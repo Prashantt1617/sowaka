@@ -14,7 +14,9 @@ import { useStore } from '../store';
 import { IconFile } from '../icons';
 import { ETYPE, STAT, TYPE } from '../theme';
 import type { LeaveType, ReqStatus } from '../theme';
-import { Avatar, Card, Pill, StatusTabs } from '../ui';
+import { Avatar, Pill, StatusTabs } from '../ui';
+import { PdBank, PdCalendar, PdChart, PdClock, PdEdit, PdFile, PdStar, PdTarget, PdTrash, PdUser } from './pdIcons';
+import './people.css';
 import { periodLabel, periodShort } from '../period';
 import { EmployeeKpiPanel } from './KpiAssign';
 import { assignShift, clearCalendarDay, clearReportingManager, deleteEmployee, getCompanySettings, getEmployeeCalendar, getShifts, setCalendarDay, setReportingManager, updateEmployeeDetails } from '../../services/hrms';
@@ -179,42 +181,42 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
     : 0;
 
   return (
-    <div style={{ animation: 'fade .3s ease both', maxWidth: 1180 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <button onClick={onBack} style={backBtn}>{backLabel}</button>
+    <div className="pd-prof" style={{ animation: 'fade .3s ease both' }}>
+      <div className="pd-prof-top">
+        <button onClick={onBack} className="pd-btn ghost sm" style={{ marginLeft: -12 }}>{backLabel}</button>
         {user?.dashboardAdmin === true && user.id !== emp.id && (
-          <button type="button" onClick={() => setDeleting(true)} style={{ background: 'var(--surface)', color: 'var(--bad)', border: '1px solid var(--bad-line)', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Delete employee</button>
+          <button type="button" onClick={() => setDeleting(true)} className="pd-btn sm" style={{ color: 'var(--bad)' }}><PdTrash /> Delete employee</button>
         )}
       </div>
       {deleting && <DeleteEmployee emp={emp} onClose={() => setDeleting(false)} onDeleted={() => { setDeleting(false); void s.reload(); onBack(); }} />}
 
       {/* Identity header */}
-      <Card style={{ padding: 0, marginBottom: 18 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '22px 24px' }}>
-          <Avatar name={emp.name} size={68} font={26} src={emp.photoUrl} />
+      <section className="pd-card pd-phead">
+        <div className="ph-id">
+          <Avatar name={emp.name} size={52} font={21} src={emp.photoUrl} />
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.6px' }}>{emp.name}</div>
+            <div className="pn">
+              <h1>{emp.name}</h1>
               <Pill label={emp.empType} tone={ETYPE[emp.empType]} />
               {emp.isDirector && <Pill label="Director" tone={{ bg: 'var(--t-lilac)', fg: 'var(--t-plum-i)' }} />}
             </div>
-            <div style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 400, marginTop: 4 }}>
+            <span className="sub">
               {emp.role} · {emp.team} · {emp.employeeId}
-            </div>
+            </span>
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', borderTop: '1px solid var(--line)' }}>
+        <div className="pd-facts">
           <Fact label="Work email" value={d.workEmail} />
           <Fact label="Employee ID" value={emp.employeeId} />
           <Fact label="Work location" value={d.workLocation} />
-          <Fact label="Reporting manager" value={emp.manager} border />
-          <Fact label="Date of joining" value={emp.joining} border />
-          <Fact label="Shift" value={currentMonth ? `${currentMonth.shift} · ${currentMonth.window}` : '—'} border />
+          <Fact label="Reporting manager" value={emp.manager} />
+          <Fact label="Date of joining" value={emp.joining} />
+          <Fact label="Shift" value={currentMonth ? `${currentMonth.shift} · ${currentMonth.window}` : '—'} />
         </div>
-      </Card>
+      </section>
 
       {/* One page, five views of the same person. */}
-      <div style={{ marginBottom: 18 }}>
+      <div className="pd-ptabs">
         <StatusTabs<ProfileTab>
           options={seesSalary ? ['profile', 'performance', 'calendar', 'requests', 'salary', 'orgchart'] : ['profile', 'performance', 'calendar', 'requests', 'orgchart']}
           active={tab}
@@ -224,9 +226,9 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
       </div>
 
       {tab === 'profile' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 18, alignItems: 'start', maxWidth: 820 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <div data-focus="details"><Section title="Basic details" action={canEditDetails ? <button type="button" onClick={() => setEditingDetails(true)} style={editBtn}>Edit details</button> : undefined}>
+        <div className="pd-psecs">
+          <div className="pd-psecs">
+            <div data-focus="details"><Section title="Basic details" icon={<PdUser />} action={canEditDetails ? <button type="button" onClick={() => setEditingDetails(true)} className="pd-sec-act"><PdEdit /> Edit details</button> : undefined}>
             <Grid>
               <Row label="First name" value={d.firstName} />
               <Row label="Middle name" value={d.middleName || '—'} />
@@ -246,30 +248,31 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
             </Grid>
           </Section></div>
             {canEditDetails && (
-              <div data-focus="shift"><Section title="Shift template">
+              <div data-focus="shift"><Section title="Shift template" icon={<PdClock />}>
                 <ShiftPicker emp={emp} onChanged={() => getEmployeeCalendar(emp.id, thisMonth()).then(setCurrentMonth).catch(() => undefined)} />
               </Section></div>
             )}
             {/* Only when something is filed; an empty box said nothing useful. */}
             {emp.documents.length > 0 && (
-            <Section title="Documents">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Section title="Documents" icon={<PdFile />}>
+              <div className="pd-list">
                 {emp.documents.map((doc) => (
                   <a
                     key={doc.id}
                     href={doc.url}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ display: 'flex', alignItems: 'center', gap: 11, background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 12, padding: '11px 13px', textDecoration: 'none', color: 'inherit', pointerEvents: doc.url ? 'auto' : 'none' }}
+                    className="pd-li"
+                    style={{ textDecoration: 'none', color: 'inherit', pointerEvents: doc.url ? 'auto' : 'none' }}
                   >
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--t-lilac)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <IconFile size={16} stroke="var(--t-lilac-i)" />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{doc.type}</div>
-                      <div style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}{doc.uploadedOn ? ` · ${doc.uploadedOn}` : ''}</div>
-                    </div>
-                    <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--accent-ink)' }}>Open</span>
+                    <span className="pd-li-i">
+                      <IconFile size={15} stroke="currentColor" />
+                    </span>
+                    <span className="grow">
+                      <b>{doc.type}</b>
+                      <span className="s" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}{doc.uploadedOn ? ` · ${doc.uploadedOn}` : ''}</span>
+                    </span>
+                    <span className="pd-sec-act">Open</span>
                   </a>
                 ))}
               </div>
@@ -283,84 +286,84 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
       {editingDetails && <EditDetails emp={emp} onClose={() => setEditingDetails(false)} />}
 
       {tab === 'performance' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 18, alignItems: 'start' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <Section title="Performance (PMS)">
+        <div className="pd-psecs">
+          <div className="pd-psecs">
+            <Section title="Performance (PMS)" icon={<PdStar />}>
             {review && review.status !== 'none' ? (
               <>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-                  <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-1px' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', padding: '6px 0' }}>
+                  <div style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', fontVariantNumeric: 'tabular-nums' }}>
                     {review.overall > 0 ? review.overall.toFixed(1) : '—'}
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--ink-4)', fontWeight: 500 }}>/ 5.0</div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>/ 5.0</div>
                   {review.overall > 0 && (
-                    <Pill label={ratingWord(review.overall)} tone={{ bg: 'var(--ok-bg)', fg: 'var(--ok)' }} fontSize={11.5} />
+                    <Pill label={ratingWord(review.overall)} tone={{ bg: 'var(--p-green)', fg: '#fff' }} fontSize={11.5} />
                   )}
                 </div>
-                <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div className="pd-pfg">
                   <MiniRow label="Review cycle" value={periodLabel(s.cycle.period)} />
                   <MiniRow label="Reviewed by" value={review.managerName} />
                   <MiniRow label="Last updated" value={review.date || '—'} />
                 </div>
                 {review.params.length > 0 && (
-                  <div style={{ marginTop: 16, borderTop: '1px solid var(--line)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 11 }}>
+                  <div style={{ marginTop: 10, borderTop: '1px solid var(--line)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {review.params.map((p, i) => (
-                      <div key={`${p.name}-${i}`}>
+                      <div key={`${p.name}-${i}`} style={{ padding: '6px 0' }}>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                          <span style={{ fontSize: 13, fontWeight: 500, flex: 1, minWidth: 0 }}>{p.name}</span>
-                          <span style={{ fontSize: 13, fontWeight: 600 }}>
+                          <span style={{ fontSize: 14, fontWeight: 400, flex: 1, minWidth: 0 }}>{p.name}</span>
+                          <span style={{ fontSize: 14, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>
                             {p.score > 0 ? p.score.toFixed(1) : '—'}
                           </span>
                         </div>
                         {p.note && (
-                          <div style={{ fontSize: 12.5, color: 'var(--ink-3)', lineHeight: 1.5, marginTop: 3 }}>{p.note}</div>
+                          <div className="pd-subnote" style={{ marginTop: 2 }}>{p.note}</div>
                         )}
                       </div>
                     ))}
                   </div>
                 )}
                 {review.extra && (
-                  <div style={{ marginTop: 14, borderTop: '1px solid var(--line)', paddingTop: 12, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.6 }}>
+                  <div style={{ marginTop: 10, borderTop: '1px solid var(--line)', paddingTop: 10, fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>
                     {review.extra}
                   </div>
                 )}
               </>
             ) : (
-              <div style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.55 }}>
+              <div style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.55, padding: '6px 0' }}>
                 No review submitted for {periodLabel(s.cycle.period)}
                 {review?.managerName && review.managerName !== '—' ? ` — ${review.managerName} has not started it yet.` : '.'}
               </div>
             )}
           </Section>
-            <Section title="Review history">
+            <Section title="Review history" icon={<PdChart />}>
             {review && review.history.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 6 }}>
                 {review.history.map((h) => (
-                  <div key={h.period} style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-                    <span style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400, width: 76, flexShrink: 0 }}>
+                  <div key={h.period} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, width: 76, flexShrink: 0 }}>
                       {periodShort(h.period)}
                     </span>
-                    <span style={{ flex: 1, height: 7, borderRadius: 5, background: 'var(--surface-2)', overflow: 'hidden' }}>
-                      <span style={{ display: 'block', width: `${(h.overall / 5) * 100}%`, height: '100%', background: 'var(--accent-soft)' }} />
+                    <span className="pd-bar" style={{ flex: 1 }}>
+                      <i style={{ width: `${(h.overall / 5) * 100}%`, background: 'var(--accent)' }} />
                     </span>
-                    <span style={{ fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums', width: 30, textAlign: 'right' }}>
+                    <span style={{ fontSize: 14, fontWeight: 500, fontVariantNumeric: 'tabular-nums', width: 30, textAlign: 'right' }}>
                       {h.overall.toFixed(1)}
                     </span>
                   </div>
                 ))}
-                <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 2, lineHeight: 1.5 }}>
+                <div className="pd-subnote" style={{ marginTop: 2 }}>
                   Sent reviews only. A cycle with no bar is one nobody submitted.
                 </div>
               </div>
             ) : (
-              <div style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.55 }}>
+              <div style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.55, padding: '6px 0' }}>
                 No earlier reviews yet.
               </div>
             )}
           </Section>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <div data-focus="kpi"><Section title="KPIs">
+          <div className="pd-psecs">
+            <div data-focus="kpi"><Section title="KPIs" icon={<PdTarget />}>
             <EmployeeKpiPanel
               userId={emp.id}
               userName={emp.name}
@@ -380,29 +383,29 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
         <div>
           <div data-focus="salary"><EmployeeSalary userId={emp.id} name={emp.name} /></div>
           <IncomeTaxCard userId={emp.id} />
-          <div style={{ marginTop: 22 }}><SalarySlips userId={emp.id} /></div>
+          <div style={{ marginTop: 20 }}><SalarySlips userId={emp.id} /></div>
         </div>
       )}
 
       {tab === 'requests' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.7fr', gap: 18, alignItems: 'start' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <Section title="Leave balance">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="pd-psecs">
+          <div className="pd-psecs">
+            <Section title="Leave balance" icon={<PdCalendar />}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, paddingTop: 8 }}>
               {bal.map((b) => {
                 const available = b.entitled - b.taken;
                 const pct = Math.round((b.taken / b.entitled) * 100);
                 return (
-                  <div key={b.key}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <div key={b.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ width: 10, height: 10, borderRadius: 3, background: TYPE[b.key], flexShrink: 0 }} />
-                      <span style={{ fontSize: 13.5, fontWeight: 500 }}>{b.name}</span>
-                      <span style={{ marginLeft: 'auto', fontSize: 13.5, fontWeight: 600 }}>{available}<span style={{ color: 'var(--ink-4)', fontWeight: 400 }}> / {b.entitled}</span></span>
+                      <span style={{ fontSize: 12.5, fontWeight: 400, color: 'var(--ink-2)' }}>{b.name}</span>
                     </div>
-                    <div style={{ height: 7, borderRadius: 5, background: 'var(--surface-2)', overflow: 'hidden' }}>
-                      <div style={{ width: `${pct}%`, height: '100%', background: TYPE[b.key], opacity: .55 }} />
+                    <span style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>{available}<span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 500 }}> / {b.entitled}</span></span>
+                    <div className="pd-bar" style={{ marginTop: 6 }}>
+                      <i style={{ width: `${pct}%`, background: TYPE[b.key] }} />
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 4 }}>{b.taken} taken · {available} available</div>
+                    <div className="pd-subnote">{b.taken} taken · {available} available</div>
                   </div>
                 );
               })}
@@ -415,25 +418,26 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
 
       {tab === 'orgchart' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+      {/* Reporting line — this person's slice of the org chart */}
+      <div>
+        <section className="pd-card">
+          <div className="pd-card-h" style={{ marginBottom: 20 }}>
+            <div>
+              <h3>Org chart</h3>
+              <small>
+                Reporting line · {reports.length} direct report{reports.length === 1 ? '' : 's'}{peers > 0 ? ` · ${peers} peer${peers === 1 ? '' : 's'}` : ''}
+              </small>
+            </div>
             <button
               type="button"
               onClick={() => { s.setOrgChartFocus(emp.id); s.setView('orgchart'); }}
-              style={{ background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', borderRadius: 999, padding: '9px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
+              className="pd-sec-act"
+              style={{ color: 'var(--accent-ink)', fontSize: 13 }}
             >
               Open in org chart ↗
             </button>
           </div>
-      {/* Reporting line — this person's slice of the org chart */}
-      <div>
-        <Card style={{ padding: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '15px 20px', borderBottom: '1px solid var(--line)' }}>
-            <div style={{ fontSize: 14, fontWeight: 600 }}>Org chart</div>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400 }}>
-              Reporting line · {reports.length} direct report{reports.length === 1 ? '' : 's'}{peers > 0 ? ` · ${peers} peer${peers === 1 ? '' : 's'}` : ''}
-            </div>
-          </div>
-          <div style={{ padding: '26px 20px 30px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <div style={{ padding: '0 0 6px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             {/* Manager — nothing at all above someone who has none; the chart starts with them. */}
             {manager ? (
               <OrgNode emp={manager} caption="Reporting manager" onOpen={onOpen} />
@@ -450,16 +454,16 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
             {reports.length > 0 && (
               <>
                 <Connector />
-                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'center', maxWidth: '100%' }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', maxWidth: '100%' }}>
                   {reports.map((r) => <OrgNode key={r.id} emp={r} onOpen={onOpen} />)}
                 </div>
               </>
             )}
             {reports.length === 0 && (
-              <div style={{ fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400, marginTop: 14 }}>No direct reports</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400, marginTop: 14 }}>No direct reports</div>
             )}
           </div>
-        </Card>
+        </section>
       </div>
         </div>
       )}
@@ -523,21 +527,21 @@ function SalarySlips({ userId }: { userId: string }) {
     return () => { live = false; };
   }, [userId]);
 
-  const salaryCard = <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Payslips</div>;
-  if (error) return <div>{salaryCard}<Card><div style={{ padding: 28, color: 'var(--bad)', fontWeight: 400 }}>{error}</div></Card></div>;
-  if (!rows) return <div>{salaryCard}<Card><div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontWeight: 400 }}>Loading…</div></Card></div>;
+  const salaryCard = <div className="pd-card-h"><h3>Payslips</h3></div>;
+  if (error) return <section className="pd-card">{salaryCard}<div style={{ padding: '8px 0', color: 'var(--bad)', fontWeight: 400, fontSize: 13 }}>{error}</div></section>;
+  if (!rows) return <section className="pd-card">{salaryCard}<div className="pd-empty">Loading…</div></section>;
   if (rows.length === 0) {
-    return <div>{salaryCard}<Card><div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontWeight: 400 }}>No salary slips yet — they appear here once a payroll run includes this person.</div></Card></div>;
+    return <section className="pd-card">{salaryCard}<div className="pd-empty">No salary slips yet — they appear here once a payroll run includes this person.</div></section>;
   }
   return (
-    <div>
+    <section className="pd-card">
     {salaryCard}
-    <Card style={{ padding: 0, overflow: 'hidden' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+    <div className="pd-tbl-wrap">
+      <table className="pd-t">
         <thead>
           <tr>
             {['Month', 'Status', 'Paid days', 'Loss of pay', 'Gross', 'Deductions', 'Net pay', ''].map((h, i) => (
-              <th key={h || i} style={{ textAlign: i >= 2 ? 'right' : 'left', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '12px 18px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)' }}>{h}</th>
+              <th key={h || i} style={{ textAlign: i >= 2 ? 'right' : 'left' }}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -549,7 +553,7 @@ function SalarySlips({ userId }: { userId: string }) {
             const lines = (payslip.inputs.attendanceDeductions ?? []).filter((l) => l.days > 0);
             return (
               <tr key={run.id}>
-                <td style={slipTd}><strong>{periodTitle(run.period)}</strong></td>
+                <td style={slipTd}><b>{periodTitle(run.period)}</b></td>
                 <td style={slipTd}><Pill label={tone.label} tone={{ bg: tone.bg, fg: tone.fg }} /></td>
                 <td style={{ ...slipTd, textAlign: 'right' }}>{payslip.inputs.payableDays} / {payslip.inputs.workingDays}</td>
                 <td style={{ ...slipTd, textAlign: 'right' }}>
@@ -566,8 +570,8 @@ function SalarySlips({ userId }: { userId: string }) {
                 <td style={{ ...slipTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}><strong>{inrPaise(payslip.netPayablePaise)}</strong></td>
                 <td style={{ ...slipTd, textAlign: 'right' }}>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    <button type="button" onClick={() => void downloadPayslipPdf(payslip, company)} style={{ background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Download slip</button>
-                    {payslip.id && <button type="button" onClick={() => void downloadTdsSheetPdf(payslip.id!).catch((e) => alert(e instanceof Error ? e.message : String(e)))} style={{ background: 'var(--surface)', color: 'var(--accent-ink)', border: '1px solid var(--accent)', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>TDS sheet</button>}
+                    <button type="button" onClick={() => void downloadPayslipPdf(payslip, company)} className="pd-btn primary sm">Download slip</button>
+                    {payslip.id && <button type="button" onClick={() => void downloadTdsSheetPdf(payslip.id!).catch((e) => alert(e instanceof Error ? e.message : String(e)))} className="pd-btn sm">TDS sheet</button>}
                   </div>
                 </td>
               </tr>
@@ -575,13 +579,13 @@ function SalarySlips({ userId }: { userId: string }) {
           })}
         </tbody>
       </table>
+      </div>
       {explain && <LossOfPayExplainer userId={userId} payslip={explain} onClose={() => setExplain(null)} />}
-    </Card>
-    </div>
+    </section>
   );
 }
 
-const slipTd: CSSProperties = { padding: '13px 18px', borderBottom: '1px solid var(--line)', verticalAlign: 'middle' };
+const slipTd: CSSProperties = { verticalAlign: 'middle' };
 
 /**
  * One person's month, day by day; HR clicks a day to mark it. Also opened from
@@ -643,14 +647,17 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
   const worked = cal ? cal.totals.present + cal.totals.half_day + cal.totals.missed_punch + cal.totals.absent + cal.totals.on_leave : 0;
 
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} style={calNav}>‹</button>
-        <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '8px 12px', fontSize: 13.5, fontWeight: 500, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' }} />
-        <button type="button" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= thisMonth()} style={{ ...calNav, opacity: month >= thisMonth() ? 0.4 : 1 }}>›</button>
+    // Inside the payroll run's dialog it sits flat; on the profile it is its own card.
+    <section className={startMonth ? undefined : 'pd-card'}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div className="pd-calnav">
+          <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} className="pd-round">‹</button>
+          <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} className="pd-inp" style={{ height: 42, borderRadius: 999, fontSize: 14, fontWeight: 500, padding: '0 14px' }} />
+          <button type="button" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= thisMonth()} className="pd-round">›</button>
+        </div>
         {loading && <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>Loading…</span>}
         {cal && (
-          <div style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
+          <div style={{ marginLeft: 'auto', fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400 }}>
             {cal.shift} · {cal.window} · {cal.punchFormat}
           </div>
         )}
@@ -658,24 +665,24 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
       {error && <div style={{ fontSize: 13, color: 'var(--bad)', fontWeight: 400, marginBottom: 12 }}>{error}</div>}
 
       {cal && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div className="pd-legend">
           {(['present', 'half_day', 'missed_punch', 'absent', 'on_leave', 'week_off', 'holiday'] as CalendarDayStatus[]).map((k) => (
-            <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: CAL_TONE[k].bg, color: CAL_TONE[k].fg, borderRadius: 999, padding: '5px 11px', fontSize: 12.5, fontWeight: 500 }}>
-              {CAL_TONE[k].label} <span style={{ opacity: .8 }}>{cal.totals[k]}</span>
+            <span key={k}>
+              <i style={{ background: k === 'week_off' ? 'var(--line-2)' : CAL_TONE[k].fg }} />{CAL_TONE[k].label} <span style={{ color: 'var(--ink-3)' }}>{cal.totals[k]}</span>
             </span>
           ))}
-          <span style={{ alignSelf: 'center', fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400 }}>{worked} working days so far</span>
+          <span style={{ marginLeft: 'auto', color: 'var(--ink-3)' }}>{worked} working days so far</span>
         </div>
       )}
 
-      <Card style={{ padding: 0 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--line)' }}>
+      <div>
+        <div className="pd-cal" style={{ marginBottom: 6 }}>
           {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
-            <div key={d} style={{ padding: '10px 12px', fontSize: 11.5, fontWeight: 500, letterSpacing: '.5px', color: 'var(--ink-3)' }}>{d.toUpperCase()}</div>
+            <div key={d} className="pd-cdh">{d.toUpperCase()}</div>
           ))}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
-          {Array.from({ length: lead }, (_, i) => <div key={`lead-${i}`} style={{ minHeight: 84, borderBottom: '1px solid var(--line)', borderRight: '1px solid var(--line)', background: 'var(--surface-2)' }} />)}
+        <div className="pd-cal">
+          {Array.from({ length: lead }, (_, i) => <div key={`lead-${i}`} className="pd-cd empty" />)}
           {(cal?.days ?? []).map((day) => {
             const tone = CAL_TONE[day.status];
             const detail = day.status === 'on_leave' ? (LEAVE_NAMES[day.label ?? ''] ?? (day.label ?? '').split('_').map((w) => w && w[0].toUpperCase() + w.slice(1)).join(' ') + ' leave')
@@ -689,27 +696,28 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
                 key={day.date}
                 title={`${day.date}${detail ? ` · ${detail}` : ''}${day.hr ? ` · marked by ${day.hr.setByName ?? 'HR'}, was ${prev?.label}` : ''}${editable ? ' · click to mark' : ''}`}
                 onClick={editable ? () => setEditing(day) : undefined}
-                style={{ minHeight: 84, padding: 10, borderBottom: '1px solid var(--line)', borderRight: '1px solid var(--line)', background: day.status === 'upcoming' ? 'var(--surface)' : tone.bg, display: 'flex', flexDirection: 'column', gap: 6, cursor: editable ? 'pointer' : 'default', boxShadow: ring ? 'inset 0 0 0 3px var(--bad)' : day.hr ? 'inset 0 0 0 2px var(--accent)' : undefined }}
+                className={day.status === 'upcoming' ? 'pd-cd future' : 'pd-cd'}
+                style={{ background: day.status === 'upcoming' ? undefined : tone.bg, color: day.status === 'upcoming' ? undefined : tone.fg, borderColor: day.status === 'week_off' ? 'var(--line)' : undefined, cursor: editable ? 'pointer' : 'default', boxShadow: ring ? 'inset 0 0 0 2px var(--bad)' : day.hr ? 'inset 0 0 0 2px var(--accent)' : undefined }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 600, color: day.status === 'upcoming' ? 'var(--ink-4)' : 'var(--ink)' }}>{Number(day.date.slice(8))}</span>
-                  {ring ? <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--on-accent)', background: 'var(--bad-solid)', borderRadius: 5, padding: '1px 5px' }}>{ring}</span>
-                    : day.hr ? <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--on-accent)', background: 'var(--accent-grad)', borderRadius: 5, padding: '1px 5px' }}>HR</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 4 }}>
+                  <b>{Number(day.date.slice(8))}</b>
+                  {ring ? <span style={{ fontSize: 10.5, fontWeight: 600, color: '#fff', background: 'var(--p-red)', borderRadius: 999, padding: '1px 6px' }}>{ring}</span>
+                    : day.hr ? <span style={{ fontSize: 10.5, fontWeight: 600, color: '#fff', background: 'var(--p-blue)', borderRadius: 999, padding: '1px 6px' }}>HR</span>
                     : day.lateByMinutes > 0 && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--t-lilac-i)' }}>late {day.lateByMinutes}m</span>}
                 </div>
                 {day.hr && prev && (
-                  <div style={{ fontSize: 11.5, fontWeight: 500, color: prev.fg, textDecoration: 'line-through', opacity: .75 }}>{prev.label}</div>
+                  <div style={{ fontSize: 11, fontWeight: 400, color: prev.fg, textDecoration: 'line-through', opacity: .75 }}>{prev.label}</div>
                 )}
-                {day.status !== 'upcoming' && <div style={{ fontSize: 12, fontWeight: 500, color: tone.fg }}>{day.hr ? '→ ' : ''}{tone.label}</div>}
-                {detail && !(day.hr && detail === tone.label) && <div style={{ fontSize: 11.5, color: tone.fg, opacity: .85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail}</div>}
+                {day.status !== 'upcoming' && <div style={{ fontSize: 11, fontWeight: 400 }}>{day.hr ? '→ ' : ''}{tone.label}</div>}
+                {detail && !(day.hr && detail === tone.label) && <div style={{ fontSize: 11, opacity: .85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail}</div>}
               </div>
             );
           })}
         </div>
-      </Card>
-      {editable && <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 10 }}>{highlight ? 'Ringed days cost pay. ' : ''}Click any day to mark it. The mark replaces what the punches, leave or holidays say, on the dashboard, in payroll and in the employee's app.</div>}
+      </div>
+      {editable && <div className="pd-subnote" style={{ marginTop: 12 }}>{highlight ? 'Ringed days cost pay. ' : ''}Click any day to mark it. The mark replaces what the punches, leave or holidays say, on the dashboard, in payroll and in the employee's app.</div>}
       {editing && <MarkDay day={editing} saving={saving} onClose={() => setEditing(null)} onSave={(status, note) => void mark(editing, status, note)} />}
-    </div>
+    </section>
   );
 }
 
@@ -720,38 +728,43 @@ function MarkDay({ day, saving, onClose, onSave }: { day: CalendarDayDTO; saving
   const recorded = day.hr ? CAL_TONE[day.hr.previousStatus] : CAL_TONE[day.status];
   const when = new Date(`${day.date}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)' }} />
-      <div style={{ position: 'relative', width: 'min(440px, 100%)', background: 'var(--surface)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', padding: '20px 22px' }}>
-        <div style={{ fontSize: 16, fontWeight: 600 }}>{when}</div>
-        <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 4 }}>
-          Recorded as <strong style={{ color: recorded.fg }}>{recorded.label}</strong>
-          {day.hr && <> · now <strong style={{ color: CAL_TONE[day.status].fg }}>{CAL_TONE[day.status].label}</strong>, marked by {day.hr.setByName ?? 'HR'}</>}
+    <div className="pd-scrim">
+      <div className="bg" onClick={onClose} />
+      <div className="pd-modal" style={{ width: 'min(440px, 100%)' }}>
+        <div className="pd-md-h">
+          <div>
+            <h3>{when}</h3>
+            <div className="pd-md-sub">
+              Recorded as <strong style={{ color: recorded.fg }}>{recorded.label}</strong>
+              {day.hr && <> · now <strong style={{ color: CAL_TONE[day.status].fg }}>{CAL_TONE[day.status].label}</strong>, marked by {day.hr.setByName ?? 'HR'}</>}
+            </div>
+          </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, margin: '16px 0 12px' }}>
-          {HR_CHOICES.map((choice) => {
-            const tone = CAL_TONE[choice];
-            const on = status === choice;
-            return (
-              <button key={choice} type="button" onClick={() => setStatus(choice)}
-                style={{ border: `2px solid ${on ? tone.fg : 'transparent'}`, background: tone.bg, color: tone.fg, borderRadius: 999, padding: '10px 6px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                {tone.label}
-              </button>
-            );
-          })}
+        <div className="pd-md-b">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            {HR_CHOICES.map((choice) => {
+              const tone = CAL_TONE[choice];
+              const on = status === choice;
+              return (
+                <button key={choice} type="button" onClick={() => setStatus(choice)}
+                  style={{ border: `1.5px solid ${on ? tone.fg : 'transparent'}`, background: tone.bg, color: tone.fg, borderRadius: 999, height: 40, padding: '0 6px', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  {tone.label}
+                </button>
+              );
+            })}
+          </div>
+          <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder="Note (optional), e.g. client visit approved by email"
+            className="pd-inp" style={{ width: '100%' }} />
         </div>
-        <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder="Note (optional), e.g. client visit approved by email"
-          style={{ width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 13, fontFamily: 'inherit' }} />
-        <div style={{ display: 'flex', gap: 10, marginTop: 16, alignItems: 'center' }}>
-          {day.hr && <button type="button" disabled={saving} onClick={() => onSave(null, '')} style={{ background: 'none', border: 'none', color: 'var(--bad)', fontWeight: 500, fontSize: 13, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Remove mark</button>}
-          <button type="button" onClick={onClose} style={{ marginLeft: 'auto', background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-          <button type="button" disabled={saving} onClick={() => onSave(status, note)} style={{ background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : 'Save'}</button>
+        <div className="pd-md-f">
+          {day.hr && <button type="button" disabled={saving} onClick={() => onSave(null, '')} className="pd-btn ghost" style={{ color: 'var(--bad)', paddingLeft: 0 }}>Remove mark</button>}
+          <button type="button" onClick={onClose} className="pd-btn" style={{ marginLeft: 'auto' }}>Cancel</button>
+          <button type="button" disabled={saving} onClick={() => onSave(status, note)} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>
   );
 }
-const calNav: CSSProperties = { width: 36, height: 36, borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface)', fontSize: 16, fontWeight: 500, cursor: 'pointer', color: 'var(--ink-2)', fontFamily: 'inherit' };
 
 // —— Requests: this person's, from the live queues ———————————————————————
 type Req = { id: string; kind: string; detail: string; when: string; status: ReqStatus; ord: number };
@@ -766,28 +779,31 @@ function RequestsForEmployee({ emp }: { emp: Emp }) {
   ].sort((a, b) => b.ord - a.ord);
   const pending = rows.filter((r) => r.status === 'Pending').length;
   return (
-    <Card style={{ padding: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '15px 20px', borderBottom: '1px solid var(--line)' }}>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>Requests</div>
-        <div style={{ fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400 }}>{rows.length} raised{pending ? ` · ${pending} pending` : ''}</div>
+    <section className="pd-card">
+      <div className="pd-card-h" style={{ marginBottom: 8 }}>
+        <div>
+          <h3>Requests</h3>
+          <small>{rows.length} raised{pending ? ` · ${pending} pending` : ''}</small>
+        </div>
       </div>
       {rows.length === 0 ? (
-        <div style={{ padding: 28, textAlign: 'center', color: 'var(--ink-4)', fontSize: 13.5, fontWeight: 400 }}>No requests from this employee.</div>
-      ) : rows.map((r) => (
-        <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1.3fr 1.2fr 1fr auto', gap: 12, alignItems: 'center', padding: '13px 20px', borderBottom: '1px solid var(--line)' }}>
-          <div style={{ fontSize: 13.5, fontWeight: 500 }}>{r.kind}</div>
+        <div className="pd-empty" style={{ padding: 28 }}>No requests from this employee.</div>
+      ) : <div className="pd-list">{rows.map((r) => (
+        <div key={r.id} className="pd-li" style={{ display: 'grid', gridTemplateColumns: '34px 1.3fr 1.2fr 1fr auto', gap: 12, padding: '10px 0' }}>
+          <span className="pd-li-i">{r.kind === 'Overtime' ? <PdClock size={15} /> : r.kind === 'Reimbursement' ? <PdFile size={15} /> : <PdCalendar size={15} />}</span>
+          <div style={{ fontSize: 14, fontWeight: 400 }}>{r.kind}</div>
           <div style={{ fontSize: 13, color: 'var(--ink-2)', fontWeight: 400 }}>{r.detail}</div>
-          <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{r.when}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>{r.when}</div>
           <Pill label={r.status} tone={STAT[r.status]} fontSize={11.5} />
         </div>
-      ))}
-    </Card>
+      ))}</div>}
+    </section>
   );
 }
 
 // —— Org-chart pieces ————————————————————————————————————————————————————
 function Connector() {
-  return <div style={{ width: 2, height: 26, background: 'var(--line-2)', margin: '2px 0' }} />;
+  return <div className="pd-ovline" />;
 }
 
 function OrgNode({ emp, caption, highlight, onOpen }: { emp: Emp; caption?: string; highlight?: boolean; onOpen?: (e: Emp) => void }) {
@@ -795,18 +811,15 @@ function OrgNode({ emp, caption, highlight, onOpen }: { emp: Emp; caption?: stri
   return (
     <button
       onClick={clickable ? () => onOpen!(emp) : undefined}
-      style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6,
-        width: 172, padding: '14px 12px', borderRadius: 16, background: highlight ? 'var(--accent-soft)' : 'var(--surface)',
-        border: `${highlight ? 2 : 1}px solid ${highlight ? 'var(--accent)' : 'var(--line)'}`,
-        boxShadow: highlight ? '0 6px 18px rgba(0,136,255,.14)' : '0 3px 10px rgba(34,34,34,.06)',
-        cursor: clickable ? 'pointer' : 'default', font: 'inherit',
-      }}
+      className={highlight ? 'pd-onode me' : 'pd-onode'}
+      style={{ cursor: clickable ? 'pointer' : 'default', padding: highlight ? '4px 14px' : undefined }}
     >
-      {caption && <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: highlight ? 'var(--accent-ink)' : 'var(--ink-4)' }}>{caption}</span>}
-      <Avatar name={emp.name} size={44} font={15} />
-      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>{emp.name}</div>
-      <div style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.3 }}>{emp.role}</div>
+      <Avatar name={emp.name} size={34} font={14} />
+      <span className="txt">
+        <b>{emp.name}</b>
+        <span className="sub">{emp.role}</span>
+      </span>
+      {caption && <span className={highlight ? 'cnt' : 'cap'} style={highlight ? { background: 'none', fontSize: 12, marginLeft: 'auto', paddingLeft: 18 } : undefined}>{caption}</span>}
     </button>
   );
 }
@@ -814,21 +827,23 @@ function OrgNode({ emp, caption, highlight, onOpen }: { emp: Emp; caption?: stri
 // Manager named on the record but not found in the roster.
 function GhostNode({ name, caption }: { name: string; caption: string }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6, width: 172, padding: '14px 12px', borderRadius: 16, background: 'var(--surface)', border: '1px dashed var(--line-2)' }}>
-      <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>{caption}</span>
-      <Avatar name={name} size={44} font={15} />
-      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>{name}</div>
-      <div style={{ fontSize: 12, color: 'var(--ink-4)', lineHeight: 1.3 }}>Manager</div>
+    <div className="pd-onode ghost">
+      <Avatar name={name} size={34} font={14} />
+      <span className="txt">
+        <b>{name}</b>
+        <span className="sub">Manager</span>
+      </span>
+      <span className="cap">{caption}</span>
     </div>
   );
 }
 
 // —— Building blocks ——————————————————————————————————————————————————
-function Fact({ label, value, border }: { label: string; value: string; border?: boolean }) {
+function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ padding: '14px 22px', borderTop: border ? '1px solid var(--line)' : 'none', borderLeft: '1px solid var(--line)', minWidth: 0 }}>
-      <div style={{ fontSize: 12, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
+    <div className="pd-fact">
+      <span className="pd-eyebrow">{label}</span>
+      <b>{value}</b>
     </div>
   );
 }
@@ -861,19 +876,20 @@ function PaymentDetails({ userId }: { userId: string }) {
     }
   };
   const field = (label: string, key: keyof PaymentDetailsInput, placeholder?: string) => (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12.5, fontWeight: 500, color: 'var(--ink-3)' }}>
+    <label className="pd-label">
       {label}
-      <input value={(form?.[key] as string | undefined) ?? ''} placeholder={placeholder} onChange={(e) => setForm({ ...form, [key]: e.target.value })} style={{ padding: '8px 10px', border: '1px solid var(--line)', borderRadius: 9, fontSize: 13.5, fontFamily: 'inherit' }} />
+      <input value={(form?.[key] as string | undefined) ?? ''} placeholder={placeholder} onChange={(e) => setForm({ ...form, [key]: e.target.value })} className="pd-inp" />
     </label>
   );
   return (
     <Section
       title="Payment and tax IDs"
-      action={d.canEdit && !form ? <button type="button" onClick={() => setForm({ bankName: d.bankName, accountHolder: d.accountHolder, ifsc: d.ifsc, accountNumber: d.accountNumber, pan: d.pan, uan: d.uan, accountType: d.accountType ?? 'savings', payMode: d.payMode ?? 'bank_transfer' })} style={editBtn}>Edit</button> : undefined}
+      icon={<PdBank />}
+      action={d.canEdit && !form ? <button type="button" onClick={() => setForm({ bankName: d.bankName, accountHolder: d.accountHolder, ifsc: d.ifsc, accountNumber: d.accountNumber, pan: d.pan, uan: d.uan, accountType: d.accountType ?? 'savings', payMode: d.payMode ?? 'bank_transfer' })} className="pd-sec-act"><PdEdit /> Edit</button> : undefined}
     >
       {form ? (
-        <div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ paddingTop: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             {field('Bank name', 'bankName', 'e.g. HDFC Bank')}
             {field('Account holder', 'accountHolder')}
             {field('Account number', 'accountNumber', '9 to 18 digits')}
@@ -881,9 +897,9 @@ function PaymentDetails({ userId }: { userId: string }) {
             {field('PAN', 'pan', 'ABCDE1234F')}
             {field('UAN', 'uan', '12 digits')}
           </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-            <button type="button" onClick={() => void save()} disabled={saving} style={{ ...editBtn, background: 'var(--accent-grad)', color: 'var(--on-accent)', borderColor: 'var(--accent)' }}>{saving ? 'Saving…' : 'Save'}</button>
-            <button type="button" onClick={() => setForm(null)} style={editBtn}>Cancel</button>
+          <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={() => setForm(null)} className="pd-btn">Cancel</button>
+            <button type="button" onClick={() => void save()} disabled={saving} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
           </div>
         </div>
       ) : (
@@ -896,25 +912,26 @@ function PaymentDetails({ userId }: { userId: string }) {
           <Row label="UAN" value={d.uan ?? '—'} />
         </Grid>
       )}
-      {!d.unmasked && (d.accountNumber || d.pan || d.uan) && <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 10 }}>Shown masked: full numbers are visible only with payroll access.</div>}
+      {!d.unmasked && (d.accountNumber || d.pan || d.uan) && <div className="pd-subnote" style={{ marginTop: 8 }}>Shown masked: full numbers are visible only with payroll access.</div>}
     </Section>
   );
 }
 
-function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+function Section({ title, icon, action, children }: { title: string; icon?: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (
-    <Card style={{ padding: 0 }}>
-      <div style={{ padding: '15px 20px', borderBottom: '1px solid var(--line)', fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ flex: 1 }}>{title}</span>
+    <section className="pd-card pd-psec">
+      <div className="pd-sec-h">
+        {icon && <span className="pd-ps-i">{icon}</span>}
+        <h3>{title}</h3>
         {action}
       </div>
-      <div style={{ padding: '18px 20px' }}>{children}</div>
-    </Card>
+      <div className="pd-sec-b">{children}</div>
+    </section>
   );
 }
 
 function Grid({ children }: { children: ReactNode }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 26px' }}>{children}</div>;
+  return <div className="pd-pfg">{children}</div>;
 }
 
 // Reporting manager, changeable here. The server checks the new manager is in
@@ -951,33 +968,32 @@ function ManagerRow({ emp }: { emp: Emp }) {
       setSaving(false);
     }
   };
-  const label = { fontSize: 12, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-4)', textTransform: 'uppercase' as const };
-  const link: CSSProperties = { background: 'none', border: 'none', padding: 0, color: 'var(--accent-ink)', fontWeight: 500, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' };
+  const link: CSSProperties = { background: 'none', border: 'none', padding: 0, color: 'var(--hi)', fontWeight: 400, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' };
   return (
-    <div style={{ minWidth: 0, gridColumn: editing ? '1 / -1' : undefined }}>
-      <div style={label}>Reporting manager</div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 3, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink)' }}>{current.name || '—'}</span>
+    <div className="pd-pf">
+      <span className="pl">Reporting manager</span>
+      <div className="pv" style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+        <span>{current.name || '—'}</span>
         {!editing && <button type="button" onClick={() => setEditing(true)} style={link}>Change</button>}
       </div>
       {editing && (
-        <div style={{ marginTop: 8, border: '1px solid var(--line)', borderRadius: 12, padding: 10, maxWidth: 440, background: 'var(--surface)' }}>
+        <div style={{ gridColumn: 2, marginTop: 8, border: '1px solid var(--line)', borderRadius: 16, padding: 10, maxWidth: 440, background: 'var(--surface)', boxShadow: '0 18px 40px -12px rgba(20,16,60,.28)' }}>
           <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or employee ID" aria-label="Search for the new manager"
-            style={{ width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 9, fontSize: 13.5, fontFamily: 'inherit' }} />
+            className="pd-inp" style={{ width: '100%', height: 40, borderRadius: 999 }} />
           <div style={{ marginTop: 6, display: 'grid' }}>
             {options.length === 0 && <div style={{ padding: '8px 4px', fontSize: 13, color: 'var(--ink-4)' }}>Nobody matches.</div>}
             {options.map((o) => (
               <button key={o.id} type="button" disabled={saving} onClick={() => save(o)}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 6px', border: 'none', borderRadius: 999, background: 'transparent', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 6px', border: 'none', borderRadius: 10, background: 'transparent', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
                 <Avatar name={o.name} size={28} font={11} />
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{o.name}</span>
-                  <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)' }}>{[o.employeeId, o.role].filter(Boolean).join(' · ')}</span>
+                  <span style={{ display: 'block', fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{o.name}</span>
+                  <span style={{ display: 'block', fontSize: 11.5, color: 'var(--ink-3)' }}>{[o.employeeId, o.role].filter(Boolean).join(' · ')}</span>
                 </span>
               </button>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 14, marginTop: 8, borderTop: '1px solid var(--line)', paddingTop: 8 }}>
+          <div style={{ display: 'flex', gap: 14, marginTop: 8, borderTop: '1px solid var(--line)', paddingTop: 8, paddingLeft: 6, paddingRight: 6 }}>
             <button type="button" onClick={() => { setEditing(false); setQ(''); }} style={{ ...link, color: 'var(--ink-3)' }}>Cancel</button>
             {current.id && <button type="button" disabled={saving} onClick={() => save(null)} style={{ ...link, color: 'var(--bad)', marginLeft: 'auto' }}>Remove manager</button>}
           </div>
@@ -987,27 +1003,23 @@ function ManagerRow({ emp }: { emp: Emp }) {
   );
 }
 
-function Row({ label, value, wide, strong }: { label: string; value: string; wide?: boolean; strong?: boolean }) {
+function Row({ label, value, strong }: { label: string; value: string; wide?: boolean; strong?: boolean }) {
   return (
-    <div style={{ gridColumn: wide ? '1 / -1' : undefined, minWidth: 0 }}>
-      <div style={{ fontSize: 12, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ fontSize: 13.5, fontWeight: strong ? 600 : 400, color: 'var(--ink)', marginTop: 3, wordBreak: 'break-word' }}>{value}</div>
+    <div className="pd-pf">
+      <span className="pl">{label}</span>
+      <span className="pv" style={strong ? { fontWeight: 500 } : undefined}>{value}</span>
     </div>
   );
 }
 
 function MiniRow({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>{label}</span>
-      <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{value}</span>
+    <div className="pd-pf">
+      <span className="pl">{label}</span>
+      <span className="pv">{value}</span>
     </div>
   );
 }
-
-const backBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--accent-ink)', fontSize: 13.5, fontWeight: 500, cursor: 'pointer', padding: '2px 0', marginBottom: 14 };
-
-const editBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--accent-ink)', border: '1px solid var(--accent-line)', padding: '6px 12px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
 
 /** The editor themselves, or anyone below them in the reporting line. The server checks the same. */
 /** Delete an employee for good, after their name is typed. History (attendance, leave, payslips) stays. */
@@ -1028,17 +1040,21 @@ function DeleteEmployee({ emp, onClose, onDeleted }: { emp: Emp; onClose: () => 
     }
   };
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--surface)', borderRadius: 'var(--r-lg)', width: 'min(460px, 100%)', padding: '20px 22px', boxShadow: 'var(--shadow-lg)' }}>
-        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Delete {emp.name}?</div>
-        <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>
-          Their account, profile, sign-ins, salary set-up and bank details are deleted for good and they can no longer use the app. Past attendance, leave and payslips stay, so payroll and reports still add up. This can't be undone.
+    <div onClick={onClose} className="pd-scrim" style={{ zIndex: 70, background: 'rgba(20, 16, 50, 0.38)' }}>
+      <div onClick={(e) => e.stopPropagation()} className="pd-modal" style={{ width: 'min(460px, 100%)' }}>
+        <div className="pd-md-h"><h3>Delete {emp.name}?</h3></div>
+        <div className="pd-md-b">
+          <div>
+            Their account, profile, sign-ins, salary set-up and bank details are deleted for good and they can no longer use the app. Past attendance, leave and payslips stay, so payroll and reports still add up. This can't be undone.
+          </div>
+          <label className="pd-label">
+            <span>Type <strong style={{ color: 'var(--ink)', fontWeight: 500 }}>{emp.name}</strong> to confirm</span>
+            <input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus className="pd-inp" style={{ width: '100%' }} />
+          </label>
         </div>
-        <label style={{ display: 'block', fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400, margin: '14px 0 6px' }}>Type <strong style={{ color: 'var(--ink)' }}>{emp.name}</strong> to confirm</label>
-        <input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', border: '1px solid var(--line-2)', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit' }} />
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-          <button type="button" onClick={onClose} style={{ background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-          <button type="button" disabled={!matches || busy} onClick={() => void run()} style={{ background: matches ? 'var(--bad-solid)' : 'var(--bad-bg)', color: 'var(--on-accent)', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: matches ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>{busy ? 'Deleting…' : 'Delete for good'}</button>
+        <div className="pd-md-f">
+          <button type="button" onClick={onClose} className="pd-btn">Cancel</button>
+          <button type="button" disabled={!matches || busy} onClick={() => void run()} className="pd-btn danger" style={matches ? undefined : { background: 'var(--bad-bg)', borderColor: 'var(--bad-bg)', color: 'var(--bad)', opacity: 1 }}>{busy ? 'Deleting…' : 'Delete for good'}</button>
         </div>
       </div>
     </div>
@@ -1130,14 +1146,16 @@ function EditDetails({ emp, onClose }: { emp: Emp; onClose: () => void }) {
   const emailChanged = form.email.trim().toLowerCase() !== before.email.toLowerCase();
   const idChanged = form.employeeId.trim() !== before.employeeId && before.employeeId !== '';
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={saving ? undefined : onClose} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)' }} />
-      <div role="dialog" aria-label={`Edit ${emp.name}'s details`} style={{ position: 'relative', width: 'min(760px, 100%)', maxHeight: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)' }}>
-        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--line)' }}>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>Edit details</div>
-          <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 3 }}>{emp.name}{before.employeeId ? ` · ${before.employeeId}` : ''}</div>
+    <div className="pd-scrim">
+      <div className="bg" onClick={saving ? undefined : onClose} />
+      <div role="dialog" aria-label={`Edit ${emp.name}'s details`} className="pd-modal" style={{ width: 'min(760px, 100%)', maxHeight: '100%', overflow: 'hidden' }}>
+        <div className="pd-md-h">
+          <div>
+            <h3>Edit details</h3>
+            <div className="pd-md-sub">{emp.name}{before.employeeId ? ` · ${before.employeeId}` : ''}</div>
+          </div>
         </div>
-        <div style={{ padding: '18px 22px 4px', overflowY: 'auto' }}>
+        <div style={{ padding: '20px 20px 4px', overflowY: 'auto' }}>
           <div style={grid3}>
             <Field label="First name" required error={touched && missing.firstName}>
               <input autoFocus value={form.firstName} onChange={(e) => set('firstName', e.target.value)} style={inputStyle} />
@@ -1198,15 +1216,15 @@ function EditDetails({ emp, onClose }: { emp: Emp; onClose: () => void }) {
               <Select value={form.empType} onChange={(v) => set('empType', v || before.empType)} placeholder="Select type" options={Object.keys(EMP_TYPE_VALUE)} />
             </Field>
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13.5, fontWeight: 400, color: 'var(--ink-2)', cursor: 'pointer', marginBottom: 18 }}>
-            <input type="checkbox" checked={form.isDirector} onChange={(e) => set('isDirector', e.target.checked)} />
-            <span>Employee is a <strong>Director / person with substantial interest</strong> in the company.</span>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: 400, color: 'var(--ink-2)', cursor: 'pointer', marginBottom: 16 }}>
+            <input type="checkbox" checked={form.isDirector} onChange={(e) => set('isDirector', e.target.checked)} style={{ width: 16, height: 16, accentColor: 'var(--accent)' }} />
+            <span>Employee is a <strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Director / person with substantial interest</strong> in the company.</span>
           </label>
-          <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginBottom: 14 }}>The reporting manager is changed on the profile itself.</div>
+          <div className="pd-subnote" style={{ marginBottom: 16 }}>The reporting manager is changed on the profile itself.</div>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: '1px solid var(--line)' }}>
-          <button type="button" disabled={saving} onClick={onClose} style={{ background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-          <button type="button" disabled={saving} onClick={save} style={{ background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : 'Save'}</button>
+        <div className="pd-md-f line">
+          <button type="button" disabled={saving} onClick={onClose} className="pd-btn">Cancel</button>
+          <button type="button" disabled={saving} onClick={save} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>
@@ -1234,10 +1252,10 @@ function ShiftPicker({ emp, onChanged }: { emp: Emp; onChanged: () => void }) {
     .catch((e) => setError(e instanceof ApiError ? e.message : 'Could not load the shift templates'));
   useEffect(() => { void load(); }, [emp.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error) return <div style={{ fontSize: 13, color: 'var(--bad)', fontWeight: 400 }}>{error}</div>;
-  if (!shifts) return <div style={{ fontSize: 13, color: 'var(--ink-4)' }}>Loading…</div>;
+  if (error) return <div style={{ fontSize: 13, color: 'var(--bad)', fontWeight: 400, padding: '6px 0' }}>{error}</div>;
+  if (!shifts) return <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '6px 0' }}>Loading…</div>;
   const usable = shifts.filter((t) => t.active || t.isDefault);
-  if (usable.length === 0) return <div style={{ fontSize: 13, color: 'var(--ink-4)' }}>No shift templates yet. Create one in Shifts › Templates.</div>;
+  if (usable.length === 0) return <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '6px 0' }}>No shift templates yet. Create one in Shifts › Templates.</div>;
   const assigned = shifts.find((t) => t.assignedUserIds.includes(emp.id));
   const current = assigned ?? shifts.find((t) => t.isDefault);
   const nameOf = (t: ShiftDTO) => `${t.name}${t.isDefault ? ' (default)' : ''}`;
@@ -1257,21 +1275,21 @@ function ShiftPicker({ emp, onChanged }: { emp: Emp; onChanged: () => void }) {
     }
   };
   return (
-    <div>
-      <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 10 }}>
-        Now on <strong style={{ color: 'var(--ink)' }}>{current ? nameOf(current) : 'the company policy'}</strong>
+    <div style={{ paddingTop: 6 }}>
+      <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 12 }}>
+        Now on <strong style={{ color: 'var(--ink)', fontWeight: 500 }}>{current ? nameOf(current) : 'the company policy'}</strong>
         {current && !assigned && ' · nobody picked one for them, so the default applies'}
       </div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select aria-label="Shift template" value={picked} onChange={(e) => setPicked(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: 260, flex: '1 1 260px' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select aria-label="Shift template" value={picked} onChange={(e) => setPicked(e.target.value)} className="pd-inp" style={{ width: 'auto', minWidth: 260, flex: '1 1 260px', height: 40, borderRadius: 999 }}>
           {usable.map((t) => <option key={t.id} value={t.id}>{nameOf(t)}</option>)}
         </select>
-        <button type="button" disabled={saving || picked === current?.id} onClick={save}
-          style={{ background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '10px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: picked === current?.id ? 'default' : 'pointer', opacity: saving || picked === current?.id ? 0.5 : 1, fontFamily: 'inherit' }}>
+        <button type="button" disabled={saving || picked === current?.id} onClick={save} className="pd-btn primary"
+          style={{ cursor: picked === current?.id ? 'default' : 'pointer' }}>
           {saving ? 'Saving…' : 'Assign'}
         </button>
       </div>
-      <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 8 }}>A change starts tomorrow; today stays on the current shift.</div>
+      <div className="pd-subnote" style={{ marginTop: 8 }}>A change starts tomorrow; today stays on the current shift.</div>
     </div>
   );
 }

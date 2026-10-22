@@ -4,8 +4,8 @@
 // from (the Add user wizard offers them), and a saved name nobody holds yet
 // shows on its page with no one in it.
 import { useCallback, useEffect, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { useStore } from '../store';
+import './people.css';
 import { IconPlus } from '../icons';
 import { getCompanySettings, updateCompanySettings } from '../../services/hrms';
 
@@ -71,7 +71,7 @@ export function AddNameButton({
 
   if (!open) {
     return (
-      <button style={primaryBtn} onClick={() => setOpen(true)}>
+      <button className="pd-btn primary" onClick={() => setOpen(true)}>
         <IconPlus size={15} /> Add {noun}
       </button>
     );
@@ -90,18 +90,15 @@ export function AddNameButton({
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Escape') { setName(''); setOpen(false); } }}
           placeholder={`New ${noun} name`}
-          style={{ ...inputStyle, width: 240, borderColor: taken ? 'var(--bad)' : 'var(--line)' }}
+          className="pd-inp"
+          style={{ width: 240, height: 40, borderRadius: 999, padding: '0 14px', borderColor: taken ? 'var(--bad)' : undefined }}
         />
-        {taken && <span style={{ fontSize: 11.5, color: 'var(--bad)' }}>That {noun} already exists.</span>}
+        {taken && <span style={{ fontSize: 11.5, color: 'var(--bad)', paddingLeft: 14 }}>That {noun} already exists.</span>}
       </div>
-      <button type="submit" style={{ ...primaryBtn, opacity: !trimmed || taken || busy ? 0.5 : 1 }} disabled={!trimmed || taken || busy}>
+      <button type="submit" className="pd-btn primary" disabled={!trimmed || taken || busy}>
         {busy ? 'Saving…' : 'Save'}
       </button>
-      <button type="button" style={ghostBtn} onClick={() => { setName(''); setOpen(false); }}>Cancel</button>
+      <button type="button" className="pd-btn" onClick={() => { setName(''); setOpen(false); }}>Cancel</button>
     </form>
   );
 }
-
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const inputStyle: CSSProperties = { padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 13.5, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };

@@ -1,0 +1,267 @@
+/* People and Shifts views, styled to the HR Admin prototype.
+   Values are the ones the prototype finally renders (its later layers win).
+   Only looks: every class here is presentational. Table cells and a few
+   shared pieces carry inline styles, so the table rules use !important to
+   take over from them inside a .pd-t table only. */
+
+/* Cards */
+.pd-card {
+  background: var(--surface);
+  border: 1px solid transparent;
+  border-radius: 22px;
+  box-shadow: 0 1px 2px rgba(20, 20, 22, 0.05), 0 6px 20px -6px rgba(20, 20, 22, 0.14);
+  padding: 20px;
+  min-width: 0;
+}
+.pd-card.flush { padding: 0; overflow: hidden; }
+.pd-card-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.pd-card-h h2, .pd-card-h h3 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+.pd-card-h small { font-size: 12px; font-weight: 400; color: var(--ink-3); }
+
+/* Page lead line and count line */
+.pd-lead { margin: 0; font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--ink-3); max-width: 62ch; }
+.pd-countline { font-size: 16px; font-weight: 400; letter-spacing: -0.02em; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.pd-countline b { font-weight: 500; color: var(--ink); }
+.pd-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.pd-grow-search > .ds-field:first-child { flex: 1 1 220px; min-width: 200px; width: auto !important; padding: 0 12px !important; }
+.pd-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 0 4px; margin-bottom: 20px; }
+.pd-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* Buttons */
+.pd-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 40px; padding: 0 16px; border-radius: 999px;
+  border: 1px solid var(--line-2); background: var(--surface); color: var(--ink);
+  font-family: inherit; font-size: 13px; font-weight: 500; line-height: 1.5; white-space: nowrap; cursor: pointer;
+}
+.pd-btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--line-2); }
+.pd-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.pd-btn svg { width: 15px; height: 15px; flex: none; }
+.pd-btn.primary {
+  background: linear-gradient(180deg, #2B9BFF, var(--accent)); border-color: transparent; color: #fff;
+  box-shadow: 0 8px 18px -10px var(--accent);
+}
+.pd-btn.primary:hover:not(:disabled) { background: linear-gradient(180deg, #2B9BFF, var(--accent)); filter: brightness(1.07); }
+.pd-btn.ghost { border-color: transparent; background: none; color: var(--accent-ink); }
+.pd-btn.ghost:hover:not(:disabled) { background: var(--accent-soft); border-color: transparent; }
+.pd-btn.danger { background: var(--p-red); border-color: var(--p-red); color: #fff; }
+.pd-btn.danger:hover:not(:disabled) { background: var(--p-red); filter: brightness(1.07); }
+.pd-btn.sm { height: 32px; padding: 0 12px; font-size: 12px; gap: 6px; }
+.pd-btn.big { height: 44px; padding: 0 20px; font-size: 14.5px; }
+.pd-icon-btn {
+  display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; flex: none;
+  border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer;
+}
+.pd-icon-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
+.pd-icon-btn svg { width: 15px; height: 15px; }
+.pd-acts { display: flex; gap: 6px; justify-content: flex-end; }
+.pd-lnk {
+  border: 0; background: none; padding: 0; font: inherit; font-weight: 600; cursor: pointer;
+  color: var(--accent-ink); text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 3px;
+}
+
+/* Fields */
+.pd-field {
+  display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 12px;
+  border: 1px solid var(--line-2); border-radius: 999px; background: var(--surface); color: var(--ink-3); font-size: 13px;
+}
+.pd-field input, .pd-field select {
+  border: 0; background: transparent; outline: 0; color: var(--ink); font: inherit; font-size: 13px; min-width: 0; height: 100%; flex: 1;
+}
+.pd-inp {
+  height: 42px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--surface);
+  padding: 0 12px; color: var(--ink); outline: none; font-family: inherit; font-size: 13px; box-sizing: border-box;
+}
+.pd-inp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+textarea.pd-inp { height: auto; padding: 10px 12px; min-height: 84px; line-height: 1.5; }
+
+/* Segmented control */
+.pd-seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 4px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; }
+.pd-seg button {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 0; border-radius: 999px;
+  background: none; color: var(--ink-2); font-family: inherit; font-size: 13px; font-weight: 400; cursor: pointer; white-space: nowrap;
+}
+.pd-seg button.on { background: var(--sel); color: var(--on-sel); font-weight: 500; }
+.pd-seg button .c { font-size: 11px; color: var(--ink-3); font-weight: 700; }
+.pd-seg button.on .c { color: inherit; opacity: 0.8; }
+
+/* Tags and small markers */
+.pd-tag {
+  display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 400; line-height: 1.5; padding: 3px 9px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--line-2); color: var(--ink-2); white-space: nowrap;
+}
+.pd-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.pd-badge-n {
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; background: var(--accent-soft); color: var(--accent-ink);
+  font-size: 11.5px; font-weight: 700; display: inline-grid; place-items: center;
+}
+
+/* Note */
+.pd-note {
+  display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 14px;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); font-size: 13px; line-height: 1.5;
+}
+.pd-note > svg { flex: none; color: var(--accent); margin-top: 2px; width: 15px; height: 15px; }
+.pd-note strong, .pd-note b { font-weight: 500; color: var(--ink); }
+
+/* KPI tiles */
+.pd-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; }
+.pd-tile {
+  position: relative; display: flex; flex-direction: column; gap: 4px; min-height: 96px; padding: 14px 16px; text-align: left;
+  background: var(--surface); border: 1px solid transparent; border-radius: 22px; color: var(--ink);
+  box-shadow: 0 1px 2px rgba(20, 20, 22, 0.05), 0 6px 20px -6px rgba(20, 20, 22, 0.14);
+}
+.pd-tile .l { font-size: 12.5px; font-weight: 400; color: var(--ink-2); }
+.pd-tile .v { font-size: 24px; font-weight: 400; letter-spacing: -0.02em; line-height: 1.05; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.pd-tile small { font-size: 12.5px; color: var(--ink-3); }
+
+/* Tables */
+table.pd-t { width: 100%; border-collapse: separate !important; border-spacing: 0; font-size: 13.5px; }
+.pd-t > thead > tr > th {
+  text-align: left; font-size: 12px !important; font-weight: 400 !important; line-height: 1.5;
+  letter-spacing: 0 !important; text-transform: none !important; color: var(--ink-3) !important;
+  background: var(--surface-2) !important; padding: 10px 12px !important; border-bottom: 0 !important; white-space: nowrap;
+}
+.pd-t > thead > tr > th:first-child { border-radius: 12px 0 0 12px; }
+.pd-t > thead > tr > th:last-child { border-radius: 0 12px 12px 0; }
+.pd-t > thead > tr > th:only-child { border-radius: 12px; }
+.pd-t > tbody > tr > td {
+  padding: 10px 12px !important; border-bottom: 1px solid var(--line) !important; font-size: 13.5px;
+  line-height: 1.5; vertical-align: middle; font-weight: 400;
+}
+.pd-t > tbody > tr:last-child > td { border-bottom: 0 !important; }
+.pd-t > tbody > tr.pd-click { cursor: pointer; }
+.pd-t > tbody > tr.pd-click:hover > td { background: var(--surface-2); }
+.pd-t > tbody > tr.pd-total > td { border-top: 1px solid var(--line-2) !important; font-weight: 500; }
+.pd-t td b, .pd-t td strong, .pd-t td .pd-b { font-size: 14px; font-weight: 500; color: var(--ink); }
+.pd-t .r { text-align: right; }
+.pd-t .num { font-variant-numeric: tabular-nums; }
+.pd-t .muted { color: var(--ink-3); }
+.pd-hband > th:first-child { border-radius: 12px 0 0 12px; }
+.pd-hband > th:last-child { border-radius: 0 12px 12px 0; }
+.pd-tbl-wrap { overflow-x: auto; margin: 0 -20px; padding: 0 20px; }
+
+/* Person cell */
+.pd-who { display: flex; align-items: center; gap: 12px; min-width: 150px; }
+.pd-who > .txt { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }
+.pd-who b { display: block; font-size: 14px; font-weight: 500; line-height: 1.25; color: var(--ink); }
+.pd-who .sub { display: block; font-size: 11.5px; font-weight: 400; line-height: 1.3; color: var(--ink-3); }
+
+/* Pager */
+.pd-pager { display: flex; align-items: center; gap: 12px; margin-top: 16px; font-size: 13px; color: var(--ink-3); }
+.pd-pager .pages { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+.pd-pager button {
+  display: inline-grid; place-items: center; min-width: 34px; height: 34px; padding: 0 8px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink-3); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.pd-pager button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pd-pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Empty */
+.pd-empty { padding: 40px; text-align: center; color: var(--ink-3); font-size: 13px; }
+
+/* Group label: small brand eyebrow */
+.pd-eyebrow { font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--hi); }
+
+/* ——— Employee profile ——— */
+.pd-prof b, .pd-prof strong { font-weight: 500; }
+.pd-prof-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.pd-phead { padding: 18px 20px; margin-bottom: 20px; }
+.pd-phead .ph-id { display: flex; align-items: center; gap: 16px; }
+.pd-phead .pn { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pd-phead .pn h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; color: var(--ink); }
+.pd-phead .sub { display: block; font-size: 13px; font-weight: 400; color: var(--ink-3); margin-top: 2px; }
+.pd-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 16px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.pd-fact { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pd-fact > b { font-size: 14px; font-weight: 400; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-ptabs { margin-bottom: 20px; }
+.pd-ptabs button { font-size: 13.5px !important; padding: 0 12px !important; }
+
+.pd-psecs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.pd-psec { padding: 16px 18px; }
+.pd-psec > .pd-sec-h {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 4px; padding-bottom: 10px; border-bottom: 1px solid var(--line); min-height: 32px;
+}
+.pd-psec > .pd-sec-h h3 { margin: 0; flex: 1; min-width: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); line-height: 1.5; }
+.pd-psec > .pd-sec-b { padding-top: 10px; }
+.pd-ps-i { width: 32px; height: 32px; border-radius: 10px; background: var(--hi-soft); color: var(--hi); display: grid; place-items: center; flex: none; }
+.pd-ps-i svg { width: 16px; height: 16px; }
+.pd-sec-act {
+  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid transparent;
+  background: none; color: var(--hi); font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap;
+}
+.pd-sec-act:hover:not(:disabled) { background: var(--accent-soft); }
+.pd-sec-act svg { width: 15px; height: 15px; }
+.pd-pfg { display: grid; grid-template-columns: minmax(0, 1fr); }
+.pd-pf { display: grid; grid-template-columns: 220px minmax(0, 1fr); column-gap: 16px; row-gap: 2px; align-items: baseline; padding: 6px 0; min-width: 0; }
+.pd-pf > .pl { grid-column: 1; font-size: 11.5px; font-weight: 400; line-height: 1.5; color: var(--ink-3); }
+.pd-pf > .pv { grid-column: 2; font-size: 14px; font-weight: 400; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+.pd-pf > .pv.empty { font-size: 13px; font-style: italic; color: var(--ink-3); }
+.pd-pf > small { grid-column: 2; font-size: 11px; color: var(--ink-3); opacity: 0.8; }
+.pd-mini { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+.pd-mini > span:first-child { font-size: 11.5px; color: var(--ink-3); }
+.pd-mini > span:last-child { margin-left: auto; font-size: 14px; color: var(--ink); }
+.pd-subnote { font-size: 11.5px; color: var(--ink-3); line-height: 1.5; }
+.pd-bar { height: 10px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.pd-bar > i { display: block; height: 100%; border-radius: 99px; }
+
+/* Documents and list rows */
+.pd-li { display: flex; align-items: center; gap: 12px; padding: 8px 0; min-width: 0; }
+.pd-li .grow { flex: 1; min-width: 0; }
+.pd-li .grow b { display: block; font-size: 14px; font-weight: 400; color: var(--ink); }
+.pd-li .s { display: block; font-size: 11.5px; color: var(--ink-3); }
+.pd-li-i { width: 34px; height: 34px; border-radius: 50%; background: var(--surface-2); color: var(--ink-3); display: grid; place-items: center; flex: none; }
+.pd-list > .pd-li + .pd-li { border-top: 1px solid var(--line); }
+
+/* Calendar */
+.pd-calnav { display: flex; align-items: center; gap: 8px; }
+.pd-calnav .pd-round {
+  width: 42px; height: 42px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2);
+  display: grid; place-items: center; font-size: 16px; cursor: pointer; font-family: inherit; padding: 0;
+}
+.pd-calnav .pd-round:disabled { opacity: 0.4; cursor: default; }
+.pd-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 12.5px; color: var(--ink-2); margin: 0 0 14px; align-items: center; }
+.pd-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.pd-cal { display: grid; grid-template-columns: repeat(7, minmax(44px, 1fr)); gap: 6px; }
+.pd-cdh { font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); text-align: center; padding: 4px 0; }
+.pd-cd {
+  min-height: 68px; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow: hidden;
+  border: 1px solid transparent; font-size: 11px; line-height: 1.25;
+}
+.pd-cd.empty { background: none; border: 0; }
+.pd-cd.future { background: var(--surface); border: 1px dashed var(--line); color: var(--ink-3); }
+.pd-cd b { font-size: 13px; font-weight: 500; }
+
+/* Org chart slice */
+.pd-onode {
+  display: flex; align-items: center; gap: 10px; min-width: 170px; padding: 12px 14px; border-radius: 16px; text-align: left;
+  background: var(--surface); border: 1px solid var(--line); color: var(--ink); font: inherit;
+  box-shadow: 0 1px 1px rgba(20, 20, 22, 0.03), 0 10px 28px -18px rgba(20, 20, 22, 0.18);
+}
+.pd-onode.me { background: var(--accent-soft); border-color: var(--accent); }
+.pd-onode.ghost { border-style: dashed; border-color: var(--line-2); box-shadow: none; }
+.pd-onode .txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.pd-onode b { font-size: 14px; font-weight: 500; line-height: 1.5; }
+.pd-onode .sub { font-size: 12px; color: var(--ink-3); line-height: 1.5; }
+.pd-onode .cnt { margin-left: auto; font-size: 11.5px; font-weight: 700; background: var(--accent-soft); color: var(--accent-ink); border-radius: 99px; padding: 2px 8px; white-space: nowrap; }
+.pd-onode .cap { margin-left: auto; font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--hi); white-space: nowrap; padding-left: 8px; }
+.pd-ovline { width: 1px; height: 22px; background: var(--line-2); }
+
+/* Dialogs */
+.pd-scrim { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.pd-scrim > .bg { position: absolute; inset: 0; background: rgba(20, 16, 50, 0.38); }
+.pd-modal {
+  position: relative; width: min(520px, 100%); max-height: calc(100% - 48px); overflow: auto; display: flex; flex-direction: column;
+  background: var(--surface); border-radius: 22px; box-shadow: var(--shadow-lg);
+}
+.pd-md-h {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 42px;
+  padding: 16px 20px; border-bottom: 1px solid var(--line); flex: none;
+}
+.pd-md-h h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.5; color: var(--ink); }
+.pd-md-h p, .pd-md-sub { margin: 2px 0 0; font-size: 12px; color: var(--ink-3); line-height: 1.5; }
+.pd-md-b { padding: 20px; display: grid; gap: 16px; overflow-y: auto; font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+.pd-md-f { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 0 20px 20px; flex: none; }
+.pd-md-f.line { border-top: 1px solid var(--line); padding-top: 16px; }
+.pd-label { display: flex; flex-direction: column; gap: 6px; font-size: 11.5px; font-weight: 400; color: var(--ink-2); }

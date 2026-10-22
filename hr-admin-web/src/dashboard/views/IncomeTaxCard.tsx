@@ -7,7 +7,7 @@ import { useStore } from '../store';
 import { ApiError } from '../../services/http';
 import { getTaxDeclaration, rupeesToPaise, saveTaxDeclaration } from '../../services/payroll';
 import type { TaxDeclarationResponse, TaxDeclarations } from '../../services/payroll';
-import { Card } from '../ui';
+import './people.css';
 
 const AMOUNTS: { key: keyof TaxDeclarations; label: string; oldOnly?: boolean }[] = [
   { key: 'sec80C', label: '80C investments (PF is added automatically)', oldOnly: true },
@@ -69,13 +69,13 @@ export function IncomeTaxCard({ userId }: { userId: string }) {
   };
   const status = data.configs.find((c) => c.regime === regime)?.status;
   return (
-    <Card style={{ padding: '20px 24px', marginTop: 22 }}>
+    <section className="pd-card" style={{ marginTop: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 15, fontWeight: 600, flex: 1 }}>Income tax · FY {data.fy}</div>
-        {status === 'to_confirm' && <span style={{ fontSize: 11.5, fontWeight: 500, padding: '3px 9px', borderRadius: 6, background: 'var(--warn-bg)', color: 'var(--warn)' }}>Slabs to confirm</span>}
-        {!status && <span style={{ fontSize: 11.5, color: 'var(--ink-4)' }}>No tax slabs for this year yet</span>}
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, letterSpacing: '-.01em', flex: 1 }}>Income tax · FY {data.fy}</h3>
+        {status === 'to_confirm' && <span style={{ fontSize: 11.5, fontWeight: 500, padding: '3px 10px', borderRadius: 999, background: 'var(--p-yellow)', color: 'var(--p-yellow-ink)' }}>Slabs to confirm</span>}
+        {!status && <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>No tax slabs for this year yet</span>}
       </div>
-      <div style={{ display: 'flex', gap: 20, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 20, marginTop: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         <label style={row}><input type="radio" checked={regime === 'new'} onChange={() => setRegime('new')} /> New regime</label>
         <label style={row}><input type="radio" checked={regime === 'old'} onChange={() => setRegime('old')} /> Old regime</label>
         <label style={row}>
@@ -87,9 +87,9 @@ export function IncomeTaxCard({ userId }: { userId: string }) {
           </select>
         </label>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12, marginTop: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16, marginTop: 16 }}>
         {AMOUNTS.filter((a) => regime === 'old' || !a.oldOnly).map((a) => (
-          <label key={a.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12.5, color: 'var(--ink-2)' }}>
+          <label key={a.key} style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11.5, color: 'var(--ink-2)' }}>
             {a.label}
             <input type="number" min={0} value={values[a.key] ?? ''} placeholder="₹ a year" onChange={(e) => setValues({ ...values, [a.key]: e.target.value })} style={field} />
           </label>
@@ -103,13 +103,12 @@ export function IncomeTaxCard({ userId }: { userId: string }) {
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
-        <button type="button" onClick={() => void save()} disabled={saving} style={btn}>{saving ? 'Saving…' : 'Save'}</button>
-        <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Used by the TDS engine on each run (Statutory Components › Income Tax). A figure typed on a run wins.</span>
+        <button type="button" onClick={() => void save()} disabled={saving} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
+        <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>Used by the TDS engine on each run (Statutory Components › Income Tax). A figure typed on a run wins.</span>
       </div>
-    </Card>
+    </section>
   );
 }
 
-const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--ink)' };
-const field: CSSProperties = { padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 9, fontSize: 13.5, fontFamily: 'inherit' };
-const btn: CSSProperties = { background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer' };
+const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink)' };
+const field: CSSProperties = { height: 42, padding: '0 12px', border: '1px solid var(--line-2)', borderRadius: 12, fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
