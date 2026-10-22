@@ -12,6 +12,7 @@ import { cancelProposal, confirmProposal, undoProposal } from './proposals';
 import { auditCol, LEVEL_LABEL, saveSettings, settingsFor, spentThisMonthUsd } from './store';
 import { llmConfigured, SUWI_MODEL, SUWI_PROVIDER } from './llm';
 import { SUWI_AREAS } from './tools';
+import { INSIGHT_KINDS, INSIGHT_ROUTE, InsightKind, insightFor, mayRead } from './insight';
 
 export const suwiRouter = Router();
 suwiRouter.use(requireAuth, requireDashboardAccess);
@@ -35,6 +36,24 @@ suwiRouter.post('/actions/:id/cancel', async (req, res, next) => {
 });
 suwiRouter.post('/actions/:id/undo', async (req, res, next) => {
   try { res.json({ success: true, action: await undoProposal(me(req).userId, me(req).org!, String(req.params.id)) }); } catch (e) { fail(res, e, next); }
+});
+
+/**
+ * The checks on one pending request or claim, for the box at the top of its
+ * drawer. Null when the area is set to "Answer only", the request isn't this
+ * company's, or this person can't see that page: the box then hides itself.
+ */
+suwiRouter.get('/insight/:kind/:id', async (req, res, next) => {
+  try {
+    const u = me(req);
+    const kind = String(req.params.kind) as InsightKind;
+    if (!INSIGHT_KINDS.includes(kind)) { res.status(404).json({ success: false, message: 'Unknown request kind' }); return; }
+    const s = await settingsFor(u.org!);
+    const level = s.levels[kind === 'claim' ? 'claims' : 'requests'];
+    if (!s.enabled || level === 'answer' || !mayRead(u, INSIGHT_ROUTE[kind])) { res.json({ success: true, insight: null }); return; }
+    const today = new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
+    res.json({ success: true, insight: await insightFor(u.org!, today, kind, String(req.params.id)) });
+  } catch (e) { fail(res, e, next); }
 });
 
 /** Settings → Suwi: everyone with dashboard access can read; only an admin changes it. */
