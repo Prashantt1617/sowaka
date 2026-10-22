@@ -1,0 +1,26 @@
+/* The HR Admin design for the Performance, Reports, Payroll and Connect
+   screens — the parts inline styles can't express. Values in look.ts. */
+
+/* Tables: a grey header strip with rounded ends, airy rows, no rule under the last row */
+.lk-t th:first-child { border-top-left-radius: 12px; border-bottom-left-radius: 12px; }
+.lk-t th:last-child { border-top-right-radius: 12px; border-bottom-right-radius: 12px; }
+.lk-t > tbody > tr:last-child > td { border-bottom: 0 !important; }
+.lk-t > tbody > tr.phm-row:hover > td,
+.lk-t > tbody > tr.lk-click:hover > td { background: var(--surface-2); }
+.lk-t > tbody > tr.phm-row,
+.lk-t > tbody > tr.lk-click { cursor: pointer; }
+.lk-t tfoot td { border-top: 2px solid var(--line-2) !important; border-bottom: 0 !important; }
+
+/* Fields: blue ring on focus */
+.lk-in:focus,
+.lk-field:focus-within {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: none;
+}
+.lk-field input { border: 0; outline: none; background: none; height: 100%; min-width: 0; color: var(--ink); font: inherit; font-size: 13px; }
+
+/* Buttons: soft hover */
+.lk-btn:hover:not(:disabled) { background: var(--surface-2) !important; border-color: var(--line-2) !important; }
+.lk-btn-p:hover:not(:disabled) { filter: brightness(1.07); }
+.lk-ghost:hover:not(:disabled) { background: var(--accent-soft) !important; }

@@ -15,8 +15,10 @@ import { adaptFeedbackList } from '../adapters';
 import { periodLabel, periodShort } from '../period';
 import { Avatar, Card, Pill, SearchInput, SelectBox, SummaryCard } from '../ui';
 import { IconDownload } from '../icons';
-import { Modal, Tabs, Td, Th } from './kpiUi';
-import { ghostBtn, panelCard, panelTitle, smallBtn } from './kpiStyles';
+import { Modal, Tabs } from './kpiUi';
+import { Td, Th } from './lookUi';
+import * as L from './look';
+import { ghostBtn, panelCard, panelTitle, smallBtn } from './kpiLook';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -50,20 +52,21 @@ function barColor(score: number): string {
 
 const pageBtn = (off: boolean): CSSProperties => ({
   ...smallBtn,
-  color: off ? 'var(--ink-4)' : 'var(--ink-2)',
-  background: off ? 'var(--surface-2)' : 'var(--surface)',
+  height: 34, borderRadius: 10, border: '1px solid var(--line)', fontSize: 13,
+  color: 'var(--ink)',
+  opacity: off ? 0.4 : 1,
   cursor: off ? 'not-allowed' : 'pointer',
 });
 
 const metricSelect: CSSProperties = {
-  border: '1px solid var(--line)', borderRadius: 999, padding: '4px 7px', background: 'var(--surface)',
-  fontSize: 11.5, fontWeight: 500, fontFamily: 'inherit', color: 'var(--ink-2)',
+  border: '1px solid var(--line-2)', borderRadius: 999, padding: '4px 8px', background: 'var(--surface)',
+  fontSize: 12, fontWeight: 400, fontFamily: 'inherit', color: 'var(--ink-2)',
   textTransform: 'none', letterSpacing: 0, cursor: 'pointer', maxWidth: 160,
 };
 
 const TONE: Record<FbEmp['status'], PillT & { label: string }> = {
-  sent: { label: 'Reviewed', bg: 'var(--ok-bg)', fg: 'var(--ok)' },
-  none: { label: 'Not started', bg: 'var(--bad-bg)', fg: 'var(--bad)' },
+  sent: { label: 'Reviewed', ...L.TONES.ok },
+  none: { label: 'Not started', ...L.TONES.warn },
 };
 
 export function Feedback() {
@@ -165,12 +168,12 @@ export function Feedback() {
       )}
 
       {/* —— Cycle summary ———————————————————————————————————————————— */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         <select
           value={period}
           onChange={(e) => { setPeriod(e.target.value); s.setFbMgrFilter(null); s.setFbEmpId(null); resetPage(); }}
           title="Review cycle"
-          style={{ border: '1px solid var(--line)', borderRadius: 999, padding: '9px 12px', fontSize: 14, fontWeight: 500, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer' }}
+          style={{ border: '1px solid var(--line-2)', borderRadius: 999, height: 40, padding: '0 12px', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer' }}
         >
           {periods.map((p) => (
             <option key={p} value={p}>
@@ -189,20 +192,21 @@ export function Feedback() {
         <button
           onClick={exportRows}
           disabled={view.fbs.length === 0}
-          style={{ ...smallBtn, marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7, opacity: view.fbs.length ? 1 : 0.5 }}
+          className="lk-btn"
+          style={{ ...ghostBtn, marginLeft: 'auto', opacity: view.fbs.length ? 1 : 0.5 }}
         >
-          <IconDownload /> Export
+          <IconDownload stroke="currentColor" /> Export
         </button>
       </div>
 
-      <div style={{ maxWidth: 260, marginBottom: 16 }}>
+      <div style={{ maxWidth: 268, marginBottom: 20 }}>
         <SummaryCard label="Reviews submitted" value={`${totDone} / ${totExp}`} />
       </div>
 
       {/* —— Per-manager completion ——————————————————————————————————— */}
       {section === 'managers' && (
-      <Card>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+      <Card style={L.cardPad}>
+        <table className="lk-t" style={L.table}>
           <thead>
             <tr>
               <Th>Manager</Th>
@@ -218,10 +222,10 @@ export function Feedback() {
             {mgrs.map((m) => {
               const complete = m.done >= m.total;
               const st: PillT & { label: string } = complete
-                ? { label: 'Complete', bg: 'var(--ok-bg)', fg: 'var(--ok)' }
+                ? { label: 'Complete', ...L.TONES.ok }
                 : m.done > 0
-                  ? { label: 'In progress', bg: 'var(--warn-bg)', fg: 'var(--warn)' }
-                  : { label: 'Not started', bg: 'var(--bad-bg)', fg: 'var(--bad)' };
+                  ? { label: 'In progress', ...L.TONES.info }
+                  : { label: 'Not started', ...L.TONES.warn };
               const mpct = m.total ? Math.round((m.done / m.total) * 100) : 0;
               const active = s.fbMgrFilter === m.id;
               return (
@@ -233,12 +237,12 @@ export function Feedback() {
                 >
                   <Td>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-                      <Avatar name={m.name} size={32} font={12} />
-                      <span style={{ fontWeight: 500, color: 'var(--accent-ink)' }}>{m.name}</span>
+                      <Avatar name={m.name} size={34} font={12.5} />
+                      <span style={L.cellName}>{m.name}</span>
                     </span>
                   </Td>
                   <Td muted>
-                    <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>{m.scope}</span>
+                    <span style={{ fontSize: 13.5, color: 'var(--ink-2)' }}>{m.scope}</span>
                   </Td>
                   <Td muted>{m.total}</Td>
                   <Td>
@@ -246,22 +250,22 @@ export function Feedback() {
                   </Td>
                   <Td>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                      <span style={{ flex: 1, height: 7, borderRadius: 'var(--r-lg)', background: 'var(--surface-2)', overflow: 'hidden', display: 'flex', minWidth: 60 }}>
-                        <span style={{ width: `${mpct}%`, background: 'var(--accent-grad)' }} />
+                      <span style={{ ...L.barTrack, flex: 1, display: 'flex', minWidth: 60 }}>
+                        <span style={{ width: `${mpct}%`, borderRadius: 99, background: 'var(--accent)' }} />
                       </span>
-                      <span style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{mpct}%</span>
+                      <span style={{ fontSize: 13.5, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>{mpct}%</span>
                     </span>
                   </Td>
                   <Td><Pill label={st.label} tone={st} /></Td>
                   <Td right>
-                    <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--accent-ink)' }}>View team →</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--accent-ink)', whiteSpace: 'nowrap' }}>View team →</span>
                   </Td>
                 </tr>
               );
             })}
             {mgrs.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: '26px 14px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>
+                <td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>
                   Nobody has direct reports yet, so there is nothing to review.
                 </td>
               </tr>
@@ -276,7 +280,7 @@ export function Feedback() {
       <>
       {/* One filter row: manager, status and search read as the same control
           set, rather than a drill-down chip sitting apart from the filters. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         <SelectBox
           value={s.fbMgrFilter ?? 'all'}
           onChange={(v) => { s.setFbMgrFilter(v === 'all' ? null : v); resetPage(); }}
@@ -303,19 +307,20 @@ export function Feedback() {
         {(focused || status !== 'all' || s.fbEmpSearch) && (
           <button
             onClick={() => { s.setFbMgrFilter(null); setStatus('all'); s.setFbEmpSearch(''); resetPage(); }}
-            style={{ ...smallBtn, padding: '7px 12px' }}
+            className="lk-btn"
+            style={smallBtn}
           >
             Clear filters
           </button>
         )}
 
-        <div style={{ marginLeft: 'auto', fontSize: 13.5, color: 'var(--ink-3)', fontWeight: 400 }}>
+        <div style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--ink-2)', fontWeight: 400 }}>
           {people.length} of {view.fbEmps.length} people
         </div>
       </div>
 
-      <Card>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+      <Card style={L.cardPad}>
+        <table className="lk-t" style={L.table}>
           <thead>
             <tr>
               <Th>Employee</Th>
@@ -357,7 +362,7 @@ export function Feedback() {
                   <Td>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
                       <Avatar name={e.name} size={34} font={13} />
-                      <span style={{ fontWeight: 500, color: 'var(--accent-ink)' }}>{e.name}</span>
+                      <span style={L.cellName}>{e.name}</span>
                     </span>
                   </Td>
                   <Td muted>{e.designation}</Td>
@@ -368,27 +373,27 @@ export function Feedback() {
                   </Td>
                   <Td right>
                     {score === null ? (
-                      <span style={{ color: 'var(--ink-4)', fontWeight: 500 }}>—</span>
+                      <span style={{ color: 'var(--ink-3)' }}>—</span>
                     ) : (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, justifyContent: 'flex-end' }}>
-                        <span style={{ width: 54, height: 6, borderRadius: 'var(--r-lg)', background: 'var(--surface-2)', overflow: 'hidden' }}>
-                          <span style={{ display: 'block', width: `${(score / 5) * 100}%`, height: '100%', background: barColor(score) }} />
+                        <span style={{ ...L.barTrack, width: 54, height: 8 }}>
+                          <span style={{ display: 'block', width: `${(score / 5) * 100}%`, height: '100%', borderRadius: 99, background: barColor(score) }} />
                         </span>
-                        <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', minWidth: 26, textAlign: 'right' }}>
+                        <span style={{ fontWeight: 400, fontVariantNumeric: 'tabular-nums', minWidth: 26, textAlign: 'right' }}>
                           {score.toFixed(1)}
                         </span>
                       </span>
                     )}
                   </Td>
                   <Td muted>
-                    <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>{e.date || '—'}</span>
+                    <span style={{ fontSize: 13.5, color: 'var(--ink-3)' }}>{e.date || '—'}</span>
                   </Td>
                 </tr>
               );
             })}
             {people.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: '26px 14px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>
+                <td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>
                   {q ? 'Nobody matches that search.' : 'Nobody in this view.'}
                 </td>
               </tr>
@@ -398,12 +403,12 @@ export function Feedback() {
       </Card>
 
       {people.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
           <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
             Showing {(curPage - 1) * PAGE_SIZE + 1}–{Math.min(people.length, curPage * PAGE_SIZE)} of {people.length}
           </div>
           {pageCount > 1 && (
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
               <button onClick={() => setPage(curPage - 1)} disabled={curPage === 1} style={pageBtn(curPage === 1)}>
                 ← Prev
               </button>
@@ -412,10 +417,10 @@ export function Feedback() {
                   key={p}
                   onClick={() => setPage(p)}
                   style={{
-                    minWidth: 32, height: 32, borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                    minWidth: 34, height: 34, borderRadius: 10, fontSize: 13, fontWeight: 500, cursor: 'pointer',
                     border: `1px solid ${p === curPage ? 'var(--accent)' : 'var(--line)'}`,
-                    background: p === curPage ? 'var(--accent-grad)' : 'var(--surface)',
-                    color: p === curPage ? 'var(--on-accent)' : 'var(--ink-2)',
+                    background: p === curPage ? 'var(--accent)' : 'var(--surface)',
+                    color: p === curPage ? '#fff' : 'var(--ink)',
                   }}
                 >
                   {p}
@@ -430,8 +435,8 @@ export function Feedback() {
       )}
 
       {activeMetric !== OVERALL && (
-        <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 10, lineHeight: 1.5 }}>
-          Showing the <strong style={{ color: 'var(--ink-3)' }}>{activeMetric}</strong> score. People
+        <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 12, lineHeight: 1.5 }}>
+          Showing the <strong style={{ color: 'var(--ink-2)' }}>{activeMetric}</strong> score. People
           not scored on it — because it is not in their assigned set, or their review is not in
           yet — show a dash and sort last.
         </div>
@@ -490,19 +495,19 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
       footer={
         <>
           <span style={{ marginRight: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Pill label={isCurrent ? tone.label : 'Reviewed'} tone={tone} fontSize={12.5} padding="5px 13px" />
-            <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
+            <Pill label={isCurrent ? tone.label : 'Reviewed'} tone={tone} />
+            <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}>
               {periodShort(shown.period)}
               {shown.date ? ` · ${shown.date}` : ''}
             </span>
           </span>
-          <button onClick={onClose} style={ghostBtn}>Close</button>
+          <button onClick={onClose} className="lk-btn" style={ghostBtn}>Close</button>
         </>
       }
     >
       {/* ââ Cycle strip âââââââââââââââââââââââââââââââââââââââââââââââ */}
-      <div style={{ ...panelCard, marginBottom: 18 }}>
-        <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-3)', marginBottom: 12 }}>
+      <div style={{ ...panelCard, marginBottom: 20 }}>
+        <div style={{ ...L.eyebrow, marginBottom: 12 }}>
           REVIEW HISTORY
         </div>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
@@ -519,22 +524,22 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
                   border: 'none', background: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit',
                 }}
               >
-                <span style={{ fontSize: 12, fontWeight: 600, color: on ? 'var(--accent-ink)' : 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
+                <span style={{ fontSize: 12, fontWeight: on ? 600 : 400, color: on ? 'var(--ink)' : 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
                   {unscored ? '—' : c.overall.toFixed(1)}
                 </span>
                 <span
                   style={{
                     width: '100%',
                     height: Math.max(5, (c.overall / 5) * 52),
-                    borderRadius: 5,
-                    background: unscored ? 'var(--surface-2)' : on ? 'var(--accent-grad)' : 'var(--accent-soft)',
+                    borderRadius: 8,
+                    background: unscored ? 'var(--surface-2)' : on ? 'var(--accent)' : 'var(--accent-soft)',
                     transition: 'background .12s',
                   }}
                 />
-                <span style={{ fontSize: 11.5, fontWeight: on ? 600 : 400, color: on ? 'var(--ink)' : 'var(--ink-4)' }}>
+                <span style={{ fontSize: 11.5, fontWeight: on ? 500 : 400, color: on ? 'var(--hi)' : 'var(--ink-3)' }}>
                   {monthLabel(c.period)}
                   {c.period === livePeriod && (
-                    <span style={{ display: 'block', fontSize: 10.5, color: 'var(--ink-4)', fontWeight: 500 }}>NOW</span>
+                    <span style={{ display: 'block', fontSize: 10.5, color: 'var(--hi)', fontWeight: 600, letterSpacing: '.08em' }}>NOW</span>
                   )}
                 </span>
               </button>
@@ -542,7 +547,7 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
           })}
         </div>
         {emp.history.length === 0 && (
-          <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 11, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 12, lineHeight: 1.5 }}>
             No earlier reviews â this is their first cycle with one.
           </div>
         )}
@@ -550,30 +555,30 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
 
       {/* ââ The selected cycle âââââââââââââââââââââââââââââââââââââââââ */}
       {isCurrent && emp.status === 'none' ? (
-        <div style={{ ...panelCard, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5, lineHeight: 1.6, padding: '30px 20px' }}>
+        <div style={{ ...panelCard, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13, lineHeight: 1.6, padding: 40 }}>
           {emp.managerName === '—'
             ? 'Nobody manages this employee yet, so no review is due.'
             : `${emp.managerName} has not started this review for the current cycle.`}
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 18, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20, alignItems: 'start' }}>
           <div style={panelCard}>
             <div style={panelTitle}>Overall</div>
             <>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
-                  <span style={{ fontSize: 32, fontWeight: 600, letterSpacing: '-1px' }}>
+                  <span style={{ fontSize: 34, fontWeight: 400, letterSpacing: '-.035em' }}>
                     {shown.overall > 0 ? shown.overall.toFixed(1) : '—'}
                   </span>
-                  <span style={{ fontSize: 13.5, color: 'var(--ink-3)', fontWeight: 500 }}>/ 5.0</span>
+                  <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>/ 5.0</span>
                 </div>
-                <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.5 }}>
                   Averaged across {shown.params.length} parameter{shown.params.length === 1 ? '' : 's'}.
                 </div>
                 <Delta cycles={cycles} period={shown.period} />
             </>
 
-            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
-              <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-3)', marginBottom: 7 }}>
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
+              <div style={{ ...L.eyebrow, marginBottom: 8 }}>
                 MANAGER SUMMARY
               </div>
               <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>
@@ -587,7 +592,7 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
             {shown.params.length === 0 ? (
               <div style={{ fontSize: 13.5, color: 'var(--ink-3)' }}>No parameters were scored on this review.</div>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <table className="lk-t" style={L.table}>
                 <thead>
                   <tr>
                     <Th>Parameter</Th>
@@ -598,15 +603,15 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
                   {shown.params.map((p, i) => (
                     <tr key={`${p.name}-${i}`}>
                       <Td top>
-                        <div style={{ fontWeight: 500 }}>{p.name}</div>
+                        <div style={L.cellName}>{p.name}</div>
                         {p.note && (
-                          <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 7, lineHeight: 1.55, borderLeft: '2px solid var(--line)', paddingLeft: 10 }}>
+                          <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 6, lineHeight: 1.55, borderLeft: '2px solid var(--line-2)', paddingLeft: 10 }}>
                             {p.note}
                           </div>
                         )}
                       </Td>
                       <Td top right>
-                        <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: p.score > 0 ? 'var(--ink)' : 'var(--ink-4)' }}>
+                        <span style={{ fontWeight: 500, fontVariantNumeric: 'tabular-nums', color: p.score > 0 ? 'var(--ink)' : 'var(--ink-3)' }}>
                           {p.score > 0 ? p.score.toFixed(1) : '—'}
                         </span>
                       </Td>

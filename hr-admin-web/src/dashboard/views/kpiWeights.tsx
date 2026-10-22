@@ -5,7 +5,7 @@
 // built is never visible in one place, and weight boxes sit against rows that
 // have no weight.
 import type { KpiParameterDTO } from '../../services/kpi';
-import { inputStyle, MAX_PER_SET, smallBtn } from './kpiStyles';
+import { inputStyle, MAX_PER_SET, smallBtn } from './kpiLook';
 import { evenWeights, weightError, weightTotal, WEIGHT_TOTAL } from '../weights';
 
 export function WeightPicker({
@@ -71,7 +71,7 @@ export function WeightPicker({
           No parameters yet.<br />Add one above to start building the set.
         </div>
       ) : (
-        <div style={{ border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
+        <div style={{ border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
           {picked.map((id) => {
             const p = byId.get(id);
             const weight = Number(weights[id]) || 0;
@@ -81,14 +81,14 @@ export function WeightPicker({
                 style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 13px', borderBottom: '1px solid var(--line)' }}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 500 }}>{p?.title ?? 'Removed parameter'}</div>
+                  <div style={{ fontSize: 14, fontWeight: 500 }}>{p?.title ?? 'Removed parameter'}</div>
                   {p?.description && (
-                    <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 1, lineHeight: 1.4 }}>{p.description}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 1, lineHeight: 1.4 }}>{p.description}</div>
                   )}
                   {/* The share of the whole, so the split reads at a glance
                       rather than having to be added up from the boxes. */}
-                  <div style={{ height: 4, borderRadius: 4, background: 'var(--surface-2)', marginTop: 7, overflow: 'hidden' }}>
-                    <div style={{ width: `${Math.min(100, weight)}%`, height: '100%', background: 'var(--accent-grad)' }} />
+                  <div style={{ height: 6, borderRadius: 99, background: 'var(--surface-2)', marginTop: 7, overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.min(100, weight)}%`, height: '100%', borderRadius: 99, background: 'var(--accent)' }} />
                   </div>
                 </div>
                 <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -98,7 +98,7 @@ export function WeightPicker({
                     inputMode="numeric"
                     maxLength={3}
                     aria-label={`Weight for ${p?.title ?? 'parameter'}`}
-                    style={{ ...inputStyle, width: 56, textAlign: 'center', padding: '6px 8px', fontSize: 13.5, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}
+                    style={{ ...inputStyle, width: 56, minHeight: 32, textAlign: 'center', padding: '6px 8px', borderRadius: 10, fontSize: 13.5, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}
                   />
                   <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 500 }}>%</span>
                 </div>
