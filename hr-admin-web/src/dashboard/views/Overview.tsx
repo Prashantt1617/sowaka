@@ -3,6 +3,7 @@ import { useStore } from '../store';
 import { STAT } from '../theme';
 import { Avatar, Pill } from '../ui';
 import { IconChevronRight } from '../icons';
+import { SuwiOverviewCards } from '../suwi/SuwiNoticed';
 
 function StatCard({
   icon,
@@ -78,6 +79,9 @@ export function Overview() {
         <StatCard icon={claimGlyph} iconBg="var(--t-olive)" value={claims} label="Claims to review" onClick={() => s.setView('reimbursements')} />
         <StatCard icon={feedbackGlyph} iconBg="var(--t-lilac)" value={reviewsPending} label="Feedbacks pending" onClick={() => s.setView('feedback')} />
       </div>
+
+      {/* Suwi: what it noticed, and today's digest; hidden when there is nothing (or Suwi is off). */}
+      <SuwiOverviewCards />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, alignItems: 'start' }}>
         {/* On leave this week */}
