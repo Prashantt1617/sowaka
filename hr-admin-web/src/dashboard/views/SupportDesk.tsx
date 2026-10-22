@@ -38,7 +38,7 @@ import type {
   SupportView,
 } from '../../services/support';
 import type { Pill as PillTone } from '../theme';
-import { Avatar, Card, Pill, SearchInput, SelectBox } from '../ui';
+import { Avatar, Card, Pill, SearchInput, SelectBox, SkeletonLines, SkeletonRows } from '../ui';
 import { IconChevronDown, IconClose, IconFile } from '../icons';
 import { ConfirmResolveDialog, SendBackDialog, TicketTypesDialog } from './SupportDialogs';
 
@@ -112,6 +112,7 @@ export function SupportDesk() {
       .finally(() => { if (live) setChecked(true); });
     return () => { live = false; };
   }, []);
+  if (!role && !checked) return <Card><SkeletonRows rows={5} cols={2} rowHeight={72} /></Card>;
   if (!role) {
     return (
       <Card>
@@ -433,7 +434,7 @@ function Desk({ role, meId, canEditTopics }: { role: SupportRole; meId: string; 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) minmax(0, 1fr)', gap: 16, height: 'calc(100vh - 205px)', minHeight: 540 }}>
         <Card style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <div className="scry" style={{ flex: 1, overflowY: 'auto' }}>
-            {tickets === null && <ListNote>Loading…</ListNote>}
+            {tickets === null && <SkeletonRows rows={6} cols={1} rowHeight={76} />}
             {tickets !== null && listError && (
               <ListNote>
                 {listError}
@@ -466,7 +467,7 @@ function Desk({ role, meId, canEditTopics }: { role: SupportRole; meId: string; 
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-3)', fontWeight: 400 }}>
               {detailState === 'error'
                 ? <span>Could not open this ticket. <button type="button" onClick={() => void loadDetail(selectedId)} style={linkBtn}>Try again</button></span>
-                : 'Loading…'}
+                : <SkeletonLines lines={6} gap={16} style={{ width: '100%', alignSelf: 'flex-start', padding: '24px 26px' }} />}
             </div>
           )}
           {selectedId && detail && detail.ticket.id === selectedId && (
@@ -720,7 +721,7 @@ function AssignMenu({ label, currentId, meId, disabled, onPick }: { label: strin
           )}
           <div className="scry" style={{ maxHeight: 300, overflowY: 'auto' }}>
             {error && <div style={{ padding: 14, fontSize: 13, color: 'var(--bad)' }}>{error}</div>}
-            {!error && people === null && <div style={{ padding: 14, fontSize: 13, color: 'var(--ink-3)' }}>Loading…</div>}
+            {!error && people === null && <SkeletonRows rows={3} cols={1} rowHeight={46} pad={14} />}
             {!error && people !== null && shown.length === 0 && (
               <div style={{ padding: 14, fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.45 }}>
                 {people.length === 0 ? 'Nobody has a Support role yet. A dashboard admin gives roles in People › Accesses.' : 'Nobody matches.'}

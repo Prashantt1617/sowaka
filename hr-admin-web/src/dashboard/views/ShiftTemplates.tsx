@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card } from '../ui';
+import { Card, ListPending } from '../ui';
 import {
   createShift, deleteShift as deleteShiftApi, getAllEmployees, getShifts, setDefaultShift, shiftHeadcount, updateShift, DEFAULT_OUTSIDE_LOCATION, DEFAULT_SHIFT_POLICY,
   type EmployeeDTO, type OutsideLocationOutcome, type PunchFormat, type PunchMode, type ShiftDTO, type ShiftPolicyDTO,
@@ -48,6 +48,8 @@ export function ShiftTemplates() {
   const [mode, setMode] = useState<Mode>({ kind: 'list' });
   const [shifts, setShifts] = useState<ShiftDTO[]>([]);
   const [loading, setLoading] = useState(true);
+  // The first load failed: say so, with Retry, rather than "No templates yet".
+  const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
   const [active, setActive] = useState(true);
@@ -62,8 +64,8 @@ export function ShiftTemplates() {
 
   const reload = () =>
     getShifts()
-      .then(setShifts)
-      .catch((error: Error) => flash(error.message))
+      .then((rows) => { setShifts(rows); setFailed(false); })
+      .catch((error: Error) => { setFailed(true); flash(error.message); })
       .finally(() => setLoading(false));
 
   useEffect(() => {
@@ -242,12 +244,14 @@ export function ShiftTemplates() {
                   </tr>
                 );
               })}
-              {!loading && shifts.length === 0 && (
+              {!loading && !failed && shifts.length === 0 && (
                 <tr><td colSpan={4} style={emptyCell}>
                   No templates yet. Create one and make it the default — everyone follows it until assigned elsewhere.
                 </td></tr>
               )}
-              {loading && <tr><td colSpan={4} style={emptyCell}>Loading…</td></tr>}
+              {(loading || (failed && shifts.length === 0)) && (
+                <tr><td colSpan={4} style={{ padding: 0 }}><ListPending state={loading ? 'loading' : 'error'} onRetry={() => { setLoading(true); void reload(); }} rows={3} cols={4} avatar={false} rowHeight={56} /></td></tr>
+              )}
             </tbody>
           </table>
         </Card>

@@ -3,10 +3,11 @@
 // Each task opens that person's profile at the place to fix it; when HR comes
 // back, the list is worked out again and what was fixed shows as done.
 import { useCallback, useEffect, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
-import { Card } from '../ui';
+import { Card, ListPending, LoadingFigure, Spinner } from '../ui';
+import type { LoadState } from '../ui';
 import { getPeopleTasks, type PeopleTaskKey, type PeopleTasksDTO } from '../../services/hrms';
 import { EmployeeProfile, type ProfileTab } from './EmployeeProfile';
 
@@ -28,17 +29,22 @@ export function PeopleTasks() {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<{ userId: string; key: PeopleTaskKey } | null>(null);
   const [done, setDone] = useState<{ name: string; label: string }[]>([]);
+  // The first load failed: the list says so, with Retry.
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const d = await getPeopleTasks();
       setData(d);
+      setFailed(false);
       return d;
     } catch (e) {
+      setFailed(true);
       s.flash(e instanceof ApiError ? e.message : 'Could not load tasks', 'error');
       return null;
     }
   }, [s]);
+  const state: LoadState = data ? 'ready' : failed ? 'error' : 'loading';
   useEffect(() => { void load(); }, [load]);
 
   const back = async () => {
@@ -68,13 +74,13 @@ export function PeopleTasks() {
       <Card style={{ padding: '18px 22px' }}>
         <div style={{ fontSize: 16, fontWeight: 600 }}>People who still need setting up</div>
         <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 4, lineHeight: 1.5 }}>
-          {data ? <><strong>{data.people.length}</strong> of {data.total} people have something missing. </> : 'Loading… '}
+          {data ? <><strong>{data.people.length}</strong> of {data.total} people have something missing. </> : state === 'loading' ? <><Spinner />{' '}</> : null}
           Click a task to open that person's profile at the right place; once it's assigned, it drops off this list.
           {data && !data.payroll && ' Salary and bank tasks show for people with payroll access.'}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14, alignItems: 'center' }}>
-          <FilterChip on={filter === 'all'} onClick={() => setFilter('all')} label="Everyone" value={data?.people.length ?? 0} />
-          {keys.map((k) => <FilterChip key={k} on={filter === k} onClick={() => setFilter(k)} label={MISSING[k]} value={count(k)} tone={WHERE[k].tone} />)}
+          <FilterChip on={filter === 'all'} onClick={() => setFilter('all')} label="Everyone" value={<LoadingFigure state={state} w={14} h={12}>{data?.people.length ?? 0}</LoadingFigure>} />
+          {keys.map((k) => <FilterChip key={k} on={filter === k} onClick={() => setFilter(k)} label={MISSING[k]} value={<LoadingFigure state={state} w={14} h={12}>{count(k)}</LoadingFigure>} tone={WHERE[k].tone} />)}
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name or ID" style={{ marginLeft: 'auto', padding: '8px 12px', borderRadius: 10, border: '1px solid var(--line)', fontFamily: 'inherit', fontSize: 13, minWidth: 200 }} />
         </div>
       </Card>
@@ -89,7 +95,9 @@ export function PeopleTasks() {
       )}
 
       <Card>
-        {data && people.length === 0 ? (
+        {!data ? (
+          <ListPending state={state} onRetry={() => { setFailed(false); void load(); }} rows={6} cols={3} avatar={false} rowHeight={56} />
+        ) : people.length === 0 ? (
           <div style={{ padding: 28, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>{data.people.length === 0 ? 'Everyone is set up. Nothing to do.' : 'Nobody matches this filter.'}</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -121,7 +129,7 @@ export function PeopleTasks() {
   );
 }
 
-function FilterChip({ on, onClick, label, value, tone = ['var(--surface-2)', 'var(--ink-2)'] }: { on: boolean; onClick: () => void; label: string; value: number; tone?: [string, string] }) {
+function FilterChip({ on, onClick, label, value, tone = ['var(--surface-2)', 'var(--ink-2)'] }: { on: boolean; onClick: () => void; label: string; value: ReactNode; tone?: [string, string] }) {
   return (
     <button type="button" onClick={onClick} style={{ ...pill, cursor: 'pointer', fontFamily: 'inherit', border: on ? `2px solid ${tone[1]}` : '2px solid transparent', background: tone[0], color: tone[1], padding: '6px 12px' }}>
       {label} <span style={{ fontSize: 13 }}>{value}</span>

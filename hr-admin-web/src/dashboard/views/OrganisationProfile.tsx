@@ -10,7 +10,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { useAuth } from '../auth/AuthContext';
 import { useBrand } from '../brand';
-import { Card } from '../ui';
+import { Card, LoadError, SkeletonForm } from '../ui';
 import { Logo } from '../icons';
 import { ORG_DISPLAY_NAME, ORG_REGISTERED_NAME } from '../org';
 import { getOrganisationProfile, saveOrganisationProfile, type OrganisationProfileDTO } from '../../services/hrms';
@@ -121,6 +121,7 @@ export function OrganisationProfile() {
   const org = user?.org ?? '';
   const [form, setForm] = useState<OrgForm | null>(null);
   const [loadError, setLoadError] = useState('');
+  const [attempt, setAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -130,10 +131,10 @@ export function OrganisationProfile() {
       .then((p) => { if (live) setForm(formFrom(p, org)); })
       .catch((e) => { if (live) setLoadError(e instanceof ApiError ? e.message : 'Could not load the organisation details'); });
     return () => { live = false; };
-  }, [org]);
+  }, [org, attempt]);
 
-  if (loadError) return <div style={{ maxWidth: 860, color: 'var(--bad)', fontWeight: 400 }}>{loadError}</div>;
-  if (!form) return <div style={{ maxWidth: 860, color: 'var(--ink-4)' }}>Loading…</div>;
+  if (loadError) return <div style={{ maxWidth: 860 }}><Card><LoadError text={loadError} onRetry={() => setAttempt((n) => n + 1)} /></Card></div>;
+  if (!form) return <div style={{ maxWidth: 860 }}><Card style={{ padding: 22 }}><SkeletonForm fields={8} /></Card></div>;
 
   const set = <K extends keyof OrgForm>(k: K, v: OrgForm[K]) => setForm({ ...form, [k]: v });
 

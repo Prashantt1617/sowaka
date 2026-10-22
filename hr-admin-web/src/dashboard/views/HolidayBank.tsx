@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card, EmptyRow } from '../ui';
+import { Card, EmptyRow, ListPending } from '../ui';
 import { IconPlus } from '../icons';
 import {
   ALL_LOCATIONS, createHoliday, deleteHoliday, getAllEmployees, getHolidays,
@@ -38,6 +38,8 @@ export function HolidayBank() {
   const [location, setLocation] = useState('All');
   const [holidays, setHolidays] = useState<HolidayDTO[]>([]);
   const [loading, setLoading] = useState(true);
+  // The first load failed: say so, with Retry, rather than "No holidays".
+  const [failed, setFailed] = useState(false);
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   const year = String(new Date().getFullYear());
@@ -52,8 +54,8 @@ export function HolidayBank() {
 
   const reload = () =>
     getHolidays()
-      .then(setHolidays)
-      .catch((error: Error) => flash(error.message))
+      .then((h) => { setHolidays(h); setFailed(false); })
+      .catch((error: Error) => { setFailed(true); flash(error.message); })
       .finally(() => setLoading(false));
 
   useEffect(() => {
@@ -166,8 +168,8 @@ export function HolidayBank() {
       )}
 
       <Card>
-        {loading ? (
-          <EmptyRow text="Loading holidays…" />
+        {loading || (failed && holidays.length === 0) ? (
+          <ListPending state={loading ? 'loading' : 'error'} onRetry={() => { setLoading(true); void reload(); }} rows={6} cols={5} avatar={false} rowHeight={48} />
         ) : rows.length === 0 ? (
           <EmptyRow text="No holidays for this location yet." />
         ) : (

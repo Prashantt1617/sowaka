@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card, EmptyRow } from '../ui';
+import { Card, EmptyRow, ListPending } from '../ui';
 import { IconPlus } from '../icons';
 import {
   createOffice, deleteOffice, getOffices, updateOffice,
@@ -20,6 +20,8 @@ export function Offices() {
   const { flash, setView } = useStore();
   const [offices, setOffices] = useState<OfficeDTO[]>([]);
   const [loading, setLoading] = useState(true);
+  // The first load failed: say so, with Retry, rather than "No offices yet".
+  const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   /** null: list only; '' : adding; an id: editing that office. */
   const [editing, setEditing] = useState<string | null>(null);
@@ -27,8 +29,8 @@ export function Offices() {
 
   const reload = () =>
     getOffices()
-      .then(setOffices)
-      .catch((error: Error) => flash(error.message))
+      .then((o) => { setOffices(o); setFailed(false); })
+      .catch((error: Error) => { setFailed(true); flash(error.message); })
       .finally(() => setLoading(false));
 
   useEffect(() => {
@@ -147,8 +149,8 @@ export function Offices() {
       )}
 
       <Card>
-        {loading ? (
-          <EmptyRow text="Loading offices…" />
+        {loading || (failed && offices.length === 0) ? (
+          <ListPending state={loading ? 'loading' : 'error'} onRetry={() => { setLoading(true); void reload(); }} rows={3} cols={5} avatar={false} rowHeight={52} />
         ) : offices.length === 0 ? (
           <EmptyRow text="No offices yet. Add one so geotagged punches have somewhere to be checked against." />
         ) : (

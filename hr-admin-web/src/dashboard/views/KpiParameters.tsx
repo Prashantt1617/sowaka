@@ -13,7 +13,8 @@
 // since this page only sees the current one.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store';
-import { Card } from '../ui';
+import { Card, ListPending } from '../ui';
+import type { LoadState } from '../ui';
 import { IconPlus } from '../icons';
 import {
   cancelKpiParameterEdit,
@@ -41,13 +42,15 @@ type Usage = { employees: number; templates: number };
 export function KpiParameters() {
   // One source for the cycle: the store loads it from the server, since it
   // depends on the company's configured start day.
-  const { cycle, cycleLoaded } = useStore();
+  const { cycle, cycleLoaded, listState, reload: reloadStore } = useStore();
   const [rows, setRows] = useState<KpiParameterDTO[]>([]);
   const [usage, setUsage] = useState<Map<string, Usage>>(new Map());
   /** Which templates include each parameter, so the count can be opened. */
   const [byParam, setByParam] = useState<Map<string, KpiTemplateDTO[]>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Once the list has loaded, a refresh keeps it on screen.
+  const [loaded, setLoaded] = useState(false);
   const [search, setSearch] = useState('');
   const [form, setForm] = useState<PForm | null>(null);
   const [viewing, setViewing] = useState<KpiParameterDTO | null>(null);
@@ -78,6 +81,7 @@ export function KpiParameters() {
       setUsage(counts);
       setByParam(templatesFor);
       setError('');
+      setLoaded(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load parameters');
     } finally {
@@ -86,7 +90,10 @@ export function KpiParameters() {
     // Re-runs once the store's real cycle lands, replacing the seeded fallback.
   }, [cycle.period]);
 
-  useEffect(() => { void reload(); }, [reload]);
+  // Waits for the real cycle, so the counts are never the guessed cycle's.
+  useEffect(() => { if (cycleLoaded) void reload(); }, [reload, cycleLoaded]);
+  const cycleState = listState('cycle');
+  const listSt: LoadState = loaded ? 'ready' : cycleState === 'error' || (error && !loading) ? 'error' : 'loading';
 
   const q = search.trim().toLowerCase();
   const visible = useMemo(
@@ -153,7 +160,7 @@ export function KpiParameters() {
         </button>
       </div>
 
-      {error && (
+      {error && loaded && (
         <div style={{ ...warnTag, background: 'var(--bad-bg)', borderColor: 'var(--bad-line)', color: 'var(--bad)', marginBottom: 14 }}>
           {error}
         </div>
@@ -194,15 +201,15 @@ export function KpiParameters() {
                 </tr>
               );
             })}
-            {!loading && visible.length === 0 && (
+            {listSt === 'ready' && visible.length === 0 && (
               <tr>
                 <td colSpan={4} style={{ padding: '26px 14px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>
                   {q ? 'No parameters match your search.' : 'No parameters yet. Add one to start building templates.'}
                 </td>
               </tr>
             )}
-            {loading && (
-              <tr><td colSpan={4} style={{ padding: '26px 14px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>Loading…</td></tr>
+            {listSt !== 'ready' && (
+              <tr><td colSpan={4} style={{ padding: 0 }}><ListPending state={listSt} errorText={error || undefined} onRetry={() => { if (cycleState === 'error') void reloadStore(); else void reload(); }} rows={5} cols={4} avatar={false} rowHeight={56} /></td></tr>
             )}
           </tbody>
         </table>

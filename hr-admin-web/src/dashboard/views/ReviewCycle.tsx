@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { getCompanySettings } from '../../services/hrms';
 import type { CompanySettings } from '../../services/hrms';
-import { Card } from '../ui';
+import { Card, LoadError, Spinner } from '../ui';
 import { cycleRange, periodLabel } from '../period';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -20,14 +20,18 @@ export function ReviewCycle() {
   const { flash } = useStore();
   const [settings, setSettings] = useState<CompanySettings | null>(null);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    setLoading(true);
+    setFailed(false);
     getCompanySettings()
       .then(setSettings)
-      .catch((error: Error) => flash(error.message))
+      .catch((error: Error) => { setFailed(true); flash(error.message); })
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [attempt]);
 
   const day = settings?.reviewCycleStartDay;
   const now = new Date();
@@ -58,6 +62,8 @@ export function ReviewCycle() {
           <span style={{ fontSize: 13.5, color: 'var(--ink-3)' }}>
             of each month{day != null && <> — the {day}{ordinal(day)}</>}
           </span>
+          {loading && <Spinner />}
+          {failed && <LoadError compact text="The review cycle could not be loaded." onRetry={() => setAttempt((n) => n + 1)} />}
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 12, lineHeight: 1.5 }}>
           Fixed for now — moving the boundary re-files which cycle new feedback and assignments
