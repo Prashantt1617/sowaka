@@ -32,7 +32,8 @@ export type ContentBlock =
   | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean };
 
 /** `raw` carries the provider's own form of an assistant turn (Gemini's thought signatures must go back unchanged). */
-export interface LlmMessage { role: 'user' | 'assistant'; content: string | ContentBlock[]; raw?: unknown }
+/** `images`: files to show the model with a user message (a bill to read): base64, with its MIME type (image/* or application/pdf). */
+export interface LlmMessage { role: 'user' | 'assistant'; content: string | ContentBlock[]; raw?: unknown; images?: { mimeType: string; data: string }[] }
 export interface LlmTool { name: string; description: string; input_schema: Record<string, unknown> }
 export interface LlmUsage { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }
 export interface LlmReply { content: ContentBlock[]; stop_reason: 'tool_use' | 'end_turn' | string; usage: LlmUsage; model: string; raw?: unknown }
@@ -80,13 +81,18 @@ async function callClaude(input: { model?: string; system: string; tools?: LlmTo
     model, max_tokens: input.maxTokens ?? 1500,
     system: [{ type: 'text', text: input.system, cache_control: { type: 'ephemeral' } }],
     ...(tools.length ? { tools } : {}),
-    messages: input.messages.map(({ role, content }) => ({ role, content })),
+    messages: input.messages.map(({ role, content, images }) => ({
+      role,
+      content: images?.length
+        ? [...images.map((im) => (im.mimeType === 'application/pdf' ? { type: 'document', source: { type: 'base64', media_type: im.mimeType, data: im.data } } : { type: 'image', source: { type: 'base64', media_type: im.mimeType, data: im.data } })), ...(typeof content === 'string' ? [{ type: 'text', text: content }] : content)]
+        : content,
+    })),
   }) as LlmReply;
   return reply;
 }
 
 // —— Google Gemini ——
-type GPart = { text?: string; thought?: boolean; functionCall?: { name: string; args?: Record<string, unknown>; id?: string }; functionResponse?: { name: string; response: unknown; id?: string }; thoughtSignature?: string };
+type GPart = { text?: string; thought?: boolean; inlineData?: { mimeType: string; data: string }; functionCall?: { name: string; args?: Record<string, unknown>; id?: string }; functionResponse?: { name: string; response: unknown; id?: string }; thoughtSignature?: string };
 
 /** JSON Schema as Gemini's function declarations accept it (a subset of OpenAPI). */
 function geminiSchema(s: unknown): unknown {
@@ -116,7 +122,7 @@ async function callGemini(input: { model?: string; system: string; tools?: LlmTo
       });
       return { role: 'model', parts };
     }
-    const parts: GPart[] = typeof m.content === 'string' ? [{ text: m.content }] : m.content.flatMap((b): GPart[] => {
+    const parts: GPart[] = [...(m.images ?? []).map((im): GPart => ({ inlineData: { mimeType: im.mimeType, data: im.data } })), ...(typeof m.content === 'string' ? [{ text: m.content }] : m.content.flatMap((b): GPart[] => {
       if (b.type === 'text') return [{ text: b.text }];
       if (b.type === 'tool_result') {
         let response: unknown;
@@ -125,7 +131,7 @@ async function callGemini(input: { model?: string; system: string; tools?: LlmTo
         return [{ functionResponse: { name: nameOfCall.get(b.tool_use_id) ?? b.tool_use_id.split('#')[0], response: b.is_error ? { error: b.content } : response } }];
       }
       return [];
-    });
+    }))];
     return { role: 'user', parts };
   });
   const tools = input.tools ?? [];
