@@ -135,7 +135,9 @@ defineTools(
       if (before && now.overtime?.amount !== before.overtime?.amount) reasons.push(`Overtime ${before.overtime?.amount ?? '₹0'} → ${now.overtime?.amount ?? '₹0'}.`);
       if (runs.get(cur.period)!.status === 'draft') reasons.push(`${monthLabel(cur.period)} is a draft run: these figures can still change before it is submitted.`);
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropping a field
       const { _L: _a, ...nowOut } = now;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropping a field
       const { _L: _b, ...beforeOut } = before ?? ({} as typeof now);
       return {
         data: {

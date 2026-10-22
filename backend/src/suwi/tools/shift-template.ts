@@ -133,6 +133,7 @@ export function whatIf(policy: ShiftPolicyRules, date: string, input: { punchIn?
 async function baseRules(ctx: SuwiContext): Promise<ShiftPolicyRules> {
   const def = await defaultTemplateFor(ctx.org);
   if (def?.policy) return def.policy;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropping a field
   const { updatedAt: _u, updatedByUserId: _b, ...rules } = await getOrgShiftPolicy(ctx.org) as ShiftPolicyRules & { updatedAt?: Date; updatedByUserId?: string };
   return rules;
 }

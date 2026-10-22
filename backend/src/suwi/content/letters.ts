@@ -32,7 +32,7 @@ export interface LetterFacts {
 }
 
 /** A value or a blank to fill, and a note of what was blank. */
-function fill(f: LetterFacts) {
+function fill() {
   const blanks: string[] = [];
   const v = (value: string | undefined, label: string) => { if (value) return value; blanks.push(label); return `[${label}]`; };
   return { v, blanks };
@@ -43,7 +43,7 @@ const head = (f: LetterFacts, title: string) => `**${f.company}**${f.companyAddr
 
 export const LETTERS: Record<LetterType, (f: LetterFacts) => { markdown: string; blanks: string[] }> = {
   offer(f) {
-    const { v, blanks } = fill(f);
+    const { v, blanks } = fill();
     const md = head(f, 'Offer of employment')
       + `We are pleased to offer you the position of **${v(f.designation, 'designation')}** in the ${v(f.department, 'department')} team at ${f.company}, based in ${v(f.location, 'work location')}. You will report to ${v(f.manager, 'reporting manager')}${f.managerDesignation ? ` (${f.managerDesignation})` : ''}.\n\n`
       + `Your employment will begin on **${v(f.joiningDate, 'joining date')}**${f.employeeType ? ` as a ${f.employeeType} employee` : ''}.`
@@ -54,7 +54,7 @@ export const LETTERS: Record<LetterType, (f: LetterFacts) => { markdown: string;
     return { markdown: md, blanks };
   },
   confirmation(f) {
-    const { v, blanks } = fill(f);
+    const { v, blanks } = fill();
     const md = head(f, 'Confirmation of employment')
       + `We are pleased to confirm your employment with ${f.company} as **${v(f.designation, 'designation')}** in the ${v(f.department, 'department')} team, with effect from **${v(f.effectiveFrom, 'confirmation date')}**.\n\n`
       + `You joined us on ${v(f.joiningDate, 'joining date')} and have completed your probation satisfactorily. All other terms of your employment remain as set out in your appointment letter.\n\n`
@@ -63,7 +63,7 @@ export const LETTERS: Record<LetterType, (f: LetterFacts) => { markdown: string;
     return { markdown: md, blanks };
   },
   experience(f) {
-    const { v, blanks } = fill(f);
+    const { v, blanks } = fill();
     const md = `**${f.company}**${f.companyAddress ? `  \n${f.companyAddress}` : ''}\n\n${f.today}\n\n### To whom it may concern\n\n`
       + `This is to certify that **${f.name}** was employed with ${f.company} from **${v(f.joiningDate, 'joining date')}** to **${v(f.lastWorkingDay, 'last working day')}**, most recently as **${v(f.designation, 'designation')}** in the ${v(f.department, 'department')} team${f.location ? `, ${f.location}` : ''}.\n\n`
       + `During this period, ${f.name.split(' ')[0]}'s conduct and performance were found to be satisfactory. We wish ${f.name.split(' ')[0]} every success in future endeavours.\n\n`
@@ -72,7 +72,7 @@ export const LETTERS: Record<LetterType, (f: LetterFacts) => { markdown: string;
     return { markdown: md, blanks };
   },
   salary_revision(f) {
-    const { v, blanks } = fill(f);
+    const { v, blanks } = fill();
     const md = head(f, 'Revision of compensation')
       + `We are pleased to inform you that, in recognition of your contribution as **${v(f.designation, 'designation')}**, your compensation has been revised with effect from **${v(f.effectiveFrom, 'effective date')}**.\n\n`
       + `| | Annual cost to company |\n|---|---|\n| Current | ${v(f.annualCtc, 'current annual CTC')} |\n| Revised | ${v(f.newAnnualCtc, 'revised annual CTC')} |\n\n`

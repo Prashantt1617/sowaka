@@ -81,7 +81,7 @@ const norm = (s: unknown) => String(s ?? '').trim().toLowerCase().replace(/[^a-z
 /** An Employee ID as matched: letters and digits only ("cs-2", "CS 2" and "CS2" are one ID). */
 const idKey = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 /** An email as matched and stored: lower case, no spaces, no wrapping quotes, brackets or trailing punctuation. */
-const emailKey = (s: unknown) => String(s ?? '').toLowerCase().replace(/\s+/g, '').replace(/^mailto:/, '').replace(/^[<"'(\[]+|[>"')\],;.:]+$/g, '');
+const emailKey = (s: unknown) => String(s ?? '').toLowerCase().replace(/\s+/g, '').replace(/^mailto:/, '').replace(/^[<"'([]+|[>"')\],;.:]+$/g, '');
 /** A text value as stored: single spaces, trimmed. */
 const tidy = (s: string) => s.replace(/\s+/g, ' ').trim();
 const GENDERS: Record<string, string> = { m: 'Male', male: 'Male', man: 'Male', f: 'Female', female: 'Female', woman: 'Female', o: 'Other', other: 'Other', others: 'Other' };
