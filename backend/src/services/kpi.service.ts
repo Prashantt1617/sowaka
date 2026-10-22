@@ -95,11 +95,12 @@ function parameterView(doc: KpiParameter & { _id?: ObjectId }, authorName?: stri
  * dashboard and the manager's form can never disagree about which wording is
  * live.
  */
-async function promoteDueEdits(org: string, period: string): Promise<void> {
+/** Returns how many edits it promoted. */
+async function promoteDueEdits(org: string, period: string): Promise<number> {
   const due = await kpiParameters()
     .find({ org, 'pendingEdit.effectiveFrom': { $lte: period } })
     .toArray();
-  if (!due.length) return;
+  if (!due.length) return 0;
   await Promise.all(
     due.map((row) =>
       kpiParameters().updateOne(
@@ -114,6 +115,7 @@ async function promoteDueEdits(org: string, period: string): Promise<void> {
       ),
     ),
   );
+  return due.length;
 }
 
 /** The wording in force for `period`, whether or not promotion has run yet. */
@@ -127,14 +129,23 @@ function wordingFor(doc: KpiParameter, period: string) {
 
 export async function listKpiParameters(adminUserId: string, includeArchived = false) {
   const org = await requireOrg(adminUserId);
-  await promoteDueEdits(org, await currentPeriodFor(org));
   const filter = includeArchived ? { org } : { org, archived: false };
-  const rows = await kpiParameters().find(filter).sort({ title: 1 }).toArray();
-  // One lookup for every author on the page rather than one per row.
-  const authorIds = [...new Set(rows.map((r) => r.createdByUserId).filter(Boolean))] as string[];
-  const authors = authorIds.length
-    ? await users().find({ userId: { $in: authorIds } }).toArray()
-    : [];
+  // The rows (and their authors) are read while due edits are checked, rather
+  // than after: almost always nothing is due, and when something is, the rows
+  // are read again once it has been promoted, exactly as before.
+  const read = async () => {
+    const rows = await kpiParameters().find(filter).sort({ title: 1 }).toArray();
+    // One lookup for every author on the page rather than one per row.
+    const authorIds = [...new Set(rows.map((r) => r.createdByUserId).filter(Boolean))] as string[];
+    const authors = authorIds.length
+      ? await users().find({ userId: { $in: authorIds } }, { projection: { _id: 0, userId: 1, name: 1 } }).toArray()
+      : [];
+    return { rows, authors };
+  };
+  const early = read();
+  early.catch(() => undefined);
+  const promoted = await promoteDueEdits(org, await currentPeriodFor(org));
+  const { rows, authors } = promoted ? await read() : await early;
   const nameById = new Map(authors.map((a) => [a.userId, a.name]));
   return rows.map((r) => parameterView(r, r.createdByUserId ? nameById.get(r.createdByUserId) : undefined));
 }
@@ -399,12 +410,15 @@ export async function listKpiTemplates(adminUserId: string) {
  * assignment was built from.
  */
 async function templateUsage(org: string) {
-  const period = await currentPeriodFor(org);
+  // The cycle and the assignments do not depend on each other: read together.
+  const [period, rows] = await Promise.all([
+    currentPeriodFor(org),
+    kpiAssignments()
+      .find({ org, templateId: { $exists: true } })
+      .project({ templateId: 1, userId: 1, period: 1 })
+      .toArray(),
+  ]);
   const upcoming = nextPeriod(period);
-  const rows = await kpiAssignments()
-    .find({ org, templateId: { $exists: true } })
-    .project({ templateId: 1, userId: 1, period: 1 })
-    .toArray();
   const out = new Map<string, { employees: number; upcoming: number; assignments: number }>();
   const live = new Map<string, Set<string>>();
   const next = new Map<string, Set<string>>();
@@ -715,10 +729,20 @@ export async function deleteKpiTemplate(adminUserId: string, id: string) {
 // --------------------------------------------------------------- assignments
 
 async function assignmentView(doc: KpiAssignment) {
-  const params = await kpiParameters()
-    .find({ _id: { $in: doc.parameterIds.map((id) => new ObjectId(id)) } })
-    .toArray();
+  return (await assignmentViews([doc]))[0];
+}
+
+/** Several assignments with one read of the parameters they use, rather than one read each. */
+async function assignmentViews(docs: KpiAssignment[]) {
+  const ids = [...new Set(docs.flatMap((doc) => doc.parameterIds))];
+  const params = ids.length
+    ? await kpiParameters().find({ _id: { $in: ids.map((id) => new ObjectId(id)) } }).toArray()
+    : [];
   const byId = new Map(params.map((p) => [p._id!.toHexString(), p]));
+  return docs.map((doc) => assignmentViewOf(doc, byId));
+}
+
+function assignmentViewOf(doc: KpiAssignment, byId: Map<string, KpiParameter & { _id?: ObjectId }>) {
   return {
     userId: doc.userId,
     period: doc.period,
@@ -745,7 +769,7 @@ export async function listKpiAssignments(adminUserId: string, periodInput: unkno
   const org = await requireOrg(adminUserId);
   const period = requirePeriod(periodInput);
   const rows = await kpiAssignments().find({ org, period }).toArray();
-  return Promise.all(rows.map(assignmentView));
+  return assignmentViews(rows);
 }
 
 /**
