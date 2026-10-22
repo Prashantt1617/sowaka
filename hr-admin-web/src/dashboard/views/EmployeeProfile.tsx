@@ -17,7 +17,7 @@ import type { LeaveType, ReqStatus } from '../theme';
 import { Avatar, Card, Pill, StatusTabs } from '../ui';
 import { periodLabel, periodShort } from '../period';
 import { EmployeeKpiPanel } from './KpiAssign';
-import { assignShift, clearCalendarDay, clearReportingManager, getCompanySettings, getEmployeeCalendar, getShifts, setCalendarDay, setReportingManager, updateEmployeeDetails } from '../../services/hrms';
+import { assignShift, clearCalendarDay, clearReportingManager, deleteEmployee, getCompanySettings, getEmployeeCalendar, getShifts, setCalendarDay, setReportingManager, updateEmployeeDetails } from '../../services/hrms';
 import type { EmployeeDetailsInput, ShiftDTO } from '../../services/hrms';
 import { Field, GENDERS as GENDER_CHOICES, Select, TypeOrPick, grid2, grid3, infoCallout, infoIcon, inputStyle } from './AddEmployeeWizard';
 import { ApiError } from '../../services/http';
@@ -127,10 +127,12 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
   const [tab, setTab] = useState<ProfileTab>('profile');
   // What someone earns is its own access, apart from Employees.
   const { user } = useAuth();
+  const [deleting, setDeleting] = useState(false);
   const seesSalary = canOpen(user, SALARY_DETAILS);
   // Edit details: for someone given the right, on themselves and anyone below them.
   const [editingDetails, setEditingDetails] = useState(false);
-  const canEditDetails = user?.canEditEmployees === true && isSelfOrBelow(s.emps, user.id, emp);
+  // HR (a dashboard admin with the right) edits anyone; others their own reporting line.
+  const canEditDetails = user?.canEditEmployees === true && (user.dashboardAdmin === true || isSelfOrBelow(s.emps, user.id, emp));
   // This month, fetched once: it names the shift in the header and seeds the
   // Calendar tab, so opening that tab does not ask for the same month again.
   const [currentMonth, setCurrentMonth] = useState<EmployeeCalendarDTO | null>(null);
@@ -155,7 +157,13 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
 
   return (
     <div style={{ animation: 'fade .3s ease both', maxWidth: 1180 }}>
-      <button onClick={onBack} style={backBtn}>← Back to employees</button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <button onClick={onBack} style={backBtn}>← Back to employees</button>
+        {user?.dashboardAdmin === true && user.id !== emp.id && (
+          <button type="button" onClick={() => setDeleting(true)} style={{ background: '#fff', color: '#C4382E', border: '1px solid #F0C9C4', padding: '8px 14px', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Delete employee</button>
+        )}
+      </div>
+      {deleting && <DeleteEmployee emp={emp} onClose={() => setDeleting(false)} onDeleted={() => { setDeleting(false); void s.reload(); onBack(); }} />}
 
       {/* Identity header */}
       <Card style={{ padding: 0, marginBottom: 18 }}>
@@ -979,6 +987,41 @@ const backBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', g
 const editBtn: CSSProperties = { background: '#fff', color: '#0571A6', border: '1px solid #CFE0F2', padding: '6px 12px', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
 
 /** The editor themselves, or anyone below them in the reporting line. The server checks the same. */
+/** Delete an employee for good, after their name is typed. History (attendance, leave, payslips) stays. */
+function DeleteEmployee({ emp, onClose, onDeleted }: { emp: Emp; onClose: () => void; onDeleted: () => void }) {
+  const { flash } = useStore();
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const matches = typed.trim().toLowerCase() === emp.name.trim().toLowerCase();
+  const run = async () => {
+    setBusy(true);
+    try {
+      await deleteEmployee(emp.id, typed.trim());
+      flash(`${emp.name} deleted`);
+      onDeleted();
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Could not delete', 'error');
+      setBusy(false);
+    }
+  };
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20,24,38,.45)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: 'min(460px, 100%)', padding: '20px 22px', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
+        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Delete {emp.name}?</div>
+        <div style={{ fontSize: 14, color: '#484848', lineHeight: 1.5 }}>
+          Their account, profile, sign-ins, salary set-up and bank details are deleted for good and they can no longer use the app. Past attendance, leave and payslips stay, so payroll and reports still add up. This can't be undone.
+        </div>
+        <label style={{ display: 'block', fontSize: 13, color: '#717171', fontWeight: 600, margin: '14px 0 6px' }}>Type <strong style={{ color: '#222222' }}>{emp.name}</strong> to confirm</label>
+        <input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 15, fontFamily: 'inherit' }} />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+          <button type="button" onClick={onClose} style={{ background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <button type="button" disabled={!matches || busy} onClick={() => void run()} style={{ background: matches ? '#C4382E' : '#E8B4AE', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: matches ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>{busy ? 'Deleting…' : 'Delete for good'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function isSelfOrBelow(emps: Emp[], editorId: string, emp: Emp): boolean {
   const byId = new Map(emps.map((e) => [e.id, e]));
   const seen = new Set<string>();
