@@ -30,3 +30,5 @@ import './tools/payroll-terms';
 import './tools/reports';
 import './tools/payroll-actions';
 import './tools/salary-templates';
+import './tools/leave-balance';
+import './tools/review';

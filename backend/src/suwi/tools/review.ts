@@ -92,7 +92,7 @@ defineTools(
     },
   },
   {
-    name: 'prepare_remind_managers',
+    name: 'prepare_remind_request_managers',
     area: 'requests',
     acts: true,
     label: (i) => `Prepared: remind ${i.managerName ? String(i.managerName) : 'the managers'} about requests waiting on them`,
@@ -109,7 +109,7 @@ defineTools(
       const parts = (g: (typeof groups)[number]) => [g.leave ? `${g.leave} leave` : '', g.overtime ? `${g.overtime} overtime` : '', g.attendance ? `${g.attendance} attendance` : ''].filter(Boolean).join(', ');
       const who = groups.length === 1 ? groups[0].manager : `${groups.length} managers`;
       const proposalId = await propose(ctx, {
-        kind: 'remind_managers', area: 'requests', title: `Remind ${who} about requests waiting on them`,
+        kind: 'remind_request_managers', area: 'requests', title: `Remind ${who} about requests waiting on them`,
         summary: `${groups.length === 1 ? `${groups[0].manager} gets` : `${groups.length} managers each get`} a push and an inbox entry saying how many requests are waiting on them, the oldest from ${Math.max(...groups.map((g) => g.oldestDays))} days ago. Nothing is approved or declined.`,
         lines: [
           ...groups.slice(0, 8).map((g) => ({ text: `${g.manager}: ${plural(g.count, 'request')} (${parts(g)}), oldest ${plural(g.oldestDays, 'day')}.`, why: 'These are their team\'s pending requests where the policy makes the reporting manager the approver, so only they, or an HR override, can close them.' })),
@@ -125,7 +125,7 @@ defineTools(
   },
 );
 
-defineExecutor('remind_managers', {
+defineExecutor('remind_request_managers', {
   async run(p) {
     const { dateKey, reminders } = p.payload as { dateKey: string; reminders: { managerUserId: string; manager: string; count: number; leave: number; overtime: number; attendance: number; oldestDays: number }[] };
     const sent: string[] = [];

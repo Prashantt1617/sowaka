@@ -189,7 +189,7 @@ defineTools(
     },
   },
   {
-    name: 'prepare_remind_managers',
+    name: 'prepare_remind_review_managers',
     area: 'performance',
     acts: true,
     label: (i) => {
@@ -217,7 +217,7 @@ async function prepareReminder(ctx: SuwiContext, cycle: Awaited<ReturnType<typeo
   const who = chosen.length === 1 ? chosen[0].name : `${chosen.length} managers`;
   const title = `Remind ${who} about ${cycle.name} reviews`;
   const proposalId = await propose(ctx, {
-    kind: 'remind_managers', area: 'performance', title,
+    kind: 'remind_review_managers', area: 'performance', title,
     summary: `Sends ${who} an in-app notification (and a phone push) saying how many of their team's ${cycle.name} reviews are done and pending, and that the cycle's last day is ${dmy(cycle.lastDay)}. No email.`,
     lines: [
       { text: `${chosen.reduce((s, r) => s + r.pending, 0)} reviews pending across ${who}; each manager gets one message.`, why: 'The same wording and route as the app\'s own Friday reminder, so managers see nothing unfamiliar. Only managers with at least one report without a sent review this cycle are included; the counts are worked out again at the moment you confirm, from the reporting line and the sent reviews.' },
@@ -232,7 +232,7 @@ async function prepareReminder(ctx: SuwiContext, cycle: Awaited<ReturnType<typeo
   return { data: { prepared: true, title, managers: chosen.map((r) => ({ name: r.name, pending: r.pending })), note: 'Nothing is sent until HR presses Confirm on the card.' }, proposalId };
 }
 
-defineExecutor('remind_managers', {
+defineExecutor('remind_review_managers', {
   async run(p) {
     const { period, lastDay, managerUserIds } = p.payload as { period: string; lastDay: string; managerUserIds: string[] };
     const month = cycleName(period).split(' ')[0];
