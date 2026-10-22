@@ -41,7 +41,6 @@ import type {
   TemplateStatutoryWages,
 } from '../../services/payroll';
 import { getAllEmployees } from '../../services/hrms';
-import * as XLSX from 'xlsx';
 import { Card, EmptyRow, ListPending, Skeleton, Spinner } from '../ui';
 import type { LoadState } from '../ui';
 import { IconClose, IconPlus } from '../icons';
@@ -1053,6 +1052,8 @@ async function exportEmployeesOnTemplate(t: SalaryTemplateDTO, flash: (m: string
       })
       .sort((a, b) => a.Name.localeCompare(b.Name));
     if (onThis.length === 0) { flash('Nobody is on this template yet'); return; }
+    // The spreadsheet library is large; it is fetched the first time someone exports.
+    const XLSX = await import('xlsx');
     const ws = XLSX.utils.json_to_sheet(onThis);
     ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 12 }, { wch: 8 }];
     const wb = XLSX.utils.book_new();

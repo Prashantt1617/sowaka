@@ -1,145 +1,67 @@
 import { StoreProvider, useStore } from './store';
-import { useEffect } from 'react';
+import { Component, Suspense, use, useEffect } from 'react';
+import type { ReactNode } from 'react';
+import type { View } from './theme';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { useBrandDocument } from './brand';
 import { LoginScreen } from './auth/LoginScreen';
 import { OVERVIEW_ITEM, SECTIONS, Sidebar, Topbar, Toast } from './Chrome';
 import { canOpen } from './access';
-import { Overview } from './views/Overview';
-import { LeaveRequests } from './views/LeaveRequests';
-import { Overtime } from './views/Overtime';
-import { AttendanceCorrections } from './views/AttendanceCorrections';
-import { Feedback } from './views/Feedback';
-import { Reimbursements } from './views/Reimbursements';
-import { Employees } from './views/Employees';
-import { EmployeeImport } from './views/EmployeeImport';
-import { PeopleTasks } from './views/PeopleTasks';
 import { Placeholder } from './views/Placeholder';
 import { Drawers } from './drawers';
 import { rememberBrandOrg } from './brand';
-import { Games } from './views/Games';
-import { RelayGame } from './views/RelayGame';
-import { ContentReports } from './views/ContentReports';
-import { EngagementPosts } from './views/EngagementPosts';
-import { PayHeadMaster } from './views/PayHeadMaster';
-import { SalaryTemplates } from './views/SalaryTemplates';
-import { PaidDaysTemplates } from './views/PaidDaysTemplates';
-import { PayrollDashboard } from './views/PayrollDashboard';
-import { PayrollReports } from './views/PayrollReports';
-import { StatutoryComponents } from './views/StatutoryComponents';
-import { PayrollRuns } from './views/PayrollRuns';
-import { PaySchedule, TaxDetails } from './views/OrgSetup';
-import { ReimbursementTypes } from './views/ReimbursementTypes';
-import { ReviewCycle } from './views/ReviewCycle';
-import { ShiftBulkAssign } from './views/ShiftBulkAssign';
-import { ShiftTemplates } from './views/ShiftTemplates';
-import { HolidayBank } from './views/HolidayBank';
-import { Offices } from './views/Offices';
-import { OutOfLocation } from './views/OutOfLocation';
-import { Organisation } from './views/Organisation';
-import { Departments } from './views/Departments';
-import { Designations } from './views/Designations';
-import { AttendanceReport } from './views/AttendanceReport';
-import { OrgChart } from './views/OrgChart';
-import { Accesses } from './views/Accesses';
-import { KpiParameters } from './views/KpiParameters';
-import { KpiTemplates } from './views/KpiTemplates';
-import { KpiBulkAssign } from './views/KpiBulkAssign';
-import { SupportDesk } from './views/SupportDesk';
-import { SuwiSettings } from './views/SuwiSettings';
 import { SuwiPanel } from './suwi/SuwiPanel';
+import { hasViewPage, isPageCodeFailure, prefetchAllViews, prefetchView, viewPage } from './viewChunks';
 
-function CurrentView() {
-  const { view } = useStore();
-  switch (view) {
-    case 'organisation':
-      return <Organisation />;
-    case 'overview':
-      return <Overview />;
-    case 'leave':
-      return <LeaveRequests />;
-    case 'overtime':
-      return <Overtime />;
-    case 'attendance':
-      return <AttendanceCorrections />;
-    case 'kpi':
-      return <KpiParameters />;
-    case 'kpibulk':
-      return <KpiBulkAssign />;
-    case 'kpitemplates':
-      return <KpiTemplates />;
-    case 'feedback':
-      return <Feedback />;
-    case 'reimbursements':
-      return <Reimbursements />;
-    case 'departments':
-      return <Departments />;
-    case 'designations':
-      return <Designations />;
-    case 'employees':
-      return <Employees />;
-    case 'employeeimport':
-      return <EmployeeImport />;
-    case 'peopletasks':
-      return <PeopleTasks />;
-    case 'attendancereport':
-      return <AttendanceReport />;
-    case 'orgchart':
-      return <OrgChart />;
-    case 'usersroles':
-      return <Accesses />;
-    case 'reimbursementtypes':
-      return <ReimbursementTypes />;
-    case 'cycle':
-      return <ReviewCycle />;
-    case 'games':
-      return <Games />;
-    case 'relaygame':
-      return <RelayGame />;
-    case 'engagementposts':
-      return <EngagementPosts />;
-    case 'contentreports':
-      return <ContentReports />;
-    case 'payheads':
-      return <PayHeadMaster />;
-    case 'templates':
-      return <SalaryTemplates />;
-    case 'paiddays':
-      return <PaidDaysTemplates />;
-    case 'payrolldash':
-      return <PayrollDashboard />;
-    case 'payrollreports':
-      return <PayrollReports />;
-    case 'statutorycomponents':
-      return <StatutoryComponents />;
-    case 'payruns':
-      return <PayrollRuns />;
-    case 'payschedule':
-      return <PaySchedule />;
-    case 'taxdetails':
-      return <TaxDetails />;
-    case 'shiftbulk':
-      return <ShiftBulkAssign />;
-    case 'shifttypes':
-      return <ShiftTemplates />;
-    case 'holidaybank':
-      return <HolidayBank />;
-    case 'offices':
-      return <Offices />;
-    case 'oolcheckins':
-      return <OutOfLocation />;
-    case 'support':
-      return <SupportDesk />;
-    case 'suwi':
-      return <SuwiSettings />;
-    default:
-      return <Placeholder />;
+function ViewPage({ view }: { view: View }) {
+  const Page = use(viewPage(view));
+  return <Page />;
+}
+
+const PAGE_FALLBACK = <div style={{ minHeight: 400 }} />;
+
+// If a page's code cannot be fetched, its area stays empty and the rest of the
+// dashboard keeps working; opening the page again retries. Any other error
+// carries on up, as it always has.
+class PageCodeBoundary extends Component<{ children: ReactNode }, { error: unknown }> {
+  state = { error: null as unknown };
+  static getDerivedStateFromError(error: unknown) {
+    return { error };
+  }
+  render() {
+    if (this.state.error === null) return this.props.children;
+    if (isPageCodeFailure(this.state.error)) return PAGE_FALLBACK;
+    throw this.state.error;
   }
 }
 
+function CurrentView() {
+  const { view } = useStore();
+  if (!hasViewPage(view)) return <Placeholder />;
+  // Neutral while the page's code arrives (usually already prefetched).
+  return (
+    <PageCodeBoundary key={view}>
+      <Suspense fallback={PAGE_FALLBACK}>
+        <ViewPage view={view} />
+      </Suspense>
+    </PageCodeBoundary>
+  );
+}
+
 function Shell() {
-  const { view, setView } = useStore();
+  const { view, setView, loaded } = useStore();
   const { user } = useAuth();
+  // The page's code downloads alongside the start-up data, not after it.
+  useEffect(() => { prefetchView(view); }, [view]);
+  // Once the start-up data is in, the other pages' code follows while the
+  // browser is idle, so opening one later does not wait on the network.
+  useEffect(() => {
+    if (!loaded) return;
+    const idle = window.requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 1500));
+    const cancel = window.cancelIdleCallback ?? window.clearTimeout;
+    const id = idle(() => prefetchAllViews(), { timeout: 5000 });
+    return () => cancel(id);
+  }, [loaded]);
   // Land on a tab this person may open, and leave one taken away from them.
   useEffect(() => {
     if (canOpen(user, view)) return;

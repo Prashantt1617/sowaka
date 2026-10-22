@@ -270,7 +270,7 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
   const exportRun = async () => {
     setExporting(true);
     try {
-      exportReport('register', await getSalaryRegister(run.period, true));
+      await exportReport('register', await getSalaryRegister(run.period, true));
     } catch (e) {
       flash(e instanceof ApiError ? e.message : 'Could not export', 'error');
     } finally {

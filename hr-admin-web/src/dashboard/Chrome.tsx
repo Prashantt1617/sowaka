@@ -4,6 +4,7 @@ import { useBrand } from './brand';
 import { useAuth } from './auth/AuthContext';
 import type { ReactNode } from 'react';
 import type { View } from './theme';
+import { prefetchView } from './viewChunks';
 import { TITLES } from './theme';
 import { IconBell, IconCheck, IconLogout, IconSearch, Logo, navIcon } from './icons';
 import { useStore } from './store';
@@ -144,6 +145,8 @@ function NavButton({ item, badge }: { item: NavItem; badge?: ReactNode }) {
   return (
     <button
       onClick={() => setView(item.key)}
+      onMouseEnter={() => prefetchView(item.key)}
+      onFocus={() => prefetchView(item.key)}
       className={active ? 'ds-nav-item on' : 'ds-nav-item'}
       style={{
         display: 'flex',
@@ -296,6 +299,7 @@ export function Sidebar() {
       {/* Company display name + logo — top-left. Clicking opens Organisation details. */}
       <button
         onClick={() => { if (orgOpen) setView('organisation'); }}
+        onMouseEnter={() => { if (orgOpen) prefetchView('organisation'); }}
         title={orgOpen ? 'Organisation details' : undefined}
         className="ds-brand"
         style={{

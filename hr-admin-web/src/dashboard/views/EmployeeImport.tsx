@@ -8,7 +8,7 @@
 // Dashboard admins only.
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import * as XLSX from 'xlsx';
+import type { WorkBook } from 'xlsx';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
 import { Card } from '../ui';
@@ -28,7 +28,7 @@ const keyOf = (s: unknown) => String(s ?? '').toLowerCase().replace(/\([^)]*\)/g
  * columns Import knows (first sheet wins a tie). The rows under it become
  * objects keyed by its cells, each with its row number in the sheet.
  */
-function readWorkbook(wb: XLSX.WorkBook, names: string[]) {
+function readWorkbook(XLSX: typeof import('xlsx'), wb: WorkBook, names: string[]) {
   const known = (c: unknown) => { const k = keyOf(c); return k !== '' && names.some((n) => k === n || k.startsWith(`${n} `)); };
   let best = { score: 0, sheet: wb.SheetNames[0], at: 0, aoa: [] as unknown[][] };
   wb.SheetNames.forEach((n, si) => {
@@ -72,10 +72,12 @@ export function EmployeeImport() {
   const toggle = <T,>(set: Set<T>, v: T) => { const n = new Set(set); if (n.has(v)) n.delete(v); else n.add(v); return n; };
 
   useEffect(() => { getEmployeeImportTemplate().then((t) => setAccepted(t.accepted ?? [])).catch(() => undefined); }, []);
+  // The spreadsheet library is large and only this page reads files with it: fetch it while HR picks one.
+  useEffect(() => { import('xlsx').catch(() => undefined); }, []);
 
   const downloadTemplate = async () => {
     try {
-      const t = await getEmployeeImportTemplate();
+      const [t, XLSX] = await Promise.all([getEmployeeImportTemplate(), import('xlsx')]);
       const ws = XLSX.utils.aoa_to_sheet([t.headers, ...t.rows]);
       ws['!cols'] = t.headers.map(() => ({ wch: 20 }));
       const wb = XLSX.utils.book_new();
@@ -107,7 +109,8 @@ export function EmployeeImport() {
     setBusy(true); setPreview(null); setResult(null); setFileName(f.name); setRowFilter('all'); setFile(null);
     try {
       const names = accepted.length ? accepted.flatMap((c) => [keyOf(c.header), ...c.aliases]) : ['employee id', 'emp id', 'name', 'email', 'designation', 'department'];
-      const read = readWorkbook(XLSX.read(await f.arrayBuffer(), { cellDates: true }), names);
+      const XLSX = await import('xlsx');
+      const read = readWorkbook(XLSX, XLSX.read(await f.arrayBuffer(), { cellDates: true }), names);
       if (read.rows.length === 0) { s.flash(`${f.name} has no rows under its header`, 'error'); setBusy(false); return; }
       setFile(read);
       setBusy(false);
