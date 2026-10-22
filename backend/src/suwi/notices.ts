@@ -63,6 +63,11 @@ async function computeNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
   const out: SuwiNotice[] = [];
   const today = ctx.today;
   const seesPeople = hasAllDashboardTabs(ctx.user) || Boolean(ctx.user.dashboardTabs?.includes('employees'));
+  // The leave safety checks are the slowest part and need only the pending
+  // leave, so they start as soon as the leave list is in rather than after
+  // every list (overtime is the slowest): the same leave rows pendingRows
+  // gives below, read on their own.
+  const leaveSafe = quietly(() => pendingRows(ctx, 'leave')).then((rows) => (rows ? quietly(() => leaveSafety(ctx.org, ctx.userId, today, rows)) : null));
   // Every list at once: each is a few round trips to the database.
   // The waiting pile is the same rows pending_requests and review_requests read, so the counts agree.
   const [pending, claims, types, tasks, relay, recent] = await Promise.all([
@@ -87,7 +92,7 @@ async function computeNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
     }
 
     // Leave that looks fine: the same checks review_requests makes for its safe-to-approve list.
-    const easy = (await quietly(() => leaveSafety(ctx.org, ctx.userId, today, pending.filter((r) => r.type === 'leave'))))?.safe.length ?? 0;
+    const easy = (await leaveSafe)?.safe.length ?? 0;
     if (easy > 0) {
       out.push({
         key: 'leave_easy', icon: 'check', view: 'leave', count: easy,

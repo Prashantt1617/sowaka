@@ -23,7 +23,7 @@ import { ReimbursementClaim } from '../models/reimbursement.model';
 import { tabsForRequest } from '../models/dashboard-tabs';
 import { hasAllDashboardTabs } from '../middleware/admin.middleware';
 import { approversFor } from '../services/request-notifications.service';
-import { approvalRulesFor, hrMayDecide, leaveRulesFor } from '../services/shift.service';
+import { approvalRulesFor, hrMayDecide, leaveRulesFor, withPolicyMemo } from '../services/shift.service';
 import { getMyLeaveBalance } from '../services/leave.service';
 import { typesForOrg } from '../services/reimbursement-type.service';
 
@@ -154,13 +154,22 @@ export async function leaveSafety<R extends { id: string; userId: string; daysWa
 
 /** Balance for the year the leave falls in; approved counts as used, pending shown separately. */
 async function leaveBalanceCheck(leave: Leave & { _id?: ObjectId }, employee: User, start: string, days: number): Promise<Check> {
-  const rules = await leaveRulesFor(employee.userId);
-  if (!rules.balanceTracked) return { ok: true, text: 'No balance is tracked for this team: leave is approved without counting it down.' };
+  // The rules and the balance share one lookup of this person's shift policy.
+  return withPolicyMemo(() => leaveBalanceCheckIn(leave, employee, start, days));
+}
+
+async function leaveBalanceCheckIn(leave: Leave & { _id?: ObjectId }, employee: User, start: string, days: number): Promise<Check> {
   const year = Number(start.slice(0, 4));
-  const [balance, otherPending] = await Promise.all([
+  // The balance and the other pending leave are read while the rules are, not
+  // after: they are only used when a balance is tracked, which it usually is.
+  const reads = Promise.all([
     getMyLeaveBalance(employee.userId, year, new Date(`${start}T00:00:00Z`)),
     leaves().find({ userId: employee.userId, type: leave.type, status: 'pending', ...(leave._id ? { _id: { $ne: leave._id } } : {}), startDate: { $lte: new Date(Date.UTC(year, 11, 31)) }, endDate: { $gte: new Date(Date.UTC(year, 0, 1)) } }).toArray(),
   ]);
+  reads.catch(() => undefined); // unused when no balance is tracked; otherwise awaited below
+  const rules = await leaveRulesFor(employee.userId);
+  if (!rules.balanceTracked) return { ok: true, text: 'No balance is tracked for this team: leave is approved without counting it down.' };
+  const [balance, otherPending] = await reads;
   const type = balance.types.find((t) => t.key === leave.type);
   if (!type) return { ok: false, text: `"${leave.type}" is not a leave type on their shift template any more.` };
   const pendingDays = otherPending.reduce((n, l) => n + (l.days ?? 1), 0);
