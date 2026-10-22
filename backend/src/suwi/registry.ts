@@ -13,3 +13,8 @@ import './tools/designations';
 import './tools/manager';
 import './tools/exit';
 import './tools/letters';
+import './tools/attendance-patterns';
+import './tools/geotag';
+import './tools/correct-day';
+import './tools/paid-days';
+import './tools/shift-template';
