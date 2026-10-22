@@ -431,7 +431,9 @@ html.app .howto{padding-top:20px}
   // ---------- Drawing: the sunset world ----------
   const INK = '#241b3a';
   const starsFor = (w, h) => Array.from({ length: 24 }, () => [Math.random() * w, Math.random() * h * .3, Math.random() * 1.4 + .4]);
-  function drawSky(c, w, h, ground, hillX, cloudX, stars, sunR) {
+  function drawSky(c, w, h, ground, hillX, cloudX, stars, sunR) { drawSkyBack(c, w, h, ground, stars, sunR); drawSkyFront(c, w, h, ground, hillX, cloudX, sunR); }
+  /* The part that never moves (the gradient, the stars, the sun), which the game draws once into a picture of its own. */
+  function drawSkyBack(c, w, h, ground, stars, sunR) {
     const g = c.createLinearGradient(0, 0, 0, h - ground);
     g.addColorStop(0, '#3b3478'); g.addColorStop(.45, '#b9628c'); g.addColorStop(.78, '#ff9a6b'); g.addColorStop(1, '#ffd59a');
     c.fillStyle = g; c.fillRect(0, 0, w, h);
@@ -440,6 +442,8 @@ html.app .howto{padding-top:20px}
     const sy = h - ground - sunR * 2.6;
     c.fillStyle = 'rgba(255,230,160,.25)'; c.beginPath(); c.arc(w * .72, sy, sunR * 1.45, 0, 7); c.fill();
     c.fillStyle = 'rgba(255,230,160,.92)'; c.beginPath(); c.arc(w * .72, sy, sunR, 0, 7); c.fill();
+  }
+  function drawSkyFront(c, w, h, ground, hillX, cloudX, sunR) {
     c.fillStyle = 'rgba(255,240,225,.5)';
     for (let i = 0; i < 2; i++) {
       const ox = -cloudX + i * w;
@@ -498,8 +502,8 @@ html.app .howto{padding-top:20px}
     c.beginPath(); c.moveTo(13, -1); c.lineTo(23, 2); c.lineTo(13, 6); c.closePath(); c.fill(); c.stroke();
     c.restore();
   }
-  function fitCanvas(cv, w) {
-    const r = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+  function fitCanvas(cv, w, cap = 2) {
+    const r = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, cap);
     cv.width = Math.max(1, Math.round(r.width * dpr)); cv.height = Math.max(1, Math.round(r.height * dpr));
     return cv.width / w;
   }
