@@ -135,7 +135,7 @@ function CurrentView() {
 
 function LoadingBar() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400, color: 'var(--ink-3)', fontSize: 13, fontWeight: 500 }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400, color: 'var(--ink-3)', fontSize: 12.5, fontWeight: 400 }}>
       <span style={{ width: 16, height: 16, border: '2px solid var(--line)', borderTopColor: 'var(--accent)', borderRadius: '50%', display: 'inline-block', marginRight: 10, animation: 'spin .7s linear infinite' }} />
       Loading…
     </div>
@@ -173,14 +173,14 @@ function AccessDenied() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--ink-2)', textAlign: 'center', padding: 24 }}>
       <div style={{ fontSize: 50.5, marginBottom: 12 }}>🔒</div>
-      <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0, color: 'var(--ink)' }}>No dashboard access</h1>
-      <p style={{ maxWidth: 420, marginTop: 10, fontSize: 14, lineHeight: 1.5, color: 'var(--ink-3)' }}>
+      <h1 style={{ fontSize: 19, fontWeight: 400, margin: 0, color: 'var(--ink)' }}>No dashboard access</h1>
+      <p style={{ maxWidth: 420, marginTop: 10, fontSize: 13, lineHeight: 1.5, color: 'var(--ink-3)' }}>
         Your account{user?.email ? ` (${user.email})` : ''} isn’t authorized to use the HR dashboard.
         Ask an administrator to grant you dashboard access.
       </p>
       <button
         onClick={() => void signOut()}
-        style={{ marginTop: 22, height: 40, padding: '0 18px', borderRadius: 999, border: '1px solid var(--line-2)', background: 'var(--surface)', color: 'var(--ink)', fontWeight: 500, fontSize: 13, cursor: 'pointer' }}
+        style={{ marginTop: 22, height: 40, padding: '0 18px', borderRadius: 999, border: '1px solid var(--line-2)', background: 'var(--surface)', color: 'var(--ink)', fontWeight: 400, fontSize: 12.5, cursor: 'pointer' }}
       >
         Sign out
       </button>

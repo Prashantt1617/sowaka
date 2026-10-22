@@ -36,7 +36,7 @@ const STATUS_TONE: Record<RunStatus, { bg: string; fg: string; label: string }> 
 
 function StatusPill({ status }: { status: RunStatus }) {
   const t = STATUS_TONE[status];
-  return <span style={{ fontSize: 14, fontWeight: 700, padding: '3px 11px', borderRadius: 20, background: t.bg, color: t.fg }}>{t.label}</span>;
+  return <span style={{ fontSize: 13, fontWeight: 500, padding: '3px 11px', borderRadius: 'var(--r-lg)', background: t.bg, color: t.fg }}>{t.label}</span>;
 }
 
 function thisMonth(): string {
@@ -175,7 +175,7 @@ export function PayrollRuns() {
                   <Td><StatusPill status={r.status} /></Td>
                   <Td right mono>{r.employeeCount}</Td>
                   <Td right mono>{inr(r.totals.netPaise + r.totals.reimbursementsPaise)}</Td>
-                  <Td right><span style={{ color: '#0571A6', fontWeight: 700, fontSize: 14 }}>Open →</span></Td>
+                  <Td right><span style={{ color: '#0571A6', fontWeight: 500, fontSize: 13 }}>Open →</span></Td>
                 </tr>
               ))}
             </tbody>
@@ -299,11 +299,11 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
       <button onClick={onBack} style={{ ...ghostBtn, marginBottom: 16 }}>← All runs</button>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
-        <h2 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>{run.period}</h2>
+        <h2 style={{ fontSize: 21, fontWeight: 600, margin: 0 }}>{run.period}</h2>
         <StatusPill status={run.status} />
-        <span style={{ color: '#717171', fontSize: 16 }}>{run.employeeCount} employee{run.employeeCount === 1 ? '' : 's'}</span>
+        <span style={{ color: '#717171', fontSize: 14 }}>{run.employeeCount} employee{run.employeeCount === 1 ? '' : 's'}</span>
       </div>
-      {run.note && <p style={{ color: '#A8475F', fontSize: 16, margin: '0 0 12px' }}>Note: {run.note}</p>}
+      {run.note && <p style={{ color: '#A8475F', fontSize: 14, margin: '0 0 12px' }}>Note: {run.note}</p>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, margin: '14px 0 18px' }}>
         <SummaryCard label="Gross pay" value={inr(t.grossPaise)} />
@@ -326,7 +326,7 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
         {run.status !== 'draft' && (
           <button onClick={() => void onAct(() => recallRun(run.id), 'Reopened as a draft')} disabled={busy} style={{ ...ghostBtn, color: '#717171' }}>Reopen for changes</button>
         )}
-        <span style={{ color: '#717171', fontSize: 14 }}>
+        <span style={{ color: '#717171', fontSize: 13 }}>
           {run.status === 'paid' ? '✓ Submitted: payslips are with employees.' : 'LOP comes from attendance: click a person’s LOP days to see or change the days. Submit is final.'}
         </span>
       </div>
@@ -357,13 +357,13 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
                 <FragmentRows key={p.userId}>
                   <tr>
                     <Td>
-                      <div style={{ fontWeight: 700 }}>{p.employeeName}</div>
-                      <div style={{ color: '#717171', fontSize: 13 }}>{[p.employeeId, p.department].filter(Boolean).join(' · ') || '—'}</div>
+                      <div style={{ fontWeight: 500 }}>{p.employeeName}</div>
+                      <div style={{ color: '#717171', fontSize: 12.5 }}>{[p.employeeId, p.department].filter(Boolean).join(' · ') || '—'}</div>
                     </Td>
                     <Td right mono>{p.inputs.workingDays}</Td>
                     <Td right>
-                      <button type="button" onClick={() => { setLopChanged(false); setLopFor(p); }} title="See the days in the calendar, and change them" style={{ ...lopLink, fontSize: 18, fontWeight: 800, color: p.inputs.lopDays > 0 ? '#A8475F' : '#4F7A52' }}>{p.inputs.lopDays}</button>
-                      <div style={{ fontSize: 12, color: '#717171', marginTop: 3 }}>
+                      <button type="button" onClick={() => { setLopChanged(false); setLopFor(p); }} title="See the days in the calendar, and change them" style={{ ...lopLink, fontSize: 16, fontWeight: 600, color: p.inputs.lopDays > 0 ? '#A8475F' : '#4F7A52' }}>{p.inputs.lopDays}</button>
+                      <div style={{ fontSize: 11.5, color: '#717171', marginTop: 3 }}>
                         {p.inputs.lopEnteredByHr ? (
                           <>Typed earlier · calendar {p.inputs.workingDays - fromAttendance}{isDraft && <button type="button" onClick={() => void recalc({ userId: p.userId, what: 'lop' })} style={linkBtn}>use calendar</button>}</>
                         ) : `of ${p.inputs.workingDays} · ${p.inputs.payableDays} paid`}
@@ -376,7 +376,7 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
                       ) : (
                         <span>{money2(taxPaise)}</span>
                       )}
-                      <div style={{ fontSize: 12, color: '#717171', marginTop: 3 }}>
+                      <div style={{ fontSize: 11.5, color: '#717171', marginTop: 3 }}>
                         {p.inputs.incomeTaxEnteredByHr ? (
                           <>Entered{isDraft && <button type="button" onClick={() => void recalc({ userId: p.userId, what: 'tax' })} style={linkBtn}>clear</button>}</>
                         ) : p.inputs.tds ? `TDS engine · ${p.inputs.tds.regime} regime${p.inputs.tds.configStatus === 'to_confirm' ? ' · slabs to confirm' : ''}` : 'None'}
@@ -439,12 +439,12 @@ function LopCalendar({ slip, period, editable, onMarked, onExplain, onClose }: {
   const month = new Date(`${period}-01T00:00:00Z`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
   const rules = (slip.inputs.attendanceDeductions ?? []).filter((l) => l.days > 0);
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20,24,38,.45)', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 16px', overflowY: 'auto' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 18, width: 'min(1040px, 100%)', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 16px', overflowY: 'auto' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 'var(--r-lg)', width: 'min(1040px, 100%)', boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '18px 22px', borderBottom: '1px solid #EBEBEB' }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 19, fontWeight: 800 }}>{slip.employeeName} · loss of pay, {month}</div>
-            <div style={{ fontSize: 14, color: '#717171', marginTop: 3 }}>
+            <div style={{ fontSize: 16.5, fontWeight: 600 }}>{slip.employeeName} · loss of pay, {month}</div>
+            <div style={{ fontSize: 13, color: '#717171', marginTop: 3 }}>
               <strong style={{ color: '#A8475F' }}>{slip.inputs.lopDays} LOP {slip.inputs.lopDays === 1 ? 'day' : 'days'}</strong> of {slip.inputs.workingDays}
               {rules.length > 0 && <> · {rules.map((l) => `${l.label} ${l.count} → ${l.days}`).join(' · ')}</>}
               {' · '}<button type="button" onClick={onExplain} style={{ ...linkBtn, marginLeft: 0 }}>how it adds up</button>
@@ -462,7 +462,7 @@ function LopCalendar({ slip, period, editable, onMarked, onExplain, onClose }: {
             highlight={(d) => (d.status === 'absent' ? 'LOP' : d.status === 'half_day' ? 'LOP ½' : null)}
             onMarked={onMarked}
           />
-          {!editable && <div style={{ fontSize: 13, color: '#717171', marginTop: 10 }}>This run is submitted, so its days are locked. Reopen it to change them.</div>}
+          {!editable && <div style={{ fontSize: 12.5, color: '#717171', marginTop: 10 }}>This run is submitted, so its days are locked. Reopen it to change them.</div>}
         </div>
       </div>
     </div>
@@ -477,19 +477,19 @@ function ThisMonthOnly({ p, items, edit, onChange }: { p: PayslipDTO; items: Pay
   const value = (code: string) => edit.amounts?.[code] ?? (saved[code] !== undefined ? String(saved[code] / 100) : '');
   const ot = edit.overtime ?? (p.inputs.overtimePaise ? String(p.inputs.overtimePaise / 100) : '');
   const field = (label: string, v: string, set: (v: string) => void, changed: boolean, hint?: string) => (
-    <label key={label} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, color: '#484848' }}>
+    <label key={label} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12.5, color: '#484848' }}>
       <span>{label}{hint && <span style={{ color: '#9197A2' }}> · {hint}</span>}</span>
       <input type="number" min={0} value={v} placeholder="0" onChange={(ev) => set(ev.target.value)} style={{ ...cellInput, width: 120, textAlign: 'left', borderColor: changed ? '#0571A6' : '#EBEBEB' }} />
     </label>
   );
   return (
     <div style={{ marginBottom: 16, paddingBottom: 14, borderBottom: '1px dashed #E5E7EB' }}>
-      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase', color: '#717171', marginBottom: 8 }}>This month only</div>
+      <div style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: '#717171', marginBottom: 8 }}>This month only</div>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         {field('Overtime pay', ot, (v) => onChange({ overtime: v }), edit.overtime !== undefined, p.inputs.approvedOtHours ? `${p.inputs.approvedOtHours} h approved${!p.inputs.overtimeEnteredByHr && p.inputs.overtimePaise > 0 ? ' · paid by the template’s rule' : ''}` : undefined)}
         {items.map((h) => field(h.payslipName ?? h.name, value(h.code), (v) => onChange({ amounts: { ...(edit.amounts ?? {}), [h.code]: v } }), edit.amounts?.[h.code] !== undefined, h.category === 'deduction' ? 'deduction' : 'one-time earning'))}
       </div>
-      <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 6 }}>Then Save &amp; recalculate. One-time earnings are paid on top of the monthly CTC.</div>
+      <div style={{ fontSize: 12, color: '#9197A2', marginTop: 6 }}>Then Save &amp; recalculate. One-time earnings are paid on top of the monthly CTC.</div>
     </div>
   );
 }
@@ -505,12 +505,12 @@ function SlipNumbers({ p }: { p: PayslipDTO }) {
   const claims = p.reimbursementsPaise - reimbLines.reduce((t, r) => t + r.amountPaise, 0);
   const e = p.employer;
   const row = (label: string, value: number, opts: { strong?: boolean; muted?: boolean; sub?: string } = {}) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 14, fontWeight: opts.strong ? 700 : 500, color: opts.muted ? '#9197A2' : '#222222' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 13, fontWeight: opts.strong ? 700 : 500, color: opts.muted ? '#9197A2' : '#222222' }}>
       <span>{label}{opts.sub && <span style={{ color: '#9197A2', fontWeight: 400 }}> · {opts.sub}</span>}</span>
       <span style={{ fontVariantNumeric: 'tabular-nums' }}>{money2(value)}</span>
     </div>
   );
-  const head = (t: string) => <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase', color: '#717171', margin: '0 0 6px' }}>{t}</div>;
+  const head = (t: string) => <div style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: '#717171', margin: '0 0 6px' }}>{t}</div>;
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 28 }}>
       <div>
@@ -527,12 +527,12 @@ function SlipNumbers({ p }: { p: PayslipDTO }) {
       </div>
       <div>
         {head('Deductions')}
-        {p.deductions.length === 0 && <div style={{ color: '#9197A2', fontSize: 14 }}>None</div>}
+        {p.deductions.length === 0 && <div style={{ color: '#9197A2', fontSize: 13 }}>None</div>}
         {p.deductions.map((d) => <div key={d.key}>{row(d.name, d.amountPaise, { muted: d.hidden })}</div>)}
         {row('Total deductions', p.employeeDeductionsPaise, { strong: true })}
         <div style={{ height: 10 }} />
         {row('Net pay', p.netPayablePaise, { strong: true })}
-        <div style={{ fontSize: 12.5, color: '#717171', marginTop: 6 }}>
+        <div style={{ fontSize: 12, color: '#717171', marginTop: 6 }}>
           {p.inputs.workingDays} days · {p.inputs.payableDays} paid · {p.inputs.lopDays} loss of pay · PF wage {money2(p.pfWagePaise)}
         </div>
       </div>
@@ -580,23 +580,23 @@ function SlipNumbers({ p }: { p: PayslipDTO }) {
   );
 }
 
-const cellInput: CSSProperties = { width: 76, padding: '6px 8px', border: '1px solid #EBEBEB', borderRadius: 8, fontSize: 15, fontFamily: 'inherit', textAlign: 'right' };
-const linkBtn: CSSProperties = { background: 'none', border: 'none', color: '#0571A6', cursor: 'pointer', fontSize: 12, fontWeight: 700, marginLeft: 6, padding: 0 };
+const cellInput: CSSProperties = { width: 76, padding: '6px 8px', border: '1px solid #EBEBEB', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', textAlign: 'right' };
+const linkBtn: CSSProperties = { background: 'none', border: 'none', color: '#0571A6', cursor: 'pointer', fontSize: 11.5, fontWeight: 500, marginLeft: 6, padding: 0 };
 
 function Th({ children, right }: { children?: ReactNode; right?: boolean }) {
-  return <th style={{ textAlign: right ? 'right' : 'left', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171', fontWeight: 700, padding: '11px 16px', borderBottom: '1px solid #EBEBEB' }}>{children}</th>;
+  return <th style={{ textAlign: right ? 'right' : 'left', fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '11px 16px', borderBottom: '1px solid #EBEBEB', background: 'var(--surface-2)' }}>{children}</th>;
 }
 function Td({ children, right, mono }: { children: ReactNode; right?: boolean; mono?: boolean }) {
   return <td style={{ padding: '11px 16px', borderBottom: '1px solid #F0F0F2', color: '#222222', textAlign: right ? 'right' : 'left', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
 }
 
-const labelStyle: CSSProperties = { display: 'block', fontSize: 14, fontWeight: 700, marginBottom: 5, color: '#484848' };
-const inputStyle: CSSProperties = { padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 16 };
-const primaryBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const approveBtn: CSSProperties = { background: '#4F7A52', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
+const labelStyle: CSSProperties = { display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 5, color: '#484848' };
+const inputStyle: CSSProperties = { padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: '#fff', color: '#222222' };
+const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
+const primaryBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const approveBtn: CSSProperties = { background: '#4F7A52', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 
-const slipBtn: CSSProperties = { background: '#fff', color: '#0571A6', border: '1px solid #CFE3EE', padding: '6px 12px', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
+const slipBtn: CSSProperties = { background: '#fff', color: '#0571A6', border: '1px solid #CFE3EE', padding: '6px 12px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 
-const lopLink: CSSProperties = { background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#A8475F', fontWeight: 700, fontSize: 16, fontFamily: 'inherit', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3 };
+const lopLink: CSSProperties = { background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#A8475F', fontWeight: 500, fontSize: 14, fontFamily: 'inherit', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3 };

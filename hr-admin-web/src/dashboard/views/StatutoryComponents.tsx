@@ -68,7 +68,7 @@ export function StatutoryComponents() {
         })}
       </div>
       {!overview ? (
-        <Card style={{ padding: '40px 22px', textAlign: 'center', color: '#717171', fontSize: 15 }}>{failed ? 'Statutory settings could not be loaded.' : 'Loading…'}</Card>
+        <Card style={{ padding: '40px 22px', textAlign: 'center', color: '#717171', fontSize: 13.5 }}>{failed ? 'Statutory settings could not be loaded.' : 'Loading…'}</Card>
       ) : tab === 'epf' ? <EpfTab overview={overview} apply={apply} saving={saving} />
         : tab === 'esi' ? <EsiTab overview={overview} apply={apply} saving={saving} />
         : tab === 'pt' ? <PtTab overview={overview} onSaved={() => getStatutorySettings().then(setOverview)} />
@@ -140,7 +140,7 @@ function EpfTab({ overview, apply, saving }: TabProps) {
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 372px', gap: 24, alignItems: 'start' }}>
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: '#222222' }}>Employees' Provident Fund</div>
+          <div style={{ fontSize: 17, fontWeight: 600, color: '#222222' }}>Employees' Provident Fund</div>
           {!editing && enabled && <button onClick={startEdit} title="Edit" style={pencilBtn}>✎</button>}
         </div>
 
@@ -164,8 +164,8 @@ function EpfTab({ overview, apply, saving }: TabProps) {
 function DisabledNote({ what, detail, onEnable, saving }: { what: string; detail: string; onEnable: () => void; saving: boolean }) {
   return (
     <div style={{ border: '1px dashed #D9DCE1', borderRadius: 12, padding: '22px 24px', maxWidth: 640 }}>
-      <div style={{ fontSize: 16, fontWeight: 700, color: '#222222' }}>{what} is disabled</div>
-      <div style={{ fontSize: 14.5, color: '#717171', marginTop: 4, lineHeight: 1.5 }}>{detail}</div>
+      <div style={{ fontSize: 14, fontWeight: 500, color: '#222222' }}>{what} is disabled</div>
+      <div style={{ fontSize: 13, color: '#717171', marginTop: 4, lineHeight: 1.5 }}>{detail}</div>
       <button onClick={onEnable} disabled={saving} style={{ ...primaryBtn, marginTop: 16 }}>Enable</button>
     </div>
   );
@@ -194,24 +194,24 @@ function PtTab({ overview, onSaved }: { overview: StatutoryOverview; onSaved: ()
         {overview.pt.map((l) => (
           <div key={l.location} style={stateCard}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <div style={{ flex: 1, fontSize: 18, fontWeight: 700, color: '#222222' }}>{l.location}</div>
+              <div style={{ flex: 1, fontSize: 16, fontWeight: 500, color: '#222222' }}>{l.location}</div>
               {editing !== l.location && (
-                <button type="button" onClick={() => setEditing(l.location)} style={{ ...ghostBtn, padding: '6px 12px', fontSize: 14 }}>✎ Edit slabs</button>
+                <button type="button" onClick={() => setEditing(l.location)} style={{ ...ghostBtn, padding: '6px 12px', fontSize: 13 }}>✎ Edit slabs</button>
               )}
             </div>
             {editing === l.location ? (
               <PtSlabEditor state={l.state} rule={l.pt} onDone={async (saved) => { if (saved) await onSaved(); setEditing(null); }} />
             ) : l.pt ? (
               <div>
-                <div style={{ fontSize: 13, color: '#9197A2', marginBottom: 8 }}>Monthly gross in <strong style={{ color: '#484848' }}>{l.state}</strong></div>
+                <div style={{ fontSize: 12.5, color: '#9197A2', marginBottom: 8 }}>Monthly gross in <strong style={{ color: '#484848' }}>{l.state}</strong></div>
                 {ptSlabText(l.pt).map((line) => (
-                  <div key={line} style={{ fontSize: 14.5, color: '#222222', padding: '8px 0', borderTop: '1px solid #F4F1EC' }}>{line}</div>
+                  <div key={line} style={{ fontSize: 13, color: '#222222', padding: '8px 0', borderTop: '1px solid #F4F1EC' }}>{line}</div>
                 ))}
               </div>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, border: '1px dashed #D9DCE1', borderRadius: 10, padding: '16px 18px', background: '#FFFFFF' }}>
                 <NoEntry />
-                <div style={{ fontSize: 14.5, color: '#717171', lineHeight: 1.5 }}>
+                <div style={{ fontSize: 13, color: '#717171', lineHeight: 1.5 }}>
                   Professional Tax is not applicable for your work location in <strong style={{ color: '#484848' }}>{l.state}</strong>
                 </div>
               </div>
@@ -260,11 +260,11 @@ function PtSlabEditor({ state, rule, onDone }: { state: string; rule: PtRule | n
       setSaving(false);
     }
   };
-  const cell: CSSProperties = { width: '100%', padding: '7px 9px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 14.5, fontFamily: 'inherit' };
+  const cell: CSSProperties = { width: '100%', padding: '7px 9px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 13, fontFamily: 'inherit' };
   return (
     <div>
-      <div style={{ fontSize: 13, color: '#9197A2', marginBottom: 8 }}>Monthly gross in <strong style={{ color: '#484848' }}>{state}</strong>. Leave the last slab’s limit empty for “and above”.</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) 28px', gap: 8, fontSize: 12, fontWeight: 700, color: '#717171', marginBottom: 6 }}>
+      <div style={{ fontSize: 12.5, color: '#9197A2', marginBottom: 8 }}>Monthly gross in <strong style={{ color: '#484848' }}>{state}</strong>. Leave the last slab’s limit empty for “and above”.</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) 28px', gap: 8, fontSize: 11.5, fontWeight: 500, color: '#717171', marginBottom: 6 }}>
         <span>Gross up to ₹</span><span>Tax ₹ / month</span><span>February ₹ (if different)</span><span />
       </div>
       {rows.map((r, i) => (
@@ -272,13 +272,13 @@ function PtSlabEditor({ state, rule, onDone }: { state: string; rule: PtRule | n
           <input type="number" min="0" placeholder={i === rows.length - 1 ? 'and above' : ''} value={r.upTo} onChange={(e) => patch(i, { upTo: e.target.value })} style={cell} aria-label={`Slab ${i + 1} gross up to`} />
           <input type="number" min="0" value={r.amount} onChange={(e) => patch(i, { amount: e.target.value })} style={cell} aria-label={`Slab ${i + 1} tax a month`} />
           <input type="number" min="0" value={r.febAmount} onChange={(e) => patch(i, { febAmount: e.target.value })} style={cell} aria-label={`Slab ${i + 1} February tax`} />
-          <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))} disabled={rows.length === 1} title="Remove slab" style={{ border: 'none', background: 'none', color: '#A8475F', fontSize: 18, cursor: 'pointer' }}>✕</button>
+          <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))} disabled={rows.length === 1} title="Remove slab" style={{ border: 'none', background: 'none', color: '#A8475F', fontSize: 16, cursor: 'pointer' }}>✕</button>
         </div>
       ))}
-      <button type="button" onClick={() => setRows([...rows, { upTo: '', amount: '0', febAmount: '' }])} style={{ border: 'none', background: 'none', color: '#0571A6', fontWeight: 700, fontSize: 14, cursor: 'pointer', padding: '4px 0' }}>+ Add slab</button>
+      <button type="button" onClick={() => setRows([...rows, { upTo: '', amount: '0', febAmount: '' }])} style={{ border: 'none', background: 'none', color: '#0571A6', fontWeight: 500, fontSize: 13, cursor: 'pointer', padding: '4px 0' }}>+ Add slab</button>
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-        <button type="button" onClick={() => void save()} disabled={saving} style={{ ...primaryBtn, padding: '7px 16px', fontSize: 15 }}>{saving ? 'Saving…' : 'Save'}</button>
-        <button type="button" onClick={() => onDone(false)} disabled={saving} style={{ ...ghostBtn, padding: '7px 16px', fontSize: 15 }}>Cancel</button>
+        <button type="button" onClick={() => void save()} disabled={saving} style={{ ...primaryBtn, padding: '7px 16px', fontSize: 13.5 }}>{saving ? 'Saving…' : 'Save'}</button>
+        <button type="button" onClick={() => onDone(false)} disabled={saving} style={{ ...ghostBtn, padding: '7px 16px', fontSize: 13.5 }}>Cancel</button>
       </div>
     </div>
   );
@@ -286,7 +286,7 @@ function PtSlabEditor({ state, rule, onDone }: { state: string; rule: PtRule | n
 
 function EmptyStates() {
   return (
-    <Card style={{ padding: '26px 22px', color: '#717171', fontSize: 15, marginBottom: 18 }}>
+    <Card style={{ padding: '26px 22px', color: '#717171', fontSize: 13.5, marginBottom: 18 }}>
       No work locations yet. Set each person’s work location and state on their profile; the rules for those states appear here.
     </Card>
   );
@@ -320,17 +320,17 @@ function LwfTab({ overview, apply, saving }: TabProps) {
       <div style={cardGrid}>
         {overview.lwf.map((s) => (
           <div key={s.state} style={stateCard}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#222222', marginBottom: 16 }}>{s.state}</div>
+            <div style={{ fontSize: 16, fontWeight: 500, color: '#222222', marginBottom: 16 }}>{s.state}</div>
             {s.rule ? (
               <>
-                <LwfRow label="Employees' Contribution" value={(() => { const t = lwfEmployeeText(s.rule); return <span>{t.main}{t.sub && <><br /><span style={{ fontSize: 13, color: '#9197A2' }}>({t.sub})</span></>}</span>; })()} />
+                <LwfRow label="Employees' Contribution" value={(() => { const t = lwfEmployeeText(s.rule); return <span>{t.main}{t.sub && <><br /><span style={{ fontSize: 12.5, color: '#9197A2' }}>({t.sub})</span></>}</span>; })()} />
                 <LwfRow label="Employer's Contribution" value={lwfEmployerText(s.rule)} />
                 <LwfRow label="Deduction Cycle" value={s.rule.cycle === 'monthly' ? 'Monthly' : 'Half Yearly'} />
                 <LwfRow label="Status" value={
                   <span>
-                    <span style={{ color: s.enabled ? '#4F7A52' : '#C4382E', fontWeight: 700 }}>{s.enabled ? 'Enabled' : 'Disabled'}</span>{' '}
+                    <span style={{ color: s.enabled ? '#4F7A52' : '#C4382E', fontWeight: 500 }}>{s.enabled ? 'Enabled' : 'Disabled'}</span>{' '}
                     <button disabled={saving} onClick={() => void apply({ lwf: { state: s.state, enabled: !s.enabled } }, `LWF ${s.enabled ? 'disabled' : 'enabled'} for ${s.state}`)}
-                      style={{ background: 'none', border: 'none', color: '#0571A6', fontWeight: 700, fontSize: 15, cursor: 'pointer', padding: 0 }}>
+                      style={{ background: 'none', border: 'none', color: '#0571A6', fontWeight: 500, fontSize: 13.5, cursor: 'pointer', padding: 0 }}>
                       ({s.enabled ? 'Disable' : 'Enable'})
                     </button>
                   </span>
@@ -339,7 +339,7 @@ function LwfTab({ overview, apply, saving }: TabProps) {
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, border: '1px dashed #D9DCE1', borderRadius: 10, padding: '16px 18px' }}>
                 <NoEntry />
-                <div style={{ fontSize: 14.5, color: '#717171', lineHeight: 1.5 }}>Labour Welfare Fund is not applicable for your work state in <strong style={{ color: '#484848' }}>{s.state}</strong></div>
+                <div style={{ fontSize: 13, color: '#717171', lineHeight: 1.5 }}>Labour Welfare Fund is not applicable for your work state in <strong style={{ color: '#484848' }}>{s.state}</strong></div>
               </div>
             )}
           </div>
@@ -351,8 +351,8 @@ function LwfTab({ overview, apply, saving }: TabProps) {
 function LwfRow({ label, value, last }: { label: string; value: ReactNode; last?: boolean }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '190px 1fr', gap: 14, padding: '10px 0', borderBottom: last ? 'none' : '1px solid #F4F1EC', alignItems: 'start' }}>
-      <div style={{ fontSize: 14.5, color: '#717171' }}>{label}</div>
-      <div style={{ fontSize: 14.5, color: '#222222', fontWeight: 600 }}>{value}</div>
+      <div style={{ fontSize: 13, color: '#717171' }}>{label}</div>
+      <div style={{ fontSize: 13, color: '#222222', fontWeight: 400 }}>{value}</div>
     </div>
   );
 }
@@ -386,24 +386,24 @@ function TdsTab({ overview, apply, saving }: TabProps) {
   const t = overview.settings.tds ?? { enabled: false, defaultRegime: 'new' as const };
   return (
     <Card style={{ padding: '22px 24px' }}>
-      <div style={{ fontSize: 17, fontWeight: 800 }}>Income tax (TDS on salary)</div>
-      <div style={{ fontSize: 14, color: '#717171', marginTop: 4, maxWidth: 720, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 15, fontWeight: 600 }}>Income tax (TDS on salary)</div>
+      <div style={{ fontSize: 13, color: '#717171', marginTop: 4, maxWidth: 720, lineHeight: 1.5 }}>
         When on, each payroll run works out a person&rsquo;s income tax unless you type it: projected yearly taxable salary (this year&rsquo;s payslips so far plus the structure for the months left), less the standard deduction and, in the old regime, their declarations; tax by the year&rsquo;s slabs, the section 87A rebate, surcharge and 4% cess; minus the tax already withheld, spread over the months left.
       </div>
       <div style={{ display: 'flex', gap: 24, alignItems: 'center', marginTop: 18, flexWrap: 'wrap' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 700 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: 500 }}>
           <input type="checkbox" checked={t.enabled} disabled={saving} onChange={(e) => void apply({ tds: { enabled: e.target.checked, defaultRegime: t.defaultRegime } }, e.target.checked ? 'TDS engine on' : 'TDS engine off')} />
           Work out TDS on each payroll run
         </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5 }}>
           Regime for people without a declaration
-          <select value={t.defaultRegime} disabled={saving} onChange={(e) => void apply({ tds: { enabled: t.enabled, defaultRegime: e.target.value as 'new' | 'old' } }, 'Default regime saved')} style={{ padding: '7px 10px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 15 }}>
+          <select value={t.defaultRegime} disabled={saving} onChange={(e) => void apply({ tds: { enabled: t.enabled, defaultRegime: e.target.value as 'new' | 'old' } }, 'Default regime saved')} style={{ padding: '7px 10px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 13.5 }}>
             <option value="new">New regime (default by law)</option>
             <option value="old">Old regime</option>
           </select>
         </label>
       </div>
-      <div style={{ marginTop: 16, background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 10, padding: '12px 14px', fontSize: 14, color: '#8A6A20', lineHeight: 1.5 }}>
+      <div style={{ marginTop: 16, background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#8A6A20', lineHeight: 1.5 }}>
         FY 2026-27 slabs and limits are confirmed: Budget 2026 left them as they were in FY 2025-26. Meal cards are tax-free up to ₹200 a meal (₹8,800 a month). The rules are re-checked on the 1st of every month. A figure typed on a run always wins over the engine.
       </div>
     </Card>
@@ -426,32 +426,32 @@ function BonusTab({ overview, apply, saving }: TabProps) {
   return (
     <div style={{ maxWidth: 900 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 22 }}>
-        <div style={{ fontSize: 20, fontWeight: 800, color: '#222222' }}>Statutory Bonus</div>
+        <div style={{ fontSize: 17, fontWeight: 600, color: '#222222' }}>Statutory Bonus</div>
         {!editing && <button onClick={() => { setDraft(cfg); setEditing(true); }} title="Edit" style={pencilBtn}>✎</button>}
       </div>
 
       {editing ? (
         <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#484848', marginBottom: 8 }}>Payment Frequency</div>
+          <div style={{ fontSize: 13, fontWeight: 500, color: '#484848', marginBottom: 8 }}>Payment Frequency</div>
           <div style={{ display: 'flex', gap: 26, marginBottom: 18 }}>
             <RadioInline checked={draft.frequency === 'monthly'} onChange={() => setDraft({ ...draft, frequency: 'monthly' })} label="Monthly" />
             <RadioInline checked={draft.frequency === 'yearly'} onChange={() => setDraft({ ...draft, frequency: 'yearly' })} label="Yearly" />
           </div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#484848', marginBottom: 8 }}>{freqLabel} Percentage of Bonus <span style={{ color: '#C4382E' }}>*</span></div>
+          <div style={{ fontSize: 13, fontWeight: 500, color: '#484848', marginBottom: 8 }}>{freqLabel} Percentage of Bonus <span style={{ color: '#C4382E' }}>*</span></div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'stretch', border: '1px solid #EBEBEB', borderRadius: 10, overflow: 'hidden', maxWidth: 240 }}>
-              <input value={draft.percent} onChange={(e) => setDraft({ ...draft, percent: e.target.value })} style={{ border: 'none', outline: 'none', padding: '9px 11px', fontSize: 16, fontFamily: 'inherit', width: 150 }} />
-              <span style={{ padding: '9px 14px', background: '#F7F7F9', color: '#717171', fontWeight: 700, borderLeft: '1px solid #EBEBEB' }}>%</span>
+              <input value={draft.percent} onChange={(e) => setDraft({ ...draft, percent: e.target.value })} style={{ border: 'none', outline: 'none', padding: '9px 11px', fontSize: 14, fontFamily: 'inherit', width: 150 }} />
+              <span style={{ padding: '9px 14px', background: '#F7F7F9', color: '#717171', fontWeight: 500, borderLeft: '1px solid #EBEBEB' }}>%</span>
             </div>
-            <span style={{ fontSize: 15, color: '#717171' }}>of salary or minimum wage earned this year</span>
+            <span style={{ fontSize: 13.5, color: '#717171' }}>of salary or minimum wage earned this year</span>
           </div>
-          <div style={{ fontSize: 13.5, color: '#717171', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
+          <div style={{ fontSize: 12.5, color: '#717171', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
             <span style={{ color: '#9197A2' }}>ⓘ</span> Statutory Bonus rate should be in-between <strong>8.33%</strong> and <strong>20%</strong>, based on the Statutory Bonus Act.
           </div>
 
           <div style={{ background: '#FBF7EF', border: '1px solid #EDE0C7', borderRadius: 10, padding: '13px 16px', margin: '0 0 24px', maxWidth: 780 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: '#A34B00', letterSpacing: '.03em', marginBottom: 6 }}>NOTE:</div>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, color: '#6E6457', lineHeight: 1.6 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#A34B00', letterSpacing: '.03em', marginBottom: 6 }}>NOTE:</div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: '#6E6457', lineHeight: 1.6 }}>
               <li>The payment frequency of this statutory bonus is <strong>monthly and taxable</strong>.</li>
               <li>Once you've associated the statutory bonus with an employee, you can change the bonus percentage only at the beginning of the next fiscal year.</li>
             </ul>
@@ -461,25 +461,25 @@ function BonusTab({ overview, apply, saving }: TabProps) {
           {draft.states.length === 0 && <EmptyStates />}
           {draft.states.map((st) => (
             <div key={st.state} style={{ ...stateCard, marginBottom: 18 }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#222222', marginBottom: 14 }}>{st.state}</div>
+              <div style={{ fontSize: 16, fontWeight: 500, color: '#222222', marginBottom: 14 }}>{st.state}</div>
               {st.wages.length === 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, border: '1px solid #F0F0F2', borderRadius: 10, padding: '24px 18px', fontSize: 15, color: '#484848', textAlign: 'center' }}>
-                  <span><span style={{ color: '#E0A64B', fontSize: 17, marginRight: 8 }}>⚠</span>Minimum wage details are not added for {st.state}</span>
-                  <button onClick={() => addWage(st.state)} style={{ background: '#EAF2FB', border: 'none', borderRadius: 6, color: '#0571A6', fontWeight: 700, fontSize: 14, cursor: 'pointer', padding: '7px 12px' }}>+ Add Minimum Wage</button>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, border: '1px solid #F0F0F2', borderRadius: 10, padding: '24px 18px', fontSize: 13.5, color: '#484848', textAlign: 'center' }}>
+                  <span><span style={{ color: '#E0A64B', fontSize: 15, marginRight: 8 }}>⚠</span>Minimum wage details are not added for {st.state}</span>
+                  <button onClick={() => addWage(st.state)} style={{ background: '#EAF2FB', border: 'none', borderRadius: 6, color: '#0571A6', fontWeight: 500, fontSize: 13, cursor: 'pointer', padding: '7px 12px' }}>+ Add Minimum Wage</button>
                 </div>
               ) : (<>
-              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 40px', gap: 12, fontSize: 12.5, fontWeight: 800, color: '#717171', paddingBottom: 10, borderBottom: '1px solid #F0F0F2' }}>
-                <div>EMPLOYMENT CATEGORY</div><div>MIN WAGE <span style={{ fontWeight: 500 }}>(per month)</span></div><div>EFFECTIVE FROM</div><div />
+              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 40px', gap: 12, fontSize: 12, fontWeight: 600, color: '#717171', paddingBottom: 10, borderBottom: '1px solid #F0F0F2' }}>
+                <div>EMPLOYMENT CATEGORY</div><div>MIN WAGE <span style={{ fontWeight: 400 }}>(per month)</span></div><div>EFFECTIVE FROM</div><div />
               </div>
               {st.wages.map((w) => (
                 <div key={w.id} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 40px', gap: 12, alignItems: 'center', padding: '10px 0' }}>
                   <input value={w.category} placeholder="e.g. Skilled" onChange={(e) => setWages(st.state, st.wages.map((x) => x.id === w.id ? { ...x, category: e.target.value } : x))} style={miniInput} />
                   <input value={w.minWage} onChange={(e) => setWages(st.state, st.wages.map((x) => x.id === w.id ? { ...x, minWage: e.target.value } : x))} style={miniInput} />
                   <input type="month" value={w.effectiveFrom} onChange={(e) => setWages(st.state, st.wages.map((x) => x.id === w.id ? { ...x, effectiveFrom: e.target.value } : x))} style={miniInput} />
-                  <button onClick={() => setWages(st.state, st.wages.filter((x) => x.id !== w.id))} title="Remove" style={{ background: 'none', border: 'none', color: '#C4382E', cursor: 'pointer', fontSize: 18 }}>⊖</button>
+                  <button onClick={() => setWages(st.state, st.wages.filter((x) => x.id !== w.id))} title="Remove" style={{ background: 'none', border: 'none', color: '#C4382E', cursor: 'pointer', fontSize: 16 }}>⊖</button>
                 </div>
               ))}
-              <button onClick={() => addWage(st.state)} style={{ background: 'none', border: 'none', color: '#0571A6', fontWeight: 700, fontSize: 14.5, cursor: 'pointer', padding: '10px 0 0' }}>+ Add Minimum Wage</button>
+              <button onClick={() => addWage(st.state)} style={{ background: 'none', border: 'none', color: '#0571A6', fontWeight: 500, fontSize: 13, cursor: 'pointer', padding: '10px 0 0' }}>+ Add Minimum Wage</button>
               </>)}
             </div>
           ))}
@@ -492,7 +492,7 @@ function BonusTab({ overview, apply, saving }: TabProps) {
       ) : (
         <div>
           {!enabled && (
-            <div style={{ background: '#FBF7EF', border: '1px solid #EDE0C7', borderRadius: 10, padding: '12px 16px', fontSize: 14, color: '#6E6457', marginBottom: 22, maxWidth: 780 }}>
+            <div style={{ background: '#FBF7EF', border: '1px solid #EDE0C7', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#6E6457', marginBottom: 22, maxWidth: 780 }}>
               Statutory Bonus is <strong>disabled</strong>: no bonus line is added to anyone’s payslip. Edit and save to enable it.
             </div>
           )}
@@ -504,21 +504,21 @@ function BonusTab({ overview, apply, saving }: TabProps) {
           {cfg.states.length === 0 && <EmptyStates />}
           {cfg.states.map((st) => (
             <div key={st.state} style={{ ...stateCard, marginBottom: 18 }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#222222', marginBottom: 14 }}>{st.state}</div>
+              <div style={{ fontSize: 16, fontWeight: 500, color: '#222222', marginBottom: 14 }}>{st.state}</div>
               {st.wages.length > 0 ? (
                 <div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: 12, fontSize: 12.5, fontWeight: 800, color: '#717171', paddingBottom: 12, borderBottom: '1px solid #F0F0F2' }}>
-                    <div>EMPLOYMENT CATEGORY</div><div>MIN WAGE <span style={{ fontWeight: 500 }}>(per month)</span></div><div>EFFECTIVE FROM</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: 12, fontSize: 12, fontWeight: 600, color: '#717171', paddingBottom: 12, borderBottom: '1px solid #F0F0F2' }}>
+                    <div>EMPLOYMENT CATEGORY</div><div>MIN WAGE <span style={{ fontWeight: 400 }}>(per month)</span></div><div>EFFECTIVE FROM</div>
                   </div>
                   {st.wages.map((w) => (
-                    <div key={w.id} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: 12, padding: '14px 0', borderBottom: '1px solid #F4F1EC', fontSize: 15, color: '#222222' }}>
+                    <div key={w.id} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: 12, padding: '14px 0', borderBottom: '1px solid #F4F1EC', fontSize: 13.5, color: '#222222' }}>
                       <div>{w.category}</div><div>{w.minWage}</div><div>{w.effectiveFrom}</div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, border: '1px solid #F0F0F2', borderRadius: 10, padding: '26px 18px', background: '#FBFBFC', fontSize: 15, color: '#717171', textAlign: 'center' }}>
-                  <span style={{ color: '#E0A64B', fontSize: 18 }}>⚠</span> Minimum wage details are not added for {st.state}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, border: '1px solid #F0F0F2', borderRadius: 10, padding: '26px 18px', background: '#FBFBFC', fontSize: 13.5, color: '#717171', textAlign: 'center' }}>
+                  <span style={{ color: '#E0A64B', fontSize: 16 }}>⚠</span> Minimum wage details are not added for {st.state}
                 </div>
               )}
             </div>
@@ -532,17 +532,17 @@ function BonusTab({ overview, apply, saving }: TabProps) {
 function StatTile({ icon, bg, label, value }: { icon: string; bg: string; label: string; value: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-      <span style={{ width: 46, height: 46, borderRadius: '50%', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{icon}</span>
+      <span style={{ width: 46, height: 46, borderRadius: '50%', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17 }}>{icon}</span>
       <div>
-        <div style={{ fontSize: 14, color: '#717171' }}>{label}</div>
-        <div style={{ fontSize: 17, fontWeight: 700, color: '#222222', marginTop: 2 }}>{value}</div>
+        <div style={{ fontSize: 13, color: '#717171' }}>{label}</div>
+        <div style={{ fontSize: 15, fontWeight: 500, color: '#222222', marginTop: 2 }}>{value}</div>
       </div>
     </div>
   );
 }
 function RadioInline({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 15, color: '#222222' }} onClick={onChange}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13.5, color: '#222222' }} onClick={onChange}>
       <span style={{ width: 17, height: 17, borderRadius: '50%', border: `1.5px solid ${checked ? '#0571A6' : '#C7CBD2'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {checked && <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#0571A6' }} />}
       </span>{label}
@@ -553,8 +553,8 @@ function RadioInline({ checked, onChange, label }: { checked: boolean; onChange:
 function SectionHead({ title, sub }: { title: string; sub: string }) {
   return (
     <div style={{ marginBottom: 22 }}>
-      <div style={{ fontSize: 20, fontWeight: 800, color: '#222222' }}>{title}</div>
-      <div style={{ fontSize: 14.5, color: '#717171', marginTop: 4 }}>{sub}</div>
+      <div style={{ fontSize: 17, fontWeight: 600, color: '#222222' }}>{title}</div>
+      <div style={{ fontSize: 13, color: '#717171', marginTop: 4 }}>{sub}</div>
     </div>
   );
 }
@@ -575,7 +575,7 @@ function EsiTab({ overview, apply, saving }: TabProps) {
   return (
     <div style={{ maxWidth: 900 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-        <div style={{ fontSize: 20, fontWeight: 800, color: '#222222' }}>Employees' State Insurance</div>
+        <div style={{ fontSize: 17, fontWeight: 600, color: '#222222' }}>Employees' State Insurance</div>
         {!editing && enabled && <button onClick={() => { setDraft(cfg); setEditing(true); }} title="Edit" style={pencilBtn}>✎</button>}
       </div>
 
@@ -594,18 +594,18 @@ function EsiTab({ overview, apply, saving }: TabProps) {
           <Field label="Employees' Contribution">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <input value="0.75%" disabled style={{ ...inputStyle, background: '#F7F7F9', color: '#717171', maxWidth: 200 }} />
-              <span style={{ fontSize: 15, color: '#717171' }}>of Gross Pay</span>
+              <span style={{ fontSize: 13.5, color: '#717171' }}>of Gross Pay</span>
             </div>
           </Field>
           <Field label="Employer's Contribution">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <input value="3.25%" disabled style={{ ...inputStyle, background: '#F7F7F9', color: '#717171', maxWidth: 200 }} />
-              <span style={{ fontSize: 15, color: '#717171' }}>of Gross Pay</span>
+              <span style={{ fontSize: 13.5, color: '#717171' }}>of Gross Pay</span>
             </div>
           </Field>
           <Check checked={draft.includeEmployer} onChange={(v) => set('includeEmployer', v)} label="Include employer's contribution in employee’s salary structure." />
 
-          <div style={{ background: '#FBF7EF', border: '1px solid #EDE0C7', borderRadius: 10, padding: '13px 15px', fontSize: 14, color: '#6E6457', lineHeight: 1.55, margin: '16px 0', maxWidth: 780 }}>
+          <div style={{ background: '#FBF7EF', border: '1px solid #EDE0C7', borderRadius: 10, padding: '13px 15px', fontSize: 13, color: '#6E6457', lineHeight: 1.55, margin: '16px 0', maxWidth: 780 }}>
             <strong>Note:</strong> ESI deductions will be made only if the employee’s monthly salary is less than or equal to ₹21,000. If the employee gets a salary revision which increases their monthly salary above ₹21,000, they would have to continue making ESI contributions till the end of the contribution period in which the salary was revised (April–September or October–March).
           </div>
 
@@ -636,7 +636,7 @@ function EpfReadView({ cfg, onDisable }: { cfg: EpfConfig; onDisable: () => void
       <Row label="Deduction Cycle" value="Monthly" />
       <Row label="Employee Contribution Rate" value={cfg.employeeRate} />
       <Row label="Employer Contribution Rate" value={<span>{cfg.employerRate} <Splitup /></span>} />
-      <Row label={<span>Contribution Preferences<br /><span style={{ fontSize: 13, color: '#9197A2' }}>(Included in Salary Structure)</span></span>}
+      <Row label={<span>Contribution Preferences<br /><span style={{ fontSize: 12.5, color: '#9197A2' }}>(Included in Salary Structure)</span></span>}
         value={
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Pref on={cfg.includeEmployer} text="Employer's PF contribution" />
@@ -656,15 +656,15 @@ function EpfReadView({ cfg, onDisable }: { cfg: EpfConfig; onDisable: () => void
 function Row({ label, value, last }: { label: ReactNode; value: ReactNode; last?: boolean }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 20, padding: '14px 0', borderBottom: last ? 'none' : '1px solid #F0F0F2', alignItems: 'start' }}>
-      <div style={{ fontSize: 15, color: '#717171' }}>{label}</div>
-      <div style={{ fontSize: 15, color: '#222222', fontWeight: 600 }}>{value}</div>
+      <div style={{ fontSize: 13.5, color: '#717171' }}>{label}</div>
+      <div style={{ fontSize: 13.5, color: '#222222', fontWeight: 400 }}>{value}</div>
     </div>
   );
 }
 function Pref({ on, text }: { on: boolean; text: string }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 15, color: '#222222', fontWeight: 600 }}>
-      <span style={{ color: on ? '#4F7A52' : '#C4382E', fontWeight: 800 }}>{on ? '✓' : '✕'}</span>{text}
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: '#222222', fontWeight: 400 }}>
+      <span style={{ color: on ? '#4F7A52' : '#C4382E', fontWeight: 600 }}>{on ? '✓' : '✕'}</span>{text}
     </span>
   );
 }
@@ -674,12 +674,12 @@ function Splitup() {
   const [open, setOpen] = useState(false);
   return (
     <span style={{ position: 'relative', display: 'inline-block' }}>
-      <button onClick={() => setOpen((o) => !o)} style={{ background: 'none', border: 'none', color: '#0571A6', fontWeight: 700, fontSize: 14, cursor: 'pointer', padding: 0, marginLeft: 4 }}>View Splitup</button>
+      <button onClick={() => setOpen((o) => !o)} style={{ background: 'none', border: 'none', color: '#0571A6', fontWeight: 500, fontSize: 13, cursor: 'pointer', padding: 0, marginLeft: 4 }}>View Splitup</button>
       {open && (
         <div style={splitCard}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #F0F0F2' }}>
-            <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.04em', color: '#9197A2' }}>CONTRIBUTION RATE</span>
-            <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', color: '#C4382E', cursor: 'pointer', fontSize: 15 }}>✕</button>
+            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.04em', color: '#9197A2' }}>CONTRIBUTION RATE</span>
+            <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', color: '#C4382E', cursor: 'pointer', fontSize: 13.5 }}>✕</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, padding: '4px 16px 14px' }}>
             <div style={splitHead}>SUB COMPONENTS</div>
@@ -732,7 +732,7 @@ function EpfEditForm({ draft, setDraft, onSave, onCancel, saving }: { draft: Epf
       )}
       <Check checked={draft.overrideAtEmployee} onChange={(v) => set('overrideAtEmployee', v)} label="Override PF contribution rate at employee level" />
 
-      <div style={{ fontSize: 15, fontWeight: 800, color: '#222222', margin: '18px 0 8px' }}>PF Configuration when LOP Applied</div>
+      <div style={{ fontSize: 13.5, fontWeight: 600, color: '#222222', margin: '18px 0 8px' }}>PF Configuration when LOP Applied</div>
       <Check checked={draft.proRateRestricted} onChange={(v) => set('proRateRestricted', v)} label="Pro-rate Restricted PF Wage"
         sub="PF contribution will be pro-rated based on the number of days worked by the employee." />
       <Check checked={draft.considerLOP} onChange={(v) => set('considerLOP', v)} label="Consider all applicable salary components if PF wage is less than ₹25,000 after Loss of Pay"
@@ -759,30 +759,30 @@ function epfSample(cfg: EpfConfig) {
 function EpfSamplePanel({ cfg, onPreview }: { cfg: EpfConfig; onPreview: () => void }) {
   const s = epfSample(cfg);
   return (
-    <div style={{ background: '#FBF7EF', border: '1px solid #EDE0C7', borderTop: '3px solid #E0A64B', borderRadius: 14, padding: '18px 20px', position: 'sticky', top: 8 }}>
-      <div style={{ fontSize: 17, fontWeight: 700, color: '#222222' }}>Sample EPF Calculation</div>
-      <div style={{ fontSize: 14, color: '#6E6457', marginTop: 6, lineHeight: 1.5 }}>Let's assume the PF wage is ₹ 30,000. The breakup of contribution will be:</div>
+    <div style={{ background: '#FBF7EF', border: '1px solid #EDE0C7', borderTop: '3px solid #E0A64B', borderRadius: 16, padding: '18px 20px', position: 'sticky', top: 8 }}>
+      <div style={{ fontSize: 15, fontWeight: 500, color: '#222222' }}>Sample EPF Calculation</div>
+      <div style={{ fontSize: 13, color: '#6E6457', marginTop: 6, lineHeight: 1.5 }}>Let's assume the PF wage is ₹ 30,000. The breakup of contribution will be:</div>
 
       <div style={{ background: '#fff', border: '1px solid #EBEBEB', borderRadius: 12, padding: '16px 18px', marginTop: 14 }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: '#222222' }}>Employee's Contribution</div>
+        <div style={{ fontSize: 13.5, fontWeight: 500, color: '#222222' }}>Employee's Contribution</div>
         <CalcLine label="EPF (12% of 25000)" value={s.empEPF} />
         <div style={{ height: 1, background: '#F0F0F2', margin: '12px 0' }} />
-        <div style={{ fontSize: 15, fontWeight: 700, color: '#222222' }}>Employer's Contribution</div>
+        <div style={{ fontSize: 13.5, fontWeight: 500, color: '#222222' }}>Employer's Contribution</div>
         <CalcLine label="EPS (8.33% of 25000 (Max of ₹ 25,000))" value={s.eps} />
         <CalcLine label="EPF (12% of 25000 - EPS)" value={s.emprEPF} />
         {cfg.includeEDLI && <CalcLine label="EDLI Contribution (0.50% of 25000)" value={s.edli} />}
         {cfg.includeAdmin && <CalcLine label="Admin Charges (0.50% of 25000)" value={s.admin} />}
         <div style={{ height: 1, background: '#F0F0F2', margin: '12px 0' }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 800, color: '#222222' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13.5, fontWeight: 600, color: '#222222' }}>
           <span>Total</span><span>₹ {s.total}</span>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 16, fontSize: 14, color: '#6E6457', lineHeight: 1.5 }}>
+      <div style={{ display: 'flex', gap: 8, marginTop: 16, fontSize: 13, color: '#6E6457', lineHeight: 1.5 }}>
         <span>💡</span>
         <span>Do you want to preview EPF calculation for multiple cases, based on the preferences you have configured?</span>
       </div>
-      <button onClick={onPreview} style={{ background: 'none', border: 'none', color: '#0571A6', fontWeight: 700, fontSize: 14.5, cursor: 'pointer', padding: '8px 0 0', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <button onClick={onPreview} style={{ background: 'none', border: 'none', color: '#0571A6', fontWeight: 500, fontSize: 13, cursor: 'pointer', padding: '8px 0 0', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
         👁 Preview EPF Calculation
       </button>
     </div>
@@ -790,9 +790,9 @@ function EpfSamplePanel({ cfg, onPreview }: { cfg: EpfConfig; onPreview: () => v
 }
 function CalcLine({ label, value }: { label: string; value: number }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 8, fontSize: 14 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 8, fontSize: 13 }}>
       <span style={{ color: '#6E6457' }}>{label}</span>
-      <span style={{ color: '#222222', fontWeight: 600, whiteSpace: 'nowrap' }}>₹ {value}</span>
+      <span style={{ color: '#222222', fontWeight: 400, whiteSpace: 'nowrap' }}>₹ {value}</span>
     </div>
   );
 }
@@ -810,19 +810,19 @@ function EpfPreviewModal({ cfg, onClose }: { cfg: EpfConfig; onClose: () => void
   const [showCfg, setShowCfg] = useState(false);
   return (
     <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: 244, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 14px' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(34,34,34,.4)', animation: 'ovl .2s ease both' }} />
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', animation: 'ovl .2s ease both' }} />
       <div className="scry" style={{ ...modalCard, width: 'min(920px, 100%)' }}>
         <div style={modalHead}>
-          <div style={{ fontSize: 20, fontWeight: 800 }}>EPF Sample Calculation</div>
+          <div style={{ fontSize: 17, fontWeight: 600 }}>EPF Sample Calculation</div>
           <CloseButton onClose={onClose} />
         </div>
         <div className="scry" style={{ padding: '20px 26px', overflowY: 'auto', flex: 1 }}>
-          <div style={{ fontSize: 15, color: '#484848', lineHeight: 1.55 }}>Let's assume the salary packages considered for EPF is as shown below; the calculation is based on the settings we've configured.</div>
-          <button onClick={() => setShowCfg((s) => !s)} style={{ background: 'none', border: 'none', color: '#0571A6', fontWeight: 700, fontSize: 14.5, cursor: 'pointer', padding: '10px 0 0' }}>
+          <div style={{ fontSize: 13.5, color: '#484848', lineHeight: 1.55 }}>Let's assume the salary packages considered for EPF is as shown below; the calculation is based on the settings we've configured.</div>
+          <button onClick={() => setShowCfg((s) => !s)} style={{ background: 'none', border: 'none', color: '#0571A6', fontWeight: 500, fontSize: 13, cursor: 'pointer', padding: '10px 0 0' }}>
             Show current configuration {showCfg ? '⌃' : '⌄'}
           </button>
           {showCfg && (
-            <div style={{ background: '#F7F7F9', border: '1px solid #EBEBEB', borderRadius: 10, padding: '12px 14px', margin: '10px 0 4px', fontSize: 13.5, color: '#484848', lineHeight: 1.6 }}>
+            <div style={{ background: '#F7F7F9', border: '1px solid #EBEBEB', borderRadius: 10, padding: '12px 14px', margin: '10px 0 4px', fontSize: 12.5, color: '#484848', lineHeight: 1.6 }}>
               Employee rate: {cfg.employeeRate}<br />Employer rate: {cfg.employerRate}<br />
               EDLI: {cfg.includeEDLI ? 'Included' : 'Not included'} · Admin charges: {cfg.includeAdmin ? 'Included' : 'Not included'}<br />
               Consider salary components based on LOP: {cfg.considerLOP ? 'Yes' : 'No'}
@@ -830,14 +830,14 @@ function EpfPreviewModal({ cfg, onClose }: { cfg: EpfConfig; onClose: () => void
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '22px 0 12px' }}>
-            <div style={{ fontSize: 17, fontWeight: 800 }}>Salary and EPF Calculation</div>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14.5, color: '#222222', cursor: 'pointer' }}>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>Salary and EPF Calculation</div>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#222222', cursor: 'pointer' }}>
               <input type="checkbox" checked={withLOP} onChange={(e) => setWithLOP(e.target.checked)} /> With 15 days LOP
             </label>
           </div>
 
           <div style={{ border: '1px solid #EBEBEB', borderRadius: 12, overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', background: '#F7F7F9', padding: '13px 16px', fontSize: 12.5, fontWeight: 800, color: '#717171' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', background: '#F7F7F9', padding: '13px 16px', fontSize: 12, fontWeight: 600, color: '#717171' }}>
               <div>SALARY COMPONENTS {withLOP && <Badge>WITH 15 DAYS LOP</Badge>}</div>
               <div style={{ textAlign: 'right' }}>PACKAGE 1</div>
               <div style={{ textAlign: 'right' }}>PACKAGE 2</div>
@@ -847,13 +847,13 @@ function EpfPreviewModal({ cfg, onClose }: { cfg: EpfConfig; onClose: () => void
             <PkgRow name="Transport Allowance" note="Considered for EPF only when PF wage < ₹ 25,000" values={PKGS.map((p) => p.transport)} />
             <PkgRow name="Telephone Allowance" note="Considered for EPF only when PF wage < ₹ 25,000" values={PKGS.map((p) => p.telephone)} last />
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', background: '#F7F7F9', padding: '16px', alignItems: 'center' }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#222222' }}>EPF Contribution {withLOP && <Badge>WITH 15 DAYS LOP</Badge>}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 500, color: '#222222' }}>EPF Contribution {withLOP && <Badge>WITH 15 DAYS LOP</Badge>}</div>
               {PKGS.map((p, i) => {
                 const wage = Math.min(25000, p.basic + p.transport + p.telephone);
                 return (
                   <div key={i} style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: '#222222' }}>₹ {pkgEpf(p)}</div>
-                    <div style={{ fontSize: 12.5, color: '#717171' }}>12% of {wage}</div>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: '#222222' }}>₹ {pkgEpf(p)}</div>
+                    <div style={{ fontSize: 12, color: '#717171' }}>12% of {wage}</div>
                   </div>
                 );
               })}
@@ -871,15 +871,15 @@ function PkgRow({ name, note, values, last }: { name: string; note: string; valu
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', padding: '16px', borderBottom: last ? 'none' : '1px solid #F0F0F2', alignItems: 'start' }}>
       <div>
-        <div style={{ fontSize: 15, fontWeight: 600, color: '#222222' }}>{name}</div>
-        <div style={{ fontSize: 13, color: '#8B6BB0', marginTop: 3 }}>{note}</div>
+        <div style={{ fontSize: 13.5, fontWeight: 400, color: '#222222' }}>{name}</div>
+        <div style={{ fontSize: 12.5, color: '#8B6BB0', marginTop: 3 }}>{note}</div>
       </div>
-      {values.map((v, i) => <div key={i} style={{ textAlign: 'right', fontSize: 15, color: '#222222' }}>₹ {v}</div>)}
+      {values.map((v, i) => <div key={i} style={{ textAlign: 'right', fontSize: 13.5, color: '#222222' }}>₹ {v}</div>)}
     </div>
   );
 }
 function Badge({ children }: { children: ReactNode }) {
-  return <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 800, letterSpacing: '.03em', color: '#A34B00', background: '#F7E7CE', borderRadius: 6, padding: '2px 7px', verticalAlign: 'middle' }}>{children}</span>;
+  return <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, letterSpacing: '.03em', color: '#A34B00', background: '#F7E7CE', borderRadius: 6, padding: '2px 7px', verticalAlign: 'middle' }}>{children}</span>;
 }
 
 // —— shared bits ————————————————————————————————————————————————————————
@@ -887,7 +887,7 @@ function Info({ text }: { text: string }) {
   const [show, setShow] = useState(false);
   return (
     <span style={{ position: 'relative', display: 'inline-flex', verticalAlign: 'middle' }} onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
-      <span style={{ color: '#9197A2', cursor: 'help', fontSize: 13, marginLeft: 5 }}>ⓘ</span>
+      <span style={{ color: '#9197A2', cursor: 'help', fontSize: 12.5, marginLeft: 5 }}>ⓘ</span>
       {show && <span style={tooltipStyle}>{text}</span>}
     </span>
   );
@@ -897,7 +897,7 @@ function Field({ label, hint, info, children }: { label: string; hint?: string; 
     <div style={{ marginBottom: 14 }}>
       <label style={fieldLabel}>{label}{info && <Info text={info} />}</label>
       {children}
-      {hint && <div style={{ fontSize: 12, color: '#9197A2', marginTop: 5 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 11.5, color: '#9197A2', marginTop: 5 }}>{hint}</div>}
     </div>
   );
 }
@@ -905,32 +905,32 @@ function Check({ checked, onChange, label, sub, info }: { checked: boolean; onCh
   return (
     <div style={{ display: 'flex', gap: 10, padding: '7px 0' }}>
       <button type="button" onClick={() => onChange(!checked)}
-        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: 'pointer', border: `1.5px solid ${checked ? '#0571A6' : '#C7CBD2'}`, background: checked ? '#0571A6' : '#fff', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, lineHeight: 1, padding: 0 }}>
+        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: 'pointer', border: `1.5px solid ${checked ? '#0571A6' : '#C7CBD2'}`, background: checked ? '#0571A6' : '#fff', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, lineHeight: 1, padding: 0 }}>
         {checked ? '✓' : ''}
       </button>
       <div>
-        <div style={{ fontSize: 15, color: '#222222' }}>{label}{info && <Info text={info} />}</div>
-        {sub && <div style={{ fontSize: 13, color: '#717171', marginTop: 2, lineHeight: 1.45 }}>{sub}</div>}
+        <div style={{ fontSize: 13.5, color: '#222222' }}>{label}{info && <Info text={info} />}</div>
+        {sub && <div style={{ fontSize: 12.5, color: '#717171', marginTop: 2, lineHeight: 1.45 }}>{sub}</div>}
       </div>
     </div>
   );
 }
 
 const tabBar: CSSProperties = { display: 'flex', gap: 4, borderBottom: '1px solid #EBEBEB', marginBottom: 24 };
-const tabBtn: CSSProperties = { background: 'none', border: 'none', borderBottom: '2.5px solid transparent', padding: '0 4px 11px', marginRight: 22, fontSize: 16, cursor: 'pointer', fontFamily: 'inherit' };
-const fieldLabel: CSSProperties = { display: 'block', fontSize: 14, fontWeight: 700, marginBottom: 6, color: '#484848' };
-const tooltipStyle: CSSProperties = { position: 'absolute', bottom: '150%', left: '50%', transform: 'translateX(-50%)', background: '#222222', color: '#fff', fontSize: 12.5, lineHeight: 1.45, borderRadius: 8, padding: '9px 12px', width: 230, zIndex: 60, boxShadow: '0 8px 22px rgba(0,0,0,.25)', fontWeight: 500, textAlign: 'left', whiteSpace: 'normal' };
-const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
-const primaryBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 20px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 18px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const pencilBtn: CSSProperties = { width: 30, height: 30, borderRadius: '50%', border: '1px solid #EBEBEB', background: '#fff', color: '#717171', cursor: 'pointer', fontSize: 14 };
+const tabBtn: CSSProperties = { background: 'none', border: 'none', borderBottom: '2.5px solid transparent', padding: '0 4px 11px', marginRight: 22, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' };
+const fieldLabel: CSSProperties = { display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: '#484848' };
+const tooltipStyle: CSSProperties = { position: 'absolute', bottom: '150%', left: '50%', transform: 'translateX(-50%)', background: '#222222', color: '#fff', fontSize: 12, lineHeight: 1.45, borderRadius: 8, padding: '9px 12px', width: 230, zIndex: 60, boxShadow: 'var(--shadow)', fontWeight: 400, textAlign: 'left', whiteSpace: 'normal' };
+const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: '#fff', color: '#222222' };
+const primaryBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 20px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 18px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const pencilBtn: CSSProperties = { width: 30, height: 30, borderRadius: '50%', border: '1px solid #EBEBEB', background: '#fff', color: '#717171', cursor: 'pointer', fontSize: 13 };
 const cardGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 22, maxWidth: 1120 };
-const stateCard: CSSProperties = { background: '#fff', border: '1px solid #EBEBEB', borderRadius: 14, padding: '20px 22px' };
-const miniInput: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid #EBEBEB', borderRadius: 8, fontSize: 15, fontFamily: 'inherit', background: '#fff', color: '#222222' };
-const disableBtn: CSSProperties = { background: 'none', border: 'none', color: '#0571A6', fontWeight: 700, fontSize: 15, cursor: 'pointer', padding: 0, marginTop: 22 };
-const splitCard: CSSProperties = { position: 'absolute', top: '120%', left: 0, zIndex: 20, width: 420, background: '#fff', border: '1px solid #EBEBEB', borderRadius: 12, boxShadow: '0 12px 34px rgba(34,34,34,.16)' };
-const splitHead: CSSProperties = { fontSize: 11.5, fontWeight: 800, letterSpacing: '.03em', color: '#9197A2', padding: '10px 0 6px' };
-const splitCell: CSSProperties = { fontSize: 14, color: '#222222', padding: '10px 0', borderTop: '1px solid #F0F0F2' };
-const modalCard: CSSProperties = { position: 'relative', width: '100%', maxHeight: '92vh', background: '#fff', borderRadius: 20, boxShadow: '0 30px 70px rgba(60,40,24,.3)', animation: 'pop .2s ease both', display: 'flex', flexDirection: 'column' };
+const stateCard: CSSProperties = { background: '#fff', border: '1px solid transparent', borderRadius: 16, padding: '20px 22px', boxShadow: 'var(--shadow)' };
+const miniInput: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid #EBEBEB', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', background: '#fff', color: '#222222' };
+const disableBtn: CSSProperties = { background: 'none', border: 'none', color: '#0571A6', fontWeight: 500, fontSize: 13.5, cursor: 'pointer', padding: 0, marginTop: 22 };
+const splitCard: CSSProperties = { position: 'absolute', top: '120%', left: 0, zIndex: 20, width: 420, background: '#fff', border: '1px solid #EBEBEB', borderRadius: 12, boxShadow: 'var(--shadow-lg)' };
+const splitHead: CSSProperties = { fontSize: 11.5, fontWeight: 600, letterSpacing: '.03em', color: '#9197A2', padding: '10px 0 6px' };
+const splitCell: CSSProperties = { fontSize: 13, color: '#222222', padding: '10px 0', borderTop: '1px solid #F0F0F2' };
+const modalCard: CSSProperties = { position: 'relative', width: '100%', maxHeight: '92vh', background: '#fff', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', animation: 'pop .2s ease both', display: 'flex', flexDirection: 'column' };
 const modalHead: CSSProperties = { padding: '20px 26px', borderBottom: '1px solid #EBEBEB', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 };
 const modalFoot: CSSProperties = { padding: '14px 26px', borderTop: '1px solid #EBEBEB', display: 'flex', justifyContent: 'flex-start', background: '#fff', borderBottomLeftRadius: 20, borderBottomRightRadius: 20, flexShrink: 0 };

@@ -153,7 +153,7 @@ export function KpiTemplates() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
-        <div style={{ fontSize: 16, color: '#717171', fontWeight: 600 }}>
+        <div style={{ fontSize: 14, color: '#717171', fontWeight: 400 }}>
           {templates.length} template{templates.length === 1 ? '' : 's'} · cycle {periodLabel(s.cycle.period)}
         </div>
         <button
@@ -173,7 +173,7 @@ export function KpiTemplates() {
       )}
 
       <Card>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
           <thead>
             <tr>
               <Th>Template</Th>
@@ -187,14 +187,14 @@ export function KpiTemplates() {
                 <Td>
                   <NameCell name={t.name} />
                   {t.description && (
-                    <div style={{ fontSize: 13.5, color: '#717171', marginTop: 3, lineHeight: 1.45 }}>{t.description}</div>
+                    <div style={{ fontSize: 12.5, color: '#717171', marginTop: 3, lineHeight: 1.45 }}>{t.description}</div>
                   )}
                 </Td>
                 <Td>
-                  <span style={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: t.employeeCount ? '#222222' : '#9197A2' }}>
+                  <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: t.employeeCount ? '#222222' : '#9197A2' }}>
                     {t.employeeCount}
                   </span>
-                  <span style={{ fontSize: 14, color: '#9197A2' }}>
+                  <span style={{ fontSize: 13, color: '#9197A2' }}>
                     {t.employeeCount === 1 ? ' employee' : ' employees'}
                   </span>
                 </Td>
@@ -212,7 +212,7 @@ export function KpiTemplates() {
             ))}
             {!loading && templates.length === 0 && (
               <tr>
-                <td colSpan={3} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 15 }}>
+                <td colSpan={3} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 13.5 }}>
                   {params.length === 0
                     ? 'Create KPI parameters first, then group them into templates.'
                     : 'No templates yet.'}
@@ -220,7 +220,7 @@ export function KpiTemplates() {
               </tr>
             )}
             {loading && (
-              <tr><td colSpan={2} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 15 }}>Loading…</td></tr>
+              <tr><td colSpan={2} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 13.5 }}>Loading…</td></tr>
             )}
           </tbody>
         </table>
@@ -262,7 +262,7 @@ function TemplateForm({
       width={1040}
       actions={
         <>
-          <span style={{ fontSize: 13, color: '#A8475F' }}>* indicates mandatory fields</span>
+          <span style={{ fontSize: 12.5, color: '#A8475F' }}>* indicates mandatory fields</span>
           <button
             onClick={onSave}
             disabled={Boolean(invalid)}

@@ -185,8 +185,8 @@ export function EmployeeImport() {
       <Card style={{ padding: '18px 22px' }}>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 280 }}>
-            <div style={{ fontSize: 18, fontWeight: 800 }}>Import employee details</div>
-            <div style={{ fontSize: 14, color: '#717171', marginTop: 4, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>Import employee details</div>
+            <div style={{ fontSize: 13, color: '#717171', marginTop: 4, lineHeight: 1.5 }}>
               Upload an Excel or CSV of employees. Nothing is saved until you approve.
             </div>
           </div>
@@ -201,7 +201,7 @@ export function EmployeeImport() {
       {preview && counts && (
         <>
           <Card style={{ padding: '16px 22px' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>{fileName}: what this import will do</div>
+            <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: 10 }}>{fileName}: what this import will do</div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <Chip tone="good" label="New employees" value={preview.newEmployees.length} />
               <Chip tone="info" label="People updated" value={preview.updates.length} />
@@ -212,13 +212,13 @@ export function EmployeeImport() {
               <Chip tone={preview.skippedCells.length ? 'warn' : 'quiet'} label="Cells skipped" value={preview.skippedCells.length} />
               <Chip tone={preview.errors.length ? 'bad' : 'quiet'} label="Rows not imported" value={preview.errors.length} />
             </div>
-            <div style={{ fontSize: 13, color: '#717171', marginTop: 10, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12.5, color: '#717171', marginTop: 10, lineHeight: 1.5 }}>
               {file && <>Read sheet <strong>{file.sheet.trim()}</strong>{file.sheets > 1 ? ` (of ${file.sheets})` : ''}, header on row {file.headerRow}, {file.rows.length} rows. </>}
               Using {preview.fileColumns.filter((c) => c.field).length} of {preview.fileColumns.length} columns: choose which under Columns from your file. 
               {preview.accountLimit.max !== null && <>Accounts: {preview.accountLimit.used} of {preview.accountLimit.max} used, {preview.accountLimit.afterImport} after this import.</>}
             </div>
-            {preview.notes.length > 0 && <div style={{ fontSize: 13, color: '#9A6200', marginTop: 8 }}>{preview.notes.join(' ')}</div>}
-            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13.5, marginTop: 10, color: '#484848' }}>
+            {preview.notes.length > 0 && <div style={{ fontSize: 12.5, color: '#9A6200', marginTop: 8 }}>{preview.notes.join(' ')}</div>}
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5, marginTop: 10, color: '#484848' }}>
               <input type="checkbox" checked={emptyRemoves} disabled={busy} onChange={(e) => toggleEmpty(e.target.checked)} />
               Empty cells remove the current value (off: empty cells leave it as it is; templates, salary and bank details are never removed by an import)
             </label>
@@ -227,13 +227,13 @@ export function EmployeeImport() {
                 {busy ? 'Importing…' : `Approve and import${nothing ? '' : ` (${addCount} new, ${updateCount} updated)`}`}
               </button>
               <button type="button" onClick={() => void cancel()} disabled={busy} style={ghost}>Cancel</button>
-              {declinedCount > 0 && <span style={{ alignSelf: 'center', fontSize: 13, fontWeight: 700, color: '#717171' }}>{declinedCount} declined · <button type="button" onClick={() => { setDeclined(new Set()); setSkipNew(new Set()); }} style={{ ...linkBtn }}>undo all</button></span>}
-              {(preview.errors.length > 0 || preview.skippedCells.length > 0) && !blocked && <span style={{ alignSelf: 'center', fontSize: 13, color: '#A8475F' }}>Everything that's right is imported; the cells and rows listed below are left as they are. Fix them in the file and upload again to include them.</span>}
+              {declinedCount > 0 && <span style={{ alignSelf: 'center', fontSize: 12.5, fontWeight: 500, color: '#717171' }}>{declinedCount} declined · <button type="button" onClick={() => { setDeclined(new Set()); setSkipNew(new Set()); }} style={{ ...linkBtn }}>undo all</button></span>}
+              {(preview.errors.length > 0 || preview.skippedCells.length > 0) && !blocked && <span style={{ alignSelf: 'center', fontSize: 12.5, color: '#A8475F' }}>Everything that's right is imported; the cells and rows listed below are left as they are. Fix them in the file and upload again to include them.</span>}
             </div>
           </Card>
 
           <Section title={`Columns from your file: ${preview.fileColumns.filter((c) => c.field).length} used, ${preview.fileColumns.filter((c) => !c.field).length} not used`}>
-            <div style={{ padding: '10px 18px 0', fontSize: 13, color: '#717171' }}>Tick the columns to use and pick what each one fills. To use a different column for something, pick it there: the column that had it is switched off. The preview updates as you go.</div>
+            <div style={{ padding: '10px 18px 0', fontSize: 12.5, color: '#717171' }}>Tick the columns to use and pick what each one fills. To use a different column for something, pick it there: the column that had it is switched off. The preview updates as you go.</div>
             <div style={{ overflowX: 'auto' }}>
               <table style={table}><thead><tr><th style={{ ...th, width: 60 }}>Use</th><th style={th}>Column in your file</th><th style={th}>First value</th><th style={th}>Fills</th></tr></thead>
                 <tbody>{preview.fileColumns.map((c) => {
@@ -241,18 +241,18 @@ export function EmployeeImport() {
                   return (
                     <tr key={c.key} style={{ background: on ? undefined : '#FAFAFB' }}>
                       <td style={td}><input type="checkbox" checked={on} disabled={busy} onChange={(e) => toggleColumn(c.key, e.target.checked)} style={{ width: 17, height: 17, cursor: 'pointer' }} /></td>
-                      <td style={{ ...td, fontWeight: 600, color: on ? undefined : '#9197A2' }}>{c.header}</td>
+                      <td style={{ ...td, fontWeight: 400, color: on ? undefined : '#9197A2' }}>{c.header}</td>
                       <td style={{ ...td, color: '#9197A2', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.sample || '—'}</td>
                       <td style={td}>
                         {on ? (
-                          <select value={c.field} disabled={busy} onChange={(e) => rematch(c.key, e.target.value)} style={{ padding: '6px 8px', borderRadius: 8, border: `1px solid ${c.field ? '#B9D7EE' : '#E8B84A'}`, background: c.field ? '#F3F8FD' : '#FFF8E8', fontFamily: 'inherit', fontSize: 13.5, minWidth: 200 }}>
+                          <select value={c.field} disabled={busy} onChange={(e) => rematch(c.key, e.target.value)} style={{ padding: '6px 8px', borderRadius: 8, border: `1px solid ${c.field ? '#B9D7EE' : '#E8B84A'}`, background: c.field ? '#F3F8FD' : '#FFF8E8', fontFamily: 'inherit', fontSize: 12.5, minWidth: 200 }}>
                             <option value="">{c.field ? 'Not used' : 'Pick what it fills…'}</option>
                             {preview.fieldChoices.map((a) => {
                               const other = preview.fileColumns.find((o) => o.field === a.field && o.key !== c.key);
                               return <option key={a.field} value={a.field}>{a.label}{other ? ` (now from ${other.header})` : ''}</option>;
                             })}
                           </select>
-                        ) : <span style={{ fontSize: 13, color: '#9197A2' }}>Not used</span>}
+                        ) : <span style={{ fontSize: 12.5, color: '#9197A2' }}>Not used</span>}
                       </td>
                     </tr>
                   );
@@ -287,7 +287,7 @@ export function EmployeeImport() {
 
           {preview.updates.length > 0 && (
             <Section title={`Changes to existing employees (${preview.updates.length} people)`}>
-              <div style={{ padding: '10px 18px 0', fontSize: 13, color: '#717171' }}>Don't want one of these? Press <strong>Decline</strong> on that line; the rest is still imported.</div>
+              <div style={{ padding: '10px 18px 0', fontSize: 12.5, color: '#717171' }}>Don't want one of these? Press <strong>Decline</strong> on that line; the rest is still imported.</div>
               <table style={table}><thead><tr><th style={th}>Employee</th><th style={th}>Field</th><th style={th}>Now</th><th style={th}>After import</th><th style={th}></th><th style={th}></th></tr></thead>
                 <tbody>{preview.updates.flatMap((u) => {
                   const allOff = u.changes.every((c) => declined.has(`${u.row}:${c.field}`));
@@ -297,13 +297,13 @@ export function EmployeeImport() {
                     return (
                       <tr key={`${u.userId}-${c.field}`} style={{ background: off ? '#FAFAFB' : undefined }}>
                         <td style={td}>{i === 0 ? <>
-                          <strong>{u.name}</strong>{u.employeeId && <span style={{ color: '#717171' }}> · {u.employeeId}</span>}<div style={{ fontSize: 12, color: '#9197A2' }}>row {u.row}</div>
-                          {u.changes.length > 1 && <button type="button" onClick={() => setDeclined((x) => { const n = new Set(x); for (const ch of u.changes) { const k2 = `${u.row}:${ch.field}`; if (allOff) n.delete(k2); else n.add(k2); } return n; })} style={{ ...linkBtn, fontSize: 12, marginTop: 4 }}>{allOff ? 'Accept all for this person' : 'Decline all for this person'}</button>}
+                          <strong>{u.name}</strong>{u.employeeId && <span style={{ color: '#717171' }}> · {u.employeeId}</span>}<div style={{ fontSize: 11.5, color: '#9197A2' }}>row {u.row}</div>
+                          {u.changes.length > 1 && <button type="button" onClick={() => setDeclined((x) => { const n = new Set(x); for (const ch of u.changes) { const k2 = `${u.row}:${ch.field}`; if (allOff) n.delete(k2); else n.add(k2); } return n; })} style={{ ...linkBtn, fontSize: 11.5, marginTop: 4 }}>{allOff ? 'Accept all for this person' : 'Decline all for this person'}</button>}
                         </> : ''}</td>
                         <td style={{ ...td, color: off ? '#9197A2' : undefined }}>{c.label}</td>
                         <td style={{ ...td, color: c.kind === 'removed' ? '#A8475F' : '#717171', textDecoration: c.kind === 'removed' && !off ? 'line-through' : undefined }}>{c.from || '—'}</td>
-                        <td style={{ ...td, fontWeight: 600, color: off ? '#9197A2' : undefined, textDecoration: off ? 'line-through' : undefined }}>{c.to || '—'}</td>
-                        <td style={td}>{off ? <span style={{ background: '#F4F4F6', color: '#717171', borderRadius: 6, padding: '2px 8px', fontSize: 12, fontWeight: 700 }}>Declined: stays as now</span> : <Tag kind={c.kind} />}</td>
+                        <td style={{ ...td, fontWeight: 400, color: off ? '#9197A2' : undefined, textDecoration: off ? 'line-through' : undefined }}>{c.to || '—'}</td>
+                        <td style={td}>{off ? <span style={{ background: '#F4F4F6', color: '#717171', borderRadius: 6, padding: '2px 8px', fontSize: 11.5, fontWeight: 500 }}>Declined: stays as now</span> : <Tag kind={c.kind} />}</td>
                         <td style={{ ...td, textAlign: 'right' }}><button type="button" onClick={() => setDeclined((x) => toggle(x, key))} style={off ? undoBtn : declineBtn}>{off ? 'Accept' : 'Decline'}</button></td>
                       </tr>
                     );
@@ -315,8 +315,8 @@ export function EmployeeImport() {
           {preview.skippedCells.length > 0 && (
             <Section title={`Cells to fix (${preview.skippedCells.length}): the rest of these rows is still imported`}>
               <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 18px', flexWrap: 'wrap', borderBottom: '1px solid #F4F4F6' }}>
-                <span style={{ fontSize: 13, color: '#717171', flex: 1, minWidth: 260 }}>Fix a cell here: pick the right person, date or value. Cells you leave alone keep what the employee has now.</span>
-                <button type="button" disabled={busy || Object.values(fixes).every((v) => !v)} onClick={applyFixes} style={{ ...primary, padding: '7px 14px', fontSize: 13.5, opacity: busy || Object.values(fixes).every((v) => !v) ? 0.5 : 1 }}>
+                <span style={{ fontSize: 12.5, color: '#717171', flex: 1, minWidth: 260 }}>Fix a cell here: pick the right person, date or value. Cells you leave alone keep what the employee has now.</span>
+                <button type="button" disabled={busy || Object.values(fixes).every((v) => !v)} onClick={applyFixes} style={{ ...primary, padding: '7px 14px', fontSize: 12.5, opacity: busy || Object.values(fixes).every((v) => !v) ? 0.5 : 1 }}>
                   {busy ? 'Updating…' : `Use ${Object.values(fixes).filter(Boolean).length || ''} fix${Object.values(fixes).filter(Boolean).length === 1 ? '' : 'es'} and update the preview`}
                 </button>
               </div>
@@ -340,7 +340,7 @@ export function EmployeeImport() {
             <div style={{ display: 'flex', gap: 8, padding: '12px 18px 4px', flexWrap: 'wrap' }}>
               {(['all', 'new', 'updated', 'unchanged', 'not imported'] as const).map((f) => {
                 const n = f === 'all' ? preview.rows.length : preview.rows.filter((r) => r.status === f).length;
-                return <button key={f} type="button" onClick={() => setRowFilter(f)} style={{ ...ghost, padding: '5px 12px', fontSize: 13, background: rowFilter === f ? '#E7F1FB' : '#fff', color: rowFilter === f ? '#0571A6' : '#484848', borderColor: rowFilter === f ? '#B9D7EE' : '#EBEBEB' }}>{f === 'all' ? 'All' : STATUS[f][2]} {n}</button>;
+                return <button key={f} type="button" onClick={() => setRowFilter(f)} style={{ ...ghost, padding: '5px 12px', fontSize: 12.5, background: rowFilter === f ? '#E7F1FB' : '#fff', color: rowFilter === f ? '#0571A6' : '#484848', borderColor: rowFilter === f ? '#B9D7EE' : '#EBEBEB' }}>{f === 'all' ? 'All' : STATUS[f][2]} {n}</button>;
               })}
             </div>
             <table style={table}><thead><tr><th style={th}>Row</th><th style={th}>Employee</th><th style={th}>Employee ID</th><th style={th}>What happens</th><th style={th}>Details</th></tr></thead>
@@ -353,7 +353,7 @@ export function EmployeeImport() {
 
       {result && (
         <Card style={{ padding: '16px 22px' }}>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>Import done: {result.created} added, {result.updated} updated</div>
+          <div style={{ fontSize: 13.5, fontWeight: 500 }}>Import done: {result.created} added, {result.updated} updated</div>
           {result.failed.length > 0 && (
             <table style={{ ...table, marginTop: 10 }}><thead><tr><th style={th}>Row</th><th style={th}>Not saved</th></tr></thead>
               <tbody>{result.failed.map((f, i) => <tr key={i}><td style={td}>{f.row}</td><td style={{ ...td, color: '#A8475F' }}>{f.message}</td></tr>)}</tbody></table>
@@ -366,7 +366,7 @@ export function EmployeeImport() {
 
 /** The editor for one skipped cell: a person or template list, a date, a fixed choice, or text. */
 function FixInput({ cell, lists, value, onChange }: { cell: EmployeeImportPreview['skippedCells'][number]; lists: EmployeeImportPreview['pickLists']; value: string; onChange: (v: string) => void }) {
-  const box: CSSProperties = { padding: '6px 8px', borderRadius: 8, border: `1px solid ${value ? '#9FCB9A' : '#EBEBEB'}`, fontFamily: 'inherit', fontSize: 13.5, width: '100%', maxWidth: 300, background: '#fff' };
+  const box: CSSProperties = { padding: '6px 8px', borderRadius: 8, border: `1px solid ${value ? '#9FCB9A' : '#EBEBEB'}`, fontFamily: 'inherit', fontSize: 12.5, width: '100%', maxWidth: 300, background: '#fff' };
   const choices: Record<string, string[]> = {
     employeeType: ['Full-time', 'Contract', 'Intern'], isDirector: ['Yes', 'No'], gender: ['Male', 'Female', 'Other'],
     payMode: ['Bank transfer', 'Cheque', 'Cash'], accountType: ['Savings', 'Current'],
@@ -391,32 +391,32 @@ function FixInput({ cell, lists, value, onChange }: { cell: EmployeeImportPrevie
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <Card>
-      <div style={{ padding: '14px 18px', borderBottom: '1px solid #EBEBEB', fontSize: 15.5, fontWeight: 800 }}>{title}</div>
+      <div style={{ padding: '14px 18px', borderBottom: '1px solid #EBEBEB', fontSize: 14, fontWeight: 600 }}>{title}</div>
       {children}
     </Card>
   );
 }
 function Chip({ label, value, tone }: { label: string; value: number; tone: 'good' | 'bad' | 'info' | 'quiet' | 'warn' }) {
   const c = { good: ['#E5F4E4', '#2F6B33'], bad: ['#FBEBEB', '#A8475F'], info: ['#E7F1FB', '#0571A6'], quiet: ['#F4F4F6', '#717171'], warn: ['#FFF4DE', '#9A6200'] }[tone];
-  return <span style={{ background: c[0], color: c[1], borderRadius: 10, padding: '7px 12px', fontSize: 13.5, fontWeight: 700 }}>{label} <span style={{ fontSize: 15 }}>{value}</span></span>;
+  return <span style={{ background: c[0], color: c[1], borderRadius: 10, padding: '7px 12px', fontSize: 12.5, fontWeight: 500 }}>{label} <span style={{ fontSize: 13.5 }}>{value}</span></span>;
 }
 function Tag({ kind }: { kind: 'changed' | 'added' | 'removed' }) {
   const c = { changed: ['#E7F1FB', '#0571A6', 'Changed'], added: ['#E5F4E4', '#2F6B33', 'Added'], removed: ['#FBEBEB', '#A8475F', 'Removed'] }[kind];
-  return <span style={{ background: c[0], color: c[1], borderRadius: 6, padding: '2px 8px', fontSize: 12, fontWeight: 700 }}>{c[2]}</span>;
+  return <span style={{ background: c[0], color: c[1], borderRadius: 6, padding: '2px 8px', fontSize: 11.5, fontWeight: 500 }}>{c[2]}</span>;
 }
 
 const STATUS = { new: ['#E5F4E4', '#2F6B33', 'New'], updated: ['#E7F1FB', '#0571A6', 'Updated'], unchanged: ['#F4F4F6', '#717171', 'No change'], 'not imported': ['#FBEBEB', '#A8475F', 'Not imported'] } as const;
 function Status({ status }: { status: keyof typeof STATUS }) {
   const c = STATUS[status];
-  return <span style={{ background: c[0], color: c[1], borderRadius: 6, padding: '2px 8px', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>{c[2]}</span>;
+  return <span style={{ background: c[0], color: c[1], borderRadius: 6, padding: '2px 8px', fontSize: 11.5, fontWeight: 500, whiteSpace: 'nowrap' }}>{c[2]}</span>;
 }
 
-const declineBtn: CSSProperties = { background: '#fff', color: '#A8475F', border: '1px solid #F0C9C4', padding: '4px 10px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
+const declineBtn: CSSProperties = { background: '#fff', color: '#A8475F', border: '1px solid #F0C9C4', padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 const undoBtn: CSSProperties = { ...declineBtn, color: '#0571A6', border: '1px solid #B9D7EE' };
-const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, color: '#0571A6', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 };
+const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, color: '#0571A6', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5 };
 
-const primary: CSSProperties = { display: 'inline-flex', alignItems: 'center', background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 10, fontSize: 14.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const ghost: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 10, fontSize: 14.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const table: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
-const th: CSSProperties = { textAlign: 'left', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171', fontWeight: 700, padding: '10px 14px', borderBottom: '1px solid #EBEBEB', background: '#FBFBFC', whiteSpace: 'nowrap' };
+const primary: CSSProperties = { display: 'inline-flex', alignItems: 'center', background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const ghost: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const table: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
+const th: CSSProperties = { textAlign: 'left', fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '10px 14px', borderBottom: '1px solid #EBEBEB', background: '#FBFBFC', whiteSpace: 'nowrap' };
 const td: CSSProperties = { padding: '9px 14px', borderBottom: '1px solid #F4F4F6', verticalAlign: 'top' };

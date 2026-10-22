@@ -2,13 +2,13 @@ import type { ReactNode } from 'react';
 import { useStore } from '../store';
 import { CloseButton } from './shell';
 
-const fieldLabel = { fontSize: 14, fontWeight: 700, color: '#484848', marginBottom: 6 } as const;
+const fieldLabel = { fontSize: 13, fontWeight: 500, color: '#484848', marginBottom: 6 } as const;
 const inputStyle = {
   width: '100%',
   border: '1px solid #EBEBEB',
-  borderRadius: 11,
+  borderRadius: 12,
   padding: '11px 13px',
-  fontSize: 16,
+  fontSize: 14,
   outline: 'none',
   background: '#fff',
   color: '#222222',
@@ -17,7 +17,7 @@ const selectStyle = {
   ...inputStyle,
   appearance: 'none' as const,
   WebkitAppearance: 'none' as const,
-  fontWeight: 600,
+  fontWeight: 400,
   cursor: 'pointer',
 };
 
@@ -37,12 +37,12 @@ export function AddUserModal() {
   const close = () => s.setAddOpen(false);
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div onClick={close} style={{ position: 'absolute', inset: 0, background: 'rgba(34,34,34,.4)', animation: 'ovl .2s ease both' }} />
-      <div className="scry" style={{ position: 'relative', width: 560, maxHeight: '92vh', overflowY: 'auto', background: '#F7F7F9', borderRadius: 20, boxShadow: '0 30px 70px rgba(60,40,24,.3)', animation: 'pop .2s ease both' }}>
+      <div onClick={close} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', animation: 'ovl .2s ease both' }} />
+      <div className="scry" style={{ position: 'relative', width: 560, maxHeight: '92vh', overflowY: 'auto', background: '#F7F7F9', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', animation: 'pop .2s ease both' }}>
         <div style={{ padding: '22px 26px', borderBottom: '1px solid #EBEBEB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.3px' }}>Add a user</div>
-            <div style={{ fontSize: 14, color: '#717171', fontWeight: 500, marginTop: 2 }}>Create a new employee profile</div>
+            <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-.3px' }}>Add a user</div>
+            <div style={{ fontSize: 13, color: '#717171', fontWeight: 400, marginTop: 2 }}>Create a new employee profile</div>
           </div>
           <CloseButton onClose={close} />
         </div>
@@ -86,8 +86,8 @@ export function AddUserModal() {
         </div>
 
         <div style={{ padding: '0 26px 22px', display: 'flex', gap: 11, justifyContent: 'flex-end' }}>
-          <button onClick={close} style={{ border: '1px solid #EBEBEB', background: '#fff', color: '#484848', borderRadius: 11, padding: '11px 20px', fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-          <button onClick={s.saveUser} style={{ border: 'none', background: '#0571A6', color: '#fff', borderRadius: 11, padding: '11px 22px', fontSize: 16, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(5,113,166,.26)' }}>Add user</button>
+          <button onClick={close} style={{ border: '1px solid #EBEBEB', background: '#fff', color: '#484848', borderRadius: 999, padding: '11px 20px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
+          <button onClick={s.saveUser} style={{ border: 'none', background: '#0571A6', color: '#fff', borderRadius: 999, padding: '11px 22px', fontSize: 14, fontWeight: 500, cursor: 'pointer', boxShadow: '0 2px 8px rgba(5,113,166,.26)' }}>Add user</button>
         </div>
       </div>
     </div>

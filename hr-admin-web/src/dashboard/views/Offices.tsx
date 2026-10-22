@@ -85,7 +85,7 @@ export function Offices() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <div style={{ fontSize: 14, color: '#717171' }}>{offices.length} {offices.length === 1 ? 'office' : 'offices'}</div>
+        <div style={{ fontSize: 13, color: '#717171' }}>{offices.length} {offices.length === 1 ? 'office' : 'offices'}</div>
         <div style={{ marginLeft: 'auto' }}>
           <button onClick={() => (editing === '' ? cancel() : startAdd())} style={primaryBtn}>
             <IconPlus size={15} /> Add office
@@ -102,7 +102,7 @@ export function Offices() {
       {editing !== null && (
         <Card style={{ padding: '18px 20px', marginBottom: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
-            <div style={{ fontSize: 16, fontWeight: 800, color: '#222222' }}>{editing ? 'Edit office' : 'New office'}</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#222222' }}>{editing ? 'Edit office' : 'New office'}</div>
             <button onClick={cancel} aria-label="Close" title="Close" style={closeBtn}>×</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr 150px', gap: 12, alignItems: 'end' }}>
@@ -131,11 +131,11 @@ export function Offices() {
             <Field label="Radius">
               <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #EBEBEB', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
                 <input type="number" min="20" step="10" value={form.radiusMeters} onChange={(e) => setForm({ ...form, radiusMeters: Number(e.target.value) || 0 })} style={{ ...inputStyle, border: 'none', borderRadius: 0 }} />
-                <span style={{ padding: '9px 12px', color: '#717171', borderLeft: '1px solid #EBEBEB', fontSize: 14 }}>m</span>
+                <span style={{ padding: '9px 12px', color: '#717171', borderLeft: '1px solid #EBEBEB', fontSize: 13 }}>m</span>
               </div>
             </Field>
           </div>
-          <div style={{ fontSize: 13, color: '#717171', marginTop: 8, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12.5, color: '#717171', marginTop: 8, lineHeight: 1.5 }}>
             Right-click the building in Google Maps and copy the coordinates; pasting “28.4595, 77.0266” into either box fills both.
             A phone indoors is often 50–80 m off, so 200 m covers a building and its car park without reaching the next street.
           </div>
@@ -184,24 +184,24 @@ export function Offices() {
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <label style={{ display: 'block', fontSize: 14, fontWeight: 700, marginBottom: 5, color: '#484848' }}>{label}</label>
+      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 5, color: '#484848' }}>{label}</label>
       {children}
     </div>
   );
 }
 function Th({ children }: { children: ReactNode }) {
-  return <th style={{ textAlign: 'left', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171', fontWeight: 700, padding: '11px 16px', borderBottom: '1px solid #EBEBEB' }}>{children}</th>;
+  return <th style={{ textAlign: 'left', fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '11px 16px', borderBottom: '1px solid #EBEBEB', background: 'var(--surface-2)' }}>{children}</th>;
 }
 function Td({ children, muted, mono }: { children: ReactNode; muted?: boolean; mono?: boolean }) {
   return <td style={{ padding: '13px 16px', borderBottom: '1px solid #F0F0F2', color: muted ? '#717171' : '#222222', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
 }
 
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 16 };
-const note: CSSProperties = { fontSize: 13, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.55 };
-const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', fontWeight: 700, color: '#0571A6', cursor: 'pointer' };
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 15, fontFamily: 'inherit', background: '#fff', color: '#222222' };
-const editBtn: CSSProperties = { background: 'none', border: 'none', padding: '4px 6px', font: 'inherit', fontSize: 14, fontWeight: 700, color: '#0571A6', cursor: 'pointer' };
-const removeBtn: CSSProperties = { background: 'none', border: 'none', padding: '4px 6px', font: 'inherit', fontSize: 14, fontWeight: 700, color: '#C4382E', cursor: 'pointer' };
-const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: 'pointer' };
-const closeBtn: CSSProperties = { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 26, lineHeight: 1, color: '#9197A2', cursor: 'pointer', padding: '0 4px' };
+const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
+const note: CSSProperties = { fontSize: 12.5, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.55 };
+const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', fontWeight: 500, color: '#0571A6', cursor: 'pointer' };
+const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 13.5, fontFamily: 'inherit', background: '#fff', color: '#222222' };
+const editBtn: CSSProperties = { background: 'none', border: 'none', padding: '4px 6px', font: 'inherit', fontSize: 13, fontWeight: 500, color: '#0571A6', cursor: 'pointer' };
+const removeBtn: CSSProperties = { background: 'none', border: 'none', padding: '4px 6px', font: 'inherit', fontSize: 13, fontWeight: 500, color: '#C4382E', cursor: 'pointer' };
+const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer' };
+const closeBtn: CSSProperties = { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 22, lineHeight: 1, color: '#9197A2', cursor: 'pointer', padding: '0 4px' };

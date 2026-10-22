@@ -14,8 +14,8 @@ export function AccountLimitModal({ max, onClose }: { max: number | null; onClos
   return (
     <div style={overlay} onClick={onClose} role="presentation">
       <div style={card} onClick={(e) => e.stopPropagation()} role="alertdialog" aria-modal="true" aria-labelledby="account-limit-title">
-        <div id="account-limit-title" style={{ fontSize: 20, fontWeight: 800, color: '#222222' }}>Contact Sowaka for more user entries</div>
-        <p style={{ margin: 0, fontSize: 16, lineHeight: 1.5, color: '#484848' }}>
+        <div id="account-limit-title" style={{ fontSize: 17, fontWeight: 600, color: '#222222' }}>Contact Sowaka for more user entries</div>
+        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: '#484848' }}>
           {max === null
             ? 'Your company has reached the number of accounts its plan allows.'
             : `Your company already has ${max} accounts, the most its plan allows.`}{' '}
@@ -29,6 +29,6 @@ export function AccountLimitModal({ max, onClose }: { max: number | null; onClos
   );
 }
 
-const overlay: CSSProperties = { position: 'fixed', inset: 0, zIndex: 95, background: 'rgba(34,34,34,.42)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 22 };
-const card: CSSProperties = { width: '100%', maxWidth: 460, display: 'flex', flexDirection: 'column', gap: 14, background: '#fff', border: '1px solid #EBEBEB', borderRadius: 18, padding: '22px 24px', boxShadow: '0 30px 70px rgba(34,34,34,.32)' };
-const primaryBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 22px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
+const overlay: CSSProperties = { position: 'fixed', inset: 0, zIndex: 95, background: 'var(--scrim)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 22 };
+const card: CSSProperties = { width: '100%', maxWidth: 460, display: 'flex', flexDirection: 'column', gap: 14, background: '#fff', border: '1px solid #EBEBEB', borderRadius: 'var(--r-lg)', padding: '22px 24px', boxShadow: 'var(--shadow-lg)' };
+const primaryBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 22px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };

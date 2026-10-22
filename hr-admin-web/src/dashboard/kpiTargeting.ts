@@ -66,11 +66,11 @@ export function targetSummary(target: KpiTargeting, emps: Emp[]): string {
 }
 
 export const andLabel: CSSProperties = {
-  flexShrink: 0, width: 40, marginTop: 13, fontSize: 12, fontWeight: 800,
+  flexShrink: 0, width: 40, marginTop: 13, fontSize: 11.5, fontWeight: 600,
   letterSpacing: '.06em', color: '#9197A2',
 };
 
 export const queryCode: CSSProperties = {
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-  fontSize: 13, color: '#3C6E9E', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+  fontSize: 12.5, color: '#3C6E9E', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
 };

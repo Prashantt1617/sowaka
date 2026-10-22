@@ -9,7 +9,7 @@ export const rowActionBtn: CSSProperties = {
   justifyContent: 'center',
   width: 30,
   height: 30,
-  borderRadius: 9,
+  borderRadius: 999,
   border: '1px solid #EBEBEB',
   background: '#fff',
   color: '#717171',

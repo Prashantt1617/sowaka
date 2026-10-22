@@ -114,7 +114,7 @@ export function PaidDaysTemplates() {
       <div style={{ maxWidth: 900 }}>
         <Card style={{ padding: '20px 22px', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-            <div style={{ fontSize: 19, fontWeight: 700, flex: 1 }}>{form.editingCode ? form.name || 'Paid days template' : 'New paid days template'}</div>
+            <div style={{ fontSize: 16.5, fontWeight: 500, flex: 1 }}>{form.editingCode ? form.name || 'Paid days template' : 'New paid days template'}</div>
             {form.isDefault && <DefaultBadge />}
           </div>
           <div style={{ display: 'grid', gap: 14 }}>
@@ -152,7 +152,7 @@ export function PaidDaysTemplates() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <div style={{ flex: 1, fontSize: 14, color: '#717171' }}>
+        <div style={{ flex: 1, fontSize: 13, color: '#717171' }}>
           How attendance turns into paid days. Everyone is on the <strong>Default</strong> unless given another on their Salary details.
         </div>
         <button onClick={() => { setConfirmDelete(false); setForm({ ...EMPTY }); }} style={primaryBtn}><IconPlus size={15} /> Create New</button>
@@ -175,7 +175,7 @@ export function PaidDaysTemplates() {
                       <strong style={{ color: '#0571A6' }}>{t.name}</strong>
                       {t.isDefault && <DefaultBadge />}
                     </div>
-                    {t.description && <div style={{ fontSize: 13, color: '#9197A2', marginTop: 2 }}>{t.description}</div>}
+                    {t.description && <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 2 }}>{t.description}</div>}
                   </Td>
                   <Td muted>{paidDaysSummary(t)}</Td>
                   <Td>{t.people}</Td>
@@ -190,5 +190,5 @@ export function PaidDaysTemplates() {
 }
 
 function DefaultBadge() {
-  return <span style={{ fontSize: 12, fontWeight: 700, color: '#0571A6', background: '#EAF4FA', borderRadius: 6, padding: '2px 8px' }}>Default</span>;
+  return <span style={{ fontSize: 11.5, fontWeight: 500, color: '#0571A6', background: '#EAF4FA', borderRadius: 6, padding: '2px 8px' }}>Default</span>;
 }

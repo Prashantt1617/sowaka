@@ -185,7 +185,7 @@ function Chips({ options, selected, onToggle }: {
             aria-pressed={on}
             onClick={() => onToggle(option)}
             style={{
-              padding: '6px 12px', borderRadius: 20, fontSize: 13.5, fontWeight: 700,
+              padding: '6px 12px', borderRadius: 'var(--r-lg)', fontSize: 12.5, fontWeight: 500,
               cursor: 'pointer', fontFamily: 'inherit',
               border: `1px solid ${on ? '#0571A6' : '#EBEBEB'}`,
               background: on ? '#E6F1F8' : '#fff',
@@ -227,8 +227,8 @@ function Th({ children, center, width }: { children: ReactNode; center?: boolean
   return (
     <th style={{
       textAlign: center ? 'center' : 'left', width,
-      fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171',
-      fontWeight: 700, padding: '11px 12px', borderBottom: '1px solid #EBEBEB',
+      fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171',
+      fontWeight: 400, padding: '11px 12px', borderBottom: '1px solid #EBEBEB', background: 'var(--surface-2)',
     }}>{children}</th>
   );
 }
@@ -242,8 +242,8 @@ function Td({ children, center }: { children: ReactNode; center?: boolean }) {
   );
 }
 
-const selectStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222', cursor: 'pointer' };
-const fixedValue: CSSProperties = { display: 'flex', flexWrap: 'wrap', whiteSpace: 'nowrap', alignItems: 'center', gap: 10, width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, background: '#F7F7F9', color: '#717171' };
-const fixedTag: CSSProperties = { marginLeft: 'auto', fontSize: 11.5, fontWeight: 800, letterSpacing: '.02em', color: '#717171', background: '#EDEDF0', borderRadius: 20, padding: '2px 9px', whiteSpace: 'nowrap' };
-const muted: CSSProperties = { fontSize: 13.5, color: '#9A9AA5' };
-const caseTable: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 15 };
+const selectStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 999, fontSize: 14, fontFamily: 'inherit', background: '#fff', color: '#222222', cursor: 'pointer' };
+const fixedValue: CSSProperties = { display: 'flex', flexWrap: 'wrap', whiteSpace: 'nowrap', alignItems: 'center', gap: 10, width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 14, background: '#F7F7F9', color: '#717171' };
+const fixedTag: CSSProperties = { marginLeft: 'auto', fontSize: 11.5, fontWeight: 600, letterSpacing: '.02em', color: '#717171', background: '#EDEDF0', borderRadius: 'var(--r-lg)', padding: '2px 9px', whiteSpace: 'nowrap' };
+const muted: CSSProperties = { fontSize: 12.5, color: '#9A9AA5' };
+const caseTable: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13.5 };

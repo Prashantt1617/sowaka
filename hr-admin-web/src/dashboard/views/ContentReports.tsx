@@ -94,7 +94,7 @@ export function ContentReports() {
           labels={{ open: 'Needs review', actioned: 'Actioned', dismissed: 'Dismissed' }}
         />
         {filter === 'open' && openCount > 0 && (
-          <span style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>
+          <span style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>
             {openCount} waiting on you
           </span>
         )}
@@ -156,7 +156,7 @@ function ReportCard({
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <Pill label={report.reasonLabel} tone={{ bg: '#FBE9E7', fg: '#B23B2E' }} />
           <Pill label={STATUS_LABEL[report.status]} tone={STATUS_TONE[report.status]} />
-          <span style={{ fontSize: 14, color: '#717171' }}>
+          <span style={{ fontSize: 13, color: '#717171' }}>
             {report.target === 'comment' ? 'Comment' : report.postTag || 'Post'} by{' '}
             <strong style={{ color: '#222222' }}>{report.authorName}</strong> · reported by{' '}
             <strong style={{ color: '#222222' }}>{report.reporterName}</strong> ·{' '}
@@ -171,7 +171,7 @@ function ReportCard({
         {edited && <Quote label="What it says now" text={report.currentText} muted />}
 
         {report.note && (
-          <div style={{ fontSize: 15, color: '#484848' }}>
+          <div style={{ fontSize: 13.5, color: '#484848' }}>
             <span style={{ color: '#717171' }}>Reporter added: </span>
             {report.note}
           </div>
@@ -186,7 +186,7 @@ function ReportCard({
             <Button label="Dismiss" tone="plain" busy={busy} onClick={onDismiss} />
           </div>
         ) : (
-          <div style={{ fontSize: 14, color: '#717171' }}>
+          <div style={{ fontSize: 13, color: '#717171' }}>
             {STATUS_LABEL[report.status]}
             {report.reviewedByName ? ` by ${report.reviewedByName}` : ''}
             {report.reviewedAt ? ` · ${formatWhen(report.reviewedAt)}` : ''}
@@ -203,8 +203,8 @@ function Quote({ label, text, muted }: { label: string; text: string; muted?: bo
     <div>
       <div
         style={{
-          fontSize: 12,
-          fontWeight: 700,
+          fontSize: 11.5,
+          fontWeight: 500,
           letterSpacing: '.5px',
           color: '#9197A2',
           marginBottom: 5,
@@ -218,7 +218,7 @@ function Quote({ label, text, muted }: { label: string; text: string; muted?: bo
           border: '1px solid #EBEBEB',
           borderRadius: 12,
           padding: '12px 14px',
-          fontSize: 15,
+          fontSize: 13.5,
           lineHeight: 1.55,
           color: muted ? '#717171' : '#222222',
           whiteSpace: 'pre-wrap',
@@ -252,10 +252,10 @@ function Button({
       disabled={busy}
       style={{
         ...palette,
-        borderRadius: 10,
+        borderRadius: 999,
         padding: '8px 16px',
-        fontSize: 14,
-        fontWeight: 700,
+        fontSize: 13,
+        fontWeight: 500,
         cursor: busy ? 'default' : 'pointer',
         opacity: busy ? 0.6 : 1,
       }}

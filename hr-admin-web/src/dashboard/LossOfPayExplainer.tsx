@@ -38,19 +38,19 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20,20,30,.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: 'min(680px, 100%)', maxHeight: '86vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,.25)' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 'var(--r-lg)', width: 'min(680px, 100%)', maxHeight: '86vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '18px 22px', borderBottom: '1px solid #EBEBEB' }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.3px' }}>Loss of pay · {periodTitle(payslip.period)}</div>
-            <div style={{ fontSize: 14, color: '#717171', marginTop: 3 }}>
+            <div style={{ fontSize: 16.5, fontWeight: 600, letterSpacing: '-.3px' }}>Loss of pay · {periodTitle(payslip.period)}</div>
+            <div style={{ fontSize: 13, color: '#717171', marginTop: 3 }}>
               {payslip.inputs.lopDays} of {payslip.inputs.workingDays} paid days deducted · {inr(lopPaise)}
               {(payslip.inputs.paidLeaveDaysApplied ?? 0) > 0 && ` · ${payslip.inputs.paidLeaveDaysApplied} ${payslip.inputs.paidLeaveDaysApplied === 1 ? 'day' : 'days'} covered by paid leave`}
             </div>
           </div>
-          <button type="button" onClick={onClose} style={{ background: '#F7F7F9', border: 'none', borderRadius: 9, width: 34, height: 34, cursor: 'pointer', fontSize: 18, color: '#484848' }}>×</button>
+          <button type="button" onClick={onClose} style={{ background: '#F7F7F9', border: 'none', borderRadius: 999, width: 34, height: 34, cursor: 'pointer', fontSize: 16, color: '#484848' }}>×</button>
         </div>
         <div style={{ overflowY: 'auto', padding: '6px 22px 18px' }}>
-          {error && <div style={{ color: '#A8475F', fontWeight: 600, padding: '14px 0' }}>{error}</div>}
+          {error && <div style={{ color: '#A8475F', fontWeight: 400, padding: '14px 0' }}>{error}</div>}
           {lines.map((line) => {
             const trigger = line.trigger;
             // Named from the rule, not the slip: a label saved with an older run stays current.
@@ -59,23 +59,23 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
             return (
               <div key={line.trigger ?? line.label} style={{ marginTop: 16 }}>
                 <div style={{ background: '#FBF1DD', border: '1px solid #F1DDB2', borderRadius: 12, padding: '12px 14px' }}>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: '#222222' }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: '#222222' }}>
                     {label}: every {line.every ?? '—'} → {line.deductDays ?? '—'} paid {line.deductDays === 1 ? 'day' : 'days'}
                   </div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: '#A8475F', marginTop: 4 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: '#A8475F', marginTop: 4 }}>
                     Total deducted days → {fmt(line.days)}
                   </div>
                 </div>
                 {!days ? (
-                  <div style={{ padding: '12px 4px', color: '#717171', fontSize: 14 }}>{error ? '' : 'Loading the days…'}</div>
+                  <div style={{ padding: '12px 4px', color: '#717171', fontSize: 13 }}>{error ? '' : 'Loading the days…'}</div>
                 ) : days.length === 0 ? (
-                  <div style={{ padding: '12px 4px', color: '#717171', fontSize: 14 }}>No matching days on the calendar.</div>
+                  <div style={{ padding: '12px 4px', color: '#717171', fontSize: 13 }}>No matching days on the calendar.</div>
                 ) : (
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15, marginTop: 8 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, marginTop: 8 }}>
                     <tbody>
                       {days.map((d) => (
                         <tr key={d.date}>
-                          <td style={{ padding: '9px 4px', borderBottom: '1px solid #F4F4F6', fontWeight: 600, width: 150 }}>{dayLabel(d.date)}</td>
+                          <td style={{ padding: '9px 4px', borderBottom: '1px solid #F4F4F6', fontWeight: 400, width: 150 }}>{dayLabel(d.date)}</td>
                           <td style={{ padding: '9px 4px', borderBottom: '1px solid #F4F4F6', color: '#717171' }}>
                             {trigger === 'late' && `In at ${clock(d.punchIn)} · late by ${mins(d.lateByMinutes)}`}
                             {trigger === 'early' && `Out at ${clock(d.punchOut)} · left ${mins(d.earlyByMinutes ?? 0)} early`}

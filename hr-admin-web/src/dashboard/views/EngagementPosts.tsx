@@ -97,10 +97,10 @@ const listButton = (bg: string, color = '#fff'): CSSProperties => ({
   border: 'none',
   background: bg,
   color,
-  borderRadius: 9,
+  borderRadius: 999,
   padding: '9px 14px',
-  fontSize: 14,
-  fontWeight: 700,
+  fontSize: 13,
+  fontWeight: 500,
   cursor: 'pointer',
 });
 
@@ -108,7 +108,7 @@ const capsLabel: CSSProperties = {
   fontFamily: SORA,
   fontSize: 11,
   lineHeight: '16.5px',
-  fontWeight: 600,
+  fontWeight: 400,
   letterSpacing: 0.9,
   color: C.tertiary,
   textTransform: 'uppercase',
@@ -165,12 +165,12 @@ export function EngagementPosts() {
             <div
               style={{
                 background: '#fff',
-                border: '1px solid #EBEBEB',
-                borderRadius: 14,
+                border: '1px solid transparent',
+                borderRadius: 16,
                 padding: '38px 20px',
                 textAlign: 'center',
                 color: '#717171',
-                fontSize: 14,
+                fontSize: 13, boxShadow: 'var(--shadow)',
               }}
             >
               Nothing published yet. A contest gives the feed something to play
@@ -185,22 +185,22 @@ export function EngagementPosts() {
                 key={post.id}
                 style={{
                   background: '#fff',
-                  border: '1px solid #EBEBEB',
-                  borderRadius: 14,
+                  border: '1px solid transparent',
+                  borderRadius: 16,
                   padding: 16,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 14,
+                  gap: 14, boxShadow: 'var(--shadow)',
                 }}
               >
-                <div style={{ fontSize: 22 }}>{post.tagIcon}</div>
+                <div style={{ fontSize: 19 }}>{post.tagIcon}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 500 }}>
                     {String(post.body.title ?? 'Caption this')}
                   </div>
                   <div
                     style={{
-                      fontSize: 12.5,
+                      fontSize: 12,
                       color: '#717171',
                       marginTop: 2,
                       overflow: 'hidden',
@@ -210,7 +210,7 @@ export function EngagementPosts() {
                   >
                     {String(post.body.task || post.body.question || '')}
                   </div>
-                  <div style={{ fontSize: 12, color: '#9197A2', marginTop: 5 }}>
+                  <div style={{ fontSize: 11.5, color: '#9197A2', marginTop: 5 }}>
                     {entries} {entries === 1 ? 'entry' : 'entries'} · {points} pts per vote
                     {post.body.closesAt
                       ? ` · closes ${IST_CLOSES.format(new Date(String(post.body.closesAt)))}`
@@ -358,7 +358,7 @@ function ContestComposer({ onPublished }: { onPublished: () => Promise<void> }) 
         overflow: 'hidden',
         background: C.surface,
         border: `1px solid ${C.border}`,
-        borderRadius: 24,
+        borderRadius: 'var(--r-lg)',
         padding: 20,
         fontFamily: SORA,
       }}
@@ -409,13 +409,13 @@ function ContestComposer({ onPublished }: { onPublished: () => Promise<void> }) 
           marginTop: 32,
           padding: 16,
           border: 'none',
-          borderRadius: 16,
+          borderRadius: 'var(--r-lg)',
           background: ready ? C.brand : C.muted,
           color: '#fff',
           fontFamily: SORA,
-          fontSize: 16,
+          fontSize: 14,
           lineHeight: '16.2px',
-          fontWeight: 600,
+          fontWeight: 400,
           letterSpacing: -0.16,
           cursor: ready ? 'pointer' : 'default',
         }}
@@ -476,9 +476,9 @@ function ContestPill({
       <img src={format.icon} alt="" width={24} height={24} style={{ objectFit: 'cover' }} />
       <span
         style={{
-          fontSize: 12,
+          fontSize: 11.5,
           lineHeight: '18px',
-          fontWeight: 700,
+          fontWeight: 500,
           letterSpacing: 0.3,
           textTransform: 'uppercase',
           color: selected ? C.brand : C.secondary,
@@ -511,8 +511,8 @@ function PointsField({
     border: 'none',
     background: 'transparent',
     color: C.brand,
-    fontSize: 18,
-    fontWeight: 600,
+    fontSize: 16,
+    fontWeight: 400,
     cursor: 'pointer',
     fontFamily: SORA,
   };
@@ -553,8 +553,8 @@ function PointsField({
               outline: 'none',
               textAlign: 'center',
               fontFamily: SORA,
-              fontSize: 15,
-              fontWeight: 700,
+              fontSize: 13.5,
+              fontWeight: 500,
               color: C.ink,
               background: 'transparent',
               MozAppearance: 'textfield',
@@ -660,7 +660,7 @@ function PreviewCard({
         boxSizing: 'border-box',
         overflow: 'hidden',
         background: C.card,
-        borderRadius: 20,
+        borderRadius: 'var(--r-lg)',
         boxShadow: '0 4px 16px rgba(109, 40, 217, 0.10)',
       }}
     >
@@ -687,9 +687,9 @@ function PreviewCard({
         <div style={{ flex: 1, minWidth: 0, marginLeft: 12 }}>
           <div
             style={{
-              fontSize: 16,
+              fontSize: 14,
               lineHeight: '24px',
-              fontWeight: 600,
+              fontWeight: 400,
               letterSpacing: -0.16,
               color: '#fff',
               whiteSpace: 'nowrap',
@@ -703,9 +703,9 @@ function PreviewCard({
             <img src={`${ICONS}/star.png`} alt="" width={14} height={14} style={{ objectFit: 'contain' }} />
             <span
               style={{
-                fontSize: 12,
+                fontSize: 11.5,
                 lineHeight: '16.2px',
-                fontWeight: 600,
+                fontWeight: 400,
                 letterSpacing: -0.16,
                 color: C.points,
                 whiteSpace: 'nowrap',
@@ -736,9 +736,9 @@ function PreviewCard({
               maxLength={400}
               placeholder="Post a photo of someone looking angry in the office."
               style={{
-                fontSize: 20,
+                fontSize: 17,
                 lineHeight: 1.26,
-                fontWeight: 600,
+                fontWeight: 400,
                 letterSpacing: -0.16,
                 color: C.onCard,
               }}
@@ -752,16 +752,16 @@ function PreviewCard({
             maxLength={80}
             singleLine
             placeholder={format.defaultTitle}
-            style={{ fontSize: 24, lineHeight: '28px', fontWeight: 700, color: '#fff' }}
+            style={{ fontSize: 21, lineHeight: '28px', fontWeight: 500, color: '#fff' }}
           />
         )}
         {format.type === 'most_likely' && (
           <div
             style={{
               paddingTop: 4,
-              fontSize: 12,
+              fontSize: 11.5,
               lineHeight: '16.2px',
-              fontWeight: 600,
+              fontWeight: 400,
               letterSpacing: -0.16,
               color: C.onCard,
             }}
@@ -879,7 +879,7 @@ function CaptionCarousel({ photoUrl, onPick }: { photoUrl: string | null; onPick
             height: 159 + 12,
             background: C.pickedRing,
             border: `6px solid ${C.pickedRing}`,
-            borderRadius: 18,
+            borderRadius: 'var(--r-lg)',
             overflow: 'hidden',
           }}
         >
@@ -921,9 +921,9 @@ function CaptionCarousel({ photoUrl, onPick }: { photoUrl: string | null; onPick
               right: 0,
               top: 90,
               textAlign: 'center',
-              fontSize: 12,
+              fontSize: 11.5,
               lineHeight: '13.333px',
-              fontWeight: 600,
+              fontWeight: 400,
               color: C.secondary,
             }}
           >
@@ -976,12 +976,12 @@ function CloseTimeSheet({
         onClick={() => onChoose(days)}
         style={{
           padding: '4px 14px',
-          borderRadius: 10,
+          borderRadius: 999,
           border: `1px solid ${C.brand}`,
           background: on ? C.brand : 'transparent',
           color: on ? '#fff' : C.brand,
           fontFamily: SORA,
-          fontSize: 16,
+          fontSize: 14,
           lineHeight: '22px',
           fontWeight: 400,
           letterSpacing: 0.4,
@@ -1025,7 +1025,7 @@ function CloseTimeSheet({
         <div style={{ padding: '8px 16px' }}>
           <div
             style={{
-              fontSize: 16,
+              fontSize: 14,
               lineHeight: '22px',
               fontWeight: 400,
               letterSpacing: 0.4,

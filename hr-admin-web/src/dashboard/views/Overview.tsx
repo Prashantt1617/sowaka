@@ -24,21 +24,21 @@ function StatCard({
         textAlign: 'left',
         cursor: 'pointer',
         background: '#fff',
-        border: '1px solid #EBEBEB',
-        borderRadius: 18,
+        border: '1px solid transparent',
+        borderRadius: 'var(--r-lg)',
         padding: 20,
         display: 'flex',
         flexDirection: 'column',
-        gap: 14,
+        gap: 14, boxShadow: 'var(--shadow)',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ width: 38, height: 38, borderRadius: 11, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</div>
+        <div style={{ width: 38, height: 38, borderRadius: 12, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</div>
         <IconChevronRight />
       </div>
       <div>
-        <div style={{ fontSize: 34.5, fontWeight: 800, letterSpacing: '-1px', lineHeight: 1 }}>{value}</div>
-        <div style={{ fontSize: 16, color: '#717171', fontWeight: 600, marginTop: 5 }}>{label}</div>
+        <div style={{ fontSize: 30, fontWeight: 600, letterSpacing: '-1px', lineHeight: 1 }}>{value}</div>
+        <div style={{ fontSize: 14, color: '#717171', fontWeight: 400, marginTop: 5 }}>{label}</div>
       </div>
     </button>
   );
@@ -81,17 +81,17 @@ export function Overview() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, alignItems: 'start' }}>
         {/* On leave this week */}
-        <div style={{ background: '#fff', border: '1px solid #EBEBEB', borderRadius: 18, padding: '18px 20px' }}>
+        <div style={{ background: '#fff', border: '1px solid transparent', borderRadius: 'var(--r-lg)', padding: '18px 20px', boxShadow: 'var(--shadow)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div style={{ fontSize: 16, fontWeight: 800 }}>On leave this week</div>
-            <button onClick={() => s.setView('leave')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: '#0571A6' }}>View all</button>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>On leave this week</div>
+            <button onClick={() => s.setView('leave')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, color: '#0571A6' }}>View all</button>
           </div>
           {weekRows.map((w) => (
             <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0', borderBottom: '1px solid #F0F0F2' }}>
               <Avatar name={w.name} size={34} font={12} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>{w.name}</div>
-                <div style={{ fontSize: 14, color: '#717171', fontWeight: 500, marginTop: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 500 }}>{w.name}</div>
+                <div style={{ fontSize: 13, color: '#717171', fontWeight: 400, marginTop: 1 }}>
                   {w.from === w.to ? w.from : `${w.from} – ${w.to}`} · {w.days}
                 </div>
               </div>
@@ -101,17 +101,17 @@ export function Overview() {
         </div>
 
         {/* Overtime requests */}
-        <div style={{ background: '#fff', border: '1px solid #EBEBEB', borderRadius: 18, padding: '18px 20px' }}>
+        <div style={{ background: '#fff', border: '1px solid transparent', borderRadius: 'var(--r-lg)', padding: '18px 20px', boxShadow: 'var(--shadow)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div style={{ fontSize: 16, fontWeight: 800 }}>Overtime requests</div>
-            <button onClick={() => s.setView('overtime')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: '#0571A6' }}>View all</button>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>Overtime requests</div>
+            <button onClick={() => s.setView('overtime')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, color: '#0571A6' }}>View all</button>
           </div>
           {ovOvertime.map((o) => (
             <div key={o.id} onClick={() => s.goOvertimeRow(o.id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0', borderBottom: '1px solid #F0F0F2', cursor: 'pointer' }}>
               <Avatar name={o.name} size={34} font={12} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>{o.name}</div>
-                <div style={{ fontSize: 14, color: '#717171', fontWeight: 500, marginTop: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 500 }}>{o.name}</div>
+                <div style={{ fontSize: 13, color: '#717171', fontWeight: 400, marginTop: 1 }}>
                   {o.duration} · {o.otDate} ({o.day})
                 </div>
               </div>

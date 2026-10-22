@@ -160,7 +160,7 @@ export function KpiParameters() {
       )}
 
       <Card>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
           <thead>
             <tr>
               <Th width="28%">Parameter</Th>
@@ -179,10 +179,10 @@ export function KpiParameters() {
                   </Td>
                   <Td muted>{r.description || '—'}</Td>
                   <Td>
-                    <span style={{ fontWeight: 700, color: u.employees ? '#222222' : '#9197A2', fontVariantNumeric: 'tabular-nums' }}>
+                    <span style={{ fontWeight: 500, color: u.employees ? '#222222' : '#9197A2', fontVariantNumeric: 'tabular-nums' }}>
                       {u.employees}
                     </span>
-                    <span style={{ fontSize: 14, color: '#9197A2' }}>
+                    <span style={{ fontSize: 13, color: '#9197A2' }}>
                       {u.employees === 1 ? ' employee' : ' employees'}
                     </span>
                   </Td>
@@ -196,13 +196,13 @@ export function KpiParameters() {
             })}
             {!loading && visible.length === 0 && (
               <tr>
-                <td colSpan={4} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 15 }}>
+                <td colSpan={4} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 13.5 }}>
                   {q ? 'No parameters match your search.' : 'No parameters yet. Add one to start building templates.'}
                 </td>
               </tr>
             )}
             {loading && (
-              <tr><td colSpan={4} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 15 }}>Loading…</td></tr>
+              <tr><td colSpan={4} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 13.5 }}>Loading…</td></tr>
             )}
           </tbody>
         </table>
@@ -314,10 +314,10 @@ function ParameterDetail({
             <strong>Change scheduled for {periodLabel(param.pendingEdit.effectiveFrom)}.</strong> The
             wording below is what managers see until then.
             <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid #ECD9B4' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>New guidance</div>
-              <div style={{ fontSize: 14, lineHeight: 1.55 }}>{param.pendingEdit.description || '—'}</div>
+              <div style={{ fontSize: 12.5, fontWeight: 500, marginBottom: 2 }}>New guidance</div>
+              <div style={{ fontSize: 13, lineHeight: 1.55 }}>{param.pendingEdit.description || '—'}</div>
             </div>
-            <button onClick={dropEdit} style={{ ...ghostBtn, padding: '6px 12px', fontSize: 14, marginTop: 11 }}>
+            <button onClick={dropEdit} style={{ ...ghostBtn, padding: '6px 12px', fontSize: 13, marginTop: 11 }}>
               Cancel scheduled change
             </button>
           </div>
@@ -348,7 +348,7 @@ function ParameterDetail({
 
         {showTemplates && templates.length > 0 && (
           <div style={{ marginTop: 12, border: '1px solid #EBEBEB', borderRadius: 12, overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
               <thead>
                 <tr>
                   <Th>Template</Th>
@@ -360,21 +360,21 @@ function ParameterDetail({
                 {templates.map((t) => (
                   <tr key={t.id}>
                     <Td>
-                      <span style={{ fontWeight: 700, color: '#0571A6' }}>{t.name}</span>
+                      <span style={{ fontWeight: 500, color: '#0571A6' }}>{t.name}</span>
                       {t.description && (
-                        <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>{t.description}</div>
+                        <div style={{ fontSize: 12.5, color: '#717171', marginTop: 2 }}>{t.description}</div>
                       )}
                     </Td>
                     <Td right>
                       {/* What this parameter is worth inside that template —
                           the same parameter can count for more in one set. */}
-                      <span style={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                      <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
                         {t.weights[param.id] ?? 0}%
                       </span>
                     </Td>
                     <Td right muted>
                       <span style={{ fontVariantNumeric: 'tabular-nums' }}>{t.employeeCount}</span>
-                      <span style={{ fontSize: 14, color: '#9197A2' }}> employees</span>
+                      <span style={{ fontSize: 13, color: '#9197A2' }}> employees</span>
                     </Td>
                   </tr>
                 ))}
@@ -389,7 +389,7 @@ function ParameterDetail({
           </div>
         )}
 
-        <div style={{ marginTop: 16, paddingTop: 13, borderTop: '1px solid #EBEBEB', fontSize: 13, color: '#9197A2', lineHeight: 1.5 }}>
+        <div style={{ marginTop: 16, paddingTop: 13, borderTop: '1px solid #EBEBEB', fontSize: 12.5, color: '#9197A2', lineHeight: 1.5 }}>
           Created by <strong style={{ color: '#717171' }}>{param.createdByName ?? 'Unknown'}</strong>
           {param.createdAt && ` on ${fmtCreated(param.createdAt)}`}
         </div>
@@ -430,9 +430,9 @@ function fmtCreated(iso: string): string {
 function ReadRow({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 5, color: '#484848' }}>{label}</div>
-      <div style={{ fontSize: 16, color: '#222222', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{value}</div>
-      {hint && <div style={{ fontSize: 12, color: '#9197A2', marginTop: 5, lineHeight: 1.45 }}>{hint}</div>}
+      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 5, color: '#484848' }}>{label}</div>
+      <div style={{ fontSize: 14, color: '#222222', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{value}</div>
+      {hint && <div style={{ fontSize: 11.5, color: '#9197A2', marginTop: 5, lineHeight: 1.45 }}>{hint}</div>}
     </div>
   );
 }
@@ -448,10 +448,10 @@ function Stat({
 }) {
   const body = (
     <>
-      <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.5px', fontVariantNumeric: 'tabular-nums', color: onClick ? '#0571A6' : '#222222' }}>
+      <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.5px', fontVariantNumeric: 'tabular-nums', color: onClick ? '#0571A6' : '#222222' }}>
         {value}
       </div>
-      <div style={{ fontSize: 13, color: '#717171', fontWeight: 600, marginTop: 2 }}>
+      <div style={{ fontSize: 12.5, color: '#717171', fontWeight: 400, marginTop: 2 }}>
         {label}{onClick && <span style={{ color: '#0571A6' }}> {open ? '▴' : '▾'}</span>}
       </div>
     </>
@@ -488,7 +488,7 @@ function AddParameterPage({
       width={820}
       actions={
         <>
-          <span style={{ fontSize: 13, color: '#A8475F' }}>* indicates mandatory fields</span>
+          <span style={{ fontSize: 12.5, color: '#A8475F' }}>* indicates mandatory fields</span>
           <button onClick={onSave} style={{ ...primaryBtn, marginLeft: 'auto' }}>Save</button>
         </>
       }

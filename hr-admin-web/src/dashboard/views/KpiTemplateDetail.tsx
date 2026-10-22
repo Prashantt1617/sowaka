@@ -64,7 +64,7 @@ export function TemplateDetailModal({
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 18, alignItems: 'start' }}>
         <div style={panelCard}>
           <div style={panelTitle}>Parameters and weights</div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
             <thead>
               <tr>
                 <Th>Parameter</Th>
@@ -79,13 +79,13 @@ export function TemplateDetailModal({
                 return (
                   <tr key={id}>
                     <Td top>
-                      <div style={{ fontWeight: 700 }}>{p?.title ?? 'Removed parameter'}</div>
+                      <div style={{ fontWeight: 500 }}>{p?.title ?? 'Removed parameter'}</div>
                       {p?.description && (
-                        <div style={{ fontSize: 13.5, color: '#717171', marginTop: 2, lineHeight: 1.45 }}>{p.description}</div>
+                        <div style={{ fontSize: 12.5, color: '#717171', marginTop: 2, lineHeight: 1.45 }}>{p.description}</div>
                       )}
                     </Td>
                     <Td top right>
-                      <span style={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{w}%</span>
+                      <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{w}%</span>
                     </Td>
                     <Td top right>
                       <span style={{ color: '#717171', fontVariantNumeric: 'tabular-nums' }}>
@@ -96,9 +96,9 @@ export function TemplateDetailModal({
                 );
               })}
               <tr>
-                <Td><span style={{ fontWeight: 700, color: '#717171' }}>Total</span></Td>
-                <Td right><span style={{ fontWeight: 800, color: '#4F7A52' }}>100%</span></Td>
-                <Td right><span style={{ fontWeight: 800 }}>5.00</span></Td>
+                <Td><span style={{ fontWeight: 500, color: '#717171' }}>Total</span></Td>
+                <Td right><span style={{ fontWeight: 600, color: '#4F7A52' }}>100%</span></Td>
+                <Td right><span style={{ fontWeight: 600 }}>5.00</span></Td>
               </tr>
             </tbody>
           </table>
@@ -107,13 +107,13 @@ export function TemplateDetailModal({
         <div>
           <div style={panelCard}>
             <div style={panelTitle}>Usage</div>
-            <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.6px', fontVariantNumeric: 'tabular-nums' }}>
+            <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-.6px', fontVariantNumeric: 'tabular-nums' }}>
               {template.employeeCount}
             </div>
-            <div style={{ fontSize: 13, color: '#717171', fontWeight: 600, marginTop: 2 }}>
+            <div style={{ fontSize: 12.5, color: '#717171', fontWeight: 400, marginTop: 2 }}>
               employees on it this cycle
             </div>
-            <div style={{ fontSize: 13, color: '#9197A2', marginTop: 10, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 10, lineHeight: 1.5 }}>
             </div>
           </div>
 

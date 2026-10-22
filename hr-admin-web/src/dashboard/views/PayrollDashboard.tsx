@@ -63,7 +63,7 @@ export function PayrollDashboard() {
   return (
     <div style={{ display: 'grid', gap: 18 }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: '#484848' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#484848' }}>
           <input type="checkbox" checked={includeDrafts} onChange={(e) => setIncludeDrafts(e.target.checked)} /> Include draft runs in the figures
         </label>
       </div>
@@ -72,7 +72,7 @@ export function PayrollDashboard() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap' }}>
           <div style={{ minWidth: 200, flex: 1 }}>
             <div style={label}>Pay run</div>
-            <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4 }}>{monthLabel(run.period)} <span style={{ ...pill, background: st.bg, color: st.fg }}>{st.label}</span></div>
+            <div style={{ fontSize: 17, fontWeight: 600, marginTop: 4 }}>{monthLabel(run.period)} <span style={{ ...pill, background: st.bg, color: st.fg }}>{st.label}</span></div>
           </div>
           <Stat title="Employees" value={run.status === 'not_started' ? '—' : String(run.employees)} />
           <Stat title="Net pay" value={run.status === 'not_started' ? '—' : money(run.netPayPaise)} />
@@ -108,7 +108,7 @@ export function PayrollDashboard() {
           <Card>
             <CardHead title="To do" />
             <div style={{ padding: '6px 22px 16px' }}>
-              {data.todo.pendingClaims + data.todo.runsAwaitingApproval === 0 ? <div style={{ color: '#717171', fontSize: 14.5, padding: '8px 0' }}>Nothing waiting.</div> : (
+              {data.todo.pendingClaims + data.todo.runsAwaitingApproval === 0 ? <div style={{ color: '#717171', fontSize: 13, padding: '8px 0' }}>Nothing waiting.</div> : (
                 <>
                   {data.todo.runsAwaitingApproval > 0 && <Row label="Runs awaiting approval" value={data.todo.runsAwaitingApproval} onClick={() => s.setView('payruns')} />}
                   {data.todo.pendingClaims > 0 && <Row label="Reimbursement claims to review" value={data.todo.pendingClaims} onClick={() => s.setView('reimbursements')} />}
@@ -126,7 +126,7 @@ export function PayrollDashboard() {
           </select>
         } />
         <CostChart months={data.cost.months} />
-        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', padding: '0 22px 18px', fontSize: 13.5, color: '#484848' }}>
+        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', padding: '0 22px 18px', fontSize: 12.5, color: '#484848' }}>
           {SERIES.map((x) => <span key={x.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 11, height: 11, borderRadius: 3, background: x.color }} />{x.label}</span>)}
           <span style={{ color: '#9197A2' }}>{data.cost.label} · finished runs{includeDrafts ? ' and drafts' : ''}</span>
         </div>
@@ -185,20 +185,20 @@ function CostChart({ months }: { months: PayrollDashboardReport['cost']['months'
 function CardHead({ title, right }: { title: string; right?: ReactNode }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', padding: '14px 22px', borderBottom: '1px solid #EBEBEB' }}>
-      <div style={{ fontSize: 16.5, fontWeight: 800, flex: 1 }}>{title}</div>
-      {right && <div style={{ fontSize: 13.5, color: '#717171' }}>{right}</div>}
+      <div style={{ fontSize: 14.5, fontWeight: 600, flex: 1 }}>{title}</div>
+      {right && <div style={{ fontSize: 12.5, color: '#717171' }}>{right}</div>}
     </div>
   );
 }
 function Stat({ title, value }: { title: string; value: string }) {
-  return <div><div style={label}>{title}</div><div style={{ fontSize: 17, fontWeight: 700, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</div></div>;
+  return <div><div style={label}>{title}</div><div style={{ fontSize: 15, fontWeight: 500, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</div></div>;
 }
 function Due({ title, sub, value, onView }: { title: string; sub: string; value: number; onView: () => void }) {
   return (
     <div style={{ padding: '16px 22px', borderRight: '1px solid #F4F4F6' }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: '#484848' }}>{title}</div>
-      <div style={{ fontSize: 12, color: '#9197A2', marginTop: 2 }}>{sub}</div>
-      <div style={{ fontSize: 20, fontWeight: 800, margin: '8px 0 6px', fontVariantNumeric: 'tabular-nums' }}>{money(value)}</div>
+      <div style={{ fontSize: 13, fontWeight: 500, color: '#484848' }}>{title}</div>
+      <div style={{ fontSize: 11.5, color: '#9197A2', marginTop: 2 }}>{sub}</div>
+      <div style={{ fontSize: 17, fontWeight: 600, margin: '8px 0 6px', fontVariantNumeric: 'tabular-nums' }}>{money(value)}</div>
       <button onClick={onView} style={link}>View details</button>
     </div>
   );
@@ -206,14 +206,14 @@ function Due({ title, sub, value, onView }: { title: string; sub: string; value:
 function Row({ label: text, value, warn, onClick }: { label: string; value: number; warn?: boolean; onClick?: () => void }) {
   return (
     <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #F4F4F6', cursor: onClick ? 'pointer' : undefined }}>
-      <span style={{ flex: 1, fontSize: 14.5, color: '#484848' }}>{text}</span>
-      <strong style={{ fontSize: 16, color: warn ? '#C4382E' : '#222222', fontVariantNumeric: 'tabular-nums' }}>{value}</strong>
+      <span style={{ flex: 1, fontSize: 13, color: '#484848' }}>{text}</span>
+      <strong style={{ fontSize: 14, color: warn ? '#C4382E' : '#222222', fontVariantNumeric: 'tabular-nums' }}>{value}</strong>
     </div>
   );
 }
 
-const label: CSSProperties = { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#9197A2' };
-const pill: CSSProperties = { fontSize: 12.5, fontWeight: 700, borderRadius: 7, padding: '3px 9px', marginLeft: 8, verticalAlign: 'middle' };
-const primary: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const link: CSSProperties = { background: 'none', border: 'none', padding: 0, color: '#0571A6', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', fontFamily: 'inherit' };
-const select: CSSProperties = { padding: '6px 10px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', background: '#fff' };
+const label: CSSProperties = { fontSize: 11.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.04em', color: '#9197A2' };
+const pill: CSSProperties = { fontSize: 12, fontWeight: 500, borderRadius: 7, padding: '3px 9px', marginLeft: 8, verticalAlign: 'middle' };
+const primary: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const link: CSSProperties = { background: 'none', border: 'none', padding: 0, color: '#0571A6', fontWeight: 500, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' };
+const select: CSSProperties = { padding: '6px 10px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 12.5, fontFamily: 'inherit', background: '#fff' };

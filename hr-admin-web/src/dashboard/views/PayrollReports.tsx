@@ -110,9 +110,9 @@ export function PayrollReports() {
       <Card style={{ padding: '10px 0' }}>
         {GROUPS.map((g) => (
           <div key={g.title} style={{ padding: '6px 0' }}>
-            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: '#9197A2', padding: '6px 18px' }}>{g.title}</div>
+            <div style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#9197A2', padding: '6px 18px' }}>{g.title}</div>
             {g.items.map((i) => (
-              <button key={i.key} onClick={() => setActive(i.key)} style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', background: active === i.key ? '#E7F1FB' : 'none', color: active === i.key ? '#0571A6' : '#222222', fontWeight: active === i.key ? 700 : 500, fontSize: 15, padding: '9px 18px', cursor: 'pointer', fontFamily: 'inherit' }}>{i.label}</button>
+              <button key={i.key} onClick={() => setActive(i.key)} style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', background: active === i.key ? '#E7F1FB' : 'none', color: active === i.key ? '#0571A6' : '#222222', fontWeight: active === i.key ? 700 : 500, fontSize: 13.5, padding: '9px 18px', cursor: 'pointer', fontFamily: 'inherit' }}>{i.label}</button>
             ))}
           </div>
         ))}
@@ -121,8 +121,8 @@ export function PayrollReports() {
         <Card style={{ padding: '16px 20px', marginBottom: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: 220 }}>
-              <div style={{ fontSize: 19, fontWeight: 800 }}>{meta.label}</div>
-              <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>{meta.hint}</div>
+              <div style={{ fontSize: 16.5, fontWeight: 600 }}>{meta.label}</div>
+              <div style={{ fontSize: 12.5, color: '#717171', marginTop: 2 }}>{meta.hint}</div>
             </div>
             {filters}
             {active !== 'payments' && (
@@ -189,11 +189,11 @@ function ReportBody({ kind, data }: { kind: ReportKey; data: unknown }) {
               <tr key={r.employeeId + r.name}>
                 <td style={td}><strong>{r.employeeId}</strong> {r.name}</td>
                 {c.earnings.map((x) => <td key={x.code} style={num}>{money(r.earnings[x.code] ?? 0)}</td>)}
-                <td style={{ ...num, fontWeight: 700 }}>{money(r.grossPaise)}</td>
+                <td style={{ ...num, fontWeight: 500 }}>{money(r.grossPaise)}</td>
                 {c.deductions.map((x) => <td key={x.key} style={num}>{money(r.deductions[x.key] ?? 0)}</td>)}
                 <td style={num}>{money(r.incomeTaxPaise)}</td>
                 <td style={num}>{money(r.reimbursementsPaise)}</td>
-                <td style={{ ...num, fontWeight: 700 }}>{money(r.netPayPaise)}</td>
+                <td style={{ ...num, fontWeight: 500 }}>{money(r.netPayPaise)}</td>
               </tr>
             ))}
             <tr>
@@ -219,7 +219,7 @@ function ReportBody({ kind, data }: { kind: ReportKey; data: unknown }) {
         <table style={table}>
           <thead><tr><th style={th}>Liability</th><th style={{ ...th, textAlign: 'right' }}>Employee contribution</th><th style={{ ...th, textAlign: 'right' }}>Employer contribution</th><th style={{ ...th, textAlign: 'right' }}>Total</th></tr></thead>
           <tbody>
-            {d.rows.map((r) => <tr key={r.key}><td style={td}>{r.name}</td><td style={num}>{money(r.employeePaise)}</td><td style={num}>{money(r.employerPaise)}</td><td style={{ ...num, fontWeight: 700 }}>{money(r.totalPaise)}</td></tr>)}
+            {d.rows.map((r) => <tr key={r.key}><td style={td}>{r.name}</td><td style={num}>{money(r.employeePaise)}</td><td style={num}>{money(r.employerPaise)}</td><td style={{ ...num, fontWeight: 500 }}>{money(r.totalPaise)}</td></tr>)}
             <tr><td style={{ ...td, ...grand }}>Total</td><td style={{ ...num, ...grand }}>{money(d.rows.reduce((t, r) => t + r.employeePaise, 0))}</td><td style={{ ...num, ...grand }}>{money(d.rows.reduce((t, r) => t + r.employerPaise, 0))}</td><td style={{ ...num, ...grand }}>{money(d.totalPaise)}</td></tr>
           </tbody>
         </table>
@@ -267,9 +267,9 @@ function ReportBody({ kind, data }: { kind: ReportKey; data: unknown }) {
 function SectionRows({ title, rows, totalLabel, totalPaise }: { title: string; rows: { name: string; paise: number }[]; totalLabel: string; totalPaise: number }) {
   return (
     <>
-      <tr><td style={{ ...td, fontWeight: 800, background: '#FBFBFC' }} colSpan={2}>{title}</td></tr>
+      <tr><td style={{ ...td, fontWeight: 600, background: '#FBFBFC' }} colSpan={2}>{title}</td></tr>
       {rows.map((r) => <tr key={r.name}><td style={{ ...td, paddingLeft: 34 }}>{r.name}</td><td style={num}>{money(r.paise)}</td></tr>)}
-      <tr><td style={{ ...td, fontWeight: 700, textAlign: 'right' }}>{totalLabel}</td><td style={{ ...num, fontWeight: 700 }}>{money(totalPaise)}</td></tr>
+      <tr><td style={{ ...td, fontWeight: 500, textAlign: 'right' }}>{totalLabel}</td><td style={{ ...num, fontWeight: 500 }}>{money(totalPaise)}</td></tr>
     </>
   );
 }
@@ -315,12 +315,12 @@ export function exportReport(kind: ReportKey, data: unknown) {
   }
 }
 
-const table: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14.5 };
-const th: CSSProperties = { textAlign: 'left', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171', fontWeight: 700, padding: '11px 16px', borderBottom: '1px solid #EBEBEB', background: '#FBFBFC', whiteSpace: 'nowrap' };
+const table: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
+const th: CSSProperties = { textAlign: 'left', fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '11px 16px', borderBottom: '1px solid #EBEBEB', background: '#FBFBFC', whiteSpace: 'nowrap' };
 const td: CSSProperties = { padding: '9px 16px', borderBottom: '1px solid #F4F4F6', verticalAlign: 'middle' };
 const num: CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
-const grand: CSSProperties = { fontWeight: 800, borderTop: '2px solid #EBEBEB', background: '#FBFBFC' };
-const note: CSSProperties = { padding: '10px 16px', fontSize: 13, color: '#717171' };
-const filterLabel: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12.5, color: '#717171', fontWeight: 600 };
-const inputS: CSSProperties = { padding: '7px 10px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 14.5, fontFamily: 'inherit', background: '#fff', color: '#222222' };
-const exportBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 14px', borderRadius: 10, fontSize: 14.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
+const grand: CSSProperties = { fontWeight: 600, borderTop: '2px solid #EBEBEB', background: '#FBFBFC' };
+const note: CSSProperties = { padding: '10px 16px', fontSize: 12.5, color: '#717171' };
+const filterLabel: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#717171', fontWeight: 400 };
+const inputS: CSSProperties = { padding: '7px 10px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: '#fff', color: '#222222' };
+const exportBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };

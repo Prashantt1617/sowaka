@@ -121,7 +121,7 @@ export function HolidayBank() {
           <option value="All">All locations</option>
           {locations.map((l) => <option key={l} value={l}>{label(l)}</option>)}
         </select>
-        <div style={{ fontSize: 14, color: '#717171' }}>Calendar year {year}</div>
+        <div style={{ fontSize: 13, color: '#717171' }}>Calendar year {year}</div>
         <div style={{ marginLeft: 'auto' }}>
           <button onClick={() => (adding ? cancelAdd() : setAdding(true))} style={primaryBtn}>
             <IconPlus size={15} /> Add holiday
@@ -129,14 +129,14 @@ export function HolidayBank() {
         </div>
       </div>
 
-      <div style={{ fontSize: 13, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+      <div style={{ fontSize: 12.5, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
         This is the org-wide holiday master. Each holiday is assigned to employees by their <strong>work location</strong> — “{ALL}” applies to everyone. A holiday is a non-working day the same way a week-off is: leave spanning one is not charged for it.
       </div>
 
       {adding && (
         <Card style={{ padding: '18px 20px', marginBottom: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
-            <div style={{ fontSize: 16, fontWeight: 800, color: '#222222' }}>New holiday</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#222222' }}>New holiday</div>
             <button onClick={cancelAdd} aria-label="Close" title="Close" style={closeBtn}>×</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '170px 1fr 200px 150px auto auto', gap: 12, alignItems: 'end' }}>
@@ -183,7 +183,7 @@ export function HolidayBank() {
                   <Td><strong style={{ color: '#222222' }}>{h.name}</strong></Td>
                   <Td muted>{label(h.state)}</Td>
                   <Td>
-                    <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: TYPE_TONE[h.type].bg, color: TYPE_TONE[h.type].fg }}>{h.type}</span>
+                    <span style={{ fontSize: 11.5, fontWeight: 500, padding: '3px 10px', borderRadius: 'var(--r-lg)', background: TYPE_TONE[h.type].bg, color: TYPE_TONE[h.type].fg }}>{h.type}</span>
                   </Td>
                   <Td>
                     <button onClick={() => void remove(h)} style={removeBtn} title={`Remove ${h.name}`}>Remove</button>
@@ -201,22 +201,22 @@ export function HolidayBank() {
 function Field({ label: text, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <label style={{ display: 'block', fontSize: 13, fontWeight: 700, marginBottom: 5, color: '#484848' }}>{text}</label>
+      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 500, marginBottom: 5, color: '#484848' }}>{text}</label>
       {children}
     </div>
   );
 }
 function Th({ children }: { children: ReactNode }) {
-  return <th style={{ textAlign: 'left', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171', fontWeight: 700, padding: '11px 16px', borderBottom: '1px solid #EBEBEB' }}>{children}</th>;
+  return <th style={{ textAlign: 'left', fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '11px 16px', borderBottom: '1px solid #EBEBEB', background: 'var(--surface-2)' }}>{children}</th>;
 }
 function Td({ children, muted, mono }: { children: ReactNode; muted?: boolean; mono?: boolean }) {
   return <td style={{ padding: '12px 16px', borderBottom: '1px solid #F0F0F2', color: muted ? '#717171' : '#222222', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
 }
 
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 16 };
-const selectStyle: CSSProperties = { padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222', cursor: 'pointer' };
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 15, fontFamily: 'inherit', background: '#fff', color: '#222222' };
-const removeBtn: CSSProperties = { background: 'none', border: 'none', padding: '4px 6px', font: 'inherit', fontSize: 14, fontWeight: 700, color: '#C4382E', cursor: 'pointer' };
-const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: 'pointer' };
-const closeBtn: CSSProperties = { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 26, lineHeight: 1, color: '#9197A2', cursor: 'pointer', padding: '0 4px' };
+const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
+const selectStyle: CSSProperties = { padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 999, fontSize: 14, fontFamily: 'inherit', background: '#fff', color: '#222222', cursor: 'pointer' };
+const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 13.5, fontFamily: 'inherit', background: '#fff', color: '#222222' };
+const removeBtn: CSSProperties = { background: 'none', border: 'none', padding: '4px 6px', font: 'inherit', fontSize: 13, fontWeight: 500, color: '#C4382E', cursor: 'pointer' };
+const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer' };
+const closeBtn: CSSProperties = { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 22, lineHeight: 1, color: '#9197A2', cursor: 'pointer', padding: '0 4px' };

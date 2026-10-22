@@ -178,11 +178,11 @@ export function ShiftBulkAssign() {
         <div style={panelCard}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
             <div style={panelTitle}>Who are you putting on a shift?</div>
-            <div style={{ marginLeft: 'auto', fontSize: 14, fontWeight: 700, color: emps.length === 0 ? '#9197A2' : preview.length ? '#4F7A52' : '#A8475F' }}>
+            <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 500, color: emps.length === 0 ? '#9197A2' : preview.length ? '#4F7A52' : '#A8475F' }}>
               {emps.length === 0 ? 'Loading employees…' : `${preview.length} of ${emps.length} employees match`}
             </div>
           </div>
-          <div style={{ fontSize: 13, color: '#717171', marginBottom: 14, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12.5, color: '#717171', marginBottom: 14, lineHeight: 1.5 }}>
             Everyone not assigned to a shift follows the org's <strong>default</strong> template.
           </div>
 
@@ -224,14 +224,14 @@ export function ShiftBulkAssign() {
           )}
 
           <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #EBEBEB' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.03em', color: '#717171', marginBottom: 7 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: '#717171', marginBottom: 7 }}>
               RESULTING RULE
             </div>
             <code style={{ ...queryCode, display: 'block', padding: '11px 13px', background: '#F7F7F9', borderRadius: 10, lineHeight: 1.7 }}>
               {targetSummary(target, emps)}
             </code>
             {emptyRules.length > 0 && (
-              <div style={{ fontSize: 13, color: '#9A6B25', fontWeight: 600, marginTop: 9 }}>
+              <div style={{ fontSize: 12.5, color: '#9A6B25', fontWeight: 400, marginTop: 9 }}>
                 {emptyRules.map((f) => f.label).join(' and ')}{' '}
                 {emptyRules.length === 1 ? 'has' : 'have'} no value chosen yet, so{' '}
                 {emptyRules.length === 1 ? 'it is' : 'they are'} not narrowing anything.
@@ -256,7 +256,7 @@ export function ShiftBulkAssign() {
       {step === 'people' && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 11 }}>
-            <div style={{ fontSize: 16, color: '#717171', fontWeight: 600 }}>
+            <div style={{ fontSize: 14, color: '#717171', fontWeight: 400 }}>
               {chosen.size} of {members.length} selected
             </div>
             <button onClick={() => setChosen(new Set(members.map((m) => m.userId)))} style={smallBtn}>Select all</button>
@@ -287,7 +287,7 @@ export function ShiftBulkAssign() {
                     </Td>
                     <Td>
                       <strong>{m.name}</strong>
-                      {m.employeeId && <span style={{ color: '#9197A2', marginLeft: 8, fontSize: 13 }}>{m.employeeId}</span>}
+                      {m.employeeId && <span style={{ color: '#9197A2', marginLeft: 8, fontSize: 12.5 }}>{m.employeeId}</span>}
                     </Td>
                     <Td muted>{m.department || '—'}</Td>
                     <Td muted>{m.designation || '—'}</Td>
@@ -308,7 +308,7 @@ export function ShiftBulkAssign() {
           {members.length > PAGE && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
               <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} style={smallBtn}>← Previous</button>
-              <div style={{ fontSize: 14, color: '#717171' }}>Page {page + 1} of {pages} · {members.length} employees</div>
+              <div style={{ fontSize: 13, color: '#717171' }}>Page {page + 1} of {pages} · {members.length} employees</div>
               <button onClick={() => setPage((p) => Math.min(pages - 1, p + 1))} disabled={page >= pages - 1} style={smallBtn}>Next →</button>
             </div>
           )}
@@ -421,14 +421,14 @@ function Steps({ step, busy, onGo }: { step: Step; busy: boolean; onGo: (target:
             >
               <span style={{
                 width: 22, height: 22, borderRadius: '50%', display: 'flex',
-                alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800,
+                alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 600,
                 background: state === 'todo' ? '#F0F0F2' : '#0571A6',
                 color: state === 'todo' ? '#9197A2' : '#fff',
               }}>
                 {state === 'done' ? '✓' : i + 1}
               </span>
               <span style={{
-                fontSize: 15,
+                fontSize: 13.5,
                 fontWeight: state === 'now' ? 800 : 600,
                 color: state === 'now' ? '#222222' : state === 'todo' ? '#9197A2' : '#0571A6',
                 textDecoration: disabled ? 'none' : 'underline',
@@ -441,20 +441,20 @@ function Steps({ step, busy, onGo }: { step: Step; busy: boolean; onGo: (target:
           </span>
         );
       })}
-      {busy && <span style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>Working…</span>}
+      {busy && <span style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>Working…</span>}
     </div>
   );
 }
 
 function Th({ children, width, right }: { children: ReactNode; width?: number; right?: boolean }) {
-  return <th style={{ textAlign: right ? 'right' : 'left', width, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171', fontWeight: 700, padding: '11px 14px', borderBottom: '1px solid #EBEBEB' }}>{children}</th>;
+  return <th style={{ textAlign: right ? 'right' : 'left', width, fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '11px 14px', borderBottom: '1px solid #EBEBEB', background: 'var(--surface-2)' }}>{children}</th>;
 }
 function Td({ children, muted, right }: { children: ReactNode; muted?: boolean; right?: boolean }) {
   return <td style={{ padding: '12px 14px', textAlign: right ? 'right' : 'left', borderBottom: '1px solid #F0F0F2', color: muted ? '#717171' : '#222222' }}>{children}</td>;
 }
 
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 15 };
-const emptyCell: CSSProperties = { padding: '30px 14px', textAlign: 'center', color: '#717171', fontSize: 15 };
-const movingPill: CSSProperties = { fontSize: 12, fontWeight: 800, color: '#8A6D1F', background: '#FBF3DD', border: '1px solid #EFE0BC', borderRadius: 20, padding: '3px 10px', cursor: 'help' };
-const inactivePill: CSSProperties = { marginLeft: 8, fontSize: 11.5, fontWeight: 800, color: '#9197A2', background: '#EDEDF0', borderRadius: 20, padding: '2px 9px' };
-const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', color: '#0571A6', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' };
+const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13.5 };
+const emptyCell: CSSProperties = { padding: '30px 14px', textAlign: 'center', color: '#717171', fontSize: 13.5 };
+const movingPill: CSSProperties = { fontSize: 11.5, fontWeight: 600, color: '#8A6D1F', background: '#FBF3DD', border: '1px solid #EFE0BC', borderRadius: 'var(--r-lg)', padding: '3px 10px', cursor: 'help' };
+const inactivePill: CSSProperties = { marginLeft: 8, fontSize: 11.5, fontWeight: 600, color: '#9197A2', background: '#EDEDF0', borderRadius: 'var(--r-lg)', padding: '2px 9px' };
+const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', color: '#0571A6', fontWeight: 500, cursor: 'pointer', textDecoration: 'underline' };

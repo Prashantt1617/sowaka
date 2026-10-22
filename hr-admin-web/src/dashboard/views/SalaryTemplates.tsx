@@ -207,7 +207,7 @@ function FixedTags({ ph }: { ph?: PayHeadDTO }) {
   const tags = fixedTagsOf(ph);
   if (!tags.length) return null;
   return (
-    <div title="Fixed for this earning type" style={{ fontSize: 12.5, color: '#9197A2', marginTop: 3 }}>
+    <div title="Fixed for this earning type" style={{ fontSize: 12, color: '#9197A2', marginTop: 3 }}>
       Fixed: {tags.join(' · ')}
     </div>
   );
@@ -497,18 +497,18 @@ export function SalaryTemplates() {
         <Card style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 22px', borderBottom: '1px solid #EBEBEB' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-.2px', color: '#222222' }}>{t.name} - Salary Template</div>
-              <div style={{ fontSize: 13, color: '#9197A2', marginTop: 2 }}>
+              <div style={{ fontSize: 16.5, fontWeight: 500, letterSpacing: '-.2px', color: '#222222' }}>{t.name} - Salary Template</div>
+              <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 2 }}>
                 {t.description ? `${t.description} · ` : ''}Amounts shown for a sample CTC of ₹{rupees(rupeesToPaise(SAMPLE_CTC_RUPEES))} a year
               </div>
             </div>
             <StatusText on={t.active} />
-            <button onClick={editCurrent} style={{ ...primaryBtn, padding: '7px 14px', fontSize: 14 }}>Edit</button>
+            <button onClick={editCurrent} style={{ ...primaryBtn, padding: '7px 14px', fontSize: 13 }}>Edit</button>
             <TemplateMenu onDuplicate={duplicateCurrent} onExport={() => void exportEmployees(t)} />
-            <button onClick={() => setMode('list')} title="Close" style={{ ...ghostBtn, padding: '7px 11px', fontSize: 14, display: 'inline-flex' }}><IconClose size={14} /></button>
+            <button onClick={() => setMode('list')} title="Close" style={{ ...ghostBtn, padding: '7px 11px', fontSize: 13, display: 'inline-flex' }}><IconClose size={14} /></button>
           </div>
 
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <thead>
               <tr>
                 <th style={detTh}>Salary Components</th>
@@ -525,8 +525,8 @@ export function SalaryTemplates() {
                     return (
                       <tr key={comp.payHeadCode}>
                         <td style={detTd}>
-                          <div style={{ fontWeight: 600, color: '#222222' }}>{ph?.name ?? comp.payHeadCode}</div>
-                          <div style={{ fontSize: 12.5, color: '#717171', marginTop: 2 }}>{calcSubtitle(comp.calculation, ph, isBalancing, phByCode)}</div>
+                          <div style={{ fontWeight: 400, color: '#222222' }}>{ph?.name ?? comp.payHeadCode}</div>
+                          <div style={{ fontSize: 12, color: '#717171', marginTop: 2 }}>{calcSubtitle(comp.calculation, ph, isBalancing, phByCode)}</div>
                           <FixedTags ph={ph} />
                         </td>
                         <td style={numTd}>₹{rupees(amt.monthly)}</td>
@@ -539,14 +539,14 @@ export function SalaryTemplates() {
               {hasOneTime && (
                 <>
                   <tr>
-                    <td style={{ ...detTd, fontWeight: 700 }}>Fixed CTC <span style={{ fontWeight: 500, color: '#717171' }}>(Annual CTC - One Time Earnings)</span></td>
+                    <td style={{ ...detTd, fontWeight: 500 }}>Fixed CTC <span style={{ fontWeight: 400, color: '#717171' }}>(Annual CTC - One Time Earnings)</span></td>
                     <td style={numTd} />
                     <td style={numTd}>₹{rupees(detailComputed?.annualCtcPaise ?? 0)}</td>
                   </tr>
                   <GroupRows label={GROUP_LABEL.onetime} cols={3}>
                     {buckets.get('onetime')!.map(({ comp, ph }) => (
                       <tr key={comp.payHeadCode}>
-                        <td style={detTd}><div style={{ fontWeight: 600, color: '#222222' }}>{ph?.name ?? comp.payHeadCode}</div></td>
+                        <td style={detTd}><div style={{ fontWeight: 400, color: '#222222' }}>{ph?.name ?? comp.payHeadCode}</div></td>
                         <td style={numTd} />
                         <td style={numTd}>₹{rupees(resolve(comp.payHeadCode, comp.calculation).annual)}</td>
                       </tr>
@@ -561,7 +561,7 @@ export function SalaryTemplates() {
           <WagesSummary wages={t.statutoryWages ?? null} phByCode={phByCode} />
         </Card>
 
-        <div style={{ marginTop: 14, fontSize: 14, color: '#717171' }}>Paid days (attendance rules, paid leave, all days paid) are set in <strong>Paid Days Templates</strong>, per person.</div>
+        <div style={{ marginTop: 14, fontSize: 13, color: '#717171' }}>Paid days (attendance rules, paid leave, all days paid) are set in <strong>Paid Days Templates</strong>, per person.</div>
       </div>
     );
   }
@@ -597,7 +597,7 @@ export function SalaryTemplates() {
 
       <div style={{ overflowY: 'auto', minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 36px 18px', borderBottom: '1px solid #EBEBEB' }}>
-          <div style={{ fontSize: 26, fontWeight: 600, color: '#222222', letterSpacing: '-.2px' }}>{form.editingCode ? 'Edit Salary Template' : 'New Salary Template'}</div>
+          <div style={{ fontSize: 22, fontWeight: 400, color: '#222222', letterSpacing: '-.2px' }}>{form.editingCode ? 'Edit Salary Template' : 'New Salary Template'}</div>
           <button onClick={closeBuilder} title="Close" style={closeCircle}><IconClose size={16} /></button>
         </div>
 
@@ -612,12 +612,12 @@ export function SalaryTemplates() {
           <div style={builderCard}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap', padding: '26px 36px 20px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
-                <div style={{ fontSize: 16, fontWeight: 600, color: '#222222', width: 230 }}>Annual CTC</div>
+                <div style={{ fontSize: 14, fontWeight: 400, color: '#222222', width: 230 }}>Annual CTC</div>
                 <CtcInput value={form.sampleCtc} onChange={(v) => set('sampleCtc', v)} />
               </div>
-              <div style={{ fontSize: 12.5, color: '#9197A2', maxWidth: 360 }}>Used to preview the amounts below. Each person's own CTC is set when the template is assigned to them.</div>
+              <div style={{ fontSize: 12, color: '#9197A2', maxWidth: 360 }}>Used to preview the amounts below. Each person's own CTC is set when the template is assigned to them.</div>
               <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 18 }}>
-                <label style={{ ...checkRow, fontWeight: 600 }}>
+                <label style={{ ...checkRow, fontWeight: 400 }}>
                   Balancing component
                   <select value={form.balancingComponentCode} onChange={(e) => set('balancingComponentCode', e.target.value)} style={{ ...input, width: 200 }}>
                     <option value="">None</option>
@@ -629,7 +629,7 @@ export function SalaryTemplates() {
             </div>
 
             <div style={{ margin: '0 36px', border: '1px solid #EBEBEB', borderRadius: 8, overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
                 <thead>
                   <tr>
                     <th style={{ ...bldTh, width: '32%' }}>Salary Components</th>
@@ -651,11 +651,11 @@ export function SalaryTemplates() {
                         return (
                           <tr key={r.payHeadCode}>
                             <td style={bldTd}>
-                              <div style={{ fontWeight: 600, color: '#222222' }}>{ph?.name ?? r.payHeadCode}{isBalancing && <span title="Takes whatever is left of the monthly CTC" style={{ color: '#9197A2', marginLeft: 6, fontSize: 13 }}>ⓘ</span>}</div>
+                              <div style={{ fontWeight: 400, color: '#222222' }}>{ph?.name ?? r.payHeadCode}{isBalancing && <span title="Takes whatever is left of the monthly CTC" style={{ color: '#9197A2', marginLeft: 6, fontSize: 12.5 }}>ⓘ</span>}</div>
                               {ph?.category === 'reimbursement' && ph.maxClaimablePaise ? (
-                                <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>Max Limit : {rupees2(ph.maxClaimablePaise)}</div>
+                                <div style={{ fontSize: 12.5, color: '#717171', marginTop: 2 }}>Max Limit : {rupees2(ph.maxClaimablePaise)}</div>
                               ) : isBalancing ? (
-                                <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>Monthly CTC - Sum of all other components</div>
+                                <div style={{ fontSize: 12.5, color: '#717171', marginTop: 2 }}>Monthly CTC - Sum of all other components</div>
                               ) : null}
                               <FixedTags ph={ph} />
                               <PayslipLabel r={r} ph={ph} onChange={(patch) => setByCode(r.payHeadCode, patch)} />
@@ -750,12 +750,12 @@ function WagesCard({ wages, onChange, earnings, phByCode, pfWagePaise }: {
   const name = (code: string) => phByCode.get(code)?.name ?? code;
   return (
     <div style={{ border: '1px solid #EBEBEB', borderRadius: 8, padding: '16px 20px', background: '#fff' }}>
-      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase', color: '#717171' }}>PF and ESI wages</div>
-      <div style={{ fontSize: 13, color: '#9197A2', marginTop: 2 }}>Which earnings on this template count toward the PF and ESI wage. Left on the defaults, payroll works exactly as before.</div>
+      <div style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: '#717171' }}>PF and ESI wages</div>
+      <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 2 }}>Which earnings on this template count toward the PF and ESI wage. Left on the defaults, payroll works exactly as before.</div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 28, marginTop: 14 }}>
         <div>
-          <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6 }}>PF wage</div>
+          <div style={{ fontWeight: 400, fontSize: 13.5, marginBottom: 6 }}>PF wage</div>
           <label style={checkRow}><input type="radio" checked={!pfCustom} onChange={() => patch({ pfComponents: undefined })} /> Each component’s own “Consider for EPF”</label>
           <label style={checkRow}><input type="radio" checked={pfCustom} onChange={() => patch({ pfComponents: defaultPfCodes(earnings, phByCode) })} /> Choose for this template</label>
           <div style={{ marginLeft: 22, marginTop: 4 }}>
@@ -765,16 +765,16 @@ function WagesCard({ wages, onChange, earnings, phByCode, pfWagePaise }: {
               </label>
             ))}
           </div>
-          <div style={{ fontWeight: 600, fontSize: 15, margin: '12px 0 6px' }}>PF contribution</div>
+          <div style={{ fontWeight: 400, fontSize: 13.5, margin: '12px 0 6px' }}>PF contribution</div>
           <select value={w.pfWageMode ?? 'org'} onChange={(e) => patch({ pfWageMode: e.target.value === 'org' ? undefined : (e.target.value as 'actual' | 'ceiling') })} style={{ ...input, width: 340 }}>
             <option value="org">As set in Statutory Components</option>
             <option value="ceiling">12% of PF wage, capped at the ceiling</option>
             <option value="actual">12% of the actual PF wage (no cap)</option>
           </select>
-          {pfWagePaise !== undefined && <div style={{ fontSize: 12.5, color: '#717171', marginTop: 6 }}>PF wage at the preview CTC: ₹{rupees(pfWagePaise)} a month</div>}
+          {pfWagePaise !== undefined && <div style={{ fontSize: 12, color: '#717171', marginTop: 6 }}>PF wage at the preview CTC: ₹{rupees(pfWagePaise)} a month</div>}
         </div>
         <div>
-          <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6 }}>ESI wage</div>
+          <div style={{ fontWeight: 400, fontSize: 13.5, marginBottom: 6 }}>ESI wage</div>
           <label style={checkRow}><input type="radio" checked={!esiCustom} onChange={() => patch({ esiComponents: undefined })} /> Gross pay (every earning)</label>
           <label style={checkRow}><input type="radio" checked={esiCustom} onChange={() => patch({ esiComponents: earnings })} /> Choose for this template</label>
           <div style={{ marginLeft: 22, marginTop: 4 }}>
@@ -784,7 +784,7 @@ function WagesCard({ wages, onChange, earnings, phByCode, pfWagePaise }: {
               </label>
             ))}
           </div>
-          <div style={{ fontSize: 12.5, color: '#717171', marginTop: 6 }}>ESI applies while this wage is ₹21,000 a month or less, and is taken on it.</div>
+          <div style={{ fontSize: 12, color: '#717171', marginTop: 6 }}>ESI applies while this wage is ₹21,000 a month or less, and is taken on it.</div>
         </div>
       </div>
     </div>
@@ -796,7 +796,7 @@ function WagesSummary({ wages, phByCode }: { wages: TemplateStatutoryWages | nul
   const mode = wages?.pfWageMode === 'actual' ? 'on the actual wage' : wages?.pfWageMode === 'ceiling' ? 'capped at the ceiling' : 'as set in Statutory Components';
   const esi = wages?.esiComponents ? names(wages.esiComponents) : 'gross pay';
   return (
-    <div style={{ padding: '12px 20px', fontSize: 14, color: '#484848', borderTop: '1px solid #F0F0F2' }}>
+    <div style={{ padding: '12px 20px', fontSize: 13, color: '#484848', borderTop: '1px solid #F0F0F2' }}>
       <strong>PF wage:</strong> {pf} · PF {mode} · <strong>ESI wage:</strong> {esi}
     </div>
   );
@@ -807,14 +807,14 @@ function WagesSummary({ wages, phByCode }: { wages: TemplateStatutoryWages | nul
 function PayslipLabel({ r, ph, onChange }: { r: Row; ph?: PayHeadDTO; onChange: (patch: Partial<Row>) => void }) {
   const shown = r.showInPayslip ?? ph?.showInPayslip !== false;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 12.5, color: '#717171' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 12, color: '#717171' }}>
       <span>On payslip as</span>
       <input
         value={r.payslipName}
         placeholder={ph?.payslipName || ph?.name || r.payHeadCode}
         onChange={(e) => onChange({ payslipName: e.target.value })}
         disabled={!shown}
-        style={{ ...input, width: 170, padding: '3px 7px', fontSize: 12.5 }}
+        style={{ ...input, width: 170, padding: '3px 7px', fontSize: 12 }}
       />
       <label title="Hidden components still count in every total" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
         <input type="checkbox" checked={!shown} onChange={(e) => onChange({ showInPayslip: !e.target.checked })} /> Hide
@@ -830,8 +830,8 @@ function ComponentNav({ unused, onPick }: { unused: PayHeadDTO[]; onPick: (code:
   const toggle = (g: Group) => setOpen((s) => { const n = new Set(s); if (n.has(g)) n.delete(g); else n.add(g); return n; });
   return (
     <div style={{ borderRight: '1px solid #EBEBEB', padding: '26px 26px 30px', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ fontSize: 22, fontWeight: 700, color: '#222222' }}>Build your Template</div>
-      <div style={{ fontSize: 15.5, color: '#484848', marginTop: 4, marginBottom: 22 }}>Include active salary components</div>
+      <div style={{ fontSize: 19, fontWeight: 500, color: '#222222' }}>Build your Template</div>
+      <div style={{ fontSize: 14, color: '#484848', marginTop: 4, marginBottom: 22 }}>Include active salary components</div>
       {GROUP_ORDER.map((g) => {
         const items = unused.filter((p) => groupOf(p) === g);
         const isOpen = open.has(g);
@@ -839,21 +839,21 @@ function ComponentNav({ unused, onPick }: { unused: PayHeadDTO[]; onPick: (code:
           <div key={g} style={{ marginBottom: 6 }}>
             <button type="button" onClick={() => toggle(g)} style={navGroupBtn}>
               <span>{NAV_LABEL[g]}</span>
-              <span style={{ color: '#717171', fontSize: 16, transform: isOpen ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform .15s' }}>›</span>
+              <span style={{ color: '#717171', fontSize: 14, transform: isOpen ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform .15s' }}>›</span>
             </button>
             {isOpen && (
               <div style={{ padding: '2px 0 10px' }}>
-                {items.length === 0 && <div style={{ fontSize: 13.5, color: '#9197A2', padding: '6px 0' }}>Nothing left to add</div>}
+                {items.length === 0 && <div style={{ fontSize: 12.5, color: '#9197A2', padding: '6px 0' }}>Nothing left to add</div>}
                 {items.map((p) => (
-                  <button key={p.code} type="button" onClick={() => onPick(p.code)} style={navItemBtn} title={p.standard ? 'Standard component: saved for your organisation when the template is saved' : undefined}>{p.name}{p.standard && <span style={{ marginLeft: 6, fontSize: 11, color: '#9197A2', fontWeight: 600 }}>Standard</span>}</button>
+                  <button key={p.code} type="button" onClick={() => onPick(p.code)} style={navItemBtn} title={p.standard ? 'Standard component: saved for your organisation when the template is saved' : undefined}>{p.name}{p.standard && <span style={{ marginLeft: 6, fontSize: 11, color: '#9197A2', fontWeight: 400 }}>Standard</span>}</button>
                 ))}
               </div>
             )}
           </div>
         );
       })}
-      <div style={{ marginTop: 'auto', paddingTop: 30, textAlign: 'center', color: '#9197A2', fontSize: 15, fontStyle: 'italic', lineHeight: 1.5 }}>
-        <div style={{ fontSize: 22, marginBottom: 2 }}>↗</div>
+      <div style={{ marginTop: 'auto', paddingTop: 30, textAlign: 'center', color: '#9197A2', fontSize: 13.5, fontStyle: 'italic', lineHeight: 1.5 }}>
+        <div style={{ fontSize: 19, marginBottom: 2 }}>↗</div>
         Click on a component to<br />add it to the template
       </div>
     </div>
@@ -873,7 +873,7 @@ const CALENDAR_TRIGGERS = new Set<DeductionTrigger>(['absent', 'half_day']);
 const TRIGGERS = (Object.keys(DEDUCTION_TRIGGER_LABELS) as DeductionTrigger[]).filter((t) => !CALENDAR_TRIGGERS.has(t));
 function CalendarNote() {
   return (
-    <div style={{ padding: '12px 22px', fontSize: 14, color: '#484848', background: '#F7F9FB', borderBottom: '1px solid #EBEBEB' }}>
+    <div style={{ padding: '12px 22px', fontSize: 13, color: '#484848', background: '#F7F9FB', borderBottom: '1px solid #EBEBEB' }}>
       Always, from the calendar: each <strong>absent day</strong> costs 1 paid day and each <strong>half day</strong> ½ a day. The rules below add to that.
     </div>
   );
@@ -897,24 +897,24 @@ export function RulesCard({ enabled, onEnabled, rules, onChange, paidLeaveDays, 
     <Card style={{ padding: 0, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px', borderBottom: '1px solid #EBEBEB' }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 17, fontWeight: 800 }}>Paid days calculation</div>
-          <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>{enabled ? "Read from each person's attendance calendar when payroll runs" : 'Every day of the month is paid; the attendance calendar is not read'}</div>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Paid days calculation</div>
+          <div style={{ fontSize: 12.5, color: '#717171', marginTop: 2 }}>{enabled ? "Read from each person's attendance calendar when payroll runs" : 'Every day of the month is paid; the attendance calendar is not read'}</div>
         </div>
       </div>
-      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '14px 22px', borderBottom: '1px solid #EBEBEB', cursor: 'pointer', fontSize: 15 }}>
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '14px 22px', borderBottom: '1px solid #EBEBEB', cursor: 'pointer', fontSize: 13.5 }}>
         <input type="checkbox" checked={!enabled} onChange={(e) => onEnabled(!e.target.checked)} style={{ width: 18, height: 18, marginTop: 2, accentColor: '#0571A6' }} />
         <span>
           <strong>All days of the month are paid days</strong>
-          <span style={{ display: 'block', color: '#717171', fontSize: 13, marginTop: 2 }}>Overrides the calendar completely: absences, half days and the rules below are not docked. Loss of pay typed on a run, and the days before someone joins, still count.</span>
+          <span style={{ display: 'block', color: '#717171', fontSize: 12.5, marginTop: 2 }}>Overrides the calendar completely: absences, half days and the rules below are not docked. Loss of pay typed on a run, and the days before someone joins, still count.</span>
         </span>
       </label>
       {!enabled ? (
-        <div style={{ padding: '16px 22px', color: '#717171', fontSize: 15 }}>Everyone on this template is paid for all the days of the month, whatever the attendance calendar shows.</div>
+        <div style={{ padding: '16px 22px', color: '#717171', fontSize: 13.5 }}>Everyone on this template is paid for all the days of the month, whatever the attendance calendar shows.</div>
       ) : (
         <>
           <CalendarNote />
           {shown.length > 0 && (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
               <thead><tr><th style={detTh}>Counts</th><th style={detTh}>Rule</th><th style={{ ...detTh, width: 130 }}>Active</th><th style={{ ...detTh, width: 90 }} /></tr></thead>
               <tbody>
                 {shown.map(({ rule, index }) => (
@@ -946,7 +946,7 @@ export function RulesCard({ enabled, onEnabled, rules, onChange, paidLeaveDays, 
             <button type="button" onClick={() => { if (draft.every > 0 && draft.deductDays > 0) onChange([...rules, draft]); }} style={primaryBtn}>+ Add rule</button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px', borderTop: '1px solid #EBEBEB' }}>
-            <div style={{ flex: 1, fontSize: 15, fontWeight: 600, color: '#222222' }}>Paid leave allowance per month</div>
+            <div style={{ flex: 1, fontSize: 13.5, fontWeight: 400, color: '#222222' }}>Paid leave allowance per month</div>
             <div style={{ width: 200 }}><Suffixed value={paidLeaveDays} onChange={onPaidLeaveDays} suffix="paid days" step="0.5" /></div>
           </div>
         </>
@@ -965,12 +965,12 @@ function TemplateMenu({ onDuplicate, onExport }: { onDuplicate: () => void; onEx
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [open]);
-  const item: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '9px 14px', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#222222', whiteSpace: 'nowrap' };
+  const item: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#222222', whiteSpace: 'nowrap' };
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button onClick={() => setOpen((v) => !v)} title="More" aria-haspopup="menu" aria-expanded={open} style={{ ...ghostBtn, padding: '7px 12px', fontSize: 14 }}>···</button>
+      <button onClick={() => setOpen((v) => !v)} title="More" aria-haspopup="menu" aria-expanded={open} style={{ ...ghostBtn, padding: '7px 12px', fontSize: 13 }}>···</button>
       {open && (
-        <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', background: '#fff', border: '1px solid #E3E3E3', borderRadius: 8, boxShadow: '0 6px 18px rgba(0,0,0,.08)', padding: '4px 0', zIndex: 20, minWidth: 190 }}>
+        <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', background: '#fff', border: '1px solid #E3E3E3', borderRadius: 8, boxShadow: 'var(--shadow)', padding: '4px 0', zIndex: 20, minWidth: 190 }}>
           <button role="menuitem" style={item} onClick={() => { setOpen(false); onDuplicate(); }}>Duplicate template</button>
           <button role="menuitem" style={item} onClick={() => { setOpen(false); onExport(); }}>Export employees (Excel)</button>
         </div>
@@ -983,20 +983,20 @@ export function RulesSummary({ enabled, rules, paidLeaveDays }: { enabled: boole
   return (
     <Card style={{ padding: 0, overflow: 'hidden', marginTop: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', padding: '16px 22px', borderBottom: '1px solid #EBEBEB' }}>
-        <div style={{ fontSize: 17, fontWeight: 800, flex: 1 }}>Paid days calculation</div>
-        <span style={{ fontSize: 13, fontWeight: 700, color: enabled ? '#4F7A52' : '#9197A2' }}>{enabled ? 'Read from the attendance calendar' : 'All days of the month are paid days'}</span>
+        <div style={{ fontSize: 15, fontWeight: 600, flex: 1 }}>Paid days calculation</div>
+        <span style={{ fontSize: 12.5, fontWeight: 500, color: enabled ? '#4F7A52' : '#9197A2' }}>{enabled ? 'Read from the attendance calendar' : 'All days of the month are paid days'}</span>
       </div>
       {!enabled ? (
-        <div style={{ padding: '18px 22px', color: '#717171', fontSize: 15 }}>The attendance calendar is not read: every day of the month is paid.</div>
+        <div style={{ padding: '18px 22px', color: '#717171', fontSize: 13.5 }}>The attendance calendar is not read: every day of the month is paid.</div>
       ) : rules.filter((r) => !CALENDAR_TRIGGERS.has(r.trigger)).length === 0 ? (
         <>
           <CalendarNote />
-          <div style={{ padding: '14px 22px', color: '#717171', fontSize: 15 }}>No other attendance rules.</div>
+          <div style={{ padding: '14px 22px', color: '#717171', fontSize: 13.5 }}>No other attendance rules.</div>
         </>
       ) : (
         <>
         <CalendarNote />
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
           <thead><tr><th style={detTh}>Counts</th><th style={detTh}>Rule</th><th style={{ ...detTh, width: 130 }}>Active</th></tr></thead>
           <tbody>
             {rules.filter((rule) => !CALENDAR_TRIGGERS.has(rule.trigger)).map((rule, index) => (
@@ -1011,7 +1011,7 @@ export function RulesSummary({ enabled, rules, paidLeaveDays }: { enabled: boole
         </>
       )}
       {enabled && paidLeaveDays > 0 && (
-        <div style={{ padding: '12px 22px', borderTop: '1px solid #EBEBEB', fontSize: 15, color: '#484848' }}>
+        <div style={{ padding: '12px 22px', borderTop: '1px solid #EBEBEB', fontSize: 13.5, color: '#484848' }}>
           Paid leave allowance: <strong>{paidLeaveDays} {paidLeaveDays === 1 ? 'day' : 'days'}</strong> a month, set off against the deductions.
         </div>
       )}
@@ -1059,7 +1059,7 @@ function OvertimeCard({ rule, onChange }: { rule: OvertimePayRule | null; onChan
     onChange(m === 'off' ? null : m === 'hourly_multiple' ? { mode: m, base: 'basic', multiplier: 2, hoursPerDay: 8 } : { mode: m, flatPerHourPaise: 20000 });
   const row = (label: string, control: ReactNode) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 22px', borderTop: '1px solid #EBEBEB' }}>
-      <div style={{ flex: 1, fontSize: 15, fontWeight: 600, color: '#222222' }}>{label}</div>
+      <div style={{ flex: 1, fontSize: 13.5, fontWeight: 400, color: '#222222' }}>{label}</div>
       <div style={{ width: 220 }}>{control}</div>
     </div>
   );
@@ -1067,8 +1067,8 @@ function OvertimeCard({ rule, onChange }: { rule: OvertimePayRule | null; onChan
     <Card style={{ padding: 0, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px' }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 17, fontWeight: 800 }}>Overtime pay</div>
-          <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>Turns each person's approved overtime hours into pay when payroll runs. HR can still change the amount on the run.</div>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Overtime pay</div>
+          <div style={{ fontSize: 12.5, color: '#717171', marginTop: 2 }}>Turns each person's approved overtime hours into pay when payroll runs. HR can still change the amount on the run.</div>
         </div>
         <select value={mode} onChange={(e) => pick(e.target.value as 'off' | 'hourly_multiple' | 'flat_per_hour')} style={{ ...input, width: 230, cursor: 'pointer' }}>
           <option value="off">Typed on the run</option>
@@ -1086,7 +1086,7 @@ function OvertimeCard({ rule, onChange }: { rule: OvertimePayRule | null; onChan
           ))}
           {row('Working hours a day', <Suffixed value={rule.hoursPerDay ?? 8} onChange={(v) => onChange({ ...rule, hoursPerDay: v })} suffix="hours" step="0.5" />)}
           {row('Pay per overtime hour', <Suffixed value={rule.multiplier ?? 2} onChange={(v) => onChange({ ...rule, multiplier: v })} suffix="× hourly rate" step="0.25" />)}
-          <div style={{ padding: '10px 22px 16px', fontSize: 13, color: '#717171' }}>
+          <div style={{ padding: '10px 22px 16px', fontSize: 12.5, color: '#717171' }}>
             Hourly rate = monthly {rule.base === 'gross' ? 'Gross' : 'Basic'} ÷ (working days × {rule.hoursPerDay ?? 8} hours). The Factories Act sets overtime at twice the ordinary rate.
           </div>
         </>
@@ -1101,17 +1101,17 @@ function OvertimeCard({ rule, onChange }: { rule: OvertimePayRule | null; onChan
 function Suffixed({ value, onChange, suffix, step }: { value: number; onChange: (v: number) => void; suffix: string; step: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #EBEBEB', borderRadius: 9, overflow: 'hidden', background: '#fff' }}>
-      <input type="number" min="0" step={step} value={value} onChange={(e) => onChange(Number(e.target.value) || 0)} style={{ border: 'none', outline: 'none', padding: '8px 10px', fontSize: 16, width: '100%', color: '#222222', background: 'transparent', fontFamily: 'inherit' }} />
-      <span style={{ padding: '0 10px', fontSize: 13, color: '#717171', borderLeft: '1px solid #EBEBEB', alignSelf: 'stretch', display: 'flex', alignItems: 'center', background: '#FBFBFC', whiteSpace: 'nowrap' }}>{suffix}</span>
+      <input type="number" min="0" step={step} value={value} onChange={(e) => onChange(Number(e.target.value) || 0)} style={{ border: 'none', outline: 'none', padding: '8px 10px', fontSize: 14, width: '100%', color: '#222222', background: 'transparent', fontFamily: 'inherit' }} />
+      <span style={{ padding: '0 10px', fontSize: 12.5, color: '#717171', borderLeft: '1px solid #EBEBEB', alignSelf: 'stretch', display: 'flex', alignItems: 'center', background: '#FBFBFC', whiteSpace: 'nowrap' }}>{suffix}</span>
     </div>
   );
 }
 
 const ruleTd: CSSProperties = { padding: '12px 22px', borderBottom: '1px solid #F4F4F6', verticalAlign: 'middle' };
-export const dangerLink: CSSProperties = { background: 'none', border: 'none', color: '#C4382E', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
+export const dangerLink: CSSProperties = { background: 'none', border: 'none', color: '#C4382E', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', padding: 0 };
 const toggleWrap: CSSProperties = { display: 'inline-flex', border: '1px solid #EBEBEB', borderRadius: 9, overflow: 'hidden' };
 const toggleBtn = (on: boolean, yes: boolean): CSSProperties => ({
-  padding: '5px 12px', fontSize: 13, fontWeight: 700, cursor: 'pointer', border: 'none', fontFamily: 'inherit',
+  padding: '5px 12px', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', border: 'none', fontFamily: 'inherit',
   borderLeft: yes ? 'none' : '1px solid #EBEBEB', background: on ? '#0571A6' : '#fff', color: on ? '#fff' : '#484848',
 });
 
@@ -1221,12 +1221,12 @@ function StatutoryList({ overview, computed, flat }: { overview: StatutoryOvervi
   return (
     <div style={flat ? { border: '1px solid #EBEBEB', borderRadius: 8, padding: '0 20px' } : { borderTop: '1px solid #EBEBEB' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, padding: flat ? '14px 0 4px' : '14px 22px 4px', flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase', color: '#717171' }}>Statutory Components</div>
-        <div style={{ fontSize: 13, color: '#9197A2' }}>Same for everyone · set in Payroll › Statutory Components · a one-person exception is made on that person’s salary</div>
+        <div style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: '#717171' }}>Statutory Components</div>
+        <div style={{ fontSize: 12.5, color: '#9197A2' }}>Same for everyone · set in Payroll › Statutory Components · a one-person exception is made on that person’s salary</div>
       </div>
       {rows.map((r) => (
-        <div key={r.name} style={{ display: 'grid', gridTemplateColumns: computed === undefined ? '1fr 2fr' : '1fr 2fr 140px', gap: 12, padding: pad, borderTop: '1px solid #F4F4F6', fontSize: 14.5, alignItems: 'center' }}>
-          <div style={{ fontWeight: 600, color: '#222222' }}>{r.name}</div>
+        <div key={r.name} style={{ display: 'grid', gridTemplateColumns: computed === undefined ? '1fr 2fr' : '1fr 2fr 140px', gap: 12, padding: pad, borderTop: '1px solid #F4F4F6', fontSize: 13, alignItems: 'center' }}>
+          <div style={{ fontWeight: 400, color: '#222222' }}>{r.name}</div>
           <div style={{ color: '#717171' }}>{r.how}</div>
           {computed !== undefined && (
             <div style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#484848' }}>{r.monthly === undefined ? '—' : `₹${rupees(r.monthly)}`}</div>
@@ -1241,8 +1241,8 @@ function CtcInput({ value, onChange }: { value: string; onChange: (v: string) =>
   return (
     <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #D9DCE1', borderRadius: 9, overflow: 'hidden', background: '#fff', width: 'fit-content' }}>
       <span style={{ padding: '10px 14px', color: '#717171', borderRight: '1px solid #D9DCE1', background: '#FBFBFC' }}>₹</span>
-      <input type="number" value={value} onChange={(e) => onChange(e.target.value)} style={{ border: 'none', outline: 'none', padding: '10px 12px', fontSize: 16, width: 190, color: '#222222', fontFamily: 'inherit' }} />
-      <span style={{ padding: '10px 14px', color: '#717171', fontSize: 14 }}>per year</span>
+      <input type="number" value={value} onChange={(e) => onChange(e.target.value)} style={{ border: 'none', outline: 'none', padding: '10px 12px', fontSize: 14, width: 190, color: '#222222', fontFamily: 'inherit' }} />
+      <span style={{ padding: '10px 14px', color: '#717171', fontSize: 13 }}>per year</span>
     </div>
   );
 }
@@ -1258,7 +1258,7 @@ function GroupRows({ label, cols, big, children }: { label: string; cols: number
   );
 }
 function TotalRow({ monthly, cols }: { monthly: number; cols: number }) {
-  const cell: CSSProperties = { ...detTd, fontWeight: 800, fontSize: 16, borderTop: '2px solid #EBEBEB' };
+  const cell: CSSProperties = { ...detTd, fontWeight: 600, fontSize: 14, borderTop: '2px solid #EBEBEB' };
   const num: CSSProperties = { ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
   return (
     <tr>
@@ -1271,45 +1271,45 @@ function TotalRow({ monthly, cols }: { monthly: number; cols: number }) {
 }
 
 export function Th({ children }: { children: ReactNode }) {
-  return <th style={{ textAlign: 'left', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171', fontWeight: 700, padding: '11px 16px', borderBottom: '1px solid #EBEBEB' }}>{children}</th>;
+  return <th style={{ textAlign: 'left', fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '11px 16px', borderBottom: '1px solid #EBEBEB', background: 'var(--surface-2)' }}>{children}</th>;
 }
 export function Td({ children, muted }: { children: ReactNode; muted?: boolean }) {
   return <td style={{ padding: '13px 16px', borderBottom: '1px solid #F0F0F2', color: muted ? '#717171' : '#222222' }}>{children}</td>;
 }
 export function StatusText({ on }: { on: boolean }) {
-  return <span style={{ fontSize: 14, fontWeight: 700, color: on ? '#4F7A52' : '#9197A2' }}>{on ? 'Active' : 'Inactive'}</span>;
+  return <span style={{ fontSize: 13, fontWeight: 500, color: on ? '#4F7A52' : '#9197A2' }}>{on ? 'Active' : 'Inactive'}</span>;
 }
 export function Field({ label, hint, required, children }: { label: string; hint?: string; required?: boolean; children: ReactNode }) {
   return (
     <div style={{ marginBottom: 12 }}>
       <label style={fieldLabel}>{label}{required && <span style={{ color: '#C4382E' }}> *</span>}</label>
       {children}
-      {hint && <div style={{ fontSize: 12, color: '#717171', marginTop: 4 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 11.5, color: '#717171', marginTop: 4 }}>{hint}</div>}
     </div>
   );
 }
 
-const fieldLabel: CSSProperties = { display: 'block', fontSize: 15, fontWeight: 600, marginBottom: 7, color: '#484848' };
-export const input: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
-const miniInput: CSSProperties = { padding: '6px 8px', border: '1px solid #EBEBEB', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', background: '#fff', color: '#222222' };
-const miniSelect: CSSProperties = { padding: '6px 8px', border: '1px solid #EBEBEB', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', background: '#fff', color: '#222222', cursor: 'pointer' };
+const fieldLabel: CSSProperties = { display: 'block', fontSize: 13.5, fontWeight: 400, marginBottom: 7, color: '#484848' };
+export const input: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', background: '#fff', color: '#222222' };
+const miniInput: CSSProperties = { padding: '6px 8px', border: '1px solid #EBEBEB', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: '#fff', color: '#222222' };
+const miniSelect: CSSProperties = { padding: '6px 8px', border: '1px solid #EBEBEB', borderRadius: 999, fontSize: 13, fontFamily: 'inherit', background: '#fff', color: '#222222', cursor: 'pointer' };
 const pairBox: CSSProperties = { display: 'inline-flex', alignItems: 'stretch', border: '1px solid #D9DCE1', borderRadius: 7, overflow: 'hidden', background: '#fff' };
-const pairInput: CSSProperties = { border: 'none', outline: 'none', padding: '8px 10px', fontSize: 15, width: 96, color: '#222222', fontFamily: 'inherit' };
-const pairSuffix: CSSProperties = { display: 'flex', alignItems: 'center', padding: '0 12px', fontSize: 14, color: '#484848', background: '#F7F7F9', borderLeft: '1px solid #D9DCE1', whiteSpace: 'nowrap' };
-export const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 16 };
-const detTh: CSSProperties = { textAlign: 'left', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171', fontWeight: 700, padding: '11px 22px', borderBottom: '1px solid #EBEBEB', background: '#FBFBFC' };
+const pairInput: CSSProperties = { border: 'none', outline: 'none', padding: '8px 10px', fontSize: 13.5, width: 96, color: '#222222', fontFamily: 'inherit' };
+const pairSuffix: CSSProperties = { display: 'flex', alignItems: 'center', padding: '0 12px', fontSize: 13, color: '#484848', background: '#F7F7F9', borderLeft: '1px solid #D9DCE1', whiteSpace: 'nowrap' };
+export const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
+const detTh: CSSProperties = { textAlign: 'left', fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '11px 22px', borderBottom: '1px solid #EBEBEB', background: '#FBFBFC' };
 const detTd: CSSProperties = { padding: '12px 22px', borderBottom: '1px solid #F4F4F6', color: '#222222' };
 const numTd: CSSProperties = { ...detTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
-const bldTh: CSSProperties = { textAlign: 'left', fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '.04em', color: '#5B6475', fontWeight: 700, padding: '13px 20px', borderBottom: '1px solid #EBEBEB', background: '#F7F8FC' };
+const bldTh: CSSProperties = { textAlign: 'left', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: '#5B6475', fontWeight: 400, padding: '13px 20px', borderBottom: '1px solid #EBEBEB', background: '#F7F8FC' };
 const bldTd: CSSProperties = { padding: '14px 20px', borderBottom: '1px solid #F4F4F6', color: '#222222', verticalAlign: 'middle' };
-const ctcBand: CSSProperties = { display: 'flex', alignItems: 'center', background: '#EAF2FB', borderRadius: 8, padding: '18px 22px', fontSize: 20, fontWeight: 600, color: '#222222', fontVariantNumeric: 'tabular-nums' };
-const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 7, fontSize: 14, fontWeight: 700, color: '#484848' };
-export const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-export const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
+const ctcBand: CSSProperties = { display: 'flex', alignItems: 'center', background: '#EAF2FB', borderRadius: 8, padding: '18px 22px', fontSize: 17, fontWeight: 400, color: '#222222', fontVariantNumeric: 'tabular-nums' };
+const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 500, color: '#484848' };
+export const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+export const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const iconBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.65 };
 const closeCircle: CSSProperties = { width: 40, height: 40, borderRadius: '50%', border: 'none', background: '#F1F2F5', color: '#484848', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
 // The builder is its own page over the whole dashboard, left nav included.
 const builderPage: CSSProperties = { position: 'fixed', inset: 0, zIndex: 90, background: '#fff', display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', fontFamily: 'inherit' };
-const builderCard: CSSProperties = { border: '1px solid #EBEBEB', borderRadius: 12, background: '#fff', boxShadow: '0 1px 2px rgba(34,34,34,.04)' };
-const navGroupBtn: CSSProperties = { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'none', border: 'none', padding: '12px 0', fontSize: 12.5, fontWeight: 700, letterSpacing: '.06em', color: '#484848', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' };
-const navItemBtn: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '10px 0', fontSize: 16, color: '#222222', cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1.3 };
+const builderCard: CSSProperties = { border: '1px solid #EBEBEB', borderRadius: 12, background: '#fff', boxShadow: 'var(--shadow)' };
+const navGroupBtn: CSSProperties = { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'none', border: 'none', padding: '12px 0', fontSize: 12, fontWeight: 500, letterSpacing: '.06em', color: '#484848', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' };
+const navItemBtn: CSSProperties = { display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '10px 0', fontSize: 14, color: '#222222', cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1.3 };

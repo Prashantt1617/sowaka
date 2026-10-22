@@ -34,13 +34,13 @@ export function Modal({
   return createPortal(
     // Inset from the left so the sidebar stays visible, as the payroll modals do.
     <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: 244, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 14px' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(34,34,34,.4)', animation: 'ovl .2s ease both' }} />
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', animation: 'ovl .2s ease both' }} />
       <div className="scry" style={{ ...modalCard, maxWidth: width }}>
         <div style={modalHead}>
           <div>
-            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.3px' }}>{title}</div>
+            <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-.3px' }}>{title}</div>
             {subtitle && (
-              <div style={{ fontSize: 14, color: '#717171', fontWeight: 500, marginTop: 2 }}>{subtitle}</div>
+              <div style={{ fontSize: 13, color: '#717171', fontWeight: 400, marginTop: 2 }}>{subtitle}</div>
             )}
           </div>
           <CloseButton onClose={onClose} />
@@ -77,9 +77,9 @@ export function DetailPage({
     <div style={{ maxWidth: width, animation: 'fade .2s ease both' }}>
       <button onClick={onBack} style={backBtn}>← {backLabel}</button>
       <div style={{ marginBottom: 18 }}>
-        <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.6px' }}>{title}</div>
+        <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.6px' }}>{title}</div>
         {subtitle && (
-          <div style={{ fontSize: 15.5, color: '#717171', marginTop: 3 }}>{subtitle}</div>
+          <div style={{ fontSize: 14, color: '#717171', marginTop: 3 }}>{subtitle}</div>
         )}
       </div>
       {children}
@@ -92,7 +92,7 @@ export function DetailPage({
 
 const backBtn: CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none',
-  color: '#0571A6', fontSize: 15, fontWeight: 700, cursor: 'pointer', padding: '2px 0',
+  color: '#0571A6', fontSize: 13.5, fontWeight: 500, cursor: 'pointer', padding: '2px 0',
   marginBottom: 14,
 };
 
@@ -100,7 +100,7 @@ const backBtn: CSSProperties = {
 
 export function Th({ children, right, width }: { children: ReactNode; right?: boolean; width?: number | string }) {
   return (
-    <th style={{ textAlign: right ? 'right' : 'left', width, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171', fontWeight: 700, padding: '11px 14px', borderBottom: '1px solid #EBEBEB', whiteSpace: 'nowrap' }}>
+    <th style={{ textAlign: right ? 'right' : 'left', width, fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '11px 14px', borderBottom: '1px solid #EBEBEB', whiteSpace: 'nowrap', background: 'var(--surface-2)' }}>
       {children}
     </th>
   );
@@ -124,9 +124,9 @@ export function NameCell({ name, tag, tagTone }: { name: string; tag?: string; t
   const tone = tones[tagTone ?? 'grey'];
   return (
     <span>
-      <span style={{ fontWeight: 700, color: '#0571A6' }}>{name}</span>
+      <span style={{ fontWeight: 500, color: '#0571A6' }}>{name}</span>
       {tag && (
-        <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: tone.bg, color: tone.fg }}>
+        <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, padding: '2px 8px', borderRadius: 6, background: tone.bg, color: tone.fg }}>
           {tag}
         </span>
       )}
@@ -150,7 +150,7 @@ export function Tabs<T extends string>({
           <button
             key={t.key}
             onClick={() => onChange(t.key)}
-            style={{ border: 'none', cursor: 'pointer', fontSize: 16, fontWeight: 700, padding: '7px 15px', borderRadius: 8, background: on ? '#0571A6' : 'transparent', color: on ? '#fff' : '#717171' }}
+            style={{ border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500, padding: '7px 15px', borderRadius: 999, background: on ? '#0571A6' : 'transparent', color: on ? '#fff' : '#717171' }}
           >
             {t.label} <span style={{ opacity: 0.7 }}>· {t.count}</span>
           </button>
@@ -167,11 +167,11 @@ export function Field({ label, req, hint, children, style }: {
 }) {
   return (
     <div style={{ marginBottom: 16, ...style }}>
-      <label style={{ display: 'block', fontSize: 14, fontWeight: 700, marginBottom: 6, color: '#484848' }}>
+      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: '#484848' }}>
         {label}{req && <span style={{ color: '#C4382E', marginLeft: 2 }}>*</span>}
       </label>
       {children}
-      {hint && <div style={{ fontSize: 12, color: '#717171', marginTop: 5, lineHeight: 1.45 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 11.5, color: '#717171', marginTop: 5, lineHeight: 1.45 }}>{hint}</div>}
     </div>
   );
 }
@@ -185,13 +185,13 @@ export function Checkbox({ checked, onChange, label, sub, disabled }: {
         type="button"
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: disabled ? 'default' : 'pointer', border: `1.5px solid ${checked ? '#0571A6' : '#C7CBD2'}`, background: checked ? '#0571A6' : '#fff', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, lineHeight: 1, padding: 0 }}
+        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: disabled ? 'default' : 'pointer', border: `1.5px solid ${checked ? '#0571A6' : '#C7CBD2'}`, background: checked ? '#0571A6' : '#fff', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, lineHeight: 1, padding: 0 }}
       >
         {checked ? '✓' : ''}
       </button>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 15, color: '#222222' }}>{label}</div>
-        {sub && <div style={{ fontSize: 13, color: '#717171', marginTop: 2, lineHeight: 1.45 }}>{sub}</div>}
+        <div style={{ fontSize: 13.5, color: '#222222' }}>{label}</div>
+        {sub && <div style={{ fontSize: 12.5, color: '#717171', marginTop: 2, lineHeight: 1.45 }}>{sub}</div>}
       </div>
     </div>
   );

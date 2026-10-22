@@ -253,18 +253,18 @@ export function KpiBulkAssign() {
     return (
       <div style={{ maxWidth: 640 }}>
         <Card style={{ padding: 28, textAlign: 'center' }}>
-          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 8 }}>Assigned</div>
-          <div style={{ fontSize: 15.5, color: '#484848', lineHeight: 1.6, marginBottom: 20 }}>{done}</div>
+          <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>Assigned</div>
+          <div style={{ fontSize: 14, color: '#484848', lineHeight: 1.6, marginBottom: 20 }}>{done}</div>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
             <button onClick={exportAssigned} style={ghostBtn}>Export as CSV</button>
             <button onClick={restart} style={primaryBtn}>Start another</button>
           </div>
-          <div style={{ background: '#EAF2FB', color: '#3C6E9E', borderRadius: 10, padding: '12px 14px', fontSize: 13.5, lineHeight: 1.55, marginTop: 18, textAlign: 'left' }}>
+          <div style={{ background: '#EAF2FB', color: '#3C6E9E', borderRadius: 10, padding: '12px 14px', fontSize: 12.5, lineHeight: 1.55, marginTop: 18, textAlign: 'left' }}>
             <strong>Takes effect from {periodLabel(s.cycle.next)}.</strong> The cycle in progress
             is frozen, so managers scoring right now keep the parameters they started with. These
             appear on the feedback form when the next cycle opens.
           </div>
-          <div style={{ fontSize: 13, color: '#9197A2', marginTop: 12, lineHeight: 1.5, textAlign: 'left' }}>
+          <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 12, lineHeight: 1.5, textAlign: 'left' }}>
             The export carries employee ID, name, department, designation, manager, the filters
             that matched them, and each parameter's weight.
           </div>
@@ -288,11 +288,11 @@ export function KpiBulkAssign() {
         <div style={panelCard}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
             <div style={panelTitle}>Who are you assigning to?</div>
-            <div style={{ marginLeft: 'auto', fontSize: 14, fontWeight: 700, color: !rosterReady ? '#9197A2' : preview.length ? '#4F7A52' : '#A8475F' }}>
+            <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 500, color: !rosterReady ? '#9197A2' : preview.length ? '#4F7A52' : '#A8475F' }}>
               {rosterReady ? `${preview.length} of ${s.emps.length} employees match` : 'Loading employees…'}
             </div>
           </div>
-          <div style={{ fontSize: 13, color: '#717171', marginBottom: 14, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12.5, color: '#717171', marginBottom: 14, lineHeight: 1.5 }}>
             This assigment will be applied from the next cycle.
           </div>
 
@@ -335,14 +335,14 @@ export function KpiBulkAssign() {
           )}
 
           <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #EBEBEB' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.03em', color: '#717171', marginBottom: 7 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: '#717171', marginBottom: 7 }}>
               RESULTING RULE
             </div>
             <code style={{ ...queryCode, display: 'block', padding: '11px 13px', background: '#F7F7F9', borderRadius: 10, lineHeight: 1.7 }}>
               {targetSummary(target, s.emps)}
             </code>
             {emptyRules.length > 0 && (
-              <div style={{ fontSize: 13, color: '#9A6B25', fontWeight: 600, marginTop: 9 }}>
+              <div style={{ fontSize: 12.5, color: '#9A6B25', fontWeight: 400, marginTop: 9 }}>
                 {emptyRules.map((f) => f.label).join(' and ')}{' '}
                 {emptyRules.length === 1 ? 'has' : 'have'} no value chosen yet, so{' '}
                 {emptyRules.length === 1 ? 'it is' : 'they are'} not narrowing anything.
@@ -367,7 +367,7 @@ export function KpiBulkAssign() {
       {step === 'people' && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 11 }}>
-            <div style={{ fontSize: 16, color: '#717171', fontWeight: 600 }}>
+            <div style={{ fontSize: 14, color: '#717171', fontWeight: 400 }}>
               {assignIds.length} of {audience.length} selected
             </div>
             <button
@@ -381,7 +381,7 @@ export function KpiBulkAssign() {
           </div>
 
           <Card>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
               <thead>
                 <tr>
                   <Th width={44}>{' '}</Th>
@@ -403,38 +403,38 @@ export function KpiBulkAssign() {
                       style={{ cursor: 'pointer', background: on ? '#F4FAFD' : '#fff' }}
                     >
                       <Td>
-                        <span style={{ display: 'flex', width: 18, height: 18, borderRadius: 5, border: `1.5px solid ${on ? '#0571A6' : '#C7CBD2'}`, background: on ? '#0571A6' : '#fff', color: '#fff', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>
+                        <span style={{ display: 'flex', width: 18, height: 18, borderRadius: 5, border: `1.5px solid ${on ? '#0571A6' : '#C7CBD2'}`, background: on ? '#0571A6' : '#fff', color: '#fff', alignItems: 'center', justifyContent: 'center', fontSize: 11.5 }}>
                           {on ? '✓' : ''}
                         </span>
                       </Td>
                       <Td>
                         <NameCell name={a.name} />
                         {a.employeeId && (
-                          <span style={{ fontSize: 13, color: '#9197A2', marginLeft: 8 }}>{a.employeeId}</span>
+                          <span style={{ fontSize: 12.5, color: '#9197A2', marginLeft: 8 }}>{a.employeeId}</span>
                         )}
                       </Td>
                       {FACETS.filter((f) => target[f.key].length > 0).map((f) => (
                         <Td key={f.key} muted>
-                          <span style={{ fontSize: 14.5, color: '#717171' }}>{valueFor(f, a) || '—'}</span>
+                          <span style={{ fontSize: 13, color: '#717171' }}>{valueFor(f, a) || '—'}</span>
                         </Td>
                       ))}
                       <Td>
                         {a.currentTemplateName ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             <ReplaceTip />
-                            <span style={{ fontSize: 14, fontWeight: 700, color: '#9A6B25' }}>
+                            <span style={{ fontSize: 13, fontWeight: 500, color: '#9A6B25' }}>
                               {a.currentTemplateName}
                             </span>
                           </span>
                         ) : a.parameterCount > 0 ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             <ReplaceTip />
-                            <span style={{ fontSize: 14, color: '#9A6B25', fontWeight: 700 }}>
+                            <span style={{ fontSize: 13, color: '#9A6B25', fontWeight: 500 }}>
                               {a.parameterCount} custom KPIs
                             </span>
                           </span>
                         ) : (
-                          <span style={{ fontSize: 14, color: '#9197A2' }}>None</span>
+                          <span style={{ fontSize: 13, color: '#9197A2' }}>None</span>
                         )}
                       </Td>
                     </tr>
@@ -442,7 +442,7 @@ export function KpiBulkAssign() {
                 })}
                 {audience.length === 0 && (
                   <tr>
-                    <td colSpan={9} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 15 }}>
+                    <td colSpan={9} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 13.5 }}>
                       Nobody matched those rules.
                     </td>
                   </tr>
@@ -469,18 +469,18 @@ export function KpiBulkAssign() {
       {/* —— 3. Template ————————————————————————————————————————————————— */}
       {step === 'template' && (
         <>
-          <div style={{ fontSize: 16, color: '#717171', fontWeight: 600, marginBottom: 14 }}>
+          <div style={{ fontSize: 14, color: '#717171', fontWeight: 400, marginBottom: 14 }}>
             Assigning to <strong style={{ color: '#222222' }}>{assignIds.length} employees</strong> for{' '}
             {periodLabel(s.cycle.next)}
             {overwriting > 0 && (
-              <span style={{ color: '#9A6B25', fontWeight: 700 }}>
+              <span style={{ color: '#9A6B25', fontWeight: 500 }}>
                 {' '}· {overwriting} will have their current set replaced
               </span>
             )}
           </div>
 
           <Card>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
               <thead>
                 <tr>
                   <Th width={44}>{' '}</Th>
@@ -508,10 +508,10 @@ export function KpiBulkAssign() {
                         </button>
                       </Td>
                       <Td muted>
-                        <span style={{ fontWeight: 700, color: t.employeeCount ? '#222222' : '#9197A2', fontVariantNumeric: 'tabular-nums' }}>
+                        <span style={{ fontWeight: 500, color: t.employeeCount ? '#222222' : '#9197A2', fontVariantNumeric: 'tabular-nums' }}>
                           {t.employeeCount}
                         </span>
-                        <span style={{ fontSize: 14, color: '#9197A2' }}>
+                        <span style={{ fontSize: 13, color: '#9197A2' }}>
                           {t.employeeCount === 1 ? ' employee' : ' employees'}
                         </span>
                       </Td>
@@ -520,7 +520,7 @@ export function KpiBulkAssign() {
                 })}
                 {templates.length === 0 && (
                   <tr>
-                    <td colSpan={3} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 15 }}>
+                    <td colSpan={3} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 13.5 }}>
                       No templates yet. Create one under Performance › Templates.
                     </td>
                   </tr>
@@ -529,7 +529,7 @@ export function KpiBulkAssign() {
             </table>
           </Card>
 
-          <div style={{ fontSize: 13, color: '#9197A2', marginTop: 10 }}>
+          <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 10 }}>
             Click a template's name to see its parameters and weights before picking it.
           </div>
 
@@ -571,7 +571,7 @@ function ReplaceTip() {
         style={{
           width: 17, height: 17, borderRadius: '50%', background: '#F6E9D5', color: '#9A6B25',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 11.5, fontWeight: 800, cursor: 'help',
+          fontSize: 11.5, fontWeight: 600, cursor: 'help',
         }}
       >
         !
@@ -582,8 +582,8 @@ function ReplaceTip() {
           style={{
             position: 'absolute', left: '50%', bottom: '140%', transform: 'translateX(-50%)',
             width: 232, background: '#222222', color: '#fff', borderRadius: 9,
-            padding: '9px 11px', fontSize: 12.5, fontWeight: 500, lineHeight: 1.5,
-            zIndex: 5, boxShadow: '0 6px 18px rgba(0,0,0,.22)', textAlign: 'left',
+            padding: '9px 11px', fontSize: 12, fontWeight: 400, lineHeight: 1.5,
+            zIndex: 5, boxShadow: 'var(--shadow)', textAlign: 'left',
           }}
         >
           {REPLACE_HINT}
@@ -606,7 +606,7 @@ function Pager({
   const to = Math.min(total, page * PAGE_SIZE);
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14 }}>
-      <div style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>
+      <div style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>
         Showing {from}–{to} of {total}
       </div>
       {pageCount > 1 && (
@@ -619,7 +619,7 @@ function Pager({
               key={p}
               onClick={() => onPage(p)}
               style={{
-                minWidth: 32, height: 32, borderRadius: 9, fontSize: 14, fontWeight: 700,
+                minWidth: 32, height: 32, borderRadius: 999, fontSize: 13, fontWeight: 500,
                 cursor: 'pointer',
                 border: `1px solid ${p === page ? '#0571A6' : '#EBEBEB'}`,
                 background: p === page ? '#0571A6' : '#fff',
@@ -693,7 +693,7 @@ function Steps({
               <span
                 style={{
                   width: 22, height: 22, borderRadius: '50%', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800,
+                  alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 600,
                   background: state === 'todo' ? '#F0F0F2' : '#0571A6',
                   color: state === 'todo' ? '#9197A2' : '#fff',
                 }}
@@ -702,7 +702,7 @@ function Steps({
               </span>
               <span
                 style={{
-                  fontSize: 15,
+                  fontSize: 13.5,
                   fontWeight: state === 'now' ? 800 : 600,
                   color: state === 'now' ? '#222222' : state === 'todo' ? '#9197A2' : '#0571A6',
                   // `disabled` already covers the current step, so anything
@@ -718,7 +718,7 @@ function Steps({
           </span>
         );
       })}
-      {busy && <span style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>Working…</span>}
+      {busy && <span style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>Working…</span>}
     </div>
   );
 }

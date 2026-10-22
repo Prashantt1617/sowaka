@@ -92,7 +92,7 @@ export function AddNameButton({
           placeholder={`New ${noun} name`}
           style={{ ...inputStyle, width: 240, borderColor: taken ? '#C24141' : '#EBEBEB' }}
         />
-        {taken && <span style={{ fontSize: 12, color: '#C24141' }}>That {noun} already exists.</span>}
+        {taken && <span style={{ fontSize: 11.5, color: '#C24141' }}>That {noun} already exists.</span>}
       </div>
       <button type="submit" style={{ ...primaryBtn, opacity: !trimmed || taken || busy ? 0.5 : 1 }} disabled={!trimmed || taken || busy}>
         {busy ? 'Saving…' : 'Save'}
@@ -102,6 +102,6 @@ export function AddNameButton({
   );
 }
 
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const inputStyle: CSSProperties = { padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 15, fontFamily: 'inherit', background: '#fff', color: '#222222' };
+const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const inputStyle: CSSProperties = { padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 13.5, fontFamily: 'inherit', background: '#fff', color: '#222222' };

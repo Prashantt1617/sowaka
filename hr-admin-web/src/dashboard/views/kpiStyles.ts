@@ -11,36 +11,36 @@ export const MAX_PER_SET = 10;
 
 export const inputStyle: CSSProperties = {
   width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10,
-  fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222',
+  fontSize: 14, fontFamily: 'inherit', background: '#fff', color: '#222222',
 };
 export const primaryBtn: CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff',
-  border: 'none', padding: '9px 15px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer',
+  border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer',
 };
 export const ghostBtn: CSSProperties = {
   background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '11px 20px',
-  borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer',
+  borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer',
 };
 export const smallBtn: CSSProperties = {
   background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '6px 12px',
-  borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer',
+  borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer',
 };
 export const noteTag: CSSProperties = {
-  background: '#EAF2FB', color: '#3C6E9E', fontSize: 13.5, borderRadius: 10,
+  background: '#EAF2FB', color: '#3C6E9E', fontSize: 12.5, borderRadius: 10,
   padding: '11px 13px', lineHeight: 1.5,
 };
 export const warnTag: CSSProperties = {
   background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 10, padding: '12px 14px',
-  fontSize: 14, color: '#8A6A20', lineHeight: 1.5,
+  fontSize: 13, color: '#8A6A20', lineHeight: 1.5,
 };
 export const panelCard: CSSProperties = {
-  background: '#fff', border: '1px solid #EBEBEB', borderRadius: 14, padding: '18px 20px',
+  background: '#fff', border: '1px solid transparent', borderRadius: 16, padding: '18px 20px', boxShadow: 'var(--shadow)',
 };
-export const panelTitle: CSSProperties = { fontSize: 16, fontWeight: 800, marginBottom: 14 };
+export const panelTitle: CSSProperties = { fontSize: 14, fontWeight: 600, marginBottom: 14 };
 
 export const modalCard: CSSProperties = {
-  position: 'relative', width: '100%', maxHeight: '92vh', background: '#F7F7F9', borderRadius: 20,
-  boxShadow: '0 30px 70px rgba(60,40,24,.3)', animation: 'pop .2s ease both',
+  position: 'relative', width: '100%', maxHeight: '92vh', background: '#F7F7F9', borderRadius: 'var(--r-lg)',
+  boxShadow: 'var(--shadow-lg)', animation: 'pop .2s ease both',
   display: 'flex', flexDirection: 'column',
 };
 export const modalHead: CSSProperties = {

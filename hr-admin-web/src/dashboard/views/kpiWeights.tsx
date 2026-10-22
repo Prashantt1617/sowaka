@@ -67,7 +67,7 @@ export function WeightPicker({
       </div>
 
       {picked.length === 0 ? (
-        <div style={{ border: '1px dashed #D8DBE0', borderRadius: 12, padding: '26px 16px', textAlign: 'center', color: '#9197A2', fontSize: 14.5, lineHeight: 1.6 }}>
+        <div style={{ border: '1px dashed #D8DBE0', borderRadius: 12, padding: '26px 16px', textAlign: 'center', color: '#9197A2', fontSize: 13, lineHeight: 1.6 }}>
           No parameters yet.<br />Add one above to start building the set.
         </div>
       ) : (
@@ -81,9 +81,9 @@ export function WeightPicker({
                 style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 13px', borderBottom: '1px solid #F4F4F6' }}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700 }}>{p?.title ?? 'Removed parameter'}</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 500 }}>{p?.title ?? 'Removed parameter'}</div>
                   {p?.description && (
-                    <div style={{ fontSize: 13, color: '#717171', marginTop: 1, lineHeight: 1.4 }}>{p.description}</div>
+                    <div style={{ fontSize: 12.5, color: '#717171', marginTop: 1, lineHeight: 1.4 }}>{p.description}</div>
                   )}
                   {/* The share of the whole, so the split reads at a glance
                       rather than having to be added up from the boxes. */}
@@ -98,14 +98,14 @@ export function WeightPicker({
                     inputMode="numeric"
                     maxLength={3}
                     aria-label={`Weight for ${p?.title ?? 'parameter'}`}
-                    style={{ ...inputStyle, width: 56, textAlign: 'center', padding: '6px 8px', fontSize: 15, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}
+                    style={{ ...inputStyle, width: 56, textAlign: 'center', padding: '6px 8px', fontSize: 13.5, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}
                   />
-                  <span style={{ fontSize: 14, color: '#717171', fontWeight: 700 }}>%</span>
+                  <span style={{ fontSize: 13, color: '#717171', fontWeight: 500 }}>%</span>
                 </div>
                 <button
                   onClick={() => remove(id)}
                   title="Remove"
-                  style={{ flexShrink: 0, border: 'none', background: 'none', color: '#9197A2', fontSize: 17, cursor: 'pointer', padding: '2px 4px', lineHeight: 1 }}
+                  style={{ flexShrink: 0, border: 'none', background: 'none', color: '#9197A2', fontSize: 15, cursor: 'pointer', padding: '2px 4px', lineHeight: 1 }}
                 >
                   ×
                 </button>
@@ -114,12 +114,12 @@ export function WeightPicker({
           })}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 13px', background: '#FBFBFC' }}>
-            <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: '#717171' }}>
+            <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: '#717171' }}>
               {picked.length} of {MAX_PER_SET} parameters
             </span>
             <span
               style={{
-                fontSize: 15, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+                fontSize: 13.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
                 color: total === WEIGHT_TOTAL ? '#4F7A52' : '#C4382E',
               }}
             >
@@ -131,9 +131,9 @@ export function WeightPicker({
       )}
 
       {error ? (
-        <div style={{ fontSize: 14, color: '#C4382E', fontWeight: 600, marginTop: 10 }}>{error}</div>
+        <div style={{ fontSize: 13, color: '#C4382E', fontWeight: 400, marginTop: 10 }}>{error}</div>
       ) : (
-        <div style={{ fontSize: 13, color: '#9197A2', marginTop: 10, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 10, lineHeight: 1.5 }}>
         </div>
       )}
     </>

@@ -111,12 +111,12 @@ export function OutOfLocation() {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14, flexWrap: 'wrap' }}>
         <SearchInput value={search} onChange={setSearch} placeholder="Search employee or manager…" />
-        <div style={{ display: 'inline-flex', border: '1px solid #EBEBEB', borderRadius: 11, overflow: 'hidden', background: '#fff' }}>
+        <div style={{ display: 'inline-flex', border: '1px solid #EBEBEB', borderRadius: 12, overflow: 'hidden', background: '#fff' }}>
           {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setFilter(t.key)}
-              style={{ padding: '8px 14px', fontSize: 14, fontWeight: 700, border: 'none', borderLeft: t.key === 'all' ? 'none' : '1px solid #EBEBEB', background: filter === t.key ? '#0571A6' : '#fff', color: filter === t.key ? '#fff' : '#484848', cursor: 'pointer', fontFamily: 'inherit' }}
+              style={{ padding: '8px 14px', fontSize: 13, fontWeight: 500, border: 'none', borderLeft: t.key === 'all' ? 'none' : '1px solid #EBEBEB', background: filter === t.key ? '#0571A6' : '#fff', color: filter === t.key ? '#fff' : '#484848', cursor: 'pointer', fontFamily: 'inherit' }}
             >
               {t.label}
             </button>
@@ -126,14 +126,14 @@ export function OutOfLocation() {
         <button
           onClick={exportRows}
           disabled={shown.length === 0}
-          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: '#222222', border: 'none', color: '#fff', borderRadius: 11, padding: '9px 15px', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', cursor: shown.length ? 'pointer' : 'not-allowed', opacity: shown.length ? 1 : 0.5 }}
+          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: '#222222', border: 'none', color: '#fff', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: shown.length ? 'pointer' : 'not-allowed', opacity: shown.length ? 1 : 0.5 }}
         >
           <IconDownload /> Export
         </button>
       </div>
 
       <Card>
-        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', fontSize: 12, fontWeight: 700, letterSpacing: '.5px', color: '#717171' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', fontSize: 11.5, fontWeight: 500, letterSpacing: '.5px', color: '#717171' }}>
           <div>EMPLOYEE</div>
           <div>DATE &amp; TIME</div>
           <div>PUNCH</div>
@@ -149,30 +149,30 @@ export function OutOfLocation() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
                 <Avatar name={r.name} />
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 16, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                  <div style={{ fontSize: 14, color: '#717171', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
+                  <div style={{ fontSize: 13, color: '#717171', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {r.employeeCode}{r.department ? ` · ${r.department}` : ''}
                   </div>
                 </div>
               </div>
-              <div style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>
+              <div style={{ fontSize: 14, fontWeight: 400, color: '#484848' }}>
                 {fmtDay(r.workDate)}
-                <div style={{ fontSize: 13, color: '#9197A2', fontWeight: 500 }}>{clock(r.at)}</div>
+                <div style={{ fontSize: 12.5, color: '#9197A2', fontWeight: 400 }}>{clock(r.at)}</div>
               </div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: '#484848' }}>{r.punchType === 'in' ? 'In' : 'Out'}</div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: '#484848' }}>{r.reason}</div>
+              <div style={{ fontSize: 13, fontWeight: 400, color: '#484848' }}>{r.punchType === 'in' ? 'In' : 'Out'}</div>
+              <div style={{ fontSize: 13, fontWeight: 400, color: '#484848' }}>{r.reason}</div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.place}</div>
+                <div style={{ fontSize: 13, fontWeight: 400, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.place}</div>
                 <a
                   href={`https://maps.google.com/?q=${r.latitude},${r.longitude}`}
                   target="_blank"
                   rel="noreferrer"
-                  style={{ fontSize: 12.5, color: '#0571A6', textDecoration: 'none', fontVariantNumeric: 'tabular-nums' }}
+                  style={{ fontSize: 12, color: '#0571A6', textDecoration: 'none', fontVariantNumeric: 'tabular-nums' }}
                 >
                   {r.latitude.toFixed(5)}, {r.longitude.toFixed(5)} ↗
                 </a>
               </div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.manager}>
+              <div style={{ fontSize: 13.5, fontWeight: 400, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.manager}>
                 {r.manager || '—'}
               </div>
               <div title={r.managerNote || ''}>

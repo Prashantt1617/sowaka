@@ -80,14 +80,14 @@ export function AttendanceCorrections() {
         <button
           onClick={exportRows}
           disabled={rows.length === 0}
-          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: '#222222', border: 'none', color: '#fff', borderRadius: 11, padding: '9px 15px', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', cursor: rows.length ? 'pointer' : 'not-allowed', opacity: rows.length ? 1 : 0.5 }}
+          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: '#222222', border: 'none', color: '#fff', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: rows.length ? 'pointer' : 'not-allowed', opacity: rows.length ? 1 : 0.5 }}
         >
           <IconDownload /> Export
         </button>
       </div>
 
       <Card>
-        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', fontSize: 12, fontWeight: 700, letterSpacing: '.5px', color: '#717171' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', fontSize: 11.5, fontWeight: 500, letterSpacing: '.5px', color: '#717171' }}>
           <div>EMPLOYEE</div>
           <div>RAISED ON</div>
           <div>WORK DATE</div>
@@ -105,23 +105,23 @@ export function AttendanceCorrections() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
               <Avatar name={r.name} />
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                <div style={{ fontSize: 14, color: '#717171', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
+                <div style={{ fontSize: 13, color: '#717171', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {r.employeeCode} · {r.team}
                 </div>
               </div>
             </div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>{r.appliedOn}</div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>
+            <div style={{ fontSize: 14, fontWeight: 400, color: '#484848' }}>{r.appliedOn}</div>
+            <div style={{ fontSize: 14, fontWeight: 400, color: '#484848' }}>
               {r.workDate}
-              <div style={{ fontSize: 13, color: '#9197A2', fontWeight: 500 }}>{r.day}</div>
+              <div style={{ fontSize: 12.5, color: '#9197A2', fontWeight: 400 }}>{r.day}</div>
             </div>
             <div><Pill label={r.dayType} tone={DAY_TONE} /></div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: r.recorded === 'No punch' ? '#B25A1B' : '#484848' }}>{r.recorded}</div>
-            <div style={{ fontSize: 14, fontWeight: 500, color: r.eRemark ? '#484848' : '#9197A2', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>
+            <div style={{ fontSize: 13, fontWeight: 400, color: r.recorded === 'No punch' ? '#B25A1B' : '#484848' }}>{r.recorded}</div>
+            <div style={{ fontSize: 13, fontWeight: 400, color: r.eRemark ? '#484848' : '#9197A2', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>
               {r.eRemark || '—'}
             </div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.manager}>
+            <div style={{ fontSize: 13.5, fontWeight: 400, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.manager}>
               {r.manager || '—'}
             </div>
             {r.status === 'Pending' ? (
@@ -154,7 +154,7 @@ function DecideButton({ label, tone, onClick }: { label: string; tone: 'approve'
         border: `1px solid ${approve ? '#CADFC9' : '#EED6DC'}`,
         background: approve ? '#E6F1E7' : '#F8E3E7',
         color: approve ? '#4F7A52' : '#A8475F',
-        borderRadius: 9, padding: '6px 12px', fontSize: 13, fontWeight: 700,
+        borderRadius: 999, padding: '6px 12px', fontSize: 12.5, fontWeight: 500,
         fontFamily: 'inherit', cursor: 'pointer',
       }}
     >
@@ -177,12 +177,12 @@ function ConfirmOverride() {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ width: 430, background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,.25)' }}
+        style={{ width: 430, background: '#fff', borderRadius: 'var(--r-lg)', padding: 24, boxShadow: 'var(--shadow-lg)' }}
       >
-        <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.3px', marginBottom: 6 }}>
+        <div style={{ fontSize: 16.5, fontWeight: 600, letterSpacing: '-.3px', marginBottom: 6 }}>
           {approve ? 'Approve' : 'Decline'} this correction?
         </div>
-        <div style={{ fontSize: 15, color: '#717171', fontWeight: 500, lineHeight: 1.5, marginBottom: 16 }}>
+        <div style={{ fontSize: 13.5, color: '#717171', fontWeight: 400, lineHeight: 1.5, marginBottom: 16 }}>
           {row
             ? `${row.name}’s ${row.workDate} will be ${approve ? `recorded as ${row.dayType.toLowerCase()}` : 'left as it is'}. ${row.manager ? `${row.manager} is the approver — this overrides them.` : ''}`
             : ''}
@@ -192,20 +192,20 @@ function ConfirmOverride() {
           onChange={(e) => s.setCorrNote(e.target.value)}
           placeholder="Add a note for the employee (optional)"
           rows={3}
-          style={{ width: '100%', border: '1px solid #EBEBEB', borderRadius: 11, padding: '11px 13px', fontSize: 15, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 16 }}
+          style={{ width: '100%', border: '1px solid #EBEBEB', borderRadius: 12, padding: '11px 13px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 16 }}
         />
         <div style={{ display: 'flex', gap: 9, justifyContent: 'flex-end' }}>
           <button
             type="button"
             onClick={s.corrCloseConfirm}
-            style={{ border: '1px solid #EBEBEB', background: '#F7F7F9', color: '#484848', borderRadius: 11, padding: '10px 16px', fontSize: 15, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer' }}
+            style={{ border: '1px solid #EBEBEB', background: '#F7F7F9', color: '#484848', borderRadius: 999, padding: '10px 16px', fontSize: 13.5, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer' }}
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={s.corrDecide}
-            style={{ border: 'none', background: approve ? '#4F7A52' : '#A8475F', color: '#fff', borderRadius: 11, padding: '10px 18px', fontSize: 15, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer' }}
+            style={{ border: 'none', background: approve ? '#4F7A52' : '#A8475F', color: '#fff', borderRadius: 999, padding: '10px 18px', fontSize: 13.5, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer' }}
           >
             {approve ? 'Approve' : 'Decline'}
           </button>

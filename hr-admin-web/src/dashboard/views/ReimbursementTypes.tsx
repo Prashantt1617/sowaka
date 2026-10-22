@@ -67,7 +67,7 @@ export function ReimbursementTypes() {
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ fontSize: 14, color: '#717171' }}>
+        <div style={{ fontSize: 13, color: '#717171' }}>
           {loading ? 'Loading…' : `${types.length} type${types.length === 1 ? '' : 's'}`}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
@@ -103,7 +103,7 @@ export function ReimbursementTypes() {
               <tr key={t.id}>
                 <Td>
                   <strong style={{ color: '#0571A6' }}>{t.name}</strong>
-                  {t.payHeadCode && <div style={{ fontSize: 12.5, color: '#717171', marginTop: 2 }}>Bills for the {t.payHeadCode.toLowerCase().replace(/_/g, ' ')} component · tax-free, not paid again</div>}
+                  {t.payHeadCode && <div style={{ fontSize: 12, color: '#717171', marginTop: 2 }}>Bills for the {t.payHeadCode.toLowerCase().replace(/_/g, ' ')} component · tax-free, not paid again</div>}
                 </Td>
                 <Td muted>{t.description || '—'}</Td>
                 <Td right mono>{rupees(t.maxLimit)}</Td>
@@ -176,7 +176,7 @@ function TypeModal({ initial, onClose, onSaved }: {
     <div style={overlay} onClick={onClose}>
       <div style={modalCard} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', padding: '18px 22px 4px' }}>
-          <div style={{ fontSize: 19, fontWeight: 800 }}>
+          <div style={{ fontSize: 16.5, fontWeight: 600 }}>
             {initial ? 'Edit reimbursement type' : 'New reimbursement type'}
           </div>
           <button onClick={onClose} style={iconBtn}><IconClose size={18} /></button>
@@ -197,14 +197,14 @@ function TypeModal({ initial, onClose, onSaved }: {
           </Field>
           <Field label="Maximum limit per claim">
             <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #EBEBEB', borderRadius: 10, overflow: 'hidden', background: '#fff', maxWidth: 260 }}>
-              <span style={{ padding: '9px 12px', color: '#717171', borderRight: '1px solid #EBEBEB', fontSize: 15 }}>₹</span>
+              <span style={{ padding: '9px 12px', color: '#717171', borderRight: '1px solid #EBEBEB', fontSize: 13.5 }}>₹</span>
               <input
                 type="number" min="0" step="100" value={maxLimit}
                 onChange={(e) => setMaxLimit(e.target.value)}
-                style={{ border: 'none', outline: 'none', padding: '9px 11px', fontSize: 16, width: '100%', color: '#222222', background: 'transparent' }}
+                style={{ border: 'none', outline: 'none', padding: '9px 11px', fontSize: 14, width: '100%', color: '#222222', background: 'transparent' }}
               />
             </div>
-            <div style={{ fontSize: 13, color: '#717171', marginTop: 6 }}>
+            <div style={{ fontSize: 12.5, color: '#717171', marginTop: 6 }}>
               {Number(maxLimit) > 0
                 ? `A claim over ₹${Number(maxLimit).toLocaleString('en-IN')} will be refused.`
                 : 'Zero means no cap — any amount is allowed.'}
@@ -215,11 +215,11 @@ function TypeModal({ initial, onClose, onSaved }: {
               <input
                 type="number" min="0" max="365" step="1" value={backdateDays}
                 onChange={(e) => setBackdateDays(e.target.value)}
-                style={{ border: 'none', outline: 'none', padding: '9px 11px', fontSize: 16, width: '100%', color: '#222222', background: 'transparent' }}
+                style={{ border: 'none', outline: 'none', padding: '9px 11px', fontSize: 14, width: '100%', color: '#222222', background: 'transparent' }}
               />
-              <span style={{ padding: '9px 12px', color: '#717171', borderLeft: '1px solid #EBEBEB', fontSize: 15 }}>days back</span>
+              <span style={{ padding: '9px 12px', color: '#717171', borderLeft: '1px solid #EBEBEB', fontSize: 13.5 }}>days back</span>
             </div>
-            <div style={{ fontSize: 13, color: '#717171', marginTop: 6 }}>
+            <div style={{ fontSize: 12.5, color: '#717171', marginTop: 6 }}>
               {Number(backdateDays) > 0
                 ? `An expense older than ${backdateDays} days cannot be claimed. The app hides those dates.`
                 : 'Zero means today only — no past dates can be claimed.'}
@@ -231,7 +231,7 @@ function TypeModal({ initial, onClose, onSaved }: {
                 <option value="">None: an expense claim, paid on the next run</option>
                 {components!.map((h) => <option key={h.code} value={h.code}>{h.name}</option>)}
               </select>
-              <div style={{ fontSize: 13, color: '#717171', marginTop: 6 }}>
+              <div style={{ fontSize: 12.5, color: '#717171', marginTop: 6 }}>
                 {billsFor
                   ? 'This component is already paid with salary every month and taxed until bills come in. An approved claim of this type is not paid again: it makes that much of the component tax-free, and the income tax drops from the next payroll run.'
                   : 'The approved amount is paid on the next payroll run.'}
@@ -259,7 +259,7 @@ function TypeModal({ initial, onClose, onSaved }: {
 function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <label style={{ display: 'block', fontSize: 14, fontWeight: 700, marginBottom: 6, color: '#484848' }}>
+      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: '#484848' }}>
         {label}{required && <span style={{ color: '#C4382E' }}> *</span>}
       </label>
       {children}
@@ -267,21 +267,21 @@ function Field({ label, required, children }: { label: string; required?: boolea
   );
 }
 function Th({ children, right, width }: { children: ReactNode; right?: boolean; width?: number }) {
-  return <th style={{ textAlign: right ? 'right' : 'left', width, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171', fontWeight: 700, padding: '11px 16px', borderBottom: '1px solid #EBEBEB' }}>{children}</th>;
+  return <th style={{ textAlign: right ? 'right' : 'left', width, fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '11px 16px', borderBottom: '1px solid #EBEBEB', background: 'var(--surface-2)' }}>{children}</th>;
 }
 function Td({ children, muted, right, mono }: { children: ReactNode; muted?: boolean; right?: boolean; mono?: boolean }) {
   return <td style={{ padding: '13px 16px', textAlign: right ? 'right' : 'left', borderBottom: '1px solid #F0F0F2', color: muted ? '#717171' : '#222222', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
 }
 
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 16 };
-const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
-const note: CSSProperties = { fontSize: 13, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.55 };
-const onPill: CSSProperties = { fontSize: 12, fontWeight: 800, color: '#4F7A52', background: '#EAF3EA', border: '1px solid #D6E8D6', borderRadius: 20, padding: '3px 10px' };
-const offPill: CSSProperties = { fontSize: 12, fontWeight: 800, color: '#9197A2', background: '#EDEDF0', borderRadius: 20, padding: '3px 10px' };
-const errorTag: CSSProperties = { fontSize: 13.5, color: '#A32B2B', background: '#F7E4E4', border: '1px solid #E8C9C9', borderRadius: 10, padding: '10px 13px', marginBottom: 6 };
-const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 600, color: '#333333', cursor: 'pointer', marginBottom: 10 };
-const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
+const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
+const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: '#fff', color: '#222222' };
+const note: CSSProperties = { fontSize: 12.5, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.55 };
+const onPill: CSSProperties = { fontSize: 11.5, fontWeight: 600, color: '#4F7A52', background: '#EAF3EA', border: '1px solid #D6E8D6', borderRadius: 'var(--r-lg)', padding: '3px 10px' };
+const offPill: CSSProperties = { fontSize: 11.5, fontWeight: 600, color: '#9197A2', background: '#EDEDF0', borderRadius: 'var(--r-lg)', padding: '3px 10px' };
+const errorTag: CSSProperties = { fontSize: 12.5, color: '#A32B2B', background: '#F7E4E4', border: '1px solid #E8C9C9', borderRadius: 10, padding: '10px 13px', marginBottom: 6 };
+const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: 400, color: '#333333', cursor: 'pointer', marginBottom: 10 };
+const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(20,16,12,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 24 };
-const modalCard: CSSProperties = { width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 18, boxShadow: '0 30px 70px rgba(60,40,24,.3)' };
+const modalCard: CSSProperties = { width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)' };
 const iconBtn: CSSProperties = { marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#9197A2', padding: 4 };

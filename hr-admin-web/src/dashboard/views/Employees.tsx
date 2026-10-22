@@ -62,7 +62,7 @@ export function Employees() {
             <option key={t} value={t}>{t}</option>
           ))}
         </SelectBox>
-        <div style={{ marginLeft: 'auto', fontSize: 16, color: '#717171', fontWeight: 600 }}>{rows.length} of {s.emps.length} people</div>
+        <div style={{ marginLeft: 'auto', fontSize: 14, color: '#717171', fontWeight: 400 }}>{rows.length} of {s.emps.length} people</div>
         <button onClick={() => exportEmployees(rows)} disabled={rows.length === 0} style={ghostBtn}>Export list</button>
         <button onClick={openAdd} disabled={checkingLimit} style={primaryBtn}>
           <IconPlus size={15} /> Add user
@@ -70,7 +70,7 @@ export function Employees() {
       </div>
 
       <Card>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
           <thead>
             <tr>
               <Th>Employee</Th>
@@ -90,7 +90,7 @@ export function Employees() {
                     <Avatar name={r.name} size={34} font={13} src={r.photoUrl} />
                     <span style={{ minWidth: 0 }}>
                       <NameCell name={r.name} />
-                      <span style={{ display: 'block', fontSize: 13, color: '#9197A2', fontWeight: 600 }}>{r.employeeId}</span>
+                      <span style={{ display: 'block', fontSize: 12.5, color: '#9197A2', fontWeight: 400 }}>{r.employeeId}</span>
                     </span>
                   </span>
                 </Td>
@@ -106,7 +106,7 @@ export function Employees() {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 15 }}>
+                <td colSpan={7} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 13.5 }}>
                   No employees match your search.
                 </td>
               </tr>
@@ -117,7 +117,7 @@ export function Employees() {
 
       {rows.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14 }}>
-          <div style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>
+          <div style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>
             Showing {firstShown}–{lastShown} of {rows.length}
           </div>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -153,7 +153,7 @@ export function Employees() {
 
 const pageBtn: CSSProperties = { ...smallBtn };
 const pageBtnDisabled: CSSProperties = { color: '#9197A2', cursor: 'not-allowed', background: '#F7F7F9' };
-const pageNum: CSSProperties = { minWidth: 32, height: 32, background: '#fff', color: '#484848', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: 'pointer' };
+const pageNum: CSSProperties = { minWidth: 32, height: 32, background: '#fff', color: '#484848', border: '1px solid #EBEBEB', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer' };
 const pageNumActive: CSSProperties = { background: '#0571A6', color: '#fff', borderColor: '#0571A6' };
 
 /** The list as filtered on screen, as an Excel sheet. */

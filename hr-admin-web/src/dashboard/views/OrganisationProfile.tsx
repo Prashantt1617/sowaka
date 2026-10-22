@@ -132,7 +132,7 @@ export function OrganisationProfile() {
     return () => { live = false; };
   }, [org]);
 
-  if (loadError) return <div style={{ maxWidth: 860, color: '#A8475F', fontWeight: 600 }}>{loadError}</div>;
+  if (loadError) return <div style={{ maxWidth: 860, color: '#A8475F', fontWeight: 400 }}>{loadError}</div>;
   if (!form) return <div style={{ maxWidth: 860, color: '#9197A2' }}>Loading…</div>;
 
   const set = <K extends keyof OrgForm>(k: K, v: OrgForm[K]) => setForm({ ...form, [k]: v });
@@ -170,7 +170,7 @@ export function OrganisationProfile() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 18, margin: '4px 0 20px' }}>
           {brand.icon ? (
             // The organisation's own mark, the same one the sidebar and sign-in wear.
-            <img src={brand.icon} alt="" style={{ ...logoTile, objectFit: 'cover', boxShadow: '0 4px 14px rgba(0,0,0,.14)', background: '#fff' }} />
+            <img src={brand.icon} alt="" style={{ ...logoTile, objectFit: 'cover', boxShadow: 'var(--shadow)', background: '#fff' }} />
           ) : (
             <div style={logoTile}>
               <div style={{ transform: 'scale(2.4)' }}>
@@ -180,7 +180,7 @@ export function OrganisationProfile() {
           )}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: '#484848' }}>Organisation logo</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#484848' }}>Organisation logo</div>
               <span style={lockPill}>🔒 Owner-managed</span>
             </div>
           </div>
@@ -298,7 +298,7 @@ export function OrganisationProfile() {
 function GroupHeader({ title }: { title: string }) {
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.2px' }}>{title}</div>
+      <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-.2px' }}>{title}</div>
     </div>
   );
 }
@@ -306,15 +306,15 @@ function GroupHeader({ title }: { title: string }) {
 function Field({ label, full, children }: { label: string; full?: boolean; children: ReactNode }) {
   return (
     <div style={full ? { gridColumn: '1 / -1' } : undefined}>
-      <label style={{ display: 'block', fontSize: 14, fontWeight: 700, marginBottom: 5, color: '#484848' }}>{label}</label>
+      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 5, color: '#484848' }}>{label}</label>
       {children}
     </div>
   );
 }
 
 const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 };
-const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
+const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: '#fff', color: '#222222' };
 const readonly: CSSProperties = { background: '#F7F7F9', color: '#717171' };
-const primaryBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const logoTile: CSSProperties = { width: 76, height: 76, borderRadius: 18, background: '#0571A6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 14px rgba(5,113,166,.28)' };
-const lockPill: CSSProperties = { fontSize: 12, fontWeight: 700, color: '#9A6B25', background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 20, padding: '2px 10px' };
+const primaryBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const logoTile: CSSProperties = { width: 76, height: 76, borderRadius: 'var(--r-lg)', background: '#0571A6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 14px rgba(5,113,166,.28)' };
+const lockPill: CSSProperties = { fontSize: 11.5, fontWeight: 500, color: '#9A6B25', background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 'var(--r-lg)', padding: '2px 10px' };

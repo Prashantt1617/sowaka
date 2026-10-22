@@ -63,14 +63,14 @@ export function Overtime() {
         <button
           onClick={exportRows}
           disabled={rows.length === 0}
-          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: '#222222', border: 'none', color: '#fff', borderRadius: 11, padding: '9px 15px', fontSize: 14, fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed', opacity: rows.length ? 1 : 0.5 }}
+          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: '#222222', border: 'none', color: '#fff', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, cursor: rows.length ? 'pointer' : 'not-allowed', opacity: rows.length ? 1 : 0.5 }}
         >
           <IconDownload /> Export
         </button>
       </div>
 
       <Card>
-        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', fontSize: 12, fontWeight: 700, letterSpacing: '.5px', color: '#717171' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', fontSize: 11.5, fontWeight: 500, letterSpacing: '.5px', color: '#717171' }}>
           <div>EMPLOYEE</div>
           <div>APPLIED ON</div>
           <div>OVERTIME DATE</div>
@@ -89,17 +89,17 @@ export function Overtime() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
               <Avatar name={r.name} />
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                <div style={{ fontSize: 14, color: '#717171', fontWeight: 500 }}>{r.team}</div>
+                <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
+                <div style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>{r.team}</div>
               </div>
             </div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>{r.appliedOn}</div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>{r.otDate}</div>
+            <div style={{ fontSize: 14, fontWeight: 400, color: '#484848' }}>{r.appliedOn}</div>
+            <div style={{ fontSize: 14, fontWeight: 400, color: '#484848' }}>{r.otDate}</div>
             <div>
               <Pill label={r.duration} tone={OTDUR[r.duration]} />
             </div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>{r.day}</div>
-            <div style={{ fontSize: 14, fontWeight: 500, color: r.eRemark ? '#484848' : '#9197A2', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
+            <div style={{ fontSize: 14, fontWeight: 400, color: '#484848' }}>{r.day}</div>
+            <div style={{ fontSize: 13, fontWeight: 400, color: r.eRemark ? '#484848' : '#9197A2', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
             <div>
               <Pill label={r.byAdmin ? `${r.status} · by admin` : r.status} tone={STAT[r.status]} />
             </div>
