@@ -86,6 +86,18 @@ textarea.pd-inp { height: auto; padding: 10px 12px; min-height: 84px; line-heigh
 .pd-seg button .c { font-size: 11px; color: var(--ink-3); font-weight: 700; }
 .pd-seg button.on .c { color: inherit; opacity: 0.8; }
 
+/* Chips */
+.pd-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.pd-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 99px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink-2);
+  font-family: inherit; font-size: 12.5px; font-weight: 400; cursor: pointer; white-space: nowrap;
+}
+.pd-chip:hover { border-color: var(--accent); color: var(--accent-ink); }
+.pd-chip.on { background: var(--sel); border-color: var(--sel); color: var(--on-sel); }
+.pd-chip .c { font-size: 11px; opacity: 0.75; font-variant-numeric: tabular-nums; }
+.pd-chip.sm { height: 30px; padding: 0 11px; }
+
 /* Tags and small markers */
 .pd-tag {
   display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 400; line-height: 1.5; padding: 3px 9px; border-radius: 999px;
@@ -142,6 +154,17 @@ table.pd-t { width: 100%; border-collapse: separate !important; border-spacing: 
 .pd-hband > th:last-child { border-radius: 0 12px 12px 0; }
 .pd-tbl-wrap { overflow-x: auto; margin: 0 -20px; padding: 0 20px; }
 
+.pd-row-hover:hover { background: var(--surface-2); }
+
+/* Focus ring on form fields inside the People and Shifts dialogs and forms */
+.pd-form input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+.pd-form select:focus,
+.pd-form textarea:focus,
+.pd-modal input:not([type="checkbox"]):not([type="radio"]):focus,
+.pd-modal select:focus {
+  outline: none; border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 /* Person cell */
 .pd-who { display: flex; align-items: center; gap: 12px; min-width: 150px; }
 .pd-who > .txt { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }
@@ -160,6 +183,23 @@ table.pd-t { width: 100%; border-collapse: separate !important; border-spacing: 
 
 /* Empty */
 .pd-empty { padding: 40px; text-align: center; color: var(--ink-3); font-size: 13px; }
+
+/* Step chips (bulk assign, add employee) */
+.pd-steps { display: flex; gap: 8px; flex-wrap: wrap; }
+.pd-step {
+  display: flex; align-items: center; gap: 10px; height: 44px; padding: 8px 14px 8px 8px; border-radius: 99px;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-3);
+  font-family: inherit; font-size: 14px; font-weight: 400; cursor: pointer; white-space: nowrap;
+}
+.pd-step > i {
+  font-style: normal; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: var(--surface); border: 1px solid var(--line-2); font-size: 12px;
+}
+.pd-step.on { background: var(--accent-soft); border-color: transparent; color: var(--accent-ink); }
+.pd-step.on > i { background: var(--accent); color: #fff; border-color: transparent; }
+.pd-step.done { color: var(--ink-2); }
+.pd-step.done > i { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+.pd-step:disabled { cursor: default; opacity: 0.7; }
 
 /* Group label: small brand eyebrow */
 .pd-eyebrow { font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--hi); }
