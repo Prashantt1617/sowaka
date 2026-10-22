@@ -1,5 +1,6 @@
 import { ObjectId } from 'mongodb';
 import { salaryStructures, salaryTemplates, users } from '../config/db';
+import { requestViewer } from '../middleware/request-viewer';
 import { CalculationBasis, PayHead } from '../models/payHead.model';
 import { OvertimePayRule, SalaryTemplate, SalaryTemplateComponent, TemplateStatutoryWages } from '../models/salaryTemplate.model';
 import { DEDUCTION_TRIGGERS, DeductionTrigger, SalaryDeductionRule } from '../models/deduction.model';
@@ -353,7 +354,7 @@ function isDuplicateKey(error: unknown): boolean {
 }
 
 async function requireAdminOrg(adminUserId: string): Promise<string> {
-  const admin = await users().findOne({ userId: adminUserId });
+  const admin = requestViewer(adminUserId) ?? (await users().findOne({ userId: adminUserId }));
   if (!admin) throw new SalaryTemplateError(404, 'User not found');
   if (!admin.org) throw new SalaryTemplateError(409, 'User is not attached to a company');
   return admin.org;

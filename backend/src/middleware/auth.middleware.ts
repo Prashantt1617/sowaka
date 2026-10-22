@@ -4,6 +4,7 @@ import { hashSessionToken } from '../services/auth.service';
 import { redactTicket } from '../services/scribble-ticket.service';
 import { logger } from '../utils/logger';
 import type { User } from '../models/user.model';
+import { runAsViewer } from './request-viewer';
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
@@ -16,6 +17,15 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
         message: 'Authentication required',
         requestId: req.requestId,
       });
+      return;
+    }
+
+    // Already checked on this request: /admin/payroll, /admin/kpi and the
+    // three /suwi routers each pass through a router of their own that asks
+    // again. The answer cannot have changed in the milliseconds between, and
+    // asking cost two round trips each time.
+    if (req.auth?.token === token && req.auth.user) {
+      next();
       return;
     }
 
@@ -57,7 +67,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       dashboardAccess: user.dashboardAccess === true,
       user: user as Omit<User, 'profilePhotoUrl'>,
     };
-    next();
+    runAsViewer(user as Omit<User, 'profilePhotoUrl'>, next);
   } catch (error) {
     next(error);
   }

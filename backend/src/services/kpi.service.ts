@@ -1,5 +1,6 @@
 import { ObjectId } from 'mongodb';
 import { feedbackRecords, kpiAssignments, kpiParameters, kpiTemplates, users } from '../config/db';
+import { requestViewer } from '../middleware/request-viewer';
 import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
 import { currentPeriodFor, nextPeriod } from './cycle';
 
@@ -59,7 +60,7 @@ async function requireFutureCycle(org: string, period: string): Promise<void> {
 
 /** The caller's org. Every read and write below is scoped to it. */
 async function requireOrg(adminUserId: string): Promise<string> {
-  const admin = await users().findOne({ userId: adminUserId });
+  const admin = requestViewer(adminUserId) ?? (await users().findOne({ userId: adminUserId }));
   if (!admin) throw new KpiError(404, 'User not found');
   if (!admin.org) throw new KpiError(409, 'User is not attached to a company');
   return admin.org;

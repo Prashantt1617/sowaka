@@ -1,5 +1,6 @@
 import { ObjectId } from 'mongodb';
 import { shiftAssignments, shiftPolicies, shiftTemplates, users } from '../config/db';
+import { requestViewer } from '../middleware/request-viewer';
 import {
   CORRECTION_TRIGGERS,
   DayMark,
@@ -49,7 +50,7 @@ const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /** The caller's org. Every read and write below is scoped to it. */
 export async function requireOrg(callerId: string): Promise<string> {
-  const caller = await users().findOne({ userId: callerId });
+  const caller = requestViewer(callerId) ?? (await users().findOne({ userId: callerId }));
   if (!caller) throw new ShiftError(404, 'User not found');
   if (!caller.org) throw new ShiftError(409, 'User is not attached to a company');
   return caller.org;

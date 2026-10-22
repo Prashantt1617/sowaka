@@ -1,4 +1,5 @@
-import { payHeads, salaryStructures, salaryTemplates, users } from '../config/db';
+import { salaryStructures, salaryTemplates, users } from '../config/db';
+import { requestViewer } from '../middleware/request-viewer';
 import { PayHead } from '../models/payHead.model';
 import { EmployeeStatutory, SalaryRevision, SalaryStructure, StructureOverrides } from '../models/salaryStructure.model';
 import { SalaryTemplate } from '../models/salaryTemplate.model';
@@ -352,7 +353,7 @@ async function requireOrgEmployee(org: string, userId: string): Promise<User> {
 }
 
 async function requireAdminOrg(adminUserId: string): Promise<string> {
-  const admin = await users().findOne({ userId: adminUserId });
+  const admin = requestViewer(adminUserId) ?? (await users().findOne({ userId: adminUserId }));
   if (!admin) throw new SalaryStructureError(404, 'User not found');
   if (!admin.org) throw new SalaryStructureError(409, 'User is not attached to a company');
   return admin.org;

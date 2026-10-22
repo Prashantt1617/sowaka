@@ -5,6 +5,7 @@
  * Salary and bank tasks are shown only to people with payroll access.
  */
 import { employeePaymentDetails, kpiAssignments, salaryStructures, shiftTemplates, users } from '../config/db';
+import { requestViewer } from '../middleware/request-viewer';
 import { AdminError } from './admin.service';
 import { hasPayrollAccess } from './payrollAccess.service';
 import { currentPeriodFor } from './cycle';
@@ -26,7 +27,7 @@ const DETAILS: [keyof import('../models/user.model').User, string][] = [
 ];
 
 export async function peopleTasks(viewerUserId: string) {
-  const viewer = await users().findOne({ userId: viewerUserId });
+  const viewer = requestViewer(viewerUserId) ?? (await users().findOne({ userId: viewerUserId }));
   if (!viewer?.org || viewer.dashboardAccess !== true) throw new AdminError(403, 'No dashboard access');
   const open = viewer.dashboardAdmin === true || !Array.isArray(viewer.dashboardTabs) || viewer.dashboardTabs.includes('employees');
   if (!open) throw new AdminError(403, 'People › Tasks needs access to Employees');

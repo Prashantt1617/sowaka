@@ -9,6 +9,7 @@ import {
   users,
   employeePaymentDetails,
 } from '../config/db';
+import { requestViewer } from '../middleware/request-viewer';
 import {
   Payslip,
   PayslipInputs,
@@ -17,7 +18,6 @@ import {
   PayrollRunTotals,
 } from '../models/payrollRun.model';
 import { ResolvedRuleSet } from '../models/statutoryRule.model';
-import { User } from '../models/user.model';
 import { calculateSalaryStructure } from './salary-calculator';
 import { applyOverrides, resolveTemplateComponents } from './salaryTemplate.service';
 import { esiCoveredThisPeriod, statutorySettingsFor, workStateOf } from './statutorySettings.service';
@@ -797,7 +797,7 @@ async function findOwnedRun(org: string, runIdInput: string): Promise<StoredRun>
 }
 
 export async function requireAdminOrg(adminUserId: string): Promise<string> {
-  const admin: User | null = await users().findOne({ userId: adminUserId });
+  const admin = requestViewer(adminUserId) ?? (await users().findOne({ userId: adminUserId }));
   if (!admin) throw new PayrollRunError(404, 'User not found');
   if (!admin.org) throw new PayrollRunError(409, 'User is not attached to a company');
   return admin.org;
