@@ -69,8 +69,17 @@ export async function tdsWorksheet(viewerUserId: string, payslipId: string) {
 export async function worksheetFor(org: string, slip: Payslip) {
   const { userId, period } = slip;
   const { fy, firstPeriod, monthsAfter } = fyOf(period);
-  const [employee, structure, catalog, templates, settings, configs, declarations, payment, company] = await Promise.all([
-    users().findOne({ userId }),
+  // Every read below depends only on the payslip, so they go together: the
+  // person's state rules follow the person as soon as they arrive, and the
+  // bill categories are fetched in case reimbursements need them. This FY's
+  // earlier payslips and the org's live runs come in the same trip.
+  const employeeP = users().findOne({ userId });
+  const ruleSetP = employeeP.then((e) => (e ? resolveRuleSet(org, workStateOf(e)) : undefined));
+  const billCategoriesP = billCategories(org);
+  ruleSetP.catch(() => undefined);
+  billCategoriesP.catch(() => undefined);
+  const [employee, structure, catalog, templates, settings, configs, declarations, payment, company, earlier, liveRuns] = await Promise.all([
+    employeeP,
     salaryStructures().findOne({ org, userId, status: 'active' }),
     payHeads().find({ org }).toArray(),
     salaryTemplates().find({ org }).toArray(),
@@ -79,6 +88,8 @@ export async function worksheetFor(org: string, slip: Payslip) {
     declarationsFor(org, fy, [userId]),
     employeePaymentDetails().findOne({ org, userId } as never) as Promise<{ pan?: string; panLast4?: string } | null>,
     companyOf(org),
+    payslips().find({ org, userId, period: { $gte: firstPeriod, $lt: period } }).toArray(),
+    payrollRuns().find({ org, status: { $ne: 'rejected' } }, { projection: { status: 1 } }).toArray(),
   ]);
   const declaration = declarations.get(userId);
   const regime: TaxRegime = declaration?.regime ?? settings.tds?.defaultRegime ?? 'new';
@@ -89,11 +100,7 @@ export async function worksheetFor(org: string, slip: Payslip) {
   const headByCode = new Map(catalog.map((h) => [h.code, h]));
 
   // This FY's earlier payslips: one per month, from the furthest-along run.
-  const earlier = await payslips().find({ org, userId, period: { $gte: firstPeriod, $lt: period } }).toArray();
-  const runs = await payrollRuns()
-    .find({ org, _id: { $in: [...new Set(earlier.map((s) => s.runId))].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id)) }, status: { $ne: 'rejected' } }, { projection: { status: 1 } })
-    .toArray();
-  const rankOf = new Map(runs.map((r) => [r._id.toHexString(), RUN_RANK[r.status] ?? 0]));
+  const rankOf = new Map(liveRuns.map((r) => [r._id.toHexString(), RUN_RANK[r.status] ?? 0]));
   const byPeriod = new Map<string, Payslip>();
   for (const s of earlier) {
     const rank = rankOf.get(s.runId);
@@ -106,7 +113,7 @@ export async function worksheetFor(org: string, slip: Payslip) {
 
   // The salary as it would be computed for any month (for months before Sowaka and the projection).
   const template = structure?.salaryTemplateCode ? templates.find((t) => t.code === structure.salaryTemplateCode) : undefined;
-  const ruleSet = employee ? await resolveRuleSet(org, workStateOf(employee)) : undefined;
+  const ruleSet = await ruleSetP;
   const salaryFor = structure && template && ruleSet
     ? (p: string, employedFrom?: string) => calculateSalaryStructure({
       monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
@@ -231,7 +238,7 @@ export async function worksheetFor(org: string, slip: Payslip) {
   for (const [code, row] of rows) if (headByCode.get(code)?.category === 'reimbursement' && headByCode.get(code)?.taxable !== false) reimbPaid.set(code, row.actualPaise);
   if (reimbPaid.size) {
     const until = new Date(Date.UTC(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0, 23, 59, 59));
-    const billed = await billsByComponent(await billCategories(org), [userId], period, until);
+    const billed = await billsByComponent(await billCategoriesP, [userId], period, until);
     for (const line of reimbursementTax(reimbPaid, billed.get(userId), headByCode).byCode) {
       if (line.exemptPaise > 0) exempt.set(`${nameOf(line.code)} (bills)`, line.exemptPaise);
     }

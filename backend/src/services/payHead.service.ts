@@ -1,5 +1,6 @@
 import { ObjectId } from 'mongodb';
 import { payHeads, salaryStructures, salaryTemplates, users } from '../config/db';
+import { requestViewer } from '../middleware/request-viewer';
 import { standardNotAdded } from '../shared/payroll/standard-components';
 import {
   CalculationBasis,
@@ -549,7 +550,7 @@ async function findOwned(org: string, idInput: string): Promise<StoredPayHead> {
 }
 
 async function requireAdminOrg(adminUserId: string): Promise<string> {
-  const admin = await users().findOne({ userId: adminUserId });
+  const admin = requestViewer(adminUserId) ?? (await users().findOne({ userId: adminUserId }));
   if (!admin) throw new PayHeadError(404, 'User not found');
   if (!admin.org) throw new PayHeadError(409, 'User is not attached to a company');
   return admin.org;

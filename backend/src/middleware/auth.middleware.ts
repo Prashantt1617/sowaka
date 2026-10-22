@@ -5,6 +5,8 @@ import { redactTicket } from '../services/scribble-ticket.service';
 import { runAsRequestUser } from '../services/request-user';
 import { logger } from '../utils/logger';
 import type { User } from '../models/user.model';
+import type { AuthSessionDocument } from '../models/auth.model';
+import { runAsViewer } from './request-viewer';
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
@@ -20,21 +22,25 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    // Already checked on this request: a path under /admin passes the admin
-    // router's check and then its own router's (/admin/kpi, /admin/payroll…),
-    // and /suwi has three routers in a row. Once is enough.
+    // Already checked on this request: /admin/payroll, /admin/kpi and the
+    // three /suwi routers each pass through a router of their own that asks
+    // again. The answer cannot have changed in the milliseconds between, and
+    // asking cost two round trips each time.
     if (req.auth?.token === token && req.auth.user) {
       next();
       return;
     }
 
-    // The session and its user in one round trip rather than two in a row.
-    // The user is the whole record, bar the profile photo: older accounts
-    // hold it inline as a base64 data URI of hundreds of KB, which is the one
-    // field worth leaving behind on every call. The rest is a few hundred
-    // bytes, and a handler that needs the user then has it without a second read.
+    // The session and its user in one round trip rather than two: every
+    // signed-in request pays this before any work starts, and on a slow link
+    // to the cluster the second trip was a few hundred milliseconds a call.
+    //
+    // The user is the whole record, bar the profile photo: older accounts hold
+    // it inline as a base64 data URI of hundreds of KB, which is the one field
+    // worth leaving behind on every call. The rest is a few hundred bytes, and
+    // a handler that needs the user then has it without a second read.
     const [session] = await authSessions()
-      .aggregate<{ userId: string; user: Omit<User, 'profilePhotoUrl'>[] }>([
+      .aggregate<AuthSessionDocument & { user: Omit<User, 'profilePhotoUrl'>[] }>([
         { $match: { tokenHash: hashSessionToken(token), expiresAt: { $gt: new Date() } } },
         { $limit: 1 },
         {
@@ -42,11 +48,10 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
             from: users().collectionName,
             localField: 'userId',
             foreignField: 'userId',
-            pipeline: [{ $project: { _id: 0, profilePhotoUrl: 0 } }, { $limit: 1 }],
+            pipeline: [{ $limit: 1 }, { $project: { _id: 0, profilePhotoUrl: 0 } }],
             as: 'user',
           },
         },
-        { $project: { _id: 0, userId: 1, user: 1 } },
       ])
       .toArray();
     if (!session) {
@@ -76,8 +81,9 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       dashboardAccess: user.dashboardAccess === true,
       user,
     };
-    // So `orgUsers` and the like know the caller's org without reading it again.
-    runAsRequestUser({ userId: session.userId, org: user.org }, next);
+    // So `orgUsers` and the services that need the caller's org know it
+    // without reading the user again.
+    runAsRequestUser({ userId: session.userId, org: user.org }, () => runAsViewer(user as Omit<User, 'profilePhotoUrl'>, next));
   } catch (error) {
     next(error);
   }

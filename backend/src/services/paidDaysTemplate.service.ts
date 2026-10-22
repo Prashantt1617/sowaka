@@ -7,6 +7,7 @@
  * given to the people on it), so no one's pay changes with the move.
  */
 import { paidDaysTemplates, salaryStructures, salaryTemplates, users } from '../config/db';
+import { requestViewer } from '../middleware/request-viewer';
 import { PaidDaysTemplate } from '../models/paidDaysTemplate.model';
 import { SalaryDeductionRule } from '../models/deduction.model';
 import { parseDeductionRules } from './salaryTemplate.service';
@@ -88,7 +89,7 @@ export async function paidDaysResolver(org: string) {
 // —— API ——
 
 async function orgOf(adminUserId: string): Promise<string> {
-  const admin = await users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1 } });
+  const admin = requestViewer(adminUserId) ?? (await users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1 } }));
   if (!admin?.org) throw new PaidDaysTemplateError(409, 'User is not attached to a company');
   return admin.org;
 }

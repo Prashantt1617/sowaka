@@ -9,6 +9,7 @@ import {
   users,
   employeePaymentDetails,
 } from '../config/db';
+import { requestViewer } from '../middleware/request-viewer';
 import {
   Payslip,
   PayslipInputs,
@@ -17,7 +18,6 @@ import {
   PayrollRunTotals,
 } from '../models/payrollRun.model';
 import { ResolvedRuleSet } from '../models/statutoryRule.model';
-import { User } from '../models/user.model';
 import { calculateSalaryStructure } from './salary-calculator';
 import { applyOverrides, resolveTemplateComponents } from './salaryTemplate.service';
 import { esiCoveredThisPeriod, statutorySettingsFor, workStateOf } from './statutorySettings.service';
@@ -424,10 +424,17 @@ export async function listRuns(adminUserId: string) {
 
 export async function getRun(adminUserId: string, runIdInput: string) {
   const org = await requireAdminOrg(adminUserId);
-  const run = await findOwnedRun(org, runIdInput);
-  const slips = await payslips().find({ org, runId: run._id.toHexString() }).toArray();
-  const creatorMayApprove = run.createdByUserId === adminUserId && (await otherRunApprovers(org, adminUserId)) === 0;
-  return { run: { ...runView(run), creatorMayApprove }, payslips: await slipsForDisplay(org, slips, true), company: await companyOf(org) };
+  // The run, its payslips, the company and the approver count do not depend
+  // on one another, so they are asked for together rather than in turn.
+  const runHex = ObjectId.isValid(runIdInput) ? new ObjectId(runIdInput).toHexString() : '';
+  const [run, slips, company, approvers] = await Promise.all([
+    findOwnedRun(org, runIdInput),
+    runHex ? payslips().find({ org, runId: runHex }).toArray() : Promise.resolve([]),
+    companyOf(org),
+    otherRunApprovers(org, adminUserId),
+  ]);
+  const creatorMayApprove = run.createdByUserId === adminUserId && approvers === 0;
+  return { run: { ...runView(run), creatorMayApprove }, payslips: await slipsForDisplay(org, slips, true), company };
 }
 
 /**
@@ -451,14 +458,18 @@ async function otherRunApprovers(org: string, userId: string): Promise<number> {
  */
 export async function employeePayslips(adminUserId: string, userId: string) {
   const org = await requireAdminOrg(adminUserId);
-  const slips = await payslips().find({ org, userId }).sort({ period: -1 }).toArray();
-  const runIds = [...new Set(slips.map((slip) => slip.runId))].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
-  const runs = await payrollRuns().find({ org, _id: { $in: runIds } }).toArray();
+  // The org's runs (one a month) come with the payslips rather than after
+  // them; only the ones these payslips came from are used.
+  const [slips, runs, company] = await Promise.all([
+    payslips().find({ org, userId }).sort({ period: -1 }).toArray(),
+    payrollRuns().find({ org }).toArray(),
+    companyOf(org),
+  ]);
   const runById = new Map(runs.map((run) => [run._id.toHexString(), run as StoredRun]));
   const kept = slips.filter((slip) => runById.has(slip.runId));
   const shown = await slipsForDisplay(org, kept, true);
   return {
-    company: await companyOf(org),
+    company,
     payslips: kept.map((slip, i) => ({ run: runView(runById.get(slip.runId)!), payslip: shown[i] })),
   };
 }
@@ -498,9 +509,13 @@ async function withYtd<T extends ReturnType<typeof payslipView>>(org: string, vi
   const userIds = [...new Set(views.map((v) => v.userId))];
   const periods = views.map((v) => v.period).sort();
   const from = fyOf(periods[0]).firstPeriod;
-  const rows = await payslips().find({ org, userId: { $in: userIds }, period: { $gte: from, $lte: periods[periods.length - 1] } }).toArray();
-  const runIds = [...new Set(rows.map((r) => r.runId))].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
-  const live = new Set((await payrollRuns().find({ _id: { $in: runIds }, status: { $ne: 'rejected' } }, { projection: { _id: 1 } }).toArray()).map((r) => r._id.toHexString()));
+  // The org's live runs (one a month) come with the rows rather than after
+  // them: a payslip belongs to a run of its own org, so the answer is the same.
+  const [rows, liveRuns] = await Promise.all([
+    payslips().find({ org, userId: { $in: userIds }, period: { $gte: from, $lte: periods[periods.length - 1] } }).toArray(),
+    payrollRuns().find({ org, status: { $ne: 'rejected' } }, { projection: { _id: 1 } }).toArray(),
+  ]);
+  const live = new Set(liveRuns.map((r) => r._id.toHexString()));
   return views.map((v) => {
     const fy = fyOf(v.period).firstPeriod;
     const earnings: Record<string, number> = {};
@@ -533,8 +548,10 @@ async function bankAccounts(org: string, userIds: string[], reveal: boolean): Pr
 
 /** The payslip as the dashboard and app show it: with YTD and the bank account. */
 async function slipsForDisplay(org: string, slips: (Payslip & { _id?: ObjectId })[], revealBank: boolean) {
-  const views = await withYtd(org, slips.map(payslipView));
-  const banks = await bankAccounts(org, [...new Set(views.map((v) => v.userId))], revealBank);
+  const [views, banks] = await Promise.all([
+    withYtd(org, slips.map(payslipView)),
+    bankAccounts(org, [...new Set(slips.map((s) => s.userId))], revealBank),
+  ]);
   return views.map((v) => ({ ...v, bankAccountNo: banks.get(v.userId) }));
 }
 
@@ -550,9 +567,9 @@ export async function myPayslips(userId: string) {
   const runById = new Map(runs.map((run) => [run._id.toHexString(), run as StoredRun]));
   const slips = all.filter((s) => runById.has(s.runId)).slice(0, MY_PAYSLIPS);
   if (slips.length === 0) return { company: null, payslips: [] };
-  const shown = await slipsForDisplay(slips[0].org, slips, true);
+  const [shown, company] = await Promise.all([slipsForDisplay(slips[0].org, slips, true), companyOf(slips[0].org)]);
   return {
-    company: await companyOf(slips[0].org),
+    company,
     payslips: slips.map((s, i) => ({ run: runView(runById.get(s.runId)!), payslip: shown[i] })),
   };
 }
@@ -797,7 +814,7 @@ async function findOwnedRun(org: string, runIdInput: string): Promise<StoredRun>
 }
 
 export async function requireAdminOrg(adminUserId: string): Promise<string> {
-  const admin: User | null = await users().findOne({ userId: adminUserId });
+  const admin = requestViewer(adminUserId) ?? (await users().findOne({ userId: adminUserId }));
   if (!admin) throw new PayrollRunError(404, 'User not found');
   if (!admin.org) throw new PayrollRunError(409, 'User is not attached to a company');
   return admin.org;

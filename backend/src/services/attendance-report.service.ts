@@ -1,4 +1,5 @@
 import { attendanceOverrides, attendanceRecords, holidays, leaves, shiftAssignments, shiftTemplates, users } from '../config/db';
+import { requestViewer } from '../middleware/request-viewer';
 import { AttendanceOverride, HrDayStatus } from '../models/attendance.model';
 import { Leave } from '../models/leave.model';
 import { DayMark, OrgShiftPolicy, PunchFormat, ShiftTemplate } from '../models/shift.model';
@@ -453,7 +454,7 @@ export async function attendanceReport(
 async function adminOrg(adminUserId: string): Promise<string> {
   const hit = adminOrgCache.get(adminUserId);
   if (hit && hit.expires > Date.now()) return hit.org;
-  const admin = await users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1 } });
+  const admin = requestViewer(adminUserId) ?? (await users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1 } }));
   if (!admin?.org) throw new ReportError(403, 'No organisation on this account');
   adminOrgCache.set(adminUserId, { expires: Date.now() + ADMIN_ORG_TTL_MS, org: admin.org });
   return admin.org;

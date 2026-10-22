@@ -1,4 +1,5 @@
-import { payHeads, salaryStructures, salaryTemplates, users } from '../config/db';
+import { salaryStructures, salaryTemplates, users } from '../config/db';
+import { requestViewer } from '../middleware/request-viewer';
 import { PayHead } from '../models/payHead.model';
 import { EmployeeStatutory, SalaryRevision, SalaryStructure, StructureOverrides } from '../models/salaryStructure.model';
 import { SalaryTemplate } from '../models/salaryTemplate.model';
@@ -53,10 +54,22 @@ export async function listSalaryStructures(adminUserId: string) {
 /** The saved structure plus its freshly computed breakup. */
 export async function getSalaryStructure(adminUserId: string, userId: string) {
   const org = await requireAdminOrg(adminUserId);
-  const doc = await salaryStructures().findOne({ org, userId });
+  // The structure, the person and the pay-head catalogue together, rather
+  // than one after another; a failure is still reported in the old order.
+  const [docR, employeeR, catalogR] = await Promise.allSettled([
+    salaryStructures().findOne({ org, userId }),
+    requireOrgEmployee(org, userId),
+    orgPayHeads(org),
+  ]);
+  const doc = settled(docR);
   if (!doc) throw new SalaryStructureError(404, 'No salary structure for this employee');
-  const { computed, components, template } = await compute(org, userId, doc);
+  const { computed, components, template } = await compute(org, userId, doc, settled(employeeR), settled(catalogR));
   return { structure: viewOf(doc, template.name, await payrollAccessOf(adminUserId)), computed, components };
+}
+
+function settled<T>(result: PromiseSettledResult<T>): T {
+  if (result.status === 'rejected') throw result.reason;
+  return result.value;
 }
 
 export async function upsertSalaryStructure(
@@ -149,16 +162,24 @@ async function compute(
   if (!structure.salaryTemplateCode) {
     throw new SalaryStructureError(400, 'Assign a salary template first');
   }
-  const template = await salaryTemplates().findOne({ org, code: structure.salaryTemplateCode });
+  // The template, the catalogue, the state's rules and the org's settings do
+  // not depend on one another: asked for together, then used in the old order.
+  const rules = Promise.all([resolveRuleSet(org, workStateOf(employee)), statutorySettingsFor(org)]);
+  rules.catch(() => undefined); // any failure surfaces below, after the template check, as before
+  const [templateR, catalogR] = await Promise.allSettled([
+    salaryTemplates().findOne({ org, code: structure.salaryTemplateCode }),
+    catalogArg ?? orgPayHeads(org),
+  ]);
+  const template = settled(templateR);
   if (!template) throw new SalaryStructureError(409, 'The assigned salary template no longer exists');
+  const catalog = settled(catalogR);
 
-  const catalog = catalogArg ?? (await orgPayHeads(org));
   const catalogByCode = new Map(catalog.map((h) => [h.code, h]));
   // The template plus this person's own add / remove / edit, checked for loops.
   const components = applyOverrides(template.components, structure.overrides, catalogByCode);
   assertAcyclic(components.map((c) => ({ code: c.payHeadCode, componentType: catalogByCode.get(c.payHeadCode)!.componentType, calculation: c.calculation })));
   const resolved = resolveTemplateComponents(components, catalogByCode);
-  const [ruleSet, settings] = await Promise.all([resolveRuleSet(org, workStateOf(employee)), statutorySettingsFor(org)]);
+  const [ruleSet, settings] = await rules;
 
   const computed = calculateSalaryStructure({
     monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
@@ -352,7 +373,7 @@ async function requireOrgEmployee(org: string, userId: string): Promise<User> {
 }
 
 async function requireAdminOrg(adminUserId: string): Promise<string> {
-  const admin = await users().findOne({ userId: adminUserId });
+  const admin = requestViewer(adminUserId) ?? (await users().findOne({ userId: adminUserId }));
   if (!admin) throw new SalaryStructureError(404, 'User not found');
   if (!admin.org) throw new SalaryStructureError(409, 'User is not attached to a company');
   return admin.org;

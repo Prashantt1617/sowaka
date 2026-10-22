@@ -123,10 +123,13 @@ export async function buildDigest(user: Omit<User, 'profilePhotoUrl'>, date = is
 
 /** Today's digest for this person: the stored one, or built now when Suwi is on and none exists yet. */
 export async function digestFor(user: Omit<User, 'profilePhotoUrl'>): Promise<SuwiDigest | null> {
-  const settings = await settingsFor(user.org!);
-  if (!settings.enabled) return null;
   const date = istToday();
-  const existing = await digestsCol().findOne({ org: user.org!, userId: user.userId, date });
+  // Both at once: the stored digest is only used when Suwi is on.
+  const [settings, existing] = await Promise.all([
+    settingsFor(user.org!),
+    digestsCol().findOne({ org: user.org!, userId: user.userId, date }),
+  ]);
+  if (!settings.enabled) return null;
   return existing ?? buildDigest(user, date);
 }
 
