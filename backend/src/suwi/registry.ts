@@ -20,3 +20,6 @@ import './tools/paid-days';
 import './tools/shift-template';
 import './tools/claims';
 import './tools/bills';
+import './tools/help';
+import './tools/statutory';
+import './tools/policy';

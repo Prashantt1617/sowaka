@@ -29,6 +29,7 @@ import { appPagesRouter } from './app-page.routes';
 import { appUpdateRouter } from './app-update.routes';
 import { suwiRouter } from '../suwi/routes';
 import { suwiPeopleRouter } from '../suwi/routes.people';
+import { suwiNoticesRouter } from '../suwi/routes.notices';
 
 export const router = Router();
 
@@ -36,6 +37,7 @@ router.use('/auth', authRouter);
 // Suwi, the HR assistant: dashboard users only; each tool checks the asker's tabs.
 router.use('/suwi', suwiRouter);
 router.use('/suwi', suwiPeopleRouter);
+router.use('/suwi', suwiNoticesRouter);
 router.use('/health', healthRouter);
 router.use('/holidays', holidayRouter);
 // Before `/admin`: the Support desk is gated by a Support role, not by a
