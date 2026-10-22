@@ -120,6 +120,38 @@ export async function leaveChecks(leave: Leave & { _id?: ObjectId }, employee: U
   return [balanceCheck, clashCheck, { ok: step.ok, text: step.text }, waitingCheck(leave.createdAt, today, limit)];
 }
 
+/** How many pending leave requests get the full checks (the oldest first). */
+export const LEAVE_CHECK_LIMIT = 40;
+
+/**
+ * Which pending leave requests are safe to approve: every check passes (balance,
+ * no clash in the department, HR's turn to decide) and it isn't the asker's own.
+ * The review tool and the "fine to approve" notice both use this, so they agree.
+ */
+export async function leaveSafety<R extends { id: string; userId: string; daysWaiting: number }>(org: string, viewerUserId: string, today: string, rows: R[], limit = OVERDUE_DAYS) {
+  const checkable = rows.filter((r) => ObjectId.isValid(r.id)).sort((a, b) => b.daysWaiting - a.daysWaiting).slice(0, LEAVE_CHECK_LIMIT);
+  const safe: (R & { checks: string[] })[] = [];
+  const checkFirst: (R & { issues: string[] })[] = [];
+  if (!checkable.length) return { checked: 0, safe, checkFirst };
+  const [docs, people] = await Promise.all([
+    leaves().find({ _id: { $in: checkable.map((r) => new ObjectId(r.id)) } }).toArray(),
+    users().find({ org, userId: { $in: checkable.map((r) => r.userId) } }).toArray(),
+  ]);
+  const byId = new Map(docs.map((d) => [d._id.toHexString(), d]));
+  const person = new Map(people.map((p) => [p.userId, p]));
+  const results = await Promise.all(checkable.map(async (r) => {
+    const doc = byId.get(r.id), employee = person.get(r.userId);
+    if (!doc || !employee || doc.status !== 'pending') return null;
+    return { r, checks: [...(r.userId === viewerUserId ? [ownRequestCheck] : []), ...(await leaveChecks(doc, employee, today, limit))] };
+  }));
+  for (const x of results) {
+    if (!x) continue;
+    if (x.checks.every((c) => c.ok)) safe.push({ ...x.r, checks: x.checks.map((c) => c.text) });
+    else checkFirst.push({ ...x.r, issues: x.checks.filter((c) => !c.ok).map((c) => c.text) });
+  }
+  return { checked: checkable.length, safe, checkFirst };
+}
+
 /** Balance for the year the leave falls in; approved counts as used, pending shown separately. */
 async function leaveBalanceCheck(leave: Leave & { _id?: ObjectId }, employee: User, start: string, days: number): Promise<Check> {
   const rules = await leaveRulesFor(employee.userId);

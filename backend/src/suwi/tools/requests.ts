@@ -16,19 +16,27 @@ export async function pendingRows(ctx: { userId: string; today: string; user: { 
   const out: PendingRow[] = [];
   const day = (d: Date | string | number | undefined) => (d == null ? '' : new Date(d).toISOString().slice(0, 10));
   const want = (t: string, route: string) => (!type || type === t) && mayRead(ctx.user, route);
-  if (want('leave', INSIGHT_ROUTE.leave)) {
-    for (const l of (await listAllLeavesForAdmin(ctx.userId)).filter((x) => x.status === 'pending')) {
+  const wantRegs = want('corrections', INSIGHT_ROUTE.correction) || want('checkins', INSIGHT_ROUTE.ool);
+  // The four lists are independent; fetch them side by side.
+  const [leaveList, otList, regList, claimList] = await Promise.all([
+    want('leave', INSIGHT_ROUTE.leave) ? listAllLeavesForAdmin(ctx.userId) : null,
+    want('overtime', INSIGHT_ROUTE.overtime) ? listAllOvertimeForAdmin(ctx.userId) : null,
+    wantRegs ? listAllRegularizationsForAdmin(ctx.userId) : null,
+    want('claims', INSIGHT_ROUTE.claim) ? listAllReimbursementsForAdmin(ctx.userId) : null,
+  ]);
+  if (leaveList) {
+    for (const l of leaveList.filter((x) => x.status === 'pending')) {
       out.push({ type: 'leave', id: l.id, userId: l.userId, name: l.employee.name, department: l.employee.department, what: `${l.typeName}${l.halfDay ? ' (half day)' : ''}, ${l.days} day${l.days === 1 ? '' : 's'}`, dates: l.startDate === l.endDate ? l.startDate : `${l.startDate} to ${l.endDate}`, submitted: day(l.createdAt), daysWaiting: daysWaiting(l.createdAt, ctx.today) });
     }
   }
-  if (want('overtime', INSIGHT_ROUTE.overtime)) {
-    for (const o of (await listAllOvertimeForAdmin(ctx.userId)).filter((x) => x.status === 'pending')) {
+  if (otList) {
+    for (const o of otList.filter((x) => x.status === 'pending')) {
       out.push({ type: 'overtime', id: o.id, userId: o.userId, name: o.employee.name, department: o.employee.department, what: `${o.hours} h overtime (${o.duration === 'full_day' ? 'full day' : 'half day'})`, dates: o.workDate, submitted: day(o.createdAt), daysWaiting: daysWaiting(o.createdAt, ctx.today) });
     }
   }
-  if (want('corrections', INSIGHT_ROUTE.correction) || want('checkins', INSIGHT_ROUTE.ool)) {
+  if (regList) {
     const DAY_TYPE: Record<string, string> = { full_day: 'full day', half_day: 'half day', wfh: 'work from home', client_visit: 'client visit', office_visit: 'client visit', leave: 'leave' };
-    for (const r of (await listAllRegularizationsForAdmin(ctx.userId)).filter((x) => x.status === 'pending')) {
+    for (const r of regList.filter((x) => x.status === 'pending')) {
       const ool = r.kind === 'out_of_location';
       if (ool ? !want('checkins', INSIGHT_ROUTE.ool) : !want('corrections', INSIGHT_ROUTE.correction)) continue;
       out.push({
@@ -38,8 +46,8 @@ export async function pendingRows(ctx: { userId: string; today: string; user: { 
       });
     }
   }
-  if (want('claims', INSIGHT_ROUTE.claim)) {
-    for (const c of (await listAllReimbursementsForAdmin(ctx.userId)).filter((x) => x.status === 'pending')) {
+  if (claimList) {
+    for (const c of claimList.filter((x) => x.status === 'pending')) {
       out.push({ type: 'claim', id: c.id, userId: c.userId, name: c.employee.name, department: c.employee.department, what: `${c.category} claim, ₹${Math.round(c.amount).toLocaleString('en-IN')}`, dates: c.expenseDate, submitted: day(c.createdAt), daysWaiting: daysWaiting(c.createdAt, ctx.today) });
     }
   }

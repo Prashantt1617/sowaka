@@ -7,12 +7,11 @@
 import { connectPosts, relayEvents, reimbursementTypes } from '../config/db';
 import { tabsForRequest } from '../models/dashboard-tabs';
 import { hasAllDashboardTabs } from '../middleware/admin.middleware';
-import { getMyLeaveBalance, listAllLeavesForAdmin } from '../services/leave.service';
-import { listAllOvertimeForAdmin } from '../services/overtime.service';
-import { listAllRegularizationsForAdmin } from '../services/attendance.service';
 import { listAllReimbursementsForAdmin } from '../services/reimbursement.service';
 import { peopleTasks } from '../services/peopleTasks.service';
 import { SuwiContext } from './tools';
+import { leaveSafety } from './insight';
+import { pendingRows } from './tools/requests';
 
 /** Days a request may wait before Suwi calls it overdue (Sowaka has no escalation setting of its own). */
 export const ESCALATION_DAYS = 3;
@@ -31,8 +30,6 @@ export interface SuwiNotice {
 }
 
 const DAY = 86_400_000;
-const daysBetween = (fromIso: string, toIso: string) => Math.round((Date.parse(`${toIso.slice(0, 10)}T00:00:00Z`) - Date.parse(`${fromIso.slice(0, 10)}T00:00:00Z`)) / DAY);
-const iso = (v: Date | string | undefined) => (v instanceof Date ? v.toISOString() : typeof v === 'string' ? v : '');
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** The same check the tools make: may this person read this dashboard API? */
@@ -67,10 +64,9 @@ async function computeNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
   const today = ctx.today;
   const seesPeople = hasAllDashboardTabs(ctx.user) || Boolean(ctx.user.dashboardTabs?.includes('employees'));
   // Every list at once: each is a few round trips to the database.
-  const [leaves, ot, corr, claims, types, tasks, relay, recent] = await Promise.all([
-    may(ctx, '/admin/leaves') ? quietly(() => listAllLeavesForAdmin(ctx.userId)) : null,
-    may(ctx, '/admin/overtime') ? quietly(() => listAllOvertimeForAdmin(ctx.userId)) : null,
-    may(ctx, '/admin/regularizations') ? quietly(() => listAllRegularizationsForAdmin(ctx.userId)) : null,
+  // The waiting pile is the same rows pending_requests and review_requests read, so the counts agree.
+  const [pending, claims, types, tasks, relay, recent] = await Promise.all([
+    quietly(() => pendingRows(ctx, '')),
     may(ctx, '/admin/reimbursements') ? quietly(() => listAllReimbursementsForAdmin(ctx.userId)) : null,
     may(ctx, '/admin/reimbursements') ? quietly(() => reimbursementTypes().find({ org: ctx.org }).project<{ name: string; maxLimit: number }>({ name: 1, maxLimit: 1 }).toArray()) : null,
     seesPeople ? quietly(() => peopleTasks(ctx.userId)) : null,
@@ -78,17 +74,9 @@ async function computeNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
     may(ctx, '/admin/relay') ? quietly(() => connectPosts().countDocuments({ org: ctx.org, systemKey: { $exists: false }, type: { $in: ['relay_game', 'live_game', 'survey', 'event', 'caption_challenge'] }, publishedAt: { $gte: new Date(Date.now() - 14 * DAY) } })) : null,
   ]);
 
-  // Requests waiting past the limit, and leave that looks fine to approve.
-  if (leaves) {
-    const pending = leaves.filter((l) => l.status === 'pending');
-    const overdue = pending.filter((l) => daysBetween(l.createdAt, today) >= ESCALATION_DAYS).length;
-    let overdueTotal = overdue;
-    if (ot) {
-      overdueTotal += ot.filter((o) => o.status === 'pending' && daysBetween(iso(o.createdAt), today) >= ESCALATION_DAYS).length;
-    }
-    if (corr) {
-      overdueTotal += corr.filter((c) => c.status === 'pending' && daysBetween(iso((c as { createdAt?: Date | string }).createdAt), today) >= ESCALATION_DAYS).length;
-    }
+  // Requests waiting past the limit (every type this person can see, claims included), and leave that looks fine to approve.
+  if (pending) {
+    const overdueTotal = pending.filter((r) => r.daysWaiting >= ESCALATION_DAYS).length;
     if (overdueTotal > 0) {
       out.push({
         key: 'requests_overdue', icon: 'clock', view: 'leave', count: overdueTotal,
@@ -98,26 +86,13 @@ async function computeNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
       });
     }
 
-    // Leave that looks fine: enough balance, and nobody else in the team already off those days.
-    const approved = leaves.filter((l) => l.status === 'approved');
-    let easy = 0;
-    // The oldest 20 are checked: balances are the slow part, so they are fetched together, once per person and year.
-    const checkable = [...pending].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(0, 20);
-    const keys = [...new Set(checkable.map((l) => `${l.userId}|${l.startDate.slice(0, 4)}`))];
-    const fetched = await Promise.all(keys.map((k) => quietly(() => getMyLeaveBalance(k.split('|')[0], Number(k.split('|')[1])))));
-    const balances = new Map(keys.map((k, i) => [k, fetched[i]]));
-    for (const l of checkable) {
-      const bal = balances.get(`${l.userId}|${l.startDate.slice(0, 4)}`);
-      const type = bal?.types.find((t) => t.key === l.type);
-      if (!type || type.remaining < l.days) continue;
-      const clash = approved.some((a) => a.userId !== l.userId && a.employee.department && a.employee.department === l.employee.department && a.startDate <= l.endDate && a.endDate >= l.startDate);
-      if (!clash) easy++;
-    }
+    // Leave that looks fine: the same checks review_requests makes for its safe-to-approve list.
+    const easy = (await quietly(() => leaveSafety(ctx.org, ctx.userId, today, pending.filter((r) => r.type === 'leave'))))?.safe.length ?? 0;
     if (easy > 0) {
       out.push({
         key: 'leave_easy', icon: 'check', view: 'leave', count: easy,
         title: `${plural(easy, 'leave request')} look${easy === 1 ? 's' : ''} fine to approve`,
-        why: 'The balance covers the days asked for, and nobody else in the same department is already approved for those dates.',
+        why: 'The balance covers the days asked for, nobody else in the same department is already approved for those dates, no manager still has to act, and none is your own.',
         ask: 'Which pending leave requests look fine to approve?',
       });
     }
@@ -157,7 +132,7 @@ async function computeNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
         out.push({
           key: 'no_shift', icon: 'calendar', view: 'peopletasks', count: noShift.length,
           title: `${plural(noShift.length, 'person', 'people')} on no shift template`,
-          why: 'Without a template they are marked on the Default shift next week, which may not match their hours or weekly offs.',
+          why: 'Without a template they are marked on the Default shift, which may not match their hours or weekly offs.',
           ask: 'Who is not on any shift template?',
         });
       }
