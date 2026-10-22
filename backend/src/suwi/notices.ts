@@ -48,22 +48,45 @@ async function quietly<T>(work: () => Promise<T>): Promise<T | null> {
   try { return await work(); } catch { return null; }
 }
 
-export async function suwiNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
+const CACHE = new Map<string, { at: number; notices: SuwiNotice[] }>();
+const CACHE_MS = 3 * 60_000;
+
+/** The notices for this person, computed at most every three minutes. */
+export async function suwiNotices(ctx: SuwiContext, fresh = false): Promise<SuwiNotice[]> {
+  const key = `${ctx.org}|${ctx.userId}|${ctx.payroll}|${ctx.today}`;
+  const hit = CACHE.get(key);
+  if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return hit.notices;
+  const notices = await computeNotices(ctx);
+  CACHE.set(key, { at: Date.now(), notices });
+  if (CACHE.size > 500) CACHE.delete(CACHE.keys().next().value!);
+  return notices;
+}
+
+async function computeNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
   const out: SuwiNotice[] = [];
   const today = ctx.today;
+  const seesPeople = hasAllDashboardTabs(ctx.user) || Boolean(ctx.user.dashboardTabs?.includes('employees'));
+  // Every list at once: each is a few round trips to the database.
+  const [leaves, ot, corr, claims, types, tasks, relay, recent] = await Promise.all([
+    may(ctx, '/admin/leaves') ? quietly(() => listAllLeavesForAdmin(ctx.userId)) : null,
+    may(ctx, '/admin/overtime') ? quietly(() => listAllOvertimeForAdmin(ctx.userId)) : null,
+    may(ctx, '/admin/regularizations') ? quietly(() => listAllRegularizationsForAdmin(ctx.userId)) : null,
+    may(ctx, '/admin/reimbursements') ? quietly(() => listAllReimbursementsForAdmin(ctx.userId)) : null,
+    may(ctx, '/admin/reimbursements') ? quietly(() => reimbursementTypes().find({ org: ctx.org }).project<{ name: string; maxLimit: number }>({ name: 1, maxLimit: 1 }).toArray()) : null,
+    seesPeople ? quietly(() => peopleTasks(ctx.userId)) : null,
+    may(ctx, '/admin/relay') ? quietly(() => relayEvents().countDocuments({ org: ctx.org, status: { $in: ['scheduled', 'live'] } })) : null,
+    may(ctx, '/admin/relay') ? quietly(() => connectPosts().countDocuments({ org: ctx.org, systemKey: { $exists: false }, type: { $in: ['relay_game', 'live_game', 'survey', 'event', 'caption_challenge'] }, publishedAt: { $gte: new Date(Date.now() - 14 * DAY) } })) : null,
+  ]);
 
   // Requests waiting past the limit, and leave that looks fine to approve.
-  if (may(ctx, '/admin/leaves')) {
-    const leaves = (await quietly(() => listAllLeavesForAdmin(ctx.userId))) ?? [];
+  if (leaves) {
     const pending = leaves.filter((l) => l.status === 'pending');
     const overdue = pending.filter((l) => daysBetween(l.createdAt, today) >= ESCALATION_DAYS).length;
     let overdueTotal = overdue;
-    if (may(ctx, '/admin/overtime')) {
-      const ot = (await quietly(() => listAllOvertimeForAdmin(ctx.userId))) ?? [];
+    if (ot) {
       overdueTotal += ot.filter((o) => o.status === 'pending' && daysBetween(iso(o.createdAt), today) >= ESCALATION_DAYS).length;
     }
-    if (may(ctx, '/admin/regularizations')) {
-      const corr = (await quietly(() => listAllRegularizationsForAdmin(ctx.userId))) ?? [];
+    if (corr) {
       overdueTotal += corr.filter((c) => c.status === 'pending' && daysBetween(iso((c as { createdAt?: Date | string }).createdAt), today) >= ESCALATION_DAYS).length;
     }
     if (overdueTotal > 0) {
@@ -78,12 +101,13 @@ export async function suwiNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
     // Leave that looks fine: enough balance, and nobody else in the team already off those days.
     const approved = leaves.filter((l) => l.status === 'approved');
     let easy = 0;
-    const balances = new Map<string, Awaited<ReturnType<typeof getMyLeaveBalance>> | null>();
-    for (const l of pending.slice(0, 40)) {
-      const year = Number(l.startDate.slice(0, 4));
-      const k = `${l.userId}|${year}`;
-      if (!balances.has(k)) balances.set(k, await quietly(() => getMyLeaveBalance(l.userId, year)));
-      const bal = balances.get(k);
+    // The oldest 20 are checked: balances are the slow part, so they are fetched together, once per person and year.
+    const checkable = [...pending].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(0, 20);
+    const keys = [...new Set(checkable.map((l) => `${l.userId}|${l.startDate.slice(0, 4)}`))];
+    const fetched = await Promise.all(keys.map((k) => quietly(() => getMyLeaveBalance(k.split('|')[0], Number(k.split('|')[1])))));
+    const balances = new Map(keys.map((k, i) => [k, fetched[i]]));
+    for (const l of checkable) {
+      const bal = balances.get(`${l.userId}|${l.startDate.slice(0, 4)}`);
       const type = bal?.types.find((t) => t.key === l.type);
       if (!type || type.remaining < l.days) continue;
       const clash = approved.some((a) => a.userId !== l.userId && a.employee.department && a.employee.department === l.employee.department && a.startDate <= l.endDate && a.endDate >= l.startDate);
@@ -100,9 +124,7 @@ export async function suwiNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
   }
 
   // Claims worth a closer look: no receipt, or more than the type's cap.
-  if (may(ctx, '/admin/reimbursements')) {
-    const claims = (await quietly(() => listAllReimbursementsForAdmin(ctx.userId))) ?? [];
-    const types = await quietly(() => reimbursementTypes().find({ org: ctx.org }).project<{ name: string; maxLimit: number }>({ name: 1, maxLimit: 1 }).toArray());
+  if (claims) {
     const cap = new Map((types ?? []).map((t) => [t.name.toLowerCase(), t.maxLimit]));
     const check = claims.filter((c) => c.status === 'pending' && (!c.hasReceipt || ((cap.get(String(c.category).toLowerCase()) ?? 0) > 0 && c.amount > (cap.get(String(c.category).toLowerCase()) ?? 0))));
     if (check.length) {
@@ -117,8 +139,7 @@ export async function suwiNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
   }
 
   // People who would hold up payroll, and people on no shift.
-  if (hasAllDashboardTabs(ctx.user) || ctx.user.dashboardTabs?.includes('employees')) {
-    const tasks = await quietly(() => peopleTasks(ctx.userId));
+  {
     if (tasks) {
       if (ctx.payroll && tasks.payroll) {
         const blockers = tasks.people.filter((p) => p.tasks.some((t) => t.key === 'salary' || t.key === 'bank'));
@@ -144,11 +165,7 @@ export async function suwiNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
   }
 
   // Nothing on the engagement calendar.
-  if (may(ctx, '/admin/relay')) {
-    const [relay, recent] = await Promise.all([
-      quietly(() => relayEvents().countDocuments({ org: ctx.org, status: { $in: ['scheduled', 'live'] } })),
-      quietly(() => connectPosts().countDocuments({ org: ctx.org, systemKey: { $exists: false }, type: { $in: ['relay_game', 'live_game', 'survey', 'event', 'caption_challenge'] }, publishedAt: { $gte: new Date(Date.now() - 14 * DAY) } })),
-    ]);
+  {
     if (relay === 0 && recent === 0) {
       out.push({
         key: 'engagement_quiet', icon: 'spark', view: 'engagementposts', count: 1,

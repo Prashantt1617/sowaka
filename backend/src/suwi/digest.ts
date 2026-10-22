@@ -48,25 +48,26 @@ export async function digestFacts(ctx: SuwiContext): Promise<DigestFacts> {
   const today = ctx.today;
   const yesterday = addDays(today, -1);
   const weekEnd = addDays(today, 7);
-  const notices = await suwiNotices(ctx);
+  const [notices, leaves, hols, claims, actions] = await Promise.all([
+    suwiNotices(ctx),
+    quietly(() => listAllLeavesForAdmin(ctx.userId), []),
+    quietly(() => holidays().find({ org: ctx.org, date: { $gte: new Date(`${today}T00:00:00Z`), $lte: new Date(`${weekEnd}T23:59:59Z`) } }).project<{ name: string; date: Date; state: string }>({ name: 1, date: 1, state: 1 }).toArray(), []),
+    quietly(() => listAllReimbursementsForAdmin(ctx.userId), []),
+    quietly(() => auditCol().find({ org: ctx.org, kind: 'action', at: { $gte: new Date(`${yesterday}T00:00:00+05:30`), $lt: new Date(`${today}T00:00:00+05:30`) }, 'action.result': 'done' }).limit(10).toArray(), []),
+  ]);
   const needsYou = notices.map((n) => `${n.title}: ${n.why}`);
-
   const comingUp: string[] = [];
   const gotDone: string[] = [];
-  const leaves = await quietly(() => listAllLeavesForAdmin(ctx.userId), []);
   const starting = leaves.filter((l) => l.status === 'approved' && l.startDate >= today && l.startDate <= weekEnd).sort((a, b) => a.startDate.localeCompare(b.startDate));
   for (const l of starting.slice(0, 6)) comingUp.push(`${l.employee.name} on ${l.typeName.toLowerCase()} ${l.startDate === l.endDate ? `on ${nice(l.startDate)}` : `${nice(l.startDate)} to ${nice(l.endDate)}`}`);
   if (starting.length > 6) comingUp.push(`${starting.length - 6} more people on approved leave this week`);
-  const hols = await quietly(() => holidays().find({ org: ctx.org, date: { $gte: new Date(`${today}T00:00:00Z`), $lte: new Date(`${weekEnd}T23:59:59Z`) } }).project<{ name: string; date: Date; state: string }>({ name: 1, date: 1, state: 1 }).toArray(), []);
   const seen = new Set<string>();
   for (const h of hols) { const k = `${h.name}|${dayOf(h.date)}`; if (seen.has(k)) continue; seen.add(k); comingUp.push(`${h.name} holiday on ${nice(dayOf(h.date))}${h.state && h.state !== '*' ? ` (${h.state})` : ''}`); }
 
   const decided = leaves.filter((l) => l.decidedAt && dayOf(l.decidedAt) === yesterday);
   if (decided.length) gotDone.push(`${decided.length} leave request${decided.length === 1 ? '' : 's'} decided (${decided.filter((l) => l.status === 'approved').length} approved)`);
-  const claims = await quietly(() => listAllReimbursementsForAdmin(ctx.userId), []);
   const claimsDone = claims.filter((c) => c.decidedAt && dayOf(c.decidedAt) === yesterday);
   if (claimsDone.length) gotDone.push(`${claimsDone.length} claim${claimsDone.length === 1 ? '' : 's'} decided`);
-  const actions = await quietly(() => auditCol().find({ org: ctx.org, kind: 'action', at: { $gte: new Date(`${yesterday}T00:00:00+05:30`), $lt: new Date(`${today}T00:00:00+05:30`) }, 'action.result': 'done' }).limit(10).toArray(), []);
   for (const a of actions) gotDone.push(`Via Suwi: ${a.action!.title}`);
   return { needsYou, comingUp, gotDone };
 }
@@ -121,12 +122,11 @@ export async function buildDigest(user: Omit<User, 'profilePhotoUrl'>, date = is
 
 /** Today's digest for this person: the stored one, or built now when Suwi is on and none exists yet. */
 export async function digestFor(user: Omit<User, 'profilePhotoUrl'>): Promise<SuwiDigest | null> {
-  const date = istToday();
-  const existing = await digestsCol().findOne({ org: user.org!, userId: user.userId, date });
-  if (existing) return existing;
   const settings = await settingsFor(user.org!);
   if (!settings.enabled) return null;
-  return buildDigest(user, date);
+  const date = istToday();
+  const existing = await digestsCol().findOne({ org: user.org!, userId: user.userId, date });
+  return existing ?? buildDigest(user, date);
 }
 
 /** The nightly run: every HR person with dashboard access, in every company with Suwi on. */

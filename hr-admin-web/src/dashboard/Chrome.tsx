@@ -251,17 +251,17 @@ export function Sidebar() {
   const reviewsPending = fbMgrs.reduce((s, m) => s + (m.total - m.done), 0);
   // New tickets plus unread for a Support head; their own unread for staff.
   const supportCount = useSupportBadge(canOpen(user, 'support') ? user?.supportRole : null);
-  // What Suwi noticed, by view: Requests and Claims turn red, pages with no count of their own get one.
-  const suwiCounts = useSuwiNotices().counts;
+  // What Suwi noticed: requests waiting past the limit turn the Requests counts red (Claims already are).
+  const overdue = useSuwiNotices().notices.some((n) => n.key === 'requests_overdue');
 
   const badgeFor = (key: View): ReactNode => {
     switch (key) {
       case 'leave':
-        return <CountBadge value={leavesPending} danger={Boolean(suwiCounts.leave)} />;
+        return <CountBadge value={leavesPending} danger={overdue && leavesPending > 0} />;
       case 'overtime':
-        return <CountBadge value={otPending} />;
+        return <CountBadge value={otPending} danger={overdue && otPending > 0} />;
       case 'attendance':
-        return <CountBadge value={corrPending} />;
+        return <CountBadge value={corrPending} danger={overdue && corrPending > 0} />;
       case 'feedback':
         return <CountBadge value={reviewsPending} />;
       case 'reimbursements':
@@ -269,7 +269,6 @@ export function Sidebar() {
       case 'support':
         return <CountBadge value={supportCount} danger={supportCount > 0} />;
       default:
-        if (suwiCounts[key]) return <CountBadge value={suwiCounts[key]} />;
         return SOON[key] ? <SoonBadge /> : null;
     }
   };

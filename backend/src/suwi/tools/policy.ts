@@ -48,16 +48,19 @@ export async function settingsNeeded(ctx: SuwiContext, text: string): Promise<{ 
   const out: { setting: string; status: string; where: string }[] = [];
   const have = await existingSettings(ctx);
   const named = new Set<string>();
-  for (const m of t.matchAll(/\b([a-z]+(?: [a-z]+)?) leave\b/g)) {
-    const name = m[1].replace(/^(a|an|the|of|on|for|any|paid|unpaid|days?|their|this|that|and|or|to|take|takes|apply|applies) /, '').trim();
+  for (const m of text.matchAll(/\b([a-z]+(?: [a-z]+)?) leave\b/gi)) {
+    const name = m[1].toLowerCase().replace(/^(a|an|the|of|on|for|any|paid|unpaid|days?|their|this|that|and|or|to|take|takes|apply|applies) /, '').trim();
     if (!name || ['a', 'an', 'the', 'of', 'on', 'for', 'any', 'days', 'day', 'their', 'this', 'and', 'or', 'to', 'take', 'apply', 'such', 'all', 'no', 'more', 'annual', 'approved', 'pending'].includes(name)) continue;
-    named.add(`${name} leave`);
+    // Keep the policy's own capitals for an acronym like WFH.
+    const shown = m[1].split(' ').slice(-name.split(' ').length).map((w) => (w === w.toUpperCase() ? w : w[0].toUpperCase() + w.slice(1).toLowerCase())).join(' ');
+    named.add(`${shown} Leave`);
   }
   for (const n of named) {
-    const hit = [...have.leaveTypes.keys()].find((k) => k.toLowerCase() === n || k.toLowerCase().startsWith(n.split(' ')[0]));
+    const low = n.toLowerCase();
+    const hit = [...have.leaveTypes.keys()].find((k) => k.toLowerCase() === low || k.toLowerCase().startsWith(low.split(' ')[0]));
     out.push(hit
       ? { setting: `Leave type "${hit}"`, status: `Exists on ${have.leaveTypes.get(hit)!.join(', ')}; check its entitlement matches the policy.`, where: 'Shifts › Templates (an attendance action can change it)' }
-      : { setting: `Leave type "${n.replace(/\b\w/g, (c) => c.toUpperCase())}"`, status: 'Not on any shift template yet; the app cannot take requests for it until it is.', where: 'Shifts › Templates › leave types (ask Suwi to prepare adding a leave type)' });
+      : { setting: `Leave type "${n}"`, status: 'Not on any shift template yet; the app cannot take requests for it until it is.', where: 'Shifts › Templates › leave types (ask Suwi to prepare adding a leave type)' });
   }
   if (/\b(grace|late mark|half[- ]day|working hours|shift timing|punch|clock[- ]in|weekly off)\b/.test(t)) out.push({ setting: 'Shift rule (timings, grace, half day, weekly offs)', status: `Set per template: ${have.templates.join(', ') || 'none yet'}.`, where: 'Shifts › Templates (ask Suwi to prepare a shift rule change)' });
   if (/\b(reimburs|claim|expense|bill|receipt|allowance)/.test(t)) out.push({ setting: 'Reimbursement type with its cap', status: have.claimTypes.length ? `Existing types: ${have.claimTypes.join(', ')}.` : 'No reimbursement types yet.', where: 'Claims › Reimbursement Types (ask Suwi to prepare a reimbursement type)' });

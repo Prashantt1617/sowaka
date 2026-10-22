@@ -55,7 +55,7 @@ export const VIEWS: HelpEntry[] = [
   { view: 'payheads', title: 'Salary Components', section: 'Payroll', what: 'The catalogue of earnings, deductions and reimbursement components salary templates are built from.', keywords: ['salary component', 'pay head', 'earning', 'deduction', 'allowance', 'hra', 'basic'] },
   { view: 'templates', title: 'Salary Templates', section: 'Payroll', what: 'Reusable pay structures: which components, in what proportion of CTC. Assign a template and CTC to each person from here or their Salary details tab.', keywords: ['salary template', 'ctc', 'pay structure', 'salary structure', 'assign salary'] },
   { view: 'paiddays', title: 'Paid Days Templates', section: 'Payroll', what: 'How attendance becomes paid days: which absences, half days, lates and early exits deduct pay. One Default per company.', keywords: ['paid days', 'lop', 'loss of pay', 'deduction rule', 'attendance deduction'] },
-  { view: 'statutorycomponents', title: 'Statutory Components', section: 'Payroll', what: 'EPF, ESI, statutory bonus and TDS settings, plus Professional Tax slabs and Labour Welfare Fund by work state.', keywords: ['statutory', 'epf', 'pf', 'esi', 'professional tax', 'pt', 'lwf', 'labour welfare', 'bonus', 'tds setting', 'minimum wage'] },
+  { view: 'statutorycomponents', title: 'Statutory Components', section: 'Payroll', what: 'EPF, ESI, statutory bonus and TDS settings, plus Professional Tax slabs and Labour Welfare Fund by work state.', keywords: ['statutory', 'epf', 'pf', 'esi', 'professional tax', 'pt', 'pt slab', 'slabs', 'lwf', 'labour welfare', 'bonus', 'tds setting', 'minimum wage'] },
   { view: 'payrolldash', title: 'Payroll Dashboard', section: 'Payroll', what: 'The pay month at a glance: headcount paid, gross, deductions, net and what is still open.', keywords: ['payroll dashboard', 'payroll summary', 'payroll overview'] },
   { view: 'payrollreports', title: 'Payroll Reports', section: 'Payroll', what: 'Salary register, statutory reports (PF, ESI, PT) and summaries to download.', keywords: ['payroll report', 'salary register', 'pf report', 'esi report', 'pt report', 'register'] },
   { view: 'payruns', title: 'Payroll Runs', section: 'Payroll', what: 'Run payroll for a month: review inputs and attendance, check each person, approve, then payslips go to the app.', keywords: ['payroll run', 'run payroll', 'payslip', 'process payroll', 'approve payroll', 'salary run'] },
@@ -83,16 +83,15 @@ export const HOW_TOS: HowTo[] = [
 ];
 
 /** What Sowaka does not do, so Suwi says so plainly instead of guessing. */
-export const NOT_SUPPORTED: string[] = [
-  'Recruitment, job postings or applicant tracking',
-  'Onboarding checklists and exit workflows (the pages are placeholders for now)',
-  'Learning or training courses',
-  'Asset tracking (laptops, ID cards)',
-  'Filing PF, ESI, PT or TDS returns with the government (Sowaka produces the reports; filing is done on the portals)',
-  'Paying salaries out of Sowaka (there is no bank integration; use the salary register with your bank)',
-  'Biometric device integration (punches come from the app)',
-  'Rosters with per-day shift scheduling beyond the Roster page, and shift swaps between employees',
-  'Editing a policy document from the dashboard (Suwi can draft and publish one for you)',
-  'Automatic escalation of requests a manager has not decided (Suwi shows them as waiting instead)',
-  'Changing the HR dashboard\'s own settings or who can see what from Suwi (People › Accesses is admin-only)',
+export const NOT_SUPPORTED: { what: string; keywords: string[] }[] = [
+  { what: 'Recruitment, job postings or applicant tracking', keywords: ['recruit', 'recruitment', 'hiring', 'job posting', 'job opening', 'vacancy', 'applicant', 'candidate', 'interview', 'ats'] },
+  { what: 'Onboarding checklists and exit workflows (the pages are placeholders for now)', keywords: ['onboarding checklist', 'exit interview', 'exit workflow', 'full and final', 'fnf', 'resignation workflow'] },
+  { what: 'Learning or training courses', keywords: ['training', 'course', 'learning', 'lms'] },
+  { what: 'Asset tracking (laptops, ID cards)', keywords: ['asset', 'laptop', 'id card', 'inventory'] },
+  { what: 'Filing PF, ESI, PT or TDS returns with the government (Sowaka produces the reports; filing is done on the portals)', keywords: ['file return', 'filing', 'ecr', 'file pf', 'file tds', 'form 24q', 'challan'] },
+  { what: 'Paying salaries out of Sowaka (there is no bank integration; use the salary register with your bank)', keywords: ['bank transfer', 'pay out', 'payout', 'disburse', 'bank integration', 'neft'] },
+  { what: 'Biometric device integration (punches come from the app)', keywords: ['biometric', 'fingerprint', 'device sync', 'essl', 'face machine'] },
+  { what: 'Editing a policy document from the dashboard (Suwi can draft and publish one for you)', keywords: ['edit policy', 'policy document', 'upload policy', 'handbook'] },
+  { what: 'Automatic escalation of requests a manager has not decided (Suwi shows them as waiting instead)', keywords: ['escalate', 'escalation', 'auto approve', 'auto-approve'] },
+  { what: 'Changing who can see what from Suwi (People › Accesses is admin-only)', keywords: ['suwi give access', 'suwi permission'] },
 ];
