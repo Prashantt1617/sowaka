@@ -179,7 +179,7 @@
 /* footer: prompts, the field, the note */
 .sora-f { padding: 10px 16px 14px; border-top: 1px solid var(--line); background: var(--surface); }
 .sora-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.sora-f .sora-chips { margin-bottom: 10px; max-height: 72px; overflow: auto; }
+.sora-f .sora-chips { margin-bottom: 10px; max-height: 104px; overflow: auto; }
 .sora-chip {
   border: 1px solid var(--suwi-line);
   background: var(--hi-soft);
