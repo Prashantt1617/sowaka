@@ -25,6 +25,7 @@
   --on-sel: #FFFFFF;
   --hi: #0571A6;
   --hi-soft: #E1F0F7;
+  --sky-soft: #EAF5FB;
 
   --t-lilac: #EEEDFD;
   --t-lilac-i: #5E57D6;
@@ -68,7 +69,11 @@
   --wash-b: #DFE3F4;
   --shadow: 0 1px 2px rgba(20, 20, 22, 0.05), 0 6px 20px -6px rgba(20, 20, 22, 0.14);
   --shadow-lg: 0 24px 64px -16px rgba(20, 20, 22, 0.28);
-  --scrim: rgba(20, 18, 40, 0.28);
+  /* The frosted sidebar and top bar sit on a lighter shadow than cards. */
+  --shadow-bar: 0 1px 1px rgba(20, 20, 22, 0.03), 0 10px 28px -18px rgba(20, 20, 22, 0.18);
+  /* Drawers and dialogs: the prototype's indigo-tinted scrim and lift. */
+  --shadow-drawer: 0 24px 64px -16px rgba(30, 20, 90, 0.28);
+  --scrim: rgba(20, 16, 50, 0.38);
   --glass-line: rgba(255, 255, 255, 0.7);
   /* Fixed brand mark tile, and text on the brand-blue count badges */
   --brand: #0571A6;
@@ -112,12 +117,13 @@
     --accent-ink: #7DBEFF;
     --accent-soft: #132A40;
     --accent-line: #22507A;
-    --accent-grad: linear-gradient(180deg, #3AA0FF, #1E86E8);
+    --accent-grad: linear-gradient(180deg, #2B9BFF, #3AA0FF);
     --on-accent: #FFFFFF;
     --sel: #F1F1F3;
     --on-sel: #141416;
     --hi: #4FB0E0;
     --hi-soft: #0E2A38;
+    --sky-soft: #0E2A38;
 
     --t-lilac: #25233D;
     --t-lilac-i: #B4AFFF;
@@ -151,6 +157,8 @@
     --wash-b: #191C2C;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
     --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.7);
+    --shadow-bar: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+    --shadow-drawer: 0 24px 64px -16px rgba(0, 0, 0, 0.7);
     --scrim: rgba(0, 0, 0, 0.55);
     --glass-line: #2A2A2F;
     --on-hi: #06121F;
@@ -177,12 +185,13 @@
   --accent-ink: #7DBEFF;
   --accent-soft: #132A40;
   --accent-line: #22507A;
-  --accent-grad: linear-gradient(180deg, #3AA0FF, #1E86E8);
+  --accent-grad: linear-gradient(180deg, #2B9BFF, #3AA0FF);
   --on-accent: #FFFFFF;
   --sel: #F1F1F3;
   --on-sel: #141416;
   --hi: #4FB0E0;
   --hi-soft: #0E2A38;
+  --sky-soft: #0E2A38;
 
   --t-lilac: #25233D;
   --t-lilac-i: #B4AFFF;
@@ -216,6 +225,8 @@
   --wash-b: #191C2C;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.7);
+  --shadow-bar: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  --shadow-drawer: 0 24px 64px -16px rgba(0, 0, 0, 0.7);
   --scrim: rgba(0, 0, 0, 0.55);
   --glass-line: #2A2A2F;
   --on-hi: #06121F;
@@ -236,6 +247,7 @@ body {
   min-width: 320px;
   font-family: var(--f-ui);
   font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   letter-spacing: -0.005em;
   color: var(--ink);
@@ -254,6 +266,7 @@ strong {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+  border-radius: 8px;
 }
 
 input::placeholder,
@@ -300,6 +313,9 @@ button:active {
 }
 
 /* Table row hover */
+.dc-row {
+  transition: background 0.12s;
+}
 .dc-row:hover {
   background: var(--surface-2);
 }
@@ -528,10 +544,83 @@ input[type='number']::-webkit-outer-spin-button {
 }
 .ds-icon-btn:hover {
   background: var(--surface-2) !important;
+  color: var(--ink) !important;
 }
 .ds-field:focus-within {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* —— Prototype components (Sowaka HR Admin). The matching inline style
+   objects live in dashboard/ui.tsx (btn, iconBtn, TH, TR, inp…); these
+   classes add the hover and focus states inline styles can't express. —— */
+.ds-btn:not(:disabled):hover {
+  background: var(--surface-2) !important;
+  border-color: var(--line-2) !important;
+}
+.ds-btn-primary:not(:disabled):hover,
+.ds-btn-solid:not(:disabled):hover {
+  filter: brightness(1.07);
+}
+.ds-btn-ghost:not(:disabled):hover {
+  background: var(--accent-soft) !important;
+}
+.ds-btn-ok:not(:disabled):hover,
+.ds-btn-no:not(:disabled):hover {
+  filter: brightness(0.97);
+}
+.ds-btn:disabled,
+.ds-btn-primary:disabled,
+.ds-btn-ghost:disabled,
+.ds-btn-ok:disabled,
+.ds-btn-no:disabled,
+.ds-btn-solid:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
+}
+.ds-inp:focus,
+.ds-inp:focus-within {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: none;
+}
+.ds-inp::placeholder {
+  color: var(--ink-3);
+}
+/* Native <table>s: give <thead className="ds-thead"> the prototype's grey
+   strip with rounded ends (cells carry the surface-2 background). */
+.ds-thead th:first-child {
+  border-radius: 12px 0 0 12px;
+}
+.ds-thead th:last-child {
+  border-radius: 0 12px 12px 0;
+}
+/* Linked KPI tiles lift a little on hover. */
+.ds-tile {
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+.ds-tile:hover {
+  transform: translateY(-2px);
+}
+/* The round ↗ on a linked tile: an arrow turned up-right. */
+.ds-go {
+  opacity: 0.7;
+  transform: rotate(-45deg);
+  transition: opacity 0.15s, transform 0.15s;
+}
+.ds-tile:hover .ds-go {
+  opacity: 1;
+  transform: rotate(-45deg) translateX(2px);
+}
+.ds-me:hover {
+  background: var(--surface-2) !important;
+}
+/* Ask Suwi in the top bar: a sky-tinted pill. */
+.ds-suwi-btn:hover,
+.ds-suwi-btn[aria-expanded='true'] {
+  background: var(--sky-soft) !important;
+  border-color: var(--hi) !important;
 }
 
 @keyframes pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }

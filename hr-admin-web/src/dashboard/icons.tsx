@@ -17,8 +17,8 @@ const base = (size: number, stroke: string, style?: CSSProperties) => ({
   style: { stroke, ...style },
 });
 
-export const Logo = () => (
-  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--on-accent)" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+export const Logo = ({ stroke = 'var(--on-accent)', size = 19 }: { stroke?: string; size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
     <path d="M5 16c2.5-1 4-3 4-6" />
     <path d="M19 8c-2.5 1-4 3-4 6" />
     <path d="M5 16c3 1.6 11 1.6 14-8" />

@@ -4,8 +4,9 @@ import type { ReqStatus } from '../theme';
 import type { Reimb } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
-import { Avatar, Card, DateRange, EmptyRow, ListPending, LoadingFigure, Pill, SearchInput, SelectBox, StatusTabs, SummaryCard } from '../ui';
+import { Card, DateRange, EmptyRow, ListPending, LoadingFigure, PageActions, Pill, SearchInput, SelectBox, StatusTabs, SummaryCard, Th } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
+import { btn, btnClass, cellName, cellSub, iconBtn, TH, toolbar, TR } from '../ds';
 import { IconCheck, IconDownload, IconEye, IconFile, IconX } from '../icons';
 
 const COLS = '1.5fr 1fr 1fr 1fr 1fr 1.5fr 1.2fr 1fr 1.1fr';
@@ -54,20 +55,31 @@ export function Reimbursements() {
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 20 }}>
         <SummaryCard label="Total claims" value={<LoadingFigure state={st}>{summary.count}</LoadingFigure>} />
         <SummaryCard label="Awaiting review" value={<LoadingFigure state={st}>{summary.pending}</LoadingFigure>} color="var(--warn)" />
         <SummaryCard label="Pending value" value={<LoadingFigure state={st}>{summary.pendingAmt}</LoadingFigure>} color="var(--warn)" />
         <SummaryCard label="Total submitted" value={<LoadingFigure state={st}>{summary.total}</LoadingFigure>} />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14, flexWrap: 'wrap' }}>
-        <SearchInput value={s.rbSearch} onChange={s.setRbSearch} placeholder="Search by employee…" width={240} />
+      <PageActions>
+        <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
+          <IconDownload stroke="currentColor" /> Export
+        </button>
+      </PageActions>
+
+      <Card padded>
+      <div style={toolbar}>
         <StatusTabs<ReqStatus | 'all'>
           options={['all', 'Pending', 'Approved', 'Declined']}
           active={s.rbStatus}
           onSelect={s.setRbStatus}
         />
+      </div>
+      <div style={toolbar}>
+        <div style={{ flex: 1, minWidth: 262, display: 'flex' }}>
+          <SearchInput value={s.rbSearch} onChange={s.setRbSearch} placeholder="Search by employee…" width="100%" />
+        </div>
         <SelectBox value={s.rbType} onChange={s.setRbType}>
           <option value="all">All types</option>
           <option value="Travel">Travel</option>
@@ -84,67 +96,59 @@ export function Reimbursements() {
           <option value="name">Name A–Z</option>
         </SelectBox>
         <DateRange from={s.rbFrom} to={s.rbTo} onFrom={s.setRbFrom} onTo={s.setRbTo} />
-        <button
-          onClick={exportRows}
-          disabled={rows.length === 0}
-          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--ink)', border: 'none', color: 'var(--on-sel)', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, cursor: rows.length ? 'pointer' : 'not-allowed', opacity: rows.length ? 1 : 0.5 }}
-        >
-          <IconDownload /> Export
-        </button>
       </div>
 
-      <Card>
-        <div style={{ display: 'grid', background: 'var(--surface-2)', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid var(--line)', fontSize: 11.5, fontWeight: 500, letterSpacing: '.5px', color: 'var(--ink-3)' }}>
-          <div>EMPLOYEE</div>
-          <div>TYPE</div>
-          <div>AMOUNT</div>
-          <div>BILL DATE</div>
-          <div>APPLIED</div>
-          <div>REMARK</div>
-          <div>MANAGER</div>
-          <div>STATUS</div>
-          <div style={{ textAlign: 'right' }}>ACTION</div>
+        <div style={TH(COLS)}>
+          <Th>EMPLOYEE</Th>
+          <Th>TYPE</Th>
+          <Th>AMOUNT</Th>
+          <Th>BILL DATE</Th>
+          <Th>APPLIED</Th>
+          <Th>REMARK</Th>
+          <Th>MANAGER</Th>
+          <Th>STATUS</Th>
+          <Th align="right">ACTION</Th>
         </div>
-        {rows.map((r) => {
+        {rows.map((r, i) => {
           const pending = r.status === 'Pending';
           return (
             <div
               key={r.id}
               className="dc-row"
               onClick={() => s.setRbDrawerId(r.id)}
-              style={{ position: 'relative', display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid var(--line)', alignItems: 'center', cursor: 'pointer', transition: 'background .12s' }}
+              style={{ ...TR(COLS, i === rows.length - 1), position: 'relative', cursor: 'pointer' }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                 <PersonAvatar name={r.name} userId={r.submitterId} />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                  <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>{r.team}</div>
+                <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <div style={{ ...cellName, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
+                  <div style={cellSub}>{r.team}</div>
                 </div>
               </div>
-              <div style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink-2)' }}>{r.type}</div>
-              <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-.2px' }}>{r.amount}</div>
-              <div style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink-2)' }}>{r.billDate}</div>
-              <div style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink-2)' }}>{r.applyDate}</div>
-              <div style={{ fontSize: 13, fontWeight: 400, color: r.eRemark ? 'var(--ink-2)' : 'var(--ink-4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
-              <div style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.manager}</div>
+              <div style={{ fontWeight: 400 }}>{r.type}</div>
+              <div style={{ fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{r.amount}</div>
+              <div style={{ fontWeight: 400 }}>{r.billDate}</div>
+              <div style={{ fontWeight: 400 }}>{r.applyDate}</div>
+              <div style={{ fontWeight: 400, color: r.eRemark ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
+              <div style={{ fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.manager}</div>
               <div>
                 <Pill label={r.byAdmin ? `${r.status} · by admin` : r.status} tone={STAT[r.status]} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 7 }} onClick={(e) => e.stopPropagation()}>
-                <button onClick={() => s.setRbBillId(r.id)} title="View bill" style={{ width: 33, height: 33, borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface-2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button onClick={() => s.setRbBillId(r.id)} title="View bill" className="ds-icon-btn" style={iconBtn(34)}>
                   <IconFile />
                 </button>
                 {pending ? (
                   <>
-                    <button onClick={() => s.rbAsk(r.id, 'decline')} title="Decline" style={{ width: 33, height: 33, borderRadius: 999, border: '1px solid var(--bad-line)', background: 'var(--bad-bg)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <button onClick={() => s.rbAsk(r.id, 'decline')} title="Decline" className={btnClass('no')} style={btn('no', 'sm')}>
                       <IconX />
                     </button>
-                    <button onClick={() => s.rbAsk(r.id, 'approve')} title="Approve" style={{ width: 33, height: 33, borderRadius: 999, border: '1px solid var(--ok-line)', background: 'var(--ok-bg)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <button onClick={() => s.rbAsk(r.id, 'approve')} title="Approve" className={btnClass('ok')} style={btn('ok', 'sm')}>
                       <IconCheck />
                     </button>
                   </>
                 ) : (
-                  <button onClick={() => s.setRbDrawerId(r.id)} title="View details" style={{ width: 33, height: 33, borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface-2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <button onClick={() => s.setRbDrawerId(r.id)} title="View details" className="ds-icon-btn" style={iconBtn(34)}>
                     <IconEye />
                   </button>
                 )}

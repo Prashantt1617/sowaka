@@ -38,17 +38,19 @@ import type {
   SupportView,
 } from '../../services/support';
 import type { Pill as PillTone } from '../theme';
-import { Avatar, Card, Pill, SearchInput, SelectBox, SkeletonLines, SkeletonRows } from '../ui';
+import { Card, PageActions, Pill, SearchInput, SelectBox, SkeletonLines, SkeletonRows } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
+import { btn, btnClass, eyebrow, iconBtn, inp, SEG, segBtn } from '../ds';
 import { IconChevronDown, IconClose, IconFile } from '../icons';
 import { ConfirmResolveDialog, SendBackDialog, TicketTypesDialog } from './SupportDialogs';
 
 // —— Shared bits ————————————————————————————————————————————————————————————
 
 const STATUS: Record<SupportStatus, { label: string; tone: PillTone }> = {
-  open: { label: 'New', tone: { bg: 'var(--warn-bg)', fg: 'var(--warn)' } },
-  assigned: { label: 'In progress', tone: { bg: 'var(--t-sky)', fg: 'var(--t-sky-i)' } },
-  resolved: { label: 'Resolved', tone: { bg: 'var(--ok-bg)', fg: 'var(--ok)' } },
+  // Solid pills, as the prototype's Pending / In progress / Resolved.
+  open: { label: 'New', tone: { bg: 'var(--p-yellow)', fg: 'var(--p-yellow-ink)' } },
+  assigned: { label: 'In progress', tone: { bg: 'var(--p-blue)', fg: 'var(--on-accent)' } },
+  resolved: { label: 'Resolved', tone: { bg: 'var(--p-green)', fg: 'var(--on-accent)' } },
 };
 
 const errText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback);
@@ -398,12 +400,12 @@ function Desk({ role, meId, canEditTopics }: { role: SupportRole; meId: string; 
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {isHead ? (
           <QueueTabs view={view} counts={counts} onSelect={(v) => { setView(v); setStatus('any'); }} />
         ) : (
-          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginRight: 6 }}>
-            My tickets{counts ? <span style={{ color: 'var(--ink-4)', fontWeight: 500 }}> · {counts.mine}</span> : null}
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)', marginRight: 8 }}>
+            My tickets{counts ? <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}> · {counts.mine}</span> : null}
           </div>
         )}
         <SearchInput value={q} onChange={setQ} placeholder="Search tickets…" width={250} />
@@ -424,15 +426,15 @@ function Desk({ role, meId, canEditTopics }: { role: SupportRole; meId: string; 
             <option value="resolved">Resolved</option>
           </SelectBox>
         )}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400 }}>
-            {isHead ? 'Support head' : 'Support staff · only tickets assigned to you'}
-          </span>
-          {canEditTopics && <TicketTypesButton topics={types} onSaved={setTypes} />}
-        </div>
       </div>
+      <PageActions>
+        <span style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400 }}>
+          {isHead ? 'Support head' : 'Support staff · only tickets assigned to you'}
+        </span>
+        {canEditTopics && <TicketTypesButton topics={types} onSaved={setTypes} />}
+      </PageActions>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) minmax(0, 1fr)', gap: 16, height: 'calc(100vh - 205px)', minHeight: 540 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) minmax(0, 1fr)', gap: 20, height: 'calc(100vh - 290px)', minHeight: 540 }}>
         <Card style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <div className="scry" style={{ flex: 1, overflowY: 'auto' }}>
             {tickets === null && <SkeletonRows rows={6} cols={1} rowHeight={76} />}
@@ -452,14 +454,14 @@ function Desk({ role, meId, canEditTopics }: { role: SupportRole; meId: string; 
         <Card style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {!selectedId && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-3)', padding: 30, textAlign: 'center' }}>
-              <div style={{ color: 'var(--ink-4)', marginBottom: 12 }}>
-                <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <div style={{ width: 72, height: 72, borderRadius: 22, background: 'var(--t-lilac)', color: 'var(--t-lilac-i)', display: 'grid', placeItems: 'center', marginBottom: 12 }}>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
                   <path d="M4 14a2 2 0 0 1 2-2h1v6H6a2 2 0 0 1-2-2v-2zM20 14a2 2 0 0 0-2-2h-1v6h1a2 2 0 0 0 2-2v-2z" />
                 </svg>
               </div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-2)' }}>Pick a ticket</div>
-              <div style={{ fontSize: 13, marginTop: 4, maxWidth: 340, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)' }}>Pick a ticket</div>
+              <div style={{ fontSize: 13, marginTop: 4, maxWidth: 340, lineHeight: 1.5, color: 'var(--ink-2)' }}>
                 {isHead ? 'Open a ticket to read it, then assign it to someone or keep it.' : 'Open a ticket to read the conversation and reply.'}
               </div>
             </div>
@@ -487,16 +489,15 @@ function ListNote({ children }: { children: ReactNode }) {
 
 function QueueTabs({ view, counts, onSelect }: { view: SupportView; counts: SupportCounts | null; onSelect: (v: SupportView) => void }) {
   return (
-    <div style={{ display: 'flex', background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, padding: 3, gap: 2 }}>
+    <div style={SEG}>
       {HEAD_VIEWS.map((v) => {
         const on = view === v.key;
         const n = counts?.[v.key];
         return (
-          <button key={v.key} type="button" onClick={() => onSelect(v.key)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, padding: '6px 12px', borderRadius: 999, background: on ? 'var(--ink)' : 'transparent', color: on ? 'var(--on-sel)' : 'var(--ink-3)', fontFamily: 'inherit' }}>
+          <button key={v.key} type="button" onClick={() => onSelect(v.key)} style={segBtn(on)}>
             {v.label}
             {n !== undefined && (
-              <span style={{ fontSize: 11.5, fontWeight: 600, borderRadius: 'var(--r-lg)', padding: '0 7px', lineHeight: '18px', background: on ? 'color-mix(in srgb, var(--on-sel) 18%, transparent)' : v.key === 'new' && n > 0 ? 'var(--warn-bg)' : 'var(--surface-2)', color: on ? 'var(--on-sel)' : v.key === 'new' && n > 0 ? 'var(--warn)' : 'var(--ink-3)' }}>{n}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: on ? 'inherit' : v.key === 'new' && n > 0 ? 'var(--warn)' : 'var(--ink-3)', opacity: on ? 0.8 : 1 }}>{n}</span>
             )}
           </button>
         );
@@ -511,26 +512,26 @@ function TicketRow({ ticket: t, role, meId, active, onOpen }: { ticket: SupportT
   const who = t.assignee ? (t.assignee.userId === meId ? 'You' : t.assignee.name) : null;
   return (
     <button type="button" onClick={onOpen} className={active ? undefined : 'dc-row'}
-      style={{ display: 'flex', gap: 12, width: '100%', textAlign: 'left', padding: '14px 16px', border: 'none', borderBottom: '1px solid var(--line)', borderLeft: `3px solid ${active ? 'var(--accent)' : 'transparent'}`, background: active ? 'var(--accent-soft)' : 'var(--surface)', cursor: 'pointer', fontFamily: 'inherit' }}>
-      <RequesterAvatar ticket={t} size={38} />
+      style={{ display: 'flex', gap: 12, width: '100%', textAlign: 'left', padding: '12px 16px', border: 'none', borderBottom: '1px solid var(--line)', boxShadow: active ? 'inset 3px 0 0 var(--accent)' : 'none', background: active ? 'color-mix(in srgb, var(--accent-soft) 55%, var(--surface))' : 'var(--surface)', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--ink)' }}>
+      <RequesterAvatar ticket={t} size={34} />
       <span style={{ flex: 1, minWidth: 0, display: 'block' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.topicLabel}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--ink-4)', fontWeight: 400, whiteSpace: 'nowrap' }}>{relTime(t.lastMessageAt || t.createdAt)}</span>
+          <span style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.4, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.topicLabel}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap' }}>{relTime(t.lastMessageAt || t.createdAt)}</span>
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 1 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 400, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {t.requester.name}{t.requester.department ? <span style={{ color: 'var(--ink-4)' }}> · {t.requester.department}</span> : null}
+          <span style={{ fontSize: 11.5, fontWeight: 400, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {t.requester.name}{t.requester.department ? <span> · {t.requester.department}</span> : null}
           </span>
-          {unread && <span style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 600, background: 'var(--accent-grad)', color: 'var(--on-accent)', borderRadius: 'var(--r-lg)', padding: '1px 7px' }}>{t.unread}</span>}
+          {unread && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, lineHeight: '16.5px', minWidth: 20, textAlign: 'center', background: 'var(--hi)', color: '#fff', borderRadius: 99, padding: '1px 7px' }}>{t.unread}</span>}
         </span>
         <span style={{ display: 'block', fontSize: 12.5, color: unread ? 'var(--ink)' : 'var(--ink-3)', fontWeight: unread ? 500 : 400, marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {t.lastMessagePreview || '—'}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 7 }}>
-          <Pill label={st.label} tone={st.tone} fontSize={11.5} padding="2px 9px" />
+          <Pill label={st.label} tone={st.tone} />
           {role === 'head' && (
-            <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {who ? `→ ${who}` : 'Unassigned'}
             </span>
           )}
@@ -595,23 +596,23 @@ function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, o
       {/* Header */}
       <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--line)' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <RequesterAvatar ticket={t} size={44} />
+          <RequesterAvatar ticket={t} size={42} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 16.5, fontWeight: 600, letterSpacing: '-.3px' }}>{t.topicLabel}</span>
+              <span style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.5 }}>{t.topicLabel}</span>
               <Pill label={STATUS[t.status].label} tone={STATUS[t.status].tone} />
             </div>
-            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', marginTop: 3 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', marginTop: 2 }}>
               {t.requester.name}
-              {requesterMeta && <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}> · {requesterMeta}</span>}
+              {requesterMeta && <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}> · {requesterMeta}</span>}
             </div>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400, marginTop: 2 }}>
+            <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, marginTop: 2 }}>
               Raised {fullDate(t.createdAt)} · {t.assignee ? <>With <strong style={{ color: 'var(--ink-2)' }}>{mineNow ? 'you' : t.assignee.name}</strong></> : 'In the head’s queue, unassigned'}
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
           {isHead && !resolved && (
             <>
               <AssignMenu label={t.assignee ? 'Reassign…' : 'Assign to…'} currentId={t.assignee?.userId} meId={meId} disabled={busy} onPick={(p) => void assign(p)} />
@@ -622,10 +623,10 @@ function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, o
             <button type="button" disabled={busy} onClick={() => setDialog('sendback')} style={ghostBtn}>Send back to head</button>
           )}
           {!resolved && (isHead || mineNow) && (
-            <button type="button" disabled={busy} onClick={() => setDialog('resolve')} style={{ ...ghostBtn, color: 'var(--ok)', borderColor: 'var(--ok-line)' }}>Resolve</button>
+            <button type="button" disabled={busy} onClick={() => setDialog('resolve')} className={btnClass('ok')} style={btn('ok')}>Resolve</button>
           )}
           <button type="button" onClick={() => setShowHistory((s) => !s)}
-            style={{ ...ghostBtn, marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, background: showHistory ? 'var(--accent-soft)' : 'var(--surface)', color: showHistory ? 'var(--accent-ink)' : 'var(--ink-2)', borderColor: showHistory ? 'var(--accent-line)' : 'var(--line)' }}>
+            style={{ ...ghostBtn, marginLeft: 'auto', background: showHistory ? 'var(--sel)' : 'var(--surface)', color: showHistory ? 'var(--on-sel)' : 'var(--ink)', borderColor: showHistory ? 'var(--sel)' : 'var(--line-2)' }}>
             <IconHistory size={15} /> History{events.length ? ` · ${events.length}` : ''}
           </button>
         </div>
@@ -667,7 +668,7 @@ function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, o
 
 function FooterNote({ children, tone }: { children: ReactNode; tone?: 'done' }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', borderTop: '1px solid var(--line)', background: tone === 'done' ? 'var(--ok-bg)' : 'var(--surface-2)', fontSize: 13, fontWeight: 400, color: tone === 'done' ? 'var(--ok)' : 'var(--ink-2)', lineHeight: 1.45 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', borderTop: '1px solid var(--line)', background: tone === 'done' ? 'var(--ok-bg)' : 'var(--surface-2)', fontSize: 13, fontWeight: 400, color: tone === 'done' ? 'var(--ok)' : 'var(--ink-2)', lineHeight: 1.5 }}>
       {children}
     </div>
   );
@@ -709,15 +710,15 @@ function AssignMenu({ label, currentId, meId, disabled, onPick }: { label: strin
 
   return (
     <div ref={box} style={{ position: 'relative' }}>
-      <button type="button" disabled={disabled} onClick={() => setOpen((o) => !o)} style={{ ...primaryBtn, gap: 8 }}>
+      <button type="button" disabled={disabled} onClick={() => setOpen((o) => !o)} className={btnClass('primary')} style={primaryBtn}>
         {label} <IconChevronDown stroke="var(--on-accent)" />
       </button>
       {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 40, width: 300, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, boxShadow: 'var(--shadow-lg)', overflow: 'hidden', animation: 'pop .16s ease both' }}>
+        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 40, width: 300, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 'var(--r)', boxShadow: 'var(--shadow-lg)', overflow: 'hidden', animation: 'pop .16s ease both' }}>
           {(people?.length ?? 0) > 7 && (
             <div style={{ padding: 10, borderBottom: '1px solid var(--line)' }}>
               <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search people"
-                style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--line)', borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+                className="ds-inp" style={{ ...inp, height: 36, borderRadius: 10 }} />
             </div>
           )}
           <div className="scry" style={{ maxHeight: 300, overflowY: 'auto' }}>
@@ -776,7 +777,7 @@ function eventLine(e: SupportEvent, meId: string): { text: string; detail?: stri
 function HistoryPanel({ events, meId }: { events: SupportEvent[]; meId: string }) {
   return (
     <div className="scry" style={{ maxHeight: 210, overflowY: 'auto', padding: '12px 20px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)', animation: 'fade .16s ease both' }}>
-      <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.06em', color: 'var(--ink-3)', marginBottom: 8 }}>HISTORY</div>
+      <div style={{ ...eyebrow, marginBottom: 8 }}>HISTORY</div>
       {events.length === 0 && <div style={{ fontSize: 13, color: 'var(--ink-4)' }}>Nothing yet.</div>}
       {events.map((e, i) => {
         const line = eventLine(e, meId);
@@ -954,7 +955,7 @@ function Composer({ onSend }: { onSend: (text: string, files: File[]) => void })
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 9 }}>
         <input ref={picker} type="file" accept={ACCEPT} multiple hidden onChange={(e) => add(e.target.files)} />
         <button type="button" title="Attach images or PDFs (up to 5, 10 MB each)" onClick={() => picker.current?.click()} disabled={files.length >= SUPPORT_MAX_FILES}
-          style={{ width: 40, height: 40, borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          className="ds-icon-btn" style={iconBtn(42)}>
           <IconClip />
         </button>
         <textarea
@@ -964,9 +965,10 @@ function Composer({ onSend }: { onSend: (text: string, files: File[]) => void })
           placeholder="Write a reply… (Enter to send, Shift+Enter for a new line)"
           rows={2}
           maxLength={4000}
-          style={{ flex: 1, resize: 'none', border: '1px solid var(--line)', borderRadius: 12, padding: '9px 12px', fontSize: 13.5, lineHeight: 1.45, fontFamily: 'inherit', outline: 'none', color: 'var(--ink)', maxHeight: 140 }}
+          className="ds-inp"
+          style={{ ...inp, flex: 1, height: 'auto', minHeight: 42, resize: 'none', padding: '10px 12px', fontSize: 13.5, maxHeight: 140 }}
         />
-        <button type="button" disabled={!canSend} onClick={send} style={{ ...primaryBtn, height: 40, opacity: canSend ? 1 : 0.5, cursor: canSend ? 'pointer' : 'not-allowed' }}>
+        <button type="button" disabled={!canSend} onClick={send} className={btnClass('primary')} style={{ ...primaryBtn, height: 42, opacity: canSend ? 1 : 0.5, cursor: canSend ? 'pointer' : 'not-allowed' }}>
           Send
         </button>
       </div>
@@ -974,6 +976,7 @@ function Composer({ onSend }: { onSend: (text: string, files: File[]) => void })
   );
 }
 
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
-const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
+// The prototype's 40px pill buttons.
+const primaryBtn: CSSProperties = { ...btn('primary'), fontFamily: 'inherit' };
+const ghostBtn: CSSProperties = { ...btn(), fontFamily: 'inherit' };
 const linkBtn: CSSProperties = { background: 'none', border: 'none', color: 'var(--accent-ink)', fontWeight: 500, fontSize: 'inherit', cursor: 'pointer', padding: 0, fontFamily: 'inherit' };

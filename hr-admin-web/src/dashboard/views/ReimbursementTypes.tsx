@@ -7,9 +7,11 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card, EmptyRow, ListPending, Spinner } from '../ui';
+import { Card, EmptyRow, ListPending, PageActions, Pill } from '../ui';
+import { btn, btnClass, fieldLabel, hint, iconBtn as roundBtn, inp, textareaStyle } from '../ds';
+import { IconInfo } from '../icons';
 import { downloadCsv } from '../export';
-import { IconClose, IconDownload, IconEdit, IconPlus, IconTrash, rowActionBtn } from './peopleTable';
+import { IconClose, IconDownload, IconEdit, IconPlus, IconTrash } from './peopleTable';
 import {
   createReimbursementType, deleteReimbursementType, getReimbursementTypes, updateReimbursementType,
   type ReimbursementTypeDTO,
@@ -68,29 +70,30 @@ export function ReimbursementTypes() {
         />
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-          {loading ? <Spinner /> : failed && types.length === 0 ? '' : `${types.length} type${types.length === 1 ? '' : 's'}`}
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
-          <button style={ghostBtn} onClick={download} disabled={types.length === 0}>
-            <IconDownload /> Download
-          </button>
-          <button style={primaryBtn} onClick={() => setAdding(true)}>
-            <IconPlus size={15} /> Add reimbursement type
-          </button>
-        </div>
-      </div>
+      <PageActions>
+        <button className={btnClass()} style={btn()} onClick={download} disabled={types.length === 0}>
+          <IconDownload /> Download
+        </button>
+        <button className={btnClass('primary')} style={btn('primary')} onClick={() => setAdding(true)}>
+          <IconPlus size={15} stroke="currentColor" /> Add reimbursement type
+        </button>
+      </PageActions>
 
       <div style={note}>
-        An employee picks one of these when raising a claim. A type that is switched off stays on
-        old claims but disappears from the app's list, which is how to retire one people have
-        already used.
+        <span style={{ display: 'inline-flex', marginTop: 2, flexShrink: 0 }}><IconInfo size={15} stroke="var(--accent)" /></span>
+        <div style={{ flex: 1 }}>
+          An employee picks one of these when raising a claim. A type that is switched off stays on
+          old claims but disappears from the app's list, which is how to retire one people have
+          already used.
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+          {loading ? 'Loading…' : `${types.length} type${types.length === 1 ? '' : 's'}`}
+        </div>
       </div>
 
-      <Card>
+      <Card padded>
         <table style={tableStyle}>
-          <thead>
+          <thead className="ds-thead">
             <tr>
               <Th>Type</Th>
               <Th>Description</Th>
@@ -101,23 +104,24 @@ export function ReimbursementTypes() {
             </tr>
           </thead>
           <tbody>
-            {types.map((t) => (
-              <tr key={t.id}>
-                <Td>
-                  <strong style={{ color: 'var(--accent-ink)' }}>{t.name}</strong>
-                  {t.payHeadCode && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>Bills for the {t.payHeadCode.toLowerCase().replace(/_/g, ' ')} component · tax-free, not paid again</div>}
+            {types.map((t, i) => (
+              <tr key={t.id} className="dc-row">
+                <Td last={i === types.length - 1}>
+                  <strong style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{t.name}</strong>
+                  {t.payHeadCode && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2 }}>Bills for the {t.payHeadCode.toLowerCase().replace(/_/g, ' ')} component · tax-free, not paid again</div>}
                 </Td>
-                <Td muted>{t.description || '—'}</Td>
-                <Td right mono>{rupees(t.maxLimit)}</Td>
-                <Td right mono>{t.backdateDays === 0 ? 'Today only' : `${t.backdateDays} days`}</Td>
-                <Td>
-                  <span style={t.active ? onPill : offPill}>{t.active ? 'Active' : 'Off'}</span>
+                <Td muted last={i === types.length - 1}>{t.description || '—'}</Td>
+                <Td right mono last={i === types.length - 1}>{rupees(t.maxLimit)}</Td>
+                <Td right mono last={i === types.length - 1}>{t.backdateDays === 0 ? 'Today only' : `${t.backdateDays} days`}</Td>
+                <Td last={i === types.length - 1}>
+                  <Pill label={t.active ? 'Active' : 'Off'} tone={t.active ? onPill : offPill} />
                 </Td>
-                <Td right>
+                <Td right last={i === types.length - 1}>
                   <div style={{ display: 'inline-flex', gap: 6 }}>
-                    <button style={rowActionBtn} title="Edit" onClick={() => setEditing(t)}><IconEdit /></button>
+                    <button className="ds-icon-btn" style={roundBtn(34)} title="Edit" onClick={() => setEditing(t)}><IconEdit /></button>
                     <button
-                      style={{ ...rowActionBtn, color: 'var(--bad)', borderColor: 'var(--bad-line)' }}
+                      className="ds-icon-btn"
+                      style={{ ...roundBtn(34), color: 'var(--bad)' }}
                       title="Delete"
                       onClick={() => void remove(t)}
                     ><IconTrash /></button>
@@ -179,17 +183,17 @@ function TypeModal({ initial, onClose, onSaved }: {
 
   return (
     <div style={overlay} onClick={onClose}>
-      <div style={modalCard} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '18px 22px 4px' }}>
-          <div style={{ fontSize: 16.5, fontWeight: 600 }}>
+      <div className="scry" style={modalCard} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.5 }}>
             {initial ? 'Edit reimbursement type' : 'New reimbursement type'}
           </div>
-          <button onClick={onClose} style={iconBtn}><IconClose size={18} /></button>
+          <button onClick={onClose} className="ds-icon-btn" style={roundBtn(42)} aria-label="Close"><IconClose size={18} stroke="currentColor" /></button>
         </div>
 
-        <div style={{ padding: '10px 22px 4px' }}>
+        <div style={{ padding: 20, flex: 1, overflowY: 'auto' }}>
           <Field label="Name" required>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Travel" style={inputStyle} autoFocus />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Travel" className="ds-inp" style={inputStyle} autoFocus />
           </Field>
           <Field label="Description">
             <textarea
@@ -197,34 +201,35 @@ function TypeModal({ initial, onClose, onSaved }: {
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What this covers, so people pick the right one"
               rows={3}
-              style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
+              className="ds-inp"
+              style={textareaStyle}
             />
           </Field>
           <Field label="Maximum limit per claim">
-            <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden', background: 'var(--surface)', maxWidth: 260 }}>
-              <span style={{ padding: '9px 12px', color: 'var(--ink-3)', borderRight: '1px solid var(--line)', fontSize: 13.5 }}>₹</span>
+            <div className="ds-inp" style={unitBox}>
+              <span style={{ padding: '0 12px', color: 'var(--ink-3)', borderRight: '1px solid var(--line)', fontSize: 13, alignSelf: 'stretch', display: 'flex', alignItems: 'center' }}>₹</span>
               <input
                 type="number" min="0" step="100" value={maxLimit}
                 onChange={(e) => setMaxLimit(e.target.value)}
-                style={{ border: 'none', outline: 'none', padding: '9px 11px', fontSize: 14, width: '100%', color: 'var(--ink)', background: 'transparent' }}
+                style={unitInput}
               />
             </div>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 6 }}>
+            <div style={{ ...hint, marginTop: 6 }}>
               {Number(maxLimit) > 0
                 ? `A claim over ₹${Number(maxLimit).toLocaleString('en-IN')} will be refused.`
                 : 'Zero means no cap — any amount is allowed.'}
             </div>
           </Field>
           <Field label="How far back can it be claimed?">
-            <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden', background: 'var(--surface)', maxWidth: 260 }}>
+            <div className="ds-inp" style={unitBox}>
               <input
                 type="number" min="0" max="365" step="1" value={backdateDays}
                 onChange={(e) => setBackdateDays(e.target.value)}
-                style={{ border: 'none', outline: 'none', padding: '9px 11px', fontSize: 14, width: '100%', color: 'var(--ink)', background: 'transparent' }}
+                style={unitInput}
               />
-              <span style={{ padding: '9px 12px', color: 'var(--ink-3)', borderLeft: '1px solid var(--line)', fontSize: 13.5 }}>days back</span>
+              <span style={{ padding: '0 12px', color: 'var(--ink-3)', borderLeft: '1px solid var(--line)', fontSize: 13, alignSelf: 'stretch', display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>days back</span>
             </div>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 6 }}>
+            <div style={{ ...hint, marginTop: 6 }}>
               {Number(backdateDays) > 0
                 ? `An expense older than ${backdateDays} days cannot be claimed. The app hides those dates.`
                 : 'Zero means today only — no past dates can be claimed.'}
@@ -232,11 +237,11 @@ function TypeModal({ initial, onClose, onSaved }: {
           </Field>
           {(components?.length ?? 0) > 0 && (
             <Field label="Bills for a salary component">
-              <select value={billsFor} onChange={(e) => setBillsFor(e.target.value)} style={{ ...inputStyle, maxWidth: 360 }}>
+              <select value={billsFor} onChange={(e) => setBillsFor(e.target.value)} className="ds-inp" style={inputStyle}>
                 <option value="">None: an expense claim, paid on the next run</option>
                 {components!.map((h) => <option key={h.code} value={h.code}>{h.name}</option>)}
               </select>
-              <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 6 }}>
+              <div style={{ ...hint, marginTop: 6 }}>
                 {billsFor
                   ? 'This component is already paid with salary every month and taxed until bills come in. An approved claim of this type is not paid again: it makes that much of the component tax-free, and the income tax drops from the next payroll run.'
                   : 'The approved amount is paid on the next payroll run.'}
@@ -250,9 +255,9 @@ function TypeModal({ initial, onClose, onSaved }: {
           {error && <div style={errorTag}>{error}</div>}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 22px', borderTop: '1px solid var(--line)' }}>
-          <button onClick={onClose} style={ghostBtn}>Cancel</button>
-          <button onClick={() => void save()} disabled={saving} style={{ ...primaryBtn, marginLeft: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, padding: '16px 20px', borderTop: '1px solid var(--line)', flexShrink: 0 }}>
+          <button onClick={onClose} className={btnClass()} style={btn()}>Cancel</button>
+          <button onClick={() => void save()} disabled={saving} className={btnClass('primary')} style={btn('primary')}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
@@ -263,30 +268,31 @@ function TypeModal({ initial, onClose, onSaved }: {
 
 function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
-    <div style={{ marginBottom: 14 }}>
-      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--ink-2)' }}>
-        {label}{required && <span style={{ color: 'var(--bad)' }}> *</span>}
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ ...fieldLabel, display: 'block', marginBottom: 6 }}>
+        {label}{required && <span style={{ color: 'var(--bad)', marginLeft: 2 }}>*</span>}
       </label>
       {children}
     </div>
   );
 }
 function Th({ children, right, width }: { children: ReactNode; right?: boolean; width?: number }) {
-  return <th style={{ textAlign: right ? 'right' : 'left', width, fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '11px 16px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)' }}>{children}</th>;
+  return <th style={{ textAlign: right ? 'right' : 'left', width, fontSize: 12, lineHeight: '18px', textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '10px 12px', background: 'var(--surface-2)', whiteSpace: 'nowrap' }}>{children}</th>;
 }
-function Td({ children, muted, right, mono }: { children: ReactNode; muted?: boolean; right?: boolean; mono?: boolean }) {
-  return <td style={{ padding: '13px 16px', textAlign: right ? 'right' : 'left', borderBottom: '1px solid var(--line)', color: muted ? 'var(--ink-3)' : 'var(--ink)', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
+function Td({ children, muted, right, mono, last }: { children: ReactNode; muted?: boolean; right?: boolean; mono?: boolean; last?: boolean }) {
+  return <td style={{ padding: '10px 12px', textAlign: right ? 'right' : 'left', borderBottom: last ? 'none' : '1px solid var(--line)', color: muted ? 'var(--ink-3)' : 'var(--ink)', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
 }
 
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
-const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
-const note: CSSProperties = { fontSize: 12.5, color: 'var(--ink-2)', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.55 };
-const onPill: CSSProperties = { fontSize: 11.5, fontWeight: 600, color: 'var(--ok)', background: 'var(--ok-bg)', border: '1px solid var(--ok-line)', borderRadius: 'var(--r-lg)', padding: '3px 10px' };
-const offPill: CSSProperties = { fontSize: 11.5, fontWeight: 600, color: 'var(--ink-4)', background: 'var(--surface-2)', borderRadius: 'var(--r-lg)', padding: '3px 10px' };
-const errorTag: CSSProperties = { fontSize: 12.5, color: 'var(--bad)', background: 'var(--bad-bg)', border: '1px solid var(--bad-line)', borderRadius: 10, padding: '10px 13px', marginBottom: 6 };
-const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: 400, color: 'var(--ink)', cursor: 'pointer', marginBottom: 10 };
-const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(20,16,12,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 24 };
-const modalCard: CSSProperties = { width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', background: 'var(--surface)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)' };
-const iconBtn: CSSProperties = { marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-4)', padding: 4 };
+// The prototype's table: a grey header strip with rounded ends inside a padded card.
+const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13.5, lineHeight: 1.5 };
+const inputStyle: CSSProperties = { ...inp };
+const unitBox: CSSProperties = { ...inp, display: 'flex', alignItems: 'center', padding: 0, overflow: 'hidden', maxWidth: 260 };
+const unitInput: CSSProperties = { border: 'none', outline: 'none', padding: '0 12px', height: '100%', fontSize: 13, width: '100%', color: 'var(--ink)', background: 'transparent' };
+const note: CSSProperties = { display: 'flex', gap: 12, alignItems: 'flex-start', fontSize: 13, color: 'var(--ink-2)', background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 14, padding: '12px 14px', marginBottom: 20, lineHeight: 1.5 };
+const onPill = { bg: 'var(--p-green)', fg: 'var(--on-accent)' };
+const offPill = { bg: 'var(--mute-bg)', fg: 'var(--ink-2)' };
+const errorTag: CSSProperties = { fontSize: 13, fontWeight: 600, color: 'var(--bad)', background: 'var(--bad-bg)', borderRadius: 14, padding: '10px 14px', marginBottom: 6 };
+const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', cursor: 'pointer', marginBottom: 10, accentColor: 'var(--accent)' };
+// A side sheet from the right, as the prototype opens its forms.
+const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'var(--scrim)', display: 'flex', justifyContent: 'flex-end', zIndex: 60, animation: 'ovl .2s ease both' };
+const modalCard: CSSProperties = { width: 440, maxWidth: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRadius: '24px 0 0 24px', boxShadow: 'var(--shadow-drawer)', animation: 'drwIn .25s ease both' }

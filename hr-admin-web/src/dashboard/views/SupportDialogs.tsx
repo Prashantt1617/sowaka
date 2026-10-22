@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { IconChevronDown, IconClose, IconPlus } from '../icons';
+import { btn, eyebrow, inp, textareaStyle } from '../ds';
 import {
   SUPPORT_MANAGER_TOPIC,
   SUPPORT_MAX_TOPICS,
@@ -17,8 +18,8 @@ function DialogShell({ title, busy, onClose, children, width = 480 }: { title: s
   return (
     <div role="dialog" aria-modal="true" aria-label={title} style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div onClick={busy ? undefined : onClose} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', animation: 'ovl .2s ease both' }} />
-      <div style={{ position: 'relative', width: `min(${width}px, 100%)`, background: 'var(--surface)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', padding: '20px 22px', animation: 'pop .18s ease both' }}>
-        <div style={{ fontSize: 16, fontWeight: 600 }}>{title}</div>
+      <div style={{ position: 'relative', width: `min(${width}px, 100%)`, background: 'var(--surface)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-drawer)', padding: 20, animation: 'pop .18s ease both' }}>
+        <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.5 }}>{title}</div>
         {children}
       </div>
     </div>
@@ -28,7 +29,7 @@ function DialogShell({ title, busy, onClose, children, width = 480 }: { title: s
 function Buttons({ busy, onClose, onConfirm, label, busyLabel, tone = 'var(--accent)', disabled }: { busy: boolean; onClose: () => void; onConfirm: () => void; label: string; busyLabel: string; tone?: string; disabled?: boolean }) {
   const off = busy || disabled;
   return (
-    <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
+    <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
       <button type="button" disabled={busy} onClick={onClose} style={{ ...ghostBtn, opacity: busy ? 0.55 : 1, cursor: busy ? 'not-allowed' : 'pointer' }}>Cancel</button>
       <button type="button" disabled={off} onClick={onConfirm} style={{ ...primaryBtn, background: tone, opacity: off ? 0.55 : 1, cursor: off ? 'not-allowed' : 'pointer' }}>
         {busy ? busyLabel : label}
@@ -44,7 +45,7 @@ export function SendBackDialog({ busy, onClose, onConfirm }: { busy: boolean; on
       <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, marginTop: 8 }}>
         The ticket leaves your desk and goes back to the head’s queue with its conversation. The employee isn’t told.
       </div>
-      <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.06em', color: 'var(--ink-3)', margin: '16px 0 6px' }}>NOTE FOR THE HEAD · OPTIONAL</div>
+      <div style={{ ...eyebrow, margin: '16px 0 8px' }}>NOTE FOR THE HEAD · OPTIONAL</div>
       <textarea autoFocus value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} rows={3} placeholder="e.g. This is a leave question, not payroll" style={textarea} />
       <Buttons busy={busy} onClose={onClose} onConfirm={() => onConfirm(note.trim())} label="Send back" busyLabel="Sending…" />
     </DialogShell>
@@ -171,8 +172,9 @@ export function TicketTypesDialog({ topics, busy, error, onClose, onSave }: {
   );
 }
 
-const input: CSSProperties = { minWidth: 0, border: '1px solid var(--line)', borderRadius: 10, padding: '8px 11px', fontSize: 13, fontFamily: 'inherit', outline: 'none', color: 'var(--ink)', background: 'var(--surface)' };
+// The prototype's fields and pill buttons.
+const input: CSSProperties = { ...inp, width: 'auto', minWidth: 0, height: 40 };
 const iconBtn = (off: boolean): CSSProperties => ({ width: 32, height: 32, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--line)', borderRadius: 999, background: 'var(--surface)', cursor: off ? 'not-allowed' : 'pointer', opacity: off ? 0.4 : 1, padding: 0 });
-const textarea: CSSProperties = { width: '100%', resize: 'vertical', border: '1px solid var(--line)', borderRadius: 10, padding: '9px 11px', fontSize: 13, lineHeight: 1.45, fontFamily: 'inherit', outline: 'none', color: 'var(--ink)' };
-const primaryBtn: CSSProperties = { background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
-const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const textarea: CSSProperties = { ...textareaStyle };
+const primaryBtn: CSSProperties = { ...btn('primary'), fontFamily: 'inherit' };
+const ghostBtn: CSSProperties = { ...btn(), fontFamily: 'inherit' };
