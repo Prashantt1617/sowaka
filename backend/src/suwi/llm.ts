@@ -5,15 +5,18 @@
  * speaks one message format (Anthropic-style blocks); the Gemini adapter maps
  * to and from it. Keys live on the server only and never reach the dashboard.
  */
-export type Provider = 'gemini' | 'claude';
-export const SUWI_PROVIDER: Provider = (process.env.SUWI_PROVIDER === 'claude' ? 'claude' : process.env.SUWI_PROVIDER === 'gemini' ? 'gemini' : process.env.GEMINI_API_KEY ? 'gemini' : 'claude');
-export const SUWI_MODEL = process.env.SUWI_MODEL || (SUWI_PROVIDER === 'gemini' ? 'gemini-3.8-flash' : 'claude-sonnet-5-5');
+export type Provider = 'gemini' | 'claude' | 'openai';
+const P = process.env.SUWI_PROVIDER;
+export const SUWI_PROVIDER: Provider = P === 'claude' || P === 'gemini' || P === 'openai' ? P : process.env.GEMINI_API_KEY ? 'gemini' : process.env.OPENAI_API_KEY ? 'openai' : 'claude';
+export const SUWI_MODEL = process.env.SUWI_MODEL || (SUWI_PROVIDER === 'gemini' ? 'gemini-3.8-flash' : SUWI_PROVIDER === 'openai' ? 'gpt-6-luna' : 'claude-sonnet-5-5');
 
 /** US$ per million tokens: input, output, cached input. Matched by model-name prefix. */
 const PRICES: [string, [number, number, number]][] = [
   ['gemini-4-argon', [2, 10, 0.1]], // introductory until 30 Nov 2026, then 4 / 20 / 0.2
   ['gemini-3.8-flash', [0.75, 3.75, 0.075]], // until 31 Dec 2026, then 1.5 / 7.5 / 0.15
   ['gemini-3.5-flash-lite', [0.3, 2.5, 0.03]],
+  ['gpt-6-luna', [0.1, 0.5, 0.01]],
+  ['gpt-5.6-luna', [0.2, 1.2, 0.02]],
   ['claude-sonnet-5-5', [2, 10, 0.1]],
   ['claude-opus-5-5', [4, 20, 0.2]],
   ['claude-haiku-4-5', [1, 5, 0.1]],
@@ -39,7 +42,7 @@ export interface LlmUsage { input_tokens: number; output_tokens: number; cache_r
 export interface LlmReply { content: ContentBlock[]; stop_reason: 'tool_use' | 'end_turn' | string; usage: LlmUsage; model: string; raw?: unknown }
 
 export function llmConfigured(): boolean {
-  return Boolean(SUWI_PROVIDER === 'gemini' ? process.env.GEMINI_API_KEY : process.env.ANTHROPIC_API_KEY);
+  return Boolean(SUWI_PROVIDER === 'gemini' ? process.env.GEMINI_API_KEY : SUWI_PROVIDER === 'openai' ? process.env.OPENAI_API_KEY : process.env.ANTHROPIC_API_KEY);
 }
 
 /** What a reply cost, in US$ (for the per-company budget and the audit log). */
@@ -50,7 +53,7 @@ export function costUsd(model: string, u: LlmUsage): number {
 }
 
 export async function callModel(input: { model?: string; system: string; tools?: LlmTool[]; messages: LlmMessage[]; maxTokens?: number }): Promise<LlmReply> {
-  return SUWI_PROVIDER === 'gemini' ? callGemini(input) : callClaude(input);
+  return SUWI_PROVIDER === 'gemini' ? callGemini(input) : SUWI_PROVIDER === 'openai' ? callOpenAI(input) : callClaude(input);
 }
 
 async function post(url: string, headers: Record<string, string>, body: unknown): Promise<unknown> {
@@ -166,5 +169,55 @@ async function callGemini(input: { model?: string; system: string; tools?: LlmTo
     usage: { input_tokens: (u.promptTokenCount ?? 0) - cached, output_tokens: (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0), cache_read_input_tokens: cached },
     model: res.modelVersion ?? model,
     raw: parts,
+  };
+}
+
+// —— OpenAI (Chat Completions) ——
+type OPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
+type OMsg = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string | OPart[] | null; tool_calls?: { id: string; type: 'function'; function: { name: string; arguments: string } }[]; tool_call_id?: string };
+
+async function callOpenAI(input: { model?: string; system: string; tools?: LlmTool[]; messages: LlmMessage[]; maxTokens?: number }): Promise<LlmReply> {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) throw new SuwiLlmError(503, 'Suwi is not set up on this server yet (no OPENAI_API_KEY)');
+  const model = input.model ?? SUWI_MODEL;
+  // The system prompt first and unchanged between questions: OpenAI caches a repeated prefix automatically.
+  const messages: OMsg[] = [{ role: 'system', content: input.system }];
+  for (const m of input.messages) {
+    const images: OPart[] = (m.images ?? []).map((im) => ({ type: 'image_url', image_url: { url: `data:${im.mimeType};base64,${im.data}` } }));
+    if (typeof m.content === 'string') {
+      messages.push({ role: m.role, content: images.length ? [...images, { type: 'text', text: m.content }] : m.content });
+      continue;
+    }
+    if (m.role === 'assistant') {
+      const text = m.content.filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text').map((b) => b.text).join('\n');
+      const calls = m.content.filter((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use');
+      messages.push({ role: 'assistant', content: text || null, ...(calls.length ? { tool_calls: calls.map((c) => ({ id: c.id, type: 'function' as const, function: { name: c.name, arguments: JSON.stringify(c.input ?? {}) } })) } : {}) });
+    } else {
+      for (const b of m.content) {
+        if (b.type === 'text') messages.push({ role: 'user', content: images.length ? [...images, { type: 'text', text: b.text }] : b.text });
+        else if (b.type === 'tool_result') messages.push({ role: 'tool', tool_call_id: b.tool_use_id, content: b.content });
+      }
+    }
+  }
+  const tools = input.tools ?? [];
+  const res = await post('https://api.openai.com/v1/chat/completions', { authorization: `Bearer ${key}` }, {
+    model, messages, max_completion_tokens: (input.maxTokens ?? 1500) + 1500,
+    ...(tools.length ? { tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } })) } : {}),
+  }) as { choices?: { message?: { content?: string | null; tool_calls?: { id: string; function: { name: string; arguments: string } }[] } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } }; model?: string };
+  const msg = res.choices?.[0]?.message;
+  const content: ContentBlock[] = [];
+  if (msg?.content) content.push({ type: 'text', text: msg.content });
+  for (const c of msg?.tool_calls ?? []) {
+    let args: Record<string, unknown> = {};
+    try { args = JSON.parse(c.function.arguments || '{}'); } catch { args = {}; }
+    content.push({ type: 'tool_use', id: c.id, name: c.function.name, input: args });
+  }
+  const u = res.usage ?? {};
+  const cached = u.prompt_tokens_details?.cached_tokens ?? 0;
+  return {
+    content,
+    stop_reason: content.some((b) => b.type === 'tool_use') ? 'tool_use' : 'end_turn',
+    usage: { input_tokens: (u.prompt_tokens ?? 0) - cached, output_tokens: u.completion_tokens ?? 0, cache_read_input_tokens: cached },
+    model: res.model ?? model,
   };
 }

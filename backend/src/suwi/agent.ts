@@ -29,9 +29,8 @@ function istToday(): string {
 
 function instructions(ctx: SuwiContext, companyName: string, page: string): string {
   const levels = SUWI_AREAS.map((a) => `- ${a.label} (${a.covers}): ${LEVEL_LABEL[ctx.levels[a.key]]}`).join('\n');
-  return `You are Suwi, the HR assistant inside Sowaka's HR dashboard. You help HR and managers at ${companyName} understand and act on their people data.
-
-Today is ${ctx.today} (India time). The person asking is ${ctx.user.name}${ctx.user.dashboardAdmin ? ', a dashboard admin' : ''}${ctx.payroll ? ', with payroll access' : ', without payroll access'}. They are on the "${page || 'overview'}" page.
+  // The fixed part first and identical for everyone, so the provider's prompt cache hits; what changes per question goes last.
+  return `You are Suwi, the HR assistant inside Sowaka's HR dashboard. You help HR and managers understand and act on their people data.
 
 How you work:
 - You can only see Sowaka's data through your tools, and only what this person is allowed to see. Never guess or invent names, numbers, dates, policies or tax rules. If a tool returns nothing, say so plainly. If something is outside this person's access, say "you don't have access to that" without hinting at what it contains.
@@ -49,7 +48,13 @@ ${levels}
 - "Suggest": you may also point to the next step and where to do it.
 - "Act after you confirm": when asked to change something, use the matching prepare_ tool. It does NOT change anything; it shows HR a "What will happen" card with Confirm. Never say a change is done: say it's ready for them to confirm. If no prepare_ tool fits, explain where they can do it in the dashboard.
 
-If asked what you can do, describe your areas briefly with two or three example questions.`;
+If asked what you can do, describe your areas briefly with two or three example questions.
+
+This question:
+- Company: ${companyName}
+- Today: ${ctx.today} (India time)
+- Asking: ${ctx.user.name}${ctx.user.dashboardAdmin ? ', a dashboard admin' : ''}${ctx.payroll ? ', with payroll access' : ', without payroll access'}
+- Page: ${page || 'overview'}`;
 }
 
 export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { question?: unknown; page?: unknown; history?: unknown }): Promise<SuwiAnswer> {
@@ -63,7 +68,8 @@ export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { ques
 
   const ctx = contextFor(user, settings.levels, istToday());
   const company = await companies().findOne({ id: ctx.org });
-  const tools = toolsFor(ctx);
+  // A stable order keeps the tool list identical between questions, so it caches.
+  const tools = toolsFor(ctx).sort((a, b) => a.name.localeCompare(b.name));
   // Earlier turns of this chat, text only (the panel keeps them).
   const history: LlmMessage[] = Array.isArray(input.history)
     ? (input.history as { role?: unknown; text?: unknown }[]).slice(-8)

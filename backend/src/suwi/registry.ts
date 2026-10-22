@@ -18,3 +18,5 @@ import './tools/geotag';
 import './tools/correct-day';
 import './tools/paid-days';
 import './tools/shift-template';
+import './tools/claims';
+import './tools/bills';
