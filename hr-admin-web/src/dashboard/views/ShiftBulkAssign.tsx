@@ -254,7 +254,7 @@ export function ShiftBulkAssign() {
               title={blockedReason('people') || undefined}
               style={{ ...primaryBtn, opacity: busy || blockedReason('people') ? 0.5 : 1 }}
             >
-              {busy ? 'Finding…' : `Continue with ${preview.length}`}
+              {busy ? 'Finding…' : rosterState === 'ready' ? `Continue with ${preview.length}` : 'Continue'}
             </button>
           </div>
         </div>

@@ -179,6 +179,8 @@ export function AttendanceReport() {
     const key = cacheKey(userId, from, to);
     // Whatever this tab last saw for the range goes up immediately.
     const cached = readCached(key);
+    // A range with no copy yet shows its skeleton, not "Refreshing…" left over from the last one.
+    if (!cached) setRefreshing(false);
     if (cached) {
       setReport(cached);
       setReportFor(key);

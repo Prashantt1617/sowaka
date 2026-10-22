@@ -125,7 +125,7 @@ export function PayrollDashboard() {
         } />
         {!data ? (
           <SkeletonFrame style={{ display: 'flex', alignItems: 'flex-end', gap: 28, height: 250, padding: '24px 40px 30px 80px' }}>
-            {[52, 70, 38, 84, 60, 46, 76, 58, 66, 42, 72, 50].map((h, i) => <Skeleton key={i} w="100%" h={0} r={4} style={{ height: `${h}%` }} />)}
+            {[52, 70, 38, 84, 60, 46, 76, 58, 66, 42, 72, 50].map((h, i) => <Skeleton key={i} h={0} r={4} style={{ height: `${h}%`, flex: 1, width: 'auto' }} />)}
           </SkeletonFrame>
         ) : <CostChart months={data.cost.months} />}
         <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', padding: '0 22px 18px', fontSize: 12.5, color: 'var(--ink-2)' }}>
