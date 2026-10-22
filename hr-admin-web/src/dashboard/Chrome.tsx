@@ -7,6 +7,7 @@ import type { View } from './theme';
 import { TITLES } from './theme';
 import { IconBell, IconCheck, IconLogout, IconSearch, Logo, navIcon } from './icons';
 import { useStore } from './store';
+import { PersonAvatar } from './PersonAvatar';
 import { ORG_DISPLAY_NAME, PLATFORM_NAME } from './org';
 import { canOpen } from './access';
 import { useSupportBadge } from './supportBadge';
@@ -455,13 +456,6 @@ export function Topbar() {
   const { view, user, signOut, suwiOpen, setSuwiOpen } = useStore();
   const [title, meta] = TITLES[view];
   const displayName = user?.name ?? 'HR Admin';
-  const userInitials = displayName
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((p) => p[0])
-    .join('')
-    .toUpperCase();
   const iconBtn = {
     position: 'relative' as const,
     width: 40,
@@ -508,23 +502,7 @@ export function Topbar() {
 
         {/* Logged-in HR — top-right. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: 42, padding: '0 16px 0 4px', borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface)' }}>
-          <div
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: '50%',
-              background: 'var(--t-butter)',
-              color: 'var(--t-butter-i)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 600,
-              fontSize: 12,
-              flexShrink: 0,
-            }}
-          >
-            {userInitials}
-          </div>
+          <PersonAvatar name={displayName} userId={user?.id} size={32} font={13.5} tone={{ bg: 'var(--t-butter)', fg: 'var(--t-butter-i)' }} />
           <div style={{ minWidth: 0, lineHeight: 1.15 }}>
             <div style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap' }}>{displayName}</div>
             <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400, marginTop: 2 }}>HR</div>
