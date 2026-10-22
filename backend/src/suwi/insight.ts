@@ -111,53 +111,48 @@ export async function managerStepCheck(employee: User, kind: 'leave' | 'overtime
 export async function leaveChecks(leave: Leave & { _id?: ObjectId }, employee: User, today: string, limit = OVERDUE_DAYS): Promise<Check[]> {
   const start = isoDay(leave.startDate), end = isoDay(leave.endDate);
   const days = leave.days ?? (leave.halfDay ? 0.5 : daysBetween(start, end) + 1);
-  const checks: Check[] = [];
+  // The three lookups are independent; run them side by side so the drawer box arrives quickly.
+  const [balanceCheck, clashCheck, step] = await Promise.all([
+    leaveBalanceCheck(leave, employee, start, days),
+    teamClashCheck(employee, start, end),
+    managerStepCheck(employee, 'leave', leave.createdAt, today),
+  ]);
+  return [balanceCheck, clashCheck, { ok: step.ok, text: step.text }, waitingCheck(leave.createdAt, today, limit)];
+}
 
-  // Balance for the year the leave falls in; approved counts as used, pending shown separately.
+/** Balance for the year the leave falls in; approved counts as used, pending shown separately. */
+async function leaveBalanceCheck(leave: Leave & { _id?: ObjectId }, employee: User, start: string, days: number): Promise<Check> {
   const rules = await leaveRulesFor(employee.userId);
-  if (!rules.balanceTracked) {
-    checks.push({ ok: true, text: 'No balance is tracked for this team: leave is approved without counting it down.' });
-  } else {
-    const year = Number(start.slice(0, 4));
-    const balance = await getMyLeaveBalance(employee.userId, year, new Date(`${start}T00:00:00Z`));
-    const type = balance.types.find((t) => t.key === leave.type);
-    if (!type) {
-      checks.push({ ok: false, text: `"${leave.type}" is not a leave type on their shift template any more.` });
-    } else {
-      const otherPending = await leaves().find({ userId: employee.userId, type: leave.type, status: 'pending', ...(leave._id ? { _id: { $ne: leave._id } } : {}), startDate: { $lte: new Date(Date.UTC(year, 11, 31)) }, endDate: { $gte: new Date(Date.UTC(year, 0, 1)) } }).toArray();
-      const pendingDays = otherPending.reduce((n, l) => n + (l.days ?? 1), 0);
-      const period = (type as { cadence?: string }).cadence === 'monthly' ? 'this month' : `in ${year}`;
-      const enough = type.remaining >= days;
-      checks.push({
-        ok: enough,
-        text: `${type.name}: ${type.remaining} of ${type.total} left ${period}; this takes ${days}${enough ? '' : ', more than is left'}.${pendingDays ? ` Another ${plural(pendingDays, 'day')} of ${type.name} is pending too.` : ''}`,
-      });
-    }
-  }
+  if (!rules.balanceTracked) return { ok: true, text: 'No balance is tracked for this team: leave is approved without counting it down.' };
+  const year = Number(start.slice(0, 4));
+  const [balance, otherPending] = await Promise.all([
+    getMyLeaveBalance(employee.userId, year, new Date(`${start}T00:00:00Z`)),
+    leaves().find({ userId: employee.userId, type: leave.type, status: 'pending', ...(leave._id ? { _id: { $ne: leave._id } } : {}), startDate: { $lte: new Date(Date.UTC(year, 11, 31)) }, endDate: { $gte: new Date(Date.UTC(year, 0, 1)) } }).toArray(),
+  ]);
+  const type = balance.types.find((t) => t.key === leave.type);
+  if (!type) return { ok: false, text: `"${leave.type}" is not a leave type on their shift template any more.` };
+  const pendingDays = otherPending.reduce((n, l) => n + (l.days ?? 1), 0);
+  const period = (type as { cadence?: string }).cadence === 'monthly' ? 'this month' : `in ${year}`;
+  const enough = type.remaining >= days;
+  return {
+    ok: enough,
+    text: `${type.name}: ${type.remaining} of ${type.total} left ${period}; this takes ${days}${enough ? '' : ', more than is left'}.${pendingDays ? ` Another ${plural(pendingDays, 'day')} of ${type.name} is pending too.` : ''}`,
+  };
+}
 
-  // A colleague in the same team off on overlapping dates.
-  const team = employee.department
-    ? await users().find({ org: employee.org, department: employee.department, userId: { $ne: employee.userId }, ...ACTIVE } as never, { projection: { _id: 0, userId: 1, name: 1 } }).toArray()
-    : employee.managerUserId
-      ? await users().find({ org: employee.org, managerUserId: employee.managerUserId, userId: { $ne: employee.userId }, ...ACTIVE } as never, { projection: { _id: 0, userId: 1, name: 1 } }).toArray()
-      : [];
+/** A colleague in the same department (or, without one, under the same manager) off on overlapping dates. */
+async function teamClashCheck(employee: User, start: string, end: string): Promise<Check> {
+  const scope = employee.department ? { department: employee.department } : employee.managerUserId ? { managerUserId: employee.managerUserId } : null;
+  const team = scope ? await users().find({ org: employee.org, ...scope, userId: { $ne: employee.userId }, ...ACTIVE } as never, { projection: { _id: 0, userId: 1, name: 1 } }).toArray() : [];
   const teamLabel = employee.department ?? 'the same team';
-  if (!team.length) {
-    checks.push({ ok: true, text: `No one else is in ${teamLabel}, so there is no clash to check.` });
-  } else {
-    const overlapping = await leaves().find({ userId: { $in: team.map((p) => p.userId) }, status: { $in: ['approved', 'pending'] }, startDate: { $lte: new Date(`${end}T00:00:00Z`) }, endDate: { $gte: new Date(`${start}T00:00:00Z`) } }).toArray();
-    const nameOf = new Map(team.map((p) => [p.userId, p.name]));
-    const who = (rows: Leave[]) => rows.slice(0, 3).map((l) => `${nameOf.get(l.userId)} (${span(isoDay(l.startDate), isoDay(l.endDate))})`).join(', ') + (rows.length > 3 ? ` and ${rows.length - 3} more` : '');
-    const approved = overlapping.filter((l) => l.status === 'approved');
-    const pending = overlapping.filter((l) => l.status === 'pending');
-    if (approved.length) checks.push({ ok: false, text: `Also off in ${teamLabel} on those dates: ${who(approved)}.${pending.length ? ` Pending as well: ${who(pending)}.` : ''}` });
-    else checks.push({ ok: true, text: `No one else in ${teamLabel} is on approved leave ${span(start, end)}.${pending.length ? ` Pending for the same dates: ${who(pending)}.` : ''}` });
-  }
-
-  const step = await managerStepCheck(employee, 'leave', leave.createdAt, today);
-  checks.push({ ok: step.ok, text: step.text });
-  checks.push(waitingCheck(leave.createdAt, today, limit));
-  return checks;
+  if (!team.length) return { ok: true, text: `No one else is in ${teamLabel}, so there is no clash to check.` };
+  const overlapping = await leaves().find({ userId: { $in: team.map((p) => p.userId) }, status: { $in: ['approved', 'pending'] }, startDate: { $lte: new Date(`${end}T00:00:00Z`) }, endDate: { $gte: new Date(`${start}T00:00:00Z`) } }).toArray();
+  const nameOf = new Map(team.map((p) => [p.userId, p.name]));
+  const who = (rows: Leave[]) => rows.slice(0, 3).map((l) => `${nameOf.get(l.userId)} (${span(isoDay(l.startDate), isoDay(l.endDate))})`).join(', ') + (rows.length > 3 ? ` and ${rows.length - 3} more` : '');
+  const approved = overlapping.filter((l) => l.status === 'approved');
+  const pending = overlapping.filter((l) => l.status === 'pending');
+  if (approved.length) return { ok: false, text: `Also off in ${teamLabel} on those dates: ${who(approved)}.${pending.length ? ` Pending as well: ${who(pending)}.` : ''}` };
+  return { ok: true, text: `No one else in ${teamLabel} is on approved leave ${span(start, end)}.${pending.length ? ` Pending for the same dates: ${who(pending)}.` : ''}` };
 }
 
 // —— Overtime, corrections, out-of-location ——
