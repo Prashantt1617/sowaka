@@ -12,6 +12,7 @@ import * as XLSX from 'xlsx';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
 import { Card } from '../ui';
+import { ImportRiskLine } from '../suwi/ImportRiskLine';
 import { applyEmployeeImport, cancelEmployeeImport, getEmployeeImportTemplate, previewEmployeeImport, type EmployeeImportColumn, type EmployeeImportPreview, type EmployeeImportResult } from '../../services/hrms';
 
 /** A cell as text: dates as YYYY-MM-DD (read in the sheet's own day), everything else as written. */
@@ -200,6 +201,7 @@ export function EmployeeImport() {
 
       {preview && counts && (
         <>
+          <ImportRiskLine importId={preview.importId} />
           <Card style={{ padding: '16px 22px' }}>
             <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: 10 }}>{fileName}: what this import will do</div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
