@@ -87,10 +87,12 @@ export function Pill({
         whiteSpace: 'nowrap',
         lineHeight: 1.5,
         letterSpacing: '-.005em',
+        maxWidth: '100%',
+        verticalAlign: 'middle',
       }}
     >
       <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', opacity: 0.85, flexShrink: 0 }} />
-      {label}
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{label}</span>
     </span>
   );
 }

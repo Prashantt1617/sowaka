@@ -91,10 +91,16 @@ export const cardNote: CSSProperties = { fontSize: 12, fontWeight: 400, color: '
 /** Space between grid columns: the 12px cell padding on either side. */
 export const COL_GAP = 24;
 
+/** Grid tracks that never grow past their share: "1.7fr 1fr" becomes "minmax(0,1.7fr) minmax(0,1fr)",
+ *  so every row lines up with the header however long a cell is. */
+export function fitCols(cols: string): string {
+  return cols.replace(/(^|\s)(\d*\.?\d+)fr\b/g, '$1minmax(0,$2fr)');
+}
+
 export function TH(cols: string): CSSProperties {
   return {
     display: 'grid',
-    gridTemplateColumns: cols,
+    gridTemplateColumns: fitCols(cols),
     columnGap: COL_GAP,
     alignItems: 'center',
     background: 'var(--surface-2)',
@@ -112,7 +118,7 @@ export function TH(cols: string): CSSProperties {
 export function TR(cols: string, last = false): CSSProperties {
   return {
     display: 'grid',
-    gridTemplateColumns: cols,
+    gridTemplateColumns: fitCols(cols),
     columnGap: COL_GAP,
     alignItems: 'center',
     padding: '10px 12px',
