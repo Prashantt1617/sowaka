@@ -10,6 +10,8 @@ import { useStore } from './store';
 import { ORG_DISPLAY_NAME, PLATFORM_NAME } from './org';
 import { canOpen } from './access';
 import { useSupportBadge } from './supportBadge';
+import type { ThemeMode } from './themeMode';
+import { applyThemeMode, readThemeMode } from './themeMode';
 
 export type NavItem = { key: View; label: string };
 
@@ -100,8 +102,8 @@ function CountBadge({ value, danger }: { value: number; danger?: boolean }) {
         lineHeight: '18px',
         minWidth: 20,
         textAlign: 'center',
-        background: danger ? 'var(--bad)' : 'var(--hi)',
-        color: '#fff',
+        background: danger ? 'var(--bad-solid)' : 'var(--hi)',
+        color: danger ? 'var(--on-accent)' : 'var(--on-hi)',
         borderRadius: 999,
         padding: '0 7px',
       }}
@@ -306,7 +308,7 @@ export function Sidebar() {
             height: 40,
             borderRadius: 12,
             // Their app icon fills the tile; Sowaka's mark sits on the brand blue.
-            background: brand.icon ? 'var(--surface)' : 'var(--hi)',
+            background: brand.icon ? 'var(--surface)' : 'var(--brand)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -325,7 +327,7 @@ export function Sidebar() {
               fontWeight: brand.wordmark?.weight ?? 600,
               letterSpacing: brand.wordmark?.letterSpacing ?? '-.01em',
               textTransform: brand.wordmark?.lowercase ? 'lowercase' : undefined,
-              color: orgActive ? 'var(--accent-ink)' : (brand.wordmark?.color ?? 'var(--ink)'),
+              color: orgActive ? 'var(--accent-ink)' : (brand.wordmark?.color ? `color-mix(in srgb, ${brand.wordmark.color} var(--av-fg), var(--ink))` : 'var(--ink)'),
             }}
           >
             {brand.wordmark?.text ?? companyName}
@@ -354,7 +356,7 @@ export function Sidebar() {
             width: 32,
             height: 32,
             borderRadius: 10,
-            background: 'var(--hi)',
+            background: 'var(--brand)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -369,6 +371,78 @@ export function Sidebar() {
         </div>
       </div>
     </aside>
+  );
+}
+
+const svgProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: ReactNode }[] = [
+  {
+    mode: 'system',
+    label: 'Match system',
+    icon: (
+      <svg {...svgProps}>
+        <rect x="3" y="4" width="18" height="12" rx="2" />
+        <path d="M8 20h8M12 16v4" />
+      </svg>
+    ),
+  },
+  {
+    mode: 'light',
+    label: 'Light',
+    icon: (
+      <svg {...svgProps}>
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+      </svg>
+    ),
+  },
+  {
+    mode: 'dark',
+    label: 'Dark',
+    icon: (
+      <svg {...svgProps}>
+        <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+      </svg>
+    ),
+  },
+];
+
+/** System / Light / Dark — a small segmented control in the top bar. */
+function ThemeSwitch() {
+  const [mode, setMode] = useState<ThemeMode>(readThemeMode);
+  return (
+    <div role="radiogroup" aria-label="Theme" style={{ display: 'flex', alignItems: 'center', gap: 2, height: 40, padding: 3, borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface-2)', flexShrink: 0 }}>
+      {THEME_OPTIONS.map((o) => {
+        const on = mode === o.mode;
+        return (
+          <button
+            key={o.mode}
+            role="radio"
+            aria-checked={on}
+            aria-label={o.label}
+            title={o.label}
+            onClick={() => {
+              setMode(o.mode);
+              applyThemeMode(o.mode);
+            }}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 999,
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: on ? 'var(--sel)' : 'transparent',
+              color: on ? 'var(--on-sel)' : 'var(--ink-3)',
+            }}
+          >
+            {o.icon}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -417,6 +491,7 @@ export function Topbar() {
           <input placeholder="Search people, requests…" style={{ border: 'none', outline: 'none', background: 'none', fontSize: 13, width: '100%', color: 'var(--ink)' }} />
         </div>
         <div style={{ flex: 1 }} />
+        <ThemeSwitch />
         <button className="ds-icon-btn" style={iconBtn}>
           <IconBell />
           <span style={{ position: 'absolute', top: 9, right: 10, width: 8, height: 8, background: '#E5533D', borderRadius: '50%', border: '2px solid var(--surface)' }} />
@@ -495,7 +570,7 @@ export function Toast() {
       }}
     >
       {failed ? (
-        <span aria-hidden style={{ width: 18, height: 18, borderRadius: 99, background: 'var(--p-red)', color: '#fff', fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>!</span>
+        <span aria-hidden style={{ width: 18, height: 18, borderRadius: 99, background: 'var(--p-red)', color: 'var(--on-accent)', fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>!</span>
       ) : (
         <IconCheck size={17} stroke="var(--p-green)" />
       )}
