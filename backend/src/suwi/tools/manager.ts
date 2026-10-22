@@ -6,18 +6,17 @@
 import { attendanceRegularizations, leaves, overtimeRequests, reimbursementClaims } from '../../config/db';
 import { assignManager, removeManager } from '../../services/reporting.service';
 import { defineExecutor, propose } from '../proposals';
-import { defineTools, SuwiContext } from '../tools';
+import { defineTools } from '../tools';
 import { findPerson, orgPathOf, roster, teamOf } from './people';
 
 /** What is still waiting for a decision on this person, by kind. Leave is read from the current manager; the rest are stamped with one. */
-export async function waitingOn(ctx: SuwiContext, userId: string) {
+export async function waitingOn(userId: string) {
   const [leave, overtime, claims, corrections] = await Promise.all([
     leaves().countDocuments({ userId, status: 'pending' } as never),
     overtimeRequests().countDocuments({ userId, status: 'pending' } as never),
     reimbursementClaims().countDocuments({ userId, status: 'pending' } as never),
     attendanceRegularizations().countDocuments({ userId, status: 'pending' } as never),
   ]);
-  void ctx;
   return { leave, overtime, claims, corrections, total: leave + overtime + claims + corrections };
 }
 
@@ -40,7 +39,7 @@ defineTools({
       throw new Error(`${manager.name} is below ${person.name} in the org chart, so ${person.name} cannot report to them. Move ${manager.name} first.`);
     }
     const old = person.managerUserId ? byId.get(person.managerUserId) : undefined;
-    const waiting = await waitingOn(ctx, person.userId);
+    const waiting = await waitingOn(person.userId);
     const reports = teamOf(person.userId, all, false);
     const oldOthers = old ? teamOf(old.userId, all, false).filter((p) => p.userId !== person.userId).length : 0;
     const path = [manager.name, ...orgPathOf(manager.userId, byId)].join(' › ');

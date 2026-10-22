@@ -222,19 +222,21 @@ defineTools(
       const refs = await references(ctx, kind, mapping.map((m) => m.from));
       const settings = await getCompanySettings(ctx.userId);
       const listBefore = kind === 'designation' ? settings.designationList : settings.departmentList;
+      // The Settings list is only rewritten when it names an old spelling; names people hold show there anyway.
+      const listTouched = listBefore.some((n) => mapping.some((m) => m.from === n));
       const title = `Rename ${mapping.length === 1 ? `${kind} "${mapping[0].from}" to "${mapping[0].to}"` : `${mapping.length} ${plural(kind)}`}`;
       const proposalId = await propose(ctx, {
         kind: 'rename_titles', area: 'people', title,
-        summary: `${holders.length} ${holders.length === 1 ? 'person gets' : 'people get'} a new ${kind} on their record${active.length !== holders.length ? ` (${holders.length - active.length} of them no longer on the active roll)` : ''}. The ${plural(kind)} list in Settings is updated to match.`,
+        summary: `${holders.length} ${holders.length === 1 ? 'person gets' : 'people get'} a new ${kind} on their record${active.length !== holders.length ? ` (${holders.length - active.length} of them no longer on the active roll)` : ''}.${listTouched ? ` The ${plural(kind)} list in Settings is updated to match.` : ''}`,
         lines: [
           ...per.map((m) => ({ text: `${m.from} → ${m.to}: ${m.people} ${m.people === 1 ? 'person' : 'people'}.`, ...(m.people === 0 ? { tone: 'info' as const } : {}) })),
           { text: `Each change goes through the same Edit details save as the profile, one person at a time, by ${ctx.user.name}.`, why: 'There is no bulk rename in Sowaka; doing it per person keeps every record\'s own checks and audit trail.' },
-          { text: `Settings › ${kind === 'designation' ? 'Designations' : 'Departments'}: the old names are replaced by the new ones.`, why: 'The list there is what the profile\'s dropdown offers; left as it was, the old spelling would come straight back.' },
+          ...(listTouched ? [{ text: `Settings › ${kind === 'designation' ? 'Designations' : 'Departments'}: the old names are replaced by the new ones.`, why: 'The list there is what the profile\'s dropdown offers; left as it was, the old spelling would come straight back.' }] : []),
           ...(refs.kpiTemplates.length ? [{ text: `KPI template${refs.kpiTemplates.length === 1 ? '' : 's'} ${refs.kpiTemplates.map((r) => `"${r.template}"`).join(', ')} still list${refs.kpiTemplates.length === 1 ? 's' : ''} the old name${refs.kpiTemplates.length === 1 ? '' : 's'}; update ${refs.kpiTemplates.length === 1 ? 'it' : 'them'} under KPI templates afterwards.`, tone: 'warn' as const, why: 'A KPI template lists the designations it is offered for. That list is not renamed here, so until it is updated the template won\'t be suggested for people with the new title.' }] : []),
           ...(refs.payslips ? [{ text: `${refs.payslips} past payslip${refs.payslips === 1 ? '' : 's'} keep the old name as issued.`, tone: 'info' as const, why: 'A payslip is a record of what was issued; it is never rewritten.' }] : []),
         ],
         effectiveFrom: ctx.today, undoable: true, typeToConfirm: String(holders.length),
-        payload: { kind, mapping, byUserId: ctx.userId, before, listBefore },
+        payload: { kind, mapping, byUserId: ctx.userId, before, listBefore, listTouched },
       });
       return { data: { prepared: true, title, people: holders.length, renames: per, typeToConfirm: String(holders.length), note: 'Nothing is saved until HR types the number of people and presses Confirm.' }, proposalId };
     },
@@ -247,7 +249,7 @@ const swapList = (list: string[], mapping: { from: string; to: string }[]) =>
 
 defineExecutor('rename_titles', {
   async run(p) {
-    const { kind, mapping, byUserId, before, listBefore } = p.payload as { kind: Kind; mapping: { from: string; to: string }[]; byUserId: string; before: Record<string, string>; listBefore: string[] };
+    const { kind, mapping, byUserId, before, listBefore, listTouched } = p.payload as { kind: Kind; mapping: { from: string; to: string }[]; byUserId: string; before: Record<string, string>; listBefore: string[]; listTouched: boolean };
     let done = 0;
     const failed: string[] = [];
     for (const [userId, old] of Object.entries(before)) {
@@ -256,20 +258,20 @@ defineExecutor('rename_titles', {
       try { await updateEmployeeDetailsForAdmin(byUserId, userId, { [kind]: to }); done++; } catch (e) { failed.push((e as Error).message); }
     }
     let listNote = '';
-    try {
-      const next = swapList([...listBefore, ...mapping.map((m) => m.to)], mapping);
+    if (listTouched) try {
+      const next = swapList(listBefore, mapping);
       await updateCompanySettings(byUserId, kind === 'designation' ? { designationList: next } : { departmentList: next });
     } catch (e) { listNote = ` The Settings list could not be updated (${(e as Error).message}).`; }
     if (failed.length && !done) throw new Error(failed[0]);
     return { message: `Renamed ${done} ${done === 1 ? 'person' : 'people'}'s ${kind}.${failed.length ? ` ${failed.length} could not be changed: ${failed[0]}` : ''}${listNote}` };
   },
   async undo(p) {
-    const { kind, byUserId, before, listBefore } = p.payload as { kind: Kind; byUserId: string; before: Record<string, string>; listBefore: string[] };
+    const { kind, byUserId, before, listBefore, listTouched } = p.payload as { kind: Kind; byUserId: string; before: Record<string, string>; listBefore: string[]; listTouched: boolean };
     let done = 0;
     for (const [userId, old] of Object.entries(before)) {
       try { await updateEmployeeDetailsForAdmin(byUserId, userId, { [kind]: old }); done++; } catch { /* the person may have been removed since */ }
     }
-    try { await updateCompanySettings(byUserId, kind === 'designation' ? { designationList: listBefore } : { departmentList: listBefore }); } catch { /* list stays as renamed */ }
-    return `Put the previous ${kind} back on ${done} ${done === 1 ? 'record' : 'records'} and restored the Settings list.`;
+    if (listTouched) try { await updateCompanySettings(byUserId, kind === 'designation' ? { designationList: listBefore } : { departmentList: listBefore }); } catch { /* list stays as renamed */ }
+    return `Put the previous ${kind} back on ${done} ${done === 1 ? 'record' : 'records'}${listTouched ? ' and restored the Settings list' : ''}.`;
   },
 });

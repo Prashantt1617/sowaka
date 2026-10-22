@@ -24,7 +24,7 @@ defineTools({
     const person = await findPerson(ctx, i.person, all);
     if (person.userId === ctx.userId) throw new Error('You cannot delete your own account');
     const reports = teamOf(person.userId, all, false);
-    const waiting = await waitingOn(ctx, person.userId);
+    const waiting = await waitingOn(person.userId);
     if (reports.length || waiting.total) {
       return {
         data: {
