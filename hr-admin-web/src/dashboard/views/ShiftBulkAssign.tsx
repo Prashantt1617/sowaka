@@ -8,7 +8,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card } from '../ui';
+import { Card, ListPending, LoadError, Spinner } from '../ui';
+import type { LoadState } from '../ui';
 import { downloadCsv } from '../export';
 import { EMPTY_TARGET, FACETS, andLabel, optionsFor, queryCode, targetSummary } from '../kpiTargeting';
 import type { FacetKey } from '../kpiTargeting';
@@ -32,7 +33,8 @@ function windowLength(start: string, end: string): string {
 }
 
 export function ShiftBulkAssign() {
-  const { flash, emps, setView } = useStore();
+  const { flash, emps, setView, listState, reload } = useStore();
+  const rosterState = listState('employees');
   const [step, setStep] = useState<Step>('rules');
   const [target, setTarget] = useState<KpiTargeting>(EMPTY);
   const [active, setActive] = useState<FacetKey[]>([]);
@@ -42,11 +44,14 @@ export function ShiftBulkAssign() {
   const [shifts, setShifts] = useState<ShiftDTO[]>([]);
   const [picked, setPicked] = useState<ShiftDTO | null>(null);
   const [busy, setBusy] = useState(false);
+  // The shift list's first load; a later refresh keeps the table on screen.
+  const [shiftsState, setShiftsState] = useState<LoadState>('loading');
 
   const reloadShifts = () =>
     getShifts()
-      .then((rows) => { setShifts(rows); setPicked((p) => (p ? rows.find((r) => r.id === p.id) ?? null : null)); })
-      .catch((error: Error) => flash(error.message));
+      .then((rows) => { setShifts(rows); setPicked((p) => (p ? rows.find((r) => r.id === p.id) ?? null : null)); setShiftsState('ready'); })
+      .catch((error: Error) => { flash(error.message); setShiftsState((st) => (st === 'ready' ? st : 'error')); });
+  const retryShifts = () => { setShiftsState('loading'); void reloadShifts(); };
 
   useEffect(() => {
     void reloadShifts();
@@ -153,6 +158,7 @@ export function ShiftBulkAssign() {
     if (to === 'people' && emptyRules.length === activeFacets.length && activeFacets.length > 0) {
       return 'Choose a value for at least one rule';
     }
+    if (to === 'people' && rosterState !== 'ready') return 'Employees are still loading';
     if (to === 'people' && preview.length === 0) return 'No employees match these rules';
     if (to === 'shift' && chosen.size === 0) return 'Select at least one employee';
     return '';
@@ -178,8 +184,10 @@ export function ShiftBulkAssign() {
         <div style={panelCard}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
             <div style={panelTitle}>Who are you putting on a shift?</div>
-            <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 500, color: emps.length === 0 ? 'var(--ink-4)' : preview.length ? 'var(--ok)' : 'var(--bad)' }}>
-              {emps.length === 0 ? 'Loading employees…' : `${preview.length} of ${emps.length} employees match`}
+            <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 500, color: rosterState !== 'ready' ? 'var(--ink-4)' : preview.length ? 'var(--ok)' : 'var(--bad)' }}>
+              {rosterState === 'ready' ? `${preview.length} of ${emps.length} employees match`
+                : rosterState === 'error' ? <LoadError compact text="Employees could not be loaded." onRetry={() => void reload()} />
+                : <Spinner label="Loading employees…" />}
             </div>
           </div>
           <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 14, lineHeight: 1.5 }}>
@@ -246,7 +254,7 @@ export function ShiftBulkAssign() {
               title={blockedReason('people') || undefined}
               style={{ ...primaryBtn, opacity: busy || blockedReason('people') ? 0.5 : 1 }}
             >
-              {busy ? 'Finding…' : `Continue with ${preview.length}`}
+              {busy ? 'Finding…' : rosterState === 'ready' ? `Continue with ${preview.length}` : 'Continue'}
             </button>
           </div>
         </div>
@@ -366,7 +374,10 @@ export function ShiftBulkAssign() {
                     </Td>
                   </tr>
                 ))}
-                {shifts.length === 0 && (
+                {shiftsState !== 'ready' && (
+                  <tr><td colSpan={6} style={{ padding: 0 }}><ListPending state={shiftsState} onRetry={retryShifts} cols={5} avatar={false} rowHeight={48} rows={3} /></td></tr>
+                )}
+                {shiftsState === 'ready' && shifts.length === 0 && (
                   <tr><td colSpan={6} style={emptyCell}>
                     No shifts yet. Create one under{' '}
                     <button onClick={() => setView('shifttypes')} style={linkBtn}>Shifts › Templates</button>.

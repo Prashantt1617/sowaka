@@ -11,6 +11,7 @@
 import { Fragment, useEffect, useMemo, useState, useRef } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
+import { SkeletonRows } from '../ui';
 import { IconClose, IconPlus } from '../icons';
 import {
   addEmployeeDocument, assignShift, createEmployee, getCompanySettings, getShifts, removeEmployeeDocument, shiftHeadcount,
@@ -83,13 +84,16 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
   const [pickedParams, setPickedParams] = useState<string[]>([]);
   const [kpiWeights, setKpiWeights] = useState<Record<string, number>>({});
 
+  // The shift and KPI steps wait for their lists rather than saying "none yet".
+  const [shiftsLoading, setShiftsLoading] = useState(true);
+  const [kpiLoading, setKpiLoading] = useState(true);
   useEffect(() => {
-    getShifts().then(setShifts).catch(() => setShifts([]));
+    getShifts().then(setShifts).catch(() => setShifts([])).finally(() => setShiftsLoading(false));
     getCompanySettings()
       .then((s) => setSavedNames({ departments: s.departmentList ?? [], designations: s.designationList ?? [] }))
       .catch(() => setSavedNames({ departments: [], designations: [] }));
     listKpiTemplates().then(setKpiTemplates).catch(() => setKpiTemplates([]));
-    listKpiParameters().then(setKpiParams).catch(() => setKpiParams([]));
+    listKpiParameters().then(setKpiParams).catch(() => setKpiParams([])).finally(() => setKpiLoading(false));
   }, []);
 
   const options = useMemo<RosterOptions>(() => {
@@ -300,11 +304,12 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
                 ) : step === 2 ? (
                   <PaymentStep holderName={fullName} />
                 ) : step === 3 ? (
-                  <ShiftTemplateStep shifts={shifts} chosen={shiftId} onChoose={setShiftId} name={fullName} />
+                  <ShiftTemplateStep shifts={shifts} loading={shiftsLoading} chosen={shiftId} onChoose={setShiftId} name={fullName} />
                 ) : (
                   <FeedbackParametersStep
                     templates={kpiTemplates}
                     parameters={kpiParams}
+                    loading={kpiLoading}
                     templateId={kpiTemplateId}
                     picked={pickedParams}
                     weights={kpiWeights}
@@ -381,8 +386,9 @@ function InviteScreen({ name, email, employeeId, orgName }: { name: string; emai
 // —— Shift template step —————————————————————————————————————————————
 // Skipping leaves them on the org policy, which is what everyone unassigned
 // follows — so "none" is a real answer, not an unfinished one.
-function ShiftTemplateStep({ shifts, chosen, onChoose, name }: {
+function ShiftTemplateStep({ shifts, loading, chosen, onChoose, name }: {
   shifts: ShiftDTO[];
+  loading: boolean;
   chosen: string;
   onChoose: (id: string) => void;
   name: string;
@@ -413,7 +419,8 @@ function ShiftTemplateStep({ shifts, chosen, onChoose, name }: {
           </span>
         </button>
       ))}
-      {withPolicy.length === 0 && (
+      {loading && <SkeletonRows rows={2} cols={1} avatar={false} rowHeight={58} pad={0} />}
+      {!loading && withPolicy.length === 0 && (
         <div style={emptyNote}>No shift templates yet — everyone follows the org policy.</div>
       )}
     </div>
@@ -424,10 +431,11 @@ function ShiftTemplateStep({ shifts, chosen, onChoose, name }: {
 // Starts from a template and stays editable for this one person, the same way
 // a per-employee assignment works everywhere else.
 function FeedbackParametersStep({
-  templates, parameters, templateId, picked, weights, period, onTemplate, onToggle, onWeight,
+  templates, parameters, loading, templateId, picked, weights, period, onTemplate, onToggle, onWeight,
 }: {
   templates: KpiTemplateDTO[];
   parameters: KpiParameterDTO[];
+  loading: boolean;
   templateId: string;
   picked: string[];
   weights: Record<string, number>;
@@ -456,7 +464,9 @@ function FeedbackParametersStep({
       <div style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--ink-4)', margin: '18px 0 8px' }}>
         Parameters {picked.length > 0 && `· ${picked.length} chosen`}
       </div>
-      {parameters.length === 0 ? (
+      {loading ? (
+        <SkeletonRows rows={3} cols={2} avatar={false} rowHeight={50} pad={0} />
+      ) : parameters.length === 0 ? (
         <div style={emptyNote}>No KPI parameters exist yet — add them under Performance › KPI Parameters.</div>
       ) : (
         <div style={{ border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>

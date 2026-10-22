@@ -8,7 +8,7 @@ import { useStore } from '../store';
 import { ApiError } from '../../services/http';
 import { getStatutorySettings, updateStatutorySettings, upsertStatutoryRule } from '../../services/payroll';
 import type { BonusSettings, EpfSettings, EsiSettings, LwfRule, PtRule, PtSlab, StatutoryOverview, StatutorySettingsInput } from '../../services/payroll';
-import { Card } from '../ui';
+import { Card, LoadError, SkeletonForm } from '../ui';
 import { CloseButton } from '../drawers/shell';
 
 type StatTab = 'epf' | 'esi' | 'pt' | 'lwf' | 'bonus' | 'tds';
@@ -30,14 +30,16 @@ export function StatutoryComponents() {
   const [overview, setOverview] = useState<StatutoryOverview | null>(null);
   const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    setFailed(false);
     getStatutorySettings().then(setOverview).catch((e) => {
       setFailed(true);
       flash(e instanceof ApiError ? e.message : 'Could not load statutory settings');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [attempt]);
 
   const apply = async (input: StatutorySettingsInput, done: string) => {
     if (saving) return false;
@@ -68,7 +70,9 @@ export function StatutoryComponents() {
         })}
       </div>
       {!overview ? (
-        <Card style={{ padding: '40px 22px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>{failed ? 'Statutory settings could not be loaded.' : 'Loading…'}</Card>
+        failed
+          ? <Card><LoadError text="Statutory settings could not be loaded." onRetry={() => setAttempt((n) => n + 1)} /></Card>
+          : <Card style={{ padding: 22 }}><SkeletonForm fields={6} /></Card>
       ) : tab === 'epf' ? <EpfTab overview={overview} apply={apply} saving={saving} />
         : tab === 'esi' ? <EsiTab overview={overview} apply={apply} saving={saving} />
         : tab === 'pt' ? <PtTab overview={overview} onSaved={() => getStatutorySettings().then(setOverview)} />

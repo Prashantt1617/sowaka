@@ -42,7 +42,8 @@ import type {
 } from '../../services/payroll';
 import { getAllEmployees } from '../../services/hrms';
 import * as XLSX from 'xlsx';
-import { Card, EmptyRow } from '../ui';
+import { Card, EmptyRow, ListPending, Skeleton, Spinner } from '../ui';
+import type { LoadState } from '../ui';
 import { IconClose, IconPlus } from '../icons';
 
 type Mode = 'list' | 'detail' | 'edit';
@@ -266,7 +267,11 @@ export function SalaryTemplates() {
   const [templates, setTemplates] = useState<SalaryTemplateDTO[]>([]);
   const [payHeadsList, setPayHeadsList] = useState<PayHeadDTO[]>([]);
   const [statutory, setStatutory] = useState<StatutoryOverview | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Skeleton until the first load; a refresh after a save keeps the list up.
+  const [state, setState] = useState<LoadState>('loading');
+  // The template being opened, and whether its amounts are still being worked out.
+  const [opening, setOpening] = useState<string | null>(null);
+  const [detailPending, setDetailPending] = useState(false);
 
   // detail
   const [detailTpl, setDetailTpl] = useState<SalaryTemplateDTO | null>(null);
@@ -279,7 +284,6 @@ export function SalaryTemplates() {
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = async () => {
-    setLoading(true);
     try {
       // The statutory list is decoration here; don't hold the templates for it.
       void getStatutorySettings().then(setStatutory).catch(() => setStatutory(null));
@@ -289,10 +293,10 @@ export function SalaryTemplates() {
       // standard one used on a template is saved as the org's on Save.
       // Only the company's own components; others are added in Salary Components first.
       setPayHeadsList(phs);
+      setState('ready');
     } catch (e) {
+      setState((st) => (st === 'ready' ? st : 'error'));
       flash(e instanceof ApiError ? e.message : 'Could not load templates', 'error');
-    } finally {
-      setLoading(false);
     }
   };
   useEffect(() => {
@@ -328,17 +332,22 @@ export function SalaryTemplates() {
   }, [JSON.stringify(form), mode]);
 
   const openDetail = async (code: string) => {
+    setOpening(code);
     try {
       const t = await getSalaryTemplate(code);
       setDetailTpl(t);
       setDetailComputed(null);
+      setDetailPending(true);
       setMode('detail');
       // Amounts for the detail columns, at the sample CTC.
       void previewSalaryTemplate({ ...inputFromTemplate(t), sampleAnnualCtcPaise: rupeesToPaise(SAMPLE_CTC_RUPEES) })
         .then(setDetailComputed)
-        .catch(() => setDetailComputed(null));
+        .catch(() => setDetailComputed(null))
+        .finally(() => setDetailPending(false));
     } catch (e) {
       flash(e instanceof ApiError ? e.message : 'Could not load template', 'error');
+    } finally {
+      setOpening(null);
     }
   };
 
@@ -452,8 +461,8 @@ export function SalaryTemplates() {
           <button onClick={newTemplate} style={primaryBtn}><IconPlus size={15} /> Create New</button>
         </div>
         <Card>
-          {loading ? (
-            <EmptyRow text="Loading…" />
+          {state !== 'ready' ? (
+            <ListPending state={state} onRetry={() => { setState('loading'); void load(); }} rows={4} cols={3} avatar={false} rowHeight={48} />
           ) : templates.length === 0 ? (
             <EmptyRow text="No salary templates yet — create your first pay group." />
           ) : (
@@ -464,7 +473,7 @@ export function SalaryTemplates() {
               <tbody>
                 {templates.map((t) => (
                   <tr key={t.code} onClick={() => openDetail(t.code)} style={{ cursor: 'pointer' }}>
-                    <Td><strong style={{ color: 'var(--accent-ink)' }}>{t.name}</strong></Td>
+                    <Td><strong style={{ color: 'var(--accent-ink)' }}>{t.name}</strong>{opening === t.code && <span style={{ marginLeft: 10 }}><Spinner /></span>}</Td>
                     <Td muted>{t.description || '—'}</Td>
                     <Td><StatusText on={t.active} /></Td>
                   </tr>
@@ -529,8 +538,8 @@ export function SalaryTemplates() {
                           <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>{calcSubtitle(comp.calculation, ph, isBalancing, phByCode)}</div>
                           <FixedTags ph={ph} />
                         </td>
-                        <td style={numTd}>₹{rupees(amt.monthly)}</td>
-                        <td style={numTd}>₹{rupees(amt.annual)}</td>
+                        <td style={numTd}>{detailPending ? <AmountPending /> : `₹${rupees(amt.monthly)}`}</td>
+                        <td style={numTd}>{detailPending ? <AmountPending /> : `₹${rupees(amt.annual)}`}</td>
                       </tr>
                     );
                   })}
@@ -541,20 +550,20 @@ export function SalaryTemplates() {
                   <tr>
                     <td style={{ ...detTd, fontWeight: 500 }}>Fixed CTC <span style={{ fontWeight: 400, color: 'var(--ink-3)' }}>(Annual CTC - One Time Earnings)</span></td>
                     <td style={numTd} />
-                    <td style={numTd}>₹{rupees(detailComputed?.annualCtcPaise ?? 0)}</td>
+                    <td style={numTd}>{detailPending ? <AmountPending /> : `₹${rupees(detailComputed?.annualCtcPaise ?? 0)}`}</td>
                   </tr>
                   <GroupRows label={GROUP_LABEL.onetime} cols={3}>
                     {buckets.get('onetime')!.map(({ comp, ph }) => (
                       <tr key={comp.payHeadCode}>
                         <td style={detTd}><div style={{ fontWeight: 400, color: 'var(--ink)' }}>{ph?.name ?? comp.payHeadCode}</div></td>
                         <td style={numTd} />
-                        <td style={numTd}>₹{rupees(resolve(comp.payHeadCode, comp.calculation).annual)}</td>
+                        <td style={numTd}>{detailPending ? <AmountPending /> : `₹${rupees(resolve(comp.payHeadCode, comp.calculation).annual)}`}</td>
                       </tr>
                     ))}
                   </GroupRows>
                 </>
               )}
-              <TotalRow monthly={costMonthly} cols={3} />
+              <TotalRow monthly={costMonthly} cols={3} pending={detailPending} />
             </tbody>
           </table>
           <StatutoryList overview={statutory} computed={detailComputed} />
@@ -1257,15 +1266,20 @@ function GroupRows({ label, cols, big, children }: { label: string; cols: number
     </>
   );
 }
-function TotalRow({ monthly, cols }: { monthly: number; cols: number }) {
+/** An amount still being worked out: a placeholder rather than ₹0. */
+function AmountPending() {
+  return <span className="sk-delay" style={{ display: 'inline-flex' }}><Skeleton w={72} h={11} /></span>;
+}
+
+function TotalRow({ monthly, cols, pending }: { monthly: number; cols: number; pending?: boolean }) {
   const cell: CSSProperties = { ...detTd, fontWeight: 600, fontSize: 14, borderTop: '2px solid var(--line)' };
   const num: CSSProperties = { ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
   return (
     <tr>
       <td style={cell}>Cost to Company</td>
       {cols === 4 && <td style={{ ...cell, borderTop: '2px solid var(--line)' }} />}
-      <td style={num}>₹{rupees(monthly)}</td>
-      <td style={num}>₹{rupees(monthly * 12)}</td>
+      <td style={num}>{pending ? <AmountPending /> : `₹${rupees(monthly)}`}</td>
+      <td style={num}>{pending ? <AmountPending /> : `₹${rupees(monthly * 12)}`}</td>
     </tr>
   );
 }

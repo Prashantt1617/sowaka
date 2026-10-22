@@ -8,7 +8,8 @@ import type { CSSProperties, ReactNode } from 'react';
 import * as XLSX from 'xlsx';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
-import { Card, EmptyRow } from '../ui';
+import { Card, EmptyRow, ListPending } from '../ui';
+import type { LoadState } from '../ui';
 import {
   getLiabilitySummary, getRunPaymentDetails, getPayrollSummary, getPtAnnual, getPtSummary, getSalaryRegister, listRuns,
   type LiabilityReport, type PaymentDetailsReport, type PayrollRunDTO, type PayrollSummaryReport, type PtAnnualReport, type PtSummaryReport, type SalaryRegisterReport,
@@ -66,13 +67,26 @@ export function PayrollReports() {
   // Paired with the report it belongs to: switching reports never draws one report with another's data.
   const [loaded, setLoaded] = useState<{ kind: ReportKey; data: unknown } | null>(null);
   const data = loaded?.kind === active ? loaded.data : null;
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => { void listRuns().then((rs) => { setRuns(rs); if (!runId && rs[0]) setRunId(rs[0].id); }).catch(() => setRuns([])); }, []);
+  const [loading, setLoading] = useState(true);
+  // A failed report says so, with Retry, rather than "Nothing to show".
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  // Payment details needs the run list first: until then it is loading, not "No payroll runs yet".
+  const [runsState, setRunsState] = useState<LoadState>('loading');
 
   useEffect(() => {
+    setRunsState('loading');
+    void listRuns()
+      .then((rs) => { setRuns(rs); setRunsState('ready'); if (!runId && rs[0]) setRunId(rs[0].id); })
+      .catch(() => { setRuns([]); setRunsState('error'); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attempt]);
+
+  useEffect(() => {
+    if (active === 'payments' && runsState !== 'ready') return;
     let live = true;
     setLoading(true);
+    setFailed(false);
     setLoaded(null);
     const load = (): Promise<unknown> => {
       switch (active) {
@@ -86,11 +100,13 @@ export function PayrollReports() {
     };
     void load()
       .then((d) => { if (live) setLoaded({ kind: active, data: d }); })
-      .catch((e) => { if (live) flash(e instanceof ApiError ? e.message : 'Could not load the report', 'error'); })
+      .catch((e) => { if (live) { setFailed(true); flash(e instanceof ApiError ? e.message : 'Could not load the report', 'error'); } })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, includeDrafts, period, from, to, fy, runId]);
+  }, [active, includeDrafts, period, from, to, fy, runId, attempt, runsState]);
+  const reportState: LoadState = active === 'payments' && runsState !== 'ready' ? runsState
+    : failed ? 'error' : loading || loaded?.kind !== active ? 'loading' : 'ready';
 
   const meta = GROUPS.flatMap((g) => g.items).find((i) => i.key === active)!;
   const fyOptions = useMemo(() => { const now = fyOf(thisMonth()); const s = Number(now.slice(0, 4)); return [now, `${s - 1}-${String(s % 100).padStart(2, '0')}`]; }, []);
@@ -134,7 +150,7 @@ export function PayrollReports() {
           </div>
         </Card>
         <Card>
-          {loading ? <EmptyRow text="Loading…" /> : !data ? <EmptyRow text={active === 'payments' ? 'No payroll runs yet.' : 'Nothing to show.'} /> : <ReportBody kind={active} data={data} />}
+          {reportState !== 'ready' ? <ListPending state={reportState} errorText="The report could not be loaded." onRetry={() => setAttempt((n) => n + 1)} rows={6} cols={5} avatar={false} rowHeight={46} /> : !data ? <EmptyRow text={active === 'payments' ? 'No payroll runs yet.' : 'Nothing to show.'} /> : <ReportBody kind={active} data={data} />}
         </Card>
       </div>
     </div>

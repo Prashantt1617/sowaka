@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { ETYPE } from '../theme';
-import { Avatar, Card, Pill, SearchInput, SelectBox } from '../ui';
+import { Avatar, Card, Loadable, Pill, SearchInput, SelectBox, SkeletonPage } from '../ui';
 import { IconPlus } from '../icons';
 import type { Emp } from '../seed';
 import { AddEmployeeWizard } from './AddEmployeeWizard';
@@ -13,7 +13,17 @@ import { NameCell, Td, Th } from './kpiUi';
 import { ghostBtn, primaryBtn, smallBtn } from './kpiStyles';
 import * as XLSX from 'xlsx';
 
+/** Waits for the shared lists this page reads before drawing it. */
 export function Employees() {
+  const s = useStore();
+  return (
+    <Loadable state={s.listState('employees')} onRetry={() => void s.reload()} skeleton={<SkeletonPage rows={8} cols={6} />}>
+      <EmployeesBody />
+    </Loadable>
+  );
+}
+
+function EmployeesBody() {
   const s = useStore();
   const [addOpen, setAddOpen] = useState(false);
   // Set to the company's limit when it is already reached: the popup instead of the wizard.

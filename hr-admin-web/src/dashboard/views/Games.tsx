@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { createGame, deleteGame, GameDTO, GameInput, getGames, publishGame, updateGame } from '../../services/hrms';
 import { ApiError } from '../../services/http';
 import { useStore } from '../store';
+import { Card, ListPending, LoadingFigure } from '../ui';
+import type { LoadState } from '../ui';
 
 const empty: GameInput = { name: '', description: '', hostedUrl: '', technology: 'vanilla_js', accentColor: '#4F8C89', instructions: '', active: true };
 const field = { width: '100%', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px', font: 'inherit', boxSizing: 'border-box' as const };
@@ -13,7 +15,9 @@ export function Games() {
   const [editing, setEditing] = useState<GameDTO | 'new' | null>(null);
   const [form, setForm] = useState<GameInput>(empty);
   const [busy, setBusy] = useState(false);
-  const load = async () => { try { setGames(await getGames()); } catch (e) { flash(e instanceof ApiError ? e.message : 'Could not load games', 'error'); } };
+  // Until the games have loaded once: a skeleton, then Retry if it failed.
+  const [state, setState] = useState<LoadState>('loading');
+  const load = async () => { try { setGames(await getGames()); setState('ready'); } catch (e) { setState((st) => (st === 'ready' ? st : 'error')); flash(e instanceof ApiError ? e.message : 'Could not load games', 'error'); } };
   useEffect(() => { void load(); }, []);
   const open = (game?: GameDTO) => {
     setEditing(game ?? 'new');
@@ -38,7 +42,7 @@ export function Games() {
 
   return <div style={{ animation: 'fade .3s ease both' }}>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-      <div style={{ color: 'var(--ink-3)', fontSize: 14 }}>{games.length} hosted game{games.length === 1 ? '' : 's'}</div>
+      <div style={{ color: 'var(--ink-3)', fontSize: 14 }}><LoadingFigure state={state} w={14} h={12}>{games.length}</LoadingFigure> hosted game{state === 'ready' && games.length === 1 ? '' : 's'}</div>
       <button onClick={() => open()} style={button('var(--accent)')}>＋ Add game</button>
     </div>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))', gap: 16 }}>
@@ -56,7 +60,8 @@ export function Games() {
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}><button disabled={!game.active} onClick={() => void publish(game)} style={button(game.active ? '#4F8C89' : 'var(--ink-4)')}>Generate post</button><button onClick={() => open(game)} style={button('var(--surface-2)', 'var(--ink-2)')}>Edit</button><button onClick={() => void remove(game)} style={button('var(--bad-bg)', 'var(--bad)')}>Delete</button></div>
         </div>
       </div>)}
-      {games.length === 0 && <div style={{ color: 'var(--ink-3)', padding: 30 }}>Add the first hosted game to generate a Connect post.</div>}
+      {state !== 'ready' && <Card style={{ gridColumn: '1 / -1' }}><ListPending state={state} onRetry={() => { setState('loading'); void load(); }} rows={3} cols={2} rowHeight={90} /></Card>}
+      {state === 'ready' && games.length === 0 && <div style={{ color: 'var(--ink-3)', padding: 30 }}>Add the first hosted game to generate a Connect post.</div>}
     </div>
     {editing && <div style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'var(--scrim)', display: 'grid', placeItems: 'center', padding: 20 }}>
       <div style={{ width: 560, maxWidth: '100%', maxHeight: '90vh', overflow: 'auto', background: 'var(--surface-2)', borderRadius: 'var(--r-lg)', padding: 24 }}>

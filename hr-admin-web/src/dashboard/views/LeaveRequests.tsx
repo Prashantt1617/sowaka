@@ -4,7 +4,7 @@ import type { ReqStatus } from '../theme';
 import type { Leave } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
-import { Card, DateRange, EmptyRow, Pill, SearchInput, SelectBox, StatusTabs, SummaryCard } from '../ui';
+import { Avatar, Card, DateRange, EmptyRow, ListPending, LoadingFigure, Pill, SearchInput, SelectBox, StatusTabs, SummaryCard } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { IconDownload, IconEye } from '../icons';
 
@@ -27,6 +27,7 @@ function computeRows(s: ReturnType<typeof useStore>): Leave[] {
 
 export function LeaveRequests() {
   const s = useStore();
+  const st = s.listState('leaves');
   // Summary reflects the selected date range (entries + summary for that range).
   const ranged = s.leaves.filter((r) => inDateRange(r.refISO, s.leaveFrom, s.leaveTo));
   const summary = {
@@ -58,10 +59,10 @@ export function LeaveRequests() {
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
-        <SummaryCard label="Total requests" value={summary.total} />
-        <SummaryCard label="Pending" value={summary.pending} color="var(--warn)" />
-        <SummaryCard label="Approved" value={summary.approved} color="var(--ok)" />
-        <SummaryCard label="Declined" value={summary.declined} color="var(--bad)" />
+        <SummaryCard label="Total requests" value={<LoadingFigure state={st}>{summary.total}</LoadingFigure>} />
+        <SummaryCard label="Pending" value={<LoadingFigure state={st}>{summary.pending}</LoadingFigure>} color="var(--warn)" />
+        <SummaryCard label="Approved" value={<LoadingFigure state={st}>{summary.approved}</LoadingFigure>} color="var(--ok)" />
+        <SummaryCard label="Declined" value={<LoadingFigure state={st}>{summary.declined}</LoadingFigure>} color="var(--bad)" />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -141,7 +142,8 @@ export function LeaveRequests() {
             </div>
           </div>
         ))}
-        {rows.length === 0 && <EmptyRow text="No requests match your filters." />}
+        <ListPending state={st} onRetry={() => void s.reload()} cols={8} />
+        {st === 'ready' && rows.length === 0 && <EmptyRow text="No requests match your filters." />}
       </Card>
     </div>
   );

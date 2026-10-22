@@ -12,7 +12,8 @@ import { useStore } from '../store';
 import { ApiError } from '../../services/http';
 import { createPayHead, deletePayHead, listPayHeads, listSalaryTemplates, rupeesToPaise, updatePayHead } from '../../services/payroll';
 import type { CalculationBasis, PayHeadDTO, PayHeadInput } from '../../services/payroll';
-import { Card } from '../ui';
+import { Card, ListPending, LoadingFigure } from '../ui';
+import type { LoadState } from '../ui';
 import { IconPlus } from '../icons';
 import { CloseButton } from '../drawers/shell';
 
@@ -352,13 +353,17 @@ export function PayHeadMaster() {
   const [allCodes, setAllCodes] = useState<Set<string>>(new Set());
   const [usedCodes, setUsedCodes] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  // Skeleton until the first load; a refresh after a save keeps the table up.
+  const [state, setState] = useState<LoadState>('loading');
   const loadLive = async () => {
     try {
       const [list, templates] = await Promise.all([listPayHeads(), listSalaryTemplates()]);
       setHeads(list);
       setAllCodes(new Set(list.map((h) => h.code)));
       setUsedCodes(new Set(templates.flatMap((t) => t.components.map((c) => c.payHeadCode))));
+      setState('ready');
     } catch (e) {
+      setState((st) => (st === 'ready' ? st : 'error'));
       flash(e instanceof ApiError ? e.message : 'Could not load salary components');
     }
   };
@@ -484,7 +489,7 @@ export function PayHeadMaster() {
                   borderRadius: 999, background: on ? 'var(--accent-grad)' : 'transparent', color: on ? 'var(--on-accent)' : 'var(--ink-3)',
                 }}
               >
-                {c.label} <span style={{ opacity: 0.7 }}>· {COUNTS[c.key]}</span>
+                {c.label} <span style={{ opacity: 0.7 }}>· <LoadingFigure state={state} w={12} h={11}>{COUNTS[c.key]}</LoadingFigure></span>
               </button>
             );
           })}
@@ -550,7 +555,10 @@ export function PayHeadMaster() {
                 <Td><StatusText status={r.status} /></Td>
               </tr>
             ))}
-            {COUNTS[tab] === 0 && (
+            {state !== 'ready' && (
+              <tr><td colSpan={6} style={{ padding: 0 }}><ListPending state={state} onRetry={() => { setState('loading'); void loadLive(); }} rows={5} cols={5} avatar={false} rowHeight={50} /></td></tr>
+            )}
+            {state === 'ready' && COUNTS[tab] === 0 && (
               <tr><td colSpan={6} style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>No components yet — add one to get started.</td></tr>
             )}
           </tbody>

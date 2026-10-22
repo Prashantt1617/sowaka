@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
+import type { LoadState } from '../ui';
 import { IconPlus } from '../icons';
 import { getCompanySettings, updateCompanySettings } from '../../services/hrms';
 
@@ -18,10 +19,19 @@ export function useSavedNames(kind: SavedNameKind) {
   const { flash } = useStore();
   const [saved, setSaved] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  // Whether the saved names have arrived, so the page waits for them too.
+  const [state, setState] = useState<LoadState>('loading');
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    getCompanySettings().then((s) => setSaved(s[kind] ?? [])).catch(() => setSaved([]));
-  }, [kind]);
+    let live = true;
+    setState('loading');
+    getCompanySettings()
+      .then((s) => { if (live) { setSaved(s[kind] ?? []); setState('ready'); } })
+      .catch(() => { if (live) { setSaved([]); setState('error'); } });
+    return () => { live = false; };
+  }, [kind, attempt]);
+  const retry = () => setAttempt((n) => n + 1);
 
   const write = useCallback(async (next: string[], done: string) => {
     setBusy(true);
@@ -40,7 +50,7 @@ export function useSavedNames(kind: SavedNameKind) {
 
   const add = (name: string) => write([...saved, name.trim()], `${name.trim()} added`);
   const remove = (name: string) => write(saved.filter((n) => !same(n, name)), `${name} removed`);
-  return { saved, busy, add, remove };
+  return { saved, busy, add, remove, state, retry };
 }
 
 /** "Add department": a button that opens a one-line form in place. */

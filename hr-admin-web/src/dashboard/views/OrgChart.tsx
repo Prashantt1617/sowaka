@@ -15,7 +15,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import { useStore } from '../store';
-import { Avatar } from '../ui';
+import { Avatar, Loadable, SkeletonPage } from '../ui';
 import type { Emp } from '../seed';
 
 type OrgNode = {
@@ -222,8 +222,18 @@ const FIT_MIN = 0.6;
 /** …and no bigger than this, or a five-person company becomes a poster. */
 const FIT_MAX = 1.35;
 
+/** Waits for the shared lists this page reads before drawing it. */
 export function OrgChart() {
-  const { emps, loaded, user, setEmpDrawerId, orgChartFocus, setOrgChartFocus } = useStore();
+  const s = useStore();
+  return (
+    <Loadable state={s.listState('employees')} onRetry={() => void s.reload()} skeleton={<SkeletonPage rows={6} cols={3} />}>
+      <OrgChartBody />
+    </Loadable>
+  );
+}
+
+function OrgChartBody() {
+  const { emps, user, setEmpDrawerId, orgChartFocus, setOrgChartFocus } = useStore();
   const fullRoots = useMemo(() => buildTree(emps), [emps]);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [query, setQuery] = useState('');
@@ -479,9 +489,7 @@ export function OrgChart() {
             {user?.company ?? 'Organisation'} chart
           </div>
           <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 2 }}>
-            {loaded
-              ? `${emps.length} people · ${managers} managers · ${teams} departments`
-              : 'Loading the roster…'}
+            {`${emps.length} people · ${managers} managers · ${teams} departments`}
           </div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -503,7 +511,7 @@ export function OrgChart() {
       </div>
 
       <div ref={viewport} onMouseDown={onMouseDown} style={canvas}>
-        {loaded && roots.length === 0 ? (
+        {roots.length === 0 ? (
           <div style={{ padding: '60px 24px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13.5 }}>
             Nobody on the roster yet.
           </div>

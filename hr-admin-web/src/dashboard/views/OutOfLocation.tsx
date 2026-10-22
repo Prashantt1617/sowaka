@@ -9,7 +9,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { STAT } from '../theme';
 import { downloadCsv } from '../export';
-import { Card, DateRange, EmptyRow, Pill, SearchInput, SummaryCard } from '../ui';
+import { Avatar, Card, DateRange, EmptyRow, ListPending, LoadingFigure, Pill, SearchInput, SummaryCard } from '../ui';
+import { useLoad } from '../useLoad';
 import { PersonAvatar } from '../PersonAvatar';
 import { IconDownload } from '../icons';
 import { getOutOfLocation, type OutOfLocationDTO } from '../../services/hrms';
@@ -38,22 +39,20 @@ export function OutOfLocation() {
   const { flash } = useStore();
   const [from, setFrom] = useState(monthStartIso());
   const [to, setTo] = useState(todayIso());
-  const [rows, setRows] = useState<OutOfLocationDTO[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'present' | 'pending' | 'approved' | 'declined'>('all');
 
+  // Empty dates mean the whole month: the range control clears to ''.
+  const f = from || monthStartIso();
+  const t = to || todayIso();
+  // Keyed by the range: another range shows its skeleton, not the last range's punches.
+  const list = useLoad(() => getOutOfLocation(f, t), [f, t]);
+  const rows = useMemo(() => list.data ?? [], [list.data]);
+  const st = list.state;
   useEffect(() => {
-    // Empty dates mean the whole month: the range control clears to ''.
-    const f = from || monthStartIso();
-    const t = to || todayIso();
-    setLoading(true);
-    getOutOfLocation(f, t)
-      .then(setRows)
-      .catch((error: Error) => flash(error.message))
-      .finally(() => setLoading(false));
+    if (list.error instanceof Error) flash(list.error.message);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to]);
+  }, [list.error]);
 
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -104,10 +103,10 @@ export function OutOfLocation() {
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
-        <SummaryCard label="Out-of-location punches" value={summary.total} />
-        <SummaryCard label="Marked present" value={summary.present} color="var(--ok)" />
-        <SummaryCard label="Awaiting a manager" value={summary.pending} color="var(--warn)" />
-        <SummaryCard label="Rejected" value={summary.declined} color="var(--bad)" />
+        <SummaryCard label="Out-of-location punches" value={<LoadingFigure state={st}>{summary.total}</LoadingFigure>} />
+        <SummaryCard label="Marked present" value={<LoadingFigure state={st}>{summary.present}</LoadingFigure>} color="var(--ok)" />
+        <SummaryCard label="Awaiting a manager" value={<LoadingFigure state={st}>{summary.pending}</LoadingFigure>} color="var(--warn)" />
+        <SummaryCard label="Rejected" value={<LoadingFigure state={st}>{summary.declined}</LoadingFigure>} color="var(--bad)" />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -182,8 +181,8 @@ export function OutOfLocation() {
             </div>
           );
         })}
-        {!loading && shown.length === 0 && <EmptyRow text="No out-of-location punches in this range." />}
-        {loading && rows.length === 0 && <EmptyRow text="Loading…" />}
+        <ListPending state={st} onRetry={list.retry} cols={7} />
+        {st === 'ready' && shown.length === 0 && <EmptyRow text="No out-of-location punches in this range." />}
       </Card>
     </div>
   );

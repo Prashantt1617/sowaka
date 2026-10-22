@@ -14,7 +14,8 @@ import {
   type PaidDaysTemplateDTO,
   type PaidDaysTemplateInput,
 } from '../../services/payroll';
-import { Card, EmptyRow } from '../ui';
+import { Card, EmptyRow, ListPending } from '../ui';
+import type { LoadState } from '../ui';
 import { IconPlus } from '../icons';
 import { DEDUCTION_TRIGGER_LABELS } from '../../services/payroll';
 import { dangerLink, Field, ghostBtn, input, primaryBtn, ruleText, RulesCard, tableStyle, Td, Th } from './SalaryTemplates';
@@ -37,19 +38,19 @@ export function paidDaysSummary(t: Pick<PaidDaysTemplateDTO, 'allDaysPaid' | 'de
 export function PaidDaysTemplates() {
   const { flash } = useStore();
   const [templates, setTemplates] = useState<PaidDaysTemplateDTO[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Skeleton until the first load; a refresh after a save keeps the table up.
+  const [state, setState] = useState<LoadState>('loading');
   const [form, setForm] = useState<Form | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const load = async () => {
-    setLoading(true);
     try {
       setTemplates(await listPaidDaysTemplates());
+      setState('ready');
     } catch (e) {
+      setState((st) => (st === 'ready' ? st : 'error'));
       flash(e instanceof ApiError ? e.message : 'Could not load paid days templates', 'error');
-    } finally {
-      setLoading(false);
     }
   };
   useEffect(() => { void load(); }, []);
@@ -158,8 +159,8 @@ export function PaidDaysTemplates() {
         <button onClick={() => { setConfirmDelete(false); setForm({ ...EMPTY }); }} style={primaryBtn}><IconPlus size={15} /> Create New</button>
       </div>
       <Card>
-        {loading ? (
-          <EmptyRow text="Loading…" />
+        {state !== 'ready' ? (
+          <ListPending state={state} onRetry={() => { setState('loading'); void load(); }} rows={3} cols={3} avatar={false} rowHeight={56} />
         ) : templates.length === 0 ? (
           <EmptyRow text="No paid days templates yet." />
         ) : (

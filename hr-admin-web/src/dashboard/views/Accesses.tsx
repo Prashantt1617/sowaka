@@ -13,7 +13,7 @@ import { ApiError } from '../../services/http';
 import { getAllEmployees, listDashboardAccesses, setDashboardAccess } from '../../services/hrms';
 import type { DashboardAccessDTO, EmployeeDTO } from '../../services/hrms';
 import type { SupportRole } from '../../services/support';
-import { Card } from '../ui';
+import { Avatar, Card, ListPending, Spinner } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { IconPlus } from '../icons';
 import { OVERVIEW_ITEM, SECTIONS } from '../Chrome';
@@ -117,8 +117,10 @@ function UsersTab() {
   const [editing, setEditing] = useState<Editing | null>(null);
   const [picking, setPicking] = useState(false);
   const [saving, setSaving] = useState(false);
+  // The first load failed: the list says so, with Retry, rather than loading forever.
+  const [failed, setFailed] = useState(false);
 
-  const load = () => listDashboardAccesses().then((r) => setRows(r.users)).catch((e) => flash(e instanceof ApiError ? e.message : 'Could not load accesses', 'error'));
+  const load = () => listDashboardAccesses().then((r) => { setRows(r.users); setFailed(false); }).catch((e) => { setFailed(true); flash(e instanceof ApiError ? e.message : 'Could not load accesses', 'error'); });
   useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const open = (u: DashboardAccessDTO) =>
@@ -159,7 +161,7 @@ function UsersTab() {
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>{rows ? `${rows.length} ${rows.length === 1 ? 'person has' : 'people have'} access to this dashboard` : 'Loading…'}</div>
+        <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>{rows ? `${rows.length} ${rows.length === 1 ? 'person has' : 'people have'} access to this dashboard` : failed ? '' : <Spinner />}</div>
         <button style={{ ...primaryBtn, marginLeft: 'auto' }} onClick={() => setPicking(true)}><IconPlus size={15} /> Give access</button>
       </div>
 
@@ -171,6 +173,7 @@ function UsersTab() {
           <div>Status</div>
           <div />
         </div>
+        {!rows && <ListPending state={failed ? 'error' : 'loading'} onRetry={() => { setFailed(false); void load(); }} cols={4} />}
         {(rows ?? []).map((u) => (
           <div key={u.userId} onClick={() => open(u)} style={{ display: 'grid', gridTemplateColumns: USER_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid var(--line)', alignItems: 'center', cursor: 'pointer' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
@@ -283,7 +286,9 @@ function EditAccess({ editing, setEditing, saving, onSave, self }: { editing: Ed
 function PickPerson({ exclude, onClose, onPick }: { exclude: Set<string>; onClose: () => void; onPick: (p: EmployeeDTO) => void }) {
   const [people, setPeople] = useState<EmployeeDTO[] | null>(null);
   const [q, setQ] = useState('');
-  useEffect(() => { getAllEmployees().then(setPeople).catch(() => setPeople([])); }, []);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => { getAllEmployees().then(setPeople).catch(() => setFailed(true)); }, [attempt]);
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return (people ?? [])
@@ -300,7 +305,7 @@ function PickPerson({ exclude, onClose, onPick }: { exclude: Set<string>; onClos
           <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, email or employee ID" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 13.5, fontFamily: 'inherit' }} />
         </div>
         <div className="scry" style={{ maxHeight: '50vh', overflowY: 'auto' }}>
-          {people === null && <div style={{ padding: 18, color: 'var(--ink-3)' }}>Loading…</div>}
+          {people === null && <ListPending state={failed ? 'error' : 'loading'} errorText="People could not be loaded." onRetry={() => { setFailed(false); setAttempt((n) => n + 1); }} rows={5} cols={1} rowHeight={53} />}
           {people !== null && shown.length === 0 && <div style={{ padding: 18, color: 'var(--ink-3)' }}>Nobody matches.</div>}
           {shown.map((p) => (
             <button key={p.userId} type="button" onClick={() => onPick(p)} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '10px 18px', border: 'none', borderBottom: '1px solid var(--line)', background: 'var(--surface)', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>

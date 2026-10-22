@@ -5,6 +5,7 @@
 // remove parameters for one individual. Editing a template afterwards does not
 // reach back into anyone already assigned from it.
 import { useCallback, useEffect, useState } from 'react';
+import { LoadError, SkeletonLines } from '../ui';
 import {
   assignKpis,
   getKpiAssignment,
@@ -48,6 +49,8 @@ export function EmployeeKpiPanel({
   const [upcoming, setUpcoming] = useState<KpiAssignmentDTO | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Once anything has loaded, a refresh keeps it on screen rather than a skeleton.
+  const [loaded, setLoaded] = useState(false);
   const [open, setOpen] = useState(false);
 
   const reload = useCallback(async () => {
@@ -64,6 +67,7 @@ export function EmployeeKpiPanel({
       setAssignment(live);
       setUpcoming(upcoming);
       setError('');
+      setLoaded(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load KPIs');
     } finally {
@@ -89,10 +93,12 @@ export function EmployeeKpiPanel({
         />
       )}
 
-      {error && <div style={{ fontSize: 13, color: 'var(--bad)', fontWeight: 400, marginBottom: 10 }}>{error}</div>}
+      {error && loaded && <div style={{ fontSize: 13, color: 'var(--bad)', fontWeight: 400, marginBottom: 10 }}>{error}</div>}
 
-      {loading ? (
-        <div style={{ fontSize: 13, color: 'var(--ink-4)' }}>Loading…</div>
+      {!loaded && error && !loading ? (
+        <LoadError compact text={error} onRetry={() => void reload()} />
+      ) : !loaded ? (
+        <SkeletonLines lines={4} />
       ) : (
         <>
           {/* What their manager is scoring against right now. Frozen. */}

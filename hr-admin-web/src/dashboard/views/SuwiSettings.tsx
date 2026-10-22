@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
-import { Card } from '../ui';
+import { Card, LoadError, SkeletonPage, SkeletonRows } from '../ui';
 import { getSuwiActivity, getSuwiSettings, saveSuwiSettings, type SuwiActivityRow, type SuwiLevel, type SuwiSettingsDTO } from '../../services/suwi';
 import { SuwiOrb } from '../suwi/SuwiPanel';
 
@@ -21,12 +21,14 @@ const RULES = [
 export function SuwiSettings() {
   const s = useStore();
   const [data, setData] = useState<SuwiSettingsDTO | null>(null);
-  const [activity, setActivity] = useState<SuwiActivityRow[]>([]);
+  const [activity, setActivity] = useState<SuwiActivityRow[] | null>(null);
+  const [failed, setFailed] = useState(false);
   const [budget, setBudget] = useState('');
   const [saving, setSaving] = useState(false);
   const load = () => {
-    getSuwiSettings().then((d) => { setData(d); setBudget(String(d.settings.monthlyBudgetUsd)); }).catch((e) => s.flash(e instanceof ApiError ? e.message : 'Could not load Suwi settings', 'error'));
-    getSuwiActivity().then(setActivity).catch(() => undefined);
+    setFailed(false);
+    getSuwiSettings().then((d) => { setData(d); setBudget(String(d.settings.monthlyBudgetUsd)); }).catch((e) => { setFailed(true); s.flash(e instanceof ApiError ? e.message : 'Could not load Suwi settings', 'error'); });
+    getSuwiActivity().then(setActivity).catch(() => setActivity((a) => a ?? []));
   };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -45,7 +47,7 @@ export function SuwiSettings() {
     }
   };
 
-  if (!data) return <div style={{ color: 'var(--ink-3)', padding: 24 }}>Loading…</div>;
+  if (!data) return failed ? <Card><LoadError text="Suwi settings could not be loaded." onRetry={load} /></Card> : <SkeletonPage cards={3} rows={4} cols={3} avatar={false} />;
   const { settings, areas, levelLabels, service, canEdit } = data;
   const levels: SuwiLevel[] = ['answer', 'suggest', 'act'];
   const pct = settings.monthlyBudgetUsd > 0 ? Math.min(100, Math.round((settings.spentThisMonthUsd / settings.monthlyBudgetUsd) * 100)) : 0;
@@ -124,7 +126,7 @@ export function SuwiSettings() {
             <div style={{ fontSize: 15, fontWeight: 600 }}>Recent Suwi activity</div>
             <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>{canEdit ? "Everyone's questions, confirmed actions and settings changes." : 'Your questions, plus every confirmed action and settings change.'}</div>
           </div>
-          {activity.length === 0 ? <div style={{ padding: 22, color: 'var(--ink-3)', fontSize: 13 }}>Nothing yet. Ask Suwi something.</div> : (
+          {activity === null ? <SkeletonRows rows={3} cols={3} avatar={false} rowHeight={46} /> : activity.length === 0 ? <div style={{ padding: 22, color: 'var(--ink-3)', fontSize: 13 }}>Nothing yet. Ask Suwi something.</div> : (
             <div style={{ maxHeight: 420, overflowY: 'auto' }}>
               {activity.map((r, i) => (
                 <div key={i} style={{ padding: '10px 18px', borderBottom: '1px solid var(--line)', fontSize: 13 }}>

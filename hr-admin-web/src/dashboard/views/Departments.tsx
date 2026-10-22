@@ -7,7 +7,8 @@
 import { useMemo } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card, EmptyRow } from '../ui';
+import { Card, EmptyRow, ListPending, Spinner } from '../ui';
+import { combineLoad } from '../useLoad';
 import { downloadCsv } from '../export';
 import { IconDownload } from './peopleTable';
 import { AddNameButton, useSavedNames } from './savedNames';
@@ -23,8 +24,13 @@ type Department = {
 
 
 export function Departments() {
-  const { emps, loaded } = useStore();
-  const { saved, busy, add, remove } = useSavedNames('departmentList');
+  const { emps, listState, reload } = useStore();
+  const { saved, busy, add, remove, state: savedState, retry: retrySaved } = useSavedNames('departmentList');
+  // The roster and the saved names both feed the table; it waits for both.
+  const empState = listState('employees');
+  const st = combineLoad(empState, savedState);
+  const retry = () => { if (empState === 'error') void reload(); if (savedState === 'error') retrySaved(); };
+  const loaded = st === 'ready';
 
   const departments = useMemo<Department[]>(() => {
     const byName = new Map<string, Department>();
@@ -61,7 +67,7 @@ export function Departments() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-          {loaded ? `${departments.length} departments · ${totalEmp} people` : 'Loading…'}
+          {loaded ? `${departments.length} departments · ${totalEmp} people` : <Spinner />}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 9, alignItems: 'flex-start' }}>
           <AddNameButton noun="department" existing={departments.map((d) => d.name)} busy={busy} onAdd={add} />
@@ -87,7 +93,8 @@ export function Departments() {
             </tr>
           </thead>
           <tbody>
-            {departments.map((d) => (
+            {st !== 'ready' && <tr><td colSpan={4} style={{ padding: 0 }}><ListPending state={st} onRetry={retry} cols={4} avatar={false} rowHeight={46} /></td></tr>}
+            {loaded && departments.map((d) => (
               <tr key={d.name}>
                 <Td>
                   <strong style={{ color: 'var(--accent-ink)' }}>{d.name}</strong>
@@ -106,12 +113,12 @@ export function Departments() {
             {loaded && departments.length === 0 && (
               <tr><td colSpan={4}><EmptyRow text="No departments yet — nobody on the roster has one set." /></td></tr>
             )}
-            <tr>
+            {loaded && <tr>
               <Td><strong>Total</strong></Td>
               <Td muted>—</Td>
               <Td right mono><strong>{departments.reduce((s, d) => s + d.managers, 0) || '—'}</strong></Td>
               <Td right mono><strong>{totalEmp}</strong></Td>
-            </tr>
+            </tr>}
           </tbody>
         </table>
       </Card>

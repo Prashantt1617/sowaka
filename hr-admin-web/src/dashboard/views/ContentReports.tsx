@@ -3,8 +3,9 @@
 // A report is a complaint from one colleague about another, so the view leads
 // with the words that were reported rather than with counts: the decision is
 // always about the content, and the queue is short by design.
-import { useCallback, useEffect, useState } from 'react';
-import { Card, EmptyRow, Pill, StatusTabs } from '../ui';
+import { useState } from 'react';
+import { useLoad } from '../useLoad';
+import { Card, EmptyRow, ListPending, Pill, StatusTabs } from '../ui';
 import { useStore } from '../store';
 import {
   getContentReports,
@@ -30,31 +31,26 @@ const STATUS_LABEL: Record<ContentReportDTO['status'], string> = {
 export function ContentReports() {
   const { flash } = useStore();
   const [filter, setFilter] = useState<Filter>('open');
-  const [reports, setReports] = useState<ContentReportDTO[] | null>(null);
   const [busyId, setBusyId] = useState('');
+  // Keyed by the filter: another filter shows its skeleton, not the last list.
+  const list = useLoad(() => getContentReports(filter), [filter]);
+  const reports = list.data ?? null;
 
-  const load = useCallback(
-    async (next: Filter) => {
-      try {
-        setReports(await getContentReports(next));
-      } catch (error) {
-        flash(error instanceof Error ? error.message : 'Could not load reports');
-        setReports([]);
-      }
-    },
-    [flash],
-  );
-
-  useEffect(() => {
-    void load(filter);
-  }, [filter, load]);
+  // A refresh after an action keeps the list on screen.
+  const load = async () => {
+    try {
+      await list.reload();
+    } catch (error) {
+      flash(error instanceof Error ? error.message : 'Could not load reports');
+    }
+  };
 
   async function close(report: ContentReportDTO, status: 'actioned' | 'dismissed') {
     setBusyId(report.id);
     try {
       await reviewContentReport(report.id, { status });
       flash(status === 'actioned' ? 'Report closed as actioned' : 'Report dismissed');
-      await load(filter);
+      await load();
     } catch (error) {
       flash(error instanceof Error ? error.message : 'Could not update the report');
     } finally {
@@ -74,7 +70,7 @@ export function ContentReports() {
     try {
       await removeReportedPost(report.postId);
       flash('Post removed from the feed');
-      await load(filter);
+      await load();
     } catch (error) {
       flash(error instanceof Error ? error.message : 'Could not remove the post');
     } finally {
@@ -102,7 +98,7 @@ export function ContentReports() {
 
       {reports === null ? (
         <Card>
-          <EmptyRow text="Loading…" />
+          <ListPending state={list.state} onRetry={list.retry} rows={3} cols={2} rowHeight={92} />
         </Card>
       ) : reports.length === 0 ? (
         <Card>

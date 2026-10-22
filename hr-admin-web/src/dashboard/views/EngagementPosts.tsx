@@ -14,6 +14,8 @@ import {
 } from '../../services/hrms';
 import { ApiError } from '../../services/http';
 import { useStore } from '../store';
+import { Card, ListPending, LoadingFigure } from '../ui';
+import type { LoadState } from '../ui';
 
 const ICONS = '/engagement';
 const SORA = "'Sora', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
@@ -117,11 +119,15 @@ const capsLabel: CSSProperties = {
 export function EngagementPosts() {
   const { flash } = useStore();
   const [posts, setPosts] = useState<EngagementPostDTO[]>([]);
+  // Until the feed has loaded once: a skeleton, then Retry if it failed.
+  const [state, setState] = useState<LoadState>('loading');
 
   const load = async () => {
     try {
       setPosts(await getEngagementPosts());
+      setState('ready');
     } catch (e) {
+      setState((st) => (st === 'ready' ? st : 'error'));
       flash(e instanceof ApiError ? e.message : 'Could not load engagement posts', 'error');
     }
   };
@@ -158,10 +164,13 @@ export function EngagementPosts() {
 
       <div style={{ flex: '1 1 340px', minWidth: 0 }}>
         <div style={{ ...capsLabel, marginBottom: 10 }}>
-          Already in the feed · {posts.length}
+          Already in the feed · <LoadingFigure state={state} w={14} h={10}>{posts.length}</LoadingFigure>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {posts.length === 0 && (
+          {state !== 'ready' && (
+            <Card><ListPending state={state} onRetry={() => { setState('loading'); void load(); }} rows={3} cols={1} rowHeight={78} /></Card>
+          )}
+          {state === 'ready' && posts.length === 0 && (
             <div
               style={{
                 background: 'var(--surface)',

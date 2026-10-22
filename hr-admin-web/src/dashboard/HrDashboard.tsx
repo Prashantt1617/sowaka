@@ -137,17 +137,8 @@ function CurrentView() {
   }
 }
 
-function LoadingBar() {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400, color: 'var(--ink-3)', fontSize: 12.5, fontWeight: 400 }}>
-      <span style={{ width: 16, height: 16, border: '2px solid var(--line)', borderTopColor: 'var(--accent)', borderRadius: '50%', display: 'inline-block', marginRight: 10, animation: 'spin .7s linear infinite' }} />
-      Loading…
-    </div>
-  );
-}
-
 function Shell() {
-  const { loading, loaded, view, setView } = useStore();
+  const { view, setView } = useStore();
   const { user } = useAuth();
   // Land on a tab this person may open, and leave one taken away from them.
   useEffect(() => {
@@ -163,7 +154,8 @@ function Shell() {
       <main className="scry" style={{ flex: 1, minWidth: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '0 6px', margin: '0 -6px' }}>
         <Topbar />
         <div style={{ padding: '20px 4px 40px', flex: 1 }}>
-          {loading && !loaded ? <LoadingBar /> : <CurrentView />}
+          {/* Each view shows its own loading state until the data it needs has arrived. */}
+          <CurrentView />
         </div>
       </main>
       <Drawers />

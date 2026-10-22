@@ -7,6 +7,7 @@ import type { View } from './theme';
 import { TITLES } from './theme';
 import { IconBell, IconCheck, IconLogout, IconSearch, Logo, navIcon } from './icons';
 import { useStore } from './store';
+import type { StoreList } from './store';
 import { PersonAvatar } from './PersonAvatar';
 import { ORG_DISPLAY_NAME, PLATFORM_NAME } from './org';
 import { canOpen } from './access';
@@ -240,7 +241,7 @@ export function Sidebar() {
   const { user } = useAuth();
   // The company's real name, not a constant baked in at build time.
   const companyName = brand.name ?? user?.company ?? ORG_DISPLAY_NAME;
-  const { leaves, ots, rbs, corrs, fbMgrs, view, setView } = useStore();
+  const { leaves, ots, rbs, corrs, fbMgrs, view, setView, listState } = useStore();
   const orgActive = view === 'organisation';
   // Only the tabs People › Accesses gives this person.
   const orgOpen = canOpen(user, 'organisation');
@@ -255,7 +256,11 @@ export function Sidebar() {
   // What Suwi noticed: requests waiting past the limit turn the Requests counts red (Claims already are).
   const overdue = useSuwiNotices().notices.some((n) => n.key === 'requests_overdue');
 
+  // A count waits for its list: no "0" before the requests have arrived.
+  const LIST_FOR: Partial<Record<View, StoreList>> = { leave: 'leaves', overtime: 'overtime', attendance: 'corrections', feedback: 'feedback', reimbursements: 'claims' };
   const badgeFor = (key: View): ReactNode => {
+    const list = LIST_FOR[key];
+    if (list && listState(list) !== 'ready') return null;
     switch (key) {
       case 'leave':
         return <CountBadge value={leavesPending} danger={overdue && leavesPending > 0} />;

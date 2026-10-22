@@ -10,7 +10,7 @@ import type { ReqStatus } from '../theme';
 import type { Correction } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
-import { Card, DateRange, EmptyRow, Pill, SearchInput, StatusTabs, SummaryCard } from '../ui';
+import { Avatar, Card, DateRange, EmptyRow, ListPending, LoadingFigure, Pill, SearchInput, StatusTabs, SummaryCard } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { IconDownload } from '../icons';
 import { SuwiInsight } from '../suwi/SuwiInsight';
@@ -21,6 +21,7 @@ const DAY_TONE = { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' };
 
 export function AttendanceCorrections() {
   const s = useStore();
+  const st = s.listState('corrections');
   const ranged = s.corrs.filter((r) => inDateRange(r.refISO, s.corrFrom, s.corrTo));
   const summary = {
     total: ranged.length,
@@ -65,10 +66,10 @@ export function AttendanceCorrections() {
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
-        <SummaryCard label="Total corrections" value={summary.total} />
-        <SummaryCard label="Pending" value={summary.pending} color="var(--warn)" />
-        <SummaryCard label="Approved" value={summary.approved} color="var(--ok)" />
-        <SummaryCard label="Declined" value={summary.declined} color="var(--bad)" />
+        <SummaryCard label="Total corrections" value={<LoadingFigure state={st}>{summary.total}</LoadingFigure>} />
+        <SummaryCard label="Pending" value={<LoadingFigure state={st}>{summary.pending}</LoadingFigure>} color="var(--warn)" />
+        <SummaryCard label="Approved" value={<LoadingFigure state={st}>{summary.approved}</LoadingFigure>} color="var(--ok)" />
+        <SummaryCard label="Declined" value={<LoadingFigure state={st}>{summary.declined}</LoadingFigure>} color="var(--bad)" />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -138,7 +139,8 @@ export function AttendanceCorrections() {
             )}
           </div>
         ))}
-        {rows.length === 0 && <EmptyRow text="No attendance corrections match your filters." />}
+        <ListPending state={st} onRetry={() => void s.reload()} cols={7} />
+        {st === 'ready' && rows.length === 0 && <EmptyRow text="No attendance corrections match your filters." />}
       </Card>
 
       {s.corrConfirm && <ConfirmOverride />}

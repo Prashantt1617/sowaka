@@ -535,3 +535,37 @@ input[type='number']::-webkit-outer-spin-button {
 }
 
 @keyframes pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+
+/* —— Loading skeletons (dashboard/ui.tsx): placeholders shaped like the content.
+   They stay invisible for the first 130 ms so a fast load never flickers,
+   then shimmer; with reduced motion they are a still placeholder. —— */
+.sk-delay {
+  animation: sk-appear 1ms linear 130ms both;
+}
+@keyframes sk-appear {
+  from { visibility: hidden; }
+  to { visibility: visible; }
+}
+.sk {
+  display: block;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-2) 30%, var(--line) 50%, var(--surface-2) 70%, var(--surface-2) 100%);
+  background-size: 300% 100%;
+  animation: sk-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes sk-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+.sk-spin {
+  animation: spin .7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk {
+    animation: none;
+    background: var(--surface-2);
+  }
+  .sk-spin {
+    animation: none;
+  }
+}

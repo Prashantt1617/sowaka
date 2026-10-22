@@ -13,7 +13,8 @@ import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { expandReport, getAttendanceReport } from '../../services/hrms';
 import type { AttendanceReportDTO, ReportRow } from '../../services/hrms';
-import { Card, DateRange, EmptyRow, Pill, SelectBox } from '../ui';
+import { Avatar, Card, DateRange, EmptyRow, ListPending, Pill, SelectBox, SkeletonCards } from '../ui';
+import type { LoadState } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { IconDownload } from './peopleTable';
 import { useAuth } from '../auth/AuthContext';
@@ -155,8 +156,11 @@ export function AttendanceReport() {
   const [from, setFrom] = useState(monthStartIso());
   const [to, setTo] = useState(todayIso());
   const [report, setReport] = useState<AttendanceReportDTO | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Which range the report on screen is for: another range shows its own
+  // skeleton (or its cached copy), never the last range's days.
+  const [reportFor, setReportFor] = useState('');
   const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
 
   const [department, setDepartment] = useState('all');
   const [manager, setManager] = useState('all');
@@ -176,12 +180,12 @@ export function AttendanceReport() {
     const key = cacheKey(userId, from, to);
     // Whatever this tab last saw for the range goes up immediately.
     const cached = readCached(key);
+    // A range with no copy yet shows its skeleton, not "Refreshing…" left over from the last one.
+    if (!cached) setRefreshing(false);
     if (cached) {
       setReport(cached);
-      setLoading(false);
+      setReportFor(key);
       setRefreshing(true);
-    } else {
-      setLoading(true);
     }
     setError('');
     // A date input fires on every edit, and each intermediate value is a
@@ -191,15 +195,18 @@ export function AttendanceReport() {
         .then((data) => {
           if (!live) return;
           setReport(data);
+          setReportFor(key);
           writeCached(key, data);
         })
         .catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load the report'); })
-        .finally(() => { if (live) { setLoading(false); setRefreshing(false); } });
+        .finally(() => { if (live) setRefreshing(false); });
     }, cached ? 150 : 400);
     return () => { live = false; clearTimeout(timer); };
-  }, [from, to, userId]);
+  }, [from, to, userId, attempt]);
 
-  const all = useMemo(() => (report ? expandReport(report) : []), [report]);
+  const shown = report && reportFor === cacheKey(userId, from, to) ? report : null;
+  const reportState: LoadState = shown ? 'ready' : error ? 'error' : 'loading';
+  const all = useMemo(() => (shown ? expandReport(shown) : []), [shown]);
 
   // Everything but the card: this is the population the totals describe.
   const scoped = useMemo(
@@ -310,17 +317,17 @@ export function AttendanceReport() {
           <option value="all">All attendance modes</option>
           {(report?.punchFormats ?? []).map((f) => <option key={f} value={f}>{f}</option>)}
         </SelectBox>
-        {loading && <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>Loading…</span>}
         {refreshing && <span style={{ fontSize: 13, color: 'var(--ink-4)', fontWeight: 400 }}>Refreshing…</span>}
         <ExportButton label="Export Excel" disabled={!canExport} onClick={exportExcel} />
       </div>
 
-      {error && (
+      {error && shown && (
         <div style={{ marginBottom: 14, fontSize: 13, color: 'var(--bad)', fontWeight: 400 }}>{error}</div>
       )}
 
       {/* ── the totals, which are the filter ──────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 14, marginBottom: filter === 'missed' ? 10 : 20 }}>
+      {!shown && <SkeletonCards count={6} minWidth={120} style={{ marginBottom: 20 }} />}
+      {shown && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 14, marginBottom: filter === 'missed' ? 10 : 20 }}>
         <div style={{ background: 'var(--surface)', border: '1px solid transparent', borderRadius: 16, padding: '15px 17px', boxShadow: 'var(--shadow)' }}>
           <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>Employees</div>
           <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: '-.6px', marginTop: 3 }}>{totals.employees}</div>
@@ -336,7 +343,7 @@ export function AttendanceReport() {
             onClick={() => pick(f.key)}
           />
         ))}
-      </div>
+      </div>}
 
       {/* Missed punch opens into which punch is missing. */}
       {filter === 'missed' && (
@@ -355,9 +362,9 @@ export function AttendanceReport() {
           {filter === 'all' ? 'All days' : FACETS.find((f) => f.key === filter)!.label}
           {filter === 'missed' && gap !== 'all' ? ` · ${GAPS.find((g) => g.key === gap)!.label}` : ''}
         </span>
-        <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
+        {shown && <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
           {listed.length} {listed.length === 1 ? 'day' : 'days'} · {new Set(listed.map((r) => r.userId)).size} people
-        </span>
+        </span>}
       </div>
 
       <Card>
@@ -371,8 +378,10 @@ export function AttendanceReport() {
           <div>STATUS</div>
           <div>MODE</div>
         </div>
-        {pageRows.length === 0 ? (
-          <EmptyRow text={loading ? 'Loading…' : 'No days match these filters.'} />
+        {!shown ? (
+          <ListPending state={reportState} errorText={error || undefined} onRetry={() => setAttempt((n) => n + 1)} rows={8} cols={8} />
+        ) : pageRows.length === 0 ? (
+          <EmptyRow text="No days match these filters." />
         ) : pageRows.map((r) => {
           const status = statusOf(r);
           return (

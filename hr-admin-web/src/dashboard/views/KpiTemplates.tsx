@@ -9,7 +9,8 @@
 // happens on their own profile, where the set stays editable for them alone.
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store';
-import { Card } from '../ui';
+import { Card, ListPending, Spinner } from '../ui';
+import type { LoadState } from '../ui';
 import { IconPlus } from '../icons';
 import {
   createKpiTemplate, kpiTemplateMembers, listKpiParameters, listKpiTemplates,
@@ -30,6 +31,8 @@ export function KpiTemplates() {
   const [templates, setTemplates] = useState<KpiTemplateDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Once the list has loaded, a refresh keeps it on screen.
+  const [loaded, setLoaded] = useState(false);
   const [form, setForm] = useState<TForm | null>(null);
   const [viewing, setViewing] = useState<KpiTemplateDTO | null>(null);
 
@@ -37,7 +40,7 @@ export function KpiTemplates() {
     setLoading(true);
     try {
       const [p, t] = await Promise.all([listKpiParameters(), listKpiTemplates()]);
-      setParams(p); setTemplates(t); setError('');
+      setParams(p); setTemplates(t); setError(''); setLoaded(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load KPI data');
     } finally {
@@ -46,6 +49,10 @@ export function KpiTemplates() {
   }
 
   useEffect(() => { void reload(); }, []);
+  // The cycle named in the header comes from the store; the list waits for both.
+  const cycleState = s.listState('cycle');
+  const listSt: LoadState = loaded && cycleState === 'ready' ? 'ready'
+    : cycleState === 'error' || (!loaded && error && !loading) ? 'error' : 'loading';
 
   const paramById = useMemo(() => new Map(params.map((p) => [p.id, p])), [params]);
 
@@ -154,7 +161,7 @@ export function KpiTemplates() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
         <div style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 400 }}>
-          {templates.length} template{templates.length === 1 ? '' : 's'} · cycle {periodLabel(s.cycle.period)}
+          {listSt === 'ready' ? <>{templates.length} template{templates.length === 1 ? '' : 's'} · cycle {periodLabel(s.cycle.period)}</> : listSt === 'loading' ? <Spinner /> : null}
         </div>
         <button
           onClick={() => setForm(blankTemplate())}
@@ -166,7 +173,7 @@ export function KpiTemplates() {
         </button>
       </div>
 
-      {error && (
+      {error && loaded && (
         <div style={{ ...warnTag, background: 'var(--bad-bg)', borderColor: 'var(--bad-line)', color: 'var(--bad)', marginBottom: 14 }}>
           {error}
         </div>
@@ -182,7 +189,7 @@ export function KpiTemplates() {
             </tr>
           </thead>
           <tbody>
-            {templates.map((t) => (
+            {listSt === 'ready' && templates.map((t) => (
               <tr key={t.id} className="phm-row" onClick={() => setViewing(t)} style={{ cursor: 'pointer' }}>
                 <Td>
                   <NameCell name={t.name} />
@@ -210,7 +217,7 @@ export function KpiTemplates() {
                 </Td>
               </tr>
             ))}
-            {!loading && templates.length === 0 && (
+            {listSt === 'ready' && templates.length === 0 && (
               <tr>
                 <td colSpan={3} style={{ padding: '26px 14px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>
                   {params.length === 0
@@ -219,8 +226,8 @@ export function KpiTemplates() {
                 </td>
               </tr>
             )}
-            {loading && (
-              <tr><td colSpan={2} style={{ padding: '26px 14px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>Loading…</td></tr>
+            {listSt !== 'ready' && (
+              <tr><td colSpan={3} style={{ padding: 0 }}><ListPending state={listSt} errorText={error || undefined} onRetry={() => { if (cycleState === 'error') void s.reload(); if (!loaded) void reload(); }} rows={4} cols={3} avatar={false} rowHeight={56} /></td></tr>
             )}
           </tbody>
         </table>

@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card, EmptyRow } from '../ui';
+import { Card, EmptyRow, ListPending, Spinner } from '../ui';
 import { downloadCsv } from '../export';
 import { IconClose, IconDownload, IconEdit, IconPlus, IconTrash, rowActionBtn } from './peopleTable';
 import {
@@ -23,13 +23,15 @@ export function ReimbursementTypes() {
   const { flash } = useStore();
   const [types, setTypes] = useState<ReimbursementTypeDTO[]>([]);
   const [loading, setLoading] = useState(true);
+  // The first load failed: say so, with Retry, rather than "No reimbursement types yet".
+  const [failed, setFailed] = useState(false);
   const [editing, setEditing] = useState<ReimbursementTypeDTO | null>(null);
   const [adding, setAdding] = useState(false);
 
   const reload = () =>
     getReimbursementTypes()
-      .then(setTypes)
-      .catch((error: Error) => flash(error.message))
+      .then((t) => { setTypes(t); setFailed(false); })
+      .catch((error: Error) => { setFailed(true); flash(error.message); })
       .finally(() => setLoading(false));
 
   useEffect(() => {
@@ -68,7 +70,7 @@ export function ReimbursementTypes() {
 
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-          {loading ? 'Loading…' : `${types.length} type${types.length === 1 ? '' : 's'}`}
+          {loading ? <Spinner /> : failed && types.length === 0 ? '' : `${types.length} type${types.length === 1 ? '' : 's'}`}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 9 }}>
           <button style={ghostBtn} onClick={download} disabled={types.length === 0}>
@@ -123,7 +125,10 @@ export function ReimbursementTypes() {
                 </Td>
               </tr>
             ))}
-            {!loading && types.length === 0 && (
+            {(loading || (failed && types.length === 0)) && (
+              <tr><td colSpan={6} style={{ padding: 0 }}><ListPending state={loading ? 'loading' : 'error'} onRetry={() => { setLoading(true); void reload(); }} rows={4} cols={6} avatar={false} rowHeight={52} /></td></tr>
+            )}
+            {!loading && !failed && types.length === 0 && (
               <tr><td colSpan={6}><EmptyRow text="No reimbursement types yet — add one to let people claim." /></td></tr>
             )}
           </tbody>

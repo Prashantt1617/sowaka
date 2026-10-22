@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
-import { Card, EmptyRow } from '../ui';
+import { Card, EmptyRow, LoadError, Skeleton, SkeletonFrame, SkeletonLines } from '../ui';
+import { useLoad } from '../useLoad';
 import { getPayrollDashboard, type CostRange, type PayrollDashboardReport } from '../../services/payroll';
 import { OPEN_REPORT_KEY } from './PayrollReports';
 
@@ -38,27 +39,24 @@ export function PayrollDashboard() {
   const s = useStore();
   const [range, setRange] = useState<CostRange>('this_year');
   const [includeDrafts, setIncludeDrafts] = useState(false);
-  const [data, setData] = useState<PayrollDashboardReport | null | undefined>(undefined);
-
+  // Keyed by range and drafts: another choice shows skeletons in the cards
+  // (the controls stay put), never the last choice's figures.
+  const report = useLoad(() => getPayrollDashboard(range, includeDrafts), [range, includeDrafts]);
+  const data = report.data;
   useEffect(() => {
-    let live = true;
-    setData(undefined);
-    void getPayrollDashboard(range, includeDrafts)
-      .then((d) => { if (live) setData(d); })
-      .catch((e) => { if (live) { setData(null); s.flash(e instanceof ApiError ? e.message : 'Could not load the payroll dashboard', 'error'); } });
-    return () => { live = false; };
+    if (report.state === 'error') s.flash(report.error instanceof ApiError ? report.error.message : 'Could not load the payroll dashboard', 'error');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, includeDrafts]);
+  }, [report.state]);
 
   const openReport = (key: string) => {
     try { localStorage.setItem(OPEN_REPORT_KEY, key); } catch { /* storage blocked: reports opens on its first report */ }
     s.setView('payrollreports');
   };
 
-  if (data === undefined) return <Card><EmptyRow text="Loading…" /></Card>;
-  if (data === null) return <Card><EmptyRow text="The payroll dashboard could not load." /></Card>;
-  const run = data.currentRun;
-  const st = STATUS[run.status] ?? STATUS.draft;
+  if (report.state === 'error') return <Card><LoadError text="The payroll dashboard could not load." onRetry={report.retry} /></Card>;
+  const run = data?.currentRun;
+  const st = run ? STATUS[run.status] ?? STATUS.draft : STATUS.draft;
+  const pending = <SkeletonLines lines={4} style={{ padding: '16px 22px' }} />;
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
@@ -69,7 +67,7 @@ export function PayrollDashboard() {
       </div>
 
       <Card style={{ padding: '18px 22px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap' }}>
+        {!run ? <SkeletonLines lines={2} /> : <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap' }}>
           <div style={{ minWidth: 200, flex: 1 }}>
             <div style={label}>Pay run</div>
             <div style={{ fontSize: 17, fontWeight: 600, marginTop: 4 }}>{monthLabel(run.period)} <span style={{ ...pill, background: st.bg, color: st.fg }}>{st.label}</span></div>
@@ -78,13 +76,13 @@ export function PayrollDashboard() {
           <Stat title="Net pay" value={run.status === 'not_started' ? '—' : money(run.netPayPaise)} />
           <Stat title="Pay date" value={dateLabel(run.payDate)} />
           <button onClick={() => s.setView('payruns')} style={primary}>{run.status === 'not_started' ? 'Create run' : 'Open run'}</button>
-        </div>
+        </div>}
       </Card>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 18 }}>
         <Card>
-          <CardHead title="Benefits and deductions" right={data.dues ? `${monthLabel(data.dues.period)}${data.dues.status === 'approved' || data.dues.status === 'paid' ? '' : ' · draft'}` : ''} />
-          {!data.dues ? <EmptyRow text="No finished run yet." /> : (
+          <CardHead title="Benefits and deductions" right={data?.dues ? `${monthLabel(data.dues.period)}${data.dues.status === 'approved' || data.dues.status === 'paid' ? '' : ' · draft'}` : ''} />
+          {!data ? pending : !data.dues ? <EmptyRow text="No finished run yet." /> : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 0 }}>
               <Due title="EPF" sub="Employee + employer, EPS, EDLI, admin" value={data.dues.epfPaise} onView={() => openReport('liability')} />
               <Due title="ESI" sub="Employee + employer" value={data.dues.esiPaise} onView={() => openReport('liability')} />
@@ -97,24 +95,24 @@ export function PayrollDashboard() {
         <div style={{ display: 'grid', gap: 18 }}>
           <Card>
             <CardHead title="Employees" />
-            <div style={{ padding: '6px 22px 16px' }}>
+            {!data ? pending : <div style={{ padding: '6px 22px 16px' }}>
               <Row label="Active employees" value={data.people.active} />
               <Row label="On payroll (salary assigned)" value={data.people.withSalary} />
               <Row label="No salary assigned" value={data.people.noSalary} warn={data.people.noSalary > 0} />
               <Row label="On payroll, no bank account" value={data.people.noBankAccount} warn={data.people.noBankAccount > 0} />
               <Row label="On payroll, no PAN" value={data.people.noPan} warn={data.people.noPan > 0} />
-            </div>
+            </div>}
           </Card>
           <Card>
             <CardHead title="To do" />
-            <div style={{ padding: '6px 22px 16px' }}>
+            {!data ? pending : <div style={{ padding: '6px 22px 16px' }}>
               {data.todo.pendingClaims + data.todo.runsAwaitingApproval === 0 ? <div style={{ color: 'var(--ink-3)', fontSize: 13, padding: '8px 0' }}>Nothing waiting.</div> : (
                 <>
                   {data.todo.runsAwaitingApproval > 0 && <Row label="Runs awaiting approval" value={data.todo.runsAwaitingApproval} onClick={() => s.setView('payruns')} />}
                   {data.todo.pendingClaims > 0 && <Row label="Reimbursement claims to review" value={data.todo.pendingClaims} onClick={() => s.setView('reimbursements')} />}
                 </>
               )}
-            </div>
+            </div>}
           </Card>
         </div>
       </div>
@@ -125,10 +123,14 @@ export function PayrollDashboard() {
             {RANGES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
           </select>
         } />
-        <CostChart months={data.cost.months} />
+        {!data ? (
+          <SkeletonFrame style={{ display: 'flex', alignItems: 'flex-end', gap: 28, height: 250, padding: '24px 40px 30px 80px' }}>
+            {[52, 70, 38, 84, 60, 46, 76, 58, 66, 42, 72, 50].map((h, i) => <Skeleton key={i} h={0} r={4} style={{ height: `${h}%`, flex: 1, width: 'auto' }} />)}
+          </SkeletonFrame>
+        ) : <CostChart months={data.cost.months} />}
         <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', padding: '0 22px 18px', fontSize: 12.5, color: 'var(--ink-2)' }}>
           {SERIES.map((x) => <span key={x.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 11, height: 11, borderRadius: 3, background: x.color }} />{x.label}</span>)}
-          <span style={{ color: 'var(--ink-4)' }}>{data.cost.label} · finished runs{includeDrafts ? ' and drafts' : ''}</span>
+          {data && <span style={{ color: 'var(--ink-4)' }}>{data.cost.label} · finished runs{includeDrafts ? ' and drafts' : ''}</span>}
         </div>
       </Card>
     </div>

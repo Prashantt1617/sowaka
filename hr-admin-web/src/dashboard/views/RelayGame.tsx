@@ -17,7 +17,8 @@ import {
 } from '../../services/relay';
 import { ApiError } from '../../services/http';
 import { useStore } from '../store';
-import { Card, EmptyRow, Pill, SummaryCard } from '../ui';
+import { Card, EmptyRow, LoadError, Pill, SkeletonPage, SummaryCard } from '../ui';
+import type { LoadState } from '../ui';
 
 const button = (bg: string, color = 'var(--on-accent)') => ({
   border: 'none',
@@ -92,12 +93,16 @@ export function RelayGame() {
 
   const event = events.find((item) => item.id === eventId) ?? null;
 
+  // Until the events have loaded once: a skeleton, then Retry if it failed.
+  const [state, setState] = useState<LoadState>('loading');
   const load = async () => {
     try {
       const list = await listRelayEvents();
       setEvents(list);
       setEventId((current) => current || list[0]?.id || '');
+      setState('ready');
     } catch (error) {
+      setState((st) => (st === 'ready' ? st : 'error'));
       flash(error instanceof ApiError ? error.message : 'Could not load relay events');
     }
   };
@@ -209,7 +214,11 @@ export function RelayGame() {
         </button>
       </div>
 
-      {!event ? (
+      {state !== 'ready' ? (
+        state === 'error'
+          ? <Card><LoadError onRetry={() => { setState('loading'); void load(); }} /></Card>
+          : <SkeletonPage cards={4} rows={3} cols={2} avatar={false} />
+      ) : !event ? (
         <Card>
           <EmptyRow text="No relay event yet — create one to import teams into." />
         </Card>

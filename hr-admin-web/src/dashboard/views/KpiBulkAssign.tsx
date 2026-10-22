@@ -15,7 +15,7 @@
 // choice rather than a side effect.
 import { useState } from 'react';
 import { useStore } from '../store';
-import { Card } from '../ui';
+import { Card, LoadError, Spinner } from '../ui';
 import {
   assignTemplateToUsers, listKpiParameters, listKpiTemplates, resolveKpiAudience,
 } from '../../services/kpi';
@@ -76,7 +76,8 @@ export function KpiBulkAssign() {
 
   // The roster arrives with the store, and this cluster is slow — until it
   // lands, an empty match is "not loaded yet", not "nobody qualifies".
-  const rosterReady = s.loaded && s.emps.length > 0;
+  const rosterState = s.listState('employees');
+  const rosterReady = rosterState === 'ready';
   const preview = matchEmployees(s.emps, target);
   const activeFacets = FACETS.filter((f) => ruleKeys.includes(f.key));
   const unusedFacets = FACETS.filter((f) => !ruleKeys.includes(f.key));
@@ -289,7 +290,9 @@ export function KpiBulkAssign() {
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
             <div style={panelTitle}>Who are you assigning to?</div>
             <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 500, color: !rosterReady ? 'var(--ink-4)' : preview.length ? 'var(--ok)' : 'var(--bad)' }}>
-              {rosterReady ? `${preview.length} of ${s.emps.length} employees match` : 'Loading employees…'}
+              {rosterReady ? `${preview.length} of ${s.emps.length} employees match`
+                : rosterState === 'error' ? <LoadError compact text="Employees could not be loaded." onRetry={() => void s.reload()} />
+                : <Spinner label="Loading employees…" />}
             </div>
           </div>
           <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 14, lineHeight: 1.5 }}>
@@ -357,7 +360,7 @@ export function KpiBulkAssign() {
               title={blockedReason('people') || undefined}
               style={{ ...primaryBtn, opacity: busy || blockedReason('people') ? 0.5 : 1 }}
             >
-              {busy ? 'Finding…' : `Continue with ${preview.length}`}
+              {busy ? 'Finding…' : rosterReady ? `Continue with ${preview.length}` : 'Continue'}
             </button>
           </div>
         </div>
