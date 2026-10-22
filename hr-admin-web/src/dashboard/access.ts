@@ -10,7 +10,9 @@ export type AccessKey = View | typeof SALARY_DETAILS;
 /** Every tab, unless HR limited them. People › Accesses is an admin's alone; Support desk needs a Support role. */
 export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boolean {
   if (!user?.dashboardAccess) return false;
-  if (view === 'usersroles') return user.dashboardAdmin === true;
+  if (view === 'usersroles' || view === 'employeeimport') return user.dashboardAdmin === true;
+  // People › Tasks goes with Employees.
+  if (view === 'peopletasks') return canOpen(user, 'employees');
   // Support desk is a role, never a tab: full access and Admin don't include it.
   if (view === 'support') return user.supportRole === 'head' || user.supportRole === 'staff';
   if (user.dashboardAdmin === true || !Array.isArray(user.dashboardTabs)) return true;

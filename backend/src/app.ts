@@ -32,6 +32,8 @@ app.use(
 // A month of attendance for a large org is over a megabyte of JSON and
 // compresses ten to one; every other response is small enough not to notice.
 app.use(compression());
+// An employee import carries the whole sheet (up to 2,000 rows).
+app.use('/admin/employees/import', express.json({ limit: '5mb' }));
 app.use(express.json());
 morgan.token('request-id', (req) => (req as Request).requestId ?? '-');
 // A Scribble page reloads itself with a credential in its query string

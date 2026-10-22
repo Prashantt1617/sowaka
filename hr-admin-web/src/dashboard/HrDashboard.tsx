@@ -12,6 +12,8 @@ import { AttendanceCorrections } from './views/AttendanceCorrections';
 import { Feedback } from './views/Feedback';
 import { Reimbursements } from './views/Reimbursements';
 import { Employees } from './views/Employees';
+import { EmployeeImport } from './views/EmployeeImport';
+import { PeopleTasks } from './views/PeopleTasks';
 import { Placeholder } from './views/Placeholder';
 import { Drawers } from './drawers';
 import { rememberBrandOrg } from './brand';
@@ -74,6 +76,10 @@ function CurrentView() {
       return <Designations />;
     case 'employees':
       return <Employees />;
+    case 'employeeimport':
+      return <EmployeeImport />;
+    case 'peopletasks':
+      return <PeopleTasks />;
     case 'attendancereport':
       return <AttendanceReport />;
     case 'orgchart':

@@ -343,6 +343,45 @@ export type EmployeeDetailsInput = {
 export const updateEmployeeDetails = (userId: string, input: EmployeeDetailsInput) =>
   api<{ employee: { userId: string; changed: string[] } }>(`/admin/employees/${userId}`, { method: 'PATCH', body: input });
 
+// —— People › Import ——
+export type EmployeeImportChange = { field: string; label: string; from: string; to: string; kind: 'changed' | 'added' | 'removed' };
+export type EmployeeImportPreview = {
+  importId: string;
+  columns: { field: string; label: string; from: string }[];
+  emptyRemoves: boolean;
+  notes: string[];
+  fileColumns: { header: string; key: string; field: string; sample: string }[];
+  fieldChoices: { field: string; label: string }[];
+  ignoredColumns: string[];
+  newEmployees: { row: number; values: Record<string, string> }[];
+  updates: { row: number; userId: string; name: string; employeeId: string; changes: EmployeeImportChange[] }[];
+  unchanged: number;
+  errors: { row: number; message: string }[];
+  skippedCells: { row: number; name: string; label: string; value: string; message: string; field: string; column: string; suggested?: string[] }[];
+  pickLists: Partial<Record<'manager' | 'salaryTemplate' | 'paidDaysTemplate' | 'shiftTemplate' | 'kpiTemplate', { value: string; label: string }[]>>;
+  rows: { row: number; name: string; employeeId: string; status: 'new' | 'updated' | 'unchanged' | 'not imported'; detail: string }[];
+  accountLimit: { max: number | null; used: number; afterImport: number };
+};
+export type EmployeeImportResult = { created: number; updated: number; failed: { row: number; message: string }[] };
+export type EmployeeImportColumn = { field: string; header: string; aliases: string[]; hint: string };
+export const getEmployeeImportTemplate = () => api<{ accepted: EmployeeImportColumn[]; headers: string[]; rows: string[][] }>('/admin/employees/import/template');
+export const previewEmployeeImport = (fileName: string, rows: Record<string, string>[], opts: { emptyRemoves?: boolean; mapping?: Record<string, string> } = {}) =>
+  api<{ preview: EmployeeImportPreview }>('/admin/employees/import/preview', { method: 'POST', body: { fileName, rows, ...opts } }).then((r) => r.preview);
+/** Applies a previewed import, leaving out declined changes and skipped rows. */
+export const applyEmployeeImport = (importId: string, choices: { declined: { row: number; field: string }[]; skipRows: number[] } = { declined: [], skipRows: [] }) =>
+  api<{ result: EmployeeImportResult }>(`/admin/employees/import/${importId}/apply`, { method: 'POST', body: choices }).then((r) => r.result);
+export const cancelEmployeeImport = (importId: string) => api(`/admin/employees/import/${importId}/cancel`, { method: 'POST' });
+
+export type PeopleTaskKey = 'details' | 'shift' | 'kpi' | 'salary' | 'bank';
+export type PeopleTasksDTO = {
+  period: string;
+  payroll: boolean;
+  total: number;
+  people: { userId: string; name: string; employeeId: string; designation: string; department: string; joiningDate: string; tasks: { key: PeopleTaskKey; label: string; detail: string }[] }[];
+};
+/** People › Tasks: everyone whose setup is incomplete, worked out fresh each time. */
+export const getPeopleTasks = () => api<PeopleTasksDTO & { success: boolean }>('/admin/employees/tasks');
+
 /** Delete an employee for good (dashboard admins); `confirmName` is their name, typed. */
 export const deleteEmployee = (userId: string, confirmName: string) =>
   api<{ deleted: boolean }>(`/admin/employees/${userId}`, { method: 'DELETE', body: { confirmName } });

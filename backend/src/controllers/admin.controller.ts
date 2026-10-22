@@ -1,4 +1,6 @@
+import { peopleTasks } from '../services/peopleTasks.service';
 import { NextFunction, Request, Response } from 'express';
+import { applyImport, cancelImport, importTemplate, previewImport } from '../services/employeeImport.service';
 import { attendanceReport, employeeCalendar } from '../services/attendance-report.service';
 import { clearAttendanceOverride, setAttendanceOverride } from '../services/attendance-override.service';
 import { listDashboardAccesses, setDashboardAccess } from '../services/dashboard-access.service';
@@ -307,6 +309,22 @@ export async function updateOvertimeEligibility(req: Request, res: Response, nex
 }
 
 /** Edits an employee's profile details: someone given the right, for themselves and their reports. */
+export async function employeeTasks(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await peopleTasks(adminUserId(req))) }); } catch (error) { next(error); }
+}
+export async function employeeImportTemplate(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await importTemplate(adminUserId(req))) }); } catch (error) { next(error); }
+}
+export async function employeeImportPreview(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, preview: await previewImport(adminUserId(req), req.body ?? {}) }); } catch (error) { next(error); }
+}
+export async function employeeImportApply(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, result: await applyImport(adminUserId(req), String(req.params.importId ?? ''), req.body ?? {}) }); } catch (error) { next(error); }
+}
+export async function employeeImportCancel(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await cancelImport(adminUserId(req), String(req.params.importId ?? ''))) }); } catch (error) { next(error); }
+}
+
 export async function deleteEmployee(req: Request, res: Response, next: NextFunction) {
   try {
     const result = await deleteEmployeeForAdmin(adminUserId(req), String(req.params.userId ?? ''), (req.body ?? {}).confirmName);

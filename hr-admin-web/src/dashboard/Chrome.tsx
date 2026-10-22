@@ -29,6 +29,8 @@ const PEOPLE: NavItem[] = [
   { key: 'departments', label: 'Departments' },
   { key: 'designations', label: 'Designations' },
   { key: 'employees', label: 'Employees' },
+  { key: 'employeeimport', label: 'Import' },
+  { key: 'peopletasks', label: 'Tasks' },
   { key: 'orgchart', label: 'Org chart' },
   { key: 'usersroles', label: 'Accesses' },
 ];

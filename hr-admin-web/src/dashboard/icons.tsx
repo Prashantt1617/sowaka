@@ -258,6 +258,18 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M14 3v5h5M8 13l2.5 2.5L16 10" />
     </svg>
   ),
+  peopletasks: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="4" y="4" width="16" height="17" rx="2" />
+      <path d="M8 10l2 2 4-4M8 16h8" />
+    </svg>
+  ),
+  employeeimport: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M12 3v12M7 10l5 5 5-5" />
+      <path d="M4 17v2.5A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5V17" />
+    </svg>
+  ),
   employees: (
     <svg {...base(18, 'currentColor')}>
       <circle cx="9" cy="8" r="3.2" />

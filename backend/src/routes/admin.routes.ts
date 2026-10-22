@@ -31,6 +31,11 @@ import {
   updateOrganisationProfileHandler,
   updateEmployeeDetails,
   deleteEmployee,
+  employeeImportTemplate,
+  employeeTasks,
+  employeeImportPreview,
+  employeeImportApply,
+  employeeImportCancel,
   updateOvertimeEligibility,
 } from '../controllers/admin.controller';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -81,6 +86,12 @@ adminRouter.post('/offices', saveOfficeHandler);
 adminRouter.patch('/offices/:officeId', saveOfficeHandler);
 adminRouter.delete('/offices/:officeId', deleteOfficeHandler);
 adminRouter.get('/feedback', listFeedback);
+// People › Import: preview a sheet of employee details, then apply it once HR approves (dashboard admins).
+adminRouter.get('/employees/tasks', employeeTasks);
+adminRouter.get('/employees/import/template', employeeImportTemplate);
+adminRouter.post('/employees/import/preview', employeeImportPreview);
+adminRouter.post('/employees/import/:importId/apply', employeeImportApply);
+adminRouter.post('/employees/import/:importId/cancel', employeeImportCancel);
 adminRouter.get('/employees', listEmployees);
 adminRouter.post('/employees', createEmployee);
 adminRouter.get('/account-limit', accountLimit);

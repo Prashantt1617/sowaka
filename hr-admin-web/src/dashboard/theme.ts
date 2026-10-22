@@ -35,6 +35,8 @@ export type View =
   | 'departments'
   | 'designations'
   | 'employees'
+  | 'employeeimport'
+  | 'peopletasks'
   | 'orgchart'
   | 'attendancereport'
   | 'usersroles'
@@ -148,6 +150,8 @@ export const TITLES: Record<View, [string, string]> = {
   departments: ['Departments', 'People'],
   designations: ['Designations', 'People'],
   employees: ['Employees', 'People'],
+  employeeimport: ['Import employees', 'People · update details from a sheet, approved before it saves'],
+  peopletasks: ['Tasks', 'People · who still needs a template, salary, bank details or basic details'],
   orgchart: ['Org chart', 'People'],
   attendancereport: ['Attendance report', 'Reports'],
   usersroles: ['Accesses', 'People · users, roles and permissions'],

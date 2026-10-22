@@ -120,11 +120,34 @@ const showDate = (iso: string) => {
 };
 
 // —— Component ——————————————————————————————————————————————————————————
-export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () => void; onOpen?: (e: Emp) => void }) {
+export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLabel = '← Back to employees' }: {
+  emp: Emp;
+  onBack: () => void;
+  onOpen?: (e: Emp) => void;
+  /** Open on this tab, and scroll to and highlight this section (People › Tasks sends people straight to what's missing). */
+  initialTab?: ProfileTab;
+  focus?: 'details' | 'shift' | 'kpi' | 'salary' | 'bank';
+  backLabel?: string;
+}) {
   const s = useStore();
   const d = derive(emp);
   const bal = leaveBalance(d.seed);
-  const [tab, setTab] = useState<ProfileTab>('profile');
+  const [tab, setTab] = useState<ProfileTab>(initialTab ?? 'profile');
+  // The section to bring into view once it has loaded (some load their own data).
+  useEffect(() => {
+    if (!focus) return;
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      const el = document.querySelector<HTMLElement>(`[data-focus="${focus}"]`);
+      if (el || ++tries > 30) window.clearInterval(timer);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.style.transition = 'box-shadow .3s'; el.style.borderRadius = '16px';
+      el.style.boxShadow = '0 0 0 3px #0571A6';
+      window.setTimeout(() => { el.style.boxShadow = 'none'; }, 2600);
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, [focus, emp.id]);
   // What someone earns is its own access, apart from Employees.
   const { user } = useAuth();
   const [deleting, setDeleting] = useState(false);
@@ -158,7 +181,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
   return (
     <div style={{ animation: 'fade .3s ease both', maxWidth: 1180 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <button onClick={onBack} style={backBtn}>← Back to employees</button>
+        <button onClick={onBack} style={backBtn}>{backLabel}</button>
         {user?.dashboardAdmin === true && user.id !== emp.id && (
           <button type="button" onClick={() => setDeleting(true)} style={{ background: '#fff', color: '#C4382E', border: '1px solid #F0C9C4', padding: '8px 14px', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Delete employee</button>
         )}
@@ -203,7 +226,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
       {tab === 'profile' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 18, alignItems: 'start', maxWidth: 820 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <Section title="Basic details" action={canEditDetails ? <button type="button" onClick={() => setEditingDetails(true)} style={editBtn}>Edit details</button> : undefined}>
+            <div data-focus="details"><Section title="Basic details" action={canEditDetails ? <button type="button" onClick={() => setEditingDetails(true)} style={editBtn}>Edit details</button> : undefined}>
             <Grid>
               <Row label="First name" value={d.firstName} />
               <Row label="Middle name" value={d.middleName || '—'} />
@@ -221,11 +244,11 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               <ManagerRow emp={emp} />
               <Row label="Director / substantial interest" value={emp.isDirector ? 'Yes' : 'No'} />
             </Grid>
-          </Section>
+          </Section></div>
             {canEditDetails && (
-              <Section title="Shift template">
+              <div data-focus="shift"><Section title="Shift template">
                 <ShiftPicker emp={emp} onChanged={() => getEmployeeCalendar(emp.id, thisMonth()).then(setCurrentMonth).catch(() => undefined)} />
-              </Section>
+              </Section></div>
             )}
             {/* Only when something is filed; an empty box said nothing useful. */}
             {emp.documents.length > 0 && (
@@ -252,7 +275,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               </div>
           </Section>
             )}
-            <PaymentDetails userId={emp.id} />
+            <div data-focus="bank"><PaymentDetails userId={emp.id} /></div>
           </div>
         </div>
       )}
@@ -337,7 +360,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
           </Section>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <Section title="KPIs">
+            <div data-focus="kpi"><Section title="KPIs">
             <EmployeeKpiPanel
               userId={emp.id}
               userName={emp.name}
@@ -347,7 +370,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
               // Someone with the edit right sets KPIs for the people below them, not for themselves.
               readOnly={user?.canEditEmployees === true && emp.id === user.id ? 'You set KPIs for the people who report to you, not for yourself.' : undefined}
             />
-          </Section>
+          </Section></div>
           </div>
         </div>
       )}
@@ -355,7 +378,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
       {tab === 'calendar' && <EmployeeCalendar userId={emp.id} initial={currentMonth} onChanged={setCurrentMonth} />}
       {tab === 'salary' && seesSalary && (
         <div>
-          <EmployeeSalary userId={emp.id} name={emp.name} />
+          <div data-focus="salary"><EmployeeSalary userId={emp.id} name={emp.name} /></div>
           <IncomeTaxCard userId={emp.id} />
           <div style={{ marginTop: 22 }}><SalarySlips userId={emp.id} /></div>
         </div>
@@ -444,7 +467,7 @@ export function EmployeeProfile({ emp, onBack, onOpen }: { emp: Emp; onBack: () 
   );
 }
 
-type ProfileTab = 'profile' | 'performance' | 'calendar' | 'requests' | 'salary' | 'orgchart';
+export type ProfileTab = 'profile' | 'performance' | 'calendar' | 'requests' | 'salary' | 'orgchart';
 
 // —— Calendar: one month, every day named ————————————————————————————————
 const CAL_TONE: Record<CalendarDayStatus, { bg: string; fg: string; label: string }> = {
