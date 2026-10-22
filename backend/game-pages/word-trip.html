@@ -79,7 +79,7 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:800;font-size:2.2rem;
 .target.done b::after{content:" ✓"}
 
 /* The play area: the prototype's wall of found words, the tray the word is built in, and the letters as chunky cream keys, then Delete, Shuffle
-   and Enter under the thumbs. Each stop repaints the accent in its own hue (--h). */
+   and Skip under the thumbs. Each stop repaints the accent in its own hue (--h). */
 .stage{position:relative}
 .play{display:flex;flex-direction:column;gap:10px}
 .wallhead{display:flex;justify-content:space-between;gap:10px;padding:0 4px 6px;font-family:var(--small);font-size:.8rem;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -114,7 +114,7 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:800;font-size:2.2rem;
 .tiles .disc{position:absolute;top:2px;left:50%;width:var(--W);height:var(--W);margin-left:calc(var(--W) / -2);border-radius:50%;z-index:1;pointer-events:none;
   background:radial-gradient(circle at 50% 42%,var(--panel2),var(--panel) 72%);border:2px solid var(--line);box-shadow:0 5px 0 var(--deep),inset 0 0 0 7px rgba(11,9,24,.18)}
 .tiles .wheel{position:relative;z-index:3;width:var(--W);height:var(--W);flex-shrink:0}
-/* A short screen (a phone with the app's bar over the page): a shorter wall and tray, so the wheel keeps its size above Delete, Shuffle and Enter. */
+/* A short screen (a phone with the app's bar over the page): a shorter wall and tray, so the wheel keeps its size above Delete, Shuffle and Skip. */
 @media (max-height:780px){.wall{height:76px}.tray{height:52px}}
 /* The line a swipe draws from letter to letter. */
 .trail{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:2}
@@ -130,10 +130,9 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:800;font-size:2.2rem;
 .wheel .tile.used,.wheel .tile.used:active{background:var(--accent);color:var(--accent-ink);border:0;box-shadow:0 2px 0 var(--accent-deep),0 0 0 4px hsl(var(--h) 95% 60% / .28);transform:translateY(3px)}
 /* The gap between letters belongs to the nearer letter (tileAt): a thumb landing just off a tile still gets it. */
 .wheel .tile::before{content:none}
-/* Under the letters: Delete, Shuffle and Enter, and a line for what a word did. */
-.keys{display:grid;grid-template-columns:1fr 1fr 1fr 1.35fr;gap:7px}
+/* Under the letters: Delete, Shuffle and Skip, and a line for what a word did. There is no Enter: lifting the finger plays a word. */
+.keys{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
 .keys .btn{min-height:48px;font-size:1.1rem;border-radius:14px}
-.keys .btn.go{font-size:1.35rem;min-height:48px}
 .status{margin:-6px 0 0;min-height:1.35em;text-align:center;font-family:var(--small);font-weight:600;font-size:.88rem;line-height:1.35;color:var(--muted);text-wrap:balance}
 .status.bad{color:var(--bad)}
 .btn:focus-visible,.pill:focus-visible,.link:focus-visible,.mini:focus-visible,.person:focus-visible,.crow:focus-visible,.dl:focus-visible,.sx:focus-visible,.tile:focus-visible,.tray button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
@@ -402,7 +401,6 @@ html.app .howto{padding-top:20px}
     <button class="btn" id="del" type="button">Delete</button>
     <button class="btn" id="shuf" type="button">Shuffle</button>
     <button class="btn skip" id="skip" type="button" aria-label="Skip these letters for 100 points" disabled><span>Skip</span><small>−100</small></button>
-    <button class="btn go" id="enter" type="button">Enter</button>
   </div>
   <p class="status" id="status" aria-live="polite"></p>
   <div class="foot" id="foot" hidden><span id="best"></span></div>
@@ -413,7 +411,7 @@ html.app .howto{padding-top:20px}
       <p class="kick">1 minute · on your own or against a colleague</p>
       <h2 id="howh">How to play</h2>
       <ol class="steps">
-        <li><i>1</i><span><b>Swipe a word</b>Slide through the letters, then lift. Three letters or more. Or tap them, then Enter.</span></li>
+        <li><i>1</i><span><b>Swipe a word</b>Slide through the letters, then lift. Three letters or more.</span></li>
         <li><i>2</i><span><b>Undo a letter</b>Slide back to the one before and rest there.</span></li>
         <li><i>3</i><span><b>Go long, be quick</b>Long words pay, and 5 letters or more add seconds. Words within 8 s combo, up to ×3.</span></li>
         <li><i>4</i><span><b>Use every letter</b>That word takes you to the next stop. Stuck? Skip to the next one for 100 points.</span></li>
@@ -862,7 +860,7 @@ function setTileUsed(id,on){ const b=rack.tiles.get(String(id)); if(!b)return; b
 function trayLetter(t,j){ const b=el('button','',t.ch); b.type='button'; b.tabIndex=-1; b.dataset.j=String(j); b.setAttribute('aria-label','Remove '+t.ch.toUpperCase()); return b; }
 function renderTray(cls){ const e=$('tray'); e.className='tray'+(cls?' '+cls:''); e.innerHTML=''; tray.forEach((t,j)=>e.appendChild(trayLetter(t,j))); }
 function renderWall(){ const n=found.filter(f=>!f.rare).length; $('wstop').textContent='Stop '+(gi+1); $('wcount').textContent=n+' of '+cur.words.length+' words'; }
-function renderKeys(){ const busy=mode!=='play'||locked; $('del').disabled=busy||!tray.length; $('shuf').disabled=busy; $('enter').disabled=busy;
+function renderKeys(){ const busy=mode!=='play'||locked; $('del').disabled=busy||!tray.length; $('shuf').disabled=busy;
   const sk=$('skip'), short=score<SKIP_COST; sk.disabled=busy||short; sk.title=short?'Skipping costs '+SKIP_COST+' points: find a word first':'Skip these letters for '+SKIP_COST+' points'; }
 function render(pop){ if(!cur)return; renderTiles(pop); renderTray(); renderWall(); renderKeys(); }
 /* The next stop of the round, in its own hue. */
@@ -907,8 +905,6 @@ function tapTile(id){ if(!canPlay()||tray.some(t=>t.id===id))return; const t=ord
   tray.push(t); setTileUsed(id,true); const e=$('tray');
   if(e.className==='tray'&&e.children.length===tray.length-1)e.appendChild(trayLetter(t,tray.length-1)); else renderTray();
   if($('status').textContent)say(''); renderKeys(); }
-/* A letter tap makes no sound and no buzz: the buzz is for a correct word, and the sounds for words and the clock. */
-function typeLetter(ch){ if(!canPlay())return; const used=usedIds(), t=order.find(o=>o.ch===ch&&!used.has(o.id)); if(t)tapTile(t.id); else sfx.untap(); }
 function removeAt(j){ if(!canPlay()||j<0||j>=tray.length)return; const [t]=tray.splice(j,1); setTileUsed(t.id,false); renderTray(); renderKeys(); }
 function del(){ if(!canPlay()||!tray.length)return; const t=tray.pop(); setTileUsed(t.id,false); const e=$('tray'); if(e.className==='tray'&&e.lastElementChild)e.removeChild(e.lastElementChild); else renderTray(); renderKeys(); }
 /* Shuffle: the same letters to new places on the wheel (at least one of them moves), gliding there. */
@@ -1317,12 +1313,7 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&mode==='
 /* ---------- input ---------- */
 $('del').onclick=()=>del();
 $('shuf').onclick=()=>shuffle();
-$('enter').onclick=()=>enter();
 $('skip').onclick=()=>skip();
-/* A keyboard plays too: letters, Enter, Backspace, and Space to shuffle. */
-document.addEventListener('keydown',e=>{ if(mode!=='play'||!$('sheet').hidden||!$('howto').hidden||e.metaKey||e.ctrlKey||e.altKey)return;
-  if(e.key==='Enter'){ e.preventDefault(); enter(); } else if(e.key==='Backspace'){ e.preventDefault(); del(); } else if(e.key===' '){ e.preventDefault(); shuffle(); }
-  else if(/^[a-zA-Z]$/.test(e.key))typeLetter(e.key.toLowerCase()); });
 $('snd').onclick=()=>{ save.sound=!save.sound; store(); sndLabel(); if(save.sound){audioChecked=false;unlockAudio();sfx.go();} };
 $('help').onclick=()=>{ sfx.ui(); showHowTo(null); };
 $('howok').onclick=()=>{ sfx.ui(); save.seenHowTo=true; store(); const then=howThen; hideHowTo(); if(then)then(); };
