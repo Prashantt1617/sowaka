@@ -30,32 +30,32 @@ export function SuwiInsight({ kind, id, pending }: { kind: SuwiInsightKind; id: 
   const flagged = insight.checks.filter((c) => !c.ok);
   const shown = open || !insight.ok ? insight.checks : [];
   return (
-    <div
-      role="note"
-      aria-label="Suwi's checks on this request"
-      style={{ border: `1px solid ${insight.ok ? 'var(--ok-line)' : 'var(--warn-line)'}`, background: insight.ok ? 'var(--ok-bg)' : 'var(--warn-bg)', borderRadius: 12, padding: '12px 14px', marginBottom: 18 }}
-    >
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        style={{ all: 'unset', display: 'flex', alignItems: 'center', gap: 9, width: '100%', cursor: 'pointer' }}
-      >
-        <SuwiOrb size={18} />
-        <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: insight.ok ? 'var(--ok)' : 'var(--warn)' }}>
-          Suwi: {insight.ok ? 'looks fine to approve' : `check before deciding${flagged.length > 1 ? ` (${flagged.length} things)` : ''}`}
-        </span>
-        {insight.ok && <span style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400 }}>{open ? 'Hide' : 'Why?'}</span>}
-      </button>
-      {shown.length > 0 && (
-        <ul style={{ listStyle: 'none', margin: '9px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {shown.map((c) => (
-            <li key={c.text} style={{ display: 'flex', gap: 8, fontSize: 13, lineHeight: 1.45, color: 'var(--ink-2)', fontWeight: 400 }}>
-              <span aria-hidden style={{ flexShrink: 0, width: 14, fontWeight: 600, color: c.ok ? 'var(--ok)' : 'var(--warn)' }}>{c.ok ? '✓' : '!'}</span>
-              <span>{c.text}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <div role="note" aria-label="Suwi's checks on this request" className={insight.ok ? 'sora-ins ok' : 'sora-ins look'}>
+      <SuwiOrb size={20} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={shown.length > 0} className="sora-ins-h">
+          <b>Suwi: {insight.ok ? 'looks fine to approve' : `check before deciding${flagged.length > 1 ? ` (${flagged.length} things)` : ''}`}</b>
+          {insight.ok && <small>{open ? 'Hide' : 'Why?'}</small>}
+        </button>
+        {shown.length > 0 && (
+          <ul>
+            {shown.map((c) => (
+              <li key={c.text} className={c.ok ? 'g' : 'w'}>
+                <CheckMark ok={c.ok} />
+                <span>{c.text}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
+  );
+}
+
+function CheckMark({ ok }: { ok: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {ok ? <path d="m5 12.5 4.5 4.5L19 7.5" /> : <><path d="M12 4 2.8 19.5h18.4z" /><path d="M12 10v4M12 17h.01" /></>}
+    </svg>
   );
 }

@@ -4,7 +4,7 @@
 // itself is the record, this is only a nudge.
 import { useEffect, useState } from 'react';
 import { api } from '../../services/http';
-import { navIcon } from '../icons';
+import { SuwiOrb } from './SuwiPanel';
 
 type Risk = { key: string; level: 'high' | 'medium' | 'info'; count: number; text: string; people: string[] };
 type ImportRisk = { enabled: false } | { enabled: true; level: Risk['level']; summary: string; phrasedBy: 'rules' | 'model'; risks: Risk[] };
@@ -18,11 +18,10 @@ export function ImportRiskLine({ importId }: { importId: string }) {
   }, [importId]);
   if (!r || r.id !== importId || !r.data.enabled) return null;
   const d = r.data;
-  const tone = d.level === 'high' ? 'var(--bad)' : d.level === 'medium' ? 'var(--warn)' : 'var(--accent-ink)';
   return (
-    <div role="status" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 14px', borderRadius: 14, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', fontSize: 13, lineHeight: 1.5, color: 'var(--ink)' }}>
-      <span style={{ color: tone, display: 'inline-flex', marginTop: 1 }} aria-hidden>{navIcon.suwi}</span>
-      <span><strong style={{ color: 'var(--accent-ink)', fontWeight: 600 }}>Suwi:</strong> {d.summary}</span>
+    <div role="status" className={`suwi-risk ${d.level}`}>
+      <SuwiOrb size={20} />
+      <span><strong>Suwi:</strong> {d.summary}</span>
     </div>
   );
 }
