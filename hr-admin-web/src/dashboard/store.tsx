@@ -177,6 +177,9 @@ function useProvideStore() {
   const [empDrawerId, setEmpDrawerId] = useState<string | null>(null);
   // Suwi's panel, and a profile it asked to open (the Employees view picks it up).
   const [suwiOpen, setSuwiOpen] = useState(false);
+  // A question handed to the panel (a "Show me" from Suwi's notices); the panel asks it and clears it.
+  const [suwiAsk, setSuwiAsk] = useState<string | null>(null);
+  const askSuwiQuestion = (q: string) => { setSuwiAsk(q); setSuwiOpen(true); };
   const [profileRequest, setProfileRequest] = useState<{ userId: string; tab?: string } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState<UserForm>(emptyForm);
@@ -592,6 +595,7 @@ function useProvideStore() {
     goOvertimeRow, goReimbRow,
     // Suwi
     suwiOpen, setSuwiOpen, profileRequest, openProfile, clearProfileRequest: () => setProfileRequest(null),
+    suwiAsk, askSuwiQuestion, clearSuwiAsk: () => setSuwiAsk(null),
   };
 }
 

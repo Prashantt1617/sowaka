@@ -13,6 +13,7 @@ import { useSupportBadge } from './supportBadge';
 import type { ThemeMode } from './themeMode';
 import { applyThemeMode, readThemeMode } from './themeMode';
 import { SuwiOrb } from './suwi/SuwiPanel';
+import { useSuwiNotices } from './suwi/SuwiNoticed';
 
 export type NavItem = { key: View; label: string };
 
@@ -250,11 +251,13 @@ export function Sidebar() {
   const reviewsPending = fbMgrs.reduce((s, m) => s + (m.total - m.done), 0);
   // New tickets plus unread for a Support head; their own unread for staff.
   const supportCount = useSupportBadge(canOpen(user, 'support') ? user?.supportRole : null);
+  // What Suwi noticed, by view: Requests and Claims turn red, pages with no count of their own get one.
+  const suwiCounts = useSuwiNotices().counts;
 
   const badgeFor = (key: View): ReactNode => {
     switch (key) {
       case 'leave':
-        return <CountBadge value={leavesPending} />;
+        return <CountBadge value={leavesPending} danger={Boolean(suwiCounts.leave)} />;
       case 'overtime':
         return <CountBadge value={otPending} />;
       case 'attendance':
@@ -266,6 +269,7 @@ export function Sidebar() {
       case 'support':
         return <CountBadge value={supportCount} danger={supportCount > 0} />;
       default:
+        if (suwiCounts[key]) return <CountBadge value={suwiCounts[key]} />;
         return SOON[key] ? <SoonBadge /> : null;
     }
   };

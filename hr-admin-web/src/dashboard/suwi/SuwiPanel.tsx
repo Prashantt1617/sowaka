@@ -66,6 +66,13 @@ export function SuwiPanel() {
       setBusy(false);
     }
   };
+  // A question handed over from elsewhere (Suwi's notices): ask it as soon as the panel is open.
+  const pending = s.suwiAsk;
+  useEffect(() => {
+    if (!open || !pending || busy) return;
+    s.clearSuwiAsk();
+    void ask(pending);
+  }, [open, pending, busy]); // eslint-disable-line react-hooks/exhaustive-deps
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void ask(draft); } };
   const updateProposal = (p: SuwiProposal) => setMsgs((m) => m.map((x) => (x.role === 'assistant' ? { ...x, answer: { ...x.answer, proposals: x.answer.proposals.map((q) => (q.id === p.id ? p : q)) } } : x)));
   const openLink = (l: { view?: string; userId?: string; tab?: string }) => {
