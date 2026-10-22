@@ -6,6 +6,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Card, EmptyRow, Pill, StatusTabs } from '../ui';
 import { useStore } from '../store';
+import * as L from './look';
+import './look.css';
 import {
   getContentReports,
   removeReportedPost,
@@ -16,9 +18,9 @@ import {
 type Filter = 'open' | 'actioned' | 'dismissed' | 'all';
 
 const STATUS_TONE: Record<ContentReportDTO['status'], { bg: string; fg: string }> = {
-  open: { bg: 'var(--warn-bg)', fg: 'var(--warn)' },
-  actioned: { bg: 'var(--ok-bg)', fg: 'var(--ok)' },
-  dismissed: { bg: 'var(--surface-2)', fg: 'var(--ink-3)' },
+  open: L.TONES.warn,
+  actioned: L.TONES.ok,
+  dismissed: L.TONES.mute,
 };
 
 const STATUS_LABEL: Record<ContentReportDTO['status'], string> = {
@@ -85,8 +87,9 @@ export function ContentReports() {
   const openCount = (reports ?? []).filter((report) => report.status === 'open').length;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+    <Card style={{ padding: 20 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <StatusTabs<Filter>
           options={['open', 'actioned', 'dismissed', 'all']}
           active={filter}
@@ -101,11 +104,11 @@ export function ContentReports() {
       </div>
 
       {reports === null ? (
-        <Card>
+        <div>
           <EmptyRow text="Loading…" />
-        </Card>
+        </div>
       ) : reports.length === 0 ? (
-        <Card>
+        <div>
           <EmptyRow
             text={
               filter === 'open'
@@ -113,9 +116,10 @@ export function ContentReports() {
                 : 'Nothing here.'
             }
           />
-        </Card>
+        </div>
       ) : (
-        reports.map((report) => (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: 16, alignItems: 'start' }}>
+        {reports.map((report) => (
           <ReportCard
             key={report.id}
             report={report}
@@ -124,9 +128,11 @@ export function ContentReports() {
             onDismiss={() => close(report, 'dismissed')}
             onRemove={() => removePost(report)}
           />
-        ))
+        ))}
+        </div>
       )}
     </div>
+    </Card>
   );
 }
 
@@ -151,19 +157,19 @@ function ReportCard({
     !report.currentText.startsWith(report.excerpt.replace(/…$/, ''));
 
   return (
-    <Card>
-      <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <Pill label={report.reasonLabel} tone={{ bg: 'var(--bad-bg)', fg: 'var(--bad)' }} />
+    <div style={{ border: '1px solid var(--line)', borderRadius: 20, background: 'var(--surface)' }}>
+      <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={L.tag}>{report.reasonLabel}</span>
           <Pill label={STATUS_LABEL[report.status]} tone={STATUS_TONE[report.status]} />
-          <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>
+          <span style={{ fontSize: 12.5, color: 'var(--ink-3)', lineHeight: 1.5 }}>
             {report.target === 'comment' ? 'Comment' : report.postTag || 'Post'} by{' '}
-            <strong style={{ color: 'var(--ink)' }}>{report.authorName}</strong> · reported by{' '}
-            <strong style={{ color: 'var(--ink)' }}>{report.reporterName}</strong> ·{' '}
+            <strong style={{ color: 'var(--ink)', fontWeight: 500 }}>{report.authorName}</strong> · reported by{' '}
+            <strong style={{ color: 'var(--ink)', fontWeight: 500 }}>{report.reporterName}</strong> ·{' '}
             {formatWhen(report.createdAt)}
           </span>
           {!report.stillPresent && (
-            <Pill label="Already deleted" tone={{ bg: 'var(--surface-2)', fg: 'var(--ink-3)' }} />
+            <Pill label="Already deleted" tone={L.TONES.mute} />
           )}
         </div>
 
@@ -171,14 +177,14 @@ function ReportCard({
         {edited && <Quote label="What it says now" text={report.currentText} muted />}
 
         {report.note && (
-          <div style={{ fontSize: 13.5, color: 'var(--ink-2)' }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-2)' }}>
             <span style={{ color: 'var(--ink-3)' }}>Reporter added: </span>
             {report.note}
           </div>
         )}
 
         {report.status === 'open' ? (
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {report.stillPresent && report.target === 'post' && (
               <Button label="Remove post" tone="danger" busy={busy} onClick={onRemove} />
             )}
@@ -186,7 +192,7 @@ function ReportCard({
             <Button label="Dismiss" tone="plain" busy={busy} onClick={onDismiss} />
           </div>
         ) : (
-          <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
+          <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>
             {STATUS_LABEL[report.status]}
             {report.reviewedByName ? ` by ${report.reviewedByName}` : ''}
             {report.reviewedAt ? ` · ${formatWhen(report.reviewedAt)}` : ''}
@@ -194,7 +200,7 @@ function ReportCard({
           </div>
         )}
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -203,11 +209,11 @@ function Quote({ label, text, muted }: { label: string; text: string; muted?: bo
     <div>
       <div
         style={{
-          fontSize: 11.5,
-          fontWeight: 500,
-          letterSpacing: '.5px',
-          color: 'var(--ink-4)',
-          marginBottom: 5,
+          fontSize: 10.5,
+          fontWeight: 600,
+          letterSpacing: '.08em',
+          color: 'var(--hi)',
+          marginBottom: 6,
         }}
       >
         {label.toUpperCase()}
@@ -216,9 +222,10 @@ function Quote({ label, text, muted }: { label: string; text: string; muted?: bo
         style={{
           background: muted ? 'var(--surface-2)' : 'var(--surface-2)',
           border: '1px solid var(--line)',
-          borderRadius: 12,
-          padding: '12px 14px',
+          borderRadius: 14,
+          padding: '12px 16px',
           fontSize: 13.5,
+          fontStyle: 'italic',
           lineHeight: 1.55,
           color: muted ? 'var(--ink-3)' : 'var(--ink)',
           whiteSpace: 'pre-wrap',
@@ -242,9 +249,9 @@ function Button({
   onClick: () => void;
 }) {
   const palette = {
-    primary: { background: 'var(--accent-grad)', color: 'var(--on-accent)', border: '1px solid var(--accent)' },
-    danger: { background: 'var(--surface)', color: 'var(--bad)', border: '1px solid var(--bad-line)' },
-    plain: { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)' },
+    primary: { background: 'var(--accent-grad)', color: '#fff', border: '1px solid transparent' },
+    danger: { background: 'var(--p-red)', color: '#fff', border: '1px solid transparent' },
+    plain: { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line-2)' },
   }[tone];
   return (
     <button
@@ -253,9 +260,11 @@ function Button({
       style={{
         ...palette,
         borderRadius: 999,
-        padding: '8px 16px',
-        fontSize: 13,
+        height: 32,
+        padding: '0 12px',
+        fontSize: 12,
         fontWeight: 500,
+        fontFamily: 'inherit',
         cursor: busy ? 'default' : 'pointer',
         opacity: busy ? 0.6 : 1,
       }}

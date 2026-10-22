@@ -24,3 +24,10 @@
 .lk-btn:hover:not(:disabled) { background: var(--surface-2) !important; border-color: var(--line-2) !important; }
 .lk-btn-p:hover:not(:disabled) { filter: brightness(1.07); }
 .lk-ghost:hover:not(:disabled) { background: var(--accent-soft) !important; }
+
+/* Sentence case for header labels written in capitals */
+.lk-cap { text-transform: lowercase; }
+.lk-cap::first-letter { text-transform: uppercase; }
+
+/* Grid rows that stand in for table rows */
+.lk-row:last-child { border-bottom: 0 !important; }
