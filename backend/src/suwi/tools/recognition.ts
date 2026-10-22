@@ -9,7 +9,7 @@ import { tabsForRequest } from '../../models/dashboard-tabs';
 import { listAllFeedbackForAdmin } from '../../services/admin.service';
 import { attendanceReport } from '../../services/attendance-report.service';
 import { catalogFor, leaderboardFor } from '../../services/game-catalog.service';
-import { pointsLeaderboardFor } from '../../services/games-home.service';
+import { pointEvents } from '../../services/points-ledger.service';
 import { defineTools, num, str, SuwiContext } from '../tools';
 import { activeRoster, addDays, istDate, officeOf, teamOf } from './connect';
 
@@ -60,16 +60,22 @@ defineTools({
     const viewer = { userId: ctx.userId, name: ctx.user.name, org: ctx.org };
     const games = await catalogFor(viewer).catch(() => []);
     const since = addDays(ctx.today, window === 'month' ? -30 : -7);
-    for (const g of games.filter((g) => g.scoring)) {
-      const board = await leaderboardFor(viewer, g.key).catch(() => null);
+    const scored = games.filter((g) => g.scoring);
+    const boards = await Promise.all(scored.map((g) => leaderboardFor(viewer, g.key).catch(() => null)));
+    scored.forEach((g, n) => {
+      const board = boards[n];
       const top = board?.leaderboard[0];
-      if (!top || top.score <= 0) continue;
+      if (!top || top.score <= 0) return;
       const when = istDate(top.achievedAt);
       if (when >= since) add(top.userId, { kind: 'game_win', evidence: `Top of the ${g.name} leaderboard with ${top.score.toLocaleString('en-IN')} ${board!.scoring.label}, set on ${when} (${board!.leaderboard.length} players).`, link: { label: 'Open games', view: 'games' } });
-    }
-    const points = await pointsLeaderboardFor(ctx.userId, 'week').catch(() => null);
-    const lead = points?.entries[0];
-    if (lead && lead.points > 0) add(lead.userId, { kind: 'points_leader', evidence: `Most engagement points this week: ${lead.points} since ${points!.since ? istDate(points!.since) : 'Monday'}.`, link: { label: 'Open games', view: 'games' } });
+    });
+    // This week's points (the same ledger the Games tab's weekly board reads, since Monday 00:00 IST).
+    const weekStart = addDays(ctx.today, -((new Date(`${ctx.today}T00:00:00Z`).getUTCDay() + 6) % 7));
+    const [lead] = await pointEvents().aggregate<{ _id: string; points: number }>([
+      { $match: { org: ctx.org, createdAt: { $gte: new Date(`${weekStart}T00:00:00+05:30`) } } },
+      { $group: { _id: '$userId', points: { $sum: '$delta' } } }, { $sort: { points: -1 } }, { $limit: 1 },
+    ]).toArray();
+    if (lead && lead.points > 0) add(lead._id, { kind: 'points_leader', evidence: `Most engagement points this week: ${lead.points} since ${weekStart}.`, link: { label: 'Open games', view: 'games' } });
 
     // 3. Perfect attendance over the last quarter: no absence, late, half day or missed punch, and enough days to mean it.
     if (mayRead(ctx, '/admin/reports/attendance')) {

@@ -103,7 +103,7 @@ function groupRows(roster: RosterPerson[], now: Map<string, Activity>, before: M
       name, people: people.length, active, activeLastMonth, change: activeLastMonth === null ? null : active - activeLastMonth, interactions,
       quiet: active === 0 || active / people.length < 0.25,
       signal: big ? { activeShare: Math.round((100 * active) / people.length), interactionsPerPerson: Math.round((10 * interactions) / people.length) / 10 } : null,
-      ...(big ? {} : { signalWithheld: `Only ${people.length} people: engagement rates are shown for groups of ${MIN_GROUP} or more, to keep individuals' wellbeing private.` }),
+      ...(big ? {} : { signalWithheld: `Only ${people.length} ${people.length === 1 ? "person" : "people"}: engagement rates are shown for groups of ${MIN_GROUP} or more, to keep individuals' wellbeing private.` }),
     };
   }).sort((a, b) => b.people - a.people);
 }
@@ -198,9 +198,9 @@ defineTools(
       const roster = await activeRoster(ctx.org);
       const [now, last, dates] = await Promise.all([activityByPerson(ctx.org, month, roster), activityByPerson(ctx.org, before, roster), lastDates(ctx)]);
       const by = str(i.by) || 'both';
-      const active = roster.filter((p) => totalOf(now.get(p.userId) ?? blank()) > 0).length;
-      const activeBefore = roster.filter((p) => totalOf(last.get(p.userId) ?? blank()) > 0).length;
-      const quietPeople = roster.filter((p) => totalOf(now.get(p.userId) ?? blank()) === 0).map((p) => ({ userId: p.userId, name: p.name, team: teamOf(p), office: officeOf(p), quietLastMonthToo: totalOf(last.get(p.userId) ?? blank()) === 0 }));
+      const active = roster.filter((p) => totalOf(now.per.get(p.userId) ?? blank()) > 0).length;
+      const activeBefore = roster.filter((p) => totalOf(last.per.get(p.userId) ?? blank()) > 0).length;
+      const quietPeople = roster.filter((p) => totalOf(now.per.get(p.userId) ?? blank()) === 0).map((p) => ({ userId: p.userId, name: p.name, team: teamOf(p), office: officeOf(p), quietLastMonthToo: totalOf(last.per.get(p.userId) ?? blank()) === 0 }));
       const ids = roster.map((p) => p.userId);
       const punches = await attendanceRecords().aggregate<{ _id: string | null; days: number; people: string[] }>([
         { $match: { userId: { $in: ids }, workDate: { $gte: `${month}-01`, $lt: `${nextMonth(month)}-01` }, punchIn: { $exists: true } } },
@@ -333,7 +333,7 @@ defineTools(
         ...(d.kind === 'shoutout' ? [{ text: 'One person, named with their own photo; nobody else is ranked or compared.', why: 'Recognition is public praise for one person, never a league table.' }] : []),
         { text: 'Undo deletes the post (likes and comments on it go with it).', tone: 'info' as const },
       ];
-      const proposalId = await proposePosts(ctx, [d], { title: `Publish ${noun}: ${str(d.body.title as string, 60) || str(d.body.text as string, 60)}`, summary: `${d.preview}\n\nTo: ${d.audience}`, lines });
+      const proposalId = await proposePosts(ctx, [d], { title: d.kind === 'shoutout' ? `Publish ${d.preview.split('\n')[0]}` : `Publish ${noun}: ${str(d.body.title as string, 60) || str(d.body.text as string, 60)}`, summary: `${d.preview}\n\nTo: ${d.audience}`, lines });
       return { data: { prepared: true, kind: d.kind, fullText: d.preview, audience: d.audience, note: 'Nothing is published until HR presses Confirm on the card.' }, proposalId, links: [{ label: 'Open engagement posts', view: 'engagementposts' }] };
     },
   },
