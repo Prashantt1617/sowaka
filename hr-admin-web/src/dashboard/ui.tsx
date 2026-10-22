@@ -5,25 +5,40 @@ import type { Pill as PillT } from './theme';
 import { avColor, initials } from './theme';
 import { IconChevronDown, IconSearch } from './icons';
 
+// Photo URLs that have already failed once. An expired presigned link or a
+// missing file fails the same way every time, so any later avatar given that
+// URL goes straight to the initials instead of asking for it again.
+const brokenPhotos = new Set<string>();
+
 export function Avatar({
   name,
   size = 36,
   font = 14,
   src,
+  tone,
 }: {
   name: string;
   size?: number;
   font?: number;
   /** Their photo; the initials stand in when it is missing or fails to load. */
   src?: string;
+  /** Colours for the initials circle, when it should not take the person's own. */
+  tone?: { bg: string; fg: string };
 }) {
-  const [broken, setBroken] = useState(false);
-  if (src && !broken) {
+  const [failed, setFailed] = useState<string | null>(null);
+  if (src && src !== failed && !brokenPhotos.has(src)) {
     return (
       <img
         src={src}
-        alt=""
-        onError={() => setBroken(true)}
+        alt={name}
+        loading="lazy"
+        decoding="async"
+        width={size}
+        height={size}
+        onError={() => {
+          brokenPhotos.add(src);
+          setFailed(src);
+        }}
         style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, display: 'block', background: 'var(--surface-2)' }}
       />
     );
@@ -37,17 +52,17 @@ export function Avatar({
         height: size,
         borderRadius: '50%',
         // Lifted toward the ink in dark mode so the initials stay readable.
-        color: `color-mix(in srgb, ${c} var(--av-fg), var(--ink))`,
+        color: tone ? tone.fg : `color-mix(in srgb, ${c} var(--av-fg), var(--ink))`,
         fontWeight: 600,
         fontSize: Math.round(font * 0.9 * 2) / 2,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         flexShrink: 0,
-        background: `color-mix(in srgb, ${c} var(--av-bg), var(--surface))`,
+        background: tone ? tone.bg : `color-mix(in srgb, ${c} var(--av-bg), var(--surface))`,
       }}
     >
-      {initials(name)}
+      {initials(name.trim() || '?')}
     </div>
   );
 }
