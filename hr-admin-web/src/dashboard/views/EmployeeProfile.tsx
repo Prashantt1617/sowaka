@@ -14,7 +14,9 @@ import { useStore } from '../store';
 import { IconFile } from '../icons';
 import { ETYPE, STAT, TYPE } from '../theme';
 import type { LeaveType, ReqStatus } from '../theme';
-import { Avatar, Card, Pill, StatusTabs } from '../ui';
+import { Avatar, Card, ListPending, LoadError, LoadingFigure, Pill, Skeleton, SkeletonFrame, SkeletonLines, SkeletonRows, StatusTabs } from '../ui';
+import type { LoadState } from '../ui';
+import { useLoad } from '../useLoad';
 import { periodLabel, periodShort } from '../period';
 import { EmployeeKpiPanel } from './KpiAssign';
 import { assignShift, clearCalendarDay, clearReportingManager, deleteEmployee, getCompanySettings, getEmployeeCalendar, getShifts, setCalendarDay, setReportingManager, updateEmployeeDetails } from '../../services/hrms';
@@ -159,14 +161,23 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
   // This month, fetched once: it names the shift in the header and seeds the
   // Calendar tab, so opening that tab does not ask for the same month again.
   const [currentMonth, setCurrentMonth] = useState<EmployeeCalendarDTO | null>(null);
+  const [currentMonthState, setCurrentMonthState] = useState<LoadState>('loading');
   useEffect(() => {
     let live = true;
     setCurrentMonth(null);
-    getEmployeeCalendar(emp.id, thisMonth()).then((c) => { if (live) setCurrentMonth(c); }).catch(() => undefined);
+    setCurrentMonthState('loading');
+    getEmployeeCalendar(emp.id, thisMonth())
+      .then((c) => { if (live) { setCurrentMonth(c); setCurrentMonthState('ready'); } })
+      .catch(() => { if (live) setCurrentMonthState('error'); });
     return () => { live = false; };
   }, [emp.id]);
   // Review state for the current cycle, from the feedback managers actually submitted.
   const review = s.fbEmps.find((f) => f.userId === emp.id);
+  const reviewState = s.listState('feedback', 'cycle');
+  // A review section waits for the feedback list rather than saying "No review".
+  const reviewPending = reviewState === 'error'
+    ? <LoadError compact text="Reviews could not be loaded." onRetry={() => void s.reload()} />
+    : <SkeletonLines lines={4} />;
 
   // Reporting line — manager above, direct reports below (from the roster).
   // Guard against a person being their own manager (seed-data quirk).
@@ -209,7 +220,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
           <Fact label="Work location" value={d.workLocation} />
           <Fact label="Reporting manager" value={emp.manager} border />
           <Fact label="Date of joining" value={emp.joining} border />
-          <Fact label="Shift" value={currentMonth ? `${currentMonth.shift} · ${currentMonth.window}` : '—'} border />
+          <Fact label="Shift" value={<LoadingFigure state={currentMonthState} w={140} h={12}>{currentMonth ? `${currentMonth.shift} · ${currentMonth.window}` : '—'}</LoadingFigure>} border />
         </div>
       </Card>
 
@@ -286,7 +297,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
         <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 18, alignItems: 'start' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <Section title="Performance (PMS)">
-            {review && review.status !== 'none' ? (
+            {reviewState !== 'ready' ? reviewPending : review && review.status !== 'none' ? (
               <>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
                   <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-1px' }}>
@@ -333,7 +344,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
             )}
           </Section>
             <Section title="Review history">
-            {review && review.history.length > 0 ? (
+            {reviewState !== 'ready' ? reviewPending : review && review.history.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
                 {review.history.map((h) => (
                   <div key={h.period} style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
@@ -361,7 +372,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <div data-focus="kpi"><Section title="KPIs">
-            <EmployeeKpiPanel
+            {s.listState('cycle') !== 'ready' ? reviewPending : <EmployeeKpiPanel
               userId={emp.id}
               userName={emp.name}
               designation={emp.role}
@@ -369,7 +380,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
               nextPeriod={s.cycle.next}
               // Someone with the edit right sets KPIs for the people below them, not for themselves.
               readOnly={user?.canEditEmployees === true && emp.id === user.id ? 'You set KPIs for the people who report to you, not for yourself.' : undefined}
-            />
+            />}
           </Section></div>
           </div>
         </div>
@@ -430,9 +441,12 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '15px 20px', borderBottom: '1px solid var(--line)' }}>
             <div style={{ fontSize: 14, fontWeight: 600 }}>Org chart</div>
             <div style={{ fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400 }}>
-              Reporting line · {reports.length} direct report{reports.length === 1 ? '' : 's'}{peers > 0 ? ` · ${peers} peer${peers === 1 ? '' : 's'}` : ''}
+              Reporting line{s.listState('employees') === 'ready' && <> · {reports.length} direct report{reports.length === 1 ? '' : 's'}{peers > 0 ? ` · ${peers} peer${peers === 1 ? '' : 's'}` : ''}</>}
             </div>
           </div>
+          {s.listState('employees') !== 'ready' ? (
+            <ListPending state={s.listState('employees')} onRetry={() => void s.reload()} rows={3} cols={1} />
+          ) : (
           <div style={{ padding: '26px 20px 30px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             {/* Manager — nothing at all above someone who has none; the chart starts with them. */}
             {manager ? (
@@ -459,6 +473,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
               <div style={{ fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400, marginTop: 14 }}>No direct reports</div>
             )}
           </div>
+          )}
         </Card>
       </div>
         </div>
@@ -510,22 +525,14 @@ const periodTitle = (period: string) =>
   new Date(`${period}-01T00:00:00Z`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
 function SalarySlips({ userId }: { userId: string }) {
-  const [rows, setRows] = useState<{ run: PayrollRunDTO; payslip: PayslipDTO }[] | null>(null);
-  const [company, setCompany] = useState<{ name: string; address: string }>({ name: '', address: '' });
-  const [error, setError] = useState<string | null>(null);
   const [explain, setExplain] = useState<PayslipDTO | null>(null);
-  useEffect(() => {
-    let live = true;
-    setRows(null);
-    getEmployeePayslips(userId)
-      .then((r) => { if (live) { setRows(r.payslips); setCompany(r.company); } })
-      .catch((e: Error) => { if (live) setError(e.message); });
-    return () => { live = false; };
-  }, [userId]);
+  const slips = useLoad(() => getEmployeePayslips(userId), [userId]);
+  const rows = slips.data?.payslips;
+  const company = slips.data?.company ?? { name: '', address: '' };
 
   const salaryCard = <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Payslips</div>;
-  if (error) return <div>{salaryCard}<Card><div style={{ padding: 28, color: 'var(--bad)', fontWeight: 400 }}>{error}</div></Card></div>;
-  if (!rows) return <div>{salaryCard}<Card><div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontWeight: 400 }}>Loading…</div></Card></div>;
+  if (slips.state === 'error') return <div>{salaryCard}<Card><LoadError text="The payslips could not be loaded." onRetry={slips.retry} /></Card></div>;
+  if (!rows) return <div>{salaryCard}<Card><SkeletonRows rows={3} cols={7} avatar={false} rowHeight={54} /></Card></div>;
   if (rows.length === 0) {
     return <div>{salaryCard}<Card><div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontWeight: 400 }}>No salary slips yet — they appear here once a payroll run includes this person.</div></Card></div>;
   }
@@ -600,8 +607,8 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
   const { flash } = useStore();
   const [month, setMonth] = useState(startMonth ?? thisMonth());
   const [cal, setCal] = useState<EmployeeCalendarDTO | null>(initial);
-  const [loading, setLoading] = useState(!initial);
   const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
   // The day HR is marking, if any. Only the current month can be marked.
   const [editing, setEditing] = useState<CalendarDayDTO | null>(null);
   const [saving, setSaving] = useState(false);
@@ -628,19 +635,21 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
   };
   useEffect(() => {
     // The profile already holds this month; only other months are fetched here.
-    if (initial && initial.month === month) { setCal(initial); setLoading(false); return; }
+    if (initial && initial.month === month) { setCal(initial); setError(''); return; }
     let live = true;
-    setLoading(true); setError('');
+    setError('');
     getEmployeeCalendar(userId, month)
       .then((c) => { if (live) setCal(c); })
-      .catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load the month'); })
-      .finally(() => { if (live) setLoading(false); });
+      .catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load the month'); });
     return () => { live = false; };
-  }, [userId, month, initial]);
+  }, [userId, month, initial, attempt]);
+  // Another month (or person) shows its own skeleton, not the last month's days.
+  const shown = cal && cal.month === month ? cal : null;
+  const loading = !shown && !error;
 
   // Monday-first grid, the way the app lays the month out.
-  const lead = cal ? (new Date(`${cal.month}-01T00:00:00Z`).getUTCDay() + 6) % 7 : 0;
-  const worked = cal ? cal.totals.present + cal.totals.half_day + cal.totals.missed_punch + cal.totals.absent + cal.totals.on_leave : 0;
+  const lead = shown ? (new Date(`${shown.month}-01T00:00:00Z`).getUTCDay() + 6) % 7 : 0;
+  const worked = shown ? shown.totals.present + shown.totals.half_day + shown.totals.missed_punch + shown.totals.absent + shown.totals.on_leave : 0;
 
   return (
     <div>
@@ -648,20 +657,24 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
         <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} style={calNav}>‹</button>
         <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '8px 12px', fontSize: 13.5, fontWeight: 500, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' }} />
         <button type="button" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= thisMonth()} style={{ ...calNav, opacity: month >= thisMonth() ? 0.4 : 1 }}>›</button>
-        {loading && <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>Loading…</span>}
-        {cal && (
+        {shown && (
           <div style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
-            {cal.shift} · {cal.window} · {cal.punchFormat}
+            {shown.shift} · {shown.window} · {shown.punchFormat}
           </div>
         )}
       </div>
-      {error && <div style={{ fontSize: 13, color: 'var(--bad)', fontWeight: 400, marginBottom: 12 }}>{error}</div>}
+      {error && <LoadError compact text={error} onRetry={() => setAttempt((n) => n + 1)} />}
 
-      {cal && (
+      {loading && (
+        <SkeletonFrame style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+          {Array.from({ length: 7 }, (_, i) => <Skeleton key={i} w={92} h={27} r={999} />)}
+        </SkeletonFrame>
+      )}
+      {shown && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
           {(['present', 'half_day', 'missed_punch', 'absent', 'on_leave', 'week_off', 'holiday'] as CalendarDayStatus[]).map((k) => (
             <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: CAL_TONE[k].bg, color: CAL_TONE[k].fg, borderRadius: 999, padding: '5px 11px', fontSize: 12.5, fontWeight: 500 }}>
-              {CAL_TONE[k].label} <span style={{ opacity: .8 }}>{cal.totals[k]}</span>
+              {CAL_TONE[k].label} <span style={{ opacity: .8 }}>{shown.totals[k]}</span>
             </span>
           ))}
           <span style={{ alignSelf: 'center', fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400 }}>{worked} working days so far</span>
@@ -676,7 +689,13 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
           {Array.from({ length: lead }, (_, i) => <div key={`lead-${i}`} style={{ minHeight: 84, borderBottom: '1px solid var(--line)', borderRight: '1px solid var(--line)', background: 'var(--surface-2)' }} />)}
-          {(cal?.days ?? []).map((day) => {
+          {loading && Array.from({ length: 35 }, (_, i) => (
+            <div key={`sk-${i}`} className="sk-delay" aria-hidden style={{ minHeight: 84, padding: 10, borderBottom: '1px solid var(--line)', borderRight: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <Skeleton w={18} h={12} />
+              <Skeleton w="64%" h={10} style={{ opacity: 0.7 }} />
+            </div>
+          ))}
+          {(shown?.days ?? []).map((day) => {
             const tone = CAL_TONE[day.status];
             const detail = day.status === 'on_leave' ? (LEAVE_NAMES[day.label ?? ''] ?? (day.label ?? '').split('_').map((w) => w && w[0].toUpperCase() + w.slice(1)).join(' ') + ' leave')
               : day.status === 'holiday' || day.status === 'week_off' ? day.label
@@ -765,13 +784,16 @@ function RequestsForEmployee({ emp }: { emp: Emp }) {
     ...s.corrs.filter((r) => mine(r.submitterId)).map((r) => ({ id: `cr-${r.id}`, kind: 'Attendance correction', detail: r.dayType, when: r.workDate, status: r.status, ord: r.ord })),
   ].sort((a, b) => b.ord - a.ord);
   const pending = rows.filter((r) => r.status === 'Pending').length;
+  const st = s.listState('leaves', 'overtime', 'claims', 'corrections');
   return (
     <Card style={{ padding: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '15px 20px', borderBottom: '1px solid var(--line)' }}>
         <div style={{ fontSize: 14, fontWeight: 600 }}>Requests</div>
-        <div style={{ fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400 }}>{rows.length} raised{pending ? ` · ${pending} pending` : ''}</div>
+        {st === 'ready' && <div style={{ fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400 }}>{rows.length} raised{pending ? ` · ${pending} pending` : ''}</div>}
       </div>
-      {rows.length === 0 ? (
+      {st !== 'ready' ? (
+        <ListPending state={st} onRetry={() => void s.reload()} rows={4} cols={4} avatar={false} rowHeight={48} />
+      ) : rows.length === 0 ? (
         <div style={{ padding: 28, textAlign: 'center', color: 'var(--ink-4)', fontSize: 13.5, fontWeight: 400 }}>No requests from this employee.</div>
       ) : rows.map((r) => (
         <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1.3fr 1.2fr 1fr auto', gap: 12, alignItems: 'center', padding: '13px 20px', borderBottom: '1px solid var(--line)' }}>
@@ -824,7 +846,7 @@ function GhostNode({ name, caption }: { name: string; caption: string }) {
 }
 
 // —— Building blocks ——————————————————————————————————————————————————
-function Fact({ label, value, border }: { label: string; value: string; border?: boolean }) {
+function Fact({ label, value, border }: { label: string; value: ReactNode; border?: boolean }) {
   return (
     <div style={{ padding: '14px 22px', borderTop: border ? '1px solid var(--line)' : 'none', borderLeft: '1px solid var(--line)', minWidth: 0 }}>
       <div style={{ fontSize: 12, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>{label}</div>
@@ -841,12 +863,26 @@ function PaymentDetails({ userId }: { userId: string }) {
   const [d, setD] = useState<PaymentDetailsDTO | null>(null);
   const [form, setForm] = useState<PaymentDetailsInput | null>(null);
   const [saving, setSaving] = useState(false);
+  // Hidden for someone not allowed to see them (403), as before; any other failure says so.
+  const [state, setState] = useState<LoadState | 'hidden'>('loading');
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
-    getPaymentDetails(userId).then((x) => live && setD(x)).catch(() => live && setD(null));
+    setD(null);
+    setState('loading');
+    getPaymentDetails(userId)
+      .then((x) => { if (live) { setD(x); setState('ready'); } })
+      .catch((e: unknown) => { if (live) { setD(null); setState(e instanceof ApiError && (e.status === 403 || e.status === 404) ? 'hidden' : 'error'); } });
     return () => { live = false; };
-  }, [userId]);
-  if (!d) return null;
+  }, [userId, attempt]);
+  if (state === 'hidden') return null;
+  if (state !== 'ready' || !d) {
+    return (
+      <Section title="Payment and tax IDs">
+        {state === 'error' ? <LoadError compact text="Payment details could not be loaded." onRetry={() => setAttempt((n) => n + 1)} /> : <SkeletonGrid rows={3} />}
+      </Section>
+    );
+  }
   const save = async () => {
     if (!form) return;
     setSaving(true);
@@ -910,6 +946,20 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
       </div>
       <div style={{ padding: '18px 20px' }}>{children}</div>
     </Card>
+  );
+}
+
+/** Placeholder pairs shaped like a Grid of Rows. */
+function SkeletonGrid({ rows }: { rows: number }) {
+  return (
+    <SkeletonFrame style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 26px' }}>
+      {Array.from({ length: rows * 2 }, (_, i) => (
+        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          <Skeleton w={70} h={9} style={{ opacity: 0.7 }} />
+          <Skeleton w={i % 3 ? '58%' : '72%'} h={12} />
+        </div>
+      ))}
+    </SkeletonFrame>
   );
 }
 
@@ -1234,8 +1284,9 @@ function ShiftPicker({ emp, onChanged }: { emp: Emp; onChanged: () => void }) {
     .catch((e) => setError(e instanceof ApiError ? e.message : 'Could not load the shift templates'));
   useEffect(() => { void load(); }, [emp.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  if (error && !shifts) return <LoadError compact text={error} onRetry={() => { setError(''); void load(); }} />;
   if (error) return <div style={{ fontSize: 13, color: 'var(--bad)', fontWeight: 400 }}>{error}</div>;
-  if (!shifts) return <div style={{ fontSize: 13, color: 'var(--ink-4)' }}>Loading…</div>;
+  if (!shifts) return <SkeletonLines lines={2} />;
   const usable = shifts.filter((t) => t.active || t.isDefault);
   if (usable.length === 0) return <div style={{ fontSize: 13, color: 'var(--ink-4)' }}>No shift templates yet. Create one in Shifts › Templates.</div>;
   const assigned = shifts.find((t) => t.assignedUserIds.includes(emp.id));

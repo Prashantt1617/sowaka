@@ -39,7 +39,7 @@ import type {
   StructureOverrides,
   StructureResponse,
 } from '../../services/payroll';
-import { Card } from '../ui';
+import { Card, LoadError, Skeleton, SkeletonCards, SkeletonRows } from '../ui';
 import { IconClose } from '../icons';
 import { paidDaysSummary } from './PaidDaysTemplates';
 
@@ -147,10 +147,14 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
   const [revising, setRevising] = useState(false);
   const [saving, setSaving] = useState(false);
   const phByCode = useMemo(() => new Map(payHeads.map((p) => [p.code, p])), [payHeads]);
+  // A failed load is not "no salary yet": it says so, with Retry.
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let live = true;
     setData(undefined);
+    setFailed(false);
     void Promise.all([
       getSalaryStructure(userId).catch((e) => { if (e instanceof ApiError && e.status === 404) return null; throw e; }),
       listSalaryTemplates(),
@@ -162,10 +166,10 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
       setTemplates(ts);
       setPayHeads(phs);
       setStatutory(st);
-    }).catch((e) => { if (live) { setData(null); flash(e instanceof ApiError ? e.message : 'Could not load salary'); } });
+    }).catch((e) => { if (live) { setFailed(true); flash(e instanceof ApiError ? e.message : 'Could not load salary'); } });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  }, [userId, attempt]);
 
   const patch = async (input: Parameters<typeof saveSalaryStructure>[1], done: string) => {
     if (saving) return;
@@ -180,7 +184,15 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
     }
   };
 
-  if (data === undefined) return <Card><div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontWeight: 400 }}>Loading…</div></Card>;
+  if (failed) return <Card><LoadError text="The salary could not be loaded." onRetry={() => setAttempt((n) => n + 1)} /></Card>;
+  if (data === undefined) {
+    return (
+      <div>
+        <SkeletonCards count={3} style={{ marginBottom: 18 }} />
+        <Card><SkeletonRows rows={5} cols={3} avatar={false} rowHeight={48} /></Card>
+      </div>
+    );
+  }
 
   if (data === null) {
     return <AssignCard templates={templates} phByCode={phByCode} saving={saving} onSave={(code, ctc, values) => void patch({ salaryTemplateCode: code, annualCtcPaise: ctc, componentValues: values, status: 'active', effectiveFrom: today() }, 'Salary assigned')} />;
@@ -391,11 +403,14 @@ function PaidDaysCard({ userId, code, onChanged }: { userId: string; code?: stri
   const { flash } = useStore();
   const [templates, setTemplates] = useState<PaidDaysTemplateDTO[] | null>(null);
   const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
-    void listPaidDaysTemplates().then((ts) => { if (live) setTemplates(ts); }).catch(() => { if (live) setTemplates([]); });
+    setFailed(false);
+    void listPaidDaysTemplates().then((ts) => { if (live) setTemplates(ts); }).catch(() => { if (live) { setTemplates([]); setFailed(true); } });
     return () => { live = false; };
-  }, []);
+  }, [attempt]);
   const def = templates?.find((t) => t.isDefault);
   const current = templates?.find((t) => t.code === code) ?? def;
   const change = async (next: string) => {
@@ -416,7 +431,7 @@ function PaidDaysCard({ userId, code, onChanged }: { userId: string; code?: stri
       <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={labelSm}>Paid Days Template</div>
-          <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 4 }}>{templates === null ? 'Loading…' : current ? paidDaysSummary(current) : 'Attendance calendar'}</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 4 }}>{failed ? <LoadError compact text="Could not be loaded." onRetry={() => { setTemplates(null); setAttempt((n) => n + 1); }} /> : templates === null ? <Skeleton w={180} h={11} /> : current ? paidDaysSummary(current) : 'Attendance calendar'}</div>
         </div>
         <select
           value={current?.code ?? ''}

@@ -7,7 +7,8 @@ import { useStore } from '../store';
 import { ApiError } from '../../services/http';
 import { getTaxDeclaration, rupeesToPaise, saveTaxDeclaration } from '../../services/payroll';
 import type { TaxDeclarationResponse, TaxDeclarations } from '../../services/payroll';
-import { Card } from '../ui';
+import { Card, LoadError, SkeletonLines } from '../ui';
+import type { LoadState } from '../ui';
 
 const AMOUNTS: { key: keyof TaxDeclarations; label: string; oldOnly?: boolean }[] = [
   { key: 'sec80C', label: '80C investments (PF is added automatically)', oldOnly: true },
@@ -30,9 +31,14 @@ export function IncomeTaxCard({ userId }: { userId: string }) {
   const [flags, setFlags] = useState<{ metro: boolean; selfSenior: boolean; parentsSenior: boolean }>({ metro: false, selfSenior: false, parentsSenior: false });
   const [proofs, setProofs] = useState<'none' | 'submitted' | 'verified'>('none');
   const [saving, setSaving] = useState(false);
+  // Hidden when it is not theirs to see (403/404), as before; any other failure says so.
+  const [state, setState] = useState<LoadState | 'hidden'>('loading');
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let live = true;
+    setData(null);
+    setState('loading');
     getTaxDeclaration(userId)
       .then((r) => {
         if (!live) return;
@@ -43,12 +49,23 @@ export function IncomeTaxCard({ userId }: { userId: string }) {
         const dec = d?.declarations ?? {};
         setValues(Object.fromEntries(AMOUNTS.filter((a) => typeof dec[a.key] === 'number').map((a) => [a.key, String((dec[a.key] as number) / 100)])));
         setFlags({ metro: dec.metro === true, selfSenior: dec.selfSenior === true, parentsSenior: dec.parentsSenior === true });
+        setState('ready');
       })
-      .catch(() => live && setData(null));
+      .catch((e: unknown) => { if (live) { setData(null); setState(e instanceof ApiError && (e.status === 403 || e.status === 404) ? 'hidden' : 'error'); } });
     return () => { live = false; };
-  }, [userId]);
+  }, [userId, attempt]);
 
-  if (!data) return null;
+  if (state === 'hidden') return null;
+  if (state !== 'ready' || !data) {
+    return (
+      <Card style={{ padding: '20px 24px', marginTop: 22 }}>
+        <div style={{ fontSize: 15, fontWeight: 600 }}>Income tax</div>
+        {state === 'error'
+          ? <LoadError compact text="The tax declaration could not be loaded." onRetry={() => setAttempt((n) => n + 1)} />
+          : <SkeletonLines lines={3} style={{ marginTop: 16 }} />}
+      </Card>
+    );
+  }
   const save = async () => {
     const declarations: TaxDeclarations = { ...flags };
     for (const a of AMOUNTS) {
