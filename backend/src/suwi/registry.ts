@@ -8,3 +8,8 @@ import './tools/kpi-templates';
 import './tools/connect';
 import './tools/recognition';
 import './tools/engagement-plan';
+import './tools/peopleTasks';
+import './tools/designations';
+import './tools/manager';
+import './tools/exit';
+import './tools/letters';
