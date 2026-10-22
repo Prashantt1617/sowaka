@@ -52,9 +52,9 @@ export function SuwiSettings() {
 
   return (
     <div style={{ display: 'grid', gap: 16, maxWidth: 1100 }}>
-      <Card style={{ padding: '18px 22px' }}>
+      <section className="sora-card" style={{ padding: '20px 22px' }}>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          <SuwiOrb size={40} />
+          <SuwiOrb size={48} />
           <div style={{ flex: 1, minWidth: 260 }}>
             <div style={{ fontSize: 17, fontWeight: 600 }}>Suwi, your HR assistant</div>
             <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 2 }}>
@@ -80,14 +80,14 @@ export function SuwiSettings() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 15, fontWeight: 600 }}>${settings.spentThisMonthUsd.toFixed(2)}</span>
               <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>of</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>$<input value={budget} onChange={(e) => setBudget(e.target.value)} disabled={!canEdit || saving} inputMode="decimal" aria-label="Monthly budget in US dollars" style={{ width: 70, height: 32, borderRadius: 10, border: '1px solid var(--line-2)', padding: '0 8px', font: 'inherit', fontSize: 13.5 }} /></span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>$<input value={budget} onChange={(e) => setBudget(e.target.value)} disabled={!canEdit || saving} inputMode="decimal" aria-label="Monthly budget in US dollars" style={{ width: 70, height: 32, borderRadius: 999, border: '1px solid var(--line-2)', background: 'var(--surface)', color: 'var(--ink)', padding: '0 10px', font: 'inherit', fontSize: 13.5 }} /></span>
               {canEdit && Number(budget) !== settings.monthlyBudgetUsd && <button type="button" disabled={saving} onClick={() => void save({ monthlyBudgetUsd: Number(budget) }, 'Budget saved')} style={ghost}>Save</button>}
             </div>
-            <div style={{ height: 6, borderRadius: 99, background: 'var(--line)', overflow: 'hidden', marginTop: 8 }}><div style={{ width: `${pct}%`, height: '100%', background: pct >= 90 ? 'var(--bad-solid)' : 'var(--accent)' }} /></div>
+            <div style={{ height: 6, borderRadius: 99, background: 'var(--line)', overflow: 'hidden', marginTop: 8 }}><div style={{ width: `${pct}%`, height: '100%', borderRadius: 99, background: pct >= 90 ? 'var(--bad-solid)' : 'var(--brand)', transition: 'width .4s ease' }} /></div>
             <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>{pct}% used · Suwi stops answering at the limit until next month. About ₹2 a question.</div>
           </div>
         </div>
-      </Card>
+      </section>
 
       <Card>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)' }}>
@@ -117,7 +117,7 @@ export function SuwiSettings() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16, alignItems: 'start' }}>
         <Card style={{ padding: '14px 18px' }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>Rules that always apply</div>
-          <ul style={{ margin: '10px 0 0', paddingLeft: 18, display: 'grid', gap: 6, fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>{RULES.map((r) => <li key={r}>{r}</li>)}</ul>
+          <ul className="sora-rules">{RULES.map((r) => <li key={r}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="m5 12.5 4.5 4.5L19 7.5" /></svg><span>{r}</span></li>)}</ul>
         </Card>
         <Card>
           <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)' }}>
@@ -130,7 +130,7 @@ export function SuwiSettings() {
                 <div key={i} style={{ padding: '10px 18px', borderBottom: '1px solid var(--line)', fontSize: 13 }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 600 }}>{r.who}</span>
-                    <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: r.kind === 'action' ? 'var(--accent-ink)' : 'var(--ink-3)' }}>{r.kind === 'question' ? 'asked' : r.kind === 'action' ? 'via Suwi' : 'settings'}</span>
+                    <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: r.kind === 'action' ? 'var(--hi)' : 'var(--ink-3)' }}>{r.kind === 'question' ? 'asked' : r.kind === 'action' ? 'via Suwi' : 'settings'}</span>
                     <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--ink-3)' }}>{new Date(r.at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                   <div style={{ marginTop: 2, color: 'var(--ink)' }}>{r.text}</div>
@@ -145,7 +145,7 @@ export function SuwiSettings() {
   );
 }
 
-const tile: CSSProperties = { background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 16, padding: '12px 14px' };
+const tile: CSSProperties = { background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 16, padding: '12px 14px' };
 const label: CSSProperties = { fontSize: 11.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: 8 };
 const th: CSSProperties = { textAlign: 'left', fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)', padding: '10px 18px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)' };
 const td: CSSProperties = { padding: '10px 18px', borderBottom: '1px solid var(--line)', verticalAlign: 'middle' };

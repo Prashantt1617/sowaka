@@ -3,7 +3,7 @@
 // are worked out on the server without any model call; the digest is built
 // once a day. Both stay hidden when Suwi is off or there is nothing to say.
 import { useEffect, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useStore } from '../store';
 import { api } from '../../services/http';
 import { Markdown } from './markdown';
@@ -49,36 +49,37 @@ const ICON_PATHS: Record<SuwiNotice['icon'], ReactNode> = {
 };
 function NoticeIcon({ icon }: { icon: SuwiNotice['icon'] }) {
   return (
-    <span style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--accent-ink)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>{ICON_PATHS[icon]}</svg>
+    <span className="sora-ic">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>{ICON_PATHS[icon]}</svg>
     </span>
   );
 }
-
-const card: CSSProperties = { background: 'var(--surface)', border: '1px solid var(--accent-line)', borderRadius: 'var(--r-lg)', padding: '16px 20px', boxShadow: 'var(--shadow)' };
-const showMe: CSSProperties = { background: 'var(--accent-soft)', color: 'var(--accent-ink)', border: 'none', borderRadius: 999, padding: '5px 12px', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', font: 'inherit', flexShrink: 0 };
 
 /** The Overview card: one line per notice, each with a "Show me" that asks Suwi. */
 function SuwiNoticedCard({ notices }: { notices: SuwiNotice[] }) {
   const s = useStore();
   return (
-    <div style={card}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 6 }}>
-        <SuwiOrb size={20} />
-        <div style={{ fontSize: 14, fontWeight: 600 }}>Suwi noticed</div>
-        <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>· from your data just now</span>
-      </div>
-      {notices.map((n, i) => (
-        <div key={n.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: i ? '1px solid var(--line)' : 'none' }}>
-          <NoticeIcon icon={n.icon} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 500 }}>{n.title}</div>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2, lineHeight: 1.45 }}>{n.why}</div>
-          </div>
-          <button type="button" onClick={() => s.askSuwiQuestion(n.ask)} style={showMe}>Show me</button>
+    <section className="sora-card">
+      <div className="sora-card-h">
+        <SuwiOrb />
+        <div style={{ minWidth: 0 }}>
+          <h3>Suwi noticed</h3>
+          <small>from your data just now</small>
         </div>
-      ))}
-    </div>
+      </div>
+      <div className="sora-list">
+        {notices.map((n) => (
+          <div key={n.key} className="sora-li">
+            <NoticeIcon icon={n.icon} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <b>{n.title}</b>
+              <span className="s">{n.why}</span>
+            </div>
+            <button type="button" onClick={() => s.askSuwiQuestion(n.ask)} className="suwi-btn">Show me</button>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -86,14 +87,16 @@ function SuwiNoticedCard({ notices }: { notices: SuwiNotice[] }) {
 function SuwiDigestCard({ digest }: { digest: { date: string; text: string } }) {
   const s = useStore();
   return (
-    <div style={{ ...card, border: '1px solid transparent' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
-        <SuwiOrb size={20} />
-        <div style={{ fontSize: 14, fontWeight: 600 }}>Suwi's morning digest</div>
-        <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>· {new Date(`${digest.date}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+    <section className="sora-card">
+      <div className="sora-card-h">
+        <SuwiOrb />
+        <div style={{ minWidth: 0 }}>
+          <h3>Suwi's morning digest</h3>
+          <small>{new Date(`${digest.date}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</small>
+        </div>
       </div>
       <div style={{ fontSize: 13.5, lineHeight: 1.5 }}><Markdown text={digest.text} onPerson={(id) => s.openProfile(id)} /></div>
-    </div>
+    </section>
   );
 }
 

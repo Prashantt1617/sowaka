@@ -496,9 +496,8 @@ export function Topbar() {
           <input placeholder="Search people, requests…" style={{ border: 'none', outline: 'none', background: 'none', fontSize: 13, width: '100%', color: 'var(--ink)' }} />
         </div>
         <div style={{ flex: 1 }} />
-        <button type="button" onClick={() => setSuwiOpen(!suwiOpen)} aria-expanded={suwiOpen} title="Ask Suwi, your HR assistant" className="ds-icon-btn"
-          style={{ ...iconBtn, width: 'auto', padding: '0 14px 0 8px', gap: 8, border: '1px solid var(--accent-line)', background: suwiOpen ? 'var(--accent)' : 'var(--accent-soft)', color: suwiOpen ? 'var(--on-accent)' : 'var(--accent-ink)', fontWeight: 500, fontSize: 13, font: 'inherit' }}>
-          <SuwiOrb size={22} />Ask Suwi
+        <button type="button" onClick={() => setSuwiOpen(!suwiOpen)} aria-expanded={suwiOpen} title="Ask Suwi, your HR assistant" className="sora-btn">
+          <SuwiOrb size={20} />Ask Suwi
         </button>
         <ThemeSwitch />
         <button className="ds-icon-btn" style={iconBtn}>
