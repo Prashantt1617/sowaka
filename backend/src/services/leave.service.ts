@@ -8,7 +8,7 @@ import { holidayDatesForUser } from './holiday.service';
 import { presignReceiptDownload, uploadLeaveDocument } from './s3-receipt.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import {
-  approvalRulesFor, fullDayHoursFor, hrMayDecide, isWeekOffDay, leaveRulesFor, leaveTypeRulesFor,
+  approvalRulesFor, fullDayHoursFor, hrMayDecide, isWeekOffDay, leaveRulesFor, leaveTypeRulesFor, withPolicyMemo,
   managerMayDecide, weekOffGridFor,
 } from './shift.service';
 import { overtimeDurationOf } from '../models/overtime.model';
@@ -264,7 +264,13 @@ export async function getMyLeaves(userId: string): Promise<LeaveView[]> {
  * reads as the month `asOf` falls in (clamped into `year`): what carried in
  * plus this month's accrual, against this month's usage.
  */
-export async function getMyLeaveBalance(userId: string, year = new Date().getUTCFullYear(), asOf = new Date()) {
+export function getMyLeaveBalance(userId: string, year = new Date().getUTCFullYear(), asOf = new Date()) {
+  // One balance asks for this person's shift policy several times; inside
+  // the memo it is looked up once.
+  return withPolicyMemo(() => leaveBalanceOf(userId, year, asOf));
+}
+
+async function leaveBalanceOf(userId: string, year: number, asOf: Date) {
   const employeeP = users().findOne({ userId });
   if (!Number.isInteger(year) || year < 2000 || year > 2100) {
     if (!(await employeeP)) throw new LeaveError(404, 'Employee not found');

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { ObjectId } from 'mongodb';
 import { shiftAssignments, shiftPolicies, shiftTemplates, users } from '../config/db';
 import { requestViewer } from '../middleware/request-viewer';
@@ -1008,6 +1009,32 @@ export async function policyForUser(
   /** Grade as of this local date. Defaults to today. */
   asOf: string = todayIso(),
 ): Promise<ShiftPolicyRules & { shiftName: string | null }> {
+  const memo = policyMemo.getStore();
+  if (!memo) return resolvePolicyForUser(userId, asOf);
+  const key = `${userId}|${asOf}`;
+  let found = memo.get(key);
+  if (!found) {
+    found = resolvePolicyForUser(userId, asOf);
+    memo.set(key, found);
+    found.catch(() => memo.delete(key));
+  }
+  return found;
+}
+
+/**
+ * One read-only computation in which a person's policy is looked up once and
+ * shared. A leave balance asks for the same person's policy three or four
+ * times (their leave types, the full-day hours for comp-off this year and
+ * last); inside this scope those are one lookup. Nothing is held beyond the
+ * call, and the shared object must only be read, never changed, by code run
+ * inside it.
+ */
+const policyMemo = new AsyncLocalStorage<Map<string, Promise<ResolvedShiftPolicy>>>();
+export function withPolicyMemo<T>(work: () => Promise<T>): Promise<T> {
+  return policyMemo.getStore() ? work() : policyMemo.run(new Map(), work);
+}
+
+async function resolvePolicyForUser(userId: string, asOf: string): Promise<ResolvedShiftPolicy> {
   // Asked in two trips rather than four or five: leave balances, overtime and
   // punches all come through here, often several times for one answer. The
   // person and their history go together; then the org policy, the template
