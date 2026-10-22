@@ -36,6 +36,10 @@
   --t-mint-i: #23806A;
   --t-peach: #FFEDE4;
   --t-peach-i: #C2562A;
+  --t-olive: #EEF0E6;
+  --t-olive-i: #5E6B3E;
+  --t-plum: #F4E9F1;
+  --t-plum-i: #8A4A78;
 
   --ok: #23806A;
   --ok-bg: #E4F4EF;
@@ -47,6 +51,9 @@
   --bad-bg: #F8E6E6;
   --bad-line: #EDC9CA;
   --mute-bg: #EFEFF1;
+  /* Solid status fills that carry white text (approve / decline buttons) */
+  --ok-solid: #23806A;
+  --bad-solid: #A83C3E;
 
   /* Solid status pills */
   --p-green: #49B195;
@@ -62,6 +69,13 @@
   --shadow: 0 1px 2px rgba(20, 20, 22, 0.05), 0 6px 20px -6px rgba(20, 20, 22, 0.14);
   --shadow-lg: 0 24px 64px -16px rgba(20, 20, 22, 0.28);
   --scrim: rgba(20, 18, 40, 0.28);
+  --glass-line: rgba(255, 255, 255, 0.7);
+  /* Fixed brand mark tile, and text on the brand-blue count badges */
+  --brand: #0571A6;
+  --on-hi: #FFFFFF;
+  /* Avatars: tint of the person's colour behind initials in that colour */
+  --av-bg: 15%;
+  --av-fg: 100%;
 
   --r-sm: 10px;
   --r: 16px;
@@ -69,11 +83,146 @@
 
   --f-ui: "Sora", "Inter Tight", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
+  color-scheme: light;
+
   color: var(--ink);
   background: var(--canvas);
   font-family: var(--f-ui);
   font-size: 14px;
   letter-spacing: -0.005em;
+}
+
+/* Dark theme: follows the system unless HR picked Light or Dark (data-theme
+   on <html>, set before first paint from index.html). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #111113;
+    --surface: #1A1A1D;
+    --surface-2: #222226;
+    --glass: rgba(34, 34, 38, 0.72);
+    --line: #2A2A2F;
+    --line-2: #3A3A41;
+
+    --ink: #F1F1F3;
+    --ink-2: #B9B9C2;
+    --ink-3: #8C8C96;
+    --ink-4: #73737D;
+
+    --accent: #3AA0FF;
+    --accent-ink: #7DBEFF;
+    --accent-soft: #132A40;
+    --accent-line: #22507A;
+    --accent-grad: linear-gradient(180deg, #3AA0FF, #1E86E8);
+    --on-accent: #FFFFFF;
+    --sel: #F1F1F3;
+    --on-sel: #141416;
+    --hi: #4FB0E0;
+    --hi-soft: #0E2A38;
+
+    --t-lilac: #25233D;
+    --t-lilac-i: #B4AFFF;
+    --t-butter: #33301F;
+    --t-butter-i: #F0D689;
+    --t-sky: #132A40;
+    --t-sky-i: #7DBEFF;
+    --t-mint: #15302A;
+    --t-mint-i: #7FD3BC;
+    --t-peach: #3A2418;
+    --t-peach-i: #FFB48F;
+    --t-olive: #262A1C;
+    --t-olive-i: #C5CF9E;
+    --t-plum: #33202E;
+    --t-plum-i: #E7A9D6;
+
+    --ok: #7FD3BC;
+    --ok-bg: #15302A;
+    --ok-line: #24503F;
+    --warn: #F0D689;
+    --warn-bg: #33301F;
+    --warn-line: #54492A;
+    --bad: #F0A3A4;
+    --bad-bg: #3A1D1E;
+    --bad-line: #5E2F31;
+    --mute-bg: #2A2A2F;
+  --ok-solid: #2A8A6E;
+  --bad-solid: #B4474A;
+
+    --wash-a: #2A1C17;
+    --wash-b: #191C2C;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.7);
+    --scrim: rgba(0, 0, 0, 0.55);
+    --glass-line: #2A2A2F;
+    --on-hi: #06121F;
+    --av-bg: 26%;
+    --av-fg: 55%;
+
+    color-scheme: dark;
+}
+}
+:root[data-theme="dark"] {
+  --canvas: #111113;
+  --surface: #1A1A1D;
+  --surface-2: #222226;
+  --glass: rgba(34, 34, 38, 0.72);
+  --line: #2A2A2F;
+  --line-2: #3A3A41;
+
+  --ink: #F1F1F3;
+  --ink-2: #B9B9C2;
+  --ink-3: #8C8C96;
+  --ink-4: #73737D;
+
+  --accent: #3AA0FF;
+  --accent-ink: #7DBEFF;
+  --accent-soft: #132A40;
+  --accent-line: #22507A;
+  --accent-grad: linear-gradient(180deg, #3AA0FF, #1E86E8);
+  --on-accent: #FFFFFF;
+  --sel: #F1F1F3;
+  --on-sel: #141416;
+  --hi: #4FB0E0;
+  --hi-soft: #0E2A38;
+
+  --t-lilac: #25233D;
+  --t-lilac-i: #B4AFFF;
+  --t-butter: #33301F;
+  --t-butter-i: #F0D689;
+  --t-sky: #132A40;
+  --t-sky-i: #7DBEFF;
+  --t-mint: #15302A;
+  --t-mint-i: #7FD3BC;
+  --t-peach: #3A2418;
+  --t-peach-i: #FFB48F;
+  --t-olive: #262A1C;
+  --t-olive-i: #C5CF9E;
+  --t-plum: #33202E;
+  --t-plum-i: #E7A9D6;
+
+  --ok: #7FD3BC;
+  --ok-bg: #15302A;
+  --ok-line: #24503F;
+  --warn: #F0D689;
+  --warn-bg: #33301F;
+  --warn-line: #54492A;
+  --bad: #F0A3A4;
+  --bad-bg: #3A1D1E;
+  --bad-line: #5E2F31;
+  --mute-bg: #2A2A2F;
+  --ok-solid: #2A8A6E;
+  --bad-solid: #B4474A;
+
+  --wash-a: #2A1C17;
+  --wash-b: #191C2C;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.7);
+  --scrim: rgba(0, 0, 0, 0.55);
+  --glass-line: #2A2A2F;
+  --on-hi: #06121F;
+  --av-bg: 26%;
+  --av-fg: 55%;
+
+  color-scheme: dark;
 }
 
 * {
@@ -363,7 +512,7 @@ input[type='number']::-webkit-outer-spin-button {
   background: var(--glass);
   backdrop-filter: blur(18px) saturate(1.2);
   -webkit-backdrop-filter: blur(18px) saturate(1.2);
-  border: 1px solid rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--glass-line);
 }
 .ds-nav-item:not(.on):hover {
   background: var(--surface-2) !important;

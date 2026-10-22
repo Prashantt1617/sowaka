@@ -10,6 +10,18 @@
       rel="stylesheet"
     />
     <title>Sowaka HRMS · HR Admin</title>
+    <!-- Theme before first paint: the saved Light / Dark choice, else the system's. -->
+    <script>
+      try {
+        var t = localStorage.getItem('sowaka.theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    </script>
+    <style>
+      html { background: #ECEBE9; color-scheme: light; }
+      @media (prefers-color-scheme: dark) { html:not([data-theme='light']) { background: #111113; color-scheme: dark; } }
+      html[data-theme='dark'] { background: #111113; color-scheme: dark; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

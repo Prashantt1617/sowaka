@@ -16,6 +16,7 @@ export async function downloadHtmlAsPdf(html: string, filename: string): Promise
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
       pagebreak: { mode: ['css', 'legacy'] },
     })
-    .from(`${styles}${doc.body.innerHTML}`, 'string')
+    // Always a light document, whatever theme the dashboard is in.
+    .from(`${styles}<div style="color:#222;background:#fff;color-scheme:light">${doc.body.innerHTML}</div>`, 'string')
     .save();
 }
