@@ -23,6 +23,7 @@ export const nextPeriod = (period: string) => {
   return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
 };
 const toPaise = (rupeesIn: unknown) => (rupeesIn === undefined || rupeesIn === null || rupeesIn === '' ? undefined : Math.round(num(rupeesIn, NaN, 0) * 100));
+const signed = (paise: number) => `${paise < 0 ? "−" : "+"}${rupees(Math.abs(paise))}`;
 
 /** A computed structure as small plain lines Claude can read and compare. */
 export function describeComputed(c: SalaryCalcResult) {
@@ -157,7 +158,7 @@ defineTools(
           changes: { template: edits.salaryTemplateCode ?? existing?.salaryTemplateCode, annualCtc: rupees(Number(edits.annualCtcPaise ?? existing?.annualCtcPaise ?? 0)), basicPercentOfCtc: i.basicPercentOfCtc ?? undefined },
           before: before ? { ...describeComputed(before), tds: tdsBefore ? { monthly: rupees(tdsBefore.monthlyPaise), regime: tdsBefore.regime } : 'not projected', netAfterTax: rupees(net(before, tdsBefore)) } : 'no structure yet',
           after: { ...describeComputed(after), tds: tdsAfter ? { monthly: rupees(tdsAfter.monthlyPaise), regime: tdsAfter.regime } : 'not projected', netAfterTax: rupees(net(after, tdsAfter)) },
-          netChange: before ? rupees(net(after, tdsAfter) - net(before, tdsBefore)) : undefined,
+          netChange: before ? signed(net(after, tdsAfter) - net(before, tdsBefore)) : undefined,
           why: whyLines(after, period, before ?? undefined),
           note: 'A simulation for a full month at today\'s statutory rules; a real run also applies loss of pay, overtime, claims and the ESI contribution period.',
         },
@@ -305,7 +306,7 @@ defineTools(
       return {
         data: {
           period, prepared: Boolean(proposalId), people: active.length, draftExists: run?.status === 'draft',
-          preflight: { noSalaryStructure: noStructure.map((p) => p.name), noBankAccount: noBank, noPan, daysOfMonthLeft: daysLeft, pendingLeaveRequests: pendingLeave, bigJumps: jumps, newSinceLastRun: newPeople },
+          preflight: { noSalaryStructure: { count: noStructure.length, names: noStructure.slice(0, 12).map((p) => p.name) }, noBankAccount: noBank, noPan, daysOfMonthLeft: daysLeft, pendingLeaveRequests: pendingLeave, bigJumps: jumps, newSinceLastRun: newPeople },
           lastRun: lastRun ? { period: lastRun.period, status: lastRun.status, people: lastRun.employeeCount, net: rupees(lastRun.totals.netPaise) } : null,
           note: blocked ? 'No card: nothing to run.' : `Nothing happens until HR types ${name.split(' ')[0].toUpperCase()} and confirms on the card. Submit is final.`,
         },
@@ -330,10 +331,12 @@ defineExecutor('assign_salary_template', {
     if (!previous?.salaryTemplateCode) throw new Error(`${name} had no salary structure before; remove the new one on their Salary details if it should not exist.`);
     await upsertSalaryStructure(byUserId, userId, {
       salaryTemplateCode: previous.salaryTemplateCode, annualCtcPaise: previous.annualCtcPaise, componentValues: previous.componentValues ?? {},
-      overrides: previous.overrides ?? {}, bonusCategory: previous.bonusCategory, status: previous.status ?? 'active',
+      overrides: previous.overrides ?? {}, ...(typeof previous.bonusCategory === 'string' ? { bonusCategory: previous.bonusCategory } : {}), status: previous.status ?? 'active',
     });
-    // The service records every CTC change as a revision; put the history back as it was before the change.
-    await salaryStructures().updateOne({ org: p.org, userId }, { $set: { revisions: previous.revisions ?? [], effectiveFrom: previous.effectiveFrom } });
+    // The service records every CTC change as a revision and fills empty fields; put them back exactly as they were.
+    await salaryStructures().updateOne({ org: p.org, userId }, { $set: {
+      revisions: previous.revisions ?? [], effectiveFrom: previous.effectiveFrom ?? null, componentValues: previous.componentValues ?? null, bonusCategory: previous.bonusCategory ?? null,
+    } as never });
     return `${name} is back on ${previous.salaryTemplateCode} at ${rupees(previous.annualCtcPaise)} a year, with the earlier salary history.`;
   },
 });

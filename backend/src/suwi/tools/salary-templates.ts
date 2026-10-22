@@ -2,7 +2,7 @@
 // from a plain-words description (prepared, Undo deletes it while unused),
 // and a template built from components, duplicated, or changed — previewed at
 // sample CTCs with the checks HR would do by hand before it is prepared.
-import { payHeads, salaryStructures, salaryTemplates, users } from '../../config/db';
+import { payrollRuns, salaryStructures, salaryTemplates, users } from '../../config/db';
 import { createPayHead, deletePayHead, PayHeadError } from '../../services/payHead.service';
 import { createSalaryTemplate, deleteSalaryTemplate, previewSalaryTemplate, updateSalaryTemplate } from '../../services/salaryTemplate.service';
 import { catalogWithStandard } from '../../services/standardComponents.service';
@@ -83,7 +83,7 @@ async function buildTemplate(ctx: SuwiContext, i: Record<string, unknown>) {
   const code = existing ? existing.code : str(i.code).toUpperCase() || codeFrom(name);
   const balancing = i.balancingComponentCode === null ? undefined : str(i.balancingComponentCode).toUpperCase() || base?.balancingComponentCode;
   const input = {
-    name, code, description: i.description === undefined ? base?.description : str(i.description),
+    name, code, description: i.description === undefined ? base?.description ?? undefined : str(i.description),
     components: [...comps.values()], balancingComponentCode: balancing && comps.has(balancing) ? balancing : undefined,
     epfApplyCeiling: base?.epfApplyCeiling, statutoryWages: base?.statutoryWages, overtimePay: base?.overtimePay, active: base?.active ?? true,
   };
@@ -247,9 +247,17 @@ defineTools(
       return {
         data: {
           nothingSaved: true, basedOn: source ? `copy of ${source.name}` : existing ? `change to ${existing.name}` : 'new',
-          template: describeTemplate({ ...input, org: ctx.org, createdAt: new Date(), updatedAt: new Date() } as SalaryTemplate, byCode),
-          samples: samples.map((s) => ({ ...s.c, sampleAnnualCtc: rupees(s.ctc), basicShareOfGross: `${s.basicShare.toFixed(0)}%` })),
           checks: templateChecks(samples),
+          template: describeTemplate({ ...input, org: ctx.org, createdAt: new Date(), updatedAt: new Date() } as SalaryTemplate, byCode),
+          // One compact row per sample CTC, so three of them stay well inside a tool result.
+          samples: samples.map(({ ctc, c, basicShare, overBudget }) => ({
+            annualCtc: rupees(ctc), monthlyCtc: c.monthlyCtc,
+            earnings: c.earnings.filter((l) => l.monthly !== '₹0').map((l) => `${l.name} ${l.monthly}`).join(', '),
+            ...(c.reimbursements.length ? { reimbursements: c.reimbursements.map((l) => `${l.name} ${l.monthly}`).join(', ') } : {}),
+            ...(c.benefits.length ? { benefits: c.benefits.map((l) => `${l.name} ${l.monthly}`).join(', ') } : {}),
+            gross: c.gross, pfEmployee: c.pf.employee, esi: typeof c.esi === 'string' ? c.esi : c.esi.employee, pt: c.pt, netBeforeTax: c.netBeforeTax,
+            basicShareOfGross: `${basicShare.toFixed(0)}%`, ...(overBudget ? { balancingNegative: true } : {}),
+          })),
           why: whyLines(samples[Math.min(1, samples.length - 1)].computed, ctx.today.slice(0, 7)),
         },
         links: [{ label: 'Open salary templates', view: 'templates' }],
@@ -282,6 +290,8 @@ defineTools(
       const checks = templateChecks(samples);
       const people = existing ? await peopleOn(ctx.org, existing.code) : [];
       const thisMonth = ctx.today.slice(0, 7);
+      const thisRun = existing ? await payrollRuns().findOne({ org: ctx.org, period: thisMonth }, { projection: { status: 1 } }) : null;
+      const whenText = !thisRun ? `${monthName(thisMonth)} has no run yet, so it is the first month on the new rules` : thisRun.status === "draft" ? `${monthName(thisMonth)}'s draft run picks it up when it is recalculated` : `${monthName(thisMonth)} is already ${thisRun.status === "paid" ? "submitted" : thisRun.status.replace("_", " ")} and stays as it is; the next month is the first on the new rules`;
       const sampleLine = (s: (typeof samples)[number]) => `${rupees(s.ctc)}: ${s.computed.earnings.filter((l) => l.monthlyPaise > 0).map((l) => `${l.payslipName} ${rupees(l.monthlyPaise)}`).join(', ')}; PF ${rupees(s.computed.statutory.epf.employeePaise)}, ESI ${s.computed.statutory.esi.applicable ? rupees(s.computed.statutory.esi.employeePaise) : 'none'}, PT ${rupees(s.computed.statutory.pt.amountPaise)}, net ${rupees(s.computed.netMonthlyPaise)}`;
       const lines: { text: string; why?: string; tone?: 'info' | 'warn' }[] = [
         { text: `${input.name} (${input.code}): ${input.components.map((c) => `${byCode.get(c.payHeadCode)?.name ?? c.payHeadCode} ${calcOf(c, c.payHeadCode === input.balancingComponentCode)}`).join('; ')}.`, why: input.balancingComponentCode ? `${byCode.get(input.balancingComponentCode)?.name ?? input.balancingComponentCode} takes whatever CTC has left after the other components and any employer PF/ESI placed inside CTC, so gross always reconciles to CTC.` : 'There is no balancing component, so gross is the sum of the components and may not equal CTC.' },
@@ -290,7 +300,7 @@ defineTools(
         ...(existing
           ? [
               { text: people.length ? `${people.length} ${people.length === 1 ? 'person is' : 'people are'} on it: ${people.slice(0, 8).map((p) => p.name).join(', ')}${people.length > 8 ? ` and ${people.length - 8} more` : ''}.` : 'Nobody is on this template yet.', tone: 'info' as const },
-              { text: `Applies to every run calculated from now on, so ${monthName(thisMonth)} if its run is still a draft (recalculate it), else ${monthName(thisMonth).replace(/\d{4}$/, '').trim()} stays as paid and the next month follows the new rules. Months already submitted are never worked out again.`, why: 'A template has no effective date: a run reads the template as it is when the run is calculated, and a submitted run is a record.' },
+              { text: `Applies to every run calculated from now on: ${whenText}. Months already submitted are never worked out again.`, why: 'A template has no effective date: a run reads the template as it is when the run is calculated, and a submitted run is a record.' },
               ...(people.length ? [{ text: 'Each person keeps their CTC and their own add/remove/edit on top of the template.', why: 'The template holds the rules; per-person overrides live on the salary and are applied after it.' }] : []),
             ]
           : [{ text: `A new template${source ? ` copied from ${source.name}` : ''}; nobody is on it until assigned on Salary details (prepare_assign_salary_template).` }]),
@@ -350,7 +360,7 @@ defineExecutor('salary_template', {
     }
     if (!previous) throw new Error('The earlier template was not kept; change it back on Salary Templates.');
     const { name, description, components, balancingComponentCode, epfApplyCeiling, statutoryWages, overtimePay, active } = previous;
-    await updateSalaryTemplate(byUserId, code, { name, description, components, balancingComponentCode, epfApplyCeiling, statutoryWages: statutoryWages ?? null, overtimePay: overtimePay ?? null, active });
+    await updateSalaryTemplate(byUserId, code, { name, description: description ?? undefined, components, balancingComponentCode, epfApplyCeiling, statutoryWages: statutoryWages ?? null, overtimePay: overtimePay ?? null, active });
     return `${name} is back as it was; it applies from the next run calculated.`;
   },
 });
