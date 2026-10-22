@@ -4,7 +4,7 @@
 // the rest) and assigning a template from the next cycle. The cycle in
 // progress is never touched: the service refuses it, and the card says so.
 import { users } from '../../config/db';
-import { cycleInfoFor, nextPeriod } from '../../services/cycle';
+import { currentPeriodFor, cycleInfoFor, nextPeriod } from '../../services/cycle';
 import { cycleName } from '../../services/feedback-notifications.service';
 import {
   assignKpis, assignTemplateToUsers, createKpiParameter, createKpiTemplate, deleteKpiParameter, deleteKpiTemplate,
@@ -12,7 +12,7 @@ import {
 } from '../../services/kpi.service';
 import { DEPARTMENT_KPI_DEFAULTS, GENERIC_KPI_DEFAULTS, normaliseName, suggestionFor } from '../content/kpiSuggestions';
 import { defineTools, num, str, SuwiContext } from '../tools';
-import { defineExecutor, propose } from '../proposals';
+import { defineExecutor, propose, SuwiActionError } from '../proposals';
 
 const ACTIVE = { lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } as const;
 const MAX_PARAMETERS = 10;
@@ -115,7 +115,7 @@ defineTools(
               department: name, headcount: people.length, designations, managers,
               basedOn: match ? `the ${match.department} default set` : 'the generic default set (no department-specific one matched)',
               parameters: (match?.parameters ?? GENERIC_KPI_DEFAULTS).map(annotate),
-              ...(managers && match?.forManagers ? { forManagers: { ...annotate(match.forManagers), note: `${managers} ${managers === 1 ? 'person' : 'people'} here ${managers === 1 ? 'has' : 'have'} reports; a separate managers' template could add this and re-weight.` } } : {}),
+              ...(managers && match?.forManagers ? { forManagers: { ...annotate(match.forManagers), note: `${managers} ${managers === 1 ? 'person' : 'people'} here ${managers === 1 ? 'has' : 'have'} reports; a separate managers' template could add this at about ${match.forManagers.weight}% and lower the others to keep 100.` } } : {}),
               existingTemplates: templates.filter((t) => t.departments.some((d) => normaliseName(d) === normaliseName(name))).map((t) => t.name),
             };
           }),
@@ -184,7 +184,7 @@ defineTools(
           ...(created.length ? [{ text: `New parameters: ${created.map((p) => `${p.title} ("${p.guidance}")`).join('; ')}.`, why: 'A parameter is the heading a manager scores 0–5 against; its guidance is the line shown under it on the manager\'s form and on the employee\'s Grow page, so they both know what the month is reviewed on.' }] : []),
           ...(reused.length ? [{ text: `Reused as they are: ${reused.map((p) => p.title).join(', ')}.`, why: 'Matched by name, so scores on these stay comparable with earlier reviews instead of starting a duplicate.' }] : []),
           { text: `Weights: ${weightsLine}.`, why: 'Weights add to 100 so the overall score is a weighted mean on the same 0–5 scale as each parameter.' },
-          ...(departments.length || designations.length ? [{ text: `Meant for ${[departments.length ? `departments ${departments.join(', ')}` : '', designations.length ? `designations ${designations.join(', ')}` : ''].filter(Boolean).join(' and ')}: Bulk assign offers these people first.` }] : []),
+          ...(departments.length || designations.length ? [{ text: `Meant for ${[departments.length ? `the ${departments.join(', ')} ${departments.length === 1 ? 'department' : 'departments'}` : '', designations.length ? `${designations.join(', ')}` : ''].filter(Boolean).join(' and ')}: Bulk assign offers these people first.` }] : []),
           ...(people.length
             ? [
                 { text: `Assigned to ${people.length === 1 ? people[0].name : `${people.length} people`} for the ${c.nextName} cycle (from ${dmy(c.nextStart)}); the ${c.liveName} cycle in progress is unchanged.`, why: 'Assignments are written only for a cycle that has not opened, so a manager scoring now never has the parameters change underneath them.' },
@@ -249,13 +249,27 @@ defineTools(
 
 type Before = Record<string, { parameterIds: string[]; weights: Record<string, number>; templateId: string | null } | null>;
 
-/** Puts back what each person held for the cycle: their earlier set, or nothing. */
-async function restoreAssignments(byUserId: string, period: string, userIds: string[], before: Before) {
+/**
+ * Puts back what each person held for the cycle: their earlier set, or nothing.
+ * Only while that cycle has not opened (managers may be scoring against it),
+ * and only for people still on this template: anyone HR has since moved by
+ * hand keeps what HR gave them.
+ */
+async function restoreAssignments(org: string, byUserId: string, templateId: string, period: string, userIds: string[], before: Before) {
+  if (period <= await currentPeriodFor(org)) {
+    throw new SuwiActionError(409, `The ${cycleName(period)} cycle has started, so its assignments can no longer be undone here. Change them under KPI › Bulk assign.`);
+  }
+  const now = await listKpiAssignments(byUserId, period);
+  const stillOnIt = new Set(now.filter((a) => a.templateId === templateId).map((a) => a.userId));
+  let restored = 0;
   for (const userId of userIds) {
+    if (!stillOnIt.has(userId)) continue;
     const b = before[userId];
     if (b) await assignKpis(byUserId, { userId, period, templateId: b.templateId ?? undefined, parameterIds: b.parameterIds, weights: b.weights });
-    else await removeKpiAssignment(byUserId, userId, period).catch(() => undefined);
+    else await removeKpiAssignment(byUserId, userId, period);
+    restored += 1;
   }
+  return { restored, leftAlone: userIds.length - restored };
 }
 
 defineExecutor('create_kpi_template', {
@@ -267,6 +281,7 @@ defineExecutor('create_kpi_template', {
     };
     const createdIds: string[] = [];
     const ids: string[] = [];
+    let templateId: string | null = null;
     try {
       for (const param of parameters) {
         if (param.existingId) { ids.push(param.existingId); continue; }
@@ -274,15 +289,17 @@ defineExecutor('create_kpi_template', {
         createdIds.push(made.id); ids.push(made.id);
       }
       const weights = Object.fromEntries(parameters.map((param, k) => [ids[k], param.weight]));
-      const tpl = await createKpiTemplate(byUserId, { name, description, parameterIds: ids, weights, departments, designations });
+      templateId = (await createKpiTemplate(byUserId, { name, description, parameterIds: ids, weights, departments, designations })).id;
       let assigned = 0;
-      if (assign) assigned = (await assignTemplateToUsers(byUserId, tpl.id, { userIds: assign.userIds, period: assign.period })).assigned;
+      if (assign) assigned = (await assignTemplateToUsers(byUserId, templateId, { userIds: assign.userIds, period: assign.period })).assigned;
       return {
-        message: `Created "${name}" with ${ids.length} parameters${createdIds.length ? ` (${createdIds.length} new)` : ''}.${assign ? ` Assigned to ${assigned} ${assigned === 1 ? 'person' : 'people'} from ${cycleName(assign.period)}.` : ''}`,
-        undo: { templateId: tpl.id, createdParameterIds: createdIds },
+        message: `Created "${name}" with ${ids.length} parameters${createdIds.length ? ` (${createdIds.length} new)` : ''}.${assign ? ` Assigned to ${assigned} ${assigned === 1 ? 'person' : 'people'} from the ${cycleName(assign.period)} cycle.` : ''}`,
+        undo: { templateId, createdParameterIds: createdIds },
       };
     } catch (e) {
       // Half-made set-up is worse than none: take back what this run created.
+      // (assignTemplateToUsers writes in one bulk call, so a failure there left no assignments.)
+      if (templateId) await deleteKpiTemplate(byUserId, templateId).catch(() => undefined);
       for (const id of createdIds) await deleteKpiParameter(byUserId, id).catch(() => undefined);
       throw e;
     }
@@ -290,14 +307,15 @@ defineExecutor('create_kpi_template', {
   async undo(p) {
     const { byUserId, name, assign } = p.payload as { byUserId: string; name: string; assign: { period: string; userIds: string[]; before: Before } | null };
     const { templateId, createdParameterIds } = (p.undo ?? {}) as { templateId?: string; createdParameterIds?: string[] };
-    if (!templateId) throw new Error('Nothing to undo');
-    if (assign) await restoreAssignments(byUserId, assign.period, assign.userIds, assign.before);
+    if (!templateId) throw new SuwiActionError(409, 'Nothing to undo');
+    const r = assign ? await restoreAssignments(p.org, byUserId, templateId, assign.period, assign.userIds, assign.before) : null;
+    // Refuses, with the reason, if anyone is still on it (someone assigned it by hand since).
     await deleteKpiTemplate(byUserId, templateId);
     const kept: string[] = [];
     for (const id of createdParameterIds ?? []) {
       try { await deleteKpiParameter(byUserId, id); } catch (e) { kept.push((e as Error).message); }
     }
-    return `Removed the template "${name}"${createdParameterIds?.length ? ` and ${createdParameterIds.length - kept.length} of its new parameters` : ''}${assign ? `, and put back what people had for ${cycleName(assign.period)}` : ''}.${kept.length ? ` Kept: ${kept.join(' ')}` : ''}`;
+    return `Removed the template "${name}"${createdParameterIds?.length ? ` and ${createdParameterIds.length - kept.length} of its ${createdParameterIds.length} new parameters` : ''}${r ? `, and put back what ${r.restored} ${r.restored === 1 ? 'person' : 'people'} had for ${cycleName(assign!.period)}` : ''}.${kept.length ? ` Kept: ${kept.join(' ')}` : ''}`;
   },
 });
 
@@ -308,8 +326,8 @@ defineExecutor('assign_kpi_template', {
     return { message: `Assigned "${templateName}" to ${r.assigned} ${r.assigned === 1 ? 'person' : 'people'} for the ${cycleName(period)} cycle.` };
   },
   async undo(p) {
-    const { byUserId, templateName, period, userIds, before } = p.payload as { byUserId: string; templateName: string; period: string; userIds: string[]; before: Before };
-    await restoreAssignments(byUserId, period, userIds, before);
-    return `Took "${templateName}" off ${userIds.length === 1 ? 'them' : `${userIds.length} people`} for ${cycleName(period)} and put back what they had.`;
+    const { byUserId, templateId, templateName, period, userIds, before } = p.payload as { byUserId: string; templateId: string; templateName: string; period: string; userIds: string[]; before: Before };
+    const r = await restoreAssignments(p.org, byUserId, templateId, period, userIds, before);
+    return `Took "${templateName}" off ${r.restored === 1 ? '1 person' : `${r.restored} people`} for the ${cycleName(period)} cycle and put back what they had.${r.leftAlone ? ` ${r.leftAlone} had been changed since and were left as they are.` : ''}`;
   },
 });

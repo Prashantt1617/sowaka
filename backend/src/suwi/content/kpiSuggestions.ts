@@ -12,14 +12,14 @@ export interface DepartmentSuggestion {
   /** Normalised department names and common aliases this set is offered for. */
   matches: string[];
   parameters: SuggestedParameter[];
-  /** For anyone in the department who has reports. */
+  /** For anyone in the department who has reports: added at its weight, the others lowered to keep 100. */
   forManagers?: SuggestedParameter;
 }
 
 const LEADERSHIP: SuggestedParameter = {
   title: 'Leadership',
   guidance: 'For anyone with reports: are their people growing, unblocked and clear on what matters this month?',
-  weight: 0,
+  weight: 15,
 };
 
 export const DEPARTMENT_KPI_DEFAULTS: DepartmentSuggestion[] = [

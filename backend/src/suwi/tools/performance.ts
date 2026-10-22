@@ -152,7 +152,7 @@ defineTools(
   {
     name: 'review_material',
     area: 'performance',
-    label: (i) => `Review material for ${i.userId ? 'one person' : 'nobody'}`,
+    label: () => 'Review material: KPIs and feedback for one person',
     description: "Everything behind one person's review, structured: who they are, the KPI parameters (with guidance and weights) they are reviewed on this cycle, any draft their manager has saved, and their sent reviews from earlier cycles with each parameter's score and the manager's note. Use it to draft a review for the manager to edit (the draft is text only; nothing is saved). Find the userId with search_people first.",
     input_schema: { type: 'object', properties: { userId: { type: 'string' }, period: { type: 'string', description: 'Cycle YYYY-MM, default the one in progress' }, cycles: { type: 'number', description: 'Earlier cycles to include, default 3, max 12' } }, required: ['userId'] },
     api: { method: 'GET', path: '/admin/feedback' },
@@ -192,7 +192,10 @@ defineTools(
     name: 'prepare_remind_managers',
     area: 'performance',
     acts: true,
-    label: (i) => `Prepared: remind ${Array.isArray(i.managerUserIds) && i.managerUserIds.length ? i.managerUserIds.length : 'all'} managers with reviews pending`,
+    label: (i) => {
+      const n = Array.isArray(i.managerUserIds) ? i.managerUserIds.length : 0;
+      return `Prepared: remind ${n === 1 ? 'a manager' : n ? `${n} managers` : 'managers'} with reviews pending`;
+    },
     description: 'Prepare a reminder to managers who still have reviews to send this cycle: an in-app notification (and phone push) like the app\'s own Friday reminder, saying how many are done and pending and the cycle\'s last day. Changes nothing until HR confirms. Default: every manager with something pending; or give managerUserIds from review_progress.',
     input_schema: { type: 'object', properties: { managerUserIds: { type: 'array', items: { type: 'string' } } } },
     api: { method: 'GET', path: '/admin/feedback' },
@@ -220,7 +223,7 @@ async function prepareReminder(ctx: SuwiContext, cycle: Awaited<ReturnType<typeo
       { text: `${chosen.reduce((s, r) => s + r.pending, 0)} reviews pending across ${who}; each manager gets one message.`, why: 'The same wording and route as the app\'s own Friday reminder, so managers see nothing unfamiliar. Only managers with at least one report without a sent review this cycle are included; the counts are worked out again at the moment you confirm, from the reporting line and the sent reviews.' },
       ...chosen.slice(0, 8).map((r) => ({ text: `${r.name}: ${r.done} of ${r.reports} done, ${r.pending} pending (${r.pendingFor.slice(0, 5).map((p) => p.name).join(', ')}${r.pendingFor.length > 5 ? ` and ${r.pendingFor.length - 5} more` : ''}).` })),
       ...(chosen.length > 8 ? [{ text: `And ${chosen.length - 8} more managers.` }] : []),
-      { text: `Cycle ${cycle.name} closes on ${dmy(cycle.lastDay)} (${cycle.daysLeft} days left).` },
+      { text: `The ${cycle.name} cycle closes on ${dmy(cycle.lastDay)} (${cycle.daysLeft} days left).` },
       { text: 'A sent notification cannot be taken back, so there is no Undo.', tone: 'warn' as const },
     ],
     effectiveFrom: ctx.today, undoable: false, typeToConfirm: chosen.length >= 10 ? String(chosen.length) : undefined,
