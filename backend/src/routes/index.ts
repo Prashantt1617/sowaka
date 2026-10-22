@@ -27,10 +27,13 @@ import { gamesRouter, playRouter, squadWebRouter } from './game-catalog.routes';
 import { policiesRouter } from './policy-document.routes';
 import { appPagesRouter } from './app-page.routes';
 import { appUpdateRouter } from './app-update.routes';
+import { suwiRouter } from '../suwi/routes';
 
 export const router = Router();
 
 router.use('/auth', authRouter);
+// Suwi, the HR assistant: dashboard users only; each tool checks the asker's tabs.
+router.use('/suwi', suwiRouter);
 router.use('/health', healthRouter);
 router.use('/holidays', holidayRouter);
 // Before `/admin`: the Support desk is gated by a Support role, not by a
