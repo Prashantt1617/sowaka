@@ -12,6 +12,7 @@ import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
 import { Avatar, Card, DateRange, EmptyRow, Pill, SearchInput, StatusTabs, SummaryCard } from '../ui';
 import { IconDownload } from '../icons';
+import { SuwiInsight } from '../suwi/SuwiInsight';
 
 const COLS = '1.8fr .9fr .9fr 1fr 1fr 1.6fr 1fr 1.3fr';
 
@@ -187,6 +188,7 @@ function ConfirmOverride() {
             ? `${row.name}’s ${row.workDate} will be ${approve ? `recorded as ${row.dayType.toLowerCase()}` : 'left as it is'}. ${row.manager ? `${row.manager} is the approver — this overrides them.` : ''}`
             : ''}
         </div>
+        {row && <SuwiInsight kind="correction" id={row.id} pending={row.status === 'Pending'} />}
         <textarea
           value={s.corrNote}
           onChange={(e) => s.setCorrNote(e.target.value)}

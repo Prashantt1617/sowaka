@@ -8,6 +8,7 @@ import { Pill, Avatar } from '../ui';
 import { IconCheck, IconDownload, IconExternal, IconFile, IconStar, IconX } from '../icons';
 import { CloseButton, DrawerHeader, DrawerShell, InfoGrid, RemarkBlock } from './shell';
 import { AddUserModal } from './AddUserModal';
+import { SuwiInsight } from '../suwi/SuwiInsight';
 
 // Shared approve/decline footer for the leave / overtime / reimbursement drawers.
 function DecisionFooter({
@@ -90,6 +91,7 @@ function LeaveDrawer() {
     <DrawerShell onClose={close}>
       <DrawerHeader name={d.name} subtitle={`${d.team} · Applied ${d.applied}`} onClose={close} />
       <div style={{ padding: '20px 24px' }}>
+        <SuwiInsight kind="leave" id={d.id} pending={d.status === 'Pending'} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
           <Pill label={d.byAdmin ? `${d.status} · by admin` : d.status} tone={STAT[d.status]} fontSize={12.5} padding="5px 13px" />
           <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 14, fontWeight: 400, color: 'var(--ink-2)' }}>
@@ -124,6 +126,7 @@ function OvertimeDrawer() {
     <DrawerShell onClose={close}>
       <DrawerHeader name={d.name} subtitle={`${d.team} · Applied ${d.appliedOn}`} onClose={close} />
       <div style={{ padding: '20px 24px' }}>
+        <SuwiInsight kind="overtime" id={d.id} pending={d.status === 'Pending'} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
           <Pill label={d.byAdmin ? `${d.status} · by admin` : d.status} tone={STAT[d.status]} fontSize={12.5} padding="5px 13px" />
           <Pill label={d.duration} tone={OTDUR[d.duration]} fontSize={12} padding="5px 13px" />
@@ -191,6 +194,7 @@ function ReimbursementDrawer() {
     <DrawerShell onClose={close}>
       <DrawerHeader name={d.name} subtitle={`${d.team} · Applied ${d.applyDate}`} onClose={close} />
       <div style={{ padding: '20px 24px' }}>
+        <SuwiInsight kind="claim" id={d.id} pending={d.status === 'Pending'} />
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18 }}>
           <div>
             <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, marginBottom: 3 }}>{d.type} claim</div>
