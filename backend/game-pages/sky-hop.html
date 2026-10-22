@@ -1086,7 +1086,7 @@ html.app .howto{padding-top:20px}
     let scale = 1, cap = 2, sky = null, box = null;
     let state = 'ready', bird, pipes, score, dist = 0, flash = 0, shake = 0, vs = null, rand = Math.random, startedAt = 0;
     let simT = 0, deadAt = 0, shown = false, shownScore = 0, loudest = 0, hudFor = '', taps = [], hist = [];
-    let lag = 0, frameGap = 16, odd = 0, trust = true; // how late taps reach the page and how long frames take, lately; whether the taps' stamps hold
+    let lag = 0, frameGap = 16, odd = 0; // how late taps reach the page and how long frames take, lately; late taps in a row on time frames
     /* The canvas at the screen's resolution (2× at most, less on a phone that can't keep up), the sky's still part drawn once, and where the stage sits. */
     function fit() {
       scale = fitCanvas(cv, W, cap); box = cv.getBoundingClientRect();
@@ -1246,9 +1246,9 @@ html.app .howto{padding-top:20px}
        x, y: where on the screen, for the ring. False when the flight takes no taps now. */
     function press(t, x, y) {
       const now = performance.now();
-      /* Five taps in a row landing far behind while the frames run on time mean the browser's stamps are not on the page's clock: from then on, now. */
-      if (now - t > 60 && frameGap < 25) { if (++odd >= 5) trust = false; } else odd = 0;
-      if (!trust) t = now;
+      /* Taps that keep landing far behind (five in a row) while the frames run on time look like stamps that are not on the page's clock:
+         while that lasts, a tap counts from now. One on time ends it. */
+      if (now - t > 60 && frameGap < 25) { if (++odd >= 5) t = now; } else odd = 0;
       lag += (now - t - lag) * .25;
       if (!(state === 'ready' || state === 'play' || (state === 'over' && !shown && t < deadAt))) return false;
       taps.push({ t, done: false });
