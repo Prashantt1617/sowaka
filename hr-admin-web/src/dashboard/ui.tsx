@@ -353,6 +353,20 @@ export function SkeletonLines({ lines = 3, gap = 12, style }: { lines?: number; 
   );
 }
 
+/** A form's worth of label-and-field pairs, two to a row. */
+export function SkeletonForm({ fields = 6 }: { fields?: number }) {
+  return (
+    <SkeletonFrame style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '22px 26px' }}>
+      {Array.from({ length: fields }, (_, i) => (
+        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <Skeleton w={110} h={10} style={{ opacity: 0.7 }} />
+          <Skeleton w="80%" h={34} r={10} />
+        </div>
+      ))}
+    </SkeletonFrame>
+  );
+}
+
 /** A page's worth: optional summary cards over a card of rows. */
 export function SkeletonPage({ cards = 0, rows = 6, cols = 4, avatar = true }: { cards?: number; rows?: number; cols?: number; avatar?: boolean }) {
   return (

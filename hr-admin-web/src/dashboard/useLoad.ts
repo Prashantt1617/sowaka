@@ -9,7 +9,7 @@ export function combineLoad(...states: LoadState[]): LoadState {
   return 'ready';
 }
 
-type Slot<T> = { key: string; state: LoadState; data: T | undefined };
+type Slot<T> = { key: string; state: LoadState; data: T | undefined; error?: unknown };
 
 /**
  * One request a view needs before it can draw, keyed by `deps`.
@@ -40,7 +40,7 @@ export function useLoad<T>(fetcher: () => Promise<T>, deps: readonly unknown[]) 
     } catch (e) {
       if (my !== gen.current) return;
       if (quiet) throw e;
-      setSlot({ key: k, state: 'error', data: undefined });
+      setSlot({ key: k, state: 'error', data: undefined, error: e });
     }
   }, []);
 
@@ -55,6 +55,8 @@ export function useLoad<T>(fetcher: () => Promise<T>, deps: readonly unknown[]) 
   return {
     data: current.data,
     state: current.state,
+    /** What the failed request threw, for a message. */
+    error: current.state === 'error' ? slot.error : undefined,
     reload: () => run(true),
     retry: () => void run(false),
     setData,

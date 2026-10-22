@@ -18,7 +18,8 @@ import {
 } from '../../services/payroll';
 import type { PayHeadDTO, PayrollRunDTO, PayslipDTO, RunStatus } from '../../services/payroll';
 
-import { Card, EmptyRow, SummaryCard } from '../ui';
+import { Card, EmptyRow, ListPending, SkeletonPage, Spinner, SummaryCard } from '../ui';
+import type { LoadState } from '../ui';
 import { downloadPayslipPdf } from '../payslip';
 import { downloadTdsSheetPdf } from '../tdsSheet';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
@@ -47,7 +48,8 @@ function thisMonth(): string {
 export function PayrollRuns() {
   const { flash } = useStore();
   const [runs, setRuns] = useState<PayrollRunDTO[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Skeleton until the first load; a refresh after an action keeps the list up.
+  const [state, setState] = useState<LoadState>('loading');
   const [period, setPeriod] = useState(thisMonth());
   const [creating, setCreating] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -56,13 +58,12 @@ export function PayrollRuns() {
   const [busy, setBusy] = useState(false);
 
   const loadRuns = async () => {
-    setLoading(true);
     try {
       setRuns(await listRuns());
+      setState('ready');
     } catch (e) {
+      setState((st) => (st === 'ready' ? st : 'error'));
       flash(e instanceof ApiError ? e.message : 'Could not load runs', 'error');
-    } finally {
-      setLoading(false);
     }
   };
   useEffect(() => {
@@ -136,7 +137,10 @@ export function PayrollRuns() {
     return (
       <div>
         <button onClick={() => setOpenId(null)} style={{ ...ghostBtn, marginBottom: 16 }}>← All runs</button>
-        <Card><EmptyRow text={`Opening ${runs.find((r) => r.id === openId)?.period ?? 'run'}…`} /></Card>
+        <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 12 }}>
+          <Spinner label={`Opening ${runs.find((r) => r.id === openId)?.period ?? 'run'}…`} />
+        </div>
+        <SkeletonPage cards={4} rows={6} cols={8} />
       </div>
     );
   }
@@ -153,8 +157,8 @@ export function PayrollRuns() {
       </div>
 
       <Card>
-        {loading ? (
-          <EmptyRow text="Loading…" />
+        {state !== 'ready' ? (
+          <ListPending state={state} onRetry={() => { setState('loading'); void loadRuns(); }} rows={4} cols={5} avatar={false} rowHeight={54} />
         ) : runs.length === 0 ? (
           <EmptyRow text="No payroll runs yet — create one for the current period." />
         ) : (

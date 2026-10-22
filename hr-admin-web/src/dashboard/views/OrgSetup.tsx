@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card } from '../ui';
+import { Card, LoadError, SkeletonForm, SkeletonRows } from '../ui';
 import { ApiError } from '../../services/http';
 import { getOrgSetup, listRuns, updateOrgSetup } from '../../services/payroll';
 import type { OrgSetupDTO, PayrollRunDTO } from '../../services/payroll';
@@ -65,26 +65,34 @@ function useOrgSetup() {
   const { flash } = useStore();
   const [setup, setSetup] = useState<OrgSetupDTO | null>(null);
   const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
+    setFailed(false);
     getOrgSetup().then(setSetup).catch((e) => {
       setFailed(true);
       flash(e instanceof ApiError ? e.message : 'Could not load the payroll setup');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return { setup, setSetup, failed };
+  }, [attempt]);
+  return { setup, setSetup, failed, retry: () => setAttempt((n) => n + 1) };
 }
 
-function Loading({ failed }: { failed: boolean }) {
-  return <Card style={{ padding: '40px 22px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>{failed ? 'The payroll setup could not be loaded.' : 'Loading…'}</Card>;
+/** The setup on its way: a form-shaped skeleton, or the failure with Retry. */
+function Loading({ failed, onRetry }: { failed: boolean; onRetry: () => void }) {
+  if (failed) return <Card><LoadError text="The payroll setup could not be loaded." onRetry={onRetry} /></Card>;
+  return (
+    <Card style={{ padding: 22 }}>
+      <SkeletonForm fields={6} />
+    </Card>
+  );
 }
 
 // —— Pay Schedule ——————————————————————————————————————————————————
 export function PaySchedule() {
   const { flash } = useStore();
-  const { setup, setSetup, failed } = useOrgSetup();
+  const { setup, setSetup, failed, retry } = useOrgSetup();
   const [sched, setSched] = useState<ScheduleForm>({ payDay: 'last_day', firstPayPeriod: '' });
-  const [runs, setRuns] = useState<PayrollRunDTO[]>([]);
+  const [runs, setRuns] = useState<PayrollRunDTO[] | null>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -92,7 +100,7 @@ export function PaySchedule() {
   // The runs list is a convenience: without Payroll Runs access it stays empty.
   useEffect(() => { listRuns().then(setRuns).catch(() => setRuns([])); }, []);
 
-  if (!setup) return <Loading failed={failed} />;
+  if (!setup) return <Loading failed={failed} onRetry={retry} />;
   const locked = setup.payScheduleLocked;
   const setS = <K extends keyof ScheduleForm>(k: K, v: ScheduleForm[K]) => setSched({ ...sched, [k]: v });
 
@@ -118,7 +126,7 @@ export function PaySchedule() {
       setSaving(false);
     }
   };
-  const recent = [...runs].sort((a, b) => b.period.localeCompare(a.period)).slice(0, 6);
+  const recent = [...(runs ?? [])].sort((a, b) => b.period.localeCompare(a.period)).slice(0, 6);
 
   return (
     <div style={{ maxWidth: 620 }}>
@@ -176,7 +184,9 @@ export function PaySchedule() {
       <Card style={{ padding: '18px 20px' }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>Recent payrolls</div>
         <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 2, marginBottom: 14 }}>The latest runs and where they stand. Open Payroll Runs to work on one.</div>
-        {recent.length === 0 ? (
+        {runs === null ? (
+          <SkeletonRows rows={2} cols={2} avatar={false} rowHeight={46} pad={0} />
+        ) : recent.length === 0 ? (
           <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '10px 0' }}>No payroll runs yet.</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -205,7 +215,7 @@ function ReadValue({ text }: { text: string }) {
 // —— Tax Details (statutory registration) ————————————————————————————
 export function TaxDetails() {
   const { flash } = useStore();
-  const { setup, setSetup, failed } = useOrgSetup();
+  const { setup, setSetup, failed, retry } = useOrgSetup();
   const [reg, setReg] = useState<RegForm>(regFrom({ paySchedule: { frequency: 'monthly', payDay: 'last_day' }, statutoryRegistration: {}, payScheduleLocked: false, hasRuns: false }));
   const [saving, setSaving] = useState(false);
   useEffect(() => { if (setup) setReg(regFrom(setup)); }, [setup]);
@@ -231,7 +241,7 @@ export function TaxDetails() {
       setSaving(false);
     }
   };
-  if (!setup) return <Loading failed={failed} />;
+  if (!setup) return <Loading failed={failed} onRetry={retry} />;
   const setR = <K extends keyof RegForm>(k: K, v: RegForm[K]) => setReg({ ...reg, [k]: v });
 
   return (
