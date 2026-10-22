@@ -9,6 +9,8 @@ import { Card } from '../ui';
 import { ApiError } from '../../services/http';
 import { getOrgSetup, listRuns, updateOrgSetup } from '../../services/payroll';
 import type { OrgSetupDTO, PayrollRunDTO } from '../../services/payroll';
+import * as L from './look';
+import './look.css';
 
 type ScheduleForm = {
   payDay: string; // 'last_day' | '1'..'28'
@@ -34,12 +36,12 @@ const fmtPeriod = (p: string) => {
 const fmtPayDay = (d: string) => (d === 'last_day' ? 'Last day of the month' : `Day ${d}`);
 const rupees = (paise: number) => `₹${Math.round(paise / 100).toLocaleString('en-IN')}`;
 
-const RUN_TONE: Record<PayrollRunDTO['status'], { bg: string; fg: string; label: string }> = {
-  draft: { bg: 'var(--surface-2)', fg: 'var(--ink-3)', label: 'Draft' },
-  pending_approval: { bg: 'var(--warn-bg)', fg: 'var(--warn)', label: 'Pending approval' },
-  approved: { bg: 'var(--ok-bg)', fg: 'var(--ok)', label: 'Approved' },
-  rejected: { bg: 'var(--bad-bg)', fg: 'var(--bad)', label: 'Rejected' },
-  paid: { bg: 'var(--t-sky)', fg: 'var(--t-sky-i)', label: 'Paid' },
+const RUN_TONE: Record<PayrollRunDTO['status'], { tone: L.Tone; label: string }> = {
+  draft: { tone: 'mute', label: 'Draft' },
+  pending_approval: { tone: 'warn', label: 'Pending approval' },
+  approved: { tone: 'ok', label: 'Approved' },
+  rejected: { tone: 'bad', label: 'Rejected' },
+  paid: { tone: 'ok', label: 'Paid' },
 };
 
 const scheduleFrom = (s: OrgSetupDTO): ScheduleForm => ({
@@ -76,7 +78,7 @@ function useOrgSetup() {
 }
 
 function Loading({ failed }: { failed: boolean }) {
-  return <Card style={{ padding: '40px 22px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>{failed ? 'The payroll setup could not be loaded.' : 'Loading…'}</Card>;
+  return <Card style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>{failed ? 'The payroll setup could not be loaded.' : 'Loading…'}</Card>;
 }
 
 // —— Pay Schedule ——————————————————————————————————————————————————
@@ -121,23 +123,23 @@ export function PaySchedule() {
   const recent = [...runs].sort((a, b) => b.period.localeCompare(a.period)).slice(0, 6);
 
   return (
-    <div style={{ maxWidth: 620 }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 14 }}>
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 20, minHeight: 40 }}>
         {editing ? (
           <>
-            <button onClick={cancel} style={ghostBtn}>Cancel</button>
-            <button onClick={() => void save()} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
+            <button onClick={cancel} className="lk-btn" style={ghostBtn}>Cancel</button>
+            <button onClick={() => void save()} disabled={saving} className="lk-btn-p" style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
           </>
         ) : (
-          !locked && <button onClick={() => setEditing(true)} style={ghostBtn}>Edit</button>
+          !locked && <button onClick={() => setEditing(true)} className="lk-btn" style={ghostBtn}>Edit</button>
         )}
       </div>
 
       {locked && (
-        <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 12, padding: '14px 16px', marginBottom: 16, display: 'flex', gap: 10 }}>
-          <span style={{ fontSize: 14 }}>🔒</span>
+        <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 14, padding: '12px 14px', marginBottom: 20, display: 'flex', gap: 12 }}>
+          <span style={{ fontSize: 13 }}>🔒</span>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--warn)' }}>Locked after the first payroll run</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--warn)' }}>Locked after the first payroll run</div>
             <div style={{ fontSize: 13, color: 'var(--warn)', marginTop: 3, lineHeight: 1.5 }}>
               Payroll has already run on this schedule, so its pay day and first period can no longer change.
             </div>
@@ -145,15 +147,16 @@ export function PaySchedule() {
         </div>
       )}
 
-      <Card style={{ padding: '18px 20px', marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.65fr) minmax(0, 1fr)', gap: 20, alignItems: 'stretch' }}>
+      <Card style={{ padding: 20, order: 2 }}>
         <SectionTitle title="Pay schedule" sub="How often and when payroll runs." />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
-          <Field label="Frequency">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: editing ? 16 : 10 }}>
+          <Field inline={!editing} label="Frequency">
             {editing ? <input value="Monthly" disabled style={{ ...inputStyle, background: 'var(--surface-2)', color: 'var(--ink-3)' }} /> : <ReadValue text="Monthly" />}
           </Field>
-          <Field label="Pay day">
+          <Field inline={!editing} label="Pay day">
             {editing ? (
-              <select value={sched.payDay} onChange={(e) => setS('payDay', e.target.value)} style={inputStyle}>
+              <select value={sched.payDay} onChange={(e) => setS('payDay', e.target.value)} className="lk-in" style={inputStyle}>
                 <option value="last_day">Last day of the month</option>
                 {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
                   <option key={d} value={String(d)}>Day {d}</option>
@@ -163,9 +166,9 @@ export function PaySchedule() {
               <ReadValue text={fmtPayDay(sched.payDay)} />
             )}
           </Field>
-          <Field label="First pay period">
+          <Field inline={!editing} label="First pay period">
             {editing ? (
-              <input type="month" value={sched.firstPayPeriod} onChange={(e) => setS('firstPayPeriod', e.target.value)} style={inputStyle} />
+              <input type="month" value={sched.firstPayPeriod} onChange={(e) => setS('firstPayPeriod', e.target.value)} className="lk-in" style={inputStyle} />
             ) : (
               <ReadValue text={fmtPeriod(sched.firstPayPeriod)} />
             )}
@@ -173,33 +176,34 @@ export function PaySchedule() {
         </div>
       </Card>
 
-      <Card style={{ padding: '18px 20px' }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>Recent payrolls</div>
-        <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 2, marginBottom: 14 }}>The latest runs and where they stand. Open Payroll Runs to work on one.</div>
+      <Card style={{ padding: 20, order: 1 }}>
+        <div style={L.cardTitle}>Recent payrolls</div>
+        <div style={{ ...L.cardNote, marginTop: 2, marginBottom: 12 }}>The latest runs and where they stand. Open Payroll Runs to work on one.</div>
         {recent.length === 0 ? (
           <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '10px 0' }}>No payroll runs yet.</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {recent.map((r) => (
-              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, border: '1px solid var(--line)', borderRadius: 10, padding: '11px 13px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {recent.map((r, i) => (
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, borderBottom: i === recent.length - 1 ? 'none' : '1px solid var(--line)', padding: '12px 0' }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{fmtPeriod(r.period)}</div>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{fmtPeriod(r.period)}</div>
                   <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{r.employeeCount} people{r.totals ? ` · Net ${rupees(r.totals.netPaise)}` : ''}</div>
                 </div>
-                <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: RUN_TONE[r.status].fg, background: RUN_TONE[r.status].bg, borderRadius: 'var(--r-lg)', padding: '4px 11px' }}>
-                  {RUN_TONE[r.status].label}
+                <span style={L.pill(RUN_TONE[r.status].tone)}>
+                  <span aria-hidden style={L.pillDot} />{RUN_TONE[r.status].label}
                 </span>
               </div>
             ))}
           </div>
         )}
       </Card>
+      </div>
     </div>
   );
 }
 
 function ReadValue({ text }: { text: string }) {
-  return <div style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink)', padding: '4px 0' }}>{text}</div>;
+  return <div style={{ ...L.kvDd }}>{text}</div>;
 }
 
 // —— Tax Details (statutory registration) ————————————————————————————
@@ -235,27 +239,28 @@ export function TaxDetails() {
   const setR = <K extends keyof RegForm>(k: K, v: RegForm[K]) => setReg({ ...reg, [k]: v });
 
   return (
-    <div style={{ maxWidth: 820 }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
-        <button onClick={() => void save()} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
+        <button onClick={() => void save()} disabled={saving} className="lk-btn-p" style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
       </div>
-      <Card style={{ padding: '18px 20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 20, alignItems: 'stretch' }}>
+      <Card style={{ padding: 20 }}>
         <SectionTitle title="Tax details" sub="Org-level tax identity, required before any statutory filing output can be generated." />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <Field label="PAN" hint="Format ABCDE1234F">
-            <input value={reg.pan} onChange={(e) => setR('pan', e.target.value.toUpperCase())} placeholder="ABCDE1234F" style={inputStyle} />
+            <input value={reg.pan} onChange={(e) => setR('pan', e.target.value.toUpperCase())} placeholder="ABCDE1234F" className="lk-in" style={inputStyle} />
           </Field>
           <Field label="TAN" hint="Format ABCD12345E">
-            <input value={reg.tan} onChange={(e) => setR('tan', e.target.value.toUpperCase())} placeholder="ABCD12345E" style={inputStyle} />
+            <input value={reg.tan} onChange={(e) => setR('tan', e.target.value.toUpperCase())} placeholder="ABCD12345E" className="lk-in" style={inputStyle} />
           </Field>
           <Field label="TDS circle">
-            <input value={reg.tdsCircle} onChange={(e) => setR('tdsCircle', e.target.value)} style={inputStyle} />
+            <input value={reg.tdsCircle} onChange={(e) => setR('tdsCircle', e.target.value)} className="lk-in" style={inputStyle} />
           </Field>
           <Field label="Assessing officer (AO) code">
-            <input value={reg.aoCode} onChange={(e) => setR('aoCode', e.target.value)} style={inputStyle} />
+            <input value={reg.aoCode} onChange={(e) => setR('aoCode', e.target.value)} className="lk-in" style={inputStyle} />
           </Field>
           <Field label="Tax payment frequency">
-            <select value={reg.taxPaymentFrequency} onChange={(e) => setR('taxPaymentFrequency', e.target.value as RegForm['taxPaymentFrequency'])} style={inputStyle}>
+            <select value={reg.taxPaymentFrequency} onChange={(e) => setR('taxPaymentFrequency', e.target.value as RegForm['taxPaymentFrequency'])} className="lk-in" style={inputStyle}>
               <option value="">Not set</option>
               <option value="monthly">Monthly</option>
               <option value="quarterly">Quarterly</option>
@@ -263,19 +268,22 @@ export function TaxDetails() {
           </Field>
         </div>
 
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', margin: '18px 0 10px', textTransform: 'uppercase', letterSpacing: '.04em' }}>Deductor details</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+      </Card>
+      <Card style={{ padding: 20 }}>
+        <div style={{ ...L.cardTitle, marginBottom: 16 }}>Deductor details</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
           <Field label="Type">
-            <input value={reg.deductorType} onChange={(e) => setR('deductorType', e.target.value)} placeholder="e.g. Company" style={inputStyle} />
+            <input value={reg.deductorType} onChange={(e) => setR('deductorType', e.target.value)} placeholder="e.g. Company" className="lk-in" style={inputStyle} />
           </Field>
           <Field label="Name">
-            <input value={reg.deductorName} onChange={(e) => setR('deductorName', e.target.value)} style={inputStyle} />
+            <input value={reg.deductorName} onChange={(e) => setR('deductorName', e.target.value)} className="lk-in" style={inputStyle} />
           </Field>
           <Field label="Designation">
-            <input value={reg.deductorDesignation} onChange={(e) => setR('deductorDesignation', e.target.value)} style={inputStyle} />
+            <input value={reg.deductorDesignation} onChange={(e) => setR('deductorDesignation', e.target.value)} className="lk-in" style={inputStyle} />
           </Field>
         </div>
       </Card>
+      </div>
     </div>
   );
 }
@@ -283,21 +291,30 @@ export function TaxDetails() {
 function SectionTitle({ title, sub }: { title: string; sub: string }) {
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 17, fontWeight: 600 }}>{title}</div>
-      <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 2 }}>{sub}</div>
+      <div style={L.cardTitle}>{title}</div>
+      <div style={{ ...L.cardNote, marginTop: 2 }}>{sub}</div>
     </div>
   );
 }
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+function Field({ label, hint, inline, children }: { label: string; hint?: string; inline?: boolean; children: ReactNode }) {
+  // Read-only values sit beside their label, as key–value rows.
+  if (inline) {
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '136px minmax(0, 1fr)', gap: 16, alignItems: 'baseline' }}>
+        <label style={L.kvDt}>{label}</label>
+        {children}
+      </div>
+    );
+  }
   return (
     <div>
-      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 5, color: 'var(--ink-2)' }}>{label}</label>
+      <label style={L.label}>{label}</label>
       {children}
-      {hint && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 4 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>{hint}</div>}
     </div>
   );
 }
 
-const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
-const primaryBtn: CSSProperties = { background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 18px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 18px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const inputStyle: CSSProperties = { ...L.input };
+const primaryBtn: CSSProperties = { ...L.btnPrimary };
+const ghostBtn: CSSProperties = { ...L.btn };

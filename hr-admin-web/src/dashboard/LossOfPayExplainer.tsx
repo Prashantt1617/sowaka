@@ -37,19 +37,19 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
   const covered = payslip.inputs.paidLeaveDaysApplied ?? 0;
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20,20,30,.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--surface)', borderRadius: 'var(--r-lg)', width: 'min(680px, 100%)', maxHeight: '86vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-lg)' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '18px 22px', borderBottom: '1px solid var(--line)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', borderBottom: '1px solid var(--line)' }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 16.5, fontWeight: 600, letterSpacing: '-.3px' }}>Loss of pay · {periodTitle(payslip.period)}</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 3 }}>
+            <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-.01em' }}>Loss of pay · {periodTitle(payslip.period)}</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>
               {payslip.inputs.lopDays} of {payslip.inputs.workingDays} paid days deducted · {inr(lopPaise)}
               {(payslip.inputs.paidLeaveDaysApplied ?? 0) > 0 && ` · ${payslip.inputs.paidLeaveDaysApplied} ${payslip.inputs.paidLeaveDaysApplied === 1 ? 'day' : 'days'} covered by paid leave`}
             </div>
           </div>
-          <button type="button" onClick={onClose} style={{ background: 'var(--surface-2)', border: 'none', borderRadius: 999, width: 34, height: 34, cursor: 'pointer', fontSize: 16, color: 'var(--ink-2)' }}>×</button>
+          <button type="button" onClick={onClose} style={{ background: 'var(--surface)', border: '1px solid var(--line-2)', borderRadius: 999, width: 32, height: 32, cursor: 'pointer', fontSize: 16, color: 'var(--ink-2)' }}>×</button>
         </div>
-        <div style={{ overflowY: 'auto', padding: '6px 22px 18px' }}>
+        <div style={{ overflowY: 'auto', padding: '4px 20px 20px' }}>
           {error && <div style={{ color: 'var(--bad)', fontWeight: 400, padding: '14px 0' }}>{error}</div>}
           {lines.map((line) => {
             const trigger = line.trigger;
@@ -58,7 +58,7 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
             const days = cal && trigger ? cal.days.filter(TRIGGER_DAY[trigger]) : null;
             return (
               <div key={line.trigger ?? line.label} style={{ marginTop: 16 }}>
-                <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 12, padding: '12px 14px' }}>
+                <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 14, padding: '12px 14px' }}>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>
                     {label}: every {line.every ?? '—'} → {line.deductDays ?? '—'} paid {line.deductDays === 1 ? 'day' : 'days'}
                   </div>
@@ -75,8 +75,8 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
                     <tbody>
                       {days.map((d) => (
                         <tr key={d.date}>
-                          <td style={{ padding: '9px 4px', borderBottom: '1px solid var(--line)', fontWeight: 400, width: 150 }}>{dayLabel(d.date)}</td>
-                          <td style={{ padding: '9px 4px', borderBottom: '1px solid var(--line)', color: 'var(--ink-3)' }}>
+                          <td style={{ padding: '10px 4px', borderBottom: '1px solid var(--line)', fontWeight: 400, width: 150 }}>{dayLabel(d.date)}</td>
+                          <td style={{ padding: '10px 4px', borderBottom: '1px solid var(--line)', color: 'var(--ink-3)' }}>
                             {trigger === 'late' && `In at ${clock(d.punchIn)} · late by ${mins(d.lateByMinutes)}`}
                             {trigger === 'early' && `Out at ${clock(d.punchOut)} · left ${mins(d.earlyByMinutes ?? 0)} early`}
                             {trigger === 'absent' && 'Absent'}
@@ -93,7 +93,7 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
             );
           })}
         </div>
-        <div style={{ borderTop: '1px solid var(--line)', padding: '14px 22px', display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--surface-2)', borderRadius: '0 0 16px 16px' }}>
+        <div style={{ borderTop: '1px solid var(--line)', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--surface-2)', borderRadius: '0 0 var(--r-lg) var(--r-lg)' }}>
           <TotalRow label="Total deducted" value={`${fmt(totalDeducted)} ${totalDeducted === 1 ? 'day' : 'days'}`} />
           {covered > 0 && <TotalRow label="Covered by paid leave" value={`−${fmt(Math.min(covered, totalDeducted))} ${Math.min(covered, totalDeducted) === 1 ? 'day' : 'days'}`} />}
           <TotalRow strong label="Loss of pay" value={`${fmt(payslip.inputs.lopDays)} ${payslip.inputs.lopDays === 1 ? 'day' : 'days'} · ${inr(lopPaise)}`} />
