@@ -55,7 +55,8 @@ export async function digestFacts(ctx: SuwiContext): Promise<DigestFacts> {
     quietly(() => listAllReimbursementsForAdmin(ctx.userId), []),
     quietly(() => auditCol().find({ org: ctx.org, kind: 'action', at: { $gte: new Date(`${yesterday}T00:00:00+05:30`), $lt: new Date(`${today}T00:00:00+05:30`) }, 'action.result': 'done' }).limit(10).toArray(), []),
   ]);
-  const needsYou = notices.map((n) => `${n.title}: ${n.why}`);
+  // Titles only: the "Suwi noticed" card beside the digest carries the why.
+  const needsYou = notices.map((n) => n.title);
   const comingUp: string[] = [];
   const gotDone: string[] = [];
   const starting = leaves.filter((l) => l.status === 'approved' && l.startDate >= today && l.startDate <= weekEnd).sort((a, b) => a.startDate.localeCompare(b.startDate));
