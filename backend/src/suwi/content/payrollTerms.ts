@@ -68,7 +68,7 @@ export const PAYROLL_TERMS: PayrollTerm[] = [
     title: 'Professional tax (PT)',
     aliases: ['professional tax', 'profession tax', 'pt slab', 'pt slabs'],
     explain: 'A small monthly tax levied by some states on salaried people, deducted by the employer and paid to the state. The amount depends on the state the person works in and their monthly gross, by slabs; some states charge a different amount in one month of the year (Karnataka and Maharashtra in February). Under the old regime it is deductible from taxable income; states like Delhi and Haryana levy none.',
-    example: 'Karnataka: gross above ₹25,000 a month → ₹200 PT each month (₹300 in February), ₹2,500 a year. Maharashtra: gross above ₹10,000 → ₹200 a month, ₹300 in February.',
+    example: 'Say a state charges ₹200 a month on gross above ₹25,000 and ₹300 in February: someone on ₹40,000 pays ₹200 each month and ₹300 in February, ₹2,500 for the year. The company\'s actual slabs are under thisCompany.',
   },
   {
     key: 'tds',
@@ -110,14 +110,14 @@ export const PAYROLL_TERMS: PayrollTerm[] = [
     title: 'Statutory bonus',
     aliases: ['statutory bonus', 'bonus act', '8.33', 'payment of bonus'],
     explain: 'Under the Payment of Bonus Act, people earning up to ₹21,000 a month get a bonus of 8.33% to 20% of their wage (Basic, or the state minimum wage if higher, capped at ₹7,000 a month). Sowaka can pay it monthly as a salary line or yearly, at the rate the company sets.',
-    example: 'Basic ₹15,000 and the minimum wage ₹12,000: the bonus base is ₹15,000 (capped at ₹7,000 by the Act for the monthly figure), so 8.33% × ₹7,000 = ₹583 a month.',
+    example: 'At an 8.33% rate on a ₹7,000 bonus wage, the bonus is ₹583 a month (₹7,000 a year). The company\'s actual rate and frequency are under thisCompany.',
   },
   {
     key: 'lwf',
     title: 'Labour welfare fund (LWF)',
     aliases: ['labour welfare', 'welfare fund'],
     explain: 'A small contribution by employee and employer to a state welfare fund, with the amount and the cycle set by each state: some deduct every month, others twice a year (June and December). Sowaka applies the state\'s rule by the person\'s work location, and a company can switch it off for a state.',
-    example: 'Haryana: ₹31 from the employee and ₹62 from the employer every month. Delhi: ₹0.75 and ₹2.25, deducted in June and December.',
+    example: 'Say a state takes 0.2% of wages from the employee, capped at ₹35, and twice that from the employer, every month: on ₹20,000 the employee pays ₹35 and the employer ₹70. The company\'s actual rules by state are under thisCompany.',
   },
   {
     key: 'reimbursement',
@@ -130,8 +130,8 @@ export const PAYROLL_TERMS: PayrollTerm[] = [
     key: 'meal_card',
     title: 'Meal card and food coupons',
     aliases: ['meal card', 'food coupon', 'food coupons', 'sodexo', 'meal allowance', 'food card'],
-    explain: 'Money loaded onto a food card instead of paid in cash. It appears as an earning and the same amount comes back off as a food-coupon deduction, so net pay is unchanged. Up to ₹50 a meal (₹2,200 a month for 44 meals; Sowaka treats up to ₹8,800 a month as tax-free under the current rules) is exempt from tax; anything above is taxed.',
-    example: 'Meal card ₹2,200 a month: gross goes up by ₹2,200, a ₹2,200 food-coupon deduction brings net back, and ₹2,200 of taxable income is saved — roughly ₹660 a year less tax at 30%.',
+    explain: 'Money loaded onto a food card instead of paid in cash. It appears as an earning and the same amount comes back off as a food-coupon deduction, so net pay is unchanged. It is tax-free up to a monthly limit (meals at a per-meal cap); anything above is taxed. The limit Sowaka applies is under thisCompany.',
+    example: 'Meal card ₹2,200 a month: gross goes up by ₹2,200, a ₹2,200 food-coupon deduction brings net pay back to where it was, and, being within the tax-free limit, ₹26,400 a year less taxable income — about ₹7,900 less tax at 30%.',
   },
   {
     key: 'overtime',
