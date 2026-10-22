@@ -13,7 +13,8 @@ const base = (size: number, stroke: string, style?: CSSProperties) => ({
   strokeWidth: 1.7,
   strokeLinecap: 'round' as const,
   strokeLinejoin: 'round' as const,
-  style,
+  // Through style too, so a colour token (var(--…)) reaches the stroke.
+  style: { stroke, ...style },
 });
 
 export const Logo = () => (

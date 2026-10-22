@@ -24,24 +24,26 @@ export function Avatar({
         src={src}
         alt=""
         onError={() => setBroken(true)}
-        style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, display: 'block', background: '#EEF0F3' }}
+        style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, display: 'block', background: 'var(--surface-2)' }}
       />
     );
   }
+  // A soft tint of the person's colour with their initials in the full colour.
+  const c = avColor(name);
   return (
     <div
       style={{
         width: size,
         height: size,
         borderRadius: '50%',
-        color: '#fff',
-        fontWeight: 700,
-        fontSize: font,
+        color: c,
+        fontWeight: 600,
+        fontSize: Math.round(font * 0.9 * 2) / 2,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         flexShrink: 0,
-        background: avColor(name),
+        background: `color-mix(in srgb, ${c} 15%, var(--surface))`,
       }}
     >
       {initials(name)}
@@ -52,9 +54,9 @@ export function Avatar({
 export function Pill({
   label,
   tone,
-  fontSize = 12,
-  padding = '4px 11px',
-  fontWeight = 700,
+  fontSize = 11.5,
+  padding = '3px 10px',
+  fontWeight = 500,
 }: {
   label: ReactNode;
   tone: PillT;
@@ -65,14 +67,20 @@ export function Pill({
   return (
     <span
       style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
         fontSize,
         fontWeight,
         padding,
-        borderRadius: 20,
+        borderRadius: 999,
         background: tone.bg,
         color: tone.fg,
+        whiteSpace: 'nowrap',
+        lineHeight: 1.45,
       }}
     >
+      <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', opacity: 0.85, flexShrink: 0 }} />
       {label}
     </span>
   );
@@ -81,16 +89,16 @@ export function Pill({
 export function SummaryCard({
   label,
   value,
-  color = '#222222',
+  color = 'var(--ink)',
 }: {
   label: string;
   value: ReactNode;
   color?: string;
 }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #EBEBEB', borderRadius: 15, padding: '15px 17px' }}>
-      <div style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-.6px', marginTop: 3, color }}>{value}</div>
+    <div style={{ background: 'var(--surface)', border: '1px solid transparent', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow)', padding: '14px 16px', minHeight: 96 }}>
+      <div style={{ fontSize: 12.5, color: 'var(--ink-2)', fontWeight: 400 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', marginTop: 6, color }}>{value}</div>
     </div>
   );
 }
@@ -107,13 +115,13 @@ export function SearchInput({
   width?: number;
 }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '1px solid #EBEBEB', borderRadius: 11, padding: '9px 13px', gap: 9, width }}>
+    <div className="ds-field" style={{ display: 'flex', alignItems: 'center', background: 'var(--surface)', border: '1px solid var(--line-2)', borderRadius: 999, height: 40, padding: '0 14px', gap: 8, width }}>
       <IconSearch />
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        style={{ border: 'none', outline: 'none', background: 'none', fontSize: 16, width: '100%', color: '#222222' }}
+        style={{ border: 'none', outline: 'none', background: 'none', fontSize: 13, width: '100%', color: 'var(--ink)' }}
       />
     </div>
   );
@@ -131,7 +139,7 @@ export function StatusTabs<T extends string>({
   labels?: Partial<Record<T, string>>;
 }) {
   return (
-    <div style={{ display: 'flex', background: '#fff', border: '1px solid #EBEBEB', borderRadius: 11, padding: 3, gap: 2 }}>
+    <div style={{ display: 'inline-flex', flexWrap: 'wrap', background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 999, padding: 4, gap: 2 }}>
       {options.map((opt) => {
         const on = active === opt;
         return (
@@ -141,12 +149,13 @@ export function StatusTabs<T extends string>({
             style={{
               border: 'none',
               cursor: 'pointer',
-              fontSize: 14,
-              fontWeight: 700,
-              padding: '6px 13px',
-              borderRadius: 8,
-              background: on ? '#222222' : 'transparent',
-              color: on ? '#fff' : '#717171',
+              fontSize: 13,
+              fontWeight: on ? 500 : 400,
+              height: 32,
+              padding: '0 13px',
+              borderRadius: 999,
+              background: on ? 'var(--sel)' : 'transparent',
+              color: on ? 'var(--on-sel)' : 'var(--ink-2)',
             }}
           >
             {labels?.[opt] ?? (opt === ('all' as T) ? 'All' : opt)}
@@ -174,13 +183,14 @@ export function SelectBox({
         style={{
           appearance: 'none',
           WebkitAppearance: 'none',
-          background: '#fff',
-          border: '1px solid #EBEBEB',
-          borderRadius: 11,
-          padding: '9px 32px 9px 13px',
-          fontSize: 14,
-          fontWeight: 700,
-          color: '#484848',
+          background: 'var(--surface)',
+          border: '1px solid var(--line-2)',
+          borderRadius: 999,
+          height: 40,
+          padding: '0 34px 0 14px',
+          fontSize: 13,
+          fontWeight: 500,
+          color: 'var(--ink)',
           cursor: 'pointer',
         }}
       >
@@ -206,16 +216,16 @@ export function DateRange({
     border: 'none',
     outline: 'none',
     background: 'none',
-    fontSize: 14,
-    fontWeight: 700,
-    color: '#484848',
+    fontSize: 13,
+    fontWeight: 500,
+    color: 'var(--ink)',
     cursor: 'pointer',
   };
   return (
-    <div style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '1px solid #EBEBEB', borderRadius: 11, padding: '7px 11px', gap: 7 }}>
-      <span style={{ fontSize: 14, fontWeight: 700, color: '#717171' }}>From</span>
+    <div style={{ display: 'flex', alignItems: 'center', background: 'var(--surface)', border: '1px solid var(--line-2)', borderRadius: 999, height: 40, padding: '0 14px', gap: 7 }}>
+      <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-3)' }}>From</span>
       <input type="date" value={from} max={to || undefined} onChange={(e) => onFrom(e.target.value)} style={box} />
-      <span style={{ fontSize: 14, fontWeight: 700, color: '#717171' }}>to</span>
+      <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-3)' }}>to</span>
       <input type="date" value={to} min={from || undefined} onChange={(e) => onTo(e.target.value)} style={box} />
       {(from || to) && (
         <button
@@ -224,7 +234,7 @@ export function DateRange({
             onTo('');
           }}
           title="Clear dates"
-          style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9197A2', fontSize: 20, fontWeight: 700, lineHeight: 1, padding: '0 2px' }}
+          style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-4)', fontSize: 18, fontWeight: 500, lineHeight: 1, padding: '0 2px' }}
         >
           ×
         </button>
@@ -235,7 +245,7 @@ export function DateRange({
 
 export function Card({ children, style }: { children: ReactNode; style?: CSSProperties }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #EBEBEB', borderRadius: 18, overflow: 'hidden', ...style }}>
+    <div style={{ background: 'var(--surface)', border: '1px solid transparent', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow)', overflow: 'hidden', ...style }}>
       {children}
     </div>
   );
@@ -243,7 +253,7 @@ export function Card({ children, style }: { children: ReactNode; style?: CSSProp
 
 export function EmptyRow({ text }: { text: string }) {
   return (
-    <div style={{ padding: 48, textAlign: 'center', color: '#717171', fontSize: 16, fontWeight: 600 }}>
+    <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13, fontWeight: 400 }}>
       {text}
     </div>
   );
