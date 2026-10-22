@@ -5,3 +5,6 @@ import './tools/requests';
 import './tools/shifts';
 import './tools/performance';
 import './tools/kpi-templates';
+import './tools/connect';
+import './tools/recognition';
+import './tools/engagement-plan';
