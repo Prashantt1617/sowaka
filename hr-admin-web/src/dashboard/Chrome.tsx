@@ -12,6 +12,7 @@ import { canOpen } from './access';
 import { useSupportBadge } from './supportBadge';
 import type { ThemeMode } from './themeMode';
 import { applyThemeMode, readThemeMode } from './themeMode';
+import { SuwiOrb } from './suwi/SuwiPanel';
 
 export type NavItem = { key: View; label: string };
 
@@ -89,6 +90,7 @@ export const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'PAYROLL', items: PAYROLL },
   { title: 'CLAIMS', items: CLAIMS },
   { title: 'CONNECT', items: CONNECT },
+  { title: 'SUWI', items: [{ key: 'suwi', label: 'Settings & activity' }] },
 ];
 const SOON: Partial<Record<View, boolean>> = {};
 
@@ -447,7 +449,7 @@ function ThemeSwitch() {
 }
 
 export function Topbar() {
-  const { view, user, signOut } = useStore();
+  const { view, user, signOut, suwiOpen, setSuwiOpen } = useStore();
   const [title, meta] = TITLES[view];
   const displayName = user?.name ?? 'HR Admin';
   const userInitials = displayName
@@ -491,6 +493,10 @@ export function Topbar() {
           <input placeholder="Search people, requests…" style={{ border: 'none', outline: 'none', background: 'none', fontSize: 13, width: '100%', color: 'var(--ink)' }} />
         </div>
         <div style={{ flex: 1 }} />
+        <button type="button" onClick={() => setSuwiOpen(!suwiOpen)} aria-expanded={suwiOpen} title="Ask Suwi, your HR assistant" className="ds-icon-btn"
+          style={{ ...iconBtn, width: 'auto', padding: '0 14px 0 8px', gap: 8, border: '1px solid var(--accent-line)', background: suwiOpen ? 'var(--accent)' : 'var(--accent-soft)', color: suwiOpen ? 'var(--on-accent)' : 'var(--accent-ink)', fontWeight: 500, fontSize: 13, font: 'inherit' }}>
+          <SuwiOrb size={22} />Ask Suwi
+        </button>
         <ThemeSwitch />
         <button className="ds-icon-btn" style={iconBtn}>
           <IconBell />

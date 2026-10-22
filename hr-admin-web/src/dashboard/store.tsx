@@ -175,6 +175,9 @@ function useProvideStore() {
   const [empSearch, setEmpSearch] = useState('');
   const [empTeam, setEmpTeam] = useState('all');
   const [empDrawerId, setEmpDrawerId] = useState<string | null>(null);
+  // Suwi's panel, and a profile it asked to open (the Employees view picks it up).
+  const [suwiOpen, setSuwiOpen] = useState(false);
+  const [profileRequest, setProfileRequest] = useState<{ userId: string; tab?: string } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState<UserForm>(emptyForm);
 
@@ -539,6 +542,11 @@ function useProvideStore() {
     setViewRaw('overtime');
     setOtDrawerId(id);
   };
+  const openProfile = (userId: string, tab?: string) => {
+    closeAllOverlays();
+    setViewRaw('employees');
+    setProfileRequest({ userId, tab });
+  };
   const goReimbRow = (id: string) => {
     closeAllOverlays();
     setViewRaw('reimbursements');
@@ -582,6 +590,8 @@ function useProvideStore() {
     addOpen, setAddOpen, form, setFormField, saveUser,
     // cross-nav
     goOvertimeRow, goReimbRow,
+    // Suwi
+    suwiOpen, setSuwiOpen, profileRequest, openProfile, clearProfileRequest: () => setProfileRequest(null),
   };
 }
 

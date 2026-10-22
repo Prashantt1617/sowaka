@@ -533,3 +533,5 @@ input[type='number']::-webkit-outer-spin-button {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+
+@keyframes pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }

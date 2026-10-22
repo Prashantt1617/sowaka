@@ -11,6 +11,8 @@ export type AccessKey = View | typeof SALARY_DETAILS;
 export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boolean {
   if (!user?.dashboardAccess) return false;
   if (view === 'usersroles' || view === 'employeeimport') return user.dashboardAdmin === true;
+  // Suwi is for everyone with dashboard access; what it can reach is decided per question.
+  if (view === 'suwi') return true;
   // People › Tasks goes with Employees.
   if (view === 'peopletasks') return canOpen(user, 'employees');
   // Support desk is a role, never a tab: full access and Admin don't include it.

@@ -46,7 +46,8 @@ export type View =
   | 'games'
   | 'relaygame'
   | 'engagementposts'
-  | 'contentreports';
+  | 'contentreports'
+  | 'suwi';
 
 /** A leave type as the lists show it: 'Casual', 'Comp-off', or a type HR added, 'Emergency'. */
 export type LeaveType = string;
@@ -172,6 +173,7 @@ export const TITLES: Record<View, [string, string]> = {
   relaygame: ['Relay game', 'Connect · launch-event teams and questions'],
   engagementposts: ['Engagement posts', 'Connect · challenges published for people to play'],
   contentreports: ['Reported content', 'Connect · posts and comments employees have reported'],
+  suwi: ['Suwi', 'Your HR assistant · what it may do, and what it did'],
 };
 
 export type Placeholder = {

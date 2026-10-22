@@ -132,7 +132,8 @@ async function callGemini(input: { model?: string; system: string; tools?: LlmTo
     systemInstruction: { parts: [{ text: input.system }] },
     contents,
     ...(tools.length ? { tools: [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description, parameters: geminiSchema(t.input_schema) })) }] } : {}),
-    generationConfig: { maxOutputTokens: input.maxTokens ?? 2048 },
+    // Thinking tokens count as output on Gemini, so leave room beyond the answer itself.
+    generationConfig: { maxOutputTokens: (input.maxTokens ?? 1500) + 2500 },
   };
   const res = await post(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { 'x-goog-api-key': key }, body) as {
     candidates?: { content?: { parts?: GPart[] }; finishReason?: string }[];

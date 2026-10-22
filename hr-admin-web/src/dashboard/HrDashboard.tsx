@@ -46,6 +46,8 @@ import { KpiParameters } from './views/KpiParameters';
 import { KpiTemplates } from './views/KpiTemplates';
 import { KpiBulkAssign } from './views/KpiBulkAssign';
 import { SupportDesk } from './views/SupportDesk';
+import { SuwiSettings } from './views/SuwiSettings';
+import { SuwiPanel } from './suwi/SuwiPanel';
 
 function CurrentView() {
   const { view } = useStore();
@@ -128,6 +130,8 @@ function CurrentView() {
       return <OutOfLocation />;
     case 'support':
       return <SupportDesk />;
+    case 'suwi':
+      return <SuwiSettings />;
     default:
       return <Placeholder />;
   }
@@ -163,6 +167,7 @@ function Shell() {
         </div>
       </main>
       <Drawers />
+      <SuwiPanel />
       <Toast />
     </div>
   );

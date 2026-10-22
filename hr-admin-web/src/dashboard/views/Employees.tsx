@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { ETYPE } from '../theme';
@@ -8,7 +8,7 @@ import type { Emp } from '../seed';
 import { AddEmployeeWizard } from './AddEmployeeWizard';
 import { AccountLimitModal } from './AccountLimitModal';
 import { getAccountLimit } from '../../services/hrms';
-import { EmployeeProfile } from './EmployeeProfile';
+import { EmployeeProfile, type ProfileTab } from './EmployeeProfile';
 import { NameCell, Td, Th } from './kpiUi';
 import { ghostBtn, primaryBtn, smallBtn } from './kpiStyles';
 import * as XLSX from 'xlsx';
@@ -31,8 +31,21 @@ export function Employees() {
   };
   const [selected, setSelected] = useState<Emp | null>(null);
   const [page, setPage] = useState(1);
+  // Opened from elsewhere (Suwi's links): which person, and on which tab.
+  const [initialTab, setInitialTab] = useState<ProfileTab | undefined>(undefined);
+  const req = s.profileRequest;
+  useEffect(() => {
+    if (!req) return;
+    const e = s.emps.find((x) => x.id === req.userId);
+    if (e) {
+      const tabs: Record<string, ProfileTab> = { calendar: 'calendar', salary: 'salary', performance: 'performance', requests: 'requests', orgchart: 'orgchart' };
+      setInitialTab(req.tab ? tabs[req.tab] : undefined);
+      setSelected(e);
+    }
+    s.clearProfileRequest();
+  }, [req, s]);
 
-  if (selected) return <EmployeeProfile emp={selected} onBack={() => setSelected(null)} onOpen={setSelected} />;
+  if (selected) return <EmployeeProfile key={selected.id} emp={selected} initialTab={initialTab} onBack={() => { setSelected(null); setInitialTab(undefined); }} onOpen={setSelected} />;
 
   // Departments actually present in this org, rather than a fixed list that
   // may name teams the company does not have.
