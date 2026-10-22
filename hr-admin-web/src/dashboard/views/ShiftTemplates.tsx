@@ -481,7 +481,7 @@ export function ShiftTemplates() {
                   style={{
                     padding: '8px 20px', fontSize: 13, fontWeight: 500, cursor: 'pointer',
                     border: 'none', borderLeft: value ? 'none' : '1px solid var(--line)',
-                    background: on ? 'var(--accent-grad)' : 'var(--surface)', color: on ? '#fff' : 'var(--ink-2)',
+                    background: on ? 'var(--accent-grad)' : 'var(--surface)', color: on ? 'var(--on-accent)' : 'var(--ink-2)',
                     fontFamily: 'inherit',
                   }}
                 >
@@ -567,7 +567,7 @@ function YesNoRow({ label, value, onChange }: { label: string; value: boolean; o
       <div style={{ flex: 1, fontSize: 13.5, color: 'var(--ink)', fontWeight: 400 }}>{label}</div>
       <div style={{ display: 'inline-flex', border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden' }}>
         {[true, false].map((v) => (
-          <button key={String(v)} type="button" onClick={() => onChange(v)} style={{ padding: '7px 18px', fontSize: 13, fontWeight: 500, cursor: 'pointer', border: 'none', borderLeft: v ? 'none' : '1px solid var(--line)', background: value === v ? 'var(--accent-grad)' : 'var(--surface)', color: value === v ? '#fff' : 'var(--ink-2)', fontFamily: 'inherit' }}>{v ? 'Yes' : 'No'}</button>
+          <button key={String(v)} type="button" onClick={() => onChange(v)} style={{ padding: '7px 18px', fontSize: 13, fontWeight: 500, cursor: 'pointer', border: 'none', borderLeft: v ? 'none' : '1px solid var(--line)', background: value === v ? 'var(--accent-grad)' : 'var(--surface)', color: value === v ? 'var(--on-accent)' : 'var(--ink-2)', fontFamily: 'inherit' }}>{v ? 'Yes' : 'No'}</button>
         ))}
       </div>
     </div>
@@ -700,7 +700,7 @@ function RuleRow({ label, on, onToggle, children }: { label: string; on: boolean
       <div>{children}</div>
       <div style={{ display: 'inline-flex', border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden' }}>
         {[true, false].map((v) => (
-          <button key={String(v)} type="button" onClick={() => onToggle(v)} style={{ padding: '7px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', border: 'none', borderLeft: v ? 'none' : '1px solid var(--line)', background: on === v ? 'var(--accent-grad)' : 'var(--surface)', color: on === v ? '#fff' : 'var(--ink-2)', fontFamily: 'inherit' }}>{v ? 'On' : 'Off'}</button>
+          <button key={String(v)} type="button" onClick={() => onToggle(v)} style={{ padding: '7px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', border: 'none', borderLeft: v ? 'none' : '1px solid var(--line)', background: on === v ? 'var(--accent-grad)' : 'var(--surface)', color: on === v ? 'var(--on-accent)' : 'var(--ink-2)', fontFamily: 'inherit' }}>{v ? 'On' : 'Off'}</button>
         ))}
       </div>
     </div>
@@ -742,4 +742,4 @@ const defaultPill: CSSProperties = { marginLeft: 8, fontSize: 11.5, fontWeight: 
 const inactivePill: CSSProperties = { marginLeft: 8, fontSize: 11.5, fontWeight: 600, color: 'var(--ink-4)', background: 'var(--surface-2)', borderRadius: 'var(--r-lg)', padding: '2px 9px' };
 const dangerBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--bad)', border: '1px solid var(--bad-line)', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', fontWeight: 500, color: 'var(--accent-ink)', cursor: 'pointer' };
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };

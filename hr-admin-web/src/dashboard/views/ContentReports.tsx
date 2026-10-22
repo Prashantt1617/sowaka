@@ -242,7 +242,7 @@ function Button({
   onClick: () => void;
 }) {
   const palette = {
-    primary: { background: 'var(--accent-grad)', color: '#fff', border: '1px solid var(--accent)' },
+    primary: { background: 'var(--accent-grad)', color: 'var(--on-accent)', border: '1px solid var(--accent)' },
     danger: { background: 'var(--surface)', color: 'var(--bad)', border: '1px solid var(--bad-line)' },
     plain: { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)' },
   }[tone];

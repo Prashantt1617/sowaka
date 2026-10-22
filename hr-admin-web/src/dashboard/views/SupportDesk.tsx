@@ -491,10 +491,10 @@ function QueueTabs({ view, counts, onSelect }: { view: SupportView; counts: Supp
         const n = counts?.[v.key];
         return (
           <button key={v.key} type="button" onClick={() => onSelect(v.key)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, padding: '6px 12px', borderRadius: 999, background: on ? 'var(--ink)' : 'transparent', color: on ? '#fff' : 'var(--ink-3)', fontFamily: 'inherit' }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, padding: '6px 12px', borderRadius: 999, background: on ? 'var(--ink)' : 'transparent', color: on ? 'var(--on-sel)' : 'var(--ink-3)', fontFamily: 'inherit' }}>
             {v.label}
             {n !== undefined && (
-              <span style={{ fontSize: 11.5, fontWeight: 600, borderRadius: 'var(--r-lg)', padding: '0 7px', lineHeight: '18px', background: on ? 'rgba(255,255,255,.18)' : v.key === 'new' && n > 0 ? 'var(--warn-bg)' : 'var(--surface-2)', color: on ? '#fff' : v.key === 'new' && n > 0 ? 'var(--warn)' : 'var(--ink-3)' }}>{n}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 600, borderRadius: 'var(--r-lg)', padding: '0 7px', lineHeight: '18px', background: on ? 'color-mix(in srgb, var(--on-sel) 18%, transparent)' : v.key === 'new' && n > 0 ? 'var(--warn-bg)' : 'var(--surface-2)', color: on ? 'var(--on-sel)' : v.key === 'new' && n > 0 ? 'var(--warn)' : 'var(--ink-3)' }}>{n}</span>
             )}
           </button>
         );
@@ -520,7 +520,7 @@ function TicketRow({ ticket: t, role, meId, active, onOpen }: { ticket: SupportT
           <span style={{ fontSize: 12.5, fontWeight: 400, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {t.requester.name}{t.requester.department ? <span style={{ color: 'var(--ink-4)' }}> · {t.requester.department}</span> : null}
           </span>
-          {unread && <span style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 600, background: 'var(--accent-grad)', color: '#fff', borderRadius: 'var(--r-lg)', padding: '1px 7px' }}>{t.unread}</span>}
+          {unread && <span style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 600, background: 'var(--accent-grad)', color: 'var(--on-accent)', borderRadius: 'var(--r-lg)', padding: '1px 7px' }}>{t.unread}</span>}
         </span>
         <span style={{ display: 'block', fontSize: 12.5, color: unread ? 'var(--ink)' : 'var(--ink-3)', fontWeight: unread ? 500 : 400, marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {t.lastMessagePreview || '—'}
@@ -708,7 +708,7 @@ function AssignMenu({ label, currentId, meId, disabled, onPick }: { label: strin
   return (
     <div ref={box} style={{ position: 'relative' }}>
       <button type="button" disabled={disabled} onClick={() => setOpen((o) => !o)} style={{ ...primaryBtn, gap: 8 }}>
-        {label} <IconChevronDown stroke="#fff" />
+        {label} <IconChevronDown stroke="var(--on-accent)" />
       </button>
       {open && (
         <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 40, width: 300, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, boxShadow: 'var(--shadow-lg)', overflow: 'hidden', animation: 'pop .16s ease both' }}>
@@ -869,7 +869,7 @@ function Bubble({ m }: { m: SupportMessage }) {
       <div style={{ fontSize: 11.5, fontWeight: 500, color: ours ? 'var(--accent-ink)' : 'var(--ink-3)', margin: '0 4px 3px' }}>
         {who} · <span style={{ fontWeight: 400, color: 'var(--ink-4)' }}>{clock(m.createdAt)}</span>
       </div>
-      <div style={{ maxWidth: '74%', background: ours ? 'var(--accent-grad)' : 'var(--surface)', color: ours ? '#fff' : 'var(--ink)', border: ours ? 'none' : '1px solid var(--line)', borderRadius: 16, borderTopRightRadius: ours ? 4 : 14, borderTopLeftRadius: ours ? 14 : 4, padding: '10px 13px', fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+      <div style={{ maxWidth: '74%', background: ours ? 'var(--accent-grad)' : 'var(--surface)', color: ours ? 'var(--on-accent)' : 'var(--ink)', border: ours ? 'none' : '1px solid var(--line)', borderRadius: 16, borderTopRightRadius: ours ? 4 : 14, borderTopLeftRadius: ours ? 14 : 4, padding: '10px 13px', fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
         {m.text}
         {m.attachments?.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: m.text ? 9 : 0 }}>
@@ -892,8 +892,8 @@ function AttachmentView({ a, ours }: { a: SupportAttachment; ours: boolean }) {
   }
   return (
     <a href={a.url || undefined} target="_blank" rel="noreferrer"
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 11px', borderRadius: 10, background: ours ? 'rgba(255,255,255,.16)' : 'var(--accent-soft)', color: ours ? '#fff' : 'var(--accent-ink)', textDecoration: 'none', fontSize: 12.5, fontWeight: 500, maxWidth: 240 }}>
-      <IconFile size={16} stroke={ours ? '#fff' : 'var(--accent-ink)'} />
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 11px', borderRadius: 10, background: ours ? 'rgba(255,255,255,.16)' : 'var(--accent-soft)', color: ours ? 'var(--on-accent)' : 'var(--accent-ink)', textDecoration: 'none', fontSize: 12.5, fontWeight: 500, maxWidth: 240 }}>
+      <IconFile size={16} stroke={ours ? 'var(--on-accent)' : 'var(--accent-ink)'} />
       <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
       {a.size ? <span style={{ fontWeight: 400, opacity: 0.75, whiteSpace: 'nowrap' }}>{fileSize(a.size)}</span> : null}
     </a>
@@ -972,6 +972,6 @@ function Composer({ onSend }: { onSend: (text: string, files: File[]) => void })
   );
 }
 
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
+const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
 const linkBtn: CSSProperties = { background: 'none', border: 'none', color: 'var(--accent-ink)', fontWeight: 500, fontSize: 'inherit', cursor: 'pointer', padding: 0, fontFamily: 'inherit' };

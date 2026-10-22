@@ -61,7 +61,7 @@ const AV = [
   '#B0506A',
   '#5E57D6',
   '#0A6AD1',
-  '#6E7A4E',
+  'var(--t-olive-i)',
   '#23806A',
   '#C2562A',
   '#A85C84',
@@ -83,10 +83,10 @@ export const TYPE: Record<LeaveType, string> = {
 
 // Status pills are solid: green done, yellow waiting, red refused, blue paid.
 const SOLID = {
-  ok: { bg: 'var(--p-green)', fg: '#fff' },
+  ok: { bg: 'var(--p-green)', fg: 'var(--on-accent)' },
   warn: { bg: 'var(--p-yellow)', fg: 'var(--p-yellow-ink)' },
-  bad: { bg: 'var(--p-red)', fg: '#fff' },
-  info: { bg: 'var(--p-blue)', fg: '#fff' },
+  bad: { bg: 'var(--p-red)', fg: 'var(--on-accent)' },
+  info: { bg: 'var(--p-blue)', fg: 'var(--on-accent)' },
   mute: { bg: 'var(--mute-bg)', fg: 'var(--ink-2)' },
 } satisfies Record<string, Pill>;
 

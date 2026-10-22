@@ -197,9 +197,9 @@ function Td({ children, muted, mono }: { children: ReactNode; muted?: boolean; m
 }
 
 const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
-const note: CSSProperties = { fontSize: 12.5, color: '#3A5A6B', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.55 };
+const note: CSSProperties = { fontSize: 12.5, color: 'var(--ink-2)', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.55 };
 const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', fontWeight: 500, color: 'var(--accent-ink)', cursor: 'pointer' };
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 13.5, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
 const editBtn: CSSProperties = { background: 'none', border: 'none', padding: '4px 6px', font: 'inherit', fontSize: 13, fontWeight: 500, color: 'var(--accent-ink)', cursor: 'pointer' };
 const removeBtn: CSSProperties = { background: 'none', border: 'none', padding: '4px 6px', font: 'inherit', fontSize: 13, fontWeight: 500, color: 'var(--bad)', cursor: 'pointer' };

@@ -315,6 +315,6 @@ function Field({ label, full, children }: { label: string; full?: boolean; child
 const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 };
 const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
 const readonly: CSSProperties = { background: 'var(--surface-2)', color: 'var(--ink-3)' };
-const primaryBtn: CSSProperties = { background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const primaryBtn: CSSProperties = { background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 18px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const logoTile: CSSProperties = { width: 76, height: 76, borderRadius: 'var(--r-lg)', background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 14px rgba(0,136,255,.28)' };
 const lockPill: CSSProperties = { fontSize: 11.5, fontWeight: 500, color: 'var(--warn)', background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 'var(--r-lg)', padding: '2px 10px' };

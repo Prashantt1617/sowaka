@@ -86,7 +86,7 @@ const SUPPORT_CHOICES: { value: SupportRole | null; label: string; hint: string 
 ];
 const SUPPORT_TONE: Record<SupportRole, { bg: string; fg: string; label: string }> = {
   head: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)', label: 'Support head' },
-  staff: { bg: '#EEF0E6', fg: '#5E6B3E', label: 'Support staff' },
+  staff: { bg: 'var(--t-olive)', fg: 'var(--t-olive-i)', label: 'Support staff' },
 };
 
 function SupportRolePill({ role }: { role?: SupportRole | null }) {
@@ -344,7 +344,7 @@ function RolesTab() {
 
 const tabBar: CSSProperties = { display: 'flex', width: 'fit-content', maxWidth: '100%', overflowX: 'auto', gap: 2, padding: 4, background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 999, marginBottom: 20 };
 const tabBtn: CSSProperties = { background: 'none', border: 'none', height: 32, padding: '0 14px', borderRadius: 999, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
 const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
 const chip: CSSProperties = { background: 'var(--accent-soft)', color: 'var(--accent-ink)', border: '1px solid var(--accent-line)', borderRadius: 999, padding: '6px 12px', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
 const rowMenuBtn: CSSProperties = { width: 32, height: 32, borderRadius: 9, color: 'var(--ink-4)', fontSize: 16, fontWeight: 500 };

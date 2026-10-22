@@ -196,7 +196,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.6px' }}>{emp.name}</div>
               <Pill label={emp.empType} tone={ETYPE[emp.empType]} />
-              {emp.isDirector && <Pill label="Director" tone={{ bg: 'var(--t-lilac)', fg: '#8A4A78' }} />}
+              {emp.isDirector && <Pill label="Director" tone={{ bg: 'var(--t-lilac)', fg: 'var(--t-plum-i)' }} />}
             </div>
             <div style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 400, marginTop: 4 }}>
               {emp.role} · {emp.team} · {emp.employeeId}
@@ -419,7 +419,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
             <button
               type="button"
               onClick={() => { s.setOrgChartFocus(emp.id); s.setView('orgchart'); }}
-              style={{ background: 'var(--accent-grad)', color: '#fff', border: 'none', borderRadius: 999, padding: '9px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
+              style={{ background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', borderRadius: 999, padding: '9px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
             >
               Open in org chart ↗
             </button>
@@ -473,7 +473,7 @@ export type ProfileTab = 'profile' | 'performance' | 'calendar' | 'requests' | '
 const CAL_TONE: Record<CalendarDayStatus, { bg: string; fg: string; label: string }> = {
   present: { bg: 'var(--ok-bg)', fg: 'var(--ok)', label: 'Present' },
   half_day: { bg: 'var(--warn-bg)', fg: 'var(--warn)', label: 'Half day' },
-  missed_punch: { bg: '#FBE9DE', fg: 'var(--warn)', label: 'Missed punch' },
+  missed_punch: { bg: 'var(--t-peach)', fg: 'var(--warn)', label: 'Missed punch' },
   absent: { bg: 'var(--bad-bg)', fg: 'var(--bad)', label: 'Absent' },
   on_leave: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)', label: 'On leave' },
   week_off: { bg: 'var(--surface-2)', fg: 'var(--ink-4)', label: 'Week off' },
@@ -566,7 +566,7 @@ function SalarySlips({ userId }: { userId: string }) {
                 <td style={{ ...slipTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}><strong>{inrPaise(payslip.netPayablePaise)}</strong></td>
                 <td style={{ ...slipTd, textAlign: 'right' }}>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    <button type="button" onClick={() => void downloadPayslipPdf(payslip, company)} style={{ background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Download slip</button>
+                    <button type="button" onClick={() => void downloadPayslipPdf(payslip, company)} style={{ background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Download slip</button>
                     {payslip.id && <button type="button" onClick={() => void downloadTdsSheetPdf(payslip.id!).catch((e) => alert(e instanceof Error ? e.message : String(e)))} style={{ background: 'var(--surface)', color: 'var(--accent-ink)', border: '1px solid var(--accent)', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>TDS sheet</button>}
                   </div>
                 </td>
@@ -693,8 +693,8 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                   <span style={{ fontSize: 13.5, fontWeight: 600, color: day.status === 'upcoming' ? 'var(--ink-4)' : 'var(--ink)' }}>{Number(day.date.slice(8))}</span>
-                  {ring ? <span style={{ fontSize: 10.5, fontWeight: 600, color: '#fff', background: 'var(--bad)', borderRadius: 5, padding: '1px 5px' }}>{ring}</span>
-                    : day.hr ? <span style={{ fontSize: 10.5, fontWeight: 600, color: '#fff', background: 'var(--accent-grad)', borderRadius: 5, padding: '1px 5px' }}>HR</span>
+                  {ring ? <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--on-accent)', background: 'var(--bad-solid)', borderRadius: 5, padding: '1px 5px' }}>{ring}</span>
+                    : day.hr ? <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--on-accent)', background: 'var(--accent-grad)', borderRadius: 5, padding: '1px 5px' }}>HR</span>
                     : day.lateByMinutes > 0 && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--t-lilac-i)' }}>late {day.lateByMinutes}m</span>}
                 </div>
                 {day.hr && prev && (
@@ -745,7 +745,7 @@ function MarkDay({ day, saving, onClose, onSave }: { day: CalendarDayDTO; saving
         <div style={{ display: 'flex', gap: 10, marginTop: 16, alignItems: 'center' }}>
           {day.hr && <button type="button" disabled={saving} onClick={() => onSave(null, '')} style={{ background: 'none', border: 'none', color: 'var(--bad)', fontWeight: 500, fontSize: 13, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Remove mark</button>}
           <button type="button" onClick={onClose} style={{ marginLeft: 'auto', background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-          <button type="button" disabled={saving} onClick={() => onSave(status, note)} style={{ background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : 'Save'}</button>
+          <button type="button" disabled={saving} onClick={() => onSave(status, note)} style={{ background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>
@@ -882,7 +882,7 @@ function PaymentDetails({ userId }: { userId: string }) {
             {field('UAN', 'uan', '12 digits')}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-            <button type="button" onClick={() => void save()} disabled={saving} style={{ ...editBtn, background: 'var(--accent-grad)', color: '#fff', borderColor: 'var(--accent)' }}>{saving ? 'Saving…' : 'Save'}</button>
+            <button type="button" onClick={() => void save()} disabled={saving} style={{ ...editBtn, background: 'var(--accent-grad)', color: 'var(--on-accent)', borderColor: 'var(--accent)' }}>{saving ? 'Saving…' : 'Save'}</button>
             <button type="button" onClick={() => setForm(null)} style={editBtn}>Cancel</button>
           </div>
         </div>
@@ -1038,7 +1038,7 @@ function DeleteEmployee({ emp, onClose, onDeleted }: { emp: Emp; onClose: () => 
         <input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', border: '1px solid var(--line-2)', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit' }} />
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
           <button type="button" onClick={onClose} style={{ background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-          <button type="button" disabled={!matches || busy} onClick={() => void run()} style={{ background: matches ? 'var(--bad)' : 'var(--bad-bg)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: matches ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>{busy ? 'Deleting…' : 'Delete for good'}</button>
+          <button type="button" disabled={!matches || busy} onClick={() => void run()} style={{ background: matches ? 'var(--bad-solid)' : 'var(--bad-bg)', color: 'var(--on-accent)', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: matches ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>{busy ? 'Deleting…' : 'Delete for good'}</button>
         </div>
       </div>
     </div>
@@ -1206,7 +1206,7 @@ function EditDetails({ emp, onClose }: { emp: Emp; onClose: () => void }) {
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: '1px solid var(--line)' }}>
           <button type="button" disabled={saving} onClick={onClose} style={{ background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-          <button type="button" disabled={saving} onClick={save} style={{ background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : 'Save'}</button>
+          <button type="button" disabled={saving} onClick={save} style={{ background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>
@@ -1267,7 +1267,7 @@ function ShiftPicker({ emp, onChanged }: { emp: Emp; onChanged: () => void }) {
           {usable.map((t) => <option key={t.id} value={t.id}>{nameOf(t)}</option>)}
         </select>
         <button type="button" disabled={saving || picked === current?.id} onClick={save}
-          style={{ background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: picked === current?.id ? 'default' : 'pointer', opacity: saving || picked === current?.id ? 0.5 : 1, fontFamily: 'inherit' }}>
+          style={{ background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '10px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: picked === current?.id ? 'default' : 'pointer', opacity: saving || picked === current?.id ? 0.5 : 1, fontFamily: 'inherit' }}>
           {saving ? 'Saving…' : 'Assign'}
         </button>
       </div>

@@ -423,7 +423,7 @@ function Steps({ step, busy, onGo }: { step: Step; busy: boolean; onGo: (target:
                 width: 22, height: 22, borderRadius: '50%', display: 'flex',
                 alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 600,
                 background: state === 'todo' ? 'var(--surface-2)' : 'var(--accent-grad)',
-                color: state === 'todo' ? 'var(--ink-4)' : '#fff',
+                color: state === 'todo' ? 'var(--ink-4)' : 'var(--on-accent)',
               }}>
                 {state === 'done' ? '✓' : i + 1}
               </span>

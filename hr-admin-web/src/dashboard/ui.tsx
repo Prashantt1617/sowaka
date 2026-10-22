@@ -36,14 +36,15 @@ export function Avatar({
         width: size,
         height: size,
         borderRadius: '50%',
-        color: c,
+        // Lifted toward the ink in dark mode so the initials stay readable.
+        color: `color-mix(in srgb, ${c} var(--av-fg), var(--ink))`,
         fontWeight: 600,
         fontSize: Math.round(font * 0.9 * 2) / 2,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         flexShrink: 0,
-        background: `color-mix(in srgb, ${c} 15%, var(--surface))`,
+        background: `color-mix(in srgb, ${c} var(--av-bg), var(--surface))`,
       }}
     >
       {initials(name)}

@@ -154,7 +154,7 @@ export function Employees() {
 const pageBtn: CSSProperties = { ...smallBtn };
 const pageBtnDisabled: CSSProperties = { color: 'var(--ink-4)', cursor: 'not-allowed', background: 'var(--surface-2)' };
 const pageNum: CSSProperties = { minWidth: 32, height: 32, background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer' };
-const pageNumActive: CSSProperties = { background: 'var(--accent-grad)', color: '#fff', borderColor: 'var(--accent)' };
+const pageNumActive: CSSProperties = { background: 'var(--accent-grad)', color: 'var(--on-accent)', borderColor: 'var(--accent)' };
 
 /** The list as filtered on screen, as an Excel sheet. */
 function exportEmployees(rows: Emp[]) {

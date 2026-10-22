@@ -770,7 +770,7 @@ const focusBtn: CSSProperties = {
   marginRight: 6,
 };
 const focusBtnActive: CSSProperties = {
-  color: '#fff', background: 'var(--accent-grad)', border: '1px solid var(--accent)', boxShadow: '0 0 0 4px rgba(0,136,255,.18)',
+  color: 'var(--on-accent)', background: 'var(--accent-grad)', border: '1px solid var(--accent)', boxShadow: '0 0 0 4px rgba(0,136,255,.18)',
 };
 const trailBar: CSSProperties = {
   position: 'absolute', left: 20, top: 16, display: 'flex', alignItems: 'center', gap: 6,

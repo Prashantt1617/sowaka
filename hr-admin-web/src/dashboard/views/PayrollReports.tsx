@@ -323,4 +323,4 @@ const grand: CSSProperties = { fontWeight: 600, borderTop: '2px solid var(--line
 const note: CSSProperties = { padding: '10px 16px', fontSize: 12.5, color: 'var(--ink-3)' };
 const filterLabel: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 };
 const inputS: CSSProperties = { padding: '7px 10px', border: '1px solid var(--line-2)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
-const exportBtn: CSSProperties = { background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const exportBtn: CSSProperties = { background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };

@@ -214,6 +214,6 @@ function Row({ label: text, value, warn, onClick }: { label: string; value: numb
 
 const label: CSSProperties = { fontSize: 11.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--ink-4)' };
 const pill: CSSProperties = { fontSize: 12, fontWeight: 500, borderRadius: 7, padding: '3px 9px', marginLeft: 8, verticalAlign: 'middle' };
-const primary: CSSProperties = { background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const primary: CSSProperties = { background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '10px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
 const link: CSSProperties = { background: 'none', border: 'none', padding: 0, color: 'var(--accent-ink)', fontWeight: 500, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' };
 const select: CSSProperties = { padding: '6px 10px', border: '1px solid var(--line-2)', borderRadius: 8, fontSize: 12.5, fontFamily: 'inherit', background: 'var(--surface)' };

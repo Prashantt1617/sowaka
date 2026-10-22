@@ -95,7 +95,7 @@ export function HrOverrideFooter({
           />
           <div style={{ display: 'flex', gap: 9, marginTop: 10 }}>
             <button onClick={onCancelDecline} style={{ flex: 1, border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink-2)', borderRadius: 999, padding: 12, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
-            <button onClick={onConfirmDecline} style={{ flex: 1.3, border: 'none', background: 'var(--bad)', color: '#fff', borderRadius: 999, padding: 12, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Confirm decline</button>
+            <button onClick={onConfirmDecline} style={{ flex: 1.3, border: 'none', background: 'var(--bad-solid)', color: 'var(--on-accent)', borderRadius: 999, padding: 12, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Confirm decline</button>
           </div>
         </div>
       ) : (
@@ -108,7 +108,7 @@ export function HrOverrideFooter({
             <IconOverride />
             <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--accent-ink)', flex: 1 }}>HR override</span>
             <button onClick={onOpenDecline} style={{ border: '1px solid var(--bad-line)', background: 'var(--surface)', color: 'var(--bad)', borderRadius: 999, padding: '8px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Decline</button>
-            <button onClick={onApprove} style={{ border: 'none', background: 'var(--ok)', color: '#fff', borderRadius: 999, padding: '8px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Approve</button>
+            <button onClick={onApprove} style={{ border: 'none', background: 'var(--ok-solid)', color: 'var(--on-accent)', borderRadius: 999, padding: '8px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Approve</button>
           </div>
         </>
       )}

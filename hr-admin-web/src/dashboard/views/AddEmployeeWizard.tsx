@@ -366,7 +366,7 @@ function InviteScreen({ name, email, employeeId, orgName }: { name: string; emai
             password and sign in to view payslips, submit IT declarations and raise reimbursement claims.
           </div>
           <div style={{ marginTop: 14 }}>
-            <span style={{ display: 'inline-block', background: 'var(--accent-grad)', color: '#fff', fontSize: 13, fontWeight: 500, padding: '9px 16px', borderRadius: 10 }}>Set password &amp; sign in</span>
+            <span style={{ display: 'inline-block', background: 'var(--accent-grad)', color: 'var(--on-accent)', fontSize: 13, fontWeight: 500, padding: '9px 16px', borderRadius: 10 }}>Set password &amp; sign in</span>
           </div>
         </div>
       </div>
@@ -518,7 +518,7 @@ const pickDot = (on: boolean): CSSProperties => ({
 const pickTitle: CSSProperties = { display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--ink)' };
 const pickSub: CSSProperties = { display: 'block', fontSize: 12.5, color: 'var(--ink-3)', marginTop: 3, lineHeight: 1.5 };
 const emptyNote: CSSProperties = {
-  fontSize: 12.5, color: '#3A5A6B', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)',
+  fontSize: 12.5, color: 'var(--ink-2)', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)',
   borderRadius: 10, padding: '11px 14px', lineHeight: 1.55,
 };
 
@@ -567,7 +567,7 @@ function Progress({ step, onJump }: { step: number; onJump: (i: number) => void 
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 13, fontWeight: 600,
                 background: filled ? 'var(--accent-grad)' : 'var(--surface)',
-                color: filled ? '#fff' : 'var(--ink-4)',
+                color: filled ? 'var(--on-accent)' : 'var(--ink-4)',
                 border: `2px solid ${filled ? 'var(--accent)' : 'var(--line)'}`,
               }}>
                 {done ? '✓' : i + 1}
@@ -1225,7 +1225,7 @@ function PaymentStep({ holderName }: { holderName: string }) {
                 <span style={{
                   width: 22, height: 22, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   border: `2px solid ${selected ? 'var(--accent)' : 'var(--line)'}`,
-                  background: selected ? 'var(--accent-grad)' : 'var(--surface)', color: '#fff',
+                  background: selected ? 'var(--accent-grad)' : 'var(--surface)', color: 'var(--on-accent)',
                 }}>
                   {selected && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5 10 17.5 19 7" /></svg>}
                 </span>
@@ -1536,7 +1536,7 @@ function InfoDot({ text }: { text: string }) {
       {open && (
         <span style={{
           position: 'absolute', bottom: 'calc(100% + 9px)', left: '50%', transform: 'translateX(-50%)',
-          width: 250, background: 'var(--ink)', color: '#fff', fontSize: 13, fontWeight: 400, fontStyle: 'normal',
+          width: 250, background: 'var(--ink)', color: 'var(--on-sel)', fontSize: 13, fontWeight: 400, fontStyle: 'normal',
           lineHeight: 1.45, padding: '9px 12px', borderRadius: 9, boxShadow: 'var(--shadow-lg)', zIndex: 5,
         }}>
           {text}
@@ -1551,9 +1551,9 @@ const overlay: CSSProperties = { position: 'fixed', inset: 0, zIndex: 90, backgr
 const modalCard: CSSProperties = { width: '100%', maxWidth: 1440, height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)' };
 export const inputStyle: CSSProperties = { width: '100%', padding: '11px 12px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
 const iconBtn: CSSProperties = { marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--ink-3)' };
-const primaryBtn: CSSProperties = { background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const primaryBtn: CSSProperties = { background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 18px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 export const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 };
 export const grid3: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 18 };
 export const infoCallout: CSSProperties = { display: 'flex', gap: 10, alignItems: 'flex-start', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: 'var(--t-sky-i)', lineHeight: 1.5 };
-export const infoIcon: CSSProperties = { flexShrink: 0, width: 18, height: 18, borderRadius: '50%', background: '#5A8FD1', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 600, fontStyle: 'italic', marginTop: 1 };
+export const infoIcon: CSSProperties = { flexShrink: 0, width: 18, height: 18, borderRadius: '50%', background: '#5A8FD1', color: 'var(--on-accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 600, fontStyle: 'italic', marginTop: 1 };

@@ -905,7 +905,7 @@ function Check({ checked, onChange, label, sub, info }: { checked: boolean; onCh
   return (
     <div style={{ display: 'flex', gap: 10, padding: '7px 0' }}>
       <button type="button" onClick={() => onChange(!checked)}
-        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: 'pointer', border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--line-2)'}`, background: checked ? 'var(--accent-grad)' : 'var(--surface)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, lineHeight: 1, padding: 0 }}>
+        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: 'pointer', border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--line-2)'}`, background: checked ? 'var(--accent-grad)' : 'var(--surface)', color: 'var(--on-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, lineHeight: 1, padding: 0 }}>
         {checked ? '✓' : ''}
       </button>
       <div>
@@ -919,9 +919,9 @@ function Check({ checked, onChange, label, sub, info }: { checked: boolean; onCh
 const tabBar: CSSProperties = { display: 'flex', width: 'fit-content', maxWidth: '100%', overflowX: 'auto', gap: 2, padding: 4, background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 999, marginBottom: 24 };
 const tabBtn: CSSProperties = { background: 'none', border: 'none', height: 32, padding: '0 14px', borderRadius: 999, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit' };
 const fieldLabel: CSSProperties = { display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--ink-2)' };
-const tooltipStyle: CSSProperties = { position: 'absolute', bottom: '150%', left: '50%', transform: 'translateX(-50%)', background: 'var(--ink)', color: '#fff', fontSize: 12, lineHeight: 1.45, borderRadius: 8, padding: '9px 12px', width: 230, zIndex: 60, boxShadow: 'var(--shadow)', fontWeight: 400, textAlign: 'left', whiteSpace: 'normal' };
+const tooltipStyle: CSSProperties = { position: 'absolute', bottom: '150%', left: '50%', transform: 'translateX(-50%)', background: 'var(--ink)', color: 'var(--on-sel)', fontSize: 12, lineHeight: 1.45, borderRadius: 8, padding: '9px 12px', width: 230, zIndex: 60, boxShadow: 'var(--shadow)', fontWeight: 400, textAlign: 'left', whiteSpace: 'normal' };
 const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
-const primaryBtn: CSSProperties = { background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 20px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const primaryBtn: CSSProperties = { background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 20px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 18px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const pencilBtn: CSSProperties = { width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink-3)', cursor: 'pointer', fontSize: 13 };
 const cardGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 22, maxWidth: 1120 };

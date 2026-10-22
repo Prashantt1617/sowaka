@@ -22,7 +22,7 @@ function DecisionFooter({
   return (
     <div style={{ position: 'sticky', bottom: 0, background: 'var(--surface)', borderTop: '1px solid var(--line)', padding: '16px 24px', display: 'flex', gap: 11 }}>
       <button onClick={onDecline} style={{ flex: 1, border: '1px solid var(--bad-line)', background: 'var(--bad-bg)', color: 'var(--bad)', borderRadius: 999, padding: 13, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Decline</button>
-      <button onClick={onApprove} style={{ flex: 1.4, border: 'none', background: 'var(--ok)', color: '#fff', borderRadius: 999, padding: 13, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>{approveLabel}</button>
+      <button onClick={onApprove} style={{ flex: 1.4, border: 'none', background: 'var(--ok-solid)', color: 'var(--on-accent)', borderRadius: 999, padding: 13, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>{approveLabel}</button>
     </div>
   );
 }
@@ -71,7 +71,7 @@ function ConfirmOverrideModal({
           <button onClick={onCancel} style={{ flex: 1, border: '1px solid var(--line)', background: 'var(--surface)', borderRadius: 999, padding: 12, fontSize: 14, fontWeight: 500, color: 'var(--ink-2)', cursor: 'pointer' }}>Cancel</button>
           <button
             onClick={onConfirm}
-            style={{ flex: 1.3, border: 'none', color: '#fff', borderRadius: 999, padding: 12, fontSize: 14, fontWeight: 500, cursor: 'pointer', background: isApprove ? 'var(--ok)' : 'var(--bad)' }}
+            style={{ flex: 1.3, border: 'none', color: 'var(--on-accent)', borderRadius: 999, padding: 12, fontSize: 14, fontWeight: 500, cursor: 'pointer', background: isApprove ? 'var(--ok-solid)' : 'var(--bad-solid)' }}
           >
             {confirmLabel}
           </button>
@@ -334,7 +334,7 @@ function RbBillModal() {
                 s.flash(d.hasBill ? 'Preparing bill…' : 'No file was uploaded for this claim');
               }
             }}
-            style={{ marginTop: 14, width: '100%', boxSizing: 'border-box', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: url ? 'var(--ink)' : 'var(--line-2)', color: '#fff', borderRadius: 999, padding: '11px 15px', fontSize: 14, fontWeight: 500, cursor: url ? 'pointer' : 'not-allowed' }}
+            style={{ marginTop: 14, width: '100%', boxSizing: 'border-box', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: url ? 'var(--ink)' : 'var(--line-2)', color: 'var(--on-sel)', borderRadius: 999, padding: '11px 15px', fontSize: 14, fontWeight: 500, cursor: url ? 'pointer' : 'not-allowed' }}
           >
             <IconDownload /> {isPdf ? 'Open bill' : 'Open full size'}
           </a>

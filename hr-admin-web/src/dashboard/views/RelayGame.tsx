@@ -19,7 +19,7 @@ import { ApiError } from '../../services/http';
 import { useStore } from '../store';
 import { Card, EmptyRow, Pill, SummaryCard } from '../ui';
 
-const button = (bg: string, color = '#fff') => ({
+const button = (bg: string, color = 'var(--on-accent)') => ({
   border: 'none',
   background: bg,
   color,
@@ -51,7 +51,7 @@ const stepBadge = (muted: boolean) => ({
   flex: 'none',
 });
 const ghost = {
-  ...button('#fff', 'var(--ink)'),
+  ...button('var(--on-accent)', 'var(--ink)'),
   border: '1px solid var(--line)',
 };
 const field = {

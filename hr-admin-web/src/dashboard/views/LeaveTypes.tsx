@@ -207,7 +207,7 @@ function YesNo({ value, onChange }: { value: boolean; onChange: (v: boolean) => 
             padding: '7px 18px', fontSize: 13, fontWeight: 500, cursor: 'pointer', border: 'none',
             borderLeft: o.v ? 'none' : '1px solid var(--line)',
             background: value === o.v ? 'var(--accent-grad)' : 'var(--surface)',
-            color: value === o.v ? '#fff' : 'var(--ink-2)',
+            color: value === o.v ? 'var(--on-accent)' : 'var(--ink-2)',
           }}
         >
           {o.l}
@@ -233,6 +233,6 @@ const removeButton: CSSProperties = { padding: 0, fontSize: 13, fontWeight: 500,
 const input: CSSProperties = { padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 9, fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
 const fieldLabel: CSSProperties = { fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' };
 const annualPill: CSSProperties = { marginLeft: 'auto', fontSize: 12.5, fontWeight: 500, color: 'var(--t-sky-i)', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 'var(--r-lg)', padding: '3px 11px' };
-const note: CSSProperties = { fontSize: 12.5, color: '#3A5A6B', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 10, padding: '11px 14px', lineHeight: 1.55 };
+const note: CSSProperties = { fontSize: 12.5, color: 'var(--ink-2)', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 10, padding: '11px 14px', lineHeight: 1.55 };
 const lapseRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, fontSize: 13, color: 'var(--ink-3)' };
 const lapseTag: CSSProperties = { flexShrink: 0, fontSize: 11.5, fontWeight: 600, letterSpacing: '.02em', color: 'var(--ink-3)', background: 'var(--surface-2)', borderRadius: 'var(--r-lg)', padding: '3px 10px' };

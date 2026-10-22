@@ -415,7 +415,7 @@ export function Feedback() {
                     minWidth: 32, height: 32, borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer',
                     border: `1px solid ${p === curPage ? 'var(--accent)' : 'var(--line)'}`,
                     background: p === curPage ? 'var(--accent-grad)' : 'var(--surface)',
-                    color: p === curPage ? '#fff' : 'var(--ink-2)',
+                    color: p === curPage ? 'var(--on-accent)' : 'var(--ink-2)',
                   }}
                 >
                   {p}

@@ -51,7 +51,7 @@ const leaveGlyph = (
   </svg>
 );
 const claimGlyph = (
-  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#6E7A4E" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--t-olive-i)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M5 3h14v18l-2.5-1.5L14 21l-2-1.5L10 21l-2.5-1.5L5 21z" />
     <path d="M9 8h6M9 12h6" />
   </svg>
@@ -75,7 +75,7 @@ export function Overview() {
     <div style={{ animation: 'fade .3s ease both' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, marginBottom: 22 }}>
         <StatCard icon={leaveGlyph} iconBg="var(--accent-soft)" value={leavesPending} label="Leaves pending" onClick={() => s.setView('leave')} />
-        <StatCard icon={claimGlyph} iconBg="#EEF0E6" value={claims} label="Claims to review" onClick={() => s.setView('reimbursements')} />
+        <StatCard icon={claimGlyph} iconBg="var(--t-olive)" value={claims} label="Claims to review" onClick={() => s.setView('reimbursements')} />
         <StatCard icon={feedbackGlyph} iconBg="var(--t-lilac)" value={reviewsPending} label="Feedbacks pending" onClick={() => s.setView('feedback')} />
       </div>
 

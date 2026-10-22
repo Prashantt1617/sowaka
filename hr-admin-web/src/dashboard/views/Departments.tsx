@@ -132,4 +132,4 @@ const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', f
 const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const emptyTag: CSSProperties = { marginLeft: 10, fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)', background: 'var(--surface-2)', borderRadius: 99, padding: '3px 9px' };
 const linkBtn: CSSProperties = { marginLeft: 8, background: 'none', border: 'none', padding: 0, color: 'var(--bad)', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' };
-const note: CSSProperties = { fontSize: 12.5, color: '#3A5A6B', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.55 };
+const note: CSSProperties = { fontSize: 12.5, color: 'var(--ink-2)', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.55 };

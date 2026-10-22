@@ -87,7 +87,7 @@ export function AddUserModal() {
 
         <div style={{ padding: '0 26px 22px', display: 'flex', gap: 11, justifyContent: 'flex-end' }}>
           <button onClick={close} style={{ border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink-2)', borderRadius: 999, padding: '11px 20px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
-          <button onClick={s.saveUser} style={{ border: 'none', background: 'var(--accent-grad)', color: '#fff', borderRadius: 999, padding: '11px 22px', fontSize: 14, fontWeight: 500, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,136,255,.26)' }}>Add user</button>
+          <button onClick={s.saveUser} style={{ border: 'none', background: 'var(--accent-grad)', color: 'var(--on-accent)', borderRadius: 999, padding: '11px 22px', fontSize: 14, fontWeight: 500, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,136,255,.26)' }}>Add user</button>
         </div>
       </div>
     </div>

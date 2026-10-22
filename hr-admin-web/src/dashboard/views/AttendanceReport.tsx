@@ -65,7 +65,7 @@ const GAPS: { key: Gap; label: string }[] = [
 const TONE: Record<Facet, { bg: string; fg: string }> = {
   present: { bg: 'var(--ok-bg)', fg: 'var(--ok)' },
   half_day: { bg: 'var(--warn-bg)', fg: 'var(--warn)' },
-  missed: { bg: '#FBE9DE', fg: 'var(--warn)' },
+  missed: { bg: 'var(--t-peach)', fg: 'var(--warn)' },
   on_leave: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
   late: { bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' },
 };
@@ -467,7 +467,7 @@ function ExportButton({ label, disabled, onClick }: { label: string; disabled: b
       type="button"
       onClick={onClick}
       disabled={disabled}
-      style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--ink)', border: 'none', color: '#fff', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}
+      style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--ink)', border: 'none', color: 'var(--on-sel)', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}
     >
       <IconDownload /> {label}
     </button>

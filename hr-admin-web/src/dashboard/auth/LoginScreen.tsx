@@ -21,7 +21,7 @@ const primaryBtn = {
   width: '100%',
   border: 'none',
   background: 'var(--accent-grad)',
-  color: '#fff',
+  color: 'var(--on-accent)',
   borderRadius: 999,
   padding: '13px',
   fontSize: 14,

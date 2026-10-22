@@ -31,4 +31,4 @@ export function AccountLimitModal({ max, onClose }: { max: number | null; onClos
 
 const overlay: CSSProperties = { position: 'fixed', inset: 0, zIndex: 95, background: 'var(--scrim)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 22 };
 const card: CSSProperties = { width: '100%', maxWidth: 460, display: 'flex', flexDirection: 'column', gap: 14, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 'var(--r-lg)', padding: '22px 24px', boxShadow: 'var(--shadow-lg)' };
-const primaryBtn: CSSProperties = { background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 22px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const primaryBtn: CSSProperties = { background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 22px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };

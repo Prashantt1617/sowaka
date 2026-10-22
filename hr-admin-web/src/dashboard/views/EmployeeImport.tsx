@@ -415,7 +415,7 @@ const declineBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--
 const undoBtn: CSSProperties = { ...declineBtn, color: 'var(--accent-ink)', border: '1px solid var(--accent-line)' };
 const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, color: 'var(--accent-ink)', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5 };
 
-const primary: CSSProperties = { display: 'inline-flex', alignItems: 'center', background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const primary: CSSProperties = { display: 'inline-flex', alignItems: 'center', background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
 const ghost: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
 const table: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
 const th: CSSProperties = { textAlign: 'left', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '10px 14px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)', whiteSpace: 'nowrap' };

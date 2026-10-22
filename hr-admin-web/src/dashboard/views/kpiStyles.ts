@@ -14,7 +14,7 @@ export const inputStyle: CSSProperties = {
   fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)',
 };
 export const primaryBtn: CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: '#fff',
+  display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: 'var(--on-accent)',
   border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer',
 };
 export const ghostBtn: CSSProperties = {

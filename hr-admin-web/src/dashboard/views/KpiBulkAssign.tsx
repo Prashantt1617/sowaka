@@ -403,7 +403,7 @@ export function KpiBulkAssign() {
                       style={{ cursor: 'pointer', background: on ? 'var(--accent-soft)' : 'var(--surface)' }}
                     >
                       <Td>
-                        <span style={{ display: 'flex', width: 18, height: 18, borderRadius: 5, border: `1.5px solid ${on ? 'var(--accent)' : 'var(--line-2)'}`, background: on ? 'var(--accent-grad)' : 'var(--surface)', color: '#fff', alignItems: 'center', justifyContent: 'center', fontSize: 11.5 }}>
+                        <span style={{ display: 'flex', width: 18, height: 18, borderRadius: 5, border: `1.5px solid ${on ? 'var(--accent)' : 'var(--line-2)'}`, background: on ? 'var(--accent-grad)' : 'var(--surface)', color: 'var(--on-accent)', alignItems: 'center', justifyContent: 'center', fontSize: 11.5 }}>
                           {on ? '✓' : ''}
                         </span>
                       </Td>
@@ -581,7 +581,7 @@ function ReplaceTip() {
           role="tooltip"
           style={{
             position: 'absolute', left: '50%', bottom: '140%', transform: 'translateX(-50%)',
-            width: 232, background: 'var(--ink)', color: '#fff', borderRadius: 9,
+            width: 232, background: 'var(--ink)', color: 'var(--on-sel)', borderRadius: 9,
             padding: '9px 11px', fontSize: 12, fontWeight: 400, lineHeight: 1.5,
             zIndex: 5, boxShadow: 'var(--shadow)', textAlign: 'left',
           }}
@@ -623,7 +623,7 @@ function Pager({
                 cursor: 'pointer',
                 border: `1px solid ${p === page ? 'var(--accent)' : 'var(--line)'}`,
                 background: p === page ? 'var(--accent-grad)' : 'var(--surface)',
-                color: p === page ? '#fff' : 'var(--ink-2)',
+                color: p === page ? 'var(--on-accent)' : 'var(--ink-2)',
               }}
             >
               {p}
@@ -695,7 +695,7 @@ function Steps({
                   width: 22, height: 22, borderRadius: '50%', display: 'flex',
                   alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 600,
                   background: state === 'todo' ? 'var(--surface-2)' : 'var(--accent-grad)',
-                  color: state === 'todo' ? 'var(--ink-4)' : '#fff',
+                  color: state === 'todo' ? 'var(--ink-4)' : 'var(--on-accent)',
                 }}
               >
                 {state === 'done' ? '✓' : i + 1}

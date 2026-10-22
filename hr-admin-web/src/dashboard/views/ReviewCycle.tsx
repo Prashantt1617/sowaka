@@ -73,7 +73,7 @@ export function ReviewCycle() {
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 12, padding: '14px 16px' }}>
         <span style={{ fontSize: 14, lineHeight: 1.3 }}>ℹ️</span>
-        <div style={{ fontSize: 13, color: '#3A5A6B', lineHeight: 1.55 }}>
+        <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55 }}>
           Everything under Performance is scoped to this cycle. A cycle that has opened is frozen:
           KPI wording edits and new assignments land in the <strong>next</strong> one, so a manager
           scoring right now never has the form change underneath them.

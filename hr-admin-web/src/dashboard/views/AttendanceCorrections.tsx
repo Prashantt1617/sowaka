@@ -80,7 +80,7 @@ export function AttendanceCorrections() {
         <button
           onClick={exportRows}
           disabled={rows.length === 0}
-          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--ink)', border: 'none', color: '#fff', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: rows.length ? 'pointer' : 'not-allowed', opacity: rows.length ? 1 : 0.5 }}
+          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--ink)', border: 'none', color: 'var(--on-sel)', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: rows.length ? 'pointer' : 'not-allowed', opacity: rows.length ? 1 : 0.5 }}
         >
           <IconDownload /> Export
         </button>
@@ -205,7 +205,7 @@ function ConfirmOverride() {
           <button
             type="button"
             onClick={s.corrDecide}
-            style={{ border: 'none', background: approve ? 'var(--ok)' : 'var(--bad)', color: '#fff', borderRadius: 999, padding: '10px 18px', fontSize: 13.5, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer' }}
+            style={{ border: 'none', background: approve ? 'var(--ok-solid)' : 'var(--bad-solid)', color: 'var(--on-accent)', borderRadius: 999, padding: '10px 18px', fontSize: 13.5, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer' }}
           >
             {approve ? 'Approve' : 'Decline'}
           </button>

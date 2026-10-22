@@ -1112,7 +1112,7 @@ export const dangerLink: CSSProperties = { background: 'none', border: 'none', c
 const toggleWrap: CSSProperties = { display: 'inline-flex', border: '1px solid var(--line)', borderRadius: 9, overflow: 'hidden' };
 const toggleBtn = (on: boolean, yes: boolean): CSSProperties => ({
   padding: '5px 12px', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', border: 'none', fontFamily: 'inherit',
-  borderLeft: yes ? 'none' : '1px solid var(--line)', background: on ? 'var(--accent-grad)' : 'var(--surface)', color: on ? '#fff' : 'var(--ink-2)',
+  borderLeft: yes ? 'none' : '1px solid var(--line)', background: on ? 'var(--accent-grad)' : 'var(--surface)', color: on ? 'var(--on-accent)' : 'var(--ink-2)',
 });
 
 // —— Inline calculation editor for one row ——
@@ -1304,7 +1304,7 @@ const bldTh: CSSProperties = { textAlign: 'left', fontSize: 12, textTransform: '
 const bldTd: CSSProperties = { padding: '14px 20px', borderBottom: '1px solid var(--line)', color: 'var(--ink)', verticalAlign: 'middle' };
 const ctcBand: CSSProperties = { display: 'flex', alignItems: 'center', background: 'var(--accent-soft)', borderRadius: 8, padding: '18px 22px', fontSize: 17, fontWeight: 400, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' };
 const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' };
-export const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+export const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 export const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const iconBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.65 };
 const closeCircle: CSSProperties = { width: 40, height: 40, borderRadius: '50%', border: 'none', background: 'var(--surface-2)', color: 'var(--ink-2)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };

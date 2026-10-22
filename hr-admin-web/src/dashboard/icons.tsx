@@ -18,7 +18,7 @@ const base = (size: number, stroke: string, style?: CSSProperties) => ({
 });
 
 export const Logo = () => (
-  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--on-accent)" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
     <path d="M5 16c2.5-1 4-3 4-6" />
     <path d="M19 8c-2.5 1-4 3-4 6" />
     <path d="M5 16c3 1.6 11 1.6 14-8" />
@@ -376,7 +376,7 @@ export const IconSort = ({ size = 16, stroke = 'var(--ink-4)' }: IconProps) => (
   </svg>
 );
 
-export const IconDownload = ({ size = 15, stroke = '#fff' }: IconProps) => (
+export const IconDownload = ({ size = 15, stroke = 'var(--on-accent)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
   </svg>
@@ -414,7 +414,7 @@ export const IconBell = ({ size = 18, stroke = 'var(--ink-2)' }: IconProps) => (
   </svg>
 );
 
-export const IconPlus = ({ size = 16, stroke = '#fff' }: IconProps) => (
+export const IconPlus = ({ size = 16, stroke = 'var(--on-accent)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 5v14M5 12h14" />
   </svg>

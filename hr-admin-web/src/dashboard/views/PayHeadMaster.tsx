@@ -481,7 +481,7 @@ export function PayHeadMaster() {
                 onClick={() => setTab(c.key)}
                 style={{
                   border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500, padding: '7px 15px',
-                  borderRadius: 999, background: on ? 'var(--accent-grad)' : 'transparent', color: on ? '#fff' : 'var(--ink-3)',
+                  borderRadius: 999, background: on ? 'var(--accent-grad)' : 'transparent', color: on ? 'var(--on-accent)' : 'var(--ink-3)',
                 }}
               >
                 {c.label} <span style={{ opacity: 0.7 }}>· {COUNTS[c.key]}</span>
@@ -980,7 +980,7 @@ function Checkbox({ checked, onChange, label, disabled, fixed }: { checked: bool
   return (
     <div style={{ display: 'flex', gap: 10, padding: '7px 0', opacity: disabled && !fixed ? 0.55 : 1 }} title={fixed ? 'Fixed for this earning type' : undefined}>
       <button type="button" disabled={off} aria-disabled={off} onClick={() => !off && onChange(!checked)}
-        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: off ? 'default' : 'pointer', border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--line-2)'}`, background: checked ? 'var(--accent-grad)' : 'var(--surface)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, lineHeight: 1, padding: 0 }}>
+        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: off ? 'default' : 'pointer', border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--line-2)'}`, background: checked ? 'var(--accent-grad)' : 'var(--surface)', color: 'var(--on-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, lineHeight: 1, padding: 0 }}>
         {checked ? '✓' : ''}
       </button>
       <div>
@@ -1003,7 +1003,7 @@ function Radio({ checked, onChange, label, disabled, fixed }: { checked: boolean
   );
 }
 
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '11px 20px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
 const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
 const modalCard: CSSProperties = { position: 'relative', width: '100%', maxHeight: '92vh', background: 'var(--surface-2)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', animation: 'pop .2s ease both', display: 'flex', flexDirection: 'column' };

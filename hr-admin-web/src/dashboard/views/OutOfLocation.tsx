@@ -116,7 +116,7 @@ export function OutOfLocation() {
             <button
               key={t.key}
               onClick={() => setFilter(t.key)}
-              style={{ padding: '8px 14px', fontSize: 13, fontWeight: 500, border: 'none', borderLeft: t.key === 'all' ? 'none' : '1px solid var(--line)', background: filter === t.key ? 'var(--accent-grad)' : 'var(--surface)', color: filter === t.key ? '#fff' : 'var(--ink-2)', cursor: 'pointer', fontFamily: 'inherit' }}
+              style={{ padding: '8px 14px', fontSize: 13, fontWeight: 500, border: 'none', borderLeft: t.key === 'all' ? 'none' : '1px solid var(--line)', background: filter === t.key ? 'var(--accent-grad)' : 'var(--surface)', color: filter === t.key ? 'var(--on-accent)' : 'var(--ink-2)', cursor: 'pointer', fontFamily: 'inherit' }}
             >
               {t.label}
             </button>
@@ -126,7 +126,7 @@ export function OutOfLocation() {
         <button
           onClick={exportRows}
           disabled={shown.length === 0}
-          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--ink)', border: 'none', color: '#fff', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: shown.length ? 'pointer' : 'not-allowed', opacity: shown.length ? 1 : 0.5 }}
+          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--ink)', border: 'none', color: 'var(--on-sel)', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: shown.length ? 'pointer' : 'not-allowed', opacity: shown.length ? 1 : 0.5 }}
         >
           <IconDownload /> Export
         </button>

@@ -150,7 +150,7 @@ export function Tabs<T extends string>({
           <button
             key={t.key}
             onClick={() => onChange(t.key)}
-            style={{ border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500, padding: '7px 15px', borderRadius: 999, background: on ? 'var(--accent-grad)' : 'transparent', color: on ? '#fff' : 'var(--ink-3)' }}
+            style={{ border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500, padding: '7px 15px', borderRadius: 999, background: on ? 'var(--accent-grad)' : 'transparent', color: on ? 'var(--on-accent)' : 'var(--ink-3)' }}
           >
             {t.label} <span style={{ opacity: 0.7 }}>· {t.count}</span>
           </button>
@@ -185,7 +185,7 @@ export function Checkbox({ checked, onChange, label, sub, disabled }: {
         type="button"
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: disabled ? 'default' : 'pointer', border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--line-2)'}`, background: checked ? 'var(--accent-grad)' : 'var(--surface)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, lineHeight: 1, padding: 0 }}
+        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: disabled ? 'default' : 'pointer', border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--line-2)'}`, background: checked ? 'var(--accent-grad)' : 'var(--surface)', color: 'var(--on-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, lineHeight: 1, padding: 0 }}
       >
         {checked ? '✓' : ''}
       </button>
