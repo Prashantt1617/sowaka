@@ -13,8 +13,8 @@ export function DrawerShell({
 }) {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', justifyContent: 'flex-end' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(34,34,34,.32)', animation: 'ovl .2s ease both' }} />
-      <div className="scry" style={{ position: 'relative', width, height: '100%', background: '#F7F7F9', boxShadow: '-20px 0 50px rgba(60,40,24,.16)', overflowY: 'auto', animation: 'drwIn .26s cubic-bezier(.2,.8,.2,1) both' }}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', animation: 'ovl .2s ease both' }} />
+      <div className="scry" style={{ position: 'relative', width, maxWidth: '100%', height: '100%', background: 'var(--surface)', borderRadius: '24px 0 0 24px', boxShadow: 'var(--shadow-lg)', overflowY: 'auto', animation: 'drwIn .26s cubic-bezier(.2,.8,.2,1) both' }}>
         {children}
       </div>
     </div>
@@ -23,7 +23,7 @@ export function DrawerShell({
 
 export function CloseButton({ onClose }: { onClose: () => void }) {
   return (
-    <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: 9, border: '1px solid #EBEBEB', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+    <button onClick={onClose} className="ds-icon-btn" style={{ width: 36, height: 36, borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
       <IconClose />
     </button>
   );

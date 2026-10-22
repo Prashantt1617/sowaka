@@ -135,8 +135,8 @@ function CurrentView() {
 
 function LoadingBar() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400, color: '#717171', fontSize: 16, fontWeight: 600 }}>
-      <span style={{ width: 16, height: 16, border: '2px solid #EBEBEB', borderTopColor: '#0571A6', borderRadius: '50%', display: 'inline-block', marginRight: 10, animation: 'spin .7s linear infinite' }} />
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400, color: 'var(--ink-3)', fontSize: 13, fontWeight: 500 }}>
+      <span style={{ width: 16, height: 16, border: '2px solid var(--line)', borderTopColor: 'var(--accent)', borderRadius: '50%', display: 'inline-block', marginRight: 10, animation: 'spin .7s linear infinite' }} />
       Loading…
     </div>
   );
@@ -154,11 +154,11 @@ function Shell() {
   // So the next sign-in screen on this device already wears their company.
   useEffect(() => { rememberBrandOrg(user?.org ?? user?.company); }, [user]);
   return (
-    <div style={{ display: 'flex', height: '100vh', width: '100%', background: '#F7F7F9', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', height: '100vh', width: '100%', padding: 16, gap: 20, overflow: 'hidden' }}>
       <Sidebar />
-      <main className="scry" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <main className="scry" style={{ flex: 1, minWidth: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '0 6px', margin: '0 -6px' }}>
         <Topbar />
-        <div style={{ padding: '28px 34px 60px', flex: 1 }}>
+        <div style={{ padding: '20px 4px 40px', flex: 1 }}>
           {loading && !loaded ? <LoadingBar /> : <CurrentView />}
         </div>
       </main>
@@ -171,16 +171,16 @@ function Shell() {
 function AccessDenied() {
   const { user, signOut } = useAuth();
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#F7F7F9', color: '#484848', textAlign: 'center', padding: 24 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--ink-2)', textAlign: 'center', padding: 24 }}>
       <div style={{ fontSize: 50.5, marginBottom: 12 }}>🔒</div>
-      <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>No dashboard access</h1>
-      <p style={{ maxWidth: 420, marginTop: 10, fontSize: 16, lineHeight: 1.5, color: '#717171' }}>
+      <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0, color: 'var(--ink)' }}>No dashboard access</h1>
+      <p style={{ maxWidth: 420, marginTop: 10, fontSize: 14, lineHeight: 1.5, color: 'var(--ink-3)' }}>
         Your account{user?.email ? ` (${user.email})` : ''} isn’t authorized to use the HR dashboard.
         Ask an administrator to grant you dashboard access.
       </p>
       <button
         onClick={() => void signOut()}
-        style={{ marginTop: 22, padding: '10px 20px', borderRadius: 10, border: '1px solid #EBEBEB', background: '#fff', color: '#484848', fontWeight: 700, fontSize: 16, cursor: 'pointer' }}
+        style={{ marginTop: 22, height: 40, padding: '0 18px', borderRadius: 999, border: '1px solid var(--line-2)', background: 'var(--surface)', color: 'var(--ink)', fontWeight: 500, fontSize: 13, cursor: 'pointer' }}
       >
         Sign out
       </button>
