@@ -202,8 +202,16 @@ function useProvideStore() {
     [flash, signOut],
   );
 
+  // What the lists depend on: who is signed in and which tabs they may open.
+  // Not the user object itself, which is replaced when the app re-reads
+  // /auth/me on every load: keyed on that, the whole burst of lists went out
+  // a second time a moment after the first.
+  const accessKey = user
+    ? JSON.stringify([user.id, user.dashboardAccess, user.dashboardAdmin, user.dashboardTabs ?? null])
+    : '';
+
   const reload = useCallback(async () => {
-    if (!user) return;
+    if (!accessKey) return;
     setLoading(true);
     try {
       const [lv, ot, rb, cr, fb, emp, live] = await Promise.all([
@@ -237,7 +245,7 @@ function useProvideStore() {
     } finally {
       setLoading(false);
     }
-  }, [user, handleError]);
+  }, [accessKey, handleError]);
 
   useEffect(() => {
     void reload();

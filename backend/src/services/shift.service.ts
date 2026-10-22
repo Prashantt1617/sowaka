@@ -1,5 +1,6 @@
 import { ObjectId } from 'mongodb';
 import { shiftAssignments, shiftPolicies, shiftTemplates, users } from '../config/db';
+import { requestUserFor } from './request-user';
 import {
   CORRECTION_TRIGGERS,
   DayMark,
@@ -49,7 +50,8 @@ const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /** The caller's org. Every read and write below is scoped to it. */
 export async function requireOrg(callerId: string): Promise<string> {
-  const caller = await users().findOne({ userId: callerId });
+  // The signed-in caller's org, when this request's auth check has read it.
+  const caller = requestUserFor(callerId) ?? (await users().findOne({ userId: callerId }, { projection: { _id: 0, org: 1 } }));
   if (!caller) throw new ShiftError(404, 'User not found');
   if (!caller.org) throw new ShiftError(409, 'User is not attached to a company');
   return caller.org;
@@ -1095,13 +1097,27 @@ export async function policiesForUsers(
   userIds: string[],
   asOf: string = todayIso(),
 ): Promise<Map<string, ResolvedShiftPolicy>> {
-  const out = new Map<string, ResolvedShiftPolicy>();
   const ids = [...new Set(userIds)];
-  if (ids.length === 0) return out;
+  if (ids.length === 0) return new Map<string, ResolvedShiftPolicy>();
   const people = await users()
     .find({ userId: { $in: ids } })
     .project<{ userId: string; org?: string }>({ _id: 0, userId: 1, org: 1 })
     .toArray();
+  return policiesForPeople(people, asOf);
+}
+
+/**
+ * `policiesForUsers` for people whose user records are already in hand, so
+ * the lookup of their orgs is not made a second time. Someone without a user
+ * record is left out, and reads as `policyForUser` would: the default policy.
+ */
+export async function policiesForPeople(
+  people: { userId: string; org?: string }[],
+  asOf: string = todayIso(),
+): Promise<Map<string, ResolvedShiftPolicy>> {
+  const out = new Map<string, ResolvedShiftPolicy>();
+  const ids = [...new Set(people.map((p) => p.userId))];
+  if (ids.length === 0) return out;
   const orgs = [...new Set(people.map((p) => p.org).filter((o): o is string => Boolean(o)))];
   const [orgPolicies, templates, assignments] = await Promise.all([
     Promise.all(orgs.map(async (org) => [org, await getOrgShiftPolicy(org)] as const)),
