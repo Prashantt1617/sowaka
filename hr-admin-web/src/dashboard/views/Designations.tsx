@@ -7,10 +7,11 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card, EmptyRow, ListPending, SearchInput, SelectBox, Spinner } from '../ui';
+import { EmptyRow, ListPending, SearchInput, SelectBox, Spinner } from '../ui';
 import { combineLoad } from '../useLoad';
 import { downloadCsv } from '../export';
-import { IconDownload } from './peopleTable';
+import { IconDownload, IconInfo } from './peopleTable';
+import './people.css';
 import { AddNameButton, useSavedNames } from './savedNames';
 
 type Designation = {
@@ -79,7 +80,7 @@ export function Designations() {
   return (
     <div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div className="pd-toolbar" style={{ gap: 8, marginBottom: 20 }}>
         <SearchInput value={search} onChange={setSearch} placeholder="Search designation…" width={280} />
         <SelectBox value={department} onChange={setDepartment}>
           <option value="all">All departments</option>
@@ -87,24 +88,27 @@ export function Designations() {
             <option key={t} value={t}>{t}</option>
           ))}
         </SelectBox>
-        <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
+        <p className="pd-lead">
           {loaded ? `${designations.length} designations · ${totalEmp} people` : <Spinner />}
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 9, alignItems: 'flex-start' }}>
-          <AddNameButton noun="designation" existing={allNames} busy={busy} onAdd={add} />
-          <button style={ghostBtn} onClick={download} disabled={designations.length === 0}>
+        </p>
+        <div className="pd-actions" style={{ marginLeft: 'auto', alignItems: 'flex-start' }}>
+          <button className="pd-btn" onClick={download} disabled={designations.length === 0}>
             <IconDownload /> Download
           </button>
+          <AddNameButton noun="designation" existing={allNames} busy={busy} onAdd={add} />
         </div>
       </div>
 
-      <div style={note}>
-        Add a designation here to have it ready before anyone holds it; it is offered when adding a user.
-        To change someone's job title, set it on their own profile under <strong>People › Employees</strong>.
+      <div className="pd-note" style={{ marginBottom: 20 }}>
+        <IconInfo />
+        <span>
+          Add a designation here to have it ready before anyone holds it; it is offered when adding a user.
+          To change someone's job title, set it on their own profile under <strong>People › Employees</strong>.
+        </span>
       </div>
 
-      <Card>
-        <table style={tableStyle}>
+      <section className="pd-card">
+        <table className="pd-t">
           <thead>
             <tr>
               <Th>Designation name</Th>
@@ -117,7 +121,7 @@ export function Designations() {
             {loaded && designations.map((d) => (
               <tr key={d.name}>
                 <Td>
-                  <strong style={{ color: 'var(--accent-ink)' }}>{d.name}</strong>
+                  <b>{d.name}</b>
                   {d.empty && (
                     <>
                       <span style={emptyTag}>No one yet</span>
@@ -125,35 +129,36 @@ export function Designations() {
                     </>
                   )}
                 </Td>
-                <Td muted>{d.departments.length ? d.departments.join(', ') : '—'}</Td>
-                <Td right mono>{d.employees}</Td>
+                <Td>
+                  {d.departments.length ? (
+                    <span className="pd-tags">{d.departments.map((t) => (t === '—' ? <span key={t} className="muted">—</span> : <span key={t} className="pd-tag">{t}</span>))}</span>
+                  ) : <span className="muted">—</span>}
+                </Td>
+                <Td right mono><b>{d.employees}</b></Td>
               </tr>
             ))}
             {loaded && designations.length === 0 && (
               <tr><td colSpan={3}><EmptyRow text={search.trim() ? 'No designation matches that search.' : department === 'all' ? 'No designations yet — nobody on the roster has a job title set.' : `Nobody in ${department} has a job title set.`} /></td></tr>
             )}
-            {loaded && <tr>
-              <Td><strong>Total</strong></Td>
+            {loaded && <tr className="pd-total">
+              <Td><b>Total</b></Td>
               <Td muted>—</Td>
-              <Td right mono><strong>{totalEmp}</strong></Td>
+              <Td right mono><b>{totalEmp}</b></Td>
             </tr>}
           </tbody>
         </table>
-      </Card>
+      </section>
     </div>
   );
 }
 
 
 function Th({ children, right }: { children: ReactNode; right?: boolean }) {
-  return <th style={{ textAlign: right ? 'right' : 'left', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '11px 16px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)' }}>{children}</th>;
+  return <th style={{ textAlign: right ? 'right' : 'left' }}>{children}</th>;
 }
 function Td({ children, muted, right, mono }: { children: ReactNode; muted?: boolean; right?: boolean; mono?: boolean }) {
-  return <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)', color: muted ? 'var(--ink-3)' : 'var(--ink)', textAlign: right ? 'right' : 'left', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
+  return <td style={{ color: muted ? 'var(--ink-3)' : 'var(--ink)', textAlign: right ? 'right' : 'left', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
 }
 
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
-const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const emptyTag: CSSProperties = { marginLeft: 10, fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)', background: 'var(--surface-2)', borderRadius: 99, padding: '3px 9px' };
+const emptyTag: CSSProperties = { marginLeft: 10, fontSize: 11.5, fontWeight: 400, lineHeight: 1.5, color: 'var(--ink-3)', background: 'var(--surface)', border: '1px dashed var(--line-2)', borderRadius: 999, padding: '3px 9px' };
 const linkBtn: CSSProperties = { marginLeft: 8, background: 'none', border: 'none', padding: 0, color: 'var(--bad)', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' };
-const note: CSSProperties = { fontSize: 12.5, color: 'var(--ink-2)', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.55 };

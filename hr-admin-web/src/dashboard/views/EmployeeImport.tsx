@@ -11,7 +11,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { WorkBook } from 'xlsx';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
-import { Card } from '../ui';
+import './people.css';
 import { ImportRiskLine } from '../suwi/ImportRiskLine';
 import { applyEmployeeImport, cancelEmployeeImport, getEmployeeImportTemplate, previewEmployeeImport, type EmployeeImportColumn, type EmployeeImportPreview, type EmployeeImportResult } from '../../services/hrms';
 
@@ -185,17 +185,17 @@ export function EmployeeImport() {
   const nothing = addCount + updateCount === 0;
 
   return (
-    <div style={{ display: 'grid', gap: 16, maxWidth: 1100 }}>
-      <Card style={{ padding: '18px 22px' }}>
+    <div style={{ display: 'grid', gap: 20 }}>
+      <Card>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 280 }}>
-            <div style={{ fontSize: 16, fontWeight: 600 }}>Import employee details</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 4, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-.01em' }}>Import employee details</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2, lineHeight: 1.5 }}>
               Upload an Excel or CSV of employees. Nothing is saved until you approve.
             </div>
           </div>
-          <button type="button" onClick={() => void downloadTemplate()} style={ghost}>Download current employees</button>
-          <label style={{ ...primary, opacity: busy ? 0.6 : 1 }}>
+          <button type="button" onClick={() => void downloadTemplate()} className="pd-btn">Download current employees</button>
+          <label className="pd-btn primary" style={{ opacity: busy ? 0.6 : 1 }}>
             {busy ? 'Reading…' : 'Upload file'}
             <input type="file" accept=".xlsx,.xls,.csv" disabled={busy} style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void upload(f); }} />
           </label>
@@ -205,8 +205,8 @@ export function EmployeeImport() {
       {preview && counts && (
         <>
           <ImportRiskLine importId={preview.importId} />
-          <Card style={{ padding: '16px 22px' }}>
-            <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: 10 }}>{fileName}: what this import will do</div>
+          <Card>
+            <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-.01em', marginBottom: 12 }}>{fileName}: what this import will do</div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <Chip tone="good" label="New employees" value={preview.newEmployees.length} />
               <Chip tone="info" label="People updated" value={preview.updates.length} />
@@ -227,20 +227,20 @@ export function EmployeeImport() {
               <input type="checkbox" checked={emptyRemoves} disabled={busy} onChange={(e) => toggleEmpty(e.target.checked)} />
               Empty cells remove the current value (off: empty cells leave it as it is; templates, salary and bank details are never removed by an import)
             </label>
-            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-              <button type="button" disabled={busy || blocked || nothing} onClick={() => void approve()} style={{ ...primary, opacity: busy || blocked || nothing ? 0.5 : 1 }}>
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button type="button" disabled={busy || blocked || nothing} onClick={() => void approve()} className="pd-btn primary">
                 {busy ? 'Importing…' : `Approve and import${nothing ? '' : ` (${addCount} new, ${updateCount} updated)`}`}
               </button>
-              <button type="button" onClick={() => void cancel()} disabled={busy} style={ghost}>Cancel</button>
+              <button type="button" onClick={() => void cancel()} disabled={busy} className="pd-btn">Cancel</button>
               {declinedCount > 0 && <span style={{ alignSelf: 'center', fontSize: 12.5, fontWeight: 500, color: 'var(--ink-3)' }}>{declinedCount} declined · <button type="button" onClick={() => { setDeclined(new Set()); setSkipNew(new Set()); }} style={{ ...linkBtn }}>undo all</button></span>}
               {(preview.errors.length > 0 || preview.skippedCells.length > 0) && !blocked && <span style={{ alignSelf: 'center', fontSize: 12.5, color: 'var(--bad)' }}>Everything that's right is imported; the cells and rows listed below are left as they are. Fix them in the file and upload again to include them.</span>}
             </div>
           </Card>
 
           <Section title={`Columns from your file: ${preview.fileColumns.filter((c) => c.field).length} used, ${preview.fileColumns.filter((c) => !c.field).length} not used`}>
-            <div style={{ padding: '10px 18px 0', fontSize: 12.5, color: 'var(--ink-3)' }}>Tick the columns to use and pick what each one fills. To use a different column for something, pick it there: the column that had it is switched off. The preview updates as you go.</div>
+            <div style={{ padding: '0 0 12px', fontSize: 12, color: 'var(--ink-3)' }}>Tick the columns to use and pick what each one fills. To use a different column for something, pick it there: the column that had it is switched off. The preview updates as you go.</div>
             <div style={{ overflowX: 'auto' }}>
-              <table style={table}><thead><tr><th style={{ ...th, width: 60 }}>Use</th><th style={th}>Column in your file</th><th style={th}>First value</th><th style={th}>Fills</th></tr></thead>
+              <table style={table}><thead><tr className="pd-hband"><th style={{ ...th, width: 60 }}>Use</th><th style={th}>Column in your file</th><th style={th}>First value</th><th style={th}>Fills</th></tr></thead>
                 <tbody>{preview.fileColumns.map((c) => {
                   const on = !!c.field || pending.has(c.key);
                   return (
@@ -250,7 +250,7 @@ export function EmployeeImport() {
                       <td style={{ ...td, color: 'var(--ink-4)', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.sample || '—'}</td>
                       <td style={td}>
                         {on ? (
-                          <select value={c.field} disabled={busy} onChange={(e) => rematch(c.key, e.target.value)} style={{ padding: '6px 8px', borderRadius: 8, border: `1px solid ${c.field ? 'var(--accent-line)' : '#E8B84A'}`, background: c.field ? 'var(--accent-soft)' : 'var(--warn-bg)', fontFamily: 'inherit', fontSize: 12.5, minWidth: 200 }}>
+                          <select value={c.field} disabled={busy} onChange={(e) => rematch(c.key, e.target.value)} style={{ height: 34, padding: '0 10px', borderRadius: 999, border: `1px solid ${c.field ? 'var(--line-2)' : 'var(--warn)'}`, background: c.field ? 'var(--surface)' : 'var(--warn-bg)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 12.5, minWidth: 200 }}>
                             <option value="">{c.field ? 'Not used' : 'Pick what it fills…'}</option>
                             {preview.fieldChoices.map((a) => {
                               const other = preview.fileColumns.find((o) => o.field === a.field && o.key !== c.key);
@@ -267,7 +267,7 @@ export function EmployeeImport() {
 
           {preview.errors.length > 0 && (
             <Section title={`Rows not imported (${preview.errors.length})`}>
-              <table style={table}><thead><tr><th style={th}>Row</th><th style={th}>Problem</th></tr></thead>
+              <table style={table}><thead><tr className="pd-hband"><th style={th}>Row</th><th style={th}>Problem</th></tr></thead>
                 <tbody>{preview.errors.map((e, i) => <tr key={i}><td style={{ ...td, width: 70 }}>{e.row || '—'}</td><td style={{ ...td, color: 'var(--bad)' }}>{e.message}</td></tr>)}</tbody></table>
             </Section>
           )}
@@ -275,7 +275,7 @@ export function EmployeeImport() {
           {preview.newEmployees.length > 0 && (
             <Section title={`New employees (${preview.newEmployees.length})`}>
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ ...table, minWidth: 900 }}><thead><tr><th style={th}></th><th style={th}>Row</th>{preview.columns.map((c) => <th key={c.field} style={th}>{c.label}</th>)}</tr></thead>
+                <table style={{ ...table, minWidth: 900 }}><thead><tr className="pd-hband"><th style={th}></th><th style={th}>Row</th>{preview.columns.map((c) => <th key={c.field} style={th}>{c.label}</th>)}</tr></thead>
                   <tbody>{preview.newEmployees.map((n) => {
                     const off = skipNew.has(n.row);
                     return (
@@ -292,8 +292,8 @@ export function EmployeeImport() {
 
           {preview.updates.length > 0 && (
             <Section title={`Changes to existing employees (${preview.updates.length} people)`}>
-              <div style={{ padding: '10px 18px 0', fontSize: 12.5, color: 'var(--ink-3)' }}>Don't want one of these? Press <strong>Decline</strong> on that line; the rest is still imported.</div>
-              <table style={table}><thead><tr><th style={th}>Employee</th><th style={th}>Field</th><th style={th}>Now</th><th style={th}>After import</th><th style={th}></th><th style={th}></th></tr></thead>
+              <div style={{ padding: '0 0 12px', fontSize: 12, color: 'var(--ink-3)' }}>Don't want one of these? Press <strong>Decline</strong> on that line; the rest is still imported.</div>
+              <table style={table}><thead><tr className="pd-hband"><th style={th}>Employee</th><th style={th}>Field</th><th style={th}>Now</th><th style={th}>After import</th><th style={th}></th><th style={th}></th></tr></thead>
                 <tbody>{preview.updates.flatMap((u) => {
                   const allOff = u.changes.every((c) => declined.has(`${u.row}:${c.field}`));
                   return u.changes.map((c, i) => {
@@ -319,14 +319,14 @@ export function EmployeeImport() {
 
           {preview.skippedCells.length > 0 && (
             <Section title={`Cells to fix (${preview.skippedCells.length}): the rest of these rows is still imported`}>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 18px', flexWrap: 'wrap', borderBottom: '1px solid var(--line)' }}>
-                <span style={{ fontSize: 12.5, color: 'var(--ink-3)', flex: 1, minWidth: 260 }}>Fix a cell here: pick the right person, date or value. Cells you leave alone keep what the employee has now.</span>
-                <button type="button" disabled={busy || Object.values(fixes).every((v) => !v)} onClick={applyFixes} style={{ ...primary, padding: '7px 14px', fontSize: 12.5, opacity: busy || Object.values(fixes).every((v) => !v) ? 0.5 : 1 }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '0 0 12px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, color: 'var(--ink-3)', flex: 1, minWidth: 260 }}>Fix a cell here: pick the right person, date or value. Cells you leave alone keep what the employee has now.</span>
+                <button type="button" disabled={busy || Object.values(fixes).every((v) => !v)} onClick={applyFixes} className="pd-btn primary sm">
                   {busy ? 'Updating…' : `Use ${Object.values(fixes).filter(Boolean).length || ''} fix${Object.values(fixes).filter(Boolean).length === 1 ? '' : 'es'} and update the preview`}
                 </button>
               </div>
               <div style={{ overflowX: 'auto' }}>
-              <table style={table}><thead><tr><th style={th}>Row</th><th style={th}>Employee</th><th style={th}>Column</th><th style={th}>In the file</th><th style={th}>Problem</th><th style={th}>Fix</th></tr></thead>
+              <table style={table}><thead><tr className="pd-hband"><th style={th}>Row</th><th style={th}>Employee</th><th style={th}>Column</th><th style={th}>In the file</th><th style={th}>Problem</th><th style={th}>Fix</th></tr></thead>
                 <tbody>{preview.skippedCells.map((c, i) => {
                   const key = `${c.row}|${c.column}`;
                   return (
@@ -342,13 +342,13 @@ export function EmployeeImport() {
           )}
 
           <Section title={`Every row in the file (${preview.rows.length})`}>
-            <div style={{ display: 'flex', gap: 8, padding: '12px 18px 4px', flexWrap: 'wrap' }}>
+            <div className="pd-chips" style={{ padding: '0 0 14px' }}>
               {(['all', 'new', 'updated', 'unchanged', 'not imported'] as const).map((f) => {
                 const n = f === 'all' ? preview.rows.length : preview.rows.filter((r) => r.status === f).length;
-                return <button key={f} type="button" onClick={() => setRowFilter(f)} style={{ ...ghost, padding: '5px 12px', fontSize: 12.5, background: rowFilter === f ? 'var(--accent-soft)' : 'var(--surface)', color: rowFilter === f ? 'var(--accent-ink)' : 'var(--ink-2)', borderColor: rowFilter === f ? 'var(--accent-line)' : 'var(--line)' }}>{f === 'all' ? 'All' : STATUS[f][2]} {n}</button>;
+                return <button key={f} type="button" onClick={() => setRowFilter(f)} className={rowFilter === f ? 'pd-chip sm on' : 'pd-chip sm'}>{f === 'all' ? 'All' : STATUS[f][2]} <span className="c">{n}</span></button>;
               })}
             </div>
-            <table style={table}><thead><tr><th style={th}>Row</th><th style={th}>Employee</th><th style={th}>Employee ID</th><th style={th}>What happens</th><th style={th}>Details</th></tr></thead>
+            <table style={table}><thead><tr className="pd-hband"><th style={th}>Row</th><th style={th}>Employee</th><th style={th}>Employee ID</th><th style={th}>What happens</th><th style={th}>Details</th></tr></thead>
               <tbody>{preview.rows.filter((r) => rowFilter === 'all' || r.status === rowFilter).map((r) => (
                 <tr key={r.row}><td style={{ ...td, width: 60 }}>{r.row}</td><td style={td}>{r.name || '—'}</td><td style={td}>{r.employeeId || '—'}</td><td style={td}><Status status={r.status} /></td><td style={{ ...td, color: r.status === 'not imported' ? 'var(--bad)' : 'var(--ink-3)' }}>{r.detail || '—'}</td></tr>
               ))}</tbody></table>
@@ -357,10 +357,10 @@ export function EmployeeImport() {
       )}
 
       {result && (
-        <Card style={{ padding: '16px 22px' }}>
-          <div style={{ fontSize: 13.5, fontWeight: 500 }}>Import done: {result.created} added, {result.updated} updated</div>
+        <Card>
+          <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-.01em' }}>Import done: {result.created} added, {result.updated} updated</div>
           {result.failed.length > 0 && (
-            <table style={{ ...table, marginTop: 10 }}><thead><tr><th style={th}>Row</th><th style={th}>Not saved</th></tr></thead>
+            <table style={{ ...table, marginTop: 10 }}><thead><tr className="pd-hband"><th style={th}>Row</th><th style={th}>Not saved</th></tr></thead>
               <tbody>{result.failed.map((f, i) => <tr key={i}><td style={td}>{f.row}</td><td style={{ ...td, color: 'var(--bad)' }}>{f.message}</td></tr>)}</tbody></table>
           )}
         </Card>
@@ -371,7 +371,7 @@ export function EmployeeImport() {
 
 /** The editor for one skipped cell: a person or template list, a date, a fixed choice, or text. */
 function FixInput({ cell, lists, value, onChange }: { cell: EmployeeImportPreview['skippedCells'][number]; lists: EmployeeImportPreview['pickLists']; value: string; onChange: (v: string) => void }) {
-  const box: CSSProperties = { padding: '6px 8px', borderRadius: 8, border: `1px solid ${value ? 'var(--ok-line)' : 'var(--line)'}`, fontFamily: 'inherit', fontSize: 12.5, width: '100%', maxWidth: 300, background: 'var(--surface)' };
+  const box: CSSProperties = { height: 34, padding: '0 10px', borderRadius: 10, border: `1px solid ${value ? 'var(--ok)' : 'var(--line-2)'}`, fontFamily: 'inherit', fontSize: 12.5, width: '100%', maxWidth: 300, background: 'var(--surface)', color: 'var(--ink)', boxSizing: 'border-box' };
   const choices: Record<string, string[]> = {
     employeeType: ['Full-time', 'Contract', 'Intern'], isDirector: ['Yes', 'No'], gender: ['Male', 'Female', 'Other'],
     payMode: ['Bank transfer', 'Cheque', 'Cash'], accountType: ['Savings', 'Current'],
@@ -393,35 +393,41 @@ function FixInput({ cell, lists, value, onChange }: { cell: EmployeeImportPrevie
   return <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Type the right value" style={box} />;
 }
 
+function Card({ children }: { children: ReactNode }) {
+  return <section className="pd-card">{children}</section>;
+}
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Card>
-      <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', fontSize: 14, fontWeight: 600 }}>{title}</div>
+    <section className="pd-card">
+      <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 600, letterSpacing: '-.01em' }}>{title}</h3>
       {children}
-    </Card>
+    </section>
   );
 }
 function Chip({ label, value, tone }: { label: string; value: number; tone: 'good' | 'bad' | 'info' | 'quiet' | 'warn' }) {
-  const c = { good: ['var(--ok-bg)', 'var(--ok)'], bad: ['var(--bad-bg)', 'var(--bad)'], info: ['var(--accent-soft)', 'var(--accent-ink)'], quiet: ['var(--surface-2)', 'var(--ink-3)'], warn: ['var(--warn-bg)', 'var(--warn)'] }[tone];
-  return <span style={{ background: c[0], color: c[1], borderRadius: 10, padding: '7px 12px', fontSize: 12.5, fontWeight: 500 }}>{label} <span style={{ fontSize: 13.5 }}>{value}</span></span>;
+  const c = { good: 'var(--p-green)', bad: 'var(--p-red)', info: 'var(--p-blue)', quiet: 'var(--line-2)', warn: 'var(--p-yellow)' }[tone];
+  return (
+    <span className="pd-chip" style={{ cursor: 'default', borderColor: 'var(--line)', color: 'var(--ink-2)' }}>
+      <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: c }} />
+      {label} <span style={{ fontSize: 14, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+    </span>
+  );
 }
 function Tag({ kind }: { kind: 'changed' | 'added' | 'removed' }) {
-  const c = { changed: ['var(--accent-soft)', 'var(--accent-ink)', 'Changed'], added: ['var(--ok-bg)', 'var(--ok)', 'Added'], removed: ['var(--bad-bg)', 'var(--bad)', 'Removed'] }[kind];
-  return <span style={{ background: c[0], color: c[1], borderRadius: 6, padding: '2px 8px', fontSize: 11.5, fontWeight: 500 }}>{c[2]}</span>;
+  const c = { changed: ['var(--p-blue)', '#fff', 'Changed'], added: ['var(--p-green)', '#fff', 'Added'], removed: ['var(--p-red)', '#fff', 'Removed'] }[kind];
+  return <span style={{ background: c[0], color: c[1], borderRadius: 999, padding: '3px 10px', fontSize: 11.5, fontWeight: 500 }}>{c[2]}</span>;
 }
 
-const STATUS = { new: ['var(--ok-bg)', 'var(--ok)', 'New'], updated: ['var(--accent-soft)', 'var(--accent-ink)', 'Updated'], unchanged: ['var(--surface-2)', 'var(--ink-3)', 'No change'], 'not imported': ['var(--bad-bg)', 'var(--bad)', 'Not imported'] } as const;
+const STATUS = { new: ['var(--p-green)', '#fff', 'New'], updated: ['var(--p-blue)', '#fff', 'Updated'], unchanged: ['var(--mute-bg)', 'var(--ink-2)', 'No change'], 'not imported': ['var(--p-red)', '#fff', 'Not imported'] } as const;
 function Status({ status }: { status: keyof typeof STATUS }) {
   const c = STATUS[status];
-  return <span style={{ background: c[0], color: c[1], borderRadius: 6, padding: '2px 8px', fontSize: 11.5, fontWeight: 500, whiteSpace: 'nowrap' }}>{c[2]}</span>;
+  return <span style={{ background: c[0], color: c[1], borderRadius: 999, padding: '3px 10px', fontSize: 11.5, fontWeight: 500, whiteSpace: 'nowrap' }}>{c[2]}</span>;
 }
 
-const declineBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--bad)', border: '1px solid var(--bad-line)', padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
-const undoBtn: CSSProperties = { ...declineBtn, color: 'var(--accent-ink)', border: '1px solid var(--accent-line)' };
+const declineBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', height: 30, background: 'var(--surface)', color: 'var(--bad)', border: '1px solid var(--line-2)', padding: '0 12px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
+const undoBtn: CSSProperties = { ...declineBtn, color: 'var(--accent-ink)' };
 const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, color: 'var(--accent-ink)', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5 };
 
-const primary: CSSProperties = { display: 'inline-flex', alignItems: 'center', background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
-const ghost: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
-const table: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
-const th: CSSProperties = { textAlign: 'left', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '10px 14px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)', whiteSpace: 'nowrap' };
-const td: CSSProperties = { padding: '9px 14px', borderBottom: '1px solid var(--line)', verticalAlign: 'top' };
+const table: CSSProperties = { width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13.5 };
+const th: CSSProperties = { textAlign: 'left', fontSize: 12, lineHeight: 1.5, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '10px 12px', background: 'var(--surface-2)', whiteSpace: 'nowrap' };
+const td: CSSProperties = { padding: '10px 12px', borderBottom: '1px solid var(--line)', verticalAlign: 'top', lineHeight: 1.5 };

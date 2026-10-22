@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card, EmptyRow, ListPending, PageActions, Pill } from '../ui';
+import { Card, EmptyRow, ListPending, PageActions, Pill, Spinner } from '../ui';
 import { btn, btnClass, fieldLabel, hint, iconBtn as roundBtn, inp, textareaStyle } from '../ds';
 import { IconInfo } from '../icons';
 import { downloadCsv } from '../export';
@@ -87,7 +87,7 @@ export function ReimbursementTypes() {
           already used.
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
-          {loading ? 'Loading…' : `${types.length} type${types.length === 1 ? '' : 's'}`}
+          {loading ? <Spinner /> : failed && types.length === 0 ? '' : `${types.length} type${types.length === 1 ? '' : 's'}`}
         </div>
       </div>
 

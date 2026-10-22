@@ -7,10 +7,11 @@
 import { useMemo } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card, EmptyRow, ListPending, Spinner } from '../ui';
+import { EmptyRow, ListPending, Spinner } from '../ui';
 import { combineLoad } from '../useLoad';
 import { downloadCsv } from '../export';
-import { IconDownload } from './peopleTable';
+import { IconDownload, IconInfo } from './peopleTable';
+import './people.css';
 import { AddNameButton, useSavedNames } from './savedNames';
 
 type Department = {
@@ -65,25 +66,28 @@ export function Departments() {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
+      <div className="pd-head">
+        <p className="pd-lead">
           {loaded ? `${departments.length} departments · ${totalEmp} people` : <Spinner />}
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 9, alignItems: 'flex-start' }}>
-          <AddNameButton noun="department" existing={departments.map((d) => d.name)} busy={busy} onAdd={add} />
-          <button style={ghostBtn} onClick={download} disabled={departments.length === 0}>
+        </p>
+        <div className="pd-actions" style={{ alignItems: 'flex-start' }}>
+          <button className="pd-btn" onClick={download} disabled={departments.length === 0}>
             <IconDownload /> Download
           </button>
+          <AddNameButton noun="department" existing={departments.map((d) => d.name)} busy={busy} onAdd={add} />
         </div>
       </div>
 
-      <div style={note}>
-        Add a department here to have it ready before anyone is in it; it is offered when adding a user.
-        To move someone, set their department on their own profile under <strong>People › Employees</strong>.
+      <div className="pd-note" style={{ marginBottom: 20 }}>
+        <IconInfo />
+        <span>
+          Add a department here to have it ready before anyone is in it; it is offered when adding a user.
+          To move someone, set their department on their own profile under <strong>People › Employees</strong>.
+        </span>
       </div>
 
-      <Card>
-        <table style={tableStyle}>
+      <section className="pd-card">
+        <table className="pd-t">
           <thead>
             <tr>
               <Th>Department name</Th>
@@ -97,7 +101,7 @@ export function Departments() {
             {loaded && departments.map((d) => (
               <tr key={d.name}>
                 <Td>
-                  <strong style={{ color: 'var(--accent-ink)' }}>{d.name}</strong>
+                  <b>{d.name}</b>
                   {d.empty && (
                     <>
                       <span style={emptyTag}>No one yet</span>
@@ -105,23 +109,27 @@ export function Departments() {
                     </>
                   )}
                 </Td>
-                <Td muted>{d.locations.length ? d.locations.join(', ') : '—'}</Td>
-                <Td right mono>{d.managers || '—'}</Td>
-                <Td right mono>{d.employees}</Td>
+                <Td>
+                  {d.locations.length ? (
+                    <span className="pd-tags">{d.locations.map((l) => (l === '—' ? <span key={l} className="muted">—</span> : <span key={l} className="pd-tag">{l}</span>))}</span>
+                  ) : <span className="muted">—</span>}
+                </Td>
+                <Td right mono>{d.managers || <span className="muted">—</span>}</Td>
+                <Td right mono><b>{d.employees}</b></Td>
               </tr>
             ))}
             {loaded && departments.length === 0 && (
               <tr><td colSpan={4}><EmptyRow text="No departments yet — nobody on the roster has one set." /></td></tr>
             )}
-            {loaded && <tr>
-              <Td><strong>Total</strong></Td>
+            {loaded && <tr className="pd-total">
+              <Td><b>Total</b></Td>
               <Td muted>—</Td>
-              <Td right mono><strong>{departments.reduce((s, d) => s + d.managers, 0) || '—'}</strong></Td>
-              <Td right mono><strong>{totalEmp}</strong></Td>
+              <Td right mono><b>{departments.reduce((s, d) => s + d.managers, 0) || '—'}</b></Td>
+              <Td right mono><b>{totalEmp}</b></Td>
             </tr>}
           </tbody>
         </table>
-      </Card>
+      </section>
     </div>
   );
 }
@@ -129,14 +137,11 @@ export function Departments() {
 
 
 function Th({ children, right }: { children: ReactNode; right?: boolean }) {
-  return <th style={{ textAlign: right ? 'right' : 'left', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '11px 16px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)' }}>{children}</th>;
+  return <th style={{ textAlign: right ? 'right' : 'left' }}>{children}</th>;
 }
 function Td({ children, muted, right, mono }: { children: ReactNode; muted?: boolean; right?: boolean; mono?: boolean }) {
-  return <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)', color: muted ? 'var(--ink-3)' : 'var(--ink)', textAlign: right ? 'right' : 'left', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
+  return <td style={{ color: muted ? 'var(--ink-3)' : 'var(--ink)', textAlign: right ? 'right' : 'left', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
 }
 
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
-const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const emptyTag: CSSProperties = { marginLeft: 10, fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)', background: 'var(--surface-2)', borderRadius: 99, padding: '3px 9px' };
+const emptyTag: CSSProperties = { marginLeft: 10, fontSize: 11.5, fontWeight: 400, lineHeight: 1.5, color: 'var(--ink-3)', background: 'var(--surface)', border: '1px dashed var(--line-2)', borderRadius: 999, padding: '3px 9px' };
 const linkBtn: CSSProperties = { marginLeft: 8, background: 'none', border: 'none', padding: 0, color: 'var(--bad)', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' };
-const note: CSSProperties = { fontSize: 12.5, color: 'var(--ink-2)', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.55 };

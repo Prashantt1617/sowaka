@@ -8,14 +8,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card, ListPending, LoadError, Spinner } from '../ui';
+import { ListPending, LoadError, Spinner } from '../ui';
 import type { LoadState } from '../ui';
 import { downloadCsv } from '../export';
+import { PdCheck } from './pdIcons';
+import './people.css';
 import { EMPTY_TARGET, FACETS, andLabel, optionsFor, queryCode, targetSummary } from '../kpiTargeting';
 import type { FacetKey } from '../kpiTargeting';
 import type { KpiTargeting } from '../../services/kpi';
 import { RuleRow } from './kpiRuleRow';
-import { ghostBtn, inputStyle, panelCard, panelTitle, primaryBtn, smallBtn, warnTag } from './kpiStyles';
 import {
   assignShift, getShifts, resolveShiftAudience, unassignShift,
   type ShiftAudienceMember, type ShiftDTO,
@@ -181,16 +182,16 @@ export function ShiftBulkAssign() {
 
       {/* —— 1. Rules ——————————————————————————————————————————————————— */}
       {step === 'rules' && (
-        <div style={panelCard}>
+        <section className="pd-card">
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-            <div style={panelTitle}>Who are you putting on a shift?</div>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, letterSpacing: '-.01em' }}>Who are you putting on a shift?</h3>
             <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 500, color: rosterState !== 'ready' ? 'var(--ink-4)' : preview.length ? 'var(--ok)' : 'var(--bad)' }}>
               {rosterState === 'ready' ? `${preview.length} of ${emps.length} employees match`
                 : rosterState === 'error' ? <LoadError compact text="Employees could not be loaded." onRetry={() => void reload()} />
                 : <Spinner label="Loading employees…" />}
             </div>
           </div>
-          <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 14, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12, color: 'var(--ink-3)', margin: '2px 0 16px', lineHeight: 1.5 }}>
             Everyone not assigned to a shift follows the org's <strong>default</strong> template.
           </div>
 
@@ -216,7 +217,8 @@ export function ShiftBulkAssign() {
                   const f = FACETS.find((x) => x.key === e.target.value);
                   if (f) addRule(f.key);
                 }}
-                style={{ ...inputStyle, maxWidth: 280 }}
+                className="pd-inp"
+                style={{ width: '100%', maxWidth: 280, height: 40, borderRadius: 999 }}
               >
                 <option value="">+ Add a rule…</option>
                 {unusedFacets.map((f) => {
@@ -232,10 +234,10 @@ export function ShiftBulkAssign() {
           )}
 
           <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
-            <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-3)', marginBottom: 7 }}>
+            <div className="pd-eyebrow" style={{ marginBottom: 8 }}>
               RESULTING RULE
             </div>
-            <code style={{ ...queryCode, display: 'block', padding: '11px 13px', background: 'var(--surface-2)', borderRadius: 10, lineHeight: 1.7 }}>
+            <code style={{ ...queryCode, display: 'block', padding: '12px 14px', background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 14, lineHeight: 1.7 }}>
               {targetSummary(target, emps)}
             </code>
             {emptyRules.length > 0 && (
@@ -252,27 +254,27 @@ export function ShiftBulkAssign() {
               onClick={() => void findPeople()}
               disabled={busy || Boolean(blockedReason('people'))}
               title={blockedReason('people') || undefined}
-              style={{ ...primaryBtn, opacity: busy || blockedReason('people') ? 0.5 : 1 }}
+              className="pd-btn primary"
             >
               {busy ? 'Finding…' : rosterState === 'ready' ? `Continue with ${preview.length}` : 'Continue'}
             </button>
           </div>
-        </div>
+        </section>
       )}
 
       {/* —— 2. People —————————————————————————————————————————————————— */}
       {step === 'people' && (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 11 }}>
-            <div style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 400 }}>
-              {chosen.size} of {members.length} selected
+        <section className="pd-card">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <div className="pd-countline" style={{ marginRight: 4 }}>
+              <b>{chosen.size}</b> of {members.length} selected
             </div>
-            <button onClick={() => setChosen(new Set(members.map((m) => m.userId)))} style={smallBtn}>Select all</button>
-            <button onClick={() => setChosen(new Set())} style={smallBtn}>Clear</button>
-            <button onClick={exportPeople} style={{ ...smallBtn, marginLeft: 'auto' }}>Export</button>
+            <button onClick={() => setChosen(new Set(members.map((m) => m.userId)))} className="pd-chip sm"><PdCheck size={14} /> Select all</button>
+            <button onClick={() => setChosen(new Set())} className="pd-chip sm">Clear</button>
+            <button onClick={exportPeople} className="pd-btn sm" style={{ marginLeft: 'auto' }}>Export</button>
           </div>
-          <Card>
-            <table style={tableStyle}>
+          <div>
+            <table className="pd-t">
               <thead>
                 <tr>
                   <Th width={44}>{' '}</Th>
@@ -286,6 +288,7 @@ export function ShiftBulkAssign() {
                       <input
                         type="checkbox"
                         checked={chosen.has(m.userId)}
+                        style={{ width: 16, height: 16, accentColor: 'var(--accent)' }}
                         onChange={() => setChosen((prev) => {
                           const next = new Set(prev);
                           if (next.has(m.userId)) next.delete(m.userId); else next.add(m.userId);
@@ -294,16 +297,18 @@ export function ShiftBulkAssign() {
                       />
                     </Td>
                     <Td>
-                      <strong>{m.name}</strong>
-                      {m.employeeId && <span style={{ color: 'var(--ink-4)', marginLeft: 8, fontSize: 12.5 }}>{m.employeeId}</span>}
+                      <span className="pd-who" style={{ display: 'block' }}>
+                        <b>{m.name}</b>
+                        {m.employeeId && <span className="sub">{m.employeeId}</span>}
+                      </span>
                     </Td>
-                    <Td muted>{m.department || '—'}</Td>
-                    <Td muted>{m.designation || '—'}</Td>
-                    <Td muted>{m.location || '—'}</Td>
+                    <Td>{m.department ? <span className="pd-tag">{m.department}</span> : '—'}</Td>
+                    <Td>{m.designation || '—'}</Td>
+                    <Td>{m.location || '—'}</Td>
                     <Td>
                       {m.currentShift
                         ? <span style={movingPill} title={`Currently on ${m.currentShift.name} — assigning replaces it`}>{m.currentShift.name}</span>
-                        : <span style={{ color: 'var(--ink-4)' }}>Org policy</span>}
+                        : <span style={{ color: 'var(--ink-3)' }}>Org policy</span>}
                     </Td>
                   </tr>
                 ))}
@@ -312,39 +317,41 @@ export function ShiftBulkAssign() {
                 )}
               </tbody>
             </table>
-          </Card>
+          </div>
           {members.length > PAGE && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
-              <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} style={smallBtn}>← Previous</button>
-              <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>Page {page + 1} of {pages} · {members.length} employees</div>
-              <button onClick={() => setPage((p) => Math.min(pages - 1, p + 1))} disabled={page >= pages - 1} style={smallBtn}>Next →</button>
+            <div className="pd-pager">
+              <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>← Previous</button>
+              <div>Page {page + 1} of {pages} · {members.length} employees</div>
+              <button onClick={() => setPage((p) => Math.min(pages - 1, p + 1))} disabled={page >= pages - 1}>Next →</button>
             </div>
           )}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 11, marginTop: 18 }}>
-            <button onClick={() => setStep('rules')} style={ghostBtn}>Back</button>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+            <button onClick={() => setStep('rules')} className="pd-btn">Back</button>
             <button
               onClick={() => setStep('shift')}
               disabled={Boolean(blockedReason('shift'))}
               title={blockedReason('shift') || undefined}
-              style={{ ...primaryBtn, opacity: blockedReason('shift') ? 0.5 : 1 }}
+              className="pd-btn primary"
             >
               Continue with {chosen.size}
             </button>
           </div>
-        </>
+        </section>
       )}
 
       {/* —— 3. Shift ——————————————————————————————————————————————————— */}
       {step === 'shift' && (
-        <>
+        <section className="pd-card">
           {replacing > 0 && (
-            <div style={{ ...warnTag, marginBottom: 14 }}>
-              <strong>{replacing}</strong> of the {chosen.size} selected are on another shift today.
-              Assigning moves them — their attendance will be graded by the shift you pick from now on.
+            <div className="pd-note" style={{ marginBottom: 16, background: 'var(--warn-bg)', borderColor: 'transparent', color: 'var(--warn)' }}>
+              <span>
+                <strong style={{ color: 'inherit' }}>{replacing}</strong> of the {chosen.size} selected are on another shift today.
+                Assigning moves them — their attendance will be graded by the shift you pick from now on.
+              </span>
             </div>
           )}
-          <Card>
-            <table style={tableStyle}>
+          <div>
+            <table className="pd-t">
               <thead>
                 <tr>
                   <Th width={44}>{' '}</Th>
@@ -355,21 +362,21 @@ export function ShiftBulkAssign() {
                 {shifts.filter((s) => s.policy).map((s) => (
                   <tr
                     key={s.id}
-                    className="phm-row"
+                    className="phm-row pd-click"
                     onClick={() => setPicked(s)}
-                    style={{ cursor: 'pointer', background: picked?.id === s.id ? 'var(--accent-soft)' : undefined }}
+                    style={{ background: picked?.id === s.id ? 'color-mix(in srgb, var(--accent-soft) 60%, transparent)' : undefined }}
                   >
-                    <Td><input type="radio" checked={picked?.id === s.id} onChange={() => setPicked(s)} /></Td>
+                    <Td><input type="radio" checked={picked?.id === s.id} onChange={() => setPicked(s)} style={{ width: 16, height: 16, accentColor: 'var(--accent)' }} /></Td>
                     <Td>
-                      <strong style={{ color: 'var(--ink)' }}>{s.name}</strong>
+                      <b>{s.name}</b>
                       {!s.active && <span style={inactivePill}>Inactive</span>}
                     </Td>
-                    <Td muted>{s.policy.startTime} – {s.policy.endTime} · {windowLength(s.policy.startTime, s.policy.endTime)}</Td>
-                    <Td muted>{s.policy.minHalfDayHours}h / {s.policy.minFullDayHours}h</Td>
-                    <Td muted>{s.assignedCount === 0 ? 'Nobody yet' : `${s.assignedCount}`}</Td>
+                    <Td>{s.policy.startTime} – {s.policy.endTime} · {windowLength(s.policy.startTime, s.policy.endTime)}</Td>
+                    <Td>{s.policy.minHalfDayHours}h / {s.policy.minFullDayHours}h</Td>
+                    <Td>{s.assignedCount === 0 ? <span style={{ color: 'var(--ink-3)' }}>Nobody yet</span> : `${s.assignedCount}`}</Td>
                     <Td right>
                       {s.assignedCount > 0 && (
-                        <button onClick={(e) => { e.stopPropagation(); void removeAll(s); }} style={smallBtn}>Remove all</button>
+                        <button onClick={(e) => { e.stopPropagation(); void removeAll(s); }} className="pd-btn sm">Remove all</button>
                       )}
                     </Td>
                   </tr>
@@ -385,19 +392,19 @@ export function ShiftBulkAssign() {
                 )}
               </tbody>
             </table>
-          </Card>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 11, marginTop: 18 }}>
-            <button onClick={() => setStep('people')} style={ghostBtn}>Back</button>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+            <button onClick={() => setStep('people')} className="pd-btn">Back</button>
             <button
               onClick={() => void assign()}
               disabled={busy || !picked}
               title={picked ? undefined : 'Pick a shift'}
-              style={{ ...primaryBtn, opacity: busy || !picked ? 0.5 : 1 }}
+              className="pd-btn primary"
             >
               {busy ? 'Assigning…' : `Assign ${chosen.size} to ${picked?.name ?? '…'}`}
             </button>
           </div>
-        </>
+        </section>
       )}
     </div>
   );
@@ -413,43 +420,24 @@ function Steps({ step, busy, onGo }: { step: Step; busy: boolean; onGo: (target:
   const at = items.findIndex((i) => i.key === step);
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
+    <div className="pd-steps" style={{ marginBottom: 20, alignItems: 'center' }}>
       {items.map((item, i) => {
         const state = i < at ? 'done' : i === at ? 'now' : 'todo';
         // Only completed steps are clickable: going forward runs work, which
         // belongs on the buttons below.
         const disabled = state !== 'done' || busy;
         return (
-          <span key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button
-              onClick={() => onGo(item.key)}
-              disabled={disabled}
-              title={disabled ? undefined : `Back to ${item.label.toLowerCase()}`}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8, border: 'none', background: 'none',
-                padding: '4px 2px', font: 'inherit', cursor: disabled ? 'default' : 'pointer',
-              }}
-            >
-              <span style={{
-                width: 22, height: 22, borderRadius: '50%', display: 'flex',
-                alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 600,
-                background: state === 'todo' ? 'var(--surface-2)' : 'var(--accent-grad)',
-                color: state === 'todo' ? 'var(--ink-4)' : 'var(--on-accent)',
-              }}>
-                {state === 'done' ? '✓' : i + 1}
-              </span>
-              <span style={{
-                fontSize: 13.5,
-                fontWeight: state === 'now' ? 600 : 400,
-                color: state === 'now' ? 'var(--ink)' : state === 'todo' ? 'var(--ink-4)' : 'var(--accent-ink)',
-                textDecoration: disabled ? 'none' : 'underline',
-                textUnderlineOffset: 3,
-              }}>
-                {item.label}
-              </span>
-            </button>
-            {i < items.length - 1 && <span style={{ color: 'var(--ink-4)' }}>→</span>}
-          </span>
+          <button
+            key={item.key}
+            onClick={() => onGo(item.key)}
+            disabled={disabled}
+            title={disabled ? undefined : `Back to ${item.label.toLowerCase()}`}
+            className={state === 'now' ? 'pd-step on' : state === 'done' ? 'pd-step done' : 'pd-step'}
+            style={state === 'done' && !busy ? { opacity: 1, cursor: 'pointer' } : state === 'now' ? { opacity: 1 } : undefined}
+          >
+            <i>{state === 'done' ? '✓' : i + 1}</i>
+            {item.label}
+          </button>
         );
       })}
       {busy && <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>Working…</span>}
@@ -458,14 +446,13 @@ function Steps({ step, busy, onGo }: { step: Step; busy: boolean; onGo: (target:
 }
 
 function Th({ children, width, right }: { children: ReactNode; width?: number; right?: boolean }) {
-  return <th style={{ textAlign: right ? 'right' : 'left', width, fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '11px 14px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)' }}>{children}</th>;
+  return <th style={{ textAlign: right ? 'right' : 'left', width }}>{children}</th>;
 }
 function Td({ children, muted, right }: { children: ReactNode; muted?: boolean; right?: boolean }) {
-  return <td style={{ padding: '12px 14px', textAlign: right ? 'right' : 'left', borderBottom: '1px solid var(--line)', color: muted ? 'var(--ink-3)' : 'var(--ink)' }}>{children}</td>;
+  return <td style={{ textAlign: right ? 'right' : 'left', color: muted ? 'var(--ink-3)' : 'var(--ink)' }}>{children}</td>;
 }
 
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13.5 };
-const emptyCell: CSSProperties = { padding: '30px 14px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 };
-const movingPill: CSSProperties = { fontSize: 11.5, fontWeight: 600, color: 'var(--warn)', background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 'var(--r-lg)', padding: '3px 10px', cursor: 'help' };
-const inactivePill: CSSProperties = { marginLeft: 8, fontSize: 11.5, fontWeight: 600, color: 'var(--ink-4)', background: 'var(--surface-2)', borderRadius: 'var(--r-lg)', padding: '2px 9px' };
+const emptyCell: CSSProperties = { padding: '30px 14px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 };
+const movingPill: CSSProperties = { display: 'inline-flex', fontSize: 11.5, fontWeight: 500, lineHeight: 1.5, color: 'var(--p-yellow-ink)', background: 'var(--p-yellow)', borderRadius: 99, padding: '3px 10px', cursor: 'help' };
+const inactivePill: CSSProperties = { marginLeft: 8, fontSize: 11.5, fontWeight: 500, color: 'var(--ink-2)', background: 'var(--mute-bg)', borderRadius: 99, padding: '3px 10px' };
 const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--accent-ink)', fontWeight: 500, cursor: 'pointer', textDecoration: 'underline' };

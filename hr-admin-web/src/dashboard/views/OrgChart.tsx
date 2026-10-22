@@ -16,6 +16,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import { useStore } from '../store';
 import { Avatar, Loadable, SkeletonPage } from '../ui';
+import './people.css';
 import type { Emp } from '../seed';
 
 type OrgNode = {
@@ -28,12 +29,12 @@ type OrgNode = {
 };
 
 // ── geometry ─────────────────────────────────────────────────────────────
-const ROOT_W = 344;
-const ROOT_H = 80;
-const LEAD_W = 332;
+const ROOT_W = 288;
+const ROOT_H = 78;
+const LEAD_W = 288;
 const LEAD_H = 78;
-const MEMBER_W = 284;
-const MEMBER_H = 60;
+const MEMBER_W = 288;
+const MEMBER_H = 78;
 /** Room between one level and the next, where the curves run. */
 const LINK_W = 84;
 /** Between siblings, and a little more between one team and the next. */
@@ -485,16 +486,16 @@ function OrgChartBody() {
     <div style={fullBleed}>
       <div style={headerBar}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>
+          <div style={{ fontSize: 16.4, fontWeight: 500, lineHeight: 1.5, color: 'var(--ink)' }}>
             {user?.company ?? 'Organisation'} chart
           </div>
-          <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 2 }}>
+          <div style={{ fontSize: 11.7, lineHeight: 1.5, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
             {`${emps.length} people · ${managers} managers · ${teams} departments`}
           </div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={searchWrap}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
               <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
             </svg>
             <input
@@ -505,8 +506,8 @@ function OrgChartBody() {
             />
             {matches.size > 0 && <span style={matchCount}>{matches.size}</span>}
           </div>
-          <button type="button" style={ghostBtn} onClick={() => setCollapsed(new Set())}>Expand all</button>
-          <button type="button" style={ghostBtn} onClick={() => setCollapsed(new Set(foldable))}>Collapse teams</button>
+          <button type="button" className="pd-btn" onClick={() => setCollapsed(new Set())}>Expand all</button>
+          <button type="button" className="pd-btn" onClick={() => setCollapsed(new Set(foldable))}>Collapse teams</button>
         </div>
       </div>
 
@@ -526,7 +527,7 @@ function OrgChartBody() {
           >
             <svg width={chart.width} height={chart.height} style={{ position: 'absolute', inset: 0, overflow: 'visible' }} aria-hidden>
               {chart.lines.map((l, i) => (
-                <path key={i} d={l.d} fill="none" stroke={l.strong ? 'var(--ink-4)' : 'var(--ink-4)'} strokeWidth={l.strong ? 2 : 1.6} strokeLinecap="round" />
+                <path key={i} d={l.d} fill="none" stroke="var(--line-2)" strokeWidth={2} strokeLinecap="round" />
               ))}
             </svg>
             {chart.boxes.map((b) => {
@@ -601,7 +602,7 @@ function FocusButton({ onFocus, active }: { onFocus: () => void; active?: boolea
       aria-label={active ? 'Back to the previous view' : 'Spotlight their team'}
       style={{ ...focusBtn, ...(active ? focusBtnActive : {}) }}
     >
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
         <circle cx="12" cy="12" r="3.5" /><path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
       </svg>
     </button>
@@ -615,11 +616,12 @@ function CountToggle({ under, open, onToggle }: { under: number; open: boolean; 
       type="button"
       onClick={(e) => { e.stopPropagation(); onToggle(); }}
       title={open ? 'Fold this team' : 'Show this team'}
-      style={{ ...countBtn, ...(open ? {} : countBtnClosed) }}
+      aria-expanded={open}
+      style={{ ...countBtn, ...(open ? countBtnOpen : {}) }}
     >
       {under}
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-        style={{ marginLeft: 4, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} aria-hidden>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+        style={{ marginLeft: 2, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} aria-hidden>
         <path d="m6 9 6 6 6-6" />
       </svg>
     </button>
@@ -658,9 +660,9 @@ function HeadCard({ node, root, open, dimmed, highlighted, onOpen, onToggle, onF
         opacity: dimmed ? 0.35 : 1, height: '100%',
       }}
     >
-      <AvatarWithOpen node={node} size={root ? 52 : 44} font={root ? 18 : 15} onOpen={onOpen} />
+      <AvatarWithOpen node={node} size={44} font={15.5} onOpen={onOpen} />
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ ...nameStyle, fontSize: root ? 16 : 14.5 }}>{node.name}</div>
+        <div style={nameStyle}>{node.name}</div>
         <div style={{ ...titleStyle, whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{node.title}</div>
       </div>
       {under > 0 && onFocus && <FocusButton onFocus={onFocus} active={focusActive} />}
@@ -678,10 +680,10 @@ function Row({ node, open, dimmed, highlighted, onOpen, onToggle, onFocus, focus
       onClick={onOpen}
       style={{ ...rowCard, ...(highlighted ? highlightCard : {}), opacity: dimmed ? 0.35 : 1, height: '100%' }}
     >
-      <AvatarWithOpen node={node} size={36} font={13} onOpen={onOpen} />
+      <AvatarWithOpen node={node} size={44} font={15.5} onOpen={onOpen} />
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={nameStyle}>{node.name}</div>
-        <div style={titleStyle}>{node.title}</div>
+        <div style={{ ...titleStyle, whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{node.title}</div>
       </div>
       {under > 0 && onFocus && <FocusButton onFocus={onFocus} active={focusActive} />}
       {under > 0 && <CountToggle under={under} open={open} onToggle={onToggle} />}
@@ -699,93 +701,87 @@ const fullBleed: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   background: 'var(--surface)',
-  borderRadius: 'var(--r-lg)',
-  boxShadow: 'var(--shadow)',
+  border: '1px solid transparent',
+  borderRadius: 22,
+  boxShadow: '0 1px 2px rgba(20,20,22,.05), 0 6px 20px -6px rgba(20,20,22,.14)',
   overflow: 'hidden',
 };
 const headerBar: CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 16, padding: '14px 20px',
+  display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px',
   borderBottom: '1px solid var(--line)', flexShrink: 0,
   // Solid: this bar carries text, and a company backdrop can be dark.
   background: 'var(--surface)',
 };
 const canvas: CSSProperties = {
   flex: 1, position: 'relative', overflow: 'hidden', userSelect: 'none', cursor: 'grab',
-  background: 'radial-gradient(var(--line-2) 1px, transparent 1px) 0 0 / 18px 18px',
+  backgroundColor: 'var(--surface-2)',
+  backgroundImage: 'radial-gradient(var(--line-2) 1px, transparent 1px)',
+  backgroundSize: '22px 22px',
 };
 const searchWrap: CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)',
-  border: '1px solid var(--line-2)', borderRadius: 10, padding: '0 10px', height: 36, width: 260,
+  display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surface)', color: 'var(--ink-3)',
+  border: '1px solid var(--line-2)', borderRadius: 999, padding: '0 12px', height: 40, width: 290, boxSizing: 'border-box',
 };
 const searchInput: CSSProperties = {
-  flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent',
-  fontSize: 12.5, color: 'var(--ink)', fontFamily: 'inherit',
+  flex: 1, minWidth: 0, height: '100%', border: 0, outline: 0, background: 'transparent',
+  fontSize: 13.5, color: 'var(--ink)', fontFamily: 'inherit',
 };
 const matchCount: CSSProperties = {
-  fontSize: 11.5, fontWeight: 600, color: 'var(--accent-ink)', background: 'var(--accent-soft)', borderRadius: 'var(--r-lg)', padding: '1px 7px',
-};
-const ghostBtn: CSSProperties = {
-  height: 36, padding: '0 12px', borderRadius: 999, border: '1px solid var(--line-2)', background: 'var(--surface)',
-  color: 'var(--ink-2)', fontSize: 12.5, fontWeight: 400, cursor: 'pointer', fontFamily: 'inherit',
+  fontSize: 11.5, fontWeight: 700, color: 'var(--accent-ink)', background: 'var(--accent-soft)', borderRadius: 99, padding: '2px 8px', whiteSpace: 'nowrap',
 };
 const zoomBar: CSSProperties = {
-  position: 'absolute', right: 20, bottom: 20, display: 'flex', alignItems: 'center', background: 'var(--surface)',
-  border: '1px solid var(--line-2)', borderRadius: 12, boxShadow: 'var(--shadow)', overflow: 'hidden',
+  position: 'absolute', right: 14, bottom: 14, display: 'flex', alignItems: 'center', background: 'var(--surface)',
+  border: '1px solid var(--line)', borderRadius: 12, boxShadow: '0 4px 14px -6px rgba(20,16,60,.18)', overflow: 'hidden',
 };
 const zoomBtn: CSSProperties = {
-  width: 38, height: 36, border: 0, background: 'transparent', cursor: 'pointer', fontSize: 16, color: 'var(--ink)', fontFamily: 'inherit',
+  minWidth: 38, height: 36, padding: '0 8px', border: 0, background: 'transparent', cursor: 'pointer', fontSize: 15, fontWeight: 700, color: 'var(--ink-2)', fontFamily: 'inherit',
 };
 const zoomLabel: CSSProperties = {
-  height: 36, minWidth: 56, border: 0, borderLeft: '1px solid var(--line)', borderRight: '1px solid var(--line)',
-  background: 'transparent', cursor: 'pointer', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', fontFamily: 'inherit',
+  height: 36, minWidth: 56, padding: '0 8px', border: 0, borderLeft: '1px solid var(--line)', borderRight: '1px solid var(--line)',
+  background: 'transparent', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: 'var(--ink-2)', fontFamily: 'inherit',
 };
 const hint: CSSProperties = {
-  position: 'absolute', left: 20, bottom: 20, fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, pointerEvents: 'none',
-  background: 'var(--surface)', border: '1px solid var(--line-2)', borderRadius: 10, padding: '6px 10px',
+  position: 'absolute', left: 16, bottom: 16, fontSize: 12, color: 'var(--ink-3)', fontWeight: 400, pointerEvents: 'none',
+  background: 'color-mix(in srgb, var(--surface) 85%, transparent)', borderRadius: 99, padding: '4px 10px',
 };
 
 const headCard: CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 12, boxSizing: 'border-box', padding: '12px 14px',
   borderRadius: 16, background: 'var(--surface)', border: '1px solid var(--line)',
-  boxShadow: 'var(--shadow)', cursor: 'pointer', transition: 'opacity .15s, box-shadow .15s',
+  boxShadow: '0 4px 14px -6px rgba(20,16,60,.18)', cursor: 'pointer', transition: 'opacity .2s, box-shadow .2s, border-color .2s',
 };
 const rootCard: CSSProperties = {
-  border: '2px solid var(--accent)', boxShadow: '0 8px 22px rgba(0,136,255,.16)', padding: '14px 16px',
+  border: '2px solid var(--accent)', boxShadow: '0 10px 26px -10px color-mix(in srgb, var(--accent) 45%, transparent)',
 };
-const rowCard: CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 10, boxSizing: 'border-box', padding: '10px 12px',
-  borderRadius: 999, background: 'var(--surface)', border: '1px solid var(--line-2)', cursor: 'pointer',
-  transition: 'opacity .15s, box-shadow .15s',
-};
-const highlightCard: CSSProperties = { boxShadow: '0 0 0 3px var(--accent), 0 8px 22px rgba(0,136,255,.2)' };
+const rowCard: CSSProperties = { ...headCard };
+const highlightCard: CSSProperties = { border: '2px solid var(--warn)', background: 'var(--warn-bg)' };
 const nameStyle: CSSProperties = {
-  fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.25,
+  fontSize: 15, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.5,
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 };
 const titleStyle: CSSProperties = {
-  fontSize: 12.5, color: 'var(--ink-3)', marginTop: 3, lineHeight: 1.3,
+  fontSize: 12.5, color: 'var(--ink-3)', lineHeight: 1.5,
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 };
 const countBtn: CSSProperties = {
-  flexShrink: 0, display: 'inline-flex', alignItems: 'center', fontSize: 11.5, fontWeight: 600,
-  fontFamily: 'inherit', color: 'var(--ink-3)', background: 'var(--surface-2)', border: '1px solid var(--line-2)',
-  borderRadius: 'var(--r-lg)', padding: '3px 9px', cursor: 'pointer',
+  flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 2, height: 26, boxSizing: 'border-box', fontSize: 12, fontWeight: 800,
+  fontFamily: 'inherit', color: 'var(--ink-2)', background: 'var(--surface-2)', border: '1px solid var(--line)',
+  borderRadius: 99, padding: '0 6px 0 9px', cursor: 'pointer',
 };
-const countBtnClosed: CSSProperties = { color: 'var(--accent-ink)', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)' };
+const countBtnOpen: CSSProperties = { color: 'var(--accent-ink)', background: 'var(--accent-soft)', border: '1px solid transparent' };
 const focusBtn: CSSProperties = {
-  flexShrink: 0, width: 34, height: 34, borderRadius: 999, display: 'inline-flex', alignItems: 'center',
-  justifyContent: 'center', color: 'var(--ink-2)', background: 'var(--surface-2)', border: '1px solid var(--line-2)', cursor: 'pointer',
-  marginRight: 6,
+  flexShrink: 0, width: 30, height: 30, borderRadius: 9, display: 'inline-grid', placeItems: 'center',
+  color: 'var(--ink-2)', background: 'var(--surface)', border: '1px solid var(--line)', cursor: 'pointer', padding: 0,
 };
 const focusBtnActive: CSSProperties = {
-  color: 'var(--on-accent)', background: 'var(--accent-grad)', border: '1px solid var(--accent)', boxShadow: '0 0 0 4px rgba(0,136,255,.18)',
+  color: 'var(--on-accent)', background: 'var(--accent)', border: '1px solid var(--accent)',
 };
 const trailBar: CSSProperties = {
-  position: 'absolute', left: 20, top: 16, display: 'flex', alignItems: 'center', gap: 6,
-  background: 'var(--surface)', border: '1px solid var(--line-2)', borderRadius: 12, padding: '6px 10px',
-  boxShadow: 'var(--shadow)', fontSize: 12.5, fontWeight: 400,
+  position: 'absolute', left: 16, top: 14, zIndex: 3, display: 'flex', alignItems: 'center', gap: 4,
+  background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, padding: '5px 10px',
+  boxShadow: '0 4px 14px -6px rgba(20,16,60,.18)', fontSize: 13, fontWeight: 700,
 };
 const trailBtn: CSSProperties = {
-  border: 0, background: 'transparent', color: 'var(--accent-ink)', fontSize: 12.5, fontWeight: 500,
+  border: 0, background: 'transparent', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 700,
   cursor: 'pointer', fontFamily: 'inherit', padding: '2px 4px',
 };

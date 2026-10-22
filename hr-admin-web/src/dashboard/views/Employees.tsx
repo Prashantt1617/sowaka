@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { ETYPE } from '../theme';
-import { Avatar, Card, Loadable, Pill, SearchInput, SelectBox, SkeletonPage } from '../ui';
+import { Avatar, Loadable, Pill, SearchInput, SelectBox, SkeletonPage } from '../ui';
 import { IconPlus } from '../icons';
 import type { Emp } from '../seed';
 import { AddEmployeeWizard } from './AddEmployeeWizard';
 import { AccountLimitModal } from './AccountLimitModal';
 import { getAccountLimit } from '../../services/hrms';
 import { EmployeeProfile, type ProfileTab } from './EmployeeProfile';
-import { NameCell, Td, Th } from './kpiUi';
-import { ghostBtn, primaryBtn, smallBtn } from './kpiStyles';
+import { Td, Th } from './kpiUi';
+import './people.css';
 
 /** Waits for the shared lists this page reads before drawing it. */
 export function Employees() {
@@ -76,23 +75,28 @@ function EmployeesBody() {
     <div>
       {addOpen && <AddEmployeeWizard onClose={() => setAddOpen(false)} />}
       {limitReached !== false && <AccountLimitModal max={limitReached} onClose={() => setLimitReached(false)} />}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 16, flexWrap: 'wrap' }}>
-        <SearchInput value={s.empSearch} onChange={s.setEmpSearch} placeholder="Search name, ID or role…" width={280} />
-        <SelectBox value={s.empTeam} onChange={s.setEmpTeam}>
-          <option value="all">All teams</option>
-          {teams.map((t) => (
-            <option key={t} value={t}>{t}</option>
-          ))}
-        </SelectBox>
-        <div style={{ marginLeft: 'auto', fontSize: 14, color: 'var(--ink-3)', fontWeight: 400 }}>{rows.length} of {s.emps.length} people</div>
-        <button onClick={() => void exportEmployees(rows)} disabled={rows.length === 0} style={ghostBtn}>Export list</button>
-        <button onClick={openAdd} disabled={checkingLimit} style={primaryBtn}>
-          <IconPlus size={15} /> Add user
-        </button>
+      <div className="pd-head" style={{ justifyContent: 'flex-end', marginTop: -8 }}>
+        <div className="pd-actions">
+          <button onClick={() => void exportEmployees(rows)} disabled={rows.length === 0} className="pd-btn"><IconExport /> Export list</button>
+          <button onClick={openAdd} disabled={checkingLimit} className="pd-btn primary">
+            <IconPlus size={15} /> Add user
+          </button>
+        </div>
       </div>
 
-      <Card>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+      <section className="pd-card">
+        <div className="pd-toolbar pd-grow-search">
+          <SearchInput value={s.empSearch} onChange={s.setEmpSearch} placeholder="Search name, ID or role…" width={280} />
+          <SelectBox value={s.empTeam} onChange={s.setEmpTeam}>
+            <option value="all">All teams</option>
+            {teams.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </SelectBox>
+        </div>
+        <div className="pd-countline" style={{ marginBottom: 14 }}><b>{rows.length}</b> of {s.emps.length} people</div>
+        <div className="pd-tbl-wrap">
+        <table className="pd-t">
           <thead>
             <tr>
               <Th>Employee</Th>
@@ -106,77 +110,69 @@ function EmployeesBody() {
           </thead>
           <tbody>
             {pageRows.map((r) => (
-              <tr key={r.id} className="phm-row" onClick={() => setSelected(r)} style={{ cursor: 'pointer' }}>
+              <tr key={r.id} className="phm-row pd-click" onClick={() => setSelected(r)}>
                 <Td>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-                    <Avatar name={r.name} size={34} font={13} src={r.photoUrl} />
-                    <span style={{ minWidth: 0 }}>
-                      <NameCell name={r.name} />
-                      <span style={{ display: 'block', fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400 }}>{r.employeeId}</span>
+                  <span className="pd-who">
+                    <Avatar name={r.name} size={34} font={14} src={r.photoUrl} />
+                    <span className="txt">
+                      <b>{r.name}</b>
+                      <span className="sub">{r.employeeId}</span>
                     </span>
                   </span>
                 </Td>
-                <Td muted>{r.role}</Td>
-                <Td muted>{r.team}</Td>
-                <Td muted>{r.location}</Td>
+                <Td>{r.role}</Td>
+                <Td>{r.team && r.team !== '—' ? <span className="pd-tag">{r.team}</span> : r.team}</Td>
+                <Td>{r.location}</Td>
                 <Td><Pill label={r.empType} tone={ETYPE[r.empType]} /></Td>
-                <Td muted>{r.manager}</Td>
-                <Td muted>
+                <Td>{r.manager}</Td>
+                <Td>
                   <span style={{ fontVariantNumeric: 'tabular-nums' }}>{r.joining}</span>
                 </Td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: '26px 14px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>
+                <td colSpan={7} className="pd-empty">
                   No employees match your search.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
-      </Card>
+        </div>
 
       {rows.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14 }}>
-          <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
+        <div className="pd-pager">
+          <div>
             Showing {firstShown}–{lastShown} of {rows.length}
           </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button
-              onClick={() => setPage(curPage - 1)}
-              disabled={curPage === 1}
-              style={{ ...pageBtn, ...(curPage === 1 ? pageBtnDisabled : {}) }}
-            >
+          <div className="pages">
+            <button onClick={() => setPage(curPage - 1)} disabled={curPage === 1}>
               ← Prev
             </button>
             {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPage(p)}
-                style={{ ...pageNum, ...(p === curPage ? pageNumActive : {}) }}
-              >
+              <button key={p} onClick={() => setPage(p)} className={p === curPage ? 'on' : undefined}>
                 {p}
               </button>
             ))}
-            <button
-              onClick={() => setPage(curPage + 1)}
-              disabled={curPage === pageCount}
-              style={{ ...pageBtn, ...(curPage === pageCount ? pageBtnDisabled : {}) }}
-            >
+            <button onClick={() => setPage(curPage + 1)} disabled={curPage === pageCount}>
               Next →
             </button>
           </div>
         </div>
       )}
+      </section>
     </div>
   );
 }
 
-const pageBtn: CSSProperties = { ...smallBtn };
-const pageBtnDisabled: CSSProperties = { color: 'var(--ink-4)', cursor: 'not-allowed', background: 'var(--surface-2)' };
-const pageNum: CSSProperties = { minWidth: 32, height: 32, background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer' };
-const pageNumActive: CSSProperties = { background: 'var(--accent-grad)', color: 'var(--on-accent)', borderColor: 'var(--accent)' };
+function IconExport() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
+    </svg>
+  );
+}
 
 /** The list as filtered on screen, as an Excel sheet. */
 async function exportEmployees(rows: Emp[]) {

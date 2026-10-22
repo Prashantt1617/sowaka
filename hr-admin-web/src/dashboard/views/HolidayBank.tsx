@@ -5,8 +5,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card, EmptyRow, ListPending } from '../ui';
+import { EmptyRow, ListPending } from '../ui';
 import { IconPlus } from '../icons';
+import { IconInfo } from './peopleTable';
+import { PdPin, PdTrash } from './pdIcons';
+import './people.css';
 import {
   ALL_LOCATIONS, createHoliday, deleteHoliday, getAllEmployees, getHolidays,
   type HolidayDTO, type HolidayType,
@@ -20,9 +23,9 @@ const label = (state: string) =>
   state === ALL_LOCATIONS ? ALL : state.replace(/\b\w/g, (c) => c.toUpperCase());
 
 const TYPE_TONE: Record<HolidayType, { bg: string; fg: string }> = {
-  Public: { bg: 'var(--ok-bg)', fg: 'var(--ok)' },
-  Restricted: { bg: 'var(--warn-bg)', fg: 'var(--warn)' },
-  Optional: { bg: 'var(--t-sky)', fg: 'var(--t-sky-i)' },
+  Public: { bg: 'var(--p-green)', fg: '#fff' },
+  Restricted: { bg: 'var(--p-yellow)', fg: 'var(--p-yellow-ink)' },
+  Optional: { bg: 'var(--p-blue)', fg: '#fff' },
 };
 
 function fmtDate(iso: string): string {
@@ -118,29 +121,38 @@ export function HolidayBank() {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <select value={location} onChange={(e) => setLocation(e.target.value)} style={{ ...selectStyle, width: 220 }}>
-          <option value="All">All locations</option>
-          {locations.map((l) => <option key={l} value={l}>{label(l)}</option>)}
-        </select>
-        <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>Calendar year {year}</div>
-        <div style={{ marginLeft: 'auto' }}>
-          <button onClick={() => (adding ? cancelAdd() : setAdding(true))} style={primaryBtn}>
+      <div className="pd-head" style={{ alignItems: 'center' }}>
+        <div className="pd-actions">
+          <label className="pd-field" style={{ width: 220, paddingRight: 8 }}>
+            <PdPin size={15} />
+            <select value={location} onChange={(e) => setLocation(e.target.value)} aria-label="Location">
+              <option value="All">All locations</option>
+              {locations.map((l) => <option key={l} value={l}>{label(l)}</option>)}
+            </select>
+          </label>
+          <p className="pd-lead">Calendar year {year}</p>
+        </div>
+        <div className="pd-actions">
+          <button onClick={() => (adding ? cancelAdd() : setAdding(true))} className="pd-btn primary">
             <IconPlus size={15} /> Add holiday
           </button>
         </div>
       </div>
 
-      <div style={{ fontSize: 12.5, color: 'var(--ink-2)', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
-        This is the org-wide holiday master. Each holiday is assigned to employees by their <strong>work location</strong> — “{ALL}” applies to everyone. A holiday is a non-working day the same way a week-off is: leave spanning one is not charged for it.
+      <div className="pd-note" style={{ marginBottom: 20 }}>
+        <IconInfo />
+        <span>
+          This is the org-wide holiday master. Each holiday is assigned to employees by their <strong>work location</strong> — “{ALL}” applies to everyone. A holiday is a non-working day the same way a week-off is: leave spanning one is not charged for it.
+        </span>
       </div>
 
       {adding && (
-        <Card style={{ padding: '18px 20px', marginBottom: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>New holiday</div>
+        <section className="pd-card pd-form" style={{ marginBottom: 20, padding: 0 }}>
+          <div className="pd-md-h">
+            <h3>New holiday</h3>
             <button onClick={cancelAdd} aria-label="Close" title="Close" style={closeBtn}>×</button>
           </div>
+          <div style={{ padding: 20 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '170px 1fr 200px 150px auto auto', gap: 12, alignItems: 'end' }}>
             <Field label="Date">
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} />
@@ -159,43 +171,54 @@ export function HolidayBank() {
                 {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </Field>
-            <button onClick={() => void add()} disabled={saving} style={{ ...primaryBtn, marginBottom: 1 }}>
+            <button onClick={() => void add()} disabled={saving} className="pd-btn primary" style={{ marginBottom: 1 }}>
               {saving ? 'Adding…' : 'Add'}
             </button>
-            <button onClick={cancelAdd} disabled={saving} style={{ ...ghostBtn, marginBottom: 1 }}>Cancel</button>
+            <button onClick={cancelAdd} disabled={saving} className="pd-btn" style={{ marginBottom: 1 }}>Cancel</button>
           </div>
-        </Card>
+          </div>
+        </section>
       )}
 
-      <Card>
+      <section className="pd-card">
         {loading || (failed && holidays.length === 0) ? (
           <ListPending state={loading ? 'loading' : 'error'} onRetry={() => { setLoading(true); void reload(); }} rows={6} cols={5} avatar={false} rowHeight={48} />
         ) : rows.length === 0 ? (
           <EmptyRow text="No holidays for this location yet." />
         ) : (
-          <table style={tableStyle}>
+          <table className="pd-t">
             <thead>
-              <tr><Th>Date</Th><Th>Day</Th><Th>Holiday</Th><Th>Location</Th><Th>Type</Th><Th> </Th></tr>
+              <tr><Th>Date</Th><Th>Day</Th><Th>Holiday</Th><Th>Location</Th><Th>Type</Th><Th right> </Th></tr>
             </thead>
             <tbody>
               {rows.map((h) => (
                 <tr key={h.id}>
-                  <Td mono>{fmtDate(h.date)}</Td>
-                  <Td muted>{weekday(h.date)}</Td>
-                  <Td><strong style={{ color: 'var(--ink)' }}>{h.name}</strong></Td>
-                  <Td muted>{label(h.state)}</Td>
-                  <Td>
-                    <span style={{ fontSize: 11.5, fontWeight: 500, padding: '3px 10px', borderRadius: 'var(--r-lg)', background: TYPE_TONE[h.type].bg, color: TYPE_TONE[h.type].fg }}>{h.type}</span>
+                  <Td mono>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                      <span className="pd-datechip" aria-hidden>
+                        <small>{new Date(h.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short' })}</small>
+                        <b>{Number(h.date.slice(8))}</b>
+                      </span>
+                      {fmtDate(h.date)}
+                    </span>
                   </Td>
+                  <Td muted>{weekday(h.date)}</Td>
+                  <Td><b>{h.name}</b></Td>
+                  <Td>{h.state === ALL_LOCATIONS ? <span>{label(h.state)}</span> : <span className="pd-tag">{label(h.state)}</span>}</Td>
                   <Td>
-                    <button onClick={() => void remove(h)} style={removeBtn} title={`Remove ${h.name}`}>Remove</button>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 500, lineHeight: 1.5, padding: '3px 10px', borderRadius: 99, background: TYPE_TONE[h.type].bg, color: TYPE_TONE[h.type].fg }}>
+                      <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', opacity: 0.85 }} />{h.type}
+                    </span>
+                  </Td>
+                  <Td right>
+                    <button onClick={() => void remove(h)} className="pd-btn sm" title={`Remove ${h.name}`}><PdTrash size={15} /> Remove</button>
                   </Td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-      </Card>
+      </section>
     </div>
   );
 }
@@ -203,22 +226,18 @@ export function HolidayBank() {
 function Field({ label: text, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 500, marginBottom: 5, color: 'var(--ink-2)' }}>{text}</label>
+      <label style={{ display: 'block', fontSize: 11.5, fontWeight: 400, lineHeight: 1.5, marginBottom: 6, color: 'var(--ink-2)' }}>{text}</label>
       {children}
     </div>
   );
 }
-function Th({ children }: { children: ReactNode }) {
-  return <th style={{ textAlign: 'left', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '11px 16px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)' }}>{children}</th>;
+function Th({ children, right }: { children: ReactNode; right?: boolean }) {
+  return <th style={{ textAlign: right ? 'right' : 'left' }}>{children}</th>;
 }
-function Td({ children, muted, mono }: { children: ReactNode; muted?: boolean; mono?: boolean }) {
-  return <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)', color: muted ? 'var(--ink-3)' : 'var(--ink)', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
+function Td({ children, muted, mono, right }: { children: ReactNode; muted?: boolean; mono?: boolean; right?: boolean }) {
+  return <td style={{ color: muted ? 'var(--ink-3)' : 'var(--ink)', textAlign: right ? 'right' : undefined, fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
 }
 
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
-const selectStyle: CSSProperties = { padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 999, fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer' };
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 13.5, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
-const removeBtn: CSSProperties = { background: 'none', border: 'none', padding: '4px 6px', font: 'inherit', fontSize: 13, fontWeight: 500, color: 'var(--bad)', cursor: 'pointer' };
-const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer' };
-const closeBtn: CSSProperties = { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 22, lineHeight: 1, color: 'var(--ink-4)', cursor: 'pointer', padding: '0 4px' };
+const selectStyle: CSSProperties = { height: 42, padding: '0 12px', border: '1px solid var(--line-2)', borderRadius: 12, fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer', boxSizing: 'border-box' };
+const inputStyle: CSSProperties = { width: '100%', height: 42, padding: '0 12px', border: '1px solid var(--line-2)', borderRadius: 12, fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)', boxSizing: 'border-box' };
+const closeBtn: CSSProperties = { marginLeft: 'auto', width: 42, height: 42, borderRadius: '50%', background: 'var(--surface)', border: '1px solid var(--line)', fontSize: 20, lineHeight: 1, color: 'var(--ink-2)', cursor: 'pointer', padding: 0 };

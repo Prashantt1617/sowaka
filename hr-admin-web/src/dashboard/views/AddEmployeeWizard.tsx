@@ -8,7 +8,8 @@
 //
 // Salary details is deliberately not in the flow — the step is kept below,
 // unrendered, until payroll is wired up.
-import { Fragment, useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
+import './people.css';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { SkeletonRows } from '../ui';
@@ -254,11 +255,11 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
 
   return (
     <div style={overlay} onClick={onClose}>
-      <div style={modalCard} onClick={(e) => e.stopPropagation()}>
+      <div className="pd-form" style={modalCard} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', padding: '18px 22px 0' }}>
-          <div style={{ fontSize: 17, fontWeight: 600 }}>{invite ? 'Create user' : 'Add employee'}</div>
-          <button onClick={onClose} style={iconBtn}><IconClose size={18} /></button>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '20px 24px 0' }}>
+          <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1.2 }}>{invite ? 'Create user' : 'Add employee'}</div>
+          <button onClick={onClose} style={iconBtn}><IconClose size={16} /></button>
         </div>
 
         {done ? (
@@ -266,9 +267,9 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
             <div style={{ padding: '26px 40px', overflowY: 'auto', flex: 1 }}>
               <SuccessScreen name={fullName || 'this employee'} employeeId={basic.employeeId} designation={basic.designation} department={basic.department} orgName={user?.company ?? 'your organisation'} />
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 22px', borderTop: '1px solid var(--line)' }}>
-              <button onClick={addAnother} style={ghostBtn}>Add another employee</button>
-              <button onClick={onClose} style={{ ...primaryBtn, marginLeft: 'auto' }}>Done</button>
+            <div style={footBar}>
+              <button onClick={addAnother} className="pd-btn">Add another employee</button>
+              <button onClick={onClose} className="pd-btn primary" style={{ marginLeft: 'auto' }}>Done</button>
             </div>
           </>
         ) : invite ? (
@@ -276,12 +277,12 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
             <div style={{ padding: '26px 40px', overflowY: 'auto', flex: 1 }}>
               <InviteScreen name={fullName || 'this employee'} email={basic.workEmail} employeeId={basic.employeeId} orgName={user?.company ?? 'your organisation'} />
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 22px', borderTop: '1px solid var(--line)' }}>
-              <button onClick={() => { setInvite(false); setError(''); }} style={ghostBtn}>← Back</button>
+            <div style={footBar}>
+              <button onClick={() => { setInvite(false); setError(''); }} className="pd-btn">← Back</button>
               {error && <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--bad)' }}>{error}</div>}
-              <div style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
-                <button onClick={onClose} style={ghostBtn}>Cancel</button>
-                <button onClick={() => void sendInvite()} disabled={saving} style={primaryBtn}>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                <button onClick={onClose} className="pd-btn">Cancel</button>
+                <button onClick={() => void sendInvite()} disabled={saving} className="pd-btn primary">
                   {saving ? 'Creating…' : 'Send invitation & create user'}
                 </button>
               </div>
@@ -290,12 +291,12 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
         ) : (
           <>
             {/* Progress bar */}
-            <div style={{ padding: '20px 22px 10px', borderBottom: '1px solid var(--line)' }}>
+            <div style={{ padding: '18px 24px 18px', borderBottom: '1px solid var(--line)' }}>
               <Progress step={step} onJump={(i) => { setStep(i); setTouched(false); }} />
             </div>
 
             {/* Body */}
-            <div style={{ padding: '26px 40px', overflowY: 'auto', flex: 1 }}>
+            <div style={{ padding: '26px 40px', overflowY: 'auto', flex: 1, background: 'var(--surface)' }}>
               <div style={{ width: '100%', maxWidth: 1040, margin: '0 auto' }}>
                 {step === 0 ? (
                   <BasicStep basic={basic} set={set} touched={touched} missing={missing} options={options} />
@@ -323,13 +324,13 @@ export function AddEmployeeWizard({ onClose }: { onClose: () => void }) {
             </div>
 
             {/* Footer */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 22px', borderTop: '1px solid var(--line)' }}>
-              {step > 0 && <button onClick={() => { setStep(step - 1); setTouched(false); setError(''); }} style={ghostBtn}>← Back</button>}
-              <button onClick={() => void saveAndContinue()} disabled={saving} style={primaryBtn}>
+            <div style={footBar}>
+              {step > 0 && <button onClick={() => { setStep(step - 1); setTouched(false); setError(''); }} className="pd-btn">← Back</button>}
+              <button onClick={() => void saveAndContinue()} disabled={saving} className="pd-btn primary">
                 {saving ? 'Saving…' : step < STEPS.length - 1 ? 'Save and Continue' : 'Save & Finish'}
               </button>
-              <button onClick={onClose} style={ghostBtn}>Cancel</button>
-              <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 400, color: error ? 'var(--bad)' : 'var(--bad)' }}>
+              <button onClick={onClose} className="pd-btn">Cancel</button>
+              <div style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 400, color: error ? 'var(--bad)' : 'var(--ink-3)' }}>
                 {error || <><span style={{ color: 'var(--bad)' }}>*</span> indicates mandatory fields</>}
               </div>
             </div>
@@ -461,7 +462,7 @@ function FeedbackParametersStep({
         </select>
       </Field>
 
-      <div style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--ink-4)', margin: '18px 0 8px' }}>
+      <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--hi)', margin: '18px 0 8px' }}>
         Parameters {picked.length > 0 && `· ${picked.length} chosen`}
       </div>
       {loading ? (
@@ -509,8 +510,8 @@ function FeedbackParametersStep({
 function StepHeading({ title, sub }: { title: string; sub: string }) {
   return (
     <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 16.5, fontWeight: 600, color: 'var(--ink)' }}>{title}</div>
-      <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.55 }}>{sub}</div>
+      <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-.01em', color: 'var(--ink)' }}>{title}</div>
+      <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 2, lineHeight: 1.5 }}>{sub}</div>
     </div>
   );
 }
@@ -518,18 +519,19 @@ function StepHeading({ title, sub }: { title: string; sub: string }) {
 const pickRow = (on: boolean): CSSProperties => ({
   display: 'flex', alignItems: 'flex-start', gap: 12, width: '100%', textAlign: 'left',
   padding: '14px 16px', marginBottom: 10, cursor: 'pointer',
-  border: `1px solid ${on ? 'var(--accent)' : 'var(--line)'}`, borderRadius: 12,
-  background: on ? 'var(--accent-soft)' : 'var(--surface)', font: 'inherit',
+  border: `1px solid ${on ? 'var(--accent)' : 'var(--line)'}`, borderRadius: 16,
+  background: on ? 'linear-gradient(140deg, var(--accent-soft), var(--surface) 75%)' : 'var(--surface)', font: 'inherit',
+  boxShadow: on ? '0 0 0 3px var(--accent-soft)' : 'none',
 });
 const pickDot = (on: boolean): CSSProperties => ({
   width: 18, height: 18, borderRadius: '50%', flexShrink: 0, marginTop: 2,
   border: `${on ? 5 : 1.5}px solid ${on ? 'var(--accent)' : 'var(--line-2)'}`, background: 'var(--surface)',
 });
 const pickTitle: CSSProperties = { display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--ink)' };
-const pickSub: CSSProperties = { display: 'block', fontSize: 12.5, color: 'var(--ink-3)', marginTop: 3, lineHeight: 1.5 };
+const pickSub: CSSProperties = { display: 'block', fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2, lineHeight: 1.5 };
 const emptyNote: CSSProperties = {
-  fontSize: 12.5, color: 'var(--ink-2)', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)',
-  borderRadius: 10, padding: '11px 14px', lineHeight: 1.55,
+  fontSize: 13, color: 'var(--ink-2)', background: 'var(--surface-2)', border: '1px solid var(--line)',
+  borderRadius: 14, padding: '12px 14px', lineHeight: 1.5,
 };
 
 function SuccessScreen({ name, employeeId, designation, department, orgName }: { name: string; employeeId: string; designation: string; department: string; orgName: string }) {
@@ -564,30 +566,15 @@ function SuccessScreen({ name, employeeId, designation, department, orgName }: {
 
 function Progress({ step, onJump }: { step: number; onJump: (i: number) => void }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div className="pd-steps">
       {STEPS.map((label, i) => {
         const done = i < step;
         const active = i === step;
-        const filled = done || active;
         return (
-          <Fragment key={label}>
-            <button onClick={() => onJump(i)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-              <span style={{
-                width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 13, fontWeight: 600,
-                background: filled ? 'var(--accent-grad)' : 'var(--surface)',
-                color: filled ? 'var(--on-accent)' : 'var(--ink-4)',
-                border: `2px solid ${filled ? 'var(--accent)' : 'var(--line)'}`,
-              }}>
-                {done ? '✓' : i + 1}
-              </span>
-              <span style={{ fontSize: 14, fontWeight: active ? 600 : 400, color: active ? 'var(--accent-ink)' : done ? 'var(--ink-2)' : 'var(--ink-3)', whiteSpace: 'nowrap' }}>{label}</span>
-            </button>
-            {i < STEPS.length - 1 && (
-              <span style={{ width: 52, height: 2, background: done ? 'var(--accent-grad)' : 'var(--surface-2)', margin: '0 16px', flexShrink: 0 }} />
-            )}
-          </Fragment>
+          <button key={label} onClick={() => onJump(i)} className={active ? 'pd-step on' : done ? 'pd-step done' : 'pd-step'}>
+            <i>{done ? '✓' : i + 1}</i>
+            {label}
+          </button>
         );
       })}
     </div>
@@ -782,7 +769,7 @@ export function SalaryStep() {
                   <OtherBenefitsGroup sal={sal} />
                 )}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
-                  <button onClick={() => saveGroup(g.key)} style={primaryBtn}>Save</button>
+                  <button onClick={() => saveGroup(g.key)} className="pd-btn primary">Save</button>
                 </div>
               </div>
             )}
@@ -945,9 +932,9 @@ function SRRow({ name, sub, info, extra, calc, monthly, annual }: { name: string
   );
 }
 
-const srInput: CSSProperties = { width: 84, padding: '6px 9px', border: '1px solid var(--line)', borderRadius: 8, fontSize: 13, textAlign: 'right', fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
-const srPct: CSSProperties = { width: 54, padding: '6px 8px', border: '1px solid var(--line)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
-const srUnit: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '6px 10px', border: '1px solid var(--line)', borderRadius: 8, fontSize: 13, background: 'var(--surface-2)', color: 'var(--ink-2)', whiteSpace: 'nowrap' };
+const srInput: CSSProperties = { width: 84, height: 34, padding: '0 10px', border: '1px solid var(--line-2)', borderRadius: 10, fontSize: 13, textAlign: 'right', fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)', boxSizing: 'border-box' };
+const srPct: CSSProperties = { width: 54, height: 34, padding: '0 8px', border: '1px solid var(--line-2)', borderRadius: 10, fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)', boxSizing: 'border-box' };
+const srUnit: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, height: 34, padding: '0 10px', border: '1px solid var(--line-2)', borderRadius: 10, fontSize: 12.5, background: 'var(--surface-2)', color: 'var(--ink-2)', whiteSpace: 'nowrap', boxSizing: 'border-box' };
 const sysCalc = <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>System Calculated</span>;
 
 // Voluntary benefits configured for the org that can be added to an employee's
@@ -1432,7 +1419,7 @@ function PersonalStep({ userId }: { userId: string | null }) {
             type="button"
             onClick={addDoc}
             disabled={!userId || !docType || !docFile || docBusy}
-            style={{ ...primaryBtn, opacity: !userId || !docType || !docFile || docBusy ? 0.5 : 1, cursor: !userId || !docType || !docFile || docBusy ? 'not-allowed' : 'pointer' }}
+            className="pd-btn primary"
           >
             {docBusy ? 'Uploading…' : 'Add'}
           </button>
@@ -1448,7 +1435,7 @@ function PersonalStep({ userId }: { userId: string | null }) {
                   <div style={{ fontSize: 12.5, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}</div>
                 </div>
                 {doc.url && <a href={doc.url} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 500, color: 'var(--accent-ink)', textDecoration: 'none' }}>Open</a>}
-                <button type="button" onClick={() => removeDoc(doc.id)} style={{ ...ghostBtn, padding: '6px 11px', fontSize: 13, color: 'var(--bad)' }}>Remove</button>
+                <button type="button" onClick={() => removeDoc(doc.id)} className="pd-btn sm" style={{ color: 'var(--bad)' }}>Remove</button>
               </div>
             ))}
           </div>
@@ -1461,12 +1448,12 @@ function PersonalStep({ userId }: { userId: string | null }) {
 // —— Small building blocks ————————————————————————————————————————————
 export function Field({ label, required, error, children }: { label: string; required?: boolean; error?: boolean; children: ReactNode }) {
   return (
-    <div style={{ marginBottom: 18 }}>
-      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 5, color: 'var(--ink-2)' }}>
-        {label}{required && <span style={{ color: 'var(--bad)', marginLeft: 3 }}>*</span>}
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ display: 'block', fontSize: 11.5, fontWeight: 400, lineHeight: 1.5, marginBottom: 6, color: 'var(--ink-2)' }}>
+        {label}{required && <span style={{ color: 'var(--bad)', marginLeft: 2 }}>*</span>}
       </label>
       {children}
-      {error && <div style={{ fontSize: 13, color: 'var(--bad)', marginTop: 4, fontWeight: 400 }}>This field is required</div>}
+      {error && <div style={{ fontSize: 12, color: 'var(--bad)', marginTop: 4, fontWeight: 500 }}>This field is required</div>}
     </div>
   );
 }
@@ -1508,9 +1495,9 @@ function RadioCard({ checked, onClick, title, sub }: { checked: boolean; onClick
   return (
     <button onClick={onClick} style={{
       flex: 1, minWidth: 220, textAlign: 'left', cursor: 'pointer',
-      border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--line)'}`,
-      background: checked ? 'var(--surface-2)' : 'var(--surface)',
-      borderRadius: 999, padding: '10px 12px', display: 'flex', gap: 9, alignItems: 'flex-start',
+      border: `1px solid ${checked ? 'var(--accent)' : 'var(--line)'}`,
+      background: checked ? 'var(--accent-soft)' : 'var(--surface)',
+      borderRadius: 16, padding: '12px 14px', display: 'flex', gap: 10, alignItems: 'flex-start', fontFamily: 'inherit',
     }}>
       <span style={{
         width: 16, height: 16, borderRadius: '50%', flexShrink: 0, marginTop: 1,
@@ -1557,13 +1544,12 @@ function InfoDot({ text }: { text: string }) {
   );
 }
 
-const overlay: CSSProperties = { position: 'fixed', inset: 0, zIndex: 90, background: 'var(--scrim)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'stretch', justifyContent: 'center', padding: 22 };
-const modalCard: CSSProperties = { width: '100%', maxWidth: 1440, height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)' };
-export const inputStyle: CSSProperties = { width: '100%', padding: '11px 12px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
-const iconBtn: CSSProperties = { marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--ink-3)' };
-const primaryBtn: CSSProperties = { background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 18px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-export const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 };
-export const grid3: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 18 };
-export const infoCallout: CSSProperties = { display: 'flex', gap: 10, alignItems: 'flex-start', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: 'var(--t-sky-i)', lineHeight: 1.5 };
-export const infoIcon: CSSProperties = { flexShrink: 0, width: 18, height: 18, borderRadius: '50%', background: '#5A8FD1', color: 'var(--on-accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 600, fontStyle: 'italic', marginTop: 1 };
+const overlay: CSSProperties = { position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(20, 16, 50, 0.38)', display: 'flex', alignItems: 'stretch', justifyContent: 'center', padding: 22 };
+const modalCard: CSSProperties = { width: '100%', maxWidth: 1440, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--surface)', border: '1px solid transparent', borderRadius: 22, boxShadow: 'var(--shadow-lg)' };
+const footBar: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '16px 24px', borderTop: '1px solid var(--line)' };
+export const inputStyle: CSSProperties = { width: '100%', height: 42, padding: '0 12px', border: '1px solid var(--line-2)', borderRadius: 12, fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)', boxSizing: 'border-box' };
+const iconBtn: CSSProperties = { marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 42, height: 42, borderRadius: '50%', background: 'var(--surface)', border: '1px solid var(--line)', cursor: 'pointer', padding: 0, color: 'var(--ink-2)' };
+export const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 };
+export const grid3: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 };
+export const infoCallout: CSSProperties = { display: 'flex', gap: 12, alignItems: 'flex-start', background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 14, padding: '12px 14px', fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 };
+export const infoIcon: CSSProperties = { flexShrink: 0, width: 16, height: 16, borderRadius: '50%', border: '1.6px solid var(--accent)', color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, fontStyle: 'normal', marginTop: 2, boxSizing: 'border-box' };
