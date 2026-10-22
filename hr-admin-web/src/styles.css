@@ -1,9 +1,79 @@
+/* Design tokens — the Sowaka HR Admin look: warm neutral canvas, frosted
+   sidebar and top bar, white cards with a soft shadow, black selected
+   states, one blue primary action and the brand blue for small highlights.
+   Views read these through inline styles as var(--…). */
 :root {
-  color: #222222;
-  background: #F7F7F9;
-  font-family:
-    "Sora", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  letter-spacing: -0.16px;
+  --canvas: #ECEBE9;
+  --surface: #FFFFFF;
+  --surface-2: #F5F5F6;
+  --glass: rgba(255, 255, 255, 0.62);
+  --line: #E9E9EC;
+  --line-2: #DADADF;
+
+  --ink: #141416;
+  --ink-2: #4E4E56;
+  --ink-3: #8A8A93;
+  --ink-4: #A0A0A9;
+
+  --accent: #0088FF;
+  --accent-ink: #0A6AD1;
+  --accent-soft: #E5F2FF;
+  --accent-line: #B8DBFF;
+  --accent-grad: linear-gradient(180deg, #2B9BFF, #0088FF);
+  --on-accent: #FFFFFF;
+  --sel: #141416;
+  --on-sel: #FFFFFF;
+  --hi: #0571A6;
+  --hi-soft: #E1F0F7;
+
+  --t-lilac: #EEEDFD;
+  --t-lilac-i: #5E57D6;
+  --t-butter: #FDF6DE;
+  --t-butter-i: #8A6A12;
+  --t-sky: #E5F2FF;
+  --t-sky-i: #0A6AD1;
+  --t-mint: #E4F4EF;
+  --t-mint-i: #23806A;
+  --t-peach: #FFEDE4;
+  --t-peach-i: #C2562A;
+
+  --ok: #23806A;
+  --ok-bg: #E4F4EF;
+  --ok-line: #BFE3D7;
+  --warn: #8A6A12;
+  --warn-bg: #FDF3D6;
+  --warn-line: #EEDCA5;
+  --bad: #A83C3E;
+  --bad-bg: #F8E6E6;
+  --bad-line: #EDC9CA;
+  --mute-bg: #EFEFF1;
+
+  /* Solid status pills */
+  --p-green: #49B195;
+  --p-blue: #0088FF;
+  --p-red: #BF494B;
+  --p-orange: #FD8A56;
+  --p-purple: #857FEB;
+  --p-yellow: #F9D97B;
+  --p-yellow-ink: #4A3A08;
+
+  --wash-a: #F6E2D8;
+  --wash-b: #DFE3F4;
+  --shadow: 0 1px 2px rgba(20, 20, 22, 0.05), 0 6px 20px -6px rgba(20, 20, 22, 0.14);
+  --shadow-lg: 0 24px 64px -16px rgba(20, 20, 22, 0.28);
+  --scrim: rgba(20, 18, 40, 0.28);
+
+  --r-sm: 10px;
+  --r: 16px;
+  --r-lg: 22px;
+
+  --f-ui: "Sora", "Inter Tight", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  color: var(--ink);
+  background: var(--canvas);
+  font-family: var(--f-ui);
+  font-size: 14px;
+  letter-spacing: -0.005em;
 }
 
 * {
@@ -15,15 +85,35 @@
 body {
   margin: 0;
   min-width: 320px;
-  font-family:
-    "Sora", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--f-ui);
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
-  letter-spacing: -0.16px;
-  color: #222222;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  background:
+    radial-gradient(1100px 680px at -8% -12%, var(--wash-a), transparent 62%),
+    radial-gradient(900px 600px at 108% 108%, var(--wash-b), transparent 60%),
+    var(--canvas);
+  background-attachment: fixed;
+}
+
+b,
+strong {
+  font-weight: 500;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink-4);
 }
 
 ::selection {
-  background: #cceaf5;
+  background: var(--accent-soft);
 }
 
 input,
@@ -50,7 +140,7 @@ button:active {
 }
 
 .scry::-webkit-scrollbar-thumb {
-  background: #d5d7dd;
+  background: var(--line-2);
   border-radius: 9px;
   border: 3px solid transparent;
   background-clip: content-box;
@@ -62,7 +152,7 @@ button:active {
 
 /* Table row hover */
 .dc-row:hover {
-  background: #F7F7F9;
+  background: var(--surface-2);
 }
 
 @keyframes drwIn {
@@ -227,8 +317,8 @@ input {
 
 /* —— Org chart cards: lift on hover so they read as something to open —— */
 .oc-card:hover {
-  box-shadow: 0 8px 22px rgba(34, 34, 34, 0.12) !important;
-  border-color: #D5DAE1 !important;
+  box-shadow: var(--shadow) !important;
+  border-color: var(--line-2) !important;
 }
 /* The open-profile badge sits on the avatar's corner and appears on hover. */
 .oc-open {
@@ -238,8 +328,8 @@ input {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  border: 2px solid #fff;
-  background: #0571A6;
+  border: 2px solid var(--surface);
+  background: var(--accent);
   color: #fff;
   display: flex;
   align-items: center;
@@ -266,4 +356,31 @@ input[type='number']::-webkit-inner-spin-button,
 input[type='number']::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
+}
+
+/* —— Shell: frosted sidebar and top bar, hover states the inline styles can't express —— */
+.ds-glass {
+  background: var(--glass);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+}
+.ds-nav-item:not(.on):hover {
+  background: var(--surface-2) !important;
+  color: var(--ink) !important;
+}
+.ds-nav-group:hover {
+  background: var(--surface-2) !important;
+  color: var(--ink) !important;
+}
+.ds-brand:hover {
+  background: var(--accent-soft) !important;
+  border-color: transparent !important;
+}
+.ds-icon-btn:hover {
+  background: var(--surface-2) !important;
+}
+.ds-field:focus-within {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
