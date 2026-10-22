@@ -78,8 +78,8 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:800;font-size:2.2rem;
 .target.done b{color:var(--good)}
 .target.done b::after{content:" ✓"}
 
-/* The play area: the prototype's wall of found words, the tray the word is built in, and the letters as chunky cream keys, then Delete, Shuffle
-   and Skip under the thumbs. Each stop repaints the accent in its own hue (--h). */
+/* The play area: the prototype's wall of found words, the tray that shows the word being swiped, and the letters as chunky cream keys, then
+   Delete, Shuffle and Skip under the thumbs. Each stop repaints the accent in its own hue (--h). */
 .stage{position:relative}
 .play{display:flex;flex-direction:column;gap:10px}
 .wallhead{display:flex;justify-content:space-between;gap:10px;padding:0 4px 6px;font-family:var(--small);font-size:.8rem;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -100,17 +100,20 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:800;font-size:2.2rem;
 .chip.full{background:linear-gradient(100deg,#FFB800,#FFF3A6 45%,#FFB800 60%);background-size:220% 100%;box-shadow:0 0 14px -2px var(--gold)}
 .chip.rare{outline:2px solid var(--rare);outline-offset:1px}
 .chip.flash{outline:3px solid var(--ink)}
-.tray{height:58px;border-radius:18px;border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;gap:6px;touch-action:manipulation}
-.tray:empty::before{content:"Swipe or tap the letters";font-family:var(--small);font-weight:600;font-size:.9rem;color:var(--muted)}
-.tray button{font-family:var(--display);font-weight:800;font-size:1.55rem;line-height:1;width:38px;height:44px;padding:4px 0 0;border-radius:11px;border:0;
-  background:var(--accent);color:var(--accent-ink);box-shadow:0 4px 0 var(--accent-deep);cursor:pointer;text-transform:uppercase}
-.tray.ok button{background:var(--good);box-shadow:0 4px 0 #1f9a61}
-.tray.gold button{background:var(--gold);box-shadow:0 4px 0 #b88a00}
-.tray.no button{background:var(--bad);box-shadow:0 4px 0 #a83838}
+.tray{height:58px;border-radius:18px;border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;gap:6px;touch-action:none;pointer-events:none}
+.tray:empty::before{content:"Slide across the letters";font-family:var(--small);font-weight:600;font-size:.9rem;color:var(--muted)}
+/* The word in the tray only shows what the swipe has linked: its letters are not buttons, and nothing in the tray can be tapped. */
+.tray span{display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.55rem;line-height:1;width:38px;height:44px;padding:4px 0 0;border-radius:11px;
+  background:var(--accent);color:var(--accent-ink);box-shadow:0 4px 0 var(--accent-deep);text-transform:uppercase}
+.tray.ok span{background:var(--good);box-shadow:0 4px 0 #1f9a61}
+.tray.gold span{background:var(--gold);box-shadow:0 4px 0 #b88a00}
+.tray.no span{background:var(--bad);box-shadow:0 4px 0 #a83838}
 /* The letters sit on a wheel, as in the connect-the-letters games: evenly round a circle, the first at the top, on a disc of their own.
    placeTiles() works out the sizes (--W the wheel, --s a letter) so that no two letters ever overlap; the line a swipe draws runs over the
-   disc and under the letters, from letter to letter. touch-action:none on the rack: a finger sliding across the letters is typing, never a scroll. */
-.tiles{--W:240px;--s:60px;position:relative;display:flex;justify-content:center;padding:2px 0 6px;touch-action:none}
+   disc and under the letters, from letter to letter. touch-action:none on the rack: a finger sliding across the letters makes a word, never a scroll,
+   a zoom, a text selection or a long-press callout. */
+.tiles{--W:240px;--s:60px;position:relative;display:flex;justify-content:center;padding:2px 0 6px;touch-action:none;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 .tiles .disc{position:absolute;top:2px;left:50%;width:var(--W);height:var(--W);margin-left:calc(var(--W) / -2);border-radius:50%;z-index:1;pointer-events:none;
   background:radial-gradient(circle at 50% 42%,var(--panel2),var(--panel) 72%);border:2px solid var(--line);box-shadow:0 5px 0 var(--deep),inset 0 0 0 7px rgba(11,9,24,.18)}
 .tiles .wheel{position:relative;z-index:3;width:var(--W);height:var(--W);flex-shrink:0}
@@ -122,20 +125,19 @@ h1{margin:0 0 0 2px;font-family:var(--display);font-weight:800;font-size:2.2rem;
 .tile{position:relative;font-family:var(--display);font-weight:800;font-size:2.25rem;line-height:1;width:82px;height:70px;padding:6px 0 0;border-radius:18px;border:0;background:var(--tile);color:var(--tile-ink);
   box-shadow:0 7px 0 var(--tile-edge),0 12px 18px -8px rgba(0,0,0,.6);cursor:pointer;text-transform:uppercase;touch-action:manipulation}
 .wheel .tile{position:absolute;margin:0;width:var(--s);height:var(--s);border-radius:50%;font-size:calc(var(--s) * .54);padding:calc(var(--s) * .1) 0 0;
-  box-shadow:0 5px 0 var(--tile-edge),0 9px 14px -6px rgba(0,0,0,.6)}
-.tile:active{transform:translateY(5px);box-shadow:0 2px 0 var(--tile-edge)}
-.wheel .tile:active{transform:translateY(3px);box-shadow:0 2px 0 var(--tile-edge)}
-/* A letter in the word lights up in the accent, where it is, and the line joins it to the next; a tap on it in the word puts it back. */
+  box-shadow:0 5px 0 var(--tile-edge),0 9px 14px -6px rgba(0,0,0,.6);touch-action:none;cursor:grab}
+/* A letter in the word lights up in the accent, where it is, and the line joins it to the next. */
 .tile.used,.tile.used:active{background:transparent;color:transparent;border:2px dashed var(--line);box-shadow:none;transform:none;cursor:default}
 .wheel .tile.used,.wheel .tile.used:active{background:var(--accent);color:var(--accent-ink);border:0;box-shadow:0 2px 0 var(--accent-deep),0 0 0 4px hsl(var(--h) 95% 60% / .28);transform:translateY(3px)}
-/* The gap between letters belongs to the nearer letter (tileAt): a thumb landing just off a tile still gets it. */
+/* A finger passing near a letter takes it: its hit circle (letterAt) reaches a little past its edge where the wheel has room. */
 .wheel .tile::before{content:none}
-/* Under the letters: Delete, Shuffle and Skip, and a line for what a word did. There is no Enter: lifting the finger plays a word. */
+/* Under the letters: Delete (clears the word a swipe is making), Shuffle and Skip, and a line for what a word did. Lifting the finger plays a word,
+   so there is no Enter. */
 .keys{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
 .keys .btn{min-height:48px;font-size:1.1rem;border-radius:14px}
 .status{margin:-6px 0 0;min-height:1.35em;text-align:center;font-family:var(--small);font-weight:600;font-size:.88rem;line-height:1.35;color:var(--muted);text-wrap:balance}
 .status.bad{color:var(--bad)}
-.btn:focus-visible,.pill:focus-visible,.link:focus-visible,.mini:focus-visible,.person:focus-visible,.crow:focus-visible,.dl:focus-visible,.sx:focus-visible,.tile:focus-visible,.tray button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+.btn:focus-visible,.pill:focus-visible,.link:focus-visible,.mini:focus-visible,.person:focus-visible,.crow:focus-visible,.dl:focus-visible,.sx:focus-visible,.tile:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
 .clock.plus{--accent:var(--good)}
 .sum{margin:-6px 0 0;text-align:center;font-family:var(--small);font-weight:700;font-size:.86rem;color:var(--muted)}
 .sum b{color:var(--ink);font-weight:800;letter-spacing:.03em}
@@ -362,7 +364,7 @@ html.app .howto{padding-top:20px}
 @media (prefers-reduced-motion:no-preference){
   .toast{animation:rise 1s ease-out forwards} .score.bump,.combo.bump b{animation:bump .3s} .clock.low{animation:beat .5s infinite}
   .chip.new{animation:pop .3s cubic-bezier(.2,1.6,.4,1)} .chip.full{animation:shine 1.6s linear 2} .chip.full.new{animation:pop .3s cubic-bezier(.2,1.6,.4,1),shine 1.6s linear 2}
-  .demo .tray span{animation:pop .12s ease-out} .tray.ok button,.tray.gold button,.demo .tray.ok span,.demo .tray.gold span{animation:hop .4s ease both} .tray.no{animation:shake .35s}
+  .demo .tray span{animation:pop .12s ease-out} .tray.ok span,.tray.gold span,.demo .tray.ok span,.demo .tray.gold span{animation:hop .4s ease both} .tray.no{animation:shake .35s}
   .tile.in{animation:tilein .18s ease-out both} .wheel.mv .tile{transition:left .3s cubic-bezier(.3,1.25,.5,1),top .3s cubic-bezier(.3,1.25,.5,1)}
   .st.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1)} .stars span.on{animation:pop .5s cubic-bezier(.2,1.8,.4,1) both} .flash.on{animation:flashk .5s ease-out} .cover .n{animation:pop .45s}
   .ticker.beat{animation:tickbeat .9s ease-out} .shim{animation:shim 1.2s linear infinite}
@@ -411,8 +413,8 @@ html.app .howto{padding-top:20px}
       <p class="kick">1 minute · on your own or against a colleague</p>
       <h2 id="howh">How to play</h2>
       <ol class="steps">
-        <li><i>1</i><span><b>Swipe a word</b>Slide through the letters, then lift. Three letters or more.</span></li>
-        <li><i>2</i><span><b>Undo a letter</b>Slide back to the one before and rest there.</span></li>
+        <li><i>1</i><span><b>Swipe a word</b>Keep your finger down and slide through the letters, then lift. Three letters or more.</span></li>
+        <li><i>2</i><span><b>Undo a letter</b>Slide back to the letter before.</span></li>
         <li><i>3</i><span><b>Go long, be quick</b>Long words pay, and 5 letters or more add seconds. Words within 8 s combo, up to ×3.</span></li>
         <li><i>4</i><span><b>Use every letter</b>That word takes you to the next stop. Stuck? Skip to the next one for 100 points.</span></li>
       </ol>
@@ -755,9 +757,8 @@ function renderTarget(tapped){ const t=$('target'), d=duel, show=!!(d&&d.theirFi
 function say(m,bad){ const s=$('status'); s.textContent=m; s.classList.toggle('bad',!!bad); }
 const usedIds=()=>new Set(tray.map(t=>t.id));
 /* ---------- the rack ----------
-   Built once per stop and never rebuilt on a tap: a tap flips one tile's class and appends one letter to the word.
-   Taps are read from the raw touches, every finger on its own, and mapped to the nearest letter by where they land
-   (a touch a little off a tile still gets it), so nothing but one class flip and one append runs before the paint. */
+   Built once per stop and never rebuilt during a swipe: a letter joining the word flips one tile's class and appends one letter to the tray, so
+   nothing more runs before the paint. */
 const rack={tiles:new Map(),slot:new Map(),rects:null,wheel:null,geo:null,W:0};
 /* The wheel: each letter on a circle, evenly spaced, the first at the top and on clockwise. The sizes are worked out, not guessed. The wheel is as
    wide as the room under the word allows without pushing Delete, Shuffle and Enter off the screen (WHEEL.min to WHEEL.max); each letter is then as
@@ -783,82 +784,79 @@ function placeTiles(){ const box=$('tiles'), n=order.length; if(!rack.wheel||!n)
     if(b){ b.style.left=(x-s/2).toFixed(1)+'px'; b.style.top=(y-s/2).toFixed(1)+'px'; } });
   rack.rects=null; }
 function renderTiles(pop){
-  const box=$('tiles'); box.innerHTML=''; rack.tiles.clear(); rack.rects=null; const wh=el('div','wheel'); rack.wheel=wh;
+  cancelSwipe(); const box=$('tiles'); box.innerHTML=''; rack.tiles.clear(); rack.rects=null; const wh=el('div','wheel'); rack.wheel=wh;
   order.forEach(t=>{ const b=el('button','tile'+(pop?' in':''),t.ch); b.type='button'; b.tabIndex=-1; b.dataset.id=String(t.id); b.setAttribute('aria-label','Letter '+t.ch.toUpperCase()); rack.tiles.set(String(t.id),b); wh.appendChild(b); });
   box.append(el('div','disc'),wh); placeTiles(); syncTiles(); }
-function measureRack(){ rack.rects=[]; const g=rack.geo; if(!g||!rack.wheel)return; const q=rack.wheel.getBoundingClientRect(), h=g.s/2;
-  rack.tiles.forEach((b,id)=>{ const [x,y]=g.pos[rack.slot.get(id)]; rack.rects.push({id,x:q.left+x,y:q.top+y,hw:h,hh:h}); }); }
-/* The tile under, or nearest to, a point: within 18px of a tile's edge counts as that tile. The rack is measured once
-   per touch (a new touch forgets the last measure), never on every move: a measure forces the page to lay out. */
-function tileAt(x,y){ if(!rack.rects)measureRack(); let best=null,bd=Infinity;
-  for(const r of rack.rects){ const dx=Math.max(0,Math.abs(x-r.x)-r.hw), dy=Math.max(0,Math.abs(y-r.y)-r.hh), d=dx*dx+dy*dy; if(d<bd){bd=d;best=r;} }
-  return best&&bd<=18*18?best.id:null; }
+function measureRack(){ rack.rects=[]; const g=rack.geo; if(!g||!rack.wheel)return; const q=rack.wheel.getBoundingClientRect(), h=g.s/2, n=g.pos.length;
+  rack.tiles.forEach((b,id)=>{ const [x,y]=g.pos[rack.slot.get(id)]; rack.rects.push({id,x:q.left+x,y:q.top+y,hw:h,hh:h}); });
+  /* How near a letter's centre the finger must pass to take it: as generous as the wheel allows. Up to a little past the letter's own edge, but
+     never so far that a straight line between two letters with one between them catches the middle one (it passes that one's centre at
+     R(1 - cos(2π/n))), nor so far that two neighbours' circles meet. */
+  const step=2*Math.PI/Math.max(n,3), between=g.R*(1-Math.cos(step)), apart=2*g.R*Math.sin(step/2);
+  rack.hitR=Math.max(h*.6,Math.min(h*1.15,between*.8,apart*.45)); }
+/* The letter whose hit circle a point is in (the nearest one, if ever two), or null. The rack is measured once per swipe (a new swipe forgets the
+   last measure), never on every move: a measure forces the page to lay out. */
+function letterAt(x,y){ if(!rack.rects)measureRack(); let best=null,bd=Infinity;
+  for(const r of rack.rects){ const d=Math.hypot(x-r.x,y-r.y); if(d<bd){bd=d;best=r;} }
+  return best&&bd<=rack.hitR?+best.id:null; }
 function syncTiles(){ const used=new Set([...usedIds()].map(String)), live=mode==='play'&&!locked;
   rack.tiles.forEach((b,id)=>{ b.classList.toggle('used',used.has(id)); b.setAttribute('aria-disabled',String(!live||used.has(id))); }); }
 function setTileUsed(id,on){ const b=rack.tiles.get(String(id)); if(!b)return; b.classList.toggle('used',on); b.setAttribute('aria-disabled',String(on||mode!=='play'||locked)); }
-(()=>{ const box=$('tiles'), tr=$('tray'); let lastTouchAt=0;
-  const idOf=s=>{ const t=order.find(o=>String(o.id)===s); return t?t.id:null; };
-  /* The letter under the finger is read off the element it landed on, which costs nothing; only a touch in a gap
-     between letters is worked out from where it landed. */
-  const hit=(x,y,target)=>{ const b=target&&target.closest&&target.closest('.tile'); if(b)return idOf(b.dataset.id); const s=tileAt(x,y); return s!==null?idOf(s):null; };
-  /* Taps and swipes. A finger that lands on a letter adds it the moment it lands. One finger at a time can then swipe,
-     as in the connect-the-letters games: each letter it slides onto joins the word, a line runs from letter to letter
-     and on to the finger, sliding back onto the letter before takes the last one off, and lifting the finger plays the
-     word once two letters or more are linked. During a swipe a letter counts only once the finger is well inside it, so
-     a line across the wheel picks up nothing on the way. The way to a letter can still cross the one before: crossing
-     it does nothing, and only holding still on it (or lifting there) takes the last letter off. A tap that does not move is a tap, as before: the end of
-     the touch, a pointer event and the click all add its letter too, and a letter already in the word is not added
-     again, so whichever arrives first wins and the rest do nothing. */
-  const fingers=new Map();
-  let swipe=null, lastSwipeAt=0; // swipe: {key, ids, ox, oy, x, y, sx, sy, slid, over, backT}
-  const BACK_REST=150; // ms held still on the letter before that takes the last one off
-  const armBack=(s,id)=>{ clearTimeout(s.backT); s.restX=s.x; s.restY=s.y; s.backT=setTimeout(()=>{ if(swipe===s&&s.over===id){ backOne(s); draw(); } },BACK_REST); };
-  const NS='http://www.w3.org/2000/svg'; let trail=null;
-  const centreOf=id=>{ const r=rack.rects&&rack.rects.find(q=>q.id===String(id)); return r?[r.x,r.y]:null; };
-  /* The tile the finger is well inside: within 70% of its radius of its centre (the letters are round). A circle, not the square: a line from one
-     letter to one two places round the wheel passes a letter between them closest at its corner-ward side, and must not pick it up. */
-  const insideTile=(x,y)=>{ if(!rack.rects)measureRack(); for(const r of rack.rects){ if(Math.hypot(x-r.x,y-r.y)<=r.hw*.7)return idOf(r.id); } return null; };
-  const draw=()=>{ if(!swipe||!swipe.slid||!swipe.ids.length){ if(trail)trail.style.display='none'; return; }
-    if(!trail||!box.contains(trail)){ trail=document.createElementNS(NS,'svg'); trail.setAttribute('class','trail'); trail.appendChild(document.createElementNS(NS,'polyline')); box.appendChild(trail); }
-    const pts=swipe.ids.map(centreOf).filter(Boolean); pts.push([swipe.x,swipe.y]);
-    trail.firstChild.setAttribute('points',pts.map(([x,y])=>(x-swipe.ox).toFixed(1)+','+(y-swipe.oy).toFixed(1)).join(' ')); trail.style.display=''; };
-  const swipeStart=(key,x,y,id)=>{ if(swipe)return; if(!rack.rects)measureRack(); const b=box.getBoundingClientRect();
-    swipe={key,ids:id!==null&&tray.some(t=>t.id===id)?[id]:[],ox:b.left,oy:b.top,x,y,sx:x,sy:y,slid:false,over:id,backT:null}; };
-  /* Take the swipe's last letter off, if it is still the word's last. */
-  const backOne=s=>{ const ids=s.ids; if(ids.length>=2&&tray.length&&tray[tray.length-1].id===ids[ids.length-1]){ ids.pop(); del(); } };
-  const swipeMove=(key,x,y)=>{ if(!swipe||swipe.key!==key)return; swipe.x=x; swipe.y=y;
-    if(!swipe.slid){ if(Math.hypot(x-swipe.sx,y-swipe.sy)<14)return; swipe.slid=true; }
-    const id=insideTile(x,y), ids=swipe.ids;
-    if(id!==swipe.over){ swipe.over=id; clearTimeout(swipe.backT); swipe.backT=null;
-      if(id!==null&&id!==ids[ids.length-1]){
-        if(ids.length>=2&&id===ids[ids.length-2])armBack(swipe,id);
-        else if(canPlay()&&!tray.some(t=>t.id===id)){ tapTile(id); ids.push(id); }
-      }
-    } else if(swipe.backT&&Math.hypot(x-swipe.restX,y-swipe.restY)>6)armBack(swipe,id); // still moving: not resting yet
-    draw(); };
-  const swipeEnd=key=>{ if(!swipe||swipe.key!==key)return; const s=swipe; swipe=null; clearTimeout(s.backT);
-    // Lifted on the letter before: that letter ends the word.
-    if(s.slid&&s.ids.length>=2&&s.over===s.ids[s.ids.length-2])backOne(s);
-    draw(); if(s.slid){ lastSwipeAt=performance.now(); if(s.ids.length>=2)enter(); } return s.slid; };
-  box.addEventListener('touchstart',e=>{ lastTouchAt=performance.now(); rack.rects=null; for(const t of e.changedTouches){ fingers.set(t.identifier,{x:t.clientX,y:t.clientY}); const id=hit(t.clientX,t.clientY,t.target); if(id!==null)tapTile(id); swipeStart('t'+t.identifier,t.clientX,t.clientY,id); } },{passive:true});
-  box.addEventListener('touchmove',e=>{ for(const t of e.changedTouches)swipeMove('t'+t.identifier,t.clientX,t.clientY); },{passive:true});
-  const touchDone=e=>{ for(const t of e.changedTouches){ const f=fingers.get(t.identifier); fingers.delete(t.identifier); const slid=swipeEnd('t'+t.identifier); if(f&&!slid){ const id=hit(t.clientX,t.clientY,t.target); if(id!==null)tapTile(id); } } };
-  box.addEventListener('touchend',touchDone,{passive:true}); box.addEventListener('touchcancel',e=>{ for(const t of e.changedTouches){ fingers.delete(t.identifier); if(swipe&&swipe.key==='t'+t.identifier){ clearTimeout(swipe.backT); swipe=null; draw(); } } },{passive:true});
-  box.addEventListener('pointerdown',e=>{ if(e.pointerType!=='touch'){ e.preventDefault(); rack.rects=null; } const id=hit(e.clientX,e.clientY,e.target); if(id!==null)tapTile(id); if(e.pointerType!=='touch')swipeStart('p',e.clientX,e.clientY,id); });
-  window.addEventListener('pointermove',e=>{ if(e.pointerType==='touch')return; if(!(e.buttons&1)){ if(swipe&&swipe.key==='p'){ clearTimeout(swipe.backT); swipe=null; draw(); } return; } swipeMove('p',e.clientX,e.clientY); });
-  window.addEventListener('pointerup',e=>{ if(e.pointerType!=='touch')swipeEnd('p'); });
-  box.addEventListener('click',e=>{ if(performance.now()-lastSwipeAt<400)return; const id=hit(e.clientX,e.clientY,e.target); if(id!==null)tapTile(id); });
-  // The word: a touch on a letter there puts it back, the moment it lands.
-  const trayHit=e=>{ const b=e.target.closest&&e.target.closest('button'); if(b&&b.dataset.j!=null)removeAt(+b.dataset.j); };
-  tr.addEventListener('touchstart',e=>{ lastTouchAt=performance.now(); trayHit(e); },{passive:true});
-  tr.addEventListener('pointerdown',e=>{ if(e.pointerType==='touch')return; e.preventDefault(); trayHit(e); });
-  tr.addEventListener('click',e=>{ if(performance.now()-lastTouchAt<700)return; trayHit(e); });
+/* ---------- the swipe ----------
+   The only way to make a word, as in the connect-the-letters games. Press on a letter (it lights up and starts the word), keep the finger down and
+   slide: each letter the finger passes over joins the word, a line runs from letter to letter and on to the finger, and the word shows in the tray
+   above the wheel. Sliding back onto the letter before takes the last one off; a letter already in the word never joins it twice. Lifting the
+   finger plays the word: three letters or more, else the tray gives a little shake and nothing is played. A tap (press and lift without linking
+   two letters) plays nothing and only says how. There is no typing and no tap-to-add.
+   Pointer events, so a finger and a mouse work the same way, and the wheel captures the pointer, so a finger or mouse that strays off the wheel
+   mid-word keeps the word. One pointer at a time: a second finger on the wheel is ignored. touch-action:none on the wheel (and its touch events
+   cancelled, for older web views) keeps the page from scrolling, zooming, selecting or opening a callout under the finger. Moves are read with
+   their coalesced points and the way between two readings is walked in short steps, so a fast finger still catches every letter it crosses. */
+let swipe=null, trailEl=null; // swipe: {pid, ids, ox, oy, x, y, sx, sy, moved}
+const SWIPE_STEP=5; // px between the points walked along a move
+const centreOf=id=>{ const r=rack.rects&&rack.rects.find(q=>q.id===String(id)); return r?[r.x,r.y]:null; };
+function drawTrail(){ const s=swipe, box=$('tiles');
+  if(!s||!s.ids.length||!s.moved){ if(trailEl)trailEl.style.display='none'; return; }
+  if(!trailEl||!box.contains(trailEl)){ const NS='http://www.w3.org/2000/svg'; trailEl=document.createElementNS(NS,'svg'); trailEl.setAttribute('class','trail');
+    trailEl.appendChild(document.createElementNS(NS,'polyline')); box.appendChild(trailEl); }
+  const pts=s.ids.map(centreOf).filter(Boolean); pts.push([s.x,s.y]);
+  trailEl.firstChild.setAttribute('points',pts.map(([x,y])=>(x-s.ox).toFixed(1)+','+(y-s.oy).toFixed(1)).join(' ')); trailEl.style.display=''; }
+/* The finger at a point: a new letter joins the word, the letter before takes the last one off, anything else does nothing. */
+function swipeOver(x,y){ const ids=swipe.ids, id=letterAt(x,y); if(id===null||id===ids[ids.length-1])return;
+  if(ids.length>=2&&id===ids[ids.length-2]){ ids.pop(); popLetter(); return; }
+  if(addLetter(id))ids.push(id); }
+/* Drops the swipe under way, if any, without playing it: a new stop, the end of the round, Delete. What it put in the tray is the caller's. */
+function cancelSwipe(){ const s=swipe; if(!s)return; swipe=null; const box=$('tiles');
+  try{ if(box.hasPointerCapture&&box.hasPointerCapture(s.pid))box.releasePointerCapture(s.pid); }catch(e){} drawTrail(); }
+const emptyTray=()=>{ if(!tray.length)return; tray=[]; syncTiles(); renderTray(); renderKeys(); };
+(()=>{ const box=$('tiles');
+  box.addEventListener('pointerdown',e=>{ if(swipe||!canPlay()||(e.pointerType==='mouse'&&e.button!==0))return; e.preventDefault();
+    try{ box.setPointerCapture(e.pointerId); }catch(_){}
+    rack.rects=null; measureRack(); clearTimeout(clearT); emptyTray(); const b=box.getBoundingClientRect();
+    swipe={pid:e.pointerId,ids:[],ox:b.left,oy:b.top,x:e.clientX,y:e.clientY,sx:e.clientX,sy:e.clientY,moved:false};
+    swipeOver(e.clientX,e.clientY); drawTrail(); });
+  window.addEventListener('pointermove',e=>{ const s=swipe; if(!s||e.pointerId!==s.pid)return; if(!canPlay()){ cancelSwipe(); return; }
+    const co=e.getCoalescedEvents?e.getCoalescedEvents():[];
+    for(const p of co.length?co:[e]){ const x=p.clientX, y=p.clientY, n=Math.max(1,Math.ceil(Math.hypot(x-s.x,y-s.y)/SWIPE_STEP)), x0=s.x, y0=s.y;
+      for(let k=1;k<=n;k++)swipeOver(x0+(x-x0)*k/n,y0+(y-y0)*k/n);
+      s.x=x; s.y=y; }
+    if(!s.moved&&Math.hypot(s.x-s.sx,s.y-s.sy)>8)s.moved=true;
+    drawTrail(); });
+  /* Lifted: two letters or more go to be played (under three, a shake); one letter or none was a tap, and only says how. */
+  window.addEventListener('pointerup',e=>{ const s=swipe; if(!s||e.pointerId!==s.pid)return; cancelSwipe(); if(!canPlay())return;
+    if(s.ids.length>=2){ submitWord(); return; }
+    emptyTray(); say('Keep your finger down and slide across the letters.'); });
+  const abort=e=>{ if(!swipe||(e&&e.pointerId!=null&&e.pointerId!==swipe.pid))return; cancelSwipe(); if(canPlay())emptyTray(); };
+  window.addEventListener('pointercancel',abort); box.addEventListener('lostpointercapture',abort); window.addEventListener('blur',()=>abort());
+  // No scroll, zoom, callout, text selection or drag image from the wheel, and no click: older web views read these from the touch events.
+  ['touchstart','touchmove'].forEach(ev=>box.addEventListener(ev,e=>{ if(e.cancelable)e.preventDefault(); },{passive:false}));
+  ['contextmenu','selectstart','dragstart'].forEach(ev=>box.addEventListener(ev,e=>e.preventDefault()));
   ['resize','orientationchange'].forEach(ev=>window.addEventListener(ev,()=>{ rack.rects=null; placeTiles(); }));
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>placeTiles());
   window.addEventListener('scroll',()=>{rack.rects=null;},{passive:true}); })();
 /* The word being made. */
-function trayLetter(t,j){ const b=el('button','',t.ch); b.type='button'; b.tabIndex=-1; b.dataset.j=String(j); b.setAttribute('aria-label','Remove '+t.ch.toUpperCase()); return b; }
-function renderTray(cls){ const e=$('tray'); e.className='tray'+(cls?' '+cls:''); e.innerHTML=''; tray.forEach((t,j)=>e.appendChild(trayLetter(t,j))); }
+const trayLetter=t=>el('span','',t.ch);
+function renderTray(cls){ const e=$('tray'); e.className='tray'+(cls?' '+cls:''); e.innerHTML=''; tray.forEach(t=>e.appendChild(trayLetter(t))); }
 function renderWall(){ const n=found.filter(f=>!f.rare).length; $('wstop').textContent='Stop '+(gi+1); $('wcount').textContent=n+' of '+cur.words.length+' words'; }
 function renderKeys(){ const busy=mode!=='play'||locked; $('del').disabled=busy||!tray.length; $('shuf').disabled=busy;
   const sk=$('skip'), short=score<SKIP_COST; sk.disabled=busy||short; sk.title=short?'Skipping costs '+SKIP_COST+' points: find a word first':'Skip these letters for '+SKIP_COST+' points'; }
@@ -898,15 +896,19 @@ function countUp(){ const e=$('score'); const from=shown, to=score, t0=performan
   const step=()=>{const k=Math.min(1,(performance.now()-t0)/dur); shown=from+(to-from)*k; e.textContent=fmtn(shown); if(k<1&&score===to)requestAnimationFrame(step); else {shown=score;e.textContent=fmtn(score);} }; requestAnimationFrame(step); }
 
 /* ---------- play ----------
-   The prototype's rules: tap letters (or type them) to build a word in the tray, Enter to play it. Three letters or more, each letter once, and in
-   the list (common or rare). A word that uses every letter ends the stop: the next one, with as many letters or more, comes up a moment later. */
+   The prototype's rules: swipe across the letters to build a word (the tray shows it), lift to play it. Three letters or more, each letter once,
+   and in the list (common or rare). A word that uses every letter ends the stop: the next one, with as many letters or more, comes up a moment later. */
 const canPlay=()=>mode==='play'&&!locked&&!!cur;
-function tapTile(id){ if(!canPlay()||tray.some(t=>t.id===id))return; const t=order.find(o=>o.id===id); if(!t)return;
+/* A letter the swipe reached joins the word (never one already in it); true if it did. No sound and no buzz: the buzz is for a correct word. */
+function addLetter(id){ if(!canPlay()||tray.some(t=>t.id===id))return false; const t=order.find(o=>o.id===id); if(!t)return false;
   tray.push(t); setTileUsed(id,true); const e=$('tray');
-  if(e.className==='tray'&&e.children.length===tray.length-1)e.appendChild(trayLetter(t,tray.length-1)); else renderTray();
-  if($('status').textContent)say(''); renderKeys(); }
-function removeAt(j){ if(!canPlay()||j<0||j>=tray.length)return; const [t]=tray.splice(j,1); setTileUsed(t.id,false); renderTray(); renderKeys(); }
-function del(){ if(!canPlay()||!tray.length)return; const t=tray.pop(); setTileUsed(t.id,false); const e=$('tray'); if(e.className==='tray'&&e.lastElementChild)e.removeChild(e.lastElementChild); else renderTray(); renderKeys(); }
+  if(e.className==='tray'&&e.children.length===tray.length-1)e.appendChild(trayLetter(t)); else renderTray();
+  if($('status').textContent)say(''); renderKeys(); return true; }
+/* The swipe slid back: the word's last letter comes off. */
+function popLetter(){ if(!canPlay()||!tray.length)return; const t=tray.pop(); setTileUsed(t.id,false); const e=$('tray'); if(e.className==='tray'&&e.lastElementChild)e.removeChild(e.lastElementChild); else renderTray(); renderKeys(); }
+/* Delete: drops the word being swiped (a second finger can press it mid-swipe). Lifting the finger always plays or clears the word, so outside a
+   swipe there is nothing to delete and the button stays off. */
+function clearWord(){ cancelSwipe(); emptyTray(); }
 /* Shuffle: the same letters to new places on the wheel (at least one of them moves), gliding there. */
 let shufT=null;
 function shuffle(){ if(!canPlay())return; const was=order.map(t=>t.id).join();
@@ -915,11 +917,12 @@ function shuffle(){ if(!canPlay())return; const was=order.map(t=>t.id).join();
 /* The tray shows the word it just played, green (gold for every letter) or red, then empties. */
 let clearT=null;
 function flashTray(cls,ms){ const letters=tray.slice(); tray=[]; syncTiles(); renderKeys(); const e=$('tray'); e.className='tray '+cls; e.innerHTML='';
-  letters.forEach(t=>{const b=el('button','',t.ch);b.type='button';b.tabIndex=-1;e.appendChild(b);});
+  letters.forEach(t=>e.appendChild(trayLetter(t)));
   clearTimeout(clearT); clearT=setTimeout(()=>{ if(!tray.length)renderTray(); },ms||380); }
-function enter(){
+/* A lifted swipe: the word in the tray, played. Under three letters it is not a word: a soft sound and a little shake, and nothing else. */
+function submitWord(){
   if(!canPlay())return; const w=tray.map(t=>t.ch).join('');
-  if(w.length<3){ sfx.no(); say(w.length?'Three letters or more.':'Tap some letters.',true); if(w.length)flashTray('no'); return; }
+  if(w.length<3){ if(!w.length)return; sfx.untap(); say('Three letters or more.'); flashTray('no'); return; }
   if(found.some(f=>f.w===w)){ sfx.dup(); say('Already found.',true); const c=[...$('wall').children].find(x=>x.dataset.w===w);
     if(c){c.classList.add('flash');c.scrollIntoView({block:'nearest'});setTimeout(()=>c.classList.remove('flash'),600);} flashTray('no'); return; }
   const isRare=!words.has(w)&&rareSet.has(w);
@@ -1310,8 +1313,8 @@ function challengesReady(){ if(!canChallenge())return; if(mode==='idle'&&!$('chb
   const want=bridge().startChallengeId; if(want&&!CH.opened){ CH.opened=true; openChallenge(String(want)); } }
 /* Back on the screen, on the menu: the lists and the board again, for anything that changed meanwhile. */
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&mode==='idle'){ refreshChallenges(); refreshBoard(); } });
-/* ---------- input ---------- */
-$('del').onclick=()=>del();
+/* ---------- buttons ---------- */
+$('del').onclick=()=>clearWord();
 $('shuf').onclick=()=>shuffle();
 $('skip').onclick=()=>skip();
 $('snd').onclick=()=>{ save.sound=!save.sound; store(); sndLabel(); if(save.sound){audioChecked=false;unlockAudio();sfx.go();} };
