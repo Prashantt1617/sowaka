@@ -1,140 +1,26 @@
 import { StoreProvider, useStore } from './store';
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { useBrandDocument } from './brand';
 import { LoginScreen } from './auth/LoginScreen';
 import { OVERVIEW_ITEM, SECTIONS, Sidebar, Topbar, Toast } from './Chrome';
 import { canOpen } from './access';
-import { Overview } from './views/Overview';
-import { LeaveRequests } from './views/LeaveRequests';
-import { Overtime } from './views/Overtime';
-import { AttendanceCorrections } from './views/AttendanceCorrections';
-import { Feedback } from './views/Feedback';
-import { Reimbursements } from './views/Reimbursements';
-import { Employees } from './views/Employees';
-import { EmployeeImport } from './views/EmployeeImport';
-import { PeopleTasks } from './views/PeopleTasks';
 import { Placeholder } from './views/Placeholder';
 import { Drawers } from './drawers';
 import { rememberBrandOrg } from './brand';
-import { Games } from './views/Games';
-import { RelayGame } from './views/RelayGame';
-import { ContentReports } from './views/ContentReports';
-import { EngagementPosts } from './views/EngagementPosts';
-import { PayHeadMaster } from './views/PayHeadMaster';
-import { SalaryTemplates } from './views/SalaryTemplates';
-import { PaidDaysTemplates } from './views/PaidDaysTemplates';
-import { PayrollDashboard } from './views/PayrollDashboard';
-import { PayrollReports } from './views/PayrollReports';
-import { StatutoryComponents } from './views/StatutoryComponents';
-import { PayrollRuns } from './views/PayrollRuns';
-import { PaySchedule, TaxDetails } from './views/OrgSetup';
-import { ReimbursementTypes } from './views/ReimbursementTypes';
-import { ReviewCycle } from './views/ReviewCycle';
-import { ShiftBulkAssign } from './views/ShiftBulkAssign';
-import { ShiftTemplates } from './views/ShiftTemplates';
-import { HolidayBank } from './views/HolidayBank';
-import { Offices } from './views/Offices';
-import { OutOfLocation } from './views/OutOfLocation';
-import { Organisation } from './views/Organisation';
-import { Departments } from './views/Departments';
-import { Designations } from './views/Designations';
-import { AttendanceReport } from './views/AttendanceReport';
-import { OrgChart } from './views/OrgChart';
-import { Accesses } from './views/Accesses';
-import { KpiParameters } from './views/KpiParameters';
-import { KpiTemplates } from './views/KpiTemplates';
-import { KpiBulkAssign } from './views/KpiBulkAssign';
-import { SupportDesk } from './views/SupportDesk';
-import { SuwiSettings } from './views/SuwiSettings';
 import { SuwiPanel } from './suwi/SuwiPanel';
+import { VIEW_COMPONENTS, prefetchView } from './viewChunks';
 
 function CurrentView() {
   const { view } = useStore();
-  switch (view) {
-    case 'organisation':
-      return <Organisation />;
-    case 'overview':
-      return <Overview />;
-    case 'leave':
-      return <LeaveRequests />;
-    case 'overtime':
-      return <Overtime />;
-    case 'attendance':
-      return <AttendanceCorrections />;
-    case 'kpi':
-      return <KpiParameters />;
-    case 'kpibulk':
-      return <KpiBulkAssign />;
-    case 'kpitemplates':
-      return <KpiTemplates />;
-    case 'feedback':
-      return <Feedback />;
-    case 'reimbursements':
-      return <Reimbursements />;
-    case 'departments':
-      return <Departments />;
-    case 'designations':
-      return <Designations />;
-    case 'employees':
-      return <Employees />;
-    case 'employeeimport':
-      return <EmployeeImport />;
-    case 'peopletasks':
-      return <PeopleTasks />;
-    case 'attendancereport':
-      return <AttendanceReport />;
-    case 'orgchart':
-      return <OrgChart />;
-    case 'usersroles':
-      return <Accesses />;
-    case 'reimbursementtypes':
-      return <ReimbursementTypes />;
-    case 'cycle':
-      return <ReviewCycle />;
-    case 'games':
-      return <Games />;
-    case 'relaygame':
-      return <RelayGame />;
-    case 'engagementposts':
-      return <EngagementPosts />;
-    case 'contentreports':
-      return <ContentReports />;
-    case 'payheads':
-      return <PayHeadMaster />;
-    case 'templates':
-      return <SalaryTemplates />;
-    case 'paiddays':
-      return <PaidDaysTemplates />;
-    case 'payrolldash':
-      return <PayrollDashboard />;
-    case 'payrollreports':
-      return <PayrollReports />;
-    case 'statutorycomponents':
-      return <StatutoryComponents />;
-    case 'payruns':
-      return <PayrollRuns />;
-    case 'payschedule':
-      return <PaySchedule />;
-    case 'taxdetails':
-      return <TaxDetails />;
-    case 'shiftbulk':
-      return <ShiftBulkAssign />;
-    case 'shifttypes':
-      return <ShiftTemplates />;
-    case 'holidaybank':
-      return <HolidayBank />;
-    case 'offices':
-      return <Offices />;
-    case 'oolcheckins':
-      return <OutOfLocation />;
-    case 'support':
-      return <SupportDesk />;
-    case 'suwi':
-      return <SuwiSettings />;
-    default:
-      return <Placeholder />;
-  }
+  const Page = VIEW_COMPONENTS[view];
+  if (!Page) return <Placeholder />;
+  // Neutral while the page's code arrives (usually already prefetched).
+  return (
+    <Suspense fallback={<div style={{ minHeight: 400 }} />}>
+      <Page />
+    </Suspense>
+  );
 }
 
 function LoadingBar() {
@@ -149,6 +35,8 @@ function LoadingBar() {
 function Shell() {
   const { loading, loaded, view, setView } = useStore();
   const { user } = useAuth();
+  // The page's code downloads alongside the start-up data, not after it.
+  useEffect(() => { prefetchView(view); }, [view]);
   // Land on a tab this person may open, and leave one taken away from them.
   useEffect(() => {
     if (canOpen(user, view)) return;
