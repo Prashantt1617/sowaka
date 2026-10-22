@@ -88,13 +88,15 @@ export function slipLines(s: Payslip) {
       { code: 'benefits', name: 'Gratuity and other benefits', paise: em.benefitsPaise },
     ].filter((l) => l.paise)
     : [];
-  const fullGross = s.earnings.reduce((t, e) => t + e.fullPaise, 0);
+  // Gross includes overtime; the full month is what the earnings would have been with no loss of pay.
+  const fullGross = s.earnings.reduce((t, e) => t + e.fullPaise, 0) + overtime;
   return {
     earnings, reimbursements, deductions, employer,
     grossPaise: s.grossPaise,
     /** What the month's earnings would have been with no loss of pay (one-time amounts included). */
     fullGrossPaise: fullGross,
     lopLossPaise: Math.max(0, fullGross - s.grossPaise),
+    overtimePaise: overtime,
     deductionsPaise: s.employeeDeductionsPaise,
     netPaise: s.netPaise,
     reimbursementsPaise: s.reimbursementsPaise ?? 0,

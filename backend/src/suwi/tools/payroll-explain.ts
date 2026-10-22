@@ -6,9 +6,9 @@
 import { payHeads, reimbursementClaims, salaryStructures, users } from '../../config/db';
 import { ObjectId } from 'mongodb';
 import { employeeCalendar } from '../../services/attendance-report.service';
-import { EPF_CEILING_SCHEDULE } from '../../models/statutoryRule.model';
+import { EPF_CEILING_SCHEDULE, epfCeilingForPeriod } from '../../models/statutoryRule.model';
 import { defineTools, rupees, str, SuwiContext } from '../tools';
-import { addMonths, allRuns, bestByPeriod, delta, lastDayOf, monthLabel, pct, showLines, slipLines, slipsOfRun, STATUS_LABEL, StoredRun, StoredSlip, taxSource } from './payroll-common';
+import { allRuns, bestByPeriod, delta, lastDayOf, monthLabel, pct, showLines, slipLines, slipsOfRun, STATUS_LABEL, StoredRun, StoredSlip, taxSource } from './payroll-common';
 import { payslips } from '../../config/db';
 
 const ACTIVE = { lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } as const;
@@ -108,13 +108,17 @@ defineTools(
         .map((r) => ({ effectiveFrom: r.effectiveFrom, from: rupees(r.previousCtcPaise), to: rupees(r.annualCtcPaise), change: delta(r.annualCtcPaise - r.previousCtcPaise) }));
       for (const r of revisions) reasons.push(`Annual CTC revised ${r.from} → ${r.to} effective ${r.effectiveFrom}.`);
       if (before && cur.annualCtcPaise !== prev!.annualCtcPaise && !revisions.length) reasons.push(`Annual CTC on the payslip changed ${rupees(prev!.annualCtcPaise)} → ${rupees(cur.annualCtcPaise)}.`);
+      for (const m of [now, before]) {
+        if (m?.days.lopTypedByHr && m.days.lopFromAttendance !== undefined && m.days.lopFromAttendance !== m.days.lopDays) reasons.push(`${m.month}: HR typed ${m.days.lopDays} loss-of-pay days on the run; attendance alone would have given ${m.days.lopFromAttendance}.`);
+      }
       if (before && now.days.lopDays !== before.days.lopDays) reasons.push(`Loss of pay ${before.days.lopDays} → ${now.days.lopDays} days (${now.days.lopTypedByHr ? 'typed by HR on the run' : 'from attendance'}): ${rupees(now._L.lopLossPaise)} of earnings not paid this month vs ${rupees(before._L.lopLossPaise)} before.`);
       else if (now.days.lopDays > 0) reasons.push(`${now.days.lopDays} loss-of-pay day${now.days.lopDays === 1 ? '' : 's'} (${now.days.lopTypedByHr ? 'typed by HR on the run' : 'from attendance'}): ${rupees(now._L.lopLossPaise)} of earnings not paid.`);
       const joined = person.joiningDate ? new Date(person.joiningDate).toISOString().slice(0, 10) : undefined;
       if (joined && joined.slice(0, 7) === cur.period && joined > `${cur.period}-01`) reasons.push(`Joined on ${joined}: paid from that day.`);
       if (before && joined && joined.slice(0, 7) === prev!.period && joined > `${prev!.period}-01`) reasons.push(`Joined on ${joined}, so ${monthLabel(prev!.period)} was a part month.`);
       const ceilingChange = EPF_CEILING_SCHEDULE.filter((s) => s.from >= from && s.from <= to);
-      if (ceilingChange.length) reasons.push(`The PF wage ceiling changed on ${ceilingChange.map((c) => `${c.from} (to ${rupees(c.ceilingPaise)})`).join(', ')}; a month that straddles the change uses a day-weighted ceiling.`);
+      const ceilNow = epfCeilingForPeriod(cur.period), ceilBefore = prev ? epfCeilingForPeriod(prev.period) : ceilNow;
+      if (ceilingChange.length || ceilNow !== ceilBefore) reasons.push(`The PF wage ceiling changed on ${ceilingChange.map((c) => `${c.from} (to ${rupees(c.ceilingPaise)})`).join(', ') || 'an earlier date'}: ${prev ? `${rupees(ceilBefore)} for ${monthLabel(prev.period)} (day-weighted where the change fell inside the month), ` : ''}${rupees(ceilNow)} for ${monthLabel(cur.period)}. PF restricted to the ceiling moves with it, and so does the balancing allowance when employer PF is inside CTC.`);
       if (before && cur.pfWagePaise !== prev!.pfWagePaise) reasons.push(`PF wage ${rupees(prev!.pfWagePaise)} → ${rupees(cur.pfWagePaise)}.`);
       if (before && now.esiCovered !== before.esiCovered) reasons.push(now.esiCovered ? 'ESI applies this month and did not before.' : 'ESI no longer applies this month (coverage holds till the end of a contribution period, then is re-tested).');
       if (before && now._L.incomeTaxPaise !== before._L.incomeTaxPaise) reasons.push(`Income tax ${rupees(before._L.incomeTaxPaise)} → ${rupees(now._L.incomeTaxPaise)} (this month ${now.incomeTax.source}; last month ${before.incomeTax.source}).${now.incomeTax.source === 'TDS engine' ? ' The engine re-projects the year every month: what has been paid so far, the months left, declarations and bills all move it.' : ''}`);
@@ -170,9 +174,11 @@ defineTools(
       const prev = prevPeriod ? runs.get(prevPeriod)! : undefined;
       const [slipsNow, slipsBefore] = await Promise.all([slipsOfRun(ctx.org, run), prev ? slipsOfRun(ctx.org, prev) : Promise.resolve([] as StoredSlip[])]);
       const sum = (slips: StoredSlip[], f: (s: StoredSlip) => number) => slips.reduce((t, s) => t + f(s), 0);
+      // Cost as the Payroll Summary report counts it: gross + reimbursements + employer contributions.
+      const costOf = (s: StoredSlip) => s.grossPaise + (s.reimbursementsPaise ?? 0) + (s.employer?.totalPaise ?? 0);
       const totals = (slips: StoredSlip[]) => ({
         people: slips.length, grossPaise: sum(slips, (s) => s.grossPaise), deductionsPaise: sum(slips, (s) => s.employeeDeductionsPaise), netPaise: sum(slips, (s) => s.netPayablePaise),
-        reimbursementsPaise: sum(slips, (s) => s.reimbursementsPaise ?? 0), employerPaise: sum(slips, (s) => s.employer?.totalPaise ?? 0), costPaise: sum(slips, (s) => s.employerCostPaise),
+        reimbursementsPaise: sum(slips, (s) => s.reimbursementsPaise ?? 0), employerPaise: sum(slips, (s) => s.employer?.totalPaise ?? 0), costPaise: sum(slips, costOf),
         taxPaise: sum(slips, (s) => slipLines(s).incomeTaxPaise),
       });
       const T = totals(slipsNow), P = totals(slipsBefore);
@@ -181,45 +187,59 @@ defineTools(
       const beforeBy = new Map(slipsBefore.map((s) => [s.userId, s]));
       const nowBy = new Map(slipsNow.map((s) => [s.userId, s]));
       const heads = new Map((await payHeads().find({ org: ctx.org }, { projection: { _id: 0, code: 1, name: 1, componentType: 1 } }).toArray()).map((h) => [h.code, h]));
-      type Cause = { cause: string; costChange: string; costChangePaise: number; netChange: string; people: { userId: string; name: string; amount: string }[] };
-      const cause = (name: string): Cause => ({ cause: name, costChange: '', costChangePaise: 0, netChange: '', people: [] });
-      const joiners = cause('Joiners: on this run, not on last month\'s'), leavers = cause('Leavers: on last month\'s run, not on this'), lop = cause('Loss of pay (earnings not paid for unpaid days)');
-      const revisions = cause('Salary revisions (monthly CTC changed)'), oneTime = cause('One-time amounts and arrears'), overtime = cause('Overtime'), claims = cause('Expense claims paid with salary');
-      const statutory = cause('Employer contributions (PF, ESI, LWF, benefits)'), tax = cause('Income tax withheld (net pay only; not a cost)');
-      let netLop = 0, netJoin = 0, netLeave = 0, netRev = 0, netOne = 0, netOt = 0, netClaims = 0, netTax = 0, netStat = 0;
+      type Cause = { cause: string; costChangePaise: number; netChangePaise: number; people: { userId: string; name: string; cost: string; net: string }[] };
+      const list: Cause[] = [];
+      const cause = (name: string): Cause => { const c: Cause = { cause: name, costChangePaise: 0, netChangePaise: 0, people: [] }; list.push(c); return c; };
+      const joiners = cause('Joiners: on this run, not on last month\'s'), leavers = cause('Leavers: on last month\'s run, not on this');
+      const revisions = cause('Salary revisions: monthly CTC changed (full-month earnings before loss of pay)');
+      const restructured = cause('Same CTC, earnings worked out differently (e.g. the PF ceiling moved the balancing allowance)');
+      const lop = cause('Loss of pay: earnings not paid for unpaid days');
+      const oneTime = cause('One-time amounts and arrears (bonus, arrears, advances, holds)');
+      const overtime = cause('Overtime');
+      const salaryReimb = cause('Salary reimbursements (fuel, internet…)');
+      const claims = cause('Expense claims paid with salary');
+      const employer = cause('Employer contributions (PF, ESI, LWF, gratuity): cost only');
+      const employeeDed = cause('Employee deductions (PF, ESI, PT, LWF, other): net pay only');
+      const tax = cause('Income tax withheld: net pay only');
       const add = (c: Cause, s: StoredSlip, costPaise: number, netPaise: number) => {
         if (!costPaise && !netPaise) return;
-        c.costChangePaise += costPaise;
-        if (c.people.length < 8) c.people.push({ userId: s.userId, name: s.employeeName, amount: delta(costPaise || netPaise) });
+        c.costChangePaise += costPaise; c.netChangePaise += netPaise;
+        c.people.push({ userId: s.userId, name: s.employeeName, cost: delta(costPaise), net: delta(netPaise) });
       };
-      const oneTimeOf = (s: StoredSlip) => Object.entries(s.inputs?.componentAmounts ?? {}).reduce((t, [code, v]) => {
-        const paid = s.earnings.find((e) => e.code === code)?.paidPaise ?? s.deductions.find((d) => d.key === code)?.amountPaise ?? v;
-        return t + (heads.get(code)?.componentType === 'hold_amount' || heads.get(code)?.componentType === 'salary_advance' || s.deductions.some((d) => d.key === code) ? -paid : paid);
-      }, 0);
+      /** One person's month split into the parts the causes compare. */
+      const parts = (s: StoredSlip) => {
+        const L = slipLines(s);
+        const amounts = s.inputs?.componentAmounts ?? {};
+        const oneEarn = s.earnings.filter((e) => amounts[e.code] !== undefined).reduce((t, e) => t + e.fullPaise, 0);
+        const oneDed = s.deductions.filter((d) => amounts[d.key] !== undefined).reduce((t, d) => t + d.amountPaise, 0);
+        const claimPaise = L.reimbursements.find((l) => l.code === '__claims')?.paise ?? 0;
+        return {
+          regular: L.fullGrossPaise - L.overtimePaise - oneEarn, lopLoss: L.lopLossPaise, oneEarn, oneDed, ot: L.overtimePaise,
+          salaryReimb: L.reimbursementsPaise - claimPaise, claims: claimPaise, employer: s.employer?.totalPaise ?? 0,
+          tax: L.incomeTaxPaise, otherDed: s.employeeDeductionsPaise - L.incomeTaxPaise - oneDed,
+        };
+      };
       for (const s of slipsNow) {
         const b = beforeBy.get(s.userId);
-        if (!b) { add(joiners, s, s.employerCostPaise, s.netPayablePaise); netJoin += s.netPayablePaise; continue; }
-        const Ln = slipLines(s), Lb = slipLines(b);
-        const lopDelta = -(Ln.lopLossPaise - Lb.lopLossPaise);
-        add(lop, s, lopDelta, lopDelta); netLop += lopDelta;
-        const ctcDelta = s.monthlyCtcPaise - b.monthlyCtcPaise;
-        add(revisions, s, ctcDelta, ctcDelta); netRev += ctcDelta;
-        const oneDelta = oneTimeOf(s) - oneTimeOf(b);
-        add(oneTime, s, oneDelta, oneDelta); netOne += oneDelta;
-        const otDelta = (s.inputs?.overtimePaise ?? 0) - (b.inputs?.overtimePaise ?? 0);
-        add(overtime, s, otDelta, otDelta); netOt += otDelta;
-        const claimDelta = (Ln.reimbursementsPaise - Lb.reimbursementsPaise);
-        add(claims, s, claimDelta, claimDelta); netClaims += claimDelta;
-        const statDelta = (s.employer?.totalPaise ?? 0) - (b.employer?.totalPaise ?? 0) - (ctcDelta > 0 ? 0 : 0);
-        add(statutory, s, statDelta, 0); netStat += statDelta;
-        const taxDelta = -(Ln.incomeTaxPaise - Lb.incomeTaxPaise);
-        add(tax, s, 0, taxDelta); netTax += taxDelta;
+        if (!b) { add(joiners, s, costOf(s), s.netPayablePaise); continue; }
+        const n = parts(s), p = parts(b);
+        const d = (k: keyof typeof n) => n[k] - p[k];
+        add(s.monthlyCtcPaise !== b.monthlyCtcPaise ? revisions : restructured, s, d('regular'), d('regular'));
+        add(lop, s, -d('lopLoss'), -d('lopLoss'));
+        add(oneTime, s, d('oneEarn'), d('oneEarn') - d('oneDed'));
+        add(overtime, s, d('ot'), d('ot'));
+        add(salaryReimb, s, d('salaryReimb'), d('salaryReimb'));
+        add(claims, s, d('claims'), d('claims'));
+        add(employer, s, d('employer'), 0);
+        add(employeeDed, s, 0, -d('otherDed'));
+        add(tax, s, 0, -d('tax'));
       }
-      for (const b of slipsBefore) if (!nowBy.has(b.userId)) { add(leavers, b, -b.employerCostPaise, -b.netPayablePaise); netLeave -= b.netPayablePaise; }
-      const finish = (c: Cause, net: number) => { c.costChange = delta(c.costChangePaise); c.netChange = delta(net); return c; };
-      const causes = [finish(joiners, netJoin), finish(leavers, netLeave), finish(lop, netLop), finish(revisions, netRev), finish(oneTime, netOne), finish(overtime, netOt), finish(claims, netClaims), finish(statutory, netStat), finish(tax, netTax)]
-        .filter((c) => c.costChangePaise !== 0 || c.netChange !== 'no change');
-      const explained = causes.reduce((t, c) => t + c.costChangePaise, 0);
+      for (const b of slipsBefore) if (!nowBy.has(b.userId)) add(leavers, b, -costOf(b), -b.netPayablePaise);
+      const causes = list.filter((c) => c.costChangePaise !== 0 || c.netChangePaise !== 0).map((c) => ({
+        cause: c.cause, costChange: delta(c.costChangePaise), netPayChange: delta(c.netChangePaise), people: c.people.slice(0, 8),
+      }));
+      const explained = list.reduce((t, c) => t + c.costChangePaise, 0);
+      const explainedNet = list.reduce((t, c) => t + c.netChangePaise, 0);
 
       // Held payouts on this run, and claims still waiting.
       const held = slipsNow.flatMap((s) => s.deductions.filter((d) => heads.get(d.key)?.componentType === 'hold_amount' && d.amountPaise > 0).map((d) => ({ userId: s.userId, name: s.employeeName, amount: rupees(d.amountPaise) })));
@@ -242,10 +262,10 @@ defineTools(
             gross: delta(T.grossPaise - P.grossPaise), incomeTax: delta(T.taxPaise - P.taxPaise), reimbursements: delta(T.reimbursementsPaise - P.reimbursementsPaise),
           } : null,
           causes,
-          unexplainedCostChange: prev ? delta(T.costPaise - P.costPaise - explained) : null,
+          unexplained: prev ? { cost: delta(T.costPaise - P.costPaise - explained), netPay: delta(T.netPaise - P.netPaise - explainedNet) } : null,
           heldPayouts: held,
           claimsWaiting: { pending: pending.length, pendingAmount: rupees(paise(pending)), approvedNotYetOnARun: approvedNotOnRun.length, approvedAmount: rupees(paise(approvedNotOnRun)) },
-          note: prev ? 'Cost to company = gross + salary reimbursements + employer contributions. Each cause shows the change it made to cost (and to net pay); "unexplained" is what the causes above do not account for (statutory re-tests, rounding, hidden lines).' : 'Only one run so far, so there is nothing to compare with.',
+          note: prev ? 'Cost to company = gross + reimbursements + employer contributions, as the Payroll Summary report counts it. Each cause shows what it changed in cost and in net pay; together they make up the whole change, so "unexplained" should be ₹0.' : 'Only one run so far, so there is nothing to compare with.',
         },
         links: [{ label: 'Open payroll runs', view: 'payruns' }, { label: 'Open the payroll summary', view: 'payrollreports' }, { label: 'Open reimbursements', view: 'reimbursements' }],
       };
@@ -253,4 +273,3 @@ defineTools(
   },
 );
 
-export { addMonths };
