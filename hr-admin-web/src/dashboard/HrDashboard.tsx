@@ -1,5 +1,7 @@
 import { StoreProvider, useStore } from './store';
-import { Suspense, useEffect } from 'react';
+import { Component, Suspense, use, useEffect } from 'react';
+import type { ReactNode } from 'react';
+import type { View } from './theme';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { useBrandDocument } from './brand';
 import { LoginScreen } from './auth/LoginScreen';
@@ -9,17 +11,40 @@ import { Placeholder } from './views/Placeholder';
 import { Drawers } from './drawers';
 import { rememberBrandOrg } from './brand';
 import { SuwiPanel } from './suwi/SuwiPanel';
-import { VIEW_COMPONENTS, prefetchView } from './viewChunks';
+import { hasViewPage, isPageCodeFailure, prefetchAllViews, prefetchView, viewPage } from './viewChunks';
+
+function ViewPage({ view }: { view: View }) {
+  const Page = use(viewPage(view));
+  return <Page />;
+}
+
+const PAGE_FALLBACK = <div style={{ minHeight: 400 }} />;
+
+// If a page's code cannot be fetched, its area stays empty and the rest of the
+// dashboard keeps working; opening the page again retries. Any other error
+// carries on up, as it always has.
+class PageCodeBoundary extends Component<{ children: ReactNode }, { error: unknown }> {
+  state = { error: null as unknown };
+  static getDerivedStateFromError(error: unknown) {
+    return { error };
+  }
+  render() {
+    if (this.state.error === null) return this.props.children;
+    if (isPageCodeFailure(this.state.error)) return PAGE_FALLBACK;
+    throw this.state.error;
+  }
+}
 
 function CurrentView() {
   const { view } = useStore();
-  const Page = VIEW_COMPONENTS[view];
-  if (!Page) return <Placeholder />;
+  if (!hasViewPage(view)) return <Placeholder />;
   // Neutral while the page's code arrives (usually already prefetched).
   return (
-    <Suspense fallback={<div style={{ minHeight: 400 }} />}>
-      <Page />
-    </Suspense>
+    <PageCodeBoundary key={view}>
+      <Suspense fallback={PAGE_FALLBACK}>
+        <ViewPage view={view} />
+      </Suspense>
+    </PageCodeBoundary>
   );
 }
 
@@ -37,6 +62,15 @@ function Shell() {
   const { user } = useAuth();
   // The page's code downloads alongside the start-up data, not after it.
   useEffect(() => { prefetchView(view); }, [view]);
+  // Once the start-up data is in, the other pages' code follows while the
+  // browser is idle, so opening one later does not wait on the network.
+  useEffect(() => {
+    if (!loaded) return;
+    const idle = window.requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 1500));
+    const cancel = window.cancelIdleCallback ?? window.clearTimeout;
+    const id = idle(() => prefetchAllViews(), { timeout: 5000 });
+    return () => cancel(id);
+  }, [loaded]);
   // Land on a tab this person may open, and leave one taken away from them.
   useEffect(() => {
     if (canOpen(user, view)) return;

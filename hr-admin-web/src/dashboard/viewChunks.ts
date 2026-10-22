@@ -1,8 +1,7 @@
 // Each dashboard view is its own code chunk, fetched the first time it is
 // opened (or sooner: when its sidebar item is hovered), so the first load
 // only downloads the shell and the page HR lands on.
-import { lazy } from 'react';
-import type { ComponentType, LazyExoticComponent } from 'react';
+import type { ComponentType } from 'react';
 import type { View } from './theme';
 
 type Loader = () => Promise<{ default: ComponentType }>;
@@ -56,32 +55,87 @@ const LOADERS: Partial<Record<View, Loader>> = {
  * the new release's names come with it.
  */
 const RELOADED_AT = 'sowaka.chunkReloadAt';
-function reloadForNewRelease(err: unknown): Promise<never> {
+function reloadForNewRelease(): boolean {
   try {
     const last = Number(sessionStorage.getItem(RELOADED_AT) ?? 0);
     if (Date.now() - last > 30_000) {
       sessionStorage.setItem(RELOADED_AT, String(Date.now()));
       window.location.reload();
-      return new Promise<never>(() => {});
+      return true;
     }
   } catch {
-    // No session storage: fall through and surface the error.
+    // No session storage: no reload; the page area stays empty instead.
   }
-  throw err;
+  return false;
 }
 
-/** The lazy component for a view, or undefined for one without its own page. */
-export const VIEW_COMPONENTS: Partial<Record<View, LazyExoticComponent<ComponentType>>> = Object.fromEntries(
-  Object.entries(LOADERS).map(([view, load]) => [view, lazy(() => load().catch(reloadForNewRelease))]),
-);
+// A page's code, as a promise React's `use` can read without suspending once
+// it has arrived: a page prefetched on hover then opens in the same frame as
+// the click, with no fallback in between.
+type PagePromise = Promise<ComponentType> & { status?: 'pending' | 'fulfilled' | 'rejected'; value?: ComponentType; reason?: unknown };
+const pages = new Map<View, PagePromise>();
+// Pages that have been asked to render: if their code fails to arrive, the
+// likely cause is a new release, and the page is loaded again.
+const shown = new Set<View>();
 
-const prefetched = new Set<View>();
+const codeFailures = new WeakSet<Error>();
 
-/** Starts downloading a view's code without rendering it (hover, focus, the landing page). */
+/** Whether an error is a page's code failing to arrive (and not the page itself failing). */
+export function isPageCodeFailure(err: unknown): boolean {
+  return err instanceof Error && codeFailures.has(err);
+}
+
+function load(view: View, loader: Loader): PagePromise {
+  const existing = pages.get(view);
+  if (existing) return existing;
+  const page: PagePromise = loader().then(
+    (m) => {
+      page.status = 'fulfilled';
+      page.value = m.default;
+      return m.default;
+    },
+    (err: unknown) => {
+      // Not kept: the next hover or open tries again.
+      pages.delete(view);
+      if (shown.has(view) && reloadForNewRelease()) return new Promise<never>(() => {});
+      const failure = err instanceof Error ? err : new Error(String(err));
+      codeFailures.add(failure);
+      page.status = 'rejected';
+      page.reason = failure;
+      throw failure;
+    },
+  );
+  page.status = 'pending';
+  pages.set(view, page);
+  return page;
+}
+
+/** Whether a view has a page of its own (others show the placeholder). */
+export function hasViewPage(view: View): boolean {
+  return view in LOADERS;
+}
+
+/** The view's page component, for `use()` inside the view's Suspense boundary. */
+export function viewPage(view: View): Promise<ComponentType> {
+  shown.add(view);
+  return load(view, LOADERS[view]!);
+}
+
+/** Starts downloading a view's code without rendering it (hover, focus, the landing page, idle time). */
 export function prefetchView(view: View): void {
-  const load = LOADERS[view];
-  if (!load || prefetched.has(view)) return;
-  prefetched.add(view);
-  // A failed prefetch is retried for real when the view is opened.
-  load().catch(() => prefetched.delete(view));
+  const loader = LOADERS[view];
+  if (!loader) return;
+  load(view, loader).catch(() => undefined);
+}
+
+/** Every page's code, one after another, for when the browser has nothing better to do. */
+export function prefetchAllViews(): void {
+  const queue = Object.keys(LOADERS) as View[];
+  const next = () => {
+    const view = queue.shift();
+    if (!view) return;
+    const loader = LOADERS[view]!;
+    load(view, loader).catch(() => undefined).finally(next);
+  };
+  next();
 }
