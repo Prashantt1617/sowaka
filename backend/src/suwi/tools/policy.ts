@@ -65,6 +65,7 @@ export async function settingsNeeded(ctx: SuwiContext, text: string): Promise<{ 
   if (/\b(grace|late mark|half[- ]day|working hours|shift timing|punch|clock[- ]in|weekly off)\b/.test(t)) out.push({ setting: 'Shift rule (timings, grace, half day, weekly offs)', status: `Set per template: ${have.templates.join(', ') || 'none yet'}.`, where: 'Shifts › Templates (ask Suwi to prepare a shift rule change)' });
   if (/\b(reimburs|claim|expense|bill|receipt|allowance)/.test(t)) out.push({ setting: 'Reimbursement type with its cap', status: have.claimTypes.length ? `Existing types: ${have.claimTypes.join(', ')}.` : 'No reimbursement types yet.', where: 'Claims › Reimbursement Types (ask Suwi to prepare a reimbursement type)' });
   if (/\b(approv|manager|hr decides|sign[- ]off)/.test(t)) out.push({ setting: 'Approval rule (manager or HR decides)', status: 'Set per shift template for leave and corrections; reimbursements are always decided on the dashboard.', where: 'Shifts › Templates › approvals' });
+  if (/\b(work(ing)?[- ]from[- ]home|wfh|remote)\b/.test(t)) out.push({ setting: 'Work from home', status: `Set per shift template (${have.templates.join(', ') || 'none yet'}): allow outside-location punches with the "Working from home" reason, and the wfh attendance correction type. The app cannot enforce a weekly limit or block certain weekdays; managers check that when they approve.`, where: 'Shifts › Templates › punch rules and corrections' });
   if (/\b(holiday)/.test(t)) out.push({ setting: 'Holidays', status: 'The policy names holidays; the dates themselves live in the Holiday Bank.', where: 'Shifts › Holiday Bank' });
   return out;
 }
@@ -94,7 +95,7 @@ defineTools(
         title: { type: 'string' }, summary: { type: 'string', description: 'One line under the title' },
         purpose: { type: 'string' }, covers: { type: 'string', description: 'Who it applies to' },
         rules: { type: 'array', items: { type: 'string' } }, howToRequest: { type: 'array', items: { type: 'string' } },
-        exceptions: { type: 'array', items: { type: 'string' } }, fromWhen: { type: 'string', description: 'e.g. "1 November 2026"' },
+        exceptions: { type: 'array', items: { type: 'string' } }, fromWhen: { type: 'string', description: 'Only a date HR gave, e.g. "1 November 2026"; otherwise leave it out' },
       },
       required: ['title', 'purpose', 'covers', 'rules'],
     },

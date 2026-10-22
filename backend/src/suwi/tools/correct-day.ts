@@ -11,6 +11,9 @@ import { policyForUser, shiftPolicyViewOf } from '../../services/shift.service';
 import { defineTools, str } from '../tools';
 import { defineExecutor, propose } from '../proposals';
 import { isDate, niceDate } from './team';
+import { monthName } from './payroll-actions';
+
+const lopDays = (n: number) => `${n === 0.5 ? '½' : n} day${n === 1 || n === 0.5 ? '' : 's'}`;
 
 const LABEL: Record<string, string> = { present: 'Present', half_day: 'Half day', absent: 'Absent', on_leave: 'On leave', week_off: 'Week off', holiday: 'Holiday', missed_punch: 'Missed punch', upcoming: 'Upcoming' };
 
@@ -50,8 +53,9 @@ defineTools(
       const thisMonth = currentMonthIst();
       const openRun = month < thisMonth ? await payrollRuns().findOne({ org: ctx.org, period: month, status: { $in: ['draft', 'pending_approval'] } } as never, { projection: { _id: 1 } }) : null;
       const finished = await payrollRuns().findOne({ org: ctx.org, period: month, status: { $in: ['approved', 'paid'] } } as never, { projection: { _id: 1 } });
-      if (finished) throw new Error(`Payroll for ${month} is submitted: its days can no longer be changed`);
-      if (month !== thisMonth && !openRun) throw new Error(`Only the current month (${thisMonth}) can be corrected, or an earlier month whose payroll run is still open; ${month} is neither`);
+      const M = monthName(month);
+      if (finished) throw new Error(`Payroll for ${M} is submitted: its days can no longer be changed`);
+      if (month !== thisMonth && !openRun) throw new Error(`Only the current month (${monthName(thisMonth)}) can be corrected, or an earlier month whose payroll run is still open; ${M} is neither`);
 
       const cal = await employeeCalendar(ctx.userId, userId, month);
       const day = cal.days.find((d) => d.date === date);
@@ -72,8 +76,8 @@ defineTools(
       const payLine = allPaid
         ? `No pay effect: ${first}'s paid-days template (${pdt!.name}) pays every day of the month, so the calendar is not read by payroll.`
         : delta === 0
-          ? `No change in paid days: ${LABEL[day.status]} and ${LABEL[status]} cost the same (${after} of ${base} days in ${month}).`
-          : `${delta > 0 ? `+${delta}` : delta} paid day${Math.abs(delta) === 1 ? '' : 's'} for ${month} (out of ${base}): the day cost ${currentLop} and will cost ${after}.`;
+          ? `No change in paid days: ${LABEL[day.status]} and ${LABEL[status]} cost the same (${lopDays(after)} of loss of pay, out of ${base} days in ${M}).`
+          : `${delta > 0 ? `+${delta}` : delta} paid day${Math.abs(delta) === 1 ? '' : 's'} for ${M} (out of ${base}): it was ${lopDays(currentLop)} of loss of pay; it becomes ${after}.`;
       const title = `Mark ${first}'s ${niceDate(date)} as ${LABEL[status]}`;
       const proposalId = await propose(ctx, {
         kind: 'correct_day', area: 'attendance', title,
@@ -82,7 +86,7 @@ defineTools(
           { text: `Now: ${describe(day)}${day.punchIn ? `, in ${ist(day.punchIn)}` : ''}${day.punchOut ? `, out ${ist(day.punchOut)}` : ''}${day.lateByMinutes ? `, late by ${day.lateByMinutes} min` : ''}.`, why: `Graded by ${cal.shift} (${cal.window}, ${cal.punchFormat}). HR's mark replaces the graded day everywhere: the report, the calendar, payroll and the app.` },
           { text: `New: ${LABEL[status]}, marked by ${ctx.user.name}${str(i.note) ? ` with the note "${str(i.note)}"` : ''}.` },
           { text: payLine, why: 'Loss of pay = calendar absences + ½ per half day (+ missed punches as the shift counts them), on top of the rules in their paid-days template; the base is the days in the month.', tone: allPaid || delta >= 0 ? 'info' : 'warn' },
-          { text: openRun ? `${month} is an earlier month, allowed because its payroll run is still open; the run picks up the change when it is recalculated.` : `Only the current month can be marked (${thisMonth}); once ${month}'s payroll is submitted the day stays as paid.`, why: 'A mark moves pay, so it can only land where pay has not been settled.' },
+          { text: openRun ? `${M} is an earlier month, allowed because its payroll run is still open; the run picks up the change when it is recalculated.` : `Only the current month can be marked (${monthName(thisMonth)}); after ${M}'s payroll is submitted, this day can no longer be changed.`, why: 'A mark moves pay, so it can only land where pay has not been settled.' },
           { text: `Their app shows ${niceDate(date)} as ${LABEL[status]} (marked by HR) from the moment you confirm; the shift stays ${policy.name} (${policy.startTime}–${policy.endTime}).` },
           ...(existing ? [{ text: `This replaces HR's earlier mark (${LABEL[existing.status]}${existing.setByName ? ` by ${existing.setByName}` : ''}); Undo puts that mark back.`, tone: 'info' as const }] : [{ text: 'Undo removes the mark and the day goes back to what the punches say.', tone: 'info' as const }]),
         ],

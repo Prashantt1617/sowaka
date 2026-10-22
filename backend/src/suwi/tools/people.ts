@@ -9,7 +9,8 @@ import { defineTools, num, str, SuwiContext } from '../tools';
 
 export const ACTIVE = { lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } as const;
 export const norm = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-export const isoDay = (d: unknown) => (d instanceof Date && !Number.isNaN(d.valueOf()) ? d.toISOString().slice(0, 10) : typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d) ? d.slice(0, 10) : null);
+/** A stored date as its India day (a joining date saved as IST midnight is 18:30 UTC the day before), the same rule Connect's anniversaries use. */
+export const isoDay = (d: unknown) => (d instanceof Date && !Number.isNaN(d.valueOf()) ? new Date(d.getTime() + 5.5 * 3_600_000).toISOString().slice(0, 10) : typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d) ? d.slice(0, 10) : null);
 
 export type Person = Pick<User, 'userId' | 'name' | 'employeeId' | 'email' | 'designation' | 'department' | 'location' | 'branch' | 'managerUserId' | 'employeeType' | 'joiningDate' | 'gender' | 'phone' | 'birthday' | 'lifecycleStatus' | 'isDirector'>;
 const PROJECTION = { _id: 0, userId: 1, name: 1, employeeId: 1, email: 1, designation: 1, department: 1, location: 1, branch: 1, managerUserId: 1, employeeType: 1, joiningDate: 1, gender: 1, phone: 1, birthday: 1, lifecycleStatus: 1, isDirector: 1 };
@@ -185,6 +186,7 @@ defineTools(
       return {
         data: {
           total: pool.length,
+          byStatus: count((p) => p.lifecycleStatus ?? 'active'),
           ...(lead ? { under: lead.name, direct: teamOf(lead.userId, all, false).length, everyoneBelow: pool.length } : {}),
           ...(by === '' || by === 'department' ? { byDepartment: count((p) => p.department) } : {}),
           ...(by === '' || by === 'location' ? { byLocation: count((p) => p.location ?? p.branch) } : {}),

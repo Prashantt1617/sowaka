@@ -116,9 +116,18 @@ export function whatIf(policy: ShiftPolicyRules, date: string, input: { punchIn?
     if (v.halfDay.earlyLeaveEnabled && before > v.halfDay.earlyLeaveMinutes) steps.push(`Out more than the ${v.halfDay.earlyLeaveMinutes}-min very-early cut-off: a half day.`);
   } else if (punchIn && policy.correction?.punchMode !== 'Single punch') steps.push(`No punch-out: a missed punch, which this shift counts as ${v.missingPunchOut}.`);
   if (!punchIn && !punchOut) steps.push(`No punches: counts as ${v.missingBoth}.`);
+  // The out-time a full day needs is counted from this punch-in, not the shift end.
+  let fullDayOutAt: string | null = null;
+  if (punchIn && v.halfDay.minFullDayEnabled && policy.correction?.punchMode !== 'Single punch') {
+    fullDayOutAt = new Date(punchIn.getTime() + v.minFullDayHours * 3_600_000 + 5.5 * 3_600_000).toISOString().slice(11, 16);
+    const [eh, em] = policy.endTime.split(':').map(Number);
+    const cut = (((eh * 60 + em - v.earlyOutGraceMinutes) % 1440) + 1440) % 1440;
+    const earlyCut = `${String(Math.floor(cut / 60)).padStart(2, '0')}:${String(cut % 60).padStart(2, '0')}`;
+    steps.push(`For a full day, punch out at or after ${fullDayOutAt}: ${inT || policy.startTime} plus the ${v.minFullDayHours} h full-day minimum.${v.earlyMarkingEnabled ? ` Out before ${earlyCut} is also marked as an early exit.` : ''}`);
+  }
   const mark = markForDay(policy, punchIn, punchOut);
   const lop = mark === 'Absent' ? 1 : mark === 'Half Day' ? 0.5 : 0;
-  return { punchIn: inT || (punchIn ? policy.startTime : null), punchOut: outT || null, steps, dayMark: mark, lateMark, earlyExit: earlyMark, lossOfPayDays: lop, answer: `${mark}${lateMark ? ', with a late mark' : ''}${earlyMark ? ', with an early exit' : ''}; costs ${lop} paid day${lop === 1 ? '' : 's'} by the calendar.` };
+  return { punchIn: inT || (punchIn ? policy.startTime : null), punchOut: outT || null, steps, dayMark: mark, lateMark, earlyExit: earlyMark, fullDayOutAt, lossOfPayDays: lop, answer: `${mark}${lateMark ? ', with a late mark' : ''}${earlyMark ? ', with an early exit' : ''}; costs ${lop} paid day${lop === 1 ? '' : 's'} by the calendar.` };
 }
 
 async function baseRules(ctx: SuwiContext): Promise<ShiftPolicyRules> {

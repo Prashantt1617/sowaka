@@ -45,6 +45,7 @@ defineTools({
     const path = [manager.name, ...orgPathOf(manager.userId, byId)].join(' › ');
     const moving = waiting.overtime + waiting.claims + waiting.corrections;
     const title = `${person.name} reports to ${manager.name}`;
+    const g = String(person.gender ?? '').toLowerCase();
     const proposalId = await propose(ctx, {
       kind: 'change_manager', area: 'people', title,
       summary: `${person.name}${person.designation ? ` (${person.designation})` : ''} moves from ${old ? `under ${old.name}` : 'nobody'} to under ${manager.name}${manager.designation ? ` (${manager.designation})` : ''}, from today.`,
@@ -55,6 +56,7 @@ defineTools({
         ...(reports.length ? [{ text: `${person.name}'s own ${reports.length} report${reports.length === 1 ? '' : 's'} stay with ${person.name.split(' ')[0]}.` }] : []),
         ...(old && !oldOthers ? [{ text: `${old.name} has no other reports and stops being marked as a manager.`, tone: 'warn' as const, why: 'A person counts as a manager while someone reports to them; the manager views in the app close when nobody does.' }] : []),
         { text: `${manager.name} gives ${person.name.split(' ')[0]}'s KPI feedback from now; anything ${old?.name ?? 'the old manager'} already sent stays as it is.` },
+        { text: `${person.name.split(' ')[0]}'s app shows ${manager.name} as ${g === 'female' ? 'her' : g === 'male' ? 'his' : 'their'} manager, and ${manager.name.split(' ')[0]}'s Team tab lists ${g === 'female' ? 'her' : g === 'male' ? 'him' : 'them'}, from the moment you confirm.` },
       ],
       effectiveFrom: ctx.today, undoable: true,
       payload: { userId: person.userId, personName: person.name, newManagerId: manager.userId, newManagerName: manager.name, oldManagerId: old?.userId ?? null, oldManagerName: old?.name ?? null, byUserId: ctx.userId },

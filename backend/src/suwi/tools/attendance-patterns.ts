@@ -13,6 +13,12 @@ import { ACTIVE, addDays, isDate, rangeOf, weekdayOf } from './team';
 
 type FarPunch = { userId: string; date: string; punch: 'in' | 'out'; place: string; distanceMeters: number | null; reason?: string; status?: string };
 
+/** Each active person's reporting manager's userId, so answers can link managers too. */
+async function managerIds(ctx: SuwiContext): Promise<Map<string, string>> {
+  const rows = await users().find({ org: ctx.org, ...ACTIVE } as never, { projection: { _id: 0, userId: 1, managerUserId: 1 } }).toArray();
+  return new Map(rows.filter((u) => u.managerUserId).map((u) => [u.userId, u.managerUserId!]));
+}
+
 /**
  * Punches taken away from every office in a range: the out-of-location rows
  * (requests and present-with-remark days) plus any punch whose location
@@ -49,7 +55,7 @@ defineTools(
     api: { method: 'GET', path: '/admin/reports/attendance' },
     async run(ctx, i) {
       const { from, to } = rangeOf(i, ctx.today);
-      const [report, templates, far] = await Promise.all([attendanceReport(ctx.userId, { from, to }), shiftTemplates().find({ org: ctx.org, deletedAt: { $exists: false }, active: true } as never).toArray(), farPunches(ctx, from, to)]);
+      const [report, templates, far, mgrOf] = await Promise.all([attendanceReport(ctx.userId, { from, to }), shiftTemplates().find({ org: ctx.org, deletedAt: { $exists: false }, active: true } as never).toArray(), farPunches(ctx, from, to), managerIds(ctx)]);
       const dep = str(i.department).toLowerCase();
       const mgr = str(i.manager).toLowerCase();
       const inScope = (uid: string) => {
@@ -59,7 +65,7 @@ defineTools(
         if (mgr && !p.manager.toLowerCase().includes(mgr)) return false;
         return true;
       };
-      const who = (uid: string) => ({ userId: uid, name: report.people[uid]?.name ?? uid, department: report.people[uid]?.department ?? '', manager: report.people[uid]?.manager ?? '', shift: report.people[uid]?.template ?? 'Default' });
+      const who = (uid: string) => ({ userId: uid, name: report.people[uid]?.name ?? uid, department: report.people[uid]?.department ?? '', manager: report.people[uid]?.manager ?? '', managerUserId: report.people[uid]?.manager ? mgrOf.get(uid) ?? null : null, shift: report.people[uid]?.template ?? 'Default' });
       const assigned = new Set(templates.flatMap((t) => t.assignedUserIds ?? []));
       const def = templates.find((t) => t.isDefault);
       const onDefaultOnly = Object.keys(report.people).filter((uid) => inScope(uid) && !assigned.has(uid)).map(who);
@@ -91,14 +97,16 @@ defineTools(
       const from = isDate(i.from) ? i.from : addDays(to, -6);
       const by = i.groupBy === 'department' ? 'department' : 'manager';
       const only = str(i.group).toLowerCase();
-      const [report, far] = await Promise.all([attendanceReport(ctx.userId, { from, to }), farPunches(ctx, from, to)]);
+      const [report, far, mgrOf] = await Promise.all([attendanceReport(ctx.userId, { from, to }), farPunches(ctx, from, to), managerIds(ctx)]);
       const per = countReport(report.days, 31);
+      // Who punched at all in the range: with nobody, there are no patterns to find, and other tools won't find any either.
+      const punched = new Set(report.days.filter((d) => d[4] || d[5]).map((d) => d[0]));
       type Item = { userId: string; name: string; count: number; days: string[] };
-      const groups = new Map<string, { missedPunches: Item[]; mondayLates: Item[]; farPunches: Item[]; people: number }>();
+      const groups = new Map<string, { managerUserId?: string; missedPunches: Item[]; mondayLates: Item[]; farPunches: Item[]; people: number }>();
       for (const [uid, p] of Object.entries(report.people)) {
         const key = (by === 'manager' ? p.manager : p.department) || (by === 'manager' ? '(no manager)' : '(no department)');
         if (only && !key.toLowerCase().includes(only)) continue;
-        const g = groups.get(key) ?? { missedPunches: [], mondayLates: [], farPunches: [], people: 0 };
+        const g = groups.get(key) ?? { ...(by === 'manager' && p.manager && mgrOf.get(uid) ? { managerUserId: mgrOf.get(uid) } : {}), missedPunches: [], mondayLates: [], farPunches: [], people: 0 };
         g.people++;
         const c = per.get(uid);
         if (c && c.missed >= 2) g.missedPunches.push({ userId: uid, name: p.name, count: c.missed, days: c.missedDays });
@@ -108,9 +116,13 @@ defineTools(
         if (away?.length) g.farPunches.push({ userId: uid, name: p.name, count: away.length, days: away.map((x) => `${x.date} ${x.punch}: ${x.place}${x.reason ? ` (${x.reason})` : ''}`) });
         groups.set(key, g);
       }
-      const summary = [...groups.entries()].map(([group, g]) => ({ [by]: group, people: g.people, flagged: g.missedPunches.length + g.mondayLates.length + g.farPunches.length, missedPunches: g.missedPunches, mondayLates: g.mondayLates, farPunches: g.farPunches })).sort((a, b) => b.flagged - a.flagged);
+      const summary = [...groups.entries()].map(([group, g]) => ({ [by]: group, ...(g.managerUserId ? { managerUserId: g.managerUserId } : {}), people: g.people, flagged: g.missedPunches.length + g.mondayLates.length + g.farPunches.length, missedPunches: g.missedPunches, mondayLates: g.mondayLates, farPunches: g.farPunches })).sort((a, b) => b.flagged - a.flagged);
       return {
-        data: { from, to, groupBy: by, groups: summary.slice(0, 40), note: `Missed punches: 2 or more graded working days with a punch missing. Monday lates: late beyond grace on a Monday. ${DEVICE_SYNC_NOTE}` },
+        data: {
+          from, to, groupBy: by, peopleWithPunches: punched.size,
+          ...(punched.size === 0 ? { noData: `Nobody has a punch between ${from} and ${to}, so there are no patterns to report. If punches come from a biometric device, check it has synced; other attendance tools will show the same.` } : {}),
+          groups: summary.slice(0, 40), note: `Missed punches: 2 or more graded working days with a punch missing. Monday lates: late beyond grace on a Monday. ${DEVICE_SYNC_NOTE}`,
+        },
         links: [{ label: 'Open attendance report', view: 'attendancereport' }, { label: 'Open OOL check-ins', view: 'oolcheckins' }],
       };
     },

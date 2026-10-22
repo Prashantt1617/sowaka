@@ -55,7 +55,7 @@ defineTools(
             : `A punch from outside every office marks the day present with a remark (reasons offered: ${ool.reasons.join(', ')}); HR sees it under OOL check-ins.`,
           why: `This is the template's out-of-location rule (${tpl.name} › Attendance correction › Out of location).`,
         },
-        { text: `Days without a punch inside the radius can become absent or a missed punch (punch-in missing counts as ${policy.missingPunchIn}, punch-out missing ${policy.missingPunchOut}), so loss of pay can rise.`, why: 'Payroll pays by the calendar: each absence costs a paid day and each half day half a day, on top of any rules in their paid-days template.', tone: 'warn' as const },
+        { text: `Days without a punch inside the radius can become absent or a missed punch (a missing punch-in counts as ${policy.missingPunchIn}; a missing punch-out as ${policy.missingPunchOut}), so loss of pay can rise.`, why: 'Payroll pays by the calendar: each absence costs a paid day and each half day half a day, on top of any rules in their paid-days template.', tone: 'warn' as const },
       ];
       return prepareMove(ctx, tpl, people.slice(0, 500), { title: `Move ${people.length === 1 ? people[0].name : `${people.length} people`} to geotag punching (${tpl.name})`, summaryPrefix: `${people.length > 1 ? `${how[0].toUpperCase()}${how.slice(1)}: ` : ''}Geotag punching is a template setting, so this moves them to the ${tpl.name} template. `, extraLines: lines });
     },

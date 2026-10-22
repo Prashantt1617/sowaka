@@ -18,16 +18,18 @@ const emptyWeek = () => Object.fromEntries(WEEKDAYS.map((d) => [d, 0])) as Recor
  */
 const DEVICE_SYNC_NOTE = 'Punches still on an offline device are not in the data (an imported row only exists once the device has synced), so missed punches cannot be separated from punches waiting on a device sync. Check the device if several people on one biometric shift miss the same day.';
 
-type Count = { present: number; halfDay: number; late: number; early: number; missed: number; absent: number; leave: number; lateDays: string[]; earlyDays: string[]; missedDays: string[]; absentDays: string[]; lateByWeekday: Record<string, number> };
-const empty = (): Count => ({ present: 0, halfDay: 0, late: 0, early: 0, missed: 0, absent: 0, leave: 0, lateDays: [], earlyDays: [], missedDays: [], absentDays: [], lateByWeekday: emptyWeek() });
+type Count = { present: number; halfDay: number; late: number; early: number; missed: number; absent: number; leave: number; notPunchedInYet: number; lateDays: string[]; earlyDays: string[]; missedDays: string[]; absentDays: string[]; lateByWeekday: Record<string, number> };
+const empty = (): Count => ({ present: 0, halfDay: 0, late: 0, early: 0, missed: 0, absent: 0, leave: 0, notPunchedInYet: 0, lateDays: [], earlyDays: [], missedDays: [], absentDays: [], lateByWeekday: emptyWeek() });
 
 /** Per-person counts and the days behind them, from the org report's rows. */
-export function countReport(days: Awaited<ReturnType<typeof attendanceReport>>['days'], keepDays = 8) {
+export function countReport(days: Awaited<ReturnType<typeof attendanceReport>>['days'], keepDays = 8, today?: string) {
   const per = new Map<string, Count>();
   const push = (list: string[], d: string) => { if (list.length < keepDays) list.push(d); };
-  for (const [uid, date, status, late, , , , , early] of days) {
+  for (const [uid, date, status, late, punchIn, punchOut, , , early] of days) {
     const p = per.get(uid) ?? empty();
-    if (status === 'present') p.present++; else if (status === 'half_day') p.halfDay++; else if (status === 'missed_punch') { p.missed++; push(p.missedDays, date); } else if (status === 'absent') { p.absent++; push(p.absentDays, date); } else if (status === 'on_leave') p.leave++;
+    // Today isn't over: a working day with no punch yet is not an absence.
+    if (today && date === today && status === 'absent' && !punchIn && !punchOut) p.notPunchedInYet++;
+    else if (status === 'present') p.present++; else if (status === 'half_day') p.halfDay++; else if (status === 'missed_punch') { p.missed++; push(p.missedDays, date); } else if (status === 'absent') { p.absent++; push(p.absentDays, date); } else if (status === 'on_leave') p.leave++;
     // A single-punch day is already a missed punch; it is not also late or early (the same rule payroll uses).
     if (status !== 'missed_punch' && late > 0) { p.late++; push(p.lateDays, date); p.lateByWeekday[weekdayOf(date)]++; }
     if (status !== 'missed_punch' && early > 0) { p.early++; push(p.earlyDays, date); }
@@ -41,7 +43,7 @@ defineTools(
     name: 'attendance_summary',
     area: 'attendance',
     label: (i) => `Attendance ${i.from ?? 'from the 1st'} to ${i.to ?? 'today'}`,
-    description: 'Attendance per person for a date range (default: this month to today): days present, half days, late arrivals (with the days and a count per weekday), early exits, missed punches, absences, leave. Optionally only people with at least N lates / absences / missed punches / early exits, or one department or manager. Use for "who was late 3+ times", "who is absent today" (from=to=today), "missed punches this week", "which weekday are people late most".',
+    description: 'Attendance per person for a date range (default: this month to today): days present, half days, late arrivals (with the days and a count per weekday), early exits, missed punches, absences, leave. Optionally only people with at least N lates / absences / missed punches / early exits, or one department or manager. Use for "who was late 3+ times", "missed punches this week", "which weekday are people late most". For "who is absent or on leave today", one call with from=to=today is enough. Today is not over, so a working day today with no punch yet is notPunchedInYet, not absent.',
     input_schema: {
       type: 'object',
       properties: {
@@ -56,7 +58,7 @@ defineTools(
     async run(ctx, i) {
       const { from, to } = rangeOf(i, ctx.today);
       const r = await attendanceReport(ctx.userId, { from, to });
-      const per = countReport(r.days);
+      const per = countReport(r.days, 8, ctx.today);
       const dep = str(i.department).toLowerCase();
       const mgr = str(i.manager).toLowerCase();
       const want = str(i.status);
@@ -74,9 +76,9 @@ defineTools(
         data: {
           from, to, peopleInReport: Object.keys(r.people).length, matching: rows.length,
           lateByWeekday,
-          totals: { late: rows.reduce((t, x) => t + x.late, 0), early: rows.reduce((t, x) => t + x.early, 0), missedPunches: rows.reduce((t, x) => t + x.missed, 0), absent: rows.reduce((t, x) => t + x.absent, 0) },
+          totals: { late: rows.reduce((t, x) => t + x.late, 0), early: rows.reduce((t, x) => t + x.early, 0), missedPunches: rows.reduce((t, x) => t + x.missed, 0), absent: rows.reduce((t, x) => t + x.absent, 0), ...(to >= ctx.today ? { notPunchedInYetToday: rows.reduce((t, x) => t + x.notPunchedInYet, 0) } : {}) },
           rows: rows.slice(0, limit),
-          note: `Working days only; weekly offs and holidays follow each person's shift and location. Day lists hold up to 8 dates each. ${DEVICE_SYNC_NOTE}`,
+          note: `Working days only; weekly offs and holidays follow each person's shift and location. Day lists hold up to 8 dates each.${to >= ctx.today ? ' Today is not over: someone with no punch yet today is counted as notPunchedInYet, not absent.' : ''} ${DEVICE_SYNC_NOTE}`,
         },
         links: [{ label: 'Open attendance report', view: 'attendancereport' }],
       };
