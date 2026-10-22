@@ -682,22 +682,28 @@ function Row({ node, open, dimmed, highlighted, onOpen, onToggle, onFocus, focus
 }
 
 // ── styles ───────────────────────────────────────────────────────────────
-// Break out of the padded content area to fill the viewport (page padding is
-// 28px top / 34px sides / 60px bottom).
+// Fill the rest of the content area as one card (the page leaves 40px
+// below; the chart takes most of it).
 const fullBleed: CSSProperties = {
-  margin: '-28px -34px -60px',
-  height: 'calc(100% + 88px)',
+  marginBottom: -24,
+  height: 'calc(100% + 24px)',
+  minHeight: 480,
   display: 'flex',
   flexDirection: 'column',
+  background: 'var(--surface)',
+  borderRadius: 'var(--r-lg)',
+  boxShadow: 'var(--shadow)',
+  overflow: 'hidden',
 };
 const headerBar: CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 16, padding: '16px 34px',
+  display: 'flex', alignItems: 'center', gap: 16, padding: '14px 20px',
   borderBottom: '1px solid var(--line)', flexShrink: 0,
   // Solid: this bar carries text, and a company backdrop can be dark.
-  background: 'var(--surface-2)',
+  background: 'var(--surface)',
 };
 const canvas: CSSProperties = {
   flex: 1, position: 'relative', overflow: 'hidden', userSelect: 'none', cursor: 'grab',
+  background: 'radial-gradient(var(--line-2) 1px, transparent 1px) 0 0 / 18px 18px',
 };
 const searchWrap: CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)',
