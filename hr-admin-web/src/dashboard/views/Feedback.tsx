@@ -13,7 +13,8 @@ import type { FbCycle, FbEmp, Feedback as FeedbackRow } from '../seed';
 import { downloadCsv } from '../export';
 import { adaptFeedbackList } from '../adapters';
 import { periodLabel, periodShort } from '../period';
-import { Avatar, Card, Pill, SearchInput, SelectBox, SummaryCard } from '../ui';
+import { Card, Pill, SearchInput, SelectBox, SummaryCard } from '../ui';
+import { PersonAvatar } from '../PersonAvatar';
 import { IconDownload } from '../icons';
 import { Modal, Tabs, Td, Th } from './kpiUi';
 import { ghostBtn, panelCard, panelTitle, smallBtn } from './kpiStyles';
@@ -233,7 +234,7 @@ export function Feedback() {
                 >
                   <Td>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-                      <Avatar name={m.name} size={32} font={12} />
+                      <PersonAvatar name={m.name} userId={m.id} size={32} font={12} />
                       <span style={{ fontWeight: 500, color: 'var(--accent-ink)' }}>{m.name}</span>
                     </span>
                   </Td>
@@ -356,7 +357,7 @@ export function Feedback() {
                 <tr key={e.userId} className="phm-row" onClick={() => s.setFbEmpId(e.userId)} style={{ cursor: 'pointer' }}>
                   <Td>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-                      <Avatar name={e.name} size={34} font={13} />
+                      <PersonAvatar name={e.name} userId={e.userId} size={34} font={13} />
                       <span style={{ fontWeight: 500, color: 'var(--accent-ink)' }}>{e.name}</span>
                     </span>
                   </Td>

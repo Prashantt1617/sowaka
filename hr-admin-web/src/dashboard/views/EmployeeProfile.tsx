@@ -15,6 +15,7 @@ import { IconFile } from '../icons';
 import { ETYPE, STAT, TYPE } from '../theme';
 import type { LeaveType, ReqStatus } from '../theme';
 import { Avatar, Card, Pill, StatusTabs } from '../ui';
+import { PersonAvatar } from '../PersonAvatar';
 import { periodLabel, periodShort } from '../period';
 import { EmployeeKpiPanel } from './KpiAssign';
 import { assignShift, clearCalendarDay, clearReportingManager, deleteEmployee, getCompanySettings, getEmployeeCalendar, getShifts, setCalendarDay, setReportingManager, updateEmployeeDetails } from '../../services/hrms';
@@ -804,7 +805,7 @@ function OrgNode({ emp, caption, highlight, onOpen }: { emp: Emp; caption?: stri
       }}
     >
       {caption && <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: highlight ? 'var(--accent-ink)' : 'var(--ink-4)' }}>{caption}</span>}
-      <Avatar name={emp.name} size={44} font={15} />
+      <Avatar name={emp.name} size={44} font={15} src={emp.photoUrl} />
       <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>{emp.name}</div>
       <div style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.3 }}>{emp.role}</div>
     </button>
@@ -816,7 +817,7 @@ function GhostNode({ name, caption }: { name: string; caption: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6, width: 172, padding: '14px 12px', borderRadius: 16, background: 'var(--surface)', border: '1px dashed var(--line-2)' }}>
       <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>{caption}</span>
-      <Avatar name={name} size={44} font={15} />
+      <PersonAvatar name={name} size={44} font={15} />
       <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>{name}</div>
       <div style={{ fontSize: 12, color: 'var(--ink-4)', lineHeight: 1.3 }}>Manager</div>
     </div>
@@ -969,7 +970,7 @@ function ManagerRow({ emp }: { emp: Emp }) {
             {options.map((o) => (
               <button key={o.id} type="button" disabled={saving} onClick={() => save(o)}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 6px', border: 'none', borderRadius: 999, background: 'transparent', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
-                <Avatar name={o.name} size={28} font={11} />
+                <Avatar name={o.name} size={28} font={11} src={o.photoUrl} />
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{o.name}</span>
                   <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)' }}>{[o.employeeId, o.role].filter(Boolean).join(' · ')}</span>

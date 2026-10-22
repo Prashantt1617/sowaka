@@ -89,7 +89,7 @@ function LeaveDrawer() {
   const close = () => s.setDrawerId(null);
   return (
     <DrawerShell onClose={close}>
-      <DrawerHeader name={d.name} subtitle={`${d.team} · Applied ${d.applied}`} onClose={close} />
+      <DrawerHeader name={d.name} userId={d.submitterId} subtitle={`${d.team} · Applied ${d.applied}`} onClose={close} />
       <div style={{ padding: '20px 24px' }}>
         <SuwiInsight kind="leave" id={d.id} pending={d.status === 'Pending'} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
@@ -124,7 +124,7 @@ function OvertimeDrawer() {
   const close = () => s.setOtDrawerId(null);
   return (
     <DrawerShell onClose={close}>
-      <DrawerHeader name={d.name} subtitle={`${d.team} · Applied ${d.appliedOn}`} onClose={close} />
+      <DrawerHeader name={d.name} userId={d.submitterId} subtitle={`${d.team} · Applied ${d.appliedOn}`} onClose={close} />
       <div style={{ padding: '20px 24px' }}>
         <SuwiInsight kind="overtime" id={d.id} pending={d.status === 'Pending'} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
@@ -192,7 +192,7 @@ function ReimbursementDrawer() {
   const close = () => s.setRbDrawerId(null);
   return (
     <DrawerShell onClose={close}>
-      <DrawerHeader name={d.name} subtitle={`${d.team} · Applied ${d.applyDate}`} onClose={close} />
+      <DrawerHeader name={d.name} userId={d.submitterId} subtitle={`${d.team} · Applied ${d.applyDate}`} onClose={close} />
       <div style={{ padding: '20px 24px' }}>
         <SuwiInsight kind="claim" id={d.id} pending={d.status === 'Pending'} />
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18 }}>
