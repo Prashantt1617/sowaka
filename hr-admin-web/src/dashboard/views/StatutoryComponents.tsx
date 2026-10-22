@@ -10,6 +10,8 @@ import { getStatutorySettings, updateStatutorySettings, upsertStatutoryRule } fr
 import type { BonusSettings, EpfSettings, EsiSettings, LwfRule, PtRule, PtSlab, StatutoryOverview, StatutorySettingsInput } from '../../services/payroll';
 import { Card, LoadError, SkeletonForm } from '../ui';
 import { CloseButton } from '../drawers/shell';
+import * as L from './look';
+import './look.css';
 
 type StatTab = 'epf' | 'esi' | 'pt' | 'lwf' | 'bonus' | 'tds';
 const TABS: { key: StatTab; label: string }[] = [
@@ -141,11 +143,11 @@ function EpfTab({ overview, apply, saving }: TabProps) {
   const active = editing ? draft : cfg;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 372px', gap: 24, alignItems: 'start' }}>
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>Employees' Provident Fund</div>
-          {!editing && enabled && <button onClick={startEdit} title="Edit" style={pencilBtn}>✎</button>}
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.65fr) minmax(0, 1fr)', gap: 20, alignItems: 'start' }}>
+      <div style={tabCard}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <div style={L.cardTitle}>Employees' Provident Fund</div>
+          {!editing && enabled && <button onClick={startEdit} title="Edit" className="lk-btn" style={pencilBtn}>✎</button>}
         </div>
 
         {!enabled ? (
@@ -167,10 +169,10 @@ function EpfTab({ overview, apply, saving }: TabProps) {
 /** A statutory component switched off for the whole company. */
 function DisabledNote({ what, detail, onEnable, saving }: { what: string; detail: string; onEnable: () => void; saving: boolean }) {
   return (
-    <div style={{ border: '1px dashed var(--line-2)', borderRadius: 12, padding: '22px 24px', maxWidth: 640 }}>
-      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{what} is disabled</div>
+    <div style={{ ...L.note, display: 'block', maxWidth: 640, padding: '16px 18px' }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{what} is disabled</div>
       <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 4, lineHeight: 1.5 }}>{detail}</div>
-      <button onClick={onEnable} disabled={saving} style={{ ...primaryBtn, marginTop: 16 }}>Enable</button>
+      <button onClick={onEnable} disabled={saving} className="lk-btn-p" style={{ ...primaryBtn, marginTop: 16 }}>Enable</button>
     </div>
   );
 }
@@ -198,22 +200,22 @@ function PtTab({ overview, onSaved }: { overview: StatutoryOverview; onSaved: ()
         {overview.pt.map((l) => (
           <div key={l.location} style={stateCard}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <div style={{ flex: 1, fontSize: 16, fontWeight: 500, color: 'var(--ink)' }}>{l.location}</div>
+              <div style={{ flex: 1, ...L.cardTitle }}>{l.location}</div>
               {editing !== l.location && (
-                <button type="button" onClick={() => setEditing(l.location)} style={{ ...ghostBtn, padding: '6px 12px', fontSize: 13 }}>✎ Edit slabs</button>
+                <button type="button" onClick={() => setEditing(l.location)} className="lk-btn" style={L.btnSm}>✎ Edit slabs</button>
               )}
             </div>
             {editing === l.location ? (
               <PtSlabEditor state={l.state} rule={l.pt} onDone={async (saved) => { if (saved) await onSaved(); setEditing(null); }} />
             ) : l.pt ? (
               <div>
-                <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginBottom: 8 }}>Monthly gross in <strong style={{ color: 'var(--ink-2)' }}>{l.state}</strong></div>
+                <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 8 }}>Monthly gross in <strong style={{ color: 'var(--ink-2)' }}>{l.state}</strong></div>
                 {ptSlabText(l.pt).map((line) => (
-                  <div key={line} style={{ fontSize: 13, color: 'var(--ink)', padding: '8px 0', borderTop: '1px solid var(--line)' }}>{line}</div>
+                  <div key={line} style={{ fontSize: 13.5, color: 'var(--ink)', padding: '10px 0', borderTop: '1px solid var(--line)' }}>{line}</div>
                 ))}
               </div>
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16, border: '1px dashed var(--line-2)', borderRadius: 10, padding: '16px 18px', background: 'var(--surface)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, border: '1px solid var(--line)', borderRadius: 14, padding: '12px 14px' }}>
                 <NoEntry />
                 <div style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.5 }}>
                   Professional Tax is not applicable for your work location in <strong style={{ color: 'var(--ink-2)' }}>{l.state}</strong>
@@ -267,7 +269,7 @@ function PtSlabEditor({ state, rule, onDone }: { state: string; rule: PtRule | n
   const cell: CSSProperties = { width: '100%', padding: '7px 9px', border: '1px solid var(--line-2)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit' };
   return (
     <div>
-      <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginBottom: 8 }}>Monthly gross in <strong style={{ color: 'var(--ink-2)' }}>{state}</strong>. Leave the last slab’s limit empty for “and above”.</div>
+      <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 8 }}>Monthly gross in <strong style={{ color: 'var(--ink-2)' }}>{state}</strong>. Leave the last slab’s limit empty for “and above”.</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) 28px', gap: 8, fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)', marginBottom: 6 }}>
         <span>Gross up to ₹</span><span>Tax ₹ / month</span><span>February ₹ (if different)</span><span />
       </div>
@@ -290,7 +292,7 @@ function PtSlabEditor({ state, rule, onDone }: { state: string; rule: PtRule | n
 
 function EmptyStates() {
   return (
-    <Card style={{ padding: '26px 22px', color: 'var(--ink-3)', fontSize: 13.5, marginBottom: 18 }}>
+    <Card style={{ padding: '26px 20px', color: 'var(--ink-3)', fontSize: 13.5, marginBottom: 18 }}>
       No work locations yet. Set each person’s work location and state on their profile; the rules for those states appear here.
     </Card>
   );
@@ -324,15 +326,15 @@ function LwfTab({ overview, apply, saving }: TabProps) {
       <div style={cardGrid}>
         {overview.lwf.map((s) => (
           <div key={s.state} style={stateCard}>
-            <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)', marginBottom: 16 }}>{s.state}</div>
+            <div style={{ ...L.cardTitle, marginBottom: 12 }}>{s.state}</div>
             {s.rule ? (
               <>
-                <LwfRow label="Employees' Contribution" value={(() => { const t = lwfEmployeeText(s.rule); return <span>{t.main}{t.sub && <><br /><span style={{ fontSize: 12.5, color: 'var(--ink-4)' }}>({t.sub})</span></>}</span>; })()} />
+                <LwfRow label="Employees' Contribution" value={(() => { const t = lwfEmployeeText(s.rule); return <span>{t.main}{t.sub && <><br /><span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>({t.sub})</span></>}</span>; })()} />
                 <LwfRow label="Employer's Contribution" value={lwfEmployerText(s.rule)} />
                 <LwfRow label="Deduction Cycle" value={s.rule.cycle === 'monthly' ? 'Monthly' : 'Half Yearly'} />
                 <LwfRow label="Status" value={
                   <span>
-                    <span style={{ color: s.enabled ? 'var(--ok)' : 'var(--bad)', fontWeight: 500 }}>{s.enabled ? 'Enabled' : 'Disabled'}</span>{' '}
+                    <span style={L.pill(s.enabled ? 'ok' : 'bad')}><span aria-hidden style={L.pillDot} />{s.enabled ? 'Enabled' : 'Disabled'}</span>{' '}
                     <button disabled={saving} onClick={() => void apply({ lwf: { state: s.state, enabled: !s.enabled } }, `LWF ${s.enabled ? 'disabled' : 'enabled'} for ${s.state}`)}
                       style={{ background: 'none', border: 'none', color: 'var(--accent-ink)', fontWeight: 500, fontSize: 13.5, cursor: 'pointer', padding: 0 }}>
                       ({s.enabled ? 'Disable' : 'Enable'})
@@ -341,7 +343,7 @@ function LwfTab({ overview, apply, saving }: TabProps) {
                 } last />
               </>
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16, border: '1px dashed var(--line-2)', borderRadius: 10, padding: '16px 18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, border: '1px solid var(--line)', borderRadius: 14, padding: '12px 14px', background: 'var(--surface-2)' }}>
                 <NoEntry />
                 <div style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.5 }}>Labour Welfare Fund is not applicable for your work state in <strong style={{ color: 'var(--ink-2)' }}>{s.state}</strong></div>
               </div>
@@ -354,9 +356,9 @@ function LwfTab({ overview, apply, saving }: TabProps) {
 }
 function LwfRow({ label, value, last }: { label: string; value: ReactNode; last?: boolean }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '190px 1fr', gap: 14, padding: '10px 0', borderBottom: last ? 'none' : '1px solid var(--line)', alignItems: 'start' }}>
-      <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>{label}</div>
-      <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 400 }}>{value}</div>
+    <div style={{ display: 'grid', gridTemplateColumns: '190px 1fr', gap: 16, padding: '6px 0', borderBottom: last ? 'none' : 'none', alignItems: 'baseline' }}>
+      <div style={L.kvDt}>{label}</div>
+      <div style={L.kvDd}>{value}</div>
     </div>
   );
 }
@@ -389,8 +391,8 @@ function fromBonusConfig(c: BonusConfig): Partial<BonusSettings> {
 function TdsTab({ overview, apply, saving }: TabProps) {
   const t = overview.settings.tds ?? { enabled: false, defaultRegime: 'new' as const };
   return (
-    <Card style={{ padding: '22px 24px' }}>
-      <div style={{ fontSize: 15, fontWeight: 600 }}>Income tax (TDS on salary)</div>
+    <Card style={{ padding: 20 }}>
+      <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-.01em' }}>Income tax (TDS on salary)</div>
       <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 4, maxWidth: 720, lineHeight: 1.5 }}>
         When on, each payroll run works out a person&rsquo;s income tax unless you type it: projected yearly taxable salary (this year&rsquo;s payslips so far plus the structure for the months left), less the standard deduction and, in the old regime, their declarations; tax by the year&rsquo;s slabs, the section 87A rebate, surcharge and 4% cess; minus the tax already withheld, spread over the months left.
       </div>
@@ -401,13 +403,13 @@ function TdsTab({ overview, apply, saving }: TabProps) {
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5 }}>
           Regime for people without a declaration
-          <select value={t.defaultRegime} disabled={saving} onChange={(e) => void apply({ tds: { enabled: t.enabled, defaultRegime: e.target.value as 'new' | 'old' } }, 'Default regime saved')} style={{ padding: '7px 10px', border: '1px solid var(--line)', borderRadius: 9, fontSize: 13.5 }}>
+          <select value={t.defaultRegime} disabled={saving} onChange={(e) => void apply({ tds: { enabled: t.enabled, defaultRegime: e.target.value as 'new' | 'old' } }, 'Default regime saved')} className="lk-in" style={{ height: 42, padding: '0 12px', border: '1px solid var(--line-2)', borderRadius: 12, fontSize: 13, background: 'var(--surface)', color: 'var(--ink)' }}>
             <option value="new">New regime (default by law)</option>
             <option value="old">Old regime</option>
           </select>
         </label>
       </div>
-      <div style={{ marginTop: 16, background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: 'var(--warn)', lineHeight: 1.5 }}>
+      <div style={{ marginTop: 16, background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 14, padding: '12px 14px', fontSize: 13, color: 'var(--warn)', lineHeight: 1.5 }}>
         FY 2026-27 slabs and limits are confirmed: Budget 2026 left them as they were in FY 2025-26. Meal cards are tax-free up to ₹200 a meal (₹8,800 a month). The rules are re-checked on the 1st of every month. A figure typed on a run always wins over the engine.
       </div>
     </Card>
@@ -428,10 +430,10 @@ function BonusTab({ overview, apply, saving }: TabProps) {
   const save = async () => { if (await apply({ bonus: fromBonusConfig(draft) }, 'Statutory Bonus saved')) setEditing(false); };
 
   return (
-    <div style={{ maxWidth: 900 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 22 }}>
-        <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>Statutory Bonus</div>
-        {!editing && <button onClick={() => { setDraft(cfg); setEditing(true); }} title="Edit" style={pencilBtn}>✎</button>}
+    <div style={{ ...tabCard, maxWidth: 900 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <div style={L.cardTitle}>Statutory Bonus</div>
+        {!editing && <button onClick={() => { setDraft(cfg); setEditing(true); }} title="Edit" className="lk-btn" style={pencilBtn}>✎</button>}
       </div>
 
       {editing ? (
@@ -450,10 +452,10 @@ function BonusTab({ overview, apply, saving }: TabProps) {
             <span style={{ fontSize: 13.5, color: 'var(--ink-3)' }}>of salary or minimum wage earned this year</span>
           </div>
           <div style={{ fontSize: 12.5, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
-            <span style={{ color: 'var(--ink-4)' }}>ⓘ</span> Statutory Bonus rate should be in-between <strong>8.33%</strong> and <strong>20%</strong>, based on the Statutory Bonus Act.
+            <span style={{ color: 'var(--ink-3)' }}>ⓘ</span> Statutory Bonus rate should be in-between <strong>8.33%</strong> and <strong>20%</strong>, based on the Statutory Bonus Act.
           </div>
 
-          <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 10, padding: '13px 16px', margin: '0 0 24px', maxWidth: 780 }}>
+          <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 14, padding: '13px 16px', margin: '0 0 24px', maxWidth: 780 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--warn)', letterSpacing: '.03em', marginBottom: 6 }}>NOTE:</div>
             <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.6 }}>
               <li>The payment frequency of this statutory bonus is <strong>monthly and taxable</strong>.</li>
@@ -489,14 +491,14 @@ function BonusTab({ overview, apply, saving }: TabProps) {
           ))}
 
           <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-            <button onClick={() => void save()} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
-            <button onClick={() => setEditing(false)} style={ghostBtn}>Cancel</button>
+            <button onClick={() => void save()} disabled={saving} className="lk-btn-p" style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
+            <button onClick={() => setEditing(false)} className="lk-btn" style={ghostBtn}>Cancel</button>
           </div>
         </div>
       ) : (
         <div>
           {!enabled && (
-            <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: 'var(--ink-3)', marginBottom: 22, maxWidth: 780 }}>
+            <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 14, padding: '12px 16px', fontSize: 13, color: 'var(--ink-3)', marginBottom: 22, maxWidth: 780 }}>
               Statutory Bonus is <strong>disabled</strong>: no bonus line is added to anyone’s payslip. Edit and save to enable it.
             </div>
           )}
@@ -556,9 +558,9 @@ function RadioInline({ checked, onChange, label }: { checked: boolean; onChange:
 
 function SectionHead({ title, sub }: { title: string; sub: string }) {
   return (
-    <div style={{ marginBottom: 22 }}>
-      <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>{title}</div>
-      <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 4 }}>{sub}</div>
+    <div style={{ marginBottom: 20 }}>
+      <div style={L.cardTitle}>{title}</div>
+      <div style={{ ...L.cardNote, marginTop: 2 }}>{sub}</div>
     </div>
   );
 }
@@ -577,10 +579,10 @@ function EsiTab({ overview, apply, saving }: TabProps) {
   const save = async () => { if (await apply({ esi: { enabled: true, esiNumber: draft.esiNumber.trim(), includeEmployer: draft.includeEmployer } }, 'ESI settings saved')) setEditing(false); };
 
   return (
-    <div style={{ maxWidth: 900 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-        <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>Employees' State Insurance</div>
-        {!editing && enabled && <button onClick={() => { setDraft(cfg); setEditing(true); }} title="Edit" style={pencilBtn}>✎</button>}
+    <div style={{ ...tabCard, maxWidth: 900 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <div style={L.cardTitle}>Employees' State Insurance</div>
+        {!editing && enabled && <button onClick={() => { setDraft(cfg); setEditing(true); }} title="Edit" className="lk-btn" style={pencilBtn}>✎</button>}
       </div>
 
       {!enabled ? (
@@ -598,24 +600,24 @@ function EsiTab({ overview, apply, saving }: TabProps) {
           <Field label="Employees' Contribution">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <input value="0.75%" disabled style={{ ...inputStyle, background: 'var(--surface-2)', color: 'var(--ink-3)', maxWidth: 200 }} />
-              <span style={{ fontSize: 13.5, color: 'var(--ink-3)' }}>of Gross Pay</span>
+              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>of Gross Pay</span>
             </div>
           </Field>
           <Field label="Employer's Contribution">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <input value="3.25%" disabled style={{ ...inputStyle, background: 'var(--surface-2)', color: 'var(--ink-3)', maxWidth: 200 }} />
-              <span style={{ fontSize: 13.5, color: 'var(--ink-3)' }}>of Gross Pay</span>
+              <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>of Gross Pay</span>
             </div>
           </Field>
           <Check checked={draft.includeEmployer} onChange={(v) => set('includeEmployer', v)} label="Include employer's contribution in employee’s salary structure." />
 
-          <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 10, padding: '13px 15px', fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.55, margin: '16px 0', maxWidth: 780 }}>
+          <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 14, padding: '13px 15px', fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.55, margin: '16px 0', maxWidth: 780 }}>
             <strong>Note:</strong> ESI deductions will be made only if the employee’s monthly salary is less than or equal to ₹21,000. If the employee gets a salary revision which increases their monthly salary above ₹21,000, they would have to continue making ESI contributions till the end of the contribution period in which the salary was revised (April–September or October–March).
           </div>
 
           <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-            <button onClick={() => void save()} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
-            <button onClick={() => setEditing(false)} style={ghostBtn}>Cancel</button>
+            <button onClick={() => void save()} disabled={saving} className="lk-btn-p" style={primaryBtn}>{saving ? 'Saving…' : 'Save'}</button>
+            <button onClick={() => setEditing(false)} className="lk-btn" style={ghostBtn}>Cancel</button>
           </div>
         </div>
       ) : (
@@ -640,9 +642,9 @@ function EpfReadView({ cfg, onDisable }: { cfg: EpfConfig; onDisable: () => void
       <Row label="Deduction Cycle" value="Monthly" />
       <Row label="Employee Contribution Rate" value={cfg.employeeRate} />
       <Row label="Employer Contribution Rate" value={<span>{cfg.employerRate} <Splitup /></span>} />
-      <Row label={<span>Contribution Preferences<br /><span style={{ fontSize: 12.5, color: 'var(--ink-4)' }}>(Included in Salary Structure)</span></span>}
+      <Row label={<span>Contribution Preferences<br /><span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>(Included in Salary Structure)</span></span>}
         value={
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             <Pref on={cfg.includeEmployer} text="Employer's PF contribution" />
             <Pref on={cfg.includeEDLI} text="EDLI contribution" />
             <Pref on={cfg.includeAdmin} text="Admin charges" />
@@ -659,16 +661,16 @@ function EpfReadView({ cfg, onDisable }: { cfg: EpfConfig; onDisable: () => void
 
 function Row({ label, value, last }: { label: ReactNode; value: ReactNode; last?: boolean }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 20, padding: '14px 0', borderBottom: last ? 'none' : '1px solid var(--line)', alignItems: 'start' }}>
-      <div style={{ fontSize: 13.5, color: 'var(--ink-3)' }}>{label}</div>
-      <div style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 400 }}>{value}</div>
+    <div style={{ display: 'grid', gridTemplateColumns: '136px 1fr', gap: 16, padding: '6px 0', borderBottom: last ? 'none' : 'none', alignItems: 'baseline' }}>
+      <div style={{ ...L.kvDt, lineHeight: 1.5 }}>{label}</div>
+      <div style={{ ...L.kvDd, lineHeight: 1.5 }}>{value}</div>
     </div>
   );
 }
 function Pref({ on, text }: { on: boolean; text: string }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: 'var(--ink)', fontWeight: 400 }}>
-      <span style={{ color: on ? 'var(--ok)' : 'var(--bad)', fontWeight: 600 }}>{on ? '✓' : '✕'}</span>{text}
+    <span style={L.chip(on)}>
+      <span style={{ fontWeight: 600 }}>{on ? '✓' : '✕'}</span>{text}
     </span>
   );
 }
@@ -678,11 +680,11 @@ function Splitup() {
   const [open, setOpen] = useState(false);
   return (
     <span style={{ position: 'relative', display: 'inline-block' }}>
-      <button onClick={() => setOpen((o) => !o)} style={{ background: 'none', border: 'none', color: 'var(--accent-ink)', fontWeight: 500, fontSize: 13, cursor: 'pointer', padding: 0, marginLeft: 4 }}>View Splitup</button>
+      <button onClick={() => setOpen((o) => !o)} style={{ background: 'none', border: 'none', color: 'var(--accent-ink)', fontWeight: 500, fontSize: 14, cursor: 'pointer', padding: 0, marginLeft: 4, textDecoration: 'underline', textUnderlineOffset: 3 }}>View Splitup</button>
       {open && (
         <div style={splitCard}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--line)' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.04em', color: 'var(--ink-4)' }}>CONTRIBUTION RATE</span>
+            <span style={L.eyebrow}>CONTRIBUTION RATE</span>
             <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--bad)', cursor: 'pointer', fontSize: 13.5 }}>✕</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, padding: '4px 16px 14px' }}>
@@ -763,26 +765,26 @@ function epfSample(cfg: EpfConfig) {
 function EpfSamplePanel({ cfg, onPreview }: { cfg: EpfConfig; onPreview: () => void }) {
   const s = epfSample(cfg);
   return (
-    <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderTop: '3px solid #E0A64B', borderRadius: 16, padding: '18px 20px', position: 'sticky', top: 8 }}>
-      <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>Sample EPF Calculation</div>
-      <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.5 }}>Let's assume the PF wage is ₹ 30,000. The breakup of contribution will be:</div>
+    <div style={{ ...tabCard, position: 'sticky', top: 8 }}>
+      <div style={L.cardTitle}>Sample EPF Calculation</div>
+      <div style={{ ...L.cardNote, marginTop: 2, lineHeight: 1.5 }}>Let's assume the PF wage is ₹ 30,000. The breakup of contribution will be:</div>
 
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, padding: '16px 18px', marginTop: 14 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>Employee's Contribution</div>
+      <div style={{ marginTop: 16 }}>
+        <div style={{ ...L.eyebrow, fontSize: 12, letterSpacing: 0, textTransform: 'none', fontWeight: 500 }}>Employee's Contribution</div>
         <CalcLine label="EPF (12% of 25000)" value={s.empEPF} />
-        <div style={{ height: 1, background: 'var(--surface-2)', margin: '12px 0' }} />
-        <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>Employer's Contribution</div>
+        <div style={{ height: 1, background: 'var(--line)', margin: '12px 0' }} />
+        <div style={{ ...L.eyebrow, fontSize: 12, letterSpacing: 0, textTransform: 'none', fontWeight: 500 }}>Employer's Contribution</div>
         <CalcLine label="EPS (8.33% of 25000 (Max of ₹ 25,000))" value={s.eps} />
         <CalcLine label="EPF (12% of 25000 - EPS)" value={s.emprEPF} />
         {cfg.includeEDLI && <CalcLine label="EDLI Contribution (0.50% of 25000)" value={s.edli} />}
         {cfg.includeAdmin && <CalcLine label="Admin Charges (0.50% of 25000)" value={s.admin} />}
-        <div style={{ height: 1, background: 'var(--surface-2)', margin: '12px 0' }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>
+        <div style={{ height: 1, background: 'var(--line)', margin: '12px 0' }} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>
           <span>Total</span><span>₹ {s.total}</span>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 16, fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.5 }}>
+      <div style={{ display: 'flex', gap: 8, marginTop: 16, fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5 }}>
         <span>💡</span>
         <span>Do you want to preview EPF calculation for multiple cases, based on the preferences you have configured?</span>
       </div>
@@ -794,8 +796,8 @@ function EpfSamplePanel({ cfg, onPreview }: { cfg: EpfConfig; onPreview: () => v
 }
 function CalcLine({ label, value }: { label: string; value: number }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 8, fontSize: 13 }}>
-      <span style={{ color: 'var(--ink-3)' }}>{label}</span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 8, fontSize: 13.5 }}>
+      <span style={{ color: 'var(--ink-2)' }}>{label}</span>
       <span style={{ color: 'var(--ink)', fontWeight: 400, whiteSpace: 'nowrap' }}>₹ {value}</span>
     </div>
   );
@@ -817,10 +819,10 @@ function EpfPreviewModal({ cfg, onClose }: { cfg: EpfConfig; onClose: () => void
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', animation: 'ovl .2s ease both' }} />
       <div className="scry" style={{ ...modalCard, width: 'min(920px, 100%)' }}>
         <div style={modalHead}>
-          <div style={{ fontSize: 17, fontWeight: 600 }}>EPF Sample Calculation</div>
+          <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-.01em' }}>EPF Sample Calculation</div>
           <CloseButton onClose={onClose} />
         </div>
-        <div className="scry" style={{ padding: '20px 26px', overflowY: 'auto', flex: 1 }}>
+        <div className="scry" style={{ ...L.modalBody, overflowY: 'auto', flex: 1 }}>
           <div style={{ fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.55 }}>Let's assume the salary packages considered for EPF is as shown below; the calculation is based on the settings we've configured.</div>
           <button onClick={() => setShowCfg((s) => !s)} style={{ background: 'none', border: 'none', color: 'var(--accent-ink)', fontWeight: 500, fontSize: 13, cursor: 'pointer', padding: '10px 0 0' }}>
             Show current configuration {showCfg ? '⌃' : '⌄'}
@@ -834,7 +836,7 @@ function EpfPreviewModal({ cfg, onClose }: { cfg: EpfConfig; onClose: () => void
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '22px 0 12px' }}>
-            <div style={{ fontSize: 15, fontWeight: 600 }}>Salary and EPF Calculation</div>
+            <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-.01em' }}>Salary and EPF Calculation</div>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink)', cursor: 'pointer' }}>
               <input type="checkbox" checked={withLOP} onChange={(e) => setWithLOP(e.target.checked)} /> With 15 days LOP
             </label>
@@ -883,7 +885,7 @@ function PkgRow({ name, note, values, last }: { name: string; note: string; valu
   );
 }
 function Badge({ children }: { children: ReactNode }) {
-  return <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, letterSpacing: '.03em', color: 'var(--warn)', background: 'var(--warn-bg)', borderRadius: 6, padding: '2px 7px', verticalAlign: 'middle' }}>{children}</span>;
+  return <span style={{ ...L.pill('warn'), marginLeft: 8, verticalAlign: 'middle' }}>{children}</span>;
 }
 
 // —— shared bits ————————————————————————————————————————————————————————
@@ -891,7 +893,7 @@ function Info({ text }: { text: string }) {
   const [show, setShow] = useState(false);
   return (
     <span style={{ position: 'relative', display: 'inline-flex', verticalAlign: 'middle' }} onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
-      <span style={{ color: 'var(--ink-4)', cursor: 'help', fontSize: 12.5, marginLeft: 5 }}>ⓘ</span>
+      <span style={{ color: 'var(--ink-3)', cursor: 'help', fontSize: 12.5, marginLeft: 5 }}>ⓘ</span>
       {show && <span style={tooltipStyle}>{text}</span>}
     </span>
   );
@@ -901,7 +903,7 @@ function Field({ label, hint, info, children }: { label: string; hint?: string; 
     <div style={{ marginBottom: 14 }}>
       <label style={fieldLabel}>{label}{info && <Info text={info} />}</label>
       {children}
-      {hint && <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 5 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 5 }}>{hint}</div>}
     </div>
   );
 }
@@ -920,21 +922,22 @@ function Check({ checked, onChange, label, sub, info }: { checked: boolean; onCh
   );
 }
 
-const tabBar: CSSProperties = { display: 'flex', width: 'fit-content', maxWidth: '100%', overflowX: 'auto', gap: 2, padding: 4, background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 999, marginBottom: 24 };
-const tabBtn: CSSProperties = { background: 'none', border: 'none', height: 32, padding: '0 14px', borderRadius: 999, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit' };
-const fieldLabel: CSSProperties = { display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--ink-2)' };
+const tabBar: CSSProperties = { display: 'flex', width: 'fit-content', maxWidth: '100%', overflowX: 'auto', gap: 2, padding: 4, background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 999, marginBottom: 20 };
+const tabBtn: CSSProperties = { background: 'none', border: 'none', height: 32, padding: '0 12px', borderRadius: 999, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit' };
+const fieldLabel: CSSProperties = { ...L.label };
+const tabCard: CSSProperties = { background: 'var(--surface)', border: '1px solid transparent', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow)', padding: 20 };
 const tooltipStyle: CSSProperties = { position: 'absolute', bottom: '150%', left: '50%', transform: 'translateX(-50%)', background: 'var(--ink)', color: 'var(--on-sel)', fontSize: 12, lineHeight: 1.45, borderRadius: 8, padding: '9px 12px', width: 230, zIndex: 60, boxShadow: 'var(--shadow)', fontWeight: 400, textAlign: 'left', whiteSpace: 'normal' };
-const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
-const primaryBtn: CSSProperties = { background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 20px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 18px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const pencilBtn: CSSProperties = { width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink-3)', cursor: 'pointer', fontSize: 13 };
-const cardGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 22, maxWidth: 1120 };
-const stateCard: CSSProperties = { background: 'var(--surface)', border: '1px solid transparent', borderRadius: 16, padding: '20px 22px', boxShadow: 'var(--shadow)' };
-const miniInput: CSSProperties = { width: '100%', padding: '8px 10px', border: '1px solid var(--line)', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
-const disableBtn: CSSProperties = { background: 'none', border: 'none', color: 'var(--accent-ink)', fontWeight: 500, fontSize: 13.5, cursor: 'pointer', padding: 0, marginTop: 22 };
-const splitCard: CSSProperties = { position: 'absolute', top: '120%', left: 0, zIndex: 20, width: 420, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, boxShadow: 'var(--shadow-lg)' };
-const splitHead: CSSProperties = { fontSize: 11.5, fontWeight: 600, letterSpacing: '.03em', color: 'var(--ink-4)', padding: '10px 0 6px' };
-const splitCell: CSSProperties = { fontSize: 13, color: 'var(--ink)', padding: '10px 0', borderTop: '1px solid var(--line)' };
-const modalCard: CSSProperties = { position: 'relative', width: '100%', maxHeight: '92vh', background: 'var(--surface)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', animation: 'pop .2s ease both', display: 'flex', flexDirection: 'column' };
-const modalHead: CSSProperties = { padding: '20px 26px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 };
-const modalFoot: CSSProperties = { padding: '14px 26px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'flex-start', background: 'var(--surface)', borderBottomLeftRadius: 20, borderBottomRightRadius: 20, flexShrink: 0 };
+const inputStyle: CSSProperties = { ...L.input };
+const primaryBtn: CSSProperties = { ...L.btnPrimary };
+const ghostBtn: CSSProperties = { ...L.btn };
+const pencilBtn: CSSProperties = { ...L.btnSm, width: 32, padding: 0, color: 'var(--ink-2)' };
+const cardGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 20, maxWidth: 1120 };
+const stateCard: CSSProperties = { background: 'var(--surface)', border: '1px solid transparent', borderRadius: 'var(--r-lg)', padding: 20, boxShadow: 'var(--shadow)' };
+const miniInput: CSSProperties = { width: '100%', height: 34, padding: '0 10px', border: '1px solid var(--line-2)', borderRadius: 10, fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
+const disableBtn: CSSProperties = { ...L.btnDanger, marginTop: 20 };
+const splitCard: CSSProperties = { position: 'absolute', top: '120%', left: 0, zIndex: 20, width: 420, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, boxShadow: 'var(--shadow-lg)' };
+const splitHead: CSSProperties = { ...L.th, background: 'none', padding: '10px 0 6px' };
+const splitCell: CSSProperties = { fontSize: 13.5, color: 'var(--ink)', padding: '10px 0', borderTop: '1px solid var(--line)' };
+const modalCard: CSSProperties = { ...L.modalSheet };
+const modalHead: CSSProperties = { ...L.modalHeadBar };
+const modalFoot: CSSProperties = { padding: '16px 20px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'flex-start', background: 'var(--surface)', borderBottomLeftRadius: 20, borderBottomRightRadius: 20, flexShrink: 0 };

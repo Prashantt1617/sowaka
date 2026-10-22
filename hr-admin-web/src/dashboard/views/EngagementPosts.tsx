@@ -14,8 +14,10 @@ import {
 } from '../../services/hrms';
 import { ApiError } from '../../services/http';
 import { useStore } from '../store';
-import { Card, ListPending, LoadingFigure } from '../ui';
+import { ListPending, LoadingFigure } from '../ui';
 import type { LoadState } from '../ui';
+import * as L from './look';
+import './look.css';
 
 const ICONS = '/engagement';
 const SORA = "'Sora', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
@@ -96,24 +98,16 @@ function selectedDays(closesAt: string): 1 | 2 | null {
 }
 
 const listButton = (bg: string, color = '#fff'): CSSProperties => ({
-  border: 'none',
+  ...L.btnSm,
+  border: '1px solid transparent',
   background: bg,
   color,
-  borderRadius: 999,
-  padding: '9px 14px',
-  fontSize: 13,
-  fontWeight: 500,
-  cursor: 'pointer',
 });
 
 const capsLabel: CSSProperties = {
   fontFamily: SORA,
-  fontSize: 11,
-  lineHeight: '16.5px',
-  fontWeight: 400,
-  letterSpacing: 0.9,
-  color: C.tertiary,
-  textTransform: 'uppercase',
+  ...L.eyebrow,
+  lineHeight: '16px',
 };
 
 export function EngagementPosts() {
@@ -157,29 +151,26 @@ export function EngagementPosts() {
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'flex-start',
-        gap: 28,
+        gap: 20,
       }}
     >
       <ContestComposer onPublished={load} />
 
-      <div style={{ flex: '1 1 340px', minWidth: 0 }}>
-        <div style={{ ...capsLabel, marginBottom: 10 }}>
+      <div style={{ flex: '1 1 340px', minWidth: 0, background: 'var(--surface)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow)', padding: '20px 20px 8px' }}>
+        <div style={{ ...L.cardTitle, marginBottom: 4 }}>
           Already in the feed · <LoadingFigure state={state} w={14} h={10}>{posts.length}</LoadingFigure>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
           {state !== 'ready' && (
-            <Card><ListPending state={state} onRetry={() => { setState('loading'); void load(); }} rows={3} cols={1} rowHeight={78} /></Card>
+            <ListPending state={state} onRetry={() => { setState('loading'); void load(); }} rows={3} cols={1} rowHeight={78} />
           )}
           {state === 'ready' && posts.length === 0 && (
             <div
               style={{
-                background: 'var(--surface)',
-                border: '1px solid transparent',
-                borderRadius: 16,
-                padding: '38px 20px',
+                padding: '40px 20px',
                 textAlign: 'center',
                 color: 'var(--ink-3)',
-                fontSize: 13, boxShadow: 'var(--shadow)',
+                fontSize: 13,
               }}
             >
               Nothing published yet. A contest gives the feed something to play
@@ -192,26 +183,25 @@ export function EngagementPosts() {
             return (
               <div
                 key={post.id}
+                className="lk-row"
                 style={{
-                  background: 'var(--surface)',
-                  border: '1px solid transparent',
-                  borderRadius: 16,
-                  padding: 16,
+                  borderBottom: '1px solid var(--line)',
+                  padding: '12px 0',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 14, boxShadow: 'var(--shadow)',
+                  gap: 12,
                 }}
               >
-                <div style={{ fontSize: 19 }}>{post.tagIcon}</div>
+                <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{post.tagIcon}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500 }}>
                     {String(post.body.title ?? 'Caption this')}
                   </div>
                   <div
                     style={{
-                      fontSize: 12,
-                      color: 'var(--ink-3)',
-                      marginTop: 2,
+                      fontSize: 12.5,
+                      color: 'var(--ink-2)',
+                      marginTop: 1,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
@@ -219,7 +209,7 @@ export function EngagementPosts() {
                   >
                     {String(post.body.task || post.body.question || '')}
                   </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 5 }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2 }}>
                     {entries} {entries === 1 ? 'entry' : 'entries'} · {points} pts per vote
                     {post.body.closesAt
                       ? ` · closes ${IST_CLOSES.format(new Date(String(post.body.closesAt)))}`
@@ -366,7 +356,8 @@ function ContestComposer({ onPublished }: { onPublished: () => Promise<void> }) 
         position: 'relative',
         overflow: 'hidden',
         background: C.surface,
-        border: `1px solid ${C.border}`,
+        border: '1px solid transparent',
+        boxShadow: 'var(--shadow)',
         borderRadius: 'var(--r-lg)',
         padding: 20,
         fontFamily: SORA,
@@ -415,17 +406,18 @@ function ContestComposer({ onPublished }: { onPublished: () => Promise<void> }) 
         style={{
           display: 'block',
           width: '100%',
-          marginTop: 32,
-          padding: 16,
-          border: 'none',
-          borderRadius: 'var(--r-lg)',
-          background: ready ? C.brand : C.muted,
+          marginTop: 24,
+          height: 42,
+          padding: '0 16px',
+          border: '1px solid transparent',
+          borderRadius: 999,
+          background: ready ? 'var(--accent-grad)' : C.muted,
+          boxShadow: ready ? '0 8px 18px -10px var(--accent)' : 'none',
           color: '#fff',
           fontFamily: SORA,
-          fontSize: 14,
-          lineHeight: '16.2px',
-          fontWeight: 400,
-          letterSpacing: -0.16,
+          fontSize: 13,
+          lineHeight: '19.5px',
+          fontWeight: 500,
           cursor: ready ? 'pointer' : 'default',
         }}
       >
@@ -474,10 +466,11 @@ function ContestPill({
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        padding: '8px 12px',
-        background: selected ? C.pillSelected : C.surface,
-        border: `1.114px solid ${selected ? C.brand : C.border}`,
-        borderRadius: 999,
+        height: 36,
+        padding: '0 14px 0 8px',
+        background: selected ? 'var(--sel)' : 'var(--surface)',
+        border: `1px solid ${selected ? 'var(--sel)' : 'var(--line)'}`,
+        borderRadius: 99,
         cursor: 'pointer',
         fontFamily: SORA,
       }}
@@ -485,12 +478,10 @@ function ContestPill({
       <img src={format.icon} alt="" width={24} height={24} style={{ objectFit: 'cover' }} />
       <span
         style={{
-          fontSize: 11.5,
+          fontSize: 12.5,
           lineHeight: '18px',
-          fontWeight: 500,
-          letterSpacing: 0.3,
-          textTransform: 'uppercase',
-          color: selected ? C.brand : C.secondary,
+          fontWeight: 400,
+          color: selected ? 'var(--on-sel)' : 'var(--ink-2)',
         }}
       >
         {format.label}
@@ -536,8 +527,9 @@ function PointsField({
             display: 'inline-flex',
             alignItems: 'center',
             background: 'var(--surface)',
-            border: `1.114px solid ${valid ? C.border : 'var(--bad)'}`,
-            borderRadius: 12,
+            height: 40,
+            border: `1px solid ${valid ? 'var(--line-2)' : 'var(--bad)'}`,
+            borderRadius: 999,
           }}
         >
           <button type="button" aria-label="Fewer points" style={stepper} onClick={() => step(-1)}>

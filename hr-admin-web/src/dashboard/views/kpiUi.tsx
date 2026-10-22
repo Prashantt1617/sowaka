@@ -8,7 +8,8 @@
 import { createPortal } from 'react-dom';
 import type { CSSProperties, ReactNode } from 'react';
 import { CloseButton } from '../drawers/shell';
-import { modalCard, modalFoot, modalHead } from './kpiStyles';
+import { modalCard, modalFoot, modalHead } from './kpiLook';
+import * as L from './look';
 
 // —— Modal shell ————————————————————————————————————————————————————————
 
@@ -38,14 +39,14 @@ export function Modal({
       <div className="scry" style={{ ...modalCard, maxWidth: width }}>
         <div style={modalHead}>
           <div>
-            <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-.3px' }}>{title}</div>
+            <div style={L.modalTitle}>{title}</div>
             {subtitle && (
-              <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400, marginTop: 2 }}>{subtitle}</div>
+              <div style={{ ...L.cardNote, marginTop: 2 }}>{subtitle}</div>
             )}
           </div>
           <CloseButton onClose={onClose} />
         </div>
-        <div className="scry" style={{ padding: '20px 26px', overflowY: 'auto', flex: 1 }}>{children}</div>
+        <div className="scry" style={{ ...L.modalBody, overflowY: 'auto', flex: 1 }}>{children}</div>
         <div style={modalFoot}>{footer}</div>
       </div>
     </div>,
@@ -77,14 +78,14 @@ export function DetailPage({
     <div style={{ maxWidth: width, animation: 'fade .2s ease both' }}>
       <button onClick={onBack} style={backBtn}>← {backLabel}</button>
       <div style={{ marginBottom: 18 }}>
-        <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.6px' }}>{title}</div>
+        <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1.2 }}>{title}</div>
         {subtitle && (
-          <div style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 3 }}>{subtitle}</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 4 }}>{subtitle}</div>
         )}
       </div>
       {children}
       {actions && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginTop: 18 }}>{actions}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 20 }}>{actions}</div>
       )}
     </div>
   );
@@ -92,7 +93,7 @@ export function DetailPage({
 
 const backBtn: CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none',
-  color: 'var(--accent-ink)', fontSize: 13.5, fontWeight: 500, cursor: 'pointer', padding: '2px 0',
+  color: 'var(--accent-ink)', fontSize: 13, fontWeight: 500, cursor: 'pointer', padding: '2px 0',
   marginBottom: 14,
 };
 
@@ -143,16 +144,16 @@ export function Tabs<T extends string>({
   onChange: (key: T) => void;
 }) {
   return (
-    <div style={{ display: 'flex', gap: 4, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, padding: 4 }}>
+    <div style={L.seg}>
       {tabs.map((t) => {
         const on = value === t.key;
         return (
           <button
             key={t.key}
             onClick={() => onChange(t.key)}
-            style={{ border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500, padding: '7px 15px', borderRadius: 999, background: on ? 'var(--accent-grad)' : 'transparent', color: on ? 'var(--on-accent)' : 'var(--ink-3)' }}
+            style={L.segBtn(on)}
           >
-            {t.label} <span style={{ opacity: 0.7 }}>· {t.count}</span>
+            {t.label} <span style={{ ...L.segCount, color: on ? 'inherit' : 'var(--ink-3)' }}>· {t.count}</span>
           </button>
         );
       })}
@@ -167,7 +168,7 @@ export function Field({ label, req, hint, children, style }: {
 }) {
   return (
     <div style={{ marginBottom: 16, ...style }}>
-      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--ink-2)' }}>
+      <label style={L.label}>
         {label}{req && <span style={{ color: 'var(--bad)', marginLeft: 2 }}>*</span>}
       </label>
       {children}

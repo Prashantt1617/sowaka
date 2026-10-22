@@ -19,32 +19,39 @@ import { ApiError } from '../../services/http';
 import { useStore } from '../store';
 import { Card, EmptyRow, LoadError, Pill, SkeletonPage, SummaryCard } from '../ui';
 import type { LoadState } from '../ui';
+import './look.css';
 
 const button = (bg: string, color = 'var(--on-accent)') => ({
-  border: 'none',
-  background: bg,
-  color,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  height: 40,
+  border: '1px solid transparent',
+  background: bg === 'var(--accent)' ? 'var(--accent-grad)' : bg,
+  boxShadow: bg === 'var(--accent)' ? '0 8px 18px -10px var(--accent)' : undefined,
+  color: bg === 'var(--accent)' ? '#fff' : color,
   borderRadius: 999,
-  padding: '9px 14px',
+  padding: '0 16px',
   fontSize: 13,
   fontWeight: 500,
+  fontFamily: 'inherit',
   cursor: 'pointer',
 });
 const panel = {
   background: 'var(--surface)',
   border: '1px solid transparent',
-  borderRadius: 16,
+  borderRadius: 'var(--r-lg)',
   padding: 20,
   marginBottom: 20, boxShadow: 'var(--shadow)',
 };
 /** A step is a number, not a heading that starts with one. */
 const stepBadge = (muted: boolean) => ({
-  width: 26,
-  height: 26,
-  borderRadius: 99,
+  width: 24,
+  height: 24,
+  borderRadius: 8,
   background: muted ? 'var(--surface-2)' : 'var(--accent-soft)',
-  color: muted ? 'var(--ink-3)' : 'var(--accent-ink)',
-  fontSize: 12.5,
+  color: muted ? 'var(--ink-3)' : 'var(--hi)',
+  fontSize: 10.5,
   fontWeight: 600,
   display: 'inline-flex',
   alignItems: 'center',
@@ -52,22 +59,27 @@ const stepBadge = (muted: boolean) => ({
   flex: 'none',
 });
 const ghost = {
-  ...button('var(--on-accent)', 'var(--ink)'),
-  border: '1px solid var(--line)',
+  ...button('var(--surface)', 'var(--ink)'),
+  border: '1px solid var(--line-2)',
 };
 const field = {
   width: '100%',
-  border: '1px solid var(--line)',
-  borderRadius: 10,
+  minHeight: 42,
+  border: '1px solid var(--line-2)',
+  borderRadius: 12,
   padding: '10px 12px',
   font: 'inherit',
+  fontSize: 13,
+  lineHeight: '20px',
+  background: 'var(--surface)',
+  color: 'var(--ink)',
   boxSizing: 'border-box' as const,
 };
 const fieldLabel = {
   display: 'block',
   fontSize: 11.5,
-  fontWeight: 500,
-  color: 'var(--ink-3)',
+  fontWeight: 400,
+  color: 'var(--ink-2)',
   marginBottom: 6,
 };
 
@@ -191,8 +203,8 @@ export function RelayGame() {
           display: 'flex',
           justifyContent: 'flex-end',
           alignItems: 'center',
-          marginBottom: 16,
-          gap: 10,
+          marginBottom: 20,
+          gap: 8,
           flexWrap: 'wrap',
         }}
       >
@@ -228,8 +240,8 @@ export function RelayGame() {
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-              gap: 12,
-              marginBottom: 16,
+              gap: 16,
+              marginBottom: 20,
             }}
           >
             <SummaryCard label="Status" value={event.status} />
@@ -238,7 +250,7 @@ export function RelayGame() {
             <SummaryCard
               label="Rounds"
               value={String(event.config.rounds)}
-              color={event.itemCount > 0 ? '#2F8F5B' : 'var(--ink-3)'}
+              color={event.itemCount > 0 ? 'var(--ok-solid)' : 'var(--ink-3)'}
             />
           </div>
 
@@ -268,7 +280,7 @@ export function RelayGame() {
                     key={team.teamKey}
                     style={{
                       border: '1px solid var(--line)',
-                      borderRadius: 10,
+                      borderRadius: 14,
                       padding: '10px 12px',
                       display: 'flex',
                       justifyContent: 'space-between',
@@ -277,8 +289,8 @@ export function RelayGame() {
                     }}
                   >
                     <div>
-                      <strong style={{ fontSize: 13 }}>{team.name}</strong>
-                      <div style={{ color: 'var(--ink-3)', fontSize: 12.5 }}>
+                      <strong style={{ fontSize: 14, fontWeight: 500 }}>{team.name}</strong>
+                      <div style={{ color: 'var(--ink-3)', fontSize: 11.5 }}>
                         {team.members.map((member) => member.name).join(', ')}
                       </div>
                     </div>
@@ -312,8 +324,8 @@ export function RelayGame() {
           />
 
           {itemPreview && itemPreview.summary.perRound.some((r) => r.size > 0) && (
-            <Card style={{ marginBottom: 14 }}>
-              <h3 style={{ margin: '0 0 10px', fontSize: 13.5 }}>Pool per round</h3>
+            <Card style={{ marginBottom: 20, padding: 20 }}>
+              <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 600, letterSpacing: '-.01em' }}>Pool per round</h3>
               <div style={{ display: 'grid', gap: 6 }}>
                 {itemPreview.summary.perRound
                   .filter((round) => round.size > 0)
@@ -326,7 +338,7 @@ export function RelayGame() {
                         alignItems: 'center',
                         padding: '8px 12px',
                         border: '1px solid var(--line)',
-                        borderRadius: 10,
+                        borderRadius: 14,
                         gap: 12,
                       }}
                     >
@@ -360,7 +372,7 @@ export function RelayGame() {
             <div style={panel}>
               <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6 }}>
                 <span style={stepBadge(notReady)}>3</span>
-                <h3 style={{ margin: 0, fontSize: 14, color: notReady ? 'var(--ink-3)' : 'var(--ink)' }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, letterSpacing: '-.01em', color: notReady ? 'var(--ink-3)' : 'var(--ink)' }}>
                   Publish to Connect
                 </h3>
               </div>
@@ -430,12 +442,12 @@ export function RelayGame() {
                     </label>
                   </div>
                 </label>
-                <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: 'var(--ink-4)' }}>
+                <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: 'var(--ink-3)' }}>
                   {event.config.rounds} rounds and {event.teamCount} teams, taken from what was
                   imported — the post describes the game rather than configuring it.
                 </div>
                 <button
-                  style={{ ...button('#2F8F5B'), width: 'fit-content', gridColumn: '1 / -1' }}
+                  style={{ ...button('var(--ok-solid)'), width: 'fit-content', gridColumn: '1 / -1' }}
                   disabled={
                     busy ||
                     notReady ||
@@ -467,8 +479,8 @@ export function RelayGame() {
           })()}
 
           {teams.length > 0 && (
-            <Card style={{ marginTop: 14 }}>
-              <h3 style={{ margin: '0 0 10px', fontSize: 13.5 }}>Imported teams</h3>
+            <Card style={{ marginTop: 20, padding: 20 }}>
+              <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 600, letterSpacing: '-.01em' }}>Imported teams</h3>
               <div style={{ display: 'grid', gap: 6 }}>
                 {teams.map((team) => (
                   <div
@@ -479,7 +491,7 @@ export function RelayGame() {
                       alignItems: 'center',
                       padding: '8px 12px',
                       border: '1px solid var(--line)',
-                      borderRadius: 10,
+                      borderRadius: 14,
                       gap: 12,
                     }}
                   >
@@ -539,7 +551,7 @@ function ImportPanel({
     <div style={panel}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6 }}>
         <span style={stepBadge(disabled === true)}>{step.trim()}</span>
-        <h3 style={{ margin: 0, fontSize: 14, color: disabled === true ? 'var(--ink-3)' : 'var(--ink)' }}>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, letterSpacing: '-.01em', color: disabled === true ? 'var(--ink-3)' : 'var(--ink)' }}>
           {rest.join('·').trim()}
         </h3>
       </div>
@@ -589,7 +601,7 @@ function ImportPanel({
       {children}
 
       {canCommit && (
-        <button style={{ ...button('#2F8F5B'), marginTop: 12 }} disabled={busy} onClick={onCommit}>
+        <button style={{ ...button('var(--ok-solid)'), marginTop: 12 }} disabled={busy} onClick={onCommit}>
           {commitLabel}
         </button>
       )}
@@ -609,7 +621,7 @@ function IssueList({
   issues: ImportIssue[];
 }) {
   return (
-    <div style={{ background, borderRadius: 10, padding: '10px 12px', marginTop: 12 }}>
+    <div style={{ background, borderRadius: 14, padding: '12px 14px', marginTop: 12 }}>
       <div style={{ color: tone, fontWeight: 500, fontSize: 12.5, marginBottom: 6 }}>{heading}</div>
       <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--ink)', fontSize: 12.5 }}>
         {issues.slice(0, 50).map((issue, index) => (

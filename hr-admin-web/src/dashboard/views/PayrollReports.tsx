@@ -9,6 +9,8 @@ import { useStore } from '../store';
 import { ApiError } from '../../services/http';
 import { Card, EmptyRow, ListPending } from '../ui';
 import type { LoadState } from '../ui';
+import * as Lk from './look';
+import './look.css';
 import {
   getLiabilitySummary, getRunPaymentDetails, getPayrollSummary, getPtAnnual, getPtSummary, getSalaryRegister, listRuns,
   type LiabilityReport, type PaymentDetailsReport, type PayrollRunDTO, type PayrollSummaryReport, type PtAnnualReport, type PtSummaryReport, type SalaryRegisterReport,
@@ -123,34 +125,34 @@ export function PayrollReports() {
   })();
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '260px minmax(0, 1fr)', gap: 18, alignItems: 'start' }}>
-      <Card style={{ padding: '10px 0' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '260px minmax(0, 1fr)', gap: 20, alignItems: 'start' }}>
+      <Card style={{ padding: 12 }}>
         {GROUPS.map((g) => (
-          <div key={g.title} style={{ padding: '6px 0' }}>
-            <div style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--ink-4)', padding: '6px 18px' }}>{g.title}</div>
+          <div key={g.title} style={{ padding: '4px 0 8px' }}>
+            <div style={{ ...Lk.eyebrow, padding: '8px 12px 6px' }}>{g.title}</div>
             {g.items.map((i) => (
-              <button key={i.key} onClick={() => setActive(i.key)} style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', background: active === i.key ? 'var(--accent-soft)' : 'none', color: active === i.key ? 'var(--accent-ink)' : 'var(--ink)', fontWeight: active === i.key ? 500 : 400, fontSize: 13.5, padding: '9px 18px', cursor: 'pointer', fontFamily: 'inherit' }}>{i.label}</button>
+              <button key={i.key} onClick={() => setActive(i.key)} style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', borderRadius: 12, background: active === i.key ? 'var(--sel)' : 'none', color: active === i.key ? 'var(--on-sel)' : 'var(--ink)', fontWeight: active === i.key ? 500 : 400, fontSize: 13.5, padding: '9px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>{i.label}</button>
             ))}
           </div>
         ))}
       </Card>
       <div style={{ minWidth: 0 }}>
-        <Card style={{ padding: '16px 20px', marginBottom: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 220 }}>
-              <div style={{ fontSize: 16.5, fontWeight: 600 }}>{meta.label}</div>
-              <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>{meta.hint}</div>
+        <Card style={{ padding: 20, marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 220, alignSelf: 'center' }}>
+              <div style={Lk.cardTitle}>{meta.label}</div>
+              <div style={{ ...Lk.cardNote, marginTop: 2 }}>{meta.hint}</div>
             </div>
             {filters}
             {active !== 'payments' && (
-              <label style={{ ...filterLabel, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <label style={{ ...filterLabel, flexDirection: 'row', alignItems: 'center', gap: 8, height: 40, fontSize: 13, color: 'var(--ink-2)' }}>
                 <input type="checkbox" checked={includeDrafts} onChange={(e) => setIncludeDrafts(e.target.checked)} /> Include draft runs
               </label>
             )}
-            <button disabled={!data || loading} onClick={() => void exportReport(active, data)} style={exportBtn}>Export (Excel)</button>
+            <button disabled={!data || loading} onClick={() => void exportReport(active, data)} className="lk-btn-p" style={exportBtn}>Export (Excel)</button>
           </div>
         </Card>
-        <Card>
+        <Card style={{ padding: 20 }}>
           {reportState !== 'ready' ? <ListPending state={reportState} errorText="The report could not be loaded." onRetry={() => setAttempt((n) => n + 1)} rows={6} cols={5} avatar={false} rowHeight={46} /> : !data ? <EmptyRow text={active === 'payments' ? 'No payroll runs yet.' : 'Nothing to show.'} /> : <ReportBody kind={active} data={data} />}
         </Card>
       </div>
@@ -169,7 +171,7 @@ function ReportBody({ kind, data }: { kind: ReportKey; data: unknown }) {
     return (
       <div>
         <RunsNote runs={d.runs} />
-        <table style={table}>
+        <table className="lk-t" style={table}>
           <thead><tr><th style={th}>Pay components</th><th style={{ ...th, textAlign: 'right' }}>Amount</th></tr></thead>
           <tbody>
             {d.sections.filter((s) => s.rows.length).map((s) => (
@@ -191,7 +193,7 @@ function ReportBody({ kind, data }: { kind: ReportKey; data: unknown }) {
     return (
       <div style={{ overflowX: 'auto' }}>
         <div style={note}>{monthLabel(d.period)} · {STATUS[d.run?.status ?? ''] ?? ''} · {d.rows.length} people</div>
-        <table style={{ ...table, minWidth: 1100 }}>
+        <table className="lk-t" style={{ ...table, minWidth: 1100 }}>
           <thead><tr>
             <th style={th}>Employee</th>
             {c.earnings.map((x) => <th key={x.code} style={{ ...th, textAlign: 'right' }}>{x.name}</th>)}
@@ -233,7 +235,7 @@ function ReportBody({ kind, data }: { kind: ReportKey; data: unknown }) {
     return (
       <div>
         <RunsNote runs={d.runs} />
-        <table style={table}>
+        <table className="lk-t" style={table}>
           <thead><tr><th style={th}>Liability</th><th style={{ ...th, textAlign: 'right' }}>Employee contribution</th><th style={{ ...th, textAlign: 'right' }}>Employer contribution</th><th style={{ ...th, textAlign: 'right' }}>Total</th></tr></thead>
           <tbody>
             {d.rows.map((r) => <tr key={r.key}><td style={td}>{r.name}</td><td style={num}>{money(r.employeePaise)}</td><td style={num}>{money(r.employerPaise)}</td><td style={{ ...num, fontWeight: 500 }}>{money(r.totalPaise)}</td></tr>)}
@@ -247,7 +249,7 @@ function ReportBody({ kind, data }: { kind: ReportKey; data: unknown }) {
     const d = data as PtSummaryReport;
     if (!d.rows.length) return <EmptyRow text={`No PT deducted in ${monthLabel(d.period)}.`} />;
     return (
-      <table style={table}>
+      <table className="lk-t" style={table}>
         <thead><tr><th style={th}>Employee number</th><th style={th}>Employee name</th><th style={th}>Work location</th><th style={th}>Status</th><th style={th}>Type</th><th style={{ ...th, textAlign: 'right' }}>PT amount</th></tr></thead>
         <tbody>
           {d.rows.map((r) => <tr key={r.employeeId + r.name}><td style={td}>{r.employeeId}</td><td style={td}>{r.name}</td><td style={td}>{r.workLocation}</td><td style={td}>{r.status}</td><td style={td}>{r.employeeType.replace('_', '-')}</td><td style={num}>{money(r.ptPaise)}</td></tr>)}
@@ -260,7 +262,7 @@ function ReportBody({ kind, data }: { kind: ReportKey; data: unknown }) {
     const d = data as PtAnnualReport;
     if (!d.rows.length) return <EmptyRow text={`No PT deductions in FY ${d.fy}.`} />;
     return (
-      <table style={table}>
+      <table className="lk-t" style={table}>
         <thead><tr><th style={th}>Period end</th><th style={th}>Run</th><th style={{ ...th, textAlign: 'right' }}>No. of employees</th><th style={{ ...th, textAlign: 'right' }}>PT amount</th></tr></thead>
         <tbody>
           {d.rows.map((r) => <tr key={r.period}><td style={td}>{r.periodEnd.split('-').reverse().join('/')}</td><td style={td}>{STATUS[r.status] ?? r.status}</td><td style={num}>{r.employees}</td><td style={num}>{money(r.ptPaise)}</td></tr>)}
@@ -271,7 +273,7 @@ function ReportBody({ kind, data }: { kind: ReportKey; data: unknown }) {
   }
   const d = data as PaymentDetailsReport;
   return (
-    <table style={table}>
+    <table className="lk-t" style={table}>
       <thead><tr><th style={th}>Employee no</th><th style={th}>Employee name</th><th style={th}>Payment mode</th><th style={th}>Bank</th><th style={th}>Account number</th><th style={th}>IFSC</th><th style={{ ...th, textAlign: 'right' }}>Net pay</th></tr></thead>
       <tbody>
         {d.rows.map((r) => <tr key={r.employeeId + r.name}><td style={td}>{r.employeeId}</td><td style={td}>{r.name}</td><td style={{ ...td, color: r.paymentMode === 'Not set' ? 'var(--bad)' : undefined }}>{r.paymentMode}</td><td style={td}>{r.bankName}</td><td style={td}>{r.accountNumber}</td><td style={td}>{r.ifsc}</td><td style={num}>{money(r.netPayPaise)}</td></tr>)}
@@ -284,8 +286,8 @@ function ReportBody({ kind, data }: { kind: ReportKey; data: unknown }) {
 function SectionRows({ title, rows, totalLabel, totalPaise }: { title: string; rows: { name: string; paise: number }[]; totalLabel: string; totalPaise: number }) {
   return (
     <>
-      <tr><td style={{ ...td, fontWeight: 600, background: 'var(--surface-2)' }} colSpan={2}>{title}</td></tr>
-      {rows.map((r) => <tr key={r.name}><td style={{ ...td, paddingLeft: 34 }}>{r.name}</td><td style={num}>{money(r.paise)}</td></tr>)}
+      <tr><td style={{ ...td, ...Lk.eyebrow, padding: '16px 12px 6px' }} colSpan={2}>{title}</td></tr>
+      {rows.map((r) => <tr key={r.name}><td style={{ ...td, paddingLeft: 24 }}>{r.name}</td><td style={num}>{money(r.paise)}</td></tr>)}
       <tr><td style={{ ...td, fontWeight: 500, textAlign: 'right' }}>{totalLabel}</td><td style={{ ...num, fontWeight: 500 }}>{money(totalPaise)}</td></tr>
     </>
   );
@@ -332,12 +334,12 @@ export function exportReport(kind: ReportKey, data: unknown): Promise<void> {
   }
 }
 
-const table: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
-const th: CSSProperties = { textAlign: 'left', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '11px 16px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)', whiteSpace: 'nowrap' };
-const td: CSSProperties = { padding: '9px 16px', borderBottom: '1px solid var(--line)', verticalAlign: 'middle' };
+const table: CSSProperties = { ...Lk.table };
+const th: CSSProperties = { ...Lk.th };
+const td: CSSProperties = { ...Lk.td };
 const num: CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
-const grand: CSSProperties = { fontWeight: 600, borderTop: '2px solid var(--line)', background: 'var(--surface-2)' };
-const note: CSSProperties = { padding: '10px 16px', fontSize: 12.5, color: 'var(--ink-3)' };
-const filterLabel: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 };
-const inputS: CSSProperties = { padding: '7px 10px', border: '1px solid var(--line-2)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
-const exportBtn: CSSProperties = { background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const grand: CSSProperties = { fontWeight: 600, borderTop: '2px solid var(--line-2)', borderBottom: 0 };
+const note: CSSProperties = { padding: '0 0 12px', fontSize: 12, color: 'var(--ink-3)' };
+const filterLabel: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11.5, color: 'var(--ink-2)', fontWeight: 400 };
+const inputS: CSSProperties = { height: 40, padding: '0 12px', border: '1px solid var(--line-2)', borderRadius: 12, fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
+const exportBtn: CSSProperties = { ...Lk.btnPrimary };

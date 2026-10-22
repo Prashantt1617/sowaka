@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { Card, ListPending } from '../ui';
 import type { LoadState } from '../ui';
-import { IconPlus } from '../icons';
+import { IconPlus, IconSearch } from '../icons';
 import {
   cancelKpiParameterEdit,
   createKpiParameter,
@@ -26,9 +26,11 @@ import {
   updateKpiParameter,
 } from '../../services/kpi';
 import type { KpiParameterDTO, KpiTemplateDTO } from '../../services/kpi';
-import { DetailPage, Field, NameCell, Td, Th } from './kpiUi';
+import { DetailPage, Field } from './kpiUi';
+import { NameCell, Td, Th } from './lookUi';
+import * as L from './look';
 import { periodLabel } from '../period';
-import { ghostBtn, inputStyle, panelCard, panelTitle, primaryBtn, warnTag } from './kpiStyles';
+import { ghostBtn, inputStyle, panelCard, panelTitle, primaryBtn, warnTag } from './kpiLook';
 
 /** Every parameter is scored on the same scale — the form has no other mode. */
 const MAX_SCORE = 5;
@@ -148,14 +150,8 @@ export function KpiParameters() {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search parameters…"
-          style={{ ...inputStyle, width: 260 }}
-        />
-        <button onClick={() => setForm(blank())} style={{ ...primaryBtn, marginLeft: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+        <button onClick={() => setForm(blank())} className="lk-btn-p" style={{ ...primaryBtn, marginLeft: 'auto' }}>
           <IconPlus size={15} /> Add Parameter
         </button>
       </div>
@@ -166,8 +162,17 @@ export function KpiParameters() {
         </div>
       )}
 
-      <Card>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+      <Card style={L.cardPad}>
+        <label className="lk-field" style={{ ...L.field, width: 218, marginBottom: 16 }}>
+          <IconSearch size={15} stroke="currentColor" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search parameters…"
+            style={{ width: '100%' }}
+          />
+        </label>
+        <table className="lk-t" style={L.table}>
           <thead>
             <tr>
               <Th width="28%">Parameter</Th>
@@ -186,15 +191,15 @@ export function KpiParameters() {
                   </Td>
                   <Td muted>{r.description || '—'}</Td>
                   <Td>
-                    <span style={{ fontWeight: 500, color: u.employees ? 'var(--ink)' : 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>
+                    <span style={{ color: u.employees ? 'var(--ink)' : 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
                       {u.employees}
                     </span>
-                    <span style={{ fontSize: 13, color: 'var(--ink-4)' }}>
+                    <span style={{ color: u.employees ? 'var(--ink)' : 'var(--ink-3)' }}>
                       {u.employees === 1 ? ' employee' : ' employees'}
                     </span>
                   </Td>
                   <Td muted>
-                    <span style={{ fontVariantNumeric: 'tabular-nums', color: u.templates ? 'var(--ink-2)' : 'var(--ink-4)' }}>
+                    <span style={{ fontVariantNumeric: 'tabular-nums', color: u.templates ? 'var(--ink)' : 'var(--ink-3)' }}>
                       {u.templates}
                     </span>
                   </Td>
@@ -203,7 +208,7 @@ export function KpiParameters() {
             })}
             {listSt === 'ready' && visible.length === 0 && (
               <tr>
-                <td colSpan={4} style={{ padding: '26px 14px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>
+                <td colSpan={4} style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>
                   {q ? 'No parameters match your search.' : 'No parameters yet. Add one to start building templates.'}
                 </td>
               </tr>
@@ -297,15 +302,15 @@ function ParameterDetail({
             <button
               onClick={remove}
               disabled={deleting}
-              style={{ ...ghostBtn, color: 'var(--bad)', opacity: deleting ? 0.45 : 1 }}
+              style={{ ...L.btnDanger, height: 40, padding: '0 16px', fontSize: 13, opacity: deleting ? 0.45 : 1 }}
             >
               {deleting ? 'Deleting…' : 'Delete parameter'}
             </button>
           )}
           {dirty && (
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 11 }}>
-              <button onClick={onBack} style={ghostBtn}>Cancel</button>
-              <button onClick={saveEdit} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.6 : 1 }}>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+              <button onClick={onBack} className="lk-btn" style={ghostBtn}>Cancel</button>
+              <button onClick={saveEdit} disabled={saving} className="lk-btn-p" style={{ ...primaryBtn, opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'Saving…' : 'Save change'}
               </button>
             </div>
@@ -324,7 +329,7 @@ function ParameterDetail({
               <div style={{ fontSize: 12.5, fontWeight: 500, marginBottom: 2 }}>New guidance</div>
               <div style={{ fontSize: 13, lineHeight: 1.55 }}>{param.pendingEdit.description || '—'}</div>
             </div>
-            <button onClick={dropEdit} style={{ ...ghostBtn, padding: '6px 12px', fontSize: 13, marginTop: 11 }}>
+            <button onClick={dropEdit} className="lk-btn" style={{ ...L.btnSm, marginTop: 12 }}>
               Cancel scheduled change
             </button>
           </div>
@@ -337,7 +342,7 @@ function ParameterDetail({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             maxLength={600}
-            style={{ ...inputStyle, minHeight: 120, resize: 'vertical', lineHeight: 1.5 }}
+            className="lk-in" style={{ ...inputStyle, minHeight: 120, resize: 'vertical', lineHeight: 1.5 }}
           />
           {descriptionDirty && <NextCycleNote cycle={cycle} cycleLoaded={cycleLoaded} />}
         </Field>
@@ -354,8 +359,8 @@ function ParameterDetail({
         </div>
 
         {showTemplates && templates.length > 0 && (
-          <div style={{ marginTop: 12, border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+          <div style={{ marginTop: 16 }}>
+            <table className="lk-t" style={L.table}>
               <thead>
                 <tr>
                   <Th>Template</Th>
@@ -367,21 +372,21 @@ function ParameterDetail({
                 {templates.map((t) => (
                   <tr key={t.id}>
                     <Td>
-                      <span style={{ fontWeight: 500, color: 'var(--accent-ink)' }}>{t.name}</span>
+                      <span style={L.cellName}>{t.name}</span>
                       {t.description && (
-                        <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>{t.description}</div>
+                        <div style={L.cellSub}>{t.description}</div>
                       )}
                     </Td>
                     <Td right>
                       {/* What this parameter is worth inside that template —
                           the same parameter can count for more in one set. */}
-                      <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                      <span style={{ fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>
                         {t.weights[param.id] ?? 0}%
                       </span>
                     </Td>
                     <Td right muted>
                       <span style={{ fontVariantNumeric: 'tabular-nums' }}>{t.employeeCount}</span>
-                      <span style={{ fontSize: 13, color: 'var(--ink-4)' }}> employees</span>
+                      <span> employees</span>
                     </Td>
                   </tr>
                 ))}
@@ -396,8 +401,8 @@ function ParameterDetail({
           </div>
         )}
 
-        <div style={{ marginTop: 16, paddingTop: 13, borderTop: '1px solid var(--line)', fontSize: 12.5, color: 'var(--ink-4)', lineHeight: 1.5 }}>
-          Created by <strong style={{ color: 'var(--ink-3)' }}>{param.createdByName ?? 'Unknown'}</strong>
+        <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--line)', fontSize: 11.5, color: 'var(--ink-3)', lineHeight: 1.5 }}>
+          Created by <strong style={{ color: 'var(--ink-2)', fontWeight: 500 }}>{param.createdByName ?? 'Unknown'}</strong>
           {param.createdAt && ` on ${fmtCreated(param.createdAt)}`}
         </div>
       </div>
@@ -437,9 +442,9 @@ function fmtCreated(iso: string): string {
 function ReadRow({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 5, color: 'var(--ink-2)' }}>{label}</div>
-      <div style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{value}</div>
-      {hint && <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 5, lineHeight: 1.45 }}>{hint}</div>}
+      <div style={{ ...L.kvDt, marginBottom: 4 }}>{label}</div>
+      <div style={{ ...L.kvDd, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{value}</div>
+      {hint && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 5, lineHeight: 1.45 }}>{hint}</div>}
     </div>
   );
 }
@@ -455,10 +460,10 @@ function Stat({
 }) {
   const body = (
     <>
-      <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.5px', fontVariantNumeric: 'tabular-nums', color: onClick ? 'var(--accent-ink)' : 'var(--ink)' }}>
+      <div style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, fontVariantNumeric: 'tabular-nums', color: onClick ? 'var(--accent-ink)' : 'var(--ink)' }}>
         {value}
       </div>
-      <div style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400, marginTop: 2 }}>
+      <div style={{ fontSize: 12.5, color: 'var(--ink-2)', fontWeight: 400, marginTop: 6 }}>
         {label}{onClick && <span style={{ color: 'var(--accent-ink)' }}> {open ? '▴' : '▾'}</span>}
       </div>
     </>
@@ -495,8 +500,8 @@ function AddParameterPage({
       width={820}
       actions={
         <>
-          <span style={{ fontSize: 12.5, color: 'var(--bad)' }}>* indicates mandatory fields</span>
-          <button onClick={onSave} style={{ ...primaryBtn, marginLeft: 'auto' }}>Save</button>
+          <span style={{ fontSize: 12, color: 'var(--bad)' }}>* indicates mandatory fields</span>
+          <button onClick={onSave} className="lk-btn-p" style={{ ...primaryBtn, marginLeft: 'auto' }}>Save</button>
         </>
       }
     >
@@ -514,7 +519,7 @@ function AddParameterPage({
             placeholder="e.g. Performance"
             maxLength={80}
             autoFocus
-            style={inputStyle}
+            className="lk-in" style={inputStyle}
           />
         </Field>
         <Field label="Guidance">
@@ -523,7 +528,7 @@ function AddParameterPage({
             onChange={(e) => set('description', e.target.value)}
             placeholder="e.g. Delivers quality work consistently and on time"
             maxLength={600}
-            style={{ ...inputStyle, minHeight: 120, resize: 'vertical', lineHeight: 1.5 }}
+            className="lk-in" style={{ ...inputStyle, minHeight: 120, resize: 'vertical', lineHeight: 1.5 }}
           />
         </Field>
         <Field label="Maximum score">
