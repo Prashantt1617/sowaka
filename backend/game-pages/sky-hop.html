@@ -1067,6 +1067,8 @@ html.app .howto{padding-top:20px}
     const next = () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     next.get = () => a; next.set = v => { a = v; }; return next;
   }
+  /* The app's haptic (iPhones have no web vibration); the browser's vibrate otherwise. */
+  function buzz(ms) { try { const S = window.Sowaka; if (S && S.native && typeof S.haptic === 'function') { S.haptic(ms >= 30 ? 'medium' : 'light'); return; } if (navigator.vibrate) navigator.vibrate(ms); } catch {} }
   let overAt = 0; // when the game-over card came up
   /* The flight runs on its own clock: 120 equal steps a second whatever the screen's rate, so a flap lifts the bird the same height on any phone
      and a slow frame never slows the game down. Each tap keeps the moment the finger landed (the event's timeStamp) and counts in the step of
@@ -1081,13 +1083,13 @@ html.app .howto{padding-top:20px}
     const STEP = 1000 / 120, REWIND = 200, SETTLE = 50, SETTLE_MAX = 120; // ms: one step; how far back a late tap reaches; how long a crash waits for one
     const cv = $('gameCanvas'), c = cv.getContext('2d');
     const stars = starsFor(W, H);
-    let scale = 1, cap = 2, sky = null;
+    let scale = 1, cap = 2, sky = null, box = null;
     let state = 'ready', bird, pipes, score, dist = 0, flash = 0, shake = 0, vs = null, rand = Math.random, startedAt = 0;
     let simT = 0, deadAt = 0, shown = false, shownScore = 0, loudest = 0, hudFor = '', taps = [], hist = [];
     let lag = 0, frameGap = 16, odd = 0, trust = true; // how late taps reach the page and how long frames take, lately; whether the taps' stamps hold
-    /* The canvas at the screen's resolution (2× at most, less on a phone that can't keep up), and the sky's still part drawn once. */
+    /* The canvas at the screen's resolution (2× at most, less on a phone that can't keep up), the sky's still part drawn once, and where the stage sits. */
     function fit() {
-      scale = fitCanvas(cv, W, cap);
+      scale = fitCanvas(cv, W, cap); box = cv.getBoundingClientRect();
       sky = document.createElement('canvas'); sky.width = cv.width; sky.height = cv.height;
       const k = sky.getContext('2d'); k.setTransform(scale, 0, 0, scale, 0, 0); drawSkyBack(k, W, H, GROUND, stars, 46);
     }
@@ -1096,7 +1098,7 @@ html.app .howto{padding-top:20px}
     function reset() {
       state = 'ready'; bird = { x: W * .3, y: H * .42, vy: 0, rot: 0, wing: 0 };
       pipes = []; score = 0; flash = 0; shake = 0; shown = false; deadAt = 0; simT = 0; taps = []; hist = [];
-      shownScore = 0; loudest = 0; hudFor = 'ready';
+      shownScore = 0; loudest = 0; hudFor = 'ready'; sq = 0; sqv = 0; wingFx = 0; puffs.forEach(p => { p.life = 0; }); rings.forEach(r => { r.life = 0; });
       rand = seeded(vs && vs.seed != null ? vs.seed : (Math.random() * 4294967296) >>> 0);
       $('gScore').textContent = '0'; $('gScore').hidden = true; $('gReady').hidden = false; $('gOver').hidden = true;
     }
@@ -1111,7 +1113,7 @@ html.app .howto{padding-top:20px}
       state = 'over'; deadAt = simT;
     }
     function crash() {
-      shown = true; hist = []; flash = 1; shake = 10; sfx.hit(); sfx.die();
+      shown = true; hist = []; flash = 1; shake = 10; sfx.hit(); sfx.die(); buzz(40);
       setTimeout(finish, 650);
     }
     function finish() {
@@ -1217,10 +1219,31 @@ html.app .howto{padding-top:20px}
       if (state === 'over' && !shown && now - deadAt >= Math.min(SETTLE_MAX, Math.max(SETTLE, lag * 1.5))) crash();
     }
 
+    // What each tap shows on the very next frame: the bird squashes and springs back, its wing beats, a puff of air under it, a ring under the finger.
+    const puffs = Array.from({ length: 30 }, () => ({ x: 0, y: 0, vx: 0, vy: 0, r: 0, life: 0 }));
+    const rings = Array.from({ length: 6 }, () => ({ x: 0, y: 0, life: 0 }));
+    let sq = 0, sqv = 0, wingFx = 0;
+    function kick(x, y) {
+      sq = .2; sqv = 0; wingFx = Math.PI;
+      let n = 0;
+      for (const p of puffs) {
+        if (p.life > 0) continue;
+        const a = Math.PI * (.5 + Math.random() * .55), v = 70 + Math.random() * 90;
+        p.x = bird.x - 8; p.y = bird.y + 9; p.vx = Math.cos(a) * v - 50; p.vy = Math.sin(a) * v; p.r = 3 + Math.random() * 3; p.life = 1;
+        if (++n === 5) break;
+      }
+      if (x != null) { const r = rings.find(q => q.life <= 0) || rings[0]; r.x = x; r.y = y; r.life = 1; }
+    }
     function fxStep(dt) {
+      // A spring back to round: the squash, a little stretch past it, then still.
+      for (let k = Math.ceil(dt / .008), h = dt / Math.max(1, k); k > 0; k--) { sqv += (-520 * sq - 15 * sqv) * h; sq += sqv * h; }
+      wingFx = Math.max(0, wingFx - dt * 30);
+      for (const p of puffs) if (p.life > 0) { p.life -= dt * 2.8; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 1 - Math.min(1, dt * 3); p.vy *= 1 - Math.min(1, dt * 3); }
+      for (const r of rings) if (r.life > 0) r.life -= dt * 3.4;
       flash = Math.max(0, flash - dt * 3); shake = Math.max(0, shake - dt * 40);
     }
-    /* A finger (or click, or key) on the game: kept with its moment for the flight, and answered at once with a sound. False when the flight takes no taps now. */
+    /* A finger (or click, or key) on the game: kept with its moment for the flight, and answered at once with a sound, a buzz and the bird's squash.
+       x, y: where on the screen, for the ring. False when the flight takes no taps now. */
     function press(t, x, y) {
       const now = performance.now();
       /* Taps that keep landing far behind while the frames run on time mean the browser's stamps are not on the page's clock: from then on, now. */
@@ -1229,7 +1252,9 @@ html.app .howto{padding-top:20px}
       lag += (now - t - lag) * .25;
       if (!(state === 'ready' || state === 'play' || (state === 'over' && !shown && t < deadAt))) return false;
       taps.push({ t, done: false });
-      sfx.flap();
+      let gx = null, gy = null;
+      if (box && x != null && box.width) { gx = (x - box.left) / box.width * W; gy = (y - box.top) / box.height * H; if (gx < 0 || gx > W || gy < 0 || gy > H) gx = gy = null; }
+      kick(gx, gy); sfx.flap(); buzz(8);
       return true;
     }
     /* The score and the hints over the canvas, touched only when they change. */
@@ -1249,7 +1274,13 @@ html.app .howto{padding-top:20px}
       drawSkyFront(c, W, H, GROUND, d * .25, (d * .08) % W, 46);
       for (const p of pipes) { const x = p.x - px; drawPipe(c, x, -4, p.top + 4, true, PW, 3); drawPipe(c, x, p.top + GAP, H - GROUND - p.top - GAP, false, PW, 3); }
       drawGround(c, W, H, GROUND, d % 24, 3);
-      drawBird(c, bird.x, by, bird.rot, bird.wing, shown);
+      c.fillStyle = '#fff6ec';
+      for (const p of puffs) if (p.life > 0) { c.globalAlpha = p.life * .85; c.beginPath(); c.arc(p.x, p.y, p.r * (1.5 - p.life * .5), 0, 7); c.fill(); }
+      c.globalAlpha = 1;
+      c.save(); c.translate(bird.x, by); c.scale(1 + sq, 1 - sq); drawBird(c, 0, 0, bird.rot, bird.wing + wingFx, shown); c.restore();
+      c.strokeStyle = '#fff'; c.lineWidth = 3;
+      for (const r of rings) if (r.life > 0) { c.globalAlpha = r.life * .9; c.beginPath(); c.arc(r.x, r.y, 10 + (1 - r.life) * 26, 0, 7); c.stroke(); }
+      c.globalAlpha = 1;
       if (flash > 0) { c.setTransform(scale, 0, 0, scale, 0, 0); c.fillStyle = `rgba(255,255,255,${flash * .8})`; c.fillRect(0, 0, W, H); }
     }
     return {
