@@ -1,10 +1,12 @@
 // The little markdown Suwi answers use: paragraphs, **bold**, bullet and
 // numbered lists, pipe tables, and links. A link to emp:USER_ID opens that
-// person's profile; http links open in a new tab.
+// person's profile; http links open in a new tab. Rule lines (---) are
+// dropped and LaTeX $$ markers stripped, should a model write them anyway.
 import type { ReactNode } from 'react';
 
 export function Markdown({ text, onPerson }: { text: string; onPerson: (userId: string) => void }) {
-  const lines = text.replace(/\r/g, '').split('\n');
+  const isHr = (l: string) => /^\s*([-*_])(\s*\1){2,}\s*$/.test(l);
+  const lines = text.replace(/\r/g, '').replace(/\$\$/g, '').split('\n').filter((l) => !isHr(l));
   const out: ReactNode[] = [];
   let i = 0, key = 0;
   const inline = (s: string): ReactNode[] => {
