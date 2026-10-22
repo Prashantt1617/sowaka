@@ -7,8 +7,11 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card, EmptyRow } from '../ui';
+import { EmptyRow } from '../ui';
 import { IconPlus } from '../icons';
+import { IconInfo } from './peopleTable';
+import { PdEdit, PdPin, PdTrash } from './pdIcons';
+import './people.css';
 import {
   createOffice, deleteOffice, getOffices, updateOffice,
   type OfficeDTO, type OfficeInput,
@@ -84,28 +87,32 @@ export function Offices() {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>{offices.length} {offices.length === 1 ? 'office' : 'offices'}</div>
-        <div style={{ marginLeft: 'auto' }}>
-          <button onClick={() => (editing === '' ? cancel() : startAdd())} style={primaryBtn}>
+      <div className="pd-head" style={{ alignItems: 'center' }}>
+        <p className="pd-lead">{offices.length} {offices.length === 1 ? 'office' : 'offices'}</p>
+        <div className="pd-actions">
+          <button onClick={() => (editing === '' ? cancel() : startAdd())} className="pd-btn primary">
             <IconPlus size={15} /> Add office
           </button>
         </div>
       </div>
 
-      <div style={note}>
-        A punch on a <strong>geotagged</strong> shift is checked against the nearest office here and counts as present
-        within its radius. Turn geotag on per shift under <button onClick={() => setView('shifttypes')} style={linkBtn}>Templates</button>,
-        where you also choose what happens when someone punches from outside every office.
+      <div className="pd-note" style={{ marginBottom: 20 }}>
+        <IconInfo />
+        <span>
+          A punch on a <strong>geotagged</strong> shift is checked against the nearest office here and counts as present
+          within its radius. Turn geotag on per shift under <button onClick={() => setView('shifttypes')} style={linkBtn}>Templates</button>,
+          where you also choose what happens when someone punches from outside every office.
+        </span>
       </div>
 
       {editing !== null && (
-        <Card style={{ padding: '18px 20px', marginBottom: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{editing ? 'Edit office' : 'New office'}</div>
+        <section className="pd-card pd-form" style={{ marginBottom: 20, padding: 0 }}>
+          <div className="pd-md-h">
+            <h3>{editing ? 'Edit office' : 'New office'}</h3>
             <button onClick={cancel} aria-label="Close" title="Close" style={closeBtn}>×</button>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr 150px', gap: 12, alignItems: 'end' }}>
+          <div style={{ padding: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr 150px', gap: 16, alignItems: 'end' }}>
             <Field label="Name">
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Gurgaon office" style={inputStyle} />
             </Field>
@@ -129,54 +136,65 @@ export function Offices() {
               />
             </Field>
             <Field label="Radius">
-              <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden', background: 'var(--surface)' }}>
-                <input type="number" min="20" step="10" value={form.radiusMeters} onChange={(e) => setForm({ ...form, radiusMeters: Number(e.target.value) || 0 })} style={{ ...inputStyle, border: 'none', borderRadius: 0 }} />
-                <span style={{ padding: '9px 12px', color: 'var(--ink-3)', borderLeft: '1px solid var(--line)', fontSize: 13 }}>m</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="number" min="20" step="10" value={form.radiusMeters} onChange={(e) => setForm({ ...form, radiusMeters: Number(e.target.value) || 0 })} style={{ ...inputStyle, width: 84 }} />
+                <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>m</span>
               </div>
             </Field>
           </div>
-          <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 8, lineHeight: 1.5 }}>
-            Right-click the building in Google Maps and copy the coordinates; pasting “28.4595, 77.0266” into either box fills both.
-            A phone indoors is often 50–80 m off, so 200 m covers a building and its car park without reaching the next street.
+          <div className="pd-note" style={{ marginTop: 16 }}>
+            <IconInfo />
+            <span>
+              Right-click the building in Google Maps and copy the coordinates; pasting “28.4595, 77.0266” into either box fills both.
+              A phone indoors is often 50–80 m off, so 200 m covers a building and its car park without reaching the next street.
+            </span>
           </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-            <button onClick={() => void save()} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Add office'}</button>
-            <button onClick={cancel} disabled={saving} style={ghostBtn}>Cancel</button>
+          <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+            <button onClick={cancel} disabled={saving} className="pd-btn">Cancel</button>
+            <button onClick={() => void save()} disabled={saving} className="pd-btn primary">{saving ? 'Saving…' : editing ? 'Save changes' : 'Add office'}</button>
           </div>
-        </Card>
+          </div>
+        </section>
       )}
 
-      <Card>
+      <section className="pd-card">
         {loading ? (
           <EmptyRow text="Loading offices…" />
         ) : offices.length === 0 ? (
           <EmptyRow text="No offices yet. Add one so geotagged punches have somewhere to be checked against." />
         ) : (
-          <table style={tableStyle}>
+          <table className="pd-t">
             <thead>
-              <tr><Th>Office</Th><Th>City</Th><Th>Coordinates</Th><Th>Radius</Th><Th> </Th></tr>
+              <tr><Th>Office</Th><Th>City</Th><Th>Coordinates</Th><Th>Radius</Th><Th right> </Th></tr>
             </thead>
             <tbody>
               {offices.map((o) => (
                 <tr key={o.id}>
-                  <Td><strong style={{ color: 'var(--ink)' }}>{o.name}</strong></Td>
-                  <Td muted>{o.city || '—'}</Td>
+                  <Td>
+                    <span className="pd-who">
+                      <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--accent-soft)', color: 'var(--accent-ink)', display: 'grid', placeItems: 'center', flex: 'none' }}><PdPin size={15} /></span>
+                      <b>{o.name}</b>
+                    </span>
+                  </Td>
+                  <Td>{o.city || '—'}</Td>
                   <Td mono>
-                    <a href={`https://maps.google.com/?q=${o.latitude},${o.longitude}`} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-ink)', textDecoration: 'none' }}>
+                    <a href={`https://maps.google.com/?q=${o.latitude},${o.longitude}`} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-ink)', textDecoration: 'none', fontSize: 13 }}>
                       {o.latitude.toFixed(5)}, {o.longitude.toFixed(5)}
                     </a>
                   </Td>
-                  <Td muted>{o.radiusMeters} m</Td>
-                  <Td>
-                    <button onClick={() => startEdit(o)} style={editBtn}>Edit</button>
-                    <button onClick={() => void remove(o)} style={removeBtn} title={`Remove ${o.name}`}>Remove</button>
+                  <Td>{o.radiusMeters} m</Td>
+                  <Td right>
+                    <span className="pd-acts">
+                      <button onClick={() => startEdit(o)} className="pd-btn sm"><PdEdit size={15} /> Edit</button>
+                      <button onClick={() => void remove(o)} className="pd-btn sm" title={`Remove ${o.name}`}><PdTrash size={15} /> Remove</button>
+                    </span>
                   </Td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-      </Card>
+      </section>
     </div>
   );
 }
@@ -184,24 +202,18 @@ export function Offices() {
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 5, color: 'var(--ink-2)' }}>{label}</label>
+      <label style={{ display: 'block', fontSize: 11.5, fontWeight: 400, lineHeight: 1.5, marginBottom: 6, color: 'var(--ink-2)' }}>{label}</label>
       {children}
     </div>
   );
 }
-function Th({ children }: { children: ReactNode }) {
-  return <th style={{ textAlign: 'left', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '11px 16px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)' }}>{children}</th>;
+function Th({ children, right }: { children: ReactNode; right?: boolean }) {
+  return <th style={{ textAlign: right ? 'right' : 'left' }}>{children}</th>;
 }
-function Td({ children, muted, mono }: { children: ReactNode; muted?: boolean; mono?: boolean }) {
-  return <td style={{ padding: '13px 16px', borderBottom: '1px solid var(--line)', color: muted ? 'var(--ink-3)' : 'var(--ink)', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
+function Td({ children, muted, mono, right }: { children: ReactNode; muted?: boolean; mono?: boolean; right?: boolean }) {
+  return <td style={{ color: muted ? 'var(--ink-3)' : 'var(--ink)', textAlign: right ? 'right' : undefined, fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
 }
 
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
-const note: CSSProperties = { fontSize: 12.5, color: 'var(--ink-2)', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.55 };
 const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', fontWeight: 500, color: 'var(--accent-ink)', cursor: 'pointer' };
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: 'var(--on-accent)', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 13.5, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
-const editBtn: CSSProperties = { background: 'none', border: 'none', padding: '4px 6px', font: 'inherit', fontSize: 13, fontWeight: 500, color: 'var(--accent-ink)', cursor: 'pointer' };
-const removeBtn: CSSProperties = { background: 'none', border: 'none', padding: '4px 6px', font: 'inherit', fontSize: 13, fontWeight: 500, color: 'var(--bad)', cursor: 'pointer' };
-const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer' };
-const closeBtn: CSSProperties = { marginLeft: 'auto', background: 'none', border: 'none', fontSize: 22, lineHeight: 1, color: 'var(--ink-4)', cursor: 'pointer', padding: '0 4px' };
+const inputStyle: CSSProperties = { width: '100%', height: 42, padding: '0 12px', border: '1px solid var(--line-2)', borderRadius: 12, fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)', boxSizing: 'border-box' };
+const closeBtn: CSSProperties = { marginLeft: 'auto', width: 42, height: 42, borderRadius: '50%', background: 'var(--surface)', border: '1px solid var(--line)', fontSize: 20, lineHeight: 1, color: 'var(--ink-2)', cursor: 'pointer', padding: 0 };
