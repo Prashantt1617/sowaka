@@ -10,7 +10,7 @@ import type { KpiParameterDTO, KpiTemplateDTO } from '../../services/kpi';
 import { DetailPage } from './kpiUi';
 import { Td, Th } from './lookUi';
 import * as L from './look';
-import { ghostBtn, panelCard, panelTitle, warnTag } from './kpiLook';
+import { panelCard, panelTitle, warnTag } from './kpiLook';
 
 
 export function TemplateDetailModal({
