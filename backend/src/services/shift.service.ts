@@ -399,11 +399,14 @@ function shiftView(doc: ShiftTemplate & { _id?: ObjectId }, fallback?: ShiftPoli
 
 export async function listShifts(callerId: string) {
   const org = await requireOrg(callerId);
-  const [docs, orgPolicy] = await Promise.all([
+  // The roster for the default's headcount does not depend on the templates,
+  // so all three are read together.
+  const [docs, orgPolicy, people] = await Promise.all([
     shiftTemplates().find({ org, deletedAt: { $exists: false } }).sort({ name: 1 }).toArray(),
     getOrgShiftPolicy(org),
+    workingPeople(org),
   ]);
-  const unassigned = await unassignedCount(org, docs);
+  const unassigned = unassignedCount(docs, people);
   return docs.map((doc) => shiftView(doc, orgPolicy, unassigned));
 }
 
@@ -412,13 +415,16 @@ export async function listShifts(callerId: string) {
  * default template covers. Offboarded and terminated staff are not counted:
  * they are not on any shift any more.
  */
-async function unassignedCount(org: string, docs: ShiftTemplate[]): Promise<number> {
+function workingPeople(org: string) {
+  return users()
+    .find({ org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }, { projection: { userId: 1 } })
+    .toArray();
+}
+
+function unassignedCount(docs: ShiftTemplate[], people: { userId: string }[]): number {
   // An inactive template holds nobody: its people follow the default, as
   // policyForUser resolves them.
   const assigned = new Set(docs.filter((doc) => doc.active).flatMap((doc) => doc.assignedUserIds ?? []));
-  const people = await users()
-    .find({ org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }, { projection: { userId: 1 } })
-    .toArray();
   return people.filter((person) => !assigned.has(person.userId)).length;
 }
 
@@ -562,7 +568,11 @@ function facet(value: unknown): string[] {
 export async function resolveShiftAudience(callerId: string, input: Record<string, unknown>) {
   const org = await requireOrg(callerId);
   const rules = Object.fromEntries(FACETS.map((key) => [key, facet(input[key])]));
-  const roster = await users().find({ org }).sort({ name: 1 }).toArray();
+  // The roster (without profile photos) and the templates, read together.
+  const [roster, templates] = await Promise.all([
+    users().find({ org }, { projection: { profilePhotoUrl: 0 } }).sort({ name: 1 }).toArray(),
+    shiftTemplates().find({ org }).toArray(),
+  ]);
   const matched = roster.filter((u) => {
     if (rules.locations.length && !rules.locations.includes(u.location ?? '')) return false;
     if (rules.designations.length && !rules.designations.includes(u.designation ?? '')) return false;
@@ -571,7 +581,6 @@ export async function resolveShiftAudience(callerId: string, input: Record<strin
     return true;
   });
 
-  const templates = await shiftTemplates().find({ org }).toArray();
   const currentByUser = new Map<string, { id: string; name: string }>();
   for (const template of templates) {
     for (const userId of template.assignedUserIds ?? []) {
@@ -687,7 +696,7 @@ export async function setDefaultShift(callerId: string, shiftId: string) {
   const updated = await shiftTemplates().findOneAndUpdate({ _id, org }, { $set: { isDefault: true, updatedAt: new Date() } }, { returnDocument: 'after' });
   shiftSetupChanged(org);
   const docs = await shiftTemplates().find({ org, deletedAt: { $exists: false } }).toArray();
-  return shiftView(updated!, undefined, await unassignedCount(org, docs));
+  return shiftView(updated!, undefined, unassignedCount(docs, await workingPeople(org)));
 }
 
 // -------------------------------------------------- the org-wide shift policy
