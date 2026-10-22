@@ -13,7 +13,7 @@ import type { FbCycle, FbEmp, Feedback as FeedbackRow } from '../seed';
 import { downloadCsv } from '../export';
 import { adaptFeedbackList } from '../adapters';
 import { periodLabel, periodShort } from '../period';
-import { Avatar, Card, Pill, SearchInput, SelectBox, SummaryCard } from '../ui';
+import { Avatar, Card, Loadable, Pill, SearchInput, SelectBox, SkeletonPage, SummaryCard } from '../ui';
 import { IconDownload } from '../icons';
 import { Modal, Tabs, Td, Th } from './kpiUi';
 import { ghostBtn, panelCard, panelTitle, smallBtn } from './kpiStyles';
@@ -66,7 +66,17 @@ const TONE: Record<FbEmp['status'], PillT & { label: string }> = {
   none: { label: 'Not started', bg: 'var(--bad-bg)', fg: 'var(--bad)' },
 };
 
+/** Waits for the shared lists this page reads before drawing it. */
 export function Feedback() {
+  const s = useStore();
+  return (
+    <Loadable state={s.listState('feedback', 'employees', 'cycle')} onRetry={() => void s.reload()} skeleton={<SkeletonPage cards={1} rows={6} cols={6} />}>
+      <FeedbackBody />
+    </Loadable>
+  );
+}
+
+function FeedbackBody() {
   const s = useStore();
   const [section, setSection] = useState<Section>('managers');
   const [status, setStatus] = useState<StatusFilter>('all');

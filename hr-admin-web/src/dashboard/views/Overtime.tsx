@@ -4,13 +4,14 @@ import type { ReqStatus } from '../theme';
 import type { Overtime as OvertimeRow } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
-import { Avatar, Card, DateRange, EmptyRow, Pill, SearchInput, StatusTabs, SummaryCard } from '../ui';
+import { Avatar, Card, DateRange, EmptyRow, ListPending, LoadingFigure, Pill, SearchInput, StatusTabs, SummaryCard } from '../ui';
 import { IconDownload } from '../icons';
 
 const COLS = '1.7fr 1fr 1.1fr 1fr .7fr 1.7fr 1.1fr';
 
 export function Overtime() {
   const s = useStore();
+  const st = s.listState('overtime');
   const ranged = s.ots.filter((r) => inDateRange(r.refISO, s.otFrom, s.otTo));
   const summary = {
     total: ranged.length,
@@ -46,10 +47,10 @@ export function Overtime() {
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
-        <SummaryCard label="Total requests" value={summary.total} />
-        <SummaryCard label="Pending" value={summary.pending} color="var(--warn)" />
-        <SummaryCard label="Approved" value={summary.approved} color="var(--ok)" />
-        <SummaryCard label="Declined" value={summary.declined} color="var(--bad)" />
+        <SummaryCard label="Total requests" value={<LoadingFigure state={st}>{summary.total}</LoadingFigure>} />
+        <SummaryCard label="Pending" value={<LoadingFigure state={st}>{summary.pending}</LoadingFigure>} color="var(--warn)" />
+        <SummaryCard label="Approved" value={<LoadingFigure state={st}>{summary.approved}</LoadingFigure>} color="var(--ok)" />
+        <SummaryCard label="Declined" value={<LoadingFigure state={st}>{summary.declined}</LoadingFigure>} color="var(--bad)" />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -105,7 +106,8 @@ export function Overtime() {
             </div>
           </div>
         ))}
-        {rows.length === 0 && <EmptyRow text="No overtime requests match your filters." />}
+        <ListPending state={st} onRetry={() => void s.reload()} cols={7} />
+        {st === 'ready' && rows.length === 0 && <EmptyRow text="No overtime requests match your filters." />}
       </Card>
     </div>
   );

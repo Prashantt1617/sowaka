@@ -7,7 +7,8 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Card, EmptyRow, SearchInput, SelectBox } from '../ui';
+import { Card, EmptyRow, ListPending, SearchInput, SelectBox, Spinner } from '../ui';
+import { combineLoad } from '../useLoad';
 import { downloadCsv } from '../export';
 import { IconDownload } from './peopleTable';
 import { AddNameButton, useSavedNames } from './savedNames';
@@ -22,8 +23,13 @@ type Designation = {
 
 
 export function Designations() {
-  const { emps, loaded } = useStore();
-  const { saved, busy, add, remove } = useSavedNames('designationList');
+  const { emps, listState, reload } = useStore();
+  const { saved, busy, add, remove, state: savedState, retry: retrySaved } = useSavedNames('designationList');
+  // The roster and the saved names both feed the table; it waits for both.
+  const empState = listState('employees');
+  const st = combineLoad(empState, savedState);
+  const retry = () => { if (empState === 'error') void reload(); if (savedState === 'error') retrySaved(); };
+  const loaded = st === 'ready';
   // One department, or all of them. With one chosen the list is the titles
   // held there and the counts are the people there who hold them.
   const [department, setDepartment] = useState('all');
@@ -82,7 +88,7 @@ export function Designations() {
           ))}
         </SelectBox>
         <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-          {loaded ? `${designations.length} designations · ${totalEmp} people` : 'Loading…'}
+          {loaded ? `${designations.length} designations · ${totalEmp} people` : <Spinner />}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 9, alignItems: 'flex-start' }}>
           <AddNameButton noun="designation" existing={allNames} busy={busy} onAdd={add} />
@@ -107,7 +113,8 @@ export function Designations() {
             </tr>
           </thead>
           <tbody>
-            {designations.map((d) => (
+            {st !== 'ready' && <tr><td colSpan={3} style={{ padding: 0 }}><ListPending state={st} onRetry={retry} cols={3} avatar={false} rowHeight={46} /></td></tr>}
+            {loaded && designations.map((d) => (
               <tr key={d.name}>
                 <Td>
                   <strong style={{ color: 'var(--accent-ink)' }}>{d.name}</strong>
@@ -125,11 +132,11 @@ export function Designations() {
             {loaded && designations.length === 0 && (
               <tr><td colSpan={3}><EmptyRow text={search.trim() ? 'No designation matches that search.' : department === 'all' ? 'No designations yet — nobody on the roster has a job title set.' : `Nobody in ${department} has a job title set.`} /></td></tr>
             )}
-            <tr>
+            {loaded && <tr>
               <Td><strong>Total</strong></Td>
               <Td muted>—</Td>
               <Td right mono><strong>{totalEmp}</strong></Td>
-            </tr>
+            </tr>}
           </tbody>
         </table>
       </Card>

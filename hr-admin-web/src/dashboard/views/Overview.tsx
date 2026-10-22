@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { useStore } from '../store';
 import { STAT } from '../theme';
-import { Avatar, Pill } from '../ui';
+import { Avatar, LoadError, LoadingFigure, Pill, SkeletonRows } from '../ui';
+import type { LoadState } from '../ui';
 import { IconChevronRight } from '../icons';
 import { SuwiOverviewCards } from '../suwi/SuwiNoticed';
 
@@ -71,13 +72,22 @@ export function Overview() {
 
   const weekRows = s.leaves.filter((l) => l.status === 'Approved').slice(0, 3);
   const ovOvertime = s.ots.slice().sort((a, b) => b.ord - a.ord).slice(0, 4);
+  const leaveState = s.listState('leaves');
+  const claimState = s.listState('claims');
+  const fbState = s.listState('feedback');
+  const otState = s.listState('overtime');
+  // A panel still loading shows rows shaped like its own; a failed one says so.
+  const pending = (state: LoadState, rows: number) =>
+    state === 'error'
+      ? <LoadError compact text="This could not be loaded." onRetry={() => void s.reload()} />
+      : <SkeletonRows rows={rows} cols={1} rowHeight={53} pad={0} />;
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, marginBottom: 22 }}>
-        <StatCard icon={leaveGlyph} iconBg="var(--accent-soft)" value={leavesPending} label="Leaves pending" onClick={() => s.setView('leave')} />
-        <StatCard icon={claimGlyph} iconBg="var(--t-olive)" value={claims} label="Claims to review" onClick={() => s.setView('reimbursements')} />
-        <StatCard icon={feedbackGlyph} iconBg="var(--t-lilac)" value={reviewsPending} label="Feedbacks pending" onClick={() => s.setView('feedback')} />
+        <StatCard icon={leaveGlyph} iconBg="var(--accent-soft)" value={<LoadingFigure state={leaveState} w={36} h={28}>{leavesPending}</LoadingFigure>} label="Leaves pending" onClick={() => s.setView('leave')} />
+        <StatCard icon={claimGlyph} iconBg="var(--t-olive)" value={<LoadingFigure state={claimState} w={36} h={28}>{claims}</LoadingFigure>} label="Claims to review" onClick={() => s.setView('reimbursements')} />
+        <StatCard icon={feedbackGlyph} iconBg="var(--t-lilac)" value={<LoadingFigure state={fbState} w={36} h={28}>{reviewsPending}</LoadingFigure>} label="Feedbacks pending" onClick={() => s.setView('feedback')} />
       </div>
 
       {/* Suwi: what it noticed, and today's digest; hidden when there is nothing (or Suwi is off). */}
@@ -90,7 +100,7 @@ export function Overview() {
             <div style={{ fontSize: 14, fontWeight: 600 }}>On leave this week</div>
             <button onClick={() => s.setView('leave')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--accent-ink)' }}>View all</button>
           </div>
-          {weekRows.map((w) => (
+          {leaveState !== 'ready' ? pending(leaveState, 3) : weekRows.map((w) => (
             <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0', borderBottom: '1px solid var(--line)' }}>
               <Avatar name={w.name} size={34} font={12} />
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -110,7 +120,7 @@ export function Overview() {
             <div style={{ fontSize: 14, fontWeight: 600 }}>Overtime requests</div>
             <button onClick={() => s.setView('overtime')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--accent-ink)' }}>View all</button>
           </div>
-          {ovOvertime.map((o) => (
+          {otState !== 'ready' ? pending(otState, 4) : ovOvertime.map((o) => (
             <div key={o.id} onClick={() => s.goOvertimeRow(o.id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0', borderBottom: '1px solid var(--line)', cursor: 'pointer' }}>
               <Avatar name={o.name} size={34} font={12} />
               <div style={{ flex: 1, minWidth: 0 }}>

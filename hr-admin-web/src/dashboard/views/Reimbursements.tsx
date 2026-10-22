@@ -4,13 +4,14 @@ import type { ReqStatus } from '../theme';
 import type { Reimb } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
-import { Avatar, Card, DateRange, EmptyRow, Pill, SearchInput, SelectBox, StatusTabs, SummaryCard } from '../ui';
+import { Avatar, Card, DateRange, EmptyRow, ListPending, LoadingFigure, Pill, SearchInput, SelectBox, StatusTabs, SummaryCard } from '../ui';
 import { IconCheck, IconDownload, IconEye, IconFile, IconX } from '../icons';
 
 const COLS = '1.5fr 1fr 1fr 1fr 1fr 1.5fr 1.2fr 1fr 1.1fr';
 
 export function Reimbursements() {
   const s = useStore();
+  const st = s.listState('claims');
   const ranged = s.rbs.filter((r) => inDateRange(r.refISO, s.rbFrom, s.rbTo));
   const rtot = ranged.reduce((a, r) => a + r.amountN, 0);
   const rpend = ranged.filter((r) => r.status === 'Pending').reduce((a, r) => a + r.amountN, 0);
@@ -53,10 +54,10 @@ export function Reimbursements() {
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
-        <SummaryCard label="Total claims" value={summary.count} />
-        <SummaryCard label="Awaiting review" value={summary.pending} color="var(--warn)" />
-        <SummaryCard label="Pending value" value={summary.pendingAmt} color="var(--warn)" />
-        <SummaryCard label="Total submitted" value={summary.total} />
+        <SummaryCard label="Total claims" value={<LoadingFigure state={st}>{summary.count}</LoadingFigure>} />
+        <SummaryCard label="Awaiting review" value={<LoadingFigure state={st}>{summary.pending}</LoadingFigure>} color="var(--warn)" />
+        <SummaryCard label="Pending value" value={<LoadingFigure state={st}>{summary.pendingAmt}</LoadingFigure>} color="var(--warn)" />
+        <SummaryCard label="Total submitted" value={<LoadingFigure state={st}>{summary.total}</LoadingFigure>} />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -150,7 +151,8 @@ export function Reimbursements() {
             </div>
           );
         })}
-        {rows.length === 0 && <EmptyRow text="No claims match your filters." />}
+        <ListPending state={st} onRetry={() => void s.reload()} cols={7} />
+        {st === 'ready' && rows.length === 0 && <EmptyRow text="No claims match your filters." />}
       </Card>
     </div>
   );
