@@ -130,7 +130,7 @@ export function initials(name: string): string {
 // [title, meta] per section.
 export const TITLES: Record<View, [string, string]> = {
   organisation: ['Organisation', 'Company profile, identity & contact details'],
-  overview: ['HR control room', 'Tuesday, 30 June'],
+  overview: ['HR control room', ''], // the date is filled in by Topbar
   leave: ['Leave requests', 'Tracking time off · approved by reporting managers'],
   overtime: ['Overtime', 'Tracking overtime · approved by reporting managers'],
   attendance: ['Attendance corrections', 'Requests · days employees asked to have corrected'],

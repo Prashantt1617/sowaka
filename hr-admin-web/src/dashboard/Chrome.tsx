@@ -468,7 +468,11 @@ function ThemeSwitch() {
 
 export function Topbar() {
   const { view, user, signOut, suwiOpen, setSuwiOpen } = useStore();
-  const [title, meta] = TITLES[view];
+  const [title, fixedMeta] = TITLES[view];
+  // The overview's line is today's date, in India time like the rest of the dashboard.
+  const meta = view === 'overview'
+    ? `${new Date().toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Asia/Kolkata' })}, ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })}`
+    : fixedMeta;
   const displayName = user?.name ?? 'HR Admin';
   const iconBtn = {
     position: 'relative' as const,
