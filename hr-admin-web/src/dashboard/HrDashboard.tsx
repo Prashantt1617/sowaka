@@ -1,144 +1,67 @@
 import { StoreProvider, useStore } from './store';
-import { useEffect } from 'react';
+import { Component, Suspense, use, useEffect } from 'react';
+import type { ReactNode } from 'react';
+import type { View } from './theme';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { useBrandDocument } from './brand';
 import { LoginScreen } from './auth/LoginScreen';
 import { OVERVIEW_ITEM, SECTIONS, Sidebar, Topbar, Toast } from './Chrome';
 import { canOpen } from './access';
-import { Overview } from './views/Overview';
-import { LeaveRequests } from './views/LeaveRequests';
-import { Overtime } from './views/Overtime';
-import { AttendanceCorrections } from './views/AttendanceCorrections';
-import { Feedback } from './views/Feedback';
-import { Reimbursements } from './views/Reimbursements';
-import { Employees } from './views/Employees';
 import { Placeholder } from './views/Placeholder';
 import { Drawers } from './drawers';
 import { rememberBrandOrg } from './brand';
-import { Games } from './views/Games';
-import { RelayGame } from './views/RelayGame';
-import { ContentReports } from './views/ContentReports';
-import { EngagementPosts } from './views/EngagementPosts';
-import { PayHeadMaster } from './views/PayHeadMaster';
-import { SalaryTemplates } from './views/SalaryTemplates';
-import { PaidDaysTemplates } from './views/PaidDaysTemplates';
-import { PayrollDashboard } from './views/PayrollDashboard';
-import { PayrollReports } from './views/PayrollReports';
-import { StatutoryComponents } from './views/StatutoryComponents';
-import { PayrollRuns } from './views/PayrollRuns';
-import { PaySchedule, TaxDetails } from './views/OrgSetup';
-import { ReimbursementTypes } from './views/ReimbursementTypes';
-import { ReviewCycle } from './views/ReviewCycle';
-import { ShiftBulkAssign } from './views/ShiftBulkAssign';
-import { ShiftTemplates } from './views/ShiftTemplates';
-import { HolidayBank } from './views/HolidayBank';
-import { Offices } from './views/Offices';
-import { OutOfLocation } from './views/OutOfLocation';
-import { Organisation } from './views/Organisation';
-import { Departments } from './views/Departments';
-import { Designations } from './views/Designations';
-import { AttendanceReport } from './views/AttendanceReport';
-import { OrgChart } from './views/OrgChart';
-import { Accesses } from './views/Accesses';
-import { KpiParameters } from './views/KpiParameters';
-import { KpiTemplates } from './views/KpiTemplates';
-import { KpiBulkAssign } from './views/KpiBulkAssign';
-import { SupportDesk } from './views/SupportDesk';
+import { SuwiPanel } from './suwi/SuwiPanel';
+import { hasViewPage, isPageCodeFailure, prefetchAllViews, prefetchView, viewPage } from './viewChunks';
 
-function CurrentView() {
-  const { view } = useStore();
-  switch (view) {
-    case 'organisation':
-      return <Organisation />;
-    case 'overview':
-      return <Overview />;
-    case 'leave':
-      return <LeaveRequests />;
-    case 'overtime':
-      return <Overtime />;
-    case 'attendance':
-      return <AttendanceCorrections />;
-    case 'kpi':
-      return <KpiParameters />;
-    case 'kpibulk':
-      return <KpiBulkAssign />;
-    case 'kpitemplates':
-      return <KpiTemplates />;
-    case 'feedback':
-      return <Feedback />;
-    case 'reimbursements':
-      return <Reimbursements />;
-    case 'departments':
-      return <Departments />;
-    case 'designations':
-      return <Designations />;
-    case 'employees':
-      return <Employees />;
-    case 'attendancereport':
-      return <AttendanceReport />;
-    case 'orgchart':
-      return <OrgChart />;
-    case 'usersroles':
-      return <Accesses />;
-    case 'reimbursementtypes':
-      return <ReimbursementTypes />;
-    case 'cycle':
-      return <ReviewCycle />;
-    case 'games':
-      return <Games />;
-    case 'relaygame':
-      return <RelayGame />;
-    case 'engagementposts':
-      return <EngagementPosts />;
-    case 'contentreports':
-      return <ContentReports />;
-    case 'payheads':
-      return <PayHeadMaster />;
-    case 'templates':
-      return <SalaryTemplates />;
-    case 'paiddays':
-      return <PaidDaysTemplates />;
-    case 'payrolldash':
-      return <PayrollDashboard />;
-    case 'payrollreports':
-      return <PayrollReports />;
-    case 'statutorycomponents':
-      return <StatutoryComponents />;
-    case 'payruns':
-      return <PayrollRuns />;
-    case 'payschedule':
-      return <PaySchedule />;
-    case 'taxdetails':
-      return <TaxDetails />;
-    case 'shiftbulk':
-      return <ShiftBulkAssign />;
-    case 'shifttypes':
-      return <ShiftTemplates />;
-    case 'holidaybank':
-      return <HolidayBank />;
-    case 'offices':
-      return <Offices />;
-    case 'oolcheckins':
-      return <OutOfLocation />;
-    case 'support':
-      return <SupportDesk />;
-    default:
-      return <Placeholder />;
+function ViewPage({ view }: { view: View }) {
+  const Page = use(viewPage(view));
+  return <Page />;
+}
+
+const PAGE_FALLBACK = <div style={{ minHeight: 400 }} />;
+
+// If a page's code cannot be fetched, its area stays empty and the rest of the
+// dashboard keeps working; opening the page again retries. Any other error
+// carries on up, as it always has.
+class PageCodeBoundary extends Component<{ children: ReactNode }, { error: unknown }> {
+  state = { error: null as unknown };
+  static getDerivedStateFromError(error: unknown) {
+    return { error };
+  }
+  render() {
+    if (this.state.error === null) return this.props.children;
+    if (isPageCodeFailure(this.state.error)) return PAGE_FALLBACK;
+    throw this.state.error;
   }
 }
 
-function LoadingBar() {
+function CurrentView() {
+  const { view } = useStore();
+  if (!hasViewPage(view)) return <Placeholder />;
+  // Neutral while the page's code arrives (usually already prefetched).
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400, color: '#717171', fontSize: 16, fontWeight: 600 }}>
-      <span style={{ width: 16, height: 16, border: '2px solid #EBEBEB', borderTopColor: '#0571A6', borderRadius: '50%', display: 'inline-block', marginRight: 10, animation: 'spin .7s linear infinite' }} />
-      Loading…
-    </div>
+    <PageCodeBoundary key={view}>
+      <Suspense fallback={PAGE_FALLBACK}>
+        <ViewPage view={view} />
+      </Suspense>
+    </PageCodeBoundary>
   );
 }
 
 function Shell() {
-  const { loading, loaded, view, setView } = useStore();
+  const { view, setView, loaded } = useStore();
   const { user } = useAuth();
+  // The page's code downloads alongside the start-up data, not after it.
+  useEffect(() => { prefetchView(view); }, [view]);
+  // Once the start-up data is in, the other pages' code follows while the
+  // browser is idle, so opening one later does not wait on the network.
+  useEffect(() => {
+    if (!loaded) return;
+    const idle = window.requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 1500));
+    const cancel = window.cancelIdleCallback ?? window.clearTimeout;
+    const id = idle(() => prefetchAllViews(), { timeout: 5000 });
+    return () => cancel(id);
+  }, [loaded]);
   // Land on a tab this person may open, and leave one taken away from them.
   useEffect(() => {
     if (canOpen(user, view)) return;
@@ -148,15 +71,17 @@ function Shell() {
   // So the next sign-in screen on this device already wears their company.
   useEffect(() => { rememberBrandOrg(user?.org ?? user?.company); }, [user]);
   return (
-    <div style={{ display: 'flex', height: '100vh', width: '100%', background: '#F7F7F9', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', height: '100vh', width: '100%', padding: 16, gap: 20, overflow: 'hidden' }}>
       <Sidebar />
-      <main className="scry" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <main className="scry" style={{ flex: 1, minWidth: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '16px 6px', margin: '-16px -6px' }}>
         <Topbar />
-        <div style={{ padding: '28px 34px 60px', flex: 1 }}>
-          {loading && !loaded ? <LoadingBar /> : <CurrentView />}
+        <div style={{ padding: '20px 0 32px', flex: 1 }}>
+          {/* Each view shows its own loading state until the data it needs has arrived. */}
+          <CurrentView />
         </div>
       </main>
       <Drawers />
+      <SuwiPanel />
       <Toast />
     </div>
   );
@@ -165,16 +90,16 @@ function Shell() {
 function AccessDenied() {
   const { user, signOut } = useAuth();
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#F7F7F9', color: '#484848', textAlign: 'center', padding: 24 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--ink-2)', textAlign: 'center', padding: 24 }}>
       <div style={{ fontSize: 50.5, marginBottom: 12 }}>🔒</div>
-      <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>No dashboard access</h1>
-      <p style={{ maxWidth: 420, marginTop: 10, fontSize: 16, lineHeight: 1.5, color: '#717171' }}>
+      <h1 style={{ fontSize: 19, fontWeight: 400, margin: 0, color: 'var(--ink)' }}>No dashboard access</h1>
+      <p style={{ maxWidth: 420, marginTop: 10, fontSize: 13, lineHeight: 1.5, color: 'var(--ink-3)' }}>
         Your account{user?.email ? ` (${user.email})` : ''} isn’t authorized to use the HR dashboard.
         Ask an administrator to grant you dashboard access.
       </p>
       <button
         onClick={() => void signOut()}
-        style={{ marginTop: 22, padding: '10px 20px', borderRadius: 10, border: '1px solid #EBEBEB', background: '#fff', color: '#484848', fontWeight: 700, fontSize: 16, cursor: 'pointer' }}
+        style={{ marginTop: 22, height: 40, padding: '0 18px', borderRadius: 999, border: '1px solid var(--line-2)', background: 'var(--surface)', color: 'var(--ink)', fontWeight: 400, fontSize: 12.5, cursor: 'pointer' }}
       >
         Sign out
       </button>

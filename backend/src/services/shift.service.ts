@@ -1,5 +1,7 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { ObjectId } from 'mongodb';
 import { shiftAssignments, shiftPolicies, shiftTemplates, users } from '../config/db';
+import { requestUserFor } from './request-user';
 import {
   CORRECTION_TRIGGERS,
   DayMark,
@@ -49,7 +51,8 @@ const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /** The caller's org. Every read and write below is scoped to it. */
 export async function requireOrg(callerId: string): Promise<string> {
-  const caller = await users().findOne({ userId: callerId });
+  // The signed-in caller's org, when this request's auth check has read it.
+  const caller = requestUserFor(callerId) ?? (await users().findOne({ userId: callerId }, { projection: { _id: 0, org: 1 } }));
   if (!caller) throw new ShiftError(404, 'User not found');
   if (!caller.org) throw new ShiftError(409, 'User is not attached to a company');
   return caller.org;
@@ -398,11 +401,14 @@ function shiftView(doc: ShiftTemplate & { _id?: ObjectId }, fallback?: ShiftPoli
 
 export async function listShifts(callerId: string) {
   const org = await requireOrg(callerId);
-  const [docs, orgPolicy] = await Promise.all([
+  // The roster for the default's headcount does not depend on the templates,
+  // so all three are read together.
+  const [docs, orgPolicy, people] = await Promise.all([
     shiftTemplates().find({ org, deletedAt: { $exists: false } }).sort({ name: 1 }).toArray(),
     getOrgShiftPolicy(org),
+    workingPeople(org),
   ]);
-  const unassigned = await unassignedCount(org, docs);
+  const unassigned = unassignedCount(docs, people);
   return docs.map((doc) => shiftView(doc, orgPolicy, unassigned));
 }
 
@@ -411,13 +417,16 @@ export async function listShifts(callerId: string) {
  * default template covers. Offboarded and terminated staff are not counted:
  * they are not on any shift any more.
  */
-async function unassignedCount(org: string, docs: ShiftTemplate[]): Promise<number> {
+function workingPeople(org: string) {
+  return users()
+    .find({ org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }, { projection: { userId: 1 } })
+    .toArray();
+}
+
+function unassignedCount(docs: ShiftTemplate[], people: { userId: string }[]): number {
   // An inactive template holds nobody: its people follow the default, as
   // policyForUser resolves them.
   const assigned = new Set(docs.filter((doc) => doc.active).flatMap((doc) => doc.assignedUserIds ?? []));
-  const people = await users()
-    .find({ org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }, { projection: { userId: 1 } })
-    .toArray();
   return people.filter((person) => !assigned.has(person.userId)).length;
 }
 
@@ -561,7 +570,11 @@ function facet(value: unknown): string[] {
 export async function resolveShiftAudience(callerId: string, input: Record<string, unknown>) {
   const org = await requireOrg(callerId);
   const rules = Object.fromEntries(FACETS.map((key) => [key, facet(input[key])]));
-  const roster = await users().find({ org }).sort({ name: 1 }).toArray();
+  // The roster (without profile photos) and the templates, read together.
+  const [roster, templates] = await Promise.all([
+    users().find({ org }, { projection: { profilePhotoUrl: 0 } }).sort({ name: 1 }).toArray(),
+    shiftTemplates().find({ org }).toArray(),
+  ]);
   const matched = roster.filter((u) => {
     if (rules.locations.length && !rules.locations.includes(u.location ?? '')) return false;
     if (rules.designations.length && !rules.designations.includes(u.designation ?? '')) return false;
@@ -570,7 +583,6 @@ export async function resolveShiftAudience(callerId: string, input: Record<strin
     return true;
   });
 
-  const templates = await shiftTemplates().find({ org }).toArray();
   const currentByUser = new Map<string, { id: string; name: string }>();
   for (const template of templates) {
     for (const userId of template.assignedUserIds ?? []) {
@@ -686,7 +698,7 @@ export async function setDefaultShift(callerId: string, shiftId: string) {
   const updated = await shiftTemplates().findOneAndUpdate({ _id, org }, { $set: { isDefault: true, updatedAt: new Date() } }, { returnDocument: 'after' });
   shiftSetupChanged(org);
   const docs = await shiftTemplates().find({ org, deletedAt: { $exists: false } }).toArray();
-  return shiftView(updated!, undefined, await unassignedCount(org, docs));
+  return shiftView(updated!, undefined, unassignedCount(docs, await workingPeople(org)));
 }
 
 // -------------------------------------------------- the org-wide shift policy
@@ -998,20 +1010,56 @@ export async function policyForUser(
   /** Grade as of this local date. Defaults to today. */
   asOf: string = todayIso(),
 ): Promise<ShiftPolicyRules & { shiftName: string | null }> {
-  const user = await users().findOne({ userId });
-  if (!user?.org) return { ...DEFAULT_ORG_SHIFT_POLICY, shiftName: null };
-  const orgPolicy = await getOrgShiftPolicy(user.org);
+  const memo = policyMemo.getStore();
+  if (!memo) return resolvePolicyForUser(userId, asOf);
+  const key = `${userId}|${asOf}`;
+  let found = memo.get(key);
+  if (!found) {
+    found = resolvePolicyForUser(userId, asOf);
+    memo.set(key, found);
+    found.catch(() => memo.delete(key));
+  }
+  return found;
+}
+
+/**
+ * One read-only computation in which a person's policy is looked up once and
+ * shared. A leave balance asks for the same person's policy three or four
+ * times (their leave types, the full-day hours for comp-off this year and
+ * last); inside this scope those are one lookup. Nothing is held beyond the
+ * call, and the shared object must only be read, never changed, by code run
+ * inside it.
+ */
+const policyMemo = new AsyncLocalStorage<Map<string, Promise<ResolvedShiftPolicy>>>();
+export function withPolicyMemo<T>(work: () => Promise<T>): Promise<T> {
+  return policyMemo.getStore() ? work() : policyMemo.run(new Map(), work);
+}
+
+async function resolvePolicyForUser(userId: string, asOf: string): Promise<ResolvedShiftPolicy> {
+  // Asked in two trips rather than four or five: leave balances, overtime and
+  // punches all come through here, often several times for one answer. The
+  // person and their history go together; then the org policy, the template
+  // and the default (in case the template has no policy) go together.
   // Which template covered them on that date, not which one they are on now.
-  const assigned = await assignedTemplateOn(userId, asOf);
-  let template = assigned === 'no-history'
-    ? await shiftTemplates().findOne({ org: user.org, active: true, deletedAt: { $exists: false }, assignedUserIds: userId })
-    : assigned === null
-      ? null
-      : await shiftTemplates().findOne({ _id: assigned, org: user.org });
+  const [user, assigned] = await Promise.all([
+    users().findOne({ userId }, { projection: { _id: 0, org: 1 } }),
+    assignedTemplateOn(userId, asOf),
+  ]);
+  if (!user?.org) return { ...DEFAULT_ORG_SHIFT_POLICY, shiftName: null };
+  const org = user.org;
+  const [orgPolicy, found, fallback] = await Promise.all([
+    getOrgShiftPolicy(org),
+    assigned === 'no-history'
+      ? shiftTemplates().findOne({ org, active: true, deletedAt: { $exists: false }, assignedUserIds: userId })
+      : assigned === null
+        ? null
+        : shiftTemplates().findOne({ _id: assigned, org }),
+    defaultTemplateFor(org),
+  ]);
   // Nobody is on "no shift": whoever is not assigned elsewhere follows the
   // org's default template. The org policy document answers only for an org
   // that has no default yet, so nothing changes for one until it does.
-  if (!template?.policy) template = await defaultTemplateFor(user.org);
+  const template = found?.policy ? found : fallback;
   return mergeTemplatePolicy(orgPolicy, template);
 }
 
@@ -1095,13 +1143,27 @@ export async function policiesForUsers(
   userIds: string[],
   asOf: string = todayIso(),
 ): Promise<Map<string, ResolvedShiftPolicy>> {
-  const out = new Map<string, ResolvedShiftPolicy>();
   const ids = [...new Set(userIds)];
-  if (ids.length === 0) return out;
+  if (ids.length === 0) return new Map<string, ResolvedShiftPolicy>();
   const people = await users()
     .find({ userId: { $in: ids } })
     .project<{ userId: string; org?: string }>({ _id: 0, userId: 1, org: 1 })
     .toArray();
+  return policiesForPeople(people, asOf);
+}
+
+/**
+ * `policiesForUsers` for people whose user records are already in hand, so
+ * the lookup of their orgs is not made a second time. Someone without a user
+ * record is left out, and reads as `policyForUser` would: the default policy.
+ */
+export async function policiesForPeople(
+  people: { userId: string; org?: string }[],
+  asOf: string = todayIso(),
+): Promise<Map<string, ResolvedShiftPolicy>> {
+  const out = new Map<string, ResolvedShiftPolicy>();
+  const ids = [...new Set(people.map((p) => p.userId))];
+  if (ids.length === 0) return out;
   const orgs = [...new Set(people.map((p) => p.org).filter((o): o is string => Boolean(o)))];
   const [orgPolicies, templates, assignments] = await Promise.all([
     Promise.all(orgs.map(async (org) => [org, await getOrgShiftPolicy(org)] as const)),

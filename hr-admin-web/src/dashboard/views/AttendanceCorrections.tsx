@@ -10,15 +10,19 @@ import type { ReqStatus } from '../theme';
 import type { Correction } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
-import { Avatar, Card, DateRange, EmptyRow, Pill, SearchInput, StatusTabs, SummaryCard } from '../ui';
+import { Card, DateRange, EmptyRow, ListPending, LoadingFigure, PageActions, Pill, SearchInput, StatusTabs, SummaryCard, Th } from '../ui';
+import { PersonAvatar } from '../PersonAvatar';
+import { btn, btnClass, cellName, cellSub, textareaStyle, TH, toolbar, TR } from '../ds';
 import { IconDownload } from '../icons';
+import { SuwiInsight } from '../suwi/SuwiInsight';
 
 const COLS = '1.8fr .9fr .9fr 1fr 1fr 1.6fr 1fr 1.3fr';
 
-const DAY_TONE = { bg: '#E7F2F7', fg: '#0571A6' };
+const DAY_TONE = { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' };
 
 export function AttendanceCorrections() {
   const s = useStore();
+  const st = s.listState('corrections');
   const ranged = s.corrs.filter((r) => inDateRange(r.refISO, s.corrFrom, s.corrTo));
   const summary = {
     total: ranged.length,
@@ -62,70 +66,73 @@ export function AttendanceCorrections() {
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
-        <SummaryCard label="Total corrections" value={summary.total} />
-        <SummaryCard label="Pending" value={summary.pending} color="#9A6B25" />
-        <SummaryCard label="Approved" value={summary.approved} color="#4F7A52" />
-        <SummaryCard label="Declined" value={summary.declined} color="#A8475F" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 20 }}>
+        <SummaryCard label="Total corrections" value={<LoadingFigure state={st}>{summary.total}</LoadingFigure>} />
+        <SummaryCard label="Pending" value={<LoadingFigure state={st}>{summary.pending}</LoadingFigure>} color="var(--warn)" />
+        <SummaryCard label="Approved" value={<LoadingFigure state={st}>{summary.approved}</LoadingFigure>} color="var(--ok)" />
+        <SummaryCard label="Declined" value={<LoadingFigure state={st}>{summary.declined}</LoadingFigure>} color="var(--bad)" />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14, flexWrap: 'wrap' }}>
-        <SearchInput value={s.corrSearch} onChange={s.setCorrSearch} placeholder="Search employee or manager…" />
+      <PageActions>
+        <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
+          <IconDownload stroke="currentColor" /> Export
+        </button>
+      </PageActions>
+
+      <Card padded>
+      <div style={toolbar}>
         <StatusTabs<ReqStatus | 'all'>
           options={['all', 'Pending', 'Approved', 'Declined']}
           active={s.corrStatus}
           onSelect={s.setCorrStatus}
         />
+      </div>
+      <div style={toolbar}>
+        <div style={{ flex: 1, minWidth: 262, display: 'flex' }}>
+          <SearchInput value={s.corrSearch} onChange={s.setCorrSearch} placeholder="Search employee or manager…" width="100%" />
+        </div>
         <DateRange from={s.corrFrom} to={s.corrTo} onFrom={s.setCorrFrom} onTo={s.setCorrTo} />
-        <button
-          onClick={exportRows}
-          disabled={rows.length === 0}
-          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: '#222222', border: 'none', color: '#fff', borderRadius: 11, padding: '9px 15px', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', cursor: rows.length ? 'pointer' : 'not-allowed', opacity: rows.length ? 1 : 0.5 }}
-        >
-          <IconDownload /> Export
-        </button>
       </div>
 
-      <Card>
-        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', fontSize: 12, fontWeight: 700, letterSpacing: '.5px', color: '#717171' }}>
-          <div>EMPLOYEE</div>
-          <div>RAISED ON</div>
-          <div>WORK DATE</div>
-          <div>REQUESTED AS</div>
-          <div>RECORDED</div>
-          <div>REASON</div>
-          <div>MANAGER</div>
-          <div>STATUS</div>
+        <div style={TH(COLS)}>
+          <Th>EMPLOYEE</Th>
+          <Th>RAISED ON</Th>
+          <Th>WORK DATE</Th>
+          <Th>REQUESTED AS</Th>
+          <Th>RECORDED</Th>
+          <Th>REASON</Th>
+          <Th>MANAGER</Th>
+          <Th>STATUS</Th>
         </div>
-        {rows.map((r) => (
+        {rows.map((r, i) => (
           <div
             key={r.id}
-            style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', alignItems: 'center' }}
+            style={{ ...TR(COLS, i === rows.length - 1) }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-              <Avatar name={r.name} />
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                <div style={{ fontSize: 14, color: '#717171', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+              <PersonAvatar name={r.name} userId={r.submitterId} />
+              <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <div style={{ ...cellName, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
+                <div style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {r.employeeCode} · {r.team}
                 </div>
               </div>
             </div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>{r.appliedOn}</div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>
+            <div style={{ fontWeight: 400 }}>{r.appliedOn}</div>
+            <div style={{ fontWeight: 400 }}>
               {r.workDate}
-              <div style={{ fontSize: 13, color: '#9197A2', fontWeight: 500 }}>{r.day}</div>
+              <div style={cellSub}>{r.day}</div>
             </div>
             <div><Pill label={r.dayType} tone={DAY_TONE} /></div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: r.recorded === 'No punch' ? '#B25A1B' : '#484848' }}>{r.recorded}</div>
-            <div style={{ fontSize: 14, fontWeight: 500, color: r.eRemark ? '#484848' : '#9197A2', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>
+            <div style={{ fontSize: 13, fontWeight: 400, color: r.recorded === 'No punch' ? 'var(--warn)' : 'var(--ink-2)' }}>{r.recorded}</div>
+            <div style={{ fontWeight: 400, color: r.eRemark ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>
               {r.eRemark || '—'}
             </div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.manager}>
+            <div style={{ fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.manager}>
               {r.manager || '—'}
             </div>
             {r.status === 'Pending' ? (
-              <div style={{ display: 'flex', gap: 7 }}>
+              <div style={{ display: 'flex', gap: 6 }}>
                 <DecideButton label="Approve" tone="approve" onClick={() => s.corrAsk(r.id, 'approve')} />
                 <DecideButton label="Decline" tone="decline" onClick={() => s.corrAsk(r.id, 'decline')} />
               </div>
@@ -136,7 +143,8 @@ export function AttendanceCorrections() {
             )}
           </div>
         ))}
-        {rows.length === 0 && <EmptyRow text="No attendance corrections match your filters." />}
+        <ListPending state={st} onRetry={() => void s.reload()} cols={7} />
+        {st === 'ready' && rows.length === 0 && <EmptyRow text="No attendance corrections match your filters." />}
       </Card>
 
       {s.corrConfirm && <ConfirmOverride />}
@@ -150,13 +158,8 @@ function DecideButton({ label, tone, onClick }: { label: string; tone: 'approve'
     <button
       type="button"
       onClick={onClick}
-      style={{
-        border: `1px solid ${approve ? '#CADFC9' : '#EED6DC'}`,
-        background: approve ? '#E6F1E7' : '#F8E3E7',
-        color: approve ? '#4F7A52' : '#A8475F',
-        borderRadius: 9, padding: '6px 12px', fontSize: 13, fontWeight: 700,
-        fontFamily: 'inherit', cursor: 'pointer',
-      }}
+      className={btnClass(approve ? 'ok' : 'no')}
+      style={btn(approve ? 'ok' : 'no', 'sm')}
     >
       {label}
     </button>
@@ -173,39 +176,43 @@ function ConfirmOverride() {
   return (
     <div
       onClick={s.corrCloseConfirm}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(20,20,24,.38)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}
+      style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, animation: 'ovl .2s ease both' }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ width: 430, background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,.25)' }}
+        style={{ width: 'min(520px, calc(100% - 32px))', background: 'var(--surface)', borderRadius: 'var(--r-lg)', padding: 20, boxShadow: 'var(--shadow-drawer)', animation: 'pop .2s ease both' }}
       >
-        <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.3px', marginBottom: 6 }}>
+        <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.5, marginBottom: 4 }}>
           {approve ? 'Approve' : 'Decline'} this correction?
         </div>
-        <div style={{ fontSize: 15, color: '#717171', fontWeight: 500, lineHeight: 1.5, marginBottom: 16 }}>
+        <div style={{ fontSize: 13.5, color: 'var(--ink-2)', fontWeight: 400, lineHeight: 1.55, marginBottom: 16 }}>
           {row
             ? `${row.name}’s ${row.workDate} will be ${approve ? `recorded as ${row.dayType.toLowerCase()}` : 'left as it is'}. ${row.manager ? `${row.manager} is the approver — this overrides them.` : ''}`
             : ''}
         </div>
+        {row && <SuwiInsight kind="correction" id={row.id} pending={row.status === 'Pending'} />}
         <textarea
           value={s.corrNote}
           onChange={(e) => s.setCorrNote(e.target.value)}
           placeholder="Add a note for the employee (optional)"
           rows={3}
-          style={{ width: '100%', border: '1px solid #EBEBEB', borderRadius: 11, padding: '11px 13px', fontSize: 15, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 16 }}
+          className="ds-inp"
+          style={{ ...textareaStyle, marginBottom: 20 }}
         />
-        <div style={{ display: 'flex', gap: 9, justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button
             type="button"
             onClick={s.corrCloseConfirm}
-            style={{ border: '1px solid #EBEBEB', background: '#F7F7F9', color: '#484848', borderRadius: 11, padding: '10px 16px', fontSize: 15, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer' }}
+            className={btnClass()}
+            style={btn()}
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={s.corrDecide}
-            style={{ border: 'none', background: approve ? '#4F7A52' : '#A8475F', color: '#fff', borderRadius: 11, padding: '10px 18px', fontSize: 15, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer' }}
+            className={btnClass(approve ? 'primary' : 'danger')}
+            style={btn(approve ? 'primary' : 'danger')}
           >
             {approve ? 'Approve' : 'Decline'}
           </button>

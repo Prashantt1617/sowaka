@@ -4,6 +4,7 @@
  * masked to the last four characters to anyone else who can open the profile.
  */
 import { employeePaymentDetails, users } from '../config/db';
+import { requestViewer } from '../middleware/request-viewer';
 import { EmployeePaymentDetails } from '../models/employeePayment.model';
 import { decryptField, encryptField, fieldKeyConfigured, FieldCryptoError, maskTail } from './fieldCrypto';
 import { hasPayrollAccess } from './payrollAccess.service';
@@ -32,7 +33,7 @@ export interface PaymentDetailsView {
 }
 
 async function context(viewerUserId: string, userId: string) {
-  const viewer = await users().findOne({ userId: viewerUserId }, { projection: { _id: 0, org: 1, dashboardAccess: 1, dashboardAdmin: 1, dashboardTabs: 1 } });
+  const viewer = requestViewer(viewerUserId) ?? (await users().findOne({ userId: viewerUserId }, { projection: { _id: 0, org: 1, dashboardAccess: 1, dashboardAdmin: 1, dashboardTabs: 1 } }));
   if (!viewer?.org) throw new EmployeePaymentError(403, 'No organisation on this account');
   const employee = await users().findOne({ userId }, { projection: { _id: 0, org: 1, name: 1 } });
   if (!employee || employee.org !== viewer.org) throw new EmployeePaymentError(404, 'Employee not found');

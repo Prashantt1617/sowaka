@@ -15,7 +15,7 @@
 // choice rather than a side effect.
 import { useState } from 'react';
 import { useStore } from '../store';
-import { Card } from '../ui';
+import { Card, LoadError, Spinner } from '../ui';
 import {
   assignTemplateToUsers, listKpiParameters, listKpiTemplates, resolveKpiAudience,
 } from '../../services/kpi';
@@ -24,9 +24,10 @@ import type {
 } from '../../services/kpi';
 import { downloadCsv } from '../export';
 import { periodLabel } from '../period';
-import { NameCell, Td, Th } from './kpiUi';
+import { NameCell, Td, Th } from './lookUi';
+import * as L from './look';
 import { TemplateDetailModal } from './KpiTemplateDetail';
-import { ghostBtn, inputStyle, panelCard, panelTitle, primaryBtn, smallBtn, warnTag } from './kpiStyles';
+import { ghostBtn, inputStyle, panelCard, panelTitle, primaryBtn, smallBtn, warnTag } from './kpiLook';
 import {
   andLabel, EMPTY_TARGET, FACETS, matchEmployees, optionsFor, queryCode, targetSummary,
 } from '../kpiTargeting';
@@ -76,7 +77,8 @@ export function KpiBulkAssign() {
 
   // The roster arrives with the store, and this cluster is slow — until it
   // lands, an empty match is "not loaded yet", not "nobody qualifies".
-  const rosterReady = s.loaded && s.emps.length > 0;
+  const rosterState = s.listState('employees');
+  const rosterReady = rosterState === 'ready';
   const preview = matchEmployees(s.emps, target);
   const activeFacets = FACETS.filter((f) => ruleKeys.includes(f.key));
   const unusedFacets = FACETS.filter((f) => !ruleKeys.includes(f.key));
@@ -252,19 +254,19 @@ export function KpiBulkAssign() {
   if (done) {
     return (
       <div style={{ maxWidth: 640 }}>
-        <Card style={{ padding: 28, textAlign: 'center' }}>
-          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 8 }}>Assigned</div>
-          <div style={{ fontSize: 15.5, color: '#484848', lineHeight: 1.6, marginBottom: 20 }}>{done}</div>
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-            <button onClick={exportAssigned} style={ghostBtn}>Export as CSV</button>
-            <button onClick={restart} style={primaryBtn}>Start another</button>
+        <Card style={{ padding: 24, textAlign: 'center' }}>
+          <div style={{ ...L.cardTitle, marginBottom: 8 }}>Assigned</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6, marginBottom: 20 }}>{done}</div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+            <button onClick={exportAssigned} className="lk-btn" style={ghostBtn}>Export as CSV</button>
+            <button onClick={restart} className="lk-btn-p" style={primaryBtn}>Start another</button>
           </div>
-          <div style={{ background: '#EAF2FB', color: '#3C6E9E', borderRadius: 10, padding: '12px 14px', fontSize: 13.5, lineHeight: 1.55, marginTop: 18, textAlign: 'left' }}>
+          <div style={{ ...L.note, display: 'block', marginTop: 20, textAlign: 'left' }}>
             <strong>Takes effect from {periodLabel(s.cycle.next)}.</strong> The cycle in progress
             is frozen, so managers scoring right now keep the parameters they started with. These
             appear on the feedback form when the next cycle opens.
           </div>
-          <div style={{ fontSize: 13, color: '#9197A2', marginTop: 12, lineHeight: 1.5, textAlign: 'left' }}>
+          <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 12, lineHeight: 1.5, textAlign: 'left' }}>
             The export carries employee ID, name, department, designation, manager, the filters
             that matched them, and each parameter's weight.
           </div>
@@ -278,7 +280,7 @@ export function KpiBulkAssign() {
       <Steps step={step} busy={busy} onGo={goTo} />
 
       {error && (
-        <div style={{ ...warnTag, background: '#F7E4E4', borderColor: '#E8C9C9', color: '#A32B2B', marginBottom: 14 }}>
+        <div style={{ ...warnTag, background: 'var(--bad-bg)', borderColor: 'var(--bad-line)', color: 'var(--bad)', marginBottom: 14 }}>
           {error}
         </div>
       )}
@@ -288,11 +290,13 @@ export function KpiBulkAssign() {
         <div style={panelCard}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
             <div style={panelTitle}>Who are you assigning to?</div>
-            <div style={{ marginLeft: 'auto', fontSize: 14, fontWeight: 700, color: !rosterReady ? '#9197A2' : preview.length ? '#4F7A52' : '#A8475F' }}>
-              {rosterReady ? `${preview.length} of ${s.emps.length} employees match` : 'Loading employees…'}
+            <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 500, color: !rosterReady ? 'var(--ink-4)' : preview.length ? 'var(--ok)' : 'var(--bad)' }}>
+              {rosterReady ? `${preview.length} of ${s.emps.length} employees match`
+                : rosterState === 'error' ? <LoadError compact text="Employees could not be loaded." onRetry={() => void s.reload()} />
+                : <Spinner label="Loading employees…" />}
             </div>
           </div>
-          <div style={{ fontSize: 13, color: '#717171', marginBottom: 14, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: -10, marginBottom: 16, lineHeight: 1.5 }}>
             This assigment will be applied from the next cycle.
           </div>
 
@@ -319,6 +323,7 @@ export function KpiBulkAssign() {
                   // Added empty — choosing the value is the next step, not a default.
                   if (f) addRule(f.key);
                 }}
+                className="lk-in"
                 style={{ ...inputStyle, maxWidth: 280 }}
               >
                 <option value="">+ Add a rule…</option>
@@ -334,15 +339,15 @@ export function KpiBulkAssign() {
             </div>
           )}
 
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #EBEBEB' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.03em', color: '#717171', marginBottom: 7 }}>
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
+            <div style={{ ...L.eyebrow, marginBottom: 8 }}>
               RESULTING RULE
             </div>
-            <code style={{ ...queryCode, display: 'block', padding: '11px 13px', background: '#F7F7F9', borderRadius: 10, lineHeight: 1.7 }}>
+            <code style={{ ...queryCode, display: 'block', padding: '12px 14px', background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 14, lineHeight: 1.7 }}>
               {targetSummary(target, s.emps)}
             </code>
             {emptyRules.length > 0 && (
-              <div style={{ fontSize: 13, color: '#9A6B25', fontWeight: 600, marginTop: 9 }}>
+              <div style={{ fontSize: 12.5, color: 'var(--warn)', fontWeight: 400, marginTop: 9 }}>
                 {emptyRules.map((f) => f.label).join(' and ')}{' '}
                 {emptyRules.length === 1 ? 'has' : 'have'} no value chosen yet, so{' '}
                 {emptyRules.length === 1 ? 'it is' : 'they are'} not narrowing anything.
@@ -350,14 +355,15 @@ export function KpiBulkAssign() {
             )}
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
             <button
               onClick={() => void goTo('people')}
+              className="lk-btn-p"
               disabled={busy || Boolean(blockedReason('people'))}
               title={blockedReason('people') || undefined}
               style={{ ...primaryBtn, opacity: busy || blockedReason('people') ? 0.5 : 1 }}
             >
-              {busy ? 'Finding…' : `Continue with ${preview.length}`}
+              {busy ? 'Finding…' : rosterReady ? `Continue with ${preview.length}` : 'Continue'}
             </button>
           </div>
         </div>
@@ -366,22 +372,23 @@ export function KpiBulkAssign() {
       {/* —— 2. People ——————————————————————————————————————————————————— */}
       {step === 'people' && (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 11 }}>
-            <div style={{ fontSize: 16, color: '#717171', fontWeight: 600 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, color: 'var(--ink-2)', fontWeight: 400 }}>
               {assignIds.length} of {audience.length} selected
             </div>
             <button
               onClick={() => setSelected(
                 selected.size === audience.length ? new Set() : new Set(audience.map((a) => a.userId)),
               )}
+              className="lk-btn"
               style={{ ...smallBtn, marginLeft: 'auto' }}
             >
               {selected.size === audience.length ? 'Deselect all' : 'Select all'}
             </button>
           </div>
 
-          <Card>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+          <Card style={L.cardPad}>
+            <table className="lk-t" style={L.table}>
               <thead>
                 <tr>
                   <Th width={44}>{' '}</Th>
@@ -400,41 +407,41 @@ export function KpiBulkAssign() {
                       key={a.userId}
                       className="phm-row"
                       onClick={() => toggle(a.userId)}
-                      style={{ cursor: 'pointer', background: on ? '#F4FAFD' : '#fff' }}
+                      style={{ cursor: 'pointer', background: on ? 'var(--accent-soft)' : 'var(--surface)' }}
                     >
                       <Td>
-                        <span style={{ display: 'flex', width: 18, height: 18, borderRadius: 5, border: `1.5px solid ${on ? '#0571A6' : '#C7CBD2'}`, background: on ? '#0571A6' : '#fff', color: '#fff', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>
+                        <span style={{ display: 'flex', width: 18, height: 18, borderRadius: 5, border: `1.5px solid ${on ? 'var(--accent)' : 'var(--line-2)'}`, background: on ? 'var(--accent-grad)' : 'var(--surface)', color: 'var(--on-accent)', alignItems: 'center', justifyContent: 'center', fontSize: 11.5 }}>
                           {on ? '✓' : ''}
                         </span>
                       </Td>
                       <Td>
                         <NameCell name={a.name} />
                         {a.employeeId && (
-                          <span style={{ fontSize: 13, color: '#9197A2', marginLeft: 8 }}>{a.employeeId}</span>
+                          <span style={{ fontSize: 11.5, color: 'var(--ink-3)', marginLeft: 8 }}>{a.employeeId}</span>
                         )}
                       </Td>
                       {FACETS.filter((f) => target[f.key].length > 0).map((f) => (
                         <Td key={f.key} muted>
-                          <span style={{ fontSize: 14.5, color: '#717171' }}>{valueFor(f, a) || '—'}</span>
+                          <span style={{ fontSize: 13.5, color: 'var(--ink-2)' }}>{valueFor(f, a) || '—'}</span>
                         </Td>
                       ))}
                       <Td>
                         {a.currentTemplateName ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             <ReplaceTip />
-                            <span style={{ fontSize: 14, fontWeight: 700, color: '#9A6B25' }}>
+                            <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--warn)' }}>
                               {a.currentTemplateName}
                             </span>
                           </span>
                         ) : a.parameterCount > 0 ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             <ReplaceTip />
-                            <span style={{ fontSize: 14, color: '#9A6B25', fontWeight: 700 }}>
+                            <span style={{ fontSize: 13.5, color: 'var(--warn)', fontWeight: 500 }}>
                               {a.parameterCount} custom KPIs
                             </span>
                           </span>
                         ) : (
-                          <span style={{ fontSize: 14, color: '#9197A2' }}>None</span>
+                          <span style={{ fontSize: 13.5, color: 'var(--ink-3)' }}>None</span>
                         )}
                       </Td>
                     </tr>
@@ -442,7 +449,7 @@ export function KpiBulkAssign() {
                 })}
                 {audience.length === 0 && (
                   <tr>
-                    <td colSpan={9} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 15 }}>
+                    <td colSpan={9} style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>
                       Nobody matched those rules.
                     </td>
                   </tr>
@@ -458,6 +465,7 @@ export function KpiBulkAssign() {
               onClick={() => void goTo('template')}
               disabled={busy || Boolean(blockedReason('template'))}
               title={blockedReason('template') || undefined}
+              className="lk-btn-p"
               style={{ ...primaryBtn, opacity: busy || blockedReason('template') ? 0.5 : 1 }}
             >
               {busy ? 'Loading…' : 'Select a template →'}
@@ -469,18 +477,18 @@ export function KpiBulkAssign() {
       {/* —— 3. Template ————————————————————————————————————————————————— */}
       {step === 'template' && (
         <>
-          <div style={{ fontSize: 16, color: '#717171', fontWeight: 600, marginBottom: 14 }}>
-            Assigning to <strong style={{ color: '#222222' }}>{assignIds.length} employees</strong> for{' '}
+          <div style={{ fontSize: 13, color: 'var(--ink-2)', fontWeight: 400, marginBottom: 12 }}>
+            Assigning to <strong style={{ color: 'var(--ink)', fontWeight: 500 }}>{assignIds.length} employees</strong> for{' '}
             {periodLabel(s.cycle.next)}
             {overwriting > 0 && (
-              <span style={{ color: '#9A6B25', fontWeight: 700 }}>
+              <span style={{ color: 'var(--warn)', fontWeight: 500 }}>
                 {' '}· {overwriting} will have their current set replaced
               </span>
             )}
           </div>
 
-          <Card>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+          <Card style={L.cardPad}>
+            <table className="lk-t" style={L.table}>
               <thead>
                 <tr>
                   <Th width={44}>{' '}</Th>
@@ -492,10 +500,10 @@ export function KpiBulkAssign() {
                 {templates.map((t) => {
                   const on = templateId === t.id;
                   return (
-                    <tr key={t.id} className="phm-row" onClick={() => setTemplateId(t.id)} style={{ cursor: 'pointer', background: on ? '#F4FAFD' : '#fff' }}>
+                    <tr key={t.id} className="phm-row" onClick={() => setTemplateId(t.id)} style={{ cursor: 'pointer', background: on ? 'var(--accent-soft)' : 'var(--surface)' }}>
                       <Td>
-                        <span style={{ display: 'flex', width: 17, height: 17, borderRadius: '50%', border: `1.5px solid ${on ? '#0571A6' : '#C7CBD2'}`, alignItems: 'center', justifyContent: 'center' }}>
-                          {on && <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#0571A6' }} />}
+                        <span style={{ display: 'flex', width: 17, height: 17, borderRadius: '50%', border: `1.5px solid ${on ? 'var(--accent)' : 'var(--line-2)'}`, alignItems: 'center', justifyContent: 'center' }}>
+                          {on && <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--accent-grad)' }} />}
                         </span>
                       </Td>
                       <Td>
@@ -508,10 +516,10 @@ export function KpiBulkAssign() {
                         </button>
                       </Td>
                       <Td muted>
-                        <span style={{ fontWeight: 700, color: t.employeeCount ? '#222222' : '#9197A2', fontVariantNumeric: 'tabular-nums' }}>
+                        <span style={{ color: t.employeeCount ? 'var(--ink)' : 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
                           {t.employeeCount}
                         </span>
-                        <span style={{ fontSize: 14, color: '#9197A2' }}>
+                        <span style={{ color: t.employeeCount ? 'var(--ink)' : 'var(--ink-3)' }}>
                           {t.employeeCount === 1 ? ' employee' : ' employees'}
                         </span>
                       </Td>
@@ -520,7 +528,7 @@ export function KpiBulkAssign() {
                 })}
                 {templates.length === 0 && (
                   <tr>
-                    <td colSpan={3} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 15 }}>
+                    <td colSpan={3} style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>
                       No templates yet. Create one under Performance › Templates.
                     </td>
                   </tr>
@@ -529,7 +537,7 @@ export function KpiBulkAssign() {
             </table>
           </Card>
 
-          <div style={{ fontSize: 13, color: '#9197A2', marginTop: 10 }}>
+          <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 12 }}>
             Click a template's name to see its parameters and weights before picking it.
           </div>
 
@@ -537,6 +545,7 @@ export function KpiBulkAssign() {
             <button
               onClick={assign}
               disabled={busy || !templateId}
+              className="lk-btn-p"
               style={{ ...primaryBtn, opacity: busy || !templateId ? 0.5 : 1 }}
             >
               {busy ? 'Assigning…' : `Assign to ${assignIds.length}`}
@@ -569,9 +578,9 @@ function ReplaceTip() {
     >
       <span
         style={{
-          width: 17, height: 17, borderRadius: '50%', background: '#F6E9D5', color: '#9A6B25',
+          width: 17, height: 17, borderRadius: '50%', background: 'var(--warn-bg)', color: 'var(--warn)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 11.5, fontWeight: 800, cursor: 'help',
+          fontSize: 11.5, fontWeight: 600, cursor: 'help',
         }}
       >
         !
@@ -581,9 +590,9 @@ function ReplaceTip() {
           role="tooltip"
           style={{
             position: 'absolute', left: '50%', bottom: '140%', transform: 'translateX(-50%)',
-            width: 232, background: '#222222', color: '#fff', borderRadius: 9,
-            padding: '9px 11px', fontSize: 12.5, fontWeight: 500, lineHeight: 1.5,
-            zIndex: 5, boxShadow: '0 6px 18px rgba(0,0,0,.22)', textAlign: 'left',
+            width: 232, background: 'var(--ink)', color: 'var(--on-sel)', borderRadius: 9,
+            padding: '9px 11px', fontSize: 12, fontWeight: 400, lineHeight: 1.5,
+            zIndex: 5, boxShadow: 'var(--shadow)', textAlign: 'left',
           }}
         >
           {REPLACE_HINT}
@@ -605,12 +614,12 @@ function Pager({
   const from = (page - 1) * PAGE_SIZE + 1;
   const to = Math.min(total, page * PAGE_SIZE);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14 }}>
-      <div style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
+      <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
         Showing {from}–{to} of {total}
       </div>
       {pageCount > 1 && (
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
           <button onClick={() => onPage(page - 1)} disabled={page === 1} style={pageBtn(page === 1)}>
             ← Prev
           </button>
@@ -619,11 +628,11 @@ function Pager({
               key={p}
               onClick={() => onPage(p)}
               style={{
-                minWidth: 32, height: 32, borderRadius: 9, fontSize: 14, fontWeight: 700,
+                minWidth: 34, height: 34, borderRadius: 10, fontSize: 13, fontWeight: 500,
                 cursor: 'pointer',
-                border: `1px solid ${p === page ? '#0571A6' : '#EBEBEB'}`,
-                background: p === page ? '#0571A6' : '#fff',
-                color: p === page ? '#fff' : '#484848',
+                border: `1px solid ${p === page ? 'var(--accent)' : 'var(--line)'}`,
+                background: p === page ? 'var(--accent)' : 'var(--surface)',
+                color: p === page ? '#fff' : 'var(--ink)',
               }}
             >
               {p}
@@ -640,8 +649,9 @@ function Pager({
 
 const pageBtn = (off: boolean) => ({
   ...smallBtn,
-  color: off ? '#9197A2' : '#484848',
-  background: off ? '#F7F7F9' : '#fff',
+  height: 34, borderRadius: 10, border: '1px solid var(--line)', fontSize: 13,
+  color: 'var(--ink)',
+  opacity: off ? 0.4 : 1,
   cursor: off ? 'not-allowed' : 'pointer',
 });
 
@@ -672,53 +682,51 @@ function Steps({
   const at = items.findIndex((i) => i.key === step);
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
       {items.map((item, i) => {
         const state = i < at ? 'done' : i === at ? 'now' : 'todo';
         // Only completed steps are clickable: going forward runs work, which
         // belongs on the buttons below.
         const disabled = state !== 'done' || busy;
         return (
-          <span key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button
               onClick={() => onGo(item.key)}
               disabled={disabled}
               title={disabled ? undefined : `Back to ${item.label.toLowerCase()}`}
               style={{
-                display: 'flex', alignItems: 'center', gap: 8, border: 'none', background: 'none',
-                padding: '4px 2px', font: 'inherit',
+                display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px 8px 8px', borderRadius: 99, font: 'inherit',
+                border: state === 'now' ? '1px solid transparent' : '1px solid var(--line)',
+                background: state === 'now' ? 'var(--accent-soft)' : 'var(--surface-2)',
                 cursor: disabled ? 'default' : 'pointer',
               }}
             >
               <span
                 style={{
-                  width: 22, height: 22, borderRadius: '50%', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800,
-                  background: state === 'todo' ? '#F0F0F2' : '#0571A6',
-                  color: state === 'todo' ? '#9197A2' : '#fff',
+                  width: 26, height: 26, borderRadius: '50%', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 400,
+                  background: state === 'now' ? 'var(--accent)' : state === 'done' ? 'var(--ok-bg)' : 'var(--surface)',
+                  color: state === 'now' ? '#fff' : state === 'done' ? 'var(--ok)' : 'var(--ink-3)',
+                  border: state === 'todo' ? '1px solid var(--line-2)' : '1px solid transparent',
                 }}
               >
                 {state === 'done' ? '✓' : i + 1}
               </span>
               <span
                 style={{
-                  fontSize: 15,
-                  fontWeight: state === 'now' ? 800 : 600,
-                  color: state === 'now' ? '#222222' : state === 'todo' ? '#9197A2' : '#0571A6',
-                  // `disabled` already covers the current step, so anything
-                  // still clickable here is a step you can navigate to.
-                  textDecoration: disabled ? 'none' : 'underline',
-                  textUnderlineOffset: 3,
+                  fontSize: 13,
+                  fontWeight: 400,
+                  color: state === 'now' ? 'var(--accent-ink)' : state === 'todo' ? 'var(--ink-3)' : 'var(--ink-2)',
                 }}
               >
                 {item.label}
               </span>
             </button>
-            {i < items.length - 1 && <span style={{ color: '#C7CBD2' }}>→</span>}
+            {i < items.length - 1 && <span style={{ color: 'var(--ink-4)', fontSize: 12 }}>→</span>}
           </span>
         );
       })}
-      {busy && <span style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>Working…</span>}
+      {busy && <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>Working…</span>}
     </div>
   );
 }

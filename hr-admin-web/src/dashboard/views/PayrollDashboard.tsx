@@ -6,16 +6,18 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
-import { Card, EmptyRow } from '../ui';
+import { Card, EmptyRow, LoadError, Skeleton, SkeletonFrame, SkeletonLines } from '../ui';
+import { useLoad } from '../useLoad';
 import { getPayrollDashboard, type CostRange, type PayrollDashboardReport } from '../../services/payroll';
 import { OPEN_REPORT_KEY } from './PayrollReports';
+import * as Lk from './look';
 
 const STATUS: Record<string, { label: string; bg: string; fg: string }> = {
-  not_started: { label: 'Not started', bg: '#F4F4F6', fg: '#484848' },
-  draft: { label: 'Draft', bg: '#FFF4E0', fg: '#8A5A00' },
-  pending_approval: { label: 'Awaiting approval', bg: '#EAF2FF', fg: '#1D4E9E' },
-  approved: { label: 'Approved', bg: '#E5F4E4', fg: '#2F6B33' },
-  paid: { label: 'Paid', bg: '#E5F4E4', fg: '#2F6B33' },
+  not_started: { label: 'Not started', ...Lk.TONES.mute },
+  draft: { label: 'Draft', ...Lk.TONES.mute },
+  pending_approval: { label: 'Awaiting approval', ...Lk.TONES.warn },
+  approved: { label: 'Approved', ...Lk.TONES.ok },
+  paid: { label: 'Paid', ...Lk.TONES.ok },
 };
 const RANGES: { key: CostRange; label: string }[] = [
   { key: 'this_year', label: 'This year' }, { key: 'this_quarter', label: 'This quarter' },
@@ -23,10 +25,10 @@ const RANGES: { key: CostRange; label: string }[] = [
 ];
 // The cost bar, bottom to top: what reached employees, then what went elsewhere.
 const SERIES = [
-  { key: 'netPayPaise', label: 'Net pay', color: '#1FA971' },
-  { key: 'taxesPaise', label: 'Taxes (TDS)', color: '#F2B233' },
-  { key: 'deductionsPaise', label: 'Deductions (PF, PT, LWF, others)', color: '#6B8BEF' },
-  { key: 'employerPaise', label: 'Employer contributions', color: '#E7795B' },
+  { key: 'netPayPaise', label: 'Net pay', color: 'var(--p-green)' },
+  { key: 'taxesPaise', label: 'Taxes (TDS)', color: 'var(--p-yellow)' },
+  { key: 'deductionsPaise', label: 'Deductions (PF, PT, LWF, others)', color: 'var(--p-blue)' },
+  { key: 'employerPaise', label: 'Employer contributions', color: 'var(--p-orange)' },
 ] as const;
 
 const money = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -38,53 +40,50 @@ export function PayrollDashboard() {
   const s = useStore();
   const [range, setRange] = useState<CostRange>('this_year');
   const [includeDrafts, setIncludeDrafts] = useState(false);
-  const [data, setData] = useState<PayrollDashboardReport | null | undefined>(undefined);
-
+  // Keyed by range and drafts: another choice shows skeletons in the cards
+  // (the controls stay put), never the last choice's figures.
+  const report = useLoad(() => getPayrollDashboard(range, includeDrafts), [range, includeDrafts]);
+  const data = report.data;
   useEffect(() => {
-    let live = true;
-    setData(undefined);
-    void getPayrollDashboard(range, includeDrafts)
-      .then((d) => { if (live) setData(d); })
-      .catch((e) => { if (live) { setData(null); s.flash(e instanceof ApiError ? e.message : 'Could not load the payroll dashboard', 'error'); } });
-    return () => { live = false; };
+    if (report.state === 'error') s.flash(report.error instanceof ApiError ? report.error.message : 'Could not load the payroll dashboard', 'error');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, includeDrafts]);
+  }, [report.state]);
 
   const openReport = (key: string) => {
     try { localStorage.setItem(OPEN_REPORT_KEY, key); } catch { /* storage blocked: reports opens on its first report */ }
     s.setView('payrollreports');
   };
 
-  if (data === undefined) return <Card><EmptyRow text="Loading…" /></Card>;
-  if (data === null) return <Card><EmptyRow text="The payroll dashboard could not load." /></Card>;
-  const run = data.currentRun;
-  const st = STATUS[run.status] ?? STATUS.draft;
+  if (report.state === 'error') return <Card><LoadError text="The payroll dashboard could not load." onRetry={report.retry} /></Card>;
+  const run = data?.currentRun;
+  const st = run ? STATUS[run.status] ?? STATUS.draft : STATUS.draft;
+  const pending = <SkeletonLines lines={4} style={{ padding: '16px 22px' }} />;
 
   return (
-    <div style={{ display: 'grid', gap: 18 }}>
+    <div style={{ display: 'grid', gap: 20 }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: '#484848' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink-2)' }}>
           <input type="checkbox" checked={includeDrafts} onChange={(e) => setIncludeDrafts(e.target.checked)} /> Include draft runs in the figures
         </label>
       </div>
 
-      <Card style={{ padding: '18px 22px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap' }}>
+      <Card style={{ padding: 20 }}>
+        {!run ? <SkeletonLines lines={2} /> : <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap' }}>
           <div style={{ minWidth: 200, flex: 1 }}>
             <div style={label}>Pay run</div>
-            <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4 }}>{monthLabel(run.period)} <span style={{ ...pill, background: st.bg, color: st.fg }}>{st.label}</span></div>
+            <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.02em', marginTop: 4 }}>{monthLabel(run.period)} <span style={{ ...pill, background: st.bg, color: st.fg }}><span aria-hidden style={Lk.pillDot} />{st.label}</span></div>
           </div>
           <Stat title="Employees" value={run.status === 'not_started' ? '—' : String(run.employees)} />
           <Stat title="Net pay" value={run.status === 'not_started' ? '—' : money(run.netPayPaise)} />
           <Stat title="Pay date" value={dateLabel(run.payDate)} />
-          <button onClick={() => s.setView('payruns')} style={primary}>{run.status === 'not_started' ? 'Create run' : 'Open run'}</button>
-        </div>
+          <button onClick={() => s.setView('payruns')} className="lk-btn-p" style={primary}>{run.status === 'not_started' ? 'Create run' : 'Open run'}</button>
+        </div>}
       </Card>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 20 }}>
         <Card>
-          <CardHead title="Benefits and deductions" right={data.dues ? `${monthLabel(data.dues.period)}${data.dues.status === 'approved' || data.dues.status === 'paid' ? '' : ' · draft'}` : ''} />
-          {!data.dues ? <EmptyRow text="No finished run yet." /> : (
+          <CardHead title="Benefits and deductions" right={data?.dues ? `${monthLabel(data.dues.period)}${data.dues.status === 'approved' || data.dues.status === 'paid' ? '' : ' · draft'}` : ''} />
+          {!data ? pending : !data.dues ? <EmptyRow text="No finished run yet." /> : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 0 }}>
               <Due title="EPF" sub="Employee + employer, EPS, EDLI, admin" value={data.dues.epfPaise} onView={() => openReport('liability')} />
               <Due title="ESI" sub="Employee + employer" value={data.dues.esiPaise} onView={() => openReport('liability')} />
@@ -94,27 +93,27 @@ export function PayrollDashboard() {
             </div>
           )}
         </Card>
-        <div style={{ display: 'grid', gap: 18 }}>
+        <div style={{ display: 'grid', gap: 20 }}>
           <Card>
             <CardHead title="Employees" />
-            <div style={{ padding: '6px 22px 16px' }}>
+            {!data ? pending : <div style={{ padding: '0 20px 12px' }}>
               <Row label="Active employees" value={data.people.active} />
               <Row label="On payroll (salary assigned)" value={data.people.withSalary} />
               <Row label="No salary assigned" value={data.people.noSalary} warn={data.people.noSalary > 0} />
               <Row label="On payroll, no bank account" value={data.people.noBankAccount} warn={data.people.noBankAccount > 0} />
               <Row label="On payroll, no PAN" value={data.people.noPan} warn={data.people.noPan > 0} />
-            </div>
+            </div>}
           </Card>
           <Card>
             <CardHead title="To do" />
-            <div style={{ padding: '6px 22px 16px' }}>
-              {data.todo.pendingClaims + data.todo.runsAwaitingApproval === 0 ? <div style={{ color: '#717171', fontSize: 14.5, padding: '8px 0' }}>Nothing waiting.</div> : (
+            {!data ? pending : <div style={{ padding: '0 20px 12px' }}>
+              {data.todo.pendingClaims + data.todo.runsAwaitingApproval === 0 ? <div style={{ color: 'var(--ink-3)', fontSize: 13, padding: '8px 0' }}>Nothing waiting.</div> : (
                 <>
                   {data.todo.runsAwaitingApproval > 0 && <Row label="Runs awaiting approval" value={data.todo.runsAwaitingApproval} onClick={() => s.setView('payruns')} />}
                   {data.todo.pendingClaims > 0 && <Row label="Reimbursement claims to review" value={data.todo.pendingClaims} onClick={() => s.setView('reimbursements')} />}
                 </>
               )}
-            </div>
+            </div>}
           </Card>
         </div>
       </div>
@@ -125,10 +124,14 @@ export function PayrollDashboard() {
             {RANGES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
           </select>
         } />
-        <CostChart months={data.cost.months} />
-        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', padding: '0 22px 18px', fontSize: 13.5, color: '#484848' }}>
-          {SERIES.map((x) => <span key={x.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 11, height: 11, borderRadius: 3, background: x.color }} />{x.label}</span>)}
-          <span style={{ color: '#9197A2' }}>{data.cost.label} · finished runs{includeDrafts ? ' and drafts' : ''}</span>
+        {!data ? (
+          <SkeletonFrame style={{ display: 'flex', alignItems: 'flex-end', gap: 28, height: 250, padding: '24px 40px 30px 80px' }}>
+            {[52, 70, 38, 84, 60, 46, 76, 58, 66, 42, 72, 50].map((h, i) => <Skeleton key={i} h={0} r={4} style={{ height: `${h}%`, flex: 1, width: 'auto' }} />)}
+          </SkeletonFrame>
+        ) : <CostChart months={data.cost.months} />}
+        <div style={{ display: 'flex', gap: '8px 16px', flexWrap: 'wrap', padding: '0 20px 20px', fontSize: 12.5, color: 'var(--ink-2)' }}>
+          {SERIES.map((x) => <span key={x.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 3, background: x.color }} />{x.label}</span>)}
+          {data && <span style={{ color: 'var(--ink-3)' }}>{data.cost.label} · finished runs{includeDrafts ? ' and drafts' : ''}</span>}
         </div>
       </Card>
     </div>
@@ -152,12 +155,12 @@ function CostChart({ months }: { months: PayrollDashboardReport['cost']['months'
   const y = (rupees: number) => T + plotH - (rupees / top) * plotH;
   const fmt = (r: number) => (r >= 1e7 ? `${(r / 1e7).toFixed(r % 1e7 ? 1 : 0)} Cr` : r >= 1e5 ? `${(r / 1e5).toFixed(r % 1e5 ? 1 : 0)} L` : r >= 1e3 ? `${Math.round(r / 1e3)} K` : String(r));
   return (
-    <div style={{ padding: '10px 14px 4px', overflowX: 'auto' }}>
+    <div style={{ padding: '0 12px 4px', overflowX: 'auto' }}>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ minWidth: 560, display: 'block' }} role="img" aria-label="Payroll cost by month">
         {ticks.map((t) => (
           <g key={t}>
-            <line x1={L} x2={W - 12} y1={y(t)} y2={y(t)} stroke="#EBEBEB" strokeDasharray={t ? '4 4' : undefined} />
-            <text x={L - 8} y={y(t) + 4} textAnchor="end" fontSize="12" fill="#717171">{fmt(t)}</text>
+            <line x1={L} x2={W - 12} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeDasharray={t ? '4 4' : undefined} />
+            <text x={L - 8} y={y(t) + 4} textAnchor="end" fontSize="12" fill="var(--ink-3)">{fmt(t)}</text>
           </g>
         ))}
         {months.map((m, i) => {
@@ -171,9 +174,9 @@ function CostChart({ months }: { months: PayrollDashboardReport['cost']['months'
                 if (v <= 0) return null;
                 const y0 = y(acc), y1 = y(acc + v);
                 acc += v;
-                return <rect key={sr.key} x={x} y={y1} width={barW} height={Math.max(0.5, y0 - y1)} fill={sr.color} />;
+                return <rect key={sr.key} x={x} y={y1} width={barW} height={Math.max(0.5, y0 - y1)} rx={Math.min(4, Math.max(0, (y0 - y1) / 2))} fill={sr.color} />;
               })}
-              <text x={x + barW / 2} y={H - 10} textAnchor="middle" fontSize="12" fill="#484848">{shortMonth(m.period)}</text>
+              <text x={x + barW / 2} y={H - 10} textAnchor="middle" fontSize="12" fill="var(--ink-2)">{shortMonth(m.period)}</text>
             </g>
           );
         })}
@@ -184,36 +187,36 @@ function CostChart({ months }: { months: PayrollDashboardReport['cost']['months'
 
 function CardHead({ title, right }: { title: string; right?: ReactNode }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', padding: '14px 22px', borderBottom: '1px solid #EBEBEB' }}>
-      <div style={{ fontSize: 16.5, fontWeight: 800, flex: 1 }}>{title}</div>
-      {right && <div style={{ fontSize: 13.5, color: '#717171' }}>{right}</div>}
+    <div style={{ display: 'flex', alignItems: 'center', padding: '20px 20px 12px' }}>
+      <div style={{ ...Lk.cardTitle, flex: 1 }}>{title}</div>
+      {right && <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{right}</div>}
     </div>
   );
 }
 function Stat({ title, value }: { title: string; value: string }) {
-  return <div><div style={label}>{title}</div><div style={{ fontSize: 17, fontWeight: 700, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</div></div>;
+  return <div><div style={label}>{title}</div><div style={{ fontSize: 14, fontWeight: 500, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{value}</div></div>;
 }
 function Due({ title, sub, value, onView }: { title: string; sub: string; value: number; onView: () => void }) {
   return (
-    <div style={{ padding: '16px 22px', borderRight: '1px solid #F4F4F6' }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: '#484848' }}>{title}</div>
-      <div style={{ fontSize: 12, color: '#9197A2', marginTop: 2 }}>{sub}</div>
-      <div style={{ fontSize: 20, fontWeight: 800, margin: '8px 0 6px', fontVariantNumeric: 'tabular-nums' }}>{money(value)}</div>
+    <div style={{ padding: '4px 20px 20px', borderRight: '1px solid var(--line)' }}>
+      <div style={{ fontSize: 12.5, fontWeight: 400, color: 'var(--ink-2)' }}>{title}</div>
+      <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2 }}>{sub}</div>
+      <div style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', margin: '8px 0 6px', fontVariantNumeric: 'tabular-nums' }}>{money(value)}</div>
       <button onClick={onView} style={link}>View details</button>
     </div>
   );
 }
 function Row({ label: text, value, warn, onClick }: { label: string; value: number; warn?: boolean; onClick?: () => void }) {
   return (
-    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #F4F4F6', cursor: onClick ? 'pointer' : undefined }}>
-      <span style={{ flex: 1, fontSize: 14.5, color: '#484848' }}>{text}</span>
-      <strong style={{ fontSize: 16, color: warn ? '#C4382E' : '#222222', fontVariantNumeric: 'tabular-nums' }}>{value}</strong>
+    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--line)', cursor: onClick ? 'pointer' : undefined }}>
+      <span style={{ flex: 1, fontSize: 13.5, color: 'var(--ink-2)' }}>{text}</span>
+      <strong style={{ fontSize: 14, fontWeight: 500, color: warn ? 'var(--bad)' : 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{value}</strong>
     </div>
   );
 }
 
-const label: CSSProperties = { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#9197A2' };
-const pill: CSSProperties = { fontSize: 12.5, fontWeight: 700, borderRadius: 7, padding: '3px 9px', marginLeft: 8, verticalAlign: 'middle' };
-const primary: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
-const link: CSSProperties = { background: 'none', border: 'none', padding: 0, color: '#0571A6', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', fontFamily: 'inherit' };
-const select: CSSProperties = { padding: '6px 10px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', background: '#fff' };
+const label: CSSProperties = { ...Lk.kvDt };
+const pill: CSSProperties = { ...Lk.pill('mute'), marginLeft: 8, verticalAlign: 'middle', letterSpacing: 0 };
+const primary: CSSProperties = { ...Lk.btnPrimary };
+const link: CSSProperties = { background: 'none', border: 'none', padding: 0, color: 'var(--accent-ink)', fontWeight: 500, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' };
+const select: CSSProperties = { height: 32, padding: '0 10px', border: '1px solid var(--line-2)', borderRadius: 999, fontSize: 12, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };

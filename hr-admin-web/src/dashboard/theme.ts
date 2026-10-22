@@ -35,6 +35,8 @@ export type View =
   | 'departments'
   | 'designations'
   | 'employees'
+  | 'employeeimport'
+  | 'peopletasks'
   | 'orgchart'
   | 'attendancereport'
   | 'usersroles'
@@ -44,7 +46,8 @@ export type View =
   | 'games'
   | 'relaygame'
   | 'engagementposts'
-  | 'contentreports';
+  | 'contentreports'
+  | 'suwi';
 
 /** A leave type as the lists show it: 'Casual', 'Comp-off', or a type HR added, 'Emergency'. */
 export type LeaveType = string;
@@ -53,54 +56,64 @@ export type FeedbackStatus = 'Submitted' | 'Acknowledged' | 'Pending' | 'Draft';
 export type EmpType = 'Full-time' | 'Contract' | 'Intern';
 export type OtDuration = 'Full day' | 'Half day';
 
-// Avatar palette — colour is derived deterministically from the name.
+// Avatar palette — colour is derived deterministically from the name. The
+// avatar shows a soft tint of it with the initials in the full colour.
 const AV = [
   '#B0506A',
-  '#7E5FB0',
-  '#4A6FA5',
-  '#6E7A4E',
-  '#3E8E8A',
-  '#C57F63',
+  '#5E57D6',
+  '#0A6AD1',
+  'var(--t-olive-i)',
+  '#23806A',
+  '#C2562A',
   '#A85C84',
-  '#5E9E7A',
-  '#C98A3C',
-  '#7C7A52',
+  '#3E8E63',
+  '#8A6A12',
+  '#4E4E56',
 ];
 
 /** The dot colour for a type; a type HR added uses the neutral one. */
-export const typeColor = (type: string): string => TYPE[type] ?? '#717171';
+export const typeColor = (type: string): string => TYPE[type] ?? 'var(--ink-3)';
 
 export const TYPE: Record<LeaveType, string> = {
-  Sick: '#C2607A',
-  Casual: '#6E7AA8',
-  Earned: '#5E9E7A',
-  WFH: '#C98A3C',
-  Unpaid: '#717171',
+  Sick: '#BF494B',
+  Casual: '#857FEB',
+  Earned: '#49B195',
+  WFH: '#E9C04F',
+  Unpaid: '#8A8A93',
 };
 
+// Status pills are solid: green done, yellow waiting, red refused, blue paid.
+const SOLID = {
+  ok: { bg: 'var(--p-green)', fg: 'var(--on-accent)' },
+  warn: { bg: 'var(--p-yellow)', fg: 'var(--p-yellow-ink)' },
+  bad: { bg: 'var(--p-red)', fg: 'var(--on-accent)' },
+  info: { bg: 'var(--p-blue)', fg: 'var(--on-accent)' },
+  mute: { bg: 'var(--mute-bg)', fg: 'var(--ink-2)' },
+} satisfies Record<string, Pill>;
+
 export const STAT: Record<ReqStatus, Pill> = {
-  Pending: { bg: '#F6E9D5', fg: '#9A6B25' },
-  Approved: { bg: '#E4EDE0', fg: '#4F7A52' },
-  Declined: { bg: '#F4DEE2', fg: '#A8475F' },
-  Paid: { bg: '#E7ECF4', fg: '#4A6FA5' },
+  Pending: SOLID.warn,
+  Approved: SOLID.ok,
+  Declined: SOLID.bad,
+  Paid: SOLID.info,
 };
 
 export const FSTAT: Record<FeedbackStatus, Pill> = {
-  Acknowledged: { bg: '#E4EDE0', fg: '#4F7A52' },
-  Submitted: { bg: '#E7ECF4', fg: '#4A6FA5' },
-  Pending: { bg: '#F6E9D5', fg: '#9A6B25' },
-  Draft: { bg: '#F7F7F9', fg: '#717171' },
+  Acknowledged: SOLID.ok,
+  Submitted: SOLID.info,
+  Pending: SOLID.warn,
+  Draft: SOLID.mute,
 };
 
 export const ETYPE: Record<EmpType, Pill> = {
-  'Full-time': { bg: '#E4EDE0', fg: '#4F7A52' },
-  Contract: { bg: '#F6E9D5', fg: '#9A6B25' },
-  Intern: { bg: '#E7ECF4', fg: '#4A6FA5' },
+  'Full-time': SOLID.ok,
+  Contract: SOLID.warn,
+  Intern: SOLID.info,
 };
 
 export const OTDUR: Record<OtDuration, Pill> = {
-  'Full day': { bg: '#E7F4FB', fg: '#0571A6' },
-  'Half day': { bg: '#EEF0E6', fg: '#5E6B3E' },
+  'Full day': { bg: 'var(--t-sky)', fg: 'var(--t-sky-i)' },
+  'Half day': { bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' },
 };
 
 export function avColor(name: string): string {
@@ -117,7 +130,7 @@ export function initials(name: string): string {
 // [title, meta] per section.
 export const TITLES: Record<View, [string, string]> = {
   organisation: ['Organisation', 'Company profile, identity & contact details'],
-  overview: ['HR control room', 'Tuesday, 30 June'],
+  overview: ['HR control room', ''], // the date is filled in by Topbar
   leave: ['Leave requests', 'Tracking time off · approved by reporting managers'],
   overtime: ['Overtime', 'Tracking overtime · approved by reporting managers'],
   attendance: ['Attendance corrections', 'Requests · days employees asked to have corrected'],
@@ -148,6 +161,8 @@ export const TITLES: Record<View, [string, string]> = {
   departments: ['Departments', 'People'],
   designations: ['Designations', 'People'],
   employees: ['Employees', 'People'],
+  employeeimport: ['Import employees', 'People · update details from a sheet, approved before it saves'],
+  peopletasks: ['Tasks', 'People · who still needs a template, salary, bank details or basic details'],
   orgchart: ['Org chart', 'People'],
   attendancereport: ['Attendance report', 'Reports'],
   usersroles: ['Accesses', 'People · users, roles and permissions'],
@@ -158,6 +173,7 @@ export const TITLES: Record<View, [string, string]> = {
   relaygame: ['Relay game', 'Connect · launch-event teams and questions'],
   engagementposts: ['Engagement posts', 'Connect · challenges published for people to play'],
   contentreports: ['Reported content', 'Connect · posts and comments employees have reported'],
+  suwi: ['Suwi', 'Your HR assistant · what it may do, and what it did'],
 };
 
 export type Placeholder = {

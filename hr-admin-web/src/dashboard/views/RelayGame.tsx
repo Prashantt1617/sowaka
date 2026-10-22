@@ -17,56 +17,69 @@ import {
 } from '../../services/relay';
 import { ApiError } from '../../services/http';
 import { useStore } from '../store';
-import { Card, EmptyRow, Pill, SummaryCard } from '../ui';
+import { Card, EmptyRow, LoadError, Pill, SkeletonPage, SummaryCard } from '../ui';
+import type { LoadState } from '../ui';
+import './look.css';
 
-const button = (bg: string, color = '#fff') => ({
-  border: 'none',
-  background: bg,
-  color,
-  borderRadius: 9,
-  padding: '9px 14px',
-  fontSize: 14,
-  fontWeight: 700,
+const button = (bg: string, color = 'var(--on-accent)') => ({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  height: 40,
+  border: '1px solid transparent',
+  background: bg === 'var(--accent)' ? 'var(--accent-grad)' : bg,
+  boxShadow: bg === 'var(--accent)' ? '0 8px 18px -10px var(--accent)' : undefined,
+  color: bg === 'var(--accent)' ? '#fff' : color,
+  borderRadius: 999,
+  padding: '0 16px',
+  fontSize: 13,
+  fontWeight: 500,
+  fontFamily: 'inherit',
   cursor: 'pointer',
 });
 const panel = {
-  background: '#fff',
-  border: '1px solid #EBEBEB',
-  borderRadius: 14,
+  background: 'var(--surface)',
+  border: '1px solid transparent',
+  borderRadius: 'var(--r-lg)',
   padding: 20,
-  marginBottom: 20,
+  marginBottom: 20, boxShadow: 'var(--shadow)',
 };
 /** A step is a number, not a heading that starts with one. */
 const stepBadge = (muted: boolean) => ({
-  width: 26,
-  height: 26,
-  borderRadius: 99,
-  background: muted ? '#F1F2F4' : '#E7F2F7',
-  color: muted ? '#9A9AA1' : '#0571A6',
-  fontSize: 13,
-  fontWeight: 800,
+  width: 24,
+  height: 24,
+  borderRadius: 8,
+  background: muted ? 'var(--surface-2)' : 'var(--accent-soft)',
+  color: muted ? 'var(--ink-3)' : 'var(--hi)',
+  fontSize: 10.5,
+  fontWeight: 600,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
   flex: 'none',
 });
 const ghost = {
-  ...button('#fff', '#222'),
-  border: '1px solid #E7E7EA',
+  ...button('var(--surface)', 'var(--ink)'),
+  border: '1px solid var(--line-2)',
 };
 const field = {
   width: '100%',
-  border: '1px solid #EBEBEB',
-  borderRadius: 10,
+  minHeight: 42,
+  border: '1px solid var(--line-2)',
+  borderRadius: 12,
   padding: '10px 12px',
   font: 'inherit',
+  fontSize: 13,
+  lineHeight: '20px',
+  background: 'var(--surface)',
+  color: 'var(--ink)',
   boxSizing: 'border-box' as const,
 };
 const fieldLabel = {
   display: 'block',
-  fontSize: 12,
-  fontWeight: 700,
-  color: '#717171',
+  fontSize: 11.5,
+  fontWeight: 400,
+  color: 'var(--ink-2)',
   marginBottom: 6,
 };
 
@@ -92,12 +105,16 @@ export function RelayGame() {
 
   const event = events.find((item) => item.id === eventId) ?? null;
 
+  // Until the events have loaded once: a skeleton, then Retry if it failed.
+  const [state, setState] = useState<LoadState>('loading');
   const load = async () => {
     try {
       const list = await listRelayEvents();
       setEvents(list);
       setEventId((current) => current || list[0]?.id || '');
+      setState('ready');
     } catch (error) {
+      setState((st) => (st === 'ready' ? st : 'error'));
       flash(error instanceof ApiError ? error.message : 'Could not load relay events');
     }
   };
@@ -186,8 +203,8 @@ export function RelayGame() {
           display: 'flex',
           justifyContent: 'flex-end',
           alignItems: 'center',
-          marginBottom: 16,
-          gap: 10,
+          marginBottom: 20,
+          gap: 8,
           flexWrap: 'wrap',
         }}
       >
@@ -195,7 +212,7 @@ export function RelayGame() {
           <select
             value={eventId}
             onChange={(e) => setEventId(e.target.value)}
-            style={{ ...ghost, fontWeight: 600, minWidth: 200 }}
+            style={{ ...ghost, fontWeight: 400, minWidth: 200 }}
           >
             {events.map((item) => (
               <option key={item.id} value={item.id}>
@@ -204,12 +221,16 @@ export function RelayGame() {
             ))}
           </select>
         )}
-        <button style={button('#0571A6')} onClick={addEvent}>
+        <button style={button('var(--accent)')} onClick={addEvent}>
           New event
         </button>
       </div>
 
-      {!event ? (
+      {state !== 'ready' ? (
+        state === 'error'
+          ? <Card><LoadError onRetry={() => { setState('loading'); void load(); }} /></Card>
+          : <SkeletonPage cards={4} rows={3} cols={2} avatar={false} />
+      ) : !event ? (
         <Card>
           <EmptyRow text="No relay event yet — create one to import teams into." />
         </Card>
@@ -219,8 +240,8 @@ export function RelayGame() {
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-              gap: 12,
-              marginBottom: 16,
+              gap: 16,
+              marginBottom: 20,
             }}
           >
             <SummaryCard label="Status" value={event.status} />
@@ -229,7 +250,7 @@ export function RelayGame() {
             <SummaryCard
               label="Rounds"
               value={String(event.config.rounds)}
-              color={event.itemCount > 0 ? '#2F8F5B' : '#717171'}
+              color={event.itemCount > 0 ? 'var(--ok-solid)' : 'var(--ink-3)'}
             />
           </div>
 
@@ -258,8 +279,8 @@ export function RelayGame() {
                   <div
                     key={team.teamKey}
                     style={{
-                      border: '1px solid #EBEBEB',
-                      borderRadius: 10,
+                      border: '1px solid var(--line)',
+                      borderRadius: 14,
                       padding: '10px 12px',
                       display: 'flex',
                       justifyContent: 'space-between',
@@ -268,12 +289,12 @@ export function RelayGame() {
                     }}
                   >
                     <div>
-                      <strong style={{ fontSize: 14 }}>{team.name}</strong>
-                      <div style={{ color: '#717171', fontSize: 13 }}>
+                      <strong style={{ fontSize: 14, fontWeight: 500 }}>{team.name}</strong>
+                      <div style={{ color: 'var(--ink-3)', fontSize: 11.5 }}>
                         {team.members.map((member) => member.name).join(', ')}
                       </div>
                     </div>
-                    <Pill label={`${team.members.length} players`} tone={{ bg: '#F7F7F9', fg: '#717171' }} />
+                    <Pill label={`${team.members.length} players`} tone={{ bg: 'var(--surface-2)', fg: 'var(--ink-3)' }} />
                   </div>
                 ))}
               </div>
@@ -303,8 +324,8 @@ export function RelayGame() {
           />
 
           {itemPreview && itemPreview.summary.perRound.some((r) => r.size > 0) && (
-            <Card style={{ marginBottom: 14 }}>
-              <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Pool per round</h3>
+            <Card style={{ marginBottom: 20, padding: 20 }}>
+              <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 600, letterSpacing: '-.01em' }}>Pool per round</h3>
               <div style={{ display: 'grid', gap: 6 }}>
                 {itemPreview.summary.perRound
                   .filter((round) => round.size > 0)
@@ -316,13 +337,13 @@ export function RelayGame() {
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         padding: '8px 12px',
-                        border: '1px solid #EBEBEB',
-                        borderRadius: 10,
+                        border: '1px solid var(--line)',
+                        borderRadius: 14,
                         gap: 12,
                       }}
                     >
-                      <span style={{ fontSize: 14, fontWeight: 600 }}>Round {round.round}</span>
-                      <span style={{ color: '#717171', fontSize: 13 }}>{round.size} items</span>
+                      <span style={{ fontSize: 13, fontWeight: 400 }}>Round {round.round}</span>
+                      <span style={{ color: 'var(--ink-3)', fontSize: 12.5 }}>{round.size} items</span>
                       <Pill
                         label={
                           Number.isFinite(round.clash)
@@ -331,8 +352,8 @@ export function RelayGame() {
                         }
                         tone={
                           !Number.isFinite(round.clash) || round.clash >= 8
-                            ? { bg: '#E4EDE0', fg: '#4F7A52' }
-                            : { bg: '#F6E9D5', fg: '#9A6B25' }
+                            ? { bg: 'var(--ok-bg)', fg: 'var(--ok)' }
+                            : { bg: 'var(--warn-bg)', fg: 'var(--warn)' }
                         }
                       />
                     </div>
@@ -351,12 +372,12 @@ export function RelayGame() {
             <div style={panel}>
               <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6 }}>
                 <span style={stepBadge(notReady)}>3</span>
-                <h3 style={{ margin: 0, fontSize: 16, color: notReady ? '#9A9AA1' : '#222' }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, letterSpacing: '-.01em', color: notReady ? 'var(--ink-3)' : 'var(--ink)' }}>
                   Publish to Connect
                 </h3>
               </div>
               {notReady && (
-                <p style={{ margin: '0 0 8px', color: '#B23B3B', fontSize: 13.5 }}>
+                <p style={{ margin: '0 0 8px', color: 'var(--bad)', fontSize: 12.5 }}>
                   {missingRoster && missingItems
                     ? 'Import the team roster and the questions first.'
                     : missingRoster
@@ -364,7 +385,7 @@ export function RelayGame() {
                       : 'Import the questions first.'}
                 </p>
               )}
-              <p style={{ margin: '0 0 12px', color: '#717171', fontSize: 13 }}>
+              <p style={{ margin: '0 0 12px', color: 'var(--ink-3)', fontSize: 12.5 }}>
                 This schedules the game and announces it together. The countdown on the post and
                 the moment the game starts itself are the same time — players see the instructions
                 video first, then the lobby, and play begins on its own.
@@ -421,12 +442,12 @@ export function RelayGame() {
                     </label>
                   </div>
                 </label>
-                <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: '#9197A2' }}>
+                <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: 'var(--ink-3)' }}>
                   {event.config.rounds} rounds and {event.teamCount} teams, taken from what was
                   imported — the post describes the game rather than configuring it.
                 </div>
                 <button
-                  style={{ ...button('#2F8F5B'), width: 'fit-content', gridColumn: '1 / -1' }}
+                  style={{ ...button('var(--ok-solid)'), width: 'fit-content', gridColumn: '1 / -1' }}
                   disabled={
                     busy ||
                     notReady ||
@@ -441,11 +462,11 @@ export function RelayGame() {
                   <div
                     style={{
                       gridColumn: '1 / -1',
-                      background: '#E4EDE0',
-                      color: '#3B5E3F',
+                      background: 'var(--ok-bg)',
+                      color: 'var(--ok)',
                       borderRadius: 10,
                       padding: '10px 12px',
-                      fontSize: 13,
+                      fontSize: 12.5,
                     }}
                   >
                     Live on Connect. Starts {new Date(published.startsAt).toLocaleString()} ·{' '}
@@ -458,8 +479,8 @@ export function RelayGame() {
           })()}
 
           {teams.length > 0 && (
-            <Card style={{ marginTop: 14 }}>
-              <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Imported teams</h3>
+            <Card style={{ marginTop: 20, padding: 20 }}>
+              <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 600, letterSpacing: '-.01em' }}>Imported teams</h3>
               <div style={{ display: 'grid', gap: 6 }}>
                 {teams.map((team) => (
                   <div
@@ -469,18 +490,18 @@ export function RelayGame() {
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       padding: '8px 12px',
-                      border: '1px solid #EBEBEB',
-                      borderRadius: 10,
+                      border: '1px solid var(--line)',
+                      borderRadius: 14,
                       gap: 12,
                     }}
                   >
-                    <span style={{ fontSize: 14, fontWeight: 600 }}>{team.name}</span>
-                    <span style={{ color: '#717171', fontSize: 13 }}>
+                    <span style={{ fontSize: 13, fontWeight: 400 }}>{team.name}</span>
+                    <span style={{ color: 'var(--ink-3)', fontSize: 12.5 }}>
                       {team.members.length} players
                     </span>
                     <Pill
                       label={`starts at slot ${team.index * 4 + 1}`}
-                      tone={{ bg: '#F7F7F9', fg: '#717171' }}
+                      tone={{ bg: 'var(--surface-2)', fg: 'var(--ink-3)' }}
                     />
                   </div>
                 ))}
@@ -530,11 +551,11 @@ function ImportPanel({
     <div style={panel}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6 }}>
         <span style={stepBadge(disabled === true)}>{step.trim()}</span>
-        <h3 style={{ margin: 0, fontSize: 16, color: disabled === true ? '#9A9AA1' : '#222' }}>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, letterSpacing: '-.01em', color: disabled === true ? 'var(--ink-3)' : 'var(--ink)' }}>
           {rest.join('·').trim()}
         </h3>
       </div>
-      <p style={{ margin: '0 0 12px', color: disabled ? '#B23B3B' : '#717171', fontSize: 13.5 }}>
+      <p style={{ margin: '0 0 12px', color: disabled ? 'var(--bad)' : 'var(--ink-3)', fontSize: 12.5 }}>
         {disabled ? (disabledNote ?? hint) : hint}
       </p>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -557,21 +578,21 @@ function ImportPanel({
             style={{ display: 'none' }}
           />
         </label>
-        {summary && <span style={{ fontSize: 13, color: '#717171' }}>{summary}</span>}
+        {summary && <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{summary}</span>}
       </div>
 
       {errors.length > 0 && (
         <IssueList
-          tone="#B23B3B"
-          background="#F8EAEA"
+          tone="var(--bad)"
+          background="var(--bad-bg)"
           heading={`${errors.length} ${errors.length === 1 ? 'problem' : 'problems'} to fix before importing`}
           issues={errors}
         />
       )}
       {warnings.length > 0 && (
         <IssueList
-          tone="#B07B22"
-          background="#F6ECDA"
+          tone="var(--warn)"
+          background="var(--warn-bg)"
           heading={`${warnings.length} worth checking`}
           issues={warnings}
         />
@@ -580,7 +601,7 @@ function ImportPanel({
       {children}
 
       {canCommit && (
-        <button style={{ ...button('#2F8F5B'), marginTop: 12 }} disabled={busy} onClick={onCommit}>
+        <button style={{ ...button('var(--ok-solid)'), marginTop: 12 }} disabled={busy} onClick={onCommit}>
           {commitLabel}
         </button>
       )}
@@ -600,9 +621,9 @@ function IssueList({
   issues: ImportIssue[];
 }) {
   return (
-    <div style={{ background, borderRadius: 10, padding: '10px 12px', marginTop: 12 }}>
-      <div style={{ color: tone, fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{heading}</div>
-      <ul style={{ margin: 0, paddingLeft: 18, color: '#222', fontSize: 13 }}>
+    <div style={{ background, borderRadius: 14, padding: '12px 14px', marginTop: 12 }}>
+      <div style={{ color: tone, fontWeight: 500, fontSize: 12.5, marginBottom: 6 }}>{heading}</div>
+      <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--ink)', fontSize: 12.5 }}>
         {issues.slice(0, 50).map((issue, index) => (
           <li key={index} style={{ marginBottom: 3 }}>
             {issue.row ? <strong>Row {issue.row}: </strong> : null}

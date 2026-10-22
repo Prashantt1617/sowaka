@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { authSessions, companies, deviceTokens, employeePaymentDetails, feedbackRecords, salaryStructures, users } from '../config/db';
 import { EmployeeDocument, User } from '../models/user.model';
 import { orgUsers } from './admin-scope';
+import { requestViewer } from '../middleware/request-viewer';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { deleteEmployeeDocument, presignReceiptDownload, uploadEmployeeDocument } from './s3-receipt.service';
 
@@ -11,7 +12,13 @@ export class AdminError extends Error {
 
 /** Org-wide list of every feedback record, for the HR dashboard (rule 5). */
 export async function listAllFeedbackForAdmin(adminUserId: string) {
-  const employees = await orgUsers(adminUserId);
+  // The same people `orgUsers` returns, but only the four fields used here:
+  // whole user records carry profile photos, some inline and hundreds of KB.
+  const admin = requestViewer(adminUserId) ?? (await users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1 } }));
+  if (!admin) return [];
+  const employees = await users()
+    .find(admin.org ? { org: admin.org } : {}, { projection: { _id: 0, userId: 1, name: 1, department: 1, designation: 1 } })
+    .toArray();
   if (employees.length === 0) return [];
   const userById = new Map(employees.map((e) => [e.userId, e]));
   const records = await feedbackRecords()

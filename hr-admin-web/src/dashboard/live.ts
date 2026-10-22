@@ -5,7 +5,7 @@
 import { useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
-import { BASE_URL, getToken } from '../services/http';
+import { BASE_URL, getToken, invalidateApiCache } from '../services/http';
 
 /**
  * Calls `onChange` when the company's requests change, when the connection
@@ -22,7 +22,11 @@ export function useRequestsLive(enabled: boolean, onChange: () => void) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const soon = () => {
       clearTimeout(timer);
-      timer = setTimeout(() => latest.current(), 600);
+      timer = setTimeout(() => {
+        // Something changed on the server: the lists must be read afresh, not from the short GET cache.
+        invalidateApiCache();
+        latest.current();
+      }, 600);
     };
     const socket = io(BASE_URL, {
       path: '/connect/socket',
@@ -62,6 +66,7 @@ let supportSocket: Socket | null = null;
 let supportCleanup: (() => void) | null = null;
 
 function emitSupport(change: SupportChange | null) {
+  invalidateApiCache();
   for (const l of supportListeners) l(change);
 }
 

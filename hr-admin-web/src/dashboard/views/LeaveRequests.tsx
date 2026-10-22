@@ -4,7 +4,9 @@ import type { ReqStatus } from '../theme';
 import type { Leave } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
-import { Avatar, Card, DateRange, EmptyRow, Pill, SearchInput, SelectBox, StatusTabs, SummaryCard } from '../ui';
+import { Card, DateRange, EmptyRow, ListPending, LoadingFigure, PageActions, Pill, SearchInput, SelectBox, StatusTabs, SummaryCard, Th } from '../ui';
+import { PersonAvatar } from '../PersonAvatar';
+import { btn, btnClass, cellName, cellSub, iconBtn, TH, toolbar, TR } from '../ds';
 import { IconDownload, IconEye } from '../icons';
 
 const COLS = '1.7fr 1fr 1.3fr .6fr 1.7fr 1.3fr 1.1fr .7fr';
@@ -26,6 +28,7 @@ function computeRows(s: ReturnType<typeof useStore>): Leave[] {
 
 export function LeaveRequests() {
   const s = useStore();
+  const st = s.listState('leaves');
   // Summary reflects the selected date range (entries + summary for that range).
   const ranged = s.leaves.filter((r) => inDateRange(r.refISO, s.leaveFrom, s.leaveTo));
   const summary = {
@@ -56,20 +59,31 @@ export function LeaveRequests() {
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
-        <SummaryCard label="Total requests" value={summary.total} />
-        <SummaryCard label="Pending" value={summary.pending} color="#9A6B25" />
-        <SummaryCard label="Approved" value={summary.approved} color="#4F7A52" />
-        <SummaryCard label="Declined" value={summary.declined} color="#A8475F" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 20 }}>
+        <SummaryCard label="Total requests" value={<LoadingFigure state={st}>{summary.total}</LoadingFigure>} />
+        <SummaryCard label="Pending" value={<LoadingFigure state={st}>{summary.pending}</LoadingFigure>} color="var(--warn)" />
+        <SummaryCard label="Approved" value={<LoadingFigure state={st}>{summary.approved}</LoadingFigure>} color="var(--ok)" />
+        <SummaryCard label="Declined" value={<LoadingFigure state={st}>{summary.declined}</LoadingFigure>} color="var(--bad)" />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14, flexWrap: 'wrap' }}>
-        <SearchInput value={s.leaveSearch} onChange={s.setLeaveSearch} placeholder="Search by employee…" />
+      <PageActions>
+        <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
+          <IconDownload stroke="currentColor" /> Export
+        </button>
+      </PageActions>
+
+      <Card padded>
+      <div style={toolbar}>
         <StatusTabs<ReqStatus | 'all'>
           options={['all', 'Pending', 'Approved', 'Declined']}
           active={s.leaveStatus}
           onSelect={s.setLeaveStatus}
         />
+      </div>
+      <div style={toolbar}>
+        <div style={{ flex: 1, minWidth: 262, display: 'flex' }}>
+          <SearchInput value={s.leaveSearch} onChange={s.setLeaveSearch} placeholder="Search by employee…" width="100%" />
+        </div>
         <SelectBox value={s.leaveType} onChange={s.setLeaveType}>
           <option value="all">All types</option>
           {/* The types that actually appear, so one HR adds shows up here too. */}
@@ -84,63 +98,52 @@ export function LeaveRequests() {
           <option value="days">Most days</option>
         </SelectBox>
         <DateRange from={s.leaveFrom} to={s.leaveTo} onFrom={s.setLeaveFrom} onTo={s.setLeaveTo} />
-        <button
-          onClick={exportRows}
-          disabled={rows.length === 0}
-          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: '#222222', border: 'none', color: '#fff', borderRadius: 11, padding: '9px 15px', fontSize: 14, fontWeight: 700, cursor: rows.length ? 'pointer' : 'not-allowed', opacity: rows.length ? 1 : 0.5 }}
-        >
-          <IconDownload /> Export
-        </button>
       </div>
 
-      <Card>
-        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', fontSize: 12, fontWeight: 700, letterSpacing: '.5px', color: '#717171' }}>
-          <div>EMPLOYEE</div>
-          <div>TYPE</div>
-          <div>DATES</div>
-          <div>DAYS</div>
-          <div>REASON</div>
-          <div>MANAGER</div>
-          <div>STATUS</div>
-          <div style={{ textAlign: 'right' }}>ACTION</div>
+        <div style={TH(COLS)}>
+          <Th>EMPLOYEE</Th>
+          <Th>TYPE</Th>
+          <Th>DATES</Th>
+          <Th>DAYS</Th>
+          <Th>REASON</Th>
+          <Th>MANAGER</Th>
+          <Th>STATUS</Th>
+          <Th align="right">ACTION</Th>
         </div>
-        {rows.map((r) => (
+        {rows.map((r, i) => (
           <div
             key={r.id}
             className="dc-row"
             onClick={() => s.setDrawerId(r.id)}
-            style={{ position: 'relative', display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', alignItems: 'center', cursor: 'pointer', transition: 'background .12s' }}
+            style={{ ...TR(COLS, i === rows.length - 1), position: 'relative', cursor: 'pointer' }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-              <Avatar name={r.name} />
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                <div style={{ fontSize: 14, color: '#717171', fontWeight: 500 }}>{r.team}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+              <PersonAvatar name={r.name} userId={r.submitterId} />
+              <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <div style={{ ...cellName, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
+                <div style={cellSub}>{r.team}</div>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: typeColor(r.type) }} />
-              <span style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>{r.type}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: typeColor(r.type) }} />
+              <span>{r.type}</span>
             </div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>{r.from === r.to ? r.from : `${r.from} – ${r.to}`}</div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#484848' }}>{r.days}</div>
-            <div style={{ fontSize: 14, fontWeight: 500, color: r.eRemark ? '#484848' : '#9197A2', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.manager}</div>
+            <div style={{ whiteSpace: 'nowrap' }}>{r.from === r.to ? r.from : `${r.from} – ${r.to}`}</div>
+            <div style={{ whiteSpace: 'nowrap' }}>{r.days}</div>
+            <div style={{ color: r.eRemark ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
+            <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.manager}</div>
             <div>
               <Pill label={r.byAdmin ? `${r.status} · by admin` : r.status} tone={STAT[r.status]} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={() => s.setDrawerId(r.id)}
-                title="View details"
-                style={{ width: 33, height: 33, borderRadius: 9, border: '1px solid #EBEBEB', background: '#F7F7F9', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                <IconEye />
+              <button onClick={() => s.setDrawerId(r.id)} title="View details" className="ds-icon-btn" style={iconBtn(34)}>
+                <IconEye stroke="currentColor" />
               </button>
             </div>
           </div>
         ))}
-        {rows.length === 0 && <EmptyRow text="No requests match your filters." />}
+        <ListPending state={st} onRetry={() => void s.reload()} cols={8} />
+        {st === 'ready' && rows.length === 0 && <EmptyRow text="No requests match your filters." />}
       </Card>
     </div>
   );

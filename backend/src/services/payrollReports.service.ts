@@ -50,8 +50,19 @@ const fyOfPeriod = (p: string) => {
 
 /** The runs that count for each month in [from, to]: one per month, the furthest along. */
 async function runsBetween(org: string, from: string, to: string, opts: Opts): Promise<StoredRun[]> {
-  const statuses = opts.includeDrafts ? ['draft', 'pending_approval', 'approved', 'paid'] : FINAL;
-  const runs = (await payrollRuns().find({ org, period: { $gte: from, $lte: to }, status: { $in: statuses } } as never).toArray()) as StoredRun[];
+  const runs = (await payrollRuns().find({ org, period: { $gte: from, $lte: to }, status: { $in: statusesFor(opts) } } as never).toArray()) as StoredRun[];
+  return bestPerMonth(runs);
+}
+
+const statusesFor = (opts: Opts) => (opts.includeDrafts ? ['draft', 'pending_approval', 'approved', 'paid'] : FINAL);
+
+/** `runsBetween` over runs already in hand: the same pick, without asking the database again. */
+function runsBetweenOf(all: StoredRun[], from: string, to: string, opts: Opts): StoredRun[] {
+  const statuses = statusesFor(opts);
+  return bestPerMonth(all.filter((r) => r.period >= from && r.period <= to && statuses.includes(r.status)));
+}
+
+function bestPerMonth(runs: StoredRun[]): StoredRun[] {
   const best = new Map<string, StoredRun>();
   for (const r of runs) {
     const held = best.get(r.period);
@@ -167,7 +178,7 @@ export async function salaryRegister(viewer: string, periodIn: unknown, opts: Op
   const [run] = await runsBetween(org, period, period, opts);
   const slips = run ? await slipsOf(org, [run]) : [];
   const [people, payments] = await Promise.all([
-    users().find({ userId: { $in: slips.map((s) => s.userId) } }).toArray(),
+    users().find({ userId: { $in: slips.map((s) => s.userId) } }, { projection: { profilePhotoUrl: 0 } }).toArray(),
     employeePaymentDetails().find({ org, userId: { $in: slips.map((s) => s.userId) } } as never).toArray() as unknown as Promise<{ userId: string; payMode?: string; bankName?: string; ifsc?: string; accountNumber?: string; accountLast4?: string }[]>,
   ]);
   const personBy = new Map(people.map((u) => [u.userId, u]));
@@ -192,6 +203,7 @@ export async function salaryRegister(viewer: string, periodIn: unknown, opts: Op
       const split = taxSplit(s, tax);
       const byCode = (list: { code: string; paise: number }[]) => Object.fromEntries(list.map((x) => [x.code, x.paise]));
       return {
+        userId: s.userId,
         employeeId: s.employeeId ?? '',
         name: s.employeeName,
         department: s.department ?? '',
@@ -242,6 +254,12 @@ export async function liabilitySummary(viewer: string, fromIn: unknown, toIn: un
   const { from, to } = rangeArgs(fromIn, toIn);
   const runs = await runsBetween(org, from, to, opts);
   const slips = await slipsOf(org, runs);
+  const list = liabilityRows(slips);
+  return { from, to, runs: runs.map((r) => ({ period: r.period, status: r.status })), rows: list, totalPaise: list.reduce((t, r) => t + r.totalPaise, 0) };
+}
+
+/** What is owed to the government from these payslips, employee and employer side. */
+function liabilityRows(slips: Slip[]) {
   const rows: Record<string, { name: string; employeePaise: number; employerPaise: number }> = {
     income_tax: { name: 'Income Tax (TDS)', employeePaise: 0, employerPaise: 0 },
     epf: { name: 'EPF Contribution', employeePaise: 0, employerPaise: 0 },
@@ -261,7 +279,7 @@ export async function liabilitySummary(viewer: string, fromIn: unknown, toIn: un
   const list = Object.entries(rows)
     .map(([key, r]) => ({ key, ...r, totalPaise: r.employeePaise + r.employerPaise }))
     .filter((r) => r.totalPaise > 0);
-  return { from, to, runs: runs.map((r) => ({ period: r.period, status: r.status })), rows: list, totalPaise: list.reduce((t, r) => t + r.totalPaise, 0) };
+  return list;
 }
 
 // ————————————————————————————————————————————————— Professional Tax
@@ -271,7 +289,7 @@ export async function ptSummary(viewer: string, periodIn: unknown, opts: Opts) {
   if (!isPeriod(periodIn)) throw new PayrollRunError(400, 'period is a month like 2026-09');
   const [run] = await runsBetween(org, periodIn, periodIn, opts);
   const slips = run ? await slipsOf(org, [run]) : [];
-  const people = await users().find({ userId: { $in: slips.map((s) => s.userId) } }).toArray();
+  const people = await users().find({ userId: { $in: slips.map((s) => s.userId) } }, { projection: { profilePhotoUrl: 0 } }).toArray();
   const by = new Map(people.map((u) => [u.userId, u]));
   const rows = slips
     .map((s) => ({ s, pt: partsOf(s).ded('pt') }))
@@ -339,36 +357,62 @@ export async function payrollDashboard(viewer: string, rangeIn: unknown, opts: O
   const org = await requireAdminOrg(viewer);
   const range: CostRange = ['this_year', 'this_quarter', 'previous_year', 'previous_quarter'].includes(String(rangeIn)) ? (rangeIn as CostRange) : 'this_year';
   const today = new Date().toISOString().slice(0, 7);
-  const company = await companies().findOne({ id: org });
+  const { from, to, label } = rangeFor(range, today);
+
+  // Everything that depends on nothing else, in one round trip. This page
+  // used to ask sixteen questions one after another, and on a slow link to the
+  // cluster that was the difference between a page and a spinner. The runs
+  // come once, and every pick below (the run needing attention, the dues
+  // month, the cost range) is made from them exactly as `runsBetween` picks.
+  // Salary and bank rows come for the whole org and are narrowed to the
+  // active people afterwards, rather than waiting for the people first.
+  const [company, all, active, salariedAll, paymentsAll] = await Promise.all([
+    companies().findOne({ id: org }, { projection: { _id: 0, paySchedule: 1 } }),
+    payrollRuns().find({ org, status: { $ne: 'rejected' } } as never).sort({ period: -1 }).toArray() as Promise<StoredRun[]>,
+    users().find({ org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } as never, { projection: { userId: 1 } }).toArray(),
+    salaryStructures().find({ org, status: 'active' }, { projection: { _id: 0, userId: 1 } }).toArray(),
+    employeePaymentDetails().find({ org } as never, { projection: { _id: 0, userId: 1, accountNumber: 1, pan: 1 } }).toArray() as unknown as Promise<{ userId: string; accountNumber?: string; pan?: string }[]>,
+  ]);
   const payDay = (company as { paySchedule?: { payDay?: 'last_day' | number } } | null)?.paySchedule?.payDay ?? 'last_day';
   const payDateOf = (p: string) => (payDay === 'last_day' ? lastDay(p) : `${addMonths(p, 1)}-${String(payDay).padStart(2, '0')}`);
 
   // The run that needs attention: the latest one not yet paid, else the next month to run.
-  const all = (await payrollRuns().find({ org, status: { $ne: 'rejected' } } as never).sort({ period: -1 }).toArray()) as StoredRun[];
   const open = all.find((r) => r.status !== 'paid');
   const lastPaid = all.find((r) => r.status === 'paid' || r.status === 'approved');
   const currentRun = open
     ? { id: open._id.toHexString(), period: open.period, status: open.status, employees: open.employeeCount, netPayPaise: (open.totals?.netPaise ?? 0) + (open.totals?.reimbursementsPaise ?? 0), payDate: payDateOf(open.period) }
     : { id: null, period: lastPaid ? addMonths(lastPaid.period, 1) : today, status: 'not_started', employees: 0, netPayPaise: 0, payDate: payDateOf(lastPaid ? addMonths(lastPaid.period, 1) : today) };
 
-  // What is owed to the government for the latest finished month.
+  // What is owed to the government for the latest finished month: the runs
+  // the Liability Summary would pick for that month.
   const latestFinal = all.find((r) => FINAL.includes(r.status)) ?? (opts.includeDrafts ? all[0] : undefined);
+  const duesRuns = latestFinal ? runsBetweenOf(all, latestFinal.period, latestFinal.period, { includeDrafts: !FINAL.includes(latestFinal.status) }) : [];
+  // Payroll cost by month.
+  const runs = runsBetweenOf(all, from, to, opts);
+
+  // People: active employees, and whose payroll set-up is incomplete.
+  const ids = active.map((u) => u.userId);
+  const idSet = new Set(ids);
+
+  // The payslips behind both, and the claims count, in a second trip.
+  const [slipsAll, pendingClaims] = await Promise.all([
+    slipsOf(org, [...new Map([...runs, ...duesRuns].map((r) => [r._id.toHexString(), r])).values()]),
+    reimbursementClaims().countDocuments({ userId: { $in: ids }, status: 'pending' }),
+  ]);
+  const slipsFor = (list: StoredRun[]) => {
+    const wanted = new Set(list.map((r) => r._id.toHexString()));
+    return slipsAll.filter((s) => wanted.has(s.runId));
+  };
+
   let dues: { period: string; status: string; epfPaise: number; esiPaise: number; tdsPaise: number; ptPaise: number; lwfPaise: number } | null = null;
   if (latestFinal) {
-    const l = await liabilitySummary(viewer, latestFinal.period, latestFinal.period, { includeDrafts: !FINAL.includes(latestFinal.status) });
-    const sum = (keys: string[]) => l.rows.filter((r) => keys.includes(r.key)).reduce((t, r) => t + r.totalPaise, 0);
+    const rows = liabilityRows(slipsFor(duesRuns));
+    const sum = (keys: string[]) => rows.filter((r) => keys.includes(r.key)).reduce((t, r) => t + r.totalPaise, 0);
     dues = { period: latestFinal.period, status: latestFinal.status, epfPaise: sum(['epf', 'eps', 'edli', 'admin']), esiPaise: sum(['esi']), tdsPaise: sum(['income_tax']), ptPaise: sum(['pt']), lwfPaise: sum(['lwf']) };
   }
 
-  // People: active employees, and whose payroll set-up is incomplete.
-  const active = await users().find({ org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } as never, { projection: { userId: 1 } }).toArray();
-  const ids = active.map((u) => u.userId);
-  const [salaried, payments] = await Promise.all([
-    salaryStructures().find({ org, userId: { $in: ids }, status: 'active' }, { projection: { userId: 1 } }).toArray(),
-    employeePaymentDetails().find({ org, userId: { $in: ids } } as never).toArray() as unknown as Promise<{ userId: string; accountNumber?: string; pan?: string }[]>,
-  ]);
-  const withSalary = new Set(salaried.map((s) => s.userId));
-  const payBy = new Map(payments.map((p) => [p.userId, p]));
+  const withSalary = new Set(salariedAll.map((s) => s.userId).filter((id) => idSet.has(id)));
+  const payBy = new Map(paymentsAll.filter((p) => idSet.has(p.userId)).map((p) => [p.userId, p]));
   const people = {
     active: ids.length,
     withSalary: withSalary.size,
@@ -377,10 +421,7 @@ export async function payrollDashboard(viewer: string, rangeIn: unknown, opts: O
     noPan: [...withSalary].filter((id) => !payBy.get(id)?.pan).length,
   };
 
-  // Payroll cost by month.
-  const { from, to, label } = rangeFor(range, today);
-  const runs = await runsBetween(org, from, to, opts);
-  const slips = await slipsOf(org, runs);
+  const slips = slipsFor(runs);
   const cost = monthsBetween(from, to).map((period) => {
     const run = runs.find((r) => r.period === period);
     const mine = run ? slips.filter((s) => s.runId === run._id.toHexString()) : [];
@@ -396,7 +437,6 @@ export async function payrollDashboard(viewer: string, rangeIn: unknown, opts: O
   });
 
   // To do.
-  const pendingClaims = await reimbursementClaims().countDocuments({ userId: { $in: ids }, status: 'pending' });
   const awaitingApproval = all.filter((r) => r.status === 'pending_approval').length;
 
   return { currentRun, dues, people, cost: { range, label, months: cost }, todo: { pendingClaims, runsAwaitingApproval: awaitingApproval } };

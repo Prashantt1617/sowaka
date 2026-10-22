@@ -1,8 +1,10 @@
 import { ObjectId } from 'mongodb';
 import { attendanceRecords, attendanceRegularizations, offices, users } from '../config/db';
 import { PunchLocation } from '../models/office.model';
+import { User } from '../models/user.model';
 import { locateForPunch, officeView, placeLabel, punchLocationFrom } from './geofence.service';
 import {
+  AttendanceRecord,
   AttendanceRegularization,
   OutsideLocationNote,
   REGULARIZATION_DAY_TYPES,
@@ -727,7 +729,8 @@ export async function listAllRegularizationsForAdmin(adminUserId: string) {
     .find({ userId: { $in: employees.map((employee) => employee.userId) } })
     .sort({ status: -1, createdAt: -1 })
     .toArray();
-  const enriched = await enrichRegularizations(values);
+  // The roster is already in hand, so the rows need not read their people again.
+  const enriched = await enrichRegularizations(values, byUserId);
   // HR is looking across managers, so each row has to say whose call it is.
   return enriched.map((value) => ({
     ...value,
@@ -890,16 +893,34 @@ async function applyRegularizationDecision(
   });
 }
 
-async function enrichRegularizations(values: AttendanceRegularization[]) {
+async function enrichRegularizations(
+  values: AttendanceRegularization[],
+  /** The people behind the rows, when the caller has already read them. */
+  known?: Map<string, User>,
+) {
   const userIds = [...new Set(values.map((value) => value.userId))];
   const employeeIds = [...new Set(values.map((value) => value.employeeId))];
+  // Only the days the requests are about: every punch these people ever
+  // made used to come back, to be looked up by a handful of dates.
+  const workDates = [...new Set(values.map((value) => value.workDate))];
+  const knownRows = known && userIds.every((id) => known.has(id)) ? userIds.map((id) => known.get(id)!) : null;
   const [employeeRows, punchRows] = await Promise.all([
-    users()
-      .find({ userId: { $in: userIds } })
-      // The photo fields come too, or the row resolves a face it never read.
-      .project({ userId: 1, name: 1, department: 1, profilePhotoKey: 1, profilePhotoUrl: 1 })
-      .toArray(),
-    attendanceRecords().find({ employeeId: { $in: employeeIds } }).toArray(),
+    knownRows ??
+      users()
+        .find({ userId: { $in: userIds } })
+        // The photo fields come too, or the row resolves a face it never read.
+        .project<Pick<User, 'userId' | 'name' | 'department' | 'profilePhotoKey' | 'profilePhotoUrl'>>({
+          userId: 1, name: 1, department: 1, profilePhotoKey: 1, profilePhotoUrl: 1,
+        })
+        .toArray(),
+    values.length === 0
+      ? []
+      : attendanceRecords()
+          .find({ employeeId: { $in: employeeIds }, workDate: { $in: workDates } })
+          .project<Pick<AttendanceRecord, 'employeeId' | 'workDate' | 'punchIn' | 'punchOut'>>({
+            _id: 0, employeeId: 1, workDate: 1, punchIn: 1, punchOut: 1,
+          })
+          .toArray(),
   ]);
   const employeeById = new Map(employeeRows.map((value) => [value.userId, value]));
   const punchByKey = new Map(punchRows.map((value) => [`${value.employeeId}|${value.workDate}`, value]));

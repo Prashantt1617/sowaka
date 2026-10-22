@@ -10,7 +10,8 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { useAuth } from '../auth/AuthContext';
 import { useBrand } from '../brand';
-import { Card } from '../ui';
+import { Card, LoadError, PageActions, SkeletonForm } from '../ui';
+import { btn, btnClass, cardTitle, fieldLabel, inp } from '../ds';
 import { Logo } from '../icons';
 import { ORG_DISPLAY_NAME, ORG_REGISTERED_NAME } from '../org';
 import { getOrganisationProfile, saveOrganisationProfile, type OrganisationProfileDTO } from '../../services/hrms';
@@ -121,6 +122,7 @@ export function OrganisationProfile() {
   const org = user?.org ?? '';
   const [form, setForm] = useState<OrgForm | null>(null);
   const [loadError, setLoadError] = useState('');
+  const [attempt, setAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -130,10 +132,10 @@ export function OrganisationProfile() {
       .then((p) => { if (live) setForm(formFrom(p, org)); })
       .catch((e) => { if (live) setLoadError(e instanceof ApiError ? e.message : 'Could not load the organisation details'); });
     return () => { live = false; };
-  }, [org]);
+  }, [org, attempt]);
 
-  if (loadError) return <div style={{ maxWidth: 860, color: '#A8475F', fontWeight: 600 }}>{loadError}</div>;
-  if (!form) return <div style={{ maxWidth: 860, color: '#9197A2' }}>Loading…</div>;
+  if (loadError) return <div><Card><LoadError text={loadError} onRetry={() => setAttempt((n) => n + 1)} /></Card></div>;
+  if (!form) return <div><Card style={{ padding: 22 }}><SkeletonForm fields={8} /></Card></div>;
 
   const set = <K extends keyof OrgForm>(k: K, v: OrgForm[K]) => setForm({ ...form, [k]: v });
 
@@ -155,34 +157,33 @@ export function OrganisationProfile() {
   };
 
   return (
-    <div style={{ maxWidth: 860 }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
-        <button onClick={save} disabled={saving} style={primaryBtn}>{saving ? 'Saving…' : 'Save changes'}</button>
-      </div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.65fr) minmax(0,1fr)', gap: 20, alignItems: 'start' }}>
+      <PageActions>
+        <button onClick={save} disabled={saving} className={btnClass('primary')} style={btn('primary')}>{saving ? 'Saving…' : 'Save changes'}</button>
+      </PageActions>
 
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
       {/* ——— Group 1: Organisation ——— */}
-      <Card style={{ padding: '20px 22px', marginBottom: 16 }}>
+      <Card padded style={{ overflow: 'visible' }}>
         <GroupHeader
           title="Organisation"
         />
 
         {/* Logo — owner-managed, read-only */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 18, margin: '4px 0 20px' }}>
+        <div style={logoRow}>
           {brand.icon ? (
             // The organisation's own mark, the same one the sidebar and sign-in wear.
-            <img src={brand.icon} alt="" style={{ ...logoTile, objectFit: 'cover', boxShadow: '0 4px 14px rgba(0,0,0,.14)', background: '#fff' }} />
+            <img src={brand.icon} alt="" style={{ ...logoTile, objectFit: 'cover', boxShadow: 'var(--shadow)', background: 'var(--surface)' }} />
           ) : (
             <div style={logoTile}>
-              <div style={{ transform: 'scale(2.4)' }}>
+              <div style={{ transform: 'scale(1.8)' }}>
                 <Logo />
               </div>
             </div>
           )}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: '#484848' }}>Organisation logo</div>
-              <span style={lockPill}>🔒 Owner-managed</span>
-            </div>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>Organisation logo</div>
+            <span style={{ ...lockPill, marginLeft: 'auto' }}>🔒 Owner-managed</span>
           </div>
         </div>
 
@@ -195,12 +196,12 @@ export function OrganisationProfile() {
           <Field
             label="Display name"
           >
-            <input value={form.displayName} onChange={(e) => set('displayName', e.target.value)} style={inputStyle} />
+            <input value={form.displayName} onChange={(e) => set('displayName', e.target.value)} className="ds-inp" style={inputStyle} />
           </Field>
           <Field
             label="Business location (country)"
           >
-            <select value={form.country} onChange={(e) => set('country', e.target.value)} style={inputStyle}>
+            <select value={form.country} onChange={(e) => set('country', e.target.value)} className="ds-inp" style={inputStyle}>
               <option>India</option>
               <option>United Arab Emirates</option>
               <option>Singapore</option>
@@ -210,7 +211,7 @@ export function OrganisationProfile() {
           <Field
             label="Industry"
           >
-            <select value={form.industry} onChange={(e) => set('industry', e.target.value)} style={inputStyle}>
+            <select value={form.industry} onChange={(e) => set('industry', e.target.value)} className="ds-inp" style={inputStyle}>
               {!form.industry && <option value="">Select industry</option>}
               <option>Services</option>
               <option>Education</option>
@@ -223,13 +224,13 @@ export function OrganisationProfile() {
           <Field
             label="Date of incorporation"
           >
-            <input type="date" value={form.incorporatedOn} onChange={(e) => set('incorporatedOn', e.target.value)} style={inputStyle} />
+            <input type="date" value={form.incorporatedOn} onChange={(e) => set('incorporatedOn', e.target.value)} className="ds-inp" style={inputStyle} />
           </Field>
         </div>
       </Card>
 
       {/* ——— Group 2: Organisation Address ——— */}
-      <Card style={{ padding: '20px 22px', marginBottom: 16 }}>
+      <Card padded style={{ overflow: 'visible' }}>
         <GroupHeader
           title="Organisation Address"
         />
@@ -238,56 +239,58 @@ export function OrganisationProfile() {
             label="Address line 1"
             full
           >
-            <input value={form.addressLine1} onChange={(e) => set('addressLine1', e.target.value)} style={inputStyle} />
+            <input value={form.addressLine1} onChange={(e) => set('addressLine1', e.target.value)} className="ds-inp" style={inputStyle} />
           </Field>
           <Field
             label="Address line 2"
             full
           >
-            <input value={form.addressLine2} onChange={(e) => set('addressLine2', e.target.value)} style={inputStyle} />
+            <input value={form.addressLine2} onChange={(e) => set('addressLine2', e.target.value)} className="ds-inp" style={inputStyle} />
           </Field>
           <Field label="City">
-            <input value={form.city} onChange={(e) => set('city', e.target.value)} style={inputStyle} />
+            <input value={form.city} onChange={(e) => set('city', e.target.value)} className="ds-inp" style={inputStyle} />
           </Field>
           <Field label="State">
-            <input value={form.state} onChange={(e) => set('state', e.target.value)} style={inputStyle} />
+            <input value={form.state} onChange={(e) => set('state', e.target.value)} className="ds-inp" style={inputStyle} />
           </Field>
           <Field label="PIN code">
-            <input value={form.pincode} onChange={(e) => set('pincode', e.target.value)} style={inputStyle} />
+            <input value={form.pincode} onChange={(e) => set('pincode', e.target.value)} className="ds-inp" style={inputStyle} />
           </Field>
           <Field label="Country">
-            <input value={form.addressCountry} onChange={(e) => set('addressCountry', e.target.value)} style={inputStyle} />
+            <input value={form.addressCountry} onChange={(e) => set('addressCountry', e.target.value)} className="ds-inp" style={inputStyle} />
           </Field>
         </div>
       </Card>
 
+      </div>
+
       {/* ——— Group 3: Contact Information ——— */}
-      <Card style={{ padding: '20px 22px' }}>
+      <Card padded style={{ overflow: 'visible' }}>
         <GroupHeader
           title="Contact Information"
         />
-        <div style={grid2}>
+        <div style={grid1}>
           <Field
             label="Primary contact email"
             full
           >
-            <input value={form.primaryContactEmail} onChange={(e) => set('primaryContactEmail', e.target.value)} style={inputStyle} />
+            <input value={form.primaryContactEmail} onChange={(e) => set('primaryContactEmail', e.target.value)} className="ds-inp" style={inputStyle} />
           </Field>
           <Field
             label="Sender email (emails to employees are sent FROM this)"
             full
           >
-            <input value={form.senderEmail} onChange={(e) => set('senderEmail', e.target.value)} style={inputStyle} />
+            <input value={form.senderEmail} onChange={(e) => set('senderEmail', e.target.value)} className="ds-inp" style={inputStyle} />
           </Field>
           <Field
             label="Sender display name"
           >
-            <input value={form.senderName} onChange={(e) => set('senderName', e.target.value)} style={inputStyle} />
+            <input value={form.senderName} onChange={(e) => set('senderName', e.target.value)} className="ds-inp" style={inputStyle} />
           </Field>
           <Field
             label="Reply-to email"
           >
-            <input value={form.replyToEmail} onChange={(e) => set('replyToEmail', e.target.value)} style={inputStyle} />
+            <input value={form.replyToEmail} onChange={(e) => set('replyToEmail', e.target.value)} className="ds-inp" style={inputStyle} />
           </Field>
         </div>
       </Card>
@@ -298,7 +301,7 @@ export function OrganisationProfile() {
 function GroupHeader({ title }: { title: string }) {
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.2px' }}>{title}</div>
+      <h2 style={cardTitle}>{title}</h2>
     </div>
   );
 }
@@ -306,15 +309,17 @@ function GroupHeader({ title }: { title: string }) {
 function Field({ label, full, children }: { label: string; full?: boolean; children: ReactNode }) {
   return (
     <div style={full ? { gridColumn: '1 / -1' } : undefined}>
-      <label style={{ display: 'block', fontSize: 14, fontWeight: 700, marginBottom: 5, color: '#484848' }}>{label}</label>
+      <label style={{ ...fieldLabel, display: 'block', marginBottom: 6 }}>{label}</label>
       {children}
     </div>
   );
 }
 
-const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 };
-const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222' };
-const readonly: CSSProperties = { background: '#F7F7F9', color: '#717171' };
-const primaryBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const logoTile: CSSProperties = { width: 76, height: 76, borderRadius: 18, background: '#0571A6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 14px rgba(5,113,166,.28)' };
-const lockPill: CSSProperties = { fontSize: 12, fontWeight: 700, color: '#9A6B25', background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 20, padding: '2px 10px' };
+// The prototype's form: 42px fields with 12px corners, 16px between rows, 12px between columns.
+const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: '16px 12px' };
+const grid1: CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gap: 16 };
+const inputStyle: CSSProperties = { ...inp, fontFamily: 'inherit' };
+const readonly: CSSProperties = { background: 'var(--surface-2)', color: 'var(--ink-2)' };
+const logoRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 14, padding: 12, border: '1px dashed var(--line-2)', borderRadius: 'var(--r)', background: 'var(--surface-2)', marginBottom: 20, flexWrap: 'wrap' };
+const logoTile: CSSProperties = { width: 56, height: 56, borderRadius: 14, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' };
+const lockPill: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 500, lineHeight: 1.5, color: 'var(--ink-2)', background: 'var(--mute-bg)', borderRadius: 99, padding: '3px 10px', whiteSpace: 'nowrap' };

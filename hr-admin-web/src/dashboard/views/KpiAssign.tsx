@@ -5,6 +5,7 @@
 // remove parameters for one individual. Editing a template afterwards does not
 // reach back into anyone already assigned from it.
 import { useCallback, useEffect, useState } from 'react';
+import { LoadError, SkeletonLines } from '../ui';
 import {
   assignKpis,
   getKpiAssignment,
@@ -48,6 +49,8 @@ export function EmployeeKpiPanel({
   const [upcoming, setUpcoming] = useState<KpiAssignmentDTO | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Once anything has loaded, a refresh keeps it on screen rather than a skeleton.
+  const [loaded, setLoaded] = useState(false);
   const [open, setOpen] = useState(false);
 
   const reload = useCallback(async () => {
@@ -64,6 +67,7 @@ export function EmployeeKpiPanel({
       setAssignment(live);
       setUpcoming(upcoming);
       setError('');
+      setLoaded(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load KPIs');
     } finally {
@@ -89,10 +93,12 @@ export function EmployeeKpiPanel({
         />
       )}
 
-      {error && <div style={{ fontSize: 14, color: '#A32B2B', fontWeight: 600, marginBottom: 10 }}>{error}</div>}
+      {error && loaded && <div style={{ fontSize: 13, color: 'var(--bad)', fontWeight: 400, marginBottom: 10 }}>{error}</div>}
 
-      {loading ? (
-        <div style={{ fontSize: 14, color: '#9197A2' }}>Loading…</div>
+      {!loaded && error && !loading ? (
+        <LoadError compact text={error} onRetry={() => void reload()} />
+      ) : !loaded ? (
+        <SkeletonLines lines={4} />
       ) : (
         <>
           {/* What their manager is scoring against right now. Frozen. */}
@@ -104,7 +110,7 @@ export function EmployeeKpiPanel({
           />
 
           {/* The editable one. Every change lands here, never in the live cycle. */}
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #F0F0F2' }}>
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
             <CycleBlock
               label={`From ${periodLabel(nextPeriod)}`}
               assignment={upcoming}
@@ -112,7 +118,7 @@ export function EmployeeKpiPanel({
               empty={`Nothing set yet. Without it they carry no KPIs into ${periodLabel(nextPeriod)}.`}
             />
             {readOnly ? (
-              <div style={{ fontSize: 13, color: '#9197A2', marginTop: 12 }}>{readOnly}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 12 }}>{readOnly}</div>
             ) : (
             <button
               onClick={() => setOpen(true)}
@@ -151,11 +157,11 @@ function CycleBlock({
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 9, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.03em', color: '#717171' }}>
+        <span style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-3)' }}>
           {label.toUpperCase()}
         </span>
         {assignment && (
-          <span style={{ background: '#EAF3F8', color: '#0571A6', borderRadius: 20, padding: '2px 9px', fontSize: 12, fontWeight: 700 }}>
+          <span style={{ background: 'var(--accent-soft)', color: 'var(--accent-ink)', borderRadius: 'var(--r-lg)', padding: '2px 9px', fontSize: 11.5, fontWeight: 500 }}>
             {source ? source.name : 'Custom set'}
           </span>
         )}
@@ -165,19 +171,19 @@ function CycleBlock({
           {assignment.parameters.map((p) => (
             <div key={p.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14.5, fontWeight: 700 }}>{p.title}</div>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{p.title}</div>
                 {p.description && (
-                  <div style={{ fontSize: 13, color: '#717171', lineHeight: 1.45, marginTop: 1 }}>{p.description}</div>
+                  <div style={{ fontSize: 12.5, color: 'var(--ink-3)', lineHeight: 1.45, marginTop: 1 }}>{p.description}</div>
                 )}
               </div>
-              <span style={{ flexShrink: 0, fontSize: 13.5, fontWeight: 800, color: '#484848', fontVariantNumeric: 'tabular-nums' }}>
+              <span style={{ flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
                 {assignment.weights[p.id] ?? 0}%
               </span>
             </div>
           ))}
         </div>
       ) : (
-        <div style={{ fontSize: 13.5, color: '#9197A2', lineHeight: 1.55 }}>{empty}</div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-4)', lineHeight: 1.55 }}>{empty}</div>
       )}
     </>
   );
@@ -264,7 +270,7 @@ export function KpiAssignModal({
           {existing && (
             <button
               onClick={async () => { await removeKpiAssignment(userId, period); onSaved(); }}
-              style={{ ...ghostBtn, color: '#A32B2B', marginRight: 'auto' }}
+              style={{ ...ghostBtn, color: 'var(--bad)', marginRight: 'auto' }}
             >
               Remove assignment
             </button>
@@ -295,7 +301,7 @@ export function KpiAssignModal({
             </select>
           </Field>
           {divergedFromTemplate ? (
-            <div style={{ ...noteTag, background: '#F6E9D5', color: '#8A6A20' }}>
+            <div style={{ ...noteTag, background: 'var(--warn-bg)', color: 'var(--warn)' }}>
               ⓘ&nbsp; Edited for this person — the parameters no longer match{' '}
               <strong>{source?.name}</strong>. Re-picking the template above resets them to it.
             </div>
@@ -320,7 +326,7 @@ export function KpiAssignModal({
             weights={weights}
             onChange={(nextPicked, nextWeights) => { setPicked(nextPicked); setWeights(nextWeights); }}
           />
-          {error && <div style={{ color: '#A32B2B', fontWeight: 600, fontSize: 14, marginTop: 10 }}>{error}</div>}
+          {error && <div style={{ color: 'var(--bad)', fontWeight: 400, fontSize: 13, marginTop: 10 }}>{error}</div>}
         </div>
       </div>
     </Modal>

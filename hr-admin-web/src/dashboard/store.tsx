@@ -27,6 +27,11 @@ import type { KpiCycleDTO } from '../services/kpi';
 import { ApiError } from '../services/http';
 import { useAuth } from './auth/AuthContext';
 import { useRequestsLive } from './live';
+import type { LoadState } from './ui';
+import { combineLoad } from './useLoad';
+
+/** The shared lists the store loads, each with its own loading state. */
+export type StoreList = 'leaves' | 'overtime' | 'claims' | 'corrections' | 'feedback' | 'employees' | 'cycle';
 
 type LeaveStatusFilter = ReqStatus | 'all';
 type FbStatusFilter = FeedbackStatus | 'all';
@@ -175,6 +180,12 @@ function useProvideStore() {
   const [empSearch, setEmpSearch] = useState('');
   const [empTeam, setEmpTeam] = useState('all');
   const [empDrawerId, setEmpDrawerId] = useState<string | null>(null);
+  // Suwi's panel, and a profile it asked to open (the Employees view picks it up).
+  const [suwiOpen, setSuwiOpen] = useState(false);
+  // A question handed to the panel (a "Show me" from Suwi's notices); the panel asks it and clears it.
+  const [suwiAsk, setSuwiAsk] = useState<string | null>(null);
+  const askSuwiQuestion = (q: string) => { setSuwiAsk(q); setSuwiOpen(true); };
+  const [profileRequest, setProfileRequest] = useState<{ userId: string; tab?: string } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState<UserForm>(emptyForm);
 
@@ -196,42 +207,71 @@ function useProvideStore() {
     [flash, signOut],
   );
 
+  // What the lists depend on: who is signed in and which tabs they may open.
+  // Not the user object itself, which is replaced when the app re-reads
+  // /auth/me on every load: keyed on that, the whole burst of lists went out
+  // a second time a moment after the first.
+  const accessKey = user
+    ? JSON.stringify([user.id, user.dashboardAccess, user.dashboardAdmin, user.dashboardTabs ?? null])
+    : '';
+  // Each shared list settles on its own, so a tab waits only for what it shows
+  // (Leave for the leave inbox and the roster, not for feedback). A list that
+  // has loaded stays on screen while a reload refreshes it; one that failed
+  // goes back to loading when Retry asks again.
+  const [lists, setLists] = useState<Record<StoreList, LoadState>>(() => ({
+    leaves: 'loading', overtime: 'loading', claims: 'loading', corrections: 'loading',
+    feedback: 'loading', employees: 'loading', cycle: 'loading',
+  }));
+  const markList = (key: StoreList, state: LoadState) => setLists((s) => (s[key] === state ? s : { ...s, [key]: state }));
+
   const reload = useCallback(async () => {
-    if (!user) return;
+    if (!accessKey) return;
     setLoading(true);
-    try {
-      const [lv, ot, rb, cr, fb, emp, live] = await Promise.all([
-        unlessForbidden(getLeaveInbox()),
-        unlessForbidden(getOvertimeInbox()),
-        unlessForbidden(getReimbInbox()),
-        unlessForbidden(getRegularizationInbox()),
-        unlessForbidden(getAllFeedback()),
-        getAllEmployees(),
-        getKpiCycle(),
-      ]);
-      setCycle(live);
-      setCycleLoaded(true);
-      setFbRaw(fb);
-      setEmpRaw(emp);
-      // Resolve each request's real manager (org-wide data spans many managers).
+    setLists((s) => {
+      const next = { ...s };
+      for (const k of Object.keys(next) as StoreList[]) if (next[k] === 'error') next[k] = 'loading';
+      return next;
+    });
+    const lvP = unlessForbidden(getLeaveInbox());
+    const otP = unlessForbidden(getOvertimeInbox());
+    const rbP = unlessForbidden(getReimbInbox());
+    const crP = unlessForbidden(getRegularizationInbox());
+    const fbP = unlessForbidden(getAllFeedback());
+    const empP = getAllEmployees();
+    const liveP = getKpiCycle();
+    // Resolve each request's real manager (org-wide data spans many managers).
+    const mgrNameP = empP.then((emp) => {
       const mgrByUser = new Map(emp.map((e) => [e.userId, e.managerName ?? '']));
-      const mgrName = (userId: string) => mgrByUser.get(userId) || '—';
-      setLeaves(lv.map((d) => adaptLeave(d, mgrName(d.userId))));
-      setOts(ot.map((d) => adaptOvertime(d, mgrName(d.userId))));
-      setRbs(rb.map((d) => adaptReimb(d, mgrName(d.userId))));
-      setCorrs(cr.map((d) => adaptCorrection(d, mgrName(d.userId))));
-      const { fbs: fbRows, fbMgrs: fbManagers, fbEmps: fbEmployees } = adaptFeedbackList(fb, emp, live.period);
-      setFbMgrs(fbManagers);
-      setFbs(fbRows);
-      setFbEmps(fbEmployees);
-      setEmps(adaptEmployees(emp));
-      setLoaded(true);
-    } catch (e) {
-      handleError(e);
-    } finally {
-      setLoading(false);
-    }
-  }, [user, handleError]);
+      return (userId: string) => mgrByUser.get(userId) || '—';
+    });
+    const settle = <T,>(key: StoreList, p: Promise<T>, apply: (v: T) => void) =>
+      p.then(
+        (v) => { apply(v); markList(key, 'ready'); },
+        (e: unknown) => { markList(key, 'error'); throw e; },
+      );
+    const results = await Promise.allSettled([
+      settle('cycle', liveP, (live) => { setCycle(live); setCycleLoaded(true); }),
+      settle('employees', empP, (emp) => { setEmpRaw(emp); setEmps(adaptEmployees(emp)); }),
+      settle('leaves', Promise.all([lvP, mgrNameP]), ([lv, mgrName]) => setLeaves(lv.map((d) => adaptLeave(d, mgrName(d.userId))))),
+      settle('overtime', Promise.all([otP, mgrNameP]), ([ot, mgrName]) => setOts(ot.map((d) => adaptOvertime(d, mgrName(d.userId))))),
+      settle('claims', Promise.all([rbP, mgrNameP]), ([rb, mgrName]) => setRbs(rb.map((d) => adaptReimb(d, mgrName(d.userId))))),
+      settle('corrections', Promise.all([crP, mgrNameP]), ([cr, mgrName]) => setCorrs(cr.map((d) => adaptCorrection(d, mgrName(d.userId))))),
+      settle('feedback', Promise.all([fbP, empP, liveP]), ([fb, emp, live]) => {
+        setFbRaw(fb);
+        const { fbs: fbRows, fbMgrs: fbManagers, fbEmps: fbEmployees } = adaptFeedbackList(fb, emp, live.period);
+        setFbMgrs(fbManagers);
+        setFbs(fbRows);
+        setFbEmps(fbEmployees);
+      }),
+    ]);
+    const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (failed) handleError(failed.reason);
+    else setLoaded(true);
+    setLoading(false);
+  }, [accessKey, handleError]);
+
+  /** Where the shared lists a view needs stand: an error in any wins, then loading. */
+  const listState = (...keys: StoreList[]): LoadState => combineLoad(...keys.map((k) => lists[k]));
 
   useEffect(() => {
     void reload();
@@ -539,6 +579,11 @@ function useProvideStore() {
     setViewRaw('overtime');
     setOtDrawerId(id);
   };
+  const openProfile = (userId: string, tab?: string) => {
+    closeAllOverlays();
+    setViewRaw('employees');
+    setProfileRequest({ userId, tab });
+  };
   const goReimbRow = (id: string) => {
     closeAllOverlays();
     setViewRaw('reimbursements');
@@ -547,7 +592,7 @@ function useProvideStore() {
 
   return {
     view, setView,
-    toast, toastTone, flash, loading, loaded, reload,
+    toast, toastTone, flash, loading, loaded, reload, listState,
     user, signOut, currentUserId,
     // leave
     leaves, leaveSearch, setLeaveSearch, leaveStatus, setLeaveStatus, leaveType, setLeaveType,
@@ -582,6 +627,9 @@ function useProvideStore() {
     addOpen, setAddOpen, form, setFormField, saveUser,
     // cross-nav
     goOvertimeRow, goReimbRow,
+    // Suwi
+    suwiOpen, setSuwiOpen, profileRequest, openProfile, clearProfileRequest: () => setProfileRequest(null),
+    suwiAsk, askSuwiQuestion, clearSuwiAsk: () => setSuwiAsk(null),
   };
 }
 

@@ -8,7 +8,7 @@ import { holidayDatesForUser } from './holiday.service';
 import { presignReceiptDownload, uploadLeaveDocument } from './s3-receipt.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import {
-  approvalRulesFor, fullDayHoursFor, hrMayDecide, isWeekOffDay, leaveRulesFor, leaveTypeRulesFor,
+  approvalRulesFor, fullDayHoursFor, hrMayDecide, isWeekOffDay, leaveRulesFor, leaveTypeRulesFor, withPolicyMemo,
   managerMayDecide, weekOffGridFor,
 } from './shift.service';
 import { overtimeDurationOf } from '../models/overtime.model';
@@ -264,27 +264,45 @@ export async function getMyLeaves(userId: string): Promise<LeaveView[]> {
  * reads as the month `asOf` falls in (clamped into `year`): what carried in
  * plus this month's accrual, against this month's usage.
  */
-export async function getMyLeaveBalance(userId: string, year = new Date().getUTCFullYear(), asOf = new Date()) {
-  const employee = await users().findOne({ userId });
-  if (!employee) throw new LeaveError(404, 'Employee not found');
+export function getMyLeaveBalance(userId: string, year = new Date().getUTCFullYear(), asOf = new Date()) {
+  // One balance asks for this person's shift policy several times; inside
+  // the memo it is looked up once.
+  return withPolicyMemo(() => leaveBalanceOf(userId, year, asOf));
+}
+
+async function leaveBalanceOf(userId: string, year: number, asOf: Date) {
+  const employeeP = users().findOne({ userId });
   if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+    if (!(await employeeP)) throw new LeaveError(404, 'Employee not found');
     throw new LeaveError(400, 'Invalid balance year');
   }
-  // Entitlements come from the leave types on the employee's shift template,
-  // never from a table in here.
-  const allRules = await leaveTypeRulesFor(employee.userId);
-  const rules = allRules.filter((rule) => rule.resetOn !== 'monthly');
-  const monthlyRules = allRules.filter((rule) => rule.resetOn === 'monthly');
   const yearStart = new Date(Date.UTC(year, 0, 1));
   const yearEnd = new Date(Date.UTC(year, 11, 31));
-  const approved = await leaves()
-    .find({
-      userId,
-      status: 'approved',
-      startDate: { $lte: yearEnd },
-      endDate: { $gte: yearStart },
-    })
-    .toArray();
+  // The person, their leave types, the year's approved leave and the comp-off
+  // it earned depend only on who and which year, so they are read together
+  // rather than one after another; a failure is still reported in the old order.
+  const [employeeR, rulesR, approvedR, compOffR] = await Promise.allSettled([
+    employeeP,
+    // Entitlements come from the leave types on the employee's shift template,
+    // never from a table in here.
+    leaveTypeRulesFor(userId),
+    leaves()
+      .find({
+        userId,
+        status: 'approved',
+        startDate: { $lte: yearEnd },
+        endDate: { $gte: yearStart },
+      })
+      .toArray(),
+    // Comp-off is not accrued: the balance is what approved overtime earned.
+    compOffCreditedIn(userId, yearStart, yearEnd),
+  ]);
+  const employee = settled(employeeR);
+  if (!employee) throw new LeaveError(404, 'Employee not found');
+  const allRules = settled(rulesR);
+  const rules = allRules.filter((rule) => rule.resetOn !== 'monthly');
+  const monthlyRules = allRules.filter((rule) => rule.resetOn === 'monthly');
+  const approved = settled(approvedR);
   const used: Record<string, number> = {};
   for (const leave of approved) {
     const withinYear = leave.startDate >= yearStart && leave.endDate <= yearEnd;
@@ -299,20 +317,23 @@ export async function getMyLeaveBalance(userId: string, year = new Date().getUTC
     const end = leave.endDate > yearEnd ? yearEnd : leave.endDate;
     used[leave.type] = (used[leave.type] ?? 0) + inclusiveDays(start, end);
   }
-  // Comp-off is not accrued: the balance is what approved overtime earned.
-  const compOffEarned = await compOffCreditedIn(userId, yearStart, yearEnd);
-  const openingFor = await openingBalances(userId, employee.org, year, rules, compOffEarned);
+  const compOffEarned = settled(compOffR);
+  const month = asOf.getUTCFullYear() === year ? asOf.getUTCMonth() + 1 : asOf.getUTCFullYear() > year ? 12 : 1;
+  // What carried in and each monthly type's walk are independent reads.
+  const [openingFor, monthlyRows] = await Promise.all([
+    openingBalances(userId, employee.org, year, rules, compOffEarned),
+    Promise.all(monthlyRules.map((rule) => monthlyBalance(employee, rule, year, month))),
+  ]);
   const entitlement = (key: Leave['type']) => {
     const rule = rules.find((item) => item.key === key);
     const accrued = key === 'comp_off' ? compOffEarned : (rule?.perMonth ?? 0) * 12;
     return round(accrued + (openingFor[key] ?? 0));
   };
 
-  const month = asOf.getUTCFullYear() === year ? asOf.getUTCMonth() + 1 : asOf.getUTCFullYear() > year ? 12 : 1;
   const monthly: Partial<Record<Leave['type'], MonthlyBalance>> = {};
-  for (const rule of monthlyRules) {
-    monthly[rule.key as Leave['type']] = await monthlyBalance(employee, rule, year, month);
-  }
+  monthlyRules.forEach((rule, i) => {
+    monthly[rule.key as Leave['type']] = monthlyRows[i];
+  });
   const item = (key: Leave['type']) => monthly[key] ?? balanceItem(entitlement(key), used[key] ?? 0);
 
   return {
@@ -440,18 +461,43 @@ async function openingBalances(
 ): Promise<Partial<Record<Leave['type'], number>>> {
   const recorded: Partial<Record<Leave['type'], number>> = {};
   const missing: LeaveTypeRule[] = [];
-  for (const rule of rules) {
-    const carried = await carriedFromYearEndRun(userId, rule.key as LeaveTypeKey, year);
+  // Last year's figures are read alongside the year-end rows rather than
+  // after them; they are only used for the types no year-end recorded.
+  const lastYear = priorYearReads(userId, year);
+  lastYear.catch(() => undefined);
+  // One read per type, all at once.
+  const carriedByType = await Promise.all(rules.map((rule) => carriedFromYearEndRun(userId, rule.key as LeaveTypeKey, year)));
+  rules.forEach((rule, i) => {
+    const carried = carriedByType[i];
     if (carried != null) recorded[rule.key as Leave['type']] = carried;
     else missing.push(rule);
-  }
+  });
   if (missing.length === 0) return recorded;
   // Per type, not all-or-nothing: a type whose year-end has been recorded uses
   // that figure, and one that has not is still derived. Short-circuiting on
   // the first recorded type left every other type opening at zero — a
   // financial-year type looked emptied the moment a calendar-year one closed.
-  const derived = await carriedForwardInto(userId, org, year, missing, compOffThisYear);
+  const derived = await carriedForwardInto(userId, org, year, missing, compOffThisYear, lastYear);
   return { ...derived, ...recorded };
+}
+
+/**
+ * What `carriedForwardInto` reads about last year, all at once: whether it was
+ * tracked, its approved leave and its comp-off. The last two only count when
+ * the year was tracked, so their failures only count then too.
+ */
+async function priorYearReads(userId: string, year: number) {
+  const priorStart = new Date(Date.UTC(year - 1, 0, 1));
+  const priorEnd = new Date(Date.UTC(year - 1, 11, 31));
+  const [tracked, prior, priorCompOff] = await Promise.allSettled([
+    yearWasTracked(userId, priorStart, priorEnd),
+    leaves()
+      .find({ userId, status: 'approved', startDate: { $lte: priorEnd }, endDate: { $gte: priorStart } })
+      .toArray(),
+    compOffCreditedIn(userId, priorStart, priorEnd),
+  ]);
+  if (!settled(tracked)) return null;
+  return { prior: settled(prior), priorCompOff: settled(priorCompOff) };
 }
 
 async function carriedForwardInto(
@@ -460,14 +506,14 @@ async function carriedForwardInto(
   year: number,
   rules: LeaveTypeRule[],
   _compOffThisYear: number,
+  reads: ReturnType<typeof priorYearReads> = priorYearReads(userId, year),
 ): Promise<Partial<Record<Leave['type'], number>>> {
   void _compOffThisYear;
   const priorStart = new Date(Date.UTC(year - 1, 0, 1));
   const priorEnd = new Date(Date.UTC(year - 1, 11, 31));
-  if (!(await yearWasTracked(userId, priorStart, priorEnd))) return {};
-  const prior = await leaves()
-    .find({ userId, status: 'approved', startDate: { $lte: priorEnd }, endDate: { $gte: priorStart } })
-    .toArray();
+  const lastYear = await reads;
+  if (!lastYear) return {};
+  const { prior, priorCompOff } = lastYear;
   const usedLastYear: Record<string, number> = {};
   for (const leave of prior) {
     const start = leave.startDate < priorStart ? priorStart : leave.startDate;
@@ -477,7 +523,6 @@ async function carriedForwardInto(
       : inclusiveDays(start, end);
     usedLastYear[leave.type] = (usedLastYear[leave.type] ?? 0) + days;
   }
-  const priorCompOff = await compOffCreditedIn(userId, priorStart, priorEnd);
 
   const opening: Partial<Record<Leave['type'], number>> = {};
   for (const rule of rules) {
@@ -506,6 +551,12 @@ async function yearWasTracked(userId: string, from: Date, to: Date): Promise<boo
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/** A settled result as `await` would have given it: the value, or the error thrown. */
+function settled<T>(result: PromiseSettledResult<T>): T {
+  if (result.status === 'rejected') throw result.reason;
+  return result.value;
 }
 
 export async function getManagerLeaveInbox(managerUserId: string): Promise<LeaveView[]> {

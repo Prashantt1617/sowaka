@@ -1,9 +1,239 @@
+/* Design tokens — the Sowaka HR Admin look: warm neutral canvas, frosted
+   sidebar and top bar, white cards with a soft shadow, black selected
+   states, one blue primary action and the brand blue for small highlights.
+   Views read these through inline styles as var(--…). */
 :root {
-  color: #222222;
-  background: #F7F7F9;
-  font-family:
-    "Sora", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  letter-spacing: -0.16px;
+  --canvas: #ECEBE9;
+  --surface: #FFFFFF;
+  --surface-2: #F5F5F6;
+  --glass: rgba(255, 255, 255, 0.62);
+  --line: #E9E9EC;
+  --line-2: #DADADF;
+
+  --ink: #141416;
+  --ink-2: #4E4E56;
+  --ink-3: #8A8A93;
+  --ink-4: #A0A0A9;
+
+  --accent: #0088FF;
+  --accent-ink: #0A6AD1;
+  --accent-soft: #E5F2FF;
+  --accent-line: #B8DBFF;
+  --accent-grad: linear-gradient(180deg, #2B9BFF, #0088FF);
+  --on-accent: #FFFFFF;
+  --sel: #141416;
+  --on-sel: #FFFFFF;
+  --hi: #0571A6;
+  --hi-soft: #E1F0F7;
+  --sky-soft: #EAF5FB;
+
+  --t-lilac: #EEEDFD;
+  --t-lilac-i: #5E57D6;
+  --t-butter: #FDF6DE;
+  --t-butter-i: #8A6A12;
+  --t-sky: #E5F2FF;
+  --t-sky-i: #0A6AD1;
+  --t-mint: #E4F4EF;
+  --t-mint-i: #23806A;
+  --t-peach: #FFEDE4;
+  --t-peach-i: #C2562A;
+  --t-olive: #EEF0E6;
+  --t-olive-i: #5E6B3E;
+  --t-plum: #F4E9F1;
+  --t-plum-i: #8A4A78;
+
+  --ok: #23806A;
+  --ok-bg: #E4F4EF;
+  --ok-line: #BFE3D7;
+  --warn: #8A6A12;
+  --warn-bg: #FDF3D6;
+  --warn-line: #EEDCA5;
+  --bad: #A83C3E;
+  --bad-bg: #F8E6E6;
+  --bad-line: #EDC9CA;
+  --mute-bg: #EFEFF1;
+  /* Solid status fills that carry white text (approve / decline buttons) */
+  --ok-solid: #23806A;
+  --bad-solid: #A83C3E;
+
+  /* Solid status pills */
+  --p-green: #49B195;
+  --p-blue: #0088FF;
+  --p-red: #BF494B;
+  --p-orange: #FD8A56;
+  --p-purple: #857FEB;
+  --p-yellow: #F9D97B;
+  --p-yellow-ink: #4A3A08;
+
+  --wash-a: #F6E2D8;
+  --wash-b: #DFE3F4;
+  --shadow: 0 1px 2px rgba(20, 20, 22, 0.05), 0 6px 20px -6px rgba(20, 20, 22, 0.14);
+  --shadow-lg: 0 24px 64px -16px rgba(20, 20, 22, 0.28);
+  /* The frosted sidebar and top bar sit on a lighter shadow than cards. */
+  --shadow-bar: 0 1px 1px rgba(20, 20, 22, 0.03), 0 10px 28px -18px rgba(20, 20, 22, 0.18);
+  /* Drawers and dialogs: the prototype's indigo-tinted scrim and lift. */
+  --shadow-drawer: 0 24px 64px -16px rgba(30, 20, 90, 0.28);
+  --scrim: rgba(20, 16, 50, 0.38);
+  --glass-line: rgba(255, 255, 255, 0.7);
+  /* Fixed brand mark tile, and text on the brand-blue count badges */
+  --brand: #0571A6;
+  --on-hi: #FFFFFF;
+  /* Avatars: tint of the person's colour behind initials in that colour */
+  --av-bg: 15%;
+  --av-fg: 100%;
+
+  --r-sm: 10px;
+  --r: 16px;
+  --r-lg: 22px;
+
+  --f-ui: "Sora", "Inter Tight", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  color-scheme: light;
+
+  color: var(--ink);
+  background: var(--canvas);
+  font-family: var(--f-ui);
+  font-size: 14px;
+  letter-spacing: -0.005em;
+}
+
+/* Dark theme: follows the system unless HR picked Light or Dark (data-theme
+   on <html>, set before first paint from index.html). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #111113;
+    --surface: #1A1A1D;
+    --surface-2: #222226;
+    --glass: rgba(34, 34, 38, 0.72);
+    --line: #2A2A2F;
+    --line-2: #3A3A41;
+
+    --ink: #F1F1F3;
+    --ink-2: #B9B9C2;
+    --ink-3: #8C8C96;
+    --ink-4: #73737D;
+
+    --accent: #3AA0FF;
+    --accent-ink: #7DBEFF;
+    --accent-soft: #132A40;
+    --accent-line: #22507A;
+    --accent-grad: linear-gradient(180deg, #2B9BFF, #3AA0FF);
+    --on-accent: #FFFFFF;
+    --sel: #F1F1F3;
+    --on-sel: #141416;
+    --hi: #4FB0E0;
+    --hi-soft: #0E2A38;
+    --sky-soft: #0E2A38;
+
+    --t-lilac: #25233D;
+    --t-lilac-i: #B4AFFF;
+    --t-butter: #33301F;
+    --t-butter-i: #F0D689;
+    --t-sky: #132A40;
+    --t-sky-i: #7DBEFF;
+    --t-mint: #15302A;
+    --t-mint-i: #7FD3BC;
+    --t-peach: #3A2418;
+    --t-peach-i: #FFB48F;
+    --t-olive: #262A1C;
+    --t-olive-i: #C5CF9E;
+    --t-plum: #33202E;
+    --t-plum-i: #E7A9D6;
+
+    --ok: #7FD3BC;
+    --ok-bg: #15302A;
+    --ok-line: #24503F;
+    --warn: #F0D689;
+    --warn-bg: #33301F;
+    --warn-line: #54492A;
+    --bad: #F0A3A4;
+    --bad-bg: #3A1D1E;
+    --bad-line: #5E2F31;
+    --mute-bg: #2A2A2F;
+  --ok-solid: #2A8A6E;
+  --bad-solid: #B4474A;
+
+    --wash-a: #2A1C17;
+    --wash-b: #191C2C;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.7);
+    --shadow-bar: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+    --shadow-drawer: 0 24px 64px -16px rgba(0, 0, 0, 0.7);
+    --scrim: rgba(0, 0, 0, 0.55);
+    --glass-line: #2A2A2F;
+    --on-hi: #06121F;
+    --av-bg: 26%;
+    --av-fg: 55%;
+
+    color-scheme: dark;
+}
+}
+:root[data-theme="dark"] {
+  --canvas: #111113;
+  --surface: #1A1A1D;
+  --surface-2: #222226;
+  --glass: rgba(34, 34, 38, 0.72);
+  --line: #2A2A2F;
+  --line-2: #3A3A41;
+
+  --ink: #F1F1F3;
+  --ink-2: #B9B9C2;
+  --ink-3: #8C8C96;
+  --ink-4: #73737D;
+
+  --accent: #3AA0FF;
+  --accent-ink: #7DBEFF;
+  --accent-soft: #132A40;
+  --accent-line: #22507A;
+  --accent-grad: linear-gradient(180deg, #2B9BFF, #3AA0FF);
+  --on-accent: #FFFFFF;
+  --sel: #F1F1F3;
+  --on-sel: #141416;
+  --hi: #4FB0E0;
+  --hi-soft: #0E2A38;
+  --sky-soft: #0E2A38;
+
+  --t-lilac: #25233D;
+  --t-lilac-i: #B4AFFF;
+  --t-butter: #33301F;
+  --t-butter-i: #F0D689;
+  --t-sky: #132A40;
+  --t-sky-i: #7DBEFF;
+  --t-mint: #15302A;
+  --t-mint-i: #7FD3BC;
+  --t-peach: #3A2418;
+  --t-peach-i: #FFB48F;
+  --t-olive: #262A1C;
+  --t-olive-i: #C5CF9E;
+  --t-plum: #33202E;
+  --t-plum-i: #E7A9D6;
+
+  --ok: #7FD3BC;
+  --ok-bg: #15302A;
+  --ok-line: #24503F;
+  --warn: #F0D689;
+  --warn-bg: #33301F;
+  --warn-line: #54492A;
+  --bad: #F0A3A4;
+  --bad-bg: #3A1D1E;
+  --bad-line: #5E2F31;
+  --mute-bg: #2A2A2F;
+  --ok-solid: #2A8A6E;
+  --bad-solid: #B4474A;
+
+  --wash-a: #2A1C17;
+  --wash-b: #191C2C;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.7);
+  --shadow-bar: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  --shadow-drawer: 0 24px 64px -16px rgba(0, 0, 0, 0.7);
+  --scrim: rgba(0, 0, 0, 0.55);
+  --glass-line: #2A2A2F;
+  --on-hi: #06121F;
+  --av-bg: 26%;
+  --av-fg: 55%;
+
+  color-scheme: dark;
 }
 
 * {
@@ -15,15 +245,37 @@
 body {
   margin: 0;
   min-width: 320px;
-  font-family:
-    "Sora", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--f-ui);
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  letter-spacing: -0.16px;
-  color: #222222;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  background:
+    radial-gradient(1100px 680px at -8% -12%, var(--wash-a), transparent 62%),
+    radial-gradient(900px 600px at 108% 108%, var(--wash-b), transparent 60%),
+    var(--canvas);
+  background-attachment: fixed;
+}
+
+b,
+strong {
+  font-weight: 500;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink-4);
 }
 
 ::selection {
-  background: #cceaf5;
+  background: var(--accent-soft);
 }
 
 input,
@@ -50,7 +302,7 @@ button:active {
 }
 
 .scry::-webkit-scrollbar-thumb {
-  background: #d5d7dd;
+  background: var(--line-2);
   border-radius: 9px;
   border: 3px solid transparent;
   background-clip: content-box;
@@ -61,8 +313,11 @@ button:active {
 }
 
 /* Table row hover */
+.dc-row {
+  transition: background 0.12s;
+}
 .dc-row:hover {
-  background: #F7F7F9;
+  background: var(--surface-2);
 }
 
 @keyframes drwIn {
@@ -227,8 +482,8 @@ input {
 
 /* —— Org chart cards: lift on hover so they read as something to open —— */
 .oc-card:hover {
-  box-shadow: 0 8px 22px rgba(34, 34, 34, 0.12) !important;
-  border-color: #D5DAE1 !important;
+  box-shadow: var(--shadow) !important;
+  border-color: var(--line-2) !important;
 }
 /* The open-profile badge sits on the avatar's corner and appears on hover. */
 .oc-open {
@@ -238,8 +493,8 @@ input {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  border: 2px solid #fff;
-  background: #0571A6;
+  border: 2px solid var(--surface);
+  background: var(--accent);
   color: #fff;
   display: flex;
   align-items: center;
@@ -266,4 +521,140 @@ input[type='number']::-webkit-inner-spin-button,
 input[type='number']::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
+}
+
+/* —— Shell: frosted sidebar and top bar, hover states the inline styles can't express —— */
+.ds-glass {
+  background: var(--glass);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  border: 1px solid var(--glass-line);
+}
+.ds-nav-item:not(.on):hover {
+  background: var(--surface-2) !important;
+  color: var(--ink) !important;
+}
+.ds-nav-group:hover {
+  background: var(--surface-2) !important;
+  color: var(--ink) !important;
+}
+.ds-brand:hover {
+  background: var(--accent-soft) !important;
+  border-color: transparent !important;
+}
+.ds-icon-btn:hover {
+  background: var(--surface-2) !important;
+  color: var(--ink) !important;
+}
+.ds-field:focus-within {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* —— Prototype components (Sowaka HR Admin). The matching inline style
+   objects live in dashboard/ui.tsx (btn, iconBtn, TH, TR, inp…); these
+   classes add the hover and focus states inline styles can't express. —— */
+.ds-btn:not(:disabled):hover {
+  background: var(--surface-2) !important;
+  border-color: var(--line-2) !important;
+}
+.ds-btn-primary:not(:disabled):hover,
+.ds-btn-solid:not(:disabled):hover {
+  filter: brightness(1.07);
+}
+.ds-btn-ghost:not(:disabled):hover {
+  background: var(--accent-soft) !important;
+}
+.ds-btn-ok:not(:disabled):hover,
+.ds-btn-no:not(:disabled):hover {
+  filter: brightness(0.97);
+}
+.ds-btn:disabled,
+.ds-btn-primary:disabled,
+.ds-btn-ghost:disabled,
+.ds-btn-ok:disabled,
+.ds-btn-no:disabled,
+.ds-btn-solid:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
+}
+.ds-inp:focus,
+.ds-inp:focus-within {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: none;
+}
+.ds-inp::placeholder {
+  color: var(--ink-3);
+}
+/* Native <table>s: give <thead className="ds-thead"> the prototype's grey
+   strip with rounded ends (cells carry the surface-2 background). */
+.ds-thead th:first-child {
+  border-radius: 12px 0 0 12px;
+}
+.ds-thead th:last-child {
+  border-radius: 0 12px 12px 0;
+}
+/* Linked KPI tiles lift a little on hover. */
+.ds-tile {
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+.ds-tile:hover {
+  transform: translateY(-2px);
+}
+/* The round ↗ on a linked tile: an arrow turned up-right. */
+.ds-go {
+  opacity: 0.7;
+  transform: rotate(-45deg);
+  transition: opacity 0.15s, transform 0.15s;
+}
+.ds-tile:hover .ds-go {
+  opacity: 1;
+  transform: rotate(-45deg) translateX(2px);
+}
+.ds-me:hover {
+  background: var(--surface-2) !important;
+}
+/* Ask Suwi in the top bar: a sky-tinted pill. */
+.ds-suwi-btn:hover,
+.ds-suwi-btn[aria-expanded='true'] {
+  background: var(--sky-soft) !important;
+  border-color: var(--hi) !important;
+}
+
+@keyframes pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+
+/* —— Loading skeletons (dashboard/ui.tsx): placeholders shaped like the content.
+   They stay invisible for the first 130 ms so a fast load never flickers,
+   then shimmer; with reduced motion they are a still placeholder. —— */
+.sk-delay {
+  animation: sk-appear 1ms linear 130ms both;
+}
+@keyframes sk-appear {
+  from { visibility: hidden; }
+  to { visibility: visible; }
+}
+.sk {
+  display: block;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-2) 30%, var(--line) 50%, var(--surface-2) 70%, var(--surface-2) 100%);
+  background-size: 300% 100%;
+  animation: sk-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes sk-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+.sk-spin {
+  animation: spin .7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk {
+    animation: none;
+    background: var(--surface-2);
+  }
+  .sk-spin {
+    animation: none;
+  }
 }

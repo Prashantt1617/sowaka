@@ -9,7 +9,8 @@
 // happens on their own profile, where the set stays editable for them alone.
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store';
-import { Card } from '../ui';
+import { Card, ListPending, Spinner } from '../ui';
+import type { LoadState } from '../ui';
 import { IconPlus } from '../icons';
 import {
   createKpiTemplate, kpiTemplateMembers, listKpiParameters, listKpiTemplates,
@@ -18,9 +19,11 @@ import type { KpiTemplateMemberDTO } from '../../services/kpi';
 import { downloadCsvSections } from '../export';
 import type { KpiParameterDTO, KpiTemplateDTO } from '../../services/kpi';
 import { periodLabel } from '../period';
-import { DetailPage, Field, NameCell, Td, Th } from './kpiUi';
+import { DetailPage, Field } from './kpiUi';
+import { NameCell, Td, Th } from './lookUi';
+import * as L from './look';
 import { TemplateDetailModal } from './KpiTemplateDetail';
-import { inputStyle, panelCard, panelTitle, primaryBtn, smallBtn, warnTag } from './kpiStyles';
+import { inputStyle, panelCard, panelTitle, primaryBtn, smallBtn, warnTag } from './kpiLook';
 import { WeightPicker } from './kpiWeights';
 import { weightError } from '../weights';
 
@@ -30,6 +33,8 @@ export function KpiTemplates() {
   const [templates, setTemplates] = useState<KpiTemplateDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Once the list has loaded, a refresh keeps it on screen.
+  const [loaded, setLoaded] = useState(false);
   const [form, setForm] = useState<TForm | null>(null);
   const [viewing, setViewing] = useState<KpiTemplateDTO | null>(null);
 
@@ -37,7 +42,7 @@ export function KpiTemplates() {
     setLoading(true);
     try {
       const [p, t] = await Promise.all([listKpiParameters(), listKpiTemplates()]);
-      setParams(p); setTemplates(t); setError('');
+      setParams(p); setTemplates(t); setError(''); setLoaded(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load KPI data');
     } finally {
@@ -46,6 +51,10 @@ export function KpiTemplates() {
   }
 
   useEffect(() => { void reload(); }, []);
+  // The cycle named in the header comes from the store; the list waits for both.
+  const cycleState = s.listState('cycle');
+  const listSt: LoadState = loaded && cycleState === 'ready' ? 'ready'
+    : cycleState === 'error' || (!loaded && error && !loading) ? 'error' : 'loading';
 
   const paramById = useMemo(() => new Map(params.map((p) => [p.id, p])), [params]);
 
@@ -152,28 +161,29 @@ export function KpiTemplates() {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
-        <div style={{ fontSize: 16, color: '#717171', fontWeight: 600 }}>
-          {templates.length} template{templates.length === 1 ? '' : 's'} · cycle {periodLabel(s.cycle.period)}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+        <div style={L.countLine}>
+          {listSt === 'ready' ? <>{templates.length} template{templates.length === 1 ? '' : 's'} · cycle {periodLabel(s.cycle.period)}</> : listSt === 'loading' ? <Spinner /> : null}
         </div>
         <button
           onClick={() => setForm(blankTemplate())}
           disabled={params.length === 0}
           title={params.length === 0 ? 'Create KPI parameters first' : undefined}
+          className="lk-btn-p"
           style={{ ...primaryBtn, marginLeft: 'auto', opacity: params.length === 0 ? 0.5 : 1 }}
         >
           <IconPlus size={15} /> Add Template
         </button>
       </div>
 
-      {error && (
-        <div style={{ ...warnTag, background: '#F7E4E4', borderColor: '#E8C9C9', color: '#A32B2B', marginBottom: 14 }}>
+      {error && loaded && (
+        <div style={{ ...warnTag, background: 'var(--bad-bg)', borderColor: 'var(--bad-line)', color: 'var(--bad)', marginBottom: 14 }}>
           {error}
         </div>
       )}
 
-      <Card>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 16 }}>
+      <Card style={L.cardPad}>
+        <table className="lk-t" style={L.table}>
           <thead>
             <tr>
               <Th>Template</Th>
@@ -182,19 +192,19 @@ export function KpiTemplates() {
             </tr>
           </thead>
           <tbody>
-            {templates.map((t) => (
+            {listSt === 'ready' && templates.map((t) => (
               <tr key={t.id} className="phm-row" onClick={() => setViewing(t)} style={{ cursor: 'pointer' }}>
                 <Td>
                   <NameCell name={t.name} />
                   {t.description && (
-                    <div style={{ fontSize: 13.5, color: '#717171', marginTop: 3, lineHeight: 1.45 }}>{t.description}</div>
+                    <div style={L.cellSub}>{t.description}</div>
                   )}
                 </Td>
                 <Td>
-                  <span style={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: t.employeeCount ? '#222222' : '#9197A2' }}>
+                  <span style={{ fontVariantNumeric: 'tabular-nums', color: t.employeeCount ? 'var(--ink)' : 'var(--ink-3)' }}>
                     {t.employeeCount}
                   </span>
-                  <span style={{ fontSize: 14, color: '#9197A2' }}>
+                  <span style={{ color: t.employeeCount ? 'var(--ink)' : 'var(--ink-3)' }}>
                     {t.employeeCount === 1 ? ' employee' : ' employees'}
                   </span>
                 </Td>
@@ -203,6 +213,7 @@ export function KpiTemplates() {
                     onClick={(e) => { e.stopPropagation(); void exportTemplate(t); }}
                     disabled={t.employeeCount === 0 && t.upcomingCount === 0}
                     title={t.employeeCount === 0 && t.upcomingCount === 0 ? 'Nobody is on this template yet' : 'Export the people on it'}
+                    className="lk-btn"
                     style={{ ...smallBtn, opacity: t.employeeCount === 0 && t.upcomingCount === 0 ? 0.45 : 1 }}
                   >
                     Export
@@ -210,17 +221,17 @@ export function KpiTemplates() {
                 </Td>
               </tr>
             ))}
-            {!loading && templates.length === 0 && (
+            {listSt === 'ready' && templates.length === 0 && (
               <tr>
-                <td colSpan={3} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 15 }}>
+                <td colSpan={3} style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>
                   {params.length === 0
                     ? 'Create KPI parameters first, then group them into templates.'
                     : 'No templates yet.'}
                 </td>
               </tr>
             )}
-            {loading && (
-              <tr><td colSpan={2} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 15 }}>Loading…</td></tr>
+            {listSt !== 'ready' && (
+              <tr><td colSpan={3} style={{ padding: 0 }}><ListPending state={listSt} errorText={error || undefined} onRetry={() => { if (cycleState === 'error') void s.reload(); if (!loaded) void reload(); }} rows={4} cols={3} avatar={false} rowHeight={56} /></td></tr>
             )}
           </tbody>
         </table>
@@ -262,10 +273,11 @@ function TemplateForm({
       width={1040}
       actions={
         <>
-          <span style={{ fontSize: 13, color: '#A8475F' }}>* indicates mandatory fields</span>
+          <span style={{ fontSize: 12, color: 'var(--bad)' }}>* indicates mandatory fields</span>
           <button
             onClick={onSave}
             disabled={Boolean(invalid)}
+            className="lk-btn-p"
             style={{ ...primaryBtn, marginLeft: 'auto', opacity: invalid ? 0.5 : 1, cursor: invalid ? 'not-allowed' : 'pointer' }}
           >
             Save
@@ -274,18 +286,18 @@ function TemplateForm({
       }
     >
       {error && (
-        <div style={{ ...warnTag, background: '#F7E4E4', borderColor: '#E8C9C9', color: '#A32B2B', marginBottom: 14 }}>
+        <div style={{ ...warnTag, background: 'var(--bad-bg)', borderColor: 'var(--bad-line)', color: 'var(--bad)', marginBottom: 14 }}>
           {error}
         </div>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'start' }}>
         <div style={panelCard}>
           <div style={panelTitle}>Details</div>
           <Field label="Template Name" req>
-            <input value={form.name} onChange={(e) => set('name', e.target.value)} maxLength={80} autoFocus style={inputStyle} />
+            <input value={form.name} onChange={(e) => set('name', e.target.value)} maxLength={80} autoFocus className="lk-in" style={inputStyle} />
           </Field>
           <Field label="Description">
-            <input value={form.description} onChange={(e) => set('description', e.target.value)} maxLength={160} style={inputStyle} />
+            <input value={form.description} onChange={(e) => set('description', e.target.value)} maxLength={160} className="lk-in" style={inputStyle} />
           </Field>
         </div>
 

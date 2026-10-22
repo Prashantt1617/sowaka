@@ -1,0 +1,409 @@
+/* Suwi, the HR assistant: the sky orb, the side panel with its opening
+   sequence, and the Suwi cards elsewhere in the dashboard. After the Sowaka
+   HR Admin prototype. Colours come from the dashboard tokens (--hi is the
+   brand blue, --hi-soft its tint), so light and dark both follow the theme;
+   only the orb and the opening wash use fixed sky colours. */
+:root {
+  --suwi-1: #BFE6F7;
+  --suwi-2: #5FB8E3;
+  --suwi-3: #0571A6;
+  --suwi-4: #083E5E;
+  --suwi-line: color-mix(in srgb, var(--hi) 25%, var(--line));
+  --suwi-shadow: 0 30px 70px -20px rgba(8, 62, 94, 0.35);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --suwi-shadow: var(--shadow-lg); }
+}
+:root[data-theme="dark"] { --suwi-shadow: var(--shadow-lg); }
+
+/* —— The orb: a small sky with a cloud drifting across it —— */
+.sora-orb {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: radial-gradient(circle at 32% 28%, #fff 0 8%, var(--suwi-1) 22%, var(--suwi-2) 52%, var(--suwi-3) 78%, var(--suwi-4) 100%);
+  box-shadow: 0 0 0 3px var(--hi-soft), 0 6px 14px -6px var(--suwi-3);
+}
+.sora-orb i {
+  position: absolute;
+  left: -30%;
+  top: 52%;
+  width: 90%;
+  height: 34%;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.55);
+  filter: blur(2px);
+  animation: soraCloud 9s ease-in-out infinite;
+}
+.sora-orb.sm { box-shadow: 0 0 0 2px var(--hi-soft); }
+.sora-orb.lg { box-shadow: 0 0 0 6px var(--hi-soft), 0 14px 30px -12px var(--suwi-3); }
+@keyframes soraCloud { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(70%); } }
+
+/* —— Top-bar entry —— */
+.sora-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px 0 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--hi) 30%, var(--line));
+  background: linear-gradient(120deg, var(--surface), var(--hi-soft));
+  color: var(--hi);
+  font: inherit;
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background-color .2s ease, border-color .2s ease;
+}
+.sora-btn:hover,
+.sora-btn[aria-expanded="true"] { background: var(--hi-soft); border-color: var(--hi); }
+
+/* —— Shared small buttons —— */
+.suwi-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.suwi-btn:hover:not(:disabled) { background: var(--surface-2); }
+.suwi-btn:disabled { opacity: .55; cursor: default; }
+.suwi-btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; height: 34px; padding: 0 16px; font-size: 13px; font-weight: 600; }
+.suwi-btn.primary:hover:not(:disabled) { background: var(--brand); filter: brightness(1.08); }
+.suwi-btn.big { height: 38px; padding: 0 18px; font-size: 13.5px; }
+.suwi-btn.icon { width: 32px; padding: 0; font-size: 18px; line-height: 1; color: var(--ink-2); }
+.suwi-btn.hi { color: var(--hi); }
+
+/* —— Side panel —— */
+.sora {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: min(420px, calc(100vw - 24px));
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  border-radius: 24px;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--hi-soft) 0, var(--surface) 160px);
+  border: 1px solid var(--line);
+  box-shadow: var(--suwi-shadow);
+  /* Softer opening: the panel dissolves in and slides a little from the right */
+  transform: translateX(24px);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .45s ease, transform .55s cubic-bezier(.2, .7, .2, 1), visibility 0s linear .55s;
+}
+.sora.on {
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity .45s ease, transform .55s cubic-bezier(.2, .7, .2, 1), visibility 0s;
+}
+.suwi-c { display: flex; flex-direction: column; flex: 1; min-height: 0; position: relative; z-index: 1; }
+.sora-h { display: flex; align-items: center; gap: 12px; padding: 16px 16px 12px; }
+.sora-h h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.sora-h small { display: block; font-size: 11.5px; color: var(--ink-3); }
+.sora-hx { margin-left: auto; display: flex; gap: 6px; flex-shrink: 0; }
+.sora-b { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
+.sora-hello { margin: auto 0; text-align: center; display: grid; justify-items: center; gap: 10px; padding: 20px 8px; }
+.sora-hello h4 { margin: 6px 0 0; font-size: 18px; font-weight: 600; }
+.sora-hello p { margin: 0; color: var(--ink-2); font-size: 13.5px; line-height: 1.55; max-width: 34ch; }
+
+/* messages */
+.sm { display: flex; gap: 10px; max-width: 100%; flex-shrink: 0; }
+.sm.me { justify-content: flex-end; }
+/* HR's own question: light brand blue with dark text */
+.sm.me p {
+  margin: 0;
+  background: var(--hi-soft);
+  color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--hi) 22%, transparent);
+  padding: 9px 13px;
+  border-radius: 16px 16px 4px 16px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  max-width: 85%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sm.sora-a { align-items: flex-start; }
+.sm.sora-a > .sora-orb { margin-top: 2px; }
+.sm-col { flex: 1; min-width: 0; display: grid; gap: 8px; }
+.sm-b {
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px 16px 16px 16px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.sm-b.err { border-color: var(--bad-line); color: var(--bad); }
+.sm-b > div > p:first-child { margin-top: 0 !important; }
+.sm-b > div > p:last-child { margin-bottom: 0 !important; }
+.sora-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.sora-why { margin-top: 10px; font-size: 12px; color: var(--ink-3); }
+.sora-why summary { cursor: pointer; color: var(--hi); font-weight: 500; }
+.sora-why ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 2px; }
+
+/* typing: "Looking that up…" */
+.suwi-typing { display: flex; gap: 10px; align-items: center; color: var(--ink-3); font-size: 13px; flex-shrink: 0; }
+.suwi-typing-b { display: inline-flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 4px 16px 16px 16px; padding: 10px 14px; }
+.suwi-typing-d { display: inline-flex; gap: 4px; }
+.suwi-typing-d span { width: 6px; height: 6px; border-radius: 50%; background: var(--hi); opacity: .35; animation: suwiDot 1.2s ease-in-out infinite; }
+.suwi-typing-d span:nth-child(2) { animation-delay: .15s; }
+.suwi-typing-d span:nth-child(3) { animation-delay: .3s; }
+@keyframes suwiDot { 0%, 60%, 100% { transform: translateY(0); opacity: .35; } 30% { transform: translateY(-3px); opacity: 1; } }
+
+/* footer: prompts, the field, the note */
+.sora-f { padding: 10px 16px 14px; border-top: 1px solid var(--line); background: var(--surface); }
+.sora-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sora-f .sora-chips { margin-bottom: 10px; max-height: 104px; overflow: auto; }
+.sora-chip {
+  border: 1px solid var(--suwi-line);
+  background: var(--hi-soft);
+  color: var(--hi);
+  border-radius: 999px;
+  padding: 5px 11px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .15s ease;
+}
+.sora-chip:hover { border-color: var(--hi); }
+.sora-in {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 22px;
+  padding: 4px 4px 4px 14px;
+  background: var(--surface);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.sora-in:focus-within { border-color: var(--hi); box-shadow: 0 0 0 3px var(--hi-soft); }
+.sora-in textarea {
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: none;
+  resize: none;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  min-width: 0;
+  max-height: 96px;
+  padding: 7px 0;
+  line-height: 1.45;
+}
+.sora-in textarea:focus-visible { outline: none; }
+.sora-send {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--brand);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity .15s ease, transform .15s ease;
+}
+.sora-send:disabled { opacity: .45; cursor: default; }
+.sora-send:not(:disabled):active { transform: scale(.94); }
+.sora-ft { margin: 8px 2px 0; font-size: 11px; color: var(--ink-3); line-height: 1.45; }
+.sora-cf { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-3); }
+
+/* a prepared change: "What will happen" */
+.suwi-prop {
+  background: linear-gradient(120deg, var(--hi-soft), var(--surface) 55%);
+  border: 1px solid var(--suwi-line);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+.suwi-prop-k { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.suwi-prop-t { font-size: 14.5px; font-weight: 600; }
+.suwi-prop-s { color: var(--ink-2); line-height: 1.5; }
+.suwi-prop ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.suwi-prop-why { margin-top: 4px; padding: 8px 10px; background: var(--surface-2); border-radius: 10px; font-size: 12.5px; color: var(--ink-2); }
+.suwi-whyb { border: 1px solid var(--suwi-line); background: var(--hi-soft); color: var(--hi); border-radius: 999px; padding: 0 7px; font: inherit; font-size: 11.5px; cursor: pointer; }
+.suwi-prop input {
+  flex: 1;
+  min-width: 150px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+}
+
+/* —— The opening sequence: a colour wash sweeps down with a pulsing dot
+   orb, the greeting appears and lifts away, then the conversation fades up —— */
+.suwi-veil,
+.suwi-greet { position: absolute; inset: 0; pointer-events: none; opacity: 0; z-index: 3; }
+.suwi-veil {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, rgba(5, 113, 166, .42) 0%, rgba(62, 155, 216, .34) 26%, rgba(124, 131, 238, .26) 50%, rgba(199, 123, 201, .16) 72%, rgba(255, 255, 255, 0) 100%);
+  -webkit-backdrop-filter: blur(10px) saturate(1.15);
+  backdrop-filter: blur(10px) saturate(1.15);
+}
+.suwi-dots {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  opacity: .85;
+  background: radial-gradient(circle, rgba(255, 255, 255, .9) 0 1.5px, transparent 2.2px) 0 0 / 10px 10px;
+  -webkit-mask: radial-gradient(circle, #000 40%, transparent 71%);
+  mask: radial-gradient(circle, #000 40%, transparent 71%);
+}
+.suwi-greet { display: grid; place-content: center; justify-items: center; gap: 6px; text-align: center; padding: 0 24px; }
+.suwi-greet b { font-size: 20px; font-weight: 600; color: var(--ink); }
+.suwi-greet span { font-size: 14px; color: var(--ink-2); }
+.sora.intro .suwi-veil { animation: suwiVeilSoft 1.8s cubic-bezier(.4, 0, .2, 1) forwards; }
+.sora.intro .suwi-dots { animation: suwiPulseSoft .9s ease-in-out 2 alternate; }
+.sora.intro .suwi-greet { animation: suwiGreetSoft 1.9s cubic-bezier(.4, 0, .2, 1) forwards; }
+.sora.intro .suwi-c { animation: suwiContentSoft 2s cubic-bezier(.4, 0, .2, 1) forwards; }
+@keyframes suwiVeilSoft {
+  0% { opacity: 0; transform: translateY(-12%); }
+  40% { opacity: 1; transform: translateY(0); }
+  70% { opacity: .7; transform: translateY(4%); }
+  100% { opacity: 0; transform: translateY(14%); }
+}
+@keyframes suwiPulseSoft { from { transform: scale(.9); opacity: .55; } to { transform: scale(1.04); opacity: .9; } }
+@keyframes suwiGreetSoft {
+  0%, 28% { opacity: 0; transform: translateY(6px); filter: blur(4px); }
+  46% { opacity: 1; transform: none; filter: blur(0); }
+  58% { opacity: 1; transform: none; filter: blur(0); }
+  70%, 100% { opacity: 0; transform: translateY(-20px); filter: blur(3px); }
+}
+@keyframes suwiContentSoft {
+  0%, 64% { opacity: 0; transform: translateY(8px); filter: blur(3px); }
+  100% { opacity: 1; transform: none; filter: blur(0); }
+}
+
+/* —— Small entrances: each new message and card plays once, on mount —— */
+.sora-b > .sm,
+.sora-b > .suwi-typing,
+.sora-b > .sora-hello { animation: suwiMsgIn .32s cubic-bezier(.2, .7, .2, 1) both; }
+.suwi-prop { animation: suwiCardIn .38s cubic-bezier(.2, .7, .2, 1) .08s both; }
+.sora-card,
+.sora-ins,
+.suwi-risk { animation: suwiCardIn .38s cubic-bezier(.2, .7, .2, 1) both; }
+@keyframes suwiMsgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes suwiCardIn { from { opacity: 0; transform: translateY(4px) scale(.985); } to { opacity: 1; transform: none; } }
+
+/* —— Overview cards: "Suwi noticed" and the morning digest —— */
+.sora-card {
+  background: linear-gradient(120deg, var(--hi-soft), var(--surface) 55%);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+  padding: 20px 22px;
+  min-width: 0;
+}
+.sora-card-h { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.sora-card-h h3 { margin: 0; font-size: 16.5px; font-weight: 600; letter-spacing: -.01em; }
+.sora-card-h small { display: block; color: var(--ink-3); font-size: 12.5px; margin-top: 1px; }
+.sora-list { display: grid; gap: 2px; }
+.sora-li { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.sora-li + .sora-li { border-top: 1px solid var(--line); }
+.sora-li b { display: block; font-weight: 500; font-size: 14px; }
+.sora-li .s { display: block; font-size: 12.5px; color: var(--ink-3); margin-top: 2px; line-height: 1.45; }
+.sora-ic { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--surface); color: var(--hi); border: 1px solid var(--line); flex: none; }
+
+/* —— Suwi's read inside a request or claim drawer —— */
+.sora-ins {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  margin-bottom: 18px;
+  background: var(--hi-soft);
+  border: 1px solid var(--suwi-line);
+}
+.sora-ins.look { background: color-mix(in srgb, var(--warn-bg) 60%, var(--surface)); border-color: var(--warn-line); }
+.sora-ins > .sora-orb { margin-top: 1px; }
+.sora-ins-h { all: unset; display: flex; align-items: center; gap: 9px; width: 100%; cursor: pointer; }
+.sora-ins-h b { flex: 1; font-weight: 600; font-size: 13.5px; color: var(--ink); }
+.sora-ins-h small { font-size: 12px; color: var(--hi); font-weight: 500; }
+.sora-ins ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 5px; font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
+.sora-ins li { display: flex; gap: 7px; align-items: flex-start; }
+.sora-ins li svg { flex-shrink: 0; margin-top: 2px; }
+.sora-ins li.g svg { color: var(--ok); }
+.sora-ins li.w svg { color: var(--warn); }
+
+/* —— The one line above an import preview —— */
+.suwi-risk {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: var(--hi-soft);
+  border: 1px solid var(--suwi-line);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.suwi-risk.medium { background: color-mix(in srgb, var(--warn-bg) 60%, var(--surface)); border-color: var(--warn-line); }
+.suwi-risk.high { background: color-mix(in srgb, var(--bad-bg) 60%, var(--surface)); border-color: var(--bad-line); }
+.suwi-risk > .sora-orb { margin-top: 1px; }
+.suwi-risk strong { color: var(--hi); font-weight: 600; }
+
+/* —— Settings & activity —— */
+.sora-rules { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+.sora-rules li { display: flex; gap: 8px; align-items: flex-start; }
+.sora-rules svg { color: var(--hi); margin-top: 3px; flex-shrink: 0; }
+
+@media (max-width: 760px) {
+  .sora { top: 0; right: 0; bottom: 0; width: 100%; border-radius: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sora-orb i,
+  .suwi-typing-d span,
+  .sora.intro .suwi-veil,
+  .sora.intro .suwi-greet,
+  .sora.intro .suwi-c,
+  .sora.intro .suwi-dots,
+  .sora-b > .sm,
+  .sora-b > .suwi-typing,
+  .sora-b > .sora-hello,
+  .suwi-prop,
+  .sora-card,
+  .sora-ins,
+  .suwi-risk { animation: none; }
+  .sora,
+  .sora.on { transform: none; transition: opacity .2s ease, visibility 0s linear .2s; }
+  .sora.on { transition: opacity .2s ease, visibility 0s; }
+}

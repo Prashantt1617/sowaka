@@ -120,14 +120,16 @@ export async function revokeSession(token: string): Promise<void> {
 }
 
 export async function getCurrentAuthUser(userId: string): Promise<AuthUser> {
-  const user = await users().findOne({ userId });
+  // Whether anyone reports to them needs only their id, so both reads go together.
+  const [user, reports] = await Promise.all([
+    users().findOne({ userId }),
+    users().countDocuments({ managerUserId: userId }, { limit: 1 }),
+  ]);
   if (!user || user.lifecycleStatus === 'offboarded' || user.lifecycleStatus === 'terminated') {
     throw new AuthError(401, 'User is not active');
   }
 
-  const role = (await users().countDocuments({ managerUserId: user.userId }, { limit: 1 }))
-    ? 'manager'
-    : 'employee';
+  const role = reports ? 'manager' : 'employee';
   return toAuthUser({ ...user, role });
 }
 

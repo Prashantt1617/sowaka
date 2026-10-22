@@ -9,12 +9,21 @@ export const rowActionBtn: CSSProperties = {
   justifyContent: 'center',
   width: 30,
   height: 30,
-  borderRadius: 9,
-  border: '1px solid #EBEBEB',
-  background: '#fff',
-  color: '#717171',
+  borderRadius: 999,
+  border: '1px solid var(--line)',
+  background: 'var(--surface)',
+  color: 'var(--ink-3)',
   cursor: 'pointer',
 };
+
+export function IconInfo() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5M12 8h.01" />
+    </svg>
+  );
+}
 
 export function IconDownload() {
   return (

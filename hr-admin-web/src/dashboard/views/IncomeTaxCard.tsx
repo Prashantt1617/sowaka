@@ -7,7 +7,9 @@ import { useStore } from '../store';
 import { ApiError } from '../../services/http';
 import { getTaxDeclaration, rupeesToPaise, saveTaxDeclaration } from '../../services/payroll';
 import type { TaxDeclarationResponse, TaxDeclarations } from '../../services/payroll';
-import { Card } from '../ui';
+import { Card, LoadError, SkeletonLines } from '../ui';
+import type { LoadState } from '../ui';
+import './people.css';
 
 const AMOUNTS: { key: keyof TaxDeclarations; label: string; oldOnly?: boolean }[] = [
   { key: 'sec80C', label: '80C investments (PF is added automatically)', oldOnly: true },
@@ -30,9 +32,14 @@ export function IncomeTaxCard({ userId }: { userId: string }) {
   const [flags, setFlags] = useState<{ metro: boolean; selfSenior: boolean; parentsSenior: boolean }>({ metro: false, selfSenior: false, parentsSenior: false });
   const [proofs, setProofs] = useState<'none' | 'submitted' | 'verified'>('none');
   const [saving, setSaving] = useState(false);
+  // Hidden when it is not theirs to see (403/404), as before; any other failure says so.
+  const [state, setState] = useState<LoadState | 'hidden'>('loading');
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let live = true;
+    setData(null);
+    setState('loading');
     getTaxDeclaration(userId)
       .then((r) => {
         if (!live) return;
@@ -43,12 +50,23 @@ export function IncomeTaxCard({ userId }: { userId: string }) {
         const dec = d?.declarations ?? {};
         setValues(Object.fromEntries(AMOUNTS.filter((a) => typeof dec[a.key] === 'number').map((a) => [a.key, String((dec[a.key] as number) / 100)])));
         setFlags({ metro: dec.metro === true, selfSenior: dec.selfSenior === true, parentsSenior: dec.parentsSenior === true });
+        setState('ready');
       })
-      .catch(() => live && setData(null));
+      .catch((e: unknown) => { if (live) { setData(null); setState(e instanceof ApiError && (e.status === 403 || e.status === 404) ? 'hidden' : 'error'); } });
     return () => { live = false; };
-  }, [userId]);
+  }, [userId, attempt]);
 
-  if (!data) return null;
+  if (state === 'hidden') return null;
+  if (state !== 'ready' || !data) {
+    return (
+      <Card style={{ padding: '20px 24px', marginTop: 22 }}>
+        <div style={{ fontSize: 15, fontWeight: 600 }}>Income tax</div>
+        {state === 'error'
+          ? <LoadError compact text="The tax declaration could not be loaded." onRetry={() => setAttempt((n) => n + 1)} />
+          : <SkeletonLines lines={3} style={{ marginTop: 16 }} />}
+      </Card>
+    );
+  }
   const save = async () => {
     const declarations: TaxDeclarations = { ...flags };
     for (const a of AMOUNTS) {
@@ -69,13 +87,13 @@ export function IncomeTaxCard({ userId }: { userId: string }) {
   };
   const status = data.configs.find((c) => c.regime === regime)?.status;
   return (
-    <Card style={{ padding: '20px 24px', marginTop: 22 }}>
+    <section className="pd-card" style={{ marginTop: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 17, fontWeight: 800, flex: 1 }}>Income tax · FY {data.fy}</div>
-        {status === 'to_confirm' && <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 6, background: '#F6E9D5', color: '#8A6A20' }}>Slabs to confirm</span>}
-        {!status && <span style={{ fontSize: 12, color: '#9197A2' }}>No tax slabs for this year yet</span>}
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, letterSpacing: '-.01em', flex: 1 }}>Income tax · FY {data.fy}</h3>
+        {status === 'to_confirm' && <span style={{ fontSize: 11.5, fontWeight: 500, padding: '3px 10px', borderRadius: 999, background: 'var(--p-yellow)', color: 'var(--p-yellow-ink)' }}>Slabs to confirm</span>}
+        {!status && <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>No tax slabs for this year yet</span>}
       </div>
-      <div style={{ display: 'flex', gap: 20, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 20, marginTop: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         <label style={row}><input type="radio" checked={regime === 'new'} onChange={() => setRegime('new')} /> New regime</label>
         <label style={row}><input type="radio" checked={regime === 'old'} onChange={() => setRegime('old')} /> Old regime</label>
         <label style={row}>
@@ -87,9 +105,9 @@ export function IncomeTaxCard({ userId }: { userId: string }) {
           </select>
         </label>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12, marginTop: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16, marginTop: 16 }}>
         {AMOUNTS.filter((a) => regime === 'old' || !a.oldOnly).map((a) => (
-          <label key={a.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, color: '#484848' }}>
+          <label key={a.key} style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11.5, color: 'var(--ink-2)' }}>
             {a.label}
             <input type="number" min={0} value={values[a.key] ?? ''} placeholder="₹ a year" onChange={(e) => setValues({ ...values, [a.key]: e.target.value })} style={field} />
           </label>
@@ -103,13 +121,12 @@ export function IncomeTaxCard({ userId }: { userId: string }) {
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
-        <button type="button" onClick={() => void save()} disabled={saving} style={btn}>{saving ? 'Saving…' : 'Save'}</button>
-        <span style={{ fontSize: 13, color: '#717171' }}>Used by the TDS engine on each run (Statutory Components › Income Tax). A figure typed on a run wins.</span>
+        <button type="button" onClick={() => void save()} disabled={saving} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
+        <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>Used by the TDS engine on each run (Statutory Components › Income Tax). A figure typed on a run wins.</span>
       </div>
-    </Card>
+    </section>
   );
 }
 
-const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, color: '#222222' };
-const field: CSSProperties = { padding: '7px 10px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 15, fontFamily: 'inherit' };
-const btn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: 'pointer' };
+const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink)' };
+const field: CSSProperties = { height: 42, padding: '0 12px', border: '1px solid var(--line-2)', borderRadius: 12, fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };

@@ -4,6 +4,7 @@
  * withholds when HR hasn't typed one.
  */
 import { payrollRuns, payslips, taxDeclarations, tdsConfigs, users } from '../config/db';
+import { requestViewer } from '../middleware/request-viewer';
 import { TaxDeclarationRow } from '../models/tds.model';
 import { computeTds, fyOf, TaxDeclarations, TaxRegime, TdsConfig, TdsResult } from '../shared/payroll/tds';
 import { hasPayrollAccess } from './payrollAccess.service';
@@ -87,7 +88,7 @@ export function runTds(args: {
 // —— Declarations API (HR enters them for now) ——
 
 async function access(viewerUserId: string, userId: string) {
-  const viewer = await users().findOne({ userId: viewerUserId }, { projection: { _id: 0, org: 1, dashboardAccess: 1, dashboardAdmin: 1, dashboardTabs: 1 } });
+  const viewer = requestViewer(viewerUserId) ?? (await users().findOne({ userId: viewerUserId }, { projection: { _id: 0, org: 1, dashboardAccess: 1, dashboardAdmin: 1, dashboardTabs: 1 } }));
   if (!viewer?.org) throw new TdsError(403, 'No organisation on this account');
   if (!hasPayrollAccess(viewer)) throw new TdsError(403, 'Only people with payroll access can see tax declarations');
   const employee = await users().findOne({ userId }, { projection: { _id: 0, org: 1 } });
@@ -99,8 +100,10 @@ const AMOUNT_FIELDS = ['sec80C', 'sec80CCD1B', 'sec80DSelf', 'sec80DParents', 'h
 
 export async function getDeclaration(viewerUserId: string, userId: string, fy: string) {
   const org = await access(viewerUserId, userId);
-  const row = await taxDeclarations().findOne({ org, userId, fy }, { projection: { _id: 0 } });
-  const configs = await tdsConfigsFor(fy);
+  const [row, configs] = await Promise.all([
+    taxDeclarations().findOne({ org, userId, fy }, { projection: { _id: 0 } }),
+    tdsConfigsFor(fy),
+  ]);
   return {
     declaration: row ?? null,
     configs: [...configs.values()].map((c) => ({ regime: c.regime, status: c.status, source: c.source })),

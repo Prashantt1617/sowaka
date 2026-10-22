@@ -10,12 +10,16 @@
 // already graded, so a filter changes the page instantly and never re-runs a
 // month of grading. The export carries exactly what the filters show.
 import { useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
+import type { WorkSheet } from 'xlsx';
 import { expandReport, getAttendanceReport } from '../../services/hrms';
 import type { AttendanceReportDTO, ReportRow } from '../../services/hrms';
-import { Avatar, Card, DateRange, EmptyRow, Pill, SelectBox } from '../ui';
+import { Card, DateRange, EmptyRow, ListPending, Pill, SelectBox, SkeletonCards } from '../ui';
+import type { LoadState } from '../ui';
+import { PersonAvatar } from '../PersonAvatar';
 import { IconDownload } from './peopleTable';
 import { useAuth } from '../auth/AuthContext';
+import * as L from './look';
+import './look.css';
 
 /**
  * The last report for a range, kept in this tab so coming back to the page —
@@ -63,12 +67,22 @@ const GAPS: { key: Gap; label: string }[] = [
 ];
 
 const TONE: Record<Facet, { bg: string; fg: string }> = {
-  present: { bg: '#E6F1E7', fg: '#4F7A52' },
-  half_day: { bg: '#FBF1DD', fg: '#9A6B25' },
-  missed: { bg: '#FBE9DE', fg: '#B25A1B' },
-  on_leave: { bg: '#E7F2F7', fg: '#0571A6' },
-  late: { bg: '#EFE7F2', fg: '#7E5FB0' },
+  present: { bg: 'var(--ok-bg)', fg: 'var(--ok)' },
+  half_day: { bg: 'var(--warn-bg)', fg: 'var(--warn)' },
+  missed: { bg: 'var(--t-peach)', fg: 'var(--warn)' },
+  on_leave: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
+  late: { bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' },
 };
+
+// The same statuses as solid pills in the day list.
+const SOLID = new Map<{ bg: string; fg: string }, { bg: string; fg: string }>([
+  [TONE.present, L.TONES.ok],
+  [TONE.half_day, L.TONES.info],
+  [TONE.missed, L.TONES.bad],
+  [TONE.on_leave, L.TONES.info],
+  [TONE.late, L.TONES.warn],
+]);
+const solid = (t: { bg: string; fg: string }) => SOLID.get(t) ?? t;
 
 const LEAVE_LABEL: Record<string, string> = {
   sick: 'Sick', casual: 'Casual', earned: 'Earned', comp_off: 'Comp off',
@@ -154,8 +168,11 @@ export function AttendanceReport() {
   const [from, setFrom] = useState(monthStartIso());
   const [to, setTo] = useState(todayIso());
   const [report, setReport] = useState<AttendanceReportDTO | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Which range the report on screen is for: another range shows its own
+  // skeleton (or its cached copy), never the last range's days.
+  const [reportFor, setReportFor] = useState('');
   const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
 
   const [department, setDepartment] = useState('all');
   const [manager, setManager] = useState('all');
@@ -175,12 +192,12 @@ export function AttendanceReport() {
     const key = cacheKey(userId, from, to);
     // Whatever this tab last saw for the range goes up immediately.
     const cached = readCached(key);
+    // A range with no copy yet shows its skeleton, not "Refreshing…" left over from the last one.
+    if (!cached) setRefreshing(false);
     if (cached) {
       setReport(cached);
-      setLoading(false);
+      setReportFor(key);
       setRefreshing(true);
-    } else {
-      setLoading(true);
     }
     setError('');
     // A date input fires on every edit, and each intermediate value is a
@@ -190,15 +207,18 @@ export function AttendanceReport() {
         .then((data) => {
           if (!live) return;
           setReport(data);
+          setReportFor(key);
           writeCached(key, data);
         })
         .catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load the report'); })
-        .finally(() => { if (live) { setLoading(false); setRefreshing(false); } });
+        .finally(() => { if (live) setRefreshing(false); });
     }, cached ? 150 : 400);
     return () => { live = false; clearTimeout(timer); };
-  }, [from, to, userId]);
+  }, [from, to, userId, attempt]);
 
-  const all = useMemo(() => (report ? expandReport(report) : []), [report]);
+  const shown = report && reportFor === cacheKey(userId, from, to) ? report : null;
+  const reportState: LoadState = shown ? 'ready' : error ? 'error' : 'loading';
+  const all = useMemo(() => (shown ? expandReport(shown) : []), [shown]);
 
   // Everything but the card: this is the population the totals describe.
   const scoped = useMemo(
@@ -234,7 +254,7 @@ export function AttendanceReport() {
   // ── export ─────────────────────────────────────────────────────────────
   const widths = (rows: Record<string, unknown>[]) =>
     Object.keys(rows[0] ?? {}).map((key) => ({ wch: Math.max(key.length, ...rows.map((r) => String(r[key] ?? '').length)) + 2 }));
-  const sheet = (rows: Record<string, unknown>[]) => {
+  const sheet = (XLSX: typeof import('xlsx'), rows: Record<string, unknown>[]): WorkSheet => {
     const ws = XLSX.utils.json_to_sheet(rows);
     ws['!cols'] = widths(rows);
     return ws;
@@ -283,11 +303,13 @@ export function AttendanceReport() {
     'Source': r.source ?? '',
   }));
   const suffix = `${from}-to-${to}${filter === 'all' ? '' : `-${filter}`}${gap === 'all' ? '' : `-${gap}`}`;
-  const exportExcel = () => {
+  const exportExcel = async () => {
+    // The spreadsheet library is large; it is fetched the first time someone exports.
+    const XLSX = await import('xlsx');
     const wb = XLSX.utils.book_new();
     // The punches are the sheet the file opens on; the totals sit behind them.
-    XLSX.utils.book_append_sheet(wb, sheet(dayRows()), 'Attendance');
-    XLSX.utils.book_append_sheet(wb, sheet(summaryRows()), 'Summary');
+    XLSX.utils.book_append_sheet(wb, sheet(XLSX, dayRows()), 'Attendance');
+    XLSX.utils.book_append_sheet(wb, sheet(XLSX, summaryRows()), 'Summary');
     XLSX.writeFile(wb, `attendance-${suffix}.xlsx`);
   };
   const canExport = listed.length > 0;
@@ -295,7 +317,7 @@ export function AttendanceReport() {
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
       {/* ── filters ───────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         <DateRange from={from} to={to} onFrom={setFrom} onTo={setTo} />
         <SelectBox value={department} onChange={setDepartment}>
           <option value="all">All departments</option>
@@ -309,20 +331,20 @@ export function AttendanceReport() {
           <option value="all">All attendance modes</option>
           {(report?.punchFormats ?? []).map((f) => <option key={f} value={f}>{f}</option>)}
         </SelectBox>
-        {loading && <span style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>Loading…</span>}
-        {refreshing && <span style={{ fontSize: 14, color: '#9197A2', fontWeight: 600 }}>Refreshing…</span>}
-        <ExportButton label="Export Excel" disabled={!canExport} onClick={exportExcel} />
+        {refreshing && <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>Refreshing…</span>}
+        <ExportButton label="Export Excel" disabled={!canExport} onClick={() => void exportExcel()} />
       </div>
 
-      {error && (
-        <div style={{ marginBottom: 14, fontSize: 14, color: '#A8475F', fontWeight: 600 }}>{error}</div>
+      {error && shown && (
+        <div style={{ marginBottom: 14, fontSize: 13, color: 'var(--bad)', fontWeight: 400 }}>{error}</div>
       )}
 
       {/* ── the totals, which are the filter ──────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 14, marginBottom: filter === 'missed' ? 10 : 20 }}>
-        <div style={{ background: '#fff', border: '1px solid #EBEBEB', borderRadius: 15, padding: '15px 17px' }}>
-          <div style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>Employees</div>
-          <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-.6px', marginTop: 3 }}>{totals.employees}</div>
+      {!shown && <SkeletonCards count={6} minWidth={120} style={{ marginBottom: 20 }} />}
+      {shown && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 16, marginBottom: filter === 'missed' ? 12 : 20 }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid transparent', borderRadius: 'var(--r-lg)', padding: '14px 16px', minHeight: 96, boxShadow: 'var(--shadow)' }}>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-2)', fontWeight: 400 }}>Employees</div>
+          <div style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6 }}>{totals.employees}</div>
         </div>
         {FACETS.map((f) => (
           <FilterCard
@@ -335,12 +357,12 @@ export function AttendanceReport() {
             onClick={() => pick(f.key)}
           />
         ))}
-      </div>
+      </div>}
 
       {/* Missed punch opens into which punch is missing. */}
       {filter === 'missed' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13, color: '#717171', fontWeight: 600, marginRight: 4 }}>Which punch</span>
+          <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400, marginRight: 4 }}>Which punch</span>
           <GapChip label="All missed" value={totals.missed} active={gap === 'all'} onClick={() => setGap('all')} />
           {GAPS.map((g) => (
             <GapChip key={g.key} label={g.label} value={totals[g.key]} active={gap === g.key} onClick={() => setGap(gap === g.key ? 'all' : g.key)} />
@@ -349,66 +371,68 @@ export function AttendanceReport() {
       )}
 
       {/* ── the days ──────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 15, fontWeight: 700 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+        <span style={{ ...L.cardTitle }}>
           {filter === 'all' ? 'All days' : FACETS.find((f) => f.key === filter)!.label}
           {filter === 'missed' && gap !== 'all' ? ` · ${GAPS.find((g) => g.key === gap)!.label}` : ''}
         </span>
-        <span style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>
+        {shown && <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}>
           {listed.length} {listed.length === 1 ? 'day' : 'days'} · {new Set(listed.map((r) => r.userId)).size} people
-        </span>
+        </span>}
       </div>
 
-      <Card>
-        <div style={{ display: 'grid', gridTemplateColumns: LIST_COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', fontSize: 12, fontWeight: 700, letterSpacing: '.5px', color: '#717171' }}>
-          <div>EMPLOYEE</div>
-          <div>TEMPLATE</div>
-          <div>DATE</div>
-          <div>IN</div>
-          <div>OUT</div>
-          <div>HOURS</div>
-          <div>STATUS</div>
-          <div>MODE</div>
+      <Card style={{ padding: 20 }}>
+        <div style={{ display: 'grid', background: 'var(--surface-2)', borderRadius: 12, gridTemplateColumns: LIST_COLS, gap: 12, padding: '10px 12px', fontSize: 12, fontWeight: 400, letterSpacing: 0, color: 'var(--ink-3)', lineHeight: 1.5 }}>
+          <div className="lk-cap">EMPLOYEE</div>
+          <div className="lk-cap">TEMPLATE</div>
+          <div className="lk-cap">DATE</div>
+          <div className="lk-cap">IN</div>
+          <div className="lk-cap">OUT</div>
+          <div className="lk-cap">HOURS</div>
+          <div className="lk-cap">STATUS</div>
+          <div className="lk-cap">MODE</div>
         </div>
-        {pageRows.length === 0 ? (
-          <EmptyRow text={loading ? 'Loading…' : 'No days match these filters.'} />
+        {!shown ? (
+          <ListPending state={reportState} errorText={error || undefined} onRetry={() => setAttempt((n) => n + 1)} rows={8} cols={8} />
+        ) : pageRows.length === 0 ? (
+          <EmptyRow text="No days match these filters." />
         ) : pageRows.map((r) => {
           const status = statusOf(r);
           return (
-            <div key={`${r.userId}-${r.date}`} style={{ display: 'grid', gridTemplateColumns: LIST_COLS, gap: 12, padding: '13px 22px', borderBottom: '1px solid #F0F0F2', alignItems: 'center' }}>
+            <div key={`${r.userId}-${r.date}`} className="lk-row" style={{ display: 'grid', gridTemplateColumns: LIST_COLS, gap: 12, padding: '10px 12px', borderBottom: '1px solid var(--line)', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-                <Avatar name={r.name} />
+                <PersonAvatar name={r.name} userId={r.userId} />
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 16, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                  <div style={{ fontSize: 14, color: '#717171', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {r.employeeId} · {r.department}
                   </div>
                 </div>
               </div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.template ?? 'Org policy'}</div>
-                <div style={{ fontSize: 13, color: '#9197A2', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.punchFormat}</div>
+                <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.template ?? 'Org policy'}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.punchFormat}</div>
               </div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: '#484848' }}>{dayLabel(r.date)}</div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: r.punchIn ? '#484848' : '#B25A1B' }}>{clock(r.punchIn)}</div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: '#484848' }}>{clock(r.punchOut)}</div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: '#484848' }}>{hours(r)}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink)' }}>{dayLabel(r.date)}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 400, color: r.punchIn ? 'var(--ink)' : 'var(--warn)' }}>{clock(r.punchIn)}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink)' }}>{clock(r.punchOut)}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink)' }}>{hours(r)}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <Pill label={status.label} tone={status.tone} />
-                {r.late && <Pill label="Late" tone={TONE.late} />}
+                <Pill label={status.label} tone={solid(status.tone)} />
+                {r.late && <Pill label="Late" tone={solid(TONE.late)} />}
               </div>
-              <div style={{ fontSize: 14, fontWeight: 500, color: '#717171', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail(r) || '—'}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail(r) || '—'}</div>
             </div>
           );
         })}
         {listed.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 22px' }}>
-            <span style={{ fontSize: 14, color: '#717171', fontWeight: 600 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 0 0' }}>
+            <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
               Showing {(current - 1) * PAGE + 1}–{Math.min(current * PAGE, listed.length)} of {listed.length}
             </span>
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
               <PageButton label="Previous" disabled={current <= 1} onClick={() => setPage(current - 1)} />
-              <span style={{ fontSize: 14, fontWeight: 700, color: '#484848', padding: '0 6px' }}>{current} / {pages}</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', padding: '0 6px' }}>{current} / {pages}</span>
               <PageButton label="Next" disabled={current >= pages} onClick={() => setPage(current + 1)} />
             </div>
           </div>
@@ -430,14 +454,15 @@ function FilterCard({ label, note, value, tone, active, onClick }: {
       title={active ? `Showing ${label.toLowerCase()} days — press to show all` : `Show ${label.toLowerCase()} days`}
       style={{
         textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer',
-        background: active ? tone.bg : '#fff',
-        border: `1px solid ${active ? tone.fg : '#EBEBEB'}`,
-        borderRadius: 15, padding: '15px 17px', transition: 'background .12s, border-color .12s',
+        background: active ? tone.bg : 'var(--surface)',
+        border: '1px solid transparent',
+        boxShadow: active ? `0 0 0 1px ${tone.fg}, var(--shadow)` : 'var(--shadow)',
+        borderRadius: 'var(--r-lg)', padding: '14px 16px', minHeight: 96, transition: 'background .12s, box-shadow .12s',
       }}
     >
-      <div style={{ fontSize: 14, color: active ? tone.fg : '#717171', fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-.6px', marginTop: 3, color: tone.fg }}>{value}</div>
-      <div style={{ fontSize: 12, color: active ? tone.fg : '#9197A2', fontWeight: 500, marginTop: 4, opacity: active ? 0.85 : 1 }}>{note}</div>
+      <div style={{ fontSize: 12.5, color: active ? tone.fg : 'var(--ink-2)', fontWeight: 400 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6, color: tone.fg }}>{value}</div>
+      <div style={{ fontSize: 11.5, color: active ? tone.fg : 'var(--ink-3)', fontWeight: 400, marginTop: 4, opacity: active ? 0.85 : 1 }}>{note}</div>
     </button>
   );
 }
@@ -450,13 +475,13 @@ function GapChip({ label, value, active, onClick }: { label: string; value: numb
       aria-pressed={active}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: 'inherit', cursor: 'pointer',
-        background: active ? TONE.missed.bg : '#fff', color: active ? TONE.missed.fg : '#484848',
-        border: `1px solid ${active ? TONE.missed.fg : '#EBEBEB'}`, borderRadius: 999, padding: '6px 12px',
-        fontSize: 14, fontWeight: 700,
+        background: active ? 'var(--sel)' : 'var(--surface)', color: active ? 'var(--on-sel)' : 'var(--ink-2)',
+        border: `1px solid ${active ? 'var(--sel)' : 'var(--line)'}`, borderRadius: 99, height: 36, padding: '0 14px',
+        fontSize: 12.5, fontWeight: 400,
       }}
     >
       {label}
-      <span style={{ fontSize: 13, fontWeight: 700, color: active ? TONE.missed.fg : '#9197A2' }}>{value}</span>
+      <span style={{ fontSize: 12, fontWeight: 500, color: active ? 'inherit' : 'var(--ink-3)', opacity: active ? 0.8 : 1 }}>{value}</span>
     </button>
   );
 }
@@ -467,7 +492,8 @@ function ExportButton({ label, disabled, onClick }: { label: string; disabled: b
       type="button"
       onClick={onClick}
       disabled={disabled}
-      style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: '#222222', border: 'none', color: '#fff', borderRadius: 11, padding: '9px 15px', fontSize: 14, fontWeight: 700, fontFamily: 'inherit', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}
+      className="lk-btn-p"
+      style={{ ...L.btnPrimary, marginLeft: 'auto', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}
     >
       <IconDownload /> {label}
     </button>
@@ -481,8 +507,8 @@ function PageButton({ label, disabled, onClick }: { label: string; disabled: boo
       onClick={onClick}
       disabled={disabled}
       style={{
-        height: 33, padding: '0 12px', borderRadius: 9, border: '1px solid #EBEBEB', background: '#F7F7F9',
-        fontSize: 14, fontWeight: 700, color: '#484848', fontFamily: 'inherit',
+        height: 34, padding: '0 12px', borderRadius: 10, border: '1px solid var(--line)', background: 'var(--surface)',
+        fontSize: 13, fontWeight: 500, color: 'var(--ink)', fontFamily: 'inherit',
         cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.45 : 1,
       }}
     >

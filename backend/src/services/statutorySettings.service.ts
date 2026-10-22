@@ -5,6 +5,7 @@
  * period.
  */
 import { payrollRuns, payslips, statutorySettings, users } from '../config/db';
+import { requestViewer } from '../middleware/request-viewer';
 import { EPF_CONSTANTS } from '../models/statutoryRule.model';
 import {
   BonusSettings,
@@ -298,7 +299,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 async function requireAdminOrg(adminUserId: string): Promise<string> {
-  const admin = await users().findOne({ userId: adminUserId });
+  const admin = requestViewer(adminUserId) ?? (await users().findOne({ userId: adminUserId }));
   if (!admin) throw new StatutorySettingsError(404, 'User not found');
   if (!admin.org) throw new StatutorySettingsError(409, 'User is not attached to a company');
   return admin.org;

@@ -11,6 +11,7 @@ import { closeSquadRealtime, initSquadRealtime } from './services/secret-squad-r
 import { closeRedis } from './config/redis';
 import { startCareScheduler, stopCareScheduler } from './services/care.service';
 import { startGameChallengeSweeper, stopGameChallengeSweeper } from './services/game-challenge.service';
+import { startSuwiDigestScheduler, stopSuwiDigestScheduler } from './suwi/digest';
 
 async function start(): Promise<void> {
   await connectDb();
@@ -18,6 +19,8 @@ async function start(): Promise<void> {
   startConnectScheduler();
   startNotificationScheduler();
   startCareScheduler();
+  // Suwi's morning digest (07:00 IST); not in api-only mode, which never calls start().
+  startSuwiDigestScheduler();
   // Expires game challenges nobody finished in time, and tells both players.
   startGameChallengeSweeper();
 
@@ -52,6 +55,7 @@ logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v
     stopConnectScheduler();
     stopNotificationScheduler();
     stopCareScheduler();
+    stopSuwiDigestScheduler();
     stopGameChallengeSweeper();
     await closeRedis();
     await closeDb();

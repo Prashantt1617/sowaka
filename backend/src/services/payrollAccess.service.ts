@@ -4,6 +4,7 @@
  * Runs or Salary details tab in People › Accesses.
  */
 import { users } from '../config/db';
+import { requestViewer } from '../middleware/request-viewer';
 import { User } from '../models/user.model';
 
 export function hasPayrollAccess(user: Pick<User, 'dashboardAccess' | 'dashboardAdmin' | 'dashboardTabs'> | null | undefined): boolean {
@@ -13,6 +14,7 @@ export function hasPayrollAccess(user: Pick<User, 'dashboardAccess' | 'dashboard
 }
 
 export async function payrollAccessOf(userId: string): Promise<boolean> {
-  const user = await users().findOne({ userId }, { projection: { _id: 0, dashboardAccess: 1, dashboardAdmin: 1, dashboardTabs: 1 } });
+  // The signed-in viewer's own record when it is them (it usually is): no second read.
+  const user = requestViewer(userId) ?? (await users().findOne({ userId }, { projection: { _id: 0, dashboardAccess: 1, dashboardAdmin: 1, dashboardTabs: 1 } }));
   return hasPayrollAccess(user);
 }

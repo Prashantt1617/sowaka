@@ -185,11 +185,11 @@ function Chips({ options, selected, onToggle }: {
             aria-pressed={on}
             onClick={() => onToggle(option)}
             style={{
-              padding: '6px 12px', borderRadius: 20, fontSize: 13.5, fontWeight: 700,
+              padding: '6px 12px', borderRadius: 'var(--r-lg)', fontSize: 12.5, fontWeight: 500,
               cursor: 'pointer', fontFamily: 'inherit',
-              border: `1px solid ${on ? '#0571A6' : '#EBEBEB'}`,
-              background: on ? '#E6F1F8' : '#fff',
-              color: on ? '#0571A6' : '#717171',
+              border: `1px solid ${on ? 'var(--accent)' : 'var(--line)'}`,
+              background: on ? 'var(--accent-soft)' : 'var(--surface)',
+              color: on ? 'var(--accent-ink)' : 'var(--ink-3)',
             }}
           >
             {option}
@@ -204,7 +204,7 @@ function Select<T extends string>({ value, onChange, options, render, disabled }
   value: T; onChange: (v: T) => void; options: readonly T[]; render?: (v: T) => string; disabled?: boolean;
 }) {
   return (
-    <select value={value} onChange={(ev) => onChange(ev.target.value as T)} disabled={disabled} style={{ ...selectStyle, ...(disabled ? { background: '#F7F7F9', color: '#9A9AA5', cursor: 'not-allowed' } : {}) }}>
+    <select value={value} onChange={(ev) => onChange(ev.target.value as T)} disabled={disabled} style={{ ...selectStyle, ...(disabled ? { background: 'var(--surface-2)', color: 'var(--ink-3)', cursor: 'not-allowed' } : {}) }}>
       {options.map((o) => <option key={o} value={o}>{render ? render(o) : o}</option>)}
     </select>
   );
@@ -213,11 +213,11 @@ function Select<T extends string>({ value, onChange, options, render, disabled }
 /** A tick or a cross for whether that punch is there in this case. */
 function Mark({ on }: { on: boolean }) {
   return on ? (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4F7A52" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-label="present">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-label="present">
       <path d="M4 12.5 9.5 18 20 6.5" />
     </svg>
   ) : (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C4382E" strokeWidth="3" strokeLinecap="round" aria-label="missing">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--bad)" strokeWidth="3" strokeLinecap="round" aria-label="missing">
       <path d="M6 6l12 12M18 6L6 18" />
     </svg>
   );
@@ -227,8 +227,8 @@ function Th({ children, center, width }: { children: ReactNode; center?: boolean
   return (
     <th style={{
       textAlign: center ? 'center' : 'left', width,
-      fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em', color: '#717171',
-      fontWeight: 700, padding: '11px 12px', borderBottom: '1px solid #EBEBEB',
+      fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)',
+      fontWeight: 400, padding: '11px 12px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)',
     }}>{children}</th>
   );
 }
@@ -236,14 +236,14 @@ function Th({ children, center, width }: { children: ReactNode; center?: boolean
 function Td({ children, center }: { children: ReactNode; center?: boolean }) {
   return (
     <td style={{
-      padding: '12px', borderBottom: '1px solid #F0F0F2',
+      padding: '12px', borderBottom: '1px solid var(--line)',
       textAlign: center ? 'center' : 'left', verticalAlign: 'middle',
     }}>{children}</td>
   );
 }
 
-const selectStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, fontFamily: 'inherit', background: '#fff', color: '#222222', cursor: 'pointer' };
-const fixedValue: CSSProperties = { display: 'flex', flexWrap: 'wrap', whiteSpace: 'nowrap', alignItems: 'center', gap: 10, width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 16, background: '#F7F7F9', color: '#717171' };
-const fixedTag: CSSProperties = { marginLeft: 'auto', fontSize: 11.5, fontWeight: 800, letterSpacing: '.02em', color: '#717171', background: '#EDEDF0', borderRadius: 20, padding: '2px 9px', whiteSpace: 'nowrap' };
-const muted: CSSProperties = { fontSize: 13.5, color: '#9A9AA5' };
-const caseTable: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 15 };
+const selectStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 999, fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer' };
+const fixedValue: CSSProperties = { display: 'flex', flexWrap: 'wrap', whiteSpace: 'nowrap', alignItems: 'center', gap: 10, width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 9, fontSize: 14, background: 'var(--surface-2)', color: 'var(--ink-3)' };
+const fixedTag: CSSProperties = { marginLeft: 'auto', fontSize: 11.5, fontWeight: 600, letterSpacing: '.02em', color: 'var(--ink-3)', background: 'var(--surface-2)', borderRadius: 'var(--r-lg)', padding: '2px 9px', whiteSpace: 'nowrap' };
+const muted: CSSProperties = { fontSize: 12.5, color: 'var(--ink-3)' };
+const caseTable: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13.5 };

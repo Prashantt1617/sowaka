@@ -4,8 +4,9 @@
 // from (the Add user wizard offers them), and a saved name nobody holds yet
 // shows on its page with no one in it.
 import { useCallback, useEffect, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { useStore } from '../store';
+import type { LoadState } from '../ui';
+import './people.css';
 import { IconPlus } from '../icons';
 import { getCompanySettings, updateCompanySettings } from '../../services/hrms';
 
@@ -18,10 +19,19 @@ export function useSavedNames(kind: SavedNameKind) {
   const { flash } = useStore();
   const [saved, setSaved] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  // Whether the saved names have arrived, so the page waits for them too.
+  const [state, setState] = useState<LoadState>('loading');
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    getCompanySettings().then((s) => setSaved(s[kind] ?? [])).catch(() => setSaved([]));
-  }, [kind]);
+    let live = true;
+    setState('loading');
+    getCompanySettings()
+      .then((s) => { if (live) { setSaved(s[kind] ?? []); setState('ready'); } })
+      .catch(() => { if (live) { setSaved([]); setState('error'); } });
+    return () => { live = false; };
+  }, [kind, attempt]);
+  const retry = () => setAttempt((n) => n + 1);
 
   const write = useCallback(async (next: string[], done: string) => {
     setBusy(true);
@@ -40,7 +50,7 @@ export function useSavedNames(kind: SavedNameKind) {
 
   const add = (name: string) => write([...saved, name.trim()], `${name.trim()} added`);
   const remove = (name: string) => write(saved.filter((n) => !same(n, name)), `${name} removed`);
-  return { saved, busy, add, remove };
+  return { saved, busy, add, remove, state, retry };
 }
 
 /** "Add department": a button that opens a one-line form in place. */
@@ -71,7 +81,7 @@ export function AddNameButton({
 
   if (!open) {
     return (
-      <button style={primaryBtn} onClick={() => setOpen(true)}>
+      <button className="pd-btn primary" onClick={() => setOpen(true)}>
         <IconPlus size={15} /> Add {noun}
       </button>
     );
@@ -90,18 +100,15 @@ export function AddNameButton({
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Escape') { setName(''); setOpen(false); } }}
           placeholder={`New ${noun} name`}
-          style={{ ...inputStyle, width: 240, borderColor: taken ? '#C24141' : '#EBEBEB' }}
+          className="pd-inp"
+          style={{ width: 240, height: 40, borderRadius: 999, padding: '0 14px', borderColor: taken ? 'var(--bad)' : undefined }}
         />
-        {taken && <span style={{ fontSize: 12, color: '#C24141' }}>That {noun} already exists.</span>}
+        {taken && <span style={{ fontSize: 11.5, color: 'var(--bad)', paddingLeft: 14 }}>That {noun} already exists.</span>}
       </div>
-      <button type="submit" style={{ ...primaryBtn, opacity: !trimmed || taken || busy ? 0.5 : 1 }} disabled={!trimmed || taken || busy}>
+      <button type="submit" className="pd-btn primary" disabled={!trimmed || taken || busy}>
         {busy ? 'Saving…' : 'Save'}
       </button>
-      <button type="button" style={ghostBtn} onClick={() => { setName(''); setOpen(false); }}>Cancel</button>
+      <button type="button" className="pd-btn" onClick={() => { setName(''); setOpen(false); }}>Cancel</button>
     </form>
   );
 }
-
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 11, fontSize: 16, fontWeight: 700, cursor: 'pointer' };
-const inputStyle: CSSProperties = { padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 15, fontFamily: 'inherit', background: '#fff', color: '#222222' };
