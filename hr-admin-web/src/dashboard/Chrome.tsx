@@ -469,6 +469,8 @@ function ThemeSwitch() {
 export function Topbar() {
   const { view, user, signOut, suwiOpen, setSuwiOpen } = useStore();
   const [title, fixedMeta] = TITLES[view];
+  // A company with Suwi turned off sees no Ask Suwi button (Settings › Suwi can turn it on).
+  const suwiOff = useSuwiNotices().enabled === false;
   // The overview's line is today's date, in India time like the rest of the dashboard.
   const meta = view === 'overview'
     ? `${new Date().toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Asia/Kolkata' })}, ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })}`
@@ -509,10 +511,12 @@ export function Topbar() {
           <input placeholder="Search people, requests…" className="ds-top-search" style={{ border: 'none', outline: 'none', background: 'none', fontSize: 13, width: '100%', height: '100%', padding: '1px 2px', color: 'var(--ink)' }} />
         </div>
         <div style={{ flex: 1 }} />
-        <button type="button" onClick={() => setSuwiOpen(!suwiOpen)} aria-expanded={suwiOpen} title="Ask Suwi, your HR assistant" className="ds-suwi-btn"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 40, padding: '0 14px 0 8px', borderRadius: 999, border: '1px solid color-mix(in srgb, var(--hi) 30%, var(--line))', background: 'linear-gradient(120deg, var(--surface), var(--sky-soft))', color: 'var(--hi)', fontFamily: 'inherit', fontSize: 13, fontWeight: 500, lineHeight: 1.5, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
-          <SuwiOrb size={22} />Ask Suwi
-        </button>
+        {!suwiOff && (
+          <button type="button" onClick={() => setSuwiOpen(!suwiOpen)} aria-expanded={suwiOpen} title="Ask Suwi, your HR assistant" className="ds-suwi-btn"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 40, padding: '0 14px 0 8px', borderRadius: 999, border: '1px solid color-mix(in srgb, var(--hi) 30%, var(--line))', background: 'linear-gradient(120deg, var(--surface), var(--sky-soft))', color: 'var(--hi)', fontFamily: 'inherit', fontSize: 13, fontWeight: 500, lineHeight: 1.5, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+            <SuwiOrb size={22} />Ask Suwi
+          </button>
+        )}
         <ThemeSwitch />
         <button className="ds-icon-btn" style={iconBtn}>
           <IconBell stroke="currentColor" />

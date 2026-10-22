@@ -10,10 +10,11 @@ import { Markdown } from './markdown';
 import { SuwiOrb } from './SuwiPanel';
 
 export type SuwiNotice = { key: string; icon: 'clock' | 'check' | 'rupee' | 'receipt' | 'spark' | 'calendar'; title: string; why: string; ask: string; view: string; count: number };
-type NoticesState = { enabled: boolean; notices: SuwiNotice[]; counts: Record<string, number> };
+// enabled is unknown (undefined) until the server has answered.
+type NoticesState = { enabled?: boolean; notices: SuwiNotice[]; counts: Record<string, number> };
 
 // One fetch shared by the sidebar and the Overview card, refreshed every five minutes.
-const EMPTY: NoticesState = { enabled: false, notices: [], counts: {} };
+const EMPTY: NoticesState = { enabled: undefined, notices: [], counts: {} };
 let cache: { at: number; data: NoticesState } | null = null;
 let inflight: Promise<NoticesState> | null = null;
 const listeners = new Set<(d: NoticesState) => void>();

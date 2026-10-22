@@ -67,11 +67,14 @@ export const DEFAULT_LEVELS: Record<SuwiArea, SuwiLevel> = {
   requests: 'act', attendance: 'act', people: 'act', payroll: 'suggest', claims: 'act', performance: 'act', connect: 'act', settings: 'answer',
 };
 
+/** Companies that have Suwi until an admin turns it off; every other company starts with it off. */
+const ON_BY_DEFAULT = new Set(['sowaka', 'convrse']);
+
 export async function settingsFor(org: string): Promise<SuwiSettings> {
   const s = await settingsCol().findOne({ org });
   return {
     org,
-    enabled: s?.enabled ?? true,
+    enabled: s?.enabled ?? ON_BY_DEFAULT.has(org),
     monthlyBudgetUsd: s?.monthlyBudgetUsd ?? 25,
     levels: { ...DEFAULT_LEVELS, ...(s?.levels ?? {}) },
     updatedAt: s?.updatedAt,
