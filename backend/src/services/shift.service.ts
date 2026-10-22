@@ -1008,20 +1008,30 @@ export async function policyForUser(
   /** Grade as of this local date. Defaults to today. */
   asOf: string = todayIso(),
 ): Promise<ShiftPolicyRules & { shiftName: string | null }> {
-  const user = await users().findOne({ userId });
-  if (!user?.org) return { ...DEFAULT_ORG_SHIFT_POLICY, shiftName: null };
-  const orgPolicy = await getOrgShiftPolicy(user.org);
+  // Asked in two trips rather than four or five: leave balances, overtime and
+  // punches all come through here, often several times for one answer. The
+  // person and their history go together; then the org policy, the template
+  // and the default (in case the template has no policy) go together.
   // Which template covered them on that date, not which one they are on now.
-  const assigned = await assignedTemplateOn(userId, asOf);
-  let template = assigned === 'no-history'
-    ? await shiftTemplates().findOne({ org: user.org, active: true, deletedAt: { $exists: false }, assignedUserIds: userId })
-    : assigned === null
-      ? null
-      : await shiftTemplates().findOne({ _id: assigned, org: user.org });
+  const [user, assigned] = await Promise.all([
+    users().findOne({ userId }, { projection: { _id: 0, org: 1 } }),
+    assignedTemplateOn(userId, asOf),
+  ]);
+  if (!user?.org) return { ...DEFAULT_ORG_SHIFT_POLICY, shiftName: null };
+  const org = user.org;
+  const [orgPolicy, found, fallback] = await Promise.all([
+    getOrgShiftPolicy(org),
+    assigned === 'no-history'
+      ? shiftTemplates().findOne({ org, active: true, deletedAt: { $exists: false }, assignedUserIds: userId })
+      : assigned === null
+        ? null
+        : shiftTemplates().findOne({ _id: assigned, org }),
+    defaultTemplateFor(org),
+  ]);
   // Nobody is on "no shift": whoever is not assigned elsewhere follows the
   // org's default template. The org policy document answers only for an org
   // that has no default yet, so nothing changes for one until it does.
-  if (!template?.policy) template = await defaultTemplateFor(user.org);
+  const template = found?.policy ? found : fallback;
   return mergeTemplatePolicy(orgPolicy, template);
 }
 
