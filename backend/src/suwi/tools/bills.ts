@@ -9,7 +9,7 @@ import { getDb, reimbursementClaims, users } from '../../config/db';
 import { getReceiptDownloadUrl } from '../../services/reimbursement.service';
 import { callModel, costUsd, LlmReply, SUWI_MODEL } from '../llm';
 import { auditCol } from '../store';
-import { defineTools, rupees, str, SuwiContext } from '../tools';
+import { defineTools, str, SuwiContext } from '../tools';
 
 /** The cheaper model reads first; the main one only re-reads when it isn't sure. */
 export const SUWI_SMALL_MODEL = process.env.SUWI_SMALL_MODEL || SUWI_MODEL;
@@ -114,6 +114,13 @@ export async function readBill(ctx: SuwiContext, claimId: string): Promise<{ rea
   return { read, hash: f.hash, model, cached: false };
 }
 
+/** Which of these claims already have a cached read (no model cost to ask again). */
+export async function readClaimIds(org: string, claimIds: string[]): Promise<Set<string>> {
+  if (!claimIds.length) return new Set();
+  const rows = await billReads().find({ org, claimId: { $in: claimIds }, read: { $exists: true } }, { projection: { claimId: 1 } }).toArray();
+  return new Set(rows.map((r) => r.claimId));
+}
+
 /** Other claims in this company carrying the very same file. */
 export async function sameBillElsewhere(org: string, claimId: string, hash: string) {
   const rows = await billReads().find({ org, hash, claimId: { $ne: claimId } }, { projection: { claimId: 1 } }).toArray();
@@ -130,7 +137,7 @@ export function billTags(read: BillRead, claim: { amount: number; expenseDate: s
   if (read.confidence === 0 || (read.amount === null && read.date === null)) return ['bill unreadable or not a bill'];
   if (read.amount === null) tags.push('amount not found on the bill');
   else if (Math.abs(read.amount - claim.amount) <= Math.max(1, claim.amount * 0.01)) tags.push('amount matches the bill');
-  else tags.push(`bill says ${rupees(read.amount * 100)}, claim says ${rupees(claim.amount * 100)}`);
+  else tags.push(`bill says ₹${read.amount.toLocaleString('en-IN')}, claim says ₹${claim.amount.toLocaleString('en-IN')}`);
   if (read.date === null) tags.push('date not found on the bill');
   else if (read.date === claim.expenseDate) tags.push('date matches the bill');
   else tags.push(`bill dated ${read.date}, claim dated ${claim.expenseDate}`);
@@ -159,7 +166,7 @@ defineTools({
     return {
       data: {
         claim: { id, userId: claim.userId, name: owner.name, type: claim.category, amount: claim.amount, expenseDate, status: claim.status, receiptName: claim.receiptName },
-        bill: r.read, checks: [...billTags(r.read, { amount: claim.amount, expenseDate }), ...same.map((s) => `same file as ${s.name}'s ${s.status} claim of ${rupees(s.amount * 100)} dated ${s.expenseDate}`)],
+        bill: r.read, checks: [...billTags(r.read, { amount: claim.amount, expenseDate }), ...same.map((s) => `same file as ${s.name}'s ${s.status} claim of ₹${s.amount.toLocaleString('en-IN')} dated ${s.expenseDate}`)],
         sameBillAs: same, readBy: r.model, cached: r.cached,
       },
       links: [{ label: 'Open reimbursements', view: 'reimbursements' }],

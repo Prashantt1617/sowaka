@@ -14,15 +14,18 @@ import { tdsConfigsFor } from '../../services/tds.service';
 import { fyOf, roundToTenRupees, taxOnIncome } from '../../shared/payroll/tds';
 import { defineTools, monthOf, num, rupees, str, SuwiContext } from '../tools';
 import { defineExecutor, propose } from '../proposals';
-import { billTags, readBill, receiptHash, sameBillElsewhere } from './bills';
+import { BillRead, billTags, readBill, readClaimIds, receiptHash, sameBillElsewhere } from './bills';
 
-type ClaimView = Awaited<ReturnType<typeof listAllReimbursementsForAdmin>>[number];
 const days = (a: string, b: string) => Math.round((Date.parse(`${b.slice(0, 10)}T00:00:00Z`) - Date.parse(`${a.slice(0, 10)}T00:00:00Z`)) / 86_400_000);
 const title = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+/** Rupees as claims carry them (₹598.50 stays ₹598.50; whole amounts have no paise). */
+const inr = (r: number) => `₹${r.toLocaleString('en-IN', { minimumFractionDigits: Number.isInteger(r) ? 0 : 2, maximumFractionDigits: 2 })}`;
 
 export interface CheckedClaim {
   id: string; userId: string; name: string; department: string; type: string; amount: number; expenseDate: string; filed: string; daysWaiting: number; hasReceipt: boolean;
   checks: string[];
+  /** The asker's own claim: someone else must decide it. */
+  yourOwn?: boolean;
   bill?: { amount: number | null; date: string | null; vendor: string | null; confidence: number };
 }
 
@@ -40,8 +43,25 @@ export async function checkedPending(ctx: SuwiContext, bills: 'none' | 'hash' | 
   const typeOf = new Map(types.map((t) => [t.name.toLowerCase(), t]));
   const headOf = new Map(heads.map((h) => [h.code, h]));
   const pending = all.filter((c) => c.status === 'pending');
+  // First every file (four at a time): its hash, and its read where asked. Only
+  // then compare, so both claims sharing a file are flagged, not just the later one.
+  const files = new Map<string, { hash?: string; read?: BillRead; error?: string }>();
+  if (bills !== 'none') {
+    const withFile = pending.filter((c) => c.hasReceipt);
+    const already = await readClaimIds(ctx.org, withFile.map((c) => c.id));
+    let newReads = 0;
+    // A bill already read costs nothing to show again, so every mode uses it.
+    const toRead = new Set(withFile.filter((c) => already.has(c.id) || (bills === 'read' && newReads++ < maxReads)).map((c) => c.id));
+    for (let k = 0; k < withFile.length; k += 4) {
+      await Promise.all(withFile.slice(k, k + 4).map(async (c) => {
+        try {
+          if (toRead.has(c.id)) { const r = await readBill(ctx, c.id); files.set(c.id, { hash: r.hash, read: r.read }); }
+          else files.set(c.id, { hash: await receiptHash(ctx, c.id) });
+        } catch (e) { files.set(c.id, { error: (e as Error).message }); }
+      }));
+    }
+  }
   const out: CheckedClaim[] = [];
-  let reads = 0;
   for (const c of pending) {
     const checks: string[] = [];
     const t = typeOf.get(c.category);
@@ -56,30 +76,20 @@ export async function checkedPending(ctx: SuwiContext, bills: 'none' | 'hash' | 
       if (head?.maxClaimablePaise) {
         const month = c.expenseDate.slice(0, 7);
         const inMonth = all.filter((o) => o.userId === c.userId && o.category === c.category && o.status !== 'declined' && o.expenseDate.slice(0, 7) === month).reduce((s, o) => s + o.amount, 0);
-        if (inMonth * 100 > head.maxClaimablePaise) checks.push(`takes ${head.name} past its monthly cap of ${rupees(head.maxClaimablePaise)} (${rupees(inMonth * 100)} claimed for ${month})`);
+        if (inMonth * 100 > head.maxClaimablePaise) checks.push(`takes ${head.name} past its monthly cap of ${rupees(head.maxClaimablePaise)} (${inr(inMonth)} claimed for ${month})`);
       }
     }
     const twin = all.find((o) => o.id !== c.id && o.userId === c.userId && o.amount === c.amount && o.expenseDate === c.expenseDate);
     if (twin) checks.push(`same amount and date as ${c.employee.name.split(' ')[0]}'s ${twin.status} claim of ${twin.createdAt.slice(0, 10)}`);
-    let bill: CheckedClaim['bill'];
-    if (c.hasReceipt && bills !== 'none') {
-      try {
-        let hash: string;
-        if (bills === 'read' && reads < maxReads) {
-          const r = await readBill(ctx, c.id);
-          if (!r.cached) reads++;
-          hash = r.hash;
-          bill = { amount: r.read.amount, date: r.read.date, vendor: r.read.vendor, confidence: r.read.confidence };
-          checks.push(...billTags(r.read, c).filter((x) => !x.startsWith('amount matches') && !x.startsWith('date matches')));
-        } else hash = await receiptHash(ctx, c.id);
-        for (const s of await sameBillElsewhere(ctx.org, c.id, hash)) checks.push(`same file as ${s.name}'s ${s.status} claim of ${rupees(s.amount * 100)} dated ${s.expenseDate}`);
-      } catch (e) {
-        checks.push(`bill could not be checked (${(e as Error).message})`);
-      }
-    }
+    const f = files.get(c.id);
+    if (f?.error) checks.push(`bill could not be checked (${f.error})`);
+    if (f?.read) checks.push(...billTags(f.read, c).filter((x) => !x.startsWith('amount matches') && !x.startsWith('date matches')));
+    if (f?.hash) for (const s of await sameBillElsewhere(ctx.org, c.id, f.hash)) checks.push(`same file as ${s.name}'s ${s.status} claim of ${inr(s.amount)} dated ${s.expenseDate}`);
     out.push({
       id: c.id, userId: c.userId, name: c.employee.name, department: c.employee.department, type: title(c.category), amount: c.amount, expenseDate: c.expenseDate,
-      filed: c.createdAt.slice(0, 10), daysWaiting: Math.max(0, days(c.createdAt, ctx.today)), hasReceipt: c.hasReceipt, checks, ...(bill ? { bill } : {}),
+      filed: c.createdAt.slice(0, 10), daysWaiting: Math.max(0, days(c.createdAt, ctx.today)), hasReceipt: c.hasReceipt, checks,
+      ...(c.userId === ctx.userId ? { yourOwn: true } : {}),
+      ...(f?.read ? { bill: { amount: f.read.amount, date: f.read.date, vendor: f.read.vendor, confidence: f.read.confidence } } : {}),
     });
   }
   return out.sort((a, b) => b.daysWaiting - a.daysWaiting);
@@ -90,7 +100,7 @@ async function taxLine(ctx: SuwiContext, claims: CheckedClaim[]): Promise<{ text
   const cats = await billCategories(ctx.org);
   const linked = claims.filter((c) => cats.has(c.type.toLowerCase()));
   const plain = claims.filter((c) => !cats.has(c.type.toLowerCase()));
-  const paidOut = plain.length ? `${rupees(plain.reduce((s, c) => s + c.amount, 0) * 100)} in expense claims goes out with the next payroll run.` : '';
+  const paidOut = plain.length ? `${inr(plain.reduce((s, c) => s + c.amount, 0))} in expense claims goes out with the next payroll run.` : '';
   if (!linked.length) return { text: `${paidOut} Taxable income is unchanged.`.trim(), why: 'None of these types is linked to a salary reimbursement component, so they are paid out, not set against salary already paid.' };
   const d = new Date(Date.parse(`${ctx.today}T00:00:00Z`));
   const next = `${d.getUTCFullYear() + (d.getUTCMonth() === 11 ? 1 : 0)}-${String(((d.getUTCMonth() + 1) % 12) + 1).padStart(2, '0')}`;
@@ -125,7 +135,7 @@ async function taxLine(ctx: SuwiContext, claims: CheckedClaim[]): Promise<{ text
   const text = dropPaise
     ? `Taxable income drops by about ${rupees(dropPaise)} for ${who}; about ${rupees(savedPaise)} less tax, given back over the months left in this financial year from the next run.${noRun ? ` (No TDS run yet for ${noRun}, so their tax part is not counted.)` : ''} ${paidOut}`.trim()
     : `These bills don't lower taxable income yet: nothing of ${linked.map((c) => c.type).filter((v, i, a) => a.indexOf(v) === i).join(', ')} has been paid this financial year beyond what bills already cover. ${paidOut}`.trim();
-  return { text, why: 'A salary reimbursement (Fuel, Internet…) is paid every month and taxed until bills come in. Approved bills make that much of what was paid this year tax-free, never more than was paid; TDS is reworked on the year\'s figures each month, so the saving spreads over the coming runs. The figure here is an estimate from the latest TDS worksheet.' };
+  return { text, why: 'A salary reimbursement (Fuel, Internet…) is paid every month and taxed until bills come in. Approved bills make that much of what was paid this year tax-free, never more than was paid; TDS is reworked on the year\'s figures each month, so the saving spreads over the coming runs. The figure is an estimate from the TDS figures on each person\'s latest payslip.' };
 }
 
 defineTools(
@@ -133,7 +143,7 @@ defineTools(
     name: 'claims_to_check',
     area: 'claims',
     label: (i) => (i.bills === 'read' ? 'Pending claims, bills read' : 'Pending claims and their checks'),
-    description: 'Pending reimbursement claims split into clean ones and ones that need a closer look, with the reason for each: no bill attached, over the type\'s per-claim limit, dated beyond the type\'s backdating window, past the linked salary component\'s monthly cap, same amount and date as another claim, the same file attached to another claim, or the bill not matching the claim. bills="hash" fetches each receipt to catch duplicate files (no model cost); bills="read" also reads each bill (amount, date, vendor) and compares, at most maxReads new reads. Use for "which claims need a closer look", "anything odd in the pending claims", "are any bills reused".',
+    description: 'Pending reimbursement claims split into clean ones and ones that need a closer look, with the reason for each: no bill attached, over the type\'s per-claim limit, dated beyond the type\'s backdating window, past the linked salary component\'s monthly cap, same amount and date as another claim, the same file attached to another claim, or the bill not matching the claim. yourOwn marks claims the asker filed (someone else must decide them). bills="hash" fetches each receipt to catch duplicate files (no model cost); bills="read" also reads each bill (amount, date, vendor) and compares, at most maxReads new reads. Use for "which claims need a closer look", "anything odd in the pending claims", "are any bills reused".',
     input_schema: { type: 'object', properties: { bills: { type: 'string', enum: ['none', 'hash', 'read'], description: 'Default hash' }, maxReads: { type: 'number', description: 'Default 10' }, limit: { type: 'number' } } },
     api: { method: 'GET', path: '/admin/reimbursements' },
     async run(ctx, i) {
@@ -204,7 +214,7 @@ defineTools(
     name: 'prepare_approve_claims',
     area: 'claims',
     acts: true,
-    label: (i) => `Prepared: approve ${Array.isArray(i.claimIds) ? i.claimIds.length : 'the clean'} claims`,
+    label: (i) => (Array.isArray(i.claimIds) ? `Prepared: approve ${i.claimIds.length} claim${i.claimIds.length === 1 ? '' : 's'}` : 'Prepared: approve the clean claims'),
     description: 'Prepare approving a set of pending reimbursement claims. Changes nothing: it makes a "What will happen" card (total, people, what the bills say, the effect on taxable income) for HR to confirm by typing the count. With no claimIds, it takes every pending claim that passed all checks (claims_to_check). Never includes the asker\'s own claims. Approval cannot be undone.',
     input_schema: { type: 'object', properties: { claimIds: { type: 'array', items: { type: 'string' }, description: 'Claim ids to approve; omit for all clean pending claims' } } },
     api: { method: 'PATCH', path: '/admin/reimbursements/x/decision' },
@@ -223,12 +233,12 @@ defineTools(
       const byType = Object.entries(claims.reduce<Record<string, number>>((m, c) => ({ ...m, [c.type]: (m[c.type] ?? 0) + c.amount }), {}));
       const who = people.length === 1 ? people[0] : `${people.length} people`;
       const proposalId = await propose(ctx, {
-        kind: 'approve_claims', area: 'claims', title: `Approve ${claims.length} claim${claims.length === 1 ? '' : 's'} (${rupees(total * 100)})`,
-        summary: `${claims.length} claim${claims.length === 1 ? '' : 's'} from ${who}, ${rupees(total * 100)} in all: ${byType.map(([t, a]) => `${t} ${rupees(a * 100)}`).join(', ')}.`,
+        kind: 'approve_claims', area: 'claims', title: `Approve ${claims.length} claim${claims.length === 1 ? '' : 's'} (${inr(total)})`,
+        summary: `${claims.length} claim${claims.length === 1 ? '' : 's'} from ${who}, ${inr(total)} in all: ${byType.map(([t, a]) => `${t} ${inr(a)}`).join(', ')}.`,
         lines: [
           { text: `People: ${people.slice(0, 8).join(', ')}${people.length > 8 ? ` and ${people.length - 8} more` : ''}.` },
           { text: flagged.length ? `${flagged.length} of these had a check against it: ${flagged.slice(0, 4).map((c) => `${c.name.split(' ')[0]} (${c.checks[0]})`).join('; ')}${flagged.length > 4 ? '; …' : ''}.` : 'Every claim here passed the checks: bill attached, within its type\'s limit and backdating window, no duplicate amount, date or file.', tone: flagged.length ? 'warn' : 'info', why: 'Checks come from Reimbursement types (limit per claim, days back), the linked salary component\'s monthly cap, and the files themselves.' },
-          ...(claims.some((c) => c.bill) ? [{ text: `Bills read: ${claims.filter((c) => c.bill).map((c) => `${c.name.split(' ')[0]} ${c.bill!.amount === null ? 'unreadable' : rupees(c.bill!.amount * 100)}${c.bill!.vendor ? ` at ${c.bill!.vendor}` : ''}`).slice(0, 6).join('; ')}.` }] : []),
+          ...(claims.some((c) => c.bill) ? [{ text: `Bills read: ${claims.filter((c) => c.bill).map((c) => `${c.name.split(' ')[0]} ${c.bill!.amount === null ? 'unreadable' : inr(c.bill!.amount)}${c.bill!.vendor ? ` at ${c.bill!.vendor}` : ''}`).slice(0, 6).join('; ')}.` }] : []),
           tax,
           { text: 'Each claim is approved as you, with the note "Approved via Suwi"; the person sees it in their app at once.' },
           { text: 'This cannot be undone: an approved claim can only go on to Paid, not back to Pending.', tone: 'warn', why: 'Sowaka has no step that reopens a decided claim; the next payroll run picks approved claims up. If one is wrong, decline it before that run or correct it on the run.' },
@@ -238,7 +248,7 @@ defineTools(
         undoable: false, typeToConfirm: String(claims.length),
         payload: { claimIds: claims.map((c) => c.id), byUserId: ctx.userId, total, names: people },
       });
-      return { data: { prepared: true, title: `Approve ${claims.length} claims`, claims: claims.length, total, people, flagged: flagged.length, leftOut: { own: own.length, notPending: missing.length }, tax: tax.text, note: `Nothing is saved until HR types ${claims.length} and presses Confirm on the card. Approval cannot be undone.` }, proposalId };
+      return { data: { prepared: true, title: `Approve ${claims.length} claim${claims.length === 1 ? '' : 's'}`, claims: claims.length, total, people, flagged: flagged.length, leftOut: { own: own.length, notPending: missing.length }, tax: tax.text, note: `Nothing is saved until HR types ${claims.length} and presses Confirm on the card. Approval cannot be undone.` }, proposalId };
     },
   },
 );
@@ -252,6 +262,6 @@ defineExecutor('approve_claims', {
       try { await adminDecideReimbursement(byUserId, id, 'approved', 'Approved via Suwi'); done++; } catch (e) { failed.push((e as Error).message); }
     }
     if (!done) throw new Error(`No claim could be approved: ${failed[0] ?? 'unknown error'}`);
-    return { message: `Approved ${done} claim${done === 1 ? '' : 's'} (${rupees(total * 100)}).${failed.length ? ` ${failed.length} could not be: ${[...new Set(failed)].join('; ')}.` : ''}` };
+    return { message: `Approved ${done} claim${done === 1 ? '' : 's'} (${inr(total)}).${failed.length ? ` ${failed.length} could not be: ${[...new Set(failed)].join('; ')}.` : ''}` };
   },
 });
