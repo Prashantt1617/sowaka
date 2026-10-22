@@ -15,6 +15,7 @@ import { epfCeilingForPeriod, ESI_CONSTANTS } from '../../models/statutoryRule.m
 import { SalaryStructure } from '../../models/salaryStructure.model';
 import { defineTools, monthOf, num, rupees, str, SuwiContext } from '../tools';
 import { defineExecutor, propose } from '../proposals';
+import { niceDate } from './team';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 export const monthName = (period: string) => `${MONTHS[Number(period.slice(5, 7)) - 1]} ${period.slice(0, 4)}`;
@@ -23,7 +24,15 @@ export const nextPeriod = (period: string) => {
   return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
 };
 const toPaise = (rupeesIn: unknown) => (rupeesIn === undefined || rupeesIn === null || rupeesIn === '' ? undefined : Math.round(num(rupeesIn, NaN, 0) * 100));
+/** A change in net pay this big against last month is flagged in the pre-flight. */
+const JUMP_PCT = 20;
 const signed = (paise: number) => `${paise < 0 ? "−" : "+"}${rupees(Math.abs(paise))}`;
+
+/** The last day of the ESI contribution period (April–September or October–March) a month falls in, as YYYY-MM-DD. */
+export function esiPeriodEnd(period: string): string {
+  const y = Number(period.slice(0, 4)), m = Number(period.slice(5, 7));
+  return m >= 4 && m <= 9 ? `${y}-09-30` : `${m >= 10 ? y + 1 : y}-03-31`;
+}
 
 /** A computed structure as small plain lines Claude can read and compare. */
 export function describeComputed(c: SalaryCalcResult) {
@@ -35,6 +44,7 @@ export function describeComputed(c: SalaryCalcResult) {
     pf: { employee: rupees(c.statutory.epf.employeePaise), employer: rupees(c.statutory.epf.employerTotalPaise) },
     esi: c.statutory.esi.applicable ? { employee: rupees(c.statutory.esi.employeePaise), employer: rupees(c.statutory.esi.employerPaise) } : 'not applicable',
     pt: rupees(c.statutory.pt.amountPaise),
+    lwf: c.statutory.lwf.applicable ? rupees(c.statutory.lwf.employeePaise) : 'not applicable',
     netBeforeTax: rupees(c.netMonthlyPaise), employerCost: rupees(c.employerCostMonthlyPaise),
     overBudget: c.overBudget || undefined,
   };
@@ -76,7 +86,7 @@ export function whyLines(c: SalaryCalcResult, period: string, before?: SalaryCal
   if (c.statutory.esi.applicable) {
     out.push(`ESI applies because the ESI wage is at or under ${rupees(esiCeiling)} a month: 0.75% from the employee, 3.25% from the employer.`);
   } else if (before?.statutory.esi.applicable) {
-    out.push(`ESI shows as stopping here, but in a real run it continues until the end of the current contribution period (April–September or October–March): the law keeps a person covered for the half-year they crossed ${rupees(esiCeiling)} in.`);
+    out.push(`ESI shows as stopping here, but in a real run it continues until ${niceDate(esiPeriodEnd(period))}, the end of the current contribution period (April–September or October–March): the law keeps a person covered for the half-year they crossed ${rupees(esiCeiling)} in.`);
   } else if (c.grossMonthlyPaise > esiCeiling && c.grossMonthlyPaise <= esiCeiling * 1.1) {
     out.push(`ESI does not apply: gross is just above ${rupees(esiCeiling)}. A cut that takes gross under it would bring ESI back.`);
   }
@@ -207,28 +217,36 @@ defineTools(
       const thisMonth = ctx.today.slice(0, 7);
       const thisRun = period === thisMonth ? run : await payrollRuns().findOne({ org: ctx.org, period: thisMonth }, { projection: { status: 1 } });
       const split = after.earnings.filter((l) => l.monthlyPaise > 0).map((l) => `${l.payslipName} ${rupees(l.monthlyPaise)}`).join(', ');
+      // Someone covered by ESI now stays covered to the end of the contribution period, even when the new pay is over the limit.
+      const esiEnd = esiPeriodEnd(thisMonth);
+      const esiContinues = Boolean(before?.statutory.esi.applicable) && !after.statutory.esi.applicable && esiPeriodEnd(period) === esiEnd;
+      const lwf = after.statutory.lwf.applicable && after.statutory.lwf.employeePaise > 0 ? `, LWF ${rupees(after.statutory.lwf.employeePaise)}` : '';
+      const fromNice = niceDate(from);
+      const oldTemplate = existing?.salaryTemplateCode ? (await salaryTemplates().findOne({ org: ctx.org, code: existing.salaryTemplateCode }, { projection: { name: 1 } }))?.name ?? existing.salaryTemplateCode : null;
       const tdsLine = tdsAfter
         ? `Income tax (TDS) ${tdsBefore ? `${rupees(tdsBefore.monthlyPaise)} → ` : ''}${rupees(tdsAfter.monthlyPaise)} a month under the ${tdsAfter.regime} regime.`
         : 'TDS is not projected (the company has the TDS engine off or no tax config for this year).';
       const lines: { text: string; why?: string; tone?: 'info' | 'warn' }[] = [
         { text: `Monthly CTC ${rupees(after.monthlyCtcPaise)}: ${split}.`, why: `Each component follows ${tpl.name}'s rule (${after.earnings.map((l) => `${l.payslipName}: ${l.calcLabel}`).join('; ')}).` },
-        { text: `Deductions: PF ${rupees(after.statutory.epf.employeePaise)}, ESI ${after.statutory.esi.applicable ? rupees(after.statutory.esi.employeePaise) : 'none'}, PT ${rupees(after.statutory.pt.amountPaise)}.`, why: whyLines(after, period, before ?? undefined).join(' ') || undefined },
+        { text: `Deductions: PF ${rupees(after.statutory.epf.employeePaise)}, ESI ${after.statutory.esi.applicable ? rupees(after.statutory.esi.employeePaise) : esiContinues ? `continues until ${niceDate(esiEnd)}` : 'none'}, PT ${rupees(after.statutory.pt.amountPaise)}${lwf}.`, why: whyLines(after, period, before ?? undefined).join(' ') || undefined },
+        ...(esiContinues ? [{ text: `ESI is still deducted until ${niceDate(esiEnd)}: ${who.name.split(' ')[0]} is covered now, and coverage lasts to the end of the contribution period even though the new gross is over ${rupees(ESI_CONSTANTS.grossCeilingPaise)}. The net below leaves it out, so take-home is lower by the ESI until then.`, tone: 'warn' as const }] : []),
         { text: `Net before tax ${before ? `${rupees(before.netMonthlyPaise)} → ` : ''}${rupees(after.netMonthlyPaise)} a month for a full month.` },
         { text: tdsLine, why: 'The engine spreads the year\'s projected tax over the months left in the financial year, so a mid-year change moves every remaining month.' },
         period === thisMonth
           ? { text: `${monthName(thisMonth)}: ${thisRun ? (thisRun.status === 'draft' ? 'the draft run is recalculated on the new structure when HR next calculates it' : 'the run is not a draft, so the change reaches the next run') : 'no run yet; it is worked out on the new structure'}; ${monthName(nextPeriod(thisMonth))} and after follow the new structure.`, tone: 'info' }
           : { text: `${monthName(thisMonth)}${thisRun?.status === 'paid' ? ' is already paid and' : ''} stays on the current structure; ${monthName(period)} onward follows the new one.`, tone: 'info' },
-        ...(existing ? [{ text: `Today: ${existing.salaryTemplateCode ?? 'no template'} at ${rupees(existing.annualCtcPaise)} a year${sameCtc ? '' : ` → ${rupees(ctcPaise)} a year, recorded as a revision in the salary history`}.` }] : [{ text: 'This is the first salary structure for this person; it is saved as active.' }]),
+        ...(existing ? [{ text: `Now: ${oldTemplate ?? 'no template'} at ${rupees(existing.annualCtcPaise)} a year → ${tpl.name} at ${rupees(ctcPaise)} a year from ${fromNice}${sameCtc ? '' : ', recorded as a revision in the salary history'}.` }] : [{ text: 'This is the first salary structure for this person; it is saved as active.' }]),
+        { text: `Their payslip from ${monthName(period)} shows the new structure.`, tone: 'info' },
         ...(after.overBudget ? [{ text: 'The CTC is too small for this template\'s fixed components; the balancing component would go negative.', tone: 'warn' as const }] : []),
       ];
       const proposalId = await propose(ctx, {
-        kind: 'assign_salary_template', area: 'payroll', title: `${who.name}: ${tpl.name}${sameCtc ? '' : ` at ${rupees(ctcPaise)}`} from ${from}`,
-        summary: `${who.name} moves to ${tpl.name}${sameCtc ? '' : ` with an annual CTC of ${rupees(ctcPaise)}`} from ${from}. Net before tax ${rupees(after.netMonthlyPaise)} a month.`,
+        kind: 'assign_salary_template', area: 'payroll', title: `${who.name}: ${tpl.name}${sameCtc ? '' : ` at ${rupees(ctcPaise)}`} from ${fromNice}`,
+        summary: `${who.name} moves to ${tpl.name}${sameCtc ? '' : ` with an annual CTC of ${rupees(ctcPaise)}`} from ${fromNice}. Net before tax ${rupees(after.netMonthlyPaise)} a month.`,
         lines, effectiveFrom: from, undoable: true,
         payload: { userId, name: who.name, byUserId: ctx.userId, templateCode: tpl.code, templateName: tpl.name, annualCtcPaise: ctcPaise, effectiveFrom: from, previous: existing ? { ...existing, _id: undefined } : null },
       });
       return {
-        data: { prepared: true, title: `${who.name} to ${tpl.name} from ${from}`, after: describeComputed(after), tds: tdsAfter ? rupees(tdsAfter.monthlyPaise) : null, note: 'Nothing is saved until HR presses Confirm on the card.' },
+        data: { prepared: true, title: `${who.name} to ${tpl.name} from ${fromNice}`, after: describeComputed(after), tds: tdsAfter ? rupees(tdsAfter.monthlyPaise) : null, note: 'Nothing is saved until HR presses Confirm on the card.' },
         proposalId,
         links: [{ label: `Open ${who.name.split(' ')[0]}'s salary`, view: 'salarydetails', userId }],
       };
@@ -280,7 +298,7 @@ defineTools(
         const last = lastNet.get(u);
         if (last === undefined || last === 0) continue;
         const pct = ((now - last) / last) * 100;
-        if (Math.abs(pct) >= 20) jumps.push({ name: nameOf.get(u) ?? u, last: rupees(last), now: rupees(now), change: `${pct > 0 ? '+' : ''}${pct.toFixed(0)}%` });
+        if (Math.abs(pct) >= JUMP_PCT) jumps.push({ name: nameOf.get(u) ?? u, last: rupees(last), now: rupees(now), change: `${pct > 0 ? '+' : ''}${pct.toFixed(0)}%` });
       }
       const newPeople = [...covered].filter((u) => lastRun && !lastNet.has(u)).map((u) => nameOf.get(u) ?? u);
       const blocked = active.length === 0;
@@ -292,7 +310,7 @@ defineTools(
         ...(noPan.length ? [{ text: `${noPan.length} without a PAN: ${list(noPan)}.`, tone: 'warn' as const, why: 'TDS is still deducted; without a PAN the quarterly return cannot credit it to them, and the law asks for 20% TDS.' }] : []),
         ...(daysLeft > 0 ? [{ text: `${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} of ${name} ${daysLeft === 31 ? 'have not started' : 'are still to come'}: loss of pay is counted from attendance as it stands now.`, tone: 'warn' as const, why: 'Payroll reads the month\'s graded days when it is calculated. Days after today count as paid; an absence later in the month would need a correction next month.' }] : []),
         ...(pendingLeave ? [{ text: `${pendingLeave} leave ${pendingLeave === 1 ? 'request' : 'requests'} for ${name} still pending.`, tone: 'warn' as const, why: 'A leave approved after the run does not change the paid days already locked.' }] : []),
-        ...(jumps.length ? [{ text: `Pay jumps against ${lastRun ? monthName(lastRun.period) : 'last month'}: ${jumps.slice(0, 5).map((j) => `${j.name} ${j.last} → ${j.now} (${j.change})`).join('; ')}.`, tone: 'warn' as const, why: 'A 20% move usually means a CTC change, a template change, loss of pay or a one-time amount. Check them on the run before submitting.' }] : []),
+        ...(jumps.length ? [{ text: `Pay jumps against ${lastRun ? monthName(lastRun.period) : 'last month'}: ${jumps.slice(0, 5).map((j) => `${j.name} ${j.last} → ${j.now} (${j.change})`).join('; ')}.`, tone: 'warn' as const, why: `A move of ${JUMP_PCT}% or more usually means a CTC change, a template change, loss of pay or a one-time amount. Check them on the run before submitting.` }] : []),
         ...(newPeople.length ? [{ text: `New since last run: ${list(newPeople)}.`, tone: 'info' as const }] : []),
         { text: 'Submit is final: payslips reach employees in the app, the month\'s attendance days are locked, and reimbursement claims on the run are marked paid.', why: 'Sowaka has no second approval step. If something is wrong afterwards, Payroll Runs › Reopen puts the month back to draft, but only while no later month has been submitted; this card has no Undo.' },
       ];
@@ -306,7 +324,7 @@ defineTools(
       return {
         data: {
           period, prepared: Boolean(proposalId), people: active.length, draftExists: run?.status === 'draft',
-          preflight: { noSalaryStructure: { count: noStructure.length, names: noStructure.slice(0, 12).map((p) => p.name) }, noBankAccount: noBank, noPan, daysOfMonthLeft: daysLeft, pendingLeaveRequests: pendingLeave, bigJumps: jumps, newSinceLastRun: newPeople },
+          preflight: { noSalaryStructure: { count: noStructure.length, names: noStructure.slice(0, 12).map((p) => p.name) }, noBankAccount: noBank, noPan, daysOfMonthLeft: daysLeft, pendingLeaveRequests: pendingLeave, bigJumps: { threshold: `net pay up or down ${JUMP_PCT}% or more against last month`, people: jumps }, newSinceLastRun: newPeople },
           lastRun: lastRun ? { period: lastRun.period, status: lastRun.status, people: lastRun.employeeCount, net: rupees(lastRun.totals.netPaise) } : null,
           note: blocked ? 'No card: nothing to run.' : `Nothing happens until HR types ${name.split(' ')[0].toUpperCase()} and confirms on the card. Submit is final.`,
         },

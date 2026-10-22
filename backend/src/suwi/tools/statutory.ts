@@ -60,7 +60,7 @@ export async function statutoryDiffs(ctx: SuwiContext): Promise<{ diffs: Diff[];
     }
     if (settings.bonus.enabled && !(settings.bonus.minWages[key]?.length)) {
       const rows: MinWageRow[] = Object.entries(DEFAULT_BONUS.minWageByCategoryPaise).map(([category, minWagePaise]) => ({ category, minWagePaise, effectiveFrom: ctx.today.slice(0, 7) }));
-      diffs.push({ key: `minwage:${key}`, title: `${title(state)}: no minimum wages for the statutory bonus`, yours: 'none set', shipped: rows.map((r) => `${r.category.replace('_', '-')} ${rupees(r.minWagePaise)}`).join(', '), why: 'Statutory bonus is on, but with no minimum wage for this state it is worked out on Basic alone; the floor Sowaka ships keeps it at least at the minimum wage.', apply: { kind: 'min_wages', state: key, rows, before: settings.bonus.minWages } });
+      diffs.push({ key: `minwage:${key}`, title: `${title(state)}: no minimum wages for the statutory bonus`, yours: 'none set', shipped: rows.map((r) => `${r.category.replace('_', '-')} ${rupees(r.minWagePaise)}`).join(', '), why: 'Statutory bonus is on, but with no minimum wage for this state it is worked out on Basic alone; the floor Sowaka ships keeps it at least at a minimum wage. That floor is Sowaka\'s neutral default, not the state\'s notified rates: check the state\'s current minimum wage notification before applying it.', apply: { kind: 'min_wages', state: key, rows, before: settings.bonus.minWages } });
     }
   }
   const ceiling = EPF_CEILING_SCHEDULE[EPF_CEILING_SCHEDULE.length - 1];

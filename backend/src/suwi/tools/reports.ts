@@ -87,13 +87,16 @@ defineTools({
 
     if (key === 'register' || key === 'pt') {
       const month = defaultMonth;
+      // Without drafts, a month whose run isn't submitted yet looks empty: say what is there instead of "no run".
+      const unsubmitted = !drafts && runs.get(month) && runs.get(month)!.status !== 'paid' && runs.get(month)!.status !== 'approved'
+        ? `${monthLabel(month)}'s run is ${runs.get(month)!.status} (not submitted yet); ask again with includeDrafts: true to see it.` : null;
       criteria.unshift(monthLabel(month));
       if (dep) criteria.push(`Department contains "${i.department}"`);
       if (who) criteria.push(`Name contains "${i.name}"`);
       if (key === 'pt') {
         const r = await ptSummary(ctx.userId, month, opts);
         const rows = r.rows.filter((x) => !who || norm(x.name).includes(who));
-        return { data: { report: R.title, criteria, run: r.run?.status ?? 'no run', people: rows.length, rows: rows.slice(0, limit).map((x) => ({ employeeId: x.employeeId, name: x.name, workLocation: x.workLocation, pt: rupees(x.ptPaise) })), total: rupees(rows.reduce((t, x) => t + x.ptPaise, 0)) }, links };
+        return { data: { report: R.title, criteria, run: r.run?.status ?? unsubmitted ?? 'no run', people: rows.length, rows: rows.slice(0, limit).map((x) => ({ employeeId: x.employeeId, name: x.name, workLocation: x.workLocation, pt: rupees(x.ptPaise) })), total: rupees(rows.reduce((t, x) => t + x.ptPaise, 0)) }, links };
       }
       const r = await salaryRegister(ctx.userId, month, opts);
       let rows = r.rows.filter((x) => (!dep || norm(x.department).includes(dep)) && (!who || norm(x.name).includes(who)) && x.lopDays >= num(i.minLopDays, 0));
@@ -104,8 +107,8 @@ defineTools({
       const sum = (f: (x: (typeof rows)[number]) => number) => rows.reduce((t, x) => t + f(x), 0);
       return {
         data: {
-          report: R.title, criteria, run: r.run?.status ?? 'no run for this month', people: rows.length,
-          rows: rows.slice(0, limit).map((x) => ({ employeeId: x.employeeId, name: x.name, department: x.department, paymentMode: x.paymentMode || 'not set', days: `${x.paidDays}/${x.baseDays}`, lopDays: x.lopDays, gross: rupees(x.grossPaise), deductions: rupees(x.totalDeductionsPaise), incomeTax: rupees(x.incomeTaxPaise), reimbursements: rupees(x.reimbursementsPaise), netPay: rupees(x.netPayPaise) })),
+          report: R.title, criteria, run: r.run?.status ?? unsubmitted ?? 'no run for this month', people: rows.length,
+          rows: rows.slice(0, limit).map((x) => ({ userId: x.userId, employeeId: x.employeeId, name: x.name, department: x.department, paymentMode: x.paymentMode || 'not set', days: `${x.paidDays}/${x.baseDays}`, lopDays: x.lopDays, gross: rupees(x.grossPaise), deductions: rupees(x.totalDeductionsPaise), incomeTax: rupees(x.incomeTaxPaise), reimbursements: rupees(x.reimbursementsPaise), netPay: rupees(x.netPayPaise) })),
           more: Math.max(0, rows.length - limit),
           totals: { gross: rupees(sum((x) => x.grossPaise)), deductions: rupees(sum((x) => x.totalDeductionsPaise)), incomeTax: rupees(sum((x) => x.incomeTaxPaise)), reimbursements: rupees(sum((x) => x.reimbursementsPaise)), netPay: rupees(sum((x) => x.netPayPaise)), employerContributions: rupees(sum((x) => x.employerTotalPaise)) },
           note: 'Bank details are left out here; the Excel export on the Reports page has every column.',

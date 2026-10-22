@@ -8,7 +8,7 @@ import { ObjectId } from 'mongodb';
 import { employeeCalendar } from '../../services/attendance-report.service';
 import { EPF_CEILING_SCHEDULE, epfCeilingForPeriod } from '../../models/statutoryRule.model';
 import { defineTools, rupees, str, SuwiContext } from '../tools';
-import { allRuns, bestByPeriod, delta, lastDayOf, monthLabel, pct, showLines, slipLines, slipsOfRun, STATUS_LABEL, StoredRun, StoredSlip, taxSource } from './payroll-common';
+import { allRuns, bestByPeriod, daysInMonth, delta, lastDayOf, monthLabel, pct, showLines, slipLines, slipsOfRun, STATUS_LABEL, StoredRun, StoredSlip, taxSource } from './payroll-common';
 import { payslips } from '../../config/db';
 
 const ACTIVE = { lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } as const;
@@ -111,14 +111,21 @@ defineTools(
       for (const m of [now, before]) {
         if (m?.days.lopTypedByHr && m.days.lopFromAttendance !== undefined && m.days.lopFromAttendance !== m.days.lopDays) reasons.push(`${m.month}: HR typed ${m.days.lopDays} loss-of-pay days on the run; attendance alone would have given ${m.days.lopFromAttendance}.`);
       }
-      if (before && now.days.lopDays !== before.days.lopDays) reasons.push(`Loss of pay ${before.days.lopDays} → ${now.days.lopDays} days (${now.days.lopTypedByHr ? 'typed by HR on the run' : 'from attendance'}): ${rupees(now._L.lopLossPaise)} of earnings not paid this month vs ${rupees(before._L.lopLossPaise)} before.`);
+      if (before && now.days.lopDays !== before.days.lopDays) {
+        const lopDiff = now._L.lopLossPaise - before._L.lopLossPaise;
+        const dNow = daysInMonth(cur.period), dBefore = daysInMonth(prev!.period);
+        reasons.push(`Loss of pay ${before.days.lopDays} → ${now.days.lopDays} days (${now.days.lopTypedByHr ? 'typed by HR on the run' : 'from attendance'}): ${rupees(now._L.lopLossPaise)} of earnings not paid this month vs ${rupees(before._L.lopLossPaise)} before, so ${rupees(Math.abs(lopDiff))} ${lopDiff > 0 ? 'more' : 'less'} lost to loss of pay this month.${dNow !== dBefore ? ` A loss-of-pay day is worth the month's pay divided by its days (${dBefore} in ${monthLabel(prev!.period)}, ${dNow} in ${monthLabel(cur.period)}), so part of the gross change comes from the different number of days.` : ''}`);
+      }
       else if (now.days.lopDays > 0) reasons.push(`${now.days.lopDays} loss-of-pay day${now.days.lopDays === 1 ? '' : 's'} (${now.days.lopTypedByHr ? 'typed by HR on the run' : 'from attendance'}): ${rupees(now._L.lopLossPaise)} of earnings not paid.`);
       const joined = person.joiningDate ? new Date(person.joiningDate).toISOString().slice(0, 10) : undefined;
       if (joined && joined.slice(0, 7) === cur.period && joined > `${cur.period}-01`) reasons.push(`Joined on ${joined}: paid from that day.`);
       if (before && joined && joined.slice(0, 7) === prev!.period && joined > `${prev!.period}-01`) reasons.push(`Joined on ${joined}, so ${monthLabel(prev!.period)} was a part month.`);
       const ceilingChange = EPF_CEILING_SCHEDULE.filter((s) => s.from >= from && s.from <= to);
       const ceilNow = epfCeilingForPeriod(cur.period), ceilBefore = prev ? epfCeilingForPeriod(prev.period) : ceilNow;
-      if (ceilingChange.length || ceilNow !== ceilBefore) reasons.push(`The PF wage ceiling changed on ${ceilingChange.map((c) => `${c.from} (to ${rupees(c.ceilingPaise)})`).join(', ') || 'an earlier date'}: ${prev ? `${rupees(ceilBefore)} for ${monthLabel(prev.period)} (day-weighted where the change fell inside the month), ` : ''}${rupees(ceilNow)} for ${monthLabel(cur.period)}. PF restricted to the ceiling moves with it, and so does the balancing allowance when employer PF is inside CTC.`);
+      // The ceiling only matters to someone whose PF wage reached it in either month.
+      const atCeiling = cur.pfWagePaise >= ceilNow || (prev ? prev.pfWagePaise >= ceilBefore : false);
+      if ((ceilingChange.length || ceilNow !== ceilBefore) && !atCeiling) reasons.push(`The PF wage ceiling changed (${prev ? `${rupees(ceilBefore)} for ${monthLabel(prev.period)}, ` : ''}${rupees(ceilNow)} for ${monthLabel(cur.period)}), but it did not affect their PF: their PF wage (${prev ? `${rupees(prev.pfWagePaise)}, then ` : ''}${rupees(cur.pfWagePaise)}) is below the ceiling${prev ? ' in both months' : ''}.`);
+      else if (ceilingChange.length || ceilNow !== ceilBefore) reasons.push(`The PF wage ceiling changed on ${ceilingChange.map((c) => `${c.from} (to ${rupees(c.ceilingPaise)})`).join(', ') || 'an earlier date'}: ${prev ? `${rupees(ceilBefore)} for ${monthLabel(prev.period)} (day-weighted where the change fell inside the month), ` : ''}${rupees(ceilNow)} for ${monthLabel(cur.period)}. PF restricted to the ceiling moves with it, and so does the balancing allowance when employer PF is inside CTC.`);
       if (before && cur.pfWagePaise !== prev!.pfWagePaise) reasons.push(`PF wage ${rupees(prev!.pfWagePaise)} → ${rupees(cur.pfWagePaise)}.`);
       if (before && now.esiCovered !== before.esiCovered) reasons.push(now.esiCovered ? 'ESI applies this month and did not before.' : 'ESI no longer applies this month (coverage holds till the end of a contribution period, then is re-tested).');
       if (before && now._L.incomeTaxPaise !== before._L.incomeTaxPaise) reasons.push(`Income tax ${rupees(before._L.incomeTaxPaise)} → ${rupees(now._L.incomeTaxPaise)} (this month ${now.incomeTax.source}; last month ${before.incomeTax.source}).${now.incomeTax.source === 'TDS engine' ? ' The engine re-projects the year every month: what has been paid so far, the months left, declarations and bills all move it.' : ''}`);

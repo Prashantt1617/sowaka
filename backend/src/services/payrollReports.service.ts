@@ -192,6 +192,7 @@ export async function salaryRegister(viewer: string, periodIn: unknown, opts: Op
       const split = taxSplit(s, tax);
       const byCode = (list: { code: string; paise: number }[]) => Object.fromEntries(list.map((x) => [x.code, x.paise]));
       return {
+        userId: s.userId,
         employeeId: s.employeeId ?? '',
         name: s.employeeName,
         department: s.department ?? '',

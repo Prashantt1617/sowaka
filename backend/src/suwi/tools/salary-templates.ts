@@ -163,7 +163,7 @@ defineTools(
     payroll: true,
     acts: true,
     label: (i) => `Prepared: new component ${i.name ?? ''}`,
-    description: 'Prepare creating a salary component from a plain-words description, mapped to its fields: category (earning | deduction | benefit | reimbursement), componentType (basic, hra, conveyance, meal_card, lta, fixed_allowance, special_allowance, medical, telephone, child_education, statutory_bonus, salary_advance, notice_pay, hold_amount, vpf, gratuity, food_coupons, other), calculation ({mode: flat_per_month, amountRupees} | {mode: percentage, percent, base: ctc|basic|component, baseComponentCode} | {mode: flat_amount} = set per person), taxable, fbp (Flexible Benefit Plan), considerForEpf/considerForEsi (in the PF/ESI wage), maxClaimableRupees (reimbursement monthly limit), payslipName, prorate, recurrence (recurring | one_time), showInPayslip. A reimbursement "taxed until bills are approved" is just category reimbursement: that is how reimbursements always work. Checks for a similar existing or standard component first and reports it instead of preparing (set ignoreSimilar to go ahead). Changes nothing until HR confirms; Undo deletes it while unused.',
+    description: 'Prepare creating a salary component from a plain-words description, mapped to its fields: category (earning | deduction | benefit | reimbursement), componentType (basic, hra, conveyance, meal_card, lta, fixed_allowance, special_allowance, medical, telephone, child_education, statutory_bonus, salary_advance, notice_pay, hold_amount, vpf, gratuity, food_coupons, other), calculation ({mode: flat_per_month, amountRupees} | {mode: percentage, percent, base: ctc|basic|component, baseComponentCode} | {mode: flat_amount} = set per person), taxable, fbp (Flexible Benefit Plan), considerForEpf/considerForEsi (in the PF/ESI wage), maxClaimableRupees (reimbursement monthly limit), payslipName, prorate, recurrence (recurring | one_time), showInPayslip. A reimbursement "taxed until bills are approved" is just category reimbursement: that is how reimbursements always work. Sowaka has no per-unit rate (per night, per day, per visit): map "₹200 a night" to flat_amount, pass the rate as statedRate, and tell HR the amount (units × rate) is entered per person on each run. Checks for a similar existing or standard component first and reports it instead of preparing (set ignoreSimilar to go ahead). Changes nothing until HR confirms; Undo deletes it while unused.',
     input_schema: {
       type: 'object',
       properties: {
@@ -174,6 +174,7 @@ defineTools(
         taxable: { type: 'boolean' }, fbp: { type: 'boolean' }, considerForEpf: { type: 'boolean' }, considerForEsi: { type: 'boolean' },
         maxClaimableRupees: { type: 'number' }, payslipName: { type: 'string' }, prorate: { type: 'boolean' }, recurrence: { type: 'string', enum: ['recurring', 'one_time'] }, showInPayslip: { type: 'boolean' },
         ignoreSimilar: { type: 'boolean' },
+        statedRate: { type: 'string', description: 'A per-unit rate HR gave, e.g. "₹200 a night"; kept as a note on the card' },
       },
       required: ['name', 'category', 'componentType'],
     },
@@ -208,6 +209,7 @@ defineTools(
         { text: `${name} (code ${code}): ${category}, type ${componentType.replace(/_/g, ' ')}, ${calcText}.`, why: category === 'reimbursement' ? 'A reimbursement is paid every month inside CTC, outside gross pay: it does not count for PF, ESI or PT.' : category === 'benefit' ? 'A benefit is an employer cost inside CTC (like gratuity); the employee does not receive it in the month.' : category === 'deduction' ? 'A deduction is taken from net pay; its amount is typed per person on the run or the salary.' : 'An earning is part of gross pay; its rule here is the default a template starts from.' },
         ...(category === 'reimbursement' ? [{ text: `Monthly limit ${maxPaise ? rupees(maxPaise) : 'none'}; paid in full and taxed until bills are approved.`, why: 'The part covered by an approved bill is tax-free; the rest is taxable salary. A later bill lowers the tax from then on.' }] : []),
         ...(category === 'earning' ? [{ text: `Taxable: ${i.taxable === false ? 'no' : 'yes'}. In the PF wage: ${i.considerForEpf ? 'yes' : 'no'}. In the ESI wage: ${i.considerForEsi ? 'yes' : 'no'}.`, why: 'Basic always counts for PF; other earnings only if ticked. ESI is on gross unless a template names its ESI components.' }] : []),
+        ...(str(i.statedRate) ? [{ text: `Stated rate: ${str(i.statedRate, 100)}. Sowaka has no per-unit rate, so the amount (units × rate) is entered per person on each run.`, tone: 'info' as const }] : []),
         ...(i.fbp ? [{ text: 'Part of the Flexible Benefit Plan: the employee chooses how much of their FBP pool goes here.' }] : []),
         ...(fields.recurrence === 'one_time' ? [{ text: 'Paid once, entered on a run; never prorated and never part of the monthly CTC split.' }] : []),
         { text: 'It becomes usable on Salary Templates and per-person salaries at once; nobody is paid it until a template or salary includes it.' },
@@ -258,7 +260,8 @@ defineTools(
             gross: c.gross, pfEmployee: c.pf.employee, esi: typeof c.esi === 'string' ? c.esi : c.esi.employee, pt: c.pt, netBeforeTax: c.netBeforeTax,
             basicShareOfGross: `${basicShare.toFixed(0)}%`, ...(overBudget ? { balancingNegative: true } : {}),
           })),
-          why: whyLines(samples[Math.min(1, samples.length - 1)].computed, ctx.today.slice(0, 7)),
+          // Worked out on one sample CTC only, so each line says which.
+          why: ((s) => whyLines(s.computed, ctx.today.slice(0, 7)).map((l) => `At ${rupees(s.ctc)} a year: ${l}`))(samples[Math.min(1, samples.length - 1)]),
         },
         links: [{ label: 'Open salary templates', view: 'templates' }],
       };
