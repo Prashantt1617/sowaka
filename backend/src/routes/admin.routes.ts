@@ -30,6 +30,7 @@ import {
   updateCompanySettingsHandler,
   updateOrganisationProfileHandler,
   updateEmployeeDetails,
+  deleteEmployee,
   updateOvertimeEligibility,
 } from '../controllers/admin.controller';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -87,6 +88,8 @@ adminRouter.get('/account-limit', accountLimit);
 adminRouter.patch('/employees/:userId/overtime-eligibility', updateOvertimeEligibility);
 // Profile details, by someone given the right (User.canEditEmployeeDetails): their own and their reports'.
 adminRouter.patch('/employees/:userId', updateEmployeeDetails);
+// Delete an employee for good (dashboard admins; their name typed to confirm).
+adminRouter.delete('/employees/:userId', deleteEmployee);
 // One person's month, graded the way the report grades it.
 adminRouter.get('/employees/:userId/calendar', employeeCalendarHandler);
 // HR marks a day of the current month; it outranks punches, leave and holidays everywhere.

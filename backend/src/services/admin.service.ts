@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { companies, feedbackRecords, users } from '../config/db';
+import { authSessions, companies, deviceTokens, employeePaymentDetails, feedbackRecords, salaryStructures, users } from '../config/db';
 import { EmployeeDocument, User } from '../models/user.model';
 import { orgUsers } from './admin-scope';
 import { resolveProfilePhoto } from './s3-connect-media.service';
@@ -217,7 +217,8 @@ async function isSelfOrBelow(editor: User, employee: User): Promise<boolean> {
 
 /**
  * Edits an employee's profile details from the dashboard. Only someone given
- * `canEditEmployeeDetails`, and only for themselves and the people below them.
+ * `canEditEmployeeDetails`: a dashboard admin (HR) for anyone in the company,
+ * anyone else for themselves and the people below them.
  * Fields left out stay as they are; an empty optional field clears it.
  */
 export async function updateEmployeeDetailsForAdmin(editorUserId: string, employeeUserId: string, input: EmployeeDetailsInput) {
@@ -226,7 +227,7 @@ export async function updateEmployeeDetailsForAdmin(editorUserId: string, employ
   if (editor.canEditEmployeeDetails !== true) throw new AdminError(403, 'You cannot edit employee details');
   const employee = await users().findOne({ userId: employeeUserId, ...(editor.org ? { org: editor.org } : {}) });
   if (!employee) throw new AdminError(404, 'Employee not found');
-  if (!(await isSelfOrBelow(editor, employee))) {
+  if (editor.dashboardAdmin !== true && !(await isSelfOrBelow(editor, employee))) {
     throw new AdminError(403, 'You can edit your own details and those of the people who report to you');
   }
 
@@ -395,4 +396,35 @@ export async function removeEmployeeDocument(adminUserId: string, userId: string
   // only storage, so failing to remove it must not fail the request.
   if (document.objectKey) await deleteEmployeeDocument(document.objectKey).catch(() => undefined);
   return employeeDocumentViews(updated?.documents);
+}
+
+/**
+ * Deletes an employee from the company for good: their account and profile,
+ * every sign-in and device, their salary set-up and payment details. Only a
+ * dashboard admin, never on themselves, with the person's name typed to
+ * confirm, and not while anyone still reports to them. Records of what already
+ * happened (attendance, leave, payslips, posts) stay, so past payroll and
+ * reports still add up. A proper exit workflow will take over from this.
+ */
+export async function deleteEmployeeForAdmin(adminUserId: string, employeeUserId: string, confirmName: unknown) {
+  const admin = await users().findOne({ userId: adminUserId });
+  if (!admin?.org) throw new AdminError(403, 'No organisation on this account');
+  if (admin.dashboardAdmin !== true) throw new AdminError(403, 'Only a dashboard admin can delete an employee');
+  if (employeeUserId === adminUserId) throw new AdminError(400, 'You cannot delete your own account');
+  const employee = await users().findOne({ userId: employeeUserId, org: admin.org });
+  if (!employee) throw new AdminError(404, 'Employee not found');
+  const typed = typeof confirmName === 'string' ? confirmName.trim().toLowerCase() : '';
+  if (!typed || typed !== employee.name.trim().toLowerCase()) throw new AdminError(400, `Type ${employee.name} to confirm`);
+  const reports = await users().countDocuments({ org: admin.org, managerUserId: employeeUserId, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } });
+  if (reports > 0) {
+    throw new AdminError(409, `${reports} ${reports === 1 ? 'person reports' : 'people report'} to ${employee.name}. Give them another manager first.`);
+  }
+  await Promise.all([
+    authSessions().deleteMany({ userId: employeeUserId }),
+    deviceTokens().deleteMany({ userId: employeeUserId }),
+    salaryStructures().deleteMany({ org: admin.org, userId: employeeUserId }),
+    employeePaymentDetails().deleteMany({ org: admin.org, userId: employeeUserId } as never),
+  ]);
+  await users().deleteOne({ userId: employeeUserId, org: admin.org });
+  return { userId: employeeUserId, deleted: true };
 }

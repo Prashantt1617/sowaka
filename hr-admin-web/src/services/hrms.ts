@@ -343,6 +343,10 @@ export type EmployeeDetailsInput = {
 export const updateEmployeeDetails = (userId: string, input: EmployeeDetailsInput) =>
   api<{ employee: { userId: string; changed: string[] } }>(`/admin/employees/${userId}`, { method: 'PATCH', body: input });
 
+/** Delete an employee for good (dashboard admins); `confirmName` is their name, typed. */
+export const deleteEmployee = (userId: string, confirmName: string) =>
+  api<{ deleted: boolean }>(`/admin/employees/${userId}`, { method: 'DELETE', body: { confirmName } });
+
 export const createEmployee = (input: CreateEmployeeInput) =>
   api<{ employee: EmployeeDTO }>('/admin/employees', { method: 'POST', body: input })
     .then((r) => r.employee);
