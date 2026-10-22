@@ -65,7 +65,13 @@ export async function connectDb(): Promise<Db> {
   // anywhere from 300ms to 45s for the same 1,400 documents; sending fewer
   // bytes is the one lever that helps whatever the link is doing. zlib is
   // built into Node, so nothing native to install, and Atlas negotiates it.
-  client = new MongoClient(env.mongoUri, { compressors: ['zlib'] });
+  //
+  // maxConnecting: the driver opens at most two connections at a time by
+  // default, and each new one to Atlas is a TLS and auth handshake of about a
+  // second from a slow link. A page that asks for twenty things at once then
+  // waited for connections two by two. Ten at a time ramps the pool up in one
+  // step; the pool's ceiling (maxPoolSize) is unchanged.
+  client = new MongoClient(env.mongoUri, { compressors: ['zlib'], maxConnecting: 10 });
   await client.connect();
   db = client.db(env.mongoDbName);
   await ensureIndexes(db);
