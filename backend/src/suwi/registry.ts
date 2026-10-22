@@ -3,3 +3,5 @@ import './tools/people';
 import './tools/attendance';
 import './tools/requests';
 import './tools/shifts';
+import './tools/performance';
+import './tools/kpi-templates';
