@@ -28,3 +28,5 @@ import './tools/payroll-check';
 import './tools/payroll-tax';
 import './tools/payroll-terms';
 import './tools/reports';
+import './tools/payroll-actions';
+import './tools/salary-templates';
