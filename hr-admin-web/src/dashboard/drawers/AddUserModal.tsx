@@ -2,16 +2,16 @@ import type { ReactNode } from 'react';
 import { useStore } from '../store';
 import { CloseButton } from './shell';
 
-const fieldLabel = { fontSize: 13, fontWeight: 500, color: '#484848', marginBottom: 6 } as const;
+const fieldLabel = { fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', marginBottom: 6 } as const;
 const inputStyle = {
   width: '100%',
-  border: '1px solid #EBEBEB',
+  border: '1px solid var(--line)',
   borderRadius: 12,
   padding: '11px 13px',
   fontSize: 14,
   outline: 'none',
-  background: '#fff',
-  color: '#222222',
+  background: 'var(--surface)',
+  color: 'var(--ink)',
 } as const;
 const selectStyle = {
   ...inputStyle,
@@ -38,11 +38,11 @@ export function AddUserModal() {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div onClick={close} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', animation: 'ovl .2s ease both' }} />
-      <div className="scry" style={{ position: 'relative', width: 560, maxHeight: '92vh', overflowY: 'auto', background: '#F7F7F9', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', animation: 'pop .2s ease both' }}>
-        <div style={{ padding: '22px 26px', borderBottom: '1px solid #EBEBEB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="scry" style={{ position: 'relative', width: 560, maxHeight: '92vh', overflowY: 'auto', background: 'var(--surface-2)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', animation: 'pop .2s ease both' }}>
+        <div style={{ padding: '22px 26px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-.3px' }}>Add a user</div>
-            <div style={{ fontSize: 13, color: '#717171', fontWeight: 400, marginTop: 2 }}>Create a new employee profile</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400, marginTop: 2 }}>Create a new employee profile</div>
           </div>
           <CloseButton onClose={close} />
         </div>
@@ -86,8 +86,8 @@ export function AddUserModal() {
         </div>
 
         <div style={{ padding: '0 26px 22px', display: 'flex', gap: 11, justifyContent: 'flex-end' }}>
-          <button onClick={close} style={{ border: '1px solid #EBEBEB', background: '#fff', color: '#484848', borderRadius: 999, padding: '11px 20px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
-          <button onClick={s.saveUser} style={{ border: 'none', background: '#0571A6', color: '#fff', borderRadius: 999, padding: '11px 22px', fontSize: 14, fontWeight: 500, cursor: 'pointer', boxShadow: '0 2px 8px rgba(5,113,166,.26)' }}>Add user</button>
+          <button onClick={close} style={{ border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink-2)', borderRadius: 999, padding: '11px 20px', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
+          <button onClick={s.saveUser} style={{ border: 'none', background: 'var(--accent-grad)', color: '#fff', borderRadius: 999, padding: '11px 22px', fontSize: 14, fontWeight: 500, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,136,255,.26)' }}>Add user</button>
         </div>
       </div>
     </div>

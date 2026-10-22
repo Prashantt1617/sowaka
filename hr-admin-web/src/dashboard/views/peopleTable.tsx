@@ -10,9 +10,9 @@ export const rowActionBtn: CSSProperties = {
   width: 30,
   height: 30,
   borderRadius: 999,
-  border: '1px solid #EBEBEB',
-  background: '#fff',
-  color: '#717171',
+  border: '1px solid var(--line)',
+  background: 'var(--surface)',
+  color: 'var(--ink-3)',
   cursor: 'pointer',
 };
 

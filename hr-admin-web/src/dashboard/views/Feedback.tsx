@@ -43,27 +43,27 @@ function scoreOf(emp: FbEmp, metric: string): number | null {
 }
 
 function barColor(score: number): string {
-  if (score >= 4) return '#4F7A52';
-  if (score >= 2.5) return '#0571A6';
-  return '#A8475F';
+  if (score >= 4) return 'var(--ok)';
+  if (score >= 2.5) return 'var(--accent)';
+  return 'var(--bad)';
 }
 
 const pageBtn = (off: boolean): CSSProperties => ({
   ...smallBtn,
-  color: off ? '#9197A2' : '#484848',
-  background: off ? '#F7F7F9' : '#fff',
+  color: off ? 'var(--ink-4)' : 'var(--ink-2)',
+  background: off ? 'var(--surface-2)' : 'var(--surface)',
   cursor: off ? 'not-allowed' : 'pointer',
 });
 
 const metricSelect: CSSProperties = {
-  border: '1px solid #EBEBEB', borderRadius: 999, padding: '4px 7px', background: '#fff',
-  fontSize: 11.5, fontWeight: 500, fontFamily: 'inherit', color: '#484848',
+  border: '1px solid var(--line)', borderRadius: 999, padding: '4px 7px', background: 'var(--surface)',
+  fontSize: 11.5, fontWeight: 500, fontFamily: 'inherit', color: 'var(--ink-2)',
   textTransform: 'none', letterSpacing: 0, cursor: 'pointer', maxWidth: 160,
 };
 
 const TONE: Record<FbEmp['status'], PillT & { label: string }> = {
-  sent: { label: 'Reviewed', bg: '#E4EDE0', fg: '#4F7A52' },
-  none: { label: 'Not started', bg: '#F4DEE2', fg: '#A8475F' },
+  sent: { label: 'Reviewed', bg: 'var(--ok-bg)', fg: 'var(--ok)' },
+  none: { label: 'Not started', bg: 'var(--bad-bg)', fg: 'var(--bad)' },
 };
 
 export function Feedback() {
@@ -170,7 +170,7 @@ export function Feedback() {
           value={period}
           onChange={(e) => { setPeriod(e.target.value); s.setFbMgrFilter(null); s.setFbEmpId(null); resetPage(); }}
           title="Review cycle"
-          style={{ border: '1px solid #EBEBEB', borderRadius: 999, padding: '9px 12px', fontSize: 14, fontWeight: 500, fontFamily: 'inherit', background: '#fff', color: '#222222', cursor: 'pointer' }}
+          style={{ border: '1px solid var(--line)', borderRadius: 999, padding: '9px 12px', fontSize: 14, fontWeight: 500, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer' }}
         >
           {periods.map((p) => (
             <option key={p} value={p}>
@@ -218,10 +218,10 @@ export function Feedback() {
             {mgrs.map((m) => {
               const complete = m.done >= m.total;
               const st: PillT & { label: string } = complete
-                ? { label: 'Complete', bg: '#E4EDE0', fg: '#4F7A52' }
+                ? { label: 'Complete', bg: 'var(--ok-bg)', fg: 'var(--ok)' }
                 : m.done > 0
-                  ? { label: 'In progress', bg: '#F6E9D5', fg: '#9A6B25' }
-                  : { label: 'Not started', bg: '#F4DEE2', fg: '#A8475F' };
+                  ? { label: 'In progress', bg: 'var(--warn-bg)', fg: 'var(--warn)' }
+                  : { label: 'Not started', bg: 'var(--bad-bg)', fg: 'var(--bad)' };
               const mpct = m.total ? Math.round((m.done / m.total) * 100) : 0;
               const active = s.fbMgrFilter === m.id;
               return (
@@ -229,39 +229,39 @@ export function Feedback() {
                   key={m.id}
                   className="phm-row"
                   onClick={() => { s.setFbMgrFilter(m.id); setSection('employees'); }}
-                  style={{ cursor: 'pointer', background: active ? '#F4FAFD' : undefined }}
+                  style={{ cursor: 'pointer', background: active ? 'var(--accent-soft)' : undefined }}
                 >
                   <Td>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
                       <Avatar name={m.name} size={32} font={12} />
-                      <span style={{ fontWeight: 500, color: '#0571A6' }}>{m.name}</span>
+                      <span style={{ fontWeight: 500, color: 'var(--accent-ink)' }}>{m.name}</span>
                     </span>
                   </Td>
                   <Td muted>
-                    <span style={{ fontSize: 13, color: '#717171' }}>{m.scope}</span>
+                    <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>{m.scope}</span>
                   </Td>
                   <Td muted>{m.total}</Td>
                   <Td>
-                    <span style={{ fontWeight: 500, color: complete ? '#4F7A52' : '#222222' }}>{m.done}</span>
+                    <span style={{ fontWeight: 500, color: complete ? 'var(--ok)' : 'var(--ink)' }}>{m.done}</span>
                   </Td>
                   <Td>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                      <span style={{ flex: 1, height: 7, borderRadius: 'var(--r-lg)', background: '#F0F0F2', overflow: 'hidden', display: 'flex', minWidth: 60 }}>
-                        <span style={{ width: `${mpct}%`, background: '#0571A6' }} />
+                      <span style={{ flex: 1, height: 7, borderRadius: 'var(--r-lg)', background: 'var(--surface-2)', overflow: 'hidden', display: 'flex', minWidth: 60 }}>
+                        <span style={{ width: `${mpct}%`, background: 'var(--accent-grad)' }} />
                       </span>
-                      <span style={{ fontSize: 12.5, color: '#717171', fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{mpct}%</span>
+                      <span style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{mpct}%</span>
                     </span>
                   </Td>
                   <Td><Pill label={st.label} tone={st} /></Td>
                   <Td right>
-                    <span style={{ fontSize: 12.5, fontWeight: 500, color: '#0571A6' }}>View team →</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--accent-ink)' }}>View team →</span>
                   </Td>
                 </tr>
               );
             })}
             {mgrs.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 13.5 }}>
+                <td colSpan={7} style={{ padding: '26px 14px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>
                   Nobody has direct reports yet, so there is nothing to review.
                 </td>
               </tr>
@@ -309,7 +309,7 @@ export function Feedback() {
           </button>
         )}
 
-        <div style={{ marginLeft: 'auto', fontSize: 13.5, color: '#717171', fontWeight: 400 }}>
+        <div style={{ marginLeft: 'auto', fontSize: 13.5, color: 'var(--ink-3)', fontWeight: 400 }}>
           {people.length} of {view.fbEmps.length} people
         </div>
       </div>
@@ -339,7 +339,7 @@ export function Feedback() {
                   <button
                     onClick={() => { setDesc((d) => !d); resetPage(); }}
                     title={desc ? 'Highest first' : 'Lowest first'}
-                    style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#0571A6', fontSize: 12.5, fontWeight: 600, padding: '2px 4px' }}
+                    style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--accent-ink)', fontSize: 12.5, fontWeight: 600, padding: '2px 4px' }}
                   >
                     {desc ? '↓' : '↑'}
                   </button>
@@ -357,7 +357,7 @@ export function Feedback() {
                   <Td>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
                       <Avatar name={e.name} size={34} font={13} />
-                      <span style={{ fontWeight: 500, color: '#0571A6' }}>{e.name}</span>
+                      <span style={{ fontWeight: 500, color: 'var(--accent-ink)' }}>{e.name}</span>
                     </span>
                   </Td>
                   <Td muted>{e.designation}</Td>
@@ -368,10 +368,10 @@ export function Feedback() {
                   </Td>
                   <Td right>
                     {score === null ? (
-                      <span style={{ color: '#C7CBD2', fontWeight: 500 }}>—</span>
+                      <span style={{ color: 'var(--ink-4)', fontWeight: 500 }}>—</span>
                     ) : (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, justifyContent: 'flex-end' }}>
-                        <span style={{ width: 54, height: 6, borderRadius: 'var(--r-lg)', background: '#F0F0F2', overflow: 'hidden' }}>
+                        <span style={{ width: 54, height: 6, borderRadius: 'var(--r-lg)', background: 'var(--surface-2)', overflow: 'hidden' }}>
                           <span style={{ display: 'block', width: `${(score / 5) * 100}%`, height: '100%', background: barColor(score) }} />
                         </span>
                         <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', minWidth: 26, textAlign: 'right' }}>
@@ -381,14 +381,14 @@ export function Feedback() {
                     )}
                   </Td>
                   <Td muted>
-                    <span style={{ fontSize: 13, color: '#717171' }}>{e.date || '—'}</span>
+                    <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>{e.date || '—'}</span>
                   </Td>
                 </tr>
               );
             })}
             {people.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 13.5 }}>
+                <td colSpan={7} style={{ padding: '26px 14px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>
                   {q ? 'Nobody matches that search.' : 'Nobody in this view.'}
                 </td>
               </tr>
@@ -399,7 +399,7 @@ export function Feedback() {
 
       {people.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14 }}>
-          <div style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
             Showing {(curPage - 1) * PAGE_SIZE + 1}–{Math.min(people.length, curPage * PAGE_SIZE)} of {people.length}
           </div>
           {pageCount > 1 && (
@@ -413,9 +413,9 @@ export function Feedback() {
                   onClick={() => setPage(p)}
                   style={{
                     minWidth: 32, height: 32, borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer',
-                    border: `1px solid ${p === curPage ? '#0571A6' : '#EBEBEB'}`,
-                    background: p === curPage ? '#0571A6' : '#fff',
-                    color: p === curPage ? '#fff' : '#484848',
+                    border: `1px solid ${p === curPage ? 'var(--accent)' : 'var(--line)'}`,
+                    background: p === curPage ? 'var(--accent-grad)' : 'var(--surface)',
+                    color: p === curPage ? '#fff' : 'var(--ink-2)',
                   }}
                 >
                   {p}
@@ -430,8 +430,8 @@ export function Feedback() {
       )}
 
       {activeMetric !== OVERALL && (
-        <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 10, lineHeight: 1.5 }}>
-          Showing the <strong style={{ color: '#717171' }}>{activeMetric}</strong> score. People
+        <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 10, lineHeight: 1.5 }}>
+          Showing the <strong style={{ color: 'var(--ink-3)' }}>{activeMetric}</strong> score. People
           not scored on it — because it is not in their assigned set, or their review is not in
           yet — show a dash and sort last.
         </div>
@@ -491,7 +491,7 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
         <>
           <span style={{ marginRight: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
             <Pill label={isCurrent ? tone.label : 'Reviewed'} tone={tone} fontSize={12.5} padding="5px 13px" />
-            <span style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>
+            <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
               {periodShort(shown.period)}
               {shown.date ? ` · ${shown.date}` : ''}
             </span>
@@ -502,7 +502,7 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
     >
       {/* ââ Cycle strip âââââââââââââââââââââââââââââââââââââââââââââââ */}
       <div style={{ ...panelCard, marginBottom: 18 }}>
-        <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: '#717171', marginBottom: 12 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-3)', marginBottom: 12 }}>
           REVIEW HISTORY
         </div>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
@@ -519,7 +519,7 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
                   border: 'none', background: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit',
                 }}
               >
-                <span style={{ fontSize: 12, fontWeight: 600, color: on ? '#0571A6' : '#484848', fontVariantNumeric: 'tabular-nums' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: on ? 'var(--accent-ink)' : 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
                   {unscored ? '—' : c.overall.toFixed(1)}
                 </span>
                 <span
@@ -527,14 +527,14 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
                     width: '100%',
                     height: Math.max(5, (c.overall / 5) * 52),
                     borderRadius: 5,
-                    background: unscored ? '#F0F0F2' : on ? '#0571A6' : '#BFD8E8',
+                    background: unscored ? 'var(--surface-2)' : on ? 'var(--accent-grad)' : 'var(--accent-soft)',
                     transition: 'background .12s',
                   }}
                 />
-                <span style={{ fontSize: 11.5, fontWeight: on ? 800 : 600, color: on ? '#222222' : '#9197A2' }}>
+                <span style={{ fontSize: 11.5, fontWeight: on ? 800 : 600, color: on ? 'var(--ink)' : 'var(--ink-4)' }}>
                   {monthLabel(c.period)}
                   {c.period === livePeriod && (
-                    <span style={{ display: 'block', fontSize: 10.5, color: '#9197A2', fontWeight: 500 }}>NOW</span>
+                    <span style={{ display: 'block', fontSize: 10.5, color: 'var(--ink-4)', fontWeight: 500 }}>NOW</span>
                   )}
                 </span>
               </button>
@@ -542,7 +542,7 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
           })}
         </div>
         {emp.history.length === 0 && (
-          <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 11, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 11, lineHeight: 1.5 }}>
             No earlier reviews â this is their first cycle with one.
           </div>
         )}
@@ -550,7 +550,7 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
 
       {/* ââ The selected cycle âââââââââââââââââââââââââââââââââââââââââ */}
       {isCurrent && emp.status === 'none' ? (
-        <div style={{ ...panelCard, textAlign: 'center', color: '#717171', fontSize: 13.5, lineHeight: 1.6, padding: '30px 20px' }}>
+        <div style={{ ...panelCard, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5, lineHeight: 1.6, padding: '30px 20px' }}>
           {emp.managerName === '—'
             ? 'Nobody manages this employee yet, so no review is due.'
             : `${emp.managerName} has not started this review for the current cycle.`}
@@ -564,19 +564,19 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
                   <span style={{ fontSize: 32, fontWeight: 600, letterSpacing: '-1px' }}>
                     {shown.overall > 0 ? shown.overall.toFixed(1) : '—'}
                   </span>
-                  <span style={{ fontSize: 13.5, color: '#717171', fontWeight: 500 }}>/ 5.0</span>
+                  <span style={{ fontSize: 13.5, color: 'var(--ink-3)', fontWeight: 500 }}>/ 5.0</span>
                 </div>
-                <div style={{ fontSize: 12.5, color: '#717171', marginTop: 6, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.5 }}>
                   Averaged across {shown.params.length} parameter{shown.params.length === 1 ? '' : 's'}.
                 </div>
                 <Delta cycles={cycles} period={shown.period} />
             </>
 
-            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #EBEBEB' }}>
-              <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: '#717171', marginBottom: 7 }}>
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
+              <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-3)', marginBottom: 7 }}>
                 MANAGER SUMMARY
               </div>
-              <div style={{ fontSize: 13, color: '#484848', lineHeight: 1.6 }}>
+              <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>
                 {shown.extra || 'No summary provided.'}
               </div>
             </div>
@@ -585,7 +585,7 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
           <div style={panelCard}>
             <div style={panelTitle}>Parameters</div>
             {shown.params.length === 0 ? (
-              <div style={{ fontSize: 13.5, color: '#717171' }}>No parameters were scored on this review.</div>
+              <div style={{ fontSize: 13.5, color: 'var(--ink-3)' }}>No parameters were scored on this review.</div>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
@@ -600,13 +600,13 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
                       <Td top>
                         <div style={{ fontWeight: 500 }}>{p.name}</div>
                         {p.note && (
-                          <div style={{ fontSize: 13, color: '#484848', marginTop: 7, lineHeight: 1.55, borderLeft: '2px solid #EBEBEB', paddingLeft: 10 }}>
+                          <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 7, lineHeight: 1.55, borderLeft: '2px solid var(--line)', paddingLeft: 10 }}>
                             {p.note}
                           </div>
                         )}
                       </Td>
                       <Td top right>
-                        <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: p.score > 0 ? '#222222' : '#C7CBD2' }}>
+                        <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: p.score > 0 ? 'var(--ink)' : 'var(--ink-4)' }}>
                           {p.score > 0 ? p.score.toFixed(1) : '—'}
                         </span>
                       </Td>
@@ -631,13 +631,13 @@ function Delta({ cycles, period }: { cycles: (FbCycle & { current: boolean })[];
   const delta = now.overall - prev.overall;
   if (delta === 0) {
     return (
-      <div style={{ fontSize: 12.5, color: '#717171', fontWeight: 500, marginTop: 9 }}>
+      <div style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 500, marginTop: 9 }}>
         Level with {monthLabel(prev.period)}
       </div>
     );
   }
   return (
-    <div style={{ fontSize: 12.5, color: delta > 0 ? '#4F7A52' : '#A8475F', fontWeight: 500, marginTop: 9 }}>
+    <div style={{ fontSize: 12.5, color: delta > 0 ? 'var(--ok)' : 'var(--bad)', fontWeight: 500, marginTop: 9 }}>
       {delta > 0 ? '↑' : '↓'} {Math.abs(delta).toFixed(1)} vs {monthLabel(prev.period)}
     </div>
   );

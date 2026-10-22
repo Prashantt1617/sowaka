@@ -178,11 +178,11 @@ export function ShiftBulkAssign() {
         <div style={panelCard}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
             <div style={panelTitle}>Who are you putting on a shift?</div>
-            <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 500, color: emps.length === 0 ? '#9197A2' : preview.length ? '#4F7A52' : '#A8475F' }}>
+            <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 500, color: emps.length === 0 ? 'var(--ink-4)' : preview.length ? 'var(--ok)' : 'var(--bad)' }}>
               {emps.length === 0 ? 'Loading employees…' : `${preview.length} of ${emps.length} employees match`}
             </div>
           </div>
-          <div style={{ fontSize: 12.5, color: '#717171', marginBottom: 14, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 14, lineHeight: 1.5 }}>
             Everyone not assigned to a shift follows the org's <strong>default</strong> template.
           </div>
 
@@ -223,15 +223,15 @@ export function ShiftBulkAssign() {
             </div>
           )}
 
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #EBEBEB' }}>
-            <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: '#717171', marginBottom: 7 }}>
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
+            <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-3)', marginBottom: 7 }}>
               RESULTING RULE
             </div>
-            <code style={{ ...queryCode, display: 'block', padding: '11px 13px', background: '#F7F7F9', borderRadius: 10, lineHeight: 1.7 }}>
+            <code style={{ ...queryCode, display: 'block', padding: '11px 13px', background: 'var(--surface-2)', borderRadius: 10, lineHeight: 1.7 }}>
               {targetSummary(target, emps)}
             </code>
             {emptyRules.length > 0 && (
-              <div style={{ fontSize: 12.5, color: '#9A6B25', fontWeight: 400, marginTop: 9 }}>
+              <div style={{ fontSize: 12.5, color: 'var(--warn)', fontWeight: 400, marginTop: 9 }}>
                 {emptyRules.map((f) => f.label).join(' and ')}{' '}
                 {emptyRules.length === 1 ? 'has' : 'have'} no value chosen yet, so{' '}
                 {emptyRules.length === 1 ? 'it is' : 'they are'} not narrowing anything.
@@ -256,7 +256,7 @@ export function ShiftBulkAssign() {
       {step === 'people' && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 11 }}>
-            <div style={{ fontSize: 14, color: '#717171', fontWeight: 400 }}>
+            <div style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 400 }}>
               {chosen.size} of {members.length} selected
             </div>
             <button onClick={() => setChosen(new Set(members.map((m) => m.userId)))} style={smallBtn}>Select all</button>
@@ -287,7 +287,7 @@ export function ShiftBulkAssign() {
                     </Td>
                     <Td>
                       <strong>{m.name}</strong>
-                      {m.employeeId && <span style={{ color: '#9197A2', marginLeft: 8, fontSize: 12.5 }}>{m.employeeId}</span>}
+                      {m.employeeId && <span style={{ color: 'var(--ink-4)', marginLeft: 8, fontSize: 12.5 }}>{m.employeeId}</span>}
                     </Td>
                     <Td muted>{m.department || '—'}</Td>
                     <Td muted>{m.designation || '—'}</Td>
@@ -295,7 +295,7 @@ export function ShiftBulkAssign() {
                     <Td>
                       {m.currentShift
                         ? <span style={movingPill} title={`Currently on ${m.currentShift.name} — assigning replaces it`}>{m.currentShift.name}</span>
-                        : <span style={{ color: '#9197A2' }}>Org policy</span>}
+                        : <span style={{ color: 'var(--ink-4)' }}>Org policy</span>}
                     </Td>
                   </tr>
                 ))}
@@ -308,7 +308,7 @@ export function ShiftBulkAssign() {
           {members.length > PAGE && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
               <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} style={smallBtn}>← Previous</button>
-              <div style={{ fontSize: 13, color: '#717171' }}>Page {page + 1} of {pages} · {members.length} employees</div>
+              <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>Page {page + 1} of {pages} · {members.length} employees</div>
               <button onClick={() => setPage((p) => Math.min(pages - 1, p + 1))} disabled={page >= pages - 1} style={smallBtn}>Next →</button>
             </div>
           )}
@@ -349,11 +349,11 @@ export function ShiftBulkAssign() {
                     key={s.id}
                     className="phm-row"
                     onClick={() => setPicked(s)}
-                    style={{ cursor: 'pointer', background: picked?.id === s.id ? '#F1F8FC' : undefined }}
+                    style={{ cursor: 'pointer', background: picked?.id === s.id ? 'var(--accent-soft)' : undefined }}
                   >
                     <Td><input type="radio" checked={picked?.id === s.id} onChange={() => setPicked(s)} /></Td>
                     <Td>
-                      <strong style={{ color: '#222222' }}>{s.name}</strong>
+                      <strong style={{ color: 'var(--ink)' }}>{s.name}</strong>
                       {!s.active && <span style={inactivePill}>Inactive</span>}
                     </Td>
                     <Td muted>{s.policy.startTime} – {s.policy.endTime} · {windowLength(s.policy.startTime, s.policy.endTime)}</Td>
@@ -422,39 +422,39 @@ function Steps({ step, busy, onGo }: { step: Step; busy: boolean; onGo: (target:
               <span style={{
                 width: 22, height: 22, borderRadius: '50%', display: 'flex',
                 alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 600,
-                background: state === 'todo' ? '#F0F0F2' : '#0571A6',
-                color: state === 'todo' ? '#9197A2' : '#fff',
+                background: state === 'todo' ? 'var(--surface-2)' : 'var(--accent-grad)',
+                color: state === 'todo' ? 'var(--ink-4)' : '#fff',
               }}>
                 {state === 'done' ? '✓' : i + 1}
               </span>
               <span style={{
                 fontSize: 13.5,
                 fontWeight: state === 'now' ? 800 : 600,
-                color: state === 'now' ? '#222222' : state === 'todo' ? '#9197A2' : '#0571A6',
+                color: state === 'now' ? 'var(--ink)' : state === 'todo' ? 'var(--ink-4)' : 'var(--accent-ink)',
                 textDecoration: disabled ? 'none' : 'underline',
                 textUnderlineOffset: 3,
               }}>
                 {item.label}
               </span>
             </button>
-            {i < items.length - 1 && <span style={{ color: '#C7CBD2' }}>→</span>}
+            {i < items.length - 1 && <span style={{ color: 'var(--ink-4)' }}>→</span>}
           </span>
         );
       })}
-      {busy && <span style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>Working…</span>}
+      {busy && <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>Working…</span>}
     </div>
   );
 }
 
 function Th({ children, width, right }: { children: ReactNode; width?: number; right?: boolean }) {
-  return <th style={{ textAlign: right ? 'right' : 'left', width, fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '11px 14px', borderBottom: '1px solid #EBEBEB', background: 'var(--surface-2)' }}>{children}</th>;
+  return <th style={{ textAlign: right ? 'right' : 'left', width, fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '11px 14px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)' }}>{children}</th>;
 }
 function Td({ children, muted, right }: { children: ReactNode; muted?: boolean; right?: boolean }) {
-  return <td style={{ padding: '12px 14px', textAlign: right ? 'right' : 'left', borderBottom: '1px solid #F0F0F2', color: muted ? '#717171' : '#222222' }}>{children}</td>;
+  return <td style={{ padding: '12px 14px', textAlign: right ? 'right' : 'left', borderBottom: '1px solid var(--line)', color: muted ? 'var(--ink-3)' : 'var(--ink)' }}>{children}</td>;
 }
 
 const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13.5 };
-const emptyCell: CSSProperties = { padding: '30px 14px', textAlign: 'center', color: '#717171', fontSize: 13.5 };
-const movingPill: CSSProperties = { fontSize: 11.5, fontWeight: 600, color: '#8A6D1F', background: '#FBF3DD', border: '1px solid #EFE0BC', borderRadius: 'var(--r-lg)', padding: '3px 10px', cursor: 'help' };
-const inactivePill: CSSProperties = { marginLeft: 8, fontSize: 11.5, fontWeight: 600, color: '#9197A2', background: '#EDEDF0', borderRadius: 'var(--r-lg)', padding: '2px 9px' };
-const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', color: '#0571A6', fontWeight: 500, cursor: 'pointer', textDecoration: 'underline' };
+const emptyCell: CSSProperties = { padding: '30px 14px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 };
+const movingPill: CSSProperties = { fontSize: 11.5, fontWeight: 600, color: 'var(--warn)', background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 'var(--r-lg)', padding: '3px 10px', cursor: 'help' };
+const inactivePill: CSSProperties = { marginLeft: 8, fontSize: 11.5, fontWeight: 600, color: 'var(--ink-4)', background: 'var(--surface-2)', borderRadius: 'var(--r-lg)', padding: '2px 9px' };
+const linkBtn: CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--accent-ink)', fontWeight: 500, cursor: 'pointer', textDecoration: 'underline' };

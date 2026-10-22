@@ -11,11 +11,11 @@ import { getPayrollDashboard, type CostRange, type PayrollDashboardReport } from
 import { OPEN_REPORT_KEY } from './PayrollReports';
 
 const STATUS: Record<string, { label: string; bg: string; fg: string }> = {
-  not_started: { label: 'Not started', bg: '#F4F4F6', fg: '#484848' },
-  draft: { label: 'Draft', bg: '#FFF4E0', fg: '#8A5A00' },
-  pending_approval: { label: 'Awaiting approval', bg: '#EAF2FF', fg: '#1D4E9E' },
-  approved: { label: 'Approved', bg: '#E5F4E4', fg: '#2F6B33' },
-  paid: { label: 'Paid', bg: '#E5F4E4', fg: '#2F6B33' },
+  not_started: { label: 'Not started', bg: 'var(--surface-2)', fg: 'var(--ink-2)' },
+  draft: { label: 'Draft', bg: 'var(--warn-bg)', fg: 'var(--warn)' },
+  pending_approval: { label: 'Awaiting approval', bg: 'var(--accent-soft)', fg: 'var(--t-sky-i)' },
+  approved: { label: 'Approved', bg: 'var(--ok-bg)', fg: 'var(--ok)' },
+  paid: { label: 'Paid', bg: 'var(--ok-bg)', fg: 'var(--ok)' },
 };
 const RANGES: { key: CostRange; label: string }[] = [
   { key: 'this_year', label: 'This year' }, { key: 'this_quarter', label: 'This quarter' },
@@ -63,7 +63,7 @@ export function PayrollDashboard() {
   return (
     <div style={{ display: 'grid', gap: 18 }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#484848' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--ink-2)' }}>
           <input type="checkbox" checked={includeDrafts} onChange={(e) => setIncludeDrafts(e.target.checked)} /> Include draft runs in the figures
         </label>
       </div>
@@ -108,7 +108,7 @@ export function PayrollDashboard() {
           <Card>
             <CardHead title="To do" />
             <div style={{ padding: '6px 22px 16px' }}>
-              {data.todo.pendingClaims + data.todo.runsAwaitingApproval === 0 ? <div style={{ color: '#717171', fontSize: 13, padding: '8px 0' }}>Nothing waiting.</div> : (
+              {data.todo.pendingClaims + data.todo.runsAwaitingApproval === 0 ? <div style={{ color: 'var(--ink-3)', fontSize: 13, padding: '8px 0' }}>Nothing waiting.</div> : (
                 <>
                   {data.todo.runsAwaitingApproval > 0 && <Row label="Runs awaiting approval" value={data.todo.runsAwaitingApproval} onClick={() => s.setView('payruns')} />}
                   {data.todo.pendingClaims > 0 && <Row label="Reimbursement claims to review" value={data.todo.pendingClaims} onClick={() => s.setView('reimbursements')} />}
@@ -126,9 +126,9 @@ export function PayrollDashboard() {
           </select>
         } />
         <CostChart months={data.cost.months} />
-        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', padding: '0 22px 18px', fontSize: 12.5, color: '#484848' }}>
+        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', padding: '0 22px 18px', fontSize: 12.5, color: 'var(--ink-2)' }}>
           {SERIES.map((x) => <span key={x.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 11, height: 11, borderRadius: 3, background: x.color }} />{x.label}</span>)}
-          <span style={{ color: '#9197A2' }}>{data.cost.label} · finished runs{includeDrafts ? ' and drafts' : ''}</span>
+          <span style={{ color: 'var(--ink-4)' }}>{data.cost.label} · finished runs{includeDrafts ? ' and drafts' : ''}</span>
         </div>
       </Card>
     </div>
@@ -156,8 +156,8 @@ function CostChart({ months }: { months: PayrollDashboardReport['cost']['months'
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ minWidth: 560, display: 'block' }} role="img" aria-label="Payroll cost by month">
         {ticks.map((t) => (
           <g key={t}>
-            <line x1={L} x2={W - 12} y1={y(t)} y2={y(t)} stroke="#EBEBEB" strokeDasharray={t ? '4 4' : undefined} />
-            <text x={L - 8} y={y(t) + 4} textAnchor="end" fontSize="12" fill="#717171">{fmt(t)}</text>
+            <line x1={L} x2={W - 12} y1={y(t)} y2={y(t)} stroke="var(--line-2)" strokeDasharray={t ? '4 4' : undefined} />
+            <text x={L - 8} y={y(t) + 4} textAnchor="end" fontSize="12" fill="var(--ink-3)">{fmt(t)}</text>
           </g>
         ))}
         {months.map((m, i) => {
@@ -173,7 +173,7 @@ function CostChart({ months }: { months: PayrollDashboardReport['cost']['months'
                 acc += v;
                 return <rect key={sr.key} x={x} y={y1} width={barW} height={Math.max(0.5, y0 - y1)} fill={sr.color} />;
               })}
-              <text x={x + barW / 2} y={H - 10} textAnchor="middle" fontSize="12" fill="#484848">{shortMonth(m.period)}</text>
+              <text x={x + barW / 2} y={H - 10} textAnchor="middle" fontSize="12" fill="var(--ink-2)">{shortMonth(m.period)}</text>
             </g>
           );
         })}
@@ -184,9 +184,9 @@ function CostChart({ months }: { months: PayrollDashboardReport['cost']['months'
 
 function CardHead({ title, right }: { title: string; right?: ReactNode }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', padding: '14px 22px', borderBottom: '1px solid #EBEBEB' }}>
+    <div style={{ display: 'flex', alignItems: 'center', padding: '14px 22px', borderBottom: '1px solid var(--line)' }}>
       <div style={{ fontSize: 14.5, fontWeight: 600, flex: 1 }}>{title}</div>
-      {right && <div style={{ fontSize: 12.5, color: '#717171' }}>{right}</div>}
+      {right && <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{right}</div>}
     </div>
   );
 }
@@ -195,9 +195,9 @@ function Stat({ title, value }: { title: string; value: string }) {
 }
 function Due({ title, sub, value, onView }: { title: string; sub: string; value: number; onView: () => void }) {
   return (
-    <div style={{ padding: '16px 22px', borderRight: '1px solid #F4F4F6' }}>
-      <div style={{ fontSize: 13, fontWeight: 500, color: '#484848' }}>{title}</div>
-      <div style={{ fontSize: 11.5, color: '#9197A2', marginTop: 2 }}>{sub}</div>
+    <div style={{ padding: '16px 22px', borderRight: '1px solid var(--line)' }}>
+      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' }}>{title}</div>
+      <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 2 }}>{sub}</div>
       <div style={{ fontSize: 17, fontWeight: 600, margin: '8px 0 6px', fontVariantNumeric: 'tabular-nums' }}>{money(value)}</div>
       <button onClick={onView} style={link}>View details</button>
     </div>
@@ -205,15 +205,15 @@ function Due({ title, sub, value, onView }: { title: string; sub: string; value:
 }
 function Row({ label: text, value, warn, onClick }: { label: string; value: number; warn?: boolean; onClick?: () => void }) {
   return (
-    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #F4F4F6', cursor: onClick ? 'pointer' : undefined }}>
-      <span style={{ flex: 1, fontSize: 13, color: '#484848' }}>{text}</span>
-      <strong style={{ fontSize: 14, color: warn ? '#C4382E' : '#222222', fontVariantNumeric: 'tabular-nums' }}>{value}</strong>
+    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--line)', cursor: onClick ? 'pointer' : undefined }}>
+      <span style={{ flex: 1, fontSize: 13, color: 'var(--ink-2)' }}>{text}</span>
+      <strong style={{ fontSize: 14, color: warn ? 'var(--bad)' : 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{value}</strong>
     </div>
   );
 }
 
-const label: CSSProperties = { fontSize: 11.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.04em', color: '#9197A2' };
+const label: CSSProperties = { fontSize: 11.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--ink-4)' };
 const pill: CSSProperties = { fontSize: 12, fontWeight: 500, borderRadius: 7, padding: '3px 9px', marginLeft: 8, verticalAlign: 'middle' };
-const primary: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
-const link: CSSProperties = { background: 'none', border: 'none', padding: 0, color: '#0571A6', fontWeight: 500, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' };
-const select: CSSProperties = { padding: '6px 10px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 12.5, fontFamily: 'inherit', background: '#fff' };
+const primary: CSSProperties = { background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const link: CSSProperties = { background: 'none', border: 'none', padding: 0, color: 'var(--accent-ink)', fontWeight: 500, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' };
+const select: CSSProperties = { padding: '6px 10px', border: '1px solid var(--line-2)', borderRadius: 8, fontSize: 12.5, fontFamily: 'inherit', background: 'var(--surface)' };

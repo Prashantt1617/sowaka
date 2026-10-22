@@ -60,7 +60,7 @@ export function Departments() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ fontSize: 13, color: '#717171' }}>
+        <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
           {loaded ? `${departments.length} departments · ${totalEmp} people` : 'Loading…'}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 9, alignItems: 'flex-start' }}>
@@ -90,7 +90,7 @@ export function Departments() {
             {departments.map((d) => (
               <tr key={d.name}>
                 <Td>
-                  <strong style={{ color: '#0571A6' }}>{d.name}</strong>
+                  <strong style={{ color: 'var(--accent-ink)' }}>{d.name}</strong>
                   {d.empty && (
                     <>
                       <span style={emptyTag}>No one yet</span>
@@ -122,14 +122,14 @@ export function Departments() {
 
 
 function Th({ children, right }: { children: ReactNode; right?: boolean }) {
-  return <th style={{ textAlign: right ? 'right' : 'left', fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '11px 16px', borderBottom: '1px solid #EBEBEB', background: 'var(--surface-2)' }}>{children}</th>;
+  return <th style={{ textAlign: right ? 'right' : 'left', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '11px 16px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)' }}>{children}</th>;
 }
 function Td({ children, muted, right, mono }: { children: ReactNode; muted?: boolean; right?: boolean; mono?: boolean }) {
-  return <td style={{ padding: '12px 16px', borderBottom: '1px solid #F0F0F2', color: muted ? '#717171' : '#222222', textAlign: right ? 'right' : 'left', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
+  return <td style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)', color: muted ? 'var(--ink-3)' : 'var(--ink)', textAlign: right ? 'right' : 'left', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>{children}</td>;
 }
 
 const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 14 };
-const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const emptyTag: CSSProperties = { marginLeft: 10, fontSize: 11.5, fontWeight: 500, color: '#717171', background: '#F4F4F5', borderRadius: 99, padding: '3px 9px' };
-const linkBtn: CSSProperties = { marginLeft: 8, background: 'none', border: 'none', padding: 0, color: '#C24141', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' };
-const note: CSSProperties = { fontSize: 12.5, color: '#3A5A6B', background: '#F1F8FC', border: '1px solid #E0EEF6', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.55 };
+const ghostBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const emptyTag: CSSProperties = { marginLeft: 10, fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)', background: 'var(--surface-2)', borderRadius: 99, padding: '3px 9px' };
+const linkBtn: CSSProperties = { marginLeft: 8, background: 'none', border: 'none', padding: 0, color: 'var(--bad)', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' };
+const note: CSSProperties = { fontSize: 12.5, color: '#3A5A6B', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, lineHeight: 1.55 };

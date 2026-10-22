@@ -475,10 +475,10 @@ export function OrgChart() {
     <div style={fullBleed}>
       <div style={headerBar}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 17, fontWeight: 600, color: '#222222' }}>
+          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>
             {user?.company ?? 'Organisation'} chart
           </div>
-          <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 2 }}>
             {loaded
               ? `${emps.length} people · ${managers} managers · ${teams} departments`
               : 'Loading the roster…'}
@@ -486,7 +486,7 @@ export function OrgChart() {
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={searchWrap}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9197A2" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
               <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
             </svg>
             <input
@@ -504,7 +504,7 @@ export function OrgChart() {
 
       <div ref={viewport} onMouseDown={onMouseDown} style={canvas}>
         {loaded && roots.length === 0 ? (
-          <div style={{ padding: '60px 24px', textAlign: 'center', color: '#9197A2', fontSize: 13.5 }}>
+          <div style={{ padding: '60px 24px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13.5 }}>
             Nobody on the roster yet.
           </div>
         ) : (
@@ -518,7 +518,7 @@ export function OrgChart() {
           >
             <svg width={chart.width} height={chart.height} style={{ position: 'absolute', inset: 0, overflow: 'visible' }} aria-hidden>
               {chart.lines.map((l, i) => (
-                <path key={i} d={l.d} fill="none" stroke={l.strong ? '#BFC8D4' : '#D3D9E2'} strokeWidth={l.strong ? 2 : 1.6} strokeLinecap="round" />
+                <path key={i} d={l.d} fill="none" stroke={l.strong ? 'var(--ink-4)' : 'var(--ink-4)'} strokeWidth={l.strong ? 2 : 1.6} strokeLinecap="round" />
               ))}
             </svg>
             {chart.boxes.map((b) => {
@@ -550,9 +550,9 @@ export function OrgChart() {
             </button>
             {trail.map((n, i) => (
               <span key={n.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ color: '#B5BAC4' }}>›</span>
+                <span style={{ color: 'var(--ink-4)' }}>›</span>
                 {i === trail.length - 1
-                  ? <span style={{ ...trailBtn, color: '#222222', cursor: 'default' }}>{n.name}</span>
+                  ? <span style={{ ...trailBtn, color: 'var(--ink)', cursor: 'default' }}>{n.name}</span>
                   : <button type="button" style={trailBtn} onClick={() => focusOn(n.id)}>{n.name}</button>}
               </span>
             ))}
@@ -692,86 +692,86 @@ const fullBleed: CSSProperties = {
 };
 const headerBar: CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 16, padding: '16px 34px',
-  borderBottom: '1px solid #EBEBEB', flexShrink: 0,
+  borderBottom: '1px solid var(--line)', flexShrink: 0,
   // Solid: this bar carries text, and a company backdrop can be dark.
-  background: '#F7F7F9',
+  background: 'var(--surface-2)',
 };
 const canvas: CSSProperties = {
   flex: 1, position: 'relative', overflow: 'hidden', userSelect: 'none', cursor: 'grab',
 };
 const searchWrap: CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 8, background: '#fff',
-  border: '1px solid #E4E4E8', borderRadius: 10, padding: '0 10px', height: 36, width: 260,
+  display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)',
+  border: '1px solid var(--line-2)', borderRadius: 10, padding: '0 10px', height: 36, width: 260,
 };
 const searchInput: CSSProperties = {
   flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent',
-  fontSize: 12.5, color: '#222222', fontFamily: 'inherit',
+  fontSize: 12.5, color: 'var(--ink)', fontFamily: 'inherit',
 };
 const matchCount: CSSProperties = {
-  fontSize: 11.5, fontWeight: 600, color: '#0571A6', background: '#E7F2F7', borderRadius: 'var(--r-lg)', padding: '1px 7px',
+  fontSize: 11.5, fontWeight: 600, color: 'var(--accent-ink)', background: 'var(--accent-soft)', borderRadius: 'var(--r-lg)', padding: '1px 7px',
 };
 const ghostBtn: CSSProperties = {
-  height: 36, padding: '0 12px', borderRadius: 999, border: '1px solid #E4E4E8', background: '#fff',
-  color: '#4B5563', fontSize: 12.5, fontWeight: 400, cursor: 'pointer', fontFamily: 'inherit',
+  height: 36, padding: '0 12px', borderRadius: 999, border: '1px solid var(--line-2)', background: 'var(--surface)',
+  color: 'var(--ink-2)', fontSize: 12.5, fontWeight: 400, cursor: 'pointer', fontFamily: 'inherit',
 };
 const zoomBar: CSSProperties = {
-  position: 'absolute', right: 20, bottom: 20, display: 'flex', alignItems: 'center', background: '#fff',
-  border: '1px solid #E4E4E8', borderRadius: 12, boxShadow: 'var(--shadow)', overflow: 'hidden',
+  position: 'absolute', right: 20, bottom: 20, display: 'flex', alignItems: 'center', background: 'var(--surface)',
+  border: '1px solid var(--line-2)', borderRadius: 12, boxShadow: 'var(--shadow)', overflow: 'hidden',
 };
 const zoomBtn: CSSProperties = {
-  width: 38, height: 36, border: 0, background: 'transparent', cursor: 'pointer', fontSize: 16, color: '#222222', fontFamily: 'inherit',
+  width: 38, height: 36, border: 0, background: 'transparent', cursor: 'pointer', fontSize: 16, color: 'var(--ink)', fontFamily: 'inherit',
 };
 const zoomLabel: CSSProperties = {
-  height: 36, minWidth: 56, border: 0, borderLeft: '1px solid #EEEEF1', borderRight: '1px solid #EEEEF1',
-  background: 'transparent', cursor: 'pointer', fontSize: 12, fontWeight: 500, color: '#4B5563', fontFamily: 'inherit',
+  height: 36, minWidth: 56, border: 0, borderLeft: '1px solid var(--line)', borderRight: '1px solid var(--line)',
+  background: 'transparent', cursor: 'pointer', fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', fontFamily: 'inherit',
 };
 const hint: CSSProperties = {
-  position: 'absolute', left: 20, bottom: 20, fontSize: 11.5, color: '#717171', fontWeight: 400, pointerEvents: 'none',
-  background: '#fff', border: '1px solid #E4E4E8', borderRadius: 10, padding: '6px 10px',
+  position: 'absolute', left: 20, bottom: 20, fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, pointerEvents: 'none',
+  background: 'var(--surface)', border: '1px solid var(--line-2)', borderRadius: 10, padding: '6px 10px',
 };
 
 const headCard: CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 12, boxSizing: 'border-box', padding: '12px 14px',
-  borderRadius: 16, background: '#fff', border: '1px solid #E6E8EC',
+  borderRadius: 16, background: 'var(--surface)', border: '1px solid var(--line)',
   boxShadow: 'var(--shadow)', cursor: 'pointer', transition: 'opacity .15s, box-shadow .15s',
 };
 const rootCard: CSSProperties = {
-  border: '2px solid #0571A6', boxShadow: '0 8px 22px rgba(5,113,166,.16)', padding: '14px 16px',
+  border: '2px solid var(--accent)', boxShadow: '0 8px 22px rgba(0,136,255,.16)', padding: '14px 16px',
 };
 const rowCard: CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 10, boxSizing: 'border-box', padding: '10px 12px',
-  borderRadius: 999, background: '#fff', border: '1px solid #E9EBEF', cursor: 'pointer',
+  borderRadius: 999, background: 'var(--surface)', border: '1px solid var(--line-2)', cursor: 'pointer',
   transition: 'opacity .15s, box-shadow .15s',
 };
-const highlightCard: CSSProperties = { boxShadow: '0 0 0 3px #0571A6, 0 8px 22px rgba(5,113,166,.2)' };
+const highlightCard: CSSProperties = { boxShadow: '0 0 0 3px var(--accent), 0 8px 22px rgba(0,136,255,.2)' };
 const nameStyle: CSSProperties = {
-  fontSize: 14, fontWeight: 500, color: '#222222', lineHeight: 1.25,
+  fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.25,
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 };
 const titleStyle: CSSProperties = {
-  fontSize: 12.5, color: '#717171', marginTop: 3, lineHeight: 1.3,
+  fontSize: 12.5, color: 'var(--ink-3)', marginTop: 3, lineHeight: 1.3,
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 };
 const countBtn: CSSProperties = {
   flexShrink: 0, display: 'inline-flex', alignItems: 'center', fontSize: 11.5, fontWeight: 600,
-  fontFamily: 'inherit', color: '#717171', background: '#F0F0F2', border: '1px solid #E4E4E8',
+  fontFamily: 'inherit', color: 'var(--ink-3)', background: 'var(--surface-2)', border: '1px solid var(--line-2)',
   borderRadius: 'var(--r-lg)', padding: '3px 9px', cursor: 'pointer',
 };
-const countBtnClosed: CSSProperties = { color: '#0571A6', background: '#E7F2F7', border: '1px solid #CFE3EE' };
+const countBtnClosed: CSSProperties = { color: 'var(--accent-ink)', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)' };
 const focusBtn: CSSProperties = {
   flexShrink: 0, width: 34, height: 34, borderRadius: 999, display: 'inline-flex', alignItems: 'center',
-  justifyContent: 'center', color: '#4B5563', background: '#F0F0F2', border: '1px solid #E4E4E8', cursor: 'pointer',
+  justifyContent: 'center', color: 'var(--ink-2)', background: 'var(--surface-2)', border: '1px solid var(--line-2)', cursor: 'pointer',
   marginRight: 6,
 };
 const focusBtnActive: CSSProperties = {
-  color: '#fff', background: '#0571A6', border: '1px solid #0571A6', boxShadow: '0 0 0 4px rgba(5,113,166,.18)',
+  color: '#fff', background: 'var(--accent-grad)', border: '1px solid var(--accent)', boxShadow: '0 0 0 4px rgba(0,136,255,.18)',
 };
 const trailBar: CSSProperties = {
   position: 'absolute', left: 20, top: 16, display: 'flex', alignItems: 'center', gap: 6,
-  background: '#fff', border: '1px solid #E4E4E8', borderRadius: 12, padding: '6px 10px',
+  background: 'var(--surface)', border: '1px solid var(--line-2)', borderRadius: 12, padding: '6px 10px',
   boxShadow: 'var(--shadow)', fontSize: 12.5, fontWeight: 400,
 };
 const trailBtn: CSSProperties = {
-  border: 0, background: 'transparent', color: '#0571A6', fontSize: 12.5, fontWeight: 500,
+  border: 0, background: 'transparent', color: 'var(--accent-ink)', fontSize: 12.5, fontWeight: 500,
   cursor: 'pointer', fontFamily: 'inherit', padding: '2px 4px',
 };

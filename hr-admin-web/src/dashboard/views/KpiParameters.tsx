@@ -154,7 +154,7 @@ export function KpiParameters() {
       </div>
 
       {error && (
-        <div style={{ ...warnTag, background: '#F7E4E4', borderColor: '#E8C9C9', color: '#A32B2B', marginBottom: 14 }}>
+        <div style={{ ...warnTag, background: 'var(--bad-bg)', borderColor: 'var(--bad-line)', color: 'var(--bad)', marginBottom: 14 }}>
           {error}
         </div>
       )}
@@ -179,15 +179,15 @@ export function KpiParameters() {
                   </Td>
                   <Td muted>{r.description || '—'}</Td>
                   <Td>
-                    <span style={{ fontWeight: 500, color: u.employees ? '#222222' : '#9197A2', fontVariantNumeric: 'tabular-nums' }}>
+                    <span style={{ fontWeight: 500, color: u.employees ? 'var(--ink)' : 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>
                       {u.employees}
                     </span>
-                    <span style={{ fontSize: 13, color: '#9197A2' }}>
+                    <span style={{ fontSize: 13, color: 'var(--ink-4)' }}>
                       {u.employees === 1 ? ' employee' : ' employees'}
                     </span>
                   </Td>
                   <Td muted>
-                    <span style={{ fontVariantNumeric: 'tabular-nums', color: u.templates ? '#484848' : '#9197A2' }}>
+                    <span style={{ fontVariantNumeric: 'tabular-nums', color: u.templates ? 'var(--ink-2)' : 'var(--ink-4)' }}>
                       {u.templates}
                     </span>
                   </Td>
@@ -196,13 +196,13 @@ export function KpiParameters() {
             })}
             {!loading && visible.length === 0 && (
               <tr>
-                <td colSpan={4} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 13.5 }}>
+                <td colSpan={4} style={{ padding: '26px 14px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>
                   {q ? 'No parameters match your search.' : 'No parameters yet. Add one to start building templates.'}
                 </td>
               </tr>
             )}
             {loading && (
-              <tr><td colSpan={4} style={{ padding: '26px 14px', textAlign: 'center', color: '#717171', fontSize: 13.5 }}>Loading…</td></tr>
+              <tr><td colSpan={4} style={{ padding: '26px 14px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>Loading…</td></tr>
             )}
           </tbody>
         </table>
@@ -290,7 +290,7 @@ function ParameterDetail({
             <button
               onClick={remove}
               disabled={deleting}
-              style={{ ...ghostBtn, color: '#A32B2B', opacity: deleting ? 0.45 : 1 }}
+              style={{ ...ghostBtn, color: 'var(--bad)', opacity: deleting ? 0.45 : 1 }}
             >
               {deleting ? 'Deleting…' : 'Delete parameter'}
             </button>
@@ -313,7 +313,7 @@ function ParameterDetail({
           <div style={{ ...warnTag, marginBottom: 16 }}>
             <strong>Change scheduled for {periodLabel(param.pendingEdit.effectiveFrom)}.</strong> The
             wording below is what managers see until then.
-            <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid #ECD9B4' }}>
+            <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid var(--warn-line)' }}>
               <div style={{ fontSize: 12.5, fontWeight: 500, marginBottom: 2 }}>New guidance</div>
               <div style={{ fontSize: 13, lineHeight: 1.55 }}>{param.pendingEdit.description || '—'}</div>
             </div>
@@ -336,7 +336,7 @@ function ParameterDetail({
         </Field>
         <ReadRow label="Maximum score" value={String(MAX_SCORE)} />
 
-        <div style={{ display: 'flex', gap: 26, marginTop: 4, paddingTop: 14, borderTop: '1px solid #EBEBEB' }}>
+        <div style={{ display: 'flex', gap: 26, marginTop: 4, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
           
           <Stat
             label="Templates including it"
@@ -347,7 +347,7 @@ function ParameterDetail({
         </div>
 
         {showTemplates && templates.length > 0 && (
-          <div style={{ marginTop: 12, border: '1px solid #EBEBEB', borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ marginTop: 12, border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
               <thead>
                 <tr>
@@ -360,9 +360,9 @@ function ParameterDetail({
                 {templates.map((t) => (
                   <tr key={t.id}>
                     <Td>
-                      <span style={{ fontWeight: 500, color: '#0571A6' }}>{t.name}</span>
+                      <span style={{ fontWeight: 500, color: 'var(--accent-ink)' }}>{t.name}</span>
                       {t.description && (
-                        <div style={{ fontSize: 12.5, color: '#717171', marginTop: 2 }}>{t.description}</div>
+                        <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>{t.description}</div>
                       )}
                     </Td>
                     <Td right>
@@ -374,7 +374,7 @@ function ParameterDetail({
                     </Td>
                     <Td right muted>
                       <span style={{ fontVariantNumeric: 'tabular-nums' }}>{t.employeeCount}</span>
-                      <span style={{ fontSize: 13, color: '#9197A2' }}> employees</span>
+                      <span style={{ fontSize: 13, color: 'var(--ink-4)' }}> employees</span>
                     </Td>
                   </tr>
                 ))}
@@ -384,13 +384,13 @@ function ParameterDetail({
         )}
 
         {blocked && (
-          <div style={{ ...warnTag, background: '#F7E4E4', borderColor: '#E8C9C9', color: '#A32B2B', marginTop: 16 }}>
+          <div style={{ ...warnTag, background: 'var(--bad-bg)', borderColor: 'var(--bad-line)', color: 'var(--bad)', marginTop: 16 }}>
             {blocked}
           </div>
         )}
 
-        <div style={{ marginTop: 16, paddingTop: 13, borderTop: '1px solid #EBEBEB', fontSize: 12.5, color: '#9197A2', lineHeight: 1.5 }}>
-          Created by <strong style={{ color: '#717171' }}>{param.createdByName ?? 'Unknown'}</strong>
+        <div style={{ marginTop: 16, paddingTop: 13, borderTop: '1px solid var(--line)', fontSize: 12.5, color: 'var(--ink-4)', lineHeight: 1.5 }}>
+          Created by <strong style={{ color: 'var(--ink-3)' }}>{param.createdByName ?? 'Unknown'}</strong>
           {param.createdAt && ` on ${fmtCreated(param.createdAt)}`}
         </div>
       </div>
@@ -430,9 +430,9 @@ function fmtCreated(iso: string): string {
 function ReadRow({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 5, color: '#484848' }}>{label}</div>
-      <div style={{ fontSize: 14, color: '#222222', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{value}</div>
-      {hint && <div style={{ fontSize: 11.5, color: '#9197A2', marginTop: 5, lineHeight: 1.45 }}>{hint}</div>}
+      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 5, color: 'var(--ink-2)' }}>{label}</div>
+      <div style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{value}</div>
+      {hint && <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 5, lineHeight: 1.45 }}>{hint}</div>}
     </div>
   );
 }
@@ -448,11 +448,11 @@ function Stat({
 }) {
   const body = (
     <>
-      <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.5px', fontVariantNumeric: 'tabular-nums', color: onClick ? '#0571A6' : '#222222' }}>
+      <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.5px', fontVariantNumeric: 'tabular-nums', color: onClick ? 'var(--accent-ink)' : 'var(--ink)' }}>
         {value}
       </div>
-      <div style={{ fontSize: 12.5, color: '#717171', fontWeight: 400, marginTop: 2 }}>
-        {label}{onClick && <span style={{ color: '#0571A6' }}> {open ? '▴' : '▾'}</span>}
+      <div style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400, marginTop: 2 }}>
+        {label}{onClick && <span style={{ color: 'var(--accent-ink)' }}> {open ? '▴' : '▾'}</span>}
       </div>
     </>
   );
@@ -488,13 +488,13 @@ function AddParameterPage({
       width={820}
       actions={
         <>
-          <span style={{ fontSize: 12.5, color: '#A8475F' }}>* indicates mandatory fields</span>
+          <span style={{ fontSize: 12.5, color: 'var(--bad)' }}>* indicates mandatory fields</span>
           <button onClick={onSave} style={{ ...primaryBtn, marginLeft: 'auto' }}>Save</button>
         </>
       }
     >
       {error && (
-        <div style={{ ...warnTag, background: '#F7E4E4', borderColor: '#E8C9C9', color: '#A32B2B', marginBottom: 14 }}>
+        <div style={{ ...warnTag, background: 'var(--bad-bg)', borderColor: 'var(--bad-line)', color: 'var(--bad)', marginBottom: 14 }}>
           {error}
         </div>
       )}
@@ -520,7 +520,7 @@ function AddParameterPage({
           />
         </Field>
         <Field label="Maximum score">
-          <input value={MAX_SCORE} disabled style={{ ...inputStyle, maxWidth: 120, background: '#F7F7F9', color: '#717171' }} />
+          <input value={MAX_SCORE} disabled style={{ ...inputStyle, maxWidth: 120, background: 'var(--surface-2)', color: 'var(--ink-3)' }} />
         </Field>
 
         <div style={warnTag}>

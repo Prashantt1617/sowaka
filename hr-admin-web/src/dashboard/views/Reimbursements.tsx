@@ -54,8 +54,8 @@ export function Reimbursements() {
     <div style={{ animation: 'fade .3s ease both' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
         <SummaryCard label="Total claims" value={summary.count} />
-        <SummaryCard label="Awaiting review" value={summary.pending} color="#9A6B25" />
-        <SummaryCard label="Pending value" value={summary.pendingAmt} color="#9A6B25" />
+        <SummaryCard label="Awaiting review" value={summary.pending} color="var(--warn)" />
+        <SummaryCard label="Pending value" value={summary.pendingAmt} color="var(--warn)" />
         <SummaryCard label="Total submitted" value={summary.total} />
       </div>
 
@@ -85,14 +85,14 @@ export function Reimbursements() {
         <button
           onClick={exportRows}
           disabled={rows.length === 0}
-          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: '#222222', border: 'none', color: '#fff', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, cursor: rows.length ? 'pointer' : 'not-allowed', opacity: rows.length ? 1 : 0.5 }}
+          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--ink)', border: 'none', color: '#fff', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, cursor: rows.length ? 'pointer' : 'not-allowed', opacity: rows.length ? 1 : 0.5 }}
         >
           <IconDownload /> Export
         </button>
       </div>
 
       <Card>
-        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', fontSize: 11.5, fontWeight: 500, letterSpacing: '.5px', color: '#717171' }}>
+        <div style={{ display: 'grid', background: 'var(--surface-2)', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid var(--line)', fontSize: 11.5, fontWeight: 500, letterSpacing: '.5px', color: 'var(--ink-3)' }}>
           <div>EMPLOYEE</div>
           <div>TYPE</div>
           <div>AMOUNT</div>
@@ -110,39 +110,39 @@ export function Reimbursements() {
               key={r.id}
               className="dc-row"
               onClick={() => s.setRbDrawerId(r.id)}
-              style={{ position: 'relative', display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', alignItems: 'center', cursor: 'pointer', transition: 'background .12s' }}
+              style={{ position: 'relative', display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid var(--line)', alignItems: 'center', cursor: 'pointer', transition: 'background .12s' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
                 <Avatar name={r.name} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                  <div style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>{r.team}</div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>{r.team}</div>
                 </div>
               </div>
-              <div style={{ fontSize: 14, fontWeight: 400, color: '#484848' }}>{r.type}</div>
+              <div style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink-2)' }}>{r.type}</div>
               <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-.2px' }}>{r.amount}</div>
-              <div style={{ fontSize: 14, fontWeight: 400, color: '#484848' }}>{r.billDate}</div>
-              <div style={{ fontSize: 14, fontWeight: 400, color: '#484848' }}>{r.applyDate}</div>
-              <div style={{ fontSize: 13, fontWeight: 400, color: r.eRemark ? '#484848' : '#9197A2', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
-              <div style={{ fontSize: 14, fontWeight: 400, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.manager}</div>
+              <div style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink-2)' }}>{r.billDate}</div>
+              <div style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink-2)' }}>{r.applyDate}</div>
+              <div style={{ fontSize: 13, fontWeight: 400, color: r.eRemark ? 'var(--ink-2)' : 'var(--ink-4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
+              <div style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.manager}</div>
               <div>
                 <Pill label={r.byAdmin ? `${r.status} · by admin` : r.status} tone={STAT[r.status]} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 7 }} onClick={(e) => e.stopPropagation()}>
-                <button onClick={() => s.setRbBillId(r.id)} title="View bill" style={{ width: 33, height: 33, borderRadius: 999, border: '1px solid #EBEBEB', background: '#F7F7F9', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button onClick={() => s.setRbBillId(r.id)} title="View bill" style={{ width: 33, height: 33, borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface-2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <IconFile />
                 </button>
                 {pending ? (
                   <>
-                    <button onClick={() => s.rbAsk(r.id, 'decline')} title="Decline" style={{ width: 33, height: 33, borderRadius: 999, border: '1px solid #EBD9DE', background: '#FBF1F3', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <button onClick={() => s.rbAsk(r.id, 'decline')} title="Decline" style={{ width: 33, height: 33, borderRadius: 999, border: '1px solid var(--bad-line)', background: 'var(--bad-bg)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <IconX />
                     </button>
-                    <button onClick={() => s.rbAsk(r.id, 'approve')} title="Approve" style={{ width: 33, height: 33, borderRadius: 999, border: '1px solid #D7E2D2', background: '#EDF3E9', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <button onClick={() => s.rbAsk(r.id, 'approve')} title="Approve" style={{ width: 33, height: 33, borderRadius: 999, border: '1px solid var(--ok-line)', background: 'var(--ok-bg)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <IconCheck />
                     </button>
                   </>
                 ) : (
-                  <button onClick={() => s.setRbDrawerId(r.id)} title="View details" style={{ width: 33, height: 33, borderRadius: 999, border: '1px solid #EBEBEB', background: '#F7F7F9', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <button onClick={() => s.setRbDrawerId(r.id)} title="View details" style={{ width: 33, height: 33, borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface-2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <IconEye />
                   </button>
                 )}

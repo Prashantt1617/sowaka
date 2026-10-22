@@ -180,7 +180,7 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
     }
   };
 
-  if (data === undefined) return <Card><div style={{ padding: 40, textAlign: 'center', color: '#717171', fontWeight: 400 }}>Loading…</div></Card>;
+  if (data === undefined) return <Card><div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontWeight: 400 }}>Loading…</div></Card>;
 
   if (data === null) {
     return <AssignCard templates={templates} phByCode={phByCode} saving={saving} onSave={(code, ctc, values) => void patch({ salaryTemplateCode: code, annualCtcPaise: ctc, componentValues: values, status: 'active', effectiveFrom: today() }, 'Salary assigned')} />;
@@ -263,9 +263,9 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
               </GroupRows>
             ))}
             <tr>
-              <td style={{ ...td, fontWeight: 600, fontSize: 14, borderTop: '2px solid #EBEBEB' }}>Cost to Company</td>
-              <td style={{ ...num, fontWeight: 600, fontSize: 14, borderTop: '2px solid #EBEBEB' }}>₹{rupees(computed.employerCostMonthlyPaise)}</td>
-              <td style={{ ...num, fontWeight: 600, fontSize: 14, borderTop: '2px solid #EBEBEB' }}>₹{rupees(computed.employerCostMonthlyPaise * 12)}</td>
+              <td style={{ ...td, fontWeight: 600, fontSize: 14, borderTop: '2px solid var(--line)' }}>Cost to Company</td>
+              <td style={{ ...num, fontWeight: 600, fontSize: 14, borderTop: '2px solid var(--line)' }}>₹{rupees(computed.employerCostMonthlyPaise)}</td>
+              <td style={{ ...num, fontWeight: 600, fontSize: 14, borderTop: '2px solid var(--line)' }}>₹{rupees(computed.employerCostMonthlyPaise * 12)}</td>
             </tr>
           </tbody>
         </table>
@@ -279,7 +279,7 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
             <GroupRows label="Benefits" cols={3}>
               <tr>
                 <td style={td}><div style={{ fontWeight: 400 }}>EPF Contribution</div></td>
-                <td style={td}><span style={{ color: person.epf === false || settings?.epf.enabled === false ? '#9197A2' : '#222222' }}>{settings?.epf.enabled === false ? 'Off for the company' : person.epf === false ? 'Disabled for this person' : ''}</span></td>
+                <td style={td}><span style={{ color: person.epf === false || settings?.epf.enabled === false ? 'var(--ink-4)' : 'var(--ink)' }}>{settings?.epf.enabled === false ? 'Off for the company' : person.epf === false ? 'Disabled for this person' : ''}</span></td>
                 <td style={{ ...td, textAlign: 'right' }}>{settings?.epf.enabled !== false && <Switch on={person.epf !== false} disabled={saving} onToggle={() => void patch({ statutory: { ...person, epf: person.epf === false } }, person.epf === false ? 'EPF enabled' : 'EPF disabled')} />}</td>
               </tr>
               {settings?.epf.enabled !== false && person.epf !== false && (
@@ -352,13 +352,13 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
         <table style={table}>
           <thead><tr><th style={th}>Previous CTC</th><th style={th}>Revised CTC</th><th style={th}>Effective From</th></tr></thead>
           <tbody>
-            {revisions.length === 0 && <tr><td colSpan={3} style={{ ...td, color: '#9197A2' }}>No revisions yet.</td></tr>}
+            {revisions.length === 0 && <tr><td colSpan={3} style={{ ...td, color: 'var(--ink-4)' }}>No revisions yet.</td></tr>}
             {revisions.map((r, i) => {
               const change = r.previousCtcPaise > 0 ? ((r.annualCtcPaise - r.previousCtcPaise) / r.previousCtcPaise) * 100 : null;
               return (
                 <tr key={i}>
                   <td style={td}>{r.previousCtcPaise > 0 ? `₹${rupees(r.previousCtcPaise)}` : '-'}</td>
-                  <td style={td}>₹{rupees(r.annualCtcPaise)}{change !== null && <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 500, color: change >= 0 ? '#4F7A52' : '#C4382E' }}>{Math.abs(change).toFixed(2)}% {change >= 0 ? '▲' : '▼'}</span>}</td>
+                  <td style={td}>₹{rupees(r.annualCtcPaise)}{change !== null && <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 500, color: change >= 0 ? 'var(--ok)' : 'var(--bad)' }}>{Math.abs(change).toFixed(2)}% {change >= 0 ? '▲' : '▼'}</span>}</td>
                   <td style={td}>{dmy(r.effectiveFrom)}</td>
                 </tr>
               );
@@ -416,7 +416,7 @@ function PaidDaysCard({ userId, code, onChanged }: { userId: string; code?: stri
       <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={labelSm}>Paid Days Template</div>
-          <div style={{ fontSize: 13, color: '#484848', marginTop: 4 }}>{templates === null ? 'Loading…' : current ? paidDaysSummary(current) : 'Attendance calendar'}</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 4 }}>{templates === null ? 'Loading…' : current ? paidDaysSummary(current) : 'Attendance calendar'}</div>
         </div>
         <select
           value={current?.code ?? ''}
@@ -454,7 +454,7 @@ function AssignCard({ templates, phByCode, saving, onSave }: { templates: Salary
   return (
     <Card style={{ padding: '22px 24px' }}>
       <div style={{ fontSize: 15, fontWeight: 600 }}>No salary yet</div>
-      <div style={{ fontSize: 13, color: '#717171', marginTop: 4, marginBottom: 16 }}>Pick a salary template and the annual CTC. You can change any component for this person after that.</div>
+      <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 4, marginBottom: 16 }}>Pick a salary template and the annual CTC. You can change any component for this person after that.</div>
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div><div style={fieldLabel}>Salary Template</div>
           <select value={code} onChange={(e) => setCode(e.target.value)} style={{ ...input, width: 280 }}>
@@ -475,14 +475,14 @@ function AssignCard({ templates, phByCode, saving, onSave }: { templates: Salary
                 <label key={c} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
                   <span>{ph?.name ?? c}</span>
                   <span style={pairBox}>
-                    <span style={{ ...pairSuffix, borderLeft: 'none', borderRight: '1px solid #D9DCE1' }}>₹</span>
+                    <span style={{ ...pairSuffix, borderLeft: 'none', borderRight: '1px solid var(--line-2)' }}>₹</span>
                     <input type="number" min={0} value={values[c] ?? ''} placeholder={ph?.category === 'reimbursement' && ph.maxClaimablePaise ? String(ph.maxClaimablePaise / 100) : '0'} onChange={(e) => setValues({ ...values, [c]: e.target.value })} style={pairInput} />
                   </span>
                 </label>
               );
             })}
           </div>
-          <div style={{ fontSize: 12, color: '#9197A2', marginTop: 6 }}>Blank: ₹0 (a reimbursement uses its monthly limit). One-time items such as a bonus are entered on each payroll run.</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 6 }}>Blank: ₹0 (a reimbursement uses its monthly limit). One-time items such as a bonus are entered on each payroll run.</div>
         </div>
       )}
     </Card>
@@ -605,7 +605,7 @@ function SalaryRevision({ userId, name, structure, lastRevision, templates, payH
           <div style={{ fontSize: 17, fontWeight: 500 }}>Salary Revision for {name}</div>
           <button onClick={onClose} title="Close" style={closeCircle}><IconClose size={16} /></button>
         </div>
-        <div style={{ display: 'flex', gap: 60, padding: '14px 32px 18px', borderBottom: '1px solid #EBEBEB' }}>
+        <div style={{ display: 'flex', gap: 60, padding: '14px 32px 18px', borderBottom: '1px solid var(--line)' }}>
           <div><div style={labelSm}>Previous CTC</div><div style={{ fontWeight: 400 }}>₹{rupees(structure.annualCtcPaise)}</div></div>
           <div><div style={labelSm}>Previous Monthly Salary</div><div style={{ fontWeight: 400 }}>₹{rupees(Math.round(structure.annualCtcPaise / 12))}</div></div>
           <div><div style={labelSm}>Last Revision</div><div style={{ fontWeight: 400 }}>{lastRevision ? new Date(lastRevision).toLocaleString('en-IN', { month: 'long', year: 'numeric' }) : '—'}</div></div>
@@ -620,7 +620,7 @@ function SalaryRevision({ userId, name, structure, lastRevision, templates, payH
             </select>
           </div>
 
-          <div style={{ fontSize: 13.5, fontWeight: 400, marginBottom: 8 }}>Select the Salary Revision type <span style={{ color: '#C4382E' }}>*</span></div>
+          <div style={{ fontSize: 13.5, fontWeight: 400, marginBottom: 8 }}>Select the Salary Revision type <span style={{ color: 'var(--bad)' }}>*</span></div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, cursor: 'pointer' }}>
             <input type="radio" checked={form.mode === 'percent'} onChange={() => set('mode', 'percent')} /> Revise CTC by percentage
             <span style={pairBox}><input type="number" step="0.01" value={form.percent} onChange={(e) => setForm({ ...form, mode: 'percent', percent: e.target.value })} style={{ ...pairInput, width: 80 }} /><span style={pairSuffix}>%</span></span>
@@ -629,7 +629,7 @@ function SalaryRevision({ userId, name, structure, lastRevision, templates, payH
             <input type="radio" checked={form.mode === 'amount'} onChange={() => set('mode', 'amount')} /> Enter the new CTC amount below
           </label>
           <div style={{ display: 'grid', gridTemplateColumns: '260px auto', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 400 }}>Revised Annual CTC <span style={{ color: '#C4382E' }}>*</span></div>
+            <div style={{ fontSize: 13.5, fontWeight: 400 }}>Revised Annual CTC <span style={{ color: 'var(--bad)' }}>*</span></div>
             {form.mode === 'amount'
               ? <CtcInput value={form.ctcRupees} onChange={(v) => set('ctcRupees', v)} />
               : <div style={{ fontWeight: 400 }}>₹{rupees(revisedPaise)} <span style={unit}>per year</span></div>}
@@ -639,11 +639,11 @@ function SalaryRevision({ userId, name, structure, lastRevision, templates, payH
             <input type="date" value={form.effectiveFrom} onChange={(e) => set('effectiveFrom', e.target.value)} style={{ ...input, width: 200 }} />
           </div>
 
-          <div style={{ border: '1px solid #EBEBEB', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden' }}>
             <table style={table}>
               <thead><tr><th style={{ ...th, width: '30%' }}>Salary Components</th><th style={{ ...th, width: '36%' }}>Calculation Type</th><th style={{ ...th, textAlign: 'right' }}>Monthly Amount</th><th style={{ ...th, textAlign: 'right' }}>Annual Amount</th></tr></thead>
               <tbody>
-                {!template && <tr><td colSpan={4} style={{ ...td, textAlign: 'center', color: '#9197A2', padding: 28 }}>Pick a salary template to start from.</td></tr>}
+                {!template && <tr><td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--ink-4)', padding: 28 }}>Pick a salary template to start from.</td></tr>}
                 {GROUP_ORDER.filter((g) => buckets.get(g)?.length || unused.some((p) => groupOf(p) === g)).map((g) => (
                   <GroupRows key={g} label={GROUP_LABEL[g]} cols={4} big>
                     {(buckets.get(g) ?? []).map((c) => {
@@ -657,7 +657,7 @@ function SalaryRevision({ userId, name, structure, lastRevision, templates, payH
                             <div style={{ fontWeight: 400 }}>{ph?.name ?? c.payHeadCode}{c.source !== 'template' && <span style={{ ...tag, marginLeft: 8 }}>{c.source === 'added' ? 'Only this person' : 'Edited'}</span>}</div>
                             {isBalancing && <div style={sub}>Monthly CTC - Sum of all other components</div>}
                           </td>
-                          <td style={td}>{isBalancing ? <span style={{ color: '#484848' }}>Fixed amount</span> : (
+                          <td style={td}>{isBalancing ? <span style={{ color: 'var(--ink-2)' }}>Fixed amount</span> : (
                             <CalcEditor
                               calc={c.calculation} ph={ph} others={rows.filter((r) => r.payHeadCode !== c.payHeadCode)} phByCode={phByCode} onChange={(calc) => editCalc(c, calc)}
                               amount={ph?.recurrence === 'one_time' ? undefined : form.values[c.payHeadCode] ?? ''}
@@ -690,7 +690,7 @@ function SalaryRevision({ userId, name, structure, lastRevision, templates, payH
                   <GroupRows label="Benefits (employer share inside CTC)" cols={4} big>
                     <tr>
                       <td style={td}><div style={{ fontWeight: 400 }}>EPF - Employer Contribution</div><div style={sub}>{settings?.epf.employerRate === 'restricted' ? `Restricted to ₹${settings ? rupees(25_000_00) : ''}` : 'Actual PF Wage'}</div></td>
-                      <td style={td}><span style={{ color: '#484848' }}>12% of PF Wage</span></td>
+                      <td style={td}><span style={{ color: 'var(--ink-2)' }}>12% of PF Wage</span></td>
                       <td style={num}>{rupees(computed.statutory.epf.employerTotalPaise)}</td>
                       <td style={num}>{rupees(computed.statutory.epf.employerTotalPaise * 12)}</td>
                     </tr>
@@ -705,7 +705,7 @@ function SalaryRevision({ userId, name, structure, lastRevision, templates, payH
                         <span>₹{rupees((computed?.employerCostMonthlyPaise ?? 0) * 12)}</span>
                       </span>
                     </div>
-                    {computed?.overBudget && <div style={{ color: '#C4382E', fontSize: 12.5, marginTop: 8 }}>The other components already exceed the CTC; the balancing component is at zero.</div>}
+                    {computed?.overBudget && <div style={{ color: 'var(--bad)', fontSize: 12.5, marginTop: 8 }}>The other components already exceed the CTC; the balancing component is at zero.</div>}
                   </td>
                 </tr>
               </tbody>
@@ -746,7 +746,7 @@ function CalcEditor({ calc, ph, others, phByCode, onChange, amount, onAmount }: 
           {fixedBase ? (
             <span style={pairSuffix}>% of {fixedBase === 'ctc' ? 'CTC' : 'Basic'}</span>
           ) : (
-            <select value={calc.base ?? 'ctc'} onChange={(e) => onChange({ ...calc, base: e.target.value as PercentageBase })} style={{ ...pairSuffix, border: 'none', borderLeft: '1px solid #D9DCE1', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <select value={calc.base ?? 'ctc'} onChange={(e) => onChange({ ...calc, base: e.target.value as PercentageBase })} style={{ ...pairSuffix, border: 'none', borderLeft: '1px solid var(--line-2)', cursor: 'pointer', fontFamily: 'inherit' }}>
               <option value="ctc">% of CTC</option>
               <option value="basic">% of Basic</option>
               <option value="component">% of…</option>
@@ -762,16 +762,16 @@ function CalcEditor({ calc, ph, others, phByCode, onChange, amount, onAmount }: 
       )}
       {calc.mode === 'flat_per_month' && (
         <span style={pairBox}>
-          <span style={{ ...pairSuffix, borderLeft: 'none', borderRight: '1px solid #D9DCE1' }}>₹</span>
+          <span style={{ ...pairSuffix, borderLeft: 'none', borderRight: '1px solid var(--line-2)' }}>₹</span>
           <input type="number" value={(calc.amountPaise ?? 0) / 100} onChange={(e) => onChange({ mode: 'flat_per_month', amountPaise: rupeesToPaise(e.target.value || '0') })} style={pairInput} />
           <span style={pairSuffix}>/ month</span>
         </span>
       )}
       {calc.mode === 'flat_amount' && (amount === undefined || !onAmount ? (
-        <span style={{ color: '#717171' }}>{ph?.recurrence === 'one_time' ? 'Entered on each payroll run' : 'Fixed amount'}</span>
+        <span style={{ color: 'var(--ink-3)' }}>{ph?.recurrence === 'one_time' ? 'Entered on each payroll run' : 'Fixed amount'}</span>
       ) : (
         <span style={pairBox} title="This person's monthly amount">
-          <span style={{ ...pairSuffix, borderLeft: 'none', borderRight: '1px solid #D9DCE1' }}>₹</span>
+          <span style={{ ...pairSuffix, borderLeft: 'none', borderRight: '1px solid var(--line-2)' }}>₹</span>
           <input type="number" min={0} value={amount} placeholder={ph?.category === 'reimbursement' && ph.maxClaimablePaise ? String(ph.maxClaimablePaise / 100) : '0'} onChange={(e) => onAmount(e.target.value)} style={pairInput} />
           <span style={pairSuffix}>/ month</span>
         </span>
@@ -788,7 +788,7 @@ function CalcEditor({ calc, ph, others, phByCode, onChange, amount, onAmount }: 
 function Switch({ on, disabled, onToggle }: { on: boolean; disabled: boolean; onToggle: () => void }) {
   return (
     <span>
-      <span style={{ color: on ? '#4F7A52' : '#C4382E', fontWeight: 500 }}>{on ? '✓ Enabled' : '✕ Disabled'}</span>{' '}
+      <span style={{ color: on ? 'var(--ok)' : 'var(--bad)', fontWeight: 500 }}>{on ? '✓ Enabled' : '✕ Disabled'}</span>{' '}
       <button disabled={disabled} onClick={onToggle} style={linkBtn}>({on ? 'Disable' : 'Enable'})</button>
     </span>
   );
@@ -796,7 +796,7 @@ function Switch({ on, disabled, onToggle }: { on: boolean; disabled: boolean; on
 function CtcInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <span style={{ ...pairBox, borderRadius: 9 }}>
-      <span style={{ ...pairSuffix, borderLeft: 'none', borderRight: '1px solid #D9DCE1' }}>₹</span>
+      <span style={{ ...pairSuffix, borderLeft: 'none', borderRight: '1px solid var(--line-2)' }}>₹</span>
       <input type="number" value={value} onChange={(e) => onChange(e.target.value)} style={{ ...pairInput, width: 170, padding: '10px 12px' }} />
       <span style={{ ...pairSuffix, background: 'none', borderLeft: 'none' }}>per year</span>
     </span>
@@ -805,32 +805,32 @@ function CtcInput({ value, onChange }: { value: string; onChange: (v: string) =>
 function GroupRows({ label, cols, big, children }: { label: string; cols: number; big?: boolean; children: ReactNode }) {
   return (
     <>
-      <tr><td colSpan={cols} style={{ padding: big ? '16px 20px 6px' : '14px 22px 4px', fontSize: big ? 17 : 14.5, fontWeight: big ? 600 : 800, color: '#222222' }}>{label}</td></tr>
+      <tr><td colSpan={cols} style={{ padding: big ? '16px 20px 6px' : '14px 22px 4px', fontSize: big ? 17 : 14.5, fontWeight: big ? 600 : 800, color: 'var(--ink)' }}>{label}</td></tr>
       {children}
     </>
   );
 }
 
-const labelSm: CSSProperties = { fontSize: 12, color: '#717171', marginBottom: 3 };
-const valueLg: CSSProperties = { fontSize: 16, fontWeight: 500, color: '#222222', fontVariantNumeric: 'tabular-nums' };
-const unit: CSSProperties = { fontSize: 12.5, fontWeight: 400, color: '#717171' };
+const labelSm: CSSProperties = { fontSize: 12, color: 'var(--ink-3)', marginBottom: 3 };
+const valueLg: CSSProperties = { fontSize: 16, fontWeight: 500, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' };
+const unit: CSSProperties = { fontSize: 12.5, fontWeight: 400, color: 'var(--ink-3)' };
 const table: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13.5 };
-const th: CSSProperties = { textAlign: 'left', fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '11px 22px', borderBottom: '1px solid #EBEBEB', background: '#FBFBFC' };
-const td: CSSProperties = { padding: '12px 22px', borderBottom: '1px solid #F4F4F6', color: '#222222', verticalAlign: 'middle' };
+const th: CSSProperties = { textAlign: 'left', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '11px 22px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)' };
+const td: CSSProperties = { padding: '12px 22px', borderBottom: '1px solid var(--line)', color: 'var(--ink)', verticalAlign: 'middle' };
 const num: CSSProperties = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
-const sub: CSSProperties = { fontSize: 12, color: '#717171', marginTop: 2 };
-const tag: CSSProperties = { fontSize: 11.5, fontWeight: 500, color: '#0571A6', background: '#E7F2F7', borderRadius: 6, padding: '2px 7px', verticalAlign: 'middle' };
-const fieldLabel: CSSProperties = { fontSize: 13, fontWeight: 500, marginBottom: 6, color: '#484848' };
-const input: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', background: '#fff', color: '#222222' };
-const miniSelect: CSSProperties = { padding: '6px 8px', border: '1px solid #EBEBEB', borderRadius: 999, fontSize: 13, fontFamily: 'inherit', background: '#fff', color: '#222222', cursor: 'pointer' };
-const pairBox: CSSProperties = { display: 'inline-flex', alignItems: 'stretch', border: '1px solid #D9DCE1', borderRadius: 7, overflow: 'hidden', background: '#fff' };
-const pairInput: CSSProperties = { border: 'none', outline: 'none', padding: '8px 10px', fontSize: 13.5, width: 96, color: '#222222', fontFamily: 'inherit' };
-const pairSuffix: CSSProperties = { display: 'flex', alignItems: 'center', padding: '0 12px', fontSize: 13, color: '#484848', background: '#F7F7F9', borderLeft: '1px solid #D9DCE1', whiteSpace: 'nowrap' };
-const ctcBand: CSSProperties = { display: 'flex', alignItems: 'center', background: '#EAF2FB', borderRadius: 8, padding: '16px 22px', fontSize: 16.5, fontWeight: 400, color: '#222222', fontVariantNumeric: 'tabular-nums' };
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
-const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
-const linkBtn: CSSProperties = { background: 'none', border: 'none', color: '#0571A6', fontWeight: 500, fontSize: 13, cursor: 'pointer', padding: 0, fontFamily: 'inherit' };
+const sub: CSSProperties = { fontSize: 12, color: 'var(--ink-3)', marginTop: 2 };
+const tag: CSSProperties = { fontSize: 11.5, fontWeight: 500, color: 'var(--accent-ink)', background: 'var(--accent-soft)', borderRadius: 6, padding: '2px 7px', verticalAlign: 'middle' };
+const fieldLabel: CSSProperties = { fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--ink-2)' };
+const input: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line-2)', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
+const miniSelect: CSSProperties = { padding: '6px 8px', border: '1px solid var(--line)', borderRadius: 999, fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer' };
+const pairBox: CSSProperties = { display: 'inline-flex', alignItems: 'stretch', border: '1px solid var(--line-2)', borderRadius: 7, overflow: 'hidden', background: 'var(--surface)' };
+const pairInput: CSSProperties = { border: 'none', outline: 'none', padding: '8px 10px', fontSize: 13.5, width: 96, color: 'var(--ink)', fontFamily: 'inherit' };
+const pairSuffix: CSSProperties = { display: 'flex', alignItems: 'center', padding: '0 12px', fontSize: 13, color: 'var(--ink-2)', background: 'var(--surface-2)', borderLeft: '1px solid var(--line-2)', whiteSpace: 'nowrap' };
+const ctcBand: CSSProperties = { display: 'flex', alignItems: 'center', background: 'var(--accent-soft)', borderRadius: 8, padding: '16px 22px', fontSize: 16.5, fontWeight: 400, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' };
+const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const linkBtn: CSSProperties = { background: 'none', border: 'none', color: 'var(--accent-ink)', fontWeight: 500, fontSize: 13, cursor: 'pointer', padding: 0, fontFamily: 'inherit' };
 const iconBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.65 };
-const closeCircle: CSSProperties = { width: 36, height: 36, borderRadius: '50%', border: 'none', background: '#F1F2F5', color: '#484848', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
+const closeCircle: CSSProperties = { width: 36, height: 36, borderRadius: '50%', border: 'none', background: 'var(--surface-2)', color: 'var(--ink-2)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
 // The revision is its own page over the whole dashboard.
-const page: CSSProperties = { position: 'fixed', inset: 0, zIndex: 90, background: '#fff', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', fontFamily: 'inherit' };
+const page: CSSProperties = { position: 'fixed', inset: 0, zIndex: 90, background: 'var(--surface)', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', fontFamily: 'inherit' };

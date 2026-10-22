@@ -143,7 +143,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
       if (!el) return;
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       el.style.transition = 'box-shadow .3s'; el.style.borderRadius = '16px';
-      el.style.boxShadow = '0 0 0 3px #0571A6';
+      el.style.boxShadow = '0 0 0 3px var(--accent)';
       window.setTimeout(() => { el.style.boxShadow = 'none'; }, 2600);
     }, 200);
     return () => window.clearInterval(timer);
@@ -183,7 +183,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <button onClick={onBack} style={backBtn}>{backLabel}</button>
         {user?.dashboardAdmin === true && user.id !== emp.id && (
-          <button type="button" onClick={() => setDeleting(true)} style={{ background: '#fff', color: '#C4382E', border: '1px solid #F0C9C4', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Delete employee</button>
+          <button type="button" onClick={() => setDeleting(true)} style={{ background: 'var(--surface)', color: 'var(--bad)', border: '1px solid var(--bad-line)', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Delete employee</button>
         )}
       </div>
       {deleting && <DeleteEmployee emp={emp} onClose={() => setDeleting(false)} onDeleted={() => { setDeleting(false); void s.reload(); onBack(); }} />}
@@ -196,14 +196,14 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.6px' }}>{emp.name}</div>
               <Pill label={emp.empType} tone={ETYPE[emp.empType]} />
-              {emp.isDirector && <Pill label="Director" tone={{ bg: '#F4E9F1', fg: '#8A4A78' }} />}
+              {emp.isDirector && <Pill label="Director" tone={{ bg: 'var(--t-lilac)', fg: '#8A4A78' }} />}
             </div>
-            <div style={{ fontSize: 14, color: '#717171', fontWeight: 400, marginTop: 4 }}>
+            <div style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 400, marginTop: 4 }}>
               {emp.role} · {emp.team} · {emp.employeeId}
             </div>
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', borderTop: '1px solid #F0F0F2' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', borderTop: '1px solid var(--line)' }}>
           <Fact label="Work email" value={d.workEmail} />
           <Fact label="Employee ID" value={emp.employeeId} />
           <Fact label="Work location" value={d.workLocation} />
@@ -260,16 +260,16 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
                     href={doc.url}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#FBFBFC', border: '1px solid #EBEBEB', borderRadius: 12, padding: '11px 13px', textDecoration: 'none', color: 'inherit', pointerEvents: doc.url ? 'auto' : 'none' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 11, background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 12, padding: '11px 13px', textDecoration: 'none', color: 'inherit', pointerEvents: doc.url ? 'auto' : 'none' }}
                   >
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EFE7F2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <IconFile size={16} stroke="#7E5FB0" />
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--t-lilac)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <IconFile size={16} stroke="var(--t-lilac-i)" />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 500, color: '#222222' }}>{doc.type}</div>
-                      <div style={{ fontSize: 12.5, color: '#717171', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}{doc.uploadedOn ? ` · ${doc.uploadedOn}` : ''}</div>
+                      <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{doc.type}</div>
+                      <div style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}{doc.uploadedOn ? ` · ${doc.uploadedOn}` : ''}</div>
                     </div>
-                    <span style={{ fontSize: 12.5, fontWeight: 500, color: '#0571A6' }}>Open</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--accent-ink)' }}>Open</span>
                   </a>
                 ))}
               </div>
@@ -292,9 +292,9 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
                   <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-1px' }}>
                     {review.overall > 0 ? review.overall.toFixed(1) : '—'}
                   </div>
-                  <div style={{ fontSize: 13, color: '#9197A2', fontWeight: 500 }}>/ 5.0</div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-4)', fontWeight: 500 }}>/ 5.0</div>
                   {review.overall > 0 && (
-                    <Pill label={ratingWord(review.overall)} tone={{ bg: '#E4EDE0', fg: '#4F7A52' }} fontSize={11.5} />
+                    <Pill label={ratingWord(review.overall)} tone={{ bg: 'var(--ok-bg)', fg: 'var(--ok)' }} fontSize={11.5} />
                   )}
                 </div>
                 <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -303,7 +303,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
                   <MiniRow label="Last updated" value={review.date || '—'} />
                 </div>
                 {review.params.length > 0 && (
-                  <div style={{ marginTop: 16, borderTop: '1px solid #F0F0F2', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 11 }}>
+                  <div style={{ marginTop: 16, borderTop: '1px solid var(--line)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 11 }}>
                     {review.params.map((p, i) => (
                       <div key={`${p.name}-${i}`}>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
@@ -313,20 +313,20 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
                           </span>
                         </div>
                         {p.note && (
-                          <div style={{ fontSize: 12.5, color: '#717171', lineHeight: 1.5, marginTop: 3 }}>{p.note}</div>
+                          <div style={{ fontSize: 12.5, color: 'var(--ink-3)', lineHeight: 1.5, marginTop: 3 }}>{p.note}</div>
                         )}
                       </div>
                     ))}
                   </div>
                 )}
                 {review.extra && (
-                  <div style={{ marginTop: 14, borderTop: '1px solid #F0F0F2', paddingTop: 12, fontSize: 12.5, color: '#484848', lineHeight: 1.6 }}>
+                  <div style={{ marginTop: 14, borderTop: '1px solid var(--line)', paddingTop: 12, fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.6 }}>
                     {review.extra}
                   </div>
                 )}
               </>
             ) : (
-              <div style={{ fontSize: 13, color: '#717171', lineHeight: 1.55 }}>
+              <div style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.55 }}>
                 No review submitted for {periodLabel(s.cycle.period)}
                 {review?.managerName && review.managerName !== '—' ? ` — ${review.managerName} has not started it yet.` : '.'}
               </div>
@@ -337,23 +337,23 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
               <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
                 {review.history.map((h) => (
                   <div key={h.period} style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-                    <span style={{ fontSize: 12.5, color: '#717171', fontWeight: 400, width: 76, flexShrink: 0 }}>
+                    <span style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400, width: 76, flexShrink: 0 }}>
                       {periodShort(h.period)}
                     </span>
-                    <span style={{ flex: 1, height: 7, borderRadius: 5, background: '#F0F0F2', overflow: 'hidden' }}>
-                      <span style={{ display: 'block', width: `${(h.overall / 5) * 100}%`, height: '100%', background: '#BFD8E8' }} />
+                    <span style={{ flex: 1, height: 7, borderRadius: 5, background: 'var(--surface-2)', overflow: 'hidden' }}>
+                      <span style={{ display: 'block', width: `${(h.overall / 5) * 100}%`, height: '100%', background: 'var(--accent-soft)' }} />
                     </span>
                     <span style={{ fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums', width: 30, textAlign: 'right' }}>
                       {h.overall.toFixed(1)}
                     </span>
                   </div>
                 ))}
-                <div style={{ fontSize: 12, color: '#9197A2', marginTop: 2, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 2, lineHeight: 1.5 }}>
                   Sent reviews only. A cycle with no bar is one nobody submitted.
                 </div>
               </div>
             ) : (
-              <div style={{ fontSize: 13, color: '#717171', lineHeight: 1.55 }}>
+              <div style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.55 }}>
                 No earlier reviews yet.
               </div>
             )}
@@ -397,12 +397,12 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                       <span style={{ width: 10, height: 10, borderRadius: 3, background: TYPE[b.key], flexShrink: 0 }} />
                       <span style={{ fontSize: 13.5, fontWeight: 500 }}>{b.name}</span>
-                      <span style={{ marginLeft: 'auto', fontSize: 13.5, fontWeight: 600 }}>{available}<span style={{ color: '#9197A2', fontWeight: 400 }}> / {b.entitled}</span></span>
+                      <span style={{ marginLeft: 'auto', fontSize: 13.5, fontWeight: 600 }}>{available}<span style={{ color: 'var(--ink-4)', fontWeight: 400 }}> / {b.entitled}</span></span>
                     </div>
-                    <div style={{ height: 7, borderRadius: 5, background: '#F0F0F2', overflow: 'hidden' }}>
+                    <div style={{ height: 7, borderRadius: 5, background: 'var(--surface-2)', overflow: 'hidden' }}>
                       <div style={{ width: `${pct}%`, height: '100%', background: TYPE[b.key], opacity: .55 }} />
                     </div>
-                    <div style={{ fontSize: 12, color: '#9197A2', marginTop: 4 }}>{b.taken} taken · {available} available</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 4 }}>{b.taken} taken · {available} available</div>
                   </div>
                 );
               })}
@@ -419,7 +419,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
             <button
               type="button"
               onClick={() => { s.setOrgChartFocus(emp.id); s.setView('orgchart'); }}
-              style={{ background: '#0571A6', color: '#fff', border: 'none', borderRadius: 999, padding: '9px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
+              style={{ background: 'var(--accent-grad)', color: '#fff', border: 'none', borderRadius: 999, padding: '9px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
             >
               Open in org chart ↗
             </button>
@@ -427,9 +427,9 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
       {/* Reporting line — this person's slice of the org chart */}
       <div>
         <Card style={{ padding: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '15px 20px', borderBottom: '1px solid #F0F0F2' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '15px 20px', borderBottom: '1px solid var(--line)' }}>
             <div style={{ fontSize: 14, fontWeight: 600 }}>Org chart</div>
-            <div style={{ fontSize: 12.5, color: '#9197A2', fontWeight: 400 }}>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400 }}>
               Reporting line · {reports.length} direct report{reports.length === 1 ? '' : 's'}{peers > 0 ? ` · ${peers} peer${peers === 1 ? '' : 's'}` : ''}
             </div>
           </div>
@@ -456,7 +456,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
               </>
             )}
             {reports.length === 0 && (
-              <div style={{ fontSize: 12.5, color: '#9197A2', fontWeight: 400, marginTop: 14 }}>No direct reports</div>
+              <div style={{ fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400, marginTop: 14 }}>No direct reports</div>
             )}
           </div>
         </Card>
@@ -471,14 +471,14 @@ export type ProfileTab = 'profile' | 'performance' | 'calendar' | 'requests' | '
 
 // —— Calendar: one month, every day named ————————————————————————————————
 const CAL_TONE: Record<CalendarDayStatus, { bg: string; fg: string; label: string }> = {
-  present: { bg: '#E6F1E7', fg: '#4F7A52', label: 'Present' },
-  half_day: { bg: '#FBF1DD', fg: '#9A6B25', label: 'Half day' },
-  missed_punch: { bg: '#FBE9DE', fg: '#B25A1B', label: 'Missed punch' },
-  absent: { bg: '#F8E3E7', fg: '#A8475F', label: 'Absent' },
-  on_leave: { bg: '#E7F2F7', fg: '#0571A6', label: 'On leave' },
-  week_off: { bg: '#F1F1F4', fg: '#9197A2', label: 'Week off' },
-  holiday: { bg: '#EFE7F2', fg: '#7E5FB0', label: 'Holiday' },
-  upcoming: { bg: '#FFFFFF', fg: '#C7CBD3', label: 'Upcoming' },
+  present: { bg: 'var(--ok-bg)', fg: 'var(--ok)', label: 'Present' },
+  half_day: { bg: 'var(--warn-bg)', fg: 'var(--warn)', label: 'Half day' },
+  missed_punch: { bg: '#FBE9DE', fg: 'var(--warn)', label: 'Missed punch' },
+  absent: { bg: 'var(--bad-bg)', fg: 'var(--bad)', label: 'Absent' },
+  on_leave: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)', label: 'On leave' },
+  week_off: { bg: 'var(--surface-2)', fg: 'var(--ink-4)', label: 'Week off' },
+  holiday: { bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)', label: 'Holiday' },
+  upcoming: { bg: 'var(--surface)', fg: 'var(--ink-4)', label: 'Upcoming' },
 };
 const LEAVE_NAMES: Record<string, string> = { sick: 'Sick leave', casual: 'Casual leave', earned: 'Earned leave', comp_off: 'Comp off' };
 // The current month by Indian time: the month HR can still correct.
@@ -499,11 +499,11 @@ const clockOf = (iso: string | null) =>
 // the printable slip.
 
 const RUN_TONE: Record<PayrollRunDTO['status'], { bg: string; fg: string; label: string }> = {
-  draft: { bg: '#F7F7F9', fg: '#717171', label: 'Draft' },
-  pending_approval: { bg: '#E7ECF4', fg: '#4A6FA5', label: 'Pending approval' },
-  approved: { bg: '#E6F1E7', fg: '#4F7A52', label: 'Approved' },
-  rejected: { bg: '#F8E3E7', fg: '#A8475F', label: 'Rejected' },
-  paid: { bg: '#E7F2F7', fg: '#0571A6', label: 'Paid' },
+  draft: { bg: 'var(--surface-2)', fg: 'var(--ink-3)', label: 'Draft' },
+  pending_approval: { bg: 'var(--t-sky)', fg: 'var(--t-sky-i)', label: 'Pending approval' },
+  approved: { bg: 'var(--ok-bg)', fg: 'var(--ok)', label: 'Approved' },
+  rejected: { bg: 'var(--bad-bg)', fg: 'var(--bad)', label: 'Rejected' },
+  paid: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)', label: 'Paid' },
 };
 
 const periodTitle = (period: string) =>
@@ -524,10 +524,10 @@ function SalarySlips({ userId }: { userId: string }) {
   }, [userId]);
 
   const salaryCard = <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Payslips</div>;
-  if (error) return <div>{salaryCard}<Card><div style={{ padding: 28, color: '#A8475F', fontWeight: 400 }}>{error}</div></Card></div>;
-  if (!rows) return <div>{salaryCard}<Card><div style={{ padding: 40, textAlign: 'center', color: '#717171', fontWeight: 400 }}>Loading…</div></Card></div>;
+  if (error) return <div>{salaryCard}<Card><div style={{ padding: 28, color: 'var(--bad)', fontWeight: 400 }}>{error}</div></Card></div>;
+  if (!rows) return <div>{salaryCard}<Card><div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontWeight: 400 }}>Loading…</div></Card></div>;
   if (rows.length === 0) {
-    return <div>{salaryCard}<Card><div style={{ padding: 40, textAlign: 'center', color: '#717171', fontWeight: 400 }}>No salary slips yet — they appear here once a payroll run includes this person.</div></Card></div>;
+    return <div>{salaryCard}<Card><div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontWeight: 400 }}>No salary slips yet — they appear here once a payroll run includes this person.</div></Card></div>;
   }
   return (
     <div>
@@ -537,7 +537,7 @@ function SalarySlips({ userId }: { userId: string }) {
         <thead>
           <tr>
             {['Month', 'Status', 'Paid days', 'Loss of pay', 'Gross', 'Deductions', 'Net pay', ''].map((h, i) => (
-              <th key={h || i} style={{ textAlign: i >= 2 ? 'right' : 'left', fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '12px 18px', borderBottom: '1px solid #EBEBEB', background: '#FBFBFC' }}>{h}</th>
+              <th key={h || i} style={{ textAlign: i >= 2 ? 'right' : 'left', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '12px 18px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)' }}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -554,20 +554,20 @@ function SalarySlips({ userId }: { userId: string }) {
                 <td style={{ ...slipTd, textAlign: 'right' }}>{payslip.inputs.payableDays} / {payslip.inputs.workingDays}</td>
                 <td style={{ ...slipTd, textAlign: 'right' }}>
                   {payslip.inputs.lopDays > 0 && lines.length > 0 ? (
-                    <button type="button" onClick={() => setExplain(payslip)} title="Why is there a loss of pay?" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#A8475F', fontWeight: 500, fontSize: 14, fontFamily: 'inherit', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3 }}>
+                    <button type="button" onClick={() => setExplain(payslip)} title="Why is there a loss of pay?" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--bad)', fontWeight: 500, fontSize: 14, fontFamily: 'inherit', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3 }}>
                       {payslip.inputs.lopDays} {payslip.inputs.lopDays === 1 ? 'day' : 'days'}
                     </button>
                   ) : (
-                    <span style={{ color: payslip.inputs.lopDays ? '#A8475F' : '#9197A2', fontWeight: 500 }}>{payslip.inputs.lopDays} {payslip.inputs.lopDays === 1 ? 'day' : 'days'}</span>
+                    <span style={{ color: payslip.inputs.lopDays ? 'var(--bad)' : 'var(--ink-4)', fontWeight: 500 }}>{payslip.inputs.lopDays} {payslip.inputs.lopDays === 1 ? 'day' : 'days'}</span>
                   )}
                 </td>
                 <td style={{ ...slipTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{inrPaise(full)}</td>
-                <td style={{ ...slipTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#A8475F' }}>−{inrPaise(lopPaise + payslip.employeeDeductionsPaise)}</td>
+                <td style={{ ...slipTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--bad)' }}>−{inrPaise(lopPaise + payslip.employeeDeductionsPaise)}</td>
                 <td style={{ ...slipTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}><strong>{inrPaise(payslip.netPayablePaise)}</strong></td>
                 <td style={{ ...slipTd, textAlign: 'right' }}>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    <button type="button" onClick={() => void downloadPayslipPdf(payslip, company)} style={{ background: '#0571A6', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Download slip</button>
-                    {payslip.id && <button type="button" onClick={() => void downloadTdsSheetPdf(payslip.id!).catch((e) => alert(e instanceof Error ? e.message : String(e)))} style={{ background: '#fff', color: '#0571A6', border: '1px solid #0571A6', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>TDS sheet</button>}
+                    <button type="button" onClick={() => void downloadPayslipPdf(payslip, company)} style={{ background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Download slip</button>
+                    {payslip.id && <button type="button" onClick={() => void downloadTdsSheetPdf(payslip.id!).catch((e) => alert(e instanceof Error ? e.message : String(e)))} style={{ background: 'var(--surface)', color: 'var(--accent-ink)', border: '1px solid var(--accent)', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>TDS sheet</button>}
                   </div>
                 </td>
               </tr>
@@ -581,7 +581,7 @@ function SalarySlips({ userId }: { userId: string }) {
   );
 }
 
-const slipTd: CSSProperties = { padding: '13px 18px', borderBottom: '1px solid #F4F4F6', verticalAlign: 'middle' };
+const slipTd: CSSProperties = { padding: '13px 18px', borderBottom: '1px solid var(--line)', verticalAlign: 'middle' };
 
 /**
  * One person's month, day by day; HR clicks a day to mark it. Also opened from
@@ -646,16 +646,16 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} style={calNav}>‹</button>
-        <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} style={{ border: '1px solid #EBEBEB', borderRadius: 12, padding: '8px 12px', fontSize: 13.5, fontWeight: 500, fontFamily: 'inherit', background: '#fff', color: '#222222' }} />
+        <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '8px 12px', fontSize: 13.5, fontWeight: 500, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' }} />
         <button type="button" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= thisMonth()} style={{ ...calNav, opacity: month >= thisMonth() ? 0.4 : 1 }}>›</button>
-        {loading && <span style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>Loading…</span>}
+        {loading && <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>Loading…</span>}
         {cal && (
-          <div style={{ marginLeft: 'auto', fontSize: 13, color: '#717171', fontWeight: 400 }}>
+          <div style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
             {cal.shift} · {cal.window} · {cal.punchFormat}
           </div>
         )}
       </div>
-      {error && <div style={{ fontSize: 13, color: '#A8475F', fontWeight: 400, marginBottom: 12 }}>{error}</div>}
+      {error && <div style={{ fontSize: 13, color: 'var(--bad)', fontWeight: 400, marginBottom: 12 }}>{error}</div>}
 
       {cal && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -664,18 +664,18 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
               {CAL_TONE[k].label} <span style={{ opacity: .8 }}>{cal.totals[k]}</span>
             </span>
           ))}
-          <span style={{ alignSelf: 'center', fontSize: 12.5, color: '#9197A2', fontWeight: 400 }}>{worked} working days so far</span>
+          <span style={{ alignSelf: 'center', fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400 }}>{worked} working days so far</span>
         </div>
       )}
 
       <Card style={{ padding: 0 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid #F0F0F2' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--line)' }}>
           {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
-            <div key={d} style={{ padding: '10px 12px', fontSize: 11.5, fontWeight: 500, letterSpacing: '.5px', color: '#717171' }}>{d.toUpperCase()}</div>
+            <div key={d} style={{ padding: '10px 12px', fontSize: 11.5, fontWeight: 500, letterSpacing: '.5px', color: 'var(--ink-3)' }}>{d.toUpperCase()}</div>
           ))}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
-          {Array.from({ length: lead }, (_, i) => <div key={`lead-${i}`} style={{ minHeight: 84, borderBottom: '1px solid #F0F0F2', borderRight: '1px solid #F0F0F2', background: '#FAFAFB' }} />)}
+          {Array.from({ length: lead }, (_, i) => <div key={`lead-${i}`} style={{ minHeight: 84, borderBottom: '1px solid var(--line)', borderRight: '1px solid var(--line)', background: 'var(--surface-2)' }} />)}
           {(cal?.days ?? []).map((day) => {
             const tone = CAL_TONE[day.status];
             const detail = day.status === 'on_leave' ? (LEAVE_NAMES[day.label ?? ''] ?? (day.label ?? '').split('_').map((w) => w && w[0].toUpperCase() + w.slice(1)).join(' ') + ' leave')
@@ -689,13 +689,13 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
                 key={day.date}
                 title={`${day.date}${detail ? ` · ${detail}` : ''}${day.hr ? ` · marked by ${day.hr.setByName ?? 'HR'}, was ${prev?.label}` : ''}${editable ? ' · click to mark' : ''}`}
                 onClick={editable ? () => setEditing(day) : undefined}
-                style={{ minHeight: 84, padding: 10, borderBottom: '1px solid #F0F0F2', borderRight: '1px solid #F0F0F2', background: day.status === 'upcoming' ? '#fff' : tone.bg, display: 'flex', flexDirection: 'column', gap: 6, cursor: editable ? 'pointer' : 'default', boxShadow: ring ? 'inset 0 0 0 3px #C4382E' : day.hr ? 'inset 0 0 0 2px #0571A6' : undefined }}
+                style={{ minHeight: 84, padding: 10, borderBottom: '1px solid var(--line)', borderRight: '1px solid var(--line)', background: day.status === 'upcoming' ? 'var(--surface)' : tone.bg, display: 'flex', flexDirection: 'column', gap: 6, cursor: editable ? 'pointer' : 'default', boxShadow: ring ? 'inset 0 0 0 3px var(--bad)' : day.hr ? 'inset 0 0 0 2px var(--accent)' : undefined }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 600, color: day.status === 'upcoming' ? '#C7CBD3' : '#222222' }}>{Number(day.date.slice(8))}</span>
-                  {ring ? <span style={{ fontSize: 10.5, fontWeight: 600, color: '#fff', background: '#C4382E', borderRadius: 5, padding: '1px 5px' }}>{ring}</span>
-                    : day.hr ? <span style={{ fontSize: 10.5, fontWeight: 600, color: '#fff', background: '#0571A6', borderRadius: 5, padding: '1px 5px' }}>HR</span>
-                    : day.lateByMinutes > 0 && <span style={{ fontSize: 11, fontWeight: 500, color: '#7E5FB0' }}>late {day.lateByMinutes}m</span>}
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: day.status === 'upcoming' ? 'var(--ink-4)' : 'var(--ink)' }}>{Number(day.date.slice(8))}</span>
+                  {ring ? <span style={{ fontSize: 10.5, fontWeight: 600, color: '#fff', background: 'var(--bad)', borderRadius: 5, padding: '1px 5px' }}>{ring}</span>
+                    : day.hr ? <span style={{ fontSize: 10.5, fontWeight: 600, color: '#fff', background: 'var(--accent-grad)', borderRadius: 5, padding: '1px 5px' }}>HR</span>
+                    : day.lateByMinutes > 0 && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--t-lilac-i)' }}>late {day.lateByMinutes}m</span>}
                 </div>
                 {day.hr && prev && (
                   <div style={{ fontSize: 11.5, fontWeight: 500, color: prev.fg, textDecoration: 'line-through', opacity: .75 }}>{prev.label}</div>
@@ -707,7 +707,7 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
           })}
         </div>
       </Card>
-      {editable && <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 10 }}>{highlight ? 'Ringed days cost pay. ' : ''}Click any day to mark it. The mark replaces what the punches, leave or holidays say, on the dashboard, in payroll and in the employee's app.</div>}
+      {editable && <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 10 }}>{highlight ? 'Ringed days cost pay. ' : ''}Click any day to mark it. The mark replaces what the punches, leave or holidays say, on the dashboard, in payroll and in the employee's app.</div>}
       {editing && <MarkDay day={editing} saving={saving} onClose={() => setEditing(null)} onSave={(status, note) => void mark(editing, status, note)} />}
     </div>
   );
@@ -722,9 +722,9 @@ function MarkDay({ day, saving, onClose, onSave }: { day: CalendarDayDTO; saving
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)' }} />
-      <div style={{ position: 'relative', width: 'min(440px, 100%)', background: '#fff', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', padding: '20px 22px' }}>
+      <div style={{ position: 'relative', width: 'min(440px, 100%)', background: 'var(--surface)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', padding: '20px 22px' }}>
         <div style={{ fontSize: 16, fontWeight: 600 }}>{when}</div>
-        <div style={{ fontSize: 12.5, color: '#717171', marginTop: 4 }}>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 4 }}>
           Recorded as <strong style={{ color: recorded.fg }}>{recorded.label}</strong>
           {day.hr && <> · now <strong style={{ color: CAL_TONE[day.status].fg }}>{CAL_TONE[day.status].label}</strong>, marked by {day.hr.setByName ?? 'HR'}</>}
         </div>
@@ -741,17 +741,17 @@ function MarkDay({ day, saving, onClose, onSave }: { day: CalendarDayDTO; saving
           })}
         </div>
         <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder="Note (optional), e.g. client visit approved by email"
-          style={{ width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 13, fontFamily: 'inherit' }} />
+          style={{ width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 13, fontFamily: 'inherit' }} />
         <div style={{ display: 'flex', gap: 10, marginTop: 16, alignItems: 'center' }}>
-          {day.hr && <button type="button" disabled={saving} onClick={() => onSave(null, '')} style={{ background: 'none', border: 'none', color: '#A8475F', fontWeight: 500, fontSize: 13, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Remove mark</button>}
-          <button type="button" onClick={onClose} style={{ marginLeft: 'auto', background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-          <button type="button" disabled={saving} onClick={() => onSave(status, note)} style={{ background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : 'Save'}</button>
+          {day.hr && <button type="button" disabled={saving} onClick={() => onSave(null, '')} style={{ background: 'none', border: 'none', color: 'var(--bad)', fontWeight: 500, fontSize: 13, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Remove mark</button>}
+          <button type="button" onClick={onClose} style={{ marginLeft: 'auto', background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <button type="button" disabled={saving} onClick={() => onSave(status, note)} style={{ background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>
   );
 }
-const calNav: CSSProperties = { width: 36, height: 36, borderRadius: 999, border: '1px solid #EBEBEB', background: '#fff', fontSize: 16, fontWeight: 500, cursor: 'pointer', color: '#484848', fontFamily: 'inherit' };
+const calNav: CSSProperties = { width: 36, height: 36, borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface)', fontSize: 16, fontWeight: 500, cursor: 'pointer', color: 'var(--ink-2)', fontFamily: 'inherit' };
 
 // —— Requests: this person's, from the live queues ———————————————————————
 type Req = { id: string; kind: string; detail: string; when: string; status: ReqStatus; ord: number };
@@ -767,17 +767,17 @@ function RequestsForEmployee({ emp }: { emp: Emp }) {
   const pending = rows.filter((r) => r.status === 'Pending').length;
   return (
     <Card style={{ padding: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '15px 20px', borderBottom: '1px solid #F0F0F2' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '15px 20px', borderBottom: '1px solid var(--line)' }}>
         <div style={{ fontSize: 14, fontWeight: 600 }}>Requests</div>
-        <div style={{ fontSize: 12.5, color: '#9197A2', fontWeight: 400 }}>{rows.length} raised{pending ? ` · ${pending} pending` : ''}</div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400 }}>{rows.length} raised{pending ? ` · ${pending} pending` : ''}</div>
       </div>
       {rows.length === 0 ? (
-        <div style={{ padding: 28, textAlign: 'center', color: '#9197A2', fontSize: 13.5, fontWeight: 400 }}>No requests from this employee.</div>
+        <div style={{ padding: 28, textAlign: 'center', color: 'var(--ink-4)', fontSize: 13.5, fontWeight: 400 }}>No requests from this employee.</div>
       ) : rows.map((r) => (
-        <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1.3fr 1.2fr 1fr auto', gap: 12, alignItems: 'center', padding: '13px 20px', borderBottom: '1px solid #F0F0F2' }}>
+        <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1.3fr 1.2fr 1fr auto', gap: 12, alignItems: 'center', padding: '13px 20px', borderBottom: '1px solid var(--line)' }}>
           <div style={{ fontSize: 13.5, fontWeight: 500 }}>{r.kind}</div>
-          <div style={{ fontSize: 13, color: '#484848', fontWeight: 400 }}>{r.detail}</div>
-          <div style={{ fontSize: 12.5, color: '#717171' }}>{r.when}</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-2)', fontWeight: 400 }}>{r.detail}</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{r.when}</div>
           <Pill label={r.status} tone={STAT[r.status]} fontSize={11.5} />
         </div>
       ))}
@@ -787,7 +787,7 @@ function RequestsForEmployee({ emp }: { emp: Emp }) {
 
 // —— Org-chart pieces ————————————————————————————————————————————————————
 function Connector() {
-  return <div style={{ width: 2, height: 26, background: '#E4E4E8', margin: '2px 0' }} />;
+  return <div style={{ width: 2, height: 26, background: 'var(--line-2)', margin: '2px 0' }} />;
 }
 
 function OrgNode({ emp, caption, highlight, onOpen }: { emp: Emp; caption?: string; highlight?: boolean; onOpen?: (e: Emp) => void }) {
@@ -797,16 +797,16 @@ function OrgNode({ emp, caption, highlight, onOpen }: { emp: Emp; caption?: stri
       onClick={clickable ? () => onOpen!(emp) : undefined}
       style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6,
-        width: 172, padding: '14px 12px', borderRadius: 16, background: highlight ? '#E7F4FB' : '#fff',
-        border: `${highlight ? 2 : 1}px solid ${highlight ? '#0571A6' : '#EBEBEB'}`,
-        boxShadow: highlight ? '0 6px 18px rgba(5,113,166,.14)' : '0 3px 10px rgba(34,34,34,.06)',
+        width: 172, padding: '14px 12px', borderRadius: 16, background: highlight ? 'var(--accent-soft)' : 'var(--surface)',
+        border: `${highlight ? 2 : 1}px solid ${highlight ? 'var(--accent)' : 'var(--line)'}`,
+        boxShadow: highlight ? '0 6px 18px rgba(0,136,255,.14)' : '0 3px 10px rgba(34,34,34,.06)',
         cursor: clickable ? 'pointer' : 'default', font: 'inherit',
       }}
     >
-      {caption && <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: highlight ? '#0571A6' : '#B0B4BC' }}>{caption}</span>}
+      {caption && <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: highlight ? 'var(--accent-ink)' : 'var(--ink-4)' }}>{caption}</span>}
       <Avatar name={emp.name} size={44} font={15} />
-      <div style={{ fontSize: 13, fontWeight: 500, color: '#222222', lineHeight: 1.2 }}>{emp.name}</div>
-      <div style={{ fontSize: 12, color: '#717171', lineHeight: 1.3 }}>{emp.role}</div>
+      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>{emp.name}</div>
+      <div style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.3 }}>{emp.role}</div>
     </button>
   );
 }
@@ -814,11 +814,11 @@ function OrgNode({ emp, caption, highlight, onOpen }: { emp: Emp; caption?: stri
 // Manager named on the record but not found in the roster.
 function GhostNode({ name, caption }: { name: string; caption: string }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6, width: 172, padding: '14px 12px', borderRadius: 16, background: '#fff', border: '1px dashed #D8D8DC' }}>
-      <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#B0B4BC' }}>{caption}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6, width: 172, padding: '14px 12px', borderRadius: 16, background: 'var(--surface)', border: '1px dashed var(--line-2)' }}>
+      <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>{caption}</span>
       <Avatar name={name} size={44} font={15} />
-      <div style={{ fontSize: 13, fontWeight: 500, color: '#222222', lineHeight: 1.2 }}>{name}</div>
-      <div style={{ fontSize: 12, color: '#9197A2', lineHeight: 1.3 }}>Manager</div>
+      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>{name}</div>
+      <div style={{ fontSize: 12, color: 'var(--ink-4)', lineHeight: 1.3 }}>Manager</div>
     </div>
   );
 }
@@ -826,9 +826,9 @@ function GhostNode({ name, caption }: { name: string; caption: string }) {
 // —— Building blocks ——————————————————————————————————————————————————
 function Fact({ label, value, border }: { label: string; value: string; border?: boolean }) {
   return (
-    <div style={{ padding: '14px 22px', borderTop: border ? '1px solid #F0F0F2' : 'none', borderLeft: '1px solid #F0F0F2', minWidth: 0 }}>
-      <div style={{ fontSize: 12, fontWeight: 500, letterSpacing: '.03em', color: '#9197A2', textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ fontSize: 13.5, fontWeight: 400, color: '#222222', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
+    <div style={{ padding: '14px 22px', borderTop: border ? '1px solid var(--line)' : 'none', borderLeft: '1px solid var(--line)', minWidth: 0 }}>
+      <div style={{ fontSize: 12, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
     </div>
   );
 }
@@ -861,9 +861,9 @@ function PaymentDetails({ userId }: { userId: string }) {
     }
   };
   const field = (label: string, key: keyof PaymentDetailsInput, placeholder?: string) => (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12.5, fontWeight: 500, color: '#717171' }}>
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12.5, fontWeight: 500, color: 'var(--ink-3)' }}>
       {label}
-      <input value={(form?.[key] as string | undefined) ?? ''} placeholder={placeholder} onChange={(e) => setForm({ ...form, [key]: e.target.value })} style={{ padding: '8px 10px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 13.5, fontFamily: 'inherit' }} />
+      <input value={(form?.[key] as string | undefined) ?? ''} placeholder={placeholder} onChange={(e) => setForm({ ...form, [key]: e.target.value })} style={{ padding: '8px 10px', border: '1px solid var(--line)', borderRadius: 9, fontSize: 13.5, fontFamily: 'inherit' }} />
     </label>
   );
   return (
@@ -882,7 +882,7 @@ function PaymentDetails({ userId }: { userId: string }) {
             {field('UAN', 'uan', '12 digits')}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-            <button type="button" onClick={() => void save()} disabled={saving} style={{ ...editBtn, background: '#0571A6', color: '#fff', borderColor: '#0571A6' }}>{saving ? 'Saving…' : 'Save'}</button>
+            <button type="button" onClick={() => void save()} disabled={saving} style={{ ...editBtn, background: 'var(--accent-grad)', color: '#fff', borderColor: 'var(--accent)' }}>{saving ? 'Saving…' : 'Save'}</button>
             <button type="button" onClick={() => setForm(null)} style={editBtn}>Cancel</button>
           </div>
         </div>
@@ -896,7 +896,7 @@ function PaymentDetails({ userId }: { userId: string }) {
           <Row label="UAN" value={d.uan ?? '—'} />
         </Grid>
       )}
-      {!d.unmasked && (d.accountNumber || d.pan || d.uan) && <div style={{ fontSize: 12, color: '#9197A2', marginTop: 10 }}>Shown masked: full numbers are visible only with payroll access.</div>}
+      {!d.unmasked && (d.accountNumber || d.pan || d.uan) && <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 10 }}>Shown masked: full numbers are visible only with payroll access.</div>}
     </Section>
   );
 }
@@ -904,7 +904,7 @@ function PaymentDetails({ userId }: { userId: string }) {
 function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
     <Card style={{ padding: 0 }}>
-      <div style={{ padding: '15px 20px', borderBottom: '1px solid #F0F0F2', fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ padding: '15px 20px', borderBottom: '1px solid var(--line)', fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{ flex: 1 }}>{title}</span>
         {action}
       </div>
@@ -951,35 +951,35 @@ function ManagerRow({ emp }: { emp: Emp }) {
       setSaving(false);
     }
   };
-  const label = { fontSize: 12, fontWeight: 500, letterSpacing: '.03em', color: '#9197A2', textTransform: 'uppercase' as const };
-  const link: CSSProperties = { background: 'none', border: 'none', padding: 0, color: '#0571A6', fontWeight: 500, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' };
+  const label = { fontSize: 12, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-4)', textTransform: 'uppercase' as const };
+  const link: CSSProperties = { background: 'none', border: 'none', padding: 0, color: 'var(--accent-ink)', fontWeight: 500, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' };
   return (
     <div style={{ minWidth: 0, gridColumn: editing ? '1 / -1' : undefined }}>
       <div style={label}>Reporting manager</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 3, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 13.5, fontWeight: 400, color: '#222222' }}>{current.name || '—'}</span>
+        <span style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink)' }}>{current.name || '—'}</span>
         {!editing && <button type="button" onClick={() => setEditing(true)} style={link}>Change</button>}
       </div>
       {editing && (
-        <div style={{ marginTop: 8, border: '1px solid #EBEBEB', borderRadius: 12, padding: 10, maxWidth: 440, background: '#fff' }}>
+        <div style={{ marginTop: 8, border: '1px solid var(--line)', borderRadius: 12, padding: 10, maxWidth: 440, background: 'var(--surface)' }}>
           <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or employee ID" aria-label="Search for the new manager"
-            style={{ width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 13.5, fontFamily: 'inherit' }} />
+            style={{ width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 9, fontSize: 13.5, fontFamily: 'inherit' }} />
           <div style={{ marginTop: 6, display: 'grid' }}>
-            {options.length === 0 && <div style={{ padding: '8px 4px', fontSize: 13, color: '#9197A2' }}>Nobody matches.</div>}
+            {options.length === 0 && <div style={{ padding: '8px 4px', fontSize: 13, color: 'var(--ink-4)' }}>Nobody matches.</div>}
             {options.map((o) => (
               <button key={o.id} type="button" disabled={saving} onClick={() => save(o)}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 6px', border: 'none', borderRadius: 999, background: 'transparent', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
                 <Avatar name={o.name} size={28} font={11} />
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#222222' }}>{o.name}</span>
-                  <span style={{ display: 'block', fontSize: 12, color: '#717171' }}>{[o.employeeId, o.role].filter(Boolean).join(' · ')}</span>
+                  <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{o.name}</span>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)' }}>{[o.employeeId, o.role].filter(Boolean).join(' · ')}</span>
                 </span>
               </button>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 14, marginTop: 8, borderTop: '1px solid #F0F0F2', paddingTop: 8 }}>
-            <button type="button" onClick={() => { setEditing(false); setQ(''); }} style={{ ...link, color: '#717171' }}>Cancel</button>
-            {current.id && <button type="button" disabled={saving} onClick={() => save(null)} style={{ ...link, color: '#A8475F', marginLeft: 'auto' }}>Remove manager</button>}
+          <div style={{ display: 'flex', gap: 14, marginTop: 8, borderTop: '1px solid var(--line)', paddingTop: 8 }}>
+            <button type="button" onClick={() => { setEditing(false); setQ(''); }} style={{ ...link, color: 'var(--ink-3)' }}>Cancel</button>
+            {current.id && <button type="button" disabled={saving} onClick={() => save(null)} style={{ ...link, color: 'var(--bad)', marginLeft: 'auto' }}>Remove manager</button>}
           </div>
         </div>
       )}
@@ -990,8 +990,8 @@ function ManagerRow({ emp }: { emp: Emp }) {
 function Row({ label, value, wide, strong }: { label: string; value: string; wide?: boolean; strong?: boolean }) {
   return (
     <div style={{ gridColumn: wide ? '1 / -1' : undefined, minWidth: 0 }}>
-      <div style={{ fontSize: 12, fontWeight: 500, letterSpacing: '.03em', color: '#9197A2', textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ fontSize: 13.5, fontWeight: strong ? 800 : 600, color: '#222222', marginTop: 3, wordBreak: 'break-word' }}>{value}</div>
+      <div style={{ fontSize: 12, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-4)', textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontSize: 13.5, fontWeight: strong ? 800 : 600, color: 'var(--ink)', marginTop: 3, wordBreak: 'break-word' }}>{value}</div>
     </div>
   );
 }
@@ -999,15 +999,15 @@ function Row({ label, value, wide, strong }: { label: string; value: string; wid
 function MiniRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>{label}</span>
-      <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 500, color: '#222222' }}>{value}</span>
+      <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>{label}</span>
+      <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{value}</span>
     </div>
   );
 }
 
-const backBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: '#0571A6', fontSize: 13.5, fontWeight: 500, cursor: 'pointer', padding: '2px 0', marginBottom: 14 };
+const backBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--accent-ink)', fontSize: 13.5, fontWeight: 500, cursor: 'pointer', padding: '2px 0', marginBottom: 14 };
 
-const editBtn: CSSProperties = { background: '#fff', color: '#0571A6', border: '1px solid #CFE0F2', padding: '6px 12px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const editBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--accent-ink)', border: '1px solid var(--accent-line)', padding: '6px 12px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
 
 /** The editor themselves, or anyone below them in the reporting line. The server checks the same. */
 /** Delete an employee for good, after their name is typed. History (attendance, leave, payslips) stays. */
@@ -1029,16 +1029,16 @@ function DeleteEmployee({ emp, onClose, onDeleted }: { emp: Emp; onClose: () => 
   };
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 'var(--r-lg)', width: 'min(460px, 100%)', padding: '20px 22px', boxShadow: 'var(--shadow-lg)' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--surface)', borderRadius: 'var(--r-lg)', width: 'min(460px, 100%)', padding: '20px 22px', boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Delete {emp.name}?</div>
-        <div style={{ fontSize: 13, color: '#484848', lineHeight: 1.5 }}>
+        <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>
           Their account, profile, sign-ins, salary set-up and bank details are deleted for good and they can no longer use the app. Past attendance, leave and payslips stay, so payroll and reports still add up. This can't be undone.
         </div>
-        <label style={{ display: 'block', fontSize: 12.5, color: '#717171', fontWeight: 400, margin: '14px 0 6px' }}>Type <strong style={{ color: '#222222' }}>{emp.name}</strong> to confirm</label>
-        <input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', border: '1px solid #D9DCE1', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit' }} />
+        <label style={{ display: 'block', fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400, margin: '14px 0 6px' }}>Type <strong style={{ color: 'var(--ink)' }}>{emp.name}</strong> to confirm</label>
+        <input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', border: '1px solid var(--line-2)', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit' }} />
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-          <button type="button" onClick={onClose} style={{ background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-          <button type="button" disabled={!matches || busy} onClick={() => void run()} style={{ background: matches ? '#C4382E' : '#E8B4AE', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: matches ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>{busy ? 'Deleting…' : 'Delete for good'}</button>
+          <button type="button" onClick={onClose} style={{ background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <button type="button" disabled={!matches || busy} onClick={() => void run()} style={{ background: matches ? 'var(--bad)' : 'var(--bad-bg)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: matches ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>{busy ? 'Deleting…' : 'Delete for good'}</button>
         </div>
       </div>
     </div>
@@ -1132,10 +1132,10 @@ function EditDetails({ emp, onClose }: { emp: Emp; onClose: () => void }) {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div onClick={saving ? undefined : onClose} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)' }} />
-      <div role="dialog" aria-label={`Edit ${emp.name}'s details`} style={{ position: 'relative', width: 'min(760px, 100%)', maxHeight: '100%', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)' }}>
-        <div style={{ padding: '18px 22px', borderBottom: '1px solid #F0F0F2' }}>
+      <div role="dialog" aria-label={`Edit ${emp.name}'s details`} style={{ position: 'relative', width: 'min(760px, 100%)', maxHeight: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)' }}>
+        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--line)' }}>
           <div style={{ fontSize: 16, fontWeight: 600 }}>Edit details</div>
-          <div style={{ fontSize: 12.5, color: '#717171', marginTop: 3 }}>{emp.name}{before.employeeId ? ` · ${before.employeeId}` : ''}</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 3 }}>{emp.name}{before.employeeId ? ` · ${before.employeeId}` : ''}</div>
         </div>
         <div style={{ padding: '18px 22px 4px', overflowY: 'auto' }}>
           <div style={grid3}>
@@ -1198,15 +1198,15 @@ function EditDetails({ emp, onClose }: { emp: Emp; onClose: () => void }) {
               <Select value={form.empType} onChange={(v) => set('empType', v || before.empType)} placeholder="Select type" options={Object.keys(EMP_TYPE_VALUE)} />
             </Field>
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13.5, fontWeight: 400, color: '#484848', cursor: 'pointer', marginBottom: 18 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13.5, fontWeight: 400, color: 'var(--ink-2)', cursor: 'pointer', marginBottom: 18 }}>
             <input type="checkbox" checked={form.isDirector} onChange={(e) => set('isDirector', e.target.checked)} />
             <span>Employee is a <strong>Director / person with substantial interest</strong> in the company.</span>
           </label>
-          <div style={{ fontSize: 12.5, color: '#9197A2', marginBottom: 14 }}>The reporting manager is changed on the profile itself.</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginBottom: 14 }}>The reporting manager is changed on the profile itself.</div>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: '1px solid #F0F0F2' }}>
-          <button type="button" disabled={saving} onClick={onClose} style={{ background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-          <button type="button" disabled={saving} onClick={save} style={{ background: '#0571A6', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : 'Save'}</button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: '1px solid var(--line)' }}>
+          <button type="button" disabled={saving} onClick={onClose} style={{ background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <button type="button" disabled={saving} onClick={save} style={{ background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>
@@ -1234,10 +1234,10 @@ function ShiftPicker({ emp, onChanged }: { emp: Emp; onChanged: () => void }) {
     .catch((e) => setError(e instanceof ApiError ? e.message : 'Could not load the shift templates'));
   useEffect(() => { void load(); }, [emp.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error) return <div style={{ fontSize: 13, color: '#A8475F', fontWeight: 400 }}>{error}</div>;
-  if (!shifts) return <div style={{ fontSize: 13, color: '#9197A2' }}>Loading…</div>;
+  if (error) return <div style={{ fontSize: 13, color: 'var(--bad)', fontWeight: 400 }}>{error}</div>;
+  if (!shifts) return <div style={{ fontSize: 13, color: 'var(--ink-4)' }}>Loading…</div>;
   const usable = shifts.filter((t) => t.active || t.isDefault);
-  if (usable.length === 0) return <div style={{ fontSize: 13, color: '#9197A2' }}>No shift templates yet. Create one in Shifts › Templates.</div>;
+  if (usable.length === 0) return <div style={{ fontSize: 13, color: 'var(--ink-4)' }}>No shift templates yet. Create one in Shifts › Templates.</div>;
   const assigned = shifts.find((t) => t.assignedUserIds.includes(emp.id));
   const current = assigned ?? shifts.find((t) => t.isDefault);
   const nameOf = (t: ShiftDTO) => `${t.name}${t.isDefault ? ' (default)' : ''}`;
@@ -1258,8 +1258,8 @@ function ShiftPicker({ emp, onChanged }: { emp: Emp; onChanged: () => void }) {
   };
   return (
     <div>
-      <div style={{ fontSize: 13, color: '#717171', marginBottom: 10 }}>
-        Now on <strong style={{ color: '#222222' }}>{current ? nameOf(current) : 'the company policy'}</strong>
+      <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 10 }}>
+        Now on <strong style={{ color: 'var(--ink)' }}>{current ? nameOf(current) : 'the company policy'}</strong>
         {current && !assigned && ' · nobody picked one for them, so the default applies'}
       </div>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1267,11 +1267,11 @@ function ShiftPicker({ emp, onChanged }: { emp: Emp; onChanged: () => void }) {
           {usable.map((t) => <option key={t.id} value={t.id}>{nameOf(t)}</option>)}
         </select>
         <button type="button" disabled={saving || picked === current?.id} onClick={save}
-          style={{ background: '#0571A6', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: picked === current?.id ? 'default' : 'pointer', opacity: saving || picked === current?.id ? 0.5 : 1, fontFamily: 'inherit' }}>
+          style={{ background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: picked === current?.id ? 'default' : 'pointer', opacity: saving || picked === current?.id ? 0.5 : 1, fontFamily: 'inherit' }}>
           {saving ? 'Saving…' : 'Assign'}
         </button>
       </div>
-      <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 8 }}>A change starts tomorrow; today stays on the current shift.</div>
+      <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 8 }}>A change starts tomorrow; today stays on the current shift.</div>
     </div>
   );
 }

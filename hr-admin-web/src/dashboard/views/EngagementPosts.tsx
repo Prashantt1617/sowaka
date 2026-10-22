@@ -21,18 +21,18 @@ const SORA = "'Sora', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 // The composer's palette (contest_composer.dart) and the card's
 // (_EngagementColors in engagement_cards.dart).
 const C = {
-  ink: '#222222',
-  secondary: '#484848',
-  tertiary: '#717171',
-  brand: '#0571A6',
-  muted: '#96B7C7',
-  surface: '#F7F7F9',
-  border: '#EBEBEB',
+  ink: 'var(--ink)',
+  secondary: 'var(--ink-2)',
+  tertiary: 'var(--ink-3)',
+  brand: 'var(--accent)',
+  muted: 'var(--accent-line)',
+  surface: 'var(--surface-2)',
+  border: 'var(--line)',
   card: '#A08CFF',
   headerDivider: 'rgba(196, 181, 253, 0.4)',
   points: '#FFE786',
-  onCard: '#EBEBEB',
-  tile: '#EAEEEF',
+  onCard: 'var(--line)',
+  tile: 'var(--line)',
   pickedRing: '#CEFCFA',
   pillSelected: '#DDDAFF',
 };
@@ -164,12 +164,12 @@ export function EngagementPosts() {
           {posts.length === 0 && (
             <div
               style={{
-                background: '#fff',
+                background: 'var(--surface)',
                 border: '1px solid transparent',
                 borderRadius: 16,
                 padding: '38px 20px',
                 textAlign: 'center',
-                color: '#717171',
+                color: 'var(--ink-3)',
                 fontSize: 13, boxShadow: 'var(--shadow)',
               }}
             >
@@ -184,7 +184,7 @@ export function EngagementPosts() {
               <div
                 key={post.id}
                 style={{
-                  background: '#fff',
+                  background: 'var(--surface)',
                   border: '1px solid transparent',
                   borderRadius: 16,
                   padding: 16,
@@ -201,7 +201,7 @@ export function EngagementPosts() {
                   <div
                     style={{
                       fontSize: 12,
-                      color: '#717171',
+                      color: 'var(--ink-3)',
                       marginTop: 2,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -210,7 +210,7 @@ export function EngagementPosts() {
                   >
                     {String(post.body.task || post.body.question || '')}
                   </div>
-                  <div style={{ fontSize: 11.5, color: '#9197A2', marginTop: 5 }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 5 }}>
                     {entries} {entries === 1 ? 'entry' : 'entries'} · {points} pts per vote
                     {post.body.closesAt
                       ? ` · closes ${IST_CLOSES.format(new Date(String(post.body.closesAt)))}`
@@ -218,7 +218,7 @@ export function EngagementPosts() {
                   </div>
                 </div>
                 <button
-                  style={listButton('#FDECEC', '#B4231F')}
+                  style={listButton('var(--bad-bg)', 'var(--bad)')}
                   onClick={() => void remove(post)}
                 >
                   Delete
@@ -526,8 +526,8 @@ function PointsField({
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            background: '#fff',
-            border: `1.114px solid ${valid ? C.border : '#E5484D'}`,
+            background: 'var(--surface)',
+            border: `1.114px solid ${valid ? C.border : 'var(--bad)'}`,
             borderRadius: 12,
           }}
         >
@@ -939,7 +939,7 @@ function CaptionCarousel({ photoUrl, onPick }: { photoUrl: string | null; onPick
               fontSize: 10,
               lineHeight: '13.333px',
               fontWeight: 300,
-              color: '#000',
+              color: 'var(--ink)',
             }}
           >
             Upload the image of your choice from the library.
@@ -1014,13 +1014,13 @@ function CloseTimeSheet({
           minHeight: 137,
           boxSizing: 'border-box',
           paddingBottom: 24,
-          background: '#fff',
+          background: 'var(--surface)',
           borderRadius: '28px 28px 0 0',
           boxShadow: '0 -4px 16px rgba(0, 0, 0, 0.12)',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
-          <div style={{ width: 40, height: 4, borderRadius: 999, background: '#D1D5DB' }} />
+          <div style={{ width: 40, height: 4, borderRadius: 999, background: 'var(--line-2)' }} />
         </div>
         <div style={{ padding: '8px 16px' }}>
           <div

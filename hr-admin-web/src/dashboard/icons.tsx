@@ -351,26 +351,26 @@ export const phIcon: Partial<Record<View, ReactElement>> = {
 };
 
 // ---- Standalone icons ----
-export const IconSearch = ({ size = 16, stroke = '#9197A2' }: IconProps) => (
+export const IconSearch = ({ size = 16, stroke = 'var(--ink-4)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.9" strokeLinecap="round">
     <circle cx="11" cy="11" r="7" />
     <path d="M21 21l-4-4" />
   </svg>
 );
 
-export const IconChevronRight = ({ size = 17, stroke = '#9197A2' }: IconProps) => (
+export const IconChevronRight = ({ size = 17, stroke = 'var(--ink-4)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M9 6l6 6-6 6" />
   </svg>
 );
 
-export const IconChevronDown = ({ size = 14, stroke = '#9197A2', style }: IconProps) => (
+export const IconChevronDown = ({ size = 14, stroke = 'var(--ink-4)', style }: IconProps) => (
   <svg style={style} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M6 9l6 6 6-6" />
   </svg>
 );
 
-export const IconSort = ({ size = 16, stroke = '#9197A2' }: IconProps) => (
+export const IconSort = ({ size = 16, stroke = 'var(--ink-4)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round">
     <path d="M8 9l4-4 4 4M8 15l4 4 4-4" />
   </svg>
@@ -382,32 +382,32 @@ export const IconDownload = ({ size = 15, stroke = '#fff' }: IconProps) => (
   </svg>
 );
 
-export const IconClose = ({ size = 16, stroke = '#484848' }: IconProps) => (
+export const IconClose = ({ size = 16, stroke = 'var(--ink-2)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round">
     <path d="M6 6l12 12M18 6L6 18" />
   </svg>
 );
 
-export const IconEye = ({ size = 16, stroke = '#717171' }: IconProps) => (
+export const IconEye = ({ size = 16, stroke = 'var(--ink-3)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="3" />
     <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
   </svg>
 );
 
-export const IconCheck = ({ size = 15, stroke = '#4F7A52' }: IconProps) => (
+export const IconCheck = ({ size = 15, stroke = 'var(--ok)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
     <path d="M5 12.5l4.5 4.5L19 6.5" />
   </svg>
 );
 
-export const IconX = ({ size = 15, stroke = '#A8475F' }: IconProps) => (
+export const IconX = ({ size = 15, stroke = 'var(--bad)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2.2" strokeLinecap="round">
     <path d="M6 6l12 12M18 6L6 18" />
   </svg>
 );
 
-export const IconBell = ({ size = 18, stroke = '#484848' }: IconProps) => (
+export const IconBell = ({ size = 18, stroke = 'var(--ink-2)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
     <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
     <path d="M13.7 21a2 2 0 0 1-3.4 0" />
@@ -421,45 +421,45 @@ export const IconPlus = ({ size = 16, stroke = '#fff' }: IconProps) => (
 );
 
 export const IconStar = ({ size = 15 }: IconProps) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="#0571A6" stroke="none">
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="var(--accent)" stroke="none">
     <path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 18.4 6.1 21l1.2-6.5L2.5 9.9 9.1 9z" />
   </svg>
 );
 
-export const IconFile = ({ size = 18, stroke = '#0571A6' }: IconProps) => (
+export const IconFile = ({ size = 18, stroke = 'var(--accent-ink)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
     <path d="M14 2v6h6" />
   </svg>
 );
 
-export const IconExternal = ({ size = 17, stroke = '#9197A2' }: IconProps) => (
+export const IconExternal = ({ size = 17, stroke = 'var(--ink-4)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M7 17L17 7M17 7H8M17 7v9" />
   </svg>
 );
 
-export const IconInfo = ({ size = 16, stroke = '#9197A2' }: IconProps) => (
+export const IconInfo = ({ size = 16, stroke = 'var(--ink-4)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="9" />
     <path d="M12 11v5M12 7.5v.5" />
   </svg>
 );
 
-export const IconOverride = ({ size = 17, stroke = '#0571A6' }: IconProps) => (
+export const IconOverride = ({ size = 17, stroke = 'var(--accent-ink)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 2.5a9.5 9.5 0 1 0 9.5 9.5" />
     <path d="M21.5 4.5l-9 9-3-3" />
   </svg>
 );
 
-export const IconChevronUpDown = ({ size = 16, stroke = '#9197A2' }: IconProps) => (
+export const IconChevronUpDown = ({ size = 16, stroke = 'var(--ink-4)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round">
     <path d="M8 9l4-4 4 4M8 15l4 4 4-4" />
   </svg>
 );
 
-export const IconLogout = ({ size = 16, stroke = '#9197A2' }: IconProps) => (
+export const IconLogout = ({ size = 16, stroke = 'var(--ink-4)' }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M14 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8" />
     <path d="M17 16l4-4-4-4M21 12H9" />

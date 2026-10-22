@@ -152,7 +152,7 @@ export function PaidDaysTemplates() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <div style={{ flex: 1, fontSize: 13, color: '#717171' }}>
+        <div style={{ flex: 1, fontSize: 13, color: 'var(--ink-3)' }}>
           How attendance turns into paid days. Everyone is on the <strong>Default</strong> unless given another on their Salary details.
         </div>
         <button onClick={() => { setConfirmDelete(false); setForm({ ...EMPTY }); }} style={primaryBtn}><IconPlus size={15} /> Create New</button>
@@ -172,10 +172,10 @@ export function PaidDaysTemplates() {
                 <tr key={t.code} onClick={() => open(t)} style={{ cursor: 'pointer' }}>
                   <Td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <strong style={{ color: '#0571A6' }}>{t.name}</strong>
+                      <strong style={{ color: 'var(--accent-ink)' }}>{t.name}</strong>
                       {t.isDefault && <DefaultBadge />}
                     </div>
-                    {t.description && <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 2 }}>{t.description}</div>}
+                    {t.description && <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 2 }}>{t.description}</div>}
                   </Td>
                   <Td muted>{paidDaysSummary(t)}</Td>
                   <Td>{t.people}</Td>
@@ -190,5 +190,5 @@ export function PaidDaysTemplates() {
 }
 
 function DefaultBadge() {
-  return <span style={{ fontSize: 11.5, fontWeight: 500, color: '#0571A6', background: '#EAF4FA', borderRadius: 6, padding: '2px 8px' }}>Default</span>;
+  return <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--accent-ink)', background: 'var(--accent-soft)', borderRadius: 6, padding: '2px 8px' }}>Default</span>;
 }

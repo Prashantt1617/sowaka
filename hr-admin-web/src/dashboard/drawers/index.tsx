@@ -20,9 +20,9 @@ function DecisionFooter({
   approveLabel: string;
 }) {
   return (
-    <div style={{ position: 'sticky', bottom: 0, background: '#F7F7F9', borderTop: '1px solid #EBEBEB', padding: '16px 24px', display: 'flex', gap: 11 }}>
-      <button onClick={onDecline} style={{ flex: 1, border: '1px solid #EBD9DE', background: '#FBF1F3', color: '#A8475F', borderRadius: 999, padding: 13, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Decline</button>
-      <button onClick={onApprove} style={{ flex: 1.4, border: 'none', background: '#4F7A52', color: '#fff', borderRadius: 999, padding: 13, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>{approveLabel}</button>
+    <div style={{ position: 'sticky', bottom: 0, background: 'var(--surface-2)', borderTop: '1px solid var(--line)', padding: '16px 24px', display: 'flex', gap: 11 }}>
+      <button onClick={onDecline} style={{ flex: 1, border: '1px solid var(--bad-line)', background: 'var(--bad-bg)', color: 'var(--bad)', borderRadius: 999, padding: 13, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Decline</button>
+      <button onClick={onApprove} style={{ flex: 1.4, border: 'none', background: 'var(--ok)', color: '#fff', borderRadius: 999, padding: 13, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>{approveLabel}</button>
     </div>
   );
 }
@@ -52,26 +52,26 @@ function ConfirmOverrideModal({
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 85, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div onClick={onCancel} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', animation: 'ovl .2s ease both' }} />
-      <div style={{ position: 'relative', width: 400, background: '#F7F7F9', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', animation: 'pop .2s ease both', padding: 24 }}>
-        <div style={{ width: 46, height: 46, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14, background: isApprove ? '#EDF3E9' : '#FBF1F3' }}>
+      <div style={{ position: 'relative', width: 400, background: 'var(--surface-2)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', animation: 'pop .2s ease both', padding: 24 }}>
+        <div style={{ width: 46, height: 46, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14, background: isApprove ? 'var(--ok-bg)' : 'var(--bad-bg)' }}>
           {isApprove ? <IconCheck /> : <IconX />}
         </div>
         <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-.3px' }}>{title}</div>
-        <div style={{ fontSize: 14, color: '#484848', fontWeight: 400, marginTop: 6, lineHeight: 1.55 }}>{summary}</div>
-        <div style={{ fontSize: 13, color: '#717171', fontWeight: 500, letterSpacing: '.3px', marginTop: 16, marginBottom: 7 }}>
+        <div style={{ fontSize: 14, color: 'var(--ink-2)', fontWeight: 400, marginTop: 6, lineHeight: 1.55 }}>{summary}</div>
+        <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 500, letterSpacing: '.3px', marginTop: 16, marginBottom: 7 }}>
           NOTE — WHY ARE YOU OVERRIDING THIS?
         </div>
         <textarea
           value={note}
           onChange={(e) => onNote(e.target.value)}
           placeholder={isApprove ? 'e.g. Cleared with finance — approving on their behalf' : 'e.g. Out of policy — resubmit with manager sign-off'}
-          style={{ width: '100%', height: 74, resize: 'none', border: '1px solid #EBEBEB', borderRadius: 10, padding: '10px 12px', fontSize: 14, outline: 'none', color: '#222222', boxSizing: 'border-box' }}
+          style={{ width: '100%', height: 74, resize: 'none', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px', fontSize: 14, outline: 'none', color: 'var(--ink)', boxSizing: 'border-box' }}
         />
         <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
-          <button onClick={onCancel} style={{ flex: 1, border: '1px solid #EBEBEB', background: '#fff', borderRadius: 999, padding: 12, fontSize: 14, fontWeight: 500, color: '#484848', cursor: 'pointer' }}>Cancel</button>
+          <button onClick={onCancel} style={{ flex: 1, border: '1px solid var(--line)', background: 'var(--surface)', borderRadius: 999, padding: 12, fontSize: 14, fontWeight: 500, color: 'var(--ink-2)', cursor: 'pointer' }}>Cancel</button>
           <button
             onClick={onConfirm}
-            style={{ flex: 1.3, border: 'none', color: '#fff', borderRadius: 999, padding: 12, fontSize: 14, fontWeight: 500, cursor: 'pointer', background: isApprove ? '#4F7A52' : '#A8475F' }}
+            style={{ flex: 1.3, border: 'none', color: '#fff', borderRadius: 999, padding: 12, fontSize: 14, fontWeight: 500, cursor: 'pointer', background: isApprove ? 'var(--ok)' : 'var(--bad)' }}
           >
             {confirmLabel}
           </button>
@@ -92,7 +92,7 @@ function LeaveDrawer() {
       <div style={{ padding: '20px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
           <Pill label={d.byAdmin ? `${d.status} · by admin` : d.status} tone={STAT[d.status]} fontSize={12.5} padding="5px 13px" />
-          <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 14, fontWeight: 400, color: '#484848' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 14, fontWeight: 400, color: 'var(--ink-2)' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: typeColor(d.type) }} />
             {d.type} leave
           </span>
@@ -155,8 +155,8 @@ function FeedbackDrawer() {
       <DrawerHeader name={d.name} subtitle={`${d.team} · Reviewed by ${d.manager}`} onClose={close} />
       <div style={{ padding: '20px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-          <Pill label={d.isOverall ? 'Overall' : d.parameter} tone={{ bg: '#EFE7F2', fg: '#7E5FB0' }} fontSize={12.5} padding="5px 13px" />
-          <span style={{ fontSize: 14, fontWeight: 400, color: '#484848' }}>{d.date}</span>
+          <Pill label={d.isOverall ? 'Overall' : d.parameter} tone={{ bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' }} fontSize={12.5} padding="5px 13px" />
+          <span style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink-2)' }}>{d.date}</span>
         </div>
         <InfoGrid
           cells={[
@@ -174,8 +174,8 @@ function FeedbackDrawer() {
           ]}
         />
         <div>
-          <div style={{ fontSize: 13, color: '#717171', fontWeight: 500, letterSpacing: '.3px', marginBottom: 7 }}>{d.isOverall ? 'SUMMARY' : 'PARAMETER NOTE'}</div>
-          <div style={{ background: '#fff', border: '1px solid #EBEBEB', borderRadius: 12, padding: '14px 15px', fontSize: 14, color: '#484848', lineHeight: 1.6, fontWeight: 400 }}>{d.note || d.text || '—'}</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 500, letterSpacing: '.3px', marginBottom: 7 }}>{d.isOverall ? 'SUMMARY' : 'PARAMETER NOTE'}</div>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, padding: '14px 15px', fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.6, fontWeight: 400 }}>{d.note || d.text || '—'}</div>
         </div>
       </div>
     </DrawerShell>
@@ -193,7 +193,7 @@ function ReimbursementDrawer() {
       <div style={{ padding: '20px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18 }}>
           <div>
-            <div style={{ fontSize: 11.5, color: '#717171', fontWeight: 400, marginBottom: 3 }}>{d.type} claim</div>
+            <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, marginBottom: 3 }}>{d.type} claim</div>
             <div style={{ fontSize: 30, fontWeight: 600, letterSpacing: '-1px' }}>{d.amount}</div>
           </div>
           <Pill label={d.status} tone={STAT[d.status]} fontSize={12.5} padding="5px 13px" />
@@ -207,17 +207,17 @@ function ReimbursementDrawer() {
           ]}
         />
         <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 13, color: '#717171', fontWeight: 500, letterSpacing: '.3px', marginBottom: 7 }}>BILL ATTACHMENT</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 500, letterSpacing: '.3px', marginBottom: 7 }}>BILL ATTACHMENT</div>
           <button
             onClick={() => s.setRbBillId(d.id)}
-            style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12, background: '#fff', border: '1px solid #EBEBEB', borderRadius: 12, padding: '13px 15px', cursor: 'pointer' }}
+            style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, padding: '13px 15px', cursor: 'pointer' }}
           >
-            <div style={{ width: 38, height: 38, borderRadius: 9, background: '#E7F4FB', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <div style={{ width: 38, height: 38, borderRadius: 9, background: 'var(--accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <IconFile />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.bill}</div>
-              <div style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>Tap to view bill</div>
+              <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>Tap to view bill</div>
             </div>
             <IconExternal />
           </button>
@@ -235,8 +235,8 @@ function ReimbursementDrawer() {
 function BillRow({ k, v }: { k: string; v: string }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', fontSize: 13 }}>
-      <span style={{ color: '#717171', fontWeight: 400 }}>{k}</span>
-      <span style={{ fontWeight: 500, color: '#3C352E' }}>{v}</span>
+      <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}>{k}</span>
+      <span style={{ fontWeight: 500, color: 'var(--ink-2)' }}>{v}</span>
     </div>
   );
 }
@@ -244,18 +244,18 @@ function BillRow({ k, v }: { k: string; v: string }) {
 // Fallback receipt rendered from claim data when no real file was uploaded.
 function FauxReceipt({ d }: { d: Reimb }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #EBEBEB', borderRadius: 12, padding: '22px 22px 26px', boxShadow: 'var(--shadow)' }}>
-      <div style={{ textAlign: 'center', borderBottom: '1px dashed #EBEBEB', paddingBottom: 14, marginBottom: 14 }}>
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, padding: '22px 22px 26px', boxShadow: 'var(--shadow)' }}>
+      <div style={{ textAlign: 'center', borderBottom: '1px dashed var(--line)', paddingBottom: 14, marginBottom: 14 }}>
         <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: '.5px' }}>{d.type.toUpperCase()} RECEIPT</div>
-        <div style={{ fontSize: 13, color: '#717171', marginTop: 3, wordBreak: 'break-all' }}>{d.bill}</div>
+        <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 3, wordBreak: 'break-all' }}>{d.bill}</div>
       </div>
       <BillRow k="Employee" v={d.name} />
       <BillRow k="Bill date" v={d.billDate} />
       <BillRow k="Category" v={d.type} />
       <BillRow k="Submitted" v={d.applyDate} />
-      <div style={{ borderTop: '1px dashed #EBEBEB', margin: '14px 0' }} />
+      <div style={{ borderTop: '1px dashed var(--line)', margin: '14px 0' }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <span style={{ fontSize: 14, fontWeight: 500, color: '#484848' }}>Total</span>
+        <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink-2)' }}>Total</span>
         <span style={{ fontSize: 21, fontWeight: 600, letterSpacing: '-.5px' }}>{d.amount}</span>
       </div>
     </div>
@@ -296,30 +296,30 @@ function RbBillModal() {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div onClick={close} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', animation: 'ovl .2s ease both' }} />
-      <div style={{ position: 'relative', width: 440, maxHeight: '92vh', overflowY: 'auto', background: '#F7F7F9', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', animation: 'pop .2s ease both' }}>
-        <div style={{ padding: '18px 22px', borderBottom: '1px solid #EBEBEB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ position: 'relative', width: 440, maxHeight: '92vh', overflowY: 'auto', background: 'var(--surface-2)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', animation: 'pop .2s ease both' }}>
+        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-.3px' }}>Bill preview</div>
-            <div style={{ fontSize: 13, color: '#717171', fontWeight: 400, marginTop: 2 }}>Uploaded by {firstName} · {d.type}</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400, marginTop: 2 }}>Uploaded by {firstName} · {d.type}</div>
           </div>
           <CloseButton onClose={close} />
         </div>
         <div style={{ padding: 22 }}>
           {d.hasBill && state === 'loading' && (
-            <div style={{ height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#717171', fontSize: 14, fontWeight: 400, border: '1px solid #EBEBEB', borderRadius: 12, background: '#fff' }}>
+            <div style={{ height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-3)', fontSize: 14, fontWeight: 400, border: '1px solid var(--line)', borderRadius: 12, background: 'var(--surface)' }}>
               Loading bill…
             </div>
           )}
           {d.hasBill && state !== 'loading' && url && !isPdf && (
-            <img src={url} alt={d.bill} style={{ display: 'block', width: '100%', borderRadius: 12, border: '1px solid #EBEBEB', background: '#fff' }} />
+            <img src={url} alt={d.bill} style={{ display: 'block', width: '100%', borderRadius: 12, border: '1px solid var(--line)', background: 'var(--surface)' }} />
           )}
           {d.hasBill && state !== 'loading' && url && isPdf && (
-            <iframe title={d.bill} src={url} style={{ display: 'block', width: '100%', height: 460, borderRadius: 12, border: '1px solid #EBEBEB', background: '#fff' }} />
+            <iframe title={d.bill} src={url} style={{ display: 'block', width: '100%', height: 460, borderRadius: 12, border: '1px solid var(--line)', background: 'var(--surface)' }} />
           )}
           {(!d.hasBill || state === 'error') && (
             <>
               {state === 'error' && (
-                <div style={{ fontSize: 13, color: '#A8475F', fontWeight: 400, marginBottom: 10 }}>Couldn’t load the uploaded file — showing claim details.</div>
+                <div style={{ fontSize: 13, color: 'var(--bad)', fontWeight: 400, marginBottom: 10 }}>Couldn’t load the uploaded file — showing claim details.</div>
               )}
               <FauxReceipt d={d} />
             </>
@@ -334,7 +334,7 @@ function RbBillModal() {
                 s.flash(d.hasBill ? 'Preparing bill…' : 'No file was uploaded for this claim');
               }
             }}
-            style={{ marginTop: 14, width: '100%', boxSizing: 'border-box', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: url ? '#222222' : '#9197A2', color: '#fff', borderRadius: 999, padding: '11px 15px', fontSize: 14, fontWeight: 500, cursor: url ? 'pointer' : 'not-allowed' }}
+            style={{ marginTop: 14, width: '100%', boxSizing: 'border-box', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: url ? 'var(--ink)' : 'var(--line-2)', color: '#fff', borderRadius: 999, padding: '11px 15px', fontSize: 14, fontWeight: 500, cursor: url ? 'pointer' : 'not-allowed' }}
           >
             <IconDownload /> {isPdf ? 'Open bill' : 'Open full size'}
           </a>
@@ -412,7 +412,7 @@ function EmployeeDrawer() {
   const close = () => s.setEmpDrawerId(null);
   return (
     <DrawerShell width={440} onClose={close}>
-      <div style={{ padding: 24, borderBottom: '1px solid #EBEBEB' }}>
+      <div style={{ padding: 24, borderBottom: '1px solid var(--line)' }}>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -12 }}>
           <CloseButton onClose={close} />
         </div>
@@ -422,7 +422,7 @@ function EmployeeDrawer() {
           </div>
           <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: '-.3px' }}>{d.name}</div>
           {/* The employee ID is what HR knows them by; the system's UUID is not. */}
-          <div style={{ fontSize: 14, color: '#717171', fontWeight: 400, marginTop: 3 }}>
+          <div style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 400, marginTop: 3 }}>
             {d.role}{d.employeeId !== '—' ? ` · ${d.employeeId}` : ''}
           </div>
           <span style={{ marginTop: 11 }}>
@@ -445,9 +445,9 @@ function EmployeeDrawer() {
           />
         </div>
         <div>
-          <div style={{ fontSize: 13, color: '#717171', fontWeight: 500, letterSpacing: '.3px', marginBottom: 9 }}>DOCUMENTS · {d.documents.length}</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 500, letterSpacing: '.3px', marginBottom: 9 }}>DOCUMENTS · {d.documents.length}</div>
           {d.documents.length === 0 ? (
-            <div style={{ fontSize: 13, color: '#9197A2', fontWeight: 400 }}>Nothing filed yet.</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-4)', fontWeight: 400 }}>Nothing filed yet.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {d.documents.map((doc) => (
@@ -457,16 +457,16 @@ function EmployeeDrawer() {
                   target="_blank"
                   rel="noreferrer"
                   title={doc.url ? `Open ${doc.name}` : 'No file stored for this record'}
-                  style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#fff', border: '1px solid #EBEBEB', borderRadius: 12, padding: '11px 13px', textDecoration: 'none', color: 'inherit', pointerEvents: doc.url ? 'auto' : 'none' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 11, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, padding: '11px 13px', textDecoration: 'none', color: 'inherit', pointerEvents: doc.url ? 'auto' : 'none' }}
                 >
-                  <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EFE7F2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <IconFile size={16} stroke="#7E5FB0" />
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--t-lilac)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <IconFile size={16} stroke="var(--t-lilac-i)" />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.type}</div>
-                    <div style={{ fontSize: 12.5, color: '#717171', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}{doc.uploadedOn ? ` · ${doc.uploadedOn}` : ''}</div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.type}</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}{doc.uploadedOn ? ` · ${doc.uploadedOn}` : ''}</div>
                   </div>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9197A2" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
                   </svg>
                 </a>

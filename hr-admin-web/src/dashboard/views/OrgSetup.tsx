@@ -35,11 +35,11 @@ const fmtPayDay = (d: string) => (d === 'last_day' ? 'Last day of the month' : `
 const rupees = (paise: number) => `₹${Math.round(paise / 100).toLocaleString('en-IN')}`;
 
 const RUN_TONE: Record<PayrollRunDTO['status'], { bg: string; fg: string; label: string }> = {
-  draft: { bg: '#F7F7F9', fg: '#717171', label: 'Draft' },
-  pending_approval: { bg: '#F6E9D5', fg: '#9A6B25', label: 'Pending approval' },
-  approved: { bg: '#E4EDE0', fg: '#4F7A52', label: 'Approved' },
-  rejected: { bg: '#F4DEE2', fg: '#A8475F', label: 'Rejected' },
-  paid: { bg: '#E7ECF4', fg: '#4A6FA5', label: 'Paid' },
+  draft: { bg: 'var(--surface-2)', fg: 'var(--ink-3)', label: 'Draft' },
+  pending_approval: { bg: 'var(--warn-bg)', fg: 'var(--warn)', label: 'Pending approval' },
+  approved: { bg: 'var(--ok-bg)', fg: 'var(--ok)', label: 'Approved' },
+  rejected: { bg: 'var(--bad-bg)', fg: 'var(--bad)', label: 'Rejected' },
+  paid: { bg: 'var(--t-sky)', fg: 'var(--t-sky-i)', label: 'Paid' },
 };
 
 const scheduleFrom = (s: OrgSetupDTO): ScheduleForm => ({
@@ -76,7 +76,7 @@ function useOrgSetup() {
 }
 
 function Loading({ failed }: { failed: boolean }) {
-  return <Card style={{ padding: '40px 22px', textAlign: 'center', color: '#717171', fontSize: 13.5 }}>{failed ? 'The payroll setup could not be loaded.' : 'Loading…'}</Card>;
+  return <Card style={{ padding: '40px 22px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>{failed ? 'The payroll setup could not be loaded.' : 'Loading…'}</Card>;
 }
 
 // —— Pay Schedule ——————————————————————————————————————————————————
@@ -134,11 +134,11 @@ export function PaySchedule() {
       </div>
 
       {locked && (
-        <div style={{ background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 12, padding: '14px 16px', marginBottom: 16, display: 'flex', gap: 10 }}>
+        <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 12, padding: '14px 16px', marginBottom: 16, display: 'flex', gap: 10 }}>
           <span style={{ fontSize: 14 }}>🔒</span>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#9A6B25' }}>Locked after the first payroll run</div>
-            <div style={{ fontSize: 13, color: '#8A6A20', marginTop: 3, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--warn)' }}>Locked after the first payroll run</div>
+            <div style={{ fontSize: 13, color: 'var(--warn)', marginTop: 3, lineHeight: 1.5 }}>
               Payroll has already run on this schedule, so its pay day and first period can no longer change.
             </div>
           </div>
@@ -149,7 +149,7 @@ export function PaySchedule() {
         <SectionTitle title="Pay schedule" sub="How often and when payroll runs." />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
           <Field label="Frequency">
-            {editing ? <input value="Monthly" disabled style={{ ...inputStyle, background: '#F7F7F9', color: '#717171' }} /> : <ReadValue text="Monthly" />}
+            {editing ? <input value="Monthly" disabled style={{ ...inputStyle, background: 'var(--surface-2)', color: 'var(--ink-3)' }} /> : <ReadValue text="Monthly" />}
           </Field>
           <Field label="Pay day">
             {editing ? (
@@ -174,17 +174,17 @@ export function PaySchedule() {
       </Card>
 
       <Card style={{ padding: '18px 20px' }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#222222' }}>Recent payrolls</div>
-        <div style={{ fontSize: 13, color: '#717171', marginTop: 2, marginBottom: 14 }}>The latest runs and where they stand. Open Payroll Runs to work on one.</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>Recent payrolls</div>
+        <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 2, marginBottom: 14 }}>The latest runs and where they stand. Open Payroll Runs to work on one.</div>
         {recent.length === 0 ? (
-          <div style={{ fontSize: 13, color: '#717171', padding: '10px 0' }}>No payroll runs yet.</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '10px 0' }}>No payroll runs yet.</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {recent.map((r) => (
-              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, border: '1px solid #EBEBEB', borderRadius: 10, padding: '11px 13px' }}>
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, border: '1px solid var(--line)', borderRadius: 10, padding: '11px 13px' }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 500, color: '#222222' }}>{fmtPeriod(r.period)}</div>
-                  <div style={{ fontSize: 12.5, color: '#717171' }}>{r.employeeCount} people{r.totals ? ` · Net ${rupees(r.totals.netPaise)}` : ''}</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{fmtPeriod(r.period)}</div>
+                  <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{r.employeeCount} people{r.totals ? ` · Net ${rupees(r.totals.netPaise)}` : ''}</div>
                 </div>
                 <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: RUN_TONE[r.status].fg, background: RUN_TONE[r.status].bg, borderRadius: 'var(--r-lg)', padding: '4px 11px' }}>
                   {RUN_TONE[r.status].label}
@@ -199,7 +199,7 @@ export function PaySchedule() {
 }
 
 function ReadValue({ text }: { text: string }) {
-  return <div style={{ fontSize: 14, fontWeight: 400, color: '#222222', padding: '4px 0' }}>{text}</div>;
+  return <div style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink)', padding: '4px 0' }}>{text}</div>;
 }
 
 // —— Tax Details (statutory registration) ————————————————————————————
@@ -263,7 +263,7 @@ export function TaxDetails() {
           </Field>
         </div>
 
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#484848', margin: '18px 0 10px', textTransform: 'uppercase', letterSpacing: '.04em' }}>Deductor details</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)', margin: '18px 0 10px', textTransform: 'uppercase', letterSpacing: '.04em' }}>Deductor details</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
           <Field label="Type">
             <input value={reg.deductorType} onChange={(e) => setR('deductorType', e.target.value)} placeholder="e.g. Company" style={inputStyle} />
@@ -284,20 +284,20 @@ function SectionTitle({ title, sub }: { title: string; sub: string }) {
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ fontSize: 17, fontWeight: 600 }}>{title}</div>
-      <div style={{ fontSize: 13, color: '#717171', marginTop: 2 }}>{sub}</div>
+      <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 2 }}>{sub}</div>
     </div>
   );
 }
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <div>
-      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 5, color: '#484848' }}>{label}</label>
+      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 5, color: 'var(--ink-2)' }}>{label}</label>
       {children}
-      {hint && <div style={{ fontSize: 11.5, color: '#717171', marginTop: 4 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 4 }}>{hint}</div>}
     </div>
   );
 }
 
-const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: '#fff', color: '#222222' };
-const primaryBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 18px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
+const primaryBtn: CSSProperties = { background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 18px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };

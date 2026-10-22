@@ -16,9 +16,9 @@ import {
 type Filter = 'open' | 'actioned' | 'dismissed' | 'all';
 
 const STATUS_TONE: Record<ContentReportDTO['status'], { bg: string; fg: string }> = {
-  open: { bg: '#FDF1DC', fg: '#9A6B25' },
-  actioned: { bg: '#E4F3EA', fg: '#2E7D51' },
-  dismissed: { bg: '#F1F1F4', fg: '#717171' },
+  open: { bg: 'var(--warn-bg)', fg: 'var(--warn)' },
+  actioned: { bg: 'var(--ok-bg)', fg: 'var(--ok)' },
+  dismissed: { bg: 'var(--surface-2)', fg: 'var(--ink-3)' },
 };
 
 const STATUS_LABEL: Record<ContentReportDTO['status'], string> = {
@@ -94,7 +94,7 @@ export function ContentReports() {
           labels={{ open: 'Needs review', actioned: 'Actioned', dismissed: 'Dismissed' }}
         />
         {filter === 'open' && openCount > 0 && (
-          <span style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>
+          <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
             {openCount} waiting on you
           </span>
         )}
@@ -154,16 +154,16 @@ function ReportCard({
     <Card>
       <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <Pill label={report.reasonLabel} tone={{ bg: '#FBE9E7', fg: '#B23B2E' }} />
+          <Pill label={report.reasonLabel} tone={{ bg: 'var(--bad-bg)', fg: 'var(--bad)' }} />
           <Pill label={STATUS_LABEL[report.status]} tone={STATUS_TONE[report.status]} />
-          <span style={{ fontSize: 13, color: '#717171' }}>
+          <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>
             {report.target === 'comment' ? 'Comment' : report.postTag || 'Post'} by{' '}
-            <strong style={{ color: '#222222' }}>{report.authorName}</strong> · reported by{' '}
-            <strong style={{ color: '#222222' }}>{report.reporterName}</strong> ·{' '}
+            <strong style={{ color: 'var(--ink)' }}>{report.authorName}</strong> · reported by{' '}
+            <strong style={{ color: 'var(--ink)' }}>{report.reporterName}</strong> ·{' '}
             {formatWhen(report.createdAt)}
           </span>
           {!report.stillPresent && (
-            <Pill label="Already deleted" tone={{ bg: '#F1F1F4', fg: '#717171' }} />
+            <Pill label="Already deleted" tone={{ bg: 'var(--surface-2)', fg: 'var(--ink-3)' }} />
           )}
         </div>
 
@@ -171,8 +171,8 @@ function ReportCard({
         {edited && <Quote label="What it says now" text={report.currentText} muted />}
 
         {report.note && (
-          <div style={{ fontSize: 13.5, color: '#484848' }}>
-            <span style={{ color: '#717171' }}>Reporter added: </span>
+          <div style={{ fontSize: 13.5, color: 'var(--ink-2)' }}>
+            <span style={{ color: 'var(--ink-3)' }}>Reporter added: </span>
             {report.note}
           </div>
         )}
@@ -186,7 +186,7 @@ function ReportCard({
             <Button label="Dismiss" tone="plain" busy={busy} onClick={onDismiss} />
           </div>
         ) : (
-          <div style={{ fontSize: 13, color: '#717171' }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
             {STATUS_LABEL[report.status]}
             {report.reviewedByName ? ` by ${report.reviewedByName}` : ''}
             {report.reviewedAt ? ` · ${formatWhen(report.reviewedAt)}` : ''}
@@ -206,7 +206,7 @@ function Quote({ label, text, muted }: { label: string; text: string; muted?: bo
           fontSize: 11.5,
           fontWeight: 500,
           letterSpacing: '.5px',
-          color: '#9197A2',
+          color: 'var(--ink-4)',
           marginBottom: 5,
         }}
       >
@@ -214,13 +214,13 @@ function Quote({ label, text, muted }: { label: string; text: string; muted?: bo
       </div>
       <div
         style={{
-          background: muted ? '#FBFBFC' : '#F7F7F9',
-          border: '1px solid #EBEBEB',
+          background: muted ? 'var(--surface-2)' : 'var(--surface-2)',
+          border: '1px solid var(--line)',
           borderRadius: 12,
           padding: '12px 14px',
           fontSize: 13.5,
           lineHeight: 1.55,
-          color: muted ? '#717171' : '#222222',
+          color: muted ? 'var(--ink-3)' : 'var(--ink)',
           whiteSpace: 'pre-wrap',
         }}
       >
@@ -242,9 +242,9 @@ function Button({
   onClick: () => void;
 }) {
   const palette = {
-    primary: { background: '#0571A6', color: '#fff', border: '1px solid #0571A6' },
-    danger: { background: '#fff', color: '#C4382E', border: '1px solid #F0C7C2' },
-    plain: { background: '#fff', color: '#484848', border: '1px solid #EBEBEB' },
+    primary: { background: 'var(--accent-grad)', color: '#fff', border: '1px solid var(--accent)' },
+    danger: { background: 'var(--surface)', color: 'var(--bad)', border: '1px solid var(--bad-line)' },
+    plain: { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)' },
   }[tone];
   return (
     <button

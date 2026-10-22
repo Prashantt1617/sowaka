@@ -15,7 +15,7 @@ import { IconDownload } from '../icons';
 
 const COLS = '1.8fr .9fr .9fr 1fr 1fr 1.6fr 1fr 1.3fr';
 
-const DAY_TONE = { bg: '#E7F2F7', fg: '#0571A6' };
+const DAY_TONE = { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' };
 
 export function AttendanceCorrections() {
   const s = useStore();
@@ -64,9 +64,9 @@ export function AttendanceCorrections() {
     <div style={{ animation: 'fade .3s ease both' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
         <SummaryCard label="Total corrections" value={summary.total} />
-        <SummaryCard label="Pending" value={summary.pending} color="#9A6B25" />
-        <SummaryCard label="Approved" value={summary.approved} color="#4F7A52" />
-        <SummaryCard label="Declined" value={summary.declined} color="#A8475F" />
+        <SummaryCard label="Pending" value={summary.pending} color="var(--warn)" />
+        <SummaryCard label="Approved" value={summary.approved} color="var(--ok)" />
+        <SummaryCard label="Declined" value={summary.declined} color="var(--bad)" />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -80,14 +80,14 @@ export function AttendanceCorrections() {
         <button
           onClick={exportRows}
           disabled={rows.length === 0}
-          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: '#222222', border: 'none', color: '#fff', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: rows.length ? 'pointer' : 'not-allowed', opacity: rows.length ? 1 : 0.5 }}
+          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--ink)', border: 'none', color: '#fff', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: rows.length ? 'pointer' : 'not-allowed', opacity: rows.length ? 1 : 0.5 }}
         >
           <IconDownload /> Export
         </button>
       </div>
 
       <Card>
-        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', fontSize: 11.5, fontWeight: 500, letterSpacing: '.5px', color: '#717171' }}>
+        <div style={{ display: 'grid', background: 'var(--surface-2)', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid var(--line)', fontSize: 11.5, fontWeight: 500, letterSpacing: '.5px', color: 'var(--ink-3)' }}>
           <div>EMPLOYEE</div>
           <div>RAISED ON</div>
           <div>WORK DATE</div>
@@ -100,28 +100,28 @@ export function AttendanceCorrections() {
         {rows.map((r) => (
           <div
             key={r.id}
-            style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', alignItems: 'center' }}
+            style={{ display: 'grid', gridTemplateColumns: COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid var(--line)', alignItems: 'center' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
               <Avatar name={r.name} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                <div style={{ fontSize: 13, color: '#717171', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {r.employeeCode} · {r.team}
                 </div>
               </div>
             </div>
-            <div style={{ fontSize: 14, fontWeight: 400, color: '#484848' }}>{r.appliedOn}</div>
-            <div style={{ fontSize: 14, fontWeight: 400, color: '#484848' }}>
+            <div style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink-2)' }}>{r.appliedOn}</div>
+            <div style={{ fontSize: 14, fontWeight: 400, color: 'var(--ink-2)' }}>
               {r.workDate}
-              <div style={{ fontSize: 12.5, color: '#9197A2', fontWeight: 400 }}>{r.day}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400 }}>{r.day}</div>
             </div>
             <div><Pill label={r.dayType} tone={DAY_TONE} /></div>
-            <div style={{ fontSize: 13, fontWeight: 400, color: r.recorded === 'No punch' ? '#B25A1B' : '#484848' }}>{r.recorded}</div>
-            <div style={{ fontSize: 13, fontWeight: 400, color: r.eRemark ? '#484848' : '#9197A2', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>
+            <div style={{ fontSize: 13, fontWeight: 400, color: r.recorded === 'No punch' ? 'var(--warn)' : 'var(--ink-2)' }}>{r.recorded}</div>
+            <div style={{ fontSize: 13, fontWeight: 400, color: r.eRemark ? 'var(--ink-2)' : 'var(--ink-4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>
               {r.eRemark || '—'}
             </div>
-            <div style={{ fontSize: 13.5, fontWeight: 400, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.manager}>
+            <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.manager}>
               {r.manager || '—'}
             </div>
             {r.status === 'Pending' ? (
@@ -151,9 +151,9 @@ function DecideButton({ label, tone, onClick }: { label: string; tone: 'approve'
       type="button"
       onClick={onClick}
       style={{
-        border: `1px solid ${approve ? '#CADFC9' : '#EED6DC'}`,
-        background: approve ? '#E6F1E7' : '#F8E3E7',
-        color: approve ? '#4F7A52' : '#A8475F',
+        border: `1px solid ${approve ? 'var(--ok-line)' : 'var(--bad-line)'}`,
+        background: approve ? 'var(--ok-bg)' : 'var(--bad-bg)',
+        color: approve ? 'var(--ok)' : 'var(--bad)',
         borderRadius: 999, padding: '6px 12px', fontSize: 12.5, fontWeight: 500,
         fontFamily: 'inherit', cursor: 'pointer',
       }}
@@ -177,12 +177,12 @@ function ConfirmOverride() {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ width: 430, background: '#fff', borderRadius: 'var(--r-lg)', padding: 24, boxShadow: 'var(--shadow-lg)' }}
+        style={{ width: 430, background: 'var(--surface)', borderRadius: 'var(--r-lg)', padding: 24, boxShadow: 'var(--shadow-lg)' }}
       >
         <div style={{ fontSize: 16.5, fontWeight: 600, letterSpacing: '-.3px', marginBottom: 6 }}>
           {approve ? 'Approve' : 'Decline'} this correction?
         </div>
-        <div style={{ fontSize: 13.5, color: '#717171', fontWeight: 400, lineHeight: 1.5, marginBottom: 16 }}>
+        <div style={{ fontSize: 13.5, color: 'var(--ink-3)', fontWeight: 400, lineHeight: 1.5, marginBottom: 16 }}>
           {row
             ? `${row.name}’s ${row.workDate} will be ${approve ? `recorded as ${row.dayType.toLowerCase()}` : 'left as it is'}. ${row.manager ? `${row.manager} is the approver — this overrides them.` : ''}`
             : ''}
@@ -192,20 +192,20 @@ function ConfirmOverride() {
           onChange={(e) => s.setCorrNote(e.target.value)}
           placeholder="Add a note for the employee (optional)"
           rows={3}
-          style={{ width: '100%', border: '1px solid #EBEBEB', borderRadius: 12, padding: '11px 13px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 16 }}
+          style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 12, padding: '11px 13px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box', marginBottom: 16 }}
         />
         <div style={{ display: 'flex', gap: 9, justifyContent: 'flex-end' }}>
           <button
             type="button"
             onClick={s.corrCloseConfirm}
-            style={{ border: '1px solid #EBEBEB', background: '#F7F7F9', color: '#484848', borderRadius: 999, padding: '10px 16px', fontSize: 13.5, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer' }}
+            style={{ border: '1px solid var(--line)', background: 'var(--surface-2)', color: 'var(--ink-2)', borderRadius: 999, padding: '10px 16px', fontSize: 13.5, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer' }}
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={s.corrDecide}
-            style={{ border: 'none', background: approve ? '#4F7A52' : '#A8475F', color: '#fff', borderRadius: 999, padding: '10px 18px', fontSize: 13.5, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer' }}
+            style={{ border: 'none', background: approve ? 'var(--ok)' : 'var(--bad)', color: '#fff', borderRadius: 999, padding: '10px 18px', fontSize: 13.5, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer' }}
           >
             {approve ? 'Approve' : 'Decline'}
           </button>

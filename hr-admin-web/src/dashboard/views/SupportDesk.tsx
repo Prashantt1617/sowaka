@@ -45,9 +45,9 @@ import { ConfirmResolveDialog, SendBackDialog, TicketTypesDialog } from './Suppo
 // —— Shared bits ————————————————————————————————————————————————————————————
 
 const STATUS: Record<SupportStatus, { label: string; tone: PillTone }> = {
-  open: { label: 'New', tone: { bg: '#F6E9D5', fg: '#9A6B25' } },
-  assigned: { label: 'In progress', tone: { bg: '#E7ECF4', fg: '#4A6FA5' } },
-  resolved: { label: 'Resolved', tone: { bg: '#E4EDE0', fg: '#4F7A52' } },
+  open: { label: 'New', tone: { bg: 'var(--warn-bg)', fg: 'var(--warn)' } },
+  assigned: { label: 'In progress', tone: { bg: 'var(--t-sky)', fg: 'var(--t-sky-i)' } },
+  resolved: { label: 'Resolved', tone: { bg: 'var(--ok-bg)', fg: 'var(--ok)' } },
 };
 
 const errText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback);
@@ -79,7 +79,7 @@ function fileSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-const IconClip = ({ size = 18, stroke = '#717171' }: { size?: number; stroke?: string }) => (
+const IconClip = ({ size = 18, stroke = 'var(--ink-3)' }: { size?: number; stroke?: string }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9" />
   </svg>
@@ -115,7 +115,7 @@ export function SupportDesk() {
   if (!role) {
     return (
       <Card>
-        <div style={{ padding: 48, textAlign: 'center', color: '#717171', fontSize: 14, fontWeight: 400 }}>
+        <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)', fontSize: 14, fontWeight: 400 }}>
           {checked ? 'You don’t have a Support role. A dashboard admin can give you one in People › Accesses.' : 'Loading…'}
           {/* A dashboard admin without a role still owns the ticket types. */}
           {checked && canEditTopics && <div style={{ marginTop: 16 }}><TicketTypesButton /></div>}
@@ -400,8 +400,8 @@ function Desk({ role, meId, canEditTopics }: { role: SupportRole; meId: string; 
         {isHead ? (
           <QueueTabs view={view} counts={counts} onSelect={(v) => { setView(v); setStatus('any'); }} />
         ) : (
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#222222', marginRight: 6 }}>
-            My tickets{counts ? <span style={{ color: '#9197A2', fontWeight: 500 }}> · {counts.mine}</span> : null}
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginRight: 6 }}>
+            My tickets{counts ? <span style={{ color: 'var(--ink-4)', fontWeight: 500 }}> · {counts.mine}</span> : null}
           </div>
         )}
         <SearchInput value={q} onChange={setQ} placeholder="Search tickets…" width={250} />
@@ -423,7 +423,7 @@ function Desk({ role, meId, canEditTopics }: { role: SupportRole; meId: string; 
           </SelectBox>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 12.5, color: '#9197A2', fontWeight: 400 }}>
+          <span style={{ fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400 }}>
             {isHead ? 'Support head' : 'Support staff · only tickets assigned to you'}
           </span>
           {canEditTopics && <TicketTypesButton topics={types} onSaved={setTypes} />}
@@ -449,21 +449,21 @@ function Desk({ role, meId, canEditTopics }: { role: SupportRole; meId: string; 
 
         <Card style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {!selectedId && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#717171', padding: 30, textAlign: 'center' }}>
-              <div style={{ color: '#9197A2', marginBottom: 12 }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-3)', padding: 30, textAlign: 'center' }}>
+              <div style={{ color: 'var(--ink-4)', marginBottom: 12 }}>
                 <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
                   <path d="M4 14a2 2 0 0 1 2-2h1v6H6a2 2 0 0 1-2-2v-2zM20 14a2 2 0 0 0-2-2h-1v6h1a2 2 0 0 0 2-2v-2z" />
                 </svg>
               </div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: '#484848' }}>Pick a ticket</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-2)' }}>Pick a ticket</div>
               <div style={{ fontSize: 13, marginTop: 4, maxWidth: 340, lineHeight: 1.5 }}>
                 {isHead ? 'Open a ticket to read it, then assign it to someone or keep it.' : 'Open a ticket to read the conversation and reply.'}
               </div>
             </div>
           )}
           {selectedId && !detail && (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#717171', fontWeight: 400 }}>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-3)', fontWeight: 400 }}>
               {detailState === 'error'
                 ? <span>Could not open this ticket. <button type="button" onClick={() => void loadDetail(selectedId)} style={linkBtn}>Try again</button></span>
                 : 'Loading…'}
@@ -480,21 +480,21 @@ function Desk({ role, meId, canEditTopics }: { role: SupportRole; meId: string; 
 }
 
 function ListNote({ children }: { children: ReactNode }) {
-  return <div style={{ padding: '44px 24px', textAlign: 'center', color: '#717171', fontSize: 13.5, fontWeight: 400, lineHeight: 1.5 }}>{children}</div>;
+  return <div style={{ padding: '44px 24px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5, fontWeight: 400, lineHeight: 1.5 }}>{children}</div>;
 }
 
 function QueueTabs({ view, counts, onSelect }: { view: SupportView; counts: SupportCounts | null; onSelect: (v: SupportView) => void }) {
   return (
-    <div style={{ display: 'flex', background: '#fff', border: '1px solid #EBEBEB', borderRadius: 12, padding: 3, gap: 2 }}>
+    <div style={{ display: 'flex', background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, padding: 3, gap: 2 }}>
       {HEAD_VIEWS.map((v) => {
         const on = view === v.key;
         const n = counts?.[v.key];
         return (
           <button key={v.key} type="button" onClick={() => onSelect(v.key)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, padding: '6px 12px', borderRadius: 999, background: on ? '#222222' : 'transparent', color: on ? '#fff' : '#717171', fontFamily: 'inherit' }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, padding: '6px 12px', borderRadius: 999, background: on ? 'var(--ink)' : 'transparent', color: on ? '#fff' : 'var(--ink-3)', fontFamily: 'inherit' }}>
             {v.label}
             {n !== undefined && (
-              <span style={{ fontSize: 11.5, fontWeight: 600, borderRadius: 'var(--r-lg)', padding: '0 7px', lineHeight: '18px', background: on ? 'rgba(255,255,255,.18)' : v.key === 'new' && n > 0 ? '#F6E9D5' : '#F7F7F9', color: on ? '#fff' : v.key === 'new' && n > 0 ? '#9A6B25' : '#717171' }}>{n}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 600, borderRadius: 'var(--r-lg)', padding: '0 7px', lineHeight: '18px', background: on ? 'rgba(255,255,255,.18)' : v.key === 'new' && n > 0 ? 'var(--warn-bg)' : 'var(--surface-2)', color: on ? '#fff' : v.key === 'new' && n > 0 ? 'var(--warn)' : 'var(--ink-3)' }}>{n}</span>
             )}
           </button>
         );
@@ -509,26 +509,26 @@ function TicketRow({ ticket: t, role, meId, active, onOpen }: { ticket: SupportT
   const who = t.assignee ? (t.assignee.userId === meId ? 'You' : t.assignee.name) : null;
   return (
     <button type="button" onClick={onOpen} className={active ? undefined : 'dc-row'}
-      style={{ display: 'flex', gap: 12, width: '100%', textAlign: 'left', padding: '14px 16px', border: 'none', borderBottom: '1px solid #F0F0F2', borderLeft: `3px solid ${active ? '#0571A6' : 'transparent'}`, background: active ? '#F3F8FB' : '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+      style={{ display: 'flex', gap: 12, width: '100%', textAlign: 'left', padding: '14px 16px', border: 'none', borderBottom: '1px solid var(--line)', borderLeft: `3px solid ${active ? 'var(--accent)' : 'transparent'}`, background: active ? 'var(--accent-soft)' : 'var(--surface)', cursor: 'pointer', fontFamily: 'inherit' }}>
       <RequesterAvatar ticket={t} size={38} />
       <span style={{ flex: 1, minWidth: 0, display: 'block' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#222222', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.topicLabel}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: '#9197A2', fontWeight: 400, whiteSpace: 'nowrap' }}>{relTime(t.lastMessageAt || t.createdAt)}</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.topicLabel}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--ink-4)', fontWeight: 400, whiteSpace: 'nowrap' }}>{relTime(t.lastMessageAt || t.createdAt)}</span>
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 1 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 400, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {t.requester.name}{t.requester.department ? <span style={{ color: '#9197A2' }}> · {t.requester.department}</span> : null}
+          <span style={{ fontSize: 12.5, fontWeight: 400, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {t.requester.name}{t.requester.department ? <span style={{ color: 'var(--ink-4)' }}> · {t.requester.department}</span> : null}
           </span>
-          {unread && <span style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 600, background: '#0571A6', color: '#fff', borderRadius: 'var(--r-lg)', padding: '1px 7px' }}>{t.unread}</span>}
+          {unread && <span style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 600, background: 'var(--accent-grad)', color: '#fff', borderRadius: 'var(--r-lg)', padding: '1px 7px' }}>{t.unread}</span>}
         </span>
-        <span style={{ display: 'block', fontSize: 12.5, color: unread ? '#222222' : '#717171', fontWeight: unread ? 600 : 500, marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <span style={{ display: 'block', fontSize: 12.5, color: unread ? 'var(--ink)' : 'var(--ink-3)', fontWeight: unread ? 600 : 500, marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {t.lastMessagePreview || '—'}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 7 }}>
           <Pill label={st.label} tone={st.tone} fontSize={11.5} padding="2px 9px" />
           {role === 'head' && (
-            <span style={{ fontSize: 12, color: '#717171', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {who ? `→ ${who}` : 'Unassigned'}
             </span>
           )}
@@ -591,7 +591,7 @@ function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, o
   return (
     <>
       {/* Header */}
-      <div style={{ padding: '16px 20px', borderBottom: '1px solid #F0F0F2' }}>
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--line)' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
           <RequesterAvatar ticket={t} size={44} />
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -599,12 +599,12 @@ function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, o
               <span style={{ fontSize: 16.5, fontWeight: 600, letterSpacing: '-.3px' }}>{t.topicLabel}</span>
               <Pill label={STATUS[t.status].label} tone={STATUS[t.status].tone} />
             </div>
-            <div style={{ fontSize: 13, fontWeight: 500, color: '#484848', marginTop: 3 }}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', marginTop: 3 }}>
               {t.requester.name}
-              {requesterMeta && <span style={{ color: '#9197A2', fontWeight: 400 }}> · {requesterMeta}</span>}
+              {requesterMeta && <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}> · {requesterMeta}</span>}
             </div>
-            <div style={{ fontSize: 12.5, color: '#717171', fontWeight: 400, marginTop: 2 }}>
-              Raised {fullDate(t.createdAt)} · {t.assignee ? <>With <strong style={{ color: '#484848' }}>{mineNow ? 'you' : t.assignee.name}</strong></> : 'In the head’s queue, unassigned'}
+            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400, marginTop: 2 }}>
+              Raised {fullDate(t.createdAt)} · {t.assignee ? <>With <strong style={{ color: 'var(--ink-2)' }}>{mineNow ? 'you' : t.assignee.name}</strong></> : 'In the head’s queue, unassigned'}
             </div>
           </div>
         </div>
@@ -620,10 +620,10 @@ function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, o
             <button type="button" disabled={busy} onClick={() => setDialog('sendback')} style={ghostBtn}>Send back to head</button>
           )}
           {!resolved && (isHead || mineNow) && (
-            <button type="button" disabled={busy} onClick={() => setDialog('resolve')} style={{ ...ghostBtn, color: '#4F7A52', borderColor: '#D7E2D2' }}>Resolve</button>
+            <button type="button" disabled={busy} onClick={() => setDialog('resolve')} style={{ ...ghostBtn, color: 'var(--ok)', borderColor: 'var(--ok-line)' }}>Resolve</button>
           )}
           <button type="button" onClick={() => setShowHistory((s) => !s)}
-            style={{ ...ghostBtn, marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, background: showHistory ? '#E7F4FB' : '#fff', color: showHistory ? '#0571A6' : '#484848', borderColor: showHistory ? '#CFE6F3' : '#EBEBEB' }}>
+            style={{ ...ghostBtn, marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, background: showHistory ? 'var(--accent-soft)' : 'var(--surface)', color: showHistory ? 'var(--accent-ink)' : 'var(--ink-2)', borderColor: showHistory ? 'var(--accent-line)' : 'var(--line)' }}>
             <IconHistory size={15} /> History{events.length ? ` · ${events.length}` : ''}
           </button>
         </div>
@@ -665,7 +665,7 @@ function TicketPane({ detail, role, meId, onChanged, pending, onSend, onRetry, o
 
 function FooterNote({ children, tone }: { children: ReactNode; tone?: 'done' }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', borderTop: '1px solid #F0F0F2', background: tone === 'done' ? '#F3F7F1' : '#F7F7F9', fontSize: 13, fontWeight: 400, color: tone === 'done' ? '#4F7A52' : '#484848', lineHeight: 1.45 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', borderTop: '1px solid var(--line)', background: tone === 'done' ? 'var(--ok-bg)' : 'var(--surface-2)', fontSize: 13, fontWeight: 400, color: tone === 'done' ? 'var(--ok)' : 'var(--ink-2)', lineHeight: 1.45 }}>
       {children}
     </div>
   );
@@ -711,18 +711,18 @@ function AssignMenu({ label, currentId, meId, disabled, onPick }: { label: strin
         {label} <IconChevronDown stroke="#fff" />
       </button>
       {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 40, width: 300, background: '#fff', border: '1px solid #EBEBEB', borderRadius: 12, boxShadow: 'var(--shadow-lg)', overflow: 'hidden', animation: 'pop .16s ease both' }}>
+        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 40, width: 300, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, boxShadow: 'var(--shadow-lg)', overflow: 'hidden', animation: 'pop .16s ease both' }}>
           {(people?.length ?? 0) > 7 && (
-            <div style={{ padding: 10, borderBottom: '1px solid #F0F0F2' }}>
+            <div style={{ padding: 10, borderBottom: '1px solid var(--line)' }}>
               <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search people"
-                style={{ width: '100%', padding: '8px 10px', border: '1px solid #EBEBEB', borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--line)', borderRadius: 9, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
             </div>
           )}
           <div className="scry" style={{ maxHeight: 300, overflowY: 'auto' }}>
-            {error && <div style={{ padding: 14, fontSize: 13, color: '#A8475F' }}>{error}</div>}
-            {!error && people === null && <div style={{ padding: 14, fontSize: 13, color: '#717171' }}>Loading…</div>}
+            {error && <div style={{ padding: 14, fontSize: 13, color: 'var(--bad)' }}>{error}</div>}
+            {!error && people === null && <div style={{ padding: 14, fontSize: 13, color: 'var(--ink-3)' }}>Loading…</div>}
             {!error && people !== null && shown.length === 0 && (
-              <div style={{ padding: 14, fontSize: 13, color: '#717171', lineHeight: 1.45 }}>
+              <div style={{ padding: 14, fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.45 }}>
                 {people.length === 0 ? 'Nobody has a Support role yet. A dashboard admin gives roles in People › Accesses.' : 'Nobody matches.'}
               </div>
             )}
@@ -730,11 +730,11 @@ function AssignMenu({ label, currentId, meId, disabled, onPick }: { label: strin
               const current = p.userId === currentId;
               return (
                 <button key={p.userId} type="button" disabled={current} onClick={() => { setOpen(false); onPick(p); }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', borderBottom: '1px solid #F7F7F9', background: '#fff', cursor: current ? 'default' : 'pointer', textAlign: 'left', fontFamily: 'inherit', opacity: current ? 0.55 : 1 }}>
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', borderBottom: '1px solid var(--line)', background: 'var(--surface)', cursor: current ? 'default' : 'pointer', textAlign: 'left', fontFamily: 'inherit', opacity: current ? 0.55 : 1 }}>
                   <Avatar name={p.name} size={30} font={11} />
                   <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#222222' }}>{p.name}{p.userId === meId && <span style={{ color: '#9197A2', fontWeight: 400 }}> · you</span>}</span>
-                    <span style={{ display: 'block', fontSize: 12, color: '#717171' }}>{p.role === 'head' ? 'Support head' : 'Support staff'}{current ? ' · has it now' : ''}</span>
+                    <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{p.name}{p.userId === meId && <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}> · you</span>}</span>
+                    <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-3)' }}>{p.role === 'head' ? 'Support head' : 'Support staff'}{current ? ' · has it now' : ''}</span>
                   </span>
                 </button>
               );
@@ -760,32 +760,32 @@ function eventTarget(e: SupportEvent, meId: string): string {
 function eventLine(e: SupportEvent, meId: string): { text: string; detail?: string; tone: string } {
   const by = eventActor(e, meId);
   switch (e.type) {
-    case 'created': return { text: 'Raised by the employee', tone: '#9197A2' };
-    case 'assigned': return { text: `Assigned to ${eventTarget(e, meId)} by ${by}`, tone: '#4A6FA5' };
-    case 'reassigned': return { text: `Reassigned to ${eventTarget(e, meId)} by ${by}`, tone: '#4A6FA5' };
-    case 'kept': return { text: `Kept by ${by}`, tone: '#4A6FA5' };
-    case 'sent_back': return { text: `Sent back to the head by ${by}`, detail: e.note ? `Note: ${e.note}` : undefined, tone: '#9A6B25' };
-    case 'resolved': return { text: `Resolved by ${by}`, tone: '#4F7A52' };
-    case 'returned_on_exit': return { text: `Back in the queue: ${e.fromName || 'the assignee'} left or lost their Support role`, tone: '#9A6B25' };
-    default: return { text: String(e.type).replace(/_/g, ' '), tone: '#9197A2' };
+    case 'created': return { text: 'Raised by the employee', tone: 'var(--ink-4)' };
+    case 'assigned': return { text: `Assigned to ${eventTarget(e, meId)} by ${by}`, tone: 'var(--t-sky-i)' };
+    case 'reassigned': return { text: `Reassigned to ${eventTarget(e, meId)} by ${by}`, tone: 'var(--t-sky-i)' };
+    case 'kept': return { text: `Kept by ${by}`, tone: 'var(--t-sky-i)' };
+    case 'sent_back': return { text: `Sent back to the head by ${by}`, detail: e.note ? `Note: ${e.note}` : undefined, tone: 'var(--warn)' };
+    case 'resolved': return { text: `Resolved by ${by}`, tone: 'var(--ok)' };
+    case 'returned_on_exit': return { text: `Back in the queue: ${e.fromName || 'the assignee'} left or lost their Support role`, tone: 'var(--warn)' };
+    default: return { text: String(e.type).replace(/_/g, ' '), tone: 'var(--ink-4)' };
   }
 }
 
 function HistoryPanel({ events, meId }: { events: SupportEvent[]; meId: string }) {
   return (
-    <div className="scry" style={{ maxHeight: 210, overflowY: 'auto', padding: '12px 20px', borderBottom: '1px solid #F0F0F2', background: '#FBFBFC', animation: 'fade .16s ease both' }}>
-      <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.06em', color: '#717171', marginBottom: 8 }}>HISTORY</div>
-      {events.length === 0 && <div style={{ fontSize: 13, color: '#9197A2' }}>Nothing yet.</div>}
+    <div className="scry" style={{ maxHeight: 210, overflowY: 'auto', padding: '12px 20px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)', animation: 'fade .16s ease both' }}>
+      <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.06em', color: 'var(--ink-3)', marginBottom: 8 }}>HISTORY</div>
+      {events.length === 0 && <div style={{ fontSize: 13, color: 'var(--ink-4)' }}>Nothing yet.</div>}
       {events.map((e, i) => {
         const line = eventLine(e, meId);
         return (
           <div key={e.id || i} style={{ display: 'flex', gap: 10, padding: '5px 0' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: line.tone, marginTop: 6, flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 400, color: '#222222' }}>{line.text}</div>
-              {line.detail && <div style={{ fontSize: 12.5, color: '#484848', marginTop: 1, whiteSpace: 'pre-wrap' }}>{line.detail}</div>}
+              <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--ink)' }}>{line.text}</div>
+              {line.detail && <div style={{ fontSize: 12.5, color: 'var(--ink-2)', marginTop: 1, whiteSpace: 'pre-wrap' }}>{line.detail}</div>}
             </div>
-            <span style={{ fontSize: 12, color: '#9197A2', fontWeight: 400, whiteSpace: 'nowrap' }}>{fullDate(e.createdAt)}</span>
+            <span style={{ fontSize: 12, color: 'var(--ink-4)', fontWeight: 400, whiteSpace: 'nowrap' }}>{fullDate(e.createdAt)}</span>
           </div>
         );
       })}
@@ -817,8 +817,8 @@ function Thread({ messages, pending, onRetry, onDiscard }: {
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [last]);
   let prevDay = '';
   return (
-    <div className="scry" style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', background: '#FBFBFC', minHeight: 0 }}>
-      {messages.length === 0 && pending.length === 0 && <div style={{ textAlign: 'center', color: '#9197A2', fontSize: 13, fontWeight: 400, padding: 30 }}>No messages yet.</div>}
+    <div className="scry" style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', background: 'var(--surface-2)', minHeight: 0 }}>
+      {messages.length === 0 && pending.length === 0 && <div style={{ textAlign: 'center', color: 'var(--ink-4)', fontSize: 13, fontWeight: 400, padding: 30 }}>No messages yet.</div>}
       {messages.map((m) => {
         const day = new Date(m.createdAt).toDateString();
         const divider = day !== prevDay ? dayLabel(m.createdAt) : null;
@@ -826,8 +826,8 @@ function Thread({ messages, pending, onRetry, onDiscard }: {
         return (
           <div key={m.id}>
             {divider && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 0 12px', color: '#9197A2', fontSize: 11.5, fontWeight: 500, letterSpacing: '.04em' }}>
-                <span style={{ flex: 1, height: 1, background: '#EBEBEB' }} />{divider.toUpperCase()}<span style={{ flex: 1, height: 1, background: '#EBEBEB' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 0 12px', color: 'var(--ink-4)', fontSize: 11.5, fontWeight: 500, letterSpacing: '.04em' }}>
+                <span style={{ flex: 1, height: 1, background: 'var(--line)' }} />{divider.toUpperCase()}<span style={{ flex: 1, height: 1, background: 'var(--line)' }} />
               </div>
             )}
             <Bubble m={m} />
@@ -839,9 +839,9 @@ function Thread({ messages, pending, onRetry, onDiscard }: {
           <Bubble m={p} />
           {p.failed && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, margin: '-6px 4px 12px', fontSize: 12, fontWeight: 500 }}>
-              <span style={{ color: '#B42318' }}>Not sent</span>
-              <button type="button" onClick={() => onRetry(p)} style={{ border: 'none', background: 'none', color: '#0571A6', fontWeight: 500, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Retry</button>
-              <button type="button" onClick={() => onDiscard(p)} style={{ border: 'none', background: 'none', color: '#717171', fontWeight: 500, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Delete</button>
+              <span style={{ color: 'var(--bad)' }}>Not sent</span>
+              <button type="button" onClick={() => onRetry(p)} style={{ border: 'none', background: 'none', color: 'var(--accent-ink)', fontWeight: 500, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Retry</button>
+              <button type="button" onClick={() => onDiscard(p)} style={{ border: 'none', background: 'none', color: 'var(--ink-3)', fontWeight: 500, cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>Delete</button>
             </div>
           )}
         </div>
@@ -855,9 +855,9 @@ function Bubble({ m }: { m: SupportMessage }) {
   if (m.side === 'system') {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', margin: '8px 0 12px' }}>
-        <div style={{ maxWidth: '82%', textAlign: 'center', background: '#F1F2F5', color: '#484848', borderRadius: 12, padding: '8px 13px', fontSize: 12.5, fontWeight: 400, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
+        <div style={{ maxWidth: '82%', textAlign: 'center', background: 'var(--surface-2)', color: 'var(--ink-2)', borderRadius: 12, padding: '8px 13px', fontSize: 12.5, fontWeight: 400, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
           {m.text}
-          <span style={{ display: 'block', fontSize: 11.5, color: '#9197A2', marginTop: 3 }}>{clock(m.createdAt)}</span>
+          <span style={{ display: 'block', fontSize: 11.5, color: 'var(--ink-4)', marginTop: 3 }}>{clock(m.createdAt)}</span>
         </div>
       </div>
     );
@@ -866,10 +866,10 @@ function Bubble({ m }: { m: SupportMessage }) {
   const who = m.senderLabel || (ours ? 'Support' : 'Employee');
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: ours ? 'flex-end' : 'flex-start', margin: '0 0 12px' }}>
-      <div style={{ fontSize: 11.5, fontWeight: 500, color: ours ? '#0571A6' : '#717171', margin: '0 4px 3px' }}>
-        {who} · <span style={{ fontWeight: 400, color: '#9197A2' }}>{clock(m.createdAt)}</span>
+      <div style={{ fontSize: 11.5, fontWeight: 500, color: ours ? 'var(--accent-ink)' : 'var(--ink-3)', margin: '0 4px 3px' }}>
+        {who} · <span style={{ fontWeight: 400, color: 'var(--ink-4)' }}>{clock(m.createdAt)}</span>
       </div>
-      <div style={{ maxWidth: '74%', background: ours ? '#0571A6' : '#fff', color: ours ? '#fff' : '#222222', border: ours ? 'none' : '1px solid #EBEBEB', borderRadius: 16, borderTopRightRadius: ours ? 4 : 14, borderTopLeftRadius: ours ? 14 : 4, padding: '10px 13px', fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+      <div style={{ maxWidth: '74%', background: ours ? 'var(--accent-grad)' : 'var(--surface)', color: ours ? '#fff' : 'var(--ink)', border: ours ? 'none' : '1px solid var(--line)', borderRadius: 16, borderTopRightRadius: ours ? 4 : 14, borderTopLeftRadius: ours ? 14 : 4, padding: '10px 13px', fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
         {m.text}
         {m.attachments?.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: m.text ? 9 : 0 }}>
@@ -885,15 +885,15 @@ function AttachmentView({ a, ours }: { a: SupportAttachment; ours: boolean }) {
   const image = a.contentType?.startsWith('image/');
   if (image && a.url) {
     return (
-      <a href={a.url} target="_blank" rel="noreferrer" title={a.name} style={{ display: 'block', borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(0,0,0,.08)', background: '#F7F7F9' }}>
+      <a href={a.url} target="_blank" rel="noreferrer" title={a.name} style={{ display: 'block', borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(0,0,0,.08)', background: 'var(--surface-2)' }}>
         <img src={a.url} alt={a.name} style={{ display: 'block', width: 150, height: 110, objectFit: 'cover' }} />
       </a>
     );
   }
   return (
     <a href={a.url || undefined} target="_blank" rel="noreferrer"
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 11px', borderRadius: 10, background: ours ? 'rgba(255,255,255,.16)' : '#F3F8FB', color: ours ? '#fff' : '#0571A6', textDecoration: 'none', fontSize: 12.5, fontWeight: 500, maxWidth: 240 }}>
-      <IconFile size={16} stroke={ours ? '#fff' : '#0571A6'} />
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 11px', borderRadius: 10, background: ours ? 'rgba(255,255,255,.16)' : 'var(--accent-soft)', color: ours ? '#fff' : 'var(--accent-ink)', textDecoration: 'none', fontSize: 12.5, fontWeight: 500, maxWidth: 240 }}>
+      <IconFile size={16} stroke={ours ? '#fff' : 'var(--accent-ink)'} />
       <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
       {a.size ? <span style={{ fontWeight: 400, opacity: 0.75, whiteSpace: 'nowrap' }}>{fileSize(a.size)}</span> : null}
     </a>
@@ -935,15 +935,15 @@ function Composer({ onSend }: { onSend: (text: string, files: File[]) => void })
   };
 
   return (
-    <div style={{ borderTop: '1px solid #F0F0F2', padding: '12px 16px 14px', background: '#fff' }}>
+    <div style={{ borderTop: '1px solid var(--line)', padding: '12px 16px 14px', background: 'var(--surface)' }}>
       {files.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 9 }}>
           {files.map((f, i) => (
-            <span key={`${f.name}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#F3F8FB', border: '1px solid #D7E9F3', color: '#0571A6', borderRadius: 9, padding: '5px 6px 5px 10px', fontSize: 12.5, fontWeight: 500, maxWidth: 240 }}>
+            <span key={`${f.name}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', color: 'var(--accent-ink)', borderRadius: 9, padding: '5px 6px 5px 10px', fontSize: 12.5, fontWeight: 500, maxWidth: 240 }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
-              <span style={{ fontWeight: 400, color: '#717171', whiteSpace: 'nowrap' }}>{fileSize(f.size)}</span>
+              <span style={{ fontWeight: 400, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{fileSize(f.size)}</span>
               <button type="button" title="Remove" onClick={() => setFiles(files.filter((_, j) => j !== i))} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 2, display: 'inline-flex' }}>
-                <IconClose size={13} stroke="#717171" />
+                <IconClose size={13} stroke="var(--ink-3)" />
               </button>
             </span>
           ))}
@@ -952,7 +952,7 @@ function Composer({ onSend }: { onSend: (text: string, files: File[]) => void })
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 9 }}>
         <input ref={picker} type="file" accept={ACCEPT} multiple hidden onChange={(e) => add(e.target.files)} />
         <button type="button" title="Attach images or PDFs (up to 5, 10 MB each)" onClick={() => picker.current?.click()} disabled={files.length >= SUPPORT_MAX_FILES}
-          style={{ width: 40, height: 40, borderRadius: 999, border: '1px solid #EBEBEB', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          style={{ width: 40, height: 40, borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <IconClip />
         </button>
         <textarea
@@ -962,7 +962,7 @@ function Composer({ onSend }: { onSend: (text: string, files: File[]) => void })
           placeholder="Write a reply… (Enter to send, Shift+Enter for a new line)"
           rows={2}
           maxLength={4000}
-          style={{ flex: 1, resize: 'none', border: '1px solid #EBEBEB', borderRadius: 12, padding: '9px 12px', fontSize: 13.5, lineHeight: 1.45, fontFamily: 'inherit', outline: 'none', color: '#222222', maxHeight: 140 }}
+          style={{ flex: 1, resize: 'none', border: '1px solid var(--line)', borderRadius: 12, padding: '9px 12px', fontSize: 13.5, lineHeight: 1.45, fontFamily: 'inherit', outline: 'none', color: 'var(--ink)', maxHeight: 140 }}
         />
         <button type="button" disabled={!canSend} onClick={send} style={{ ...primaryBtn, height: 40, opacity: canSend ? 1 : 0.5, cursor: canSend ? 'pointer' : 'not-allowed' }}>
           Send
@@ -972,6 +972,6 @@ function Composer({ onSend }: { onSend: (text: string, files: File[]) => void })
   );
 }
 
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
-const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
-const linkBtn: CSSProperties = { background: 'none', border: 'none', color: '#0571A6', fontWeight: 500, fontSize: 'inherit', cursor: 'pointer', padding: 0, fontFamily: 'inherit' };
+const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
+const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' };
+const linkBtn: CSSProperties = { background: 'none', border: 'none', color: 'var(--accent-ink)', fontWeight: 500, fontSize: 'inherit', cursor: 'pointer', padding: 0, fontFamily: 'inherit' };

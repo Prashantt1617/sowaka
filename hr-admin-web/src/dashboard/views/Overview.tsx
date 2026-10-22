@@ -23,7 +23,7 @@ function StatCard({
       style={{
         textAlign: 'left',
         cursor: 'pointer',
-        background: '#fff',
+        background: 'var(--surface)',
         border: '1px solid transparent',
         borderRadius: 'var(--r-lg)',
         padding: 20,
@@ -38,14 +38,14 @@ function StatCard({
       </div>
       <div>
         <div style={{ fontSize: 30, fontWeight: 600, letterSpacing: '-1px', lineHeight: 1 }}>{value}</div>
-        <div style={{ fontSize: 14, color: '#717171', fontWeight: 400, marginTop: 5 }}>{label}</div>
+        <div style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 400, marginTop: 5 }}>{label}</div>
       </div>
     </button>
   );
 }
 
 const leaveGlyph = (
-  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#0571A6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--accent-ink)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <rect x="3" y="4.5" width="18" height="16.5" rx="2.5" />
     <path d="M3 9h18M8 2.5v4M16 2.5v4" />
   </svg>
@@ -57,7 +57,7 @@ const claimGlyph = (
   </svg>
 );
 const feedbackGlyph = (
-  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#7E5FB0" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--t-lilac-i)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 11.5a8.38 8.38 0 0 1-9 8.3 8.5 8.5 0 0 1-3.8-.9L3 20.5l1.6-4.2A8.4 8.4 0 0 1 12 3.2a8.38 8.38 0 0 1 9 8.3z" />
   </svg>
 );
@@ -74,24 +74,24 @@ export function Overview() {
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, marginBottom: 22 }}>
-        <StatCard icon={leaveGlyph} iconBg="#E7F4FB" value={leavesPending} label="Leaves pending" onClick={() => s.setView('leave')} />
+        <StatCard icon={leaveGlyph} iconBg="var(--accent-soft)" value={leavesPending} label="Leaves pending" onClick={() => s.setView('leave')} />
         <StatCard icon={claimGlyph} iconBg="#EEF0E6" value={claims} label="Claims to review" onClick={() => s.setView('reimbursements')} />
-        <StatCard icon={feedbackGlyph} iconBg="#EFE7F2" value={reviewsPending} label="Feedbacks pending" onClick={() => s.setView('feedback')} />
+        <StatCard icon={feedbackGlyph} iconBg="var(--t-lilac)" value={reviewsPending} label="Feedbacks pending" onClick={() => s.setView('feedback')} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, alignItems: 'start' }}>
         {/* On leave this week */}
-        <div style={{ background: '#fff', border: '1px solid transparent', borderRadius: 'var(--r-lg)', padding: '18px 20px', boxShadow: 'var(--shadow)' }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid transparent', borderRadius: 'var(--r-lg)', padding: '18px 20px', boxShadow: 'var(--shadow)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div style={{ fontSize: 14, fontWeight: 600 }}>On leave this week</div>
-            <button onClick={() => s.setView('leave')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, color: '#0571A6' }}>View all</button>
+            <button onClick={() => s.setView('leave')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--accent-ink)' }}>View all</button>
           </div>
           {weekRows.map((w) => (
-            <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0', borderBottom: '1px solid #F0F0F2' }}>
+            <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0', borderBottom: '1px solid var(--line)' }}>
               <Avatar name={w.name} size={34} font={12} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 500 }}>{w.name}</div>
-                <div style={{ fontSize: 13, color: '#717171', fontWeight: 400, marginTop: 1 }}>
+                <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400, marginTop: 1 }}>
                   {w.from === w.to ? w.from : `${w.from} – ${w.to}`} · {w.days}
                 </div>
               </div>
@@ -101,17 +101,17 @@ export function Overview() {
         </div>
 
         {/* Overtime requests */}
-        <div style={{ background: '#fff', border: '1px solid transparent', borderRadius: 'var(--r-lg)', padding: '18px 20px', boxShadow: 'var(--shadow)' }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid transparent', borderRadius: 'var(--r-lg)', padding: '18px 20px', boxShadow: 'var(--shadow)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div style={{ fontSize: 14, fontWeight: 600 }}>Overtime requests</div>
-            <button onClick={() => s.setView('overtime')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, color: '#0571A6' }}>View all</button>
+            <button onClick={() => s.setView('overtime')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--accent-ink)' }}>View all</button>
           </div>
           {ovOvertime.map((o) => (
-            <div key={o.id} onClick={() => s.goOvertimeRow(o.id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0', borderBottom: '1px solid #F0F0F2', cursor: 'pointer' }}>
+            <div key={o.id} onClick={() => s.goOvertimeRow(o.id)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0', borderBottom: '1px solid var(--line)', cursor: 'pointer' }}>
               <Avatar name={o.name} size={34} font={12} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 500 }}>{o.name}</div>
-                <div style={{ fontSize: 13, color: '#717171', fontWeight: 400, marginTop: 1 }}>
+                <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400, marginTop: 1 }}>
                   {o.duration} · {o.otDate} ({o.day})
                 </div>
               </div>

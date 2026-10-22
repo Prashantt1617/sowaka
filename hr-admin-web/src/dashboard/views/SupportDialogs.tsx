@@ -17,7 +17,7 @@ function DialogShell({ title, busy, onClose, children, width = 480 }: { title: s
   return (
     <div role="dialog" aria-modal="true" aria-label={title} style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div onClick={busy ? undefined : onClose} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', animation: 'ovl .2s ease both' }} />
-      <div style={{ position: 'relative', width: `min(${width}px, 100%)`, background: '#fff', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', padding: '20px 22px', animation: 'pop .18s ease both' }}>
+      <div style={{ position: 'relative', width: `min(${width}px, 100%)`, background: 'var(--surface)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', padding: '20px 22px', animation: 'pop .18s ease both' }}>
         <div style={{ fontSize: 16, fontWeight: 600 }}>{title}</div>
         {children}
       </div>
@@ -25,7 +25,7 @@ function DialogShell({ title, busy, onClose, children, width = 480 }: { title: s
   );
 }
 
-function Buttons({ busy, onClose, onConfirm, label, busyLabel, tone = '#0571A6', disabled }: { busy: boolean; onClose: () => void; onConfirm: () => void; label: string; busyLabel: string; tone?: string; disabled?: boolean }) {
+function Buttons({ busy, onClose, onConfirm, label, busyLabel, tone = 'var(--accent)', disabled }: { busy: boolean; onClose: () => void; onConfirm: () => void; label: string; busyLabel: string; tone?: string; disabled?: boolean }) {
   const off = busy || disabled;
   return (
     <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
@@ -41,10 +41,10 @@ export function SendBackDialog({ busy, onClose, onConfirm }: { busy: boolean; on
   const [note, setNote] = useState('');
   return (
     <DialogShell title="Send back to the Support head?" busy={busy} onClose={onClose}>
-      <div style={{ fontSize: 13, color: '#484848', lineHeight: 1.55, marginTop: 8 }}>
+      <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, marginTop: 8 }}>
         The ticket leaves your desk and goes back to the head’s queue with its conversation. The employee isn’t told.
       </div>
-      <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.06em', color: '#717171', margin: '16px 0 6px' }}>NOTE FOR THE HEAD · OPTIONAL</div>
+      <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.06em', color: 'var(--ink-3)', margin: '16px 0 6px' }}>NOTE FOR THE HEAD · OPTIONAL</div>
       <textarea autoFocus value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} rows={3} placeholder="e.g. This is a leave question, not payroll" style={textarea} />
       <Buttons busy={busy} onClose={onClose} onConfirm={() => onConfirm(note.trim())} label="Send back" busyLabel="Sending…" />
     </DialogShell>
@@ -54,10 +54,10 @@ export function SendBackDialog({ busy, onClose, onConfirm }: { busy: boolean; on
 export function ConfirmResolveDialog({ busy, onClose, onConfirm }: { busy: boolean; onClose: () => void; onConfirm: () => void }) {
   return (
     <DialogShell title="Resolve this ticket?" busy={busy} onClose={onClose}>
-      <div style={{ fontSize: 13, color: '#484848', lineHeight: 1.55, marginTop: 8 }}>
+      <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, marginTop: 8 }}>
         The conversation closes for good. The employee is notified and can’t reply here; to continue they raise a new ticket.
       </div>
-      <Buttons busy={busy} onClose={onClose} onConfirm={onConfirm} label="Resolve" busyLabel="Resolving…" tone="#4F7A52" />
+      <Buttons busy={busy} onClose={onClose} onConfirm={onConfirm} label="Resolve" busyLabel="Resolving…" tone="var(--ok)" />
     </DialogShell>
   );
 }
@@ -120,31 +120,31 @@ export function TicketTypesDialog({ topics, busy, error, onClose, onSave }: {
 
   return (
     <DialogShell title="Ticket types" busy={busy} onClose={onClose} width={560}>
-      <div style={{ fontSize: 13, color: '#484848', lineHeight: 1.55, marginTop: 8 }}>
+      <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, marginTop: 8 }}>
         What employees choose from when they raise a ticket in the app, in this order. Renaming a type keeps its tickets together; removing one stops new tickets of that type, and tickets already raised keep theirs.
       </div>
       <div className="scry" style={{ maxHeight: 'min(420px, 52vh)', overflowY: 'auto', margin: '14px -4px 0', padding: '0 4px' }}>
         {rows.map((r, i) => {
           const tooLong = tidy(r.label).length > SUPPORT_MAX_TOPIC_LABEL;
           return (
-            <div key={r.id} style={{ padding: '6px 0', borderBottom: '1px solid #F7F7F9' }}>
+            <div key={r.id} style={{ padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <span style={{ width: 22, textAlign: 'right', fontSize: 12.5, fontWeight: 500, color: '#9197A2', flexShrink: 0 }}>{i + 1}</span>
+                <span style={{ width: 22, textAlign: 'right', fontSize: 12.5, fontWeight: 500, color: 'var(--ink-4)', flexShrink: 0 }}>{i + 1}</span>
                 <input value={r.label} onChange={(e) => patch(r.id, e.target.value)} disabled={busy} aria-label={`Type ${i + 1}`} maxLength={SUPPORT_MAX_TOPIC_LABEL}
-                  style={{ ...input, flex: 1, borderColor: tooLong || !tidy(r.label) ? '#E8B7C3' : '#EBEBEB' }} />
-                {!r.key && <span style={{ fontSize: 11.5, fontWeight: 600, color: '#4A6FA5', background: '#E7ECF4', borderRadius: 'var(--r-lg)', padding: '2px 8px' }}>New</span>}
+                  style={{ ...input, flex: 1, borderColor: tooLong || !tidy(r.label) ? 'var(--bad-line)' : 'var(--line)' }} />
+                {!r.key && <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--t-sky-i)', background: 'var(--t-sky)', borderRadius: 'var(--r-lg)', padding: '2px 8px' }}>New</span>}
                 <button type="button" title="Move up" disabled={busy || i === 0} onClick={() => move(i, -1)} style={iconBtn(i === 0)}>
-                  <IconChevronDown stroke="#484848" style={{ transform: 'rotate(180deg)' }} />
+                  <IconChevronDown stroke="var(--ink-2)" style={{ transform: 'rotate(180deg)' }} />
                 </button>
                 <button type="button" title="Move down" disabled={busy || i === rows.length - 1} onClick={() => move(i, 1)} style={iconBtn(i === rows.length - 1)}>
-                  <IconChevronDown stroke="#484848" />
+                  <IconChevronDown stroke="var(--ink-2)" />
                 </button>
                 <button type="button" title="Remove" disabled={busy || rows.length === 1} onClick={() => setRows((rs) => rs.filter((x) => x.id !== r.id))} style={iconBtn(rows.length === 1)}>
-                  <IconClose size={14} stroke="#A8475F" />
+                  <IconClose size={14} stroke="var(--bad)" />
                 </button>
               </div>
               {r.key === SUPPORT_MANAGER_TOPIC && (
-                <div style={{ fontSize: 12, color: '#717171', margin: '4px 0 0 29px' }}>Tickets of this type never go to the requester’s manager or anyone above them.</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-3)', margin: '4px 0 0 29px' }}>Tickets of this type never go to the requester’s manager or anyone above them.</div>
               )}
             </div>
           );
@@ -156,23 +156,23 @@ export function TicketTypesDialog({ topics, busy, error, onClose, onSave }: {
           placeholder={full ? `Up to ${SUPPORT_MAX_TOPICS} types` : 'Add a type, e.g. IT & laptops'} style={{ ...input, flex: 1 }} />
         <button type="button" disabled={busy || full || !tidy(draft)} onClick={add}
           style={{ ...ghostBtn, display: 'inline-flex', alignItems: 'center', gap: 6, opacity: busy || full || !tidy(draft) ? 0.55 : 1, cursor: busy || full || !tidy(draft) ? 'not-allowed' : 'pointer' }}>
-          <IconPlus size={14} stroke="#484848" /> Add
+          <IconPlus size={14} stroke="var(--ink-2)" /> Add
         </button>
       </div>
       {removed.length > 0 && (
-        <div style={{ fontSize: 12.5, color: '#9A6B25', background: '#FBF4EA', borderRadius: 10, padding: '8px 11px', marginTop: 12, lineHeight: 1.45 }}>
+        <div style={{ fontSize: 12.5, color: 'var(--warn)', background: 'var(--warn-bg)', borderRadius: 10, padding: '8px 11px', marginTop: 12, lineHeight: 1.45 }}>
           Removing {removed.map((t) => t.label).join(', ')}. Tickets already raised keep their type.
         </div>
       )}
-      {(problem || error) && <div style={{ fontSize: 12.5, color: '#A8475F', marginTop: 10 }}>{problem || error}</div>}
+      {(problem || error) && <div style={{ fontSize: 12.5, color: 'var(--bad)', marginTop: 10 }}>{problem || error}</div>}
       <Buttons busy={busy} onClose={onClose} disabled={Boolean(problem) || !changed} label="Save"
         busyLabel="Saving…" onConfirm={() => onSave(rows.map((r) => ({ ...(r.key ? { key: r.key } : {}), label: tidy(r.label) })))} />
     </DialogShell>
   );
 }
 
-const input: CSSProperties = { minWidth: 0, border: '1px solid #EBEBEB', borderRadius: 10, padding: '8px 11px', fontSize: 13, fontFamily: 'inherit', outline: 'none', color: '#222222', background: '#fff' };
-const iconBtn = (off: boolean): CSSProperties => ({ width: 32, height: 32, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #EBEBEB', borderRadius: 999, background: '#fff', cursor: off ? 'not-allowed' : 'pointer', opacity: off ? 0.4 : 1, padding: 0 });
-const textarea: CSSProperties = { width: '100%', resize: 'vertical', border: '1px solid #EBEBEB', borderRadius: 10, padding: '9px 11px', fontSize: 13, lineHeight: 1.45, fontFamily: 'inherit', outline: 'none', color: '#222222' };
-const primaryBtn: CSSProperties = { background: '#0571A6', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
-const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const input: CSSProperties = { minWidth: 0, border: '1px solid var(--line)', borderRadius: 10, padding: '8px 11px', fontSize: 13, fontFamily: 'inherit', outline: 'none', color: 'var(--ink)', background: 'var(--surface)' };
+const iconBtn = (off: boolean): CSSProperties => ({ width: 32, height: 32, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--line)', borderRadius: 999, background: 'var(--surface)', cursor: off ? 'not-allowed' : 'pointer', opacity: off ? 0.4 : 1, padding: 0 });
+const textarea: CSSProperties = { width: '100%', resize: 'vertical', border: '1px solid var(--line)', borderRadius: 10, padding: '9px 11px', fontSize: 13, lineHeight: 1.45, fontFamily: 'inherit', outline: 'none', color: 'var(--ink)' };
+const primaryBtn: CSSProperties = { background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };

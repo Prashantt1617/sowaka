@@ -472,7 +472,7 @@ export function PayHeadMaster() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-        <div style={{ display: 'flex', gap: 4, background: '#fff', border: '1px solid #EBEBEB', borderRadius: 12, padding: 4 }}>
+        <div style={{ display: 'flex', gap: 4, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, padding: 4 }}>
           {CATEGORIES.map((c) => {
             const on = tab === c.key;
             return (
@@ -481,7 +481,7 @@ export function PayHeadMaster() {
                 onClick={() => setTab(c.key)}
                 style={{
                   border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500, padding: '7px 15px',
-                  borderRadius: 999, background: on ? '#0571A6' : 'transparent', color: on ? '#fff' : '#717171',
+                  borderRadius: 999, background: on ? 'var(--accent-grad)' : 'transparent', color: on ? '#fff' : 'var(--ink-3)',
                 }}
               >
                 {c.label} <span style={{ opacity: 0.7 }}>· {COUNTS[c.key]}</span>
@@ -495,9 +495,9 @@ export function PayHeadMaster() {
       </div>
 
       {tab === 'reimbursement' && (
-        <div style={{ display: 'flex', gap: 10, background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 12, padding: '12px 15px', marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 10, background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 12, padding: '12px 15px', marginBottom: 14 }}>
           <span style={{ fontSize: 13.5 }}>ℹ️</span>
-          <div style={{ fontSize: 13, color: '#8A6A20', lineHeight: 1.5 }}>
+          <div style={{ fontSize: 13, color: 'var(--warn)', lineHeight: 1.5 }}>
             With these reimbursement components, employees can claim reimbursements for the components which are part of the payroll — not for other expense reimbursements.
           </div>
         </div>
@@ -551,7 +551,7 @@ export function PayHeadMaster() {
               </tr>
             ))}
             {COUNTS[tab] === 0 && (
-              <tr><td colSpan={6} style={{ padding: '28px 16px', textAlign: 'center', color: '#9A9AA5', fontSize: 13.5 }}>No components yet — add one to get started.</td></tr>
+              <tr><td colSpan={6} style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5 }}>No components yet — add one to get started.</td></tr>
             )}
           </tbody>
         </table>
@@ -594,7 +594,7 @@ function ReimbursementModal({ form, setForm, onClose, onSave, saving, onDelete }
                   {REIMB_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               ) : (
-                <input value={form.type} disabled style={{ ...inputStyle, background: '#F7F7F9', color: '#717171' }} />
+                <input value={form.type} disabled style={{ ...inputStyle, background: 'var(--surface-2)', color: 'var(--ink-3)' }} />
               )}
             </Field>
 
@@ -621,14 +621,14 @@ function ReimbursementModal({ form, setForm, onClose, onSave, saving, onDelete }
             <Checkbox checked={form.showInPayslip} onChange={(v) => set('showInPayslip', v)} label="Show this component in payslip" />
             <Checkbox checked={form.active} disabled={locked} onChange={(v) => set('active', v)} label="Mark this as Active" />
 
-            <div style={{ background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#8A6A20', lineHeight: 1.5, marginTop: 16 }}>
+            <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: 'var(--warn)', lineHeight: 1.5, marginTop: 16 }}>
               <strong>Note:</strong> Once you associate this component with an employee, you’ll only be able to edit the <strong>Name in Payslip</strong> and <strong>Amount</strong>. Changes to the amount apply only to new employees.
             </div>
           </div>
         </div>
 
         <div style={modalFoot}>
-          <span style={{ marginRight: 'auto', fontSize: 12.5, color: '#A8475F' }}>* indicates mandatory fields</span>
+          <span style={{ marginRight: 'auto', fontSize: 12.5, color: 'var(--bad)' }}>* indicates mandatory fields</span>
           {onDelete && <DeleteButton onDelete={onDelete} busy={saving} />}
           <button onClick={onClose} style={ghostBtn}>Cancel</button>
           <button onClick={onSave} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
@@ -672,7 +672,7 @@ function BenefitModal({ form, setForm, onClose, onSave, saving, onDelete }: { fo
                   {BENEFIT_PLANS.map((p) => <option key={p.label} value={p.label}>{p.label}</option>)}
                 </select>
               ) : (
-                <input value={form.plan} disabled style={{ ...inputStyle, background: '#F7F7F9', color: '#717171' }} />
+                <input value={form.plan} disabled style={{ ...inputStyle, background: 'var(--surface-2)', color: 'var(--ink-3)' }} />
               )}
             </Field>
 
@@ -698,14 +698,14 @@ function BenefitModal({ form, setForm, onClose, onSave, saving, onDelete }: { fo
               <Checkbox checked={form.active} disabled={locked} onChange={(v) => set('active', v)} label="Mark this as Active" />
             </div>
 
-            <div style={{ background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#8A6A20', lineHeight: 1.5, marginTop: 16 }}>
+            <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: 'var(--warn)', lineHeight: 1.5, marginTop: 16 }}>
               <strong>Note:</strong> Benefits are paid by the employer and sit inside CTC, so the balancing component shrinks by the same amount. Once a template uses this benefit, only the <strong>Name in Payslip</strong> and the amount can be changed.
             </div>
           </div>
         </div>
 
         <div style={modalFoot}>
-          <span style={{ marginRight: 'auto', fontSize: 12.5, color: '#A8475F' }}>* indicates mandatory fields</span>
+          <span style={{ marginRight: 'auto', fontSize: 12.5, color: 'var(--bad)' }}>* indicates mandatory fields</span>
           {onDelete && <DeleteButton onDelete={onDelete} busy={saving} />}
           <button onClick={onClose} style={ghostBtn}>Cancel</button>
           <button onClick={onSave} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
@@ -735,7 +735,7 @@ function DeductionModal({ form, setForm, onClose, onSave, saving, onDelete }: { 
           <div style={{ ...panelCard, maxWidth: 640 }}>
             {!form.isNew && (
               <Field label="Deduction Type" req>
-                <input value={form.type} disabled style={{ ...inputStyle, background: '#F7F7F9', color: '#717171' }} />
+                <input value={form.type} disabled style={{ ...inputStyle, background: 'var(--surface-2)', color: 'var(--ink-3)' }} />
               </Field>
             )}
             <Field label="Name in Payslip" req>
@@ -747,14 +747,14 @@ function DeductionModal({ form, setForm, onClose, onSave, saving, onDelete }: { 
             </Field>
             <Checkbox checked={form.active} disabled={locked} onChange={(v) => set('active', v)} label="Mark this as Active" />
 
-            <div style={{ background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#8A6A20', lineHeight: 1.5, marginTop: 16 }}>
+            <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: 'var(--warn)', lineHeight: 1.5, marginTop: 16 }}>
               <strong>Note:</strong> Once you associate this deduction with an employee, you’ll only be able to edit the <strong>Name in Payslip</strong>. The change will be reflected in both new and existing employees.
             </div>
           </div>
         </div>
 
         <div style={modalFoot}>
-          <span style={{ marginRight: 'auto', fontSize: 12.5, color: '#A8475F' }}>* indicates mandatory fields</span>
+          <span style={{ marginRight: 'auto', fontSize: 12.5, color: 'var(--bad)' }}>* indicates mandatory fields</span>
           {onDelete && <DeleteButton onDelete={onDelete} busy={saving} />}
           <button onClick={onClose} style={ghostBtn}>Cancel</button>
           <button onClick={onSave} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
@@ -797,7 +797,7 @@ function EarningModal({ form, setForm, onClose, onSave, saving, takenTypes, onDe
                     {ADD_TYPES.map((t) => <option key={t} value={t} disabled={takenTypes.has(t)}>{takenTypes.has(t) ? `${t} (already added)` : t}</option>)}
                   </select>
                 ) : (
-                  <input value={form.type} disabled style={{ ...inputStyle, background: '#F7F7F9', color: '#717171' }} />
+                  <input value={form.type} disabled style={{ ...inputStyle, background: 'var(--surface-2)', color: 'var(--ink-3)' }} />
                 )}
               </Field>
             </div>
@@ -884,7 +884,7 @@ function EarningModal({ form, setForm, onClose, onSave, saving, takenTypes, onDe
           </div>
 
           {locked && (
-            <div style={{ background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#8A6A20', lineHeight: 1.5, marginTop: 18 }}>
+            <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: 'var(--warn)', lineHeight: 1.5, marginTop: 18 }}>
               <strong>Note:</strong> This component is already associated with one or more employees, so you can only edit the <strong>Name</strong> and <strong>Amount/Percentage</strong>. Changes to the amount will apply only to new employees.
             </div>
           )}
@@ -892,7 +892,7 @@ function EarningModal({ form, setForm, onClose, onSave, saving, takenTypes, onDe
 
         {/* Footer */}
         <div style={modalFoot}>
-          <span style={{ marginRight: 'auto', fontSize: 12.5, color: '#A8475F' }}>* indicates mandatory fields</span>
+          <span style={{ marginRight: 'auto', fontSize: 12.5, color: 'var(--bad)' }}>* indicates mandatory fields</span>
           {onDelete && <DeleteButton onDelete={onDelete} busy={saving} />}
           <button onClick={onClose} style={ghostBtn}>Cancel</button>
           <button onClick={onSave} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
@@ -911,7 +911,7 @@ function DeleteButton({ onDelete, busy }: { onDelete: () => void; busy: boolean 
       onClick={() => (confirming ? onDelete() : setConfirming(true))}
       onMouseLeave={() => setConfirming(false)}
       disabled={busy}
-      style={{ ...ghostBtn, color: '#A8475F', borderColor: confirming ? '#A8475F' : '#EBD9DE', background: confirming ? '#FBEFF2' : '#fff' }}
+      style={{ ...ghostBtn, color: 'var(--bad)', borderColor: confirming ? 'var(--bad)' : 'var(--bad-line)', background: confirming ? 'var(--bad-bg)' : 'var(--surface)' }}
     >
       {confirming ? 'Click again to delete' : 'Delete'}
     </button>
@@ -920,34 +920,34 @@ function DeleteButton({ onDelete, busy }: { onDelete: () => void; busy: boolean 
 function NameCell({ name, fbp, standard }: { name: string; fbp?: boolean; standard?: boolean }) {
   return (
     <span>
-      <span style={{ fontWeight: 500, color: standard ? '#484848' : '#0571A6' }}>{name}</span>
-      {standard && <span title="A built-in component: saved for your organisation when you save it or add it to a template" style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, padding: '2px 8px', borderRadius: 6, background: '#F0F0F2', color: '#717171' }}>Standard · not added yet</span>}
-      {fbp && <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, padding: '2px 8px', borderRadius: 6, background: '#E4EDE0', color: '#0F6E56' }}>FBP</span>}
+      <span style={{ fontWeight: 500, color: standard ? 'var(--ink-2)' : 'var(--accent-ink)' }}>{name}</span>
+      {standard && <span title="A built-in component: saved for your organisation when you save it or add it to a template" style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, padding: '2px 8px', borderRadius: 6, background: 'var(--surface-2)', color: 'var(--ink-3)' }}>Standard · not added yet</span>}
+      {fbp && <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, padding: '2px 8px', borderRadius: 6, background: 'var(--ok-bg)', color: 'var(--ok)' }}>FBP</span>}
     </span>
   );
 }
 function YesNo({ value }: { value: string }) {
   const [main, ...rest] = value.split(' (');
   return (
-    <span style={{ color: '#222222' }}>
+    <span style={{ color: 'var(--ink)' }}>
       {main}
-      {rest.length > 0 && <span style={{ color: '#9197A2', fontSize: 12.5 }}> ({rest.join(' (')}</span>}
+      {rest.length > 0 && <span style={{ color: 'var(--ink-4)', fontSize: 12.5 }}> ({rest.join(' (')}</span>}
     </span>
   );
 }
 function StatusText({ status }: { status: Status }) {
-  return <span style={{ fontWeight: 500, color: status === 'Active' ? '#4F7A52' : '#9197A2' }}>{status}</span>;
+  return <span style={{ fontWeight: 500, color: status === 'Active' ? 'var(--ok)' : 'var(--ink-4)' }}>{status}</span>;
 }
 function Th({ children, right }: { children: ReactNode; right?: boolean }) {
   return (
-    <th style={{ textAlign: right ? 'right' : 'left', fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '11px 14px', borderBottom: '1px solid #EBEBEB', whiteSpace: 'nowrap', background: 'var(--surface-2)' }}>
+    <th style={{ textAlign: right ? 'right' : 'left', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '11px 14px', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap', background: 'var(--surface-2)' }}>
       {children}
     </th>
   );
 }
 function Td({ children, muted, right, mono }: { children: ReactNode; muted?: boolean; right?: boolean; mono?: boolean }) {
   return (
-    <td style={{ padding: '13px 14px', borderBottom: '1px solid #F0F0F2', color: muted ? '#484848' : '#222222', textAlign: right ? 'right' : 'left', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>
+    <td style={{ padding: '13px 14px', borderBottom: '1px solid var(--line)', color: muted ? 'var(--ink-2)' : 'var(--ink)', textAlign: right ? 'right' : 'left', fontVariantNumeric: mono ? 'tabular-nums' : undefined }}>
       {children}
     </td>
   );
@@ -956,8 +956,8 @@ function Td({ children, muted, right, mono }: { children: ReactNode; muted?: boo
 function Field({ label, req, children, style }: { label: string; req?: boolean; children: ReactNode; style?: CSSProperties }) {
   return (
     <div style={{ marginBottom: 16, ...style }}>
-      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: '#484848' }}>
-        {label}{req && <span style={{ color: '#C4382E', marginLeft: 2 }}>*</span>}
+      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--ink-2)' }}>
+        {label}{req && <span style={{ color: 'var(--bad)', marginLeft: 2 }}>*</span>}
       </label>
       {children}
     </div>
@@ -966,11 +966,11 @@ function Field({ label, req, children, style }: { label: string; req?: boolean; 
 function AmountInput({ value, onChange, suffix, prefix = '₹', disabled }: { value: string; onChange: (v: string) => void; suffix?: string; prefix?: string | null; disabled?: boolean }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'stretch', border: '1px solid #EBEBEB', borderRadius: 10, overflow: 'hidden', background: '#fff', maxWidth: 200 }}>
-        {prefix && <span style={{ padding: '9px 11px', background: '#F7F7F9', color: '#717171', fontWeight: 500, borderRight: '1px solid #EBEBEB' }}>{prefix}</span>}
-        <input type="number" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} style={{ border: 'none', outline: 'none', padding: '9px 11px', fontSize: 14, fontFamily: 'inherit', width: 120, color: '#222222', background: 'none' }} />
+      <div style={{ display: 'flex', alignItems: 'stretch', border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden', background: 'var(--surface)', maxWidth: 200 }}>
+        {prefix && <span style={{ padding: '9px 11px', background: 'var(--surface-2)', color: 'var(--ink-3)', fontWeight: 500, borderRight: '1px solid var(--line)' }}>{prefix}</span>}
+        <input type="number" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} style={{ border: 'none', outline: 'none', padding: '9px 11px', fontSize: 14, fontFamily: 'inherit', width: 120, color: 'var(--ink)', background: 'none' }} />
       </div>
-      {suffix && <span style={{ fontSize: 13.5, color: '#717171' }}>{suffix}</span>}
+      {suffix && <span style={{ fontSize: 13.5, color: 'var(--ink-3)' }}>{suffix}</span>}
     </div>
   );
 }
@@ -980,11 +980,11 @@ function Checkbox({ checked, onChange, label, disabled, fixed }: { checked: bool
   return (
     <div style={{ display: 'flex', gap: 10, padding: '7px 0', opacity: disabled && !fixed ? 0.55 : 1 }} title={fixed ? 'Fixed for this earning type' : undefined}>
       <button type="button" disabled={off} aria-disabled={off} onClick={() => !off && onChange(!checked)}
-        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: off ? 'default' : 'pointer', border: `1.5px solid ${checked ? '#0571A6' : '#C7CBD2'}`, background: checked ? '#0571A6' : '#fff', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, lineHeight: 1, padding: 0 }}>
+        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: off ? 'default' : 'pointer', border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--line-2)'}`, background: checked ? 'var(--accent-grad)' : 'var(--surface)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, lineHeight: 1, padding: 0 }}>
         {checked ? '✓' : ''}
       </button>
       <div>
-        <div style={{ fontSize: 13.5, color: '#222222' }}>{label}</div>
+        <div style={{ fontSize: 13.5, color: 'var(--ink)' }}>{label}</div>
       </div>
     </div>
   );
@@ -993,21 +993,21 @@ function Radio({ checked, onChange, label, disabled, fixed }: { checked: boolean
   const off = disabled || fixed;
   return (
     <div style={{ display: 'flex', gap: 10, padding: '6px 0', opacity: disabled && !fixed ? 0.55 : 1, cursor: off ? 'default' : 'pointer' }} title={fixed ? 'Fixed for this earning type' : undefined} onClick={() => !off && onChange()}>
-      <span style={{ flexShrink: 0, width: 17, height: 17, marginTop: 1, borderRadius: '50%', border: `1.5px solid ${checked ? '#0571A6' : '#C7CBD2'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {checked && <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#0571A6' }} />}
+      <span style={{ flexShrink: 0, width: 17, height: 17, marginTop: 1, borderRadius: '50%', border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--line-2)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {checked && <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--accent-grad)' }} />}
       </span>
       <div>
-        <div style={{ fontSize: 13.5, color: '#222222' }}>{label}</div>
+        <div style={{ fontSize: 13.5, color: 'var(--ink)' }}>{label}</div>
       </div>
     </div>
   );
 }
 
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '11px 20px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
-const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: '#fff', color: '#222222' };
-const modalCard: CSSProperties = { position: 'relative', width: '100%', maxHeight: '92vh', background: '#F7F7F9', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', animation: 'pop .2s ease both', display: 'flex', flexDirection: 'column' };
-const modalHead: CSSProperties = { padding: '20px 26px', borderBottom: '1px solid #EBEBEB', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 };
-const modalFoot: CSSProperties = { padding: '14px 26px', borderTop: '1px solid #EBEBEB', display: 'flex', alignItems: 'center', gap: 11, background: '#fff', borderBottomLeftRadius: 20, borderBottomRightRadius: 20, flexShrink: 0 };
-const panelCard: CSSProperties = { background: '#fff', border: '1px solid transparent', borderRadius: 16, padding: '18px 20px', boxShadow: 'var(--shadow)' };
+const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '11px 20px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer' };
+const inputStyle: CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
+const modalCard: CSSProperties = { position: 'relative', width: '100%', maxHeight: '92vh', background: 'var(--surface-2)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', animation: 'pop .2s ease both', display: 'flex', flexDirection: 'column' };
+const modalHead: CSSProperties = { padding: '20px 26px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 };
+const modalFoot: CSSProperties = { padding: '14px 26px', borderTop: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 11, background: 'var(--surface)', borderBottomLeftRadius: 20, borderBottomRightRadius: 20, flexShrink: 0 };
+const panelCard: CSSProperties = { background: 'var(--surface)', border: '1px solid transparent', borderRadius: 16, padding: '18px 20px', boxShadow: 'var(--shadow)' };
 const panelTitle: CSSProperties = { fontSize: 14, fontWeight: 600, marginBottom: 14 };

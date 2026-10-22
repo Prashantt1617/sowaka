@@ -53,7 +53,7 @@ export function TemplateDetailModal({
             <button
               onClick={remove}
               disabled={deleting}
-              style={{ ...ghostBtn, color: '#A32B2B', opacity: deleting ? 0.45 : 1 }}
+              style={{ ...ghostBtn, color: 'var(--bad)', opacity: deleting ? 0.45 : 1 }}
             >
               {deleting ? 'Deleting…' : 'Delete template'}
             </button>
@@ -81,14 +81,14 @@ export function TemplateDetailModal({
                     <Td top>
                       <div style={{ fontWeight: 500 }}>{p?.title ?? 'Removed parameter'}</div>
                       {p?.description && (
-                        <div style={{ fontSize: 12.5, color: '#717171', marginTop: 2, lineHeight: 1.45 }}>{p.description}</div>
+                        <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2, lineHeight: 1.45 }}>{p.description}</div>
                       )}
                     </Td>
                     <Td top right>
                       <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{w}%</span>
                     </Td>
                     <Td top right>
-                      <span style={{ color: '#717171', fontVariantNumeric: 'tabular-nums' }}>
+                      <span style={{ color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
                         {((w / 100) * 5).toFixed(2)}
                       </span>
                     </Td>
@@ -96,8 +96,8 @@ export function TemplateDetailModal({
                 );
               })}
               <tr>
-                <Td><span style={{ fontWeight: 500, color: '#717171' }}>Total</span></Td>
-                <Td right><span style={{ fontWeight: 600, color: '#4F7A52' }}>100%</span></Td>
+                <Td><span style={{ fontWeight: 500, color: 'var(--ink-3)' }}>Total</span></Td>
+                <Td right><span style={{ fontWeight: 600, color: 'var(--ok)' }}>100%</span></Td>
                 <Td right><span style={{ fontWeight: 600 }}>5.00</span></Td>
               </tr>
             </tbody>
@@ -110,10 +110,10 @@ export function TemplateDetailModal({
             <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-.6px', fontVariantNumeric: 'tabular-nums' }}>
               {template.employeeCount}
             </div>
-            <div style={{ fontSize: 12.5, color: '#717171', fontWeight: 400, marginTop: 2 }}>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400, marginTop: 2 }}>
               employees on it this cycle
             </div>
-            <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 10, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 10, lineHeight: 1.5 }}>
             </div>
           </div>
 
@@ -121,7 +121,7 @@ export function TemplateDetailModal({
       </div>
 
       {blocked && (
-        <div style={{ ...warnTag, background: '#F7E4E4', borderColor: '#E8C9C9', color: '#A32B2B', marginTop: 16 }}>
+        <div style={{ ...warnTag, background: 'var(--bad-bg)', borderColor: 'var(--bad-line)', color: 'var(--bad)', marginTop: 16 }}>
           {blocked}
         </div>
       )}

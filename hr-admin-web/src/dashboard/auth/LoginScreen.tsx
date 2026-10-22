@@ -8,26 +8,26 @@ import { Logo } from '../icons';
 
 const inputStyle = {
   width: '100%',
-  border: '1px solid #EBEBEB',
+  border: '1px solid var(--line)',
   borderRadius: 12,
   padding: '12px 14px',
   fontSize: 14,
   outline: 'none',
-  background: '#fff',
-  color: '#222222',
+  background: 'var(--surface)',
+  color: 'var(--ink)',
 } as const;
 
 const primaryBtn = {
   width: '100%',
   border: 'none',
-  background: '#0571A6',
+  background: 'var(--accent-grad)',
   color: '#fff',
   borderRadius: 999,
   padding: '13px',
   fontSize: 14,
   fontWeight: 500,
   cursor: 'pointer',
-  boxShadow: '0 2px 8px rgba(5,113,166,.26)',
+  boxShadow: '0 2px 8px rgba(0,136,255,.26)',
 } as const;
 
 export function LoginScreen() {
@@ -78,7 +78,7 @@ export function LoginScreen() {
         // and the name lit up in the middle of it — stays in view.
         justifyContent: backdrop ? 'flex-start' : 'center',
         padding: backdrop ? '24px 24px 24px max(48px, 9vw)' : 24,
-        background: backdrop ? `url(${backdrop}) center / cover no-repeat fixed` : '#F7F7F9',
+        background: backdrop ? `url(${backdrop}) center / cover no-repeat fixed` : 'var(--surface-2)',
       }}
     >
       <div
@@ -86,10 +86,10 @@ export function LoginScreen() {
           width: 400, borderRadius: 'var(--r-lg)', padding: '34px 32px',
           // Frosted over an image: enough of the room shows through to place
           // you, and the text still sits on something close to white.
-          background: backdrop ? 'rgba(247,247,249,.8)' : '#F7F7F9',
+          background: backdrop ? 'rgba(247,247,249,.8)' : 'var(--surface-2)',
           backdropFilter: backdrop ? 'blur(10px) saturate(1.2)' : undefined,
           WebkitBackdropFilter: backdrop ? 'blur(10px) saturate(1.2)' : undefined,
-          border: backdrop ? '1px solid rgba(255,255,255,.55)' : '1px solid #EBEBEB',
+          border: backdrop ? '1px solid rgba(255,255,255,.55)' : '1px solid var(--line)',
           boxShadow: backdrop ? '0 24px 60px rgba(0,0,0,.35)' : '0 20px 50px rgba(60,40,24,.12)',
         }}
       >
@@ -116,17 +116,17 @@ export function LoginScreen() {
             >
               {brand.wordmark.text}
             </div>
-            <div style={{ fontSize: 13, fontWeight: 400, color: '#717171', marginTop: 4 }}>HR Admin</div>
+            <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-3)', marginTop: 4 }}>HR Admin</div>
             </div>
           </div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 22 }}>
-            <div style={{ width: 38, height: 38, borderRadius: 12, background: '#0571A6', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(5,113,166,.28)' }}>
+            <div style={{ width: 38, height: 38, borderRadius: 12, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,136,255,.28)' }}>
               <Logo />
             </div>
             <div>
               <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-.3px', lineHeight: 1 }}>Sowaka</div>
-              <div style={{ fontSize: 13, fontWeight: 400, color: '#717171', marginTop: 3 }}>HR Admin</div>
+              <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-3)', marginTop: 3 }}>HR Admin</div>
             </div>
           </div>
         )}
@@ -134,7 +134,7 @@ export function LoginScreen() {
         <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: '-.4px', marginBottom: 6 }}>
           {step === 'email' ? 'Sign in' : 'Enter your code'}
         </div>
-        <div style={{ fontSize: 14, color: '#717171', fontWeight: 400, lineHeight: 1.5, marginBottom: 22 }}>
+        <div style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 400, lineHeight: 1.5, marginBottom: 22 }}>
           {step === 'email'
             ? 'We’ll email you a one-time sign-in code.'
             : `We sent a 6-digit code to ${email}.`}
@@ -150,7 +150,7 @@ export function LoginScreen() {
               autoFocus
               style={inputStyle}
             />
-            {error && <div style={{ fontSize: 13, color: '#A8475F', fontWeight: 400 }}>{error}</div>}
+            {error && <div style={{ fontSize: 13, color: 'var(--bad)', fontWeight: 400 }}>{error}</div>}
             <button type="submit" disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>
               {busy ? 'Sending…' : 'Send code'}
             </button>
@@ -164,14 +164,14 @@ export function LoginScreen() {
               autoFocus
               style={{ ...inputStyle, letterSpacing: '6px', fontSize: 17, fontWeight: 500, textAlign: 'center' }}
             />
-            {error && <div style={{ fontSize: 13, color: '#A8475F', fontWeight: 400 }}>{error}</div>}
+            {error && <div style={{ fontSize: 13, color: 'var(--bad)', fontWeight: 400 }}>{error}</div>}
             <button type="submit" disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>
               {busy ? 'Verifying…' : 'Verify & sign in'}
             </button>
             <button
               type="button"
               onClick={() => { setStep('email'); setOtp(''); setError(''); }}
-              style={{ border: 'none', background: 'none', color: '#717171', fontSize: 13, fontWeight: 500, cursor: 'pointer', padding: 4 }}
+              style={{ border: 'none', background: 'none', color: 'var(--ink-3)', fontSize: 13, fontWeight: 500, cursor: 'pointer', padding: 4 }}
             >
               ← Use a different email
             </button>

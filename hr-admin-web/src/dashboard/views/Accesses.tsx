@@ -67,7 +67,7 @@ export function Accesses() {
           const active = tab === t.key;
           return (
             <button key={t.key} onClick={() => setTab(t.key)}
-              style={{ ...tabBtn, color: active ? '#0571A6' : '#717171', borderBottomColor: active ? '#0571A6' : 'transparent', fontWeight: active ? 800 : 600 }}>
+              style={{ ...tabBtn, color: active ? 'var(--accent-ink)' : 'var(--ink-3)', borderBottomColor: active ? 'var(--accent)' : 'transparent', fontWeight: active ? 800 : 600 }}>
               {t.label}
             </button>
           );
@@ -85,12 +85,12 @@ const SUPPORT_CHOICES: { value: SupportRole | null; label: string; hint: string 
   { value: 'head', label: 'Support head', hint: 'Sees every ticket, assigns or keeps them, replies and resolves.' },
 ];
 const SUPPORT_TONE: Record<SupportRole, { bg: string; fg: string; label: string }> = {
-  head: { bg: '#E7F4FB', fg: '#0571A6', label: 'Support head' },
+  head: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)', label: 'Support head' },
   staff: { bg: '#EEF0E6', fg: '#5E6B3E', label: 'Support staff' },
 };
 
 function SupportRolePill({ role }: { role?: SupportRole | null }) {
-  if (!role) return <span style={{ fontSize: 13, color: '#9197A2' }}>—</span>;
+  if (!role) return <span style={{ fontSize: 13, color: 'var(--ink-4)' }}>—</span>;
   const t = SUPPORT_TONE[role];
   return <span style={{ fontSize: 11.5, fontWeight: 500, padding: '3px 10px', borderRadius: 'var(--r-lg)', background: t.bg, color: t.fg, whiteSpace: 'nowrap' }}>{t.label}</span>;
 }
@@ -153,17 +153,17 @@ function UsersTab() {
   return (
     <div>
       {noHead && (
-        <div style={{ background: '#FBF4E8', border: '1px solid #F0DFC0', color: '#8A5F1F', borderRadius: 12, padding: '11px 15px', fontSize: 13, fontWeight: 400, marginBottom: 14, lineHeight: 1.45 }}>
+        <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', color: 'var(--warn)', borderRadius: 12, padding: '11px 15px', fontSize: 13, fontWeight: 400, marginBottom: 14, lineHeight: 1.45 }}>
           There’s support staff but no Support head. New support tickets will wait unassigned until someone is made Support head.
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ fontSize: 13, color: '#717171' }}>{rows ? `${rows.length} ${rows.length === 1 ? 'person has' : 'people have'} access to this dashboard` : 'Loading…'}</div>
+        <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>{rows ? `${rows.length} ${rows.length === 1 ? 'person has' : 'people have'} access to this dashboard` : 'Loading…'}</div>
         <button style={{ ...primaryBtn, marginLeft: 'auto' }} onClick={() => setPicking(true)}><IconPlus size={15} /> Give access</button>
       </div>
 
       <Card>
-        <div style={{ display: 'grid', gridTemplateColumns: USER_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid #F0F0F2', fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: '#717171', textTransform: 'uppercase' }}>
+        <div style={{ display: 'grid', background: 'var(--surface-2)', gridTemplateColumns: USER_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid var(--line)', fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-3)', textTransform: 'uppercase' }}>
           <div>User details</div>
           <div>Tabs</div>
           <div>Support desk</div>
@@ -171,17 +171,17 @@ function UsersTab() {
           <div />
         </div>
         {(rows ?? []).map((u) => (
-          <div key={u.userId} onClick={() => open(u)} style={{ display: 'grid', gridTemplateColumns: USER_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid #F0F0F2', alignItems: 'center', cursor: 'pointer' }}>
+          <div key={u.userId} onClick={() => open(u)} style={{ display: 'grid', gridTemplateColumns: USER_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid var(--line)', alignItems: 'center', cursor: 'pointer' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
               <Avatar name={u.name} size={38} font={14} />
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 500, color: '#0571A6' }}>{u.name}{u.userId === me?.id && <span style={{ color: '#9197A2', fontWeight: 400 }}> · you</span>}</div>
-                <div style={{ fontSize: 13, color: '#717171' }}>{u.email}</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--accent-ink)' }}>{u.name}{u.userId === me?.id && <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}> · you</span>}</div>
+                <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>{u.email}</div>
               </div>
             </div>
-            <div style={{ fontSize: 13, fontWeight: 400, color: u.admin ? '#0571A6' : '#484848' }}>{accessSummary(u)}</div>
+            <div style={{ fontSize: 13, fontWeight: 400, color: u.admin ? 'var(--accent-ink)' : 'var(--ink-2)' }}>{accessSummary(u)}</div>
             <div><SupportRolePill role={u.supportRole} /></div>
-            <div><span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.04em', color: u.active ? '#4F7A52' : '#9197A2' }}>{u.active ? 'ACTIVE' : 'INACTIVE'}</span></div>
+            <div><span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.04em', color: u.active ? 'var(--ok)' : 'var(--ink-4)' }}>{u.active ? 'ACTIVE' : 'INACTIVE'}</span></div>
             <span style={{ ...rowMenuBtn, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>›</span>
           </div>
         ))}
@@ -211,17 +211,17 @@ function EditAccess({ editing, setEditing, saving, onSave, self }: { editing: Ed
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', justifyContent: 'flex-end' }}>
       <div onClick={() => setEditing(null)} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)' }} />
-      <div className="scry" style={{ position: 'relative', width: 'min(560px, 100%)', height: '100%', background: '#fff', overflowY: 'auto', padding: '22px 24px 28px', boxShadow: '-12px 0 40px rgba(34,34,34,.18)' }}>
+      <div className="scry" style={{ position: 'relative', width: 'min(560px, 100%)', height: '100%', background: 'var(--surface)', overflowY: 'auto', padding: '22px 24px 28px', boxShadow: '-12px 0 40px rgba(34,34,34,.18)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Avatar name={editing.person.name} size={42} font={15} />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontSize: 16.5, fontWeight: 600 }}>{editing.person.name}</div>
-            <div style={{ fontSize: 13, color: '#717171' }}>{editing.person.email}</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>{editing.person.email}</div>
           </div>
           <button onClick={() => setEditing(null)} style={{ ...ghostBtn, padding: '7px 12px' }}>Close</button>
         </div>
 
-        <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.06em', color: '#717171', margin: '22px 0 8px' }}>START FROM A ROLE</div>
+        <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.06em', color: 'var(--ink-3)', margin: '22px 0 8px' }}>START FROM A ROLE</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {ROLES.map((r) => <button key={r.name} type="button" onClick={() => applyRole(r)} style={chip}>{r.name}</button>)}
         </div>
@@ -230,47 +230,47 @@ function EditAccess({ editing, setEditing, saving, onSave, self }: { editing: Ed
           <input type="checkbox" checked={editing.admin} onChange={(e) => setEditing({ ...editing, admin: e.target.checked })} style={{ marginTop: 3 }} />
           <span>
             <span style={{ fontSize: 13.5, fontWeight: 500 }}>Admin</span>
-            <span style={{ display: 'block', fontSize: 12.5, color: '#717171' }}>Everything, and can change who sees what on this page.</span>
+            <span style={{ display: 'block', fontSize: 12.5, color: 'var(--ink-3)' }}>Everything, and can change who sees what on this page.</span>
           </span>
         </label>
 
-        <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.06em', color: '#717171', margin: '18px 0 4px' }}>SUPPORT DESK</div>
-        <div style={{ fontSize: 12.5, color: '#717171', marginBottom: 8 }}>A role of its own: Admin and every tab don’t include it.</div>
+        <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.06em', color: 'var(--ink-3)', margin: '18px 0 4px' }}>SUPPORT DESK</div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 8 }}>A role of its own: Admin and every tab don’t include it.</div>
         <div role="radiogroup" aria-label="Support desk role" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
           {SUPPORT_CHOICES.map((c) => {
             const on = editing.supportRole === c.value;
             return (
               <button key={c.label} type="button" role="radio" aria-checked={on} onClick={() => setEditing({ ...editing, supportRole: c.value })}
-                style={{ border: `1.5px solid ${on ? '#0571A6' : '#EBEBEB'}`, background: on ? '#F3F8FB' : '#fff', color: on ? '#0571A6' : '#484848', borderRadius: 999, padding: '9px 8px', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+                style={{ border: `1.5px solid ${on ? 'var(--accent)' : 'var(--line)'}`, background: on ? 'var(--accent-soft)' : 'var(--surface)', color: on ? 'var(--accent-ink)' : 'var(--ink-2)', borderRadius: 999, padding: '9px 8px', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
                 {c.label}
               </button>
             );
           })}
         </div>
-        <div style={{ fontSize: 12.5, color: '#717171', marginTop: 7, lineHeight: 1.45 }}>{SUPPORT_CHOICES.find((c) => c.value === editing.supportRole)?.hint}</div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 7, lineHeight: 1.45 }}>{SUPPORT_CHOICES.find((c) => c.value === editing.supportRole)?.hint}</div>
 
         {!editing.admin && (
           <>
-            <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.06em', color: '#717171', margin: '18px 0 4px' }}>WHAT THEY CAN OPEN · {UNITS.filter((u) => hasUnit(editing.tabs, u)).length} of {UNITS.length}</div>
+            <div style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.06em', color: 'var(--ink-3)', margin: '18px 0 4px' }}>WHAT THEY CAN OPEN · {UNITS.filter((u) => hasUnit(editing.tabs, u)).length} of {UNITS.length}</div>
             {UNITS.map((u) => (
-              <label key={u.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderTop: '1px solid #F0F0F2', cursor: 'pointer' }}>
+              <label key={u.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderTop: '1px solid var(--line)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={hasUnit(editing.tabs, u)} onChange={() => toggle(u)} style={{ marginTop: 3 }} />
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 13.5, fontWeight: 500, color: '#222222' }}>{u.title}</span>
-                  <span style={{ display: 'block', fontSize: 12.5, color: '#717171' }}>{u.hint}</span>
+                  <span style={{ display: 'block', fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{u.title}</span>
+                  <span style={{ display: 'block', fontSize: 12.5, color: 'var(--ink-3)' }}>{u.hint}</span>
                 </span>
               </label>
             ))}
           </>
         )}
 
-        {self && !editing.admin && <div style={{ fontSize: 12.5, color: '#A8475F', marginTop: 12 }}>This is your own access. Without Admin you won't be able to come back to this page.</div>}
+        {self && !editing.admin && <div style={{ fontSize: 12.5, color: 'var(--bad)', marginTop: 12 }}>This is your own access. Without Admin you won't be able to come back to this page.</div>}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 22, alignItems: 'center' }}>
           {!editing.isNew && (
             confirmRemove
-              ? <button type="button" disabled={saving} onClick={() => onSave(false)} style={{ ...ghostBtn, color: '#A8475F', borderColor: '#A8475F' }}>Click again to remove</button>
-              : <button type="button" onClick={() => setConfirmRemove(true)} style={{ ...ghostBtn, color: '#A8475F', borderColor: '#EBD9DE' }}>Remove access</button>
+              ? <button type="button" disabled={saving} onClick={() => onSave(false)} style={{ ...ghostBtn, color: 'var(--bad)', borderColor: 'var(--bad)' }}>Click again to remove</button>
+              : <button type="button" onClick={() => setConfirmRemove(true)} style={{ ...ghostBtn, color: 'var(--bad)', borderColor: 'var(--bad-line)' }}>Remove access</button>
           )}
           <button type="button" disabled={saving} onClick={() => onSave(true)} style={{ ...primaryBtn, marginLeft: 'auto' }}>{saving ? 'Saving…' : editing.isNew ? 'Give access' : 'Save'}</button>
         </div>
@@ -293,20 +293,20 @@ function PickPerson({ exclude, onClose, onPick }: { exclude: Set<string>; onClos
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '10vh' }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)' }} />
-      <div style={{ position: 'relative', width: 'min(520px, 92vw)', background: '#fff', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }}>
-        <div style={{ padding: '16px 18px', borderBottom: '1px solid #F0F0F2' }}>
+      <div style={{ position: 'relative', width: 'min(520px, 92vw)', background: 'var(--surface)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }}>
+        <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--line)' }}>
           <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Give dashboard access</div>
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, email or employee ID" style={{ width: '100%', padding: '10px 12px', border: '1px solid #EBEBEB', borderRadius: 10, fontSize: 13.5, fontFamily: 'inherit' }} />
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, email or employee ID" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 13.5, fontFamily: 'inherit' }} />
         </div>
         <div className="scry" style={{ maxHeight: '50vh', overflowY: 'auto' }}>
-          {people === null && <div style={{ padding: 18, color: '#717171' }}>Loading…</div>}
-          {people !== null && shown.length === 0 && <div style={{ padding: 18, color: '#717171' }}>Nobody matches.</div>}
+          {people === null && <div style={{ padding: 18, color: 'var(--ink-3)' }}>Loading…</div>}
+          {people !== null && shown.length === 0 && <div style={{ padding: 18, color: 'var(--ink-3)' }}>Nobody matches.</div>}
           {shown.map((p) => (
-            <button key={p.userId} type="button" onClick={() => onPick(p)} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '10px 18px', border: 'none', borderBottom: '1px solid #F7F7F9', background: '#fff', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+            <button key={p.userId} type="button" onClick={() => onPick(p)} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '10px 18px', border: 'none', borderBottom: '1px solid var(--line)', background: 'var(--surface)', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
               <Avatar name={p.name} size={32} font={12} />
               <span style={{ minWidth: 0 }}>
-                <span style={{ display: 'block', fontSize: 13.5, fontWeight: 500, color: '#222222' }}>{p.name}</span>
-                <span style={{ display: 'block', fontSize: 12.5, color: '#717171' }}>{[p.employeeId, p.designation, p.email].filter(Boolean).join(' · ')}</span>
+                <span style={{ display: 'block', fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{p.name}</span>
+                <span style={{ display: 'block', fontSize: 12.5, color: 'var(--ink-3)' }}>{[p.employeeId, p.designation, p.email].filter(Boolean).join(' · ')}</span>
               </span>
             </button>
           ))}
@@ -322,18 +322,18 @@ const ROLE_COLS = '1.1fr 2.6fr';
 function RolesTab() {
   return (
     <div>
-      <div style={{ fontSize: 13, color: '#717171', marginBottom: 16 }}>Starting points for a person's tabs. Pick one in the access editor, then add or remove tabs for that person.</div>
+      <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 16 }}>Starting points for a person's tabs. Pick one in the access editor, then add or remove tabs for that person.</div>
       <Card>
-        <div style={{ display: 'grid', gridTemplateColumns: ROLE_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid #F0F0F2', fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: '#717171', textTransform: 'uppercase' }}>
+        <div style={{ display: 'grid', background: 'var(--surface-2)', gridTemplateColumns: ROLE_COLS, gap: 12, padding: '13px 20px', borderBottom: '1px solid var(--line)', fontSize: 11.5, fontWeight: 500, letterSpacing: '.03em', color: 'var(--ink-3)', textTransform: 'uppercase' }}>
           <div>Role name</div>
           <div>Tabs</div>
         </div>
         {ROLES.map((r) => (
-          <div key={r.name} style={{ display: 'grid', gridTemplateColumns: ROLE_COLS, gap: 12, padding: '15px 20px', borderBottom: '1px solid #F0F0F2', alignItems: 'start' }}>
-            <div style={{ fontSize: 14, fontWeight: 500, color: '#0571A6' }}>{r.name}</div>
+          <div key={r.name} style={{ display: 'grid', gridTemplateColumns: ROLE_COLS, gap: 12, padding: '15px 20px', borderBottom: '1px solid var(--line)', alignItems: 'start' }}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--accent-ink)' }}>{r.name}</div>
             <div>
-              <div style={{ fontSize: 13, color: '#484848', lineHeight: 1.5 }}>{r.desc}</div>
-              {!r.admin && <div style={{ fontSize: 12.5, color: '#9197A2', marginTop: 4 }}>{UNITS.filter((u) => hasUnit(r.tabs, u)).map((u) => u.title).join(' · ')}</div>}
+              <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>{r.desc}</div>
+              {!r.admin && <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 4 }}>{UNITS.filter((u) => hasUnit(r.tabs, u)).map((u) => u.title).join(' · ')}</div>}
             </div>
           </div>
         ))}
@@ -342,9 +342,9 @@ function RolesTab() {
   );
 }
 
-const tabBar: CSSProperties = { display: 'flex', gap: 4, borderBottom: '1px solid #EBEBEB', marginBottom: 20 };
+const tabBar: CSSProperties = { display: 'flex', gap: 4, borderBottom: '1px solid var(--line)', marginBottom: 20 };
 const tabBtn: CSSProperties = { background: 'none', border: 'none', borderBottom: '2.5px solid transparent', padding: '0 4px 11px', marginRight: 22, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' };
-const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff', border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
-const ghostBtn: CSSProperties = { background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
-const chip: CSSProperties = { background: '#F3F8FB', color: '#0571A6', border: '1px solid #D7E9F3', borderRadius: 999, padding: '6px 12px', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
-const rowMenuBtn: CSSProperties = { width: 32, height: 32, borderRadius: 9, color: '#9197A2', fontSize: 16, fontWeight: 500 };
+const primaryBtn: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: '#fff', border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const ghostBtn: CSSProperties = { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '9px 15px', borderRadius: 999, fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const chip: CSSProperties = { background: 'var(--accent-soft)', color: 'var(--accent-ink)', border: '1px solid var(--accent-line)', borderRadius: 999, padding: '6px 12px', fontSize: 12.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' };
+const rowMenuBtn: CSSProperties = { width: 32, height: 32, borderRadius: 9, color: 'var(--ink-4)', fontSize: 16, fontWeight: 500 };

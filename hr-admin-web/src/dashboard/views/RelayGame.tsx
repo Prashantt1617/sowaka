@@ -30,7 +30,7 @@ const button = (bg: string, color = '#fff') => ({
   cursor: 'pointer',
 });
 const panel = {
-  background: '#fff',
+  background: 'var(--surface)',
   border: '1px solid transparent',
   borderRadius: 16,
   padding: 20,
@@ -41,8 +41,8 @@ const stepBadge = (muted: boolean) => ({
   width: 26,
   height: 26,
   borderRadius: 99,
-  background: muted ? '#F1F2F4' : '#E7F2F7',
-  color: muted ? '#9A9AA1' : '#0571A6',
+  background: muted ? 'var(--surface-2)' : 'var(--accent-soft)',
+  color: muted ? 'var(--ink-3)' : 'var(--accent-ink)',
   fontSize: 12.5,
   fontWeight: 600,
   display: 'inline-flex',
@@ -51,12 +51,12 @@ const stepBadge = (muted: boolean) => ({
   flex: 'none',
 });
 const ghost = {
-  ...button('#fff', '#222'),
-  border: '1px solid #E7E7EA',
+  ...button('#fff', 'var(--ink)'),
+  border: '1px solid var(--line)',
 };
 const field = {
   width: '100%',
-  border: '1px solid #EBEBEB',
+  border: '1px solid var(--line)',
   borderRadius: 10,
   padding: '10px 12px',
   font: 'inherit',
@@ -66,7 +66,7 @@ const fieldLabel = {
   display: 'block',
   fontSize: 11.5,
   fontWeight: 500,
-  color: '#717171',
+  color: 'var(--ink-3)',
   marginBottom: 6,
 };
 
@@ -204,7 +204,7 @@ export function RelayGame() {
             ))}
           </select>
         )}
-        <button style={button('#0571A6')} onClick={addEvent}>
+        <button style={button('var(--accent)')} onClick={addEvent}>
           New event
         </button>
       </div>
@@ -229,7 +229,7 @@ export function RelayGame() {
             <SummaryCard
               label="Rounds"
               value={String(event.config.rounds)}
-              color={event.itemCount > 0 ? '#2F8F5B' : '#717171'}
+              color={event.itemCount > 0 ? '#2F8F5B' : 'var(--ink-3)'}
             />
           </div>
 
@@ -258,7 +258,7 @@ export function RelayGame() {
                   <div
                     key={team.teamKey}
                     style={{
-                      border: '1px solid #EBEBEB',
+                      border: '1px solid var(--line)',
                       borderRadius: 10,
                       padding: '10px 12px',
                       display: 'flex',
@@ -269,11 +269,11 @@ export function RelayGame() {
                   >
                     <div>
                       <strong style={{ fontSize: 13 }}>{team.name}</strong>
-                      <div style={{ color: '#717171', fontSize: 12.5 }}>
+                      <div style={{ color: 'var(--ink-3)', fontSize: 12.5 }}>
                         {team.members.map((member) => member.name).join(', ')}
                       </div>
                     </div>
-                    <Pill label={`${team.members.length} players`} tone={{ bg: '#F7F7F9', fg: '#717171' }} />
+                    <Pill label={`${team.members.length} players`} tone={{ bg: 'var(--surface-2)', fg: 'var(--ink-3)' }} />
                   </div>
                 ))}
               </div>
@@ -316,13 +316,13 @@ export function RelayGame() {
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         padding: '8px 12px',
-                        border: '1px solid #EBEBEB',
+                        border: '1px solid var(--line)',
                         borderRadius: 10,
                         gap: 12,
                       }}
                     >
                       <span style={{ fontSize: 13, fontWeight: 400 }}>Round {round.round}</span>
-                      <span style={{ color: '#717171', fontSize: 12.5 }}>{round.size} items</span>
+                      <span style={{ color: 'var(--ink-3)', fontSize: 12.5 }}>{round.size} items</span>
                       <Pill
                         label={
                           Number.isFinite(round.clash)
@@ -331,8 +331,8 @@ export function RelayGame() {
                         }
                         tone={
                           !Number.isFinite(round.clash) || round.clash >= 8
-                            ? { bg: '#E4EDE0', fg: '#4F7A52' }
-                            : { bg: '#F6E9D5', fg: '#9A6B25' }
+                            ? { bg: 'var(--ok-bg)', fg: 'var(--ok)' }
+                            : { bg: 'var(--warn-bg)', fg: 'var(--warn)' }
                         }
                       />
                     </div>
@@ -351,12 +351,12 @@ export function RelayGame() {
             <div style={panel}>
               <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6 }}>
                 <span style={stepBadge(notReady)}>3</span>
-                <h3 style={{ margin: 0, fontSize: 14, color: notReady ? '#9A9AA1' : '#222' }}>
+                <h3 style={{ margin: 0, fontSize: 14, color: notReady ? 'var(--ink-3)' : 'var(--ink)' }}>
                   Publish to Connect
                 </h3>
               </div>
               {notReady && (
-                <p style={{ margin: '0 0 8px', color: '#B23B3B', fontSize: 12.5 }}>
+                <p style={{ margin: '0 0 8px', color: 'var(--bad)', fontSize: 12.5 }}>
                   {missingRoster && missingItems
                     ? 'Import the team roster and the questions first.'
                     : missingRoster
@@ -364,7 +364,7 @@ export function RelayGame() {
                       : 'Import the questions first.'}
                 </p>
               )}
-              <p style={{ margin: '0 0 12px', color: '#717171', fontSize: 12.5 }}>
+              <p style={{ margin: '0 0 12px', color: 'var(--ink-3)', fontSize: 12.5 }}>
                 This schedules the game and announces it together. The countdown on the post and
                 the moment the game starts itself are the same time — players see the instructions
                 video first, then the lobby, and play begins on its own.
@@ -421,7 +421,7 @@ export function RelayGame() {
                     </label>
                   </div>
                 </label>
-                <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: '#9197A2' }}>
+                <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: 'var(--ink-4)' }}>
                   {event.config.rounds} rounds and {event.teamCount} teams, taken from what was
                   imported — the post describes the game rather than configuring it.
                 </div>
@@ -441,8 +441,8 @@ export function RelayGame() {
                   <div
                     style={{
                       gridColumn: '1 / -1',
-                      background: '#E4EDE0',
-                      color: '#3B5E3F',
+                      background: 'var(--ok-bg)',
+                      color: 'var(--ok)',
                       borderRadius: 10,
                       padding: '10px 12px',
                       fontSize: 12.5,
@@ -469,18 +469,18 @@ export function RelayGame() {
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       padding: '8px 12px',
-                      border: '1px solid #EBEBEB',
+                      border: '1px solid var(--line)',
                       borderRadius: 10,
                       gap: 12,
                     }}
                   >
                     <span style={{ fontSize: 13, fontWeight: 400 }}>{team.name}</span>
-                    <span style={{ color: '#717171', fontSize: 12.5 }}>
+                    <span style={{ color: 'var(--ink-3)', fontSize: 12.5 }}>
                       {team.members.length} players
                     </span>
                     <Pill
                       label={`starts at slot ${team.index * 4 + 1}`}
-                      tone={{ bg: '#F7F7F9', fg: '#717171' }}
+                      tone={{ bg: 'var(--surface-2)', fg: 'var(--ink-3)' }}
                     />
                   </div>
                 ))}
@@ -530,11 +530,11 @@ function ImportPanel({
     <div style={panel}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6 }}>
         <span style={stepBadge(disabled === true)}>{step.trim()}</span>
-        <h3 style={{ margin: 0, fontSize: 14, color: disabled === true ? '#9A9AA1' : '#222' }}>
+        <h3 style={{ margin: 0, fontSize: 14, color: disabled === true ? 'var(--ink-3)' : 'var(--ink)' }}>
           {rest.join('·').trim()}
         </h3>
       </div>
-      <p style={{ margin: '0 0 12px', color: disabled ? '#B23B3B' : '#717171', fontSize: 12.5 }}>
+      <p style={{ margin: '0 0 12px', color: disabled ? 'var(--bad)' : 'var(--ink-3)', fontSize: 12.5 }}>
         {disabled ? (disabledNote ?? hint) : hint}
       </p>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -557,21 +557,21 @@ function ImportPanel({
             style={{ display: 'none' }}
           />
         </label>
-        {summary && <span style={{ fontSize: 12.5, color: '#717171' }}>{summary}</span>}
+        {summary && <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{summary}</span>}
       </div>
 
       {errors.length > 0 && (
         <IssueList
-          tone="#B23B3B"
-          background="#F8EAEA"
+          tone="var(--bad)"
+          background="var(--bad-bg)"
           heading={`${errors.length} ${errors.length === 1 ? 'problem' : 'problems'} to fix before importing`}
           issues={errors}
         />
       )}
       {warnings.length > 0 && (
         <IssueList
-          tone="#B07B22"
-          background="#F6ECDA"
+          tone="var(--warn)"
+          background="var(--warn-bg)"
           heading={`${warnings.length} worth checking`}
           issues={warnings}
         />
@@ -602,7 +602,7 @@ function IssueList({
   return (
     <div style={{ background, borderRadius: 10, padding: '10px 12px', marginTop: 12 }}>
       <div style={{ color: tone, fontWeight: 500, fontSize: 12.5, marginBottom: 6 }}>{heading}</div>
-      <ul style={{ margin: 0, paddingLeft: 18, color: '#222', fontSize: 12.5 }}>
+      <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--ink)', fontSize: 12.5 }}>
         {issues.slice(0, 50).map((issue, index) => (
           <li key={index} style={{ marginBottom: 3 }}>
             {issue.row ? <strong>Row {issue.row}: </strong> : null}

@@ -40,7 +40,7 @@ export function Modal({
           <div>
             <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-.3px' }}>{title}</div>
             {subtitle && (
-              <div style={{ fontSize: 13, color: '#717171', fontWeight: 400, marginTop: 2 }}>{subtitle}</div>
+              <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400, marginTop: 2 }}>{subtitle}</div>
             )}
           </div>
           <CloseButton onClose={onClose} />
@@ -79,7 +79,7 @@ export function DetailPage({
       <div style={{ marginBottom: 18 }}>
         <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.6px' }}>{title}</div>
         {subtitle && (
-          <div style={{ fontSize: 14, color: '#717171', marginTop: 3 }}>{subtitle}</div>
+          <div style={{ fontSize: 14, color: 'var(--ink-3)', marginTop: 3 }}>{subtitle}</div>
         )}
       </div>
       {children}
@@ -92,7 +92,7 @@ export function DetailPage({
 
 const backBtn: CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none',
-  color: '#0571A6', fontSize: 13.5, fontWeight: 500, cursor: 'pointer', padding: '2px 0',
+  color: 'var(--accent-ink)', fontSize: 13.5, fontWeight: 500, cursor: 'pointer', padding: '2px 0',
   marginBottom: 14,
 };
 
@@ -100,7 +100,7 @@ const backBtn: CSSProperties = {
 
 export function Th({ children, right, width }: { children: ReactNode; right?: boolean; width?: number | string }) {
   return (
-    <th style={{ textAlign: right ? 'right' : 'left', width, fontSize: 11.5, textTransform: 'none', letterSpacing: 0, color: '#717171', fontWeight: 400, padding: '11px 14px', borderBottom: '1px solid #EBEBEB', whiteSpace: 'nowrap', background: 'var(--surface-2)' }}>
+    <th style={{ textAlign: right ? 'right' : 'left', width, fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-3)', fontWeight: 400, padding: '11px 14px', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap', background: 'var(--surface-2)' }}>
       {children}
     </th>
   );
@@ -108,7 +108,7 @@ export function Th({ children, right, width }: { children: ReactNode; right?: bo
 
 export function Td({ children, muted, right, top }: { children: ReactNode; muted?: boolean; right?: boolean; top?: boolean }) {
   return (
-    <td style={{ padding: '13px 14px', borderBottom: '1px solid #F0F0F2', color: muted ? '#484848' : '#222222', textAlign: right ? 'right' : 'left', verticalAlign: top ? 'top' : 'middle' }}>
+    <td style={{ padding: '13px 14px', borderBottom: '1px solid var(--line)', color: muted ? 'var(--ink-2)' : 'var(--ink)', textAlign: right ? 'right' : 'left', verticalAlign: top ? 'top' : 'middle' }}>
       {children}
     </td>
   );
@@ -117,14 +117,14 @@ export function Td({ children, muted, right, top }: { children: ReactNode; muted
 /** The clickable identifier in the first column of every catalogue table. */
 export function NameCell({ name, tag, tagTone }: { name: string; tag?: string; tagTone?: 'green' | 'amber' | 'grey' }) {
   const tones = {
-    green: { bg: '#E4EDE0', fg: '#0F6E56' },
-    amber: { bg: '#F6E9D5', fg: '#9A6B25' },
-    grey: { bg: '#F0F0F2', fg: '#717171' },
+    green: { bg: 'var(--ok-bg)', fg: 'var(--ok)' },
+    amber: { bg: 'var(--warn-bg)', fg: 'var(--warn)' },
+    grey: { bg: 'var(--surface-2)', fg: 'var(--ink-3)' },
   };
   const tone = tones[tagTone ?? 'grey'];
   return (
     <span>
-      <span style={{ fontWeight: 500, color: '#0571A6' }}>{name}</span>
+      <span style={{ fontWeight: 500, color: 'var(--accent-ink)' }}>{name}</span>
       {tag && (
         <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, padding: '2px 8px', borderRadius: 6, background: tone.bg, color: tone.fg }}>
           {tag}
@@ -143,14 +143,14 @@ export function Tabs<T extends string>({
   onChange: (key: T) => void;
 }) {
   return (
-    <div style={{ display: 'flex', gap: 4, background: '#fff', border: '1px solid #EBEBEB', borderRadius: 12, padding: 4 }}>
+    <div style={{ display: 'flex', gap: 4, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, padding: 4 }}>
       {tabs.map((t) => {
         const on = value === t.key;
         return (
           <button
             key={t.key}
             onClick={() => onChange(t.key)}
-            style={{ border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500, padding: '7px 15px', borderRadius: 999, background: on ? '#0571A6' : 'transparent', color: on ? '#fff' : '#717171' }}
+            style={{ border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500, padding: '7px 15px', borderRadius: 999, background: on ? 'var(--accent-grad)' : 'transparent', color: on ? '#fff' : 'var(--ink-3)' }}
           >
             {t.label} <span style={{ opacity: 0.7 }}>· {t.count}</span>
           </button>
@@ -167,11 +167,11 @@ export function Field({ label, req, hint, children, style }: {
 }) {
   return (
     <div style={{ marginBottom: 16, ...style }}>
-      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: '#484848' }}>
-        {label}{req && <span style={{ color: '#C4382E', marginLeft: 2 }}>*</span>}
+      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--ink-2)' }}>
+        {label}{req && <span style={{ color: 'var(--bad)', marginLeft: 2 }}>*</span>}
       </label>
       {children}
-      {hint && <div style={{ fontSize: 11.5, color: '#717171', marginTop: 5, lineHeight: 1.45 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 5, lineHeight: 1.45 }}>{hint}</div>}
     </div>
   );
 }
@@ -185,13 +185,13 @@ export function Checkbox({ checked, onChange, label, sub, disabled }: {
         type="button"
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: disabled ? 'default' : 'pointer', border: `1.5px solid ${checked ? '#0571A6' : '#C7CBD2'}`, background: checked ? '#0571A6' : '#fff', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, lineHeight: 1, padding: 0 }}
+        style={{ flexShrink: 0, width: 18, height: 18, marginTop: 2, borderRadius: 5, cursor: disabled ? 'default' : 'pointer', border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--line-2)'}`, background: checked ? 'var(--accent-grad)' : 'var(--surface)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, lineHeight: 1, padding: 0 }}
       >
         {checked ? '✓' : ''}
       </button>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 13.5, color: '#222222' }}>{label}</div>
-        {sub && <div style={{ fontSize: 12.5, color: '#717171', marginTop: 2, lineHeight: 1.45 }}>{sub}</div>}
+        <div style={{ fontSize: 13.5, color: 'var(--ink)' }}>{label}</div>
+        {sub && <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2, lineHeight: 1.45 }}>{sub}</div>}
       </div>
     </div>
   );

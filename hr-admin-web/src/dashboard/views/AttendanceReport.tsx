@@ -63,11 +63,11 @@ const GAPS: { key: Gap; label: string }[] = [
 ];
 
 const TONE: Record<Facet, { bg: string; fg: string }> = {
-  present: { bg: '#E6F1E7', fg: '#4F7A52' },
-  half_day: { bg: '#FBF1DD', fg: '#9A6B25' },
-  missed: { bg: '#FBE9DE', fg: '#B25A1B' },
-  on_leave: { bg: '#E7F2F7', fg: '#0571A6' },
-  late: { bg: '#EFE7F2', fg: '#7E5FB0' },
+  present: { bg: 'var(--ok-bg)', fg: 'var(--ok)' },
+  half_day: { bg: 'var(--warn-bg)', fg: 'var(--warn)' },
+  missed: { bg: '#FBE9DE', fg: 'var(--warn)' },
+  on_leave: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
+  late: { bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' },
 };
 
 const LEAVE_LABEL: Record<string, string> = {
@@ -309,19 +309,19 @@ export function AttendanceReport() {
           <option value="all">All attendance modes</option>
           {(report?.punchFormats ?? []).map((f) => <option key={f} value={f}>{f}</option>)}
         </SelectBox>
-        {loading && <span style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>Loading…</span>}
-        {refreshing && <span style={{ fontSize: 13, color: '#9197A2', fontWeight: 400 }}>Refreshing…</span>}
+        {loading && <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>Loading…</span>}
+        {refreshing && <span style={{ fontSize: 13, color: 'var(--ink-4)', fontWeight: 400 }}>Refreshing…</span>}
         <ExportButton label="Export Excel" disabled={!canExport} onClick={exportExcel} />
       </div>
 
       {error && (
-        <div style={{ marginBottom: 14, fontSize: 13, color: '#A8475F', fontWeight: 400 }}>{error}</div>
+        <div style={{ marginBottom: 14, fontSize: 13, color: 'var(--bad)', fontWeight: 400 }}>{error}</div>
       )}
 
       {/* ── the totals, which are the filter ──────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 14, marginBottom: filter === 'missed' ? 10 : 20 }}>
-        <div style={{ background: '#fff', border: '1px solid transparent', borderRadius: 16, padding: '15px 17px', boxShadow: 'var(--shadow)' }}>
-          <div style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>Employees</div>
+        <div style={{ background: 'var(--surface)', border: '1px solid transparent', borderRadius: 16, padding: '15px 17px', boxShadow: 'var(--shadow)' }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>Employees</div>
           <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: '-.6px', marginTop: 3 }}>{totals.employees}</div>
         </div>
         {FACETS.map((f) => (
@@ -340,7 +340,7 @@ export function AttendanceReport() {
       {/* Missed punch opens into which punch is missing. */}
       {filter === 'missed' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12.5, color: '#717171', fontWeight: 400, marginRight: 4 }}>Which punch</span>
+          <span style={{ fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 400, marginRight: 4 }}>Which punch</span>
           <GapChip label="All missed" value={totals.missed} active={gap === 'all'} onClick={() => setGap('all')} />
           {GAPS.map((g) => (
             <GapChip key={g.key} label={g.label} value={totals[g.key]} active={gap === g.key} onClick={() => setGap(gap === g.key ? 'all' : g.key)} />
@@ -354,13 +354,13 @@ export function AttendanceReport() {
           {filter === 'all' ? 'All days' : FACETS.find((f) => f.key === filter)!.label}
           {filter === 'missed' && gap !== 'all' ? ` · ${GAPS.find((g) => g.key === gap)!.label}` : ''}
         </span>
-        <span style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>
+        <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
           {listed.length} {listed.length === 1 ? 'day' : 'days'} · {new Set(listed.map((r) => r.userId)).size} people
         </span>
       </div>
 
       <Card>
-        <div style={{ display: 'grid', gridTemplateColumns: LIST_COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid #F0F0F2', fontSize: 11.5, fontWeight: 500, letterSpacing: '.5px', color: '#717171' }}>
+        <div style={{ display: 'grid', background: 'var(--surface-2)', gridTemplateColumns: LIST_COLS, gap: 12, padding: '14px 22px', borderBottom: '1px solid var(--line)', fontSize: 11.5, fontWeight: 500, letterSpacing: '.5px', color: 'var(--ink-3)' }}>
           <div>EMPLOYEE</div>
           <div>TEMPLATE</div>
           <div>DATE</div>
@@ -375,40 +375,40 @@ export function AttendanceReport() {
         ) : pageRows.map((r) => {
           const status = statusOf(r);
           return (
-            <div key={`${r.userId}-${r.date}`} style={{ display: 'grid', gridTemplateColumns: LIST_COLS, gap: 12, padding: '13px 22px', borderBottom: '1px solid #F0F0F2', alignItems: 'center' }}>
+            <div key={`${r.userId}-${r.date}`} style={{ display: 'grid', gridTemplateColumns: LIST_COLS, gap: 12, padding: '13px 22px', borderBottom: '1px solid var(--line)', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
                 <Avatar name={r.name} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                  <div style={{ fontSize: 13, color: '#717171', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {r.employeeId} · {r.department}
                   </div>
                 </div>
               </div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 400, color: '#484848', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.template ?? 'Org policy'}</div>
-                <div style={{ fontSize: 12.5, color: '#9197A2', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.punchFormat}</div>
+                <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.template ?? 'Org policy'}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--ink-4)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.punchFormat}</div>
               </div>
-              <div style={{ fontSize: 13.5, fontWeight: 400, color: '#484848' }}>{dayLabel(r.date)}</div>
-              <div style={{ fontSize: 13.5, fontWeight: 400, color: r.punchIn ? '#484848' : '#B25A1B' }}>{clock(r.punchIn)}</div>
-              <div style={{ fontSize: 13.5, fontWeight: 400, color: '#484848' }}>{clock(r.punchOut)}</div>
-              <div style={{ fontSize: 13.5, fontWeight: 400, color: '#484848' }}>{hours(r)}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink-2)' }}>{dayLabel(r.date)}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 400, color: r.punchIn ? 'var(--ink-2)' : 'var(--warn)' }}>{clock(r.punchIn)}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink-2)' }}>{clock(r.punchOut)}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink-2)' }}>{hours(r)}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 <Pill label={status.label} tone={status.tone} />
                 {r.late && <Pill label="Late" tone={TONE.late} />}
               </div>
-              <div style={{ fontSize: 13, fontWeight: 400, color: '#717171', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail(r) || '—'}</div>
+              <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail(r) || '—'}</div>
             </div>
           );
         })}
         {listed.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 22px' }}>
-            <span style={{ fontSize: 13, color: '#717171', fontWeight: 400 }}>
+            <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
               Showing {(current - 1) * PAGE + 1}–{Math.min(current * PAGE, listed.length)} of {listed.length}
             </span>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
               <PageButton label="Previous" disabled={current <= 1} onClick={() => setPage(current - 1)} />
-              <span style={{ fontSize: 13, fontWeight: 500, color: '#484848', padding: '0 6px' }}>{current} / {pages}</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', padding: '0 6px' }}>{current} / {pages}</span>
               <PageButton label="Next" disabled={current >= pages} onClick={() => setPage(current + 1)} />
             </div>
           </div>
@@ -430,14 +430,14 @@ function FilterCard({ label, note, value, tone, active, onClick }: {
       title={active ? `Showing ${label.toLowerCase()} days — press to show all` : `Show ${label.toLowerCase()} days`}
       style={{
         textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer',
-        background: active ? tone.bg : '#fff',
-        border: `1px solid ${active ? tone.fg : '#EBEBEB'}`,
+        background: active ? tone.bg : 'var(--surface)',
+        border: `1px solid ${active ? tone.fg : 'var(--line)'}`,
         borderRadius: 16, padding: '15px 17px', transition: 'background .12s, border-color .12s',
       }}
     >
-      <div style={{ fontSize: 13, color: active ? tone.fg : '#717171', fontWeight: 400 }}>{label}</div>
+      <div style={{ fontSize: 13, color: active ? tone.fg : 'var(--ink-3)', fontWeight: 400 }}>{label}</div>
       <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: '-.6px', marginTop: 3, color: tone.fg }}>{value}</div>
-      <div style={{ fontSize: 11.5, color: active ? tone.fg : '#9197A2', fontWeight: 400, marginTop: 4, opacity: active ? 0.85 : 1 }}>{note}</div>
+      <div style={{ fontSize: 11.5, color: active ? tone.fg : 'var(--ink-4)', fontWeight: 400, marginTop: 4, opacity: active ? 0.85 : 1 }}>{note}</div>
     </button>
   );
 }
@@ -450,13 +450,13 @@ function GapChip({ label, value, active, onClick }: { label: string; value: numb
       aria-pressed={active}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: 'inherit', cursor: 'pointer',
-        background: active ? TONE.missed.bg : '#fff', color: active ? TONE.missed.fg : '#484848',
-        border: `1px solid ${active ? TONE.missed.fg : '#EBEBEB'}`, borderRadius: 999, padding: '6px 12px',
+        background: active ? TONE.missed.bg : 'var(--surface)', color: active ? TONE.missed.fg : 'var(--ink-2)',
+        border: `1px solid ${active ? TONE.missed.fg : 'var(--line)'}`, borderRadius: 999, padding: '6px 12px',
         fontSize: 13, fontWeight: 500,
       }}
     >
       {label}
-      <span style={{ fontSize: 12.5, fontWeight: 500, color: active ? TONE.missed.fg : '#9197A2' }}>{value}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 500, color: active ? TONE.missed.fg : 'var(--ink-4)' }}>{value}</span>
     </button>
   );
 }
@@ -467,7 +467,7 @@ function ExportButton({ label, disabled, onClick }: { label: string; disabled: b
       type="button"
       onClick={onClick}
       disabled={disabled}
-      style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: '#222222', border: 'none', color: '#fff', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}
+      style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--ink)', border: 'none', color: '#fff', borderRadius: 999, padding: '9px 15px', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}
     >
       <IconDownload /> {label}
     </button>
@@ -481,8 +481,8 @@ function PageButton({ label, disabled, onClick }: { label: string; disabled: boo
       onClick={onClick}
       disabled={disabled}
       style={{
-        height: 33, padding: '0 12px', borderRadius: 999, border: '1px solid #EBEBEB', background: '#F7F7F9',
-        fontSize: 13, fontWeight: 500, color: '#484848', fontFamily: 'inherit',
+        height: 33, padding: '0 12px', borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface-2)',
+        fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', fontFamily: 'inherit',
         cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.45 : 1,
       }}
     >

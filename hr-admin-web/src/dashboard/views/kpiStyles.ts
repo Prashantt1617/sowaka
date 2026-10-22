@@ -10,44 +10,44 @@ import type { CSSProperties } from 'react';
 export const MAX_PER_SET = 10;
 
 export const inputStyle: CSSProperties = {
-  width: '100%', padding: '9px 11px', border: '1px solid #EBEBEB', borderRadius: 10,
-  fontSize: 14, fontFamily: 'inherit', background: '#fff', color: '#222222',
+  width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 10,
+  fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)',
 };
 export const primaryBtn: CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0571A6', color: '#fff',
+  display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--accent-grad)', color: '#fff',
   border: 'none', padding: '9px 15px', borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer',
 };
 export const ghostBtn: CSSProperties = {
-  background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '11px 20px',
+  background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '11px 20px',
   borderRadius: 999, fontSize: 14, fontWeight: 500, cursor: 'pointer',
 };
 export const smallBtn: CSSProperties = {
-  background: '#fff', color: '#484848', border: '1px solid #EBEBEB', padding: '6px 12px',
+  background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--line)', padding: '6px 12px',
   borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: 'pointer',
 };
 export const noteTag: CSSProperties = {
-  background: '#EAF2FB', color: '#3C6E9E', fontSize: 12.5, borderRadius: 10,
+  background: 'var(--accent-soft)', color: 'var(--t-sky-i)', fontSize: 12.5, borderRadius: 10,
   padding: '11px 13px', lineHeight: 1.5,
 };
 export const warnTag: CSSProperties = {
-  background: '#F6E9D5', border: '1px solid #ECD9B4', borderRadius: 10, padding: '12px 14px',
-  fontSize: 13, color: '#8A6A20', lineHeight: 1.5,
+  background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 10, padding: '12px 14px',
+  fontSize: 13, color: 'var(--warn)', lineHeight: 1.5,
 };
 export const panelCard: CSSProperties = {
-  background: '#fff', border: '1px solid transparent', borderRadius: 16, padding: '18px 20px', boxShadow: 'var(--shadow)',
+  background: 'var(--surface)', border: '1px solid transparent', borderRadius: 16, padding: '18px 20px', boxShadow: 'var(--shadow)',
 };
 export const panelTitle: CSSProperties = { fontSize: 14, fontWeight: 600, marginBottom: 14 };
 
 export const modalCard: CSSProperties = {
-  position: 'relative', width: '100%', maxHeight: '92vh', background: '#F7F7F9', borderRadius: 'var(--r-lg)',
+  position: 'relative', width: '100%', maxHeight: '92vh', background: 'var(--surface-2)', borderRadius: 'var(--r-lg)',
   boxShadow: 'var(--shadow-lg)', animation: 'pop .2s ease both',
   display: 'flex', flexDirection: 'column',
 };
 export const modalHead: CSSProperties = {
-  padding: '20px 26px', borderBottom: '1px solid #EBEBEB', display: 'flex',
+  padding: '20px 26px', borderBottom: '1px solid var(--line)', display: 'flex',
   alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
 };
 export const modalFoot: CSSProperties = {
-  padding: '14px 26px', borderTop: '1px solid #EBEBEB', display: 'flex', alignItems: 'center',
-  gap: 11, background: '#fff', borderBottomLeftRadius: 20, borderBottomRightRadius: 20, flexShrink: 0,
+  padding: '14px 26px', borderTop: '1px solid var(--line)', display: 'flex', alignItems: 'center',
+  gap: 11, background: 'var(--surface)', borderBottomLeftRadius: 20, borderBottomRightRadius: 20, flexShrink: 0,
 };
