@@ -323,11 +323,11 @@ export function CupTv() {
         <button type="button" className="ctv-ghost" onClick={fullScreen}>Full screen</button>
       </header>
 
-      {!state && !error && <div className="ctv-empty">Loading the Cup…</div>}
+      {!state && !error && <div className="ctv-empty">Loading the tournament…</div>}
       {state && !event && (
         <div className="ctv-panel">
           <div className="ctv-big">The Cup is not on</div>
-          <div className="ctv-empty">When the Diwali Cup is switched on, its bracket and the match on stage show here.</div>
+          <div className="ctv-empty">When the tournament is switched on, its bracket and the match on stage show here.</div>
         </div>
       )}
 
@@ -373,7 +373,7 @@ export function CupTv() {
               {sequential.length ? (
                 <Bracket rounds={sequential} onStageId={stage?.match.id} onPick={hr ? (m) => setConfirming(m) : undefined} />
               ) : (
-                <div className="ctv-empty">The bracket fills in as the Cup gets there.</div>
+                <div className="ctv-empty">The bracket fills in as the tournament gets there.</div>
               )}
             </section>
             <section className="ctv-panel" aria-label="Top tipsters">
@@ -440,7 +440,7 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
       const w = match.winnerId === match.a.userId ? match.a : match.winnerId === match.b.userId ? match.b : null;
       if (!w) return '';
       const how = match.decidedBy === 'absent' ? ' (neither played: the better seed goes through)' : match.decidedBy === 'solo' ? ' (the other player did not show)' : '';
-      return `${firstName(w.name)} ${round.short === 'F' ? 'wins the Cup' : 'goes through'}${how}`;
+      return `${firstName(w.name)} ${round.short === 'F' ? 'wins the tournament' : 'goes through'}${how}`;
     }
     if (match.status !== 'live' && match.status !== 'solo') return '';
     if (!leader) return sa === 0 ? 'Get ready…' : `Level on ${fmt(sa)}`;
@@ -499,7 +499,7 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
         <div className="ctv-split" aria-label="Bets">
           <small>{match.status === 'betting' ? 'BETS ARE OPEN' : 'BETS ON THIS MATCH'}</small>
           <span style={{ fontWeight: 800, fontSize: 18 }}>
-            {match.status === 'betting' ? 'No bets yet. Open the Diwali Cup in the app to back a player: a right pick pays double.' : 'Nobody bet on this match.'}
+            {match.status === 'betting' ? 'No bets yet. Open the tournament in the app to back a player: a right pick pays double.' : 'Nobody bet on this match.'}
           </span>
         </div>
       )}
@@ -611,7 +611,7 @@ function Standings({ rows }: { rows: NonNullable<CupState['standings']> }) {
   const champ = rows.find((r) => r.place === 1);
   return (
     <section className="ctv-panel" aria-label="Final standings">
-      {champ && <div className="ctv-big" style={{ color: C.yellow, marginTop: 6 }}>{champ.name} wins the Cup!</div>}
+      {champ && <div className="ctv-big" style={{ color: C.yellow, marginTop: 6 }}>{champ.name} wins the tournament!</div>}
       <div className="ctv-tips">
         {rows.filter((r) => r.place > 1).slice(0, 7).map((r) => (
           <div className="ctv-tip" key={r.userId}>

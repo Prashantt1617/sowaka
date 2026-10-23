@@ -148,10 +148,10 @@ async function viewerRow(userId: string): Promise<ViewerRow | null> {
  */
 export async function viewerFromTicket(raw: unknown): Promise<CupViewer> {
   const verdict = verifyTicket(raw, 'ticket');
-  if (!verdict.ok) throw new CupError(401, 'Close and reopen the Cup.');
+  if (!verdict.ok) throw new CupError(401, 'Close and reopen the tournament.');
   const row = await viewerRow(verdict.ticket.userId);
   if (!row || INACTIVE.includes(row.lifecycleStatus) || row.org !== verdict.ticket.org) {
-    throw new CupError(401, 'Close and reopen the Cup.');
+    throw new CupError(401, 'Close and reopen the tournament.');
   }
   return { userId: row.userId, name: row.name, org: row.org, hr: row.dashboardAccess === true && hasAllDashboardTabs(row) };
 }

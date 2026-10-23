@@ -110,7 +110,7 @@ const sourceTitles: Record<PointSource, string> = {
   hint_relay: 'Hint Relay',
   // A game challenge is titled by its game, from the event; this is the fallback.
   game_challenge: 'Game challenge',
-  cup_bet: 'Diwali Cup bets',
+  cup_bet: 'Tournament bets',
 };
 
 const sourceKinds: Record<PointSource, string> = {

@@ -149,7 +149,7 @@ export function ledgerRowFor(
     reason: step === 'placed' ? 'bet_placed' : step === 'won' ? 'bet_won' : 'bet_refunded',
     refId: bet._id,
     note: betNote(ctx, how),
-    title: step === 'placed' ? 'Diwali Cup bet' : step === 'won' ? 'Diwali Cup win' : 'Diwali Cup refund',
+    title: step === 'placed' ? 'O-O-O Tournament bet' : step === 'won' ? 'O-O-O Tournament win' : 'O-O-O Tournament refund',
     createdAt: now,
   };
 }

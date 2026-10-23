@@ -162,10 +162,10 @@ console.log('What pages show');
   check('…won = payouts less stakes, right of settled', tips[0].won === 30 && tips[1].won === 10 && tips[1].right === 2 && tips[1].of === 2 && tips[2].won === 0 && tips[2].right === 1 && tips[2].of === 2);
   check('…held and refunded bets do not count', !tips.some((t) => t.userId === 'd' || t.userId === 'e'));
   const row = ledgerRowFor(betOf('u1', 'pa', 10), 'won', 20, { label: 'QF1', pickName: 'Priya' }, now);
-  check('ledger: a win is a cup_bet row on the bet, "Diwali Cup win"', row.source === 'cup_bet' && row.reason === 'bet_won' && row.refId === 'm-qf1:0:u1' && row.title === 'Diwali Cup win' && row.delta === 20 && row.id === 'cup:m-qf1:0:u1:won', row);
+  check('ledger: a win is a cup_bet row on the bet, "O-O-O Tournament win"', row.source === 'cup_bet' && row.reason === 'bet_won' && row.refId === 'm-qf1:0:u1' && row.title === 'O-O-O Tournament win' && row.delta === 20 && row.id === 'cup:m-qf1:0:u1:won', row);
   check('…its note: the match, the pick, how it went', row.note === 'QF1 · backed Priya · won, 20 back', row.note);
-  check('…a stake is "Diwali Cup bet", a refund "Diwali Cup refund"',
-    ledgerRowFor(betOf('u1', 'pa', 10), 'placed', -10, { label: 'QF1', pickName: 'P' }, now).title === 'Diwali Cup bet'
+  check('…a stake is "O-O-O Tournament bet", a refund "O-O-O Tournament refund"',
+    ledgerRowFor(betOf('u1', 'pa', 10), 'placed', -10, { label: 'QF1', pickName: 'P' }, now).title === 'O-O-O Tournament bet'
     && ledgerRowFor(betOf('u1', 'pa', 10), 'refund', 10, { label: 'QF1', pickName: 'P' }, now).reason === 'bet_refunded');
 }
 
@@ -210,7 +210,7 @@ async function database() {
     const held = await stores.bets.findOne({ _id: betIdOf(m.id, 0, 'u1') });
     check('…the bet is held', held?.status === 'held' && held.stake === 30 && held.pick === 'pa' && held.book === 0);
     const placedRows = await ledgerFor('u1');
-    check('…a ledger row, − stake, "Diwali Cup bet"', placedRows.length === 1 && placedRows[0].delta === -30 && placedRows[0].title === 'Diwali Cup bet' && placedRows[0].reason === 'bet_placed', placedRows);
+    check('…a ledger row, − stake, "O-O-O Tournament bet"', placedRows.length === 1 && placedRows[0].delta === -30 && placedRows[0].title === 'O-O-O Tournament bet' && placedRows[0].reason === 'bet_placed', placedRows);
 
     check('a second bet on the same match: 409', (await refusal(placeBetOn(viewer('u1'), event, m, 'pb', 5, stores, now))) === 409);
     check('…the balance and history untouched', (await points('u1')) === 70 && (await ledgerFor('u1')).length === 1);
@@ -252,7 +252,7 @@ async function database() {
     check('…a loser: nothing (u3 stays 60)', (await points('u3')) === 60);
     check('…whole-balance winner (u5 0 + 200)', (await points('u5')) === 200);
     const winRows = (await ledgerFor('u1')).filter((r) => r.reason === 'bet_won');
-    check('…one win row each, "Diwali Cup win"', winRows.length === 1 && winRows[0].delta === 60 && winRows[0].title === 'Diwali Cup win', winRows);
+    check('…one win row each, "O-O-O Tournament win"', winRows.length === 1 && winRows[0].delta === 60 && winRows[0].title === 'O-O-O Tournament win', winRows);
     check('…no row for a loss', (await ledgerFor('u3')).length === 1);
     const again = await settleMatchBets(decided, stores, nameOf, later(300));
     check('settled again (a retry): nothing moves', again.length === 0 && (await points('u1')) === 130 && (await stores.ledger.countDocuments({ reason: 'bet_won' })) === onM - 1);
@@ -262,7 +262,7 @@ async function database() {
     const voidRuns = await Promise.all([1, 2].map(() => settleMatchBets(voided, stores, nameOf, later(350))));
     check('voided by two at once: each bet refunded once', voidRuns[0].length + voidRuns[1].length === onM);
     check('…everyone back where they started', (await points('u1')) === 100 && (await points('u3')) === 100 && (await points('u5')) === 100, [await points('u1'), await points('u3'), await points('u5')]);
-    check('…refund rows, "Diwali Cup refund"', (await stores.ledger.countDocuments({ reason: 'bet_refunded', title: 'Diwali Cup refund' })) === onM);
+    check('…refund rows, "O-O-O Tournament refund"', (await stores.ledger.countDocuments({ reason: 'bet_refunded', title: 'O-O-O Tournament refund' })) === onM);
     const net = await stores.ledger.aggregate<{ _id: string; sum: number }>([{ $match: { userId: { $in: ['u1', 'u3', 'u5'] } } }, { $group: { _id: '$userId', sum: { $sum: '$delta' } } }]).toArray();
     check('…the ledger nets to zero for each', net.every((row) => row.sum === 0), net);
     check('…all bets refunded at their stake', (await stores.bets.countDocuments({ matchId: m.id, status: 'refunded', $expr: { $eq: ['$payout', '$stake'] } })) === onM);

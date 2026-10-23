@@ -218,7 +218,7 @@ function namesOf(event: Pick<CupEvent, 'entrants'> | null): (userId: string) => 
 }
 
 const contextFor = (match: Pick<CupMatch, 'label'>, nameOf: (userId: string) => string, pick: string): BetContext => ({
-  label: match.label || 'Diwali Cup',
+  label: match.label || 'O-O-O Tournament',
   pickName: nameOf(pick),
 });
 
