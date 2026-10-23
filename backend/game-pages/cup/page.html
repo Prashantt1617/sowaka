@@ -33,8 +33,8 @@ button:disabled{cursor:default}
 .pill.y{background:var(--y)}.pill.co{background:var(--co)}.pill.gr{background:var(--gr)}
 .bal{display:flex;align-items:center;gap:8px;background:var(--p2);border-radius:99px;padding:6px 12px 6px 6px;font-weight:800;font-size:14px;white-space:nowrap}
 .coin{width:22px;height:22px;border-radius:50%;background:var(--y);border:3px solid var(--yl);box-shadow:inset 0 -2px 0 #C98A12;flex:none}
-.tabs{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:6px;background:var(--p1);border-radius:18px;padding:6px;margin:8px 20px 0;position:sticky;top:6px;z-index:5;box-shadow:0 6px 16px rgba(10,8,25,.5)}
-.tab{min-height:44px;border:0;border-radius:14px;background:transparent;font-weight:800;font-size:13px;color:var(--mu);padding:0 4px;position:relative}
+.tabs{display:grid;grid-auto-flow:column;grid-auto-columns:auto;gap:6px;background:var(--p1);border-radius:18px;padding:6px;margin:8px 20px 0;position:sticky;top:6px;z-index:5;box-shadow:0 6px 16px rgba(10,8,25,.5)}
+.tab{min-height:44px;border:0;border-radius:14px;background:transparent;font-weight:800;font-size:13px;color:var(--mu);padding:0 8px;position:relative;white-space:nowrap}
 .tab.on{background:var(--y);color:var(--bg)}
 .tab .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--co);margin-left:5px;vertical-align:1px}
 .body{display:flex;flex-direction:column;gap:14px;padding:16px 20px 8px}
@@ -997,7 +997,7 @@ button.bm{min-height:44px}
     }
     var e = ev();
     if (!e) return fullScreen('✦', cupName() + ' isn\'t on right now', 'When it\'s switched on, your match, all the matches and the live games all show up here.');
-    var tabs = [['me', e.phase === 'done' ? 'Results' : 'Home'], ['bracket', 'Matches'], ['watch', 'Watch']];
+    var tabs = [['me', e.phase === 'done' ? 'Results' : 'Home'], ['bracket', 'Matches'], ['watch', 'Watch &amp; Bet']];
     // Tipsters from the top N on (the server may send an empty list from the start).
     if (S.tipsters && (S.tipsters.length || isTopN() || e.phase === 'done')) tabs.push(['tipsters', 'Tipsters']);
     if (!tabs.some(function (t) { return t[0] === ui.tab; })) ui.tab = 'me';
