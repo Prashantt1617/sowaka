@@ -56,7 +56,7 @@ function advance(s) {
     mm.opponentJoined = true;
     mm.status = 'live';
     mm.startAt = new Date(now + 4000).toISOString();
-    mm.boardSeed = `b-${mm.id}-${mm.attempt}`;
+    mm.boardSeed = 100000 + (Math.abs(hash(mm.id)) % 900000) + mm.attempt;
     const rm = matchesOf(d).find((m) => m.id === mm.id);
     if (rm) Object.assign(rm, { status: 'live', startAt: mm.startAt, live: { [meId]: 0, [mm.opponent.userId]: 0 } });
     s.bump += 1;
@@ -146,7 +146,7 @@ const server = createServer(async (req, res) => {
         if (mm.opponentJoined) {
           mm.status = 'live';
           mm.startAt = new Date(now + 4000).toISOString();
-          mm.boardSeed = `b-${mm.id}-${mm.attempt}`;
+          mm.boardSeed = 100000 + (Math.abs(hash(mm.id)) % 900000) + mm.attempt;
           if (rm) Object.assign(rm, { status: 'live', startAt: mm.startAt, live: { [d.me.userId]: 0, [mm.opponent.userId]: 0 } });
         } else s.oppJoinAt = now + 4000;
         s.bump += 1;
@@ -155,7 +155,7 @@ const server = createServer(async (req, res) => {
       if (what === 'solo') {
         if (mm.status !== 'solo') return send(res, 409, { success: false, message: 'There is no round to start' });
         mm.startAt = new Date(now + 4000).toISOString();
-        mm.boardSeed = `b-${mm.id}-solo`;
+        mm.boardSeed = 1 + Math.floor(Math.random() * 999999);
         if (rm) rm.startAt = mm.startAt;
         s.bump += 1;
         return send(res, 200, { success: true, match: mm });

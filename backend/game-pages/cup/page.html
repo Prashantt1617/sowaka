@@ -979,6 +979,7 @@ button.bm{min-height:44px}
     if (!S || !S.me || !S.me.match) return;
     var m = S.me.match, key = m.id + ':' + (m.attempt || 0);
     var start = ms(m.startAt);
+    if ((m.status === 'live' || m.status === 'solo') && finals[key] != null && !posted[key]) postFinal(m.id, key, finals[key]);
     var want = (m.status === 'live' || (m.status === 'solo' && m.startAt)) && isFinite(start) && finals[key] == null && now() < start + (roundSec() + 8) * 1000;
     if (ui.playing && !want && finals[ui.playing] == null) stopPlay();
     if (!want || ui.playing === key) return;
@@ -1004,9 +1005,10 @@ button.bm{min-height:44px}
         boardSeed: m.boardSeed || seeds[key],
         startAt: start,
         serverNow: now(),
+        clockOffset: offset,
         roundSec: roundSec(),
         attempt: m.attempt || 0,
-        opponent: { name: opp.name || 'Your opponent', seed: opp.seed, userId: opp.userId },
+        opponent: m.status === 'solo' ? null : { name: opp.name || 'Your opponent', seed: opp.seed, userId: opp.userId },
         me: { name: S.me.name, seed: S.me.seed },
         solo: m.status === 'solo',
         onLive: function (score) {
@@ -1026,6 +1028,14 @@ button.bm{min-height:44px}
     if (finals[key] != null) return;
     finals[key] = score;
     store('cup-finals', finals);
+    postFinal(matchId, key, score);
+    setTimeout(function () { if (ui.playing === key) stopPlay(); render(); }, 2200);
+  }
+  /* The final, kept on this phone (cup-finals) until the server has it, so a reload sends it again. */
+  var posted = {};
+  function postFinal(matchId, key, score) {
+    if (posted[key]) return;
+    posted[key] = true;
     var tries = 0;
     (function send() {
       api('/matches/' + encodeURIComponent(matchId) + '/final', { method: 'POST', body: { score: score } }).then(function (j) {
@@ -1033,10 +1043,9 @@ button.bm{min-height:44px}
         poll();
       }).catch(function (e) {
         if (e && e.status >= 400 && e.status < 500) { toast(e.message, true); return; }
-        if (++tries < 5) setTimeout(send, 1000 * tries); else toast('Your score didn\'t reach the server. Keep this screen open.', true);
+        if (++tries < 5) setTimeout(send, 1000 * tries); else { posted[key] = false; toast('Your score didn\'t reach the server. Keep this screen open.', true); }
       });
     })();
-    setTimeout(function () { if (ui.playing === key) stopPlay(); render(); }, 2200);
   }
   function stopPlay() {
     try { if (ui.handle && typeof ui.handle.stop === 'function') ui.handle.stop(); else if (ui.handle && typeof ui.handle.destroy === 'function') ui.handle.destroy(); } catch (e) {}
@@ -1063,6 +1072,8 @@ button.bm{min-height:44px}
       render(); poll();
     }).catch(function (e) { ui.busy = ''; ui.err = e.message; render(); });
   }
+  /* Inside the tap, so iOS lets the round's countdown beep. */
+  function unlock() { try { if (window.CupPlay && window.CupPlay.unlockAudio) window.CupPlay.unlockAudio(); } catch (e) {} }
   var ACT = {
     tab: function (v) {
       if (ui.tab === v) { window.scrollTo(0, 0); return; }
@@ -1078,8 +1089,8 @@ button.bm{min-height:44px}
     duel: function (v) { ui.duel = v; render(); },
     'duel-close': function () { ui.duel = null; render(); },
     retry: function () { netFail = 0; render(); poll(); },
-    join: function () { matchAction('join'); },
-    solo: function () { matchAction('solo'); },
+    join: function () { unlock(); matchAction('join'); },
+    solo: function () { unlock(); matchAction('solo'); },
     reopen: function () { $play.hidden = false; },
     pick: function (v) { ui.pick = v; ui.betErr = ''; render(); },
     add: function (v) { ui.stake = Math.min((S.me.balance || 0), ui.stake + Number(v)); render(); },

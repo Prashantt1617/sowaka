@@ -3160,7 +3160,7 @@
    "opponentJoined": true,
    "deadlineAt": "2026-11-06T12:12:30.000Z",
    "startAt": "2026-11-06T12:10:04.000Z",
-   "boardSeed": "b-41-1-0",
+   "boardSeed": 418203,
    "myLive": 0,
    "opponentLive": 0
   }

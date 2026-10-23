@@ -308,7 +308,7 @@ write('lobby', moment({ me: 41, at: { round: 1, stage: 'lobby' } }));
   u.me.match.joined = true;
   u.me.match.status = 'live';
   u.me.match.startAt = iso(T0 + sec(4));
-  u.me.match.boardSeed = 'b-41-1-0';
+  u.me.match.boardSeed = 418203;
   u.me.match.myLive = 0;
   u.me.match.opponentLive = 0;
   findMatch(u, u.me.match.id).status = 'live';
