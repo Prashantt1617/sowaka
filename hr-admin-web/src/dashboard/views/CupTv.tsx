@@ -66,13 +66,28 @@ interface CupState {
 }
 
 /**
+ * The event on the TV: the company's current one (the latest lobby that is
+ * on), unless the address names one (`/dashboard?cup=<eventId>`), for when
+ * two are on at once, e.g. a rehearsal beside the real one.
+ */
+function askedEvent(): string | null {
+  try {
+    const id = new URLSearchParams(window.location.search).get('cup');
+    return id && /^[A-Za-z0-9_-]{1,80}$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The state, read fresh. Not through `api()`: its reads are kept for 20 s,
  * and a read with a signal counts as a write there (forgetting everything
  * the dashboard has read), which a poll every 1.5 s should not do.
  */
 async function readState(signal: AbortSignal): Promise<CupState> {
   const token = getToken();
-  const res = await fetch(`${BASE_URL}/admin/cup/state`, { signal, headers: token ? { Authorization: `Bearer ${token}` } : {}, cache: 'no-store' });
+  const asked = askedEvent();
+  const res = await fetch(`${BASE_URL}/admin/cup/${asked ? `${encodeURIComponent(asked)}/state` : 'state'}`, { signal, headers: token ? { Authorization: `Bearer ${token}` } : {}, cache: 'no-store' });
   const data = (await res.json().catch(() => ({}))) as CupState & { message?: string };
   if (!res.ok) throw new ApiError(res.status, data.message || `Request failed (${res.status})`);
   return data;
