@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <!--CUP-TICKET-->
-<title>Diwali Cup</title>
+<title>O-O-O Tournament</title>
 <!-- One file, uploaded to game_catalog as `diwali-cup` (build.mjs inlines cup/play.js into it). The server puts
      window.__CUP = { ticket, eventId?, from, hopTicket? } where the marker above is; every call goes to /cup/api with the ticket. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
@@ -22,9 +22,12 @@ button:disabled{cursor:default}
 :focus-visible{outline:3px solid var(--cy);outline-offset:2px}
 .hd{font-family:var(--hd);font-weight:400}
 .wrap{max-width:560px;margin:0 auto;padding:0 0 calc(28px + env(safe-area-inset-bottom))}
-.top{display:flex;align-items:center;gap:10px;padding:calc(16px + env(safe-area-inset-top)) 20px 8px}
-.wm{font-family:var(--hd);font-size:24px;letter-spacing:.5px;color:var(--y);flex:1;margin:0;font-weight:400;white-space:nowrap}
-@media (max-width:380px){.wm{font-size:21px}.top .pill{font-size:11px;padding:5px 9px}}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:calc(16px + env(safe-area-inset-top)) 20px 8px}
+.wm{font-family:var(--hd);font-size:24px;letter-spacing:.5px;color:var(--y);flex:1 1 auto;min-width:0;max-width:100%;margin:0;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.15}
+.wm.l{font-size:20px}
+/* The chips go under the name when both don't fit on one line (flex-wrap measures the name at its full width). */
+.tr{display:flex;align-items:center;gap:8px;flex:none}.wm.xl{font-size:17px;white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+@media (max-width:380px){.wm{font-size:21px}.wm.l{font-size:18px}.wm.xl{font-size:15px}.top .pill{font-size:11px;padding:5px 9px}.top .bal{font-size:13px;padding:5px 10px 5px 5px}.top .coin{width:18px;height:18px}}
 .pk{flex:none;font-size:10px;font-weight:800;letter-spacing:.8px;background:var(--y);color:var(--bg);border-radius:99px;padding:3px 8px}
 .pill{font-size:12px;font-weight:800;letter-spacing:1px;color:var(--bg);background:var(--cy);border-radius:99px;padding:6px 12px;white-space:nowrap}
 .pill.y{background:var(--y)}.pill.co{background:var(--co)}.pill.gr{background:var(--gr)}
@@ -65,6 +68,17 @@ h1{font-size:34px}h2{font-size:26px}
 .av.s{width:40px;height:40px;font-size:15px;border-width:0;box-shadow:none}
 .av.xs{width:32px;height:32px;font-size:13px;border-width:0;box-shadow:none}
 .av.tbd{background:transparent;border:2px dashed #6E66A0;box-shadow:none;color:var(--mu2)}
+/* A photo sits in the same round frame, the player's colour as its ring; the initials stay underneath for when it fails. */
+.av{position:relative;overflow:hidden}
+.av>img{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover;background:var(--p2)}
+.av.ph{border-color:var(--bg);box-shadow:0 0 0 3px var(--rc,var(--line))}
+.av.s.ph,.av.xs.ph,.av.xxs.ph{border:2px solid var(--bg);box-shadow:0 0 0 2px var(--rc,var(--line))}
+.av.xxs{width:24px;height:24px;font-size:10px;border-width:0;box-shadow:none}
+.bp .av,.ln .av{flex:none!important;overflow:hidden!important}
+.av.pd.ph{border:4px solid var(--bg);box-shadow:0 0 0 3px var(--rc)}
+.pp .av{font-size:13px;color:var(--bg);margin:2px 0}
+.vso{display:flex;align-items:center;justify-content:center;gap:8px}
+.crown{position:relative;overflow:hidden}.crown>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}
 .x{width:40px;height:40px;border-radius:50%;background:var(--co);display:grid;place-items:center;font-family:var(--hd);font-size:15px;color:var(--bg);transform:rotate(-8deg);box-shadow:0 4px 0 var(--cod)}
 .tagg{font-size:11px;font-weight:800;letter-spacing:.6px;color:var(--bg);background:var(--gr);border-radius:99px;padding:4px 9px;white-space:nowrap}
 .facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
@@ -243,7 +257,7 @@ button.bm{min-height:44px}
 <div id="app"></div>
 <div id="play" hidden></div>
 <div id="say" class="sr" aria-live="polite"></div>
-<script id="cup-play">/* Diwali Cup: one Odd One Out round, played inside the Cup page.
+<script id="cup-play">/* One Odd One Out round, played inside the tournament page (cup/page.html).
  *
  * The same game as game-pages/odd-one-out.html: the seeded boards are copied from it verbatim (the block between the seeded-boards markers),
  * and so are the scoring rules (20 a find, +10 when found within a second of the board showing, times the streak multiplier, ×1 to ×5;
@@ -257,11 +271,13 @@ button.bm{min-height:44px}
  *     receivedAt,            // optional: Date.now() when that response arrived (default: now)
  *     clockOffset,           // optional: server minus client clock in ms; wins over serverNow/receivedAt
  *     roundSec = 45,
- *     me: { name }, opponent: { name } | null,
+ *     me: { name, photoUrl? }, opponent: { name, photoUrl? } | null,   // a face in the round frame; initials when there's no photo or it fails
  *     getOpponentLive: () => number | null,   // polled 4× a second; the host keeps it fresh from /state
  *     onLive(score),         // on a score change, at most 4× a second
  *     onFinal(score),        // exactly once, when the round is over (also after the app comes back from the background)
  *     onStart(),             // optional: the board just appeared
+ *     onProgress(p),         // optional: after every find and miss, { score, gi, streak, cleared, miss } — the host keeps it to resume
+ *     resume,                // optional: that object, after a reload mid-round: the round carries on from it (same boards onward)
  *     sound = true,
  *   });
  *   h.stop();  h.score();  h.state();   // 'wait' | 'play' | 'closing' | 'over' | 'stopped'
@@ -298,13 +314,16 @@ function boardAt(sd,g){
   const multFor = s => Math.min(MAXMULT, 1 + Math.floor(Math.max(0, s - 1) / 3));
   const MILE = { 5: 'On fire!', 10: 'Unstoppable!', 15: 'Machine!', 20: 'Legend!', 30: 'Unreal!' };
   const NEXT_MS = 130, NEXT_MS_REDUCED = 40;   // the pause between a find and the next board
-  const LIVE_MS = 250;                         // onLive and the opponent's score: 4× a second
+  const LIVE_MS = 250;
+  const badFace = {};                         // onLive and the opponent's score: 4× a second
   const COLS = ['#F5B82E', '#FFE08A', '#FF6B57', '#FFFFFF', '#6FD3F2', '#3DDC97'];
 
   const fmtn = x => Math.round(x).toLocaleString('en-IN');
   const reduce = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   const first = n => String(n || '').trim().split(/\s+/)[0] || '';
   const toMs = v => { if (v == null || v === '') return NaN; if (typeof v === 'number') return v; const n = Number(v); return isFinite(n) ? n : Date.parse(v); };
+  const initials = n => { const p = String(n || '?').trim().split(/\s+/); return ((p[0] || '?')[0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase(); };
+  const okUrl = u => typeof u === 'string' && /^(https:|data:image\/|blob:|\/)/i.test(u) ? u : '';
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   /* ---------- look ---------- */
@@ -320,6 +339,10 @@ function boardAt(sd,g){
 .cp-p{min-width:0;padding:8px 10px 9px;border-radius:16px;background:var(--panel);border:2px solid var(--line);box-shadow:0 4px 0 var(--deep);display:flex;flex-direction:column;gap:2px;transition:border-color .2s,box-shadow .2s}
 .cp-p.op{text-align:right;align-items:flex-end}
 .cp-p small{font-weight:800;font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);line-height:1.2}
+.cp-who{display:flex;align-items:center;gap:6px;min-width:0;max-width:100%}.cp-p.op .cp-who{flex-direction:row-reverse}
+.cp-face{position:relative;flex:none;width:24px;height:24px;border-radius:50%;overflow:hidden;display:grid;place-items:center;font-family:var(--disp);font-size:.62rem;color:var(--bg);background:var(--rc);border:2px solid var(--bg);box-shadow:0 0 0 2px var(--rc)}
+.cp-face img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}
+.cp-vs .cp-face{width:44px;height:44px;font-size:1rem;border-width:3px;box-shadow:0 0 0 3px var(--rc)}
 .cp-p b{font-weight:700;font-size:.84rem;line-height:1.2;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cp-sc{font-family:var(--disp);font-size:1.9rem;line-height:1;font-variant-numeric:tabular-nums;display:inline-block}
 .cp-p.me .cp-sc{color:var(--y)} .cp-p.op .cp-sc{color:var(--co)}
@@ -445,9 +468,12 @@ function boardAt(sd,g){
     const onLive = typeof opts.onLive === 'function' ? opts.onLive : () => {};
     const onFinal = typeof opts.onFinal === 'function' ? opts.onFinal : () => {};
     const onStart = typeof opts.onStart === 'function' ? opts.onStart : () => {};
+    const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
     const getOpp = typeof opts.getOpponentLive === 'function' ? opts.getOpponentLive : () => null;
     const meName = (opts.me && opts.me.name) || 'You';
-    const opp = opts.opponent && opts.opponent.name ? { name: String(opts.opponent.name) } : null;
+    const opp = opts.opponent && opts.opponent.name ? { name: String(opts.opponent.name), photoUrl: okUrl(opts.opponent.photoUrl) } : null;
+    const mePhoto = okUrl(opts.me && opts.me.photoUrl);
+    const face = (name, url, col) => '<span class="cp-face" style="--rc:' + col + '" aria-hidden="true">' + esc(initials(name)) + (url ? '<img src="' + esc(url) + '" alt="" decoding="async" referrerpolicy="no-referrer" draggable="false">' : '') + '</span>';
 
     /* The server's clock, as this phone sees it: offset = server − client. */
     let offset = Number(opts.clockOffset);
@@ -466,9 +492,9 @@ function boardAt(sd,g){
     const root = document.createElement('div'); root.className = 'cp';
     root.innerHTML =
       '<div class="cp-top">' +
-        '<div class="cp-p me"><small>You</small><b>' + esc(first(meName) || 'You') + '</b><span class="cp-sc">0</span></div>' +
+        '<div class="cp-p me"><small>You</small><div class="cp-who">' + face(meName, mePhoto, '#F5B82E') + '<b>' + esc(first(meName) || 'You') + '</b></div><span class="cp-sc">0</span></div>' +
         '<div class="cp-mid" role="timer" aria-label="Seconds left"><b>' + ROUND + '</b><small>sec</small></div>' +
-        '<div class="cp-p op"><small>Opponent</small><b>' + esc(opp ? first(opp.name) || 'Opponent' : 'No-show') + '</b><span class="cp-sc">' + (opp ? '–' : '0') + '</span></div>' +
+        '<div class="cp-p op"><small>Opponent</small><div class="cp-who">' + (opp ? face(opp.name, opp.photoUrl, '#FF6B57') : '') + '<b>' + esc(opp ? first(opp.name) || 'Opponent' : 'No-show') + '</b></div><span class="cp-sc">' + (opp ? '–' : '0') + '</span></div>' +
       '</div>' +
       '<div class="cp-bar"><i></i></div>' +
       '<div class="cp-row"><span class="cp-combo"><b>×1</b><small>streak 0</small></span><span class="cp-found">0 found</span></div>' +
@@ -479,6 +505,8 @@ function boardAt(sd,g){
       '</div></div>' +
       '<div class="cp-flash"></div>';
     mount.appendChild(root);
+    /* A photo that doesn't load leaves the initials under it. */
+    root.addEventListener('error', e => { const t = e.target; if (t && t.tagName === 'IMG' && t.parentNode && t.parentNode.classList.contains('cp-face')) { badFace[t.getAttribute('src')] = 1; t.remove(); } }, true);
     const q = s => root.querySelector(s);
     const $score = q('.cp-p.me .cp-sc'), $meBox = q('.cp-p.me'), $oppBox = q('.cp-p.op'), $opp = q('.cp-p.op .cp-sc');
     const $mid = q('.cp-mid'), $secs = q('.cp-mid b'), $bar = q('.cp-bar'), $barI = q('.cp-bar i');
@@ -489,6 +517,11 @@ function boardAt(sd,g){
     /* State, as in the game: the board index, the score, the streak. */
     let state = 'wait', gi = 0, cur = null, score = 0, streak = 0, cleared = 0, miss = 0, shownAt = 0, locked = true, lastSec = -1;
     let finalSent = false, stopped = false, lag = 0, closeAt = 0;
+    /* Back after a reload mid-round: the score, the board reached and the clock the misses cost, as they were. */
+    const rs = opts.resume && typeof opts.resume === 'object' ? opts.resume : null;
+    const int = v => Math.max(0, Math.floor(Number(v) || 0));
+    if (rs) { score = int(rs.score); gi = int(rs.gi); streak = int(rs.streak); cleared = int(rs.cleared); miss = int(rs.miss); endWall -= miss * PENALTY * 1000; }
+    const progress = () => { try { onProgress({ score, gi, streak, cleared, miss }); } catch (e) {} };
     const timers = new Set();
     const later = (fn, ms) => { const id = setTimeout(() => { timers.delete(id); if (!stopped) fn(); }, ms); timers.add(id); return id; };
 
@@ -578,7 +611,8 @@ function boardAt(sd,g){
       } else {
         const key = 'w' + k;
         if (coverKey !== key) {
-          const vs = '<div class="cp-vs"><span class="a">' + esc(first(meName) || 'You') + '</span><i>VS</i><span class="b">' + esc(opp ? first(opp.name) : 'the clock') + '</span></div>';
+          const ok = u => u && !badFace[u] ? u : '';
+          const vs = '<div class="cp-vs">' + face(meName, ok(mePhoto), '#F5B82E') + '<span class="a">' + esc(first(meName) || 'You') + '</span><i>VS</i><span class="b">' + esc(opp ? first(opp.name) : 'the clock') + '</span>' + (opp ? face(opp.name, ok(opp.photoUrl), '#FF6B57') : '') + '</div>';
           const mm = Math.floor(k / 60), ss = k % 60;
           $cover.innerHTML = '<h2>Get ready</h2>' + vs + '<div class="cp-in">' + (mm ? mm + ':' + String(ss).padStart(2, '0') : ss) + '</div><p>Same boards for both of you. Tap the tile that is different.</p>';
           coverKey = key;
@@ -612,7 +646,7 @@ function boardAt(sd,g){
       if (i !== cur.at) {
         if (cell.classList.contains('no')) return;
         miss++; const had = streak; streak = 0; endWall -= PENALTY * 1000; cell.classList.add('no'); sfx.no(); if (had >= 4) sfx.lost(); buzz([30, 40, 30]);
-        toast('−' + PENALTY + ' s', 'bad', x, y); renderCombo(); renderTime(); return;
+        toast('−' + PENALTY + ' s', 'bad', x, y); renderCombo(); renderTime(); progress(); return;
       }
       locked = true; const dt = Math.max(0, t - shownAt) / 1000, quick = dt <= QUICK; streak++; cleared++;
       const m = multFor(streak), pm = multFor(streak - 1), pts = (20 + (quick ? 10 : 0)) * m, before = score; score += pts;
@@ -625,7 +659,7 @@ function boardAt(sd,g){
       $score.textContent = fmtn(score); bump($score); bump($cx);
       const o = typeof oppShown === 'number' ? oppShown : null; if (o != null && before <= o && score > o) later(sfx.ahead, 250);
       renderLead(); renderCombo(); pushLive();
-      const n0 = cur.n; gi++;
+      const n0 = cur.n; gi++; progress();
       later(() => { if (state !== 'play' && state !== 'closing') return; if (sizeFor(gi) > n0) sfx.grow(); showGrid(); }, reduce() ? NEXT_MS_REDUCED : NEXT_MS);
     }
 
@@ -699,7 +733,7 @@ function boardAt(sd,g){
     window.addEventListener('pageshow', wake);
     window.addEventListener('focus', wake);
 
-    renderTime(); renderCombo(); pollOpp();
+    renderTime(); renderCombo(); pollOpp(); if (score) $score.textContent = fmtn(score);
     $cover.hidden = false; renderWait();
     if (state === 'wait') runLoop(50); else runLoop(100);
     if (state === 'play' && endWall <= wall()) step();
@@ -727,7 +761,7 @@ function boardAt(sd,g){
 })();
 </script>
 <script>
-/* The Diwali Cup page. Polls /cup/api/state (since=version) every 1.5 s (2 s hidden), draws one of the screens from it,
+/* The tournament page (event.name; "O-O-O Tournament" until the state says). Polls /cup/api/state (since=version) every 1.5 s (2 s hidden), draws one of the screens from it,
    and patches the DOM in place (no rebuild: scroll, focus and the search box survive a poll). Countdowns run off the
    server's clock (serverNow). A match is played by window.CupPlay (cup/play.js) in the #play overlay. */
 (function () {
@@ -780,10 +814,36 @@ function boardAt(sd,g){
   function initials(name) { var p = String(name || '?').trim().split(/\s+/); return ((p[0] || '?')[0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase(); }
   var PAL = ['#FF8A7A', '#6FD3F2', '#B79CFF', '#3DDC97', '#FFD66B', '#F5B82E', '#FF9EC7'];
   function color(id) { var h = 0; id = String(id || ''); for (var i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0; return PAL[Math.abs(h) % PAL.length]; }
-  function av(p, cls, label, col) {
-    if (!p) return '<span class="av tbd ' + (cls || '') + '" aria-hidden="true">?</span>';
-    return '<span class="av ' + (cls || '') + '" style="background-color:' + (col || color(p.userId)) + '" aria-hidden="true">' + esc(label || initials(p.name)) + '</span>';
+  /* A player's face: their photo (state's photoUrl) in the round frame, ringed in their colour, over their initials,
+     which show when there is no photo or it doesn't load (a failed URL is remembered, so a poll doesn't retry it). */
+  var badPhoto = {}, photos = {};
+  function photoOf(p) {
+    if (!p) return '';
+    var u = p.photoUrl || photos[p.userId] || '';
+    if (u && !/^(https:|data:image\/|blob:|\/)/i.test(u)) u = '';
+    return u && !badPhoto[u] ? u : '';
   }
+  function av(p, cls, label, col, style) {
+    if (!p) return '<span class="av tbd ' + (cls || '') + '" aria-hidden="true"' + (style ? ' style="' + style + '"' : '') + '>?</span>';
+    var c = col || color(p.userId), u = photoOf(p);
+    return '<span class="av ' + (cls || '') + (u ? ' ph' : '') + '" style="background-color:' + c + ';--rc:' + c + (style ? ';' + style : '') + '" aria-hidden="true">' + esc(label || initials(p.name)) +
+      (u ? '<img src="' + esc(u) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" draggable="false">' : '') + '</span>';
+  }
+  document.addEventListener('error', function (e) {
+    var t = e.target;
+    if (!t || t.tagName !== 'IMG' || !t.parentNode || !t.parentNode.classList || !/(^|\s)(av|crown)(\s|$)/.test(t.parentNode.className)) return;
+    badPhoto[t.getAttribute('src')] = 1;
+    t.parentNode.classList.remove('ph');
+    t.parentNode.removeChild(t);
+  }, true);
+  /* The tournament's name comes from the event (state's event.name); the last one seen covers the first paint. */
+  /* The name last seen, with its event: used for the first paint only, and only for that event (or when the page doesn't say). */
+  var NAME0 = 'O-O-O Tournament', lastName = '';
+  try { var kept = JSON.parse(localStorage.getItem('cup-name') || 'null'); if (kept && kept.n && (!C || !C.eventId || kept.id === C.eventId)) lastName = String(kept.n); } catch (e) {}
+  function cupName() { var e = S && S.event; var n = e && typeof e.name === 'string' ? e.name.replace(/\s+/g, ' ').trim() : ''; return n || (S ? NAME0 : lastName || NAME0); }
+  function wordmark() { var n = cupName(); return '<h1 class="wm' + (n.length > 22 ? ' xl' : n.length > 13 ? ' l' : '') + '" title="' + esc(n) + '">' + esc(n.toUpperCase()) + '</h1>'; }
+  /* Points won from bets can be below 0 (stakes lost): +120 / −30. */
+  function signed(n) { n = Math.round(Number(n) || 0); return (n < 0 ? '−' : '+') + num(Math.abs(n)); }
   function plural(n, one, many) { return num(n) + ' ' + (n === 1 ? one : (many || one + 's')); }
   function say(text) { $say.textContent = ''; setTimeout(function () { $say.textContent = text; }, 30); }
   function store(key, val) { try { if (val === undefined) return JSON.parse(localStorage.getItem(key) || 'null'); localStorage.setItem(key, JSON.stringify(val)); } catch (e) { return null; } }
@@ -799,7 +859,7 @@ function boardAt(sd,g){
       if (r.status === 204) return {};
       return r.json().catch(function () { return null; }).then(function (j) {
         if (!r.ok || !j || j.success === false) {
-          var e = new Error((j && j.message) || (r.ok ? 'Something went wrong. Try again.' : 'The Cup server said no (' + r.status + '). Try again.'));
+          var e = new Error((j && j.message) || (r.ok ? 'Something went wrong. Try again.' : 'The server said no (' + r.status + '). Try again.'));
           e.status = r.status; throw e;
         }
         return j;
@@ -809,11 +869,14 @@ function boardAt(sd,g){
 
   /* ---------- state ---------- */
   var S = null, version = null, eventId = C && C.eventId ? String(C.eventId) : '';
-  var fatal = HOP_FAILED ? 'The Cup could not reach its server. Close and reopen the Cup.' : (!C || !C.ticket ? 'nocup' : null);
+  var fatal = HOP_FAILED ? 'This page could not reach its server. Close it and open it again from Sowaka.' : (!C || !C.ticket ? 'nocup' : null);
   var netFail = 0, pollT = 0, inflight = false;
   var seen = store('cup-seen-bets') || [];
   var ui = { tab: 'me', round: null, q: '', all: false, watchAll: false, standAll: false, duel: null, pick: null, pickFor: null, stake: 0, betBusy: false, betErr: '', busy: '', err: '', toast: null, playing: null, handle: null, scroll: {} };
   var finals = store('cup-finals') || {};
+  /* The round in progress, kept on this phone after every find, so a reload mid-round carries on from it and resends it. */
+  var progress = store('cup-live') || {};
+  function keepLast(map, n) { var k = Object.keys(map); k.slice(0, Math.max(0, k.length - n)).forEach(function (x) { delete map[x]; }); return map; }
   var seeds = {};
 
   function poll() {
@@ -833,12 +896,14 @@ function boardAt(sd,g){
       }
       if (!j.unchanged) {
         S = j; version = j.version;
+        indexPhotos(j);
+        if (j.event && j.event.name) { var nm = cupName(); if (nm !== lastName) { lastName = nm; store('cup-name', { id: j.event.id, n: nm }); } if (document.title !== nm) document.title = nm; }
         if (j.event && j.event.id) eventId = j.event.id;
       }
       netFail = 0;
       render();
     }).catch(function (e) {
-      if (e && (e.status === 401 || e.status === 403)) { fatal = e.message || 'Close and reopen the Cup.'; render(); return; }
+      if (e && (e.status === 401 || e.status === 403)) { fatal = e.message || 'reopen'; render(); return; }
       netFail++;
       render();
     }).then(function () {
@@ -849,6 +914,14 @@ function boardAt(sd,g){
     });
   }
   document.addEventListener('visibilitychange', function () { if (!document.hidden && !fatal) poll(); });
+
+  /* Every photo the state names, by person: a list that leaves photoUrl off one player object still shows the face. */
+  function indexPhotos(j) {
+    function add(p) { if (p && p.userId && p.photoUrl) photos[p.userId] = p.photoUrl; }
+    if (j.me) { add(j.me); if (j.me.match) add(j.me.match.opponent); }
+    if (j.event) (j.event.rounds || []).forEach(function (r) { (r.matches || []).forEach(function (m) { add(m.a); add(m.b); }); });
+    (j.tipsters || []).forEach(add); (j.standings || []).forEach(add);
+  }
 
   /* ---------- reading the state ---------- */
   function ev() { return S && S.event; }
@@ -944,7 +1017,12 @@ function boardAt(sd,g){
     var mineFinished = m && finals[m.id + ':' + (m.attempt || 0)] != null && m.status !== 'done';
     var myTurn = onNow && !(stage && m.status === 'scheduled');
     var showStage = stage && !(onNow && S.current && S.current.matchId === m.id && m.status !== 'scheduled') && !mineFinished;
-    if (myTurn) out += viewMyMatch(m);
+    if (myTurn) {
+      out += viewMyMatch(m);
+      // On stage myself: a bet that just settled still gets its moment, under my match.
+      var settled = stage && lastSettled();
+      if (settled) out += viewBetResult(settled);
+    }
     else if (showStage) return viewStage() + (me.alive ? viewWaiting() : outStrip());
     else if (me.alive && me.freePass && me.freePass.round === e.round) out += viewFreePass();
     else if (!me.alive) out += viewOut();
@@ -961,7 +1039,7 @@ function boardAt(sd,g){
       ? '<div class="seed"><span class="rank"><small>SEED</small><b>' + me.seed + '</b></span><p>You\'re <b>#' + (rank || me.seed) + ' on ' + orgPossessive() + ' Odd One Out leaderboard</b>' + (me.best != null ? ' (best ' + num(me.best) + ')' : '') + '. Seeds 1 and 2 can only meet in the final.</p></div>'
       : '<div class="seed"><span class="rank"><small>BEST</small><b>' + (me.best != null ? num(me.best) : '–') + '</b></span><p>' + (me.best != null ? 'Seeds are set from the leaderboard at <b>' + clock(e.lobbyAt) + '</b>' + (rank ? '. You\'re <b>#' + rank + '</b> right now' : '') + '. Play Odd One Out before then to climb.' : 'You have no Odd One Out score yet, so you\'d be seeded near the end. <b>Play a round before ' + clock(e.lobbyAt) + '</b> to move up.') + '</p></div>';
     return '<div class="count"><small>Lobby opens in</small><b>' + cd(ms(e.lobbyAt)) + '</b><span>Round 1 at ' + clock(e.startAt) + ' · ' + plural(n, 'player') + '</span></div>' +
-      '<section class="card" aria-label="How the Cup works"><p class="lbl">How it works</p><ol class="rules">' +
+      '<section class="card" aria-label="How it works"><p class="lbl">How it works</p><ol class="rules">' +
       '<li><b class="n">1</b><span>Everyone is in, seeded by the Odd One Out leaderboard. One bracket, ' + plural(n, 'player') + '.</span></li>' +
       '<li><b class="n">2</b><span>Each match: you and one colleague on the same board for 45 seconds. Higher score goes through.</span></li>' +
       '<li><b class="n">3</b><span>A tie replays at once. Not there within 3 minutes? The one who plays wins with their score.</span></li>' +
@@ -986,9 +1064,9 @@ function boardAt(sd,g){
     var e = ev(), me = S.me, m = me.match;
     var n = e.entrantCount || S.entrants || 0;
     var r1 = roundOf(1);
-    var meP = { userId: me.userId, name: me.name, seed: me.seed, best: me.best };
+    var meP = { userId: me.userId, name: me.name, seed: me.seed, best: me.best, photoUrl: me.photoUrl };
     var card = m
-      ? '<section class="card gold" aria-label="Your first match"><div class="row"><p class="lbl sp">Your first match<br>' + esc(m.label || 'Round 1') + '</p><span class="tagg">SAME BOARD FOR BOTH</span></div>' + vsBlock(meP, m.opponent) +
+      ? '<section class="card gold" aria-label="Your first match"><div class="row"><p class="lbl sp">Your first match<br>' + esc(m.label || 'Round 1') + '</p><span class="tagg">SAME BOARD</span></div>' + vsBlock(meP, m.opponent) +
         '<button type="button" class="btn" disabled>PLAY OPENS AT ' + clock(e.startAt) + '</button></section>'
       : me.freePass ? '<section class="ticket" aria-label="Free pass"><small>FREE PASS · ROUND ' + me.freePass.round + '</small><b>YOU SKIP ROUND ' + me.freePass.round + '</b><span>You were #' + (me.freePass.boardRank || me.seed) + ' on ' + orgPossessive() + ' Odd One Out leaderboard.</span></section>' : '';
     return '<div class="count"><small>Round 1 starts in</small><b>' + cd(ms(e.startAt)) + '</b></div>' + card +
@@ -999,10 +1077,12 @@ function boardAt(sd,g){
 
   function viewMyMatch(m) {
     var e = ev(), me = S.me, key = m.id + ':' + (m.attempt || 0);
-    var meP = { userId: me.userId, name: me.name, seed: me.seed, best: me.best };
+    var meP = { userId: me.userId, name: me.name, seed: me.seed, best: me.best, photoUrl: me.photoUrl };
     var opp = m.opponent, on = opp ? first(opp.name) : 'Your opponent';
     var head = '<div class="row"><p class="lbl sp">Your match<br>' + esc(m.label || roundName(m.round)) + '</p>' + (m.attempt ? '<span class="pill co">REPLAY ' + m.attempt + '</span>' : m.status === 'solo' ? '<span class="pill">SOLO</span>' : '<span class="tagg">SAME BOARD</span>') + '</div>';
-    var replay = m.attempt ? '<div class="banner co" role="status">It was a tie' + (m.lastTie != null ? ' at ' + num(m.lastTie) : '') + '. Replay on a new board: same rules, fresh start.</div>' : '';
+    // lastTie is the tied game's scores by player ({ userId: score }); a plain number is taken too.
+    var lt = m.lastTie, tieAt = lt == null ? null : typeof lt === 'object' ? (lt[me.userId] != null ? lt[me.userId] : Object.keys(lt).map(function (k) { return lt[k]; })[0]) : lt;
+    var replay = m.attempt ? '<div class="banner co" role="status">It was a tie' + (tieAt != null && isFinite(Number(tieAt)) ? ' at ' + num(tieAt) : '') + '. Replay on a new board: same rules, fresh start.</div>' : '';
     var body = '', foot = '';
     var err = ui.err ? '<p class="why" role="alert">' + esc(ui.err) + '</p>' : '';
     if (m.status === 'scheduled' || m.status === 'betting') {
@@ -1036,7 +1116,7 @@ function boardAt(sd,g){
       } else if (ui.playing === key) {
         body = '<p class="note" style="text-align:center">Your round is on.</p><button type="button" class="btn" data-act="reopen">BACK TO MY ROUND</button>';
       } else {
-        body = '<p class="note" style="text-align:center">Your round is starting…</p>' + (window.CupPlay ? '' : '<p class="why">The game didn\'t load. Close and reopen the Cup.</p>');
+        body = '<p class="note" style="text-align:center">Your round is starting…</p>' + (window.CupPlay ? '' : '<p class="why">The game didn\'t load. Close this screen and open it again.</p>');
       }
     }
     return '<section class="card gold" aria-label="Your match">' + head + vsBlock(meP, opp) + replay + body + err + foot + '</section>' + (m.status === 'open' || m.status === 'scheduled' ? pathSteps() : '');
@@ -1055,16 +1135,24 @@ function boardAt(sd,g){
       '<p class="lbl">' + esc(r.label) + ' · ' + (won ? 'You won' : 'Knocked out') + '</p>' +
       (big ? '<h1>' + (won ? 'YOU WON!' : 'KNOCKED OUT') + '</h1>' : '') +
       '<span class="sc">' + num(mine) + ' <span class="mut" style="font-size:20px">to</span> ' + num(theirs) + '</span>' +
-      '<p class="note">v ' + esc(opp ? opp.name : '') + (opp && opp.seed ? ' (seed ' + opp.seed + ')' : '') + '</p>' + (how ? '<p class="note">' + how + '</p>' : '') +
+      '<p class="note vso">' + av(opp, 'xxs') + '<span>v ' + esc(opp ? opp.name : '') + (opp && opp.seed ? ' (seed ' + opp.seed + ')' : '') + '</span></p>' + (how ? '<p class="note">' + how + '</p>' : '') +
       '</div></section>';
   }
 
+  /* My slot in a later round's bracket, before the server makes it my match: the label and who I'd meet (or where they come from). */
+  function upcoming(n) {
+    var r = roundOf(n), u = meId();
+    var m = r && r.matches.find(function (x) { return (x.a && x.a.userId === u) || (x.b && x.b.userId === u); });
+    if (!m) return { round: n, label: roundName(n) };
+    var side = m.a && m.a.userId === u ? 'b' : 'a';
+    return { round: n, label: m.label || roundName(n), opponent: m[side] || null, from: m.feedsFrom && m.feedsFrom[side] };
+  }
   function nextMatchCard(nm) {
     var e = ev();
     if (!nm) return '';
     var opp = nm.opponent;
     return '<section class="card edge" aria-label="Your next match"><p class="lbl">Your next match · ' + esc(nm.label || roundName(nm.round)) + '</p>' +
-      '<div class="row">' + av({ userId: meId(), name: S.me.name }, 's') + '<b>You</b><span class="sp" style="text-align:center;font-family:var(--hd);color:var(--co)">VS</span><b style="text-align:right;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (opp ? esc(opp.name) : 'To be decided') + '</b>' + av(opp, 's') + '</div>' +
+      '<div class="row">' + av({ userId: meId(), name: S.me.name, photoUrl: S.me.photoUrl }, 's') + '<b>You</b><span class="sp" style="text-align:center;font-family:var(--hd);color:var(--co)">VS</span><b style="text-align:right;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (opp ? esc(opp.name) : nm.from ? esc(nm.from) : 'To be decided') + '</b>' + av(opp, 's') + '</div>' +
       roundProgress(e.round) + '</section>';
   }
   function roundProgress(n) {
@@ -1083,7 +1171,7 @@ function boardAt(sd,g){
     return '<section class="ticket" aria-label="Free pass"><small>FREE PASS · ROUND ' + fp.round + '</small><b>YOU SKIP ROUND ' + fp.round + '</b>' +
       '<span>' + (prev ? 'You won ' + esc(prev.label.toLowerCase()) + ', and as' : 'As') + ' a top seed you go straight to round ' + (fp.round + 1) + '.</span></section>' +
       '<section class="card"><div class="seed"><span class="rank"><small>RANK</small><b>#' + (fp.boardRank || fp.seed || me.seed) + '</b></span><p>You were <b>#' + (fp.boardRank || fp.seed || me.seed) + ' on ' + orgPossessive() + ' Odd One Out leaderboard</b>' + (me.best != null ? ' (best ' + num(me.best) + ')' : '') + '. The ' + plural(((roundOf(fp.round) || {}).byes || []).length || passesFor(e.entrantCount || 0), 'highest seed') + ' skip round ' + fp.round + '.</p></div></section>' +
-      nextMatchCard(nm || { round: fp.round + 1, label: 'Round ' + (fp.round + 1) }) +
+      nextMatchCard(nm || upcoming(fp.round + 1)) +
       '<button type="button" class="btn2" data-act="tab" data-v="watch">Watch round ' + fp.round + ' live</button>';
   }
 
@@ -1099,7 +1187,7 @@ function boardAt(sd,g){
   function viewWaiting() {
     var me = S.me, last = myLastDone();
     var nm = me.match && me.match.status !== 'done' ? me.match : null;
-    return resultCard(last, !!(last && last.r.n === ev().round)) + nextMatchCard(nm || { round: ev().round + 1, label: roundName(ev().round + 1) }) + (isTopN() ? '' : liveNowMini(3));
+    return resultCard(last, !!(last && last.r.n === ev().round)) + nextMatchCard(nm || upcoming(ev().round + 1)) + (isTopN() ? '' : liveNowMini(3));
   }
 
   function viewOut() {
@@ -1109,9 +1197,9 @@ function boardAt(sd,g){
     var wins = allMatches().filter(function (m) { return m.status === 'done' && m.winnerId === me.userId; }).length;
     var firstR = (e.rounds || []).find(function (r) { return r.kind === 'sequential'; });
     return resultCard(last, !!(last && last.r.n === e.round)) +
-      '<section class="card" aria-label="Your Cup"><p class="lbl">Your Cup</p><p style="font-weight:700">You reached <b>' + esc(reached) + '</b>' + (me.seed ? ' as seed ' + me.seed : '') + (wins ? ' and won ' + plural(wins, 'match', 'matches') : '') + '.</p>' +
+      '<section class="card" aria-label="Your run"><p class="lbl">Your run</p><p style="font-weight:700">You reached <b>' + esc(reached) + '</b>' + (me.seed ? ' as seed ' + me.seed : '') + (wins ? ' and won ' + plural(wins, 'match', 'matches') : '') + '.</p>' +
       (stage ? '' : '<p class="note">' + (firstR ? 'When it gets to the top ' + (e.topN || 8) + ', they play one at a time on stage and you can bet points on every match.' : '') + '</p>') + '</section>' +
-      (stage ? '' : liveNowMini(3) || '<button type="button" class="btn2" data-act="tab" data-v="watch">Watch the Cup</button>');
+      (stage ? '' : liveNowMini(3) || '<button type="button" class="btn2" data-act="tab" data-v="watch">Watch the matches</button>');
   }
 
   /* Out of the Cup while the top 8 play: one line, the stage comes first. */
@@ -1119,7 +1207,7 @@ function boardAt(sd,g){
     var me = S.me, last = myLastDone();
     if (!last) return '';
     var m = last.m, u = meId(), opp = m.a && m.a.userId === u ? m.b : m.a;
-    return '<section class="card" aria-label="Your Cup" style="flex-direction:row;align-items:center"><div class="sp"><p class="lbl">Your Cup</p><p style="font-weight:700">Out in ' + esc(me.eliminatedIn || last.r.label) + ': ' + num(scoreOf(m, u)) + ' to ' + num(scoreOf(m, opp && opp.userId)) + ' v ' + esc(opp ? opp.name : '') + '</p></div></section>';
+    return '<section class="card" aria-label="Your run" style="flex-direction:row;align-items:center"><div class="sp"><p class="lbl">Your run</p><p style="font-weight:700">Out in ' + esc(me.eliminatedIn || last.r.label) + ': ' + num(scoreOf(m, u)) + ' to ' + num(scoreOf(m, opp && opp.userId)) + ' v ' + esc(opp ? opp.name : '') + '</p></div></section>';
   }
   function viewSpectator() {
     var e = ev();
@@ -1267,10 +1355,10 @@ function boardAt(sd,g){
     var live = isLive(m);
     var chip = m.status === 'done' ? '<span class="sta done">' + (m.decidedBy === 'absent' || m.decidedBy === 'solo' ? 'NO-SHOW' : 'DONE') + '</span>' : live ? '<span class="sta live">LIVE</span>' : m.status === 'betting' ? '<span class="sta bet">BETTING</span>' : m.status === 'open' ? '<span class="sta">JOINING</span>' : '<span class="sta">' + (m.startAt ? clock(m.startAt) : 'NEXT') + '</span>';
     function line(p) {
-      if (!p) return '<div class="bp tbd"><span class="sd">–</span><span>To be decided</span></div>';
+      if (!p) return '<div class="bp tbd"><span class="sd">–</span>' + av(null, 'xxs') + '<span>To be decided</span></div>';
       var s = scoreOf(m, p.userId);
       var cls = m.winnerId ? (m.winnerId === p.userId ? 'win' : 'lose') : '';
-      return '<div class="bp ' + cls + '"><span class="sd">' + p.seed + '</span><span>' + youOr(p) + (m.winnerId === p.userId ? ' ✓' : '') + '</span><b>' + (s != null ? num(s) : '') + '</b></div>';
+      return '<div class="bp ' + cls + '"><span class="sd">' + p.seed + '</span>' + av(p, 'xxs') + '<span>' + youOr(p) + (m.winnerId === p.userId ? ' ✓' : '') + '</span><b>' + (s != null ? num(s) : '') + '</b></div>';
     }
     var inner = '<div class="bh"><span>' + esc(m.label) + (m.attempt ? ' · replay ' + m.attempt : '') + '</span>' + chip + '</div>' + line(m.a) + line(m.b);
     var cls = 'bm' + (isMine(m) ? ' me' : '');
@@ -1281,7 +1369,7 @@ function boardAt(sd,g){
   /* ---------- Watch ---------- */
   function liveRow(m) {
     var sa = scoreOf(m, m.a && m.a.userId) || 0, sb = scoreOf(m, m.b && m.b.userId) || 0, sc = Math.max(2000, sa, sb) * 1.15;
-    function ln(p, s, col) { return '<div class="ln"><span class="sd">' + (p ? p.seed : '') + '</span><span>' + youOr(p) + '</span><b style="color:' + col + '">' + num(s) + '</b></div><div class="tb"><i style="width:' + ((s / sc) * 100).toFixed(1) + '%;background:' + col + '"></i></div>'; }
+    function ln(p, s, col) { return '<div class="ln"><span class="sd">' + (p ? p.seed : '') + '</span>' + av(p, 'xxs', '', col) + '<span>' + youOr(p) + '</span><b style="color:' + col + '">' + num(s) + '</b></div><div class="tb"><i style="width:' + ((s / sc) * 100).toFixed(1) + '%;background:' + col + '"></i></div>'; }
     return '<button type="button" class="lm' + (isMine(m) ? ' me' : '') + '" data-k="w' + esc(m.id) + '" data-act="duel" data-v="' + esc(m.id) + '" aria-label="Watch ' + esc(m.label) + ': ' + esc(m.a ? m.a.name : '') + ' ' + num(sa) + ', ' + esc(m.b ? m.b.name : '') + ' ' + num(sb) + '">' +
       '<div class="ln" style="font-size:11px;color:var(--mu);font-weight:800;letter-spacing:.6px;text-transform:uppercase"><span>' + esc(m.label) + (m.status === 'solo' ? ' · solo' : '') + '</span></div>' + ln(m.a, sa, '#FF8A7A') + ln(m.b, sb, '#6FD3F2') + '</button>';
   }
@@ -1297,7 +1385,7 @@ function boardAt(sd,g){
     }
     if (!lm.length) {
       if (!cur) {
-        var msg = e.phase === 'scheduled' || e.phase === 'lobby' ? 'Matches start at ' + clock(e.startAt) + '. Every one of them shows up here, live.' : e.phase === 'done' ? 'The Cup is over. See the final standings on My Cup.' : 'Nothing is live this second. The next match starts soon.';
+        var msg = e.phase === 'scheduled' || e.phase === 'lobby' ? 'Matches start at ' + clock(e.startAt) + '. Every one of them shows up here, live.' : e.phase === 'done' ? cupName() + ' is over. See the final standings on Results.' : 'Nothing is live this second. The next match starts soon.';
         out += '<div class="full" style="min-height:40vh"><div class="ic" aria-hidden="true">◎</div><h2>Nothing live right now</h2><p>' + esc(msg) + '</p></div>';
       }
       return out;
@@ -1329,14 +1417,15 @@ function boardAt(sd,g){
   /* ---------- Tipsters ---------- */
   function viewTipsters() {
     var t = (S.tipsters || []).slice().sort(function (a, b) { return b.won - a.won; }), u = meId();
+    var onPod = t.filter(function (x) { return x.won > 0; }).length;
     if (!t.length) return '<h1>Top tipsters</h1><div class="full" style="min-height:40vh"><div class="ic" aria-hidden="true">★</div><h2>No bets settled yet</h2><p>The board fills in after the first top-' + ((ev() && ev().topN) || 8) + ' match. Points won from bets decide it.</p></div>';
     var pod = [t[1], t[0], t[2]].map(function (x, i) {
-      if (!x) return '<div class="p"></div>';
+      if (!x || [1, 0, 2][i] >= onPod) return '<div class="p"></div>';
       var place = [2, 1, 3][i], h = [96, 128, 80][i], col = ['#B79CFF', '#F5B82E', '#6FD3F2'][i], size = place === 1 ? 68 : 56;
-      return '<div class="p">' + '<span class="av" style="width:' + size + 'px;height:' + size + 'px;font-size:' + (size / 2.8).toFixed(0) + 'px;background-color:' + color(x.userId) + '" aria-hidden="true">' + esc(x.userId === u ? 'YOU' : initials(x.name)) + '</span><b>' + (x.userId === u ? 'You' : esc(x.name)) + '</b><div class="blk" style="height:' + h + 'px;background-color:' + col + '"><strong>' + place + '</strong><span>+' + num(x.won) + '</span></div></div>';
+      return '<div class="p">' + av(x, 'pd', x.userId === u ? 'YOU' : '', col, 'width:' + size + 'px;height:' + size + 'px;font-size:' + (size / 2.8).toFixed(0) + 'px') + '<b>' + (x.userId === u ? 'You' : esc(x.name)) + '</b><div class="blk" style="height:' + h + 'px;background-color:' + col + '"><strong>' + place + '</strong><span>' + signed(x.won) + '</span></div></div>';
     }).join('');
-    var rest = t.slice(3).map(function (x, i) {
-      return '<div class="lr' + (x.userId === u ? ' me' : '') + '" data-k="t' + esc(x.userId) + '"><span class="n"' + (x.userId === u ? ' style="color:var(--y)"' : '') + '>' + (i + 4) + '</span>' + av(x, 'xs', x.userId === u ? 'YOU' : '') + '<div class="tx"><b>' + (x.userId === u ? 'You' : esc(x.name)) + '</b><span>' + x.right + ' of ' + x.of + ' right</span></div><em>+' + num(x.won) + '</em></div>';
+    var rest = t.slice(Math.min(3, onPod)).map(function (x, i) {
+      return '<div class="lr' + (x.userId === u ? ' me' : '') + '" data-k="t' + esc(x.userId) + '"><span class="n"' + (x.userId === u ? ' style="color:var(--y)"' : '') + '>' + (i + 1 + Math.min(3, onPod)) + '</span>' + av(x, 'xs', x.userId === u ? 'YOU' : '') + '<div class="tx"><b>' + (x.userId === u ? 'You' : esc(x.name)) + '</b><span>' + x.right + ' of ' + x.of + ' right</span></div><em' + (x.won < 0 ? ' style="color:var(--co)"' : '') + '>' + signed(x.won) + '</em></div>';
     }).join('');
     var meIn = t.some(function (x) { return x.userId === u; });
     var r = roundOf(ev().round);
@@ -1349,22 +1438,23 @@ function boardAt(sd,g){
     var e = ev(), st = (S.standings || []).slice().sort(function (a, b) { return a.place - b.place || a.seed - b.seed; }), u = meId();
     var fr = roundOf((e.rounds || []).length), fm = fr && fr.matches[0];
     var champ = st[0];
-    if (!champ) return '<div class="full"><h2>The Cup is over</h2><p>Final standings are on their way.</p></div>';
+    if (!champ) return '<div class="full"><h2>' + esc(cupName()) + ' is over</h2><p>Final standings are on their way.</p></div>';
     var ru = fm ? (fm.a.userId === champ.userId ? fm.b : fm.a) : st[1];
     var semis = st.filter(function (x) { return x.reached === 'Semi-final'; }).slice(0, 2);
     var mine = st.find(function (x) { return x.userId === u; });
     var tip = (S.tipsters || []).slice().sort(function (a, b) { return b.won - a.won; })[0];
+    if (tip && !(tip.won > 0)) tip = null;
     var myTip = (S.tipsters || []).find(function (x) { return x.userId === u; });
     var list = ui.standAll ? st.slice(4) : st.slice(4, 24);
     var q = ui.q.trim().toLowerCase();
     if (q) list = st.filter(function (x) { return x.name.toLowerCase().indexOf(q) >= 0; });
-    return '<section class="count" aria-label="Champion" style="gap:6px"><small>Champion</small><span class="crown" aria-hidden="true">' + esc(initials(champ.name)) + '</span><b style="font-size:30px;color:var(--tx)">' + (champ.userId === u ? 'You!' : esc(champ.name)) + '</b>' +
+    return '<section class="count" aria-label="Champion" style="gap:6px"><small>Champion</small><span class="crown" aria-hidden="true">' + esc(initials(champ.name)) + (photoOf(champ) ? '<img src="' + esc(photoOf(champ)) + '" alt="" decoding="async" referrerpolicy="no-referrer">' : '') + '</span><b style="font-size:30px;color:var(--tx)">' + (champ.userId === u ? 'You!' : esc(champ.name)) + '</b>' +
       (fm ? '<span>Beat ' + esc(ru.name) + ' ' + num(scoreOf(fm, champ.userId)) + ' to ' + num(scoreOf(fm, ru.userId)) + ' in the final · seed ' + champ.seed + '</span>' : '') + '</section>' +
       '<div class="pod" style="grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch">' +
-      '<div class="pp"><em style="color:#B79CFF">2nd</em><b>' + youOr(ru) + '</b><span>Runner-up</span></div>' +
-      semis.map(function (s) { return '<div class="pp"><em style="color:#6FD3F2">3rd</em><b>' + youOr(s) + '</b><span>Semi-finalist</span></div>'; }).join('') + '</div>' +
-      (mine ? '<section class="betc" aria-label="Your result" style="border-width:2px"><div class="sp"><p class="lbl">Your Cup</p><b style="font-family:inherit;font-size:15px;font-weight:800;color:var(--tx)">' + (mine.reached === 'Champion' ? 'Champion!' : 'Reached ' + esc(mine.reached)) + ' · place ' + mine.place + ' of ' + num(st.length) + '</b></div>' + (myTip ? '<b style="color:var(--gr);font-size:20px">+' + num(myTip.won) + ' pts</b>' : '') + '</section>' : '') +
-      (tip ? '<div class="card" style="flex-direction:row;align-items:center"><div class="sp"><p class="lbl" style="color:var(--cy)">Top tipster</p><b>' + (tip.userId === u ? 'You' : esc(tip.name)) + ' · ' + tip.right + ' of ' + tip.of + ' right</b></div><b class="hd" style="color:var(--gr);font-size:20px">+' + num(tip.won) + '</b></div>' : '') +
+      '<div class="pp"><em style="color:#B79CFF">2nd</em>' + av(ru, 'xs', '', '#B79CFF') + '<b>' + youOr(ru) + '</b><span>Runner-up</span></div>' +
+      semis.map(function (s) { return '<div class="pp"><em style="color:#6FD3F2">3rd</em>' + av(s, 'xs', '', '#6FD3F2') + '<b>' + youOr(s) + '</b><span>Semi-finalist</span></div>'; }).join('') + '</div>' +
+      (mine ? '<section class="betc" aria-label="Your result" style="border-width:2px"><div class="sp"><p class="lbl">Your run</p><b style="font-family:inherit;font-size:15px;font-weight:800;color:var(--tx)">' + (mine.reached === 'Champion' ? 'Champion!' : 'Reached ' + esc(mine.reached)) + ' · place ' + mine.place + ' of ' + num(st.length) + '</b></div>' + (myTip ? '<b style="color:' + (myTip.won < 0 ? 'var(--co)' : 'var(--gr)') + ';font-size:20px">' + signed(myTip.won) + ' pts</b>' : '') + '</section>' : '') +
+      (tip ? '<div class="card" style="flex-direction:row;align-items:center"><div class="sp"><p class="lbl" style="color:var(--cy)">Top tipster</p><b>' + (tip.userId === u ? 'You' : esc(tip.name)) + ' · ' + tip.right + ' of ' + tip.of + ' right</b></div><b class="hd" style="color:var(--gr);font-size:20px">' + signed(tip.won) + '</b></div>' : '') +
       '<div class="row"><p class="lbl sp">Final standings</p><p class="lbl">' + plural(st.length, 'player') + '</p></div>' +
       '<label class="sr" for="sq">Find a player</label><input id="sq" class="search" type="search" placeholder="Find a player" autocomplete="off" data-in="q" value="' + esc(ui.q) + '">' +
       '<div class="list">' + list.map(function (x) { return '<div class="lr' + (x.userId === u ? ' me' : '') + '" data-k="s' + esc(x.userId) + '"><span class="n">' + x.place + '</span>' + av(x, 'xs') + '<div class="tx"><b>' + youOr(x) + '</b><span>Seed ' + x.seed + '</span></div><span class="mut t12" style="font-weight:700">' + esc(x.reached) + '</span></div>'; }).join('') + '</div>' +
@@ -1373,27 +1463,28 @@ function boardAt(sd,g){
 
   /* ---------- the frame ---------- */
   function fullScreen(icon, title, text, btn) {
-    return '<div class="wrap"><header class="top"><h1 class="wm">DIWALI CUP</h1></header><div class="full"><div class="ic" aria-hidden="true">' + icon + '</div><h2>' + esc(title) + '</h2><p>' + esc(text) + '</p>' + (btn || '') + '</div></div>';
+    return '<div class="wrap"><header class="top">' + wordmark() + '</header><div class="full"><div class="ic" aria-hidden="true">' + icon + '</div><h2>' + esc(title) + '</h2><p>' + esc(text) + '</p>' + (btn || '') + '</div></div>';
   }
   function frame() {
-    if (fatal === 'nocup') return fullScreen('!', 'Open the Cup from Sowaka', 'The Diwali Cup opens from the Games tab or the Cup post in your feed.');
-    if (fatal) return fullScreen('↻', 'Close and reopen the Cup', fatal.replace(/^Close and reopen the Cup\.?$/, 'Your pass to the Cup has run out. Close this screen and open the Cup again.'));
+    if (fatal === 'nocup') return fullScreen('!', 'Open it from Sowaka', cupName() + ' opens from the Games tab or its post in your feed.');
+    if (fatal) return fullScreen('↻', 'Close and open it again', fatal === 'reopen' || /^Close and reopen/i.test(fatal) ? 'Your pass has run out. Close this screen and open ' + cupName() + ' again from Sowaka.' : fatal);
     if (!S) {
-      if (netFail) return fullScreen('!', 'Can\'t reach the Cup', 'Check your connection. We\'ll keep trying.', '<button type="button" class="btn" style="max-width:280px" data-act="retry">TRY AGAIN</button>');
-      return '<div class="wrap"><header class="top"><h1 class="wm">DIWALI CUP</h1></header><div class="body" aria-busy="true"><div class="skel"></div><div class="skel" style="height:200px"></div><div class="skel" style="height:80px"></div></div></div>';
+      if (netFail) return fullScreen('!', 'Can\'t reach the server', 'Check your connection. We\'ll keep trying.', '<button type="button" class="btn" style="max-width:280px" data-act="retry">TRY AGAIN</button>');
+      return '<div class="wrap"><header class="top">' + wordmark() + '</header><div class="body" aria-busy="true"><div class="skel"></div><div class="skel" style="height:200px"></div><div class="skel" style="height:80px"></div></div></div>';
     }
     var e = ev();
-    if (!e) return fullScreen('✦', 'The Diwali Cup isn\'t on right now', 'When it\'s switched on, your match, the bracket and the live games all show up here.');
-    var tabs = [['me', e.phase === 'done' ? 'Results' : 'My Cup'], ['bracket', 'Bracket'], ['watch', 'Watch']];
-    if (S.tipsters) tabs.push(['tipsters', 'Tipsters']);
+    if (!e) return fullScreen('✦', cupName() + ' isn\'t on right now', 'When it\'s switched on, your match, the bracket and the live games all show up here.');
+    var tabs = [['me', e.phase === 'done' ? 'Results' : 'Home'], ['bracket', 'Bracket'], ['watch', 'Watch']];
+    // Tipsters from the top N on (the server may send an empty list from the start).
+    if (S.tipsters && (S.tipsters.length || isTopN() || e.phase === 'done')) tabs.push(['tipsters', 'Tipsters']);
     if (!tabs.some(function (t) { return t[0] === ui.tab; })) ui.tab = 'me';
     var liveN = liveMatches().length;
-    var tabHtml = '<div class="tabs" role="tablist" aria-label="Cup">' + tabs.map(function (t) {
+    var tabHtml = '<div class="tabs" role="tablist" aria-label="' + esc(cupName()) + '">' + tabs.map(function (t) {
       return '<button type="button" role="tab" id="tab-' + t[0] + '" aria-controls="panel" class="tab' + (ui.tab === t[0] ? ' on' : '') + '" aria-selected="' + (ui.tab === t[0]) + '" data-act="tab" data-v="' + t[0] + '">' + t[1] + (t[0] === 'watch' && liveN && ui.tab !== 'watch' ? '<span class="dot" aria-label="' + liveN + ' live"></span>' : '') + '</button>';
     }).join('') + '</div>';
     var body = ui.tab === 'bracket' ? viewBracket() : ui.tab === 'watch' ? viewWatch() : ui.tab === 'tipsters' ? viewTipsters() : viewMe();
-    return '<div class="wrap"><header class="top"><h1 class="wm">DIWALI CUP</h1>' + phaseChip() +
-      (showBalance() ? '<span class="bal" aria-label="Your balance: ' + num(S.me.balance) + ' points"><span class="coin" aria-hidden="true"></span>' + num(S.me.balance) + '</span>' : '') + '</header>' +
+    return '<div class="wrap"><header class="top">' + wordmark() + '<span class="tr">' + phaseChip() +
+      (showBalance() ? '<span class="bal" aria-label="Your balance: ' + num(S.me.balance) + ' points"><span class="coin" aria-hidden="true"></span>' + num(S.me.balance) + '</span>' : '') + '</span></header>' +
       tabHtml + '<main class="body" id="panel" role="tabpanel" aria-labelledby="tab-' + ui.tab + '">' + body + '</main></div>' +
       (ui.duel ? viewDuel(ui.duel) : '') +
       (netFail ? '<div class="net" role="status">Connection lost. Retrying…<button type="button" data-act="retry">Retry now</button></div>' : '') +
@@ -1463,6 +1554,11 @@ function boardAt(sd,g){
     var start = ms(m.startAt);
     if ((m.status === 'live' || m.status === 'solo') && finals[key] != null && !posted[key]) postFinal(m.id, key, finals[key]);
     var want = (m.status === 'live' || (m.status === 'solo' && m.startAt)) && isFinite(start) && finals[key] == null && now() < start + (roundSec() + 8) * 1000;
+    /* Away (closed, reloaded) until after the end: what this phone had is the final. */
+    if (!want && !ui.playing && (m.status === 'live' || m.status === 'solo') && m.startAt && finals[key] == null && progress[key] && now() >= start + roundSec() * 1000) {
+      finals[key] = Math.max(0, Math.round(Number(progress[key].score) || 0)); store('cup-finals', keepLast(finals, 20));
+      postFinal(m.id, key, finals[key]);
+    }
     if (ui.playing && !want && finals[ui.playing] == null) stopPlay();
     if (!want || ui.playing === key) return;
     if (!window.CupPlay || typeof window.CupPlay.start !== 'function') return;
@@ -1490,9 +1586,11 @@ function boardAt(sd,g){
         clockOffset: offset,
         roundSec: roundSec(),
         attempt: m.attempt || 0,
-        opponent: m.status === 'solo' ? null : { name: opp.name || 'Your opponent', seed: opp.seed, userId: opp.userId },
-        me: { name: S.me.name, seed: S.me.seed },
+        opponent: m.status === 'solo' ? null : { name: opp.name || 'Your opponent', seed: opp.seed, userId: opp.userId, photoUrl: photoOf(opp) || null },
+        me: { name: S.me.name, seed: S.me.seed, photoUrl: photoOf(S.me) || null },
         solo: m.status === 'solo',
+        resume: progress[key] || null,
+        onProgress: function (p) { progress[key] = p; store('cup-live', keepLast(progress, 6)); },
         onLive: function (score) {
           pending = Math.max(0, Math.round(Number(score) || 0));
           if (!liveT) liveT = setTimeout(sendLive, Math.max(0, 260 - (Date.now() - lastLive)));
@@ -1503,13 +1601,14 @@ function boardAt(sd,g){
     } catch (err) {
       console.error('CupPlay failed', err);
       stopPlay();
-      ui.err = 'The game didn\'t start. Close and reopen the Cup.';
+      ui.err = 'The game didn\'t start. Close this screen and open it again.';
     }
   }
   function finishPlay(matchId, key, score) {
     if (finals[key] != null) return;
     finals[key] = score;
-    store('cup-finals', finals);
+    store('cup-finals', keepLast(finals, 20));
+    if (progress[key]) { delete progress[key]; store('cup-live', progress); }
     postFinal(matchId, key, score);
     setTimeout(function () { if (ui.playing === key) stopPlay(); render(); }, 2200);
   }
@@ -1524,6 +1623,8 @@ function boardAt(sd,g){
         if (j && j.match && S && S.me && S.me.match && S.me.match.id === matchId) Object.assign(S.me.match, j.match);
         poll();
       }).catch(function (e) {
+        // 409: the match was decided without it (back too late; the live score counted). Nothing to tell, the result screen says it.
+        if (e && e.status === 409) { poll(); return; }
         if (e && e.status >= 400 && e.status < 500) { toast(e.message, true); return; }
         if (++tries < 5) setTimeout(send, 1000 * tries); else { posted[key] = false; toast('Your score didn\'t reach the server. Keep this screen open.', true); }
       });

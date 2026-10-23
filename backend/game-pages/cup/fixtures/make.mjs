@@ -221,7 +221,7 @@ function moment({ me: meSeed, at, fate = {}, mine = {} }) {
     version: 100 + (at.round ?? 0) * 10,
     event: {
       id: 'diwali-2026',
-      name: 'Diwali Cup',
+      name: 'O-O-O Tournament',
       phase,
       round: Math.min(curRound, total),
       lobbyAt: iso(lobbyAt),
@@ -271,7 +271,27 @@ function moment({ me: meSeed, at, fate = {}, mine = {} }) {
 
 // For bets: the on-stage match, and match lookups.
 const findMatch = (s, id) => s.event.rounds.flatMap((r) => r.matches).find((m) => m.id === id);
+/* Faces: most people have a photo (a drawn one, as a data: URL the page's policy allows), every third has none (initials),
+   and every eleventh has one that fails to load (initials again). The engine is to send photoUrl on every player object. */
+const PHOTO_BG = ['#7A5CFF', '#2F9E8F', '#C2577A', '#3A6FD8', '#B7791F', '#5B8C3A'];
+function photoOf(userId) {
+  const i = Number(String(userId).slice(1));
+  if (!Number.isFinite(i) || i % 3 === 0) return null;
+  if (i % 11 === 0) return `https://photos.invalid/${userId}.jpg`;
+  const bg = PHOTO_BG[i % PHOTO_BG.length], skin = ['#F1C27D', '#C68642', '#8D5524', '#E0AC69'][i % 4], hair = ['#2B1B10', '#5A3214', '#111', '#7B4B2A'][i % 4];
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' fill='${bg}'/><circle cx='32' cy='27' r='13' fill='${skin}'/><path d='M19 25c0-9 6-14 13-14s13 5 13 14c-3-5-8-7-13-7s-10 2-13 7z' fill='${hair}'/><path d='M10 64c2-14 11-20 22-20s20 6 22 20z' fill='${skin}'/></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+function withPhotos(v) {
+  if (Array.isArray(v)) v.forEach(withPhotos);
+  else if (v && typeof v === 'object') {
+    if (typeof v.userId === 'string' && typeof v.name === 'string' && /^u\d{3}$/.test(v.userId)) v.photoUrl = photoOf(v.userId);
+    Object.values(v).forEach(withPhotos);
+  }
+  return v;
+}
 const write = (name, state) => {
+  withPhotos(state);
   writeFileSync(join(here, `${name}.json`), `${JSON.stringify(state, null, 1)}\n`);
   console.log(name, `${Math.round(JSON.stringify(state).length / 1024)} KB`);
 };
@@ -328,7 +348,7 @@ write('lobby', moment({ me: 41, at: { round: 1, stage: 'lobby' } }));
   w.me.match.attempt = 1;
   w.me.match.opponentJoined = false;
   w.me.match.deadlineAt = iso(T0 + sec(170));
-  w.me.match.lastTie = 1840;
+  w.me.match.lastTie = { [w.me.userId]: 1840, [w.me.match.opponent.userId]: 1840 }; // as the engine sends it: the tied game's scores by player
   findMatch(w, w.me.match.id).attempt = 1;
   w.version += 4;
   write('match-replay', w);
