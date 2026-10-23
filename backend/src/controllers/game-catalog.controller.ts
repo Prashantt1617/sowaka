@@ -104,6 +104,7 @@ function withGameTicket(key: string, html: string, viewer: GameViewer, withHop: 
   const subject = { userId: viewer.userId, org: viewer.org, name: viewer.name };
   const payload: Record<string, string> = { ticket: mintTicket(subject) };
   if (withHop) payload.hopTicket = mintTicket(subject, { kind: 'hop' });
+  if (key === CUP_KEY) payload.from = 'games';
   return withGlobal(key, html, payload);
 }
 

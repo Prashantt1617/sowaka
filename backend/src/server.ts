@@ -11,6 +11,7 @@ import { closeSquadRealtime, initSquadRealtime } from './services/secret-squad-r
 import { closeRedis } from './config/redis';
 import { startCareScheduler, stopCareScheduler } from './services/care.service';
 import { startGameChallengeSweeper, stopGameChallengeSweeper } from './services/game-challenge.service';
+import { startCupRunner, stopCupRunner } from './services/cup.service';
 import { startSuwiDigestScheduler, stopSuwiDigestScheduler } from './suwi/digest';
 
 async function start(): Promise<void> {
@@ -23,6 +24,8 @@ async function start(): Promise<void> {
   startSuwiDigestScheduler();
   // Expires game challenges nobody finished in time, and tells both players.
   startGameChallengeSweeper();
+  // Moves switched-on Diwali Cup events along (only CUP_RUNNER_ORGS' outside production).
+  startCupRunner();
 
 
 logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v1.cloudfront.net'})
@@ -57,6 +60,7 @@ logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v
     stopCareScheduler();
     stopSuwiDigestScheduler();
     stopGameChallengeSweeper();
+    stopCupRunner();
     await closeRedis();
     await closeDb();
     process.exit(0);

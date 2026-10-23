@@ -7,9 +7,11 @@
  *     times and rules, and once the draw is made, everyone in it by seed
  *     (`entrants`) and the seeded draw (`rounds`).
  *   - `cup_matches`: one per match actually played (a free pass is not one).
- *   - `cup_bets`: one per person per match, `_id` `${matchId}:${userId}` so a
- *     second bet on the same match is refused by the primary key, with no
- *     index of its own.
+ *   - `cup_bets`: one per person per match and book, `_id`
+ *     `${matchId}:${book}:${userId}` so a second bet on the same match is
+ *     refused by the primary key, with no index of its own. The book is the
+ *     match's `voids.length` when the bet was placed: a voided match is bet on
+ *     afresh.
  *
  * See `services/cup-rules.ts` for the draw and the rules, and
  * `services/cup.service.ts` for the runner and the API.
@@ -83,6 +85,7 @@ export interface CupEventConfig {
 }
 
 export interface CupEvent extends CupEventConfig {
+  /** Letters, digits, - and _. */
   id: string;
   org: string;
   name: string;
@@ -184,8 +187,10 @@ export interface CupMatch {
 export type CupBetStatus = 'held' | 'won' | 'lost' | 'refunded';
 
 export interface CupBet {
-  /** `${matchId}:${userId}`: one bet per person per match. */
+  /** `${matchId}:${book}:${userId}`: one bet per person per match and book. */
   _id: string;
+  /** The match's `voids.length` when placed. */
+  book: number;
   eventId: string;
   org: string;
   matchId: string;

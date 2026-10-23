@@ -40,6 +40,7 @@ import type { CupEvent, CupEventConfig, CupSeeding } from '../models/cup.model';
 import type { ConnectPost } from '../models/connect.model';
 import { DEFAULT_CUP_CONFIG } from '../services/cup-rules';
 import { cupBets, cupEvents, cupMatches, rosterOf } from '../services/cup.service';
+import { pointEvents } from '../services/points-ledger.service';
 
 type Flags = Record<string, string>;
 
@@ -145,6 +146,20 @@ async function describe(event: CupEvent) {
   const matches = await cupMatches().countDocuments({ eventId: event.id });
   const bets = await cupBets().countDocuments({ eventId: event.id });
   console.log(`  ${matches} matches · ${bets} bets`);
+}
+
+/**
+ * Undoes every point a test event's bets moved: each person's ledger rows for
+ * its matches (refId `<eventId>-r…`) summed, taken back off their balance,
+ * and the rows deleted. Sowaka only.
+ */
+async function revertBetPoints(event: CupEvent): Promise<string> {
+  const rows = await pointEvents().find({ org: event.org, source: 'cup_bet', refId: { $regex: `^${event.id}-r` } }).toArray();
+  const net = new Map<string, number>();
+  for (const row of rows) net.set(row.userId, (net.get(row.userId) ?? 0) + row.delta);
+  for (const [userId, delta] of net) if (delta !== 0) await users().updateOne({ userId }, { $inc: { points: -delta } });
+  await pointEvents().deleteMany({ _id: { $in: rows.map((row) => (row as unknown as { _id: never })._id) } });
+  return `${rows.length} bet ledger rows reverted for ${net.size} people.`;
 }
 
 async function main() {
@@ -278,16 +293,24 @@ async function main() {
       console.log(`Removed ${result.deletedCount} post(s).`);
       break;
     }
+    case 'reset':
     case 'remove': {
       const event = await requireEvent(flags.id);
-      if (event.org !== 'sowaka') throw new Error('remove is for sowaka test events only');
-      const held = await cupBets().find({ eventId: event.id, status: 'held' }).toArray();
-      for (const bet of held) await users().updateOne({ userId: bet.userId }, { $inc: { points: bet.stake } });
+      if (event.org !== 'sowaka') throw new Error(`${command} is for sowaka test events only`);
+      const reverted = await revertBetPoints(event);
       await cupBets().deleteMany({ eventId: event.id });
       await cupMatches().deleteMany({ eventId: event.id });
-      await connectPosts().deleteMany({ org: event.org, type: 'live_game', 'body.cupEventId': event.id });
-      await cupEvents().deleteOne({ id: event.id });
-      console.log(`Removed ${event.id} (${held.length} held bets refunded).`);
+      if (command === 'remove') {
+        await connectPosts().deleteMany({ org: event.org, type: 'live_game', 'body.cupEventId': event.id });
+        await cupEvents().deleteOne({ id: event.id });
+        console.log(`Removed ${event.id}; ${reverted}`);
+      } else {
+        await cupEvents().updateOne(
+          { id: event.id },
+          { $set: { phase: 'scheduled', round: 0, entrants: [], rounds: [], updatedAt: now }, $unset: { drawnAt: '', championId: '', finishedAt: '' }, $inc: { version: 1 } },
+        );
+        console.log(`Reset ${event.id} to before the draw (times unchanged: update them); ${reverted}`);
+      }
       break;
     }
     default:
