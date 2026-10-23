@@ -201,17 +201,22 @@ export async function notifyUsers(userIds: string[], input: NotificationInput) {
     .toArray();
   const firebase = messaging();
   if (!firebase || !tokens.length) return;
-  const result = await firebase.sendEachForMulticast({
-    tokens: tokens.map((entry) => entry.token),
-    notification: { title: input.title, body: input.body },
-    data: { ...input.data, scenario: input.scenario },
-    android: { priority: 'high', notification: { channelId: 'sowaka_notifications' } },
-    apns: { payload: { aps: { sound: 'default' } } },
-  });
-  const invalid = result.responses.flatMap((response, index) => {
-    const code = response.error?.code ?? '';
-    return !response.success && (code.includes('registration-token-not-registered') || code.includes('invalid-registration-token')) ? [tokens[index].token] : [];
-  });
+  // FCM takes at most 500 tokens a call (more throws and pushes nobody): a whole company is sent in slices.
+  const invalid: string[] = [];
+  for (let at = 0; at < tokens.length; at += 500) {
+    const slice = tokens.slice(at, at + 500);
+    const result = await firebase.sendEachForMulticast({
+      tokens: slice.map((entry) => entry.token),
+      notification: { title: input.title, body: input.body },
+      data: { ...input.data, scenario: input.scenario },
+      android: { priority: 'high', notification: { channelId: 'sowaka_notifications' } },
+      apns: { payload: { aps: { sound: 'default' } } },
+    });
+    result.responses.forEach((response, index) => {
+      const code = response.error?.code ?? '';
+      if (!response.success && (code.includes('registration-token-not-registered') || code.includes('invalid-registration-token'))) invalid.push(slice[index].token);
+    });
+  }
   if (invalid.length) await deviceTokens().deleteMany({ token: { $in: invalid } });
 }
 
