@@ -100,20 +100,29 @@ const isDuplicateKey = (error: unknown) => (error as { code?: number } | null)?.
 const eventBetsCache = new Map<string, { rows: CupBetRow[]; at: number } | { pending: Promise<CupBetRow[]> }>();
 const BETS_TTL_MS = 1000;
 
+/**
+ * Moves on whenever this server writes an event's bets: a read that began
+ * before the write must not be kept as if it were newer (a bet just placed
+ * would be missing from the page, and the split on the TV, for a second).
+ */
+const betsGeneration = new Map<string, number>();
+
 async function eventBets(eventId: string, stores: BetStores = liveBetStores()): Promise<CupBetRow[]> {
   const kept = eventBetsCache.get(eventId);
   if (kept && 'pending' in kept) return kept.pending;
   if (kept && Date.now() - kept.at < BETS_TTL_MS) return kept.rows;
+  const generation = betsGeneration.get(eventId) ?? 0;
+  const ours = () => (betsGeneration.get(eventId) ?? 0) === generation;
   const pending = stores.bets
     .find({ eventId })
     .toArray()
     .then(
       (rows) => {
-        eventBetsCache.set(eventId, { rows, at: Date.now() });
+        if (ours()) eventBetsCache.set(eventId, { rows, at: Date.now() });
         return rows;
       },
       (error) => {
-        eventBetsCache.delete(eventId);
+        if (ours()) eventBetsCache.delete(eventId);
         throw error;
       },
     );
@@ -165,6 +174,8 @@ async function stageMatch(eventId: string, matchId?: string | null): Promise<Cup
 
 /** After a write here: what this server keeps of it is read again. */
 function forgetBets(eventId: string, userIds: Iterable<string>): void {
+  betsGeneration.set(eventId, (betsGeneration.get(eventId) ?? 0) + 1);
+  if (betsGeneration.size > 200) betsGeneration.clear();
   eventBetsCache.delete(eventId);
   for (const key of stageCache.keys()) if (key.startsWith(`${eventId}|`)) stageCache.delete(key);
   for (const userId of userIds) balanceCache.delete(userId);
@@ -436,6 +447,7 @@ export async function reconcileCupBets(eventId: string): Promise<number> {
 export async function voidMatch(viewer: CupViewer, matchId: unknown) {
   if (!viewer.hr) throw new CupError(403, 'Only HR can void a result');
   if (typeof matchId !== 'string' || !matchId) throw new CupError(400, 'Which match?');
+  if (!MATCH_ID.test(matchId)) throw new CupError(404, 'Match not found');
   const voided = await voidMatchResult(viewer, matchId);
   const stored = await cupMatches().findOne({ id: matchId }, { projection: { _id: 0 } });
   if (stored) await reconcileQuietly(stored, 'voided');
@@ -443,6 +455,10 @@ export async function voidMatch(viewer: CupViewer, matchId: unknown) {
 }
 
 // ---------------------------------------------------------------- what pages show
+
+/** The shapes of the engine's ids (`cup-event.ts` makes events; matches are `<eventId>-r<round>-m<slot>`). */
+const EVENT_ID = /^[A-Za-z0-9_-]{1,80}$/;
+const MATCH_ID = /^[A-Za-z0-9_-]{1,80}-r\d{1,2}-m\d{1,4}$/;
 
 /**
  * The bet parts of one person's state: their balance (for `me.balance`),
@@ -469,6 +485,8 @@ export async function betsStateFor(viewer: Pick<CupViewer, 'userId'>, event: Pic
 
 /** The event asked for if it is the viewer's company's and on, else the company's current one. */
 async function viewersEvent(viewer: CupViewer, askedId?: unknown): Promise<CupEvent | null> {
+  // An id that cannot be an event's is not looked up (each one looked up is remembered by the engine).
+  if (typeof askedId === 'string' && askedId && !EVENT_ID.test(askedId)) return null;
   const id =
     typeof askedId === 'string' && askedId
       ? askedId
@@ -536,7 +554,8 @@ function dashboardViewer(req: Request): CupViewer {
 /** The state a Cup page gets (the engine's, with the bet parts its hook adds), for the TV. */
 export async function tvStateFor(viewer: CupViewer, eventId?: string) {
   // The engine's state for this viewer, with the bet parts its hook adds.
-  const { success: _ok, ...state } = JSON.parse(await stateFor(viewer, eventId, undefined)) as Record<string, unknown>;
+  const state = JSON.parse(await stateFor(viewer, eventId, undefined)) as Record<string, unknown>;
+  delete state.success;
   return state;
 }
 
