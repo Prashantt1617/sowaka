@@ -83,6 +83,7 @@ const CLAIMS: NavItem[] = [
 const CONNECT: NavItem[] = [
   { key: 'engagementposts', label: 'Engagement posts' },
   { key: 'relaygame', label: 'Relay game' },
+  { key: 'cuptv', label: 'Diwali Cup TV' },
   { key: 'contentreports', label: 'Moderate feed' },
 ];
 export const SECTIONS: { title: string; items: NavItem[] }[] = [

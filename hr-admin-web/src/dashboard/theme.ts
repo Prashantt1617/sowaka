@@ -45,6 +45,7 @@ export type View =
   | 'shiftbulk'
   | 'games'
   | 'relaygame'
+  | 'cuptv'
   | 'engagementposts'
   | 'contentreports'
   | 'suwi';
@@ -171,6 +172,7 @@ export const TITLES: Record<View, [string, string]> = {
   shiftbulk: ['Bulk Assign', 'Shifts · put employees on a shift'],
   games: ['Games', 'Connect · hosted games and leaderboards'],
   relaygame: ['Relay game', 'Connect · launch-event teams and questions'],
+  cuptv: ['Diwali Cup TV', 'Connect · the Cup live, for the office screen'],
   engagementposts: ['Engagement posts', 'Connect · challenges published for people to play'],
   contentreports: ['Reported content', 'Connect · posts and comments employees have reported'],
   suwi: ['Suwi', 'Your HR assistant · what it may do, and what it did'],

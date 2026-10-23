@@ -29,6 +29,7 @@ const LOADERS: Partial<Record<View, Loader>> = {
   cycle: () => import('./views/ReviewCycle').then((m) => ({ default: m.ReviewCycle })),
   games: () => import('./views/Games').then((m) => ({ default: m.Games })),
   relaygame: () => import('./views/RelayGame').then((m) => ({ default: m.RelayGame })),
+  cuptv: () => import('./views/CupTv').then((m) => ({ default: m.CupTv })),
   engagementposts: () => import('./views/EngagementPosts').then((m) => ({ default: m.EngagementPosts })),
   contentreports: () => import('./views/ContentReports').then((m) => ({ default: m.ContentReports })),
   payheads: () => import('./views/PayHeadMaster').then((m) => ({ default: m.PayHeadMaster })),

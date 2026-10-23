@@ -34,7 +34,7 @@ const titleCase = (t: string) => t.charAt(0) + t.slice(1).toLowerCase();
 // A section left with no tabs (Support: its desk is a role) is not a unit,
 // or it would read as given to everyone.
 const SECTION_UNITS: Unit[] = SECTIONS.flatMap((s) => {
-  const items = s.items.filter((i) => i.key !== 'usersroles' && i.key !== 'support');
+  const items = s.items.filter((i) => i.key !== 'usersroles' && i.key !== 'support' && i.key !== 'cuptv');
   if (items.length === 0) return [];
   return [{ key: s.title, title: titleCase(s.title), tabs: items.map((i) => i.key), hint: items.map((i) => i.label).join(' · ') }];
 });
