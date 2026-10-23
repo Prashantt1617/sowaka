@@ -1132,7 +1132,7 @@ export async function voidMatchResult(viewer: CupViewer, id: string) {
     );
     if (back) keep(rt, back);
     else logger.error('Cup void could not be undone', { matchId: id });
-    throw new CupError(409, 'The Cup moved on meanwhile: look again and try again');
+    throw new CupError(409, 'The tournament moved on meanwhile: look again and try again');
   }
   keep(rt, after);
   rt.event = moved;
@@ -1455,7 +1455,7 @@ export async function stateFor(viewer: CupViewer, askedId: unknown, since: unkno
 /** Who is in, for the list on the page: before the draw by best score, after it by seed. */
 export async function entrantsFor(viewer: CupViewer, askedId?: unknown) {
   const rt = await runtimeFor(viewer, askedId);
-  if (!rt) throw new CupError(404, 'The Cup is not on');
+  if (!rt) throw new CupError(404, 'The tournament is not on');
   if (rt.event.phase === 'scheduled') {
     const roster = await rosterPreview(rt.event);
     return { entrants: roster.map((row) => ({ userId: row.userId, name: row.name, photoUrl: photoOf(rt, row.userId), best: row.best, seed: null })) };

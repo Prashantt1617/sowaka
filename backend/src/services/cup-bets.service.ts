@@ -241,7 +241,7 @@ export async function placeBet(viewer: CupViewer, input: PlaceBetInput, now = ne
   const match = await cupMatches().findOne({ id: matchId }, { projection: { _id: 0 } });
   if (!match || match.org !== viewer.org) throw new CupError(404, 'There is no such match');
   const event = await loadEvent(match.eventId);
-  if (!event || !event.active || event.org !== viewer.org) throw new CupError(404, 'The Cup is not on');
+  if (!event || !event.active || event.org !== viewer.org) throw new CupError(404, 'The tournament is not on');
   return placeBetOn(viewer, event, match, input.pick, input.stake, liveBetStores(), now);
 }
 
@@ -498,7 +498,7 @@ async function viewersEvent(viewer: CupViewer, askedId?: unknown): Promise<CupEv
 /** `GET /cup/api/bets/mine`. */
 export async function myBets(viewer: CupViewer, askedId?: unknown) {
   const event = await viewersEvent(viewer, askedId);
-  if (!event) throw new CupError(404, 'The Cup is not on');
+  if (!event) throw new CupError(404, 'The tournament is not on');
   const [bets, balance] = await Promise.all([eventBets(event.id), balanceOf(viewer.userId)]);
   return { bets: mineOf(bets, viewer.userId), balance };
 }
@@ -547,7 +547,7 @@ function dashboardViewer(req: Request): CupViewer {
   const user = req.auth?.user;
   if (!user?.org) throw new CupError(401, 'Sign in again');
   const hr = user.dashboardAccess === true && hasAllDashboardTabs(user);
-  if (!hr) throw new CupError(403, 'The Cup TV is for HR with the whole dashboard');
+  if (!hr) throw new CupError(403, 'Tournament TV is for HR with the whole dashboard');
   return { userId: user.userId, name: user.name || 'HR', org: user.org, hr };
 }
 
