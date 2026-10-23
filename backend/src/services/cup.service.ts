@@ -98,7 +98,12 @@ export const cupHooks: {
   onMatchVoided?: (match: CupMatch, event: CupEvent, byUserId: string) => Promise<void>;
   state?: (viewer: CupViewer, event: CupEvent, current: { matchId: string; kind: 'betting' | 'live' } | null) => Promise<Record<string, unknown>>;
   balance?: (viewer: CupViewer) => Promise<number>;
+  /** Settles whatever a lost hook call left behind; the runner calls it every so often while bets are taken. */
+  reconcile?: (eventId: string) => Promise<number>;
 } = {};
+
+const RECONCILE_EVERY_MS = 15_000;
+const lastReconcile = new Map<string, number>();
 
 async function hook(name: string, run: (() => Promise<void> | undefined) | undefined) {
   if (!run) return;
@@ -570,7 +575,15 @@ async function tickEvent(id: string, now: Date): Promise<void> {
   const inRound = [...rt.matches.values()].filter((m) => m.round === n);
   // Round 1's start window closes on all its matches at once: a few at a time, not one by one.
   await inBatches(inRound, 16, (match) => advance(rt, match, now));
-  if (round.kind === 'sequential') await stage(rt, n, now);
+  if (round.kind === 'sequential') {
+    await stage(rt, n, now);
+    if (cupHooks.reconcile && Date.now() - (lastReconcile.get(id) ?? 0) >= RECONCILE_EVERY_MS) {
+      lastReconcile.set(id, Date.now());
+      await hook('reconcile', async () => {
+        await cupHooks.reconcile?.(id);
+      });
+    }
+  }
   const wanted = round.nodes.filter((node) => node.feeders.length === 2).length;
   const decided = [...rt.matches.values()].filter((m) => m.round === n && m.status === 'done').length;
   if (decided >= wanted) {
@@ -774,6 +787,9 @@ async function finish(rt: Runtime, now: Date): Promise<void> {
   if (!claimed) return;
   rt.event = claimed;
   rt.rev += 1;
+  await hook('reconcile', async () => {
+    await cupHooks.reconcile?.(event.id);
+  });
   logger.info('Cup finished', { eventId: event.id, championId: champion });
   if (champion) void pushCup(claimed, claimed.entrants.map((e) => e.userId), 'cup_champion', `${nameOf(claimed, champion)} wins the ${claimed.name}!`, 'See the final standings and the top tipsters.');
 }

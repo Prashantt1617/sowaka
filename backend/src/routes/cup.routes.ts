@@ -7,11 +7,9 @@ import {
   liveHandler,
   soloHandler,
   stateHandler,
-  voidHandler,
 } from '../controllers/cup.controller';
-// TODO(cup-bets, Agent 4): mount the bet handlers and load the hooks, e.g.
-//   import { placeBetHandler, myBetsHandler } from '../services/cup-bets.service';
-// Importing that module sets `cupHooks` (settle on decide, ride on replay, refund on void, bets in state).
+// Importing the bets module also fills the engine's `cupHooks` (settle on decide, ride on replay, refund on void, bets in state).
+import { myBetsHandler, placeBetHandler, voidMatchHandler } from '../services/cup-bets.service';
 
 /**
  * The Diwali Cup. `/cup/api/*` is the page's own API, signed in by the
@@ -25,7 +23,8 @@ cupRouter.post('/api/matches/:id/join', joinHandler);
 cupRouter.post('/api/matches/:id/solo', soloHandler);
 cupRouter.post('/api/matches/:id/live', liveHandler);
 cupRouter.post('/api/matches/:id/final', finalHandler);
-cupRouter.post('/api/matches/:id/void', voidHandler);
-// cupRouter.post('/api/bets', placeBetHandler);
-// cupRouter.get('/api/bets/mine', myBetsHandler);
+// HR's void: the engine replays the match, and its bets are refunded (reconciled once more here).
+cupRouter.post('/api/matches/:id/void', voidMatchHandler);
+cupRouter.post('/api/bets', placeBetHandler);
+cupRouter.get('/api/bets/mine', myBetsHandler);
 cupRouter.get('/:eventId', cupLinkPageHandler);

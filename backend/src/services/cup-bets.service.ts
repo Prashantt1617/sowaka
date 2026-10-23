@@ -400,6 +400,7 @@ cupHooks.onMatchVoided = async (match, event) => {
   await reconcileMatch(match, event);
 };
 cupHooks.balance = (viewer) => balanceOf(viewer.userId);
+cupHooks.reconcile = (eventId) => reconcileCupBets(eventId);
 cupHooks.state = async (viewer, event, current) => {
   const parts = await betsStateFor(viewer, event, await stageMatch(event.id, current?.matchId));
   return { bets: parts.bets, tipsters: parts.tipsters };

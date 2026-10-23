@@ -8,7 +8,6 @@ import {
   startSolo,
   stateFor,
   viewerFromTicket,
-  voidMatchResult,
   type CupViewer,
 } from '../services/cup.service';
 
@@ -66,5 +65,3 @@ export const liveHandler = cupHandler(async (viewer, req) => {
   return undefined;
 });
 export const finalHandler = cupHandler((viewer, req) => reportFinal(viewer, idOf(req), req.body?.score));
-/** HR voids a result; the match is played again and its bets refunded (cup-bets' onMatchVoided). */
-export const voidHandler = cupHandler((viewer, req) => voidMatchResult(viewer, idOf(req)));
