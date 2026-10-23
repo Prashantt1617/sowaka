@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { forgetAuthToken } from './auth-cache';
 import type { Filter } from 'mongodb';
 import { env } from '../config/env';
 import { authSessions, companies, otpChallenges, users } from '../config/db';
@@ -115,6 +116,7 @@ export async function verifyLoginOtp(
 
 export async function revokeSession(token: string): Promise<void> {
   if (token) {
+    forgetAuthToken(hashSessionToken(token));
     await authSessions().deleteOne({ tokenHash: hashSessionToken(token) });
   }
 }

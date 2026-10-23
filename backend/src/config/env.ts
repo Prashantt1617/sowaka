@@ -86,6 +86,12 @@ export const env = {
   appWebUrl: process.env.APP_WEB_URL ?? 'https://dikcsyvq9i7v1.cloudfront.net',
   mongoUri: process.env.MONGODB_URI ?? '',
   mongoDbName: process.env.MONGODB_DB ?? 'sowaka',
+  /** Most connections to the cluster at once (MONGO_MAX_POOL). The cluster is a ~200 ms round trip away, so each request holds one for a while. */
+  mongoMaxPool: Math.max(10, Number(process.env.MONGO_MAX_POOL) || 200),
+  /** Connections kept open between bursts (MONGO_MIN_POOL): opening one is a TLS handshake of about a second. */
+  mongoMinPool: Math.max(0, Number(process.env.MONGO_MIN_POOL) || (process.env.NODE_ENV === 'production' ? 20 : 0)),
+  /** How long a request may wait for a free connection before it fails (MONGO_WAIT_MS), instead of queueing past the proxy's timeout. */
+  mongoWaitQueueMs: Math.max(1000, Number(process.env.MONGO_WAIT_MS) || 15_000),
   otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES ?? 10),
   /**
    * Lets `123456` stand in for any mailed code — for local work only.

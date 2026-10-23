@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import { authSessions, users } from '../config/db';
 import { hashSessionToken } from '../services/auth.service';
+import { cachedAuth, rememberAuth } from '../services/auth-cache';
 import { redactTicket } from '../services/scribble-ticket.service';
 import { runAsRequestUser } from '../services/request-user';
 import { logger } from '../utils/logger';
@@ -39,9 +40,13 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // it inline as a base64 data URI of hundreds of KB, which is the one field
     // worth leaving behind on every call. The rest is a few hundred bytes, and
     // a handler that needs the user then has it without a second read.
-    const [session] = await authSessions()
+    const tokenHash = hashSessionToken(token);
+    const remembered = cachedAuth(tokenHash);
+    const [session] = remembered
+      ? [{ ...remembered.session, user: [remembered.user] }]
+      : await authSessions()
       .aggregate<AuthSessionDocument & { user: Omit<User, 'profilePhotoUrl'>[] }>([
-        { $match: { tokenHash: hashSessionToken(token), expiresAt: { $gt: new Date() } } },
+        { $match: { tokenHash, expiresAt: { $gt: new Date() } } },
         { $limit: 1 },
         {
           $lookup: {
@@ -73,6 +78,11 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
         requestId: req.requestId,
       });
       return;
+    }
+
+    if (!remembered) {
+      const { user: _users, ...sessionOnly } = session;
+      rememberAuth(tokenHash, sessionOnly as AuthSessionDocument, user);
     }
 
     req.auth = {

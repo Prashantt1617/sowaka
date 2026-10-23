@@ -71,7 +71,19 @@ export async function connectDb(): Promise<Db> {
   // second from a slow link. A page that asks for twenty things at once then
   // waited for connections two by two. Ten at a time ramps the pool up in one
   // step; the pool's ceiling (maxPoolSize) is unchanged.
-  client = new MongoClient(env.mongoUri, { compressors: ['zlib'], maxConnecting: 10 });
+  //
+  // The pool: the cluster is about 200 ms away, so every connection is held
+  // that long per query, and a hundred of them (the driver's default) ran out
+  // when the whole company opened the app at once. A request that cannot get
+  // one waits at most mongoWaitQueueMs and fails, rather than queueing until
+  // the proxy gives up and every later request queues behind it.
+  client = new MongoClient(env.mongoUri, {
+    compressors: ['zlib'],
+    maxConnecting: 10,
+    maxPoolSize: env.mongoMaxPool,
+    minPoolSize: env.mongoMinPool,
+    waitQueueTimeoutMS: env.mongoWaitQueueMs,
+  });
   await client.connect();
   db = client.db(env.mongoDbName);
   await ensureIndexes(db);

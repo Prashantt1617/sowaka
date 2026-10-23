@@ -249,12 +249,15 @@ export async function applyForLeave(
 }
 
 export async function getMyLeaves(userId: string): Promise<LeaveView[]> {
-  const employee = await users().findOne({ userId });
+  // The person and their leave in one round trip, not two.
+  const [employee, documents] = await Promise.all([
+    users().findOne({ userId }),
+    leaves().find({ userId }).sort({ createdAt: -1 }).toArray(),
+  ]);
   if (!employee) {
     throw new LeaveError(404, 'Employee not found');
   }
 
-  const documents = await leaves().find({ userId }).sort({ createdAt: -1 }).toArray();
   return Promise.all(documents.map((leave) => toLeaveView(leave, employee)));
 }
 
@@ -844,6 +847,14 @@ async function leaveTypeName(key: string, userId: string): Promise<string> {
 
 async function toLeaveView(leave: Leave & { _id: ObjectId }, employee: User): Promise<LeaveView> {
   const createdAt = leave.createdAt ? new Date(leave.createdAt) : (leave.updatedAt ?? new Date());
+  // Side by side: each is a round trip to the cluster or to S3, ~200 ms apiece.
+  const [photoUrl, typeName, documentUrl] = await Promise.all([
+    resolveProfilePhoto(employee),
+    leaveTypeName(leave.type, employee.userId),
+    leave.documentKey
+      ? presignReceiptDownload(leave.documentKey, leave.documentName).catch(() => undefined)
+      : Promise.resolve(undefined),
+  ]);
   return {
     id: leave._id.toHexString(),
     userId: leave.userId,
@@ -852,10 +863,10 @@ async function toLeaveView(leave: Leave & { _id: ObjectId }, employee: User): Pr
       email: employee.email,
       department: employee.department,
       designation: employee.designation,
-      photoUrl: await resolveProfilePhoto(employee),
+      photoUrl,
     },
     type: leave.type,
-    typeName: await leaveTypeName(leave.type, employee.userId),
+    typeName,
     startDate: leave.startDate.toISOString().slice(0, 10),
     endDate: leave.endDate.toISOString().slice(0, 10),
     // Rows written before `days` existed fall back to the raw calendar span.
@@ -863,9 +874,7 @@ async function toLeaveView(leave: Leave & { _id: ObjectId }, employee: User): Pr
     halfDay: leave.halfDay === true,
     reason: leave.reason,
     documentName: leave.documentName,
-    documentUrl: leave.documentKey
-      ? await presignReceiptDownload(leave.documentKey, leave.documentName).catch(() => undefined)
-      : undefined,
+    documentUrl,
     status: leave.status,
     managerNote: leave.managerNote,
     createdAt: createdAt.toISOString(),
