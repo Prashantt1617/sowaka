@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { forgetAuthUser } from './auth-cache';
 import { authSessions, companies, deviceTokens, employeePaymentDetails, feedbackRecords, salaryStructures, users } from '../config/db';
 import { EmployeeDocument, User } from '../models/user.model';
 import { orgUsers } from './admin-scope';
@@ -427,7 +428,7 @@ export async function deleteEmployeeForAdmin(adminUserId: string, employeeUserId
     throw new AdminError(409, `${reports} ${reports === 1 ? 'person reports' : 'people report'} to ${employee.name}. Give them another manager first.`);
   }
   await Promise.all([
-    authSessions().deleteMany({ userId: employeeUserId }),
+    (forgetAuthUser(employeeUserId), authSessions().deleteMany({ userId: employeeUserId })),
     deviceTokens().deleteMany({ userId: employeeUserId }),
     salaryStructures().deleteMany({ org: admin.org, userId: employeeUserId }),
     employeePaymentDetails().deleteMany({ org: admin.org, userId: employeeUserId } as never),
