@@ -1,0 +1,11 @@
+{
+ "success": true,
+ "serverNow": "2026-11-06T12:10:00.000Z",
+ "version": 1,
+ "event": null,
+ "me": {
+  "userId": "u041",
+  "name": "Aarav Sethi",
+  "hr": false
+ }
+}
