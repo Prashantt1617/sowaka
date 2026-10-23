@@ -47,7 +47,7 @@ const seedOf = (m) => 100000 + (Math.abs(hash(m.id)) % 900000) + (m.attempt || 0
 
 /** Where a simulated player is `el` seconds in: a find every ~1.3 s (faster for some), and every fifth step a wrong tap. */
 function simBoard(seed, uid, el) {
-  const pace = 1.0 + (Math.abs(hash(uid)) % 7) / 10;
+  const pace = 0.8 + (Math.abs(hash(uid + ':pace')) % 13) / 15;
   const steps = Math.floor(el / (pace * 0.85));
   const wrong = Math.floor(steps / 5);
   const board = Math.max(0, steps - wrong);

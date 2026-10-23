@@ -519,8 +519,8 @@ function boardAt(sd,g){
 .cpv-c i{font-style:normal;display:block}
 .cpv-c.flip i{transform:scaleX(-1)}
 .cpv-c.no{background:#FF6B57;animation:cpv-no .6s ease-out}
-.cpv.ok::after{content:"";position:absolute;inset:-2px;border-radius:inherit;box-shadow:0 0 0 3px #3DDC97,0 0 22px #3DDC97;opacity:0;animation:cpv-ok .9s ease-out;pointer-events:none}
-.cpv-n{position:absolute;right:calc(var(--w)*.03);bottom:calc(var(--w)*-.02);transform:translateY(50%);padding:1px 7px;border-radius:999px;background:var(--pc,#3B3270);color:#15122B;
+.cpv.ok::after{content:"";position:absolute;z-index:1;inset:-2px;border-radius:inherit;box-shadow:0 0 0 3px #3DDC97,0 0 22px #3DDC97;opacity:0;animation:cpv-ok .9s ease-out;pointer-events:none}
+.cpv-n{position:absolute;z-index:2;right:calc(var(--w)*.03);bottom:calc(var(--w)*-.02);transform:translateY(50%);padding:1px 7px;border-radius:999px;background:var(--pc,#3B3270);color:#15122B;
   font:400 calc(max(10px,var(--w)*.075)) "Lilita One","Arial Rounded MT Bold",system-ui,sans-serif;letter-spacing:.02em}
 @keyframes cpv-ok{0%{opacity:1}100%{opacity:0}}
 @keyframes cpv-no{0%{transform:scale(1.15)}100%{transform:scale(1)}}
