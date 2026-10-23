@@ -626,18 +626,45 @@ let activeIds: { ids: string[]; at: number } = { ids: [], at: 0 };
 const runnerMoves = (org: string) => env.cupRunnerOrgs.length === 0 || env.cupRunnerOrgs.includes(org);
 
 /** One pass over every switched-on event this process may move. */
-export async function tickCups(now = new Date()): Promise<void> {
+export async function tickCups(): Promise<void> {
   if (Date.now() - activeIds.at > 5000) {
     const rows = await cupEvents().find({ active: true, phase: { $ne: 'done' } }, { projection: { _id: 0, id: 1, org: 1 } }).toArray();
     activeIds = { ids: rows.filter((r) => runnerMoves(r.org)).map((r) => r.id), at: Date.now() };
   }
-  for (const id of activeIds.ids) {
-    try {
-      await tickEvent(id, now);
-    } catch (error) {
-      logger.error('Cup tick failed', { eventId: id }, error);
-    }
+  // Side by side: one event's slow pass (a 113-match round) must not hold another's clock up.
+  await Promise.all(activeIds.ids.map((id) => tickOnce(id, false)));
+}
+
+/** Events being stepped now, each with whether it should go again straight after (something was decided meanwhile). */
+const eventTicks = new Map<string, { again: boolean }>();
+
+/** Steps one event, never twice at once in this process. */
+async function tickOnce(id: string, again: boolean): Promise<void> {
+  const running = eventTicks.get(id);
+  if (running) {
+    if (again) running.again = true;
+    return;
   }
+  const mine = { again: false };
+  eventTicks.set(id, mine);
+  try {
+    do {
+      mine.again = false;
+      await tickEvent(id).catch((error) => logger.error('Cup tick failed', { eventId: id }, error));
+    } while (mine.again);
+  } finally {
+    eventTicks.delete(id);
+  }
+}
+
+/**
+ * A match was just decided (or voided) here: step its event now rather than
+ * on the next tick, so the next round, or the next top-N match's lobby, opens
+ * at once. Only where the runner runs.
+ */
+function kick(rt: Runtime) {
+  if (!ticker || !runnerMoves(rt.event.org) || !rt.event.active) return;
+  void tickOnce(rt.event.id, true);
 }
 
 export function startCupRunner(intervalMs = 1000) {
@@ -659,9 +686,16 @@ export function stopCupRunner() {
   ticker = undefined;
 }
 
-async function tickEvent(id: string, now: Date): Promise<void> {
+/**
+ * One event's step. The time is read afresh for every move, never once per
+ * pass: a pass over several events (or a round of 113 matches over a slow
+ * link) takes seconds, and a stale clock would cut that much off every
+ * window it opens (betting lobbies, start windows, a lone player's start).
+ */
+async function tickEvent(id: string): Promise<void> {
   const rt = await runtime(id, true);
   if (!rt || !rt.event.active || !runnerMoves(rt.event.org)) return;
+  let now = new Date();
   const event = rt.event;
   if (event.phase === 'scheduled') {
     if (now >= event.lobbyAt) await makeDraw(rt, now);
@@ -679,9 +713,9 @@ async function tickEvent(id: string, now: Date): Promise<void> {
   await createRoundMatches(rt, n, now, round.kind === 'sequential' ? 'scheduled' : 'open');
   const inRound = [...rt.matches.values()].filter((m) => m.round === n);
   // Round 1's start window closes on all its matches at once: a few at a time, not one by one.
-  await inBatches(inRound, 16, (match) => advance(rt, match, now));
+  await inBatches(inRound, 16, (match) => advance(rt, match, new Date()));
   if (round.kind === 'sequential') {
-    await stage(rt, n, now);
+    await stage(rt, n, new Date());
     if (cupHooks.reconcile && Date.now() - (lastReconcile.get(id) ?? 0) >= RECONCILE_EVERY_MS) {
       lastReconcile.set(id, Date.now());
       await hook('reconcile', async () => {
@@ -692,6 +726,7 @@ async function tickEvent(id: string, now: Date): Promise<void> {
   const wanted = round.nodes.filter((node) => node.feeders.length === 2).length;
   const decided = [...rt.matches.values()].filter((m) => m.round === n && m.status === 'done').length;
   if (decided >= wanted) {
+    now = new Date();
     if (n >= event.rounds.length) await finish(rt, now);
     else await openRound(rt, n + 1, now);
   }
@@ -734,6 +769,7 @@ async function openRound(rt: Runtime, n: number, now: Date): Promise<void> {
   rt.event = claimed;
   rt.rev += 1;
   logger.info('Cup round opened', { eventId: event.id, round: n, kind: round.kind });
+  now = new Date();
   if (round.kind === 'sequential') {
     await createRoundMatches(rt, n, now, 'scheduled');
     await stage(rt, n, now);
@@ -784,6 +820,7 @@ async function stage(rt: Runtime, n: number, now: Date): Promise<void> {
   }
   const next = inRound.find((m) => m.status === 'scheduled');
   if (!next) return;
+  now = new Date();
   const bettingEndsAt = new Date(now.getTime() + event.bettingSec * 1000);
   const moved = await cupMatches().findOneAndUpdate(
     { id: next.id, status: 'scheduled' },
@@ -1013,6 +1050,7 @@ export async function reportFinal(viewer: CupViewer, id: string, raw: unknown) {
     if (runnerMoves(rt.event.org)) {
       await apply(rt, after, nextStep(withLive(rt, after), rt.event, now, seedLookup(rt.event)), now);
       current = rt.matches.get(id) ?? current;
+      if (current.status === 'done') kick(rt);
     }
   }
   return { serverNow: new Date(), match: myMatchView(rt, current, viewer.userId) };
@@ -1100,6 +1138,7 @@ export async function voidMatchResult(viewer: CupViewer, id: string) {
   rt.event = moved;
   activeIds.at = 0;
   logger.info('Cup match voided', { matchId: id, by: viewer.userId });
+  kick(rt);
   await hook('onMatchVoided', () => cupHooks.onMatchVoided?.(after, rt.event, viewer.userId));
   if (!sequential) void pushOpen(rt.event, after);
   return { match: matchView(rt, after) };
@@ -1223,6 +1262,9 @@ function shared(rt: Runtime, rosterCount: number) {
     bettingSec: event.bettingSec,
     countdownSec: event.countdownSec,
     roundSec: event.roundSec,
+    finishGraceSec: event.finishGraceSec,
+    minPlaySec: event.minPlaySec,
+    maxScore: event.maxScore,
     championId: event.championId,
     rounds: roundsView(rt),
   };
@@ -1347,21 +1389,22 @@ async function balanceOf(viewer: CupViewer): Promise<number> {
 /** The viewer's part of the state. */
 async function meOf(rt: Runtime, viewer: CupViewer) {
   const event = rt.event;
-  const base = { userId: viewer.userId, name: viewer.name, photoUrl: photoOf(rt, viewer.userId), hr: viewer.hr, balance: await balanceOf(viewer) };
+  // Read from the runtime first, with no wait in between, so the viewer's part matches the event part; the balance last.
+  const base = { userId: viewer.userId, name: viewer.name, photoUrl: photoOf(rt, viewer.userId), hr: viewer.hr };
   if (event.phase === 'scheduled') {
     const roster = await rosterPreview(event);
     const mine = roster.find((row) => row.userId === viewer.userId);
-    return { ...base, entered: !!mine, alive: !!mine, best: mine?.best ?? null };
+    return { ...base, entered: !!mine, alive: !!mine, best: mine?.best ?? null, balance: await balanceOf(viewer) };
   }
   const entrant = event.entrants.find((e) => e.userId === viewer.userId);
-  if (!entrant) return { ...base, entered: false, alive: false };
+  if (!entrant) return { ...base, entered: false, alive: false, balance: await balanceOf(viewer) };
   const outIn = eliminations(rt).get(viewer.userId);
   const mine = [...rt.matches.values()]
     .filter((m) => m.players.includes(viewer.userId))
     .sort((a, b) => b.round - a.round)[0];
   // Their latest match: this round's (round 1's in the lobby), else the last one they played.
   const showing = mine;
-  return {
+  const me = {
     ...base,
     entered: true,
     seed: entrant.seed,
@@ -1373,6 +1416,7 @@ async function meOf(rt: Runtime, viewer: CupViewer) {
     freePass: outIn ? undefined : freePassOf(rt, viewer.userId) ?? undefined,
     match: showing ? myMatchView(rt, showing, viewer.userId) : undefined,
   };
+  return { ...me, balance: await balanceOf(viewer) };
 }
 
 /**
@@ -1388,8 +1432,9 @@ export async function stateFor(viewer: CupViewer, askedId: unknown, since: unkno
   if (since !== undefined && String(since) === String(rt.rev)) {
     return JSON.stringify({ success: true, unchanged: true, version: rt.rev, serverNow: now });
   }
-  const version = rt.rev;
   const rosterCount = rt.event.phase === 'scheduled' ? (await rosterPreview(rt.event)).length : 0;
+  // The version and the event part read together, with no wait between: the page never holds a version newer than what it drew.
+  const version = rt.rev;
   const common = shared(rt, rosterCount);
   const me = await meOf(rt, viewer);
   const extra: Record<string, unknown> = { current: common.current ?? undefined };
