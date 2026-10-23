@@ -12,6 +12,7 @@ import {
   mayJoin,
   mayScore,
   nextStep,
+  parseLiveBoard,
   parseRef,
   seedOrderOf,
 } from '../services/cup-rules';
@@ -317,6 +318,19 @@ check('bets: open lobby only, not on your own match, within balance', () => {
   assert.equal(mayBet(m, 'x', 'hi', 50, 100, 40, at(10)).ok, false);
   assert.equal(mayBet(m, 'x', 'hi', 50, 100, 0, at(60)).ok, false);
   assert.equal(mayBet(m, 'x', 'hi', 0, 100, 0, at(10)).ok, false);
+});
+
+check('live board: integers in range kept, junk ignored, a tap only with ok', () => {
+  assert.deepEqual(parseLiveBoard({ score: 120, board: 7 }), { board: 7 });
+  assert.deepEqual(parseLiveBoard({ score: 120, board: 7, tap: 3, ok: true }), { board: 7, tap: 3, ok: true });
+  assert.deepEqual(parseLiveBoard({ board: 0, tap: 35, ok: false }), { board: 0, tap: 35, ok: false });
+  assert.deepEqual(parseLiveBoard({ board: 7, tap: 3 }), { board: 7 });
+  assert.deepEqual(parseLiveBoard({ board: 7, tap: 36, ok: true }), { board: 7 });
+  assert.deepEqual(parseLiveBoard({ board: 7, tap: '3', ok: true }), { board: 7 });
+  assert.deepEqual(parseLiveBoard({ board: 7, tap: 1.5, ok: true }), { board: 7 });
+  for (const junk of [undefined, null, 'x', 5, { score: 100 }, { board: -1 }, { board: 1.5 }, { board: '3' }, { board: 10_001 }, { board: Number.NaN }, { board: Infinity }]) {
+    assert.equal(parseLiveBoard(junk), null);
+  }
 });
 
 console.log(`\n${checks} checks passed`);

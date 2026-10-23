@@ -336,3 +336,27 @@ export function mayBet(
   if (stake > balance) return no(400, `You have ${balance} points to bet`);
   return yes;
 }
+
+/** Where a player is in the match's seeded boards: the board index, and the last tile tapped (right or wrong). */
+export interface LiveBoard {
+  board: number;
+  tap?: number;
+  ok?: boolean;
+}
+
+const MAX_BOARD = 10_000;
+const MAX_TILE = 6 * 6 - 1;
+const isBoardInt = (v: unknown, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= max;
+
+/** The board a page reported with its score, or null when there is none or it is junk (a tap without a sound board is dropped with it). */
+export function parseLiveBoard(raw: unknown): LiveBoard | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (!isBoardInt(r.board, MAX_BOARD)) return null;
+  const out: LiveBoard = { board: r.board };
+  if (isBoardInt(r.tap, MAX_TILE) && typeof r.ok === 'boolean') {
+    out.tap = r.tap;
+    out.ok = r.ok;
+  }
+  return out;
+}

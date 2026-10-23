@@ -62,7 +62,7 @@ export const entrantsHandler = cupHandler((viewer, req) => entrantsFor(viewer, e
 export const joinHandler = cupHandler((viewer, req) => joinMatch(viewer, idOf(req)));
 export const soloHandler = cupHandler((viewer, req) => startSolo(viewer, idOf(req)));
 export const liveHandler = cupHandler(async (viewer, req) => {
-  await reportLive(viewer, idOf(req), req.body?.score);
+  await reportLive(viewer, idOf(req), req.body?.score, req.body);
   return undefined;
 });
 export const finalHandler = cupHandler((viewer, req) => reportFinal(viewer, idOf(req), req.body?.score));

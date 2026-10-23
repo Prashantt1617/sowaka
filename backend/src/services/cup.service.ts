@@ -43,8 +43,10 @@ import {
   mayStartSolo,
   nextStep,
   parseRef,
+  parseLiveBoard,
   parseScore,
   seedOrderOf,
+  type LiveBoard,
   type MatchStep,
 } from './cup-rules';
 import { newSeed } from './game-challenge-rules';
@@ -169,6 +171,8 @@ interface Runtime {
   matches: Map<string, CupMatch>;
   /** Live scores by `${matchId}:${attempt}:${userId}`. */
   live: Map<string, { score: number; at: number }>;
+  /** Where each player is in the match's boards (memory only), by the same key: for viewers to draw both boards. */
+  boards: Map<string, LiveBoard & { at: number }>;
   persisted: Map<string, number>;
   rev: number;
   refreshedAt: number;
@@ -227,7 +231,7 @@ async function refresh(eventId: string): Promise<Runtime | null> {
       : { eventId, $or: [{ status: { $ne: 'done' as const } }, { updatedAt: { $gte: new Date(rt.refreshedAt - 5000) } }] };
     const rows = await cupMatches().find(query, { projection: { _id: 0 } }).toArray();
     if (!rt) {
-      rt = { event, matches: new Map(), live: new Map(), persisted: new Map(), rev: Date.now(), refreshedAt: 0, refreshing: null };
+      rt = { event, matches: new Map(), live: new Map(), boards: new Map(), persisted: new Map(), rev: Date.now(), refreshedAt: 0, refreshing: null };
       runtimes.set(eventId, rt);
     }
     if (rt.event.version !== event.version || rt.event.active !== event.active) rt.rev += 1;
@@ -1026,14 +1030,25 @@ export async function startSolo(viewer: CupViewer, id: string) {
 
 const PERSIST_EVERY_MS = 3000;
 
-/** A score mid-round: kept here for both pages, written to the match every few seconds. */
-export async function reportLive(viewer: CupViewer, id: string, raw: unknown): Promise<void> {
+/**
+ * A score mid-round: kept here for both pages, written to the match every few seconds.
+ * `progress` (the request body's `board`, `tap`, `ok`; optional) is where the player is in the boards, kept in memory only.
+ */
+export async function reportLive(viewer: CupViewer, id: string, raw: unknown, progress?: unknown): Promise<void> {
   const { rt, match } = await playersMatch(viewer, id);
   const now = new Date();
   refuse(mayScore(match, viewer.userId, rt.event, now, false));
   const score = parseScore(raw, rt.event.maxScore);
   if (score === null) throw new CupError(400, 'Score is invalid');
   const key = `${match.id}:${match.attempt}:${viewer.userId}`;
+  const board = parseLiveBoard(progress);
+  if (board) {
+    const was = rt.boards.get(key);
+    if (!was || was.board !== board.board || was.tap !== board.tap || was.ok !== board.ok) {
+      rt.boards.set(key, { ...board, at: now.getTime() });
+      rt.rev += 1;
+    }
+  }
   const had = rt.live.get(key);
   if (had && score <= had.score) return;
   rt.live.set(key, { score, at: now.getTime() });
@@ -1185,9 +1200,24 @@ function liveOf(rt: Runtime, match: CupMatch): Record<string, number> | undefine
   return out;
 }
 
+/**
+ * Each player's board, for a match in play: `{}` until their page reports one (an old page never does, and viewers show scores only).
+ * Memory only: after a restart it fills again with the next tap.
+ */
+function liveBoardOf(rt: Runtime, match: CupMatch): Record<string, LiveBoard & { at: string }> | undefined {
+  if (match.status !== 'live' && match.status !== 'solo') return undefined;
+  const out: Record<string, LiveBoard & { at: string }> = {};
+  for (const p of match.players) {
+    const b = p ? rt.boards.get(`${match.id}:${match.attempt}:${p}`) : undefined;
+    if (b) out[p] = { board: b.board, ...(b.tap !== undefined ? { tap: b.tap, ok: b.ok } : {}), at: new Date(b.at).toISOString() };
+  }
+  return out;
+}
+
 /** One match as the bracket and the watch list show it. */
 function matchView(rt: Runtime, match: CupMatch) {
   const event = rt.event;
+  const liveBoard = liveBoardOf(rt, match);
   return {
     id: match.id,
     slot: match.slot,
@@ -1196,6 +1226,8 @@ function matchView(rt: Runtime, match: CupMatch) {
     a: person(rt, match.players[0]),
     b: person(rt, match.players[1]),
     live: liveOf(rt, match),
+    boardSeed: liveBoard ? match.seed : undefined,
+    liveBoard,
     result: match.result,
     winnerId: match.winnerId,
     decidedBy: match.decidedBy,
@@ -1366,6 +1398,7 @@ function myMatchView(rt: Runtime, match: CupMatch, userId: string) {
     opponentJoined: !!match.joined?.[them],
     myLive: live[userId],
     opponentLive: live[them],
+    liveBoard: playing ? liveBoardOf(rt, match) : undefined,
     myFinal: match.finals?.[userId]?.score,
     result: match.result,
     winnerId: match.winnerId,
