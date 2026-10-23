@@ -1,4 +1,4 @@
-// Connect › Diwali Cup TV: the Cup live, for the office screen. The bracket
+// Connect › Tournament TV: the tournament live, for the office screen. The bracket
 // from the last eight (and a line for each earlier round), the match on
 // stage big — names, seeds, live scores, time left, how the bets split, the
 // betting countdown — and the top tipsters. HR can void a result from here
@@ -171,6 +171,9 @@ const CSS = `
 .ctv-tip .tx small{font-size:12px;font-weight:700;color:${C.ink2}}
 .ctv-tip b{font-family:var(--h);font-weight:400;font-size:22px}
 .ctv-rounds{display:flex;gap:10px;flex-wrap:wrap}
+.ctv-live{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;max-height:62vh;overflow-y:auto;padding-right:4px}
+.ctv-livecount{display:flex;gap:16px;font-size:14px;font-weight:800;color:${C.ink2};margin:-6px 0 14px}
+.ctv-lt{display:flex;justify-content:space-between;font-size:11px;font-weight:800;letter-spacing:.6px;color:${C.ink2};margin-bottom:6px}
 .ctv-rd{background:${C.panel2};border-radius:14px;padding:10px 14px;display:flex;flex-direction:column;gap:2px;flex:1 1 110px}
 .ctv-rd b{font-family:var(--h);font-weight:400;font-size:18px}
 .ctv-rd span{font-size:12px;font-weight:700;color:${C.ink2}}
@@ -309,13 +312,14 @@ export function CupTv() {
   const rounds = event?.rounds ?? [];
   const sequential = rounds.filter((r) => r.kind === 'sequential');
   const earlier = rounds.filter((r) => r.kind === 'parallel');
+  const current = rounds.find((r) => r.n === event?.round);
   const entrants = event?.entrantCount ?? state?.entrants;
 
   return (
     <div ref={root} className="ctv" data-testid="cup-tv">
       <style>{CSS}</style>
       <header className="ctv-top">
-        <span className="ctv-wm">DIWALI CUP</span>
+        <span className="ctv-wm">{(event?.name || 'O-O-O Tournament').toUpperCase()}</span>
         <span className="ctv-sub">
           {event ? subtitle(event, entrants, serverNow) : 'Odd One Out, company-wide'}
         </span>
@@ -346,7 +350,7 @@ export function CupTv() {
             ) : (
               <div className="ctv-panel">
                 <div className="ctv-big">
-                  {event.phase === 'scheduled' || event.phase === 'lobby' ? 'Starting soon' : event.phase === 'done' ? 'The Cup is over' : `On the way to the last ${event.topN}`}
+                  {event.phase === 'scheduled' || event.phase === 'lobby' ? 'Starting soon' : event.phase === 'done' ? 'The tournament is over' : `On the way to the last ${event.topN}`}
                 </div>
                 <div className="ctv-empty">
                   {event.phase === 'scheduled' || event.phase === 'lobby'
@@ -357,6 +361,7 @@ export function CupTv() {
                 </div>
               </div>
             )}
+            {!stage && current?.kind === 'parallel' && <LiveNow round={current} />}
             {earlier.length > 0 && (
               <section className="ctv-panel" aria-label="Earlier rounds">
                 <h2 className="ctv-h">Earlier rounds</h2>
@@ -397,7 +402,7 @@ function subtitle(event: NonNullable<CupState['event']>, entrants: number | unde
     case 'lobby':
       return [people, `Round 1 in ${clock(ms(event.startAt) - serverNow)}`].filter(Boolean).join(' · ');
     case 'done':
-      return [people, 'The Cup is over'].filter(Boolean).join(' · ');
+      return [people, 'The tournament is over'].filter(Boolean).join(' · ');
     default: {
       const r = event.rounds?.find((x) => x.n === event.round);
       return [people, r ? r.label : `Round ${event.round}`].filter(Boolean).join(' · ');
@@ -572,6 +577,47 @@ function Bracket({ rounds, onStageId, onPick }: { rounds: Round[]; onStageId?: s
         </div>
       ))}
     </div>
+  );
+}
+
+// The round being played before the last eight: every match at once, those
+// being played first, so the screen can be watched from round 1.
+const LIVE_ORDER: Partial<Record<Status, number>> = { live: 0, solo: 1, open: 2, done: 3 };
+
+function LiveNow({ round }: { round: Round }) {
+  const matches = [...round.matches].sort((x, y) => (LIVE_ORDER[x.status] ?? 4) - (LIVE_ORDER[y.status] ?? 4) || x.slot - y.slot);
+  const playing = round.matches.filter((m) => m.status === 'live' || m.status === 'solo').length;
+  const decided = round.matches.filter((m) => m.status === 'done').length;
+  return (
+    <section className="ctv-panel" aria-label={`${round.label}, live`}>
+      <h2 className="ctv-h">{round.label} · live now</h2>
+      <div className="ctv-livecount">
+        <span style={{ color: C.coral }}>{fmt(playing)} playing</span>
+        <span>{fmt(decided)}/{fmt(round.matches.length)} decided</span>
+      </div>
+      <div className="ctv-live">
+        {matches.map((m) => (
+          <div key={m.slot} className={`ctv-bm${m.status === 'live' || m.status === 'solo' ? ' on' : ''}`}>
+            <div className="ctv-lt">
+              <span>{m.label}</span>
+              <span style={{ color: m.status === 'done' ? C.green : m.status === 'open' ? C.ink2 : C.coral }}>
+                {m.status === 'done' ? 'DONE' : m.status === 'open' ? 'WAITING' : m.status === 'solo' ? 'SOLO' : 'LIVE'}
+              </span>
+            </div>
+            {[m.a, m.b].map((p, i) => {
+              const out = m.status === 'done' && p && m.winnerId && m.winnerId !== p.userId;
+              const win = m.status === 'done' && p && m.winnerId === p.userId;
+              return (
+                <div key={i} className={`ctv-bp${out ? ' out' : ''}${win ? ' win' : ''}`}>
+                  <span>{p ? p.name : '—'}</span>
+                  {p && m.status !== 'open' && <b style={{ color: i === 0 ? C.a : C.b }}>{fmt(scoreOf(m, p))}</b>}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
