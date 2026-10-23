@@ -216,8 +216,9 @@ export const roundEnds = (startAt: Date, t: Pick<MatchTiming, 'roundSec' | 'fini
  *   live:  both finals in, or the round over: each player's final, else
  *          their last live score; nothing at all from either is absent. A
  *          tie replays (up to `maxReplays`, then the better seed).
- *   solo:  the lone player's final counts against 0. Not started in time, or
- *          never finished: both absent, so the better seed.
+ *   solo:  the lone player's final (or, if they dropped out, their best live
+ *          score) counts against 0. Not started in time, or started and
+ *          never scored at all: both absent, so the better seed.
  */
 export function nextStep(match: CupMatch, t: MatchTiming, now: Date, seedOf: (userId: string) => number): MatchStep {
   const nowMs = now.getTime();
@@ -246,7 +247,8 @@ export function nextStep(match: CupMatch, t: MatchTiming, now: Date, seedOf: (us
       if (sa == null && sb == null) return absent();
       const result = { [a]: sa ?? 0, [b]: sb ?? 0 };
       if (result[a] === result[b]) {
-        if (match.attempt < t.maxReplays) return { kind: 'replay', scores: result };
+        // Ties so far in this play of the match (an HR void starts the count again).
+        if ((match.history?.length ?? 0) < t.maxReplays) return { kind: 'replay', scores: result };
         return { kind: 'decide', winnerId: betterSeed(match, seedOf), decidedBy: 'played', result };
       }
       return { kind: 'decide', winnerId: result[a] > result[b] ? a : b, decidedBy: 'played', result };
@@ -261,7 +263,11 @@ export function nextStep(match: CupMatch, t: MatchTiming, now: Date, seedOf: (us
         return { kind: 'decide', winnerId: lone, decidedBy: 'solo', result: { [lone]: score, [other]: 0 } };
       }
       if (!match.startAt) return nowMs >= at(match.soloUntil) ? absent() : { kind: 'none' };
-      return nowMs >= roundEnds(match.startAt, t).getTime() ? absent() : { kind: 'none' };
+      if (nowMs < roundEnds(match.startAt, t).getTime()) return { kind: 'none' };
+      // Started and dropped out before the end: their last live score stands against 0, as in a played match.
+      const live = match.live?.[lone]?.score;
+      if (live != null) return { kind: 'decide', winnerId: lone, decidedBy: 'solo', result: { [lone]: live, [other]: 0 } };
+      return absent();
     }
     default:
       return { kind: 'none' };

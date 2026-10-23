@@ -30,7 +30,8 @@ const PAGE_CSP = [
   "script-src 'unsafe-inline'",
   "style-src 'unsafe-inline' https://fonts.googleapis.com",
   'font-src https://fonts.gstatic.com data:',
-  'img-src data: blob: https:',
+  // 'self': photos come from this host's /media (the Cup's players), which is plain http on a local test.
+  "img-src 'self' data: blob: https:",
   'media-src data: blob:',
   "connect-src 'none'",
   "base-uri 'none'",
@@ -78,7 +79,7 @@ const TICKETED: Record<string, { marker: string; global: string; name: string }>
   [SCRIBBLE_KEY]: { marker: '<!--SCRIBBLE-TICKET-->', global: '__SCRIBBLE', name: 'Scribble' },
   [SQUAD_KEY]: { marker: '<!--SQUAD-TICKET-->', global: '__SQUAD', name: 'Secret Squad' },
   // The Diwali Cup's page talks to `/cup/api` with its ticket, after the same reload.
-  [CUP_KEY]: { marker: '<!--CUP-TICKET-->', global: '__CUP', name: 'the Diwali Cup' },
+  [CUP_KEY]: { marker: '<!--CUP-TICKET-->', global: '__CUP', name: 'the Cup' },
 };
 
 /** A JavaScript literal safe inside a `<script>` element (`<` can never close it). */
@@ -177,12 +178,12 @@ export async function cupLinkPageHandler(req: Request, res: Response, next: Next
         .status(401)
         .set({ 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' })
         .type('text/plain')
-        .send('This link has expired. Go back and open the Diwali Cup again.');
+        .send(`This link has expired. Go back and open ${event?.name ?? 'the Cup'} again.`);
       return;
     }
     const page = await publicPageFor(event.catalogKey);
     if (!page) {
-      res.status(404).type('text/plain').send('The Diwali Cup is not available here yet.');
+      res.status(404).type('text/plain').send(`${event.name} is not available here yet.`);
       return;
     }
     const subject = { userId: verdict.ticket.userId, org: verdict.ticket.org, name: '' };

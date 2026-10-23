@@ -25,6 +25,7 @@
  * this process and written to the match at most every few seconds; the
  * pages read them from here. Production runs one instance.
  */
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { Collection } from 'mongodb';
 import { env } from '../config/env';
 import { companies, gameScores, getDb, users } from '../config/db';
@@ -176,6 +177,8 @@ interface Runtime {
   /** The company's name, for the page's header. */
   orgName?: string;
   standings?: { rev: number; rows: Standing[] };
+  /** Everyone's photo address (null for none), for whoever is in the draw (or would be, before it). */
+  photos?: { at: number; key: string; map: Map<string, string | null> };
 }
 
 const runtimes = new Map<string, Runtime>();
@@ -196,6 +199,9 @@ async function runtime(eventId: string, fresh = false): Promise<Runtime | null> 
   return refresh(eventId);
 }
 
+/** Which draw an event is on: none yet, or the one made at `drawnAt`. */
+const drawKey = (event: Pick<CupEvent, 'drawnAt'>) => (event.drawnAt ? new Date(event.drawnAt).getTime() : 0);
+
 const STUCK_MS = 15_000;
 const refreshStarted = new Map<string, number>();
 
@@ -210,6 +216,11 @@ async function refresh(eventId: string): Promise<Runtime | null> {
       return null;
     }
     let rt = runtimes.get(eventId);
+    // A new draw (a test's `reset`, then the lobby again): what this process held of the old one is gone.
+    if (rt && drawKey(rt.event) !== drawKey(event)) {
+      runtimes.delete(eventId);
+      rt = undefined;
+    }
     // The first time, every match; after that the undecided ones and any written lately (decided or voided elsewhere).
     const query = !rt
       ? { eventId }
@@ -230,6 +241,7 @@ async function refresh(eventId: string): Promise<Runtime | null> {
       if (!had || had.updatedAt.getTime() !== row.updatedAt.getTime()) rt.rev += 1;
       rt.matches.set(row.id, row);
     }
+    await refreshPhotos(rt).catch((error) => logger.error('Cup photos failed', { eventId }, error));
     rt.refreshedAt = Date.now();
     return rt;
   })();
@@ -290,6 +302,94 @@ async function runtimeFor(viewer: CupViewer, askedId?: unknown): Promise<Runtime
   if (!id || !/^[A-Za-z0-9_-]{1,80}$/.test(id)) return null;
   const rt = await runtime(id);
   return rt && rt.event.org === viewer.org && rt.event.active ? rt : null;
+}
+
+// ---------------------------------------------------------------- photos
+
+/**
+ * Photos for the page, as addresses it can load under its policy (same
+ * origin): a photo held as media is `/media/<key>`, as the app's feed shows
+ * it; an old inline photo (a `data:` URI on the user) is served by
+ * `/cup/api/photo/…`, signed so that only an address this API handed out
+ * (to someone at the same company, in their state) opens it. No photo: null.
+ * Read for the whole draw every few minutes, never per poll.
+ */
+const PHOTOS_EVERY_MS = 5 * 60_000;
+
+let photoSigningKey: Buffer | null = null;
+function photoSignature(eventId: string, userId: string, v: string): string {
+  photoSigningKey ??= createHash('sha256').update(`cup-photo:${env.scribbleTicketSecret || env.mongoUri}`).digest();
+  return createHmac('sha256', photoSigningKey).update(`${eventId}:${userId}:${v}`).digest('base64url').slice(0, 24);
+}
+
+async function refreshPhotos(rt: Runtime): Promise<void> {
+  const event = rt.event;
+  const ids = event.phase === 'scheduled' ? (await rosterPreview(event)).map((row) => row.userId) : event.entrants.map((e) => e.userId);
+  const key = `${drawKey(event)}:${ids.length}`;
+  if (rt.photos && rt.photos.key === key && Date.now() - rt.photos.at < PHOTOS_EVERY_MS) return;
+  const rows = ids.length
+    ? await users()
+        .aggregate<{ userId: string; profilePhotoKey?: string; head: string; size: number; https: string }>([
+          { $match: { org: event.org, userId: { $in: ids } } },
+          {
+            $project: {
+              _id: 0,
+              userId: 1,
+              profilePhotoKey: 1,
+              head: { $substrCP: [{ $ifNull: ['$profilePhotoUrl', ''] }, 0, 16] },
+              size: { $strLenBytes: { $ifNull: ['$profilePhotoUrl', ''] } },
+              https: {
+                $cond: [{ $eq: [{ $substrCP: [{ $ifNull: ['$profilePhotoUrl', ''] }, 0, 8] }, 'https://'] }, '$profilePhotoUrl', ''],
+              },
+            },
+          },
+        ])
+        .toArray()
+    : [];
+  const map = new Map<string, string | null>();
+  for (const row of rows) {
+    let url: string | null = null;
+    if (row.profilePhotoKey) url = `/media/${encodeURIComponent(row.profilePhotoKey)}`;
+    else if (row.https && row.https.length <= 2048) url = row.https;
+    else if (/^data:image\//.test(row.head)) {
+      const v = String(row.size);
+      url = `/cup/api/photo/${encodeURIComponent(event.id)}/${encodeURIComponent(row.userId)}?v=${v}&s=${photoSignature(event.id, row.userId, v)}`;
+    }
+    map.set(row.userId, url);
+  }
+  const changed = !rt.photos || rt.photos.map.size !== map.size || [...map].some(([id, url]) => rt.photos!.map.get(id) !== url);
+  rt.photos = { at: Date.now(), key, map };
+  if (changed) rt.rev += 1;
+}
+
+const photoOf = (rt: Runtime, userId: string | null | undefined): string | null => (userId ? rt.photos?.map.get(userId) ?? null : null);
+
+/** A person's photo address in this event, for the bets' parts of the state (tipsters, the stage). Null for none. */
+export function cupPhotoUrl(eventId: string, userId: string): string | null {
+  const rt = runtimes.get(eventId);
+  return rt ? photoOf(rt, userId) : null;
+}
+
+/**
+ * An old inline photo, for `GET /cup/api/photo/:eventId/:userId?v=&s=`: only
+ * with the signature this API put in the address, only for someone in that
+ * event, at its company. Null when there is nothing to show.
+ */
+export async function inlinePhoto(eventId: string, userId: string, v: unknown, sig: unknown): Promise<{ type: string; bytes: Buffer } | null> {
+  if (typeof v !== 'string' || typeof sig !== 'string' || !/^\d{1,9}$/.test(v)) return null;
+  const expected = Buffer.from(photoSignature(eventId, userId, v));
+  const given = Buffer.from(sig);
+  if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(eventId)) return null;
+  const rt = await runtime(eventId);
+  if (!rt) return null;
+  const event = rt.event;
+  const inIt = event.phase === 'scheduled' ? (await rosterPreview(event)).some((row) => row.userId === userId) : event.entrants.some((e) => e.userId === userId);
+  if (!inIt) return null;
+  const row = await users().findOne({ userId, org: event.org }, { projection: { _id: 0, profilePhotoUrl: 1 } });
+  const parsed = /^data:(image\/(?:png|jpeg|jpg|gif|webp));base64,([A-Za-z0-9+/=\s]+)$/.exec(row?.profilePhotoUrl ?? '');
+  if (!parsed) return null;
+  return { type: parsed[1], bytes: Buffer.from(parsed[2], 'base64') };
 }
 
 // ---------------------------------------------------------------- who is in
@@ -457,12 +557,17 @@ async function createRoundMatches(rt: Runtime, n: number, now: Date, status: 'sc
   }
   if (!docs.length) return;
   try {
-    await cupMatches().insertMany(docs.map((d) => ({ ...d })), { ordered: false });
+    // `_id` is the match id: with no index on `id` (none may be made on the shared cluster), the primary key is what
+    // stops two runners writing the same match twice.
+    await cupMatches().insertMany(docs.map((d) => ({ _id: d.id, ...d }) as unknown as CupMatch), { ordered: false });
+    for (const doc of docs) rt.matches.set(doc.id, doc);
   } catch (error) {
-    // Another runner wrote some of them first: theirs stand.
-    if ((error as { code?: number }).code !== 11000) throw error;
+    // Another runner wrote some of them first: theirs stand (their boards, their times), so read them all back.
+    const code = (error as { code?: number; writeErrors?: unknown }).code;
+    if (code !== 11000 && !/E11000/.test(String((error as Error).message))) throw error;
+    const rows = await cupMatches().find({ id: { $in: docs.map((d) => d.id) } }, { projection: { _id: 0 } }).toArray();
+    for (const row of rows) rt.matches.set(row.id, row);
   }
-  for (const doc of docs) rt.matches.set(doc.id, doc);
   rt.rev += 1;
 }
 
@@ -608,8 +713,10 @@ async function openRound(rt: Runtime, n: number, now: Date): Promise<void> {
   const round = event.rounds[n - 1];
   if (!round) return;
   const byes = round.nodes.filter((node) => node.feeders.length === 1).map((node) => holderOf(rt, node.feeders[0])).filter((u): u is string => !!u);
+  // Conditional on the version the decided matches were read with: an HR void writes the match, then bumps the
+  // version, so a round is never opened on a result that was voided meanwhile (see voidMatchResult).
   const claimed = await cupEvents().findOneAndUpdate(
-    { id: event.id, round: n - 1, phase: n === 1 ? 'lobby' : 'running', active: true },
+    { id: event.id, round: n - 1, phase: n === 1 ? 'lobby' : 'running', active: true, ...(n > 1 ? { version: event.version } : {}) },
     {
       $set: {
         round: n,
@@ -710,7 +817,8 @@ async function advance(rt: Runtime, match: CupMatch, now: Date): Promise<void> {
 
 async function apply(rt: Runtime, match: CupMatch, step: MatchStep, now: Date): Promise<void> {
   const event = rt.event;
-  const where = { id: match.id, status: match.status, attempt: match.attempt };
+  // As read: a final, a join or a void written since (here or by another instance) makes this a no-op until the next look.
+  const where = { id: match.id, status: match.status, attempt: match.attempt, updatedAt: match.updatedAt };
   const write = async (update: Record<string, unknown>) => {
     const after = await cupMatches().findOneAndUpdate(where, update, { returnDocument: 'after', projection: { _id: 0 } });
     if (after) keep(rt, after);
@@ -777,7 +885,7 @@ async function finish(rt: Runtime, now: Date): Promise<void> {
   const last = event.rounds[event.rounds.length - 1];
   const champion = last ? holderOf(rt, nodeRefOfLast(last)) : null;
   const claimed = await cupEvents().findOneAndUpdate(
-    { id: event.id, phase: 'running', round: event.rounds.length },
+    { id: event.id, phase: 'running', round: event.rounds.length, active: true, version: event.version },
     {
       $set: { phase: 'done', championId: champion ?? undefined, finishedAt: now, [`rounds.${event.rounds.length - 1}.closedAt`]: now, updatedAt: now },
       $inc: { version: 1 },
@@ -927,10 +1035,13 @@ export async function voidMatchResult(viewer: CupViewer, id: string) {
   if (!match) throw new CupError(404, 'Match not found');
   if (match.status === 'scheduled' || match.status === 'betting') throw new CupError(409, 'This match has not been played yet');
   const event = rt.event;
+  const tooLate = () => new CupError(409, `Too late: ${match.winnerId ? nameOf(event, match.winnerId) : 'the winner'} is already in the next round`);
+  // Once the next round is open, every winner of this one is in it (a match or a free pass).
+  if (match.round < event.round) throw tooLate();
   if (match.status === 'done' && match.winnerId) {
     const later = [...rt.matches.values()].some((m) => m.round > match.round && m.players.includes(match.winnerId!));
     const passed = event.rounds.slice(match.round).some((r) => r.byes?.includes(match.winnerId!));
-    if (later || passed) throw new CupError(409, `Too late: ${nameOf(event, match.winnerId)} is already in the next round`);
+    if (later || passed) throw tooLate();
   }
   const now = new Date();
   const sequential = match.kind === 'sequential';
@@ -946,22 +1057,48 @@ export async function voidMatchResult(viewer: CupViewer, id: string) {
         updatedAt: now,
         ...(sequential ? {} : { openedAt: now, deadlineAt: new Date(now.getTime() + event.startWindowSec * 1000) }),
       },
-      $unset: { startAt: '', soloUntil: '', winnerId: '', decidedBy: '', decidedAt: '', result: '', bettingAt: '', bettingEndsAt: '', ...(sequential ? { openedAt: '', deadlineAt: '' } : {}) },
+      $unset: {
+        startAt: '',
+        soloUntil: '',
+        winnerId: '',
+        decidedBy: '',
+        decidedAt: '',
+        result: '',
+        bettingAt: '',
+        bettingEndsAt: '',
+        // A fresh play: earlier ties no longer count towards the replay limit.
+        history: '',
+        ...(sequential ? { openedAt: '', deadlineAt: '' } : {}),
+      },
       $inc: { attempt: 1 },
       $push: { voids: { by: viewer.userId, at: now } },
     },
     { returnDocument: 'after', projection: { _id: 0 } },
   );
   if (!after) throw new CupError(409, 'The match changed: try again');
-  keep(rt, after);
-  if (event.phase === 'done' && match.round === event.rounds.length) {
-    const back = await cupEvents().findOneAndUpdate(
-      { id: event.id, phase: 'done' },
-      { $set: { phase: 'running', updatedAt: now }, $unset: { championId: '', finishedAt: '', [`rounds.${match.round - 1}.closedAt`]: '' }, $inc: { version: 1 } },
+  // Then the event, on the version read above: if a runner opened the next round (or finished the Cup) on the
+  // result in the meantime, this fails and the void is undone. A runner that reads after this sees the match again.
+  const final = event.phase === 'done' && match.round === event.rounds.length;
+  const moved = await cupEvents().findOneAndUpdate(
+    { id: event.id, version: event.version, round: event.round, phase: event.phase },
+    final
+      ? { $set: { phase: 'running', updatedAt: now }, $unset: { championId: '', finishedAt: '', [`rounds.${match.round - 1}.closedAt`]: '' }, $inc: { version: 1 } }
+      : { $set: { updatedAt: now }, $inc: { version: 1 } },
+    { returnDocument: 'after', projection: { _id: 0 } },
+  );
+  if (!moved) {
+    const back = await cupMatches().findOneAndReplace(
+      { id, attempt: after.attempt, status: after.status, updatedAt: after.updatedAt },
+      { ...match },
       { returnDocument: 'after', projection: { _id: 0 } },
     );
-    if (back) rt.event = back;
+    if (back) keep(rt, back);
+    else logger.error('Cup void could not be undone', { matchId: id });
+    throw new CupError(409, 'The Cup moved on meanwhile: look again and try again');
   }
+  keep(rt, after);
+  rt.event = moved;
+  activeIds.at = 0;
   logger.info('Cup match voided', { matchId: id, by: viewer.userId });
   await hook('onMatchVoided', () => cupHooks.onMatchVoided?.(after, rt.event, viewer.userId));
   if (!sequential) void pushOpen(rt.event, after);
@@ -972,10 +1109,10 @@ export async function voidMatchResult(viewer: CupViewer, id: string) {
 
 type CurrentStage = { matchId: string; kind: 'betting' | 'live' };
 
-const person = (event: CupEvent, userId: string | null) => {
+const person = (rt: Runtime, userId: string | null) => {
   if (!userId) return null;
-  const e = event.entrants.find((x) => x.userId === userId);
-  return { userId, name: e?.name ?? 'Colleague', seed: e?.seed ?? null };
+  const e = rt.event.entrants.find((x) => x.userId === userId);
+  return { userId, name: e?.name ?? 'Colleague', seed: e?.seed ?? null, photoUrl: photoOf(rt, userId) };
 };
 
 function liveOf(rt: Runtime, match: CupMatch): Record<string, number> | undefined {
@@ -998,8 +1135,8 @@ function matchView(rt: Runtime, match: CupMatch) {
     slot: match.slot,
     label: match.label,
     status: match.status,
-    a: person(event, match.players[0]),
-    b: person(event, match.players[1]),
+    a: person(rt, match.players[0]),
+    b: person(rt, match.players[1]),
     live: liveOf(rt, match),
     result: match.result,
     winnerId: match.winnerId,
@@ -1030,8 +1167,8 @@ function roundsView(rt: Runtime) {
           slot: node.slot,
           label: matchLabel(round, number),
           status: 'pending' as const,
-          a: person(event, p),
-          b: person(event, q),
+          a: person(rt, p),
+          b: person(rt, q),
           feedsFrom: { a: p ? undefined : feederName(rt, node.feeders[0]), b: q ? undefined : feederName(rt, node.feeders[1]) },
           attempt: 0,
         };
@@ -1097,6 +1234,7 @@ function shared(rt: Runtime, rosterCount: number) {
 export interface Standing {
   userId: string;
   name: string;
+  photoUrl: string | null;
   seed: number;
   reached: string;
   place: number;
@@ -1138,7 +1276,7 @@ export function standingsOf(rt: Runtime): Standing[] {
   rows.forEach((row, i) => {
     row.place = i > 0 && rows[i - 1].depth === row.depth ? rows[i - 1].place : i + 1;
   });
-  const result: Standing[] = rows.map((row) => ({ userId: row.userId, name: row.name, seed: row.seed, reached: row.reached, place: row.place, alive: row.alive }));
+  const result: Standing[] = rows.map((row) => ({ userId: row.userId, name: row.name, photoUrl: photoOf(rt, row.userId), seed: row.seed, reached: row.reached, place: row.place, alive: row.alive }));
   rt.standings = { rev: rt.rev, rows: result };
   return result;
 }
@@ -1156,7 +1294,7 @@ function myMatchView(rt: Runtime, match: CupMatch, userId: string) {
     round: match.round,
     kind: match.kind,
     status: match.status,
-    opponent: entrant ? { userId: them, name: entrant.name, seed: entrant.seed, best: entrant.best } : null,
+    opponent: entrant ? { userId: them, name: entrant.name, seed: entrant.seed, best: entrant.best, photoUrl: photoOf(rt, them) } : null,
     bettingEndsAt: match.bettingEndsAt,
     deadlineAt: match.deadlineAt,
     startAt: match.startAt,
@@ -1209,7 +1347,7 @@ async function balanceOf(viewer: CupViewer): Promise<number> {
 /** The viewer's part of the state. */
 async function meOf(rt: Runtime, viewer: CupViewer) {
   const event = rt.event;
-  const base = { userId: viewer.userId, name: viewer.name, hr: viewer.hr, balance: await balanceOf(viewer) };
+  const base = { userId: viewer.userId, name: viewer.name, photoUrl: photoOf(rt, viewer.userId), hr: viewer.hr, balance: await balanceOf(viewer) };
   if (event.phase === 'scheduled') {
     const roster = await rosterPreview(event);
     const mine = roster.find((row) => row.userId === viewer.userId);
@@ -1245,7 +1383,7 @@ export async function stateFor(viewer: CupViewer, askedId: unknown, since: unkno
   const now = new Date();
   const rt = await runtimeFor(viewer, askedId);
   if (!rt) {
-    return JSON.stringify({ success: true, serverNow: now, version: 0, event: null, me: { userId: viewer.userId, name: viewer.name, hr: viewer.hr, entered: false, alive: false, balance: await balanceOf(viewer) } });
+    return JSON.stringify({ success: true, serverNow: now, version: 0, event: null, me: { userId: viewer.userId, name: viewer.name, photoUrl: null, hr: viewer.hr, entered: false, alive: false, balance: await balanceOf(viewer) } });
   }
   if (since !== undefined && String(since) === String(rt.rev)) {
     return JSON.stringify({ success: true, unchanged: true, version: rt.rev, serverNow: now });
@@ -1275,9 +1413,9 @@ export async function entrantsFor(viewer: CupViewer, askedId?: unknown) {
   if (!rt) throw new CupError(404, 'The Cup is not on');
   if (rt.event.phase === 'scheduled') {
     const roster = await rosterPreview(rt.event);
-    return { entrants: roster.map((row) => ({ userId: row.userId, name: row.name, best: row.best, seed: null })) };
+    return { entrants: roster.map((row) => ({ userId: row.userId, name: row.name, photoUrl: photoOf(rt, row.userId), best: row.best, seed: null })) };
   }
-  return { entrants: rt.event.entrants.map((e) => ({ userId: e.userId, name: e.name, best: e.best, seed: e.seed, boardRank: e.boardRank })) };
+  return { entrants: rt.event.entrants.map((e) => ({ userId: e.userId, name: e.name, photoUrl: photoOf(rt, e.userId), best: e.best, seed: e.seed, boardRank: e.boardRank })) };
 }
 
 /**
