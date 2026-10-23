@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <!--CUP-TICKET-->
-<title>The Odd-Off</title>
+<title>O-O-O Tournament</title>
 <!-- One file, uploaded to game_catalog as `diwali-cup` (build.mjs inlines cup/play.js into it). The server puts
      window.__CUP = { ticket, eventId?, from, hopTicket? } where the marker above is; every call goes to /cup/api with the ticket. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
@@ -259,7 +259,7 @@ button.bm{min-height:44px}
 <div id="say" class="sr" aria-live="polite"></div>
 <script id="cup-play">/*@CUP_PLAY@*/</script>
 <script>
-/* The tournament page (event.name; "The Odd-Off" until the state says). Polls /cup/api/state (since=version) every 1.5 s (2 s hidden), draws one of the screens from it,
+/* The tournament page (event.name; "O-O-O Tournament" until the state says). Polls /cup/api/state (since=version) every 1.5 s (2 s hidden), draws one of the screens from it,
    and patches the DOM in place (no rebuild: scroll, focus and the search box survive a poll). Countdowns run off the
    server's clock (serverNow). A match is played by window.CupPlay (cup/play.js) in the #play overlay. */
 (function () {
@@ -335,7 +335,7 @@ button.bm{min-height:44px}
     t.parentNode.removeChild(t);
   }, true);
   /* The tournament's name comes from the event (state's event.name); the last one seen covers the first paint. */
-  var NAME0 = 'The Odd-Off', lastName = '';
+  var NAME0 = 'O-O-O Tournament', lastName = '';
   try { lastName = String(JSON.parse(localStorage.getItem('cup-name') || '""') || ''); } catch (e) {}
   function cupName() { var e = S && S.event; var n = e && typeof e.name === 'string' ? e.name.replace(/\s+/g, ' ').trim() : ''; return n || lastName || NAME0; }
   function wordmark() { var n = cupName(); return '<h1 class="wm' + (n.length > 22 ? ' xl' : n.length > 13 ? ' l' : '') + '" title="' + esc(n) + '">' + esc(n.toUpperCase()) + '</h1>'; }
@@ -553,7 +553,7 @@ button.bm{min-height:44px}
     var r1 = roundOf(1);
     var meP = { userId: me.userId, name: me.name, seed: me.seed, best: me.best, photoUrl: me.photoUrl };
     var card = m
-      ? '<section class="card gold" aria-label="Your first match"><div class="row"><p class="lbl sp">Your first match<br>' + esc(m.label || 'Round 1') + '</p><span class="tagg">SAME BOARD FOR BOTH</span></div>' + vsBlock(meP, m.opponent) +
+      ? '<section class="card gold" aria-label="Your first match"><div class="row"><p class="lbl sp">Your first match<br>' + esc(m.label || 'Round 1') + '</p><span class="tagg">SAME BOARD</span></div>' + vsBlock(meP, m.opponent) +
         '<button type="button" class="btn" disabled>PLAY OPENS AT ' + clock(e.startAt) + '</button></section>'
       : me.freePass ? '<section class="ticket" aria-label="Free pass"><small>FREE PASS · ROUND ' + me.freePass.round + '</small><b>YOU SKIP ROUND ' + me.freePass.round + '</b><span>You were #' + (me.freePass.boardRank || me.seed) + ' on ' + orgPossessive() + ' Odd One Out leaderboard.</span></section>' : '';
     return '<div class="count"><small>Round 1 starts in</small><b>' + cd(ms(e.startAt)) + '</b></div>' + card +

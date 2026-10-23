@@ -221,7 +221,7 @@ function moment({ me: meSeed, at, fate = {}, mine = {} }) {
     version: 100 + (at.round ?? 0) * 10,
     event: {
       id: 'diwali-2026',
-      name: 'The Odd-Off',
+      name: 'O-O-O Tournament',
       phase,
       round: Math.min(curRound, total),
       lobbyAt: iso(lobbyAt),
