@@ -348,7 +348,7 @@ write('lobby', moment({ me: 41, at: { round: 1, stage: 'lobby' } }));
   w.me.match.attempt = 1;
   w.me.match.opponentJoined = false;
   w.me.match.deadlineAt = iso(T0 + sec(170));
-  w.me.match.lastTie = 1840;
+  w.me.match.lastTie = { [w.me.userId]: 1840, [w.me.match.opponent.userId]: 1840 }; // as the engine sends it: the tied game's scores by player
   findMatch(w, w.me.match.id).attempt = 1;
   w.version += 4;
   write('match-replay', w);

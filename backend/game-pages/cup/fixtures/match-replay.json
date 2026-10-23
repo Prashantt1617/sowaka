@@ -3385,7 +3385,10 @@
    "joined": false,
    "opponentJoined": false,
    "deadlineAt": "2026-11-06T12:12:50.000Z",
-   "lastTie": 1840
+   "lastTie": {
+    "u041": 1840,
+    "u186": 1840
+   }
   },
   "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
  }

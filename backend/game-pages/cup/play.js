@@ -17,6 +17,8 @@
  *     onLive(score),         // on a score change, at most 4× a second
  *     onFinal(score),        // exactly once, when the round is over (also after the app comes back from the background)
  *     onStart(),             // optional: the board just appeared
+ *     onProgress(p),         // optional: after every find and miss, { score, gi, streak, cleared, miss } — the host keeps it to resume
+ *     resume,                // optional: that object, after a reload mid-round: the round carries on from it (same boards onward)
  *     sound = true,
  *   });
  *   h.stop();  h.score();  h.state();   // 'wait' | 'play' | 'closing' | 'over' | 'stopped'
@@ -207,6 +209,7 @@ function boardAt(sd,g){
     const onLive = typeof opts.onLive === 'function' ? opts.onLive : () => {};
     const onFinal = typeof opts.onFinal === 'function' ? opts.onFinal : () => {};
     const onStart = typeof opts.onStart === 'function' ? opts.onStart : () => {};
+    const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
     const getOpp = typeof opts.getOpponentLive === 'function' ? opts.getOpponentLive : () => null;
     const meName = (opts.me && opts.me.name) || 'You';
     const opp = opts.opponent && opts.opponent.name ? { name: String(opts.opponent.name), photoUrl: okUrl(opts.opponent.photoUrl) } : null;
@@ -255,6 +258,11 @@ function boardAt(sd,g){
     /* State, as in the game: the board index, the score, the streak. */
     let state = 'wait', gi = 0, cur = null, score = 0, streak = 0, cleared = 0, miss = 0, shownAt = 0, locked = true, lastSec = -1;
     let finalSent = false, stopped = false, lag = 0, closeAt = 0;
+    /* Back after a reload mid-round: the score, the board reached and the clock the misses cost, as they were. */
+    const rs = opts.resume && typeof opts.resume === 'object' ? opts.resume : null;
+    const int = v => Math.max(0, Math.floor(Number(v) || 0));
+    if (rs) { score = int(rs.score); gi = int(rs.gi); streak = int(rs.streak); cleared = int(rs.cleared); miss = int(rs.miss); endWall -= miss * PENALTY * 1000; }
+    const progress = () => { try { onProgress({ score, gi, streak, cleared, miss }); } catch (e) {} };
     const timers = new Set();
     const later = (fn, ms) => { const id = setTimeout(() => { timers.delete(id); if (!stopped) fn(); }, ms); timers.add(id); return id; };
 
@@ -379,7 +387,7 @@ function boardAt(sd,g){
       if (i !== cur.at) {
         if (cell.classList.contains('no')) return;
         miss++; const had = streak; streak = 0; endWall -= PENALTY * 1000; cell.classList.add('no'); sfx.no(); if (had >= 4) sfx.lost(); buzz([30, 40, 30]);
-        toast('−' + PENALTY + ' s', 'bad', x, y); renderCombo(); renderTime(); return;
+        toast('−' + PENALTY + ' s', 'bad', x, y); renderCombo(); renderTime(); progress(); return;
       }
       locked = true; const dt = Math.max(0, t - shownAt) / 1000, quick = dt <= QUICK; streak++; cleared++;
       const m = multFor(streak), pm = multFor(streak - 1), pts = (20 + (quick ? 10 : 0)) * m, before = score; score += pts;
@@ -392,7 +400,7 @@ function boardAt(sd,g){
       $score.textContent = fmtn(score); bump($score); bump($cx);
       const o = typeof oppShown === 'number' ? oppShown : null; if (o != null && before <= o && score > o) later(sfx.ahead, 250);
       renderLead(); renderCombo(); pushLive();
-      const n0 = cur.n; gi++;
+      const n0 = cur.n; gi++; progress();
       later(() => { if (state !== 'play' && state !== 'closing') return; if (sizeFor(gi) > n0) sfx.grow(); showGrid(); }, reduce() ? NEXT_MS_REDUCED : NEXT_MS);
     }
 
@@ -466,7 +474,7 @@ function boardAt(sd,g){
     window.addEventListener('pageshow', wake);
     window.addEventListener('focus', wake);
 
-    renderTime(); renderCombo(); pollOpp();
+    renderTime(); renderCombo(); pollOpp(); if (score) $score.textContent = fmtn(score);
     $cover.hidden = false; renderWait();
     if (state === 'wait') runLoop(50); else runLoop(100);
     if (state === 'play' && endWall <= wall()) step();

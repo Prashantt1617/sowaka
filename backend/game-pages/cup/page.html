@@ -335,10 +335,13 @@ button.bm{min-height:44px}
     t.parentNode.removeChild(t);
   }, true);
   /* The tournament's name comes from the event (state's event.name); the last one seen covers the first paint. */
+  /* The name last seen, with its event: used for the first paint only, and only for that event (or when the page doesn't say). */
   var NAME0 = 'O-O-O Tournament', lastName = '';
-  try { lastName = String(JSON.parse(localStorage.getItem('cup-name') || '""') || ''); } catch (e) {}
-  function cupName() { var e = S && S.event; var n = e && typeof e.name === 'string' ? e.name.replace(/\s+/g, ' ').trim() : ''; return n || lastName || NAME0; }
+  try { var kept = JSON.parse(localStorage.getItem('cup-name') || 'null'); if (kept && kept.n && (!C || !C.eventId || kept.id === C.eventId)) lastName = String(kept.n); } catch (e) {}
+  function cupName() { var e = S && S.event; var n = e && typeof e.name === 'string' ? e.name.replace(/\s+/g, ' ').trim() : ''; return n || (S ? NAME0 : lastName || NAME0); }
   function wordmark() { var n = cupName(); return '<h1 class="wm' + (n.length > 22 ? ' xl' : n.length > 13 ? ' l' : '') + '" title="' + esc(n) + '">' + esc(n.toUpperCase()) + '</h1>'; }
+  /* Points won from bets can be below 0 (stakes lost): +120 / −30. */
+  function signed(n) { n = Math.round(Number(n) || 0); return (n < 0 ? '−' : '+') + num(Math.abs(n)); }
   function plural(n, one, many) { return num(n) + ' ' + (n === 1 ? one : (many || one + 's')); }
   function say(text) { $say.textContent = ''; setTimeout(function () { $say.textContent = text; }, 30); }
   function store(key, val) { try { if (val === undefined) return JSON.parse(localStorage.getItem(key) || 'null'); localStorage.setItem(key, JSON.stringify(val)); } catch (e) { return null; } }
@@ -369,6 +372,9 @@ button.bm{min-height:44px}
   var seen = store('cup-seen-bets') || [];
   var ui = { tab: 'me', round: null, q: '', all: false, watchAll: false, standAll: false, duel: null, pick: null, pickFor: null, stake: 0, betBusy: false, betErr: '', busy: '', err: '', toast: null, playing: null, handle: null, scroll: {} };
   var finals = store('cup-finals') || {};
+  /* The round in progress, kept on this phone after every find, so a reload mid-round carries on from it and resends it. */
+  var progress = store('cup-live') || {};
+  function keepLast(map, n) { var k = Object.keys(map); k.slice(0, Math.max(0, k.length - n)).forEach(function (x) { delete map[x]; }); return map; }
   var seeds = {};
 
   function poll() {
@@ -389,7 +395,7 @@ button.bm{min-height:44px}
       if (!j.unchanged) {
         S = j; version = j.version;
         indexPhotos(j);
-        if (j.event && j.event.name) { var nm = cupName(); if (nm !== lastName) { lastName = nm; store('cup-name', nm); } if (document.title !== nm) document.title = nm; }
+        if (j.event && j.event.name) { var nm = cupName(); if (nm !== lastName) { lastName = nm; store('cup-name', { id: j.event.id, n: nm }); } if (document.title !== nm) document.title = nm; }
         if (j.event && j.event.id) eventId = j.event.id;
       }
       netFail = 0;
@@ -509,7 +515,12 @@ button.bm{min-height:44px}
     var mineFinished = m && finals[m.id + ':' + (m.attempt || 0)] != null && m.status !== 'done';
     var myTurn = onNow && !(stage && m.status === 'scheduled');
     var showStage = stage && !(onNow && S.current && S.current.matchId === m.id && m.status !== 'scheduled') && !mineFinished;
-    if (myTurn) out += viewMyMatch(m);
+    if (myTurn) {
+      out += viewMyMatch(m);
+      // On stage myself: a bet that just settled still gets its moment, under my match.
+      var settled = stage && lastSettled();
+      if (settled) out += viewBetResult(settled);
+    }
     else if (showStage) return viewStage() + (me.alive ? viewWaiting() : outStrip());
     else if (me.alive && me.freePass && me.freePass.round === e.round) out += viewFreePass();
     else if (!me.alive) out += viewOut();
@@ -567,7 +578,9 @@ button.bm{min-height:44px}
     var meP = { userId: me.userId, name: me.name, seed: me.seed, best: me.best, photoUrl: me.photoUrl };
     var opp = m.opponent, on = opp ? first(opp.name) : 'Your opponent';
     var head = '<div class="row"><p class="lbl sp">Your match<br>' + esc(m.label || roundName(m.round)) + '</p>' + (m.attempt ? '<span class="pill co">REPLAY ' + m.attempt + '</span>' : m.status === 'solo' ? '<span class="pill">SOLO</span>' : '<span class="tagg">SAME BOARD</span>') + '</div>';
-    var replay = m.attempt ? '<div class="banner co" role="status">It was a tie' + (m.lastTie != null ? ' at ' + num(m.lastTie) : '') + '. Replay on a new board: same rules, fresh start.</div>' : '';
+    // lastTie is the tied game's scores by player ({ userId: score }); a plain number is taken too.
+    var lt = m.lastTie, tieAt = lt == null ? null : typeof lt === 'object' ? (lt[me.userId] != null ? lt[me.userId] : Object.keys(lt).map(function (k) { return lt[k]; })[0]) : lt;
+    var replay = m.attempt ? '<div class="banner co" role="status">It was a tie' + (tieAt != null && isFinite(Number(tieAt)) ? ' at ' + num(tieAt) : '') + '. Replay on a new board: same rules, fresh start.</div>' : '';
     var body = '', foot = '';
     var err = ui.err ? '<p class="why" role="alert">' + esc(ui.err) + '</p>' : '';
     if (m.status === 'scheduled' || m.status === 'betting') {
@@ -624,12 +637,20 @@ button.bm{min-height:44px}
       '</div></section>';
   }
 
+  /* My slot in a later round's bracket, before the server makes it my match: the label and who I'd meet (or where they come from). */
+  function upcoming(n) {
+    var r = roundOf(n), u = meId();
+    var m = r && r.matches.find(function (x) { return (x.a && x.a.userId === u) || (x.b && x.b.userId === u); });
+    if (!m) return { round: n, label: roundName(n) };
+    var side = m.a && m.a.userId === u ? 'b' : 'a';
+    return { round: n, label: m.label || roundName(n), opponent: m[side] || null, from: m.feedsFrom && m.feedsFrom[side] };
+  }
   function nextMatchCard(nm) {
     var e = ev();
     if (!nm) return '';
     var opp = nm.opponent;
     return '<section class="card edge" aria-label="Your next match"><p class="lbl">Your next match · ' + esc(nm.label || roundName(nm.round)) + '</p>' +
-      '<div class="row">' + av({ userId: meId(), name: S.me.name, photoUrl: S.me.photoUrl }, 's') + '<b>You</b><span class="sp" style="text-align:center;font-family:var(--hd);color:var(--co)">VS</span><b style="text-align:right;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (opp ? esc(opp.name) : 'To be decided') + '</b>' + av(opp, 's') + '</div>' +
+      '<div class="row">' + av({ userId: meId(), name: S.me.name, photoUrl: S.me.photoUrl }, 's') + '<b>You</b><span class="sp" style="text-align:center;font-family:var(--hd);color:var(--co)">VS</span><b style="text-align:right;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (opp ? esc(opp.name) : nm.from ? esc(nm.from) : 'To be decided') + '</b>' + av(opp, 's') + '</div>' +
       roundProgress(e.round) + '</section>';
   }
   function roundProgress(n) {
@@ -648,7 +669,7 @@ button.bm{min-height:44px}
     return '<section class="ticket" aria-label="Free pass"><small>FREE PASS · ROUND ' + fp.round + '</small><b>YOU SKIP ROUND ' + fp.round + '</b>' +
       '<span>' + (prev ? 'You won ' + esc(prev.label.toLowerCase()) + ', and as' : 'As') + ' a top seed you go straight to round ' + (fp.round + 1) + '.</span></section>' +
       '<section class="card"><div class="seed"><span class="rank"><small>RANK</small><b>#' + (fp.boardRank || fp.seed || me.seed) + '</b></span><p>You were <b>#' + (fp.boardRank || fp.seed || me.seed) + ' on ' + orgPossessive() + ' Odd One Out leaderboard</b>' + (me.best != null ? ' (best ' + num(me.best) + ')' : '') + '. The ' + plural(((roundOf(fp.round) || {}).byes || []).length || passesFor(e.entrantCount || 0), 'highest seed') + ' skip round ' + fp.round + '.</p></div></section>' +
-      nextMatchCard(nm || { round: fp.round + 1, label: 'Round ' + (fp.round + 1) }) +
+      nextMatchCard(nm || upcoming(fp.round + 1)) +
       '<button type="button" class="btn2" data-act="tab" data-v="watch">Watch round ' + fp.round + ' live</button>';
   }
 
@@ -664,7 +685,7 @@ button.bm{min-height:44px}
   function viewWaiting() {
     var me = S.me, last = myLastDone();
     var nm = me.match && me.match.status !== 'done' ? me.match : null;
-    return resultCard(last, !!(last && last.r.n === ev().round)) + nextMatchCard(nm || { round: ev().round + 1, label: roundName(ev().round + 1) }) + (isTopN() ? '' : liveNowMini(3));
+    return resultCard(last, !!(last && last.r.n === ev().round)) + nextMatchCard(nm || upcoming(ev().round + 1)) + (isTopN() ? '' : liveNowMini(3));
   }
 
   function viewOut() {
@@ -894,14 +915,15 @@ button.bm{min-height:44px}
   /* ---------- Tipsters ---------- */
   function viewTipsters() {
     var t = (S.tipsters || []).slice().sort(function (a, b) { return b.won - a.won; }), u = meId();
+    var onPod = t.filter(function (x) { return x.won > 0; }).length;
     if (!t.length) return '<h1>Top tipsters</h1><div class="full" style="min-height:40vh"><div class="ic" aria-hidden="true">★</div><h2>No bets settled yet</h2><p>The board fills in after the first top-' + ((ev() && ev().topN) || 8) + ' match. Points won from bets decide it.</p></div>';
     var pod = [t[1], t[0], t[2]].map(function (x, i) {
-      if (!x) return '<div class="p"></div>';
+      if (!x || [1, 0, 2][i] >= onPod) return '<div class="p"></div>';
       var place = [2, 1, 3][i], h = [96, 128, 80][i], col = ['#B79CFF', '#F5B82E', '#6FD3F2'][i], size = place === 1 ? 68 : 56;
-      return '<div class="p">' + av(x, 'pd', x.userId === u ? 'YOU' : '', col, 'width:' + size + 'px;height:' + size + 'px;font-size:' + (size / 2.8).toFixed(0) + 'px') + '<b>' + (x.userId === u ? 'You' : esc(x.name)) + '</b><div class="blk" style="height:' + h + 'px;background-color:' + col + '"><strong>' + place + '</strong><span>+' + num(x.won) + '</span></div></div>';
+      return '<div class="p">' + av(x, 'pd', x.userId === u ? 'YOU' : '', col, 'width:' + size + 'px;height:' + size + 'px;font-size:' + (size / 2.8).toFixed(0) + 'px') + '<b>' + (x.userId === u ? 'You' : esc(x.name)) + '</b><div class="blk" style="height:' + h + 'px;background-color:' + col + '"><strong>' + place + '</strong><span>' + signed(x.won) + '</span></div></div>';
     }).join('');
-    var rest = t.slice(3).map(function (x, i) {
-      return '<div class="lr' + (x.userId === u ? ' me' : '') + '" data-k="t' + esc(x.userId) + '"><span class="n"' + (x.userId === u ? ' style="color:var(--y)"' : '') + '>' + (i + 4) + '</span>' + av(x, 'xs', x.userId === u ? 'YOU' : '') + '<div class="tx"><b>' + (x.userId === u ? 'You' : esc(x.name)) + '</b><span>' + x.right + ' of ' + x.of + ' right</span></div><em>+' + num(x.won) + '</em></div>';
+    var rest = t.slice(Math.min(3, onPod)).map(function (x, i) {
+      return '<div class="lr' + (x.userId === u ? ' me' : '') + '" data-k="t' + esc(x.userId) + '"><span class="n"' + (x.userId === u ? ' style="color:var(--y)"' : '') + '>' + (i + 1 + Math.min(3, onPod)) + '</span>' + av(x, 'xs', x.userId === u ? 'YOU' : '') + '<div class="tx"><b>' + (x.userId === u ? 'You' : esc(x.name)) + '</b><span>' + x.right + ' of ' + x.of + ' right</span></div><em' + (x.won < 0 ? ' style="color:var(--co)"' : '') + '>' + signed(x.won) + '</em></div>';
     }).join('');
     var meIn = t.some(function (x) { return x.userId === u; });
     var r = roundOf(ev().round);
@@ -919,6 +941,7 @@ button.bm{min-height:44px}
     var semis = st.filter(function (x) { return x.reached === 'Semi-final'; }).slice(0, 2);
     var mine = st.find(function (x) { return x.userId === u; });
     var tip = (S.tipsters || []).slice().sort(function (a, b) { return b.won - a.won; })[0];
+    if (tip && !(tip.won > 0)) tip = null;
     var myTip = (S.tipsters || []).find(function (x) { return x.userId === u; });
     var list = ui.standAll ? st.slice(4) : st.slice(4, 24);
     var q = ui.q.trim().toLowerCase();
@@ -928,8 +951,8 @@ button.bm{min-height:44px}
       '<div class="pod" style="grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch">' +
       '<div class="pp"><em style="color:#B79CFF">2nd</em>' + av(ru, 'xs', '', '#B79CFF') + '<b>' + youOr(ru) + '</b><span>Runner-up</span></div>' +
       semis.map(function (s) { return '<div class="pp"><em style="color:#6FD3F2">3rd</em>' + av(s, 'xs', '', '#6FD3F2') + '<b>' + youOr(s) + '</b><span>Semi-finalist</span></div>'; }).join('') + '</div>' +
-      (mine ? '<section class="betc" aria-label="Your result" style="border-width:2px"><div class="sp"><p class="lbl">Your run</p><b style="font-family:inherit;font-size:15px;font-weight:800;color:var(--tx)">' + (mine.reached === 'Champion' ? 'Champion!' : 'Reached ' + esc(mine.reached)) + ' · place ' + mine.place + ' of ' + num(st.length) + '</b></div>' + (myTip ? '<b style="color:var(--gr);font-size:20px">+' + num(myTip.won) + ' pts</b>' : '') + '</section>' : '') +
-      (tip ? '<div class="card" style="flex-direction:row;align-items:center"><div class="sp"><p class="lbl" style="color:var(--cy)">Top tipster</p><b>' + (tip.userId === u ? 'You' : esc(tip.name)) + ' · ' + tip.right + ' of ' + tip.of + ' right</b></div><b class="hd" style="color:var(--gr);font-size:20px">+' + num(tip.won) + '</b></div>' : '') +
+      (mine ? '<section class="betc" aria-label="Your result" style="border-width:2px"><div class="sp"><p class="lbl">Your run</p><b style="font-family:inherit;font-size:15px;font-weight:800;color:var(--tx)">' + (mine.reached === 'Champion' ? 'Champion!' : 'Reached ' + esc(mine.reached)) + ' · place ' + mine.place + ' of ' + num(st.length) + '</b></div>' + (myTip ? '<b style="color:' + (myTip.won < 0 ? 'var(--co)' : 'var(--gr)') + ';font-size:20px">' + signed(myTip.won) + ' pts</b>' : '') + '</section>' : '') +
+      (tip ? '<div class="card" style="flex-direction:row;align-items:center"><div class="sp"><p class="lbl" style="color:var(--cy)">Top tipster</p><b>' + (tip.userId === u ? 'You' : esc(tip.name)) + ' · ' + tip.right + ' of ' + tip.of + ' right</b></div><b class="hd" style="color:var(--gr);font-size:20px">' + signed(tip.won) + '</b></div>' : '') +
       '<div class="row"><p class="lbl sp">Final standings</p><p class="lbl">' + plural(st.length, 'player') + '</p></div>' +
       '<label class="sr" for="sq">Find a player</label><input id="sq" class="search" type="search" placeholder="Find a player" autocomplete="off" data-in="q" value="' + esc(ui.q) + '">' +
       '<div class="list">' + list.map(function (x) { return '<div class="lr' + (x.userId === u ? ' me' : '') + '" data-k="s' + esc(x.userId) + '"><span class="n">' + x.place + '</span>' + av(x, 'xs') + '<div class="tx"><b>' + youOr(x) + '</b><span>Seed ' + x.seed + '</span></div><span class="mut t12" style="font-weight:700">' + esc(x.reached) + '</span></div>'; }).join('') + '</div>' +
@@ -950,7 +973,8 @@ button.bm{min-height:44px}
     var e = ev();
     if (!e) return fullScreen('✦', cupName() + ' isn\'t on right now', 'When it\'s switched on, your match, the bracket and the live games all show up here.');
     var tabs = [['me', e.phase === 'done' ? 'Results' : 'Home'], ['bracket', 'Bracket'], ['watch', 'Watch']];
-    if (S.tipsters) tabs.push(['tipsters', 'Tipsters']);
+    // Tipsters from the top N on (the server may send an empty list from the start).
+    if (S.tipsters && (S.tipsters.length || isTopN() || e.phase === 'done')) tabs.push(['tipsters', 'Tipsters']);
     if (!tabs.some(function (t) { return t[0] === ui.tab; })) ui.tab = 'me';
     var liveN = liveMatches().length;
     var tabHtml = '<div class="tabs" role="tablist" aria-label="' + esc(cupName()) + '">' + tabs.map(function (t) {
@@ -1028,6 +1052,11 @@ button.bm{min-height:44px}
     var start = ms(m.startAt);
     if ((m.status === 'live' || m.status === 'solo') && finals[key] != null && !posted[key]) postFinal(m.id, key, finals[key]);
     var want = (m.status === 'live' || (m.status === 'solo' && m.startAt)) && isFinite(start) && finals[key] == null && now() < start + (roundSec() + 8) * 1000;
+    /* Away (closed, reloaded) until after the end: what this phone had is the final. */
+    if (!want && !ui.playing && (m.status === 'live' || m.status === 'solo') && m.startAt && finals[key] == null && progress[key] && now() >= start + roundSec() * 1000) {
+      finals[key] = Math.max(0, Math.round(Number(progress[key].score) || 0)); store('cup-finals', keepLast(finals, 20));
+      postFinal(m.id, key, finals[key]);
+    }
     if (ui.playing && !want && finals[ui.playing] == null) stopPlay();
     if (!want || ui.playing === key) return;
     if (!window.CupPlay || typeof window.CupPlay.start !== 'function') return;
@@ -1058,6 +1087,8 @@ button.bm{min-height:44px}
         opponent: m.status === 'solo' ? null : { name: opp.name || 'Your opponent', seed: opp.seed, userId: opp.userId, photoUrl: photoOf(opp) || null },
         me: { name: S.me.name, seed: S.me.seed, photoUrl: photoOf(S.me) || null },
         solo: m.status === 'solo',
+        resume: progress[key] || null,
+        onProgress: function (p) { progress[key] = p; store('cup-live', keepLast(progress, 6)); },
         onLive: function (score) {
           pending = Math.max(0, Math.round(Number(score) || 0));
           if (!liveT) liveT = setTimeout(sendLive, Math.max(0, 260 - (Date.now() - lastLive)));
@@ -1074,7 +1105,8 @@ button.bm{min-height:44px}
   function finishPlay(matchId, key, score) {
     if (finals[key] != null) return;
     finals[key] = score;
-    store('cup-finals', finals);
+    store('cup-finals', keepLast(finals, 20));
+    if (progress[key]) { delete progress[key]; store('cup-live', progress); }
     postFinal(matchId, key, score);
     setTimeout(function () { if (ui.playing === key) stopPlay(); render(); }, 2200);
   }
@@ -1089,6 +1121,8 @@ button.bm{min-height:44px}
         if (j && j.match && S && S.me && S.me.match && S.me.match.id === matchId) Object.assign(S.me.match, j.match);
         poll();
       }).catch(function (e) {
+        // 409: the match was decided without it (back too late; the live score counted). Nothing to tell, the result screen says it.
+        if (e && e.status === 409) { poll(); return; }
         if (e && e.status >= 400 && e.status < 500) { toast(e.message, true); return; }
         if (++tries < 5) setTimeout(send, 1000 * tries); else { posted[key] = false; toast('Your score didn\'t reach the server. Keep this screen open.', true); }
       });
