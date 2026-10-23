@@ -964,7 +964,11 @@ export async function performConnectAction(
     }
   }
   const updated = await connectPosts().findOne({ id: postId });
-  announceChange(post, 'updated', viewerUserId);
+  // A game card's button only marks the viewer's own card ("you've played"):
+  // nothing anyone else sees changes, and telling the whole company makes
+  // every open feed refetch the post on every tap, all at once when a game
+  // opens.
+  if (post.type !== 'live_game') announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
 
