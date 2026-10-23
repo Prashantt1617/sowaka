@@ -1,4 +1,4 @@
-/* Diwali Cup: one Odd One Out round, played inside the Cup page.
+/* One Odd One Out round, played inside the tournament page (cup/page.html).
  *
  * The same game as game-pages/odd-one-out.html: the seeded boards are copied from it verbatim (the block between the seeded-boards markers),
  * and so are the scoring rules (20 a find, +10 when found within a second of the board showing, times the streak multiplier, ×1 to ×5;
@@ -12,7 +12,7 @@
  *     receivedAt,            // optional: Date.now() when that response arrived (default: now)
  *     clockOffset,           // optional: server minus client clock in ms; wins over serverNow/receivedAt
  *     roundSec = 45,
- *     me: { name }, opponent: { name } | null,
+ *     me: { name, photoUrl? }, opponent: { name, photoUrl? } | null,   // a face in the round frame; initials when there's no photo or it fails
  *     getOpponentLive: () => number | null,   // polled 4× a second; the host keeps it fresh from /state
  *     onLive(score),         // on a score change, at most 4× a second
  *     onFinal(score),        // exactly once, when the round is over (also after the app comes back from the background)
@@ -53,13 +53,16 @@ function boardAt(sd,g){
   const multFor = s => Math.min(MAXMULT, 1 + Math.floor(Math.max(0, s - 1) / 3));
   const MILE = { 5: 'On fire!', 10: 'Unstoppable!', 15: 'Machine!', 20: 'Legend!', 30: 'Unreal!' };
   const NEXT_MS = 130, NEXT_MS_REDUCED = 40;   // the pause between a find and the next board
-  const LIVE_MS = 250;                         // onLive and the opponent's score: 4× a second
+  const LIVE_MS = 250;
+  const badFace = {};                         // onLive and the opponent's score: 4× a second
   const COLS = ['#F5B82E', '#FFE08A', '#FF6B57', '#FFFFFF', '#6FD3F2', '#3DDC97'];
 
   const fmtn = x => Math.round(x).toLocaleString('en-IN');
   const reduce = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   const first = n => String(n || '').trim().split(/\s+/)[0] || '';
   const toMs = v => { if (v == null || v === '') return NaN; if (typeof v === 'number') return v; const n = Number(v); return isFinite(n) ? n : Date.parse(v); };
+  const initials = n => { const p = String(n || '?').trim().split(/\s+/); return ((p[0] || '?')[0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase(); };
+  const okUrl = u => typeof u === 'string' && /^(https:|data:image\/|blob:|\/)/i.test(u) ? u : '';
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   /* ---------- look ---------- */
@@ -75,6 +78,10 @@ function boardAt(sd,g){
 .cp-p{min-width:0;padding:8px 10px 9px;border-radius:16px;background:var(--panel);border:2px solid var(--line);box-shadow:0 4px 0 var(--deep);display:flex;flex-direction:column;gap:2px;transition:border-color .2s,box-shadow .2s}
 .cp-p.op{text-align:right;align-items:flex-end}
 .cp-p small{font-weight:800;font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);line-height:1.2}
+.cp-who{display:flex;align-items:center;gap:6px;min-width:0;max-width:100%}.cp-p.op .cp-who{flex-direction:row-reverse}
+.cp-face{position:relative;flex:none;width:24px;height:24px;border-radius:50%;overflow:hidden;display:grid;place-items:center;font-family:var(--disp);font-size:.62rem;color:var(--bg);background:var(--rc);border:2px solid var(--bg);box-shadow:0 0 0 2px var(--rc)}
+.cp-face img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}
+.cp-vs .cp-face{width:44px;height:44px;font-size:1rem;border-width:3px;box-shadow:0 0 0 3px var(--rc)}
 .cp-p b{font-weight:700;font-size:.84rem;line-height:1.2;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cp-sc{font-family:var(--disp);font-size:1.9rem;line-height:1;font-variant-numeric:tabular-nums;display:inline-block}
 .cp-p.me .cp-sc{color:var(--y)} .cp-p.op .cp-sc{color:var(--co)}
@@ -202,7 +209,9 @@ function boardAt(sd,g){
     const onStart = typeof opts.onStart === 'function' ? opts.onStart : () => {};
     const getOpp = typeof opts.getOpponentLive === 'function' ? opts.getOpponentLive : () => null;
     const meName = (opts.me && opts.me.name) || 'You';
-    const opp = opts.opponent && opts.opponent.name ? { name: String(opts.opponent.name) } : null;
+    const opp = opts.opponent && opts.opponent.name ? { name: String(opts.opponent.name), photoUrl: okUrl(opts.opponent.photoUrl) } : null;
+    const mePhoto = okUrl(opts.me && opts.me.photoUrl);
+    const face = (name, url, col) => '<span class="cp-face" style="--rc:' + col + '" aria-hidden="true">' + esc(initials(name)) + (url ? '<img src="' + esc(url) + '" alt="" decoding="async" referrerpolicy="no-referrer" draggable="false">' : '') + '</span>';
 
     /* The server's clock, as this phone sees it: offset = server − client. */
     let offset = Number(opts.clockOffset);
@@ -221,9 +230,9 @@ function boardAt(sd,g){
     const root = document.createElement('div'); root.className = 'cp';
     root.innerHTML =
       '<div class="cp-top">' +
-        '<div class="cp-p me"><small>You</small><b>' + esc(first(meName) || 'You') + '</b><span class="cp-sc">0</span></div>' +
+        '<div class="cp-p me"><small>You</small><div class="cp-who">' + face(meName, mePhoto, '#F5B82E') + '<b>' + esc(first(meName) || 'You') + '</b></div><span class="cp-sc">0</span></div>' +
         '<div class="cp-mid" role="timer" aria-label="Seconds left"><b>' + ROUND + '</b><small>sec</small></div>' +
-        '<div class="cp-p op"><small>Opponent</small><b>' + esc(opp ? first(opp.name) || 'Opponent' : 'No-show') + '</b><span class="cp-sc">' + (opp ? '–' : '0') + '</span></div>' +
+        '<div class="cp-p op"><small>Opponent</small><div class="cp-who">' + (opp ? face(opp.name, opp.photoUrl, '#FF6B57') : '') + '<b>' + esc(opp ? first(opp.name) || 'Opponent' : 'No-show') + '</b></div><span class="cp-sc">' + (opp ? '–' : '0') + '</span></div>' +
       '</div>' +
       '<div class="cp-bar"><i></i></div>' +
       '<div class="cp-row"><span class="cp-combo"><b>×1</b><small>streak 0</small></span><span class="cp-found">0 found</span></div>' +
@@ -234,6 +243,8 @@ function boardAt(sd,g){
       '</div></div>' +
       '<div class="cp-flash"></div>';
     mount.appendChild(root);
+    /* A photo that doesn't load leaves the initials under it. */
+    root.addEventListener('error', e => { const t = e.target; if (t && t.tagName === 'IMG' && t.parentNode && t.parentNode.classList.contains('cp-face')) { badFace[t.getAttribute('src')] = 1; t.remove(); } }, true);
     const q = s => root.querySelector(s);
     const $score = q('.cp-p.me .cp-sc'), $meBox = q('.cp-p.me'), $oppBox = q('.cp-p.op'), $opp = q('.cp-p.op .cp-sc');
     const $mid = q('.cp-mid'), $secs = q('.cp-mid b'), $bar = q('.cp-bar'), $barI = q('.cp-bar i');
@@ -333,7 +344,8 @@ function boardAt(sd,g){
       } else {
         const key = 'w' + k;
         if (coverKey !== key) {
-          const vs = '<div class="cp-vs"><span class="a">' + esc(first(meName) || 'You') + '</span><i>VS</i><span class="b">' + esc(opp ? first(opp.name) : 'the clock') + '</span></div>';
+          const ok = u => u && !badFace[u] ? u : '';
+          const vs = '<div class="cp-vs">' + face(meName, ok(mePhoto), '#F5B82E') + '<span class="a">' + esc(first(meName) || 'You') + '</span><i>VS</i><span class="b">' + esc(opp ? first(opp.name) : 'the clock') + '</span>' + (opp ? face(opp.name, ok(opp.photoUrl), '#FF6B57') : '') + '</div>';
           const mm = Math.floor(k / 60), ss = k % 60;
           $cover.innerHTML = '<h2>Get ready</h2>' + vs + '<div class="cp-in">' + (mm ? mm + ':' + String(ss).padStart(2, '0') : ss) + '</div><p>Same boards for both of you. Tap the tile that is different.</p>';
           coverKey = key;

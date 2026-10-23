@@ -11,6 +11,7 @@
  * clock moved to now (countdowns tick, live scores climb). Join, solo, live,
  * final and bets change that copy, so a match or a bet can be played through.
  *
+ * `&name=<text>` gives the event another name (the page shows event.name).
  * Special fixtures: expired (the ticket is refused), flaky (watch, with the
  * network failing from 3 s to 9 s), down (never answers), noticket (no __CUP).
  */
@@ -34,10 +35,12 @@ function shiftDates(value, by) {
 const hash = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7);
 const strip = (k, v) => (k.startsWith('_') ? undefined : v);
 
-function newSession(fx) {
+function newSession(fx, name) {
   const real = fx === 'flaky' ? 'watch' : fx;
   const raw = JSON.parse(readFileSync(join(here, 'fixtures', `${real}.json`), 'utf8'));
   const data = shiftDates(raw, Date.now() - Date.parse(raw.serverNow));
+  // ?name= tries the page with another tournament name (?name= with nothing: no name, the page's fallback).
+  if (name != null && data.event) data.event.name = name;
   const ticket = `fx:${fx}:${Math.random().toString(36).slice(2, 8)}`;
   sessions.set(ticket, { fx, data, anchor: Date.now(), bump: 0 });
   return ticket;
@@ -95,10 +98,10 @@ const readBody = (req) =>
     });
   });
 
-function page(fx, from) {
+function page(fx, from, name) {
   let html = readFileSync(BUILT, 'utf8');
   if (fx === 'noticket') return html;
-  const ticket = fx === 'expired' ? 'expired' : fx === 'down' ? 'down' : newSession(fx);
+  const ticket = fx === 'expired' ? 'expired' : fx === 'down' ? 'down' : newSession(fx, name);
   const cup = { ticket, eventId: fx === 'off' ? '' : 'diwali-2026', from };
   return html.replace('<!--CUP-TICKET-->', () => `<script>window.__CUP=${JSON.stringify(cup)}</script>`);
 }
@@ -114,7 +117,7 @@ const server = createServer(async (req, res) => {
       return send(res, 200, `<!doctype html><meta name=viewport content="width=device-width"><body style="font:16px system-ui;background:#15122B;color:#fff;padding:20px"><h1>Cup mock</h1>${all.map((n) => `<p><a style="color:#F5B82E" href="/play/diwali-cup?fx=${n}">${n}</a></p>`).join('')}`);
     }
     if (path === '/play/diwali-cup' || /^\/cup\/[^/]+$/.test(path)) {
-      return send(res, 200, page(url.searchParams.get('fx') || 'lobby', path.startsWith('/cup/') ? 'feed' : 'games'));
+      return send(res, 200, page(url.searchParams.get('fx') || 'lobby', path.startsWith('/cup/') ? 'feed' : 'games', url.searchParams.get('name')));
     }
     if (!path.startsWith('/cup/api/')) return send(res, 404, { success: false, message: 'Not found' });
     const ticket = req.headers['x-cup-ticket'] || '';
