@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cup match demo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<!-- The demo only: the Cup page loads these fonts itself; play.js reaches no network. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap">
+<style>
+html,body{margin:0;height:100%;background:#15122B;color:#F4F1FF;font-family:"Plus Jakarta Sans",system-ui,sans-serif}
+#stage{position:fixed;inset:0}
+#after[hidden]{display:none}
+#after{position:fixed;left:0;right:0;bottom:max(16px,env(safe-area-inset-bottom));display:flex;justify-content:center;z-index:20}
+#after button{font-family:"Lilita One",system-ui,sans-serif;font-size:1.3rem;padding:10px 26px;border-radius:16px;border:0;background:#F5B82E;color:#15122B;box-shadow:0 5px 0 #B9861A}
+#log{position:fixed;left:8px;bottom:8px;max-width:60vw;font:11px/1.3 ui-monospace,monospace;color:#B9B2D9;z-index:21;pointer-events:none;white-space:pre}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="after" hidden><button id="again" type="button">Play again</button></div>
+<div id="log" hidden></div>
+<script src="play.js"></script>
+<script>
+/* A Cup match on its own: a fixed seed, a start a few seconds out on a pretend server clock, and an opponent whose score climbs.
+   Query: ?seed=4242 &delay=5000 (ms to the start) &round=45 &opp=Priya (none: no opponent) &skew=0 (ms the server is ahead of this phone) &log=1 &sound=0 */
+const P = new URLSearchParams(location.search);
+const num = (k, d) => { const v = Number(P.get(k)); return P.has(k) && isFinite(v) ? v : d; };
+const log = P.get('log') === '1', $log = document.getElementById('log'); $log.hidden = !log;
+window.__events = [];
+function note(kind, v) { const e = { kind, v, at: performance.now(), wall: performance.timeOrigin + performance.now() }; __events.push(e); if (log) $log.textContent = __events.slice(-8).map(x => x.kind + ' ' + (x.v ?? '')).join('\n'); }
+let h = null, oppScore = null, oppTimer = 0, seed = num('seed', 4242);
+function run() {
+  document.getElementById('after').hidden = true;
+  const skew = num('skew', 0), delay = num('delay', 5000), round = num('round', 45);
+  const serverNow = Date.now() + skew;                 // the pretend server's clock
+  const oppName = P.has('opp') ? P.get('opp') : 'Priya Raman';
+  oppScore = null; clearInterval(oppTimer);
+  /* The fake opponent: joins, then finds a tile every second or so once the round starts. */
+  const startAt = serverNow + delay; window.__startAt = startAt;
+  oppTimer = setInterval(() => {
+    const t = Date.now() + skew; if (t < startAt) return; if (t > startAt + round * 1000) { clearInterval(oppTimer); return; }
+    oppScore = (oppScore || 0) + (Math.random() < .8 ? 30 * Math.min(5, 1 + Math.floor(((oppScore || 0) / 120))) : 0);
+  }, 900);
+  h = CupPlay.start({
+    mount: document.getElementById('stage'), boardSeed: seed, startAt, serverNow, roundSec: round,
+    me: { name: 'Tanvi Shah' }, opponent: oppName ? { name: oppName } : null,
+    getOpponentLive: () => oppScore, sound: P.get('sound') !== '0',
+    onStart: () => note('start'),
+    onLive: s => note('live', s),
+    onFinal: s => { note('final', s); clearInterval(oppTimer); setTimeout(() => { document.getElementById('after').hidden = false; }, 600); },
+  });
+}
+document.getElementById('again').onclick = () => { CupPlay.unlockAudio(); h && h.stop(); seed++; run(); };
+run();
+</script>
+</body>
+</html>
