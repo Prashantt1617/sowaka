@@ -103,7 +103,7 @@ const CSS = `
 .ctv-top{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .ctv-wm{font-family:var(--h);font-size:34px;letter-spacing:.5px;color:${C.yellow};line-height:1}
 .ctv-sub{font-size:14px;font-weight:700;color:${C.ink2};flex:1;min-width:160px}
-.ctv-pill{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:800;letter-spacing:1px;border-radius:99px;padding:6px 12px;white-space:nowrap}
+.ctv-pill{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:800;letter-spacing:1px;border-radius:99px;padding:6px 12px;white-space:nowrap}
 .ctv-pill i{width:8px;height:8px;border-radius:50%;background:currentColor}
 .ctv-ghost{border:0;background:${C.panel2};border-radius:14px;padding:10px 14px;font-size:13px;font-weight:800}
 .ctv-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:20px;align-items:start}
@@ -156,7 +156,7 @@ const CSS = `
 .ctv-tip .tx small{font-size:12px;font-weight:700;color:${C.ink2}}
 .ctv-tip b{font-family:var(--h);font-weight:400;font-size:22px}
 .ctv-rounds{display:flex;gap:10px;flex-wrap:wrap}
-.ctv-rd{background:${C.panel2};border-radius:14px;padding:10px 14px;display:flex;flex-direction:column;gap:2px;min-width:120px}
+.ctv-rd{background:${C.panel2};border-radius:14px;padding:10px 14px;display:flex;flex-direction:column;gap:2px;flex:1 1 110px}
 .ctv-rd b{font-family:var(--h);font-weight:400;font-size:18px}
 .ctv-rd span{font-size:12px;font-weight:700;color:${C.ink2}}
 .ctv-empty{color:${C.ink2};font-size:15px;font-weight:700;text-align:center;padding:24px 0}
@@ -330,11 +330,15 @@ export function CupTv() {
               />
             ) : (
               <div className="ctv-panel">
-                <div className="ctv-big">{event.phase === 'scheduled' || event.phase === 'lobby' ? 'Starting soon' : `Down to ${event.topN}…`}</div>
+                <div className="ctv-big">
+                  {event.phase === 'scheduled' || event.phase === 'lobby' ? 'Starting soon' : event.phase === 'done' ? 'The Cup is over' : `On the way to the last ${event.topN}`}
+                </div>
                 <div className="ctv-empty">
                   {event.phase === 'scheduled' || event.phase === 'lobby'
                     ? `Round 1 starts at ${new Date(event.startAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}.`
-                    : `From the last ${event.topN}, one match at a time, with bets. The rounds before play all at once.`}
+                    : event.phase === 'done'
+                      ? 'Thanks for playing.'
+                      : `From the last ${event.topN}, one match at a time, with bets. The rounds before play all at once.`}
                 </div>
               </div>
             )}
@@ -412,6 +416,8 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
     return null;
   })();
   const leader = sa === sb ? null : sa > sb ? match.a : match.b;
+  // Scores only once there is a game: not in the betting lobby or the start window.
+  const scored = match.status === 'live' || match.status === 'solo' || match.status === 'done';
   const decided = match.status === 'done';
   const lead = (() => {
     if (!match.a || !match.b) return '';
@@ -419,7 +425,7 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
       const w = match.winnerId === match.a.userId ? match.a : match.winnerId === match.b.userId ? match.b : null;
       if (!w) return '';
       const how = match.decidedBy === 'absent' ? ' (neither played: the better seed goes through)' : match.decidedBy === 'solo' ? ' (the other player did not show)' : '';
-      return `${firstName(w.name)} goes through${how}`;
+      return `${firstName(w.name)} ${round.short === 'F' ? 'wins the Cup' : 'goes through'}${how}`;
     }
     if (match.status !== 'live' && match.status !== 'solo') return '';
     if (!leader) return sa === 0 ? 'Get ready…' : `Level on ${fmt(sa)}`;
@@ -438,7 +444,7 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
             {pill.text}
           </span>
           <span style={{ fontFamily: "'Lilita One',system-ui,sans-serif", fontSize: 30 }}>
-            {round.label} · {match.label}{match.attempt ? ` · replay ${match.attempt}` : ''}
+            {round.label === match.label ? match.label : `${round.label} · ${match.label}`}{match.attempt ? ` · replay ${match.attempt}` : ''}
           </span>
         </div>
         {timer && (
@@ -462,11 +468,13 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
                 {p && <span className="ctv-seed">#{p.seed}</span>}
                 {won && <span className="ctv-won">THROUGH</span>}
               </span>
-              <span className="ctv-sc" style={{ color: colour }}>{p ? fmt(s) : ''}</span>
+              <span className="ctv-sc" style={{ color: colour }}>{p && scored ? fmt(s) : ''}</span>
             </div>
-            <div className="ctv-bar" role="img" aria-label={p ? `${p.name} ${fmt(s)}` : 'No player yet'}>
-              <i style={{ width: p && (s > 0 || decided) ? width(s) : '0%', background: colour }} />
-            </div>
+            {scored && (
+              <div className="ctv-bar" role="img" aria-label={p ? `${p.name} ${fmt(s)}` : 'No player yet'}>
+                <i style={{ width: p && (s > 0 || decided) ? width(s) : '0%', background: colour }} />
+              </div>
+            )}
           </div>
         );
       })}
