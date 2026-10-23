@@ -3,10 +3,12 @@
  * company's Suwi settings and activity. Dashboard users only; what each person
  * can reach is decided per tool by the same tab rules as the rest of the API.
  */
+import { randomUUID } from 'node:crypto';
 import { NextFunction, Request, Response, Router } from 'express';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess } from '../middleware/admin.middleware';
 import { users } from '../config/db';
+import { logger } from '../utils/logger';
 import { askSuwi } from './agent';
 import { cancelProposal, confirmProposal, undoProposal } from './proposals';
 import { auditCol, LEVEL_LABEL, saveSettings, settingsFor, spentThisMonthUsd } from './store';
@@ -24,8 +26,52 @@ const fail = (res: Response, e: unknown, next: NextFunction) => {
   next(e);
 };
 
+/**
+ * A question that takes longer than FIRST_WAIT_MS is answered with a ticket
+ * (202, `pending`), and the panel asks for the answer with GET /ask/:id until
+ * it is ready. No proxy in between then holds one request open long enough to
+ * cut it (CloudFront gives up on an answer after 60 s); a quick question is
+ * answered in one go, as before. Tickets live in this process for 10 minutes.
+ */
+type AskJob = { userId: string; at: number; answer?: unknown; error?: unknown };
+const askJobs = new Map<string, AskJob>();
+const FIRST_WAIT_MS = 20_000;
+const JOB_TTL_MS = 10 * 60_000;
+const failed = (e: unknown) => {
+  const code = (e as { statusCode?: number }).statusCode;
+  return code ? { status: code, message: (e as Error).message } : { status: 500, message: 'Suwi could not answer just now. Try again in a moment.' };
+};
+
 suwiRouter.post('/ask', async (req, res, next) => {
-  try { res.json({ success: true, answer: await askSuwi(me(req), req.body ?? {}) }); } catch (e) { fail(res, e, next); }
+  const u = me(req);
+  const job: AskJob = { userId: u.userId, at: Date.now() };
+  const run = askSuwi(u, req.body ?? {}).then(
+    (answer) => { job.answer = answer; },
+    (e: unknown) => { job.error = e; },
+  );
+  let timer: NodeJS.Timeout | undefined;
+  const done = await Promise.race([run.then(() => true), new Promise<boolean>((r) => { timer = setTimeout(() => r(false), FIRST_WAIT_MS); })]);
+  clearTimeout(timer);
+  if (done) {
+    if (job.error !== undefined) { fail(res, job.error, next); return; }
+    res.json({ success: true, answer: job.answer });
+    return;
+  }
+  for (const [id, j] of askJobs) if (Date.now() - j.at > JOB_TTL_MS) askJobs.delete(id);
+  const id = randomUUID();
+  askJobs.set(id, job);
+  // Logged here, since nobody may come back for it.
+  void run.then(() => { if (job.error !== undefined && !(job.error as { statusCode?: number }).statusCode) logger.error('Suwi answer failed', { userId: u.userId }, job.error); });
+  res.status(202).json({ success: true, pending: id });
+});
+
+suwiRouter.get('/ask/:id', (req, res) => {
+  const id = String(req.params.id);
+  const job = askJobs.get(id);
+  if (!job || job.userId !== me(req).userId) { res.status(404).json({ success: false, message: 'That answer is no longer here. Ask again.' }); return; }
+  if (job.answer !== undefined) { askJobs.delete(id); res.json({ success: true, answer: job.answer }); return; }
+  if (job.error !== undefined) { askJobs.delete(id); const f = failed(job.error); res.status(f.status).json({ success: false, message: f.message }); return; }
+  res.json({ success: true, pending: id });
 });
 
 suwiRouter.post('/actions/:id/confirm', async (req, res, next) => {
