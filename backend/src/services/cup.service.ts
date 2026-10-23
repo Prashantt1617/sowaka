@@ -27,7 +27,7 @@
  */
 import type { Collection } from 'mongodb';
 import { env } from '../config/env';
-import { gameScores, getDb, users } from '../config/db';
+import { companies, gameScores, getDb, users } from '../config/db';
 import type { CupDecision, CupEntrant, CupEvent, CupMatch, CupRound, CupBet } from '../models/cup.model';
 import { catalogScoreId } from '../models/game-catalog.model';
 import type { User } from '../models/user.model';
@@ -167,18 +167,37 @@ interface Runtime {
   rev: number;
   refreshedAt: number;
   refreshing: Promise<Runtime | null> | null;
-  shared?: { rev: number; json: string; current: CurrentStage | null };
+  shared?: { rev: number; count: number; json: string; current: CurrentStage | null };
+  /** The company's name, for the page's header. */
+  orgName?: string;
   standings?: { rev: number; rows: Standing[] };
 }
 
 const runtimes = new Map<string, Runtime>();
 const REFRESH_MS = 1000;
 
-/** The event's runtime, refreshed when it is over a second old. Null for no such event. */
+/**
+ * The event's runtime. A page's request never waits on the database when
+ * there is one already: an old one is answered from, and refreshed behind
+ * it (a slow moment on the link must not hold every player's score up).
+ * The runner asks for a `fresh` one, and waits.
+ */
 async function runtime(eventId: string, fresh = false): Promise<Runtime | null> {
   const kept = runtimes.get(eventId);
-  if (kept && !fresh && Date.now() - kept.refreshedAt < REFRESH_MS) return kept;
-  if (kept?.refreshing) return kept.refreshing;
+  if (kept && !fresh) {
+    if (Date.now() - kept.refreshedAt >= REFRESH_MS) void refresh(eventId).catch((error) => logger.error('Cup refresh failed', { eventId }, error));
+    return kept;
+  }
+  return refresh(eventId);
+}
+
+const STUCK_MS = 15_000;
+const refreshStarted = new Map<string, number>();
+
+async function refresh(eventId: string): Promise<Runtime | null> {
+  const kept = runtimes.get(eventId);
+  if (kept?.refreshing && Date.now() - (refreshStarted.get(eventId) ?? 0) < STUCK_MS) return kept.refreshing;
+  refreshStarted.set(eventId, Date.now());
   const load = (async () => {
     const event = await cupEvents().findOne({ id: eventId }, { projection: { _id: 0 } });
     if (!event) {
@@ -196,6 +215,10 @@ async function runtime(eventId: string, fresh = false): Promise<Runtime | null> 
       runtimes.set(eventId, rt);
     }
     if (rt.event.version !== event.version || rt.event.active !== event.active) rt.rev += 1;
+    if (rt.orgName === undefined) {
+      const company = await companies().findOne({ id: event.org }, { projection: { _id: 0, name: 1 } });
+      rt.orgName = company?.name ?? '';
+    }
     rt.event = event;
     for (const row of rows) {
       const had = rt.matches.get(row.id);
@@ -545,13 +568,20 @@ async function tickEvent(id: string, now: Date): Promise<void> {
   // A crash between claiming the round and writing its matches: write them now.
   await createRoundMatches(rt, n, now, round.kind === 'sequential' ? 'scheduled' : 'open');
   const inRound = [...rt.matches.values()].filter((m) => m.round === n);
-  for (const match of inRound) await advance(rt, match, now);
+  // Round 1's start window closes on all its matches at once: a few at a time, not one by one.
+  await inBatches(inRound, 16, (match) => advance(rt, match, now));
   if (round.kind === 'sequential') await stage(rt, n, now);
   const wanted = round.nodes.filter((node) => node.feeders.length === 2).length;
   const decided = [...rt.matches.values()].filter((m) => m.round === n && m.status === 'done').length;
   if (decided >= wanted) {
     if (n >= event.rounds.length) await finish(rt, now);
     else await openRound(rt, n + 1, now);
+  }
+}
+
+async function inBatches<T>(items: T[], size: number, run: (item: T) => Promise<void>): Promise<void> {
+  for (let i = 0; i < items.length; i += size) {
+    await Promise.all(items.slice(i, i + size).map((item) => run(item).catch((error) => logger.error('Cup match step failed', {}, error))));
   }
 }
 
@@ -599,6 +629,7 @@ async function openRound(rt: Runtime, n: number, now: Date): Promise<void> {
     for (const m of [...rt.matches.values()].filter((x) => x.round === 1 && x.status === 'scheduled')) {
       rt.matches.set(m.id, { ...m, status: 'open', openedAt: now, deadlineAt, updatedAt: now });
     }
+    rt.rev += 1;
   } else {
     await createRoundMatches(rt, n, now, 'open');
   }
@@ -791,7 +822,7 @@ export async function joinMatch(viewer: CupViewer, id: string) {
     current = started ?? (await reloadMatch(rt, id)) ?? current;
     if (started) keep(rt, started);
   }
-  return { match: myMatchView(rt, current, viewer.userId) };
+  return { serverNow: new Date(), match: myMatchView(rt, current, viewer.userId) };
 }
 
 /** A lone player, after the window: starts their round now. */
@@ -810,7 +841,7 @@ export async function startSolo(viewer: CupViewer, id: string) {
     current = after ?? (await reloadMatch(rt, id)) ?? match;
     if (after) keep(rt, after);
   }
-  return { match: myMatchView(rt, current, viewer.userId) };
+  return { serverNow: new Date(), match: myMatchView(rt, current, viewer.userId) };
 }
 
 const PERSIST_EVERY_MS = 3000;
@@ -840,25 +871,27 @@ export async function reportFinal(viewer: CupViewer, id: string, raw: unknown) {
   const { rt } = await playersMatch(viewer, id);
   const match = (await reloadMatch(rt, id))!;
   const now = new Date();
-  if (match.finals?.[viewer.userId]) return { match: myMatchView(rt, match, viewer.userId) };
+  if (match.finals?.[viewer.userId]) return { serverNow: now, match: myMatchView(rt, match, viewer.userId) };
   refuse(mayScore(match, viewer.userId, rt.event, now, true));
   const score = parseScore(raw, rt.event.maxScore);
   if (score === null) throw new CupError(400, 'Score is invalid');
   const after = await cupMatches().findOneAndUpdate(
     { id, attempt: match.attempt, status: match.status, [`finals.${viewer.userId}`]: { $exists: false } },
-    { $set: { [`finals.${viewer.userId}`]: { score, at: now }, [`live.${viewer.userId}`]: { score, at: now }, updatedAt: now } },
+    // The live score keeps its best: a page reopened mid-round restarted from 0.
+    { $set: { [`finals.${viewer.userId}`]: { score, at: now }, [`live.${viewer.userId}.at`]: now, updatedAt: now }, $max: { [`live.${viewer.userId}.score`]: score } },
     { returnDocument: 'after', projection: { _id: 0 } },
   );
   let current = after ?? (await reloadMatch(rt, id)) ?? match;
   if (after) {
     keep(rt, after);
-    rt.live.set(`${id}:${after.attempt}:${viewer.userId}`, { score, at: now.getTime() });
+    const key = `${id}:${after.attempt}:${viewer.userId}`;
+    rt.live.set(key, { score: Math.max(score, rt.live.get(key)?.score ?? 0), at: now.getTime() });
     if (runnerMoves(rt.event.org)) {
       await apply(rt, after, nextStep(withLive(rt, after), rt.event, now, seedLookup(rt.event)), now);
       current = rt.matches.get(id) ?? current;
     }
   }
-  return { match: myMatchView(rt, current, viewer.userId) };
+  return { serverNow: new Date(), match: myMatchView(rt, current, viewer.userId) };
 }
 
 // ---------------------------------------------------------------- void (for HR, through cup-bets)
@@ -977,13 +1010,33 @@ function roundsView(rt: Runtime) {
         const real = rt.matches.get(matchId(event.id, round.n, node.slot));
         if (real) return matchView(rt, real);
         const [p, q] = node.feeders.map((ref) => holderOf(rt, ref));
-        return { slot: node.slot, label: matchLabel(round, number), status: 'pending' as const, a: person(event, p), b: person(event, q), attempt: 0 };
+        return {
+          slot: node.slot,
+          label: matchLabel(round, number),
+          status: 'pending' as const,
+          a: person(event, p),
+          b: person(event, q),
+          feedsFrom: { a: p ? undefined : feederName(rt, node.feeders[0]), b: q ? undefined : feederName(rt, node.feeders[1]) },
+          attempt: 0,
+        };
       });
     const byes =
       round.byes ??
       round.nodes.filter((node) => node.feeders.length === 1).map((node) => holderOf(rt, node.feeders[0])).filter((u): u is string => !!u);
     return { n: round.n, label: round.label, short: round.short, kind: round.kind, openedAt: round.openedAt, closedAt: round.closedAt, byes, freePasses: round.nodes.filter((node) => node.feeders.length === 1).length, matches };
   });
+}
+
+/** "Winner of QF2": where a place's player will come from, past any free pass. */
+function feederName(rt: Runtime, ref: string): string | undefined {
+  const parsed = parseRef(ref);
+  if (!parsed || parsed.kind !== 'n') return undefined;
+  const round = rt.event.rounds[parsed.round - 1];
+  const node = round?.nodes.find((x) => x.slot === parsed.slot);
+  if (!round || !node) return undefined;
+  if (node.feeders.length === 1) return feederName(rt, node.feeders[0]);
+  const number = round.nodes.filter((x) => x.feeders.length === 2 && x.slot <= node.slot).length;
+  return `Winner of ${matchLabel(round, number)}`;
 }
 
 /** The top-N match on stage, if any. */
@@ -997,8 +1050,8 @@ function currentStage(rt: Runtime): CurrentStage | null {
 }
 
 /** The part of the state everyone shares, serialised once per revision. */
-function shared(rt: Runtime) {
-  if (rt.shared && rt.shared.rev === rt.rev) return rt.shared;
+function shared(rt: Runtime, rosterCount: number) {
+  if (rt.shared && rt.shared.rev === rt.rev && rt.shared.count === rosterCount) return rt.shared;
   const event = rt.event;
   const view = {
     id: event.id,
@@ -1008,7 +1061,9 @@ function shared(rt: Runtime) {
     lobbyAt: event.lobbyAt,
     startAt: event.startAt,
     topN: event.topN,
-    entrantCount: event.entrants.length,
+    orgName: rt.orgName || undefined,
+    // Before the draw, everyone who would be in now.
+    entrantCount: event.phase === 'scheduled' ? rosterCount : event.entrants.length,
     seeding: event.seeding,
     startWindowSec: event.startWindowSec,
     soloStartSec: event.soloStartSec,
@@ -1018,7 +1073,7 @@ function shared(rt: Runtime) {
     championId: event.championId,
     rounds: roundsView(rt),
   };
-  rt.shared = { rev: rt.rev, json: JSON.stringify(view), current: currentStage(rt) };
+  rt.shared = { rev: rt.rev, count: rosterCount, json: JSON.stringify(view), current: currentStage(rt) };
   return rt.shared;
 }
 
@@ -1067,7 +1122,7 @@ export function standingsOf(rt: Runtime): Standing[] {
   rows.forEach((row, i) => {
     row.place = i > 0 && rows[i - 1].depth === row.depth ? rows[i - 1].place : i + 1;
   });
-  const result = rows.map(({ depth: _depth, ...row }) => row);
+  const result: Standing[] = rows.map((row) => ({ userId: row.userId, name: row.name, seed: row.seed, reached: row.reached, place: row.place, alive: row.alive }));
   rt.standings = { rev: rt.rev, rows: result };
   return result;
 }
@@ -1101,6 +1156,7 @@ function myMatchView(rt: Runtime, match: CupMatch, userId: string) {
     winnerId: match.winnerId,
     decidedBy: match.decidedBy,
     history: match.history,
+    lastTie: match.history?.length ? match.history[match.history.length - 1].scores : undefined,
     roundSec: event.roundSec,
     countdownSec: event.countdownSec,
   };
@@ -1179,10 +1235,10 @@ export async function stateFor(viewer: CupViewer, askedId: unknown, since: unkno
     return JSON.stringify({ success: true, unchanged: true, version: rt.rev, serverNow: now });
   }
   const version = rt.rev;
-  const common = shared(rt);
+  const rosterCount = rt.event.phase === 'scheduled' ? (await rosterPreview(rt.event)).length : 0;
+  const common = shared(rt, rosterCount);
   const me = await meOf(rt, viewer);
   const extra: Record<string, unknown> = { current: common.current ?? undefined };
-  if (rt.event.phase === 'scheduled') extra.entrantCount = (await rosterPreview(rt.event)).length;
   if (rt.event.phase === 'done') extra.standings = standingsOf(rt);
   if (cupHooks.state) {
     try {

@@ -35,7 +35,7 @@
  * Times: ISO with an offset (2026-10-23T17:25+05:30), or +Nm / +Ns from now.
  */
 import { randomUUID } from 'node:crypto';
-import { companies, connectDb, connectPosts, closeDb, users } from '../config/db';
+import { companies, connectDb, connectPosts, closeDb, gameCatalog, users } from '../config/db';
 import type { CupEvent, CupEventConfig, CupSeeding } from '../models/cup.model';
 import type { ConnectPost } from '../models/connect.model';
 import { DEFAULT_CUP_CONFIG } from '../services/cup-rules';
@@ -174,8 +174,11 @@ async function main() {
       if (!(await companies().findOne({ id: flags.org }))) throw new Error(`No company ${flags.org}`);
       if (await cupEvents().findOne({ id: flags.id })) throw new Error(`${flags.id} exists: use update`);
       const fields = fieldsFrom(flags);
+      // The game's own ceiling, as its catalog entry says, unless given.
+      const game = await gameCatalog().findOne({ key: fields.gameKey ?? DEFAULT_CUP_CONFIG.gameKey }, { projection: { _id: 0, scoring: 1 } });
       const event: CupEvent = {
         ...DEFAULT_CUP_CONFIG,
+        ...(game?.scoring?.max ? { maxScore: game.scoring.max } : {}),
         id: flags.id,
         org: flags.org,
         name: 'Diwali Cup',

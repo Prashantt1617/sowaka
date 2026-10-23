@@ -202,6 +202,11 @@ check('a player who drops out mid-round: their last live score stands when the r
   assert.deepEqual(nextStep(live, T, at(13 + 70), seedOf), { kind: 'decide', winnerId: 'lo', decidedBy: 'played', result: { hi: 700, lo: 820 } });
 });
 
+check('a page reopened mid-round: the higher of final and live counts', () => {
+  const live = match({ status: 'live', joined: { hi: at(5), lo: at(9) }, startAt: at(13), finals: { hi: sc(300), lo: sc(500) }, live: { hi: sc(900, 30), lo: sc(500) } });
+  assert.deepEqual(nextStep(live, T, at(60), seedOf), { kind: 'decide', winnerId: 'hi', decidedBy: 'played', result: { hi: 900, lo: 500 } });
+});
+
 check('a tie replays, up to the limit, then the better seed', () => {
   const tie = match({ status: 'live', joined: { hi: at(5), lo: at(9) }, startAt: at(13), finals: { hi: sc(500), lo: sc(500) } });
   assert.deepEqual(nextStep(tie, T, at(60), seedOf), { kind: 'replay', scores: { hi: 500, lo: 500 } });

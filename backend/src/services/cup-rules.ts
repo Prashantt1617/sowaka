@@ -235,7 +235,12 @@ export function nextStep(match: CupMatch, t: MatchTiming, now: Date, seedOf: (us
       if (!match.startAt) return { kind: 'start', startAt: new Date(nowMs + t.countdownSec * 1000) };
       const bothIn = !!(match.finals?.[a] && match.finals?.[b]);
       if (!bothIn && nowMs < roundEnds(match.startAt, t).getTime()) return { kind: 'none' };
-      const scoreOf = (p: string) => match.finals?.[p]?.score ?? match.live?.[p]?.score ?? null;
+      // The higher of a player's final and their best live score: a page reopened mid-round starts again from 0.
+      const scoreOf = (p: string) => {
+        const final = match.finals?.[p]?.score;
+        const live = match.live?.[p]?.score;
+        return final == null && live == null ? null : Math.max(final ?? 0, live ?? 0);
+      };
       const sa = scoreOf(a);
       const sb = scoreOf(b);
       if (sa == null && sb == null) return absent();
@@ -251,7 +256,10 @@ export function nextStep(match: CupMatch, t: MatchTiming, now: Date, seedOf: (us
       if (!lone) return absent();
       const other = lone === a ? b : a;
       const final = match.finals?.[lone];
-      if (final) return { kind: 'decide', winnerId: lone, decidedBy: 'solo', result: { [lone]: final.score, [other]: 0 } };
+      if (final) {
+        const score = Math.max(final.score, match.live?.[lone]?.score ?? 0);
+        return { kind: 'decide', winnerId: lone, decidedBy: 'solo', result: { [lone]: score, [other]: 0 } };
+      }
       if (!match.startAt) return nowMs >= at(match.soloUntil) ? absent() : { kind: 'none' };
       return nowMs >= roundEnds(match.startAt, t).getTime() ? absent() : { kind: 'none' };
     }
@@ -297,10 +305,11 @@ export function mayScore(match: CupMatch, userId: string, t: MatchTiming, now: D
   return yes;
 }
 
+/** A score as posted, held to 0..max (a round past the game's ceiling counts as the ceiling); null for no number. */
 export function parseScore(raw: unknown, max: number): number | null {
   const score = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : Number.NaN;
-  if (!Number.isFinite(score) || score < 0 || score > max) return null;
-  return Math.round(score);
+  if (!Number.isFinite(score) || score < 0) return null;
+  return Math.min(Math.round(score), max);
 }
 
 /** Whether `userId` may back `pick` with `stake` points in this match, with `balance` to spend. */
