@@ -5,7 +5,7 @@ import { Leave } from '../models/leave.model';
 import { DayMark, OrgShiftPolicy, PunchFormat, ShiftTemplate } from '../models/shift.model';
 import { User } from '../models/user.model';
 import { getOrgShiftPolicy, isWeekOffDay, onShiftSetupChanged } from './shift.service';
-import { markForDay, minutesAfterShiftStart, minutesBeforeShiftEnd, normalisePunches } from './attendance.service';
+import { SHIFT_UTC_OFFSET, markForDay, minutesAfterShiftStart, minutesBeforeShiftEnd, normalisePunches } from './attendance.service';
 import { holidaysForUser } from './holiday.service';
 
 /**
@@ -45,11 +45,18 @@ export type ReportPerson = {
 };
 
 /**
- * One graded day: [userId, date, status, lateByMinutes, punchIn, punchOut, leaveType, source, earlyByMinutes].
+ * One graded day: [userId, date, status, lateByMinutes, punchIn, punchOut, leaveType, source, earlyByMinutes, shiftRunning?].
  * `lateByMinutes` and `earlyByMinutes` are 0 when they were within grace;
  * times are ISO strings or null.
+ *
+ * `shiftRunning` is 1 on a day whose shift has not ended yet and whose
+ * punches are still incomplete — today, mostly. The status stays what the
+ * punches so far grade to (payroll and Suwi read it unchanged); the flag lets
+ * the dashboard say "not punched in yet" instead of "missed punch" while the
+ * punch can still come. Left off every other day, so older readers see the
+ * same nine fields.
  */
-export type ReportDay = [string, string, DayStatus, number, string | null, string | null, string | null, string | null, number];
+export type ReportDay = [string, string, DayStatus, number, string | null, string | null, string | null, string | null, number, 1?];
 
 export type AttendanceReport = {
   from: string;
@@ -81,6 +88,16 @@ const keyOf = (date: Date) => date.toISOString().slice(0, 10);
 /** Minutes short of the shift's end, once the grace period is spent. */
 function earlyBy(punchOut: Date, startTime: string, endTime: string, graceMinutes: number): number {
   return Math.max(0, minutesBeforeShiftEnd(punchOut, startTime, endTime) - graceMinutes);
+}
+
+/**
+ * Whether the shift covering `key` is still under way: before its end in
+ * office time. An end at or before the start is the next morning's.
+ */
+function shiftStillRunning(key: string, startTime: string, endTime: string, now: number): boolean {
+  let end = new Date(`${key}T${endTime}:00.000${SHIFT_UTC_OFFSET}`).getTime();
+  if (endTime <= startTime) end += DAY_MS;
+  return Number.isFinite(end) && now < end;
 }
 
 /** Minutes past the shift's start, once the grace period is spent. */
@@ -336,6 +353,10 @@ export async function attendanceReport(
   const nameOf = new Map(roster.map((u) => [u.userId, u.name]));
   const first = dayOf(from).getTime();
   const last = dayOf(to).getTime();
+  // Only a day from yesterday on can still be under way (an overnight shift
+  // that started yesterday); older days are settled and skip the check.
+  const now = Date.now();
+  const recentDay = keyOf(new Date(now - 2 * DAY_MS));
 
   for (const user of roster) {
     // The row that names the person describes where they stand at the end of
@@ -425,14 +446,18 @@ export async function attendanceReport(
               ? 'half_day'
               : 'absent';
 
-      days.push([
+      const graded: ReportDay = [
         user.userId, key, status, over,
         punchIn ? punchIn.toISOString() : null,
         punchOut ? punchOut.toISOString() : null,
         null,
         record?.source ?? null,
         short,
-      ]);
+      ];
+      // A punch that is missing only because the shift is not over yet.
+      if ((status === 'absent' || status === 'missed_punch') && key >= recentDay
+        && shiftStillRunning(key, onDay.startTime, onDay.endTime, now)) graded.push(1);
+      days.push(graded);
     }
   }
 

@@ -924,8 +924,8 @@ export type ReportPersonDTO = {
   manager: string;
 };
 
-/** [userId, date, status, lateByMinutes, punchIn, punchOut, leaveType, source] */
-export type ReportDayDTO = [string, string, ReportStatus, number, string | null, string | null, string | null, string | null, number?];
+/** [userId, date, status, lateByMinutes, punchIn, punchOut, leaveType, source, earlyByMinutes, shiftRunning] */
+export type ReportDayDTO = [string, string, ReportStatus, number, string | null, string | null, string | null, string | null, number?, 1?];
 
 export type AttendanceReportDTO = {
   from: string;
@@ -951,13 +951,19 @@ export type ReportRow = ReportPersonDTO & {
   punchOut: string | null;
   leaveType: string | null;
   source: string | null;
+  /**
+   * The shift is still under way and a punch has not come yet: the punch is
+   * pending, not missed. Only ever set on today (or last night's overnight).
+   */
+  shiftRunning: boolean;
 };
 
 /** The wire shape is tuples pointing at people; the page wants rows. */
 export function expandReport(report: AttendanceReportDTO): ReportRow[] {
-  return report.days.map(([userId, date, status, lateBy, punchIn, punchOut, leaveType, source, earlyBy]) => ({
+  return report.days.map(([userId, date, status, lateBy, punchIn, punchOut, leaveType, source, earlyBy, running]) => ({
     ...(report.people[userId] ?? { name: '—', employeeId: '—', department: '—', location: '—', template: null, punchFormat: '—', manager: '' }),
     userId, date, status, late: lateBy > 0, lateByMinutes: lateBy, earlyByMinutes: earlyBy ?? 0, punchIn, punchOut, leaveType, source,
+    shiftRunning: running === 1,
   }));
 }
 
