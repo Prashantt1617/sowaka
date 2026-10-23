@@ -33,8 +33,8 @@ button:disabled{cursor:default}
 .pill.y{background:var(--y)}.pill.co{background:var(--co)}.pill.gr{background:var(--gr)}
 .bal{display:flex;align-items:center;gap:8px;background:var(--p2);border-radius:99px;padding:6px 12px 6px 6px;font-weight:800;font-size:14px;white-space:nowrap}
 .coin{width:22px;height:22px;border-radius:50%;background:var(--y);border:3px solid var(--yl);box-shadow:inset 0 -2px 0 #C98A12;flex:none}
-.tabs{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:6px;background:var(--p1);border-radius:18px;padding:6px;margin:8px 20px 0;position:sticky;top:6px;z-index:5;box-shadow:0 6px 16px rgba(10,8,25,.5)}
-.tab{min-height:44px;border:0;border-radius:14px;background:transparent;font-weight:800;font-size:13px;color:var(--mu);padding:0 4px;position:relative}
+.tabs{display:grid;grid-auto-flow:column;grid-auto-columns:auto;gap:6px;background:var(--p1);border-radius:18px;padding:6px;margin:8px 20px 0;position:sticky;top:6px;z-index:5;box-shadow:0 6px 16px rgba(10,8,25,.5)}
+.tab{min-height:44px;border:0;border-radius:14px;background:transparent;font-weight:800;font-size:13px;color:var(--mu);padding:0 8px;position:relative;white-space:nowrap}
 .tab.on{background:var(--y);color:var(--bg)}
 .tab .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--co);margin-left:5px;vertical-align:1px}
 .body{display:flex;flex-direction:column;gap:14px;padding:16px 20px 8px}
@@ -532,19 +532,13 @@ button.bm{min-height:44px}
   function viewBefore() {
     var e = ev(), me = S.me;
     var n = e.entrantCount || S.entrants || 0;
-    var rank = me.boardRank || (me.seed && me.best != null ? me.seed : null);
-    var seedCard = me.seed
-      ? '<div class="seed"><span class="rank"><small>SEED</small><b>' + me.seed + '</b></span><p>You\'re <b>#' + (rank || me.seed) + ' on ' + orgPossessive() + ' Odd One Out leaderboard</b>' + (me.best != null ? ' (best ' + num(me.best) + ')' : '') + '. Seeds 1 and 2 can only meet in the final.</p></div>'
-      : '<div class="seed"><span class="rank"><small>BEST</small><b>' + (me.best != null ? num(me.best) : '–') + '</b></span><p>' + (me.best != null ? 'Seeds are set from the leaderboard at <b>' + clock(e.lobbyAt) + '</b>' + (rank ? '. You\'re <b>#' + rank + '</b> right now' : '') + '. Play Odd One Out before then to climb.' : 'You have no Odd One Out score yet, so you\'d be seeded near the end. <b>Play a round before ' + clock(e.lobbyAt) + '</b> to move up.') + '</p></div>';
     return '<div class="count"><small>Lobby opens in</small><b>' + cd(ms(e.lobbyAt)) + '</b><span>Round 1 at ' + clock(e.startAt) + ' · ' + plural(n, 'player') + '</span></div>' +
       '<section class="card" aria-label="How it works"><p class="lbl">How it works</p><ol class="rules">' +
-      '<li><b class="n">1</b><span>Everyone is in, seeded by the Odd One Out leaderboard. One bracket, ' + plural(n, 'player') + '.</span></li>' +
+      '<li><b class="n">1</b><span>Everyone is paired to compete 1 on 1 in Odd One Out matches. The winner moves to the next round till there are only 8 left.</span></li>' +
       '<li><b class="n">2</b><span>Each match: you and one colleague on the same board for 45 seconds. Higher score goes through.</span></li>' +
       '<li><b class="n">3</b><span>A tie replays at once. Not there within 3 minutes? The one who plays wins with their score.</span></li>' +
       '<li><b class="n">4</b><span>The top 8 play one at a time on stage, and everyone can bet points on them.</span></li>' +
-      '</ol></section>' +
-      '<section class="card edge" aria-label="Your seed">' + seedCard + '</section>' +
-      '<button type="button" class="btn2" data-act="tab" data-v="bracket">See the bracket</button>';
+      '</ol></section>';
   }
 
   function pathSteps() {
@@ -569,8 +563,7 @@ button.bm{min-height:44px}
       : me.freePass ? '<section class="ticket" aria-label="Free pass"><small>FREE PASS · ROUND ' + me.freePass.round + '</small><b>YOU SKIP ROUND ' + me.freePass.round + '</b><span>You were #' + (me.freePass.boardRank || me.seed) + ' on ' + orgPossessive() + ' Odd One Out leaderboard.</span></section>' : '';
     return '<div class="count"><small>Round 1 starts in</small><b>' + cd(ms(e.startAt)) + '</b></div>' + card +
       '<div class="facts"><div class="f"><b>' + num(n) + '</b><span>players in the draw</span></div><div class="f"><b>' + num(r1 ? r1.matches.length : Math.floor(n / 2)) + '</b><span>matches in round 1, all at once</span></div><div class="f"><b>' + num(passesFor(n)) + '</b><span>free passes in round 2</span></div></div>' +
-      pathSteps() +
-      '<button type="button" class="btn2" data-act="tab" data-v="bracket">See the whole bracket</button>';
+      pathSteps();
   }
 
   function viewMyMatch(m) {
@@ -812,7 +805,7 @@ button.bm{min-height:44px}
   function viewBracket() {
     var e = ev(), u = meId();
     var rounds = e.rounds || [];
-    if (!rounds.length) return '<div class="full"><div class="ic">?</div><h2>The draw is made at ' + clock(e.lobbyAt) + '</h2><p>Seeds come from the Odd One Out leaderboard at that moment.</p></div>';
+    if (!rounds.length) return '<div class="full"><div class="ic">?</div><h2>The draw is made at ' + clock(e.lobbyAt) + '</h2></div>';
     var sel = ui.round || (e.phase === 'done' ? rounds.length : e.round || 1);
     var r = roundOf(sel) || rounds[0];
     var chips = rounds.map(function (x) {
@@ -832,14 +825,14 @@ button.bm{min-height:44px}
       lo = Math.max(0, hi - 12);
       list = ms_.slice(lo, hi); more = ms_.length - list.length;
     }
-    var byes = (r.byes || []).map(function (id) { var p = findPerson(id); return '<span class="pass' + (id === u ? ' me' : '') + '">' + (p ? '#' + p.seed + ' ' + esc(p.userId === u ? 'You' : p.name) : 'Free pass') + '</span>'; }).join('');
+    var byes = (r.byes || []).map(function (id) { var p = findPerson(id); return '<span class="pass' + (id === u ? ' me' : '') + '">' + (p ? esc(p.userId === u ? 'You' : p.name) : 'Free pass') + '</span>'; }).join('');
     var tools = big ? '<div class="seg" role="group" aria-label="Show"><button type="button" data-act="all" data-v="0" class="' + (!ui.all ? 'on' : '') + '" aria-pressed="' + !ui.all + '">' + (mineIdx >= 0 ? 'Your section' : 'First 12') + '</button><button type="button" data-act="all" data-v="1" class="' + (ui.all ? 'on' : '') + '" aria-pressed="' + ui.all + '">All ' + ms_.length + '</button></div>' +
-      '<label class="sr" for="bq">Find a player</label><input id="bq" class="search" type="search" placeholder="Find a player or seed" autocomplete="off" data-in="q" value="' + esc(ui.q) + '">' : '';
+      '<label class="sr" for="bq">Find a player</label><input id="bq" class="search" type="search" placeholder="Find a player" autocomplete="off" data-in="q" value="' + esc(ui.q) + '">' : '';
     return '<div class="chips" role="group" aria-label="Rounds">' + chips + '</div>' +
       '<div class="row"><h2 class="sp">' + esc(r.label) + '</h2><span class="mut t13" style="font-weight:700">' + plural(ms_.length, 'match', 'matches') + ' · ' + plural(players, 'player') + '</span></div>' +
       (r.kind === 'sequential' ? '<p class="note">On stage, one at a time, with a 1-minute betting lobby before each.</p>' : '') +
-      (passesDue ? '<section class="card" aria-label="Free passes"><p class="lbl">' + plural(passesDue, 'free pass', 'free passes') + '</p><p class="note">The ' + passesDue + ' highest seeds still in skip this round.</p></section>' : '') +
-      (byes ? '<section class="card" aria-label="Free passes"><p class="lbl">' + plural(r.byes.length, 'free pass', 'free passes') + ' · top seeds skip this round</p><div class="passes">' + byes + '</div></section>' : '') +
+      (passesDue ? '<section class="card" aria-label="Free passes"><p class="lbl">' + plural(passesDue, 'free pass', 'free passes') + '</p><p class="note">The ' + passesDue + ' top scorers still in skip this round.</p></section>' : '') +
+      (byes ? '<section class="card" aria-label="Free passes"><p class="lbl">' + plural(r.byes.length, 'free pass', 'free passes') + ' · top scorers skip this round</p><div class="passes">' + byes + '</div></section>' : '') +
       tools +
       '<div class="list">' + (list.length ? list.map(bracketRow).join('') : '<p class="note" style="text-align:center;padding:20px">' + (q ? 'Nobody called “' + esc(ui.q) + '” in this round.' : 'No matches yet.') + '</p>') + '</div>' +
       (more && !q ? '<button type="button" class="btn2" data-act="all" data-v="1">Show all ' + ms_.length + ' matches</button>' : '');
@@ -856,7 +849,7 @@ button.bm{min-height:44px}
       if (!p) return '<div class="bp tbd"><span class="sd">–</span>' + av(null, 'xxs') + '<span>To be decided</span></div>';
       var s = scoreOf(m, p.userId);
       var cls = m.winnerId ? (m.winnerId === p.userId ? 'win' : 'lose') : '';
-      return '<div class="bp ' + cls + '"><span class="sd">' + p.seed + '</span>' + av(p, 'xxs') + '<span>' + youOr(p) + (m.winnerId === p.userId ? ' ✓' : '') + '</span><b>' + (s != null ? num(s) : '') + '</b></div>';
+      return '<div class="bp ' + cls + '">' + av(p, 'xxs') + '<span>' + youOr(p) + (m.winnerId === p.userId ? ' ✓' : '') + '</span><b>' + (s != null ? num(s) : '') + '</b></div>';
     }
     var inner = '<div class="bh"><span>' + esc(m.label) + (m.attempt ? ' · replay ' + m.attempt : '') + '</span>' + chip + '</div>' + line(m.a) + line(m.b);
     var cls = 'bm' + (isMine(m) ? ' me' : '');
@@ -971,8 +964,8 @@ button.bm{min-height:44px}
       return '<div class="wrap"><header class="top">' + wordmark() + '</header><div class="body" aria-busy="true"><div class="skel"></div><div class="skel" style="height:200px"></div><div class="skel" style="height:80px"></div></div></div>';
     }
     var e = ev();
-    if (!e) return fullScreen('✦', cupName() + ' isn\'t on right now', 'When it\'s switched on, your match, the bracket and the live games all show up here.');
-    var tabs = [['me', e.phase === 'done' ? 'Results' : 'Home'], ['bracket', 'Bracket'], ['watch', 'Watch']];
+    if (!e) return fullScreen('✦', cupName() + ' isn\'t on right now', 'When it\'s switched on, your match, all the matches and the live games all show up here.');
+    var tabs = [['me', e.phase === 'done' ? 'Results' : 'Home'], ['bracket', 'Matches'], ['watch', 'Watch &amp; Bet']];
     // Tipsters from the top N on (the server may send an empty list from the start).
     if (S.tipsters && (S.tipsters.length || isTopN() || e.phase === 'done')) tabs.push(['tipsters', 'Tipsters']);
     if (!tabs.some(function (t) { return t[0] === ui.tab; })) ui.tab = 'me';

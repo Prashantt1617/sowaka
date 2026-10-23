@@ -833,6 +833,25 @@ async function stage(rt: Runtime, n: number, now: Date): Promise<void> {
   for (const [me, them] of [moved.players, [moved.players[1], moved.players[0]]]) {
     void pushCup(event, [me], 'cup_up_next', `You're up next in the ${event.name}`, `${moved.label}: you v ${nameOf(event, them)} starts in ${secs}. Everyone's watching.`);
   }
+  void pushBetting(event, moved, secs);
+}
+
+/** Everyone else at the company, as a top-N match's betting lobby opens: a right pick pays double. */
+async function pushBetting(event: CupEvent, match: CupMatch, secs: string) {
+  try {
+    const skip = new Set([...match.players, ...event.excludeUserIds]);
+    const rows = await users()
+      .find(
+        { org: event.org, lifecycleStatus: { $nin: INACTIVE }, ...(event.includeUserIds.length ? { userId: { $in: event.includeUserIds } } : {}) },
+        { projection: { _id: 0, userId: 1 } },
+      )
+      .toArray();
+    const ids = rows.map((row) => row.userId).filter((id) => !skip.has(id));
+    const [a, b] = match.players.map((id) => nameOf(event, id).split(/\s+/)[0]);
+    await pushCup(event, ids, 'cup_betting_open', `💰 Bets are open: ${match.label}`, `${a} v ${b}. You have ${secs} to back a player: a right pick pays 2×!`);
+  } catch (error) {
+    logger.error('Cup betting push failed', { eventId: event.id, matchId: match.id }, error);
+  }
 }
 
 /** The match with this process's live scores in it, for deciding a round that ran out. */
