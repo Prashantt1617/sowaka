@@ -110,6 +110,7 @@ const sourceTitles: Record<PointSource, string> = {
   hint_relay: 'Hint Relay',
   // A game challenge is titled by its game, from the event; this is the fallback.
   game_challenge: 'Game challenge',
+  cup_bet: 'Diwali Cup bets',
 };
 
 const sourceKinds: Record<PointSource, string> = {
@@ -118,6 +119,7 @@ const sourceKinds: Record<PointSource, string> = {
   most_likely: 'Social challenge',
   hint_relay: 'Game',
   game_challenge: 'Game',
+  cup_bet: 'Bets',
 };
 
 function plural(count: number, one: string, many: string): string {
@@ -160,6 +162,9 @@ export function groupActivity(events: PointEvent[]): ActivityGroup[] {
         // One challenge per row: who it was against and how it ended.
         case 'game_challenge':
           return latest.note ?? 'Challenge played';
+        // One bet per row: the match, the pick and how it went.
+        case 'cup_bet':
+          return latest.note ?? 'Bet';
         default:
           return `${plural(votes, 'vote', 'votes')} received`;
       }

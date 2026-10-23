@@ -201,6 +201,15 @@ export const env = {
    * database credentials and the game's signing key are not one secret.
    */
   scribbleTicketSecret: (process.env.SCRIBBLE_TICKET_SECRET ?? '').trim(),
+  /**
+   * The Diwali Cup's runner (see `cup.service`): off with `CUP_RUNNER=off`.
+   * `CUP_RUNNER_ORGS` (comma-separated) limits which orgs' events it moves;
+   * outside production it defaults to `NOTIFY_ORGS`, and with neither set it
+   * moves nothing, so a dev server on the shared database never runs a real
+   * company's Cup.
+   */
+  cupRunner: (process.env.CUP_RUNNER ?? '').trim().toLowerCase() !== 'off',
+  cupRunnerOrgs: orgList(process.env.CUP_RUNNER_ORGS ?? (process.env.NODE_ENV === 'production' ? '' : process.env.NOTIFY_ORGS ?? '-')),
   zoom: {
     accountId: process.env.ZOOM_ACCOUNT_ID ?? '',
     clientId: process.env.ZOOM_CLIENT_ID ?? '',
