@@ -30,7 +30,8 @@ const PAGE_CSP = [
   "script-src 'unsafe-inline'",
   "style-src 'unsafe-inline' https://fonts.googleapis.com",
   'font-src https://fonts.gstatic.com data:',
-  'img-src data: blob: https:',
+  // 'self': photos come from this host's /media (the Cup's players), which is plain http on a local test.
+  "img-src 'self' data: blob: https:",
   'media-src data: blob:',
   "connect-src 'none'",
   "base-uri 'none'",
@@ -177,12 +178,12 @@ export async function cupLinkPageHandler(req: Request, res: Response, next: Next
         .status(401)
         .set({ 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' })
         .type('text/plain')
-        .send('This link has expired. Go back and open the tournament again.');
+        .send(`This link has expired. Go back and open ${event?.name ?? 'the tournament'} again.`);
       return;
     }
     const page = await publicPageFor(event.catalogKey);
     if (!page) {
-      res.status(404).type('text/plain').send('The tournament is not available here yet.');
+      res.status(404).type('text/plain').send(`${event.name} is not available here yet.`);
       return;
     }
     const subject = { userId: verdict.ticket.userId, org: verdict.ticket.org, name: '' };

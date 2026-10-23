@@ -5,7 +5,7 @@
  *
  *   # A test in sowaka, squeezed into minutes: lobby in 2 min, round 1 in 4 min,
  *   # short windows, 15-second rounds, top 4 one at a time:
- *   node --env-file=.env --import tsx src/scripts/cup-event.ts create --id cup-test-sowaka --org sowaka \
+ *   node --env-file=.env --import tsx src/scripts/cup-event.ts create --id cup-test-sowaka --org sowaka --name "Test Cup" \
  *     --lobby +2m --start +4m --link-base http://localhost:4311 --top-n 4 \
  *     --start-window 40 --solo-start 30 --betting 20 --round 15 --min-play 8
  *
@@ -15,7 +15,7 @@
  *     --link-base https://d3lwup4rvo6csf.cloudfront.net --exclude <supportUserId>
  *
  *   node --env-file=.env --import tsx src/scripts/cup-event.ts on  --id diwali-cup-2026
- *   node --env-file=.env --import tsx src/scripts/cup-event.ts off --id diwali-cup-2026   # pauses everything
+ *   node --env-file=.env --import tsx src/scripts/cup-event.ts off --id diwali-cup-2026   # pauses everything; on again resumes, nobody losing time
  *   node --env-file=.env --import tsx src/scripts/cup-event.ts update --id diwali-cup-2026 --start 2026-10-23T17:40+05:30
  *   node --env-file=.env --import tsx src/scripts/cup-event.ts status --id diwali-cup-2026
  *   node --env-file=.env --import tsx src/scripts/cup-event.ts list
@@ -39,6 +39,7 @@ import { companies, connectDb, connectPosts, closeDb, gameCatalog, users } from 
 import type { CupEvent, CupEventConfig, CupSeeding } from '../models/cup.model';
 import type { ConnectPost } from '../models/connect.model';
 import { DEFAULT_CUP_CONFIG } from '../services/cup-rules';
+import { newSeed } from '../services/game-challenge-rules';
 import { cupBets, cupEvents, cupMatches, rosterOf } from '../services/cup.service';
 import { pointEvents } from '../services/points-ledger.service';
 
@@ -162,6 +163,48 @@ async function revertBetPoints(event: CupEvent): Promise<string> {
   return `${rows.length} bet ledger rows reverted for ${net.size} people.`;
 }
 
+/**
+ * Back on after a pause mid-tournament: nobody loses time to it. Every
+ * window still running when it was paused (betting lobby, start window, a
+ * lone player's start) moves on by the pause; a round that was being played
+ * starts again from the start window on new boards (the pages lost it while
+ * the Cup was off), and its bets ride. Round 1's start moves on too, from a
+ * lobby. Done while still switched off, so no runner or page moves meanwhile.
+ */
+async function resume(event: CupEvent, now: Date): Promise<string> {
+  const paused = now.getTime() - new Date(event.pausedAt!).getTime();
+  const later = (date: Date | undefined) => (date ? new Date(new Date(date).getTime() + paused) : date);
+  const pausedMs = new Date(event.pausedAt!).getTime();
+  let moved = 0;
+  let restarted = 0;
+  if (event.phase === 'lobby' && event.startAt.getTime() > pausedMs) {
+    await cupEvents().updateOne({ id: event.id }, { $set: { startAt: later(event.startAt)! } });
+  }
+  const open = await cupMatches().find({ eventId: event.id, status: { $in: ['betting', 'open', 'live', 'solo'] } }, { projection: { _id: 0 } }).toArray();
+  for (const m of open) {
+    const where = { id: m.id, status: m.status, attempt: m.attempt };
+    const playing = (m.status === 'live' || m.status === 'solo') && m.startAt;
+    if (playing) {
+      // A round that had run out before the pause is decided from what came in, as usual.
+      if (new Date(m.startAt!).getTime() + (event.roundSec + event.finishGraceSec) * 1000 <= pausedMs) continue;
+      await cupMatches().updateOne(where, {
+        $set: { status: 'open', seed: newSeed(), joined: {}, live: {}, finals: {}, openedAt: now, deadlineAt: new Date(now.getTime() + event.startWindowSec * 1000), updatedAt: now },
+        $unset: { startAt: '', soloUntil: '' },
+        $inc: { attempt: 1 },
+      });
+      restarted += 1;
+      continue;
+    }
+    const set: Record<string, Date> = { updatedAt: now };
+    if (m.status === 'betting' && m.bettingEndsAt) set.bettingEndsAt = later(m.bettingEndsAt)!;
+    if (m.status === 'open' && m.deadlineAt) set.deadlineAt = later(m.deadlineAt)!;
+    if (m.status === 'solo' && m.soloUntil) set.soloUntil = later(m.soloUntil)!;
+    await cupMatches().updateOne(where, { $set: set });
+    moved += 1;
+  }
+  return `Paused ${Math.round(paused / 1000)}s: ${moved} match clocks moved on, ${restarted} rounds in play restarted${event.phase === 'lobby' ? ', round 1 moved on' : ''}.`;
+}
+
 async function main() {
   const { command, flags } = parse(process.argv.slice(2));
   await connectDb();
@@ -170,7 +213,7 @@ async function main() {
     case 'create': {
       if (!flags.id || !/^[A-Za-z0-9_-]{1,80}$/.test(flags.id)) throw new Error('--id is required: letters, digits, - and _');
       if (!flags.org) throw new Error('--org is required');
-      if (!flags.lobby || !flags.start || !flags['link-base']) throw new Error('--lobby, --start and --link-base are required');
+      if (!flags.name || !flags.lobby || !flags.start || !flags['link-base']) throw new Error('--name, --lobby, --start and --link-base are required');
       if (!(await companies().findOne({ id: flags.org }))) throw new Error(`No company ${flags.org}`);
       if (await cupEvents().findOne({ id: flags.id })) throw new Error(`${flags.id} exists: use update`);
       const fields = fieldsFrom(flags);
@@ -181,7 +224,7 @@ async function main() {
         ...(game?.scoring?.max ? { maxScore: game.scoring.max } : {}),
         id: flags.id,
         org: flags.org,
-        name: 'O-O-O Tournament',
+        name: flags.name.slice(0, 60),
         active: false,
         lobbyAt: fields.lobbyAt!,
         startAt: fields.startAt!,
@@ -197,7 +240,8 @@ async function main() {
         ...fields,
       };
       check(event);
-      await cupEvents().insertOne({ ...event });
+      // `_id` is the event id: the primary key keeps it unique (no index on `id` is made on the shared cluster).
+      await cupEvents().insertOne({ _id: event.id, ...event } as unknown as CupEvent);
       console.log('Created, switched OFF:');
       await describe(event);
       break;
@@ -215,12 +259,22 @@ async function main() {
       await describe(next);
       break;
     }
-    case 'on':
     case 'off': {
       const event = await requireEvent(flags.id);
-      await cupEvents().updateOne({ id: event.id }, { $set: { active: command === 'on', updatedAt: now }, $inc: { version: 1 } });
-      console.log(`${event.id} is ${command === 'on' ? 'ON' : 'OFF'}`);
-      if (command === 'on' && event.lobbyAt.getTime() < now.getTime() && event.phase === 'scheduled') {
+      const midway = event.active && (event.phase === 'lobby' || event.phase === 'running');
+      await cupEvents().updateOne(
+        { id: event.id },
+        { $set: { active: false, updatedAt: now, ...(midway && !event.pausedAt ? { pausedAt: now } : {}) }, $inc: { version: 1 } },
+      );
+      console.log(`${event.id} is OFF${midway ? ': paused; every clock moves on by the pause when it is switched on again' : ''}`);
+      break;
+    }
+    case 'on': {
+      const event = await requireEvent(flags.id);
+      if (event.pausedAt && (event.phase === 'lobby' || event.phase === 'running')) console.log(`  ${await resume(event, now)}`);
+      await cupEvents().updateOne({ id: event.id }, { $set: { active: true, updatedAt: now }, $unset: { pausedAt: '' }, $inc: { version: 1 } });
+      console.log(`${event.id} is ON`);
+      if (event.lobbyAt.getTime() < now.getTime() && event.phase === 'scheduled') {
         console.log('  Note: the lobby time has passed, so the draw is made on the runner\'s next tick.');
       }
       break;
@@ -310,7 +364,7 @@ async function main() {
       } else {
         await cupEvents().updateOne(
           { id: event.id },
-          { $set: { phase: 'scheduled', round: 0, entrants: [], rounds: [], updatedAt: now }, $unset: { drawnAt: '', championId: '', finishedAt: '' }, $inc: { version: 1 } },
+          { $set: { phase: 'scheduled', round: 0, entrants: [], rounds: [], updatedAt: now }, $unset: { drawnAt: '', championId: '', finishedAt: '', pausedAt: '' }, $inc: { version: 1 } },
         );
         console.log(`Reset ${event.id} to before the draw (times unchanged: update them); ${reverted}`);
       }

@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import {
   CupError,
   entrantsFor,
+  inlinePhoto,
   joinMatch,
   reportFinal,
   reportLive,
@@ -65,3 +66,24 @@ export const liveHandler = cupHandler(async (viewer, req) => {
   return undefined;
 });
 export const finalHandler = cupHandler((viewer, req) => reportFinal(viewer, idOf(req), req.body?.score));
+
+/**
+ * An old inline profile photo, as an image (`<img>` sends no ticket: the
+ * address is signed instead, and only ever handed to the event's own company
+ * in its state). Kept a day by the browser; a new photo has a new address.
+ */
+export async function photoHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const photo = await inlinePhoto(String(req.params.eventId ?? ''), String(req.params.userId ?? ''), req.query.v, req.query.s);
+    if (!photo) {
+      noStore(res).status(404).json({ success: false, message: 'No photo' });
+      return;
+    }
+    res
+      .status(200)
+      .set({ 'Content-Type': photo.type, 'Cache-Control': 'private, max-age=86400, immutable', 'X-Content-Type-Options': 'nosniff' })
+      .send(photo.bytes);
+  } catch (error) {
+    cupFailed(error, res, next);
+  }
+}

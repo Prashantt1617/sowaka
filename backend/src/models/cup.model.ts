@@ -108,6 +108,8 @@ export interface CupEvent extends CupEventConfig {
   drawnAt?: Date;
   championId?: string;
   finishedAt?: Date;
+  /** Switched off mid-tournament at this time (`cup-event.ts off`); switching back on moves every match's clock on by the pause. */
+  pausedAt?: Date;
   /** Bumped on every change a page would draw differently. */
   version: number;
   createdAt: Date;

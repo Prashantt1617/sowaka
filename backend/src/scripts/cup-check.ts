@@ -127,6 +127,75 @@ check('every size from 2 to 300 makes one champion in N-1 matches, each entrant 
   }
 });
 
+/** The earliest round two seeds could meet in, whatever happens: where their paths through the draw first join. */
+function meetRound(rounds: CupRound[], s1: number, s2: number): number {
+  const path = (seed: number) => {
+    const out = new Map<string, number>();
+    let ref = `e:${seed}`;
+    for (const round of rounds) {
+      const node = round.nodes.find((x) => x.feeders.includes(ref));
+      if (!node) break;
+      ref = `n:${round.n}:${node.slot}`;
+      out.set(ref, node.feeders.length === 2 ? round.n : Number.POSITIVE_INFINITY);
+    }
+    return out;
+  };
+  const a = path(s1);
+  const b = path(s2);
+  for (const [ref, n] of a) if (b.has(ref)) return n;
+  return Number.POSITIVE_INFINITY;
+}
+
+check('every size 2..300, every topN: 1 v 2 only in the final, top 4 not before the semis (8+ entrants), top 8 not before the quarters (16+)', () => {
+  for (let n = 2; n <= 300; n += 1) {
+    for (const topN of [2, 4, 8, 16]) {
+      const rounds = buildDraw(n, topN);
+      const total = rounds.length;
+      assert.equal(rounds[total - 1].nodes.length, 1, `N=${n}: one final`);
+      assert.equal(rounds[total - 1].short, 'F', `N=${n}`);
+      for (let i = 1; i <= Math.min(8, n); i += 1) {
+        for (let j = i + 1; j <= Math.min(8, n); j += 1) {
+          const r = meetRound(rounds, i, j);
+          // Round 1 is everyone, top half v bottom half: with fewer than 2k entrants two of the top k must meet in it.
+          if (j > 2 && n < 2 * (j <= 4 ? 4 : 8)) continue;
+          const limit = j <= 2 ? total : j <= 4 ? total - 1 : total - 2;
+          assert.ok(r >= limit && r <= total, `N=${n}: seeds ${i} and ${j} could meet in round ${r} of ${total}`);
+        }
+      }
+      // Free passes: round 1 only seed 1 (odd N); round 2 the units of the top seeds, each keeping its place.
+      const second = rounds[1];
+      if (second) {
+        const passes = second.nodes.filter((x) => x.feeders.length === 1);
+        passes.forEach((node, k) => assert.deepEqual(node.feeders, [`n:1:${k + 1}`], `N=${n}`));
+        const players = second.nodes.reduce((sum, x) => sum + x.feeders.length, 0);
+        if (passes.length) assert.equal(players, Math.ceil(n / 2), `N=${n}: round 2 is every round-1 survivor`);
+        assert.equal(second.nodes.length & (second.nodes.length - 1), 0, `N=${n}: round 2 leaves a power of two`);
+      }
+      // Each later round halves; labels F/SF/QF only where they belong.
+      for (let k = 2; k < total; k += 1) assert.equal(rounds[k].nodes.length * 2, rounds[k - 1].nodes.length, `N=${n} round ${k + 1}`);
+      rounds.forEach((r) => {
+        if (r.short === 'SF') assert.ok(r.n === total - 1 && r.nodes.length === 2);
+        if (r.short === 'QF') assert.ok(r.n === total - 2 && r.nodes.length === 4);
+      });
+    }
+  }
+});
+
+check('226 random tournaments: no two of the top 8 meet before the quarter-finals, the top 4 before the semis, 1 and 2 before the final', () => {
+  const rounds = buildDraw(226, 8);
+  for (let trial = 0; trial < 2000; trial += 1) {
+    const { meetings, champion } = play(rounds, 226, (a, b) => (Math.random() < 0.5 ? a : b));
+    assert.ok(champion >= 1 && champion <= 226);
+    for (const m of meetings) {
+      const lo = Math.min(m.a, m.b);
+      const hi = Math.max(m.a, m.b);
+      if (hi <= 2) assert.equal(m.round, 8);
+      else if (hi <= 4) assert.ok(m.round >= 7, `${lo} v ${hi} in round ${m.round}`);
+      else if (hi <= 8) assert.ok(m.round >= 6, `${lo} v ${hi} in round ${m.round}`);
+    }
+  }
+});
+
 check('33 entrants: seed 1 skips round 1, then 15 free passes to 16', () => {
   const rounds = buildDraw(33, 8);
   assert.deepEqual(rounds[0].nodes[0].feeders, ['e:1']);
@@ -186,8 +255,13 @@ check('one comes: they play alone, their score against 0', () => {
   const started = { ...solo, startAt: at(205) };
   assert.deepEqual(nextStep(started, T, at(240), seedOf), { kind: 'none' });
   assert.deepEqual(nextStep({ ...started, finals: { lo: sc(1200, 251) } }, T, at(251), seedOf), { kind: 'decide', winnerId: 'lo', decidedBy: 'solo', result: { lo: 1200, hi: 0 } });
-  // Started and never finished: absent.
+  // Started and never scored: absent.
   assert.equal((nextStep(started, T, at(205 + 70), seedOf) as { decidedBy: string }).decidedBy, 'absent');
+  // Started, played a while, dropped out: their best live score stands against 0.
+  assert.equal(nextStep({ ...started, live: { lo: sc(640, 230) } }, T, at(205 + 69), seedOf).kind, 'none');
+  assert.deepEqual(nextStep({ ...started, live: { lo: sc(640, 230) } }, T, at(205 + 70), seedOf), { kind: 'decide', winnerId: 'lo', decidedBy: 'solo', result: { lo: 640, hi: 0 } });
+  // A final lower than their best live score: the best counts.
+  assert.deepEqual(nextStep({ ...started, live: { lo: sc(900, 230) }, finals: { lo: sc(300, 251) } }, T, at(251), seedOf), { kind: 'decide', winnerId: 'lo', decidedBy: 'solo', result: { lo: 900, hi: 0 } });
 });
 
 check('both come: decided when both finals are in, higher wins', () => {
@@ -210,7 +284,10 @@ check('a page reopened mid-round: the higher of final and live counts', () => {
 check('a tie replays, up to the limit, then the better seed', () => {
   const tie = match({ status: 'live', joined: { hi: at(5), lo: at(9) }, startAt: at(13), finals: { hi: sc(500), lo: sc(500) } });
   assert.deepEqual(nextStep(tie, T, at(60), seedOf), { kind: 'replay', scores: { hi: 500, lo: 500 } });
-  assert.deepEqual(nextStep({ ...tie, attempt: 2 }, T, at(60), seedOf), { kind: 'decide', winnerId: 'hi', decidedBy: 'played', result: { hi: 500, lo: 500 } });
+  const twice = { ...tie, attempt: 2, history: [{ attempt: 0, scores: { hi: 1, lo: 1 } }, { attempt: 1, scores: { hi: 2, lo: 2 } }] };
+  assert.deepEqual(nextStep(twice, T, at(60), seedOf), { kind: 'decide', winnerId: 'hi', decidedBy: 'played', result: { hi: 500, lo: 500 } });
+  // After an HR void (attempt 3, the tie history cleared) the replays are counted afresh.
+  assert.equal(nextStep({ ...tie, attempt: 3, history: undefined }, T, at(60), seedOf).kind, 'replay');
 });
 
 check('joining: only the two, only in the window', () => {
