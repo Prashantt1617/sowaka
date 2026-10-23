@@ -32,7 +32,7 @@
  * --exclude id,id --include id,id (a test: only these) --seeding leaderboard|lucky
  * --top-n N --start-window S --solo-start S --betting S --countdown S --round S
  * --grace S --min-play S --max-score N --max-replays N --max-stake N --push-at-lobby true|false
- * Times: ISO with an offset (2026-10-23T17:25+05:30), or +Nm / +Ns from now.
+ * Times: ISO with an offset (2026-10-23T17:25+05:30), or +Ns / +Nm / +Nh from now.
  */
 import { randomUUID } from 'node:crypto';
 import { companies, connectDb, connectPosts, closeDb, gameCatalog, users } from '../config/db';
@@ -60,8 +60,8 @@ function parse(argv: string[]): { command: string; flags: Flags } {
 }
 
 function time(raw: string, name: string): Date {
-  const rel = /^\+(\d+(?:\.\d+)?)([sm])$/.exec(raw);
-  if (rel) return new Date(Date.now() + Number(rel[1]) * (rel[2] === 'm' ? 60_000 : 1000));
+  const rel = /^\+(\d+(?:\.\d+)?)([smh])$/.exec(raw);
+  if (rel) return new Date(Date.now() + Number(rel[1]) * (rel[2] === 'h' ? 3_600_000 : rel[2] === 'm' ? 60_000 : 1000));
   if (!/[zZ]|[+-]\d\d:?\d\d$/.test(raw)) throw new Error(`--${name} needs a time zone, e.g. 2026-10-23T17:25+05:30`);
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) throw new Error(`--${name} is not a time: ${raw}`);
