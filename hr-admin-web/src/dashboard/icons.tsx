@@ -70,6 +70,12 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M7 11h10M7 11l-2 4M17 11l2 4M12 9v9" />
     </svg>
   ),
+  cuptv: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M8 4h8v5a4 4 0 0 1-8 0V4z" />
+      <path d="M8 6H5v1a3 3 0 0 0 3 3M16 6h3v1a3 3 0 0 1-3 3M12 13v4M8 20h8M9 17h6" />
+    </svg>
+  ),
   departments: (
     <svg {...base(18, 'currentColor')}>
       <rect x="4" y="13" width="6" height="8" rx="1" />
