@@ -11,8 +11,23 @@ export type SuwiProposal = {
 export type SuwiAnswer = { text: string; checked: string[]; links: SuwiLink[]; proposals: SuwiProposal[]; costUsd: number };
 export type SuwiHistoryTurn = { role: 'user' | 'assistant'; text: string };
 
-export const askSuwi = (question: string, page: string, history: SuwiHistoryTurn[]) =>
-  api<{ answer: SuwiAnswer }>('/suwi/ask', { method: 'POST', body: { question, page, history } }).then((r) => r.answer);
+/**
+ * A slow answer comes back as a ticket (`pending`); the answer is then fetched
+ * every 2 s until it is ready, for up to 5 minutes. The signal keeps each check
+ * out of the 20-second GET cache in http.ts.
+ */
+export async function askSuwi(question: string, page: string, history: SuwiHistoryTurn[]): Promise<SuwiAnswer> {
+  type Reply = { answer?: SuwiAnswer; pending?: string };
+  const first = await api<Reply>('/suwi/ask', { method: 'POST', body: { question, page, history } });
+  if (first.answer) return first.answer;
+  const until = Date.now() + 5 * 60_000;
+  while (first.pending && Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const next = await api<Reply>(`/suwi/ask/${encodeURIComponent(first.pending)}`, { signal: new AbortController().signal });
+    if (next.answer) return next.answer;
+  }
+  throw new Error('Suwi is taking too long to answer. Try again in a moment.');
+}
 export const confirmSuwiAction = (id: string, typed?: string) =>
   api<{ action: SuwiProposal }>(`/suwi/actions/${id}/confirm`, { method: 'POST', body: { typed } }).then((r) => r.action);
 export const cancelSuwiAction = (id: string) => api(`/suwi/actions/${id}/cancel`, { method: 'POST' });
