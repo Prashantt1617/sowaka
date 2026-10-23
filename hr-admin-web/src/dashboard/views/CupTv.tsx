@@ -7,9 +7,11 @@
 // It polls the same state a Cup page does (`GET /admin/cup/state`), every
 // 1.5 s while the tab is visible. Dark arcade, as the Cup itself, inside the
 // dashboard's frame; "Full screen" fills the TV with it.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { ApiError, BASE_URL, api, getToken } from '../../services/http';
 import { useStore } from '../store';
+import { boardAt } from './cupBoards';
 
 // —— the state (the Cup page's, as much as the TV draws) ————————————————————
 
@@ -23,6 +25,10 @@ interface Match {
   a: Player | null;
   b: Player | null;
   live?: Record<string, number>;
+  /** Where each player is in the match's boards (live/solo matches, when their page reports it). */
+  liveBoard?: Record<string, LiveBoard>;
+  /** The match's board seed, sent with liveBoard. */
+  boardSeed?: number;
   result?: Record<string, number>;
   winnerId?: string;
   decidedBy?: string;
@@ -31,6 +37,7 @@ interface Match {
   startAt?: string;
   attempt?: number;
 }
+interface LiveBoard { board: number; tap?: number; ok?: boolean }
 interface Round {
   n: number;
   label: string;
@@ -187,6 +194,29 @@ const CSS = `
 .ctv-yellow{border:0;background:${C.yellow};color:${C.bg};border-radius:14px;padding:12px 18px;font-size:14px;font-weight:800;box-shadow:0 4px 0 ${C.yellowShadow}}
 .ctv-danger{border:0;background:${C.coral};color:${C.bg};border-radius:14px;padding:12px 18px;font-size:14px;font-weight:800;box-shadow:0 4px 0 #B8443A}
 .ctv-err{color:${C.coral};font-size:13px;font-weight:700}
+.ctv-boards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start}
+.ctv-bside{display:flex;flex-direction:column;align-items:center;gap:12px;min-width:0}
+.ctv-bside .ctv-who{width:100%}
+.ctv-bside .ctv-nm{font-size:22px}
+.ctv-bside .ctv-av{width:48px;height:48px;font-size:18px}
+.ctv-bside .ctv-sc{font-size:46px}
+.ctv-bside.lead .ctv-board{box-shadow:0 5px 0 #0C0A1C,0 0 26px -4px var(--pc)}
+.ctv-board{--w:300px;--n:2;position:relative;width:var(--w);height:var(--w);padding:calc(var(--w)*.035);border-radius:calc(var(--w)*.09);background:${C.bg};border:3px solid var(--pc);box-shadow:0 5px 0 #0C0A1C;box-sizing:content-box!important;flex:none}
+.ctv-board .g{display:grid;grid-template-columns:repeat(var(--n),1fr);grid-auto-rows:1fr;gap:calc(var(--w)/var(--n)*.08);width:100%;height:100%}
+.ctv-board .c{display:grid;place-items:center;border-radius:calc(var(--w)/var(--n)*.2);background:${C.panel};box-shadow:0 calc(var(--w)/var(--n)*.05) 0 #0C0A1C;font-size:calc(var(--w)/var(--n)*.56);line-height:1;overflow:hidden;min-width:0;min-height:0}
+.ctv-board .c i{font-style:normal;display:block}
+.ctv-board .c.flip i{transform:scaleX(-1)}
+.ctv-board .c.no{background:${C.coral};animation:ctv-no .6s ease-out}
+.ctv-board.ok::after{content:"";position:absolute;inset:-3px;border-radius:inherit;box-shadow:0 0 0 4px ${C.green},0 0 30px ${C.green};opacity:0;animation:ctv-ok .9s ease-out;pointer-events:none}
+.ctv-board .num{position:absolute;right:8%;bottom:0;transform:translateY(50%);padding:2px 9px;border-radius:99px;background:var(--pc);color:${C.bg};font-family:var(--h);font-size:max(11px,calc(var(--w)*.07))}
+.ctv-bwait{display:grid;place-items:center;text-align:center;border:3px dashed ${C.panel2};border-radius:22px;color:${C.ink2};font-weight:800;font-size:13px;padding:8px}
+.ctv-bm.watch{cursor:pointer}
+.ctv-bm.watch:hover,.ctv-bm.watch:focus-visible{border-color:${C.cyan};outline:none}
+.ctv-minib{display:grid;grid-template-columns:1fr 1fr;gap:8px;justify-items:center;margin:4px 0 8px}
+.ctv-focus{background:${C.panel};color:${C.ink};border-radius:28px;padding:26px;max-width:900px;width:100%;display:flex;flex-direction:column;gap:22px;font-family:'Plus Jakarta Sans',system-ui,sans-serif;max-height:96vh;overflow:auto}
+@keyframes ctv-ok{0%{opacity:1}100%{opacity:0}}
+@keyframes ctv-no{0%{transform:scale(1.15)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.ctv-board .c.no,.ctv-board.ok::after{animation:none}}
 `;
 
 const FONTS = 'https://fonts.googleapis.com/css2?family=Lilita+One&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap';
@@ -251,6 +281,10 @@ export function CupTv() {
   const [skew, setSkew] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [confirming, setConfirming] = useState<Match | null>(null);
+  // A match of a parallel round opened big from "live now" (by slot, so it follows the polls).
+  const [watching, setWatching] = useState<number | null>(null);
+  const onWatch = useCallback((m: Match) => setWatching(m.slot), []);
+  const closeWatch = useCallback(() => setWatching(null), []);
   const root = useRef<HTMLDivElement>(null);
 
   // The poll: a fresh read each time (the signal keeps it out of the dashboard's read cache).
@@ -361,7 +395,7 @@ export function CupTv() {
                 </div>
               </div>
             )}
-            {!stage && current?.kind === 'parallel' && <LiveNow round={current} />}
+            {!stage && current?.kind === 'parallel' && <LiveNow round={current} onWatch={onWatch} />}
             {earlier.length > 0 && (
               <section className="ctv-panel" aria-label="Earlier rounds">
                 <h2 className="ctv-h">Earlier rounds</h2>
@@ -389,6 +423,10 @@ export function CupTv() {
         </div>
       )}
 
+      {watching != null && event && current?.kind === 'parallel' && (() => {
+        const m = current.matches.find((x) => x.slot === watching);
+        return m ? <WatchDialog match={m} round={current} serverNow={serverNow} roundSec={event.roundSec ?? 45} onClose={closeWatch} /> : null;
+      })()}
       {confirming && <VoidDialog match={confirming} onCancel={() => setConfirming(null)} onConfirm={() => doVoid(confirming)} />}
     </div>
   );
@@ -411,6 +449,80 @@ function subtitle(event: NonNullable<CupState['event']>, entrants: number | unde
 }
 
 // —— the match on stage ————————————————————————————————————————————————————
+
+// —— the boards ——————————————————————————————————————————————————————————————
+
+/** Board `at.board` of a seed, read-only: what that player has in front of them (the odd tile is never marked). */
+const CupBoard = memo(function CupBoard({ seed, at, size, colour }: { seed: number; at: LiveBoard; size: number; colour: string }) {
+  const b = boardAt(seed, at.board);
+  const wrong = at.ok === false && typeof at.tap === 'number' && at.tap !== b.at ? at.tap : -1;
+  const style = { '--w': `${size}px`, '--n': b.n, '--pc': colour } as CSSProperties;
+  return (
+    <div className={`ctv-board${at.ok === true ? ' ok' : ''}`} style={style} role="img" aria-label={`Board ${at.board + 1}${wrong >= 0 ? ', a wrong tap' : ''}`}>
+      <div className="g">
+        {Array.from({ length: b.n * b.n }, (_, i) => (
+          <span key={i} className={`c${b.flip && i === b.at ? ' flip' : ''}${i === wrong ? ' no' : ''}`}><i>{i === b.at ? b.odd : b.base}</i></span>
+        ))}
+      </div>
+      <span className="num" aria-hidden="true">#{at.board + 1}</span>
+    </div>
+  );
+});
+
+/** A key that changes with every move, so the board is drawn afresh and its flash plays again. */
+const moveKey = (at: LiveBoard) => `${at.board}:${at.tap ?? ''}:${at.ok ?? ''}`;
+
+const hasBoards = (m: Match) => (m.status === 'live' || m.status === 'solo') && typeof m.boardSeed === 'number' && !!m.liveBoard && Object.keys(m.liveBoard).length > 0;
+
+function BoardOrWait({ match, p, size, colour }: { match: Match; p: Player | null; size: number; colour: string }) {
+  const at = p ? match.liveBoard?.[p.userId] : undefined;
+  if (at && typeof match.boardSeed === 'number') return <CupBoard key={moveKey(at)} seed={match.boardSeed} at={at} size={size} colour={colour} />;
+  const box = Math.round(size * 1.07 + 6);
+  return <div className="ctv-bwait" style={{ width: box, height: box }}>{match.status === 'solo' ? 'Not playing' : 'Board shows when they tap'}</div>;
+}
+
+/** Both players' boards, big, with name, seed and score above each. */
+function BoardsDuel({ match, size }: { match: Match; size: number }) {
+  const sa = scoreOf(match, match.a);
+  const sb = scoreOf(match, match.b);
+  return (
+    <div className="ctv-boards" aria-label="Both boards, live">
+      {[match.a, match.b].map((p, i) => {
+        const colour = i === 0 ? C.a : C.b;
+        const s = i === 0 ? sa : sb;
+        const other = i === 0 ? sb : sa;
+        return (
+          <div key={i} className={`ctv-bside${s > other ? ' lead' : ''}`} style={{ '--pc': colour } as CSSProperties}>
+            <div className="ctv-who">
+              <span className="ctv-av" style={{ background: colour }}>{p ? initials(p.name) : '?'}</span>
+              <span className="ctv-nm">
+                {p ? firstName(p.name) : 'To be decided'}
+                {p && <span className="ctv-seed">#{p.seed}</span>}
+              </span>
+              <span className="ctv-sc" style={{ color: colour }}>{fmt(s)}</span>
+            </div>
+            <BoardOrWait match={match} p={p} size={size} colour={colour} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** How big one of two boards side by side can be: `share` of the window's width is theirs (less padding), at most `max`. */
+function useBoardSize(max: number, share: number) {
+  const [w, setW] = useState(() => (typeof window === 'undefined' ? 1200 : window.innerWidth));
+  useEffect(() => {
+    const on = () => setW(window.innerWidth);
+    window.addEventListener('resize', on);
+    document.addEventListener('fullscreenchange', on);
+    return () => {
+      window.removeEventListener('resize', on);
+      document.removeEventListener('fullscreenchange', on);
+    };
+  }, []);
+  return Math.max(110, Math.min(max, Math.floor((w * share - 40) / 2 / 1.12)));
+}
 
 function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
   match: Match;
@@ -454,6 +566,9 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
   const totalStake = (split?.a.stake ?? 0) + (split?.b.stake ?? 0);
   const totalPeople = (split?.a.count ?? 0) + (split?.b.count ?? 0);
   const share = totalStake > 0 ? ((split?.a.stake ?? 0) / totalStake) * 100 : 50;
+  const boards = hasBoards(match);
+  // The stage is 60% of the TV beside the bracket (all of it below 1100 px), inside the dashboard's frame.
+  const boardSize = useBoardSize(340, typeof window !== 'undefined' && window.innerWidth > 1100 ? 0.5 : 0.8);
 
   return (
     <section className="ctv-panel ctv-stage" aria-label="The match on stage">
@@ -475,7 +590,8 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
         )}
       </div>
 
-      {[match.a, match.b].map((p, i) => {
+      {boards && <BoardsDuel match={match} size={boardSize} />}
+      {!boards && [match.a, match.b].map((p, i) => {
         const colour = i === 0 ? C.a : C.b;
         const s = i === 0 ? sa : sb;
         const won = decided && p && match.winnerId === p.userId;
@@ -584,7 +700,7 @@ function Bracket({ rounds, onStageId, onPick }: { rounds: Round[]; onStageId?: s
 // being played first, so the screen can be watched from round 1.
 const LIVE_ORDER: Partial<Record<Status, number>> = { live: 0, solo: 1, open: 2, done: 3 };
 
-function LiveNow({ round }: { round: Round }) {
+const LiveNow = memo(function LiveNow({ round, onWatch }: { round: Round; onWatch: (m: Match) => void }) {
   const matches = [...round.matches].sort((x, y) => (LIVE_ORDER[x.status] ?? 4) - (LIVE_ORDER[y.status] ?? 4) || x.slot - y.slot);
   const playing = round.matches.filter((m) => m.status === 'live' || m.status === 'solo').length;
   const decided = round.matches.filter((m) => m.status === 'done').length;
@@ -596,8 +712,24 @@ function LiveNow({ round }: { round: Round }) {
         <span>{fmt(decided)}/{fmt(round.matches.length)} decided</span>
       </div>
       <div className="ctv-live">
-        {matches.map((m) => (
-          <div key={m.slot} className={`ctv-bm${m.status === 'live' || m.status === 'solo' ? ' on' : ''}`}>
+        {matches.map((m) => {
+          const boards = hasBoards(m);
+          const watch = boards
+            ? {
+                role: 'button',
+                tabIndex: 0,
+                title: `Watch ${m.label} big`,
+                onClick: () => onWatch(m),
+                onKeyDown: (e: ReactKeyboardEvent) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onWatch(m);
+                  }
+                },
+              }
+            : {};
+          return (
+          <div key={m.slot} className={`ctv-bm${m.status === 'live' || m.status === 'solo' ? ' on' : ''}${boards ? ' watch' : ''}`} {...watch}>
             <div className="ctv-lt">
               <span>{m.label}</span>
               <span style={{ color: m.status === 'done' ? C.green : m.status === 'open' ? C.ink2 : C.coral }}>
@@ -614,10 +746,52 @@ function LiveNow({ round }: { round: Round }) {
                 </div>
               );
             })}
+            {boards && (
+              <div className="ctv-minib">
+                <BoardOrWait match={m} p={m.a} size={80} colour={C.a} />
+                <BoardOrWait match={m} p={m.b} size={80} colour={C.b} />
+              </div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </section>
+  );
+});
+
+/** One match of a parallel round, big: both boards, until closed. */
+function WatchDialog({ match, round, serverNow, roundSec, onClose }: { match: Match; round: Round; serverNow: number; roundSec: number; onClose: () => void }) {
+  const size = useBoardSize(360, 0.9);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  const start = ms(match.startAt);
+  const live = match.status === 'live' || match.status === 'solo';
+  const left = live && Number.isFinite(start)
+    ? serverNow < start ? `Starts in ${Math.max(1, Math.ceil((start - serverNow) / 1000))}` : `${clock(start + roundSec * 1000 - serverNow)} left`
+    : match.status === 'done' ? 'Final score' : '';
+  return (
+    <div className="ctv-veil" role="dialog" aria-modal="true" aria-label={`${round.label} · ${match.label}`} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ctv-focus">
+        <div className="ctv-stagehead">
+          <span style={{ fontFamily: "'Lilita One',system-ui,sans-serif", fontSize: 30 }}>{round.label} · {match.label}</span>
+          <span style={{ flex: 1 }} />
+          <span style={{ fontFamily: "'Lilita One',system-ui,sans-serif", fontSize: 30, color: C.ink2 }}>{left}</span>
+          <button type="button" className="ctv-ghost" onClick={onClose} autoFocus>Close</button>
+        </div>
+        {hasBoards(match) ? (
+          <BoardsDuel match={match} size={size} />
+        ) : (
+          <div className="ctv-empty">
+            {match.a?.name ?? '—'} {fmt(scoreOf(match, match.a))} · {match.b?.name ?? '—'} {fmt(scoreOf(match, match.b))}
+            {match.status === 'done' ? '' : ' (the boards show while they play)'}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
