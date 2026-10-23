@@ -24,6 +24,8 @@ import { careRouter } from './care.routes';
 import { profileRouter } from './profile.routes';
 import { supportAdminRouter, supportRouter } from './support.routes';
 import { gamesRouter, playRouter, squadWebRouter } from './game-catalog.routes';
+import { cupRouter } from './cup.routes';
+import { cupAdminRouter } from './cup-admin.routes';
 import { policiesRouter } from './policy-document.routes';
 import { appPagesRouter } from './app-page.routes';
 import { appUpdateRouter } from './app-update.routes';
@@ -59,6 +61,8 @@ router.use('/admin/reporting', reportingRouter);
 router.use('/admin/payroll', payrollRouter);
 router.use('/admin/kpi', kpiRouter);
 router.use('/admin/relay', relayRouter);
+// The Diwali Cup on the office TV, and HR's void (see cup-bets.service).
+router.use('/admin/cup', cupAdminRouter);
 router.use('/relay', relayPlayerRouter);
 router.use('/talk', talkRouter);
 router.use('/garden', gardenRouter);
@@ -67,6 +71,8 @@ router.use('/games', gamesRouter);
 router.use('/play', playRouter);
 // Secret Squad opened in a phone browser (signs in by email code itself).
 router.use('/squad', squadWebRouter);
+// The Diwali Cup's page and its API, signed in by ticket (see cup.service).
+router.use('/cup', cupRouter);
 // Pages the app shows inside a tab (the Games home), when on for the company.
 router.use('/app-pages', appPagesRouter);
 // Whether the app must, or may, update: set per company by Sowaka.

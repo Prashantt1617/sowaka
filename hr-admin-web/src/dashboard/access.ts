@@ -15,6 +15,8 @@ export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boo
   if (view === 'suwi') return true;
   // People › Tasks goes with Employees.
   if (view === 'peopletasks') return canOpen(user, 'employees');
+  // The Diwali Cup TV (and its void) is HR's: an admin, or someone never limited to some tabs.
+  if (view === 'cuptv') return user.dashboardAdmin === true || !Array.isArray(user.dashboardTabs);
   // Support desk is a role, never a tab: full access and Admin don't include it.
   if (view === 'support') return user.supportRole === 'head' || user.supportRole === 'staff';
   if (user.dashboardAdmin === true || !Array.isArray(user.dashboardTabs)) return true;

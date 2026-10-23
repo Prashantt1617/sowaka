@@ -1,0 +1,3850 @@
+{
+ "success": true,
+ "serverNow": "2026-11-06T12:10:00.000Z",
+ "version": 110,
+ "event": {
+  "id": "diwali-2026",
+  "name": "O-O-O Tournament",
+  "phase": "running",
+  "round": 1,
+  "lobbyAt": "2026-11-06T11:55:00.000Z",
+  "startAt": "2026-11-06T12:00:00.000Z",
+  "topN": 8,
+  "entrantCount": 226,
+  "roundSec": 45,
+  "startWindowSec": 180,
+  "bettingSec": 60,
+  "countdownSec": 4,
+  "rounds": [
+   {
+    "n": 1,
+    "label": "Round 1",
+    "short": "R1",
+    "kind": "parallel",
+    "byes": [],
+    "matches": [
+     {
+      "id": "m-1-1",
+      "slot": 1,
+      "label": "Round 1 · Match 1",
+      "status": "live",
+      "a": {
+       "userId": "u001",
+       "name": "Aarav Kapoor",
+       "seed": 1,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u226",
+       "name": "Kunal Kapoor",
+       "seed": 226,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:43.000Z",
+      "live": {
+       "u001": 449,
+       "u226": 813
+      }
+     },
+     {
+      "id": "m-1-2",
+      "slot": 2,
+      "label": "Round 1 · Match 2",
+      "status": "live",
+      "a": {
+       "userId": "u002",
+       "name": "Zoya Mehta",
+       "seed": 2,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u225",
+       "name": "Ishaan Bhatt",
+       "seed": 225,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:31.000Z",
+      "live": {
+       "u002": 1008,
+       "u225": 794
+      }
+     },
+     {
+      "id": "m-1-3",
+      "slot": 3,
+      "label": "Round 1 · Match 3",
+      "status": "live",
+      "a": {
+       "userId": "u003",
+       "name": "Tara Gill",
+       "seed": 3,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u224",
+       "name": "Riya Malhotra",
+       "seed": 224,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:34.000Z",
+      "live": {
+       "u003": 1373,
+       "u224": 112
+      }
+     },
+     {
+      "id": "m-1-4",
+      "slot": 4,
+      "label": "Round 1 · Match 4",
+      "status": "live",
+      "a": {
+       "userId": "u004",
+       "name": "Simran Shah",
+       "seed": 4,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u223",
+       "name": "Kartik Bose",
+       "seed": 223,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:31.000Z",
+      "live": {
+       "u004": 314,
+       "u223": 290
+      }
+     },
+     {
+      "id": "m-1-5",
+      "slot": 5,
+      "label": "Round 1 · Match 5",
+      "status": "live",
+      "a": {
+       "userId": "u005",
+       "name": "Sahil Das",
+       "seed": 5,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u222",
+       "name": "Kavya Nair",
+       "seed": 222,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:31.000Z",
+      "live": {
+       "u005": 89,
+       "u222": 576
+      }
+     },
+     {
+      "id": "m-1-6",
+      "slot": 6,
+      "label": "Round 1 · Match 6",
+      "status": "live",
+      "a": {
+       "userId": "u006",
+       "name": "Mira Reddy",
+       "seed": 6,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u221",
+       "name": "Rahul Khan",
+       "seed": 221,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:10:00.000Z",
+      "live": {
+       "u006": 108,
+       "u221": 1011
+      }
+     },
+     {
+      "id": "m-1-7",
+      "slot": 7,
+      "label": "Round 1 · Match 7",
+      "status": "live",
+      "a": {
+       "userId": "u007",
+       "name": "Kabir Chopra",
+       "seed": 7,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u220",
+       "name": "Rohan Arora",
+       "seed": 220,
+       "photoUrl": "https://photos.invalid/u220.jpg"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:33.000Z",
+      "live": {
+       "u007": 1214,
+       "u220": 1112
+      }
+     },
+     {
+      "id": "m-1-8",
+      "slot": 8,
+      "label": "Round 1 · Match 8",
+      "status": "live",
+      "a": {
+       "userId": "u008",
+       "name": "Pooja Sethi",
+       "seed": 8,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u219",
+       "name": "Anika Sen",
+       "seed": 219,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:59.000Z",
+      "live": {
+       "u008": 927,
+       "u219": 744
+      }
+     },
+     {
+      "id": "m-1-9",
+      "slot": 9,
+      "label": "Round 1 · Match 9",
+      "status": "live",
+      "a": {
+       "userId": "u009",
+       "name": "Diya Verma",
+       "seed": 9,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u218",
+       "name": "Isha Pillai",
+       "seed": 218,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:54.000Z",
+      "live": {
+       "u009": 1338,
+       "u218": 103
+      }
+     },
+     {
+      "id": "m-1-10",
+      "slot": 10,
+      "label": "Round 1 · Match 10",
+      "status": "live",
+      "a": {
+       "userId": "u010",
+       "name": "Priya Rao",
+       "seed": 10,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u217",
+       "name": "Om Joshi",
+       "seed": 217,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:36.000Z",
+      "live": {
+       "u010": 220,
+       "u217": 41
+      }
+     },
+     {
+      "id": "m-1-11",
+      "slot": 11,
+      "label": "Round 1 · Match 11",
+      "status": "live",
+      "a": {
+       "userId": "u011",
+       "name": "Nikhil Iyer",
+       "seed": 11,
+       "photoUrl": "https://photos.invalid/u011.jpg"
+      },
+      "b": {
+       "userId": "u216",
+       "name": "Ira Iyer",
+       "seed": 216,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:39.000Z",
+      "live": {
+       "u011": 1108,
+       "u216": 1295
+      }
+     },
+     {
+      "id": "m-1-12",
+      "slot": 12,
+      "label": "Round 1 · Match 12",
+      "status": "live",
+      "a": {
+       "userId": "u012",
+       "name": "Shreya Joshi",
+       "seed": 12,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u215",
+       "name": "Nisha Rao",
+       "seed": 215,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:36.000Z",
+      "live": {
+       "u012": 1254,
+       "u215": 1114
+      }
+     },
+     {
+      "id": "m-1-13",
+      "slot": 13,
+      "label": "Round 1 · Match 13",
+      "status": "live",
+      "a": {
+       "userId": "u013",
+       "name": "Arjun Pillai",
+       "seed": 13,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u214",
+       "name": "Vihaan Verma",
+       "seed": 214,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:59.000Z",
+      "live": {
+       "u013": 509,
+       "u214": 225
+      }
+     },
+     {
+      "id": "m-1-14",
+      "slot": 14,
+      "label": "Round 1 · Match 14",
+      "status": "live",
+      "a": {
+       "userId": "u014",
+       "name": "Vihaan Sen",
+       "seed": 14,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u213",
+       "name": "Arjun Sethi",
+       "seed": 213,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:41.000Z",
+      "live": {
+       "u014": 575,
+       "u213": 449
+      }
+     },
+     {
+      "id": "m-1-15",
+      "slot": 15,
+      "label": "Round 1 · Match 15",
+      "status": "live",
+      "a": {
+       "userId": "u015",
+       "name": "Nisha Arora",
+       "seed": 15,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u212",
+       "name": "Shreya Chopra",
+       "seed": 212,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:37.000Z",
+      "live": {
+       "u015": 469,
+       "u212": 1312
+      }
+     },
+     {
+      "id": "m-1-16",
+      "slot": 16,
+      "label": "Round 1 · Match 16",
+      "status": "live",
+      "a": {
+       "userId": "u016",
+       "name": "Ira Khan",
+       "seed": 16,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u211",
+       "name": "Nikhil Reddy",
+       "seed": 211,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:44.000Z",
+      "live": {
+       "u016": 301,
+       "u211": 693
+      }
+     },
+     {
+      "id": "m-1-17",
+      "slot": 17,
+      "label": "Round 1 · Match 17",
+      "status": "live",
+      "a": {
+       "userId": "u017",
+       "name": "Om Nair",
+       "seed": 17,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u210",
+       "name": "Priya Das",
+       "seed": 210,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:43.000Z",
+      "live": {
+       "u017": 623,
+       "u210": 448
+      }
+     },
+     {
+      "id": "m-1-18",
+      "slot": 18,
+      "label": "Round 1 · Match 18",
+      "status": "live",
+      "a": {
+       "userId": "u018",
+       "name": "Isha Bose",
+       "seed": 18,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u209",
+       "name": "Diya Shah",
+       "seed": 209,
+       "photoUrl": "https://photos.invalid/u209.jpg"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:35.000Z",
+      "live": {
+       "u018": 901,
+       "u209": 530
+      }
+     },
+     {
+      "id": "m-1-19",
+      "slot": 19,
+      "label": "Round 1 · Match 19",
+      "status": "live",
+      "a": {
+       "userId": "u019",
+       "name": "Anika Malhotra",
+       "seed": 19,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u208",
+       "name": "Pooja Gill",
+       "seed": 208,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:39.000Z",
+      "live": {
+       "u019": 880,
+       "u208": 599
+      }
+     },
+     {
+      "id": "m-1-20",
+      "slot": 20,
+      "label": "Round 1 · Match 20",
+      "status": "live",
+      "a": {
+       "userId": "u020",
+       "name": "Rohan Bhatt",
+       "seed": 20,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u207",
+       "name": "Kabir Mehta",
+       "seed": 207,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:43.000Z",
+      "live": {
+       "u020": 356,
+       "u207": 129
+      }
+     },
+     {
+      "id": "m-1-21",
+      "slot": 21,
+      "label": "Round 1 · Match 21",
+      "status": "live",
+      "a": {
+       "userId": "u021",
+       "name": "Rahul Kapoor",
+       "seed": 21,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u206",
+       "name": "Mira Kapoor",
+       "seed": 206,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:43.000Z",
+      "live": {
+       "u021": 788,
+       "u206": 682
+      }
+     },
+     {
+      "id": "m-1-22",
+      "slot": 22,
+      "label": "Round 1 · Match 22",
+      "status": "live",
+      "a": {
+       "userId": "u022",
+       "name": "Kavya Mehta",
+       "seed": 22,
+       "photoUrl": "https://photos.invalid/u022.jpg"
+      },
+      "b": {
+       "userId": "u205",
+       "name": "Sahil Bhatt",
+       "seed": 205,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:52.000Z",
+      "live": {
+       "u022": 678,
+       "u205": 119
+      }
+     },
+     {
+      "id": "m-1-23",
+      "slot": 23,
+      "label": "Round 1 · Match 23",
+      "status": "live",
+      "a": {
+       "userId": "u023",
+       "name": "Kartik Gill",
+       "seed": 23,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u204",
+       "name": "Simran Malhotra",
+       "seed": 204,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:37.000Z",
+      "live": {
+       "u023": 304,
+       "u204": 181
+      }
+     },
+     {
+      "id": "m-1-24",
+      "slot": 24,
+      "label": "Round 1 · Match 24",
+      "status": "live",
+      "a": {
+       "userId": "u024",
+       "name": "Riya Shah",
+       "seed": 24,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u203",
+       "name": "Tara Bose",
+       "seed": 203,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:35.000Z",
+      "live": {
+       "u024": 906,
+       "u203": 926
+      }
+     },
+     {
+      "id": "m-1-25",
+      "slot": 25,
+      "label": "Round 1 · Match 25",
+      "status": "live",
+      "a": {
+       "userId": "u025",
+       "name": "Ishaan Das",
+       "seed": 25,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u202",
+       "name": "Zoya Nair",
+       "seed": 202,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:33.000Z",
+      "live": {
+       "u025": 373,
+       "u202": 721
+      }
+     },
+     {
+      "id": "m-1-26",
+      "slot": 26,
+      "label": "Round 1 · Match 26",
+      "status": "live",
+      "a": {
+       "userId": "u026",
+       "name": "Kunal Reddy",
+       "seed": 26,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u201",
+       "name": "Aarav Khan",
+       "seed": 201,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:49.000Z",
+      "live": {
+       "u026": 947,
+       "u201": 1020
+      }
+     },
+     {
+      "id": "m-1-27",
+      "slot": 27,
+      "label": "Round 1 · Match 27",
+      "status": "live",
+      "a": {
+       "userId": "u027",
+       "name": "Yash Chopra",
+       "seed": 27,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u200",
+       "name": "Lavanya Sethi",
+       "seed": 200,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:54.000Z",
+      "live": {
+       "u027": 288,
+       "u200": 926
+      }
+     },
+     {
+      "id": "m-1-28",
+      "slot": 28,
+      "label": "Round 1 · Match 28",
+      "status": "live",
+      "a": {
+       "userId": "u028",
+       "name": "Ananya Sethi",
+       "seed": 28,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u199",
+       "name": "Manav Chopra",
+       "seed": 199,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:10:00.000Z",
+      "live": {
+       "u028": 425,
+       "u199": 1165
+      }
+     },
+     {
+      "id": "m-1-29",
+      "slot": 29,
+      "label": "Round 1 · Match 29",
+      "status": "live",
+      "a": {
+       "userId": "u029",
+       "name": "Dhruv Verma",
+       "seed": 29,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u198",
+       "name": "Kiran Reddy",
+       "seed": 198,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:38.000Z",
+      "live": {
+       "u029": 648,
+       "u198": 551
+      }
+     },
+     {
+      "id": "m-1-30",
+      "slot": 30,
+      "label": "Round 1 · Match 30",
+      "status": "live",
+      "a": {
+       "userId": "u030",
+       "name": "Neha Rao",
+       "seed": 30,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u197",
+       "name": "Meera Das",
+       "seed": 197,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:45.000Z",
+      "live": {
+       "u030": 381,
+       "u197": 439
+      }
+     },
+     {
+      "id": "m-1-31",
+      "slot": 31,
+      "label": "Round 1 · Match 31",
+      "status": "live",
+      "a": {
+       "userId": "u031",
+       "name": "Sana Iyer",
+       "seed": 31,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u196",
+       "name": "Dev Shah",
+       "seed": 196,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:35.000Z",
+      "live": {
+       "u031": 424,
+       "u196": 892
+      }
+     },
+     {
+      "id": "m-1-32",
+      "slot": 32,
+      "label": "Round 1 · Match 32",
+      "status": "live",
+      "a": {
+       "userId": "u032",
+       "name": "Aditya Joshi",
+       "seed": 32,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u195",
+       "name": "Aman Gill",
+       "seed": 195,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:59.000Z",
+      "live": {
+       "u032": 1313,
+       "u195": 1031
+      }
+     },
+     {
+      "id": "m-1-33",
+      "slot": 33,
+      "label": "Round 1 · Match 33",
+      "status": "live",
+      "a": {
+       "userId": "u033",
+       "name": "Varun Pillai",
+       "seed": 33,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u194",
+       "name": "Rhea Mehta",
+       "seed": 194,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:47.000Z",
+      "live": {
+       "u033": 261,
+       "u194": 1241
+      }
+     },
+     {
+      "id": "m-1-34",
+      "slot": 34,
+      "label": "Round 1 · Match 34",
+      "status": "live",
+      "a": {
+       "userId": "u034",
+       "name": "Rhea Sen",
+       "seed": 34,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u193",
+       "name": "Varun Kapoor",
+       "seed": 193,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:52.000Z",
+      "live": {
+       "u034": 332,
+       "u193": 683
+      }
+     },
+     {
+      "id": "m-1-35",
+      "slot": 35,
+      "label": "Round 1 · Match 35",
+      "status": "live",
+      "a": {
+       "userId": "u035",
+       "name": "Aman Arora",
+       "seed": 35,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u192",
+       "name": "Aditya Bhatt",
+       "seed": 192,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:37.000Z",
+      "live": {
+       "u035": 546,
+       "u192": 2
+      }
+     },
+     {
+      "id": "m-1-36",
+      "slot": 36,
+      "label": "Round 1 · Match 36",
+      "status": "live",
+      "a": {
+       "userId": "u036",
+       "name": "Dev Khan",
+       "seed": 36,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u191",
+       "name": "Sana Malhotra",
+       "seed": 191,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:48.000Z",
+      "live": {
+       "u036": 163,
+       "u191": 1486
+      }
+     },
+     {
+      "id": "m-1-37",
+      "slot": 37,
+      "label": "Round 1 · Match 37",
+      "status": "live",
+      "a": {
+       "userId": "u037",
+       "name": "Meera Nair",
+       "seed": 37,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u190",
+       "name": "Neha Bose",
+       "seed": 190,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:52.000Z",
+      "live": {
+       "u037": 864,
+       "u190": 889
+      }
+     },
+     {
+      "id": "m-1-38",
+      "slot": 38,
+      "label": "Round 1 · Match 38",
+      "status": "live",
+      "a": {
+       "userId": "u038",
+       "name": "Kiran Bose",
+       "seed": 38,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u189",
+       "name": "Dhruv Nair",
+       "seed": 189,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:34.000Z",
+      "live": {
+       "u038": 1082,
+       "u189": 1462
+      }
+     },
+     {
+      "id": "m-1-39",
+      "slot": 39,
+      "label": "Round 1 · Match 39",
+      "status": "live",
+      "a": {
+       "userId": "u039",
+       "name": "Manav Malhotra",
+       "seed": 39,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u188",
+       "name": "Ananya Khan",
+       "seed": 188,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:53.000Z",
+      "live": {
+       "u039": 340,
+       "u188": 743
+      }
+     },
+     {
+      "id": "m-1-40",
+      "slot": 40,
+      "label": "Round 1 · Match 40",
+      "status": "live",
+      "a": {
+       "userId": "u040",
+       "name": "Lavanya Bhatt",
+       "seed": 40,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u187",
+       "name": "Yash Arora",
+       "seed": 187,
+       "photoUrl": "https://photos.invalid/u187.jpg"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:49.000Z",
+      "live": {
+       "u040": 1179,
+       "u187": 760
+      }
+     },
+     {
+      "id": "m-1-41",
+      "slot": 41,
+      "label": "Round 1 · Match 41",
+      "status": "done",
+      "a": {
+       "userId": "u041",
+       "name": "Aarav Sethi",
+       "seed": 41,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u186",
+       "name": "Kunal Sen",
+       "seed": 186,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:32.000Z",
+      "result": {
+       "u041": 2960,
+       "u186": 1710
+      },
+      "winnerId": "u041",
+      "decidedBy": "played"
+     },
+     {
+      "id": "m-1-42",
+      "slot": 42,
+      "label": "Round 1 · Match 42",
+      "status": "live",
+      "a": {
+       "userId": "u042",
+       "name": "Zoya Verma",
+       "seed": 42,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u185",
+       "name": "Ishaan Pillai",
+       "seed": 185,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:33.000Z",
+      "live": {
+       "u042": 584,
+       "u185": 876
+      }
+     },
+     {
+      "id": "m-1-43",
+      "slot": 43,
+      "label": "Round 1 · Match 43",
+      "status": "live",
+      "a": {
+       "userId": "u043",
+       "name": "Tara Rao",
+       "seed": 43,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u184",
+       "name": "Riya Joshi",
+       "seed": 184,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:34.000Z",
+      "live": {
+       "u043": 693,
+       "u184": 506
+      }
+     },
+     {
+      "id": "m-1-44",
+      "slot": 44,
+      "label": "Round 1 · Match 44",
+      "status": "live",
+      "a": {
+       "userId": "u044",
+       "name": "Simran Iyer",
+       "seed": 44,
+       "photoUrl": "https://photos.invalid/u044.jpg"
+      },
+      "b": {
+       "userId": "u183",
+       "name": "Kartik Iyer",
+       "seed": 183,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:38.000Z",
+      "live": {
+       "u044": 1348,
+       "u183": 1311
+      }
+     },
+     {
+      "id": "m-1-45",
+      "slot": 45,
+      "label": "Round 1 · Match 45",
+      "status": "live",
+      "a": {
+       "userId": "u045",
+       "name": "Sahil Joshi",
+       "seed": 45,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u182",
+       "name": "Kavya Rao",
+       "seed": 182,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:55.000Z",
+      "live": {
+       "u045": 369,
+       "u182": 511
+      }
+     },
+     {
+      "id": "m-1-46",
+      "slot": 46,
+      "label": "Round 1 · Match 46",
+      "status": "live",
+      "a": {
+       "userId": "u046",
+       "name": "Mira Pillai",
+       "seed": 46,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u181",
+       "name": "Rahul Verma",
+       "seed": 181,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:59.000Z",
+      "live": {
+       "u046": 204,
+       "u181": 992
+      }
+     },
+     {
+      "id": "m-1-47",
+      "slot": 47,
+      "label": "Round 1 · Match 47",
+      "status": "live",
+      "a": {
+       "userId": "u047",
+       "name": "Kabir Sen",
+       "seed": 47,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u180",
+       "name": "Rohan Sethi",
+       "seed": 180,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:36.000Z",
+      "live": {
+       "u047": 353,
+       "u180": 829
+      }
+     },
+     {
+      "id": "m-1-48",
+      "slot": 48,
+      "label": "Round 1 · Match 48",
+      "status": "live",
+      "a": {
+       "userId": "u048",
+       "name": "Pooja Arora",
+       "seed": 48,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u179",
+       "name": "Anika Chopra",
+       "seed": 179,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:52.000Z",
+      "live": {
+       "u048": 278,
+       "u179": 902
+      }
+     },
+     {
+      "id": "m-1-49",
+      "slot": 49,
+      "label": "Round 1 · Match 49",
+      "status": "live",
+      "a": {
+       "userId": "u049",
+       "name": "Diya Khan",
+       "seed": 49,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u178",
+       "name": "Isha Reddy",
+       "seed": 178,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:41.000Z",
+      "live": {
+       "u049": 1376,
+       "u178": 1368
+      }
+     },
+     {
+      "id": "m-1-50",
+      "slot": 50,
+      "label": "Round 1 · Match 50",
+      "status": "live",
+      "a": {
+       "userId": "u050",
+       "name": "Priya Nair",
+       "seed": 50,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u177",
+       "name": "Om Das",
+       "seed": 177,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:53.000Z",
+      "live": {
+       "u050": 1022,
+       "u177": 179
+      }
+     },
+     {
+      "id": "m-1-51",
+      "slot": 51,
+      "label": "Round 1 · Match 51",
+      "status": "live",
+      "a": {
+       "userId": "u051",
+       "name": "Nikhil Bose",
+       "seed": 51,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u176",
+       "name": "Ira Shah",
+       "seed": 176,
+       "photoUrl": "https://photos.invalid/u176.jpg"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:36.000Z",
+      "live": {
+       "u051": 502,
+       "u176": 468
+      }
+     },
+     {
+      "id": "m-1-52",
+      "slot": 52,
+      "label": "Round 1 · Match 52",
+      "status": "live",
+      "a": {
+       "userId": "u052",
+       "name": "Shreya Malhotra",
+       "seed": 52,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u175",
+       "name": "Nisha Gill",
+       "seed": 175,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:40.000Z",
+      "live": {
+       "u052": 166,
+       "u175": 1267
+      }
+     },
+     {
+      "id": "m-1-53",
+      "slot": 53,
+      "label": "Round 1 · Match 53",
+      "status": "live",
+      "a": {
+       "userId": "u053",
+       "name": "Arjun Bhatt",
+       "seed": 53,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u174",
+       "name": "Vihaan Mehta",
+       "seed": 174,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:50.000Z",
+      "live": {
+       "u053": 414,
+       "u174": 918
+      }
+     },
+     {
+      "id": "m-1-54",
+      "slot": 54,
+      "label": "Round 1 · Match 54",
+      "status": "live",
+      "a": {
+       "userId": "u054",
+       "name": "Vihaan Kapoor",
+       "seed": 54,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u173",
+       "name": "Arjun Kapoor",
+       "seed": 173,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:46.000Z",
+      "live": {
+       "u054": 834,
+       "u173": 1398
+      }
+     },
+     {
+      "id": "m-1-55",
+      "slot": 55,
+      "label": "Round 1 · Match 55",
+      "status": "live",
+      "a": {
+       "userId": "u055",
+       "name": "Nisha Mehta",
+       "seed": 55,
+       "photoUrl": "https://photos.invalid/u055.jpg"
+      },
+      "b": {
+       "userId": "u172",
+       "name": "Shreya Bhatt",
+       "seed": 172,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:47.000Z",
+      "live": {
+       "u055": 1474,
+       "u172": 112
+      }
+     },
+     {
+      "id": "m-1-56",
+      "slot": 56,
+      "label": "Round 1 · Match 56",
+      "status": "live",
+      "a": {
+       "userId": "u056",
+       "name": "Ira Gill",
+       "seed": 56,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u171",
+       "name": "Nikhil Malhotra",
+       "seed": 171,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:43.000Z",
+      "live": {
+       "u056": 975,
+       "u171": 244
+      }
+     },
+     {
+      "id": "m-1-57",
+      "slot": 57,
+      "label": "Round 1 · Match 57",
+      "status": "live",
+      "a": {
+       "userId": "u057",
+       "name": "Om Shah",
+       "seed": 57,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u170",
+       "name": "Priya Bose",
+       "seed": 170,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:42.000Z",
+      "live": {
+       "u057": 1150,
+       "u170": 878
+      }
+     },
+     {
+      "id": "m-1-58",
+      "slot": 58,
+      "label": "Round 1 · Match 58",
+      "status": "live",
+      "a": {
+       "userId": "u058",
+       "name": "Isha Das",
+       "seed": 58,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u169",
+       "name": "Diya Nair",
+       "seed": 169,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:59.000Z",
+      "live": {
+       "u058": 1343,
+       "u169": 714
+      }
+     },
+     {
+      "id": "m-1-59",
+      "slot": 59,
+      "label": "Round 1 · Match 59",
+      "status": "live",
+      "a": {
+       "userId": "u059",
+       "name": "Anika Reddy",
+       "seed": 59,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u168",
+       "name": "Pooja Khan",
+       "seed": 168,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:47.000Z",
+      "live": {
+       "u059": 1238,
+       "u168": 1134
+      }
+     },
+     {
+      "id": "m-1-60",
+      "slot": 60,
+      "label": "Round 1 · Match 60",
+      "status": "live",
+      "a": {
+       "userId": "u060",
+       "name": "Rohan Chopra",
+       "seed": 60,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u167",
+       "name": "Kabir Arora",
+       "seed": 167,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:56.000Z",
+      "live": {
+       "u060": 1349,
+       "u167": 487
+      }
+     },
+     {
+      "id": "m-1-61",
+      "slot": 61,
+      "label": "Round 1 · Match 61",
+      "status": "live",
+      "a": {
+       "userId": "u061",
+       "name": "Rahul Sethi",
+       "seed": 61,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u166",
+       "name": "Mira Sen",
+       "seed": 166,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:58.000Z",
+      "live": {
+       "u061": 328,
+       "u166": 96
+      }
+     },
+     {
+      "id": "m-1-62",
+      "slot": 62,
+      "label": "Round 1 · Match 62",
+      "status": "live",
+      "a": {
+       "userId": "u062",
+       "name": "Kavya Verma",
+       "seed": 62,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u165",
+       "name": "Sahil Pillai",
+       "seed": 165,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:38.000Z",
+      "live": {
+       "u062": 1149,
+       "u165": 867
+      }
+     },
+     {
+      "id": "m-1-63",
+      "slot": 63,
+      "label": "Round 1 · Match 63",
+      "status": "live",
+      "a": {
+       "userId": "u063",
+       "name": "Kartik Rao",
+       "seed": 63,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u164",
+       "name": "Simran Joshi",
+       "seed": 164,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:10:00.000Z",
+      "live": {
+       "u063": 610,
+       "u164": 1223
+      }
+     },
+     {
+      "id": "m-1-64",
+      "slot": 64,
+      "label": "Round 1 · Match 64",
+      "status": "live",
+      "a": {
+       "userId": "u064",
+       "name": "Riya Iyer",
+       "seed": 64,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u163",
+       "name": "Tara Iyer",
+       "seed": 163,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:47.000Z",
+      "live": {
+       "u064": 275,
+       "u163": 330
+      }
+     },
+     {
+      "id": "m-1-65",
+      "slot": 65,
+      "label": "Round 1 · Match 65",
+      "status": "live",
+      "a": {
+       "userId": "u065",
+       "name": "Ishaan Joshi",
+       "seed": 65,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u162",
+       "name": "Zoya Rao",
+       "seed": 162,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:56.000Z",
+      "live": {
+       "u065": 898,
+       "u162": 873
+      }
+     },
+     {
+      "id": "m-1-66",
+      "slot": 66,
+      "label": "Round 1 · Match 66",
+      "status": "live",
+      "a": {
+       "userId": "u066",
+       "name": "Kunal Pillai",
+       "seed": 66,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u161",
+       "name": "Aarav Verma",
+       "seed": 161,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:51.000Z",
+      "live": {
+       "u066": 987,
+       "u161": 185
+      }
+     },
+     {
+      "id": "m-1-67",
+      "slot": 67,
+      "label": "Round 1 · Match 67",
+      "status": "live",
+      "a": {
+       "userId": "u067",
+       "name": "Yash Sen",
+       "seed": 67,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u160",
+       "name": "Lavanya Kapoor",
+       "seed": 160,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:35.000Z",
+      "live": {
+       "u067": 164,
+       "u160": 1485
+      }
+     },
+     {
+      "id": "m-1-68",
+      "slot": 68,
+      "label": "Round 1 · Match 68",
+      "status": "live",
+      "a": {
+       "userId": "u068",
+       "name": "Ananya Arora",
+       "seed": 68,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u159",
+       "name": "Manav Bhatt",
+       "seed": 159,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:56.000Z",
+      "live": {
+       "u068": 388,
+       "u159": 135
+      }
+     },
+     {
+      "id": "m-1-69",
+      "slot": 69,
+      "label": "Round 1 · Match 69",
+      "status": "live",
+      "a": {
+       "userId": "u069",
+       "name": "Dhruv Khan",
+       "seed": 69,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u158",
+       "name": "Kiran Malhotra",
+       "seed": 158,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:40.000Z",
+      "live": {
+       "u069": 656,
+       "u158": 1018
+      }
+     },
+     {
+      "id": "m-1-70",
+      "slot": 70,
+      "label": "Round 1 · Match 70",
+      "status": "live",
+      "a": {
+       "userId": "u070",
+       "name": "Neha Nair",
+       "seed": 70,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u157",
+       "name": "Meera Bose",
+       "seed": 157,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:10:00.000Z",
+      "live": {
+       "u070": 92,
+       "u157": 1
+      }
+     },
+     {
+      "id": "m-1-71",
+      "slot": 71,
+      "label": "Round 1 · Match 71",
+      "status": "live",
+      "a": {
+       "userId": "u071",
+       "name": "Sana Bose",
+       "seed": 71,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u156",
+       "name": "Dev Nair",
+       "seed": 156,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:57.000Z",
+      "live": {
+       "u071": 739,
+       "u156": 92
+      }
+     },
+     {
+      "id": "m-1-72",
+      "slot": 72,
+      "label": "Round 1 · Match 72",
+      "status": "live",
+      "a": {
+       "userId": "u072",
+       "name": "Aditya Malhotra",
+       "seed": 72,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u155",
+       "name": "Aman Khan",
+       "seed": 155,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:31.000Z",
+      "live": {
+       "u072": 470,
+       "u155": 229
+      }
+     },
+     {
+      "id": "m-1-73",
+      "slot": 73,
+      "label": "Round 1 · Match 73",
+      "status": "live",
+      "a": {
+       "userId": "u073",
+       "name": "Varun Bhatt",
+       "seed": 73,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u154",
+       "name": "Rhea Arora",
+       "seed": 154,
+       "photoUrl": "https://photos.invalid/u154.jpg"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:54.000Z",
+      "live": {
+       "u073": 485,
+       "u154": 701
+      }
+     },
+     {
+      "id": "m-1-74",
+      "slot": 74,
+      "label": "Round 1 · Match 74",
+      "status": "live",
+      "a": {
+       "userId": "u074",
+       "name": "Rhea Kapoor",
+       "seed": 74,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u153",
+       "name": "Varun Sen",
+       "seed": 153,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:45.000Z",
+      "live": {
+       "u074": 1470,
+       "u153": 1065
+      }
+     },
+     {
+      "id": "m-1-75",
+      "slot": 75,
+      "label": "Round 1 · Match 75",
+      "status": "live",
+      "a": {
+       "userId": "u075",
+       "name": "Aman Mehta",
+       "seed": 75,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u152",
+       "name": "Aditya Pillai",
+       "seed": 152,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:43.000Z",
+      "live": {
+       "u075": 237,
+       "u152": 424
+      }
+     },
+     {
+      "id": "m-1-76",
+      "slot": 76,
+      "label": "Round 1 · Match 76",
+      "status": "live",
+      "a": {
+       "userId": "u076",
+       "name": "Dev Gill",
+       "seed": 76,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u151",
+       "name": "Sana Joshi",
+       "seed": 151,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:37.000Z",
+      "live": {
+       "u076": 1126,
+       "u151": 747
+      }
+     },
+     {
+      "id": "m-1-77",
+      "slot": 77,
+      "label": "Round 1 · Match 77",
+      "status": "live",
+      "a": {
+       "userId": "u077",
+       "name": "Meera Shah",
+       "seed": 77,
+       "photoUrl": "https://photos.invalid/u077.jpg"
+      },
+      "b": {
+       "userId": "u150",
+       "name": "Neha Iyer",
+       "seed": 150,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:58.000Z",
+      "live": {
+       "u077": 1089,
+       "u150": 1116
+      }
+     },
+     {
+      "id": "m-1-78",
+      "slot": 78,
+      "label": "Round 1 · Match 78",
+      "status": "live",
+      "a": {
+       "userId": "u078",
+       "name": "Kiran Das",
+       "seed": 78,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u149",
+       "name": "Dhruv Rao",
+       "seed": 149,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:59.000Z",
+      "live": {
+       "u078": 170,
+       "u149": 478
+      }
+     },
+     {
+      "id": "m-1-79",
+      "slot": 79,
+      "label": "Round 1 · Match 79",
+      "status": "live",
+      "a": {
+       "userId": "u079",
+       "name": "Manav Reddy",
+       "seed": 79,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u148",
+       "name": "Ananya Verma",
+       "seed": 148,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:54.000Z",
+      "live": {
+       "u079": 391,
+       "u148": 956
+      }
+     },
+     {
+      "id": "m-1-80",
+      "slot": 80,
+      "label": "Round 1 · Match 80",
+      "status": "live",
+      "a": {
+       "userId": "u080",
+       "name": "Lavanya Chopra",
+       "seed": 80,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u147",
+       "name": "Yash Sethi",
+       "seed": 147,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:44.000Z",
+      "live": {
+       "u080": 1283,
+       "u147": 811
+      }
+     },
+     {
+      "id": "m-1-81",
+      "slot": 81,
+      "label": "Round 1 · Match 81",
+      "status": "live",
+      "a": {
+       "userId": "u081",
+       "name": "Aarav Arora",
+       "seed": 81,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u146",
+       "name": "Kunal Chopra",
+       "seed": 146,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:35.000Z",
+      "live": {
+       "u081": 761,
+       "u146": 196
+      }
+     },
+     {
+      "id": "m-1-82",
+      "slot": 82,
+      "label": "Round 1 · Match 82",
+      "status": "live",
+      "a": {
+       "userId": "u082",
+       "name": "Zoya Khan",
+       "seed": 82,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u145",
+       "name": "Ishaan Reddy",
+       "seed": 145,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:41.000Z",
+      "live": {
+       "u082": 769,
+       "u145": 794
+      }
+     },
+     {
+      "id": "m-1-83",
+      "slot": 83,
+      "label": "Round 1 · Match 83",
+      "status": "live",
+      "a": {
+       "userId": "u083",
+       "name": "Tara Nair",
+       "seed": 83,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u144",
+       "name": "Riya Das",
+       "seed": 144,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:37.000Z",
+      "live": {
+       "u083": 1480,
+       "u144": 930
+      }
+     },
+     {
+      "id": "m-1-84",
+      "slot": 84,
+      "label": "Round 1 · Match 84",
+      "status": "live",
+      "a": {
+       "userId": "u084",
+       "name": "Simran Bose",
+       "seed": 84,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u143",
+       "name": "Kartik Shah",
+       "seed": 143,
+       "photoUrl": "https://photos.invalid/u143.jpg"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:40.000Z",
+      "live": {
+       "u084": 1320,
+       "u143": 491
+      }
+     },
+     {
+      "id": "m-1-85",
+      "slot": 85,
+      "label": "Round 1 · Match 85",
+      "status": "live",
+      "a": {
+       "userId": "u085",
+       "name": "Sahil Malhotra",
+       "seed": 85,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u142",
+       "name": "Kavya Gill",
+       "seed": 142,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:33.000Z",
+      "live": {
+       "u085": 749,
+       "u142": 1316
+      }
+     },
+     {
+      "id": "m-1-86",
+      "slot": 86,
+      "label": "Round 1 · Match 86",
+      "status": "live",
+      "a": {
+       "userId": "u086",
+       "name": "Mira Bhatt",
+       "seed": 86,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u141",
+       "name": "Rahul Mehta",
+       "seed": 141,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:32.000Z",
+      "live": {
+       "u086": 1402,
+       "u141": 1299
+      }
+     },
+     {
+      "id": "m-1-87",
+      "slot": 87,
+      "label": "Round 1 · Match 87",
+      "status": "live",
+      "a": {
+       "userId": "u087",
+       "name": "Kabir Kapoor",
+       "seed": 87,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u140",
+       "name": "Rohan Kapoor",
+       "seed": 140,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:44.000Z",
+      "live": {
+       "u087": 56,
+       "u140": 1057
+      }
+     },
+     {
+      "id": "m-1-88",
+      "slot": 88,
+      "label": "Round 1 · Match 88",
+      "status": "live",
+      "a": {
+       "userId": "u088",
+       "name": "Pooja Mehta",
+       "seed": 88,
+       "photoUrl": "https://photos.invalid/u088.jpg"
+      },
+      "b": {
+       "userId": "u139",
+       "name": "Anika Bhatt",
+       "seed": 139,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:58.000Z",
+      "live": {
+       "u088": 907,
+       "u139": 52
+      }
+     },
+     {
+      "id": "m-1-89",
+      "slot": 89,
+      "label": "Round 1 · Match 89",
+      "status": "live",
+      "a": {
+       "userId": "u089",
+       "name": "Diya Gill",
+       "seed": 89,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u138",
+       "name": "Isha Malhotra",
+       "seed": 138,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:32.000Z",
+      "live": {
+       "u089": 18,
+       "u138": 1274
+      }
+     },
+     {
+      "id": "m-1-90",
+      "slot": 90,
+      "label": "Round 1 · Match 90",
+      "status": "live",
+      "a": {
+       "userId": "u090",
+       "name": "Priya Shah",
+       "seed": 90,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u137",
+       "name": "Om Bose",
+       "seed": 137,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:35.000Z",
+      "live": {
+       "u090": 66,
+       "u137": 657
+      }
+     },
+     {
+      "id": "m-1-91",
+      "slot": 91,
+      "label": "Round 1 · Match 91",
+      "status": "live",
+      "a": {
+       "userId": "u091",
+       "name": "Nikhil Das",
+       "seed": 91,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u136",
+       "name": "Ira Nair",
+       "seed": 136,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:57.000Z",
+      "live": {
+       "u091": 775,
+       "u136": 76
+      }
+     },
+     {
+      "id": "m-1-92",
+      "slot": 92,
+      "label": "Round 1 · Match 92",
+      "status": "live",
+      "a": {
+       "userId": "u092",
+       "name": "Shreya Reddy",
+       "seed": 92,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u135",
+       "name": "Nisha Khan",
+       "seed": 135,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:50.000Z",
+      "live": {
+       "u092": 316,
+       "u135": 635
+      }
+     },
+     {
+      "id": "m-1-93",
+      "slot": 93,
+      "label": "Round 1 · Match 93",
+      "status": "live",
+      "a": {
+       "userId": "u093",
+       "name": "Arjun Chopra",
+       "seed": 93,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u134",
+       "name": "Vihaan Arora",
+       "seed": 134,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:37.000Z",
+      "live": {
+       "u093": 1168,
+       "u134": 1388
+      }
+     },
+     {
+      "id": "m-1-94",
+      "slot": 94,
+      "label": "Round 1 · Match 94",
+      "status": "live",
+      "a": {
+       "userId": "u094",
+       "name": "Vihaan Sethi",
+       "seed": 94,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u133",
+       "name": "Arjun Sen",
+       "seed": 133,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:50.000Z",
+      "live": {
+       "u094": 1231,
+       "u133": 813
+      }
+     },
+     {
+      "id": "m-1-95",
+      "slot": 95,
+      "label": "Round 1 · Match 95",
+      "status": "live",
+      "a": {
+       "userId": "u095",
+       "name": "Nisha Verma",
+       "seed": 95,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u132",
+       "name": "Shreya Pillai",
+       "seed": 132,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:45.000Z",
+      "live": {
+       "u095": 192,
+       "u132": 861
+      }
+     },
+     {
+      "id": "m-1-96",
+      "slot": 96,
+      "label": "Round 1 · Match 96",
+      "status": "live",
+      "a": {
+       "userId": "u096",
+       "name": "Ira Rao",
+       "seed": 96,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u131",
+       "name": "Nikhil Joshi",
+       "seed": 131,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:45.000Z",
+      "live": {
+       "u096": 142,
+       "u131": 405
+      }
+     },
+     {
+      "id": "m-1-97",
+      "slot": 97,
+      "label": "Round 1 · Match 97",
+      "status": "live",
+      "a": {
+       "userId": "u097",
+       "name": "Om Iyer",
+       "seed": 97,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u130",
+       "name": "Priya Iyer",
+       "seed": 130,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:10:00.000Z",
+      "live": {
+       "u097": 253,
+       "u130": 475
+      }
+     },
+     {
+      "id": "m-1-98",
+      "slot": 98,
+      "label": "Round 1 · Match 98",
+      "status": "live",
+      "a": {
+       "userId": "u098",
+       "name": "Isha Joshi",
+       "seed": 98,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u129",
+       "name": "Diya Rao",
+       "seed": 129,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:51.000Z",
+      "live": {
+       "u098": 797,
+       "u129": 1478
+      }
+     },
+     {
+      "id": "m-1-99",
+      "slot": 99,
+      "label": "Round 1 · Match 99",
+      "status": "live",
+      "a": {
+       "userId": "u099",
+       "name": "Anika Pillai",
+       "seed": 99,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u128",
+       "name": "Pooja Verma",
+       "seed": 128,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:45.000Z",
+      "live": {
+       "u099": 870,
+       "u128": 1363
+      }
+     },
+     {
+      "id": "m-1-100",
+      "slot": 100,
+      "label": "Round 1 · Match 100",
+      "status": "live",
+      "a": {
+       "userId": "u100",
+       "name": "Rohan Sen",
+       "seed": 100,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u127",
+       "name": "Kabir Sethi",
+       "seed": 127,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:33.000Z",
+      "live": {
+       "u100": 1399,
+       "u127": 840
+      }
+     },
+     {
+      "id": "m-1-101",
+      "slot": 101,
+      "label": "Round 1 · Match 101",
+      "status": "live",
+      "a": {
+       "userId": "u101",
+       "name": "Rahul Arora",
+       "seed": 101,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u126",
+       "name": "Mira Chopra",
+       "seed": 126,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:38.000Z",
+      "live": {
+       "u101": 132,
+       "u126": 228
+      }
+     },
+     {
+      "id": "m-1-102",
+      "slot": 102,
+      "label": "Round 1 · Match 102",
+      "status": "live",
+      "a": {
+       "userId": "u102",
+       "name": "Kavya Khan",
+       "seed": 102,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u125",
+       "name": "Sahil Reddy",
+       "seed": 125,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:46.000Z",
+      "live": {
+       "u102": 1397,
+       "u125": 975
+      }
+     },
+     {
+      "id": "m-1-103",
+      "slot": 103,
+      "label": "Round 1 · Match 103",
+      "status": "live",
+      "a": {
+       "userId": "u103",
+       "name": "Kartik Nair",
+       "seed": 103,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u124",
+       "name": "Simran Das",
+       "seed": 124,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:10:00.000Z",
+      "live": {
+       "u103": 288,
+       "u124": 1127
+      }
+     },
+     {
+      "id": "m-1-104",
+      "slot": 104,
+      "label": "Round 1 · Match 104",
+      "status": "live",
+      "a": {
+       "userId": "u104",
+       "name": "Riya Bose",
+       "seed": 104,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u123",
+       "name": "Tara Shah",
+       "seed": 123,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:37.000Z",
+      "live": {
+       "u104": 1088,
+       "u123": 1186
+      }
+     },
+     {
+      "id": "m-1-105",
+      "slot": 105,
+      "label": "Round 1 · Match 105",
+      "status": "live",
+      "a": {
+       "userId": "u105",
+       "name": "Ishaan Malhotra",
+       "seed": 105,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u122",
+       "name": "Zoya Gill",
+       "seed": 122,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:48.000Z",
+      "live": {
+       "u105": 61,
+       "u122": 327
+      }
+     },
+     {
+      "id": "m-1-106",
+      "slot": 106,
+      "label": "Round 1 · Match 106",
+      "status": "live",
+      "a": {
+       "userId": "u106",
+       "name": "Kunal Bhatt",
+       "seed": 106,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u121",
+       "name": "Aarav Mehta",
+       "seed": 121,
+       "photoUrl": "https://photos.invalid/u121.jpg"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:40.000Z",
+      "live": {
+       "u106": 1035,
+       "u121": 671
+      }
+     },
+     {
+      "id": "m-1-107",
+      "slot": 107,
+      "label": "Round 1 · Match 107",
+      "status": "live",
+      "a": {
+       "userId": "u107",
+       "name": "Yash Kapoor",
+       "seed": 107,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u120",
+       "name": "Lavanya Sen",
+       "seed": 120,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:42.000Z",
+      "live": {
+       "u107": 347,
+       "u120": 437
+      }
+     },
+     {
+      "id": "m-1-108",
+      "slot": 108,
+      "label": "Round 1 · Match 108",
+      "status": "live",
+      "a": {
+       "userId": "u108",
+       "name": "Ananya Mehta",
+       "seed": 108,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u119",
+       "name": "Manav Pillai",
+       "seed": 119,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:10:00.000Z",
+      "live": {
+       "u108": 1317,
+       "u119": 1408
+      }
+     },
+     {
+      "id": "m-1-109",
+      "slot": 109,
+      "label": "Round 1 · Match 109",
+      "status": "live",
+      "a": {
+       "userId": "u109",
+       "name": "Dhruv Gill",
+       "seed": 109,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u118",
+       "name": "Kiran Joshi",
+       "seed": 118,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%238D5524'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%23111'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%238D5524'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:58.000Z",
+      "live": {
+       "u109": 590,
+       "u118": 500
+      }
+     },
+     {
+      "id": "m-1-110",
+      "slot": 110,
+      "label": "Round 1 · Match 110",
+      "status": "live",
+      "a": {
+       "userId": "u110",
+       "name": "Neha Shah",
+       "seed": 110,
+       "photoUrl": "https://photos.invalid/u110.jpg"
+      },
+      "b": {
+       "userId": "u117",
+       "name": "Meera Iyer",
+       "seed": 117,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:37.000Z",
+      "live": {
+       "u110": 1323,
+       "u117": 171
+      }
+     },
+     {
+      "id": "m-1-111",
+      "slot": 111,
+      "label": "Round 1 · Match 111",
+      "status": "live",
+      "a": {
+       "userId": "u111",
+       "name": "Sana Das",
+       "seed": 111,
+       "photoUrl": null
+      },
+      "b": {
+       "userId": "u116",
+       "name": "Dev Rao",
+       "seed": 116,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23C2577A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:54.000Z",
+      "live": {
+       "u111": 166,
+       "u116": 1015
+      }
+     },
+     {
+      "id": "m-1-112",
+      "slot": 112,
+      "label": "Round 1 · Match 112",
+      "status": "live",
+      "a": {
+       "userId": "u112",
+       "name": "Aditya Reddy",
+       "seed": 112,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%23B7791F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23F1C27D'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%232B1B10'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23F1C27D'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u115",
+       "name": "Aman Verma",
+       "seed": 115,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%232F9E8F'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23E0AC69'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%237B4B2A'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23E0AC69'%2F%3E%3C%2Fsvg%3E"
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:51.000Z",
+      "live": {
+       "u112": 764,
+       "u115": 1472
+      }
+     },
+     {
+      "id": "m-1-113",
+      "slot": 113,
+      "label": "Round 1 · Match 113",
+      "status": "live",
+      "a": {
+       "userId": "u113",
+       "name": "Varun Chopra",
+       "seed": 113,
+       "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+      },
+      "b": {
+       "userId": "u114",
+       "name": "Rhea Sethi",
+       "seed": 114,
+       "photoUrl": null
+      },
+      "attempt": 0,
+      "startAt": "2026-11-06T12:09:53.000Z",
+      "live": {
+       "u113": 1022,
+       "u114": 1478
+      }
+     }
+    ],
+    "openedAt": "2026-11-06T12:09:20.000Z"
+   },
+   {
+    "n": 2,
+    "label": "Round 2",
+    "short": "R2",
+    "kind": "parallel",
+    "byes": [],
+    "matches": [
+     {
+      "id": "m-2-16",
+      "slot": 16,
+      "label": "Round 2 · Match 1",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-17",
+      "slot": 17,
+      "label": "Round 2 · Match 2",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-18",
+      "slot": 18,
+      "label": "Round 2 · Match 3",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-19",
+      "slot": 19,
+      "label": "Round 2 · Match 4",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-20",
+      "slot": 20,
+      "label": "Round 2 · Match 5",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-21",
+      "slot": 21,
+      "label": "Round 2 · Match 6",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-22",
+      "slot": 22,
+      "label": "Round 2 · Match 7",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-23",
+      "slot": 23,
+      "label": "Round 2 · Match 8",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-24",
+      "slot": 24,
+      "label": "Round 2 · Match 9",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-25",
+      "slot": 25,
+      "label": "Round 2 · Match 10",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-26",
+      "slot": 26,
+      "label": "Round 2 · Match 11",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-27",
+      "slot": 27,
+      "label": "Round 2 · Match 12",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-28",
+      "slot": 28,
+      "label": "Round 2 · Match 13",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-29",
+      "slot": 29,
+      "label": "Round 2 · Match 14",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-30",
+      "slot": 30,
+      "label": "Round 2 · Match 15",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-31",
+      "slot": 31,
+      "label": "Round 2 · Match 16",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-32",
+      "slot": 32,
+      "label": "Round 2 · Match 17",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-33",
+      "slot": 33,
+      "label": "Round 2 · Match 18",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-34",
+      "slot": 34,
+      "label": "Round 2 · Match 19",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-35",
+      "slot": 35,
+      "label": "Round 2 · Match 20",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-36",
+      "slot": 36,
+      "label": "Round 2 · Match 21",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-37",
+      "slot": 37,
+      "label": "Round 2 · Match 22",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-38",
+      "slot": 38,
+      "label": "Round 2 · Match 23",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-39",
+      "slot": 39,
+      "label": "Round 2 · Match 24",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-40",
+      "slot": 40,
+      "label": "Round 2 · Match 25",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-41",
+      "slot": 41,
+      "label": "Round 2 · Match 26",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-42",
+      "slot": 42,
+      "label": "Round 2 · Match 27",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-43",
+      "slot": 43,
+      "label": "Round 2 · Match 28",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-44",
+      "slot": 44,
+      "label": "Round 2 · Match 29",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-45",
+      "slot": 45,
+      "label": "Round 2 · Match 30",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-46",
+      "slot": 46,
+      "label": "Round 2 · Match 31",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-47",
+      "slot": 47,
+      "label": "Round 2 · Match 32",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-48",
+      "slot": 48,
+      "label": "Round 2 · Match 33",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-49",
+      "slot": 49,
+      "label": "Round 2 · Match 34",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-50",
+      "slot": 50,
+      "label": "Round 2 · Match 35",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-51",
+      "slot": 51,
+      "label": "Round 2 · Match 36",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-52",
+      "slot": 52,
+      "label": "Round 2 · Match 37",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-53",
+      "slot": 53,
+      "label": "Round 2 · Match 38",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-54",
+      "slot": 54,
+      "label": "Round 2 · Match 39",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-55",
+      "slot": 55,
+      "label": "Round 2 · Match 40",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-56",
+      "slot": 56,
+      "label": "Round 2 · Match 41",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-57",
+      "slot": 57,
+      "label": "Round 2 · Match 42",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-58",
+      "slot": 58,
+      "label": "Round 2 · Match 43",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-59",
+      "slot": 59,
+      "label": "Round 2 · Match 44",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-60",
+      "slot": 60,
+      "label": "Round 2 · Match 45",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-61",
+      "slot": 61,
+      "label": "Round 2 · Match 46",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-62",
+      "slot": 62,
+      "label": "Round 2 · Match 47",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-63",
+      "slot": 63,
+      "label": "Round 2 · Match 48",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-2-64",
+      "slot": 64,
+      "label": "Round 2 · Match 49",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     }
+    ]
+   },
+   {
+    "n": 3,
+    "label": "Round 3",
+    "short": "R3",
+    "kind": "parallel",
+    "byes": [],
+    "matches": [
+     {
+      "id": "m-3-1",
+      "slot": 1,
+      "label": "Round 3 · Match 1",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-2",
+      "slot": 2,
+      "label": "Round 3 · Match 2",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-3",
+      "slot": 3,
+      "label": "Round 3 · Match 3",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-4",
+      "slot": 4,
+      "label": "Round 3 · Match 4",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-5",
+      "slot": 5,
+      "label": "Round 3 · Match 5",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-6",
+      "slot": 6,
+      "label": "Round 3 · Match 6",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-7",
+      "slot": 7,
+      "label": "Round 3 · Match 7",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-8",
+      "slot": 8,
+      "label": "Round 3 · Match 8",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-9",
+      "slot": 9,
+      "label": "Round 3 · Match 9",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-10",
+      "slot": 10,
+      "label": "Round 3 · Match 10",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-11",
+      "slot": 11,
+      "label": "Round 3 · Match 11",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-12",
+      "slot": 12,
+      "label": "Round 3 · Match 12",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-13",
+      "slot": 13,
+      "label": "Round 3 · Match 13",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-14",
+      "slot": 14,
+      "label": "Round 3 · Match 14",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-15",
+      "slot": 15,
+      "label": "Round 3 · Match 15",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-16",
+      "slot": 16,
+      "label": "Round 3 · Match 16",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-17",
+      "slot": 17,
+      "label": "Round 3 · Match 17",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-18",
+      "slot": 18,
+      "label": "Round 3 · Match 18",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-19",
+      "slot": 19,
+      "label": "Round 3 · Match 19",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-20",
+      "slot": 20,
+      "label": "Round 3 · Match 20",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-21",
+      "slot": 21,
+      "label": "Round 3 · Match 21",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-22",
+      "slot": 22,
+      "label": "Round 3 · Match 22",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-23",
+      "slot": 23,
+      "label": "Round 3 · Match 23",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-24",
+      "slot": 24,
+      "label": "Round 3 · Match 24",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-25",
+      "slot": 25,
+      "label": "Round 3 · Match 25",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-26",
+      "slot": 26,
+      "label": "Round 3 · Match 26",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-27",
+      "slot": 27,
+      "label": "Round 3 · Match 27",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-28",
+      "slot": 28,
+      "label": "Round 3 · Match 28",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-29",
+      "slot": 29,
+      "label": "Round 3 · Match 29",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-30",
+      "slot": 30,
+      "label": "Round 3 · Match 30",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-31",
+      "slot": 31,
+      "label": "Round 3 · Match 31",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-3-32",
+      "slot": 32,
+      "label": "Round 3 · Match 32",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     }
+    ]
+   },
+   {
+    "n": 4,
+    "label": "Round 4",
+    "short": "R4",
+    "kind": "parallel",
+    "byes": [],
+    "matches": [
+     {
+      "id": "m-4-1",
+      "slot": 1,
+      "label": "Round 4 · Match 1",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-4-2",
+      "slot": 2,
+      "label": "Round 4 · Match 2",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-4-3",
+      "slot": 3,
+      "label": "Round 4 · Match 3",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-4-4",
+      "slot": 4,
+      "label": "Round 4 · Match 4",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-4-5",
+      "slot": 5,
+      "label": "Round 4 · Match 5",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-4-6",
+      "slot": 6,
+      "label": "Round 4 · Match 6",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-4-7",
+      "slot": 7,
+      "label": "Round 4 · Match 7",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-4-8",
+      "slot": 8,
+      "label": "Round 4 · Match 8",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-4-9",
+      "slot": 9,
+      "label": "Round 4 · Match 9",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-4-10",
+      "slot": 10,
+      "label": "Round 4 · Match 10",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-4-11",
+      "slot": 11,
+      "label": "Round 4 · Match 11",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-4-12",
+      "slot": 12,
+      "label": "Round 4 · Match 12",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-4-13",
+      "slot": 13,
+      "label": "Round 4 · Match 13",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-4-14",
+      "slot": 14,
+      "label": "Round 4 · Match 14",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-4-15",
+      "slot": 15,
+      "label": "Round 4 · Match 15",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-4-16",
+      "slot": 16,
+      "label": "Round 4 · Match 16",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     }
+    ]
+   },
+   {
+    "n": 5,
+    "label": "Round 5",
+    "short": "R5",
+    "kind": "parallel",
+    "byes": [],
+    "matches": [
+     {
+      "id": "m-5-1",
+      "slot": 1,
+      "label": "Round 5 · Match 1",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-5-2",
+      "slot": 2,
+      "label": "Round 5 · Match 2",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-5-3",
+      "slot": 3,
+      "label": "Round 5 · Match 3",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-5-4",
+      "slot": 4,
+      "label": "Round 5 · Match 4",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-5-5",
+      "slot": 5,
+      "label": "Round 5 · Match 5",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-5-6",
+      "slot": 6,
+      "label": "Round 5 · Match 6",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-5-7",
+      "slot": 7,
+      "label": "Round 5 · Match 7",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-5-8",
+      "slot": 8,
+      "label": "Round 5 · Match 8",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     }
+    ]
+   },
+   {
+    "n": 6,
+    "label": "Quarter-finals",
+    "short": "QF",
+    "kind": "sequential",
+    "byes": [],
+    "matches": [
+     {
+      "id": "m-6-1",
+      "slot": 1,
+      "label": "QF1",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-6-2",
+      "slot": 2,
+      "label": "QF2",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-6-3",
+      "slot": 3,
+      "label": "QF3",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-6-4",
+      "slot": 4,
+      "label": "QF4",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     }
+    ]
+   },
+   {
+    "n": 7,
+    "label": "Semi-finals",
+    "short": "SF",
+    "kind": "sequential",
+    "byes": [],
+    "matches": [
+     {
+      "id": "m-7-1",
+      "slot": 1,
+      "label": "SF1",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     },
+     {
+      "id": "m-7-2",
+      "slot": 2,
+      "label": "SF2",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     }
+    ]
+   },
+   {
+    "n": 8,
+    "label": "Final",
+    "short": "F",
+    "kind": "sequential",
+    "byes": [],
+    "matches": [
+     {
+      "id": "m-8-1",
+      "slot": 1,
+      "label": "Final",
+      "status": "pending",
+      "a": null,
+      "b": null,
+      "attempt": 0
+     }
+    ]
+   }
+  ]
+ },
+ "me": {
+  "userId": "u041",
+  "name": "Aarav Sethi",
+  "hr": false,
+  "entered": true,
+  "seed": 41,
+  "boardRank": 41,
+  "best": 4293,
+  "alive": true,
+  "balance": 1250,
+  "match": {
+   "id": "m-1-41",
+   "label": "Round 1 · Match 41",
+   "round": 1,
+   "status": "done",
+   "opponent": {
+    "userId": "u186",
+    "name": "Kunal Sen",
+    "seed": 186,
+    "best": 1024,
+    "photoUrl": null
+   },
+   "attempt": 0,
+   "joined": true,
+   "opponentJoined": true,
+   "startAt": "2026-11-06T12:09:32.000Z",
+   "result": {
+    "u041": 2960,
+    "u186": 1710
+   },
+   "winnerId": "u041"
+  },
+  "photoUrl": "data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2064%2064'%3E%3Crect%20width%3D'64'%20height%3D'64'%20fill%3D'%235B8C3A'%2F%3E%3Ccircle%20cx%3D'32'%20cy%3D'27'%20r%3D'13'%20fill%3D'%23C68642'%2F%3E%3Cpath%20d%3D'M19%2025c0-9%206-14%2013-14s13%205%2013%2014c-3-5-8-7-13-7s-10%202-13%207z'%20fill%3D'%235A3214'%2F%3E%3Cpath%20d%3D'M10%2064c2-14%2011-20%2022-20s20%206%2022%2020z'%20fill%3D'%23C68642'%2F%3E%3C%2Fsvg%3E"
+ }
+}

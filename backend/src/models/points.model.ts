@@ -11,7 +11,9 @@ export type PointSource =
   | 'photo_story_challenge'
   | 'most_likely'
   | 'hint_relay'
-  | 'game_challenge';
+  | 'game_challenge'
+  /** A bet on a Diwali Cup match: the stake held, then paid back double, or refunded. */
+  | 'cup_bet';
 
 /**
  * What happened. Kept separate from the source so a month's activity can say
@@ -29,7 +31,11 @@ export type PointReason =
   /** The challenge itself was deleted before it closed. */
   | 'challenge_deleted'
   /** Points from a game. */
-  | 'game';
+  | 'game'
+  /** A Cup bet: the stake taken, a winning bet's payout, or a voided match's refund. */
+  | 'bet_placed'
+  | 'bet_won'
+  | 'bet_refunded';
 
 /**
  * One change to one person's `User.points`, recorded as it happens.

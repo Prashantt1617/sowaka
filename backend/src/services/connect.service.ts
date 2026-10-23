@@ -1,6 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { randomUUID } from 'node:crypto';
 import { audienceLists, companies, connectPosts, contentReports, gameScores, notifications, relayEvents, users } from '../config/db';
+import { cupLinkFor } from './cup.service';
 import { ConnectAudience, ConnectCaptionEntry, ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
 import { notifyUsers, removePostNotifications } from './notification.service';
@@ -1569,7 +1570,13 @@ async function viewPost(
     body.myEntryId = entries.find((entry) => entry.isMine)?.id ?? null;
     body.myVoteEntryId = votes[viewerUserId] ?? null;
   }
-  if (post.type === 'live_game' && typeof body.gameId === 'string') {
+  if (post.type === 'live_game' && typeof body.cupEventId === 'string') {
+    // The Diwali Cup's post: the app opens `hostedUrl` as a page with no
+    // session, so each viewer gets a link signed for them alone.
+    body.hostedUrl = cupLinkFor(body, { userId: viewerUserId, org: post.org }) ?? '';
+    delete body.cupLinkBase;
+    delete body.cupLinkUntil;
+  } else if (post.type === 'live_game' && typeof body.gameId === 'string') {
     const leaders = await gameScores()
       .find({ gameId: body.gameId, org: post.org })
       .sort({ score: -1, achievedAt: 1 })

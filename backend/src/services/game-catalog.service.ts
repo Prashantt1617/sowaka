@@ -155,7 +155,16 @@ async function requireGame(viewer: GameViewer, key: string, withHtml = false): P
  * `GAME_PAGE_DIR` on a developer's machine, the file `<dir>/<key>.html` when
  * there is one, as version "dev"; the game must still be on the company's list.
  */
+/** The Cup's page from `CUP_PAGE_FILE`, on a developer's machine only; null otherwise. */
+async function devCupPage(key: string): Promise<{ html: string; version: string } | null> {
+  if (key !== 'diwali-cup' || !env.cupPageFile) return null;
+  const html = await readFile(resolve(env.cupPageFile), 'utf8');
+  return html.length > 0 ? { html, version: 'dev' } : null;
+}
+
 export async function pageFor(viewer: GameViewer, key: string): Promise<{ html: string; version: string }> {
+  const cup = await devCupPage(key);
+  if (cup) return cup;
   if (env.gamePageDir && GAME_KEY_PATTERN.test(key)) {
     await requireGame(viewer, key);
     try {
@@ -179,6 +188,8 @@ export async function pageFor(viewer: GameViewer, key: string): Promise<{ html: 
  */
 export async function publicPageFor(key: string): Promise<{ html: string; version: string } | null> {
   if (!GAME_KEY_PATTERN.test(key)) return null;
+  const cup = await devCupPage(key);
+  if (cup) return cup;
   if (env.gamePageDir) {
     try {
       const html = await readFile(join(resolve(env.gamePageDir), `${key}.html`), 'utf8');

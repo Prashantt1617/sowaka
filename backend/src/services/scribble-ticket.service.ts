@@ -22,7 +22,12 @@ import { logger } from '../utils/logger';
  *     hop token is refused at the socket, so a URL in a log opens nothing.
  */
 
-export type ScribbleTicketKind = 'ticket' | 'hop';
+/**
+ * A third kind, `cup-link`, rides in the Diwali Cup's feed post: each viewer
+ * gets their own link to the Cup page, good until the event ends, which buys
+ * the page a `ticket` like a hop does. It opens nothing else.
+ */
+export type ScribbleTicketKind = 'ticket' | 'hop' | 'cup-link';
 
 export interface ScribbleTicket {
   userId: string;

@@ -193,6 +193,12 @@ export const env = {
    * machine only. For trying a game page in the simulator, or a live Scribble
    * build against a local backend, without uploading it to the catalog.
    */
+  /**
+   * For a local test of the Diwali Cup only: the Cup's page (`diwali-cup`) is
+   * read from this file instead of game_catalog, without the catalog entry or
+   * the company's game list. Ignored outside development and test.
+   */
+  cupPageFile: DEV_ENVIRONMENTS.has(process.env.NODE_ENV ?? '') ? (process.env.CUP_PAGE_FILE ?? '').trim() : '',
   gamePageDir: DEV_ENVIRONMENTS.has(process.env.NODE_ENV ?? '') ? (process.env.GAME_PAGE_DIR ?? '').trim() : '',
   /**
    * Signs the tickets a Scribble page carries (see `scribble-ticket.service`).
@@ -201,6 +207,15 @@ export const env = {
    * database credentials and the game's signing key are not one secret.
    */
   scribbleTicketSecret: (process.env.SCRIBBLE_TICKET_SECRET ?? '').trim(),
+  /**
+   * The Diwali Cup's runner (see `cup.service`): off with `CUP_RUNNER=off`.
+   * `CUP_RUNNER_ORGS` (comma-separated) limits which orgs' events it moves;
+   * outside production it defaults to `NOTIFY_ORGS`, and with neither set it
+   * moves nothing, so a dev server on the shared database never runs a real
+   * company's Cup.
+   */
+  cupRunner: (process.env.CUP_RUNNER ?? '').trim().toLowerCase() !== 'off',
+  cupRunnerOrgs: orgList(process.env.CUP_RUNNER_ORGS ?? (process.env.NODE_ENV === 'production' ? '' : process.env.NOTIFY_ORGS ?? '-')),
   zoom: {
     accountId: process.env.ZOOM_ACCOUNT_ID ?? '',
     clientId: process.env.ZOOM_CLIENT_ID ?? '',
@@ -241,6 +256,9 @@ if ((process.env.APP_PAGE_DIR ?? '').trim() && !env.appPageDir) {
   console.warn(`[app-pages] APP_PAGE_DIR is set on a ${env.nodeEnv} host and has been ignored; pages come from the database.`);
 }
 
+if ((process.env.CUP_PAGE_FILE ?? '').trim() && !env.cupPageFile) {
+  console.warn('CUP_PAGE_FILE is ignored outside development and test');
+}
 if ((process.env.GAME_PAGE_DIR ?? '').trim() && !env.gamePageDir) {
   // eslint-disable-next-line no-console
   console.warn(`[game-pages] GAME_PAGE_DIR is set on a ${env.nodeEnv} host and has been ignored; pages come from the catalog.`);

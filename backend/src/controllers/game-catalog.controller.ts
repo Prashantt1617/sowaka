@@ -9,6 +9,7 @@ import {
   submitScore,
 } from '../services/game-catalog.service';
 import { gamesHomeFor, parsePeriod, pointsLeaderboardFor } from '../services/games-home.service';
+import { loadEvent } from '../services/cup.service';
 import { mintTicket, verifyTicket } from '../services/scribble-ticket.service';
 
 function viewerOf(req: Request): GameViewer {
@@ -29,7 +30,8 @@ const PAGE_CSP = [
   "script-src 'unsafe-inline'",
   "style-src 'unsafe-inline' https://fonts.googleapis.com",
   'font-src https://fonts.gstatic.com data:',
-  'img-src data: blob: https:',
+  // 'self': photos come from this host's /media (the Cup's players), which is plain http on a local test.
+  "img-src 'self' data: blob: https:",
   'media-src data: blob:',
   "connect-src 'none'",
   "base-uri 'none'",
@@ -70,11 +72,14 @@ export async function playHandler(req: Request, res: Response, next: NextFunctio
 
 const SCRIBBLE_KEY = 'scribble';
 const SQUAD_KEY = 'secret-squad';
+const CUP_KEY = 'diwali-cup';
 
 /** The live games whose page carries a socket ticket: the marker it leaves, and the global it gets. */
 const TICKETED: Record<string, { marker: string; global: string; name: string }> = {
   [SCRIBBLE_KEY]: { marker: '<!--SCRIBBLE-TICKET-->', global: '__SCRIBBLE', name: 'Scribble' },
   [SQUAD_KEY]: { marker: '<!--SQUAD-TICKET-->', global: '__SQUAD', name: 'Secret Squad' },
+  // The Diwali Cup's page talks to `/cup/api` with its ticket, after the same reload.
+  [CUP_KEY]: { marker: '<!--CUP-TICKET-->', global: '__CUP', name: 'the tournament' },
 };
 
 /** A JavaScript literal safe inside a `<script>` element (`<` can never close it). */
@@ -100,6 +105,7 @@ function withGameTicket(key: string, html: string, viewer: GameViewer, withHop: 
   const subject = { userId: viewer.userId, org: viewer.org, name: viewer.name };
   const payload: Record<string, string> = { ticket: mintTicket(subject) };
   if (withHop) payload.hopTicket = mintTicket(subject, { kind: 'hop' });
+  if (key === CUP_KEY) payload.from = 'games';
   return withGlobal(key, html, payload);
 }
 
@@ -150,6 +156,48 @@ export async function scribbleHopHandler(req: Request, res: Response, next: Next
         'X-Game-Version': version,
       })
       .send(withGameTicket(key, html, viewer, false));
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * The Diwali Cup from its feed post, `GET /cup/<event>?ticket=<cup-link>`: the
+ * app opens the post's link as an ordinary page (no session, no bridge), and
+ * the link is the viewer's own (see `cupLinkFor`). The page comes with a
+ * ticket for `/cup/api` and the event it is about, under a policy that lets
+ * it reach this server and nothing else. A bad or stale link gets a plain 401.
+ */
+export async function cupLinkPageHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const verdict = verifyTicket(req.query.ticket, 'cup-link');
+    const eventId = String(req.params.eventId ?? '');
+    const event = verdict.ok && /^[A-Za-z0-9_-]{1,80}$/.test(eventId) ? await loadEvent(eventId) : null;
+    if (!verdict.ok || !event || event.org !== verdict.ticket.org) {
+      res
+        .status(401)
+        .set({ 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' })
+        .type('text/plain')
+        .send(`This link has expired. Go back and open ${event?.name ?? 'the tournament'} again.`);
+      return;
+    }
+    const page = await publicPageFor(event.catalogKey);
+    if (!page) {
+      res.status(404).type('text/plain').send(`${event.name} is not available here yet.`);
+      return;
+    }
+    const subject = { userId: verdict.ticket.userId, org: verdict.ticket.org, name: '' };
+    res
+      .status(200)
+      .set({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer',
+        'Content-Security-Policy': PAGE_CSP.replace("connect-src 'none'", "connect-src 'self'"),
+        'X-Game-Version': page.version,
+      })
+      .send(withGlobal(CUP_KEY, page.html, { ticket: mintTicket(subject), eventId: event.id, from: 'feed' }));
   } catch (error) {
     next(error);
   }
