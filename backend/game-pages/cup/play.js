@@ -14,7 +14,9 @@
  *     roundSec = 45,
  *     me: { name, photoUrl? }, opponent: { name, photoUrl? } | null,   // a face in the round frame; initials when there's no photo or it fails
  *     getOpponentLive: () => number | null,   // polled 4× a second; the host keeps it fresh from /state
- *     onLive(score),         // on a score change, at most 4× a second
+ *     onLive(score, progress), // on a change, at most 4× a second; progress = { board, tap?, ok? }: the board index the player is on now
+ *                            // (board N of the seed), the last tile tapped and whether it was the odd one (ok: true means the tap
+ *                            // found board N−1's odd tile and moved on; false, a wrong tap on board N). Viewers draw it with drawBoard.
  *     onFinal(score),        // exactly once, when the round is over (also after the app comes back from the background)
  *     onStart(),             // optional: the board just appeared
  *     onProgress(p),         // optional: after every find and miss, { score, gi, streak, cleared, miss } — the host keeps it to resume
@@ -23,6 +25,8 @@
  *   });
  *   h.stop();  h.score();  h.state();   // 'wait' | 'play' | 'closing' | 'over' | 'stopped'
  *   CupPlay.unlockAudio()   // call inside the tap that joins the match, so iOS lets the countdown beep
+ *   CupPlay.boardHtml(seed, n, { size, tap, ok, color, key })   // board n of a seed, read-only, as HTML (for a page that patches its DOM)
+ *   CupPlay.drawBoard(mount, seed, n, opts)                      // the same, put into mount
  *
  * Input is touchstart (taken at once, no scroll or zoom), pointerdown for a mouse, click for a keyboard. A tap keeps the moment the finger
  * landed: a tap that reaches the page late (a busy phone) is judged by when it was made, both for the one-second bonus and at the buzzer
@@ -257,7 +261,7 @@ function boardAt(sd,g){
 
     /* State, as in the game: the board index, the score, the streak. */
     let state = 'wait', gi = 0, cur = null, score = 0, streak = 0, cleared = 0, miss = 0, shownAt = 0, locked = true, lastSec = -1;
-    let finalSent = false, stopped = false, lag = 0, closeAt = 0;
+    let finalSent = false, stopped = false, lag = 0, closeAt = 0, lastTap = -1, lastOk = false;
     /* Back after a reload mid-round: the score, the board reached and the clock the misses cost, as they were. */
     const rs = opts.resume && typeof opts.resume === 'object' ? opts.resume : null;
     const int = v => Math.max(0, Math.floor(Number(v) || 0));
@@ -334,11 +338,15 @@ function boardAt(sd,g){
 
     /* ---------- live score out ---------- */
     let liveSent = null, liveAt = -1e9, liveTimer = 0;
+    /* The score and where the player is: the board index, and the last tap on it (or the find that left the one before). */
+    const liveKey = () => score + ':' + gi + ':' + lastTap + ':' + lastOk;
     function pushLive() {
-      if (finalSent || stopped || score === liveSent) return;
+      if (finalSent || stopped || liveKey() === liveSent) return;
       const n = performance.now(), wait = LIVE_MS - (n - liveAt);
       if (wait > 0) { if (!liveTimer) liveTimer = later(() => { liveTimer = 0; pushLive(); }, wait); return; }
-      liveAt = n; liveSent = score; try { onLive(score); } catch (e) {}
+      liveAt = n; liveSent = liveKey();
+      const p = { board: gi }; if (lastTap >= 0) { p.tap = lastTap; p.ok = lastOk; }
+      try { onLive(score, p); } catch (e) {}
     }
 
     /* ---------- the countdown ---------- */
@@ -387,7 +395,7 @@ function boardAt(sd,g){
       if (i !== cur.at) {
         if (cell.classList.contains('no')) return;
         miss++; const had = streak; streak = 0; endWall -= PENALTY * 1000; cell.classList.add('no'); sfx.no(); if (had >= 4) sfx.lost(); buzz([30, 40, 30]);
-        toast('−' + PENALTY + ' s', 'bad', x, y); renderCombo(); renderTime(); progress(); return;
+        toast('−' + PENALTY + ' s', 'bad', x, y); renderCombo(); renderTime(); progress(); lastTap = i; lastOk = false; pushLive(); return;
       }
       locked = true; const dt = Math.max(0, t - shownAt) / 1000, quick = dt <= QUICK; streak++; cleared++;
       const m = multFor(streak), pm = multFor(streak - 1), pts = (20 + (quick ? 10 : 0)) * m, before = score; score += pts;
@@ -399,8 +407,8 @@ function boardAt(sd,g){
       else if (m > pm && streak > 1) later(() => toast('×' + m + '!', 'big'), 100);
       $score.textContent = fmtn(score); bump($score); bump($cx);
       const o = typeof oppShown === 'number' ? oppShown : null; if (o != null && before <= o && score > o) later(sfx.ahead, 250);
-      renderLead(); renderCombo(); pushLive();
-      const n0 = cur.n; gi++; progress();
+      renderLead(); renderCombo();
+      const n0 = cur.n; gi++; lastTap = i; lastOk = true; progress(); pushLive();
       later(() => { if (state !== 'play' && state !== 'closing') return; if (sizeFor(gi) > n0) sfx.grow(); showGrid(); }, reduce() ? NEXT_MS_REDUCED : NEXT_MS);
     }
 
@@ -498,5 +506,47 @@ function boardAt(sd,g){
 
   function unlockAudio() { if (!soundOn) return; const a = ac(); return !!a; }
 
-  window.CupPlay = { start, unlockAudio, boardAt, sizeFor, multFor, version: 1 };
+  /* ---------- a board for viewers: board g of a seed, read-only, small ----------
+     The same boardAt as the round, so a viewer sees exactly the board the player has. The odd tile is never marked (the opponent may be watching).
+     opts: size (px, default 140), tap + ok (the last tap: ok false paints that tile coral; ok true flashes the board green, a find),
+     color (the player's colour, for the frame), key (a data-k for a page that patches its DOM by keys: a new key replays the flash). */
+  const VCSS = `
+.cpv{--w:140px;--n:2;position:relative;width:var(--w);height:var(--w);padding:calc(var(--w)*.035);border-radius:calc(var(--w)*.09);background:#15122B;
+  border:2px solid var(--pc,#3B3270);box-shadow:0 4px 0 #0C0A1C;box-sizing:content-box;flex:none}
+.cpv-g{display:grid;grid-template-columns:repeat(var(--n),1fr);grid-auto-rows:1fr;gap:calc(var(--w)/var(--n)*.08);width:100%;height:100%}
+.cpv-c{display:grid;place-items:center;border-radius:calc(var(--w)/var(--n)*.2);background:#221C44;box-shadow:0 calc(var(--w)/var(--n)*.05) 0 #0C0A1C;
+  font-size:calc(var(--w)/var(--n)*.56);line-height:1;overflow:hidden;min-width:0;min-height:0}
+.cpv-c i{font-style:normal;display:block}
+.cpv-c.flip i{transform:scaleX(-1)}
+.cpv-c.no{background:#FF6B57;animation:cpv-no .6s ease-out}
+.cpv.ok::after{content:"";position:absolute;inset:-2px;border-radius:inherit;box-shadow:0 0 0 3px #3DDC97,0 0 22px #3DDC97;opacity:0;animation:cpv-ok .9s ease-out;pointer-events:none}
+.cpv-n{position:absolute;right:calc(var(--w)*.03);bottom:calc(var(--w)*-.02);transform:translateY(50%);padding:1px 7px;border-radius:999px;background:var(--pc,#3B3270);color:#15122B;
+  font:400 calc(max(10px,var(--w)*.075)) "Lilita One","Arial Rounded MT Bold",system-ui,sans-serif;letter-spacing:.02em}
+@keyframes cpv-ok{0%{opacity:1}100%{opacity:0}}
+@keyframes cpv-no{0%{transform:scale(1.15)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.cpv-c.no,.cpv.ok::after{animation:none}.cpv.ok::after{opacity:.8}}`;
+  function addViewStyle() {
+    if (document.getElementById('cupplay-view-css')) return;
+    const st = document.createElement('style'); st.id = 'cupplay-view-css'; st.textContent = VCSS; (document.head || document.documentElement).appendChild(st);
+  }
+  function boardHtml(seed, g, o) {
+    o = o || {}; addViewStyle();
+    seed = Math.floor(Number(seed)); g = Math.max(0, Math.floor(Number(g) || 0));
+    if (!isFinite(seed)) return '';
+    const b = boardAt(seed, g), n = b.n, size = Math.max(60, Math.round(Number(o.size) || 140));
+    const tap = Number.isInteger(o.tap) && o.tap >= 0 && o.tap < n * n ? o.tap : -1;
+    const wrong = tap >= 0 && o.ok === false && tap !== b.at, found = o.ok === true;
+    let cells = '';
+    for (let i = 0; i < n * n; i++) cells += '<span class="cpv-c' + (b.flip && i === b.at ? ' flip' : '') + (wrong && i === tap ? ' no' : '') + '"><i>' + (i === b.at ? b.odd : b.base) + '</i></span>';
+    const col = typeof o.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(o.color) ? ';--pc:' + o.color : '';
+    return '<div class="cpv' + (found ? ' ok' : '') + '"' + (o.key != null ? ' data-k="' + esc(o.key) + '"' : '') + ' style="--w:' + size + 'px;--n:' + n + col + '" role="img" aria-label="Board ' + (g + 1) + (wrong ? ', a wrong tap' : found ? ', just found one' : '') + '">' +
+      '<div class="cpv-g">' + cells + '</div><span class="cpv-n" aria-hidden="true">#' + (g + 1) + '</span></div>';
+  }
+  function drawBoard(mount, seed, g, o) {
+    const el = typeof mount === 'string' ? document.querySelector(mount) : mount;
+    if (el) el.innerHTML = boardHtml(seed, g, o);
+    return el;
+  }
+
+  window.CupPlay = { start, unlockAudio, boardAt, sizeFor, multFor, boardHtml, drawBoard, version: 2 };
 })();

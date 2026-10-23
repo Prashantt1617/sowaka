@@ -11,6 +11,10 @@
  * clock moved to now (countdowns tick, live scores climb). Join, solo, live,
  * final and bets change that copy, so a match or a bet can be played through.
  *
+ * Live matches also carry `boardSeed` and `liveBoard` (where each player is in
+ * the seeded boards, moving with the score, a wrong tap now and then), so both
+ * boards can be watched; `&boards=0` leaves them out (an old page's scores only).
+ *
  * `&name=<text>` gives the event another name (the page shows event.name).
  * Special fixtures: expired (the ticket is refused), flaky (watch, with the
  * network failing from 3 s to 9 s), down (never answers), noticket (no __CUP).
@@ -35,14 +39,34 @@ function shiftDates(value, by) {
 const hash = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7);
 const strip = (k, v) => (k.startsWith('_') ? undefined : v);
 
-function newSession(fx, name) {
+/* The boards, from play.js's own seeded-boards block (board g of a seed). */
+const PLAY = readFileSync(join(here, 'play.js'), 'utf8');
+const SEEDED = PLAY.slice(PLAY.indexOf('/* seeded-boards:start'), PLAY.indexOf('/* seeded-boards:end */'));
+const { boardAt } = new Function(SEEDED + '\nreturn { boardAt };')();
+const seedOf = (m) => 100000 + (Math.abs(hash(m.id)) % 900000) + (m.attempt || 0);
+
+/** Where a simulated player is `el` seconds in: a find every ~1.3 s (faster for some), and every fifth step a wrong tap. */
+function simBoard(seed, uid, el) {
+  const pace = 1.0 + (Math.abs(hash(uid)) % 7) / 10;
+  const steps = Math.floor(el / (pace * 0.85));
+  const wrong = Math.floor(steps / 5);
+  const board = Math.max(0, steps - wrong);
+  if (!steps) return { board: 0 };
+  if (steps % 5 === 4) {
+    const b = boardAt(seed, board), n = b.n * b.n;
+    return { board, tap: (b.at + 1 + (Math.abs(hash(uid + steps)) % (n - 1))) % n, ok: false };
+  }
+  return { board, tap: boardAt(seed, board - 1).at, ok: true };
+}
+
+function newSession(fx, name, boards) {
   const real = fx === 'flaky' ? 'watch' : fx;
   const raw = JSON.parse(readFileSync(join(here, 'fixtures', `${real}.json`), 'utf8'));
   const data = shiftDates(raw, Date.now() - Date.parse(raw.serverNow));
   // ?name= tries the page with another tournament name (?name= with nothing: no name, the page's fallback).
   if (name != null && data.event) data.event.name = name;
   const ticket = `fx:${fx}:${Math.random().toString(36).slice(2, 8)}`;
-  sessions.set(ticket, { fx, data, anchor: Date.now(), bump: 0 });
+  sessions.set(ticket, { fx, data, anchor: Date.now(), bump: 0, boards });
   return ticket;
 }
 
@@ -74,6 +98,11 @@ function advance(s) {
       if (uid === meId) continue;
       m.live[uid] = m._base[uid] + Math.floor(el * (40 + (Math.abs(hash(uid)) % 50)));
     }
+    if (s.boards) {
+      m.boardSeed = m.boardSeed || seedOf(m);
+      m.liveBoard = m.liveBoard || {};
+      for (const uid of Object.keys(m.live)) if (uid !== meId) m.liveBoard[uid] = { ...simBoard(m.boardSeed, uid, el), at: new Date(now).toISOString() };
+    }
   }
   if (mm && (mm.status === 'live' || mm.status === 'solo') && mm.startAt && mm.opponent) {
     const el = Math.max(0, Math.min(45, (now - Date.parse(mm.startAt)) / 1000));
@@ -98,10 +127,10 @@ const readBody = (req) =>
     });
   });
 
-function page(fx, from, name) {
+function page(fx, from, name, boards) {
   let html = readFileSync(BUILT, 'utf8');
   if (fx === 'noticket') return html;
-  const ticket = fx === 'expired' ? 'expired' : fx === 'down' ? 'down' : newSession(fx, name);
+  const ticket = fx === 'expired' ? 'expired' : fx === 'down' ? 'down' : newSession(fx, name, boards);
   const cup = { ticket, eventId: fx === 'off' ? '' : 'diwali-2026', from };
   return html.replace('<!--CUP-TICKET-->', () => `<script>window.__CUP=${JSON.stringify(cup)}</script>`);
 }
@@ -117,7 +146,7 @@ const server = createServer(async (req, res) => {
       return send(res, 200, `<!doctype html><meta name=viewport content="width=device-width"><body style="font:16px system-ui;background:#15122B;color:#fff;padding:20px"><h1>Cup mock</h1>${all.map((n) => `<p><a style="color:#F5B82E" href="/play/diwali-cup?fx=${n}">${n}</a></p>`).join('')}`);
     }
     if (path === '/play/diwali-cup' || /^\/cup\/[^/]+$/.test(path)) {
-      return send(res, 200, page(url.searchParams.get('fx') || 'lobby', path.startsWith('/cup/') ? 'feed' : 'games', url.searchParams.get('name')));
+      return send(res, 200, page(url.searchParams.get('fx') || 'lobby', path.startsWith('/cup/') ? 'feed' : 'games', url.searchParams.get('name'), url.searchParams.get('boards') !== '0'));
     }
     if (!path.startsWith('/cup/api/')) return send(res, 404, { success: false, message: 'Not found' });
     const ticket = req.headers['x-cup-ticket'] || '';
@@ -166,6 +195,12 @@ const server = createServer(async (req, res) => {
       if (what === 'live') {
         mm.myLive = Number(body.score) || 0;
         if (rm && rm.live) rm.live[d.me.userId] = mm.myLive;
+        if (rm && s.boards && Number.isInteger(body.board)) {
+          rm.boardSeed = mm.boardSeed;
+          rm.liveBoard = rm.liveBoard || {};
+          rm.liveBoard[d.me.userId] = { ...(Number.isInteger(body.tap) ? { board: body.board, tap: body.tap, ok: !!body.ok } : { board: body.board }), at: new Date(now).toISOString() };
+          s.bump += 1;
+        }
         res.writeHead(204).end();
         return;
       }

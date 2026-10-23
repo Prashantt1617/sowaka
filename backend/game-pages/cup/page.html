@@ -226,6 +226,15 @@ button.bm{min-height:44px}
 .pp span{font-size:11px;font-weight:700;color:var(--mu)}
 .prog{height:8px;border-radius:99px;background:var(--bg);overflow:hidden}
 .prog i{display:block;height:100%;background:var(--cy);border-radius:99px;transition:width .6s}
+.boards{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
+.bside{display:flex;flex-direction:column;align-items:center;gap:8px;min-width:0}
+.bside .bh{display:flex;align-items:center;gap:6px;width:100%;min-width:0}
+.bside .bh .nm{font-weight:800;font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bside .bh .sc{font-family:var(--hd);font-size:24px;line-height:1;font-variant-numeric:tabular-nums}
+.duel .bside .bh .sc{font-size:30px}
+.bside .bh .pk{font-size:9px;padding:2px 6px}
+.bside.lead .cpv{box-shadow:0 4px 0 #0C0A1C,0 0 18px -4px var(--pc)}
+.bwait{display:grid;place-items:center;text-align:center;border-radius:14px;border:2px dashed var(--line);color:var(--mu);font-weight:700;font-size:12px;padding:8px;box-sizing:content-box}
 .duel{position:fixed;inset:0;z-index:30;background-color:var(--bg);background-image:radial-gradient(rgba(255,255,255,.06) 1px,transparent 1px);background-size:18px 18px;overflow-y:auto;overscroll-behavior:contain}
 .duel .in{max-width:560px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:16px;min-height:100%}
 .close{width:44px;height:44px;border-radius:14px;border:0;background:var(--p2);display:grid;place-items:center;padding:0;flex:none}
@@ -412,6 +421,8 @@ button.bm{min-height:44px}
     });
   }
   document.addEventListener('visibilitychange', function () { if (!document.hidden && !fatal) poll(); });
+  var resizeT = 0;
+  window.addEventListener('resize', function () { clearTimeout(resizeT); resizeT = setTimeout(render, 150); });
 
   /* Every photo the state names, by person: a list that leaves photoUrl off one player object still shows the face. */
   function indexPhotos(j) {
@@ -480,6 +491,27 @@ button.bm{min-height:44px}
         '<div class="bar" role="img" aria-label="' + esc((p ? p.name : '') + ' ' + num(s)) + '"><i style="width:' + Math.min(100, (s / scale) * 100).toFixed(1) + '%;background-color:' + col + '"></i></div></div>';
     }
     return '<div class="bars">' + row(a, sa, '#FF8A7A') + row(b, sb, '#6FD3F2') + '</div>';
+  }
+  /* Both boards, as each player has them now (board N of the match's seed, from cup/play.js), when the server sends where they are. */
+  function hasBoards(m) {
+    return !!(m && isLive(m) && m.boardSeed != null && m.liveBoard && Object.keys(m.liveBoard).length && window.CupPlay && typeof window.CupPlay.boardHtml === 'function');
+  }
+  function boardSize(inDuel) {
+    var w = Math.min(window.innerWidth || 360, 560) - (inDuel ? 40 : 72);
+    return Math.max(80, Math.min(220, Math.floor(((w - 10) / 2 - 4) / 1.07)));
+  }
+  function boardsBlock(m, opts) {
+    opts = opts || {};
+    if (!hasBoards(m)) return '';
+    var size = boardSize(opts.duel), sa = scoreOf(m, m.a && m.a.userId) || 0, sb = scoreOf(m, m.b && m.b.userId) || 0;
+    function side(p, s, other, col) {
+      var lb = p && m.liveBoard[p.userId], tag = opts.pick && p && opts.pick === p.userId ? '<span class="pk">PICK</span>' : '';
+      var head = '<div class="bh">' + av(p, 'xxs', '', col) + '<span class="nm">' + (p ? (p.userId === meId() ? 'You' : esc(first(p.name))) : '') + '</span>' + tag + '<span class="sc" style="color:' + col + '">' + num(s) + '</span></div>';
+      var board = lb ? window.CupPlay.boardHtml(m.boardSeed, lb.board, { size: size, tap: lb.tap, ok: lb.ok, color: col, key: 'bd' + p.userId + ':' + lb.board + ':' + (lb.tap == null ? '' : lb.tap) + ':' + lb.ok })
+        : '<div class="bwait" data-k="bw' + esc(p ? p.userId : '') + '" style="width:' + Math.round(size * 1.07) + 'px;height:' + Math.round(size * 1.07) + 'px">' + (m.status === 'solo' && !(m.joined || []).some(function (j) { return p && j === p.userId; }) ? 'No-show' : 'Board shows when they tap') + '</div>';
+      return '<div class="bside' + (s > other ? ' lead' : '') + '">' + head + board + '</div>';
+    }
+    return '<div class="boards" role="group" aria-label="Both boards, live">' + side(m.a, sa, sb, '#FF8A7A') + side(m.b, sb, sa, '#6FD3F2') + '</div>';
   }
   function leadLine(m) {
     var a = m.a, b = m.b, sa = scoreOf(m, a && a.userId) || 0, sb = scoreOf(m, b && b.userId) || 0;
@@ -794,7 +826,7 @@ button.bm{min-height:44px}
     var status = m.status === 'open' ? '<span class="pill y">' + esc(String(m.label).toUpperCase()) + ' · PLAYERS JOINING</span>' : m.status === 'done' ? '<span class="pill gr">' + esc(String(m.label).toUpperCase()) + ' · DONE</span>' : '<span class="livec"><i aria-hidden="true"></i>LIVE · ' + esc(String(m.label).toUpperCase()) + '</span>';
     var mp = mine ? (m.a.userId === mine.pick ? m.a : m.b) : null;
     return '<div class="row">' + status + '<span class="sp"></span>' + (isLive(m) ? timeLeft(m) : '') + '</div>' +
-      '<section class="card" aria-label="Live scores">' + raceRows(m, { pick: mine && mine.pick }) + leadLine(m) + '</section>' +
+      '<section class="card" aria-label="Live scores">' + (hasBoards(m) ? boardsBlock(m, { pick: mine && mine.pick }) : raceRows(m, { pick: mine && mine.pick })) + leadLine(m) + '</section>' +
       (mine ? '<section class="betc" aria-label="Your bet"><span class="lock" aria-hidden="true">' + LOCK + '</span><div class="sp"><p class="lbl">Your bet · locked</p><b>' + num(mine.stake) + ' pts on ' + esc(first(mp.name)) + '</b><span>Pays ' + num(mine.stake * 2) + ' pts if ' + esc(first(mp.name)) + ' wins</span></div></section>' :
         (isMine(m) ? '' : '<p class="note" style="text-align:center">No bet on this one. Bets open again for the next match.</p>')) +
       (os ? '<div class="stats"><div class="stt"><b>' + num(os.a.stake + os.b.stake) + '</b><span>points riding on this match</span></div><div class="stt"><b>' + num(os.a.count + os.b.count) + '</b><span>people backing a player</span></div></div>' : '') +
@@ -871,7 +903,7 @@ button.bm{min-height:44px}
     if (cur) {
       out += '<section class="card gold" aria-label="On stage"><div class="row"><p class="lbl sp">On stage · ' + esc(cur.label) + '</p>' + (cur.status === 'betting' ? '<span class="pill y">BETTING</span>' : isLive(cur) ? '<span class="livec"><i></i>LIVE</span>' : '') + '</div>' +
         (cur.status === 'betting' ? '<p style="font-weight:800;font-size:17px">' + youOr(cur.a) + ' <span class="mut">v</span> ' + youOr(cur.b) + '</p><p class="note">Bets close in <b data-cd="' + ms(cur.bettingEndsAt) + '">' + left(ms(cur.bettingEndsAt)) + '</b></p>' + (isMine(cur) ? '' : '<button type="button" class="btn" data-act="tab" data-v="me">' + (myBet(cur.id) ? 'SEE MY BET' : 'BET ON IT') + '</button>') :
-          raceRows(cur, { pick: myBet(cur.id) && myBet(cur.id).pick }) + leadLine(cur) + '<button type="button" class="btn2" data-act="duel" data-v="' + esc(cur.id) + '">Watch full screen</button>') + '</section>';
+          (hasBoards(cur) ? boardsBlock(cur, { pick: myBet(cur.id) && myBet(cur.id).pick }) : raceRows(cur, { pick: myBet(cur.id) && myBet(cur.id).pick })) + leadLine(cur) + '<button type="button" class="btn2" data-act="duel" data-v="' + esc(cur.id) + '">Watch full screen</button>') + '</section>';
       lm = lm.filter(function (m) { return m !== cur; });
     }
     if (!lm.length) {
@@ -900,7 +932,7 @@ button.bm{min-height:44px}
       '<div class="row"><button type="button" class="close" data-act="duel-close" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F1FF" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button><span class="sp"></span>' +
       (isLive(m) ? '<span class="livec"><i aria-hidden="true"></i>LIVE</span>' : m.status === 'done' ? '<span class="pill gr">FINAL SCORE</span>' : '<span class="pill">' + esc(m.status.toUpperCase()) + '</span>') + '</div>' +
       '<div class="row"><h2 class="sp">' + esc(m.label) + '</h2>' + (isLive(m) ? timeLeft(m) : '') + '</div>' +
-      side(m.a, sa, '#FF8A7A') + '<span class="x" aria-hidden="true" style="align-self:center">VS</span>' + side(m.b, sb, '#6FD3F2') + leadLine(m) +
+      (hasBoards(m) ? boardsBlock(m, { duel: true, pick: bet && bet.pick }) : side(m.a, sa, '#FF8A7A') + '<span class="x" aria-hidden="true" style="align-self:center">VS</span>' + side(m.b, sb, '#6FD3F2')) + leadLine(m) +
       (bet ? '<section class="betc"><span class="lock" aria-hidden="true">' + LOCK + '</span><div class="sp"><p class="lbl">Your bet</p><b>' + num(bet.stake) + ' pts on ' + esc(first((m.a.userId === bet.pick ? m.a : m.b).name)) + '</b></div></section>' : '') +
       '</div></div>';
   }
@@ -1061,12 +1093,15 @@ button.bm{min-height:44px}
     mount.className = 'play-mount';
     $play.appendChild(mount);
     var matchId = m.id, opp = m.opponent || {};
-    var lastLive = 0, liveT = 0, pending = null;
+    var lastLive = 0, liveT = 0, pending = null, pendingAt = null;
     function sendLive() {
       liveT = 0;
       if (pending == null) return;
-      var s = pending; pending = null; lastLive = Date.now();
-      api('/matches/' + encodeURIComponent(matchId) + '/live', { method: 'POST', body: { score: s } }).catch(function () {});
+      var body = { score: pending }, p = pendingAt;
+      // Where the player is (board, last tap), for viewers drawing both boards; an older server ignores it.
+      if (p && typeof p.board === 'number') { body.board = p.board; if (typeof p.tap === 'number') { body.tap = p.tap; body.ok = !!p.ok; } }
+      pending = null; pendingAt = null; lastLive = Date.now();
+      api('/matches/' + encodeURIComponent(matchId) + '/live', { method: 'POST', body: body }).catch(function () {});
     }
     try {
       ui.handle = window.CupPlay.start({
@@ -1082,8 +1117,8 @@ button.bm{min-height:44px}
         solo: m.status === 'solo',
         resume: progress[key] || null,
         onProgress: function (p) { progress[key] = p; store('cup-live', keepLast(progress, 6)); },
-        onLive: function (score) {
-          pending = Math.max(0, Math.round(Number(score) || 0));
+        onLive: function (score, p) {
+          pending = Math.max(0, Math.round(Number(score) || 0)); pendingAt = p || null;
           if (!liveT) liveT = setTimeout(sendLive, Math.max(0, 260 - (Date.now() - lastLive)));
         },
         onFinal: function (score) { finishPlay(matchId, key, Math.max(0, Math.round(Number(score) || 0))); },
