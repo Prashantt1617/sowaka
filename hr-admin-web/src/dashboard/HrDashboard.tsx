@@ -20,6 +20,15 @@ function ViewPage({ view }: { view: View }) {
 
 const PAGE_FALLBACK = <div style={{ minHeight: 400 }} />;
 
+/** The Tournament TV's stream view (`?stream=1`): the TV alone, no sidebar or top bar. */
+const TV_STREAM = (() => {
+  try {
+    return new URLSearchParams(window.location.search).get('stream') === '1';
+  } catch {
+    return false;
+  }
+})();
+
 // If a page's code cannot be fetched, its area stays empty and the rest of the
 // dashboard keeps working; opening the page again retries. Any other error
 // carries on up, as it always has.
@@ -70,6 +79,18 @@ function Shell() {
   }, [user, view, setView]);
   // So the next sign-in screen on this device already wears their company.
   useEffect(() => { rememberBrandOrg(user?.org ?? user?.company); }, [user]);
+  if (TV_STREAM && canOpen(user, 'cuptv')) {
+    return (
+      <div style={{ minHeight: '100vh', width: '100%', background: '#15122B' }}>
+        <PageCodeBoundary>
+          <Suspense fallback={PAGE_FALLBACK}>
+            <ViewPage view="cuptv" />
+          </Suspense>
+        </PageCodeBoundary>
+        <Toast />
+      </div>
+    );
+  }
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100%', padding: 16, gap: 20, overflow: 'hidden' }}>
       <Sidebar />

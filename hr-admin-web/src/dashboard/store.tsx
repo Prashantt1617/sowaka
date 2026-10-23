@@ -63,7 +63,15 @@ function useProvideStore() {
     return false;
   };
 
-  const [view, setViewRaw] = useState<View>('overview');
+  // A Tournament TV link (`?cup=<eventId>`, `?stream=1`) opens on the TV.
+  const [view, setViewRaw] = useState<View>(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      return q.has('cup') || q.get('stream') === '1' ? 'cuptv' : 'overview';
+    } catch {
+      return 'overview';
+    }
+  });
   const [toast, setToast] = useState('');
   // A failure reads as one: no green tick on "Could not save".
   const [toastTone, setToastTone] = useState<'ok' | 'error'>('ok');

@@ -119,6 +119,52 @@ const C = {
 
 const CSS = `
 .ctv{--h:'Lilita One',system-ui,sans-serif;background-color:${C.bg};background-image:radial-gradient(rgba(255,255,255,.06) 1px,transparent 1px);background-size:18px 18px;color:${C.ink};font-family:'Plus Jakarta Sans',system-ui,sans-serif;border-radius:24px;padding:24px;min-height:calc(100vh - 160px);box-sizing:border-box;display:flex;flex-direction:column;gap:20px}
+.ctv.stream{border-radius:0;min-height:100vh;padding:22px 40px 26px;gap:16px}
+.ctv.stream .ctv-wm{font-size:40px}
+.ctv.stream .ctv-sub{font-size:20px}
+.ctv a.ctv-ghost{text-decoration:none;color:${C.ink}}
+.ctv-ghost.dim{opacity:.3;transition:opacity .2s}
+.ctv-ghost.dim:hover,.ctv-ghost.dim:focus-visible{opacity:1}
+.cs-duel{flex:1;display:flex;flex-direction:column;gap:18px;background:${C.panel};border-radius:28px;padding:22px 32px 30px;min-height:0}
+.cs-head{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.cs-head .ctv-pill{align-self:center;font-size:15px;padding:8px 14px}
+.cs-label{font-family:var(--h);font-size:38px;line-height:1}
+.cs-kick{font-size:15px;font-weight:800;letter-spacing:1.2px;color:${C.yellow}}
+.cs-row{flex:1;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:64px;align-items:center}
+.cs-side{display:flex;flex-direction:column;align-items:center;gap:16px;min-width:0}
+.cs-who{display:flex;align-items:center;gap:16px;width:100%;min-width:0}
+.cs-side.b .cs-who{flex-direction:row-reverse;text-align:right}
+.cs-who .ctv-av{width:72px;height:72px;font-size:28px}
+.cs-nm{flex:1;min-width:0;font-weight:800;font-size:38px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cs-sc{font-family:var(--h);font-size:80px;line-height:1;font-variant-numeric:tabular-nums}
+.cs-side.lead .ctv-board{box-shadow:0 6px 0 #0C0A1C,0 0 40px -4px var(--pc)}
+.cs-bl{font-size:20px;font-weight:800;letter-spacing:1px;color:${C.ink2};margin-top:6px}
+.cs-bl b{color:${C.ink}}
+.cs-noboard{display:grid;place-items:center;border:3px dashed ${C.panel2};border-radius:28px;font-family:var(--h);font-size:96px;color:var(--pc)}
+.cs-mid{display:flex;flex-direction:column;align-items:center;gap:22px;text-align:center;width:260px}
+.cs-timer{font-family:var(--h);font-size:110px;line-height:1;font-variant-numeric:tabular-nums}
+.cs-timer small{display:block;font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-size:16px;font-weight:800;letter-spacing:1.5px;color:${C.ink2};margin-bottom:6px}
+.cs-vs{font-family:var(--h);font-size:40px;color:${C.ink2};line-height:1}
+.cs-lead{font-size:24px;font-weight:800;color:${C.green}}
+.cs-bets{width:100%;display:flex;flex-direction:column;gap:8px;background:#2E2652;border:3px solid ${C.yellow};border-radius:20px;padding:14px}
+.cs-bets small{font-size:13px;font-weight:800;letter-spacing:1px;color:${C.ink2}}
+.cs-betrow{display:flex;justify-content:space-between;font-family:var(--h);font-size:24px}
+.ctv.stream .cs-between{flex:1;align-items:center}
+.ctv.stream .cs-between .ctv-nm{font-size:42px}
+.ctv.stream .cs-between .ctv-av{width:84px;height:84px;font-size:30px}
+.ctv.stream .cs-between .ctv-sc{font-size:76px}
+.ctv.stream .cs-between .ctv-timer{font-size:96px}
+.ctv.stream .ctv-bp{font-size:17px}
+.ctv.stream .ctv-bp b{font-size:18px}
+.ctv.stream .ctv-h{font-size:26px}
+@media (max-height:800px){
+  .ctv.stream{padding:14px 28px 18px;gap:10px}
+  .ctv.stream .ctv-wm{font-size:28px}.ctv.stream .ctv-sub{font-size:16px}
+  .cs-duel{padding:16px 24px 20px;gap:12px}.cs-label{font-size:28px}
+  .cs-row{gap:48px}.cs-mid{width:200px;gap:14px}
+  .cs-who .ctv-av{width:52px;height:52px;font-size:20px}.cs-nm{font-size:26px}.cs-sc{font-size:56px}
+  .cs-timer{font-size:76px}.cs-vs{font-size:30px}.cs-lead{font-size:18px}.cs-bl{font-size:15px}
+}
 .ctv:fullscreen{border-radius:0;min-height:100vh;padding:36px 44px;overflow:auto}
 .ctv *{box-sizing:border-box}
 .ctv button{font:inherit;color:inherit;cursor:pointer}
@@ -285,6 +331,9 @@ export function CupTv() {
   const [watching, setWatching] = useState<number | null>(null);
   const onWatch = useCallback((m: Match) => setWatching(m.slot), []);
   const closeWatch = useCallback(() => setWatching(null), []);
+  const [stream] = useState(streamMode);
+  // Stream mode before the last eight: the live match it features (by slot), kept while it is played.
+  const [featuredSlot, setFeaturedSlot] = useState<number | null>(null);
   const root = useRef<HTMLDivElement>(null);
 
   // The poll: a fresh read each time (the signal keeps it out of the dashboard's read cache).
@@ -348,9 +397,34 @@ export function CupTv() {
   const earlier = rounds.filter((r) => r.kind === 'parallel');
   const current = rounds.find((r) => r.n === event?.round);
   const entrants = event?.entrantCount ?? state?.entrants;
+  const roundSec = event?.roundSec ?? 45;
+  const stageSplit = stage && state?.bets?.onStage?.matchId === stage.match.id ? state?.bets?.onStage : undefined;
+  const parallel = !stage && current?.kind === 'parallel' ? current : null;
+  const featured = stream && parallel ? featuredOf(parallel.matches, featuredSlot) : null;
+  useEffect(() => {
+    const slot = featured ? featured.slot : null;
+    if (slot !== featuredSlot) setFeaturedSlot(slot);
+  }, [featured, featuredSlot]);
+  const onAir = !stream || !event
+    ? null
+    : stage
+      ? (isLive(stage.match) ? { match: stage.match, round: stage.round, kicker: undefined } : null)
+      : parallel && featured
+        ? { match: featured, round: parallel, kicker: `FEATURED · ${fmt(parallel.matches.filter(isLive).length)} LIVE` }
+        : null;
+  const bracketPanel = event && (
+    <section className="ctv-panel" aria-label="The last eight">
+      <h2 className="ctv-h">The last {event.topN}</h2>
+      {sequential.length ? (
+        <Bracket rounds={sequential} onStageId={stage?.match.id} onPick={hr && !stream ? (m) => setConfirming(m) : undefined} />
+      ) : (
+        <div className="ctv-empty">The bracket fills in as the tournament gets there.</div>
+      )}
+    </section>
+  );
 
   return (
-    <div ref={root} className="ctv" data-testid="cup-tv">
+    <div ref={root} className={`ctv${stream ? ' stream' : ''}`} data-testid="cup-tv">
       <style>{CSS}</style>
       <header className="ctv-top">
         <span className="ctv-wm">{(event?.name || 'O-O-O Tournament').toUpperCase()}</span>
@@ -358,7 +432,12 @@ export function CupTv() {
           {event ? subtitle(event, entrants, serverNow) : 'Odd One Out, company-wide'}
         </span>
         {error && <span className="ctv-err" role="status">{error}</span>}
-        <button type="button" className="ctv-ghost" onClick={fullScreen}>Full screen</button>
+        {stream ? (
+          <a className="ctv-ghost dim" href={streamUrl(false)}>Exit stream view</a>
+        ) : (
+          <a className="ctv-ghost" href={streamUrl(true)} target="_blank" rel="noreferrer" title="The TV alone and big, for a stream or a screen share">Stream view</a>
+        )}
+        <button type="button" className={`ctv-ghost${stream ? ' dim' : ''}`} onClick={fullScreen}>Full screen</button>
       </header>
 
       {!state && !error && <div className="ctv-empty">Loading the tournament…</div>}
@@ -369,7 +448,29 @@ export function CupTv() {
         </div>
       )}
 
-      {event && (
+      {event && stream && onAir && (
+        <StreamDuel match={onAir.match} round={onAir.round} split={stage && onAir.match === stage.match ? stageSplit : undefined} serverNow={serverNow} roundSec={roundSec} kicker={onAir.kicker} />
+      )}
+      {event && stream && !onAir && (
+        <div className="ctv-grid cs-between">
+          <div className="ctv-col">
+            {stage ? <Stage match={stage.match} round={stage.round} split={stageSplit} serverNow={serverNow} roundSec={roundSec} /> : <Waiting event={event} />}
+            {parallel && <LiveNow round={parallel} onWatch={onWatch} />}
+          </div>
+          <div className="ctv-col">
+            {event.phase === 'done' && state?.standings?.length ? <Standings rows={state.standings} /> : null}
+            {bracketPanel}
+            {!!state?.tipsters?.length && (
+              <section className="ctv-panel" aria-label="Top tipsters">
+                <h2 className="ctv-h">Top tipsters</h2>
+                <Tipsters rows={state.tipsters} />
+              </section>
+            )}
+          </div>
+        </div>
+      )}
+
+      {event && !stream && (
         <div className="ctv-grid">
           <div className="ctv-col">
             {stage ? (
@@ -382,18 +483,7 @@ export function CupTv() {
                 onVoid={hr && stage.match.id && ['live', 'solo', 'done'].includes(stage.match.status) ? () => setConfirming(stage.match) : undefined}
               />
             ) : (
-              <div className="ctv-panel">
-                <div className="ctv-big">
-                  {event.phase === 'scheduled' || event.phase === 'lobby' ? 'Starting soon' : event.phase === 'done' ? 'The tournament is over' : `On the way to the last ${event.topN}`}
-                </div>
-                <div className="ctv-empty">
-                  {event.phase === 'scheduled' || event.phase === 'lobby'
-                    ? `Round 1 starts at ${new Date(event.startAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}.`
-                    : event.phase === 'done'
-                      ? 'Thanks for playing.'
-                      : `From the last ${event.topN}, one match at a time, with bets. The rounds before play all at once.`}
-                </div>
-              </div>
+              <Waiting event={event} />
             )}
             {!stage && current?.kind === 'parallel' && <LiveNow round={current} onWatch={onWatch} />}
             {earlier.length > 0 && (
@@ -407,14 +497,7 @@ export function CupTv() {
           </div>
           <div className="ctv-col">
             {event.phase === 'done' && state?.standings?.length ? <Standings rows={state.standings} /> : null}
-            <section className="ctv-panel" aria-label="The last eight">
-              <h2 className="ctv-h">The last {event.topN}</h2>
-              {sequential.length ? (
-                <Bracket rounds={sequential} onStageId={stage?.match.id} onPick={hr ? (m) => setConfirming(m) : undefined} />
-              ) : (
-                <div className="ctv-empty">The bracket fills in as the tournament gets there.</div>
-              )}
-            </section>
+            {bracketPanel}
             <section className="ctv-panel" aria-label="Top tipsters">
               <h2 className="ctv-h">Top tipsters</h2>
               <Tipsters rows={state?.tipsters ?? []} />
@@ -429,6 +512,24 @@ export function CupTv() {
       })()}
       {confirming && <VoidDialog match={confirming} onCancel={() => setConfirming(null)} onConfirm={() => doVoid(confirming)} />}
     </div>
+  );
+}
+
+/** Before the stage has a match: the tournament starting, on its way to the last eight, or over. */
+function Waiting({ event }: { event: NonNullable<CupState['event']> }) {
+  return (
+        <div className="ctv-panel">
+          <div className="ctv-big">
+            {event.phase === 'scheduled' || event.phase === 'lobby' ? 'Starting soon' : event.phase === 'done' ? 'The tournament is over' : `On the way to the last ${event.topN}`}
+          </div>
+          <div className="ctv-empty">
+            {event.phase === 'scheduled' || event.phase === 'lobby'
+              ? `Round 1 starts at ${new Date(event.startAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}.`
+              : event.phase === 'done'
+                ? 'Thanks for playing.'
+                : `From the last ${event.topN}, one match at a time, with bets. The rounds before play all at once.`}
+          </div>
+        </div>
   );
 }
 
@@ -524,6 +625,36 @@ function useBoardSize(max: number, share: number) {
   return Math.max(110, Math.min(max, Math.floor((w * share - 40) / 2 / 1.12)));
 }
 
+/** The match's clock: the betting countdown, the start window, the 3-2-1, or the time left in play. */
+function matchClock(match: Match, split: { closesAt?: string | null } | undefined, serverNow: number, roundSec: number): { label: string; text: string } | null {
+  const start = ms(match.startAt);
+  if (match.status === 'betting') return { label: 'BETS CLOSE IN', text: clock(ms(split?.closesAt ?? match.bettingEndsAt) - serverNow) };
+  if (match.status === 'open') return { label: 'START WINDOW', text: clock(ms(match.deadlineAt) - serverNow) };
+  if ((match.status === 'live' || match.status === 'solo') && Number.isFinite(start)) {
+    if (serverNow < start) return { label: 'STARTS IN', text: String(Math.max(1, Math.ceil((start - serverNow) / 1000))) };
+    return { label: 'LEFT', text: clock(start + roundSec * 1000 - serverNow) };
+  }
+  return null;
+}
+
+/** Who leads, or who went through. */
+function leadLine(match: Match, round: Round): string {
+  const sa = scoreOf(match, match.a);
+  const sb = scoreOf(match, match.b);
+  const leader = sa === sb ? null : sa > sb ? match.a : match.b;
+  const decided = match.status === 'done';
+  if (!match.a || !match.b) return '';
+  if (decided) {
+    const w = match.winnerId === match.a.userId ? match.a : match.winnerId === match.b.userId ? match.b : null;
+    if (!w) return '';
+    const how = match.decidedBy === 'absent' ? ' (neither played: the better seed goes through)' : match.decidedBy === 'solo' ? ' (the other player did not show)' : '';
+    return `${firstName(w.name)} ${round.short === 'F' ? 'wins the tournament' : 'goes through'}${how}`;
+  }
+  if (match.status !== 'live' && match.status !== 'solo') return '';
+  if (!leader) return sa === 0 ? 'Get ready…' : `Level on ${fmt(sa)}`;
+  return `${firstName(leader.name)} leads by ${fmt(Math.abs(sa - sb))}`;
+}
+
 function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
   match: Match;
   round: Round;
@@ -537,32 +668,11 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
   const sb = scoreOf(match, match.b);
   const top = Math.max(sa, sb, 1);
   const width = (s: number) => `${Math.max(2, Math.min(100, (s / top) * 88))}%`;
-  const start = ms(match.startAt);
-  const timer = (() => {
-    if (match.status === 'betting') return { label: 'BETS CLOSE IN', text: clock(ms(split?.closesAt ?? match.bettingEndsAt) - serverNow) };
-    if (match.status === 'open') return { label: 'START WINDOW', text: clock(ms(match.deadlineAt) - serverNow) };
-    if ((match.status === 'live' || match.status === 'solo') && Number.isFinite(start)) {
-      if (serverNow < start) return { label: 'STARTS IN', text: String(Math.max(1, Math.ceil((start - serverNow) / 1000))) };
-      return { label: 'LEFT', text: clock(start + roundSec * 1000 - serverNow) };
-    }
-    return null;
-  })();
-  const leader = sa === sb ? null : sa > sb ? match.a : match.b;
+  const timer = matchClock(match, split, serverNow, roundSec);
   // Scores only once there is a game: not in the betting lobby or the start window.
   const scored = match.status === 'live' || match.status === 'solo' || match.status === 'done';
   const decided = match.status === 'done';
-  const lead = (() => {
-    if (!match.a || !match.b) return '';
-    if (decided) {
-      const w = match.winnerId === match.a.userId ? match.a : match.winnerId === match.b.userId ? match.b : null;
-      if (!w) return '';
-      const how = match.decidedBy === 'absent' ? ' (neither played: the better seed goes through)' : match.decidedBy === 'solo' ? ' (the other player did not show)' : '';
-      return `${firstName(w.name)} ${round.short === 'F' ? 'wins the tournament' : 'goes through'}${how}`;
-    }
-    if (match.status !== 'live' && match.status !== 'solo') return '';
-    if (!leader) return sa === 0 ? 'Get ready…' : `Level on ${fmt(sa)}`;
-    return `${firstName(leader.name)} leads by ${fmt(Math.abs(sa - sb))}`;
-  })();
+  const lead = leadLine(match, round);
   const totalStake = (split?.a.stake ?? 0) + (split?.b.stake ?? 0);
   const totalPeople = (split?.a.count ?? 0) + (split?.b.count ?? 0);
   const share = totalStake > 0 ? ((split?.a.stake ?? 0) / totalStake) * 100 : 50;
@@ -883,3 +993,144 @@ function VoidDialog({ match, onCancel, onConfirm }: { match: Match; onCancel: ()
     </div>
   );
 }
+
+// —— stream mode (`?stream=1`) ———————————————————————————————————————————————
+// The TV alone, for a stream or a screen share: the match being played big —
+// both boards, scores, the clock and the round — and between matches the next
+// one and the bracket. Before the last eight it features a live match itself.
+
+/** `?stream=1` on the address. */
+function streamMode(): boolean {
+  try {
+    const v = new URLSearchParams(window.location.search).get('stream');
+    return v === '1' || v === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/** This address with stream mode on or off, the rest (the event in `?cup=`) kept. */
+function streamUrl(on: boolean): string {
+  const url = new URL(window.location.href);
+  if (on) url.searchParams.set('stream', '1');
+  else url.searchParams.delete('stream');
+  return url.toString();
+}
+
+const isLive = (m: Match) => m.status === 'live' || m.status === 'solo';
+
+/**
+ * The live match a parallel round puts forward: two players before one, boards
+ * before scores only, then the closest and highest-scoring (the weaker
+ * player's score, then the total). The one featured stays while it is being
+ * played, so the stream does not hop between matches every poll.
+ */
+function featuredOf(matches: Match[], keep: number | null): Match | null {
+  const live = matches.filter(isLive);
+  if (!live.length) return null;
+  const held = keep != null ? live.find((m) => m.slot === keep) : undefined;
+  if (held && !(held.status === 'solo' && live.some((m) => m.status === 'live'))) return held;
+  const rank = (m: Match) => {
+    const sa = scoreOf(m, m.a), sb = scoreOf(m, m.b);
+    return [m.status === 'live' ? 1 : 0, hasBoards(m) ? 1 : 0, Math.min(sa, sb), sa + sb];
+  };
+  return [...live].sort((x, y) => {
+    const rx = rank(x), ry = rank(y);
+    for (let i = 0; i < rx.length; i++) if (rx[i] !== ry[i]) return ry[i]! - rx[i]!;
+    return x.slot - y.slot;
+  })[0]!;
+}
+
+/** One board's side in stream mode: as wide as two fit beside the clock, as tall as the screen allows. */
+function useStreamBoardSize() {
+  const read = () => ({ w: window.innerWidth, h: window.innerHeight });
+  const [box, setBox] = useState(read);
+  useEffect(() => {
+    const on = () => setBox(read());
+    window.addEventListener('resize', on);
+    document.addEventListener('fullscreenchange', on);
+    return () => {
+      window.removeEventListener('resize', on);
+      document.removeEventListener('fullscreenchange', on);
+    };
+  }, []);
+  const small = box.h <= 800;
+  const byWidth = (box.w - (small ? 56 : 80) - (small ? 200 : 260) - 2 * (small ? 48 : 64)) / 2;
+  const byHeight = box.h - (small ? 300 : 370);
+  // The board's frame is 7% padding and a 3 px border on top of its tiles.
+  return Math.max(120, Math.floor(Math.min(byWidth, byHeight) / 1.07 - 6));
+}
+
+function StreamDuel({ match, round, split, serverNow, roundSec, kicker }: {
+  match: Match;
+  round: Round;
+  split?: { a: Side; b: Side; closesAt?: string | null };
+  serverNow: number;
+  roundSec: number;
+  kicker?: string;
+}) {
+  const size = useStreamBoardSize();
+  const pill = STATUS_PILL[match.status];
+  const timer = matchClock(match, split, serverNow, roundSec);
+  const lead = leadLine(match, round);
+  const sa = scoreOf(match, match.a);
+  const sb = scoreOf(match, match.b);
+  const boards = hasBoards(match);
+  const stake = (split?.a.stake ?? 0) + (split?.b.stake ?? 0);
+  const share = stake > 0 ? ((split?.a.stake ?? 0) / stake) * 100 : 50;
+  const side = (p: Player | null, i: number) => {
+    const colour = i === 0 ? C.a : C.b;
+    const s = i === 0 ? sa : sb;
+    const at = p ? match.liveBoard?.[p.userId] : undefined;
+    return (
+      <div className={`cs-side${i ? ' b' : ''}${s > (i === 0 ? sb : sa) ? ' lead' : ''}`} style={{ '--pc': colour } as CSSProperties}>
+        <div className="cs-who">
+          <span className="ctv-av" style={{ background: colour }}>{p ? initials(p.name) : '?'}</span>
+          <span className="cs-nm">
+            {p ? p.name : 'No opponent'}
+            {p && <span className="ctv-seed">#{p.seed}</span>}
+          </span>
+          <span className="cs-sc" style={{ color: colour }}>{p ? fmt(s) : ''}</span>
+        </div>
+        {boards ? <BoardOrWait match={match} p={p} size={size} colour={colour} /> : <div className="cs-noboard" style={{ width: size * 1.07 + 6, height: size * 1.07 + 6 }}>{fmt(s)}</div>}
+        {at && <span className="cs-bl">BOARD <b>{at.board + 1}</b> · {at.board} FOUND</span>}
+      </div>
+    );
+  };
+  return (
+    <section className="cs-duel" aria-label="The match being played">
+      <div className="cs-head">
+        <span className="ctv-pill" style={{ background: pill.bg, color: pill.fg }}>
+          {isLive(match) && <i aria-hidden="true" />}
+          {pill.text}
+        </span>
+        <span className="cs-label">
+          {round.label === match.label ? match.label : `${round.label} · ${match.label}`}{match.attempt ? ` · replay ${match.attempt}` : ''}
+        </span>
+        {kicker && <span className="cs-kick">{kicker}</span>}
+      </div>
+      <div className="cs-row">
+        {side(match.a, 0)}
+        <div className="cs-mid">
+          {timer && (
+            <div className="cs-timer" aria-live="off">
+              <small>{timer.label}</small>
+              {timer.text}
+            </div>
+          )}
+          <span className="cs-vs">VS</span>
+          {lead && <span className="cs-lead">{lead}</span>}
+          {split && stake > 0 && (
+            <div className="cs-bets" aria-label={`Bets: ${fmt(split.a.stake)} points on one side, ${fmt(split.b.stake)} on the other`}>
+              <small>BETS</small>
+              <div className="ctv-splitbar"><i style={{ width: `${share}%`, background: C.a }} /><i style={{ width: `${100 - share}%`, background: C.b }} /></div>
+              <div className="cs-betrow"><span style={{ color: C.a }}>{fmt(split.a.stake)}</span><span style={{ color: C.b }}>{fmt(split.b.stake)}</span></div>
+            </div>
+          )}
+        </div>
+        {side(match.b, 1)}
+      </div>
+    </section>
+  );
+}
+
