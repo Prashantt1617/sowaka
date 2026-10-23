@@ -37,6 +37,8 @@ button:disabled{cursor:default}
 .tab{min-height:44px;border:0;border-radius:14px;background:transparent;font-weight:800;font-size:13px;color:var(--mu);padding:0 8px;position:relative;white-space:nowrap}
 .tab.on{background:var(--y);color:var(--bg)}
 .tab .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--co);margin-left:5px;vertical-align:1px}
+@media (max-width:380px){.tabs{gap:4px}.tab{padding:0 6px}}
+@media (max-width:340px){.tab{padding:0 4px;font-size:12px}}
 .body{display:flex;flex-direction:column;gap:14px;padding:16px 20px 8px}
 .card{background:var(--p1);border-radius:22px;padding:16px;display:flex;flex-direction:column;gap:12px}
 .card.gold{border:3px solid var(--y)}
@@ -851,7 +853,7 @@ button.bm{min-height:44px}
     var passesDue = !(r.byes || []).length && players > ms_.length * 2 ? players - ms_.length * 2 : 0;
     var q = ui.q.trim().toLowerCase();
     var list = ms_, more = 0, mineIdx = ms_.findIndex(isMine);
-    if (q) list = ms_.filter(function (m) { return [m.a, m.b].some(function (p) { return p && (p.name.toLowerCase().indexOf(q) >= 0 || String(p.seed) === q); }) || String(m.label).toLowerCase().indexOf(q) >= 0; });
+    if (q) list = ms_.filter(function (m) { return [m.a, m.b].some(function (p) { return p && (p.name.toLowerCase().indexOf(q) >= 0); }) || String(m.label).toLowerCase().indexOf(q) >= 0; });
     else if (big && !ui.all) {
       var c = mineIdx >= 0 ? mineIdx : 0, lo = Math.max(0, c - 5), hi = Math.min(ms_.length, lo + 12);
       lo = Math.max(0, hi - 12);
@@ -878,7 +880,7 @@ button.bm{min-height:44px}
     var live = isLive(m);
     var chip = m.status === 'done' ? '<span class="sta done">' + (m.decidedBy === 'absent' || m.decidedBy === 'solo' ? 'NO-SHOW' : 'DONE') + '</span>' : live ? '<span class="sta live">LIVE</span>' : m.status === 'betting' ? '<span class="sta bet">BETTING</span>' : m.status === 'open' ? '<span class="sta">JOINING</span>' : '<span class="sta">' + (m.startAt ? clock(m.startAt) : 'NEXT') + '</span>';
     function line(p) {
-      if (!p) return '<div class="bp tbd"><span class="sd">–</span>' + av(null, 'xxs') + '<span>To be decided</span></div>';
+      if (!p) return '<div class="bp tbd">' + av(null, 'xxs') + '<span>To be decided</span></div>';
       var s = scoreOf(m, p.userId);
       var cls = m.winnerId ? (m.winnerId === p.userId ? 'win' : 'lose') : '';
       return '<div class="bp ' + cls + '">' + av(p, 'xxs') + '<span>' + youOr(p) + (m.winnerId === p.userId ? ' ✓' : '') + '</span><b>' + (s != null ? num(s) : '') + '</b></div>';

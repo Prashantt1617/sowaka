@@ -808,7 +808,7 @@ function Bracket({ rounds, onStageId, onPick }: { rounds: Round[]; onStageId?: s
 
 // The round being played before the last eight: every match at once, those
 // being played first, so the screen can be watched from round 1.
-const LIVE_ORDER: Partial<Record<Status, number>> = { live: 0, solo: 1, open: 2, done: 3 };
+const LIVE_ORDER: Partial<Record<Status, number>> = { live: 0, solo: 1, open: 2, scheduled: 2, pending: 2, done: 3 };
 
 const LiveNow = memo(function LiveNow({ round, onWatch }: { round: Round; onWatch: (m: Match) => void }) {
   const matches = [...round.matches].sort((x, y) => (LIVE_ORDER[x.status] ?? 4) - (LIVE_ORDER[y.status] ?? 4) || x.slot - y.slot);
@@ -842,8 +842,8 @@ const LiveNow = memo(function LiveNow({ round, onWatch }: { round: Round; onWatc
           <div key={m.slot} className={`ctv-bm${m.status === 'live' || m.status === 'solo' ? ' on' : ''}${boards ? ' watch' : ''}`} {...watch}>
             <div className="ctv-lt">
               <span>{m.label}</span>
-              <span style={{ color: m.status === 'done' ? C.green : m.status === 'open' ? C.ink2 : C.coral }}>
-                {m.status === 'done' ? 'DONE' : m.status === 'open' ? 'WAITING' : m.status === 'solo' ? 'SOLO' : 'LIVE'}
+              <span style={{ color: m.status === 'done' ? C.green : m.status === 'live' || m.status === 'solo' ? C.coral : C.ink2 }}>
+                {m.status === 'done' ? 'DONE' : m.status === 'live' ? 'LIVE' : m.status === 'solo' ? 'SOLO' : 'WAITING'}
               </span>
             </div>
             {[m.a, m.b].map((p, i) => {
@@ -852,7 +852,7 @@ const LiveNow = memo(function LiveNow({ round, onWatch }: { round: Round; onWatc
               return (
                 <div key={i} className={`ctv-bp${out ? ' out' : ''}${win ? ' win' : ''}`}>
                   <span>{p ? p.name : '—'}</span>
-                  {p && m.status !== 'open' && <b style={{ color: i === 0 ? C.a : C.b }}>{fmt(scoreOf(m, p))}</b>}
+                  {p && (m.status === 'live' || m.status === 'solo' || m.status === 'done') && <b style={{ color: i === 0 ? C.a : C.b }}>{fmt(scoreOf(m, p))}</b>}
                 </div>
               );
             })}
