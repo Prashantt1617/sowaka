@@ -998,7 +998,8 @@ function ManagerRow({ emp }: { emp: Emp }) {
   const options = emps
     .filter((e) => e.id !== emp.id && e.id !== current.id)
     .filter((e) => !needle || e.name.toLowerCase().includes(needle) || (e.employeeId ?? '').toLowerCase().includes(needle))
-    .slice(0, 8);
+    // Everyone can be a manager, not only people who already are: list them all.
+    .sort((a, b) => a.name.localeCompare(b.name));
   const save = async (next: Emp | null) => {
     setSaving(true);
     try {
@@ -1031,7 +1032,8 @@ function ManagerRow({ emp }: { emp: Emp }) {
         <div style={{ gridColumn: 2, marginTop: 8, border: '1px solid var(--line)', borderRadius: 16, padding: 10, maxWidth: 440, background: 'var(--surface)', boxShadow: '0 18px 40px -12px rgba(20,16,60,.28)' }}>
           <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or employee ID" aria-label="Search for the new manager"
             className="pd-inp" style={{ width: '100%', height: 40, borderRadius: 999 }} />
-          <div style={{ marginTop: 6, display: 'grid' }}>
+          {options.length > 0 && <div style={{ padding: '8px 6px 0', fontSize: 11.5, color: 'var(--ink-3)' }}>{options.length} {options.length === 1 ? 'person' : 'people'}</div>}
+          <div className="scry" style={{ marginTop: 4, display: 'grid', maxHeight: 320, overflowY: 'auto' }}>
             {options.length === 0 && <div style={{ padding: '8px 4px', fontSize: 13, color: 'var(--ink-4)' }}>Nobody matches.</div>}
             {options.map((o) => (
               <button key={o.id} type="button" disabled={saving} onClick={() => save(o)}
