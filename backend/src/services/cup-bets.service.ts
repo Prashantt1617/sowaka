@@ -17,11 +17,13 @@
  * servers settling the same match at once move nothing more. A bet that
  * cannot be paid for (the balance moved since it was read) is never written.
  *
- * The engine (`cup.service.ts`) calls `onCupMatchDecided`, `onCupMatchVoided`
- * and `onCupMatchReplayed` when a match changes, and `betsStateFor` for each
- * page's state. Each hook only reconciles the match's bets with the match as
- * it now stands, so the order they arrive in, or a lost call, does not
- * matter: `reconcileCupBets` (run by the runner now and then) catches up.
+ * The engine (`cup.service.ts`) calls in through `cupHooks`, which this
+ * module fills when it loads: after a match is decided, replayed after a tie
+ * or voided, and for the bet parts of each page's state (`me.balance`,
+ * `bets`, `tipsters`). Each match hook only reconciles the match's bets with
+ * the match as it now stands, so the order they arrive in, or a lost call,
+ * does not matter: `reconcileCupBets` (run by the runner now and then)
+ * catches up.
  */
 import type { NextFunction, Request, Response } from 'express';
 import type { ClientSession, Collection, Db } from 'mongodb';
@@ -31,8 +33,18 @@ import type { PointEvent } from '../models/points.model';
 import type { User } from '../models/user.model';
 import { hasAllDashboardTabs } from '../middleware/admin.middleware';
 import { logger } from '../utils/logger';
-import * as engine from './cup.service';
-import { CupError, cupEvents, cupMatches, eventFor, forgetEvent, loadEvent, viewerFromTicket, type CupViewer } from './cup.service';
+import {
+  CupError,
+  cupEvents,
+  cupHooks,
+  cupMatches,
+  loadEvent,
+  stateFor,
+  touchCup,
+  viewerFromTicket,
+  voidMatchResult,
+  type CupViewer,
+} from './cup.service';
 import {
   betIdOf,
   betVerdict,
@@ -123,13 +135,18 @@ async function balanceOf(userId: string, stores: BetStores = liveBetStores(), fr
   return points;
 }
 
-/** The top-8 match on stage (its lobby or its game), else the last one decided. Kept a second. */
+/**
+ * The top-8 match on stage: the one the engine names, else its lobby or its
+ * game, else the last one decided. Kept a second, however many pages ask.
+ */
 const stageCache = new Map<string, { match: CupMatch | null; at: number }>();
 
-async function stageMatch(eventId: string): Promise<CupMatch | null> {
-  const kept = stageCache.get(eventId);
+async function stageMatch(eventId: string, matchId?: string | null): Promise<CupMatch | null> {
+  const key = `${eventId}|${matchId ?? ''}`;
+  const kept = stageCache.get(key);
   if (kept && Date.now() - kept.at < 1000) return kept.match;
-  const on = await cupMatches()
+  const named = matchId ? await cupMatches().findOne({ id: matchId }, { projection: { _id: 0 } }) : null;
+  const on = named ?? await cupMatches()
     .find({ eventId, kind: 'sequential', status: { $in: ['betting', 'open', 'live', 'solo'] } }, { projection: { _id: 0 } })
     .sort({ round: 1, slot: 1 })
     .limit(1)
@@ -141,14 +158,15 @@ async function stageMatch(eventId: string): Promise<CupMatch | null> {
       .sort({ decidedAt: -1 })
       .limit(1)
       .next());
-  stageCache.set(eventId, { match, at: Date.now() });
+  stageCache.set(key, { match, at: Date.now() });
+  if (stageCache.size > 200) stageCache.clear();
   return match;
 }
 
 /** After a write here: what this server keeps of it is read again. */
 function forgetBets(eventId: string, userIds: Iterable<string>): void {
   eventBetsCache.delete(eventId);
-  stageCache.delete(eventId);
+  for (const key of stageCache.keys()) if (key.startsWith(`${eventId}|`)) stageCache.delete(key);
   for (const userId of userIds) balanceCache.delete(userId);
 }
 
@@ -157,10 +175,24 @@ function forgetBets(eventId: string, userIds: Iterable<string>): void {
  * the event's version moves on (a page asking `since` the old one gets the
  * new state).
  */
-async function bumpVersion(eventId: string): Promise<void> {
+const bumping = new Map<string, Promise<void>>();
+
+/** Many bets in the same half second move the version on once. */
+function bumpVersion(eventId: string): Promise<void> {
+  const pending = bumping.get(eventId);
+  if (pending) return pending;
+  const run = new Promise<void>((resolve) => setTimeout(resolve, 400)).then(() => {
+    bumping.delete(eventId);
+    return writeVersion(eventId);
+  });
+  bumping.set(eventId, run);
+  return run;
+}
+
+async function writeVersion(eventId: string): Promise<void> {
   try {
+    touchCup(eventId);
     await cupEvents().updateOne({ id: eventId }, { $inc: { version: 1 }, $set: { updatedAt: new Date() } });
-    forgetEvent(eventId);
   } catch (error) {
     logger.warn('Cup: version bump after a bet failed', { eventId }, error);
   }
@@ -320,10 +352,10 @@ export async function settleMatchBets(
 }
 
 /** Reconciles one match's bets against the match as stored now. */
-async function reconcileMatch(given: CupMatch): Promise<BetMove[]> {
+async function reconcileMatch(given: CupMatch, known?: CupEvent): Promise<BetMove[]> {
   if (given.kind !== 'sequential' && bookOf(given) === 0) return [];
   const match = (await cupMatches().findOne({ id: given.id }, { projection: { _id: 0 } })) ?? given;
-  const event = await loadEvent(match.eventId);
+  const event = known ?? (await loadEvent(match.eventId));
   const moves = await settleMatchBets(match, liveBetStores(), namesOf(event));
   if (moves.length) {
     forgetBets(match.eventId, moves.map((move) => move.bet.userId));
@@ -347,14 +379,31 @@ async function reconcileQuietly(match: CupMatch, why: string): Promise<void> {
   }
 }
 
-/** The engine: a match has been decided (status 'done', `winnerId` set). Pays the winners. */
+/** A match has been decided (status 'done', `winnerId` set): pays the winners. */
 export const onCupMatchDecided = (match: CupMatch) => reconcileQuietly(match, 'decided');
 
-/** The engine: a match has been voided (`voids` grew). Refunds every bet placed before. */
+/** A match has been voided (`voids` grew): refunds every bet placed before. */
 export const onCupMatchVoided = (match: CupMatch) => reconcileQuietly(match, 'voided');
 
-/** The engine: a tied match is being replayed. The bets ride: nothing moves (a no-op, kept for symmetry). */
+/** A tied match is being replayed: the bets ride, so nothing moves (kept for symmetry). */
 export const onCupMatchReplayed = (match: CupMatch) => reconcileQuietly(match, 'replayed');
+
+// The engine's way in. Its own wrapper logs a failure and never undoes the
+// match's move; a bet left held is settled by `reconcileCupBets` later.
+cupHooks.onMatchDecided = async (match, event) => {
+  await reconcileMatch(match, event);
+};
+cupHooks.onMatchReplayed = async (match, event) => {
+  await reconcileMatch(match, event);
+};
+cupHooks.onMatchVoided = async (match, event) => {
+  await reconcileMatch(match, event);
+};
+cupHooks.balance = (viewer) => balanceOf(viewer.userId);
+cupHooks.state = async (viewer, event, current) => {
+  const parts = await betsStateFor(viewer, event, await stageMatch(event.id, current?.matchId));
+  return { bets: parts.bets, tipsters: parts.tipsters };
+};
 
 /**
  * For the runner, every so often (say each 15 s while the top 8 are on):
@@ -378,24 +427,18 @@ export async function reconcileCupBets(eventId: string): Promise<number> {
 // ---------------------------------------------------------------- voiding (HR)
 
 /**
- * What the engine must export for a void: record it on the match (push
- * `{ by, at }` onto `voids`), undo the result and set the match up to be
- * played again (a top-8 match through a fresh betting lobby), and return the
- * match as it now is. Refusing (a CupError) when it cannot be voided.
+ * HR voids a match's result: the engine (`voidMatchResult`) sets it up to be
+ * played again and records the void, which refunds its bets through the
+ * `onMatchVoided` hook. Reconciled here once more in case that hook failed:
+ * nothing is refunded twice.
  */
-type VoidCupMatch = (matchId: string, by: { userId: string; name: string }) => Promise<CupMatch>;
-
-/** HR voids a match's result: the engine replays it, and every bet on it is refunded. */
 export async function voidMatch(viewer: CupViewer, matchId: unknown) {
   if (!viewer.hr) throw new CupError(403, 'Only HR can void a result');
   if (typeof matchId !== 'string' || !matchId) throw new CupError(400, 'Which match?');
-  const match = await cupMatches().findOne({ id: matchId }, { projection: { _id: 0 } });
-  if (!match || match.org !== viewer.org) throw new CupError(404, 'There is no such match');
-  const voidCupMatch = (engine as unknown as { voidCupMatch?: VoidCupMatch }).voidCupMatch;
-  if (typeof voidCupMatch !== 'function') throw new CupError(501, 'Voiding a result is not ready yet');
-  const replayed = await voidCupMatch(match.id, { userId: viewer.userId, name: viewer.name });
-  await reconcileMatch(replayed);
-  return { match: replayed };
+  const voided = await voidMatchResult(viewer, matchId);
+  const stored = await cupMatches().findOne({ id: matchId }, { projection: { _id: 0 } });
+  if (stored) await reconcileQuietly(stored, 'voided');
+  return voided;
 }
 
 // ---------------------------------------------------------------- what pages show
@@ -423,9 +466,19 @@ export async function betsStateFor(viewer: Pick<CupViewer, 'userId'>, event: Pic
   };
 }
 
+/** The event asked for if it is the viewer's company's and on, else the company's current one. */
+async function viewersEvent(viewer: CupViewer, askedId?: unknown): Promise<CupEvent | null> {
+  const id =
+    typeof askedId === 'string' && askedId
+      ? askedId
+      : (await cupEvents().find({ org: viewer.org, active: true }, { projection: { _id: 0, id: 1 } }).sort({ lobbyAt: -1 }).limit(1).next())?.id;
+  const event = id ? await loadEvent(id) : null;
+  return event && event.org === viewer.org && event.active ? event : null;
+}
+
 /** `GET /cup/api/bets/mine`. */
 export async function myBets(viewer: CupViewer, askedId?: unknown) {
-  const event = await eventFor(viewer, askedId);
+  const event = await viewersEvent(viewer, askedId);
   if (!event) throw new CupError(404, 'The Cup is not on');
   const [bets, balance] = await Promise.all([eventBets(event.id), balanceOf(viewer.userId)]);
   return { bets: mineOf(bets, viewer.userId), balance };
@@ -479,18 +532,11 @@ function dashboardViewer(req: Request): CupViewer {
   return { userId: user.userId, name: user.name || 'HR', org: user.org, hr };
 }
 
-/** The state a page gets (the engine's), with the bet parts filled in if the engine has not yet. */
+/** The state a Cup page gets (the engine's, with the bet parts its hook adds), for the TV. */
 export async function tvStateFor(viewer: CupViewer, eventId?: string) {
-  const state = (await engine.stateFor(viewer, eventId)) as Record<string, unknown> & { event: { id: string } | null };
-  if (!state.event) return state;
-  const current = state.current as { matchId?: string } | undefined;
-  const onStage = current?.matchId ? await cupMatches().findOne({ id: current.matchId }, { projection: { _id: 0 } }) : undefined;
-  const bets = await betsStateFor(viewer, state.event, onStage ?? undefined);
-  return {
-    ...state,
-    bets: (state.bets as object | undefined) ?? bets.bets,
-    tipsters: (state.tipsters as unknown[] | undefined) ?? bets.tipsters,
-  };
+  // The engine's state for this viewer, with the bet parts its hook adds.
+  const { success: _ok, ...state } = JSON.parse(await stateFor(viewer, eventId, undefined)) as Record<string, unknown>;
+  return state;
 }
 
 const dashboard =

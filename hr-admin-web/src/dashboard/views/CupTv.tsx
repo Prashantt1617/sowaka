@@ -480,7 +480,15 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
       })}
       {lead && <span className="ctv-lead">{lead}</span>}
 
-      {split && match.a && match.b && (
+      {split && match.a && match.b && totalPeople === 0 && (
+        <div className="ctv-split" aria-label="Bets">
+          <small>{match.status === 'betting' ? 'BETS ARE OPEN' : 'BETS ON THIS MATCH'}</small>
+          <span style={{ fontWeight: 800, fontSize: 18 }}>
+            {match.status === 'betting' ? 'No bets yet. Open the Diwali Cup in the app to back a player: a right pick pays double.' : 'Nobody bet on this match.'}
+          </span>
+        </div>
+      )}
+      {split && match.a && match.b && totalPeople > 0 && (
         <div className="ctv-split" aria-label="How the bets split">
           <small>{match.status === 'betting' ? 'BETS SO FAR' : 'BETS ON THIS MATCH'}</small>
           <div className="ctv-splitbar" role="img" aria-label={`${fmt(split.a.stake)} points on ${match.a.name}, ${fmt(split.b.stake)} on ${match.b.name}`}>
@@ -499,7 +507,7 @@ function Stage({ match, round, split, serverNow, roundSec, onVoid }: {
           </div>
         </div>
       )}
-      {split && (
+      {split && totalPeople > 0 && (
         <div className="ctv-stats">
           <div className="ctv-st"><b>{fmt(totalStake)}</b><span>points riding</span></div>
           <div className="ctv-st"><b>{fmt(totalPeople)}</b><span>{totalPeople === 1 ? 'person has bet' : 'people have bet'}</span></div>
