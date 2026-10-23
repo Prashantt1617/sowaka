@@ -326,7 +326,7 @@ export function CupTv() {
       {!state && !error && <div className="ctv-empty">Loading the tournament…</div>}
       {state && !event && (
         <div className="ctv-panel">
-          <div className="ctv-big">The Cup is not on</div>
+          <div className="ctv-big">The tournament is not on</div>
           <div className="ctv-empty">When the tournament is switched on, its bracket and the match on stage show here.</div>
         </div>
       )}
