@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import '../../auth/data/auth_models.dart';
 import '../../shared/network_status.dart';
@@ -210,14 +211,35 @@ class ConnectBloc {
       );
       return;
     }
+    // A change to a post this feed isn't showing (an update from beyond the
+    // pages loaded) is not fetched at all: nothing on screen would change.
+    if (change.action != ConnectChangeAction.created &&
+        !_state.posts.any((item) => item.id == change.postId)) {
+      return;
+    }
+    // Many changes to one post (a busy poll, a game card everyone taps) are
+    // fetched once, after a short random wait, so the whole company's phones
+    // don't ask for the same post in the same second. While the server is
+    // struggling the wait grows.
+    if (_pendingRefetch.containsKey(change.postId)) {
+      _pendingRefetch[change.postId] = change.action == ConnectChangeAction.created ||
+          _pendingRefetch[change.postId]!;
+      return;
+    }
+    _pendingRefetch[change.postId] = change.action == ConnectChangeAction.created;
+    final waitMs = 400 + _jitter.nextInt(2600) + _refetchBackoffMs;
+    await Future<void>.delayed(Duration(milliseconds: waitMs));
+    final created = _pendingRefetch.remove(change.postId) ?? false;
+    if (_controller.isClosed) return;
     try {
       final post = await _api.fetchPost(change.postId);
+      _refetchBackoffMs = 0;
       if (_controller.isClosed) return;
       final index = _state.posts.indexWhere((item) => item.id == post.id);
       final posts = [..._state.posts];
       if (index >= 0) {
         posts[index] = post;
-      } else if (change.action == ConnectChangeAction.created) {
+      } else if (created) {
         posts.insert(0, post);
       } else {
         // A like on a post from weeks ago, beyond the pages loaded: it is
@@ -225,11 +247,31 @@ class ConnectBloc {
         return;
       }
       _emit(_state.copyWith(posts: posts));
+    } on ConnectApiException catch (error) {
+      if (_controller.isClosed) return;
+      if (error.statusCode == 404 || error.statusCode == 403) {
+        // Gone, or no longer ours to see: off the feed, so nothing asks for
+        // it again.
+        _emit(
+          _state.copyWith(
+            posts: _state.posts.where((item) => item.id != change.postId).toList(),
+          ),
+        );
+      } else if (error.statusCode >= 500 || error.statusCode == 429) {
+        _refetchBackoffMs = min(30000, max(2000, _refetchBackoffMs * 2));
+      }
     } catch (_) {
-      // A post we can't fetch (deleted or not visible to us) just stays as-is;
-      // the next reconnect or manual refresh reconciles the feed.
+      // No connection: the post stays as-is; the next reconnect or manual
+      // refresh reconciles the feed. Wait longer before the next fetch.
+      _refetchBackoffMs = min(30000, max(2000, _refetchBackoffMs * 2));
     }
   }
+
+  /// Posts waiting for their one refetch, and whether any of the changes was
+  /// a new post (which goes to the top of the feed).
+  final Map<String, bool> _pendingRefetch = {};
+  final Random _jitter = Random();
+  int _refetchBackoffMs = 0;
 
   /// Back to the top of the feed: the first page again, older pages dropped
   /// until the reader scrolls for them.
