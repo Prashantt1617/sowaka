@@ -3,6 +3,7 @@ import { connectPosts, games, gameScores, users } from '../config/db';
 import { ConnectPost } from '../models/connect.model';
 import { Game } from '../models/game.model';
 import { companyDisplayName } from './company-settings.service';
+import { cupBoardFor } from './cup.service';
 import { notifyLiveGameStarted } from './connect-notifications.service';
 import { logger } from '../utils/logger';
 
@@ -93,6 +94,9 @@ export async function publishGame(adminUserId: string, gameId: string) {
 export async function getGameForPlayer(userId: string, gameId: string) {
   const user = await users().findOne({ userId }); if (!user) throw new GameError(404, 'User not found');
   const org = user.org ?? user.email.split('@').at(1) ?? 'default';
+  // The Diwali Cup's feed post: its leaderboard button shows the Cup's standings.
+  const cup = await cupBoardFor(org, gameId);
+  if (cup) return cup;
   const game = await games().findOne({ id: gameId, org, active: true });
   if (!game) throw new GameError(404, 'Game not found');
   return { game, leaderboard: await leaderboard(gameId, org, 20) };
