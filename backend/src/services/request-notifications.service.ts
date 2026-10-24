@@ -24,7 +24,7 @@ import { notifyUsers } from './notification.service';
 import { claimOnce } from './scribble-store';
 import { emitRequestsChanged } from './connect-realtime.service';
 import { leaveTypeLabel } from '../models/shift.model';
-import { approvalRulesFor, managerMayDecide, policiesForUsers, policyForUser, ResolvedShiftPolicy } from './shift.service';
+import { approvalRulesFor, managerMayDecide, policiesForPeople, policyForUser, ResolvedShiftPolicy } from './shift.service';
 import { dateRange, dayLabel, days, istParts, shortDate, tueThuDueFor } from './notification-time';
 
 /** "10 September 2026", for email copy. */
@@ -508,7 +508,8 @@ export async function pendingFor(approver: User, now: Date): Promise<{ leave: nu
     return Boolean(person && (onTeam(person) || (forHr(person) && person.managerUserId)));
   });
   const batch = owners.length
-    ? await policiesForUsers(owners).catch(() => new Map<string, ResolvedShiftPolicy>())
+    // Everyone here is in the approver's company, so their org needn't be read again.
+    ? await policiesForPeople(owners.map((userId) => ({ userId, org: approver.org }))).catch(() => new Map<string, ResolvedShiftPolicy>())
     : new Map<string, ResolvedShiftPolicy>();
   const single = new Map<string, Promise<ResolvedShiftPolicy>>();
   const policyOf = (userId: string): ResolvedShiftPolicy | Promise<ResolvedShiftPolicy> => {

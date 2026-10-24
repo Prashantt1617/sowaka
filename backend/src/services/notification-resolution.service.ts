@@ -22,6 +22,8 @@
  */
 import { ObjectId } from 'mongodb';
 import { attendanceOverrides, attendanceRecords, attendanceRegularizations, gameChallenges, getDb, leaves, overtimeRequests, users } from '../config/db';
+import type { User } from '../models/user.model';
+import { requestViewer } from '../middleware/request-viewer';
 import { AppNotification } from '../models/notification.model';
 import { feedbackProgress } from './feedback-notifications.service';
 import { istParts } from './notification-time';
@@ -112,7 +114,8 @@ async function punchReminders(userId: string, rows: AppNotification[], now: Date
   const reminders = rows.filter((row) => row.scenario === 'punch_in_reminder');
   if (!reminders.length) return;
   const days = [...new Set(reminders.map((row) => row.data?.dateKey).filter(Boolean))];
-  const user = await users().findOne({ userId }, { projection: { _id: 0, employeeId: 1 } });
+  // The signed-in person is already in hand on a request (no round trip); read otherwise.
+  const user = requestViewer(userId) ?? await users().findOne({ userId }, { projection: { _id: 0, employeeId: 1 } });
   const records = days.length
     ? await attendanceRecords()
       .find(
@@ -182,7 +185,7 @@ async function pendingReminders(userId: string, rows: AppNotification[], now: Da
   const [latest, ...older] = rows.filter((row) => row.scenario === 'pending_requests_reminder');
   if (!latest) return;
   for (const row of older) resolved.add(row.id);
-  const approver = await users().findOne({ userId });
+  const approver = (requestViewer(userId) as User | undefined) ?? await users().findOne({ userId });
   if (!approver) return;
   const pending = await pendingFor(approver, now);
   if (pending.leave + pending.overtime + pending.attendance === 0) resolved.add(latest.id);
@@ -192,17 +195,13 @@ async function feedbackDue(userId: string, rows: AppNotification[], now: Date, r
   const due = rows.filter((row) => ['feedback_cycle_open', 'feedback_weekly', 'feedback_last_day'].includes(row.scenario));
   if (!due.length) return;
   const today = istParts(now).dateKey;
-  const manager = await users().findOne({ userId });
+  const manager = (requestViewer(userId) as User | undefined) ?? await users().findOne({ userId });
   if (!manager) return;
-  const done = new Map<string, boolean>();
-  for (const row of due) {
-    if (row.scenario === 'feedback_last_day' && istParts(new Date(row.createdAt)).dateKey < today) {
-      resolved.add(row.id);
-      continue;
-    }
-    const period = row.data?.period ?? '';
-    if (!period) continue;
-    if (!done.has(period)) done.set(period, (await feedbackProgress(manager, period)).pending.length === 0);
-    if (done.get(period)) resolved.add(row.id);
-  }
+  const open = due.filter((row) => !(row.scenario === 'feedback_last_day' && istParts(new Date(row.createdAt)).dateKey < today));
+  for (const row of due) if (!open.includes(row)) resolved.add(row.id);
+  // Each period's progress side by side, not one after another.
+  const periods = [...new Set(open.map((row) => row.data?.period ?? '').filter(Boolean))];
+  const done = new Map(await Promise.all(periods.map(async (period) =>
+    [period, (await feedbackProgress(manager, period)).pending.length === 0] as const)));
+  for (const row of open) if (done.get(row.data?.period ?? '')) resolved.add(row.id);
 }
