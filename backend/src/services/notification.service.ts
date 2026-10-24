@@ -73,10 +73,20 @@ export async function unregisterDeviceToken(userId: string, token: string) {
 }
 
 export async function listNotifications(userId: string) {
-  const rows = await notifications().find({ userId }).sort({ createdAt: -1 }).limit(100).toArray();
-  // A notification about a post that has since been deleted leads nowhere.
-  // Deleting a post now removes its notifications too; this covers the ones
-  // written before that, and any a delete raced with.
+  return withoutDeletedPosts(await listNotificationRows(userId));
+}
+
+/** The newest hundred rows of someone's inbox, as stored. */
+export function listNotificationRows(userId: string) {
+  return notifications().find({ userId }).sort({ createdAt: -1 }).limit(100).toArray();
+}
+
+/**
+ * A notification about a post that has since been deleted leads nowhere.
+ * Deleting a post now removes its notifications too; this covers the ones
+ * written before that, and any a delete raced with.
+ */
+export async function withoutDeletedPosts<T extends { data?: { postId?: string } }>(rows: T[]): Promise<T[]> {
   const postIds = [...new Set(rows.map((row) => row.data?.postId).filter((id): id is string => Boolean(id)))];
   if (postIds.length === 0) return rows;
   const live = new Set(

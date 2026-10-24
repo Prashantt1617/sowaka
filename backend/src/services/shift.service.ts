@@ -24,6 +24,7 @@ import {
   ShiftOvertimeRules,
   ShiftPolicyRules,
   ShiftTemplate,
+  ShiftAssignment,
   ASSIGNMENT_EPOCH,
   PunchFormat,
   PUNCH_FORMATS,
@@ -1041,6 +1042,30 @@ async function resolvePolicyForUser(userId: string, asOf: string): Promise<Resol
   // person and their history go together; then the org policy, the template
   // and the default (in case the template has no policy) go together.
   // Which template covered them on that date, not which one they are on now.
+  //
+  // For the signed-in person of this request the org is already known, so
+  // everything goes in one trip: their history, the org policy and the org's
+  // templates (a handful), picked from in memory exactly as the queries below
+  // pick them. Every self-service screen comes through here.
+  const knownOrg = requestUserFor(userId)?.org;
+  if (knownOrg) {
+    const [history, orgPolicy, templates] = await Promise.all([
+      assignedTemplateOn(userId, asOf),
+      getOrgShiftPolicy(knownOrg),
+      shiftTemplates().find({ org: knownOrg }).toArray(),
+    ]);
+    const live = (t: ShiftTemplate) => t.active === true && t.deletedAt === undefined;
+    const lists = (t: ShiftTemplate) =>
+      Array.isArray(t.assignedUserIds) ? t.assignedUserIds.includes(userId) : (t.assignedUserIds as unknown) === userId;
+    const found = history === 'no-history'
+      ? templates.find((t) => live(t) && lists(t))
+      : history === null
+        ? null
+        : templates.find((t) => t._id != null && t._id.equals(history));
+    const fallback = templates.find((t) => live(t) && t.isDefault === true);
+    const template = found?.policy ? found : fallback;
+    return mergeTemplatePolicy(orgPolicy, template);
+  }
   const [user, assigned] = await Promise.all([
     users().findOne({ userId }, { projection: { _id: 0, org: 1 } }),
     assignedTemplateOn(userId, asOf),
@@ -1161,19 +1186,45 @@ export async function policiesForPeople(
   people: { userId: string; org?: string }[],
   asOf: string = todayIso(),
 ): Promise<Map<string, ResolvedShiftPolicy>> {
-  const out = new Map<string, ResolvedShiftPolicy>();
   const ids = [...new Set(people.map((p) => p.userId))];
-  if (ids.length === 0) return out;
+  if (ids.length === 0) return new Map<string, ResolvedShiftPolicy>();
   const orgs = [...new Set(people.map((p) => p.org).filter((o): o is string => Boolean(o)))];
-  const [orgPolicies, templates, assignments] = await Promise.all([
-    Promise.all(orgs.map(async (org) => [org, await getOrgShiftPolicy(org)] as const)),
-    orgs.length ? shiftTemplates().find({ org: { $in: orgs } }).toArray() : Promise.resolve([]),
+  const [setup, assignments] = await Promise.all([
+    orgPolicySetup(orgs),
     shiftAssignments()
       .find({ userId: { $in: ids }, effectiveFrom: { $lte: asOf } })
       .sort({ effectiveFrom: -1, createdAt: -1 })
       .toArray(),
   ]);
-  const policyByOrg = new Map(orgPolicies);
+  return resolvePolicies(people, setup, assignments);
+}
+
+/** What `resolvePolicies` needs of each org: its policy and every template. */
+export type OrgPolicySetup = { policyByOrg: Map<string, OrgPolicy>; templates: ShiftTemplate[] };
+
+/**
+ * The org half of `policiesForPeople`, for a caller that reads it alongside
+ * its own queries rather than after them.
+ */
+export async function orgPolicySetup(orgs: string[]): Promise<OrgPolicySetup> {
+  const [orgPolicies, templates] = await Promise.all([
+    Promise.all(orgs.map(async (org) => [org, await getOrgShiftPolicy(org)] as const)),
+    orgs.length ? shiftTemplates().find({ org: { $in: orgs } }).toArray() : Promise.resolve([]),
+  ]);
+  return { policyByOrg: new Map(orgPolicies), templates };
+}
+
+/**
+ * `policiesForPeople` from inputs already loaded, in memory. `assignments`
+ * are everyone's rows in force by the date asked about, newest first
+ * (`effectiveFrom` then `createdAt`, both descending).
+ */
+export function resolvePolicies(
+  people: { userId: string; org?: string }[],
+  { policyByOrg, templates }: OrgPolicySetup,
+  assignments: ShiftAssignment[],
+): Map<string, ResolvedShiftPolicy> {
+  const out = new Map<string, ResolvedShiftPolicy>();
   const templateById = new Map(templates.map((t) => [t._id!.toHexString(), t]));
   const defaultByOrg = new Map<string, ShiftTemplate>();
   for (const t of templates) {

@@ -16,7 +16,8 @@ import { RecognitionNomination } from '../models/recognition.model';
 import { notifyUsers } from './notification.service';
 import { assignedParametersFor, assignedParametersForMany } from './kpi.service';
 import { currentPeriodFor, cycleInfoFor } from './cycle';
-import { policiesForUsers, policyForUser, shiftPolicyViewOf } from './shift.service';
+import { policiesForPeople, policyForUser, shiftPolicyViewOf } from './shift.service';
+import { sortLikeMongo } from './admin-scope';
 import { markForDay, minutesAfterShiftStart, DEFAULT_AWAY_REASON } from './attendance.service';
 import { presignReceiptDownload } from './s3-receipt.service';
 import { holidaysForUser } from './holiday.service';
@@ -259,18 +260,12 @@ export async function getManagerWorkspace(
 
   // The whole org, so each report's own reporting line can be walked rather
   // than assumed to run through whoever is looking at it.
-  const [approver, orgRoster, directReports, cycle, companyConfig, orgHolidays, ownPhoto] =
+  const [approver, orgRoster, cycle, companyConfig, orgHolidays, ownPhoto] =
     await Promise.all([
       approverFuture,
-      users().find(orgFilter).toArray(),
-      users()
-        .find({
-          managerUserId,
-          ...orgFilter,
-          lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
-        })
-        .sort({ name: 1, userId: 1 })
-        .toArray(),
+      // Every batch at once: a roster past the default first batch of 101
+      // went back to the cluster for the rest.
+      users().find(orgFilter, { batchSize: 100_000 }).toArray(),
       cycleInfoFor(manager.org ?? ''),
       // Company config for the overtime apply flow: which weekdays are
       // week-offs, whether overtime is enabled for this user's department.
@@ -289,6 +284,16 @@ export async function getManagerWorkspace(
     manager.profilePhotoKey = ownPhoto.profilePhotoKey;
   }
   const orgUsersById = new Map(orgRoster.map((user) => [user.userId, user]));
+  // The viewer's active direct reports, by name: picked from the roster
+  // already in hand rather than asked for again.
+  const directReports = sortLikeMongo(
+    orgRoster.filter(
+      (user) =>
+        user.managerUserId === managerUserId &&
+        !['offboarded', 'terminated'].includes(user.lifecycleStatus ?? ''),
+    ),
+    [['name', 1], ['userId', 1]],
+  );
 
   // Your team is the people you actually work alongside: whoever reports to
   // your manager *and* works in your department, plus your manager heading it,
@@ -398,7 +403,9 @@ export async function getManagerWorkspace(
 
       assignedParametersForMany(manager.org ?? '', reportIds, period),
       // The viewer's own shift rides along: it is what their day is graded by.
-      policiesForUsers([manager.userId, ...reportIds]),
+      // Everyone's org is on the records already in hand, so the policies
+      // need not look the people up again first.
+      policiesForPeople([manager, ...reports]),
       leaves()
         .find({ userId: { $in: reportIds }, status: 'approved', startDate: { $lte: todayStartUtc() }, endDate: { $gte: todayStartUtc() } })
         .project<{ userId: string }>({ userId: 1 })

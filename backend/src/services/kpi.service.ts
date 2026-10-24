@@ -852,6 +852,18 @@ export async function removeKpiAssignment(
  * memory. No fallback to an earlier cycle here — the team tab shows what is
  * assigned now, as the manager's form does.
  */
+type AssignmentWithParameters = KpiAssignment & { __parameters: KpiParameter[] };
+
+/**
+ * Stages that bring each assignment's parameters along with it, matched by
+ * `_id` as the separate `$in` read did, so the two no longer cost a round
+ * trip each.
+ */
+const withAssignedParameters = [
+  { $addFields: { __parameterObjectIds: { $map: { input: '$parameterIds', in: { $toObjectId: '$$this' } } } } },
+  { $lookup: { from: 'kpi_parameters', localField: '__parameterObjectIds', foreignField: '_id', as: '__parameters' } },
+];
+
 export async function assignedParametersForMany(
   org: string,
   userIds: string[],
@@ -860,12 +872,10 @@ export async function assignedParametersForMany(
   const out = new Map<string, Array<{ id: string; title: string; description: string; weight: number }>>();
   const ids = [...new Set(userIds)];
   if (ids.length === 0) return out;
-  const docs = await kpiAssignments().find({ org, userId: { $in: ids }, period }).toArray();
-  const parameterIds = [...new Set(docs.flatMap((doc) => doc.parameterIds))];
-  const params = parameterIds.length
-    ? await kpiParameters().find({ _id: { $in: parameterIds.map((id) => new ObjectId(id)) } }).toArray()
-    : [];
-  const byId = new Map(params.map((p) => [p._id!.toHexString(), p]));
+  const docs = await kpiAssignments()
+    .aggregate<AssignmentWithParameters>([{ $match: { org, userId: { $in: ids }, period } }, ...withAssignedParameters])
+    .toArray();
+  const byId = new Map(docs.flatMap((doc) => doc.__parameters).map((p) => [p._id!.toHexString(), p]));
   for (const doc of docs) {
     const weights = weightsOrEven(doc.parameterIds, doc.weights);
     out.set(
@@ -895,19 +905,19 @@ export async function assignedParametersFor(
    */
   options: { fallbackToLatest?: boolean } = {},
 ): Promise<Array<{ id: string; title: string; description: string; weight: number }>> {
-  const doc =
-    (await kpiAssignments().findOne({ org, userId, period })) ??
-    (options.fallbackToLatest
-      ? await kpiAssignments().findOne(
-          { org, userId, period: { $lt: period } },
-          { sort: { period: -1 } },
-        )
-      : null);
-  if (!doc) return [];
-  const params = await kpiParameters()
-    .find({ _id: { $in: doc.parameterIds.map((id) => new ObjectId(id)) } })
+  // The cycle's own assignment or, with the fallback, the latest earlier one
+  // — the newest at or before this cycle is exactly that — with its
+  // parameters, in one round trip rather than up to three in a row.
+  const [doc] = await kpiAssignments()
+    .aggregate<AssignmentWithParameters>([
+      { $match: options.fallbackToLatest ? { org, userId, period: { $lte: period } } : { org, userId, period } },
+      { $sort: { period: -1 } },
+      { $limit: 1 },
+      ...withAssignedParameters,
+    ])
     .toArray();
-  const byId = new Map(params.map((p) => [p._id!.toHexString(), p]));
+  if (!doc) return [];
+  const byId = new Map(doc.__parameters.map((p) => [p._id!.toHexString(), p]));
   const weights = weightsOrEven(doc.parameterIds, doc.weights);
   return doc.parameterIds
     .map((id) => byId.get(id))
