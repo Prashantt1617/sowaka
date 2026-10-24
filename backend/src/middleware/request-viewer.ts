@@ -27,3 +27,13 @@ export function requestViewer(userId: string): Viewer | undefined {
   const user = scope.getStore()?.user;
   return user && user.userId === userId ? user : undefined;
 }
+
+/**
+ * `requestViewer`, when that record is enough to show their face: it holds
+ * every field bar `profilePhotoUrl`, which only matters for someone without
+ * a stored photo key. For them this is undefined and the caller reads.
+ */
+export function requestViewerWithPhoto(userId: string): User | undefined {
+  const user = requestViewer(userId);
+  return user?.profilePhotoKey ? (user as User) : undefined;
+}

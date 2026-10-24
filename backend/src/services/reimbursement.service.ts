@@ -9,8 +9,9 @@ import {
   presignReceiptDownload,
   uploadReimbursementReceipt,
 } from './s3-receipt.service';
-import { orgUsers } from './admin-scope';
+import { orgUsersWithRows, sortLikeMongo } from './admin-scope';
 import { resolveProfilePhoto } from './s3-connect-media.service';
+import { requestViewerWithPhoto } from '../middleware/request-viewer';
 import { resolveTypeForClaim } from './reimbursement-type.service';
 
 const decisions = new Set<ReimbursementStatus>(['approved', 'declined', 'paid']);
@@ -107,22 +108,40 @@ export async function createReimbursementClaim(
 }
 
 export async function getMyReimbursementClaims(userId: string) {
-  const employee = await users().findOne({ userId });
+  // The person and their claims in one round trip, not two; the signed-in
+  // person's record is usually already in hand.
+  const [employee, claims] = await Promise.all([
+    requestViewerWithPhoto(userId) ?? users().findOne({ userId }, { projection: CLAIM_VIEW_EMPLOYEE }),
+    reimbursementClaims().find({ userId }).sort({ createdAt: -1 }).toArray(),
+  ]);
   if (!employee) throw new ReimbursementError(404, 'Employee not found');
-  const claims = await reimbursementClaims().find({ userId }).sort({ createdAt: -1 }).toArray();
-  return Promise.all(claims.map((claim) => toView(claim, employee)));
+  return Promise.all(claims.map((claim) => toView(claim, employee as User)));
 }
 
+/** The fields of a person a claim view shows. */
+const CLAIM_VIEW_EMPLOYEE = {
+  _id: 0, userId: 1, name: 1, department: 1, designation: 1, profilePhotoKey: 1, profilePhotoUrl: 1,
+} as const;
+
 export async function getManagerReimbursementInbox(managerUserId: string) {
-  const claims = await reimbursementClaims()
-    .find({ managerUserId })
-    .sort({ status: -1, createdAt: -1 })
+  // The claims and the people who made them in one trip, not two.
+  const rows = await reimbursementClaims()
+    .aggregate<ReimbursementClaim & { _id: ObjectId; employee: User[] }>([
+      { $match: { managerUserId } },
+      { $sort: { status: -1, createdAt: -1 } },
+      {
+        $lookup: {
+          from: users().collectionName,
+          localField: 'userId',
+          foreignField: 'userId',
+          pipeline: [{ $limit: 1 }, { $project: CLAIM_VIEW_EMPLOYEE }],
+          as: 'employee',
+        },
+      },
+    ])
     .toArray();
-  const employeeIds = [...new Set(claims.map((claim) => claim.userId))];
-  const employees = await users()
-    .find({ userId: { $in: employeeIds } })
-    .toArray();
-  const employeeById = new Map(employees.map((employee) => [employee.userId, employee]));
+  const claims = rows.map(({ employee: _employee, ...claim }) => claim);
+  const employeeById = new Map(rows.flatMap((row) => row.employee).map((employee) => [employee.userId, employee]));
   return Promise.all(
     claims.flatMap((claim) => {
       const employee = employeeById.get(claim.userId);
@@ -133,13 +152,15 @@ export async function getManagerReimbursementInbox(managerUserId: string) {
 
 /** Org-wide list of every reimbursement claim, for the HR dashboard. */
 export async function listAllReimbursementsForAdmin(adminUserId: string) {
-  const employees = await orgUsers(adminUserId);
+  // The roster and its claims in one round trip, each person trimmed to what
+  // the card shows.
+  const { employees, rows } = await orgUsersWithRows(adminUserId, reimbursementClaims(), {
+    onlyWithRows: true,
+    userFields: ['userId', 'name', 'department', 'designation', 'profilePhotoKey', 'profilePhotoUrl'],
+  });
   if (employees.length === 0) return [];
   const employeeById = new Map(employees.map((e) => [e.userId, e]));
-  const claims = await reimbursementClaims()
-    .find({ userId: { $in: employees.map((e) => e.userId) } })
-    .sort({ status: -1, createdAt: -1 })
-    .toArray();
+  const claims = sortLikeMongo(rows, [['status', -1], ['createdAt', -1]]);
   return Promise.all(
     claims.flatMap((claim) => {
       const employee = employeeById.get(claim.userId);

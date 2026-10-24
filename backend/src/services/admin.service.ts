@@ -2,8 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { forgetAuthUser } from './auth-cache';
 import { authSessions, companies, deviceTokens, employeePaymentDetails, feedbackRecords, salaryStructures, users } from '../config/db';
 import { EmployeeDocument, User } from '../models/user.model';
-import { orgUsers } from './admin-scope';
-import { requestViewer } from '../middleware/request-viewer';
+import { orgUsers, orgUsersWithRows, sortLikeMongo } from './admin-scope';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { deleteEmployeeDocument, presignReceiptDownload, uploadEmployeeDocument } from './s3-receipt.service';
 
@@ -13,19 +12,17 @@ export class AdminError extends Error {
 
 /** Org-wide list of every feedback record, for the HR dashboard (rule 5). */
 export async function listAllFeedbackForAdmin(adminUserId: string) {
-  // The same people `orgUsers` returns, but only the four fields used here:
-  // whole user records carry profile photos, some inline and hundreds of KB.
-  const admin = requestViewer(adminUserId) ?? (await users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1 } }));
-  if (!admin) return [];
-  const employees = await users()
-    .find(admin.org ? { org: admin.org } : {}, { projection: { _id: 0, userId: 1, name: 1, department: 1, designation: 1 } })
-    .toArray();
+  // The same people `orgUsers` returns, but only the four fields used here
+  // (whole user records carry profile photos, some inline and hundreds of
+  // KB), with their records, in one round trip. Everyone, not only those
+  // reviewed: a manager is named from the same roster.
+  const { employees, rows } = await orgUsersWithRows(adminUserId, feedbackRecords(), {
+    foreignField: 'employeeUserId',
+    userFields: ['userId', 'name', 'department', 'designation'],
+  });
   if (employees.length === 0) return [];
   const userById = new Map(employees.map((e) => [e.userId, e]));
-  const records = await feedbackRecords()
-    .find({ employeeUserId: { $in: employees.map((e) => e.userId) } })
-    .sort({ period: -1, updatedAt: -1 })
-    .toArray();
+  const records = sortLikeMongo(rows, [['period', -1], ['updatedAt', -1]]);
   return records.map((record) => {
     const employee = userById.get(record.employeeUserId);
     const manager = userById.get(record.managerUserId);

@@ -55,6 +55,20 @@ export async function carriedFromRun(
   return row ? row.carried : null;
 }
 
+/**
+ * `carriedFromRun` for every type at once, in one read: what last year's run
+ * carried into `year`, by type. A type the run never closed is absent.
+ */
+export async function carriedFromRuns(userId: string, year: number): Promise<Map<LeaveTypeKey, number>> {
+  const rows = await leaveYearEnds()
+    .find({ userId, year: year - 1 }, { projection: { _id: 0, type: 1, carried: 1 } })
+    .toArray();
+  const carried = new Map<LeaveTypeKey, number>();
+  // The first row per type, as `findOne` would have picked it.
+  for (const row of rows) if (!carried.has(row.type)) carried.set(row.type, row.carried);
+  return carried;
+}
+
 export interface YearEndResult {
   processed: number;
   skipped: number;

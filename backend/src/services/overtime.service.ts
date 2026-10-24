@@ -1,13 +1,15 @@
 import { ObjectId } from 'mongodb';
-import { overtimeRequests, users } from '../config/db';
+import { overtimeRequests, shiftAssignments, users } from '../config/db';
 import { OvertimeRequest, OvertimeStatus, overtimeDurationOf } from '../models/overtime.model';
 import { User } from '../models/user.model';
-import { orgUsers } from './admin-scope';
+import { orgUsersWithRows, sortLikeMongo } from './admin-scope';
+import { requestUserFor } from './request-user';
 import { getCompanyConfig } from './company-settings.service';
-import type { OvertimeDuration } from '../models/shift.model';
-import { fullDayHoursFor, policiesForPeople, policyForUser } from './shift.service';
+import type { OvertimeDuration, ShiftAssignment } from '../models/shift.model';
+import { fullDayHoursFor, orgPolicySetup, policiesForPeople, policyForUser, resolvePolicies, todayIso } from './shift.service';
 import { notifyOvertimeDecided, notifyOvertimeSubmitted } from './request-notifications.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
+import { requestViewerWithPhoto } from '../middleware/request-viewer';
 
 const decisions = new Set<OvertimeStatus>(['approved', 'declined']);
 
@@ -106,24 +108,47 @@ export async function createOvertimeRequest(
 }
 
 export async function getMyOvertimeRequests(userId: string) {
-  const employee = await users().findOne({ userId });
+  // The person, their requests and their full-day hours depend only on who
+  // they are, so they are read together rather than one after another.
+  const hours = fullDayHoursFor(userId);
+  hours.catch(() => undefined);
+  const [employee, requests] = await Promise.all([
+    requestViewerWithPhoto(userId) ?? users().findOne({ userId }, { projection: OVERTIME_VIEW_EMPLOYEE }),
+    overtimeRequests().find({ userId }).sort({ createdAt: -1 }).toArray(),
+  ]);
   if (!employee) throw new OvertimeError(404, 'Employee not found');
-  const requests = await overtimeRequests().find({ userId }).sort({ createdAt: -1 }).toArray();
-  const fullDayHours = await fullDayHoursFor(userId);
-  return await Promise.all(requests.map((request) => toView(request, employee, fullDayHours)));
+  const fullDayHours = await hours;
+  return await Promise.all(requests.map((request) => toView(request, employee as User, fullDayHours)));
 }
 
+/** The fields of a person an overtime view shows, and their org for the policy lookup. */
+const OVERTIME_VIEW_EMPLOYEE = {
+  _id: 0, userId: 1, org: 1, name: 1, department: 1, designation: 1, profilePhotoKey: 1, profilePhotoUrl: 1,
+} as const;
+
 export async function getManagerOvertimeInbox(managerUserId: string) {
-  const requests = await overtimeRequests()
-    .find({ managerUserId })
-    .sort({ status: -1, createdAt: -1 })
+  // The requests and the people who raised them in one trip, then every one
+  // of those people's full-day hours in one more.
+  const rows = await overtimeRequests()
+    .aggregate<OvertimeRequest & { _id: ObjectId; employee: User[] }>([
+      { $match: { managerUserId } },
+      { $sort: { status: -1, createdAt: -1 } },
+      {
+        $lookup: {
+          from: users().collectionName,
+          localField: 'userId',
+          foreignField: 'userId',
+          pipeline: [{ $limit: 1 }, { $project: OVERTIME_VIEW_EMPLOYEE }],
+          as: 'employee',
+        },
+      },
+    ])
     .toArray();
+  const requests = rows.map(({ employee: _employee, ...request }) => request);
+  const employees = [...new Map(rows.flatMap((row) => row.employee).map((e) => [e.userId, e])).values()];
   const employeeIds = [...new Set(requests.map((request) => request.userId))];
-  const employees = await users()
-    .find({ userId: { $in: employeeIds } })
-    .toArray();
   const employeeById = new Map(employees.map((employee) => [employee.userId, employee]));
-  const hoursByUser = await fullDayHoursByUser(employeeIds);
+  const hoursByUser = await fullDayHoursByUser(employeeIds, employees);
   return await Promise.all(
     requests.flatMap((request) => {
       const employee = employeeById.get(request.userId);
@@ -200,19 +225,44 @@ async function durationLabel(request: Pick<OvertimeRequest, 'userId' | 'duration
 
 /** Org-wide list of every overtime request, for the HR dashboard. */
 export async function listAllOvertimeForAdmin(adminUserId: string) {
-  const employees = await orgUsers(adminUserId);
-  if (employees.length === 0) return [];
-  const employeeById = new Map(employees.map((e) => [e.userId, e]));
-  // The requests and everyone's full-day threshold side by side: the
-  // policies are batched over the roster already in hand (a handful of
-  // queries in all) rather than five in a row for each person who asked.
-  const [requests, policies] = await Promise.all([
-    overtimeRequests()
-      .find({ userId: { $in: employees.map((e) => e.userId) } })
-      .sort({ status: -1, createdAt: -1 })
-      .toArray(),
-    policiesForPeople(employees),
+  // One round trip for the lot: the roster with its requests and each
+  // person's shift assignments, beside the org's policy and templates. The
+  // full-day threshold is then resolved in memory, as `policiesForPeople`
+  // would, rather than read person by person.
+  const org = requestUserFor(adminUserId)?.org;
+  const asOf = todayIso();
+  const [{ employees, rows }, setup] = await Promise.all([
+    orgUsersWithRows(adminUserId, overtimeRequests(), {
+      onlyWithRows: true,
+      userFields: ['userId', 'org', 'name', 'department', 'designation', 'profilePhotoKey', 'profilePhotoUrl'],
+      alsoLookup: [
+        {
+          $lookup: {
+            from: shiftAssignments().collectionName,
+            localField: 'userId',
+            foreignField: 'userId',
+            pipeline: [{ $match: { effectiveFrom: { $lte: asOf } } }],
+            as: '__assignments',
+          },
+        },
+      ],
+    }),
+    org ? orgPolicySetup([org]) : Promise.resolve(null),
   ]);
+  if (employees.length === 0) return [];
+  const assignments = sortLikeMongo(
+    employees.flatMap((e) => ((e as { __assignments?: ShiftAssignment[] }).__assignments ?? [])),
+    [['effectiveFrom', -1], ['createdAt', -1]],
+  );
+  for (const e of employees) delete (e as { __assignments?: unknown }).__assignments;
+  const employeeById = new Map(employees.map((e) => [e.userId, e]));
+  const requests = sortLikeMongo(rows, [['status', -1], ['createdAt', -1]]);
+  // Everyone here is in the caller's org; anything else (no org on the
+  // caller) reads the policies the long way.
+  const policies =
+    setup && employees.every((e) => e.org === org)
+      ? resolvePolicies(employees, setup, assignments)
+      : await policiesForPeople(employees, asOf);
   return await Promise.all(
     requests.flatMap((request) => {
       const employee = employeeById.get(request.userId);
@@ -279,9 +329,16 @@ export async function adminDecideOvertime(
  * The full-day threshold for each of several people, looked up once per
  * person rather than once per request when shaping a list.
  */
-async function fullDayHoursByUser(userIds: string[]): Promise<Map<string, number>> {
+async function fullDayHoursByUser(
+  userIds: string[],
+  /** Their user records, when in hand: then every policy is one batch. */
+  people?: { userId: string; org?: string }[],
+): Promise<Map<string, number>> {
   const unique = [...new Set(userIds)];
-  const hours = await Promise.all(unique.map((userId) => fullDayHoursFor(userId)));
+  const batch = people?.length ? await policiesForPeople(people).catch(() => null) : null;
+  const hours = await Promise.all(
+    unique.map((userId) => batch?.get(userId)?.minFullDayHours ?? fullDayHoursFor(userId)),
+  );
   return new Map(unique.map((userId, index) => [userId, hours[index]]));
 }
 

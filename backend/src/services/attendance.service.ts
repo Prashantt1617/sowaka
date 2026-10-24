@@ -16,6 +16,7 @@ import { orgUsers } from './admin-scope';
 import { DayMark, HALF_DAY_CORRECTION_OUTCOMES, ShiftPolicyRules } from '../models/shift.model';
 import { holidayDatesForUser } from './holiday.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
+import { requestViewer } from '../middleware/request-viewer';
 import {
   notifyCorrectionDecided, notifyCorrectionSubmitted, notifyOutOfLocationDecided,
   notifyOutOfLocationSubmitted, notifyPunchedIn, notifyPunchedOut,
@@ -25,7 +26,10 @@ const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const decisions = new Set<RegularizationStatus>(['approved', 'declined']);
 
 export async function getMyAttendance(userId: string, fromInput: string, toInput: string) {
-  const employee = await users().findOne({ userId });
+  // The signed-in person, as requireAuth read them, when it is them: only
+  // their employee id and org are needed, and reading them again was a round
+  // trip ahead of everything else.
+  const employee = requestViewer(userId) ?? (await users().findOne({ userId }, { projection: { _id: 0, employeeId: 1, org: 1 } }));
   if (!employee) throw new AttendanceError(404, 'Employee not found');
   return getAttendanceForEmployee(userId, employee.employeeId, fromInput, toInput, employee.org);
 }

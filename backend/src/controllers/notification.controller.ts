@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
-import { listNotifications, markAllNotificationsRead, markNotificationRead, registerDeviceToken, sendTestPush, unregisterDeviceToken } from '../services/notification.service';
+import { listNotificationRows, withoutDeletedPosts, markAllNotificationsRead, markNotificationRead, registerDeviceToken, sendTestPush, unregisterDeviceToken } from '../services/notification.service';
 import { resolveNotifications, withoutEndedGames } from '../services/notification-resolution.service';
 
 const userId = (req: Request) => req.auth!.userId;
@@ -16,8 +16,19 @@ export async function unregisterToken(req: Request, res: Response, next: NextFun
 }
 export async function notificationInbox(req: Request, res: Response, next: NextFunction) {
   try {
-    const rows = await resolveNotifications(userId(req), await listNotifications(userId(req)));
-    res.json({ success: true, notifications: await withoutEndedGames(rows) });
+    const rows = await listNotificationRows(userId(req));
+    // Whether a row's post is gone, whether it has been overtaken by events and
+    // whether its game has ended are separate questions about the same rows, so
+    // they are asked side by side rather than one after another.
+    const [kept, resolved, current] = await Promise.all([
+      withoutDeletedPosts(rows),
+      resolveNotifications(userId(req), rows),
+      withoutEndedGames(rows),
+    ]);
+    const keep = new Set(kept);
+    const live = new Set(current);
+    // `resolved` is `rows`, row for row, some marked resolved.
+    res.json({ success: true, notifications: resolved.filter((_, i) => keep.has(rows[i]) && live.has(rows[i])) });
   } catch (error) { next(error); }
 }
 export async function readNotification(req: Request, res: Response, next: NextFunction) {

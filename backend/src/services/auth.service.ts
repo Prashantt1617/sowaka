@@ -9,7 +9,7 @@ import { generateOtp, hashOtp, isValidEmail } from '../utils/otp.util';
 import { OtpDeliveryError, sendOtpEmail } from './email.service';
 import { logger } from '../utils/logger';
 import { resolveProfilePhoto } from './s3-connect-media.service';
-import { DEFAULT_APP_TABS } from '../models/company.model';
+import { Company, DEFAULT_APP_TABS } from '../models/company.model';
 import { supportRoleOf } from '../models/support.model';
 import { enabledGamesOf } from './game-catalog.service';
 
@@ -121,18 +121,32 @@ export async function revokeSession(token: string): Promise<void> {
   }
 }
 
-export async function getCurrentAuthUser(userId: string): Promise<AuthUser> {
-  // Whether anyone reports to them needs only their id, so both reads go together.
-  const [user, reports] = await Promise.all([
+export async function getCurrentAuthUser(
+  userId: string,
+  /** The user as the auth check read them moments ago, photo aside. */
+  preloaded?: Pick<User, 'org' | 'managerUserId'>,
+): Promise<AuthUser> {
+  // Whether anyone reports to them needs only their id, so both reads go
+  // together. The record itself is read fresh (an edit made a second ago
+  // must show), but its company and manager are asked for alongside it from
+  // what the auth check saw, and only asked again if those have since moved.
+  const [user, reports, company, manager] = await Promise.all([
     users().findOne({ userId }),
     users().countDocuments({ managerUserId: userId }, { limit: 1 }),
+    preloaded ? companyFor(preloaded.org) : undefined,
+    preloaded ? managerNameFor(preloaded.managerUserId) : undefined,
   ]);
   if (!user || user.lifecycleStatus === 'offboarded' || user.lifecycleStatus === 'terminated') {
     throw new AuthError(401, 'User is not active');
   }
 
   const role = reports ? 'manager' : 'employee';
-  return toAuthUser({ ...user, role });
+  return toAuthUser(
+    { ...user, role },
+    preloaded && preloaded.org === user.org && preloaded.managerUserId === user.managerUserId
+      ? { company: company ?? null, manager: manager ?? null }
+      : undefined,
+  );
 }
 
 export function hashSessionToken(token: string): string {
@@ -294,14 +308,26 @@ export async function getTeammates(viewerUserId: string, limit = 12, scope: 'tea
   return { teammates, total };
 }
 
-async function toAuthUser(user: User): Promise<AuthUser> {
+function companyFor(org: string | undefined) {
+  return org ? companies().findOne({ id: org }) : null;
+}
+
+function managerNameFor(managerUserId: string | undefined) {
+  // Only the name is used, and a full user document carries the profile
+  // photo with it.
+  return managerUserId
+    ? users().findOne({ userId: managerUserId }, { projection: { _id: 0, name: 1 } })
+    : null;
+}
+
+async function toAuthUser(
+  user: User,
+  /** The company and manager when already read for this user's org and manager. */
+  prefetched?: { company: Company | null; manager: { name?: string } | null },
+): Promise<AuthUser> {
   const [company, manager, profilePhotoUrl] = await Promise.all([
-    user.org ? companies().findOne({ id: user.org }) : null,
-    // Only the name is used below, and a full user document carries the
-    // profile photo with it.
-    user.managerUserId
-      ? users().findOne({ userId: user.managerUserId }, { projection: { _id: 0, name: 1 } })
-      : null,
+    prefetched ? prefetched.company : companyFor(user.org),
+    prefetched ? prefetched.manager : managerNameFor(user.managerUserId),
     resolveProfilePhoto(user),
   ]);
 

@@ -31,7 +31,7 @@ export async function logout(req: Request, res: Response, next: NextFunction) {
 
 export async function currentUser(req: Request, res: Response, next: NextFunction) {
   try {
-    const user = await getCurrentAuthUser(req.auth?.userId ?? '');
+    const user = await getCurrentAuthUser(req.auth?.userId ?? '', req.auth?.user);
     res.status(200).json({ success: true, user });
   } catch (error) {
     next(error);
