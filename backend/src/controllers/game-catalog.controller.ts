@@ -71,12 +71,15 @@ export async function playHandler(req: Request, res: Response, next: NextFunctio
 // ---------------------------------------------------------------- live games' tickets
 
 const SCRIBBLE_KEY = 'scribble';
+const TILE_UP_KEY = 'tile-up';
 const SQUAD_KEY = 'secret-squad';
 const CUP_KEY = 'diwali-cup';
 
 /** The live games whose page carries a socket ticket: the marker it leaves, and the global it gets. */
 const TICKETED: Record<string, { marker: string; global: string; name: string }> = {
   [SCRIBBLE_KEY]: { marker: '<!--SCRIBBLE-TICKET-->', global: '__SCRIBBLE', name: 'Scribble' },
+  // Tile Up's rooms, built like Scribble's: the same ticket, its own `/tileup` namespace.
+  [TILE_UP_KEY]: { marker: '<!--TILEUP-TICKET-->', global: '__TILEUP', name: 'Tile Up' },
   [SQUAD_KEY]: { marker: '<!--SQUAD-TICKET-->', global: '__SQUAD', name: 'Secret Squad' },
   // The Diwali Cup's page talks to `/cup/api` with its ticket, after the same reload.
   [CUP_KEY]: { marker: '<!--CUP-TICKET-->', global: '__CUP', name: 'the tournament' },

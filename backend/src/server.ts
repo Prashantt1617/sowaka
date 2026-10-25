@@ -7,6 +7,7 @@ import { startNotificationScheduler, stopNotificationScheduler } from './service
 import { closeConnectRealtime, initConnectRealtime } from './services/connect-realtime.service';
 import { closeRelayRealtime, initRelayRealtime } from './services/relay-realtime.service';
 import { closeScribbleRealtime, initScribbleRealtime } from './services/scribble-realtime.service';
+import { closeTileUpRealtime, initTileUpRealtime } from './services/tileup-realtime.service';
 import { closeSquadRealtime, initSquadRealtime } from './services/secret-squad-realtime.service';
 import { closeRedis } from './config/redis';
 import { startCareScheduler, stopCareScheduler } from './services/care.service';
@@ -45,12 +46,14 @@ logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v
   initRelayRealtime(io);
   // Scribble's rooms: the same server and path, a third namespace.
   initScribbleRealtime(io);
+  initTileUpRealtime(io);
   // Secret Squad's office sessions: a fourth namespace on the same server.
   initSquadRealtime(io);
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info('Shutdown requested', { signal });
     closeScribbleRealtime();
+    closeTileUpRealtime();
     closeSquadRealtime();
     closeRelayRealtime();
     closeConnectRealtime();
