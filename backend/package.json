@@ -19,6 +19,7 @@
     "relay:store": "tsx src/scripts/relay-store-check.ts",
     "relay:game": "tsx src/scripts/relay-game-check.ts",
     "scribble:check": "tsx src/scripts/scribble-check.ts",
+    "tileup:check": "tsx src/scripts/tileup-check.ts",
     "notifications:check": "tsx src/scripts/notifications-check.ts",
     "employee-details:check": "tsx src/scripts/employee-details-check.ts",
     "celebrations:check": "tsx src/scripts/connect-celebrations-check.ts",
