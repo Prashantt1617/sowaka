@@ -174,12 +174,32 @@ export async function pageFor(viewer: GameViewer, key: string): Promise<{ html: 
       /* no file for this key: the catalog's copy */
     }
   }
-  const entry = await requireGame(viewer, key, true);
-  if (entry.kind !== 'web' || typeof entry.html !== 'string' || entry.html.length === 0) {
+  // Who may open it and which version is current: two small reads side by
+  // side (no page, no thumbnail). The page itself (hundreds of KB, slow to
+  // bring over from the cluster) comes from memory while its version holds,
+  // and is read again only when the catalog entry changes.
+  if (!GAME_KEY_PATTERN.test(key)) throw new GameCatalogError(404, 'Game not found');
+  const [keys, meta] = await Promise.all([
+    gamesForOrg(viewer.org),
+    gameCatalog().findOne({ key, active: true }, { projection: { _id: 0, kind: 1, updatedAt: 1 } }),
+  ]);
+  if (!viewer.org || !keys.includes(key)) throw new GameCatalogError(403, 'This game is not available for your company');
+  if (!meta) throw new GameCatalogError(404, 'Game not found');
+  if (meta.kind !== 'web') throw new GameCatalogError(404, 'This game has no page here');
+  const version = versionOf(meta);
+  const kept = pageCache.get(key);
+  if (kept && kept.version === version) return kept;
+  const entry = await gameCatalog().findOne({ key, active: true }, { projection: { _id: 0, kind: 1, html: 1, updatedAt: 1 } });
+  if (!entry || entry.kind !== 'web' || typeof entry.html !== 'string' || entry.html.length === 0) {
     throw new GameCatalogError(404, 'This game has no page here');
   }
-  return { html: entry.html, version: versionOf(entry) };
+  const page = { html: entry.html, version: versionOf(entry) };
+  pageCache.set(key, page);
+  return page;
 }
+
+/** Each game's page as last read, by key, with the version (the entry's `updatedAt`) it was read at. */
+const pageCache = new Map<string, { html: string; version: string }>();
 
 /**
  * A game's page with no viewer, for one that signs people in itself (Secret
