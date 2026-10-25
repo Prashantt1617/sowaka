@@ -281,9 +281,10 @@ async function main() {
     assert.equal(view.players.length, 2);
     assert.ok(sent.some((s) => s.event === 'room:feed' && (s.payload as { kind: string }).kind === 'join'));
   });
-  await check('settings: host only, 60 or 120', async () => {
+  await check('settings: host only, 30, 60 or 120', async () => {
     await assert.rejects(settingsRoom(sb, { secs: 120 }), (e: TileUpError) => e.status === 403);
     await assert.rejects(settingsRoom(sa, { secs: 90 }), (e: TileUpError) => e.status === 400);
+    assert.equal((await settingsRoom(sa, { secs: 30 })).secs, 30);
     assert.equal((await settingsRoom(sa, { secs: 120 })).secs, 120);
   });
   await check('full at 4: the fifth gets 409', async () => {

@@ -713,7 +713,7 @@ const api={
   invite:userId=>request('room:invite',{userId:String(userId)}),
   start:()=>request('room:start',{}),
   kick:userId=>request('room:kick',{userId:String(userId)}),
-  /* The host's lobby choice: {secs:60|120}; answered with the room. */
+  /* The host's lobby choice: {secs:30|60|120}; answered with the room. */
   settings:s=>request('room:settings',{secs:s&&s.secs}).then(keep),
   /* A word on your turn: the verdict, {ok:true, score, words, all7, rack} or {ok:false, why, words, bad}. */
   play:tiles=>request('tileup:play',{tiles:Array.isArray(tiles)?tiles.map(t=>({r:t.r|0,c:t.c|0,ch:String(t.ch||''),blank:t.blank===true})):[]}),
@@ -754,7 +754,7 @@ const PEOPLE=[['Ananya Rao','Product Designer','Design'],['Arjun Das','Backend E
  .map((p,i)=>({userId:'u'+i,name:p[0],designation:p[1],department:p[2],photoUrl:null}));
 const who=n=>PEOPLE.find(p=>p.name===n);
 const CFG={min:2,max:4};
-const SEC_OPTS=[60,120];
+const SEC_OPTS=[30,60,120];
 let quick=false, meOnline=true, mine=null, seq=0, myBest=0;
 const now=()=>Date.now(), copy=v=>JSON.parse(JSON.stringify(v)), rnd=(a,b)=>a+Math.random()*(b-a), pick=a=>a[Math.floor(Math.random()*a.length)];
 const deliver=evt=>{ if(window.onSowakaRoom)window.onSowakaRoom(copy(evt)); };
@@ -885,7 +885,7 @@ const api={
     startGame(r); return slow({},120); },
   kick(userId){ const r=mine; if(!r||r.hostId!==ME.userId)return fail(403,'Only the host can remove players.'); removePlayer(r,userId,'kick'); return slow({},200); },
   settings(o){ const r=mine; o=o||{}; if(!r||r.hostId!==ME.userId)return fail(403,'Only the host can change the game.'); if(r.status!=='lobby')return fail(409,'The game has already started.');
-    if(o.secs!=null&&!SEC_OPTS.includes(+o.secs))return fail(400,'Choose 1 or 2 minutes a turn.');
+    if(o.secs!=null&&!SEC_OPTS.includes(+o.secs))return fail(400,'Choose 30 seconds, 1 or 2 minutes a turn.');
     if(o.secs!=null)r.secs=+o.secs; push(r); return slow(view(r),120); },
   play(tiles){ if(!meOnline)return fail(0,'Not connected'); return slow(play(mine,ME.userId,copy(tiles||[])),180); },
   swap(letters){ if(!meOnline)return fail(0,'Not connected'); return swap(mine,ME.userId,copy(letters||[])); },
@@ -969,7 +969,7 @@ loadSave();
      Sowaka.room.invite(userId)    -> Promise; the colleague gets a push that opens Tile Up on this room
      Sowaka.room.start()           -> Promise (host only, with at least `min` players); the server shuffles the bag, deals 7 each and picks who goes first
      Sowaka.room.kick(userId)      -> Promise (host only); they cannot join this room again
-     Sowaka.room.settings(s)       -> Promise of the room (host only, in the lobby): s is {secs:60|120}, the time for each turn
+     Sowaka.room.settings(s)       -> Promise of the room (host only, in the lobby): s is {secs:30|60|120}, the time for each turn
      Sowaka.room.play(tiles)       -> Promise of the verdict, on your turn. tiles: [{r,c,ch,blank}] (row and column 0-14; ch the letter; blank:true when a
                                       blank tile stands for ch).
                                       {ok:true, score, words:[{word,score,known}], all7, rack}   played; your rack is refilled from the bag
@@ -1239,7 +1239,7 @@ function joinCode(code,ui){
 }
 
 /* ---------- the room before the game ---------- */
-const SECS=[60,120];
+const SECS=[30,60,120];
 let pendingSet=null;
 function renderLobby(){
   const r=room, L=$('lobby'); L.innerHTML='';
@@ -1281,7 +1281,7 @@ function settingsCard(){ const r=room, c=el('div','setcard'), host=isHost(), can
         ask('settings',{[key]:v}).then(x=>{ pendingSet=null; if(x&&x.code)applyState(x); else render(); }).catch(e=>{ pendingSet=null; sfx.no(); toast(errText(e),'feed'); render(); }); };
       seg.append(b); });
     w.append(seg); return w; };
-  c.append(row('Time a turn',SECS.map(n=>[n,(n/60)+' min']),'secs'));
+  c.append(row('Time a turn',SECS.map(n=>[n,n<60?n+' sec':(n/60)+' min']),'secs'));
   if(!host)c.append(el('p','hint',firstOf(nameOf(r.hostId))+' picks these'));
   return c; }
 function copyText(t){ try{ if(navigator.clipboard&&navigator.clipboard.writeText)return navigator.clipboard.writeText(t).then(()=>true,()=>legacyCopy(t)); }catch(e){} return Promise.resolve(legacyCopy(t)); }

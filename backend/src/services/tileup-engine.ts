@@ -28,7 +28,7 @@ export const TILEUP = {
   minPlayers: 2,
   maxPlayers: 4,
   /** A turn's time, in seconds: the host picks one of these in the lobby. */
-  secsOptions: [60, 120] as readonly number[],
+  secsOptions: [30, 60, 120] as readonly number[],
   secs: 60,
   /** The clock the page shows runs out this long before the server's, so a play made at 0 still counts. */
   graceSec: 2,
@@ -385,7 +385,7 @@ export function applyPass(room: TileUpRoom, userId: string, now: number): Effect
   return afterMove(room, userId, { kind: 'pass' }, now);
 }
 
-/** The host's lobby choice, `{secs: 60|120}`: whether the room changed, or null for a choice that is not allowed. */
+/** The host's lobby choice, `{secs: 30|60|120}`: whether the room changed, or null for a choice that is not allowed. */
 export function applySettings(room: TileUpRoom, input: { secs?: unknown }): boolean | null {
   const { secs } = input;
   if (secs === undefined) return null;
