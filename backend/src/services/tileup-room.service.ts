@@ -501,7 +501,7 @@ export async function startRoom(seat: Seat): Promise<void> {
   for (const userId of changed.result) await clearInvite(seat.org, userId, room.code);
 }
 
-/** The host's choice in the lobby: the time for each turn, `{secs: 60|120}`. */
+/** The host's choice in the lobby: the time for each turn, `{secs: 30|60|120}`. */
 export async function settingsRoom(seat: Seat, raw: { secs?: unknown }): Promise<TileUpView> {
   const room = await requireRoom(seat);
   const hostOnly = 'Only the host can change the game.';
@@ -512,7 +512,7 @@ export async function settingsRoom(seat: Seat, raw: { secs?: unknown }): Promise
     if (r.hostId !== seat.userId) throw new TileUpError(403, hostOnly);
     if (r.status !== 'lobby') throw new TileUpError(409, tooLate);
     const moved = applySettings(r, { secs: raw.secs });
-    if (moved === null) throw new TileUpError(400, 'Choose 1 or 2 minutes a turn.');
+    if (moved === null) throw new TileUpError(400, 'Choose 30 seconds, 1 or 2 minutes a turn.');
     return { result: true, effects: [], write: moved };
   });
   if (!changed) throw new TileUpError(404, 'That room has closed.');

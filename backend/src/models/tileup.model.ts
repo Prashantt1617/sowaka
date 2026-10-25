@@ -77,7 +77,7 @@ export interface TileUpRoom {
   kicked: Array<{ userId: string; at: number }>;
   /** Invites sent in this game, against the per-game cap. */
   invitesSent: number;
-  /** The time for each turn, in seconds: 60 or 120, set by the host in the lobby. */
+  /** The time for each turn, in seconds: 30, 60 or 120, set by the host in the lobby. */
   secs: number;
   gameId: string | null;
   /** 225 squares: '' or a letter, lowercase, or uppercase for a blank (which scores 0). */
