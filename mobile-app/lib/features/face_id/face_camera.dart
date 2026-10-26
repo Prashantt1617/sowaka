@@ -46,11 +46,19 @@ enum FaceChallenge {
 /// stronger check, ready to switch on.
 class FaceCamera extends ChangeNotifier {
   FaceCamera({Random? random})
-    : challenge = FaceChallenge.values[(random ?? Random()).nextInt(FaceChallenge.values.length)];
+    : challenge = FaceChallenge
+          .values[(random ?? Random()).nextInt(FaceChallenge.values.length)];
 
   /// How the screens make one. Only a test replaces it, with a camera that
   /// needs no device.
   static FaceCamera Function() create = FaceCamera.new;
+
+  /// How long the phone holds capture for its own face detection and prompt.
+  /// Past it, capture unlocks and the server's match decides: a phone that
+  /// cannot see a face in dim light, behind glasses or on a slow camera must
+  /// not leave someone unable to punch, and the server's failed tries are
+  /// what open sending the punch to the manager.
+  static Duration patience = const Duration(seconds: 15);
 
   final FaceChallenge challenge;
 
@@ -68,6 +76,11 @@ class FaceCamera extends ChangeNotifier {
 
   bool challengeDone = false;
 
+  /// Detection gave up waiting (see [patience]); the screens read it as
+  /// [FaceSignal.unavailable].
+  bool waived = false;
+  Timer? _patienceTimer;
+
   // The prompt's progress, for the face being tracked: a different face
   // starts it again, so one person cannot blink for another.
   int? _trackingId;
@@ -80,7 +93,8 @@ class FaceCamera extends ChangeNotifier {
     if (_disposed) return;
     try {
       final cameras = await availableCameras();
-      if (cameras.isEmpty) throw CameraException('NoCamera', 'No camera on this device');
+      if (cameras.isEmpty)
+        throw CameraException('NoCamera', 'No camera on this device');
       final front = cameras.firstWhere(
         (camera) => camera.lensDirection == CameraLensDirection.front,
         orElse: () => cameras.first,
@@ -107,7 +121,9 @@ class FaceCamera extends ChangeNotifier {
       notifyListeners();
       await _startDetecting();
     } on CameraException catch (error) {
-      permissionDenied = error.code.contains('AccessDenied') || error.code.contains('Restricted');
+      permissionDenied =
+          error.code.contains('AccessDenied') ||
+          error.code.contains('Restricted');
       cameraProblem = permissionDenied
           ? 'Allow camera access in Settings to check your face.'
           : 'The camera could not be opened. Close other apps using it and try again.';
@@ -133,14 +149,21 @@ class FaceCamera extends ChangeNotifier {
           performanceMode: FaceDetectorMode.fast,
         ),
       );
-      if (!camera.value.isStreamingImages) await camera.startImageStream(_onFrame);
+      if (!camera.value.isStreamingImages)
+        await camera.startImageStream(_onFrame);
+      _patienceTimer ??= Timer(patience, () {
+        if (_disposed || (signal == FaceSignal.detected && challengeDone))
+          return;
+        waived = true;
+        _set(FaceSignal.unavailable);
+      });
     } catch (_) {
       _set(FaceSignal.unavailable);
     }
   }
 
   Future<void> _onFrame(CameraImage image) async {
-    if (_processing || _disposed) return;
+    if (_processing || _disposed || waived) return;
     _processing = true;
     try {
       final input = _inputImage(image);
@@ -150,7 +173,9 @@ class FaceCamera extends ChangeNotifier {
       }
       final faces = await _detector!.processImage(input);
       final shortSide = min(image.width, image.height).toDouble();
-      final near = faces.where((face) => face.boundingBox.width / shortSide >= 0.28).toList();
+      final near = faces
+          .where((face) => face.boundingBox.width / shortSide >= 0.28)
+          .toList();
       if (faces.length != 1 || near.length != 1) {
         _set(FaceSignal.notDetected);
         return;
@@ -189,7 +214,9 @@ class FaceCamera extends ChangeNotifier {
         // own left (towards the right of the camera's picture).
         final yaw = face.headEulerAngleY;
         if (yaw == null) return;
-        final turned = challenge == FaceChallenge.turnLeft ? yaw > 18 : yaw < -18;
+        final turned = challenge == FaceChallenge.turnLeft
+            ? yaw > 18
+            : yaw < -18;
         if (_stage == 0 && yaw.abs() < 10) _stage = 1;
         if (_stage == 1 && turned) _stage = 2;
         if (_stage == 2 && yaw.abs() < 10) challengeDone = true;
@@ -197,7 +224,8 @@ class FaceCamera extends ChangeNotifier {
   }
 
   void _set(FaceSignal next) {
-    if (_disposed) return;
+    // A frame still being read when detection gave up does not take it back.
+    if (_disposed || (waived && next != FaceSignal.unavailable)) return;
     signal = next;
     notifyListeners();
   }
@@ -225,7 +253,8 @@ class FaceCamera extends ChangeNotifier {
       );
     }
     final format = InputImageFormatValue.fromRawValue(image.format.raw);
-    if (rotation == null || format == null || image.planes.length != 1) return null;
+    if (rotation == null || format == null || image.planes.length != 1)
+      return null;
     final plane = image.planes.first;
     return InputImage.fromBytes(
       bytes: plane.bytes,
@@ -270,6 +299,7 @@ class FaceCamera extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _patienceTimer?.cancel();
     final camera = _camera;
     _camera = null;
     unawaited(camera?.dispose().catchError((_) {}));
