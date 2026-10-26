@@ -18,6 +18,7 @@ import '../../../services/linkified_text.dart';
 import '../../auth/data/auth_api_service.dart';
 import '../../auth/data/auth_models.dart';
 import '../../auth/data/auth_session_store.dart';
+import '../../connect/bloc/connect_bloc.dart';
 import '../../connect/data/connect_models.dart';
 import '../../connect/presentation/blocked_people_screen.dart';
 import '../../connect/presentation/connect_feed_screen.dart';
@@ -182,10 +183,13 @@ class _ManagerScreenState extends State<ManagerScreen> {
     registerPersonProfileOpener(_openTeamMember);
     // The inbox wears the shell's header, this avatar included.
     registerInboxProfileAction(_inboxProfileAction);
+    // A profile's Post tab shares this feed's directory, composer and list.
+    _profileFeed = _connectComposerController;
   }
 
   @override
   void dispose() {
+    if (identical(_profileFeed, _connectComposerController)) _profileFeed = null;
     unregisterPersonProfileOpener(_openTeamMember);
     unregisterInboxProfileAction(_inboxProfileAction);
     NetworkStatus.offline.removeListener(_onNetworkChanged);

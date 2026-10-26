@@ -22,6 +22,7 @@ class ConnectState {
     this.fromCache = false,
     this.publishing = 0,
     this.publishingTo,
+    this.total,
   });
 
   final ConnectLoadStatus status;
@@ -53,6 +54,10 @@ class ConnectState {
   /// published.
   final String? publishingTo;
 
+  /// How many posts there are in all, where the server says: one person's
+  /// posts on their profile. Null for the feed.
+  final int? total;
+
   factory ConnectState.initial() {
     return const ConnectState(status: ConnectLoadStatus.initial, posts: []);
   }
@@ -69,6 +74,7 @@ class ConnectState {
     bool? fromCache,
     int? publishing,
     String? publishingTo,
+    int? total,
     bool clearError = false,
     bool clearMessage = false,
     bool clearBusy = false,
@@ -86,6 +92,7 @@ class ConnectState {
       fromCache: fromCache ?? this.fromCache,
       publishing: publishing ?? this.publishing,
       publishingTo: clearPublishing ? null : publishingTo ?? this.publishingTo,
+      total: total ?? this.total,
     );
   }
 }
@@ -103,9 +110,39 @@ class ConnectBloc {
     required AuthSession session,
     ConnectApiService? api,
     ConnectSocketService? socket,
+    this.authorUserId,
+    this.onPostSaved,
+    this.onPostDeleted,
   }) : _session = session,
        _api = api ?? ConnectApiService(session: session),
        _socket = socket ?? ConnectSocketService(session: session);
+
+  /// Set for the Posts tab on a profile: this bloc holds that person's own
+  /// posts, from `/connect/users/:userId/posts`, rather than the feed. Every
+  /// like, comment, vote, edit and delete works on them as in the feed. It
+  /// keeps no copy on the device and opens no live connection — the feed
+  /// under it already has one.
+  final String? authorUserId;
+
+  /// The server's copy of a post after something here changed it, and a post
+  /// deleted here: so the feed under a profile shows the same like, the same
+  /// comments, and no post that is gone.
+  final void Function(ConnectPost post)? onPostSaved;
+  final void Function(String postId)? onPostDeleted;
+
+  bool get _isPerson => authorUserId != null;
+
+  /// A page of this bloc's posts: the feed's, or one person's with how many
+  /// they have in all.
+  Future<({List<ConnectPost> posts, String? nextCursor, int? total})>
+  _fetchPage({String? cursor}) async {
+    final userId = authorUserId;
+    if (userId != null) {
+      return _api.fetchPersonPosts(userId, limit: pageSize, cursor: cursor);
+    }
+    final page = await _api.fetchFeed(limit: pageSize, cursor: cursor);
+    return (posts: page.posts, nextCursor: page.nextCursor, total: null);
+  }
 
   final AuthSession _session;
   final ConnectApiService _api;
@@ -133,7 +170,9 @@ class ConnectBloc {
     // The top of the feed as it was last time comes up at once; the live
     // page replaces it as it lands. Older pages are not asked for on the
     // copy — its cursor may no longer hold.
-    final remembered = _state.posts.isEmpty ? await _api.fetchFeedFromCache() : null;
+    final remembered = _state.posts.isEmpty && !_isPerson
+        ? await _api.fetchFeedFromCache()
+        : null;
     if (remembered != null && remembered.posts.isNotEmpty) {
       _emit(ConnectState(
         status: ConnectLoadStatus.ready,
@@ -148,9 +187,10 @@ class ConnectBloc {
     }
     // Whatever the live page does, changes are listened for and a lost
     // connection is retried once it is back.
-    _listenForChanges();
+    if (!_isPerson) _listenForChanges();
     try {
-      final page = await _api.fetchFeed(limit: pageSize);
+      final page = await _fetchPage();
+      if (_controller.isClosed) return;
       _cursor = page.nextCursor;
       _emit(ConnectState(
         status: ConnectLoadStatus.ready,
@@ -158,6 +198,7 @@ class ConnectBloc {
         hasMore: page.nextCursor != null,
         publishing: _state.publishing,
         publishingTo: _state.publishingTo,
+        total: page.total,
       ));
       // The second page is asked for as soon as the first is on screen, so
       // the first scroll never waits on a spinner.
@@ -277,7 +318,7 @@ class ConnectBloc {
   /// until the reader scrolls for them.
   Future<void> refresh() async {
     try {
-      final page = await _api.fetchFeed(limit: pageSize);
+      final page = await _fetchPage();
       _cursor = page.nextCursor;
       _emit(_state.copyWith(
         status: ConnectLoadStatus.ready,
@@ -286,6 +327,7 @@ class ConnectBloc {
         loadingMore: false,
         // The live page now, whatever was on show before it.
         fromCache: false,
+        total: page.total,
       ));
     } catch (error) {
       _emit(_state.copyWith(message: error.toString()));
@@ -297,7 +339,7 @@ class ConnectBloc {
   /// reconnect, where the reader must not lose their place.
   Future<void> resyncTop() async {
     try {
-      final page = await _api.fetchFeed(limit: pageSize);
+      final page = await _fetchPage();
       if (_controller.isClosed) return;
       final current = _state.posts;
       final byId = {for (final post in page.posts) post.id: post};
@@ -377,7 +419,7 @@ class ConnectBloc {
     if (cursor == null || _state.loadingMore || !_state.hasMore || _state.loadMoreFailed) return;
     _emit(_state.copyWith(loadingMore: true));
     try {
-      final page = await _api.fetchFeed(limit: pageSize, cursor: cursor);
+      final page = await _fetchPage(cursor: cursor);
       if (_controller.isClosed) return;
       // A refresh in the meantime moved the cursor on; this page is stale.
       if (_cursor != cursor) return;
@@ -729,12 +771,15 @@ class ConnectBloc {
     _emit(_state.copyWith(busyPostId: postId, clearMessage: true));
     try {
       await _api.deletePost(postId);
+      onPostDeleted?.call(postId);
+      final total = _state.total;
       _emit(
         _state.copyWith(
           posts: _state.posts.where((post) => post.id != postId).toList(),
           message: 'Post deleted',
           busyPostId: null,
           clearBusy: true,
+          total: total == null ? null : (total - 1).clamp(0, 1 << 30),
         ),
       );
     } catch (error) {
@@ -905,7 +950,26 @@ class ConnectBloc {
     }
   }
 
-  List<ConnectPost> _replacePost(ConnectPost updated) {
+  /// [post] as the server has it after a change made in another list of the
+  /// same posts — a profile's Posts tab over this feed: put in its place
+  /// when this list has it, and otherwise left alone, as a like on a post
+  /// beyond the pages loaded is.
+  void adoptPost(ConnectPost post) {
+    if (_controller.isClosed || !_state.posts.any((item) => item.id == post.id)) return;
+    _emit(_state.copyWith(posts: _replacePost(post, announce: false)));
+  }
+
+  /// A post deleted from another list of the same posts: gone from this one.
+  void forgetPost(String postId) {
+    if (_controller.isClosed || !_state.posts.any((item) => item.id == postId)) return;
+    _emit(_state.copyWith(posts: _state.posts.where((post) => post.id != postId).toList()));
+  }
+
+  /// [updated] in its place. It is the server's copy after a change made here,
+  /// so [onPostSaved] hears of it, unless [announce] is false: the change was
+  /// made elsewhere and is only being shown here.
+  List<ConnectPost> _replacePost(ConnectPost updated, {bool announce = true}) {
+    if (announce) onPostSaved?.call(updated);
     return _state.posts
         .map((post) => post.id == updated.id ? updated : post)
         .toList();

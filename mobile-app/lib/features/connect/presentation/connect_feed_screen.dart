@@ -23,6 +23,7 @@ import 'feed_video.dart';
 import 'game_play_screen.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
 import '../../notifications/presentation/notification_inbox_screen.dart';
+import '../../profile/presentation/profile_style.dart' show ProfileEmptyNote;
 import '../../../services/api_config.dart';
 import '../../../services/linkified_text.dart';
 import '../../relay/presentation/relay_post_card.dart';
@@ -40,7 +41,9 @@ part 'contest_composer.dart';
 part 'contest_entries_route.dart';
 part 'engagement_cards.dart';
 part 'engagement_entries_sheet.dart';
+part 'person_posts_tab.dart';
 part 'poll_post_card.dart';
+part 'post_card_host.dart';
 part 'post_likes_sheet.dart';
 
 /// Lets any screen in the app open the Connect post composer, not just the
@@ -99,6 +102,31 @@ class ConnectComposerController {
   /// top (from a notification).
   void openPost(String postId, {bool comments = false, bool inPlace = false}) =>
       _state?._revealPost(postId, comments: comments, inPlace: inPlace);
+
+  /// A bloc for [userId]'s own posts, for the Posts tab on their profile.
+  /// What is liked, commented on, voted on or deleted there is put into the
+  /// feed under it too, so going back shows the same.
+  ConnectBloc personPosts(AuthSession session, String userId) => ConnectBloc(
+    session: session,
+    authorUserId: userId,
+    onPostSaved: (post) => _state?._bloc.adoptPost(post),
+    onPostDeleted: (postId) => _state?._bloc.forgetPost(postId),
+  );
+
+  /// The company directory the feed has loaded, for tagging someone in a
+  /// comment on a profile's post. Empty until it has.
+  List<ConnectTeammate> get _people => _state?._taggablePeople ?? const [];
+
+  /// Edits [post] in the feed's composer — a profile has none of its own,
+  /// nor the lists and directory it needs — then has [alsoIn] read it again.
+  Future<void> _editPost(ConnectPost post, {required ConnectBloc alsoIn}) async {
+    final state = _state;
+    if (state == null || !await state._openComposer(post.type, existing: post)) return;
+    await alsoIn.ensurePost(post.id, keepOnTop: false);
+  }
+
+  /// Someone was blocked from a profile: the feed drops them too.
+  void _refresh() => _state?._bloc.refresh();
 }
 
 class ConnectFeedScreen extends StatefulWidget {
@@ -139,7 +167,9 @@ class ConnectFeedScreen extends StatefulWidget {
   State<ConnectFeedScreen> createState() => _ConnectFeedScreenState();
 }
 
-class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
+class _ConnectFeedScreenState extends State<ConnectFeedScreen>
+    with _PostCardHost<ConnectFeedScreen> {
+  @override
   late ConnectBloc _bloc;
 
   /// The bloc has been handed to the controller for the feed replacing this
@@ -154,18 +184,19 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   /// One key per post card, so a card can be found and scrolled to.
   final _postKeys = <String, GlobalKey>{};
 
-  // AuthUser carries no initials/avatarColor fields of its own, so the
-  // signed-in viewer's comment-composer avatar is derived the same way the
-  // backend derives author avatars (see `initialsFor`/`avatarColorFor` in
-  // connect.service.ts): initials from the name, color hashed from a stable
-  // id.
-  String get _viewerInitials => _initials(widget.session.user.name);
-  Color get _viewerColor => _avatarColorFor(widget.session.user.id);
-  String get _viewerPhotoUrl => widget.session.user.profilePhotoUrl ?? '';
+  @override
+  AuthSession get _session => widget.session;
+
+  @override
+  ValueChanged<String>? get _onOpenPerson => widget.onOpenPerson;
+
+  @override
+  void _editPost(ConnectPost post) => _openComposer(post.type, existing: post);
 
   /// Everyone in the company, for the tag picker. Anyone can be tagged, not
   /// only the viewer's own team, so this comes from the org-wide directory
   /// rather than the team data the shell already holds.
+  @override
   List<ConnectTeammate> _taggablePeople = const [];
 
   /// The viewer's custom audience lists and the directory they are picked
@@ -455,74 +486,10 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
               );
             }
             final post = card.single;
-            // The celebrant's own birthday or anniversary: their wishes, not
-            // a card asking them to wish themselves.
-            if (_isCelebrant(post, widget.session.user.id)) {
-              return _CelebrantCard(
-                key: _postKeys.putIfAbsent(post.id, GlobalKey.new),
-                post: post,
-                onViewAll: () => _openComments(post.id),
-              );
-            }
-            // The game draws its whole card itself — its own gradient, and the
-            // viewer's own team — rather than sitting inside a standard post.
-            if (post.type == ConnectPostType.relayGame) {
-              return Padding(
-                key: _postKeys.putIfAbsent(post.id, GlobalKey.new),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: RelayPostCard(post: post, session: widget.session),
-              );
-            }
-            // Secret Squad's session for this office: its own animated card,
-            // drawn whole like the relay's, with the way into the game.
-            if (post.type == ConnectPostType.secretSquad) {
-              return SecretSquadPostCard(
-                key: _postKeys.putIfAbsent(post.id, GlobalKey.new),
-                post: post,
-                session: widget.session,
-              );
-            }
-            return _ConnectPostCard(
+            return _postCard(
+              post,
+              state,
               key: _postKeys.putIfAbsent(post.id, GlobalKey.new),
-              post: post,
-              busy: state.busyPostId == post.id,
-              canManage:
-                  post.author.userId.isNotEmpty &&
-                  post.author.userId == widget.session.user.id,
-              onLike: () => _bloc.toggleReaction(post.id),
-              // Not on the device's copy of the feed: its hearts may be out
-              // of date, and the server flips whatever it holds.
-              onDoubleTapLike: state.fromCache
-                  ? null
-                  : () => _bloc.likeFromDoubleTap(post.id),
-              onComment: (text, mentions) =>
-                  _bloc.addComment(post.id, text, mentions: mentions),
-              onAction: ({optionId}) =>
-                  _bloc.performAction(post.id, optionId: optionId),
-              onSubmitCaption: (text, photoPath, taggedUserId) =>
-                  _bloc.submitCaption(
-                    post.id,
-                    text,
-                    photoPath: photoPath,
-                    taggedUserId: taggedUserId,
-                  ),
-              onDeleteCaption: () => _bloc.deleteCaption(post.id),
-              onVoteCaption: (entryId) => _bloc.voteCaption(post.id, entryId),
-              onPlayGame: () => _openGame(post),
-              onEdit: () => _openComposer(post.type, existing: post),
-              onDelete: () => _confirmDelete(post),
-              onReport: () => _reportContent(
-                postId: post.id,
-                authorName: post.author.name,
-                isComment: false,
-              ),
-              onBlock: () =>
-                  _confirmBlock(post.author.userId, post.author.name),
-              onOpenComments: () => _openComments(post.id),
-              viewerInitials: _viewerInitials,
-              viewerColor: _viewerColor,
-              viewerPhotoUrl: _viewerPhotoUrl,
-              onOpenPerson: widget.onOpenPerson,
             );
           },
         ),
@@ -632,54 +599,6 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
     return true;
   }
 
-  Future<void> _confirmDelete(ConnectPost post) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierColor: const Color(0x76000000),
-      builder: (_) => _DeletePostSheet(
-        title: 'Delete post?',
-        body:
-            'This will remove your ${post.tag.toLowerCase()} post from the company feed.',
-      ),
-    );
-    if (confirmed == true) await _bloc.deletePost(post.id);
-  }
-
-  /// Asks why, then sends the report. Used for a post and for a single
-  /// comment — the only difference is what the sheet says it is reporting.
-  Future<void> _reportContent({
-    required String postId,
-    required String authorName,
-    required bool isComment,
-    String? commentId,
-  }) async {
-    final result = await showModalBottomSheet<_ReportOutcome>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) =>
-          _ReportSheet(authorName: authorName, isComment: isComment),
-    );
-    if (!mounted || result == null) return;
-    await _bloc.reportContent(
-      postId,
-      reason: result.reason,
-      commentId: commentId,
-      note: result.note,
-    );
-  }
-
-  Future<void> _confirmBlock(String userId, String name) async {
-    if (userId.isEmpty) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierColor: const Color(0x76000000),
-      builder: (_) => _BlockPersonSheet(name: name),
-    );
-    if (confirmed == true) await _bloc.blockPerson(userId, name);
-  }
-
   /// Scrolls until the post's card is on screen. Cards are built lazily, so
   /// this walks down a screen at a time until the card exists, then settles
   /// it near the top. A post not in the loaded feed is fetched first.
@@ -729,98 +648,6 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
     }
     if (comments && mounted) await _openComments(postId);
   }
-
-  /// The post's comments — on a birthday or anniversary, its wishes, with
-  /// [initialText] in the box as a wish starts.
-  Future<void> _openComments(String postId, {String initialText = ''}) {
-    final post = _bloc.state.posts
-        .where((item) => item.id == postId)
-        .firstOrNull;
-    if (post != null && _isCelebration(post.type)) {
-      return _openWishes(post, initialText: initialText);
-    }
-    return showModalBottomSheet<void>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _CommentsSheet(
-        bloc: _bloc,
-        postId: postId,
-        people: _taggablePeople,
-        viewerUserId: widget.session.user.id,
-        viewerInitials: _viewerInitials,
-        viewerColor: _viewerColor,
-        viewerPhotoUrl: _viewerPhotoUrl,
-        onReportComment: (comment) => _reportContent(
-          postId: postId,
-          authorName: comment.name,
-          isComment: true,
-          commentId: comment.id,
-        ),
-        onBlockCommenter: (comment) =>
-            _confirmBlock(comment.userId, comment.name),
-        onOpenPerson: widget.onOpenPerson,
-      ),
-    );
-  }
-
-  /// A birthday's or anniversary's wishes (frame 3886:93781). For the person
-  /// it celebrates, opening them is seeing them: their card's "N new" goes,
-  /// and anything that arrived while the sheet was up goes when it closes.
-  Future<void> _openWishes(ConnectPost post, {String initialText = ''}) async {
-    final celebrant = _isCelebrant(post, widget.session.user.id);
-    if (celebrant) unawaited(_bloc.markWishesSeen(post.id));
-    await showModalBottomSheet<void>(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _WishesSheet(
-        bloc: _bloc,
-        postId: post.id,
-        initialText: initialText,
-        people: _taggablePeople,
-        viewerUserId: widget.session.user.id,
-        viewerInitials: _viewerInitials,
-        viewerColor: _viewerColor,
-        viewerPhotoUrl: _viewerPhotoUrl,
-        onReportComment: (comment) => _reportContent(
-          postId: post.id,
-          authorName: comment.name,
-          isComment: true,
-          commentId: comment.id,
-        ),
-        onBlockCommenter: (comment) =>
-            _confirmBlock(comment.userId, comment.name),
-        onOpenPerson: widget.onOpenPerson,
-      ),
-    );
-    if (!celebrant || !mounted) return;
-    final now = _bloc.state.posts
-        .where((item) => item.id == post.id)
-        .firstOrNull;
-    final unseen = (now?.body['newWishCount'] as num?)?.toInt() ?? 0;
-    if (unseen > 0) unawaited(_bloc.markWishesSeen(post.id));
-  }
-
-  Future<void> _openGame(ConnectPost post) async {
-    final gameId = _bodyString(post, 'gameId');
-    final hostedUrl = _bodyString(post, 'hostedUrl');
-    if (gameId.isEmpty || hostedUrl.isEmpty) return;
-    await _bloc.performAction(post.id);
-    if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => GamePlayScreen(
-          session: widget.session,
-          gameId: gameId,
-          title: _bodyString(post, 'title'),
-          hostedUrl: hostedUrl,
-        ),
-      ),
-    );
-  }
 }
 
 class _ConnectPostCard extends StatefulWidget {
@@ -846,12 +673,17 @@ class _ConnectPostCard extends StatefulWidget {
     this.onSubmitCaption,
     this.onDeleteCaption,
     this.onVoteCaption,
+    this.conversation = true,
   });
 
   final ConnectPost post;
   final bool busy;
   final bool canManage;
   final VoidCallback onLike;
+
+  /// The latest comments and the comment box under the likes; false on a
+  /// profile's Post tab (see `_PostFooter.conversation`).
+  final bool conversation;
 
   /// Likes the post and never unlikes it; null while a double-tap should do
   /// nothing.
@@ -1032,6 +864,7 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
                 viewerColor: widget.viewerColor,
                 viewerPhotoUrl: widget.viewerPhotoUrl,
                 mentions: _mentions,
+                conversation: widget.conversation,
               ),
           ],
         ),
@@ -1112,6 +945,7 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
                 viewerColor: widget.viewerColor,
                 viewerPhotoUrl: widget.viewerPhotoUrl,
                 mentions: _mentions,
+                conversation: widget.conversation,
               ),
             ],
           ),
@@ -4512,6 +4346,7 @@ class _PostFooter extends StatelessWidget {
     required this.viewerColor,
     this.viewerPhotoUrl = '',
     this.mentions,
+    this.conversation = true,
   });
 
   final ConnectPost post;
@@ -4527,6 +4362,11 @@ class _PostFooter extends StatelessWidget {
   /// The "@" tags in [controller]; null where tagging is not offered.
   final _CommentMentions? mentions;
 
+  /// The latest comments and a box to write one, under the likes. False on a
+  /// profile's Post tab, which draws only the likes and comments row (node
+  /// 3965:56279); the comments sheet still opens from it.
+  final bool conversation;
+
   @override
   Widget build(BuildContext context) {
     // Transparent, not opaque white: the card behind it may be tinted (see
@@ -4537,10 +4377,17 @@ class _PostFooter extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Color(0x66EBEBEB))),
-            ),
+            padding: conversation
+                ? const EdgeInsets.symmetric(horizontal: 16, vertical: 10)
+                // The Post tab's row (node 3965:56280): the heart 30 under
+                // the text and 23 over the card's edge, with no rule above —
+                // the text's own 14 and the heart's 4 counted in.
+                : const EdgeInsets.fromLTRB(16, 12, 16, 18),
+            decoration: conversation
+                ? const BoxDecoration(
+                    border: Border(top: BorderSide(color: Color(0x66EBEBEB))),
+                  )
+                : null,
             child: Row(
               children: [
                 // The heart likes; the count beside it lists who did.
@@ -4619,7 +4466,7 @@ class _PostFooter extends StatelessWidget {
               ],
             ),
           ),
-          if (post.comments.isNotEmpty)
+          if (conversation && post.comments.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
               child: Column(
@@ -4714,7 +4561,7 @@ class _PostFooter extends StatelessWidget {
                 }).toList(),
               ),
             ),
-          if (mentions case final tags?)
+          if (mentions case final tags? when conversation)
             ValueListenableBuilder<TextEditingValue>(
               valueListenable: controller,
               builder: (context, _, _) {
@@ -4730,66 +4577,67 @@ class _PostFooter extends StatelessWidget {
                 );
               },
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                _InitialAvatar(
-                  initials: viewerInitials,
-                  color: viewerColor,
-                  photoUrl: viewerPhotoUrl,
-                  size: 32,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    minLines: 1,
-                    maxLines: 3,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => onComment(),
-                    decoration: InputDecoration(
-                      hintText: 'Write a comment...',
-                      hintStyle: const TextStyle(
-                        color: _ConnectColors.faint,
-                        fontSize: 12.5,
-                      ),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.send_rounded, size: 18),
-                        color: _ConnectColors.blue,
-                        onPressed: onComment,
-                      ),
-                      filled: true,
-                      fillColor: const Color(0xFFF7F7F9),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(99),
-                        borderSide: const BorderSide(
-                          color: _ConnectColors.cardBorder,
+          if (conversation)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _InitialAvatar(
+                    initials: viewerInitials,
+                    color: viewerColor,
+                    photoUrl: viewerPhotoUrl,
+                    size: 32,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: controller,
+                      minLines: 1,
+                      maxLines: 3,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => onComment(),
+                      decoration: InputDecoration(
+                        hintText: 'Write a comment...',
+                        hintStyle: const TextStyle(
+                          color: _ConnectColors.faint,
+                          fontSize: 12.5,
                         ),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(99),
-                        borderSide: const BorderSide(
-                          color: _ConnectColors.cardBorder,
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.send_rounded, size: 18),
+                          color: _ConnectColors.blue,
+                          onPressed: onComment,
                         ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(99),
-                        borderSide: const BorderSide(
-                          color: _ConnectColors.terra,
+                        filled: true,
+                        fillColor: const Color(0xFFF7F7F9),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(99),
+                          borderSide: const BorderSide(
+                            color: _ConnectColors.cardBorder,
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(99),
+                          borderSide: const BorderSide(
+                            color: _ConnectColors.cardBorder,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(99),
+                          borderSide: const BorderSide(
+                            color: _ConnectColors.terra,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
@@ -18,7 +19,12 @@ class ConnectApiService {
     String? baseUrl,
     http.Client? client,
   }) : _baseUrl = baseUrl ?? ApiConfig.baseUrl,
-       _client = client ?? ApiClient.shared;
+        _client = client ?? testClient ?? ApiClient.shared;
+
+  /// Answers the requests of a service built without a client, in tests: a
+  /// profile's Post tab makes its own, as the feed does.
+  @visibleForTesting
+  static http.Client? testClient;
 
   final AuthSession session;
   final String _baseUrl;
@@ -67,6 +73,32 @@ class ConnectApiService {
           .map((value) => ConnectPost.fromJson(value as Map<String, dynamic>))
           .toList(),
       nextCursor: json['nextCursor'] as String?,
+    );
+  }
+
+  /// How long a profile waits for a page of someone's posts before saying so.
+  static const personPostsLimit = Duration(seconds: 15);
+
+  /// One page of [userId]'s own posts for the Posts tab on their profile,
+  /// newest first, as the viewer's feed would show them. [cursor] is the
+  /// feed's kind, from the page before. [total] — how many there are in all,
+  /// for the tab's badge — comes with the first page only.
+  Future<({List<ConnectPost> posts, String? nextCursor, int? total})>
+  fetchPersonPosts(String userId, {int limit = 5, String? cursor}) async {
+    final query = [
+      'limit=$limit',
+      if (cursor != null) 'cursor=${Uri.encodeQueryComponent(cursor)}',
+    ].join('&');
+    final json = await _request(
+      'GET',
+      '/connect/users/${Uri.encodeComponent(userId)}/posts?$query',
+      limit: personPostsLimit,
+    );
+    final page = _feedPage(json);
+    return (
+      posts: page.posts,
+      nextCursor: page.nextCursor,
+      total: (json['total'] as num?)?.toInt(),
     );
   }
 
@@ -343,31 +375,42 @@ class ConnectApiService {
         .toList();
   }
 
+  /// [limit], when given, is how long to wait for an answer before giving up
+  /// with [ConnectTimeoutException].
   Future<Map<String, dynamic>> _request(
     String method,
     String path, {
     Map<String, dynamic>? body,
+    Duration? limit,
   }) async {
     final uri = Uri.parse('$_baseUrl$path');
     final headers = {
       'Authorization': 'Bearer ${session.token}',
       'Content-Type': 'application/json',
     };
-    Future<http.Response> send() => switch (method) {
-      'GET' => _client.get(uri, headers: headers),
-      'POST' => _client.post(
-        uri,
-        headers: headers,
-        body: body == null ? null : jsonEncode(body),
-      ),
-      'PATCH' => _client.patch(
-        uri,
-        headers: headers,
-        body: body == null ? null : jsonEncode(body),
-      ),
-      'DELETE' => _client.delete(uri, headers: headers),
-      _ => throw UnsupportedError('Unsupported method $method'),
-    };
+    Future<http.Response> send() async {
+      final sent = switch (method) {
+        'GET' => _client.get(uri, headers: headers),
+        'POST' => _client.post(
+          uri,
+          headers: headers,
+          body: body == null ? null : jsonEncode(body),
+        ),
+        'PATCH' => _client.patch(
+          uri,
+          headers: headers,
+          body: body == null ? null : jsonEncode(body),
+        ),
+        'DELETE' => _client.delete(uri, headers: headers),
+        _ => throw UnsupportedError('Unsupported method $method'),
+      };
+      if (limit == null) return sent;
+      try {
+        return await sent.timeout(limit);
+      } on TimeoutException {
+        throw const ConnectTimeoutException();
+      }
+    }
     http.Response response;
     try {
       response = await send();
@@ -510,6 +553,14 @@ class ConnectOfflineException implements Exception {
   @override
   String toString() =>
       "Couldn't reach Sowaka. Check your connection and try again.";
+}
+
+/// A request given a time limit ran past it.
+class ConnectTimeoutException implements Exception {
+  const ConnectTimeoutException();
+
+  @override
+  String toString() => 'Sowaka is taking too long to answer. Try again.';
 }
 
 /// One of the viewer's lists as the server sends it.

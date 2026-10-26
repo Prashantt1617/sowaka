@@ -11,6 +11,7 @@ enum ProfileTab {
   orgChart('Org chart'),
   grow('Grow'),
   rank('Rank'),
+  posts('Post'),
   counselor('Counselor'),
   documentation('Documentation'),
   settings('Settings');
@@ -21,17 +22,20 @@ enum ProfileTab {
 }
 
 /// What anyone in the company sees on a colleague's profile: their
-/// attendance, who they are, where they sit, and where they stand on points.
-/// Nothing about their requests, their reviews or their documents.
+/// attendance, who they are, where they sit, where they stand on points, and
+/// what they have posted. Nothing about their requests, their reviews or
+/// their documents.
 ///
 /// This is the one list to edit to widen or narrow the colleague view. The
 /// server reads a colleague's month for anyone in the same company
-/// (`getTeamMemberAttendance`).
+/// (`getTeamMemberAttendance`), and their posts as the viewer's own feed
+/// would show them (`/connect/users/:userId/posts`).
 const colleagueProfileTabs = [
   ProfileTab.workDetail,
   ProfileTab.attendance,
   ProfileTab.orgChart,
   ProfileTab.rank,
+  ProfileTab.posts,
 ];
 
 /// The tabs on someone else's profile.
@@ -40,7 +44,7 @@ const colleagueProfileTabs = [
 /// report — keeps everything their profile has always shown the viewer: their
 /// day, their details, where they sit and their growth; the requests waiting on
 /// the viewer when the viewer is the one who decides them; their documents when
-/// HR has filed any. Rank is on every profile. Everyone else gets
+/// HR has filed any. Rank and Post are on every profile. Everyone else gets
 /// [colleagueProfileTabs].
 List<ProfileTab> memberProfileTabs({
   required bool inViewerChain,
@@ -55,6 +59,7 @@ List<ProfileTab> memberProfileTabs({
     ProfileTab.orgChart,
     ProfileTab.grow,
     ProfileTab.rank,
+    ProfileTab.posts,
     if (hasDocuments) ProfileTab.documentation,
   ];
 }
@@ -73,9 +78,55 @@ List<ProfileTab> ownProfileTabs({
   ProfileTab.orgChart,
   if (hasManager) ProfileTab.grow,
   ProfileTab.rank,
+  ProfileTab.posts,
   if (showsHelp) ProfileTab.counselor,
   ProfileTab.settings,
 ];
+
+/// Whether profiles carry Post: where the company has Connect to have posted
+/// in, as the bottom bar decides it.
+bool profileShowsPosts(List<String> enabledTabs) =>
+    visibleTabs(enabledTabs).contains(ManagerTab.connect);
+
+/// The feed under the profiles while the shell is mounted, which a profile's
+/// Post tab shares: its directory for tagging, its composer for editing, and
+/// its list, kept in step with what is done on the profile. Set and cleared
+/// by the shell.
+ConnectComposerController? _profileFeed;
+
+/// One person's posts for their profile's Post tab, loading from the start
+/// so the tab's badge has its count; and the page around it rebuilt when the
+/// count changes. Disposed with the page.
+final class _ProfilePosts {
+  _ProfilePosts(AuthSession session, String userId, VoidCallback onCount)
+    : bloc =
+          _profileFeed?.personPosts(session, userId) ??
+          ConnectBloc(session: session, authorUserId: userId) {
+    _count = bloc.stream
+        .map((state) => state.total)
+        .distinct()
+        .listen((_) => onCount());
+    unawaited(bloc.load());
+  }
+
+  final ConnectBloc bloc;
+  late final StreamSubscription<int?> _count;
+
+  /// How many there are, once the first page has said.
+  int? get total => bloc.state.total;
+
+  Widget tab(AuthSession session) => PersonPostsTab(
+    bloc: bloc,
+    session: session,
+    feed: _profileFeed,
+    onOpenPerson: openPersonProfile,
+  );
+
+  void dispose() {
+    _count.cancel();
+    bloc.dispose();
+  }
+}
 
 /// Another person's profile: a report's from the Team tab, or anyone's in the
 /// company from wherever their name was tapped. Which tabs it carries is
@@ -115,6 +166,27 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
   late final ProfileApiService _profileService = ProfileApiService(
     session: widget.bloc.service.session,
   );
+
+  /// Their posts; null, and no Post tab, where the company has no Connect.
+  _ProfilePosts? _posts;
+
+  @override
+  void initState() {
+    super.initState();
+    final session = widget.bloc.service.session;
+    final userId = widget.member.userId;
+    if (userId.isNotEmpty && profileShowsPosts(session.user.enabledTabs)) {
+      _posts = _ProfilePosts(session, userId, () {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _posts?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -269,13 +341,17 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
     final data = bloc.state.dashboard ?? widget.data;
     final present = member.todayStatus == TeamPresenceStatus.present;
     final today = DateTime.now();
-    final tabs = widget.publicOnly
-        ? colleagueProfileTabs
-        : memberProfileTabs(
-            inViewerChain: member.inViewerChain,
-            viewerCanManage: widget.canManage,
-            hasDocuments: member.documents.isNotEmpty,
-          );
+    final posts = _posts;
+    final tabs = [
+      for (final tab in widget.publicOnly
+          ? colleagueProfileTabs
+          : memberProfileTabs(
+              inViewerChain: member.inViewerChain,
+              viewerCanManage: widget.canManage,
+              hasDocuments: member.documents.isNotEmpty,
+            ))
+        if (tab != ProfileTab.posts || posts != null) tab,
+    ];
     final selected = _tab.clamp(0, tabs.length - 1);
     // Whether they are in today is their attendance, so it shows only where
     // their Attendance tab does.
@@ -372,6 +448,9 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
       ProfileTab.rank => [
         _RankHistory(service: _profileService, userId: member.userId),
       ],
+      ProfileTab.posts => [
+        if (posts != null) posts.tab(widget.bloc.service.session),
+      ],
       ProfileTab.documentation => [
         _DocumentationList(documents: member.documents),
       ],
@@ -422,6 +501,10 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
                 recognition: _nonEmpty(member.recognitionLabel),
               ),
               tabs: [for (final tab in tabs) tab.label],
+              counts: [
+                for (final tab in tabs)
+                  tab == ProfileTab.posts ? posts?.total : null,
+              ],
               selected: selected,
               onChanged: (index) => setState(() => _tab = index),
               children: content,
@@ -586,6 +669,7 @@ class _ProfileScrollFrame extends StatelessWidget {
   const _ProfileScrollFrame({
     required this.hero,
     required this.tabs,
+    this.counts = const [],
     required this.selected,
     required this.onChanged,
     required this.children,
@@ -593,6 +677,10 @@ class _ProfileScrollFrame extends StatelessWidget {
 
   final Widget hero;
   final List<String> tabs;
+
+  /// A count to wear beside each tab's label, in the tabs' order; null (or
+  /// missing) for none.
+  final List<int?> counts;
   final int selected;
   final ValueChanged<int> onChanged;
   final List<Widget> children;
@@ -625,6 +713,7 @@ class _ProfileScrollFrame extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: _ProfileTabs(
                   labels: tabs,
+                  counts: counts,
                   selected: selected,
                   onChanged: onChanged,
                 ),
@@ -632,6 +721,7 @@ class _ProfileScrollFrame extends StatelessWidget {
             ),
             selected: selected,
             tabs: tabs,
+            counts: counts,
           ),
         ),
         SliverToBoxAdapter(
@@ -652,11 +742,17 @@ class _ProfileScrollFrame extends StatelessWidget {
 
 /// The tab row, held at the top of the page once it scrolls there.
 class _PinnedTabs extends SliverPersistentHeaderDelegate {
-  _PinnedTabs({required this.child, required this.selected, required this.tabs});
+  _PinnedTabs({
+    required this.child,
+    required this.selected,
+    required this.tabs,
+    this.counts = const [],
+  });
 
   final Widget child;
   final int selected;
   final List<String> tabs;
+  final List<int?> counts;
 
   static const _height = 42.0;
 
@@ -672,7 +768,9 @@ class _PinnedTabs extends SliverPersistentHeaderDelegate {
 
   @override
   bool shouldRebuild(_PinnedTabs old) =>
-      old.selected != selected || old.tabs.join() != tabs.join();
+      old.selected != selected ||
+      old.tabs.join() != tabs.join() ||
+      old.counts.join(',') != counts.join(',');
 }
 
 /// Who the profile is (node 3106:50096): the photo, the name, the role. Someone
@@ -941,6 +1039,31 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     session: widget.bloc.service.session,
   );
 
+  /// One's own posts; null, and no Post tab, where the company has no
+  /// Connect.
+  _ProfilePosts? _posts;
+
+  @override
+  void initState() {
+    super.initState();
+    final session = widget.session;
+    final enabled = session.user.enabledTabs;
+    // A company whose app is Help alone has no tabs to show them in.
+    if (session.user.id.isNotEmpty &&
+        profileShowsWork(enabled) &&
+        profileShowsPosts(enabled)) {
+      _posts = _ProfilePosts(session, session.user.id, () {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _posts?.dispose();
+    super.dispose();
+  }
+
   /// The Request tab: every request of theirs, newest first, or a line
   /// saying there are none.
   List<Widget> _requestTab(ManagerDashboard dashboard) {
@@ -1109,10 +1232,14 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     final worksHere = profileShowsWork(user.enabledTabs);
     final helpHere = profileShowsHelp(user.enabledTabs);
     final helpOnly = !worksHere && helpHere;
-    final tabs = ownProfileTabs(
-      hasManager: dashboard.hasManager,
-      showsHelp: helpHere,
-    );
+    final posts = _posts;
+    final tabs = [
+      for (final tab in ownProfileTabs(
+        hasManager: dashboard.hasManager,
+        showsHelp: helpHere,
+      ))
+        if (tab != ProfileTab.posts || posts != null) tab,
+    ];
     final selected = _tab.clamp(0, tabs.length - 1);
     final today = DateTime.now();
     final todayRecord = dashboard.attendance
@@ -1229,6 +1356,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
         _ProfileGrowTab(data: dashboard, bloc: bloc, managerName: reportsTo),
       ],
       ProfileTab.rank => [_RankHistory(service: _profileService)],
+      ProfileTab.posts => [if (posts != null) posts.tab(session)],
       ProfileTab.counselor => [HelpProfileSection(session: session)],
       // One's own documents are not loaded with the workspace.
       ProfileTab.documentation => const <Widget>[],
@@ -1262,6 +1390,10 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                 ? _ProfileScrollFrame(
                     hero: hero,
                     tabs: [for (final tab in tabs) tab.label],
+                    counts: [
+                      for (final tab in tabs)
+                        tab == ProfileTab.posts ? posts?.total : null,
+                    ],
                     selected: selected,
                     onChanged: (index) => setState(() => _tab = index),
                     children: content,
@@ -2749,46 +2881,64 @@ class _ProfileAvatar extends StatelessWidget {
 class _ProfileTabs extends StatelessWidget {
   const _ProfileTabs({
     required this.labels,
+    this.counts = const [],
     required this.selected,
     required this.onChanged,
   });
 
   final List<String> labels;
+
+  /// A count beside a label ("Post 12"), by index; null or missing for none.
+  final List<int?> counts;
   final int selected;
   final ValueChanged<int> onChanged;
 
   /// Up to this many tabs share the bar equally; more scroll.
   static const _fitsAcross = 3;
 
-  Widget _tab(int index, {required bool stretched}) => InkWell(
-    onTap: () => onChanged(index),
-    child: Container(
-      padding: const EdgeInsets.only(bottom: 13),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: index == selected
-                ? const Color(0xFF222222)
-                : Colors.transparent,
-            width: 1.114,
+  Widget _tab(int index, {required bool stretched}) {
+    final label = Text(
+      labels[index],
+      textAlign: stretched ? TextAlign.center : TextAlign.start,
+      style: TextStyle(
+        fontFamily: 'Sora',
+        color: index == selected
+            ? const Color(0xFF222222)
+            : const Color(0xFF717171),
+        fontSize: 14,
+        height: 20 / 14,
+        fontWeight: index == selected ? FontWeight.w700 : FontWeight.w500,
+      ),
+    );
+    final count = index < counts.length ? counts[index] : null;
+    return InkWell(
+      onTap: () => onChanged(index),
+      child: Container(
+        padding: const EdgeInsets.only(bottom: 13),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: index == selected
+                  ? const Color(0xFF222222)
+                  : Colors.transparent,
+              width: 1.114,
+            ),
           ),
         ),
+        child: count == null || count <= 0
+            ? label
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  label,
+                  const SizedBox(width: 4),
+                  _TabCountBadge(count),
+                ],
+              ),
       ),
-      child: Text(
-        labels[index],
-        textAlign: stretched ? TextAlign.center : TextAlign.start,
-        style: TextStyle(
-          fontFamily: 'Sora',
-          color: index == selected
-              ? const Color(0xFF222222)
-              : const Color(0xFF717171),
-          fontSize: 14,
-          height: 20 / 14,
-          fontWeight: index == selected ? FontWeight.w700 : FontWeight.w500,
-        ),
-      ),
-    ),
-  );
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2828,6 +2978,35 @@ class _ProfileTabs extends StatelessWidget {
       ),
     );
   }
+}
+
+/// How many there are, beside a tab's label: the blue pill on "Post 12"
+/// (node 3965:56224). Round at one digit, as at two.
+class _TabCountBadge extends StatelessWidget {
+  const _TabCountBadge(this.count);
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    constraints: const BoxConstraints(minWidth: 20),
+    padding: const EdgeInsets.all(4),
+    decoration: BoxDecoration(
+      color: const Color(0xFF0571A6),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      count > 99 ? '99+' : '$count',
+      textAlign: TextAlign.center,
+      style: const TextStyle(
+        fontFamily: 'Sora',
+        color: Colors.white,
+        fontSize: 10,
+        height: 12 / 10,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
 }
 
 /// One line of the Work detail tab (node 3074:45990): the glyph in a soft
