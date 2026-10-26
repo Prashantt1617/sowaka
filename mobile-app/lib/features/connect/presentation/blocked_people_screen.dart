@@ -5,7 +5,7 @@ import '../../shared/app_toast.dart';
 import '../../auth/data/auth_models.dart';
 import '../data/connect_api_service.dart';
 import '../data/connect_models.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../../services/api_config.dart';
 
 /// Everyone this person has muted in Connect, and the one place a block can be
 /// undone. Reached from Profile › Settings — blocking is rare, and a list
@@ -160,7 +160,7 @@ class _BlockedRow extends StatelessWidget {
             radius: 20,
             backgroundColor: const Color(0xFFE8EEF3),
             backgroundImage: photoUrl != null && photoUrl.isNotEmpty
-                ? CachedNetworkImageProvider(photoUrl)
+                ? avatarImageProvider(photoUrl)
                 : null,
             child: photoUrl != null && photoUrl.isNotEmpty
                 ? null

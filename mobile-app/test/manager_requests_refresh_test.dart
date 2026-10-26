@@ -253,4 +253,33 @@ void main() {
     bloc.dispose();
     controller.dispose();
   });
+
+  testWidgets('the minute\'s poll stops while the app is in the background', (tester) async {
+    final calls = <String>[];
+    final bloc = _bloc(calls);
+    await tester.runAsync(() => bloc.add(const LoadManagerDashboard()));
+    // In front: the poll runs (restarted here, on the test's clock).
+    bloc.setInBackground(true);
+    bloc.setInBackground(false);
+    calls.clear();
+    await tester.pump(const Duration(seconds: 61));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    expect(calls, contains('/leaves/mine'));
+
+    // Behind: five minutes and not one call.
+    bloc.setInBackground(true);
+    calls.clear();
+    await tester.pump(const Duration(minutes: 5));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    expect(calls, isEmpty);
+
+    // Back: the poll picks up again.
+    bloc.setInBackground(false);
+    await tester.pump(const Duration(seconds: 61));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    expect(calls, contains('/leaves/mine'));
+    bloc.dispose();
+    // Closing the live socket leaves a five-second close timer behind.
+    await tester.pump(const Duration(seconds: 6));
+  });
 }

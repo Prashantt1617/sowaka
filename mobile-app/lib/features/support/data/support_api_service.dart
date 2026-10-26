@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
+import '../../../services/api_client.dart';
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import '../../shared/network_status.dart';
@@ -74,7 +75,7 @@ class SupportApiService {
     String? baseUrl,
     http.Client? client,
   }) : _baseUrl = baseUrl ?? ApiConfig.baseUrl,
-       _client = client ?? testClient ?? http.Client();
+       _client = client ?? testClient ?? ApiClient.shared;
 
   /// Answers every request the Support screens make, in tests. The screens
   /// build their own service from the session, so this is where a test

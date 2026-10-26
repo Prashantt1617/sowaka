@@ -4,6 +4,7 @@
 // own type pill when it has one.
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -90,13 +91,23 @@ class _FakeVideoPlayer extends VideoPlayerPlatform {
 
   /// Each play and pause, in order: (player, playing).
   final plays = <(int, bool)>[];
+
+  /// Where each player made reads from, in order.
+  final sources = <DataSourceType>[];
+
+  /// Each setLooping, in order: (player, looping).
+  final loops = <(int, bool)>[];
   int _next = 0;
+
+  /// [player] played to its end.
+  void finish(int player) => _events[player]?.add(VideoEvent(eventType: VideoEventType.completed));
 
   @override
   Future<void> init() async {}
 
   @override
   Future<int?> createWithOptions(VideoCreationOptions options) async {
+    sources.add(options.dataSource.sourceType);
     final id = _next++;
     _events[id] = StreamController<VideoEvent>();
     return id;
@@ -127,7 +138,7 @@ class _FakeVideoPlayer extends VideoPlayerPlatform {
   ) async {}
 
   @override
-  Future<void> setLooping(int playerId, bool looping) async {}
+  Future<void> setLooping(int playerId, bool looping) async => loops.add((playerId, looping));
 
   @override
   Future<void> setVolume(int playerId, double volume) async =>
@@ -223,6 +234,7 @@ void main() {
     videos = _FakeVideoPlayer();
     VideoPlayerPlatform.instance = videos;
     FeedVideo.resetSound();
+    FeedVideo.cache = FeedVideoCache.none;
   });
 
   tearDown(() => VideoPlayerPlatform.instance = realPlatform);
@@ -526,4 +538,60 @@ void main() {
     expect(_labelled('Close'), findsNothing);
     await _tearDown(tester, bloc);
   });
+
+  testWidgets('a streamed video does not loop by itself; at its end it moves to the phone\'s copy, '
+      'which loops with nothing more downloaded', (tester) async {
+    final cache = _FakeVideoCache();
+    FeedVideo.cache = cache;
+    final (_, bloc) = await _pumpFeed(tester, _videoPost('10'));
+
+    expect(videos.sources, [DataSourceType.network]);
+    expect(videos.loops, isNot(contains((0, true))));
+    // Played, so it is kept for next time.
+    expect(cache.kept, hasLength(1));
+
+    // The copy has arrived; the stream reaches its end.
+    cache.arrived = true;
+    videos.finish(0);
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(videos.sources, [DataSourceType.network, DataSourceType.file]);
+    expect(videos.loops.last, (1, true));
+    expect(videos.plays.last, (1, true));
+    await _tearDown(tester, bloc);
+  });
+
+  testWidgets('a video already on the phone plays from the file, looping', (tester) async {
+    FeedVideo.cache = _FakeVideoCache()..arrived = true;
+    final (_, bloc) = await _pumpFeed(tester, _videoPost('11'));
+    expect(videos.sources, [DataSourceType.file]);
+    expect(videos.loops.last, (0, true));
+    await _tearDown(tester, bloc);
+  });
+
+  testWidgets('without the copy yet, the end streams it once more', (tester) async {
+    FeedVideo.cache = _FakeVideoCache();
+    final (_, bloc) = await _pumpFeed(tester, _videoPost('12'));
+    final before = videos.plays.length;
+    videos.finish(0);
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(videos.sources, [DataSourceType.network]);
+    expect(videos.plays.sublist(before), contains((0, true)));
+    await _tearDown(tester, bloc);
+  });
+}
+
+/// The phone's copies, in memory: none until [arrived].
+class _FakeVideoCache extends FeedVideoCache {
+  bool arrived = false;
+  final kept = <String>[];
+
+  @override
+  Future<File?> cached(String url) async => arrived ? File('/tmp/kept.mov') : null;
+
+  @override
+  void keep(String url) => kept.add(url);
 }

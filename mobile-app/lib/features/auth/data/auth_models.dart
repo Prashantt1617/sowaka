@@ -22,6 +22,9 @@ class AuthUser {
     this.enabledTabs = const [],
     this.enabledGames,
     this.canCreateContests = false,
+    this.faceIdRequired = false,
+    this.faceIdEnrolled = false,
+    this.faceIdAtPunch = false,
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
@@ -62,7 +65,15 @@ class AuthUser {
           ? [for (final value in json['enabledGames'] as List) '$value']
           : null,
       canCreateContests: json['canCreateContests'] == true,
+      faceIdRequired: _faceId(json, 'required'),
+      faceIdEnrolled: _faceId(json, 'enrolled'),
+      faceIdAtPunch: _faceId(json, 'atPunch'),
     );
+  }
+
+  static bool _faceId(Map<String, dynamic> json, String key) {
+    final face = json['faceId'];
+    return face is Map && face[key] == true;
   }
 
   final String id;
@@ -102,6 +113,14 @@ class AuthUser {
   /// Granted per person by the server, which refuses a contest without it.
   final bool canCreateContests;
 
+  /// Face ID: the company asks everyone to set it up (whatever their
+  /// attendance source), whether this person has, and whether a geotagged
+  /// punch-in is checked against it. All false from a server that predates
+  /// Face ID, which then never asks.
+  final bool faceIdRequired;
+  final bool faceIdEnrolled;
+  final bool faceIdAtPunch;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'email': email,
@@ -125,9 +144,18 @@ class AuthUser {
     'enabledTabs': enabledTabs,
     if (enabledGames != null) 'enabledGames': enabledGames,
     'canCreateContests': canCreateContests,
+    'faceId': {
+      'required': faceIdRequired,
+      'enrolled': faceIdEnrolled,
+      'atPunch': faceIdAtPunch,
+    },
   };
 
-  AuthUser copyWith({String? profilePhotoUrl, List<String>? interests}) => AuthUser(
+  AuthUser copyWith({
+    String? profilePhotoUrl,
+    List<String>? interests,
+    bool? faceIdEnrolled,
+  }) => AuthUser(
     id: id,
     email: email,
     name: name,
@@ -150,6 +178,9 @@ class AuthUser {
     enabledTabs: enabledTabs,
     enabledGames: enabledGames,
     canCreateContests: canCreateContests,
+    faceIdRequired: faceIdRequired,
+    faceIdEnrolled: faceIdEnrolled ?? this.faceIdEnrolled,
+    faceIdAtPunch: faceIdAtPunch,
   );
 }
 

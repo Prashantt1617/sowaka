@@ -886,11 +886,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     // How long the shift runs, from the org's shift policy — never a fixed day.
     final standardShift = widget.dashboard.shift.window;
     final expectedOut = punchIn?.add(standardShift);
-    final progress = punchIn == null
-        ? 0.0
-        : ((punchOut ?? DateTime.now()).difference(punchIn).inMinutes /
-                  standardShift.inMinutes)
-              .clamp(0.0, 1.0);
 
     final monthStart = DateTime(today.year, today.month, 1);
     final todayOnly = _dateOnly(today);
@@ -947,14 +942,14 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           child: ColoredBox(
             color: const Color(0xFFF7F7F9),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+              padding: const EdgeInsets.fromLTRB(16, 17, 16, 24),
               children: [
                 _HomeAttendanceCard(
                   date: today,
                   punchIn: punchIn,
                   punchOut: punchOut,
                   expectedOut: expectedOut,
-                  progress: progress,
+                  shiftLength: standardShift,
                   needsCorrection: needsCorrection,
                   onTap: () => _open(_QuickPage.calendar),
                   onPunch: widget.dashboard.shift.punchesFromApp
@@ -973,7 +968,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 ],
                 const SizedBox(height: 16),
                 const _HomeSectionLabel('Actions'),
-                const SizedBox(height: 2),
+                const SizedBox(height: 12),
                 GridView(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -989,9 +984,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     crossAxisCount: 2,
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
-                    // 38 icon + 10 + title + 2 + up to two subtitle lines,
-                    // plus 14px padding top and bottom.
-                    mainAxisExtent: 142,
+                    // The design's row (node 4166:19896): a 40 tile, 10, a 21
+                    // title, 2 and a 16 subtitle inside 16 of padding, with
+                    // the card stretched to the row.
+                    mainAxisExtent: 123.185,
                   ),
                   children: [
                     // Someone marked present automatically has no attendance to
@@ -1008,11 +1004,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                         // what it is for rather than a number that would be
                         // wrong for these people.
                         subtitle: widget.dashboard.shift.leaveBalanceTracked
-                            ? '$leaveDaysAvailable days available'
+                            ? '${formatDays(leaveDaysAvailable)} days available'
                             : 'Apply & view requests',
                         onTap: () => _open(_QuickPage.leave),
-                        imageAsset:
-                            'assets/icons/action_card_leave_calendar.png',
+                        imageAsset: 'assets/icons/team/calendar.png',
                       ),
                     if (!autoPresent && widget.dashboard.overtimeEnabled)
                       _HomeActionCard(
@@ -1022,8 +1017,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                         title: 'Overtime',
                         subtitle: 'Request & view hours',
                         onTap: () => _open(_QuickPage.overtime),
-                        imageAsset:
-                            'assets/icons/action_card_overtime_hourglass.png',
+                        imageAsset: 'assets/icons/overtime_hourglass.png',
                       ),
                     _HomeActionCard(
                       icon: Icons.payments_rounded,
@@ -1033,7 +1027,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       subtitle: 'Track your claims',
                       onTap: () => _open(_QuickPage.reimbursements),
                       imageAsset:
-                          'assets/icons/action_card_reimbursement_money.png',
+                          'assets/icons/action_card_reimbursement_rupee.png',
+                      imageSize: 28,
                     ),
                     // Support desk (node 2896:32193): a concern raised to HR
                     // and the chat on it. Its pages keep the tabs under them,
@@ -1052,13 +1047,12 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                         onNotifications: widget.onNotifications,
                         // The shell's tabs under the desk; a pick comes back
                         // to the shell first, once anything unsent is let go.
-                        tabs: visibleTabs(
-                          widget.bloc.session.user.enabledTabs,
-                        ),
+                        tabs: visibleTabs(widget.bloc.session.user.enabledTabs),
                         selectedTab: widget.bloc.state.tab,
                         onSelectTab: (tab) {
-                          Navigator.of(context)
-                              .popUntil((route) => route.isFirst);
+                          Navigator.of(
+                            context,
+                          ).popUntil((route) => route.isFirst);
                           widget.bloc.add(ChangeManagerTab(tab, fresh: true));
                         },
                       ),
@@ -1074,7 +1068,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       subtitle: 'Company guidelines',
                       onTap: () => _open(_QuickPage.policies),
                       imageAsset:
-                          'assets/icons/action_card_policies_pencil.png',
+                          'assets/icons/connect_icon_my_post_pencil.png',
                     ),
                   ],
                 ),
@@ -1108,48 +1102,50 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
         // With no balance to count down, what matters is what has been asked
-        // for and how it went — node 2217:12436.
+        // for and how it went (node 3464:64477); otherwise the balance strip
+        // of node 3464:64024.
         if (!widget.dashboard.shift.leaveBalanceTracked) ...[
-          const SizedBox(height: 16),
-          _LeaveYearSummaryCard(leaves: widget.dashboard.myLeaves),
+          const _HomeSectionLabel('This Year'),
+          const SizedBox(height: 12),
+          _LeaveYearCards(leaves: widget.dashboard.myLeaves),
         ] else ...[
           const _HomeSectionLabel('Leave Balance'),
           const SizedBox(height: 12),
-          SizedBox(
-            height: 108,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final label in _accruingLeaveLabels) ...[
+                for (final (index, label) in _accruingLeaveLabels.indexed) ...[
+                  if (index > 0) const SizedBox(width: 8),
                   _LeaveBalanceCard(label: label, item: _balanceFor(label)!),
-                  const SizedBox(width: 8),
                 ],
               ],
             ),
           ),
         ],
-        const SizedBox(height: 4),
-        Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: RichText(
-            text: TextSpan(
-              style: const TextStyle(color: _Q.inkSoft, fontSize: 12),
-              children: [
-                const TextSpan(text: 'Read detailed leave policy '),
-                TextSpan(
-                  text: 'leave policy',
-                  style: const TextStyle(
-                    color: Color(0xFF0571A6),
-                    fontWeight: FontWeight.w700,
-                  ),
-                  recognizer: TapGestureRecognizer()
-                    ..onTap = _openLeavePolicy,
-                ),
-              ],
+        const SizedBox(height: 2),
+        RichText(
+          text: TextSpan(
+            style: const TextStyle(
+              fontFamily: 'Sora',
+              color: Color(0xFF717171),
+              fontSize: 10,
+              height: 16.2 / 10,
+              letterSpacing: -0.16,
             ),
+            children: [
+              const TextSpan(text: 'For more information check out our '),
+              TextSpan(
+                text: 'leave policy',
+                style: const TextStyle(color: Color(0xFF0571A6)),
+                recognizer: TapGestureRecognizer()..onTap = _openLeavePolicy,
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         LeaveViewSwitch(
           history: _leaveHistoryView,
           onChanged: (history) => setState(() => _leaveHistoryView = history),
@@ -1170,6 +1166,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               padding: const EdgeInsets.only(bottom: 12),
               child: _LeaveRequestCard(
                 request: request,
+                label: _leaveLabelFor(request),
                 onViewDetails: () => _showRequestDetail(
                   RequestSummary(
                     screenTitle: 'Leave',
@@ -1210,6 +1207,16 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   /// them. Switching a type off in the dashboard takes it out of the picker,
   /// the balance strip and the day counts here.
   List<String> get _leaveLabels => widget.dashboard.shift.applicableLeaveLabels;
+
+  /// A request's type in full, as the policy names it — the server sends
+  /// "Casual" for "Casual Leave". A type the policy no longer lists keeps the
+  /// name it was filed under.
+  String _leaveLabelFor(LeaveRequest request) => _leaveLabels.firstWhere(
+    (label) =>
+        label == request.type ||
+        label.replaceAll(RegExp(r'\s+[Ll]eave$'), '').trim() == request.type,
+    orElse: () => request.type,
+  );
 
   /// Every type this employee has a balance for — including one that has run
   /// down to zero, which stays on show, and comp-off once overtime has
@@ -1734,15 +1741,20 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     // current calendar month meant a pending request from an earlier month sat
     // in the list while the totals above it read zero.
     final thisMonth = requests;
-    final totalHours = thisMonth
-        .where((request) => request.decision != LeaveDecision.declined)
-        .fold<double>(0, (sum, request) => sum + request.hours);
-    final approvedHours = thisMonth
-        .where((request) => request.decision == LeaveDecision.approved)
-        .fold<double>(0, (sum, request) => sum + request.hours);
-    final pendingHours = thisMonth
-        .where((request) => request.decision == LeaveDecision.pending)
-        .fold<double>(0, (sum, request) => sum + request.hours);
+    // Counted in the days the claims were made in, as comp-off is credited:
+    // half a day or a whole one each.
+    double days(bool Function(OvertimeRequest) counts) => thisMonth
+        .where(counts)
+        .fold<double>(0, (sum, request) => sum + _overtimeDays(request));
+    final totalDays = days(
+      (request) => request.decision != LeaveDecision.declined,
+    );
+    final approvedDays = days(
+      (request) => request.decision == LeaveDecision.approved,
+    );
+    final pendingDays = days(
+      (request) => request.decision == LeaveDecision.pending,
+    );
     final visible = requests
         .where(
           (request) => _overtimeHistoryView
@@ -1763,31 +1775,23 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       ),
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        _QuickStatsCard(
+        _HubSummaryCard(
           label: 'Overview',
-          stats: [
-            (_hoursMinutesLabel(totalHours), 'Total', const Color(0xFF111827)),
-            // Same order as the reimbursement overview: total, pending, then
-            // approved.
-            (
-              _hoursMinutesLabel(pendingHours),
-              'Pending',
-              const Color(0xFFFB2C36),
-            ),
-            (
-              _hoursMinutesLabel(approvedHours),
-              'Approved',
-              const Color(0xFF16A34A),
-            ),
-          ],
+          total: _daysLabel(totalDays, capital: true),
+          iconAsset: 'assets/icons/overtime_hourglass.png',
+          approved: approvedDays,
+          pending: pendingDays,
+          approvedLabel: _daysLabel(approvedDays),
+          approvedCaption: 'Approved',
+          pendingLabel: _daysLabel(pendingDays),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         LeaveViewSwitch(
           history: _overtimeHistoryView,
           onChanged: (value) => setState(() => _overtimeHistoryView = value),
           firstLabel: 'Requests',
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         if (visible.isEmpty)
           _HubEmptyState(
             iconAsset: 'assets/icons/action_card_overtime_hourglass.png',
@@ -1801,18 +1805,20 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ...visible.map(
             (request) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: _QuickRequestCard(
-                title: _short(request.workDate),
-                subtitle: request.note.isEmpty
-                    ? request.timeRangeLabel
-                    : request.note,
+              child: _HubRequestCard(
+                iconAsset: request.halfDayClaim
+                    ? 'assets/icons/overtime_half_day.png'
+                    : 'assets/icons/overtime_full_day.png',
+                title: request.halfDayClaim ? 'Half-day' : 'Full-day',
+                date: _short(request.workDate),
                 status: _decision(request.decision),
                 statusColor: switch (request.decision) {
                   LeaveDecision.approved => const Color(0xFF16A34A),
                   _ => const Color(0xFFFB2C36),
                 },
-                footerText: request.hoursLabel,
-                onViewDetails: () => _showRequestDetail(
+                footerIcon: _HubRequestCard.clockIcon,
+                footerText: _hoursMinutesLabel(request.hours),
+                onTap: () => _showRequestDetail(
                   RequestSummary(
                     screenTitle: 'Overtime',
                     successTitle: '',
@@ -2363,22 +2369,24 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       ),
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        _QuickStatsCard(
+        _HubSummaryCard(
           label: 'Overview',
-          stats: [
-            (_money(claimed), 'Total Claimed', const Color(0xFF111827)),
-            (_money(pending), 'Pending', const Color(0xFFFB2C36)),
-            (_money(reimbursed), 'Approved', const Color(0xFF16A34A)),
-          ],
+          total: _money(claimed),
+          iconAsset: 'assets/icons/request_reimbursement_money.png',
+          approved: reimbursed,
+          pending: pending,
+          approvedLabel: _money(reimbursed),
+          approvedCaption: 'Reimbursed',
+          pendingLabel: _money(pending),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         LeaveViewSwitch(
           history: _reimbursementHistoryView,
           onChanged: (value) =>
               setState(() => _reimbursementHistoryView = value),
           firstLabel: 'Claims',
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         if (visible.isEmpty)
           _HubEmptyState(
             iconAsset: 'assets/icons/action_card_reimbursement_money.png',
@@ -2394,15 +2402,19 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ...visible.map(
             (claim) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: _QuickRequestCard(
+              child: _HubRequestCard(
+                iconAsset: _claimCategoryIcon(claim.category),
+                iconSize: 20,
                 title: claim.category,
-                subtitle: _short(claim.expenseDate),
-                status: '${_money(claim.amount)} · ${claim.statusLabel}',
+                date: _short(claim.expenseDate),
+                status: claim.statusLabel,
                 statusColor: switch (claim.status) {
                   'Paid' || 'Approved' => const Color(0xFF16A34A),
-                  _ => const Color(0xFFFB2C36),
+                  _ => const Color(0xFFFF383C),
                 },
-                onViewDetails: () => _showRequestDetail(
+                footerIcon: _HubRequestCard.walletIcon,
+                footerText: _money(claim.amount),
+                onTap: () => _showRequestDetail(
                   RequestSummary(
                     screenTitle: 'Reimbursement',
                     successTitle: '',
@@ -5667,11 +5679,15 @@ class _HubScaffold extends StatelessWidget {
         // nested — Flutter doesn't dedupe that) double-pads under the
         // notch on a real iPhone while looking fine on macOS/simulator
         // where the top inset is 0.
+        // The form header of Figma 4194:21787: a round back (or close) button
+        // on grey, the title beside it, and the screen's own action on the
+        // right.
         SafeArea(
           top: false,
           bottom: false,
           child: Container(
-            padding: const EdgeInsets.fromLTRB(16, 8, 18, 12),
+            height: 60,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             decoration: const BoxDecoration(
               color: Colors.white,
               border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
@@ -5680,31 +5696,45 @@ class _HubScaffold extends StatelessWidget {
               children: [
                 Material(
                   color: const Color(0xFFF7F7F9),
-                  borderRadius: BorderRadius.circular(12),
+                  shape: const CircleBorder(),
                   child: InkWell(
                     onTap: onBack,
-                    borderRadius: BorderRadius.circular(12),
+                    customBorder: const CircleBorder(),
                     child: SizedBox(
-                      width: 38,
-                      height: 38,
+                      width: 36,
+                      height: 36,
                       child: Center(
                         child: closeIcon
-                            ? const Icon(
-                                Icons.close_rounded,
-                                size: 20,
-                                color: Color(0xFF2A2A2A),
+                            ? SvgPicture.asset(
+                                'assets/icons/hub_close_x.svg',
+                                width: 15.9987,
+                                height: 15.9987,
                               )
                             : SvgPicture.asset(
-                                'assets/icons/chevron_back.svg',
-                                width: 20,
-                                height: 20,
+                                'assets/icons/chevron_left_small.svg',
+                                width: 17.9833,
+                                height: 17.9833,
                               ),
                       ),
                     ),
                   ),
                 ),
                 const SizedBox(width: 10),
-                Expanded(child: Text(title, style: _QText.topbar)),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Sora',
+                      color: Color(0xFF222222),
+                      fontSize: 16,
+                      height: 24 / 16,
+                      letterSpacing: -0.2,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
                 ?trailing,
               ],
             ),
@@ -5714,7 +5744,7 @@ class _HubScaffold extends StatelessWidget {
           child: ColoredBox(
             color: backgroundColor ?? _Q.bg,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(18, 20, 18, 28),
+              padding: const EdgeInsets.fromLTRB(16, 17, 16, 20),
               children: children,
             ),
           ),
@@ -5893,9 +5923,12 @@ class _LeaveHeaderButton extends StatelessWidget {
               : Text(
                   label,
                   style: TextStyle(
+                    fontFamily: 'Sora',
                     color: live ? Colors.white : const Color(0xFF9CA3AF),
                     fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                    height: 16.2 / 12,
+                    letterSpacing: -0.16,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
         ),
@@ -5904,9 +5937,10 @@ class _LeaveHeaderButton extends StatelessWidget {
   }
 }
 
-/// This year's requests, for people with no balance to show (node 2217:12436).
-class _LeaveYearSummaryCard extends StatelessWidget {
-  const _LeaveYearSummaryCard({required this.leaves});
+/// This year's requests, for people with no balance to show (node 3464:64477):
+/// what has been approved and what is still waiting, a card each.
+class _LeaveYearCards extends StatelessWidget {
+  const _LeaveYearCards({required this.leaves});
 
   final List<LeaveRequest> leaves;
 
@@ -5922,53 +5956,23 @@ class _LeaveYearSummaryCard extends StatelessWidget {
     final pending = thisYear
         .where((leave) => leave.decision == LeaveDecision.pending)
         .length;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0A000000),
-            blurRadius: 2,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'THIS YEAR',
-            style: TextStyle(
-              fontFamily: 'Sora',
-              color: Color(0xFF9CA3AF),
-              fontSize: 12,
-              height: 16 / 12,
-              letterSpacing: 0.3,
-              fontWeight: FontWeight.w600,
-            ),
+          _LeaveFigureCard(
+            iconAsset: 'assets/icons/leave_year_approved_badge.png',
+            iconSize: 28,
+            label: 'Approved Leave',
+            value: '$approved',
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _LeaveYearFigure(
-                value: '${thisYear.length}',
-                label: 'Total request',
-                color: const Color(0xFF111827),
-              ),
-              _LeaveYearFigure(
-                value: '$approved',
-                label: 'Approved',
-                color: const Color(0xFF16A34A),
-              ),
-              _LeaveYearFigure(
-                value: '$pending',
-                label: 'Pending',
-                color: const Color(0xFFFF383C),
-              ),
-            ],
+          const SizedBox(width: 8),
+          _LeaveFigureCard(
+            iconAsset: 'assets/icons/attendance_review_clock.png',
+            iconSize: 30,
+            label: 'Pending Leave',
+            value: '$pending',
           ),
         ],
       ),
@@ -5976,48 +5980,8 @@ class _LeaveYearSummaryCard extends StatelessWidget {
   }
 }
 
-/// One of the three figures: the count over its name.
-class _LeaveYearFigure extends StatelessWidget {
-  const _LeaveYearFigure({
-    required this.value,
-    required this.label,
-    required this.color,
-  });
-
-  final String value;
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Expanded(
-    child: Column(
-      children: [
-        Text(
-          value,
-          style: TextStyle(
-            fontFamily: 'Sora',
-            color: color,
-            fontSize: 16,
-            height: 24 / 16,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: const TextStyle(
-            fontFamily: 'Sora',
-            color: Color(0xFF9CA3AF),
-            fontSize: 10,
-            height: 15 / 10,
-            fontWeight: FontWeight.w400,
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
+/// One type's balance (node 3464:64043): its picture, what is left of the
+/// year's days, and a bar of the same.
 class _LeaveBalanceCard extends StatelessWidget {
   const _LeaveBalanceCard({required this.label, required this.item});
 
@@ -6026,8 +5990,78 @@ class _LeaveBalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final share = item.total <= 0
+        ? 0.0
+        : (item.remaining / item.total).clamp(0.0, 1.0);
+    return _LeaveFigureCard(
+      iconAsset: _leaveTypeIcon(label).asset,
+      label: label,
+      value: '${formatDays(item.remaining)}/${formatDays(item.total)}',
+      footer: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Container(
+            height: 8,
+            color: const Color(0xFFD1D5DB),
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: share,
+              heightFactor: 1,
+              child: const ColoredBox(color: Color(0xFF0571A6)),
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 22,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                // A monthly type is this month's figure, and lapses with it.
+                item.monthly
+                    ? 'days for ${item.periodLabel}'
+                    : 'days available',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'Sora',
+                  color: Color(0xFF484848),
+                  fontSize: 10,
+                  height: 16.2 / 10,
+                  letterSpacing: -0.16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The bordered card the Leave screen counts in: a picture, a name, a figure,
+/// and anything that goes under the figure.
+class _LeaveFigureCard extends StatelessWidget {
+  const _LeaveFigureCard({
+    required this.iconAsset,
+    required this.label,
+    required this.value,
+    this.iconSize = 24,
+    this.footer = const [],
+  });
+
+  final String iconAsset;
+  final double iconSize;
+  final String label;
+  final String value;
+  final List<Widget> footer;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      width: 144,
+      width: 155,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -6037,35 +6071,95 @@ class _LeaveBalanceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _IllustrationTile(asset: iconAsset, size: iconSize),
+          const SizedBox(height: 8),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
+              fontFamily: 'Sora',
               color: Color(0xFF222222),
               fontSize: 11,
-              fontWeight: FontWeight.w600,
+              height: 16.5 / 11,
+              fontWeight: FontWeight.w500,
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            '${formatDays(item.remaining)}/${formatDays(item.total)}',
-            style: const TextStyle(
-              color: Color(0xFF222222),
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontFamily: 'Sora',
+                color: Color(0xFF222222),
+                fontSize: 16,
+                height: 16.2 / 16,
+                letterSpacing: -0.16,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            // A monthly type is this month's figure, and lapses with it.
-            item.monthly ? 'days for ${item.periodLabel}' : 'days available',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Color(0xFF222222), fontSize: 10),
-          ),
+          ...footer,
         ],
       ),
     );
   }
+}
+
+/// The white tile an illustrated icon sits on across the Actions screens
+/// (node 3464:64045): 40 square, a 12 corner, and a faint shadow under it.
+class _IllustrationTile extends StatelessWidget {
+  const _IllustrationTile({required this.asset, this.size = 24});
+
+  final String asset;
+
+  /// The picture's own size inside the tile; most are 24, a few are drawn
+  /// larger so their artwork reads the same.
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 40,
+    height: 40,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x14000000),
+          blurRadius: 1.5,
+          offset: Offset(0, 1),
+        ),
+      ],
+    ),
+    child: Image.asset(asset, width: size, height: size, fit: BoxFit.cover),
+  );
+}
+
+/// The picture a leave type is drawn with (Figma 4194:21787), found from the
+/// name HR gave it so a renamed type keeps its picture, and the size it is
+/// drawn at beside a request's name. A type the designs have no picture for
+/// gets the Leave action's calendar.
+({String asset, double size}) _leaveTypeIcon(String label) {
+  final name = label.toLowerCase();
+  if (name.contains('casual')) {
+    return (asset: 'assets/icons/leave_type_casual_suitcase.png', size: 16);
+  }
+  if (name.contains('sick')) {
+    return (asset: 'assets/icons/leave_type_sick_face.png', size: 16);
+  }
+  if (name.contains('earned') || name.contains('privilege')) {
+    return (asset: 'assets/icons/punch/target.png', size: 16);
+  }
+  if (name.contains('lwp') ||
+      name.contains('without pay') ||
+      name.contains('loss of pay') ||
+      name.contains('unpaid')) {
+    return (asset: 'assets/icons/leave_type_lwp.png', size: 20);
+  }
+  return (asset: 'assets/icons/team/calendar.png', size: 16);
 }
 
 class LeaveViewSwitch extends StatelessWidget {
@@ -6098,6 +6192,7 @@ class LeaveViewSwitch extends StatelessWidget {
               onTap: () => onChanged(false),
             ),
           ),
+          const SizedBox(width: 4),
           Expanded(
             child: _LeaveViewSwitchItem(
               label: secondLabel,
@@ -6133,10 +6228,11 @@ class _LeaveViewSwitchItem extends StatelessWidget {
           color: selected ? Colors.white : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           boxShadow: selected
-              ? [
+              ? const [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: .1),
+                    color: Color(0x1A000000),
                     blurRadius: 1.5,
+                    offset: Offset(0, 1),
                   ),
                 ]
               : null,
@@ -6145,8 +6241,10 @@ class _LeaveViewSwitchItem extends StatelessWidget {
           label,
           textAlign: TextAlign.center,
           style: TextStyle(
+            fontFamily: 'Sora',
             color: selected ? const Color(0xFF0571A6) : const Color(0xFF9CA3AF),
             fontSize: 12,
+            height: 16 / 12,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -6156,106 +6254,215 @@ class _LeaveViewSwitchItem extends StatelessWidget {
 }
 
 class _LeaveRequestCard extends StatelessWidget {
-  const _LeaveRequestCard({required this.request, this.onViewDetails});
+  const _LeaveRequestCard({
+    required this.request,
+    required this.label,
+    this.onViewDetails,
+  });
 
   final LeaveRequest request;
+
+  /// The type as the policy names it, "Casual Leave".
+  final String label;
 
   /// Opens the same summary the request was sent on, attachment included.
   final VoidCallback? onViewDetails;
 
   @override
   Widget build(BuildContext context) {
-    final (label, color, tint) = switch (request.decision) {
-      LeaveDecision.approved => (
-        'Approved',
-        const Color(0xFF16A34A),
-        const Color(0xFFDCFCE7),
-      ),
-      LeaveDecision.pending => (
-        'Pending',
-        const Color(0xFFFF383C),
-        const Color(0xFFFEE2E2),
-      ),
-      LeaveDecision.declined => (
-        'Declined',
-        const Color(0xFF6B7280),
-        const Color(0xFFF3F4F6),
-      ),
+    final (status, color) = switch (request.decision) {
+      LeaveDecision.approved => ('Approved', const Color(0xFF16A34A)),
+      LeaveDecision.pending => ('Pending', const Color(0xFFFF383C)),
+      LeaveDecision.declined => ('Declined', const Color(0xFF6B7280)),
     };
     final range = _sameDay(request.start, request.end)
         ? _short(request.start)
         : '${_short(request.start)} – ${_short(request.end)}';
-    return Container(
-      padding: const EdgeInsets.all(16),
+    final icon = _leaveTypeIcon(label);
+    return _HubRequestCard(
+      iconAsset: icon.asset,
+      iconSize: icon.size,
+      title: label,
+      date: range,
+      status: status,
+      statusColor: color,
+      footerIcon: _HubRequestCard.calendarIcon,
+      footerText: request.halfDay
+          ? 'Half Day'
+          : '${request.daysLabel} Day${request.days == 1 ? '' : 's'}',
+      onTap: onViewDetails,
+    );
+  }
+}
+
+/// One request in a hub's list (nodes 4202:22179, 3464:64180, 3464:64264):
+/// its picture and name over the date, the decision on the right, and what it
+/// came to under a rule. Tapping it opens everything it was sent with.
+class _HubRequestCard extends StatelessWidget {
+  const _HubRequestCard({
+    required this.iconAsset,
+    required this.title,
+    required this.date,
+    required this.status,
+    required this.statusColor,
+    required this.footerIcon,
+    required this.footerText,
+    this.iconSize = 16,
+    this.onTap,
+  });
+
+  /// The footer pictures of the designs, each drawn in a 14 square.
+  static const calendarIcon = (
+    asset: 'assets/icons/request_card_calendar.svg',
+    size: 12.6667,
+  );
+  static const clockIcon = (
+    asset: 'assets/icons/request_card_clock.svg',
+    size: 14.0,
+  );
+  static const walletIcon = (
+    asset: 'assets/icons/request_card_wallet.svg',
+    size: 14.0,
+  );
+
+  final String iconAsset;
+  final double iconSize;
+  final String title;
+  final String date;
+  final String status;
+  final Color statusColor;
+  final ({String asset, double size}) footerIcon;
+  final String footerText;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
-            color: Colors.black.withValues(alpha: .04),
+            color: Color(0x0A000000),
             blurRadius: 2,
-            offset: const Offset(0, 1),
+            offset: Offset(0, 1),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${request.type} leave request',
-                  style: const TextStyle(
-                    color: Color(0xFF111827),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Image.asset(
+                                iconAsset,
+                                width: iconSize,
+                                height: iconSize,
+                                fit: BoxFit.cover,
+                              ),
+                              // The larger pictures carry their own margin.
+                              SizedBox(width: iconSize > 16 ? 4 : 5),
+                              Flexible(
+                                child: Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontFamily: 'Sora',
+                                    color: Color(0xFF111827),
+                                    fontSize: 14,
+                                    height: 20 / 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            date,
+                            style: const TextStyle(
+                              fontFamily: 'Sora',
+                              color: Color(0xFF6B7280),
+                              fontSize: 12,
+                              height: 16 / 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      child: Text(
+                        status,
+                        style: TextStyle(
+                          fontFamily: 'Sora',
+                          color: statusColor,
+                          fontSize: 11,
+                          height: 16.5 / 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.only(top: 8),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      top: BorderSide(color: Color(0xFFF3F4F6), width: 0.8),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: Center(
+                          child: SvgPicture.asset(
+                            footerIcon.asset,
+                            width: footerIcon.size,
+                            height: footerIcon.size,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        footerText,
+                        style: const TextStyle(
+                          fontFamily: 'Sora',
+                          fontFamilyFallback: _soraFallback,
+                          color: Color(0xFF6B7280),
+                          fontSize: 12,
+                          height: 16 / 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: tint,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Text(
-                range,
-                style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                '${request.daysLabel} day${request.days == 1 ? '' : 's'}',
-                style: const TextStyle(
-                  color: Color(0xFF111827),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          if (onViewDetails case final open?) ...[
-            const SizedBox(height: 4),
-            _ViewDetailsLink(onTap: open),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -6366,58 +6573,195 @@ class _PolicyRow extends StatelessWidget {
   }
 }
 
-class _QuickStatsCard extends StatelessWidget {
-  const _QuickStatsCard({required this.label, required this.stats});
+/// The summary over a hub's list (nodes 3464:64148 and 3464:64232): the total
+/// claimed beside the action's picture, then a bar of what has been approved
+/// against what is still pending, with the two figures under its ends.
+class _HubSummaryCard extends StatelessWidget {
+  const _HubSummaryCard({
+    required this.label,
+    required this.total,
+    required this.iconAsset,
+    required this.approved,
+    required this.pending,
+    required this.approvedLabel,
+    required this.approvedCaption,
+    required this.pendingLabel,
+  });
 
   final String label;
-  final List<(String value, String caption, Color color)> stats;
+  final String total;
+  final String iconAsset;
+
+  /// The two parts of the bar, in whatever the hub counts in.
+  final double approved;
+  final double pending;
+  final String approvedLabel;
+  final String approvedCaption;
+  final String pendingLabel;
+
+  static const _caption = TextStyle(
+    fontFamily: 'Sora',
+    color: Color(0xFF9CA3AF),
+    fontSize: 10,
+    height: 15 / 10,
+  );
+
+  static const _figure = TextStyle(
+    fontFamily: 'Sora',
+    fontFamilyFallback: _soraFallback,
+    fontSize: 12,
+    height: 16.2 / 12,
+    letterSpacing: -0.16,
+    fontWeight: FontWeight.w600,
+  );
 
   @override
   Widget build(BuildContext context) {
+    final whole = approved + pending;
     return _FormCard(
       children: [
         Text(
           label.toUpperCase(),
           style: const TextStyle(
+            fontFamily: 'Sora',
             color: Color(0xFF9CA3AF),
             fontSize: 12,
+            height: 16 / 12,
             fontWeight: FontWeight.w600,
             letterSpacing: .3,
           ),
         ),
-        const SizedBox(height: 12),
-        Row(
-          children: stats
-              .map(
-                (stat) => Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        stat.$1,
-                        style: TextStyle(
-                          color: stat.$3,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Text('Total Claimed', style: _caption),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      total,
+                      style: const TextStyle(
+                        fontFamily: 'Sora',
+                        fontFamilyFallback: _soraFallback,
+                        color: Color(0xFF111827),
+                        fontSize: 14,
+                        height: 20 / 14,
+                        fontWeight: FontWeight.w700,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        stat.$2,
-                        style: const TextStyle(
-                          color: Color(0xFF9CA3AF),
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              )
-              .toList(),
+              ),
+              _IllustrationTile(asset: iconAsset),
+            ],
+          ),
+        ),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Container(
+            height: 8,
+            // Nothing claimed yet: an empty track rather than a red one.
+            color: whole <= 0
+                ? const Color(0xFFEBEBEB)
+                : const Color(0xB3FF383C),
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: whole <= 0 ? 0 : (approved / whole).clamp(0, 1),
+              heightFactor: 1,
+              child: const ColoredBox(color: Color(0xFF34C759)),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    approvedLabel,
+                    style: _figure.copyWith(color: const Color(0xFF16A34A)),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(approvedCaption, style: _caption),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    pendingLabel,
+                    style: _figure.copyWith(color: const Color(0xFFFB2C36)),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2),
+                    child: Text('Pending', style: _caption),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ],
     );
   }
+}
+
+/// Sora has no rupee sign; amounts take it from the app's own font rather
+/// than whatever the phone falls back to.
+const _soraFallback = ['Plus Jakarta Sans'];
+
+/// The days an overtime claim is worth: half a day or a whole one.
+double _overtimeDays(OvertimeRequest request) => request.halfDayClaim ? 0.5 : 1;
+
+/// "8 days", "1 day", "12.5 Days" — the summary's total is capitalised.
+String _daysLabel(double days, {bool capital = false}) {
+  final unit = days == 1 ? 'day' : 'days';
+  return '${formatDays(days)} ${capital ? unit.replaceFirst('d', 'D') : unit}';
+}
+
+/// The picture a claim category is drawn with (node 3464:64217), found from
+/// the name HR gave the type. One the designs have no picture for gets the
+/// Reimbursement summary's banknotes.
+String _claimCategoryIcon(String category) {
+  final name = category.toLowerCase();
+  bool any(List<String> words) => words.any(name.contains);
+  if (any(['hotel', 'stay', 'accommodation', 'lodging'])) {
+    return 'assets/icons/claim_hotel.png';
+  }
+  if (any(['transport', 'travel', 'cab', 'taxi', 'fuel', 'commute'])) {
+    return 'assets/icons/claim_transport_car.png';
+  }
+  if (any(['book', 'course', 'training', 'learning', 'education'])) {
+    return 'assets/icons/claim_book_course.png';
+  }
+  if (any(['meal', 'food', 'lunch', 'dinner'])) {
+    return 'assets/icons/claim_meal.png';
+  }
+  if (any(['tool', 'software', 'subscription', 'licen'])) {
+    return 'assets/icons/claim_tools_software.png';
+  }
+  if (any(['device', 'hardware', 'equipment', 'gadget', 'keyboard'])) {
+    return 'assets/icons/claim_devices_keyboard.png';
+  }
+  if (any(['internet', 'broadband', 'wifi', 'wi-fi', 'data'])) {
+    return 'assets/icons/claim_internet_globe.png';
+  }
+  return 'assets/icons/request_reimbursement_money.png';
 }
 
 class _QuickRequestCard extends StatelessWidget {
@@ -6426,7 +6770,6 @@ class _QuickRequestCard extends StatelessWidget {
     required this.subtitle,
     required this.status,
     required this.statusColor,
-    this.footerText,
     this.onViewDetails,
   });
 
@@ -6434,7 +6777,6 @@ class _QuickRequestCard extends StatelessWidget {
   final String subtitle;
   final String status;
   final Color statusColor;
-  final String? footerText;
 
   /// Opens everything the request was filled in with, plus the response.
   final VoidCallback? onViewDetails;
@@ -6496,29 +6838,6 @@ class _QuickRequestCard extends StatelessWidget {
               ),
             ],
           ),
-          if (footerText != null) ...[
-            const SizedBox(height: 10),
-            const Divider(height: 1, color: Color(0xFFF3F4F6)),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                SvgPicture.asset(
-                  'assets/icons/schedule_clock_gray.svg',
-                  width: 14,
-                  height: 14,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  footerText!,
-                  style: const TextStyle(
-                    color: Color(0xFF6B7280),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ],
           if (onViewDetails case final open?) ...[
             const SizedBox(height: 4),
             _ViewDetailsLink(onTap: open),
@@ -6925,10 +7244,12 @@ class _HomeSectionLabel extends StatelessWidget {
   Widget build(BuildContext context) => Text(
     text.toUpperCase(),
     style: const TextStyle(
-      color: Color(0xFF717171),
+      fontFamily: 'Sora',
+      color: Color(0xFF9CA3AF),
       fontSize: 12,
-      fontWeight: FontWeight.w800,
-      letterSpacing: .9,
+      height: 16 / 12,
+      fontWeight: FontWeight.w600,
+      letterSpacing: .6,
     ),
   );
 }
@@ -6991,13 +7312,16 @@ class _MissedPunchBanner extends StatelessWidget {
   }
 }
 
+/// Today's attendance on the Actions home (Figma 4166:19856): the date and
+/// whether the day is counted, then, once it has started, how far into the
+/// shift it is and the two punches, with the slider that closes it last.
 class _HomeAttendanceCard extends StatelessWidget {
   const _HomeAttendanceCard({
     required this.date,
     required this.punchIn,
     required this.punchOut,
     required this.expectedOut,
-    required this.progress,
+    required this.shiftLength,
     required this.needsCorrection,
     required this.onTap,
     this.onPunch,
@@ -7009,7 +7333,9 @@ class _HomeAttendanceCard extends StatelessWidget {
   final DateTime? punchIn;
   final DateTime? punchOut;
   final DateTime? expectedOut;
-  final double progress;
+
+  /// How long the shift runs, from the org's shift policy, for the bar.
+  final Duration shiftLength;
   final bool needsCorrection;
   final VoidCallback onTap;
 
@@ -7026,232 +7352,352 @@ class _HomeAttendanceCard extends StatelessWidget {
   /// is no punch-out to slide and no second time to show.
   final bool singlePunch;
 
+  /// "09:42 AM".
   static String _clock(DateTime? value) {
     if (value == null) return '-';
     final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
     final minute = value.minute.toString().padLeft(2, '0');
-    return '$hour:$minute ${value.hour >= 12 ? 'PM' : 'AM'}';
+    return '${hour.toString().padLeft(2, '0')}:$minute '
+        '${value.hour >= 12 ? 'PM' : 'AM'}';
   }
+
+  static const _punchLabel = TextStyle(
+    fontFamily: 'Sora',
+    color: Color(0xFF717171),
+    fontSize: 10,
+    height: 15 / 10,
+    fontWeight: FontWeight.w500,
+    letterSpacing: .25,
+  );
+
+  static const _punchTime = TextStyle(
+    fontFamily: 'Sora',
+    color: Color(0xFF222222),
+    fontSize: 14,
+    height: 20 / 14,
+    fontWeight: FontWeight.w600,
+  );
+
+  Widget _punch(String label, String time) => SizedBox(
+    width: 93,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: _punchLabel),
+        const SizedBox(height: 2),
+        Text(time, style: _punchTime),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFEBEBEB)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: .05),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    final punch = onPunch;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFF7F7F9),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: SvgPicture.asset(
-                      'assets/icons/attendance_card_small_icon.svg',
-                      width: 18,
-                      height: 18,
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF7F7F9),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: const Color(0xFFEBEBEB)),
+                      ),
+                      child: SvgPicture.asset(
+                        'assets/icons/attendance_card_calendar.svg',
+                        width: 16,
+                        height: 16,
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text(
-                    'Attendance',
-                    style: TextStyle(
-                      color: Color(0xFF222222),
-                      fontSize: 16.5,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                SvgPicture.asset(
-                  'assets/icons/chevron_right_expand.svg',
-                  width: 20,
-                  height: 20,
-                  colorFilter: const ColorFilter.mode(
-                    Color(0xFF717171),
-                    BlendMode.srcIn,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${date.day} ${_monthName(date.month)} ${date.year}',
-                    style: const TextStyle(
-                      color: Color(0xFF484848),
-                      fontSize: 14,
-                      height: 16.2 / 14,
-                      letterSpacing: -0.16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                // Present once the day has a punch against it, or when nobody
-                // has to punch at all (node 2412:82314).
-                if (punchIn != null || autoPresent)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDF4),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF00C950),
-                            shape: BoxShape.circle,
-                          ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Attendance',
+                        style: TextStyle(
+                          fontFamily: 'Sora',
+                          color: Color(0xFF111827),
+                          fontSize: 16,
+                          height: 16.2 / 16,
+                          letterSpacing: -0.16,
+                          fontWeight: FontWeight.w600,
                         ),
-                        const SizedBox(width: 4),
-                        const Text(
-                          'Present',
-                          style: TextStyle(
-                            color: Color(0xFF008236),
-                            fontSize: 12,
-                            height: 16 / 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-              ],
-            ),
-            if (onPunch case final punch?) ...[
-              const SizedBox(height: 12),
-              // Punch in while the day has not started, punch out once it has.
-              // A day with both punches recorded has nothing left to slide.
-              if (punchIn == null)
-                SlideToPunch(
-                  label: 'Slide to Punch In',
-                  onComplete: () => punch('in'),
-                )
-              else if (!singlePunch && punchOut == null)
-                SlideToPunch.filled(
-                  label: 'Slide to Punch Out',
-                  color: const Color(0xFF34A853),
-                  onComplete: () => punch('out'),
+                    SvgPicture.asset(
+                      'assets/icons/chevron_right_expand.svg',
+                      width: 19.9854,
+                      height: 19.9854,
+                    ),
+                  ],
                 ),
-            ],
-            if (autoPresent) ...[
-              const SizedBox(height: 10),
-              const Text(
-                'Marked present automatically — no punching needed.',
-                style: TextStyle(color: Color(0xFF717171), fontSize: 13),
-              ),
-            ] else if (punchIn != null) ...[
-              // Only once the day has started: before that the slider is the
-              // whole card, and a pair of empty times under it said nothing.
-              const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(99),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  minHeight: 6,
-                  backgroundColor: const Color(0xFFEBEBEB),
-                  valueColor: const AlwaysStoppedAnimation(Color(0xFF0571A6)),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${date.day.toString().padLeft(2, '0')} '
+                        '${_shortMonthNames[date.month - 1]}, '
+                        '${_fullWeekdayNames[date.weekday - 1]}',
+                        style: const TextStyle(
+                          fontFamily: 'Sora',
+                          color: Color(0xFF484848),
+                          fontSize: 14,
+                          height: 16.2 / 14,
+                          letterSpacing: -0.16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    // Present once the day has a punch against it, or when
+                    // nobody has to punch at all (node 2412:82314).
+                    if (punchIn != null || autoPresent)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0FDF4),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF00C950),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Text(
+                              'Present',
+                              style: TextStyle(
+                                fontFamily: 'Sora',
+                                color: Color(0xFF008236),
+                                fontSize: 12,
+                                height: 16 / 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'PUNCH-IN',
-                          style: TextStyle(
-                            color: Color(0xFF717171),
-                            fontSize: 10,
-                            height: 15 / 10,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: .25,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _clock(punchIn),
-                          style: const TextStyle(
-                            color: Color(0xFF222222),
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    width: 1,
-                    height: 32,
-                    color: const Color(0xFFEBEBEB),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'PUNCH-OUT',
-                          style: TextStyle(
-                            color: Color(0xFF717171),
-                            fontSize: 10,
-                            height: 15 / 10,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: .25,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          // Not required on a single-punch shift, rather than
-                          // missing: nobody is expected to punch out.
-                          singlePunch ? 'NR' : _clock(punchOut),
-                          style: const TextStyle(
-                            color: Color(0xFF222222),
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
+                // Punch in while the day has not started: before that the
+                // slider is the whole card, and a pair of empty times under it
+                // said nothing.
+                if (punch != null && punchIn == null) ...[
+                  const SizedBox(height: 16),
+                  SlideToPunch(
+                    label: 'Slide to Punch In',
+                    onComplete: () => punch('in'),
                   ),
                 ],
-              ),
-            ],
-          ],
+                if (autoPresent) ...[
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Marked present automatically — no punching needed.',
+                    style: TextStyle(color: Color(0xFF717171), fontSize: 13),
+                  ),
+                ] else if (punchIn case final start?) ...[
+                  const SizedBox(height: 24),
+                  _ShiftProgress(
+                    punchIn: start,
+                    punchOut: punchOut,
+                    shiftLength: shiftLength,
+                    // A single-punch day has no span to count.
+                    showClock: !singlePunch,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _punch('PUNCH-IN', _clock(punchIn)),
+                        Container(
+                          width: 1,
+                          height: 32,
+                          color: const Color(0xFFEBEBEB),
+                        ),
+                        // Not required on a single-punch shift, rather than
+                        // missing: nobody is expected to punch out.
+                        _punch(
+                          'PUNCH-OUT',
+                          singlePunch ? 'NR' : _clock(punchOut),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // A day with both punches recorded has nothing left to
+                  // slide.
+                  if (punch != null && !singlePunch && punchOut == null) ...[
+                    const SizedBox(height: 16),
+                    SlideToPunch.filled(
+                      label: 'Slide to Punch Out',
+                      color: const Color(0xFF00C0E8),
+                      height: 48,
+                      knobInset: 7,
+                      knobIcon: false,
+                      labelStyle: const TextStyle(
+                        fontFamily: 'Sora',
+                        color: Color(0x66FFFFFF),
+                        fontSize: 13,
+                        height: 19.5 / 13,
+                        letterSpacing: .2,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      onComplete: () => punch('out'),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// How far into the shift the day is: a bar of the shift's length, the time
+/// it has reached on the left and the time worked so far on the right,
+/// counting each second until the punch-out.
+class _ShiftProgress extends StatefulWidget {
+  const _ShiftProgress({
+    required this.punchIn,
+    required this.punchOut,
+    required this.shiftLength,
+    this.showClock = true,
+  });
+
+  final DateTime punchIn;
+  final DateTime? punchOut;
+  final Duration shiftLength;
+  final bool showClock;
+
+  @override
+  State<_ShiftProgress> createState() => _ShiftProgressState();
+}
+
+class _ShiftProgressState extends State<_ShiftProgress> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _schedule();
+  }
+
+  @override
+  void didUpdateWidget(_ShiftProgress oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _schedule();
+  }
+
+  /// Ticks only while the day is open and its clock is on show.
+  void _schedule() {
+    final running = widget.punchOut == null && widget.showClock;
+    if (running && _tick == null) {
+      _tick = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => setState(() {}),
+      );
+    } else if (!running) {
+      _tick?.cancel();
+      _tick = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  static String _two(int value) => value.toString().padLeft(2, '0');
+
+  @override
+  Widget build(BuildContext context) {
+    final upTo = widget.punchOut ?? DateTime.now();
+    final worked = upTo.difference(widget.punchIn);
+    final share = widget.shiftLength.inSeconds <= 0
+        ? 0.0
+        : (worked.inSeconds / widget.shiftLength.inSeconds).clamp(0.0, 1.0);
+    final hour = upTo.hour % 12 == 0 ? 12 : upTo.hour % 12;
+    const label = TextStyle(
+      fontFamily: 'Sora',
+      fontSize: 10,
+      height: 16.2 / 10,
+      letterSpacing: -0.16,
+      fontWeight: FontWeight.w600,
+    );
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(99),
+          child: Container(
+            height: 6,
+            color: const Color(0xFFEBEBEB),
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: share,
+              heightFactor: 1,
+              child: const DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.all(Radius.circular(99)),
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF0571A6), Color(0xFF0EA5E9)],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (widget.showClock) ...[
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${_two(hour)}:${_two(upTo.minute)}'
+                '${upTo.hour >= 12 ? 'PM' : 'AM'}',
+                style: label.copyWith(color: const Color(0xFF717171)),
+              ),
+              Text(
+                '${_two(worked.inHours)}:${_two(worked.inMinutes % 60)}:'
+                '${_two(worked.inSeconds % 60)}',
+                style: label.copyWith(color: const Color(0xFF0571A6)),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 6),
+      ],
     );
   }
 }
@@ -7266,6 +7712,7 @@ class _HomeActionCard extends StatelessWidget {
     required this.subtitle,
     required this.onTap,
     this.imageAsset,
+    this.imageSize = 24,
   });
 
   final IconData icon;
@@ -7276,55 +7723,68 @@ class _HomeActionCard extends StatelessWidget {
   final VoidCallback onTap;
   final String? imageAsset;
 
+  /// The picture's size in its tile (node 4166:19897): 24, or 28 for the
+  /// rupee whose artwork has more air round it.
+  final double imageSize;
+
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFEBEBEB)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: .05),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
+    final image = imageAsset;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (image != null)
+                  _IllustrationTile(asset: image, size: imageSize)
+                else
+                  _IconTile(icon: icon, color: color, tint: tint, size: 40),
+                const SizedBox(height: 10),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Sora',
+                    color: Color(0xFF222222),
+                    fontSize: 14,
+                    height: 21 / 14,
+                    letterSpacing: -0.1,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Sora',
+                    color: Color(0xFF484848),
+                    fontSize: 12,
+                    height: 16 / 12,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _IconTile(
-              icon: icon,
-              color: color,
-              tint: tint,
-              size: 38,
-              imageAsset: imageAsset,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFF222222),
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Color(0xFF717171), fontSize: 12),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -7961,30 +8421,23 @@ class _IconTile extends StatelessWidget {
     required this.color,
     required this.tint,
     this.size = 44,
-    this.imageAsset,
   });
   final IconData icon;
   final Color color;
   final Color tint;
   final double size;
-  final String? imageAsset;
 
+  // The illustrated icons sit on white in an [_IllustrationTile]; this is the
+  // tinted plate the flat glyph icons need.
   @override
   Widget build(BuildContext context) => Container(
     width: size,
     height: size,
     decoration: BoxDecoration(
-      // The illustrated icons carry their own colour, so they sit on white;
-      // only the flat glyph icons need a tinted plate behind them.
-      color: imageAsset != null ? Colors.white : tint,
+      color: tint,
       borderRadius: BorderRadius.circular(13),
     ),
-    child: imageAsset != null
-        ? Padding(
-            padding: const EdgeInsets.all(5),
-            child: Image.asset(imageAsset!, fit: BoxFit.contain),
-          )
-        : Icon(icon, color: color, size: 22),
+    child: Icon(icon, color: color, size: 22),
   );
 }
 
@@ -8204,11 +8657,6 @@ class _QText {
     fontSize: 23,
     fontWeight: FontWeight.w800,
     letterSpacing: -0.4,
-  );
-  static const topbar = TextStyle(
-    color: _Q.ink,
-    fontSize: 19,
-    fontWeight: FontWeight.w800,
   );
   static const section = TextStyle(
     color: _Q.inkFaint,

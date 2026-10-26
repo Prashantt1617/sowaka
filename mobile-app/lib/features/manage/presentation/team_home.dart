@@ -328,60 +328,6 @@ class _MyTeamViewState extends State<_MyTeamView> {
   void _toggleTeam(String title) =>
       setState(() => _openTeam = _openTeam == title ? null : title);
 
-  /// Everyone in your core team but you — empty for someone with no manager
-  /// and no peers, who therefore has no core team to show.
-  List<TeamMember> _coreOthers(List<TeamMember> members) =>
-      _coreTeam(members).where((member) => !member.isSelf).toList();
-
-  /// "My Team": your manager heading it, then you, then the people who report
-  /// to the same manager in your department. The server already narrows the
-  /// peers to your department; anyone you lead belongs under Direct Reports.
-  List<TeamMember> _myTeamOnly(List<TeamMember> members) => [
-    if (members.where((member) => member.isManager).firstOrNull case final m?)
-      m,
-    if (members.where((member) => member.isSelf).firstOrNull case final me?) me,
-    ...members.where(
-      (member) => !member.isManager && !member.isSelf && !member.reportsToViewer,
-    ),
-  ];
-
-  /// A team's name above its people.
-  Widget _teamHeading(String title) => Padding(
-    padding: const EdgeInsets.only(bottom: 12),
-    child: Text(
-      title,
-      style: const TextStyle(
-        fontFamily: 'Sora',
-        color: Color(0xFF222222),
-        fontSize: 17,
-        height: 25.5 / 17,
-        fontWeight: FontWeight.w700,
-      ),
-    ),
-  );
-
-  /// The team you belong to: your manager, you, and whoever else reports to
-  /// them from your own department.
-  List<TeamMember> _coreTeam(List<TeamMember> members) =>
-      members.where((member) => !member.reportsToViewer).toList();
-
-  /// The teams you lead, split by the department each report works in — a
-  /// designer and a backend engineer reporting to the same person are two
-  /// teams, not one list.
-  List<_TeamDepartmentGroup> _ledTeams(List<TeamMember> members) {
-    final led = members.where((member) => member.reportsToViewer).toList();
-    if (led.isEmpty) return const [];
-    final grouped = <String, List<TeamMember>>{};
-    for (final member in led) {
-      grouped.putIfAbsent(member.team, () => []).add(member);
-    }
-    final names = grouped.keys.toList()..sort();
-    return [
-      for (final name in names)
-        _TeamDepartmentGroup(title: name, members: grouped[name]!),
-    ];
-  }
-
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
@@ -422,120 +368,229 @@ class _MyTeamViewState extends State<_MyTeamView> {
               ),
             ),
           )
-        else ...[
-          // Level 1: nobody reports to you, so your team is one flat list —
-          // your manager, you, your peers (node 2488:90748).
-          if (_ledTeams(filtered).isEmpty) ...[
-            _teamHeading('My Team'),
-            for (final member in _coreTeam(filtered))
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: _TeamMemberRow(
-                  member: member,
-                  canManage: widget.canManage,
-                  data: data,
-                  bloc: widget.bloc,
-                  onNotifications: widget.onNotifications,
-                  onOpenComposer: widget.onOpenComposer,
-                  onOpenProfile: widget.onOpenProfile,
-                ),
-              ),
-          ] else ...[
-            // "My Team" is just who you report to: your manager and you
-            // (node 2488:91055) — a small card of its own, separate from the
-            // people you lead. Someone with no manager has no such card; their
-            // own card heads the page instead (node 2503:92534).
-            if (_coreOthers(filtered).isEmpty) ...[
-              if (filtered.where((member) => member.isSelf).firstOrNull
-                  case final me?) ...[
-                _TeamMemberRow(
-                  member: me,
-                  canManage: widget.canManage,
-                  data: data,
-                  bloc: widget.bloc,
-                  onNotifications: widget.onNotifications,
-                  onOpenComposer: widget.onOpenComposer,
-                  onOpenProfile: widget.onOpenProfile,
-                ),
-                const SizedBox(height: 16),
-              ],
-            ] else ...[
-              if (_openTeam == 'My Team' || _query.isNotEmpty)
-                _OpenTeamBox(
-                  title: 'My Team',
-                  members: _myTeamOnly(filtered),
-                  onTap: () => _toggleTeam('My Team'),
-                  canManage: widget.canManage,
-                  data: data,
-                  bloc: widget.bloc,
-                  onNotifications: widget.onNotifications,
-                  onOpenComposer: widget.onOpenComposer,
-                  onOpenProfile: widget.onOpenProfile,
-                )
-              else
-                _TeamFacesCard(
-                  title: 'My Team',
-                  members: _myTeamOnly(filtered),
-                  onTap: () => _toggleTeam('My Team'),
-                ),
-              // 12 to the next heading (node 2944:42329, gap-[12px]).
-              const SizedBox(height: 12),
-            ],
-            if (_ledTeams(filtered).length > 1)
-              // Reports across more than one department are grouped exactly
-              // as a bigger manager's teams are (node 2488:91180): each
-              // department a card of faces, on the shared dashed trunk.
-              _TeamStack(
-                teams: [
-                  for (final group in _ledTeams(filtered))
-                    _TeamDepartmentGroup(
-                      title: '${group.title} Team',
-                      members: group.members,
-                    ),
-                ],
-                openTitle: _query.isEmpty ? _openTeam : null,
-                onToggle: _toggleTeam,
-                canManage: widget.canManage,
-                data: data,
-                bloc: widget.bloc,
-                onNotifications: widget.onNotifications,
-                onOpenComposer: widget.onOpenComposer,
-                onOpenProfile: widget.onOpenProfile,
-              )
-            else
-              // One department: a plain "Direct Reports" list — your own
-              // card off the tree, your reports on it, always shown in full
-              // rather than behind a card to open (node 2488:91055).
-              ..._ledTeams(filtered).expand(
-                (group) => [
-                  _teamHeading('Direct Reports'),
-                  if (filtered.where((member) => member.isSelf).firstOrNull
-                      case final me?)
-                    _TeamMemberRow(
-                      member: me,
-                      canManage: widget.canManage,
-                      data: data,
-                      bloc: widget.bloc,
-                      onNotifications: widget.onNotifications,
-                      onOpenComposer: widget.onOpenComposer,
-                      onOpenProfile: widget.onOpenProfile,
-                    ),
-                  _DirectReportsTree(
-                    members: group.members,
-                    canManage: widget.canManage,
-                    data: data,
-                    bloc: widget.bloc,
-                    onNotifications: widget.onNotifications,
-                    onOpenComposer: widget.onOpenComposer,
-                    onOpenProfile: widget.onOpenProfile,
-                  ),
-                ],
-              ),
-          ],
-        ],
+        else
+          ..._teamTree(
+            members: filtered,
+            openTeam: _openTeam,
+            onToggle: _toggleTeam,
+            searching: _query.isNotEmpty,
+            row: (member) => _TeamMemberRow(
+              member: member,
+              canManage: widget.canManage,
+              data: data,
+              bloc: widget.bloc,
+              onNotifications: widget.onNotifications,
+              onOpenComposer: widget.onOpenComposer,
+              onOpenProfile: widget.onOpenProfile,
+            ),
+          ),
       ],
     );
   }
+}
+
+// ── One person's team, as the Team tab draws it ──────────────────────────────
+
+/// How big the Team tab's people are drawn. The tab itself draws them at the
+/// design's size; the Org chart on a profile draws the same cards at the size
+/// its own cards have always had, so they fit inside the profile.
+class _TeamSizing {
+  const _TeamSizing({
+    required this.photo,
+    required this.photoGap,
+    required this.name,
+    required this.nameHeight,
+    required this.detail,
+    required this.detailHeight,
+    required this.padding,
+    required this.presence,
+  });
+
+  /// The Team tab (node 2488:89724): 56 photos, 17 names, 17.114 padding.
+  static const teamTab = _TeamSizing(
+    photo: 56,
+    photoGap: 16,
+    name: 17,
+    nameHeight: 25.5,
+    detail: 14,
+    detailHeight: 20,
+    padding: 17.114,
+    presence: true,
+  );
+
+  /// A profile's Org chart (node 3106:49385): 40 photos, 14 names, 13.114
+  /// padding, and no presence dots — it says who is on the team, not who is
+  /// in today.
+  static const profile = _TeamSizing(
+    photo: 40,
+    photoGap: 12,
+    name: 14,
+    nameHeight: 20,
+    detail: 11,
+    detailHeight: 16.5,
+    padding: 13.114,
+    presence: false,
+  );
+
+  final double photo;
+  final double photoGap;
+  final double name;
+  final double nameHeight;
+  final double detail;
+  final double detailHeight;
+  final double padding;
+
+  /// Whether a face on a team card carries the presence dot.
+  final bool presence;
+}
+
+/// The person you are, the one they report to, and anyone else: "(You)" and
+/// "(Manager)" as the Team tab names them.
+String _teamRowName(TeamMember member, {required bool you}) => you
+    ? '${member.name} (You)'
+    : member.isManager
+    ? '${member.name} (Manager)'
+    : member.name;
+
+/// Everyone in the core team but its person — empty for someone with no
+/// manager and no peers, who therefore has no core team to show.
+List<TeamMember> _coreOthers(List<TeamMember> members) =>
+    _coreTeam(members).where((member) => !member.isSelf).toList();
+
+/// "My Team": the manager heading it, then the person, then the people who
+/// report to the same manager in their department. The server already narrows
+/// the peers to the department; anyone the person leads belongs under Direct
+/// Reports.
+List<TeamMember> _myTeamOnly(List<TeamMember> members) => [
+  if (members.where((member) => member.isManager).firstOrNull case final m?) m,
+  if (members.where((member) => member.isSelf).firstOrNull case final me?) me,
+  ...members.where(
+    (member) => !member.isManager && !member.isSelf && !member.reportsToViewer,
+  ),
+];
+
+/// The team the person belongs to: their manager, them, and whoever else
+/// reports to that manager from their own department.
+List<TeamMember> _coreTeam(List<TeamMember> members) =>
+    members.where((member) => !member.reportsToViewer).toList();
+
+/// The teams the person leads, split by the department each report works in —
+/// a designer and a backend engineer reporting to the same person are two
+/// teams, not one list.
+List<_TeamDepartmentGroup> _ledTeams(List<TeamMember> members) {
+  final led = members.where((member) => member.reportsToViewer).toList();
+  if (led.isEmpty) return const [];
+  final grouped = <String, List<TeamMember>>{};
+  for (final member in led) {
+    grouped.putIfAbsent(member.team, () => []).add(member);
+  }
+  final names = grouped.keys.toList()..sort();
+  return [
+    for (final name in names)
+      _TeamDepartmentGroup(title: name, members: grouped[name]!),
+  ];
+}
+
+/// A team's name above its people.
+Widget _teamHeading(String title, {_TeamSizing sizing = _TeamSizing.teamTab}) =>
+    Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontFamily: 'Sora',
+          color: const Color(0xFF222222),
+          fontSize: sizing.name,
+          height: sizing.nameHeight / sizing.name,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+
+/// One person's team laid out as the Team tab lays it out: the team they
+/// belong to — their manager, them, their peers — and the teams they lead.
+///
+/// [members] carry who each is to that person: `isSelf` the person, `isManager`
+/// their manager, `reportsToViewer` someone who reports to them. The Team tab
+/// hands over the viewer's own team; a profile's Org chart hands over the team
+/// of whoever it is about. [row] draws one person; [coreTitle] names the team
+/// they belong to. [searching] opens that team, as the Team tab does while a
+/// name is being searched for.
+List<Widget> _teamTree({
+  required List<TeamMember> members,
+  required Widget Function(TeamMember member) row,
+  required String? openTeam,
+  required void Function(String title) onToggle,
+  bool searching = false,
+  String coreTitle = 'My Team',
+  _TeamSizing sizing = _TeamSizing.teamTab,
+}) {
+  final led = _ledTeams(members);
+  final self = members.where((member) => member.isSelf).firstOrNull;
+  // Level 1: nobody reports to them, so their team is one flat list —
+  // their manager, them, their peers (node 2488:90748).
+  if (led.isEmpty) {
+    return [
+      _teamHeading(coreTitle, sizing: sizing),
+      for (final member in _coreTeam(members))
+        Padding(padding: const EdgeInsets.only(bottom: 16), child: row(member)),
+    ];
+  }
+  return [
+    // "My Team" is just who they report to: their manager and them
+    // (node 2488:91055) — a small card of its own, separate from the
+    // people they lead. Someone with no manager has no such card; their
+    // own card heads the page instead (node 2503:92534).
+    if (_coreOthers(members).isEmpty) ...[
+      if (self != null) ...[row(self), const SizedBox(height: 16)],
+    ] else ...[
+      if (openTeam == coreTitle || searching)
+        _OpenTeamBox(
+          title: coreTitle,
+          members: _myTeamOnly(members),
+          onTap: () => onToggle(coreTitle),
+          row: row,
+          sizing: sizing,
+        )
+      else
+        _TeamFacesCard(
+          title: coreTitle,
+          members: _myTeamOnly(members),
+          onTap: () => onToggle(coreTitle),
+          sizing: sizing,
+        ),
+      // 12 to the next heading (node 2944:42329, gap-[12px]).
+      const SizedBox(height: 12),
+    ],
+    if (led.length > 1)
+      // Reports across more than one department are grouped exactly
+      // as a bigger manager's teams are (node 2488:91180): each
+      // department a card of faces, on the shared dashed trunk.
+      _TeamStack(
+        teams: [
+          for (final group in led)
+            _TeamDepartmentGroup(
+              title: '${group.title} Team',
+              members: group.members,
+            ),
+        ],
+        openTitle: searching ? null : openTeam,
+        onToggle: onToggle,
+        row: row,
+        sizing: sizing,
+      )
+    else
+      // One department: a plain "Direct Reports" list — their own
+      // card off the tree, their reports on it, always shown in full
+      // rather than behind a card to open (node 2488:91055).
+      ...led.expand(
+        (group) => [
+          _teamHeading('Direct Reports', sizing: sizing),
+          if (self != null) row(self),
+          _DirectReportsTree(members: group.members, row: row),
+        ],
+      ),
+  ];
 }
 
 class _TeamMemberRow extends StatelessWidget {
@@ -569,7 +624,6 @@ class _TeamMemberRow extends StatelessWidget {
         : 0;
     final upcomingLeave = _upcomingLeaveFor(data, member.userId);
     final birthdaySoon = _isBirthdaySoon(member.birthday);
-    final dot = _presenceDotColor(member);
     // Working away says where from — "Work from home", "Client visit", in
     // HR's words — in the same green as the time beside it.
     final away = member.todayAway;
@@ -586,8 +640,12 @@ class _TeamMemberRow extends StatelessWidget {
     // Your own row is your own profile — the same screen as the photo in
     // the header, not a read-only view of yourself as a team member.
     final openSelf = member.isSelf ? onOpenProfile : null;
-    return _TeamCardShell(
-      onTap: openSelf ??
+    return _TeamPersonRow(
+      member: member,
+      name: _teamRowName(member, you: member.isSelf),
+      dot: _presenceDotColor(member),
+      onTap:
+          openSelf ??
           () => Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => _TeamMemberProfilePage(
@@ -600,149 +658,170 @@ class _TeamMemberRow extends StatelessWidget {
               ),
             ),
           ),
-      child: Column(
+      details: [
+        // Today at a glance (node 3198:20671): when they punched
+        // in, how the day reads, and what is waiting on you.
+        if (punchIn != null || status != null || pendingCount > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                // The time they came in — or, when only the
+                // punch-out was recorded, the one punch there is.
+                if ((punchIn ?? member.punchOut) case final at?)
+                  _PunchTimePill(at: at),
+                if (status != null) status,
+                if (pendingCount > 0) _RequestCountPill(count: pendingCount),
+              ],
+            ),
+          ),
+        // What is coming up for them, one badge under another
+        // (node 3459:62071, a column 8 apart).
+        if (upcomingLeave != null ||
+            birthdaySoon ||
+            (recognition != null && recognition.isNotEmpty))
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final (index, chip) in [
+                  if (upcomingLeave != null)
+                    // The design's own calendar (node 3459:62021),
+                    // decoded at the size it is drawn.
+                    const _TagChip(
+                      icon: Image(
+                        image: ResizeImage(
+                          AssetImage('assets/icons/team/calendar.png'),
+                          width: 60,
+                          height: 60,
+                        ),
+                      ),
+                      label: 'Leave Upcoming',
+                    ),
+                  if (birthdaySoon)
+                    _TagChip(
+                      icon: SvgPicture.asset(
+                        'assets/icons/team_pill_birthday_cupcake.svg',
+                      ),
+                      label: 'Birthday Soon',
+                    ),
+                  if (recognition != null && recognition.isNotEmpty)
+                    // "Employee of month" with the trophy (node
+                    // 3459:62088), a badge like the others.
+                    _TagChip(
+                      icon: Image.asset(
+                        'assets/icons/team/trophy.png',
+                        fit: BoxFit.cover,
+                      ),
+                      label: recognition,
+                    ),
+                ].indexed) ...[if (index > 0) const SizedBox(height: 8), chip],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// One person on a team card: their photo, their name, and their designation
+/// under it — the Team tab's row (node 2488:89724), and the same card on a
+/// profile's Org chart at the profile's [sizing]. [details] hang under the
+/// designation; [dot] is the presence dot on the photo, where there is one.
+class _TeamPersonRow extends StatelessWidget {
+  const _TeamPersonRow({
+    required this.member,
+    required this.name,
+    this.onTap,
+    this.dot,
+    this.details = const [],
+    this.sizing = _TeamSizing.teamTab,
+    this.photo,
+  });
+
+  final TeamMember member;
+  final String name;
+  final VoidCallback? onTap;
+  final Color? dot;
+  final List<Widget> details;
+  final _TeamSizing sizing;
+
+  /// Drawn in place of [member]'s photo: a profile's own face, as its hero
+  /// draws it.
+  final Widget? photo;
+
+  @override
+  Widget build(BuildContext context) {
+    final dot = this.dot;
+    return _TeamCardShell(
+      onTap: onTap,
+      padding: sizing.padding,
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 56,
-                height: 56,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    _TeamMemberPhoto(member: member, size: 56),
-                    Positioned(
-                      right: 0,
-                      bottom: 0,
-                      child: Container(
-                        width: 14,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: dot,
-                          border: Border.all(color: Colors.white, width: 1.114),
-                        ),
+          SizedBox(
+            width: sizing.photo,
+            height: sizing.photo,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                photo ?? _TeamMemberPhoto(member: member, size: sizing.photo),
+                if (dot != null)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: dot,
+                        border: Border.all(color: Colors.white, width: 1.114),
                       ),
                     ),
-                  ],
+                  ),
+              ],
+            ),
+          ),
+          SizedBox(width: sizing.photoGap),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Sora',
+                    color: const Color(0xFF222222),
+                    fontWeight: FontWeight.w700,
+                    fontSize: sizing.name,
+                    height: sizing.nameHeight / sizing.name,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            member.isSelf
-                                ? '${member.name} (You)'
-                                : member.isManager
-                                ? '${member.name} (Manager)'
-                                : member.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontFamily: 'Sora',
-                              color: Color(0xFF222222),
-                              fontWeight: FontWeight.w700,
-                              fontSize: 17,
-                              height: 25.5 / 17,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      // The designation is what the design names here; the
-                      // department is the heading the row already sits under.
-                      member.designation.isNotEmpty
-                          ? member.designation
-                          : member.team,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'Sora',
-                        color: Color(0xFF717171),
-                        fontSize: 14,
-                        height: 20 / 14,
-                      ),
-                    ),
-                    // Today at a glance (node 3198:20671): when they punched
-                    // in, how the day reads, and what is waiting on you.
-                    if (punchIn != null || status != null || pendingCount > 0)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            // The time they came in — or, when only the
-                            // punch-out was recorded, the one punch there is.
-                            if ((punchIn ?? member.punchOut) case final at?)
-                              _PunchTimePill(at: at),
-                            if (status != null) status,
-                            if (pendingCount > 0)
-                              _RequestCountPill(count: pendingCount),
-                          ],
-                        ),
-                      ),
-                    // What is coming up for them, one badge under another
-                    // (node 3459:62071, a column 8 apart).
-                    if (upcomingLeave != null ||
-                        birthdaySoon ||
-                        (recognition != null && recognition.isNotEmpty))
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            for (final (index, chip) in [
-                              if (upcomingLeave != null)
-                                // The design's own calendar (node 3459:62021),
-                                // decoded at the size it is drawn.
-                                const _TagChip(
-                                  icon: Image(
-                                    image: ResizeImage(
-                                      AssetImage('assets/icons/team/calendar.png'),
-                                      width: 60,
-                                      height: 60,
-                                    ),
-                                  ),
-                                  label: 'Leave Upcoming',
-                                ),
-                              if (birthdaySoon)
-                                _TagChip(
-                                  icon: SvgPicture.asset(
-                                    'assets/icons/team_pill_birthday_cupcake.svg',
-                                  ),
-                                  label: 'Birthday Soon',
-                                ),
-                              if (recognition != null && recognition.isNotEmpty)
-                                // "Employee of month" with the trophy (node
-                                // 3459:62088), a badge like the others.
-                                _TagChip(
-                                  icon: Image.asset(
-                                    'assets/icons/team/trophy.png',
-                                    fit: BoxFit.cover,
-                                  ),
-                                  label: recognition,
-                                ),
-                            ].indexed) ...[
-                              if (index > 0) const SizedBox(height: 8),
-                              chip,
-                            ],
-                          ],
-                        ),
-                      ),
-                  ],
+                const SizedBox(height: 2),
+                Text(
+                  // The designation is what the design names here; the
+                  // department is the heading the row already sits under.
+                  member.designation.isNotEmpty
+                      ? member.designation
+                      : member.team,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Sora',
+                    color: const Color(0xFF717171),
+                    fontSize: sizing.detail,
+                    height: sizing.detailHeight / sizing.detail,
+                  ),
                 ),
-              ),
-            ],
+                ...details,
+              ],
+            ),
           ),
         ],
       ),
@@ -1896,26 +1975,12 @@ class _TeamDepartmentGroup {
 /// Used only when every one of your reports shares a single department; more
 /// than one and they are grouped into team cards instead (_TeamStack).
 class _DirectReportsTree extends StatelessWidget {
-  const _DirectReportsTree({
-    required this.members,
-    required this.canManage,
-    required this.data,
-    required this.bloc,
-    required this.onNotifications,
-    required this.onOpenComposer,
-    this.onOpenProfile,
-  });
+  const _DirectReportsTree({required this.members, required this.row});
 
   final List<TeamMember> members;
-  final bool canManage;
-  final ManagerDashboard data;
-  final ManagerBloc bloc;
-  final VoidCallback onNotifications;
-  final VoidCallback onOpenComposer;
 
-  /// Opens the signed-in user's own profile — the one the top-right photo
-  /// opens — for the row that is them.
-  final VoidCallback? onOpenProfile;
+  /// Draws one person: the Team tab's row, or a profile's.
+  final Widget Function(TeamMember member) row;
 
   /// 28 to the cards, 16 above the first, 12 between them (node 3459:61996:
   /// pl-[28px] pt-[16px] gap-[12px]).
@@ -1949,15 +2014,7 @@ class _DirectReportsTree extends StatelessWidget {
                       padding: EdgeInsets.only(
                         bottom: index == members.length - 1 ? 0 : _gap,
                       ),
-                      child: _TeamMemberRow(
-                        member: member,
-                        canManage: canManage,
-                        data: data,
-                        bloc: bloc,
-                        onNotifications: onNotifications,
-                        onOpenComposer: onOpenComposer,
-                        onOpenProfile: onOpenProfile,
-                      ),
+                      child: row(member),
                     ),
                   ),
                 ],
@@ -1974,16 +2031,19 @@ class _TeamFacesCard extends StatelessWidget {
     required this.title,
     required this.members,
     required this.onTap,
+    this.sizing = _TeamSizing.teamTab,
   });
 
   final String title;
   final List<TeamMember> members;
   final VoidCallback onTap;
+  final _TeamSizing sizing;
 
   @override
   Widget build(BuildContext context) {
     return _TeamCardShell(
       onTap: onTap,
+      padding: sizing.padding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1992,11 +2052,11 @@ class _TeamFacesCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Sora',
-                    color: Color(0xFF222222),
-                    fontSize: 17,
-                    height: 25.5 / 17,
+                    color: const Color(0xFF222222),
+                    fontSize: sizing.name,
+                    height: sizing.nameHeight / sizing.name,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -2006,7 +2066,7 @@ class _TeamFacesCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           SizedBox(
-            height: TeamFacesLayout.face,
+            height: sizing.photo,
             child: LayoutBuilder(builder: _faces),
           ),
         ],
@@ -2021,10 +2081,15 @@ class _TeamFacesCard extends StatelessWidget {
   /// pulled over each other and the last place goes to a +N bubble. Drawn in
   /// a Stack rather than with negative padding, which RenderPadding rejects.
   Widget _faces(BuildContext context, BoxConstraints box) {
+    final face = sizing.photo;
     final width = box.maxWidth.isFinite
         ? box.maxWidth
-        : TeamFacesLayout.face * TeamFacesLayout.maxShown + 1;
-    final layout = TeamFacesLayout.forWidth(width, members.length);
+        : face * TeamFacesLayout.maxShown + 1;
+    final layout = TeamFacesLayout.forWidth(
+      width,
+      members.length,
+      faceSize: face,
+    );
     if (layout.faceCount == 0 && layout.rest == 0) {
       return const SizedBox.shrink();
     }
@@ -2037,8 +2102,8 @@ class _TeamFacesCard extends StatelessWidget {
           Positioned(
             left: faces.length * layout.step,
             child: Container(
-              width: TeamFacesLayout.face,
-              height: TeamFacesLayout.face,
+              width: face,
+              height: face,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: const Color(0xFF0571A6),
@@ -2047,10 +2112,11 @@ class _TeamFacesCard extends StatelessWidget {
               ),
               child: Text(
                 '+${layout.rest}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Sora',
                   color: Colors.white,
-                  fontSize: 16,
+                  // 16 on a 56 face, in proportion on a smaller one.
+                  fontSize: 16 * face / TeamFacesLayout.face,
                   height: 16.2 / 16,
                   letterSpacing: -0.16,
                   fontWeight: FontWeight.w600,
@@ -2065,9 +2131,10 @@ class _TeamFacesCard extends StatelessWidget {
   /// One face: the photo, ringed in white so overlapping faces stay apart,
   /// with the presence dot on its corner.
   Widget _face_(TeamMember member) {
+    final face = sizing.photo;
     return SizedBox(
-      width: TeamFacesLayout.face,
-      height: TeamFacesLayout.face,
+      width: face,
+      height: face,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -2078,22 +2145,23 @@ class _TeamFacesCard extends StatelessWidget {
                 BorderSide(color: Colors.white, width: 1.4),
               ),
             ),
-            child: _TeamMemberPhoto(member: member, size: TeamFacesLayout.face),
+            child: _TeamMemberPhoto(member: member, size: face),
           ),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                // The same reading as the card below it (node 2944:42341).
-                color: _presenceDotColor(member),
-                border: Border.all(color: Colors.white, width: 1.114),
+          if (sizing.presence)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  // The same reading as the card below it (node 2944:42341).
+                  color: _presenceDotColor(member),
+                  border: Border.all(color: Colors.white, width: 1.114),
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -2163,15 +2231,22 @@ class _BranchLinePainter extends CustomPainter {
 /// The card every team row sits in (node 2488:89724): a hairline at 1.114, a
 /// 16 radius, 17.114 of padding and the design's two soft shadows.
 class _TeamCardShell extends StatelessWidget {
-  const _TeamCardShell({required this.child, this.onTap});
+  const _TeamCardShell({
+    required this.child,
+    this.onTap,
+    this.padding = 17.114,
+  });
 
   final Widget child;
   final VoidCallback? onTap;
 
+  /// 17.114 on the Team tab; a profile's Org chart keeps its own 13.114.
+  final double padding;
+
   @override
   Widget build(BuildContext context) {
     final card = Container(
-      padding: const EdgeInsets.all(17.114),
+      padding: EdgeInsets.all(padding),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -2213,26 +2288,17 @@ class _TeamStack extends StatelessWidget {
     required this.teams,
     required this.openTitle,
     required this.onToggle,
-    required this.canManage,
-    required this.data,
-    required this.bloc,
-    required this.onNotifications,
-    required this.onOpenComposer,
-    this.onOpenProfile,
+    required this.row,
+    this.sizing = _TeamSizing.teamTab,
   });
 
   final List<_TeamDepartmentGroup> teams;
   final String? openTitle;
   final void Function(String title) onToggle;
-  final bool canManage;
-  final ManagerDashboard data;
-  final ManagerBloc bloc;
-  final VoidCallback onNotifications;
-  final VoidCallback onOpenComposer;
 
-  /// Opens the signed-in user's own profile — the one the top-right photo
-  /// opens — for the row that is them.
-  final VoidCallback? onOpenProfile;
+  /// Draws one person: the Team tab's row, or a profile's.
+  final Widget Function(TeamMember member) row;
+  final _TeamSizing sizing;
 
   /// The gutter the trunk lives in: 13px to the line, 15px more to its stub,
   /// landing the cards' left edge at 28px (node 2488:91198 — pl-[28px],
@@ -2253,24 +2319,21 @@ class _TeamStack extends StatelessWidget {
                 title: team.title!,
                 members: team.members,
                 onTap: () => onToggle(team.title!),
-                canManage: canManage,
-                data: data,
-                bloc: bloc,
-                onNotifications: onNotifications,
-                onOpenComposer: onOpenComposer,
-                onOpenProfile: onOpenProfile,
+                row: row,
+                sizing: sizing,
               )
             : _TeamFacesCard(
                 title: team.title!,
                 members: team.members,
                 onTap: () => onToggle(team.title!),
+                sizing: sizing,
               ),
     ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final (index, row) in rows.indexed)
+        for (final (index, slot) in rows.indexed)
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2289,7 +2352,7 @@ class _TeamStack extends StatelessWidget {
                     padding: EdgeInsets.only(
                       bottom: index == rows.length - 1 ? 0 : _gap,
                     ),
-                    child: row,
+                    child: slot,
                   ),
                 ),
               ],
@@ -2305,26 +2368,17 @@ class _OpenTeamBox extends StatelessWidget {
     required this.title,
     required this.members,
     required this.onTap,
-    required this.canManage,
-    required this.data,
-    required this.bloc,
-    required this.onNotifications,
-    required this.onOpenComposer,
-    this.onOpenProfile,
+    required this.row,
+    this.sizing = _TeamSizing.teamTab,
   });
 
   final String title;
   final List<TeamMember> members;
   final VoidCallback onTap;
-  final bool canManage;
-  final ManagerDashboard data;
-  final ManagerBloc bloc;
-  final VoidCallback onNotifications;
-  final VoidCallback onOpenComposer;
 
-  /// Opens the signed-in user's own profile — the one the top-right photo
-  /// opens — for the row that is them.
-  final VoidCallback? onOpenProfile;
+  /// Draws one person: the Team tab's row, or a profile's.
+  final Widget Function(TeamMember member) row;
+  final _TeamSizing sizing;
 
   @override
   Widget build(BuildContext context) {
@@ -2350,11 +2404,11 @@ class _OpenTeamBox extends StatelessWidget {
                   Expanded(
                     child: Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: 'Sora',
-                        color: Color(0xFF222222),
-                        fontSize: 17,
-                        height: 25.5 / 17,
+                        color: const Color(0xFF222222),
+                        fontSize: sizing.name,
+                        height: sizing.nameHeight / sizing.name,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -2366,15 +2420,7 @@ class _OpenTeamBox extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               for (final (index, member) in members.indexed) ...[
-                _TeamMemberRow(
-                  member: member,
-                  canManage: canManage,
-                  data: data,
-                  bloc: bloc,
-                  onNotifications: onNotifications,
-                  onOpenComposer: onOpenComposer,
-                  onOpenProfile: onOpenProfile,
-                ),
+                row(member),
                 if (index != members.length - 1) const SizedBox(height: 12),
               ],
             ],

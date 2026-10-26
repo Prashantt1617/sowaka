@@ -54,21 +54,24 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_branded) return;
     _branded = true;
     // Now there is a company to ask about: must, or may, this build update?
-    AppUpdateGate.recheck();
+    // (Asked only if the launch did not already ask for this session.)
+    AppUpdateGate.signedIn();
     final branding = OrgBranding.of(session.user.org);
     OrgBranding.current.value = branding;
     await OrgBranding.remember(session.user.org);
     await AppIcon.use(branding.iosIconName);
   }
 
-  Future<void> _finishOnboarding(String photoUrl, List<String> interests) async {
+  Future<void> _finishOnboarding(String photoUrl, List<String> interests, bool faceEnrolled) async {
     final session = _session;
     if (session == null) return;
     final updated = AuthSession(
       token: session.token,
       user: session.user.copyWith(
         profilePhotoUrl: photoUrl.isEmpty ? null : photoUrl,
-        interests: interests,
+        // Empty when the interests step was not asked: keep the ones they have.
+        interests: interests.isEmpty ? null : interests,
+        faceIdEnrolled: faceEnrolled ? true : null,
       ),
     );
     await AuthSessionStore().save(updated);

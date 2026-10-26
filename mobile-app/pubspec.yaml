@@ -58,9 +58,13 @@ dependencies:
   printing: ^5.14.3
   pdf: ^3.12.0
   cached_network_image: ^4.0.4
+  # Feed videos kept on the phone once watched (already here, under cached_network_image).
+  flutter_cache_manager: ^3.4.1
   path_provider: ^2.1.6
   package_info_plus: ^9.0.1
   mobile_scanner: ^7.4.2
+  camera: ^0.12.1
+  google_mlkit_face_detection: ^0.15.1
 
 dev_dependencies:
   flutter_test:
@@ -96,6 +100,8 @@ flutter:
     - assets/icons/engagement/
     - assets/icons/grow/
     - assets/icons/punch/
+    # The selfie punch-in's oval, status icons and navigation (Figma 4194:21786).
+    - assets/icons/face/
     # Flutter does not recurse into asset folders, so the team icons were
     # shipped nowhere and their plus never drew.
     - assets/icons/team/

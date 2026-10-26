@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../../../services/api_client.dart';
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import '../../talk/data/talk_api_service.dart';
@@ -31,16 +32,22 @@ String? _lastHelpHomeFor;
 HelpHome? helpHomeFor(String userId) =>
     _lastHelpHomeFor == userId ? _lastHelpHome : null;
 
+/// The session whose company refused Help (403: Help is not on its plan).
+/// Remembered until sign-out, so the profile and the tab do not ask again at
+/// every rebuild and every open only to be refused each time.
+String? _helpRefusedFor;
+
 /// Forgets it. Called when the person signs out.
 void forgetHelpHome() {
   _lastHelpHome = null;
   _lastHelpHomeFor = null;
+  _helpRefusedFor = null;
 }
 
 class HelpApiService {
   HelpApiService({required this.session, String? baseUrl, http.Client? client})
     : _baseUrl = baseUrl ?? ApiConfig.baseUrl,
-      _client = client ?? http.Client(),
+      _client = client ?? ApiClient.shared,
       talk = TalkApiService(session: session, baseUrl: baseUrl, client: client);
 
   final AuthSession session;
@@ -85,7 +92,17 @@ class HelpApiService {
   }
 
   Future<HelpHome> home() async {
-    final home = HelpHome.fromJson(await _request('GET', '/help/home'));
+    if (_helpRefusedFor == session.token) {
+      throw const TalkApiException('Help is not available for your company.', statusCode: 403);
+    }
+    final Map<String, dynamic> json;
+    try {
+      json = await _request('GET', '/help/home');
+    } on TalkApiException catch (error) {
+      if (error.statusCode == 403) _helpRefusedFor = session.token;
+      rethrow;
+    }
+    final home = HelpHome.fromJson(json);
     _lastHelpHome = home;
     _lastHelpHomeFor = session.user.id;
     return home;

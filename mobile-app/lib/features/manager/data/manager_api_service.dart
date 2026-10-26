@@ -10,9 +10,11 @@ import 'package:http/http.dart' as http;
 import '../../shared/network_status.dart';
 import 'dashboard_cache.dart';
 
+import '../../../services/api_client.dart';
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import 'manager_models.dart';
+import '../../face_id/face_id_models.dart';
 
 class ManagerApiService {
   ManagerApiService({
@@ -20,7 +22,7 @@ class ManagerApiService {
     String? baseUrl,
     http.Client? client,
   }) : _baseUrl = baseUrl ?? ApiConfig.baseUrl,
-       _client = client ?? http.Client();
+       _client = client ?? ApiClient.shared;
 
   final AuthSession session;
   final String _baseUrl;
@@ -33,6 +35,9 @@ class ManagerApiService {
   /// Set while a dashboard is being rebuilt from the device's copy: a GET
   /// is answered from here instead of the network.
   Map<String, Map<String, dynamic>>? _replay;
+
+  /// The last dashboard load kept a list as it was because its read failed.
+  bool _partial = false;
 
   /// The dashboard as this person last saw it, from the device, or null
   /// when there is none or it no longer parses. Never touches the network.
@@ -82,7 +87,7 @@ class ManagerApiService {
         onCore: onCore,
         attendanceMonth: attendanceMonth ?? startedAt,
       );
-      if (recording != null) {
+      if (recording != null && !_partial) {
         unawaited(DashboardCache.write(session.user.id, recording, startedAt: startedAt));
       }
       return dashboard;
@@ -96,24 +101,53 @@ class ManagerApiService {
     void Function(ManagerDashboard core)? onCore,
     required DateTime attendanceMonth,
   }) async {
+    // Each part on its own, all at once. Only the workspace is the page: a
+    // list that fails keeps what was on screen (or starts empty) rather than
+    // failing the rest, and the load is then not kept as the device's copy,
+    // which would be missing that list. Answering from the copy, a missing
+    // reply still fails the copy, as before.
+    _partial = false;
+    Future<T> kept<T>(Future<T> part, T fallback) => _replay != null
+        ? part
+        : part.catchError((Object error) {
+            debugPrint('Dashboard part not loaded, kept as it was: $error');
+            _partial = true;
+            return fallback;
+          });
     final workspaceFuture = _request('GET', '/manager/workspace');
-    final myLeavesFuture = fetchMyLeaves();
-    final managerLeavesFuture = fetchManagerLeaves();
+    final myLeavesFuture = kept(fetchMyLeaves(), previous?.myLeaves ?? const <LeaveRequest>[]);
+    final managerLeavesFuture = kept(fetchManagerLeaves(), previous?.leaves ?? const <LeaveRequest>[]);
     final balanceFuture = _request('GET', '/leaves/balance');
-    final myOvertimeFuture = fetchMyOvertime();
-    final overtimeFuture = fetchManagerOvertime();
-    final reimbursementsFuture = fetchMyReimbursements();
-    final reimbursementTypesFuture = fetchReimbursementTypes();
+    final myOvertimeFuture = kept(fetchMyOvertime(), previous?.myOvertime ?? const <OvertimeRequest>[]);
+    final overtimeFuture = kept(fetchManagerOvertime(), previous?.overtime ?? const <OvertimeRequest>[]);
+    final reimbursementsFuture = kept(
+      fetchMyReimbursements(),
+      previous?.myReimbursements ?? const <ReimbursementClaim>[],
+    );
+    final reimbursementTypesFuture = kept(
+      fetchReimbursementTypes(),
+      previous?.reimbursementTypes ?? const <ReimbursementType>[],
+    );
     final managerReimbursementsFuture = session.user.role == 'manager'
-        ? fetchManagerReimbursements()
+        ? kept(fetchManagerReimbursements(), previous?.reimbursements ?? const <ReimbursementClaim>[])
         : Future<List<ReimbursementClaim>>.value(const []);
     final month = attendanceMonth;
-    final attendanceFuture = fetchAttendance(
-      DateTime(month.year, month.month, 1),
-      DateTime(month.year, month.month + 1, 0),
+    final attendanceFuture = kept(
+      fetchAttendance(
+        DateTime(month.year, month.month, 1),
+        DateTime(month.year, month.month + 1, 0),
+      ),
+      (
+        previous?.attendance ?? const <AttendanceRecord>[],
+        previous?.regularizations ?? const <AttendanceRegularization>[],
+        previous?.serverDays ?? const <String, ServerDayStatus>{},
+      ),
     );
     final regularizationInboxFuture = session.user.role == 'manager'
-        ? fetchManagerAttendanceRegularizations()
+        ? kept(
+            fetchManagerAttendanceRegularizations(),
+            previous?.managerRegularizations ?? const <AttendanceRegularization>[],
+          )
         : Future<List<AttendanceRegularization>>.value(const []);
     final workspace = await workspaceFuture;
     final teamValues = workspace['team'] as List<dynamic>? ?? const [];
@@ -319,6 +353,8 @@ class ManagerApiService {
     /// Punch without saying why — allowed where the day is marked present
     /// without a manager's decision.
     bool skipReason = false,
+    /// What a passed face check handed back, where the company checks faces.
+    String? faceToken,
   }) async {
     final json = await _request(
       'POST',
@@ -328,6 +364,7 @@ class ManagerApiService {
         ...?reading?.toJson(),
         if (reason != null) 'reason': reason,
         if (skipReason) 'skipReason': true,
+        'faceToken': ?faceToken,
       },
     );
     return AttendanceRecord.fromJson(json);
@@ -732,6 +769,71 @@ class ManagerApiService {
     final json = await _send(request);
     return json['photoUrl'] as String;
   }
+
+  /// Whether Face ID is on for the company, and whether this person has set it up.
+  Future<FaceIdStatus> fetchFaceStatus() async =>
+      FaceIdStatus.fromJson(await _face(_jsonRequest('GET', '/face/status')));
+
+  /// The consented setup photo. Throws with the server's reason (too dark,
+  /// more than one face, …) in `details['face']`.
+  Future<void> enrolFace({required Uint8List jpeg, required String consentVersion}) async {
+    final request =
+        http.MultipartRequest('POST', Uri.parse('$_baseUrl/face/enrol'))
+          ..headers['Authorization'] = 'Bearer ${session.token}'
+          ..fields['consent'] = 'true'
+          ..fields['consentVersion'] = consentVersion
+          ..files.add(http.MultipartFile.fromBytes('photo', jpeg, filename: 'face.jpg'));
+    await _face(request);
+  }
+
+  /// A selfie, or a finished Face Liveness session, checked by the server.
+  /// The app's own blink-or-turn result goes along for the log only.
+  Future<FaceCheckResult> verifyFace({
+    Uint8List? jpeg,
+    String? livenessSessionId,
+    String? challenge,
+    bool? devicePassed,
+  }) async {
+    final request =
+        http.MultipartRequest('POST', Uri.parse('$_baseUrl/face/verify'))
+          ..headers['Authorization'] = 'Bearer ${session.token}';
+    if (jpeg != null) {
+      request.files.add(http.MultipartFile.fromBytes('photo', jpeg, filename: 'face.jpg'));
+    }
+    if (livenessSessionId != null) request.fields['livenessSessionId'] = livenessSessionId;
+    if (challenge != null) request.fields['challenge'] = challenge;
+    if (devicePassed != null) request.fields['devicePassed'] = '$devicePassed';
+    return FaceCheckResult.fromJson(await _face(request));
+  }
+
+  Future<FaceLivenessSession> startFaceLiveness() async =>
+      FaceLivenessSession.fromJson(await _face(_jsonRequest('POST', '/face/liveness-session')));
+
+  /// Today's punch to the manager, once the face check has failed enough.
+  Future<void> requestFaceFallback({String type = 'in', PunchReading? reading}) async {
+    await _face(_jsonRequest('POST', '/face/fallback', body: {'type': type, ...?reading?.toJson()}));
+  }
+
+  http.Request _jsonRequest(String method, String path, {Map<String, dynamic>? body}) {
+    final request = http.Request(method, Uri.parse('$_baseUrl$path'))
+      ..headers.addAll({
+        'Authorization': 'Bearer ${session.token}',
+        'Content-Type': 'application/json',
+      });
+    if (body != null) request.body = jsonEncode(body);
+    return request;
+  }
+
+  /// A face call never hangs the punch: past the limit it fails as the face
+  /// service being unavailable, which the screen offers the fallback for.
+  Future<Map<String, dynamic>> _face(http.BaseRequest request) =>
+      _send(request).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw const ManagerApiException(
+          "Face check isn't available right now. Try again in a minute.",
+          details: {'face': {'reason': 'unavailable'}},
+        ),
+      );
 
   Future<Map<String, dynamic>> _request(
     String method,
