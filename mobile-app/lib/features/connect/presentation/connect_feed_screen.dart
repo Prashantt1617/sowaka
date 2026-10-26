@@ -53,11 +53,16 @@ part 'post_likes_sheet.dart';
 class ConnectComposerController {
   _ConnectFeedScreenState? _state;
 
-  /// A feed's bloc kept alive between one feed and the next while a post of
-  /// its is still going up: a Connect tab picked afresh rebuilds the feed,
-  /// and the publish must not go down with the old one.
+  /// The feed's bloc between one feed and the next. The shell owns this
+  /// controller for the whole sign-in, so the feed has one bloc for the
+  /// session: a Connect tab picked afresh rebuilds the feed, and the new one
+  /// carries on with the old one's bloc (its posts, its live socket, a post
+  /// still going up) rather than making another, which cost a socket, the
+  /// first two pages and the company directory each time.
   ConnectBloc? _parked;
-  StreamSubscription<ConnectState>? _parkedWatch;
+
+  /// The company directory the tag picker uses, read once for the session.
+  List<ConnectTeammate>? _people;
 
   void _attach(_ConnectFeedScreenState state) => _state = state;
 
@@ -69,28 +74,22 @@ class ConnectComposerController {
   bool get isPublishing => (_state?._bloc.state.publishing ?? 0) > 0;
 
   void _park(ConnectBloc bloc) {
-    _dropParked();
+    if (!identical(_parked, bloc)) _parked?.dispose();
     _parked = bloc;
-    // Finished with no feed to show it: let it go.
-    _parkedWatch = bloc.stream.listen((state) {
-      if (state.publishing == 0) _dropParked();
-    });
   }
 
   /// The parked bloc, for the next feed to carry on with; null when none.
   ConnectBloc? _adopt() {
     final bloc = _parked;
-    _parkedWatch?.cancel();
-    _parkedWatch = null;
     _parked = null;
     return bloc;
   }
 
-  void _dropParked() {
-    _parkedWatch?.cancel();
-    _parkedWatch = null;
+  /// The session is over (sign-out, or the shell is gone): the bloc goes too.
+  void dispose() {
     _parked?.dispose();
     _parked = null;
+    _people = null;
   }
 
   void openComposer() => _state?._openPostTypePicker();
@@ -190,6 +189,9 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
         adopted ??
         ConnectBloc(session: widget.session, api: widget.api, socket: widget.socket);
     if (_ownsBloc) {
+      // The session's bloc, carried on with, is not read again: its live
+      // socket has kept it current, and it reads the top again itself after
+      // any time without one.
       if (adopted == null) _bloc.load();
       _loadTaggablePeople();
     }
@@ -197,25 +199,30 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   }
 
   Future<void> _loadTaggablePeople() async {
+    final known = widget.composerController?._people;
+    if (known != null) {
+      _taggablePeople = known;
+      return;
+    }
     try {
       final result = await AuthApiService().fetchTeammates(
         widget.session.token,
         limit: 500,
       );
+      final people = result.teammates
+          .map(
+            (person) => ConnectTeammate(
+              userId: person.userId,
+              name: person.name,
+              initials: person.initials,
+              department: person.roleLine,
+              photoUrl: person.photoUrl,
+            ),
+          )
+          .toList();
+      widget.composerController?._people = people;
       if (!mounted) return;
-      setState(() {
-        _taggablePeople = result.teammates
-            .map(
-              (person) => ConnectTeammate(
-                userId: person.userId,
-                name: person.name,
-                initials: person.initials,
-                department: person.roleLine,
-                photoUrl: person.photoUrl,
-              ),
-            )
-            .toList();
-      });
+      setState(() => _taggablePeople = people);
     } catch (_) {
       // Tagging is optional: if the directory can't be reached the composer
       // simply shows no tag field rather than blocking the post.
@@ -223,12 +230,12 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen> {
   }
 
   /// Taken out of the tree — a Connect tab picked afresh is about to build
-  /// the feed again, before this one is disposed — with a post still going
-  /// up: the bloc is parked for the next feed to carry on with.
+  /// the feed again, before this one is disposed: the bloc is parked for the
+  /// next feed to carry on with (see [ConnectComposerController._parked]).
   @override
   void deactivate() {
     final controller = widget.composerController;
-    if (_ownsBloc && !_handedOver && controller != null && _bloc.state.publishing > 0) {
+    if (_ownsBloc && !_handedOver && controller != null) {
       controller._park(_bloc);
       _handedOver = true;
     }

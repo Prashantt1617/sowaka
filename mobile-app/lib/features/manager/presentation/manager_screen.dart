@@ -199,6 +199,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
     _notificationSubscription?.cancel();
     _receivedSubscription?.cancel();
     _lifecycle?.dispose();
+    // The feed's bloc, kept by the controller for the session, goes with it.
+    _connectComposerController.dispose();
     super.dispose();
   }
 
