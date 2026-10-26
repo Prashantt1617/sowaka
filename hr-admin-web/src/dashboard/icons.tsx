@@ -145,6 +145,12 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M17 15l2.5 2.5L23 13" />
     </svg>
   ),
+  payrollbulk: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M4 6h10M4 12h10M4 18h6" />
+      <path d="M17 15l2.5 2.5L23 13" />
+    </svg>
+  ),
   kpitemplates: (
     <svg {...base(18, 'currentColor')}>
       <rect x="3" y="4" width="18" height="16" rx="2" />

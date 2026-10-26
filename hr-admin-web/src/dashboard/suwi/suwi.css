@@ -235,6 +235,34 @@
 .sora-send:disabled { opacity: .45; cursor: default; }
 .sora-send:not(:disabled):active { transform: scale(.94); }
 .sora-ft { margin: 8px 2px 0; font-size: 11px; color: var(--ink-3); line-height: 1.45; }
+/* attachments: the paperclip in the field, the file waiting above it, the refusal under it */
+.sora-clip {
+  width: 34px; height: 34px; border-radius: 50%; border: 0; background: none; color: var(--ink-3);
+  display: grid; place-items: center; cursor: pointer; flex-shrink: 0; transition: color .15s ease, background .15s ease;
+}
+.sora-clip:hover:not(:disabled) { color: var(--hi); background: var(--hi-soft); }
+.sora-clip:disabled { opacity: .45; cursor: default; }
+.sora-file {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px; padding: 6px 6px 6px 8px;
+  border: 1px solid var(--line-2); border-radius: 14px; background: var(--surface); max-width: 100%;
+}
+.sora-file img { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+.sora-file-t { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.3; }
+.sora-file-t b { font-weight: 500; font-size: 13px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sora-file-t small { font-size: 11.5px; color: var(--ink-3); }
+.sora-file-x { width: 26px; height: 26px; border-radius: 50%; border: 0; background: none; color: var(--ink-3); display: grid; place-items: center; cursor: pointer; flex-shrink: 0; }
+.sora-file-x:hover { background: var(--line); color: var(--ink); }
+.sora-sheet { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; flex-shrink: 0; color: var(--ok); background: var(--ok-bg); }
+.sora-attach-err { margin: 6px 4px 0; font-size: 12px; color: var(--bad); line-height: 1.4; }
+/* in the thread: HR's file above their words */
+.sm-me-col { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 85%; }
+.sm-me-col p { max-width: 100%; }
+.sm-img { padding: 0; border: 1px solid var(--line-2); border-radius: 14px; overflow: hidden; background: var(--surface); cursor: zoom-in; max-width: 220px; }
+.sm-img img { display: block; width: 100%; max-height: 200px; object-fit: cover; }
+.sm-file { display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 8px; border: 1px solid var(--line-2); border-radius: 14px; background: var(--surface); max-width: 260px; }
+.sora-zoom { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; padding: 24px; background: rgba(12, 10, 30, .72); cursor: zoom-out; }
+.sora-zoom img { max-width: 100%; max-height: 100%; border-radius: 12px; box-shadow: 0 20px 60px rgba(0, 0, 0, .4); }
+.sora-zoom .suwi-btn { position: absolute; top: 14px; right: 14px; }
 .sora-cf { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-3); }
 
 /* a prepared change: "What will happen" */
@@ -407,3 +435,26 @@
   .sora.on { transform: none; transition: opacity .2s ease, visibility 0s linear .2s; }
   .sora.on { transition: opacity .2s ease, visibility 0s; }
 }
+
+/* Bulk assign: the guide that opens it, its examples, and the card's table of people */
+.sora-bulk { border-style: dashed; }
+.sora-bulk.on { background: var(--hi-soft); color: var(--hi); border-style: solid; }
+.suwi-guide p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+.suwi-guide p:first-child { color: var(--ink); font-size: 13.5px; }
+.suwi-guide b { color: var(--ink); font-weight: 600; }
+.suwi-guide-exs { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 10px; }
+.suwi-guide-ex { text-align: left; font: inherit; font-size: 13px; line-height: 1.4; color: var(--hi); background: var(--hi-soft); border: 1px solid color-mix(in srgb, var(--hi) 22%, transparent); border-radius: 10px; padding: 8px 10px; cursor: pointer; }
+.suwi-guide-ex:hover { border-color: var(--hi); }
+.suwi-guide-n { color: var(--ink-3) !important; font-size: 12px !important; margin-bottom: 0 !important; }
+.suwi-prev { margin: 8px 0 4px; }
+.suwi-prev-h { font-size: 12.5px; color: var(--ink-2); margin-bottom: 6px; }
+.suwi-prev-s { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+.suwi-prev table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.suwi-prev th { text-align: left; font-weight: 500; color: var(--ink-3); background: var(--surface-2); padding: 6px 8px; white-space: nowrap; }
+.suwi-prev td { padding: 6px 8px; border-top: 1px solid var(--line); color: var(--ink); }
+.suwi-prev td:last-child { color: var(--hi); font-weight: 500; }
+.suwi-prev tr.same td { color: var(--ink-3); font-weight: 400; }
+.suwi-prev-k { margin-top: 8px; font-size: 12.5px; }
+.suwi-prev-k b { color: var(--warn); font-weight: 600; }
+.suwi-prev-k ul { margin: 4px 0 0; padding-left: 18px; color: var(--ink-2); }
+.suwi-prev-k span { color: var(--ink); }

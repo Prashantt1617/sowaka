@@ -11,6 +11,7 @@ import { requestViewer } from '../middleware/request-viewer';
 import { PaidDaysTemplate } from '../models/paidDaysTemplate.model';
 import { SalaryDeductionRule } from '../models/deduction.model';
 import { parseDeductionRules } from './salaryTemplate.service';
+import { logActivity } from './employee-activity.service';
 
 export class PaidDaysTemplateError extends Error {
   constructor(public readonly statusCode: number, message: string) {
@@ -199,7 +200,7 @@ export async function deletePaidDaysTemplate(adminUserId: string, code: string) 
 export async function assignPaidDaysTemplate(adminUserId: string, userId: string, code: string | null) {
   const org = await orgOf(adminUserId);
   await ensurePaidDaysTemplates(org);
-  const structure = await salaryStructures().findOne({ org, userId }, { projection: { _id: 1 } });
+  const structure = await salaryStructures().findOne({ org, userId }, { projection: { _id: 1, paidDaysTemplateCode: 1 } });
   if (!structure) throw new PaidDaysTemplateError(409, 'Assign a salary first');
   if (code) {
     const template = await paidDaysTemplates().findOne({ org, code });
@@ -208,5 +209,14 @@ export async function assignPaidDaysTemplate(adminUserId: string, userId: string
     if (template.isDefault) code = null;
   }
   await salaryStructures().updateOne({ org, userId }, code ? { $set: { paidDaysTemplateCode: code } } : { $unset: { paidDaysTemplateCode: '' } });
+  const previous = structure.paidDaysTemplateCode ?? null;
+  if (previous !== code) {
+    const named = await paidDaysTemplates().find({ org, $or: [{ code: { $in: [previous, code].filter(Boolean) as string[] } }, { isDefault: true }] }, { projection: { code: 1, name: 1, isDefault: 1 } }).toArray();
+    const nameOf = (c: string | null) => (c ? named.find((t) => t.code === c)?.name : named.find((t) => t.isDefault)?.name) ?? c ?? 'the Default';
+    void logActivity({
+      org, userId, byUserId: adminUserId, kind: 'paid_days', title: `Paid days template set to ${nameOf(code)}`,
+      changes: [{ field: 'paidDaysTemplate', label: 'Paid days template', from: nameOf(previous), to: nameOf(code) }],
+    });
+  }
   return { userId, paidDaysTemplateCode: code };
 }

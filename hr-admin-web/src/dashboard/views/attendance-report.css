@@ -1,0 +1,120 @@
+/* Reports › Attendance, as the prototype draws it. Status colours are tokens so
+   the dark theme gets its own; everything else uses the dashboard's. */
+:root {
+  --ar-p-bg: #DDF3E4; --ar-p-fg: #166534;
+  --ar-l-bg: #F6D776; --ar-l-fg: #5B4300;
+  --ar-mp-bg: #C2362F; --ar-mp-fg: #FFFFFF;
+  --ar-lv-bg: #E0EAFF; --ar-lv-fg: #1E40AF;
+  --ar-hd-bg: #EDE4FF; --ar-hd-fg: #5B21B6;
+  --ar-np-bg: #EEF0F3; --ar-np-fg: #374151;
+  --ar-wo-bg: #F4F4F6; --ar-wo-fg: #6B7280;
+  --ar-n-present: #2E7D4F; --ar-n-late: #4F46E5; --ar-n-half: #7C5A12;
+  --ar-n-leave: #1D4ED8; --ar-n-missed: #B45309; --ar-n-np: #4B5563;
+  --ar-t-present: #2E7D4F; --ar-t-late: #B45309; --ar-t-missed: #C2362F; --ar-t-leave: #1D4ED8;
+  --ar-pending: #2563EB;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ar-p-bg: #173B26; --ar-p-fg: #8EE0AA;
+    --ar-l-bg: #4A3A0B; --ar-l-fg: #F6D776;
+    --ar-mp-bg: #B5342D; --ar-mp-fg: #FFFFFF;
+    --ar-lv-bg: #1C2A4D; --ar-lv-fg: #A9C1FF;
+    --ar-hd-bg: #2E2147; --ar-hd-fg: #CDB6FF;
+    --ar-np-bg: #2A2B30; --ar-np-fg: #C9CDD4;
+    --ar-wo-bg: #232328; --ar-wo-fg: #8B8F98;
+    --ar-n-present: #6FCF97; --ar-n-late: #9C95FF; --ar-n-half: #E0B85A;
+    --ar-n-leave: #7FA6FF; --ar-n-missed: #F29B52; --ar-n-np: #B7BCC5;
+    --ar-t-present: #6FCF97; --ar-t-late: #F29B52; --ar-t-missed: #FF7A72; --ar-t-leave: #7FA6FF;
+    --ar-pending: #7FA6FF;
+  }
+}
+:root[data-theme="dark"] {
+  --ar-p-bg: #173B26; --ar-p-fg: #8EE0AA;
+  --ar-l-bg: #4A3A0B; --ar-l-fg: #F6D776;
+  --ar-mp-bg: #B5342D; --ar-mp-fg: #FFFFFF;
+  --ar-lv-bg: #1C2A4D; --ar-lv-fg: #A9C1FF;
+  --ar-hd-bg: #2E2147; --ar-hd-fg: #CDB6FF;
+  --ar-np-bg: #2A2B30; --ar-np-fg: #C9CDD4;
+  --ar-wo-bg: #232328; --ar-wo-fg: #8B8F98;
+  --ar-n-present: #6FCF97; --ar-n-late: #9C95FF; --ar-n-half: #E0B85A;
+  --ar-n-leave: #7FA6FF; --ar-n-missed: #F29B52; --ar-n-np: #B7BCC5;
+  --ar-t-present: #6FCF97; --ar-t-late: #F29B52; --ar-t-missed: #FF7A72; --ar-t-leave: #7FA6FF;
+  --ar-pending: #7FA6FF;
+}
+
+.ar { display: flex; flex-direction: column; gap: 0; animation: fade .3s ease both; }
+.ar-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.ar-period { font-size: 13.5px; color: var(--ink-3); }
+.ar-filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.ar-sel { position: relative; display: inline-flex; align-items: center; gap: 10px; height: 46px; padding: 0 40px 0 16px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); }
+.ar-sel span { font-size: 13px; color: var(--ink-3); white-space: nowrap; }
+.ar-sel select { appearance: none; border: 0; background: none; font: inherit; font-size: 15px; font-weight: 500; color: var(--ink); cursor: pointer; padding: 0; outline: none; max-width: 260px; }
+.ar-sel::after { content: ''; position: absolute; right: 18px; top: 50%; width: 7px; height: 7px; border-right: 1.6px solid var(--ink-2); border-bottom: 1.6px solid var(--ink-2); transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+.ar-sel:focus-within { border-color: var(--accent); }
+.ar-export { align-self: flex-start; margin-bottom: 20px; }
+
+.ar-cov { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px; margin-bottom: 16px; }
+.ar-cov-h { flex: 1 1 260px; min-width: 0; }
+.ar-cov-k { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+.ar-cov-t { font-size: 15px; color: var(--ink); margin-top: 4px; }
+.ar-cov-n { display: flex; gap: 28px; flex-wrap: wrap; }
+.ar-cov-n div span { display: block; font-size: 12.5px; color: var(--ink-2); }
+.ar-cov-n b { font-size: 26px; font-weight: 500; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.ar-cov-n small { font-size: 13px; color: var(--ink-3); margin-left: 4px; }
+
+.ar-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; margin-bottom: 26px; }
+.ar-card { background: var(--surface); border-radius: 18px; padding: 18px 20px; min-height: 120px; box-shadow: var(--shadow); }
+.ar-card-l { font-size: 14px; color: var(--ink-2); }
+.ar-card-n { font-size: 34px; font-weight: 500; letter-spacing: -.02em; line-height: 1.15; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.ar-card-s { font-size: 12px; color: var(--ink-3); margin-top: 6px; line-height: 1.4; }
+
+.ar-h { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+.ar-h b { font-size: 19px; font-weight: 600; letter-spacing: -.01em; color: var(--ink); }
+.ar-h span { font-size: 13px; color: var(--ink-3); }
+
+.ar-box { background: var(--surface); border-radius: 22px; padding: 14px; box-shadow: var(--shadow); }
+.ar-scroll { overflow-x: auto; }
+.ar-t { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; color: var(--ink); }
+.ar-t thead th { background: var(--surface-2); color: var(--ink-2); font-size: 14px; font-weight: 500; text-align: left; padding: 12px 14px; white-space: nowrap; }
+.ar-t thead th:first-child { border-radius: 12px 0 0 12px; }
+.ar-t thead th:last-child { border-radius: 0 12px 12px 0; }
+.ar-t tbody tr { cursor: pointer; }
+.ar-t tbody tr:hover td { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+.ar-t td { padding: 14px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ar-t .num { text-align: right; padding-right: 26px; }
+.ar-t th.num { text-align: right; padding-right: 26px; }
+.ar-who { display: flex; align-items: center; gap: 12px; min-width: 200px; }
+.ar-who b { display: block; font-size: 15px; font-weight: 500; color: var(--ink); }
+.ar-who small { display: block; font-size: 12.5px; color: var(--ink-3); }
+.ar-tpl b { display: block; font-size: 14px; font-weight: 400; color: var(--ink); }
+.ar-tpl small { display: block; font-size: 12.5px; color: var(--ink-3); }
+.ar-pending { color: var(--ar-pending); font-style: italic; }
+.ar-mode { color: var(--ink-3); }
+.ar-pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 500; white-space: nowrap; }
+.ar-chip { display: inline-grid; place-items: center; min-width: 34px; height: 28px; padding: 0 6px; box-sizing: border-box; border-radius: 8px; font-size: 12px; font-weight: 600; }
+.ar-grid th:not(:first-child), .ar-grid td:not(:first-child) { text-align: center; padding-inline: 8px; }
+.ar-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 8px 6px 16px; font-size: 13px; color: var(--ink-2); }
+.ar-legend span { display: inline-flex; align-items: center; gap: 8px; }
+.ar-foot { font-size: 12.5px; color: var(--ink-3); padding: 14px 6px 4px; }
+.ar-note { font-size: 12.5px; color: var(--ink-3); margin-top: 18px; line-height: 1.5; }
+.ar-empty { padding: 44px; text-align: center; color: var(--ink-3); font-size: 14px; }
+.ar-pager { display: flex; align-items: center; gap: 10px; padding: 16px 6px 2px; font-size: 13px; color: var(--ink-3); }
+.ar-pager div { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+
+/* The employee drawer */
+.ar-dim { position: fixed; inset: 0; z-index: 60; background: rgba(17, 17, 19, .38); display: flex; justify-content: flex-end; }
+.ar-drawer { width: min(560px, 100%); height: 100%; overflow-y: auto; background: var(--canvas); padding: 22px 22px 32px; box-shadow: -20px 0 60px rgba(0, 0, 0, .18); animation: ar-in .2s ease both; }
+@keyframes ar-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.ar-dr-h { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+.ar-dr-h b { display: block; font-size: 20px; font-weight: 600; color: var(--ink); }
+.ar-dr-h small { display: block; font-size: 13px; color: var(--ink-3); }
+.ar-dr-x { margin-left: auto; width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); display: grid; place-items: center; cursor: pointer; flex: none; }
+.ar-dr-card { background: var(--surface); border-radius: 18px; padding: 18px; }
+.ar-dr-ct { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.ar-dr-ct b { font-size: 16px; font-weight: 600; color: var(--ink); }
+.ar-dr-f { padding: 7px 0; }
+.ar-dr-f span { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+.ar-dr-f span i { font-style: normal; font-weight: 400; color: var(--ink-3); display: inline-flex; align-items: center; gap: 3px; }
+.ar-dr-f div { font-size: 15px; color: var(--ink); margin-top: 3px; }
+.ar-dr-note { font-size: 12.5px; color: var(--ink-3); margin-top: 12px; line-height: 1.45; }
+.ar-dr-sub { margin-top: 16px; }

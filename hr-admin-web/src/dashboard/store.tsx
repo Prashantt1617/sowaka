@@ -32,6 +32,8 @@ import { combineLoad } from './useLoad';
 
 /** The shared lists the store loads, each with its own loading state. */
 export type StoreList = 'leaves' | 'overtime' | 'claims' | 'corrections' | 'feedback' | 'employees' | 'cycle';
+/** Where Bulk assign was opened from; `any` is the panel's own Bulk assign button. */
+export type SuwiBulkArea = 'shifts' | 'performance' | 'payroll' | 'any';
 
 type LeaveStatusFilter = ReqStatus | 'all';
 type FbStatusFilter = FeedbackStatus | 'all';
@@ -193,6 +195,11 @@ function useProvideStore() {
   // A question handed to the panel (a "Show me" from Suwi's notices); the panel asks it and clears it.
   const [suwiAsk, setSuwiAsk] = useState<string | null>(null);
   const askSuwiQuestion = (q: string) => { setSuwiAsk(q); setSuwiOpen(true); };
+  // Bulk assign runs only through Suwi: which section opened it, so the panel shows that section's guide.
+  const [suwiBulk, setSuwiBulk] = useState<SuwiBulkArea | null>(null);
+  const openSuwiBulk = (area: SuwiBulkArea) => { setSuwiBulk(area); setSuwiOpen(true); };
+  // Words handed to the panel's field (a Bulk assign example) for HR to edit and send.
+  const [suwiDraft, setSuwiDraft] = useState<string | null>(null);
   const [profileRequest, setProfileRequest] = useState<{ userId: string; tab?: string } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState<UserForm>(emptyForm);
@@ -638,6 +645,7 @@ function useProvideStore() {
     // Suwi
     suwiOpen, setSuwiOpen, profileRequest, openProfile, clearProfileRequest: () => setProfileRequest(null),
     suwiAsk, askSuwiQuestion, clearSuwiAsk: () => setSuwiAsk(null),
+    suwiBulk, openSuwiBulk, setSuwiBulk, suwiDraft, setSuwiDraft,
   };
 }
 

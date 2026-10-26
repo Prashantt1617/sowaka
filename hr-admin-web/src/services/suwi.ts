@@ -7,6 +7,8 @@ export type SuwiProposal = {
   lines: { text: string; why?: string; tone?: 'info' | 'warn' }[];
   effectiveFrom?: string; undoable: boolean; typeToConfirm?: string;
   status: 'pending' | 'done' | 'failed' | 'cancelled' | 'undone' | 'expired'; message?: string;
+  /** A bulk change: each person's current and new value, and who was left out. */
+  preview?: { field: string; rows: { name: string; current: string; next: string }[]; skipped: { who: string; reason: string }[] };
 };
 export type SuwiAnswer = { text: string; checked: string[]; links: SuwiLink[]; proposals: SuwiProposal[]; costUsd: number };
 export type SuwiHistoryTurn = { role: 'user' | 'assistant'; text: string };
@@ -16,9 +18,13 @@ export type SuwiHistoryTurn = { role: 'user' | 'assistant'; text: string };
  * every 2 s until it is ready, for up to 5 minutes. The signal keeps each check
  * out of the 20-second GET cache in http.ts.
  */
-export async function askSuwi(question: string, page: string, history: SuwiHistoryTurn[]): Promise<SuwiAnswer> {
+/** A file sent with a question: an image as base64, or a spreadsheet already read into CSV text. */
+export type SuwiAttachment =
+  | { kind: 'image'; name: string; mimeType: 'image/png' | 'image/jpeg'; data: string }
+  | { kind: 'table'; name: string; text: string };
+export async function askSuwi(question: string, page: string, history: SuwiHistoryTurn[], attachment?: SuwiAttachment): Promise<SuwiAnswer> {
   type Reply = { answer?: SuwiAnswer; pending?: string };
-  const first = await api<Reply>('/suwi/ask', { method: 'POST', body: { question, page, history } });
+  const first = await api<Reply>('/suwi/ask', { method: 'POST', body: { question, page, history, ...(attachment ? { attachments: [attachment] } : {}) } });
   if (first.answer) return first.answer;
   const until = Date.now() + 5 * 60_000;
   while (first.pending && Date.now() < until) {

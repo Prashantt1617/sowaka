@@ -3,6 +3,7 @@ import { employeePayslipsHandler } from '../controllers/payrollRun.controller';
 import {
   addEmployeeDocumentHandler,
   attendanceReportHandler,
+  employeeActivityHandler,
   accountLimit,
   createEmployee,
   decideLeave,
@@ -101,6 +102,8 @@ adminRouter.patch('/employees/:userId/overtime-eligibility', updateOvertimeEligi
 adminRouter.patch('/employees/:userId', updateEmployeeDetails);
 // Delete an employee for good (dashboard admins; their name typed to confirm).
 adminRouter.delete('/employees/:userId', deleteEmployee);
+// Who changed what on them: details, manager, shift and templates.
+adminRouter.get('/employees/:userId/activity', employeeActivityHandler);
 // One person's month, graded the way the report grades it.
 adminRouter.get('/employees/:userId/calendar', employeeCalendarHandler);
 // HR marks a day of the current month; it outranks punches, leave and holidays everywhere.

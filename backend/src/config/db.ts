@@ -51,6 +51,7 @@ import { CareWriting, JournalEntry, PairQuiz } from '../models/care.model';
 import { SupportEvent, SupportMessage, SupportTicket, SupportTopicList } from '../models/support.model';
 import { PolicyDocument } from '../models/policy-document.model';
 import { AppPage } from '../models/app-page.model';
+import { EmployeeActivity } from '../models/employee-activity.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -360,6 +361,11 @@ export function supportTopics(): Collection<SupportTopicList> {
 /** Pages the app shows inside its own tabs (the Games tab's home), one per key; see AppPage. */
 export function appPages(): Collection<AppPage> {
   return getDb().collection<AppPage>('app_pages');
+}
+
+/** Each employee's change history, newest first on their profile; see EmployeeActivity. */
+export function employeeActivity(): Collection<EmployeeActivity> {
+  return getDb().collection<EmployeeActivity>('employee_activity');
 }
 
 async function ensureIndexes(database: Db): Promise<void> {

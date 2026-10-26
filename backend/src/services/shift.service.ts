@@ -34,6 +34,7 @@ import {
   CORRECTION_OUTCOMES,
   HALF_DAY_CORRECTION_OUTCOMES,
 } from '../models/shift.model';
+import { logActivity } from './employee-activity.service';
 
 export class ShiftError extends Error {
   constructor(
@@ -630,11 +631,15 @@ export async function assignShiftToUsers(callerId: string, shiftId: string, user
   // history keeps it.
   const before = await shiftTemplates()
     .find({ org, assignedUserIds: { $in: valid } })
-    .project<{ _id: ObjectId; assignedUserIds: string[] }>({ assignedUserIds: 1 })
+    .project<{ _id: ObjectId; name: string; assignedUserIds: string[] }>({ assignedUserIds: 1, name: 1 })
     .toArray();
   const currentOf = new Map<string, ObjectId>();
+  const currentName = new Map<string, string>();
   for (const row of before) {
-    for (const userId of row.assignedUserIds ?? []) currentOf.set(userId, row._id);
+    for (const userId of row.assignedUserIds ?? []) {
+      currentOf.set(userId, row._id);
+      currentName.set(userId, row.name);
+    }
   }
 
   await shiftTemplates().updateMany(
@@ -648,13 +653,22 @@ export async function assignShiftToUsers(callerId: string, shiftId: string, user
   );
   // The move itself starts tomorrow; today was worked under the old shift.
   let effectiveFrom = '';
+  const moved: string[] = [];
   for (const userId of valid) {
     if (currentOf.get(userId)?.equals(_id)) continue; // already on it
     effectiveFrom = await recordAssignmentChange(
       org, userId, _id, callerId, currentOf.get(userId) ?? null,
     );
+    moved.push(userId);
   }
   shiftSetupChanged(org);
+  if (moved.length) {
+    const fallback = moved.some((id) => !currentName.has(id)) ? (await defaultTemplateFor(org))?.name ?? 'the Default' : '';
+    void logActivity(...moved.map((userId) => ({
+      org, userId, byUserId: callerId, kind: 'shift' as const, title: `Moved to ${template.name}`, effectiveFrom,
+      changes: [{ field: 'shift', label: 'Shift', from: currentName.get(userId) ?? fallback, to: template.name }],
+    })));
+  }
   return { ...shiftView(updated!), effectiveFrom: effectiveFrom || undefined };
 }
 
@@ -674,11 +688,20 @@ export async function unassignShiftUsers(callerId: string, shiftId: string, user
   if (!updated) throw new ShiftError(404, 'Shift not found');
   // Back to the org policy, from tomorrow.
   let effectiveFrom = '';
+  const moved: string[] = [];
   for (const userId of ids) {
     if (!(before.assignedUserIds ?? []).includes(userId)) continue;
     effectiveFrom = await recordAssignmentChange(org, userId, null, callerId, _id);
+    moved.push(userId);
   }
   shiftSetupChanged(org);
+  if (moved.length) {
+    const back = (await defaultTemplateFor(org))?.name ?? 'the Default';
+    void logActivity(...moved.map((userId) => ({
+      org, userId, byUserId: callerId, kind: 'shift' as const, title: `Moved back to ${back}`, effectiveFrom,
+      changes: [{ field: 'shift', label: 'Shift', from: before.name, to: back }],
+    })));
+  }
   return { ...shiftView(updated), effectiveFrom: effectiveFrom || undefined };
 }
 
