@@ -54,7 +54,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_branded) return;
     _branded = true;
     // Now there is a company to ask about: must, or may, this build update?
-    AppUpdateGate.recheck();
+    // (Asked only if the launch did not already ask for this session.)
+    AppUpdateGate.signedIn();
     final branding = OrgBranding.of(session.user.org);
     OrgBranding.current.value = branding;
     await OrgBranding.remember(session.user.org);
