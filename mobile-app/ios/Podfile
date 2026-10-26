@@ -44,6 +44,9 @@ post_install do |installer|
       if Gem::Version.new(config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] || '0') < Gem::Version.new('15.5')
         config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.5'
       end
+      # ML Kit ships no arm64 simulator slice, so the simulator builds for
+      # x86_64 and runs under Rosetta on Apple silicon. Devices are untouched.
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
     end
   end
 end
