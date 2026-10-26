@@ -9,8 +9,8 @@ import 'face_capture_layout.dart';
 import 'face_id_models.dart';
 
 /// Setting up Face ID, on the selfie punch-in's own screens (Figma
-/// 4194:21786) with setup's words. The consent is on the same screen: a short
-/// line to agree to, above the button, with the full wording a tap away.
+/// 4194:21786) with setup's words. The consent is on the same screen: one
+/// line to agree to, word for word, above the button.
 /// Pops true once a face is enrolled, false or null otherwise.
 class FaceSetupScreen extends StatefulWidget {
   const FaceSetupScreen({super.key, required this.api, this.allowLater = false});
@@ -133,18 +133,6 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
     });
   }
 
-  void _learnMore() {
-    final consent = _consent;
-    if (consent == null) return;
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => _ConsentSheet(consent: consent),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     void leave() => Navigator.of(context).pop(_done);
@@ -216,7 +204,6 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
         consent: _consent,
         agreed: _agreed,
         onChanged: _busy ? null : (value) => setState(() => _agreed = value),
-        onLearnMore: _learnMore,
         onRetry: _loadProblem == null ? null : _load,
       ),
       action: action,
@@ -229,21 +216,19 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
   }
 }
 
-/// The short consent line and its tick, set in the action caption's type.
-/// Agreeing is something they do, never a default.
+/// The consent line and its tick, set in the action caption's type: the
+/// whole consent, word for word. Agreeing is something they do, never a default.
 class _ConsentLine extends StatelessWidget {
   const _ConsentLine({
     required this.consent,
     required this.agreed,
     required this.onChanged,
-    required this.onLearnMore,
     required this.onRetry,
   });
 
   final FaceConsent? consent;
   final bool agreed;
   final ValueChanged<bool>? onChanged;
-  final VoidCallback onLearnMore;
   final VoidCallback? onRetry;
 
   @override
@@ -278,22 +263,7 @@ class _ConsentLine extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text.rich(
-                TextSpan(
-                  style: _sora(11, FontWeight.w400, _tertiary, height: 18 / 11),
-                  children: [
-                    TextSpan(text: '${words.agree} '),
-                    WidgetSpan(
-                      alignment: PlaceholderAlignment.baseline,
-                      baseline: TextBaseline.alphabetic,
-                      child: GestureDetector(
-                        onTap: onLearnMore,
-                        child: Text('Learn more', style: _sora(11, FontWeight.w600, _brand, height: 18 / 11)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              child: Text(words.agree, style: _sora(11, FontWeight.w400, _tertiary, height: 18 / 11)),
             ),
           ],
         ),
@@ -302,40 +272,8 @@ class _ConsentLine extends StatelessWidget {
   }
 }
 
-/// The full consent, word for word as the server has it.
-class _ConsentSheet extends StatelessWidget {
-  const _ConsentSheet({required this.consent});
-
-  final FaceConsent consent;
-
-  @override
-  Widget build(BuildContext context) => SafeArea(
-    child: ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('How Face ID uses your face', style: _sora(18, FontWeight.w600, _ink, height: 24 / 18)),
-            const SizedBox(height: 16),
-            for (final (index, paragraph) in consent.paragraphs.indexed) ...[
-              if (index > 0) const SizedBox(height: 12),
-              Text(paragraph, style: _sora(14, FontWeight.w400, _secondary, height: 22 / 14)),
-            ],
-            const SizedBox(height: 20),
-            FaceCaptureAction(label: 'Close', caption: '', onTap: () => Navigator.of(context).pop()),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
 TextStyle _sora(double size, FontWeight weight, Color color, {double? height}) =>
     TextStyle(fontFamily: 'Sora', fontSize: size, fontWeight: weight, color: color, height: height);
 
-const _ink = Color(0xFF222222);
-const _secondary = Color(0xFF484848);
 const _tertiary = Color(0xFF717171);
 const _brand = Color(0xFF0571A6);

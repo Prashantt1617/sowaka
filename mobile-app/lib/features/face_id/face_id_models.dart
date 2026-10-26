@@ -34,21 +34,18 @@ class FaceIdStatus {
   final bool fallbackAvailable;
 }
 
-/// The words the person agrees to, as the server has them. The version goes
-/// back with the enrolment, so the record says which wording was agreed to.
+/// The line the person ticks, as the server has it, word for word. The
+/// version goes back with the enrolment, so the record says which line was
+/// agreed to.
 class FaceConsent {
-  const FaceConsent({required this.version, required this.paragraphs, required this.agree});
+  const FaceConsent({required this.version, required this.agree});
 
   factory FaceConsent.fromJson(Map<String, dynamic> json) => FaceConsent(
     version: json['version'] as String? ?? '',
-    paragraphs: [
-      for (final value in (json['paragraphs'] as List<dynamic>? ?? const [])) '$value',
-    ],
-    agree: json['agree'] as String? ?? 'I agree',
+    agree: json['agree'] as String? ?? '',
   );
 
   final String version;
-  final List<String> paragraphs;
   final String agree;
 }
 

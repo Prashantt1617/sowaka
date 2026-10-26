@@ -52,13 +52,14 @@ AuthUser _user({bool required = false, bool enrolled = false, bool atPunch = fal
 
 final _requests = <String>[];
 String? _enrolBody;
+String? _fallbackBody;
 
 http.Client _server({required Map<String, dynamic> verify}) => MockClient((request) async {
   _requests.add(request.url.path);
   if (request.url.path.endsWith('/face/status')) {
     return http.Response(jsonEncode({
       'success': true, 'setupRequired': true, 'checkAtPunch': true, 'enrolled': true,
-      'consent': {'version': 'v1', 'paragraphs': ['What we collect.', 'Questions? Contact your HR team.'], 'agree': 'I agree to Face ID.'},
+      'consent': {'version': 'v1', 'agree': 'I agree to Face ID keeping a template of my face.'},
       'liveness': {'mode': 'device'}, 'maxAttempts': 3, 'failedAttempts': 0, 'fallbackAvailable': false,
     }), 200);
   }
@@ -68,6 +69,7 @@ http.Client _server({required Map<String, dynamic> verify}) => MockClient((reque
     return http.Response(jsonEncode({'success': true, 'enrolled': true}), 201);
   }
   if (request.url.path.endsWith('/face/fallback')) {
+    _fallbackBody = request.body;
     return http.Response(jsonEncode({'success': true, 'request': {'id': 'r1'}}), 201);
   }
   return http.Response('{"success":true}', 200);
@@ -174,6 +176,40 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('a punch-out has the same selfie with its own words, and its own fallback', (tester) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = ManagerApiService(
+      session: AuthSession(token: 't', user: _user(required: true, enrolled: true, atPunch: true)),
+      baseUrl: 'https://example.test',
+      client: _server(verify: {'passed': false, 'reason': 'not_a_match', 'message': 'No match.', 'attemptsLeft': 0, 'fallbackAvailable': true}),
+    );
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: TextButton(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<FaceCheckOutcome>(
+              builder: (_) => FaceCheckScreen(api: api, type: 'out'),
+            )),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.text('Punch out'), findsOneWidget);
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump();
+    expect(find.text('Your selfie will confirm your punch-out.'), findsOneWidget);
+    await tester.tap(find.text('Take selfie & punch out'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Send punch-out to manager'));
+    await tester.pumpAndSettle();
+    expect(_fallbackBody, contains('"type":"out"'));
+  });
+
   testWidgets('a pass hands the token back to the punch', (tester) async {
     final open = _pumpCheck(tester, _server(verify: {'passed': true, 'reason': 'matched', 'token': 'tok-1'}));
     await open();
@@ -227,7 +263,8 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(find.text('Set up Face ID'), findsOneWidget);
-    expect(find.textContaining('I agree to Face ID.'), findsOneWidget);
+    expect(find.text('I agree to Face ID keeping a template of my face.'), findsOneWidget);
+    expect(find.text('Learn more'), findsNothing);
     _camera.sees(FaceSignal.detected, prompted: true);
     await tester.pump();
     // Not agreed: the button does nothing.
@@ -235,12 +272,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(_requests.where((path) => path.endsWith('/face/enrol')), isEmpty);
     expect(find.text('Agree above to set up Face ID.'), findsOneWidget);
-    // The full wording, a tap away.
-    await tester.tap(find.text('Learn more'));
-    await tester.pumpAndSettle();
-    expect(find.text('Questions? Contact your HR team.'), findsOneWidget);
-    await tester.tap(find.text('Close').last);
-    await tester.pumpAndSettle();
     await tester.tap(find.byType(Checkbox));
     await tester.pump();
     await tester.tap(find.text('Take selfie & set up'));
