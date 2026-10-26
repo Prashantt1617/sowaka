@@ -7,7 +7,7 @@ import {
   attendanceOverrides,
 } from '../config/db';
 import { getCompanyConfig } from './company-settings.service';
-import { AVATAR_EDGE, fitImage } from './image-fit';
+import { AVATAR_EDGE } from './image-fit';
 import {
   FeedbackParameter,
   FeedbackRecordStatus,
@@ -165,10 +165,10 @@ export async function updateProfilePhoto(userId: string, file: ConnectMediaFile)
   let photoUrl: string;
   let objectKey: string;
   try {
-    // Stored at the size it is drawn, not the camera's.
-    const uploaded = await uploadConnectMedia(userId, await fitImage(file, AVATAR_EDGE));
+    // Stored as it came, with a 256 px copy that every face is drawn from.
+    const uploaded = await uploadConnectMedia(userId, file, 'avatar');
     objectKey = uploaded.objectKey;
-    photoUrl = await presignConnectMedia(objectKey);
+    photoUrl = await presignConnectMedia(objectKey, AVATAR_EDGE);
   } catch {
     throw new ManagerError(503, 'Photo storage is unavailable');
   }

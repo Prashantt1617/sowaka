@@ -1,6 +1,7 @@
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -9,6 +10,8 @@ import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { env } from '../config/env';
 import { s3EncryptionParams } from '../utils/s3-encryption.util';
 import { connectMedia } from '../config/db';
+import { logger } from '../utils/logger';
+import { AVATAR_EDGE, copyKey, imageCopies, MEDIA_WIDTHS, type MediaCopies, type MediaCopy } from './image-fit';
 
 export type ConnectMediaFile = {
   originalName: string;
@@ -19,21 +22,26 @@ export type ConnectMediaFile = {
 
 let client: S3Client | undefined;
 
-export async function uploadConnectMedia(userId: string, file: ConnectMediaFile) {
-  if (!hasS3Configuration()) return storeInMongo(file);
+/**
+ * Stores one upload. A picture given [copies] is stored as it came, with its
+ * smaller copies beside it (see [imageCopies]). The copies are a bonus: one
+ * that fails to store is logged, `/media` serves the original in its place,
+ * and the upload still succeeds.
+ */
+export async function uploadConnectMedia(userId: string, file: ConnectMediaFile, copies?: MediaCopies) {
+  const made = copies ? await imageCopies(file, copies) : [];
+  if (!hasS3Configuration()) return storeInMongo(file, made);
   try {
     validateConfiguration();
     const objectKey = buildObjectKey(userId, file.originalName);
-    await getClient().send(
-      new PutObjectCommand({
-        Bucket: env.s3.bucket,
-        Key: objectKey,
-        Body: file.bytes,
-        ContentType: file.contentType,
-        ContentLength: file.size,
-      ...s3EncryptionParams(),
-      }),
-    );
+    await Promise.all([
+      putConnectObject(objectKey, file),
+      ...made.map((copy) =>
+        putConnectObject(copyKey(objectKey, copy.width), copy).catch((error: unknown) => {
+          logger.warn('Media copy not stored; the original is served instead', { objectKey, width: copy.width }, error);
+        }),
+      ),
+    ]);
     return { objectKey, contentType: file.contentType, size: file.size };
   } catch (error) {
     // No explicit access key was configured, meaning we expected an AWS
@@ -41,36 +49,69 @@ export async function uploadConnectMedia(userId: string, file: ConnectMediaFile)
     // we're not actually running on AWS (e.g. local dev) rather than a real
     // misconfiguration — fall back to Mongo storage instead of hard-failing.
     // An explicit-but-wrong key still throws, since that path is skipped.
-    if (!env.s3.accessKeyId) return storeInMongo(file);
+    if (!env.s3.accessKeyId) return storeInMongo(file, made);
     throw error;
   }
 }
 
-async function storeInMongo(file: ConnectMediaFile) {
+/** Writes one object under the Connect prefix, encrypted as every object is. */
+export async function putConnectObject(
+  objectKey: string,
+  file: Pick<ConnectMediaFile, 'bytes' | 'contentType' | 'size'>,
+) {
+  validateConfiguration();
+  await getClient().send(
+    new PutObjectCommand({
+      Bucket: env.s3.bucket,
+      Key: objectKey,
+      Body: file.bytes,
+      ContentType: file.contentType,
+      ContentLength: file.size,
+      ...s3EncryptionParams(),
+    }),
+  );
+}
+
+async function storeInMongo(file: ConnectMediaFile, copies: MediaCopy[] = []) {
   if (!file.contentType.startsWith('image/')) {
     throw new Error('AWS S3 is required for video uploads');
   }
-  if (file.size > 10 * 1024 * 1024) { 
+  if (file.size > 10 * 1024 * 1024) {
     throw new Error('Images must be 10 MB or smaller');
   }
   const objectKey = `mongo/${randomUUID()}`;
-  await connectMedia().insertOne({
-    objectKey,
-    contentType: file.contentType,
-    size: file.size,
-    bytes: file.bytes,
-    createdAt: new Date(),
-  });
+  const createdAt = new Date();
+  await connectMedia().insertMany([
+    { objectKey, contentType: file.contentType, size: file.size, bytes: file.bytes, createdAt },
+    ...copies.map((copy) => ({
+      objectKey: copyKey(objectKey, copy.width),
+      contentType: copy.contentType,
+      size: copy.size,
+      bytes: copy.bytes,
+      createdAt,
+    })),
+  ]);
   return { objectKey, contentType: file.contentType, size: file.size };
 }
 
+/** Deletes an upload and every copy it may have. */
 export async function deleteConnectMedia(objectKey: string) {
+  const copies = MEDIA_WIDTHS.map((width) => copyKey(objectKey, width));
   if (objectKey.startsWith('mongo/')) {
-    await connectMedia().deleteOne({ objectKey });
+    await connectMedia().deleteMany({ objectKey: { $in: [objectKey, ...copies] } });
     return;
   }
   validateConfiguration();
   await getClient().send(new DeleteObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));
+  // S3 answers a delete of a key never written as done, so an upload from
+  // before copies existed costs four quick calls and nothing else.
+  await Promise.all(
+    copies.map((key) =>
+      getClient()
+        .send(new DeleteObjectCommand({ Bucket: env.s3.bucket, Key: key }))
+        .catch(() => undefined),
+    ),
+  );
 }
 
 /**
@@ -109,12 +150,36 @@ export async function readConnectMedia(objectKey: string, range?: string) {
   };
 }
 
-export async function presignConnectMedia(objectKey: string) {
+/** True if a Connect object is stored at `objectKey` (S3 or the Mongo fallback). */
+export async function hasConnectObject(objectKey: string) {
+  if (objectKey.startsWith('mongo/')) {
+    return (await connectMedia().countDocuments({ objectKey }, { limit: 1 })) > 0;
+  }
+  if (!isConnectMediaKey(objectKey)) return false;
+  validateConfiguration();
+  try {
+    await getClient().send(new HeadObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));
+    return true;
+  } catch (error) {
+    if ((error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 404) return false;
+    throw error;
+  }
+}
+
+export async function presignConnectMedia(objectKey: string, width?: number) {
   // Always a path on this API, never the bucket's own host. Phones on
   // networks that filter *.amazonaws.com (a common Private DNS or ad-block
   // rule) could resolve the API but not S3, so a feed of images and video sat
   // buffering forever. One host to reach means one host to allow.
-  return `/media/${encodeURIComponent(objectKey)}`;
+  return mediaPath(objectKey, width);
+}
+
+/**
+ * `/media/<key>`, optionally asking for a width. Without one the route serves
+ * the largest copy there is; the app adds `?w=` for the width it draws at.
+ */
+export function mediaPath(objectKey: string, width?: number) {
+  return `/media/${encodeURIComponent(objectKey)}${width ? `?w=${width}` : ''}`;
 }
 
 export async function resolveProfilePhoto(
@@ -122,7 +187,9 @@ export async function resolveProfilePhoto(
 ): Promise<string | undefined> {
   if (!user) return undefined;
   if (user.profilePhotoKey) {
-    return presignConnectMedia(user.profilePhotoKey).catch(() => undefined);
+    // The small copy: a face is drawn at avatar size everywhere it appears,
+    // and app builds already in people's hands load the URL as given.
+    return presignConnectMedia(user.profilePhotoKey, AVATAR_EDGE).catch(() => undefined);
   }
   return user.profilePhotoUrl;
 }
