@@ -42,25 +42,71 @@ class AppHomeHeader extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Whose app this is: the signed-in org's logo, or the Convrse logo
-              // the header has always worn when the org has none of its own.
-              // Listens, so the face changes the moment the org is known.
-              ValueListenableBuilder<OrgBranding>(
-                valueListenable: OrgBranding.current,
-                builder: (context, branding, _) => Image.asset(
-                  branding.homeLogoAsset ?? 'assets/images/convrse_logo.png',
-                  width: 99,
-                  height: 41,
-                  fit: BoxFit.contain,
+              // The logo takes what the bell and avatar leave, so nothing in
+              // it can push them off the screen.
+              const Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _AppHeaderLogo(),
                 ),
               ),
-              const Spacer(),
               _AppHeaderBellButton(onTap: onNotifications),
               const SizedBox(width: 12),
-              profileAction,
+              // The avatar is 30 or 42 across. Capped, because the row gives
+              // its children all the width they ask for: a photo that failed
+              // with no fallback drew Flutter's error box, its message on one
+              // line, and overflowed the header by ~2000 px on a phone that
+              // could not reach the API.
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 48, maxHeight: 48),
+                child: profileAction,
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Whose app this is: the signed-in org's logo, or the Convrse logo the
+/// header has always worn when the org has none of its own. Listens, so the
+/// face changes the moment the org is known.
+///
+/// Always 99 x 41, whatever the logo's shape: a wide wordmark or a tall crest
+/// is fitted inside, and one that fails to load gives way to the default logo
+/// (or to nothing, if even that fails), never to an error box.
+class _AppHeaderLogo extends StatelessWidget {
+  const _AppHeaderLogo();
+
+  static const _defaultLogo = 'assets/images/convrse_logo.png';
+
+  static Widget _logo(String asset, {required Widget fallback}) => Image.asset(
+    asset,
+    width: 99,
+    height: 41,
+    fit: BoxFit.contain,
+    errorBuilder: (_, _, _) => fallback,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      key: const ValueKey('app-home-logo'),
+      width: 99,
+      height: 41,
+      child: ValueListenableBuilder<OrgBranding>(
+        valueListenable: OrgBranding.current,
+        builder: (context, branding, _) {
+          const none = SizedBox.shrink();
+          final asset = branding.homeLogoAsset ?? _defaultLogo;
+          return _logo(
+            asset,
+            fallback: asset == _defaultLogo
+                ? none
+                : _logo(_defaultLogo, fallback: none),
+          );
+        },
       ),
     );
   }

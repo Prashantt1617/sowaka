@@ -4052,6 +4052,11 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
                   width: 30,
                   height: 30,
                   fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => AvatarBadge(
+                    initial: widget.data.managerInitial,
+                    index: 1,
+                    size: 30,
+                  ),
                 ),
               ),
             },
