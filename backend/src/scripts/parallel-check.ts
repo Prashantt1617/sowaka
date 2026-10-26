@@ -381,7 +381,7 @@ async function degrade() {
   check('holidays down: none, the team as it was', noHolidays.holidays.length === 0 && noHolidays.team.length === workspace.team.length);
   const noInline = await broken('users', 'find', () => asSignedIn('mgr', () => getManagerWorkspace('mgr')), (f) => JSON.stringify(f).includes('"$in"'));
   check('inline photos down: initials for those, the rest as it was',
-    noInline.team.find((m) => m.userId === 'a')?.photoUrl === null && noInline.team.find((m) => m.userId === 'b')?.photoUrl === '/media/connect%2Fb.jpg', noInline.team.map((m) => [m.userId, m.photoUrl]));
+    noInline.team.find((m) => m.userId === 'a')?.photoUrl === null && noInline.team.find((m) => m.userId === 'b')?.photoUrl === '/media/connect%2Fb.jpg?w=256', noInline.team.map((m) => [m.userId, m.photoUrl]));
   check('the feedback down fails the workspace', await broken('feedback_records', 'find', () => fails(() => asSignedIn('mgr', () => getManagerWorkspace('mgr')))));
   const snap = await broken('users', 'findOne', () => asSignedIn('mgr', () => getFeedbackSnapshot('mgr')), (f) => (f as { userId?: string })?.userId === 'boss');
   check('the approver down: "Your manager", the rest as it was', snap.growthHistory[0]?.managerName === 'Your manager' && snap.team.length === 2, snap);
@@ -465,7 +465,7 @@ async function degrade() {
   check('corrections: pending first, then newest, named with their managers',
     JSON.stringify(regs.map((r) => [r.userId, r.status, r.manager, r.employeeCode])) ===
       JSON.stringify([['a', 'pending', 'Manav Manager', 'E-A'], ['c', 'declined', 'Manav Manager', 'E-C'], ['b', 'approved', 'Manav Manager', 'E-B']]), regs);
-  check('…with each person\'s face, inline or stored', regs[0].employee.photoUrl === INLINE && regs[2].employee.photoUrl === '/media/connect%2Fb.jpg', regs.map((r) => r.employee));
+  check('…with each person\'s face, inline or stored', regs[0].employee.photoUrl === INLINE && regs[2].employee.photoUrl === '/media/connect%2Fb.jpg?w=256', regs.map((r) => r.employee));
 
   console.log('notices');
   const boss = await users().findOne({ userId: 'boss' }, { projection: { profilePhotoUrl: 0 } });

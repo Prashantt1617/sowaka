@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile_app/features/auth/data/auth_models.dart';
 import 'package:mobile_app/features/shared/app_update.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,7 +11,7 @@ class _FakeService extends AppUpdateService {
   int calls = 0;
 
   @override
-  Future<AppUpdateStatus> check() async {
+  Future<AppUpdateStatus> check({AuthSession? session}) async {
     calls += 1;
     return status;
   }
@@ -114,6 +115,31 @@ void main() {
     AppUpdateGate.recheck();
     await tester.pumpAndSettle();
     expect(find.text('Update now'), findsNothing);
+  });
+
+  testWidgets('signing in asks once for a session the launch did not', (
+    tester,
+  ) async {
+    final service = _FakeService(_status('none'));
+    await tester.pumpWidget(_app(service));
+    await tester.pumpAndSettle();
+    expect(service.calls, 1);
+    // The launch asked with nobody signed in; nobody is signed in still.
+    AppUpdateGate.signedIn();
+    await tester.pumpAndSettle();
+    expect(service.calls, 1);
+    // Now someone is.
+    SharedPreferences.setMockInitialValues({
+      'auth_session':
+          '{"token":"t1","user":{"id":"u1","email":"a@sowaka.test","name":"A","role":"employee","company":"Sowaka"}}',
+    });
+    AppUpdateGate.signedIn();
+    await tester.pumpAndSettle();
+    expect(service.calls, 2);
+    // The same session again: not asked twice.
+    AppUpdateGate.signedIn();
+    await tester.pumpAndSettle();
+    expect(service.calls, 2);
   });
 
   test('a status with no store to open asks for nothing', () {

@@ -191,8 +191,8 @@ function endedAt(session: SquadSession): number {
   return last?.overAt ?? session.phaseEndsAt - SQUAD.keepAfterMs;
 }
 
-/** A profile photo as this API serves it (as presignConnectMedia does), for the game's faces. */
-const photoOf = (photoKey?: string) => (photoKey ? `/media/${encodeURIComponent(photoKey)}` : null);
+/** A profile photo as this API serves it (as resolveProfilePhoto does: the small copy), for the game's faces. */
+const photoOf = (photoKey?: string) => (photoKey ? `/media/${encodeURIComponent(photoKey)}?w=256` : null);
 
 const viewOptions = { photoUrl: (player: SquadPlayer) => photoOf(player.photoKey) };
 

@@ -10,6 +10,7 @@ import { OtpDeliveryError, sendOtpEmail } from './email.service';
 import { logger } from '../utils/logger';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { Company, DEFAULT_APP_TABS } from '../models/company.model';
+import { faceIdSettingsOf } from '../models/face.model';
 import { supportRoleOf } from '../models/support.model';
 import { enabledGamesOf } from './game-catalog.service';
 import { placementsFeatureOf } from './placements.service';
@@ -412,6 +413,12 @@ async function toAuthUser(
     isLeadership: user.isLeadership === true,
     // Whether the composer offers contests; the server refuses one without it.
     canCreateContests: user.canCreateContests === true,
+    // Whether their punches are face-checked and whether they have set up
+    // Face ID, so the punch screen knows which to open: no extra call.
+    faceId: {
+      enrolled: Boolean(user.faceId?.faceId),
+      atPunch: faceIdSettingsOf(company).checkAtPunch,
+    },
     // Features only some companies have, so the app and the dashboard show
     // their screens only there; the server refuses their routes elsewhere.
     features: {

@@ -29,7 +29,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Sowaka uses the camera so you can take a photo for your profile picture or a post, and to scan a colleague's code in a game.</string>
+	<string>Sowaka uses the camera for the selfie that confirms it's you when you punch in or out, to take a photo for your profile picture or a post, and to scan a colleague's code in a game.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Sowaka checks that you are at the office when you punch in or out. Your location is only read at that moment — never in the background.</string>
 	<!-- The location plugin's code carries the "always" API, so Apple's scan

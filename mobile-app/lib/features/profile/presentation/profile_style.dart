@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../services/api_config.dart';
@@ -43,7 +42,7 @@ ImageProvider profilePhotoProvider(String url) {
   if (url.startsWith('data:')) {
     return MemoryImage(base64Decode(url.split(',').last));
   }
-  return CachedNetworkImageProvider(resolveMediaUrl(url));
+  return avatarImageProvider(url);
 }
 
 /// A round photo, or the person's initials on a soft disc when there is none

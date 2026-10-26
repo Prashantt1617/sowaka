@@ -28,7 +28,13 @@ class _FakeApi extends ManagerApiService {
   }
 }
 
-AuthSession _session({String? photoUrl, List<String> interests = const [], String org = 'convrse'}) {
+AuthSession _session({
+  String? photoUrl,
+  List<String> interests = const [],
+  String org = 'convrse',
+  bool faceAtPunch = false,
+  bool faceEnrolled = false,
+}) {
   return AuthSession(
     token: 't',
     user: AuthUser(
@@ -40,6 +46,8 @@ AuthSession _session({String? photoUrl, List<String> interests = const [], Strin
       org: org,
       interests: interests,
       profilePhotoUrl: photoUrl,
+      faceIdAtPunch: faceAtPunch,
+      faceIdEnrolled: faceEnrolled,
     ),
   );
 }
@@ -140,6 +148,46 @@ void main() {
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
     expect(done, isTrue);
+  });
+
+  group('Face ID', () {
+    test('is not a reason to onboard someone who has answered both', () {
+      expect(needsOnboarding(_session(photoUrl: 'p', interests: ['Music'], faceAtPunch: true).user), isFalse);
+    });
+
+    testWidgets('a newcomer at a company that checks faces sets it up last', (tester) async {
+      final session = _session(photoUrl: 'https://example.test/old.png', faceAtPunch: true);
+      var done = false;
+      await _pump(
+        tester,
+        OnboardingFlow(session: session, api: _FakeApi(session: session), onDone: (_, _) => done = true),
+      );
+      await tester.tap(find.text('Travel'));
+      await tester.pump();
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(done, isFalse);
+      expect(find.text('Set up Face ID'), findsWidgets);
+    });
+
+    testWidgets('no Face ID step where faces are not checked, or once set up', (tester) async {
+      for (final session in [
+        _session(photoUrl: 'https://example.test/old.png'),
+        _session(photoUrl: 'https://example.test/old.png', faceAtPunch: true, faceEnrolled: true),
+      ]) {
+        var done = false;
+        await _pump(
+          tester,
+          OnboardingFlow(session: session, api: _FakeApi(session: session), onDone: (_, _) => done = true),
+        );
+        await tester.tap(find.text('Travel'));
+        await tester.pump();
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+        expect(done, isTrue);
+        await tester.pumpWidget(const SizedBox());
+      }
+    });
   });
 
   testWidgets('at most three interests', (tester) async {

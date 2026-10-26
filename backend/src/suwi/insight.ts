@@ -173,6 +173,8 @@ async function leaveBalanceCheckIn(leave: Leave & { _id?: ObjectId }, employee: 
   const [balance, otherPending] = await reads;
   const type = balance.types.find((t) => t.key === leave.type);
   if (!type) return { ok: false, text: `"${leave.type}" is not a leave type on their shift template any more.` };
+  // Leave without pay keeps no balance: it cannot run out, it is paid for.
+  if ((type as { unpaid?: boolean }).unpaid) return { ok: true, text: `${type.name} is leave without pay: no balance to check, and these ${plural(days, 'day')} are loss of pay in payroll.` };
   const pendingDays = otherPending.reduce((n, l) => n + (l.days ?? 1), 0);
   const period = (type as { cadence?: string }).cadence === 'monthly' ? 'this month' : `in ${year}`;
   const enough = type.remaining >= days;

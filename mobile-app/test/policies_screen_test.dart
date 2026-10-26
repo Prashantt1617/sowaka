@@ -312,7 +312,9 @@ void main() {
       find.byWidgetPredicate(
         (widget) =>
             widget is RichText &&
-            widget.text.toPlainText().startsWith('Read detailed leave policy'),
+            widget.text.toPlainText().startsWith(
+              'For more information check out our',
+            ),
       ),
     );
     var tapped = false;
@@ -499,7 +501,7 @@ void main() {
           (widget) =>
               widget is RichText &&
               widget.text.toPlainText().startsWith(
-                'Read detailed leave policy',
+                'For more information check out our',
               ),
         ),
         findsOneWidget,

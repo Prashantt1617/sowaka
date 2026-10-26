@@ -49,6 +49,7 @@ export async function punch(req: Request, res: Response, next: NextFunction) {
       userId(req), String(body.type ?? ''), reading,
       typeof body.reason === 'string' ? body.reason : undefined,
       body.skipReason === true,
+      typeof body.faceToken === 'string' ? body.faceToken : undefined,
     );
     res.json({ success: true, ...result });
   } catch (error) { next(error); }

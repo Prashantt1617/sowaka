@@ -51,15 +51,46 @@ class ApiConfig {
 /// (`/media/...`) rather than an absolute URL, because clients reach the API on
 /// different hosts — a phone over the LAN, desktop over localhost — so each has
 /// to resolve it against its own base. Absolute URLs pass through untouched.
-String resolveMediaUrl(String url) {
-  if (url.startsWith('/')) return '${ApiConfig.baseUrl}$url';
-  return url;
+///
+/// Given a [width], a picture of ours (`/media/...`) is asked for at that
+/// width (`?w=`): the server keeps copies at 256, 720, 1080 and 1600 px and
+/// sends the smallest at least that wide, rather than the camera's original
+/// (1.8 MB on average). [original] asks for the upload as it came, for a
+/// photo opened full screen. Anyone else's URL passes through untouched.
+String resolveMediaUrl(String url, {int? width, bool original = false}) {
+  final absolute = url.startsWith('/') ? '${ApiConfig.baseUrl}$url' : url;
+  final ours = url.startsWith('/media/') || url.startsWith('${ApiConfig.baseUrl}/media/');
+  if (!ours || (width == null && !original)) return absolute;
+  final uri = Uri.parse(absolute);
+  final query = Map<String, String>.of(uri.queryParameters)..remove('w')..remove('original');
+  if (original) {
+    query['original'] = '1';
+  } else {
+    query['w'] = '$width';
+  }
+  return uri.replace(queryParameters: query).toString();
 }
 
-/// Image provider for any avatar/media reference the API hands back, covering
-/// both the relative `/media/...` paths and legacy inline `data:` URIs that
-/// predate them (`NetworkImage` can't load a `data:` URI).
-ImageProvider avatarImageProvider(String url) {
+/// The width a face is fetched and decoded at: the server's smallest copy,
+/// sharp on the biggest avatar the app draws.
+const int avatarImageWidth = 256;
+
+/// The width a picture in the feed is fetched and decoded at: full width on
+/// a phone at 3x. One width for every place a post's picture shows (card,
+/// grid tile, poll option, entry), so each is downloaded and decoded once.
+const int feedImageWidth = 1080;
+
+/// [provider] decoded no wider than [width] pixels, at its own shape. A
+/// 4000 px photo decoded whole for a 390 pt card held ~48 MB of memory.
+ImageProvider _decodedAt(ImageProvider provider, int? width) =>
+    width == null ? provider : ResizeImage(provider, width: width, allowUpscaling: false);
+
+/// A picture or face the API handed back, as an image: `/media/...` paths
+/// and absolute URLs fetched (asked for at [width] and decoded at it) and
+/// cached on disk by URL, so one seen once is not fetched again, on this
+/// scroll or the next launch — keys are immutable, so the cache never goes
+/// stale — and legacy inline `data:` URIs decoded in place.
+ImageProvider mediaImageProvider(String url, {int? width, bool original = false}) {
   if (url.startsWith('data:')) {
     final comma = url.indexOf(',');
     if (comma != -1) {
@@ -70,7 +101,15 @@ ImageProvider avatarImageProvider(String url) {
       }
     }
   }
-  // Cached on disk by URL: a photo seen once is not fetched again, on this
-  // scroll or the next launch. Keys are immutable, so the cache never goes stale.
-  return CachedNetworkImageProvider(resolveMediaUrl(url));
+  if (original) return CachedNetworkImageProvider(resolveMediaUrl(url, original: true));
+  // A URL the server already sized (a face comes as `?w=256`) keeps the
+  // smaller of the two: a face shown in a feed card is still a face, and one
+  // URL per face means one download.
+  final given = int.tryParse(Uri.tryParse(url)?.queryParameters['w'] ?? '');
+  final wanted = width == null ? given : (given == null ? width : (given < width ? given : width));
+  return _decodedAt(CachedNetworkImageProvider(resolveMediaUrl(url, width: wanted)), wanted);
 }
+
+/// Image provider for any avatar the API hands back: the small copy,
+/// decoded small.
+ImageProvider avatarImageProvider(String url) => mediaImageProvider(url, width: avatarImageWidth);

@@ -20,8 +20,10 @@ class SplashScreen extends StatefulWidget {
   final OrgBranding branding;
 
   /// How long the whole entrance takes; callers hold the splash at least this
-  /// long so the animation isn't cut off by a fast session restore.
-  static const Duration duration = Duration(milliseconds: 1900);
+  /// long so the animation isn't cut off by a fast session restore. The same
+  /// entrance, played quicker: at 1.9 s it was most of every launch, since
+  /// the session check behind it is usually back well within a second.
+  static const Duration duration = Duration(milliseconds: 1200);
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();

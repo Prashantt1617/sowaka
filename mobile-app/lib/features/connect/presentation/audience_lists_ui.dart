@@ -157,7 +157,9 @@ class _Avatar extends StatelessWidget {
       child: url != null && url.isNotEmpty
           ? CachedNetworkImage(
               // The server sends "/media/…": made whole as the feed's faces are.
-              imageUrl: resolveMediaUrl(url),
+              // The small copy, decoded small, as every face is.
+              imageUrl: resolveMediaUrl(url, width: avatarImageWidth),
+              memCacheWidth: avatarImageWidth,
               width: size,
               height: size,
               fit: BoxFit.cover,

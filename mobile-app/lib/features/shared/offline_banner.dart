@@ -52,6 +52,12 @@ class OfflineBanner extends StatelessWidget {
 
 /// A screen with the banner above it. While the banner shows, the content
 /// below no longer pads for the status bar — the banner already did.
+///
+/// The content sits under the same widgets online and offline, only its
+/// padding changes: swapping `child` for `MediaQuery(child)` when the network
+/// flipped made Flutter throw away and rebuild everything below it — every
+/// tab, the feed's bloc and socket, its first two pages and the company
+/// directory — each time a phone lost and found its signal.
 class OfflineAware extends StatelessWidget {
   const OfflineAware({super.key, required this.child});
 
@@ -61,13 +67,12 @@ class OfflineAware extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
       valueListenable: NetworkStatus.offline,
-      builder: (context, offline, _) => Column(
+      child: child,
+      builder: (context, offline, child) => Column(
         children: [
           const OfflineBanner(),
           Expanded(
-            child: offline
-                ? MediaQuery.removePadding(context: context, removeTop: true, child: child)
-                : child,
+            child: MediaQuery.removePadding(context: context, removeTop: offline, child: child!),
           ),
         ],
       ),

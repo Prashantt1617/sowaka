@@ -92,8 +92,9 @@ export async function closeYearForUser(
   let skipped = 0;
 
   for (const rule of rules) {
-    // Only the types whose year actually ends today, unless forced.
-    if (rule.resetOn === 'monthly' || (!force && closingYear(rule, now) !== year)) { skipped += 1; continue; }
+    // Only the types whose year actually ends today, unless forced. Leave
+    // without pay keeps no balance, so there is nothing of it to close.
+    if (rule.unpaid || rule.resetOn === 'monthly' || (!force && closingYear(rule, now) !== year)) { skipped += 1; continue; }
     const already = await leaveYearEnds().findOne({ userId, year, type: rule.key });
     if (already) { skipped += 1; continue; }
 

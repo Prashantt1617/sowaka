@@ -1,6 +1,5 @@
 import 'dart:async';
 import '../../manage/presentation/team_faces_layout.dart';
-import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -19,6 +18,7 @@ import '../../../services/linkified_text.dart';
 import '../../auth/data/auth_api_service.dart';
 import '../../auth/data/auth_models.dart';
 import '../../auth/data/auth_session_store.dart';
+import '../../connect/bloc/connect_bloc.dart';
 import '../../connect/data/connect_models.dart';
 import '../../connect/presentation/blocked_people_screen.dart';
 import '../../connect/presentation/connect_feed_screen.dart';
@@ -53,7 +53,6 @@ import '../../care/presentation/care_tab.dart';
 import '../../garden/presentation/garden_screen.dart';
 import '../../garden/presentation/floating_tree.dart';
 import '../../profile/profile.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 part '../../connect/presentation/connect_tab.dart';
 part '../../games/presentation/games_tab.dart';
@@ -106,6 +105,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
   late final QuickActionsController _quickActionsController;
   final _connectComposerController = ConnectComposerController();
   bool _profileOpen = false;
+  /// The tab one's own profile opens on, and a count of openings so a profile
+  /// opened afresh (from the feed, say, while it was open) starts on it again.
+  ProfileTab? _profileOpenOn = ProfileTab.orgChart;
+  int _profileOpenings = 0;
   /// Whether the punch screen has already been offered this session, so
   /// closing it does not bring it straight back on the next rebuild.
   bool _punchPrompted = false;
@@ -163,8 +166,13 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // The bell's dot: anything unread since the inbox was last opened, read
     // now and again whenever the app comes back to the front.
     unawaited(NotificationBadge.refresh(_session));
+    // The minute's poll of leaves runs only while the app is in front.
     _lifecycle = AppLifecycleListener(
-      onResume: () => unawaited(NotificationBadge.refresh(_session)),
+      onPause: () => _bloc.setInBackground(true),
+      onResume: () {
+        _bloc.setInBackground(false);
+        unawaited(NotificationBadge.refresh(_session));
+      },
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // The tablet rail lives above the navigator, so it reads the bloc from
@@ -179,10 +187,13 @@ class _ManagerScreenState extends State<ManagerScreen> {
     registerPersonProfileOpener(_openTeamMember);
     // The inbox wears the shell's header, this avatar included.
     registerInboxProfileAction(_inboxProfileAction);
+    // A profile's Post tab shares this feed's directory, composer and list.
+    _profileFeed = _connectComposerController;
   }
 
   @override
   void dispose() {
+    if (identical(_profileFeed, _connectComposerController)) _profileFeed = null;
     unregisterPersonProfileOpener(_openTeamMember);
     unregisterInboxProfileAction(_inboxProfileAction);
     NetworkStatus.offline.removeListener(_onNetworkChanged);
@@ -194,6 +205,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
     _notificationSubscription?.cancel();
     _receivedSubscription?.cancel();
     _lifecycle?.dispose();
+    // The feed's bloc, kept by the controller for the session, goes with it.
+    _connectComposerController.dispose();
     super.dispose();
   }
 
@@ -340,7 +353,12 @@ class _ManagerScreenState extends State<ManagerScreen> {
     _connectComposerController.openComposer();
   }
 
-  void _openProfile() => setState(() => _profileOpen = true);
+  /// One's own profile, from the avatar or the Team tab: on the org chart.
+  void _openProfile({ProfileTab? on = ProfileTab.orgChart}) => setState(() {
+    _profileOpen = true;
+    _profileOpenOn = on;
+    _profileOpenings++;
+  });
 
   void _closeProfile() => setState(() => _profileOpen = false);
 
@@ -396,7 +414,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
         // a push about anyone else lands on the Team tab alone.
         _bloc.add(const ChangeManagerTab(ManagerTab.manage));
         if (_teamMember(employeeUserId) != null) {
-          _openTeamMember(employeeUserId);
+          _openTeamMember(employeeUserId, ProfileEntry.elsewhere);
         }
       // The requests queue, under either name the server has used.
       case 'manage_leave':
@@ -535,12 +553,13 @@ class _ManagerScreenState extends State<ManagerScreen> {
   /// fetched as the colleague view ([colleagueProfileTabs]). False only when
   /// there is nobody to open. Registered as [openPersonProfile], so other
   /// libraries reach it without importing the shell.
-  bool _openTeamMember(String userId) {
+  bool _openTeamMember(String userId, ProfileEntry from) {
     final dashboard = _bloc.state.dashboard;
     if (!mounted || userId.isEmpty || dashboard == null) return false;
+    final openOn = openingTabFor(from);
     if (userId == _session.user.id) {
       Navigator.of(context).popUntil((route) => route.isFirst);
-      setState(() => _profileOpen = true);
+      _openProfile(on: openOn);
       return true;
     }
     final member = _teamMember(userId);
@@ -554,6 +573,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
                 onNotifications: () => _openNotifications(context),
                 onOpenComposer: _connectComposerController.openComposer,
                 canManage: _bloc.state.canManage,
+                openOn: openOn,
               )
             : _ColleagueProfileLoader(
                 userId: userId,
@@ -561,6 +581,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
                 bloc: _bloc,
                 onNotifications: () => _openNotifications(context),
                 onOpenComposer: _connectComposerController.openComposer,
+                openOn: openOn,
               ),
       ),
     );
@@ -632,10 +653,29 @@ class _ManagerScreenState extends State<ManagerScreen> {
 
         if (state.status == ManagerLoadStatus.failure ||
             state.dashboard == null) {
+          // Said, with a way to try again: it used to be the words alone,
+          // and the only way out was closing the app.
           return Scaffold(
             backgroundColor: const Color(0xFFF7F7F9),
             body: Center(
-              child: Text(state.error ?? 'Could not load manager view'),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      state.error ?? 'Could not load manager view',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    TextButton(
+                      key: const ValueKey('manager-load-retry'),
+                      onPressed: () => _bloc.add(const LoadManagerDashboard()),
+                      child: const Text('Try again'),
+                    ),
+                  ],
+                ),
+              ),
             ),
           );
         }
@@ -665,59 +705,76 @@ class _ManagerScreenState extends State<ManagerScreen> {
           child: Scaffold(
             backgroundColor: const Color(0xFFF7F7F9),
             body: OfflineAware(
-              child: _profileOpen
-                ? _ProfileScreen(
-                    session: _session,
-                    dashboard: state.dashboard!,
-                    bloc: _bloc,
-                    onBack: _closeProfile,
-                    onLogout: _logout,
-                    onOpenComposer: _connectComposerController.openComposer,
-                    onNotifications: () => _openNotifications(context),
-                    onProfilePhotoUpdated: _updateProfilePhoto,
-                  )
-                : Stack(
-                    children: [
-                      Column(
+              // The profile opens over the tabs, which stay built beneath it
+              // (hidden, their videos paused): swapping the tabs out for the
+              // profile built every one of them again on the way back, with a
+              // new feed, socket and directory read each time.
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Offstage(
+                    offstage: _profileOpen,
+                    child: TickerMode(
+                      enabled: !_profileOpen,
+                      child: Stack(
                         children: [
-                          Expanded(
-                            // Read from a context below the offline banner,
-                            // which has already taken the status-bar inset
-                            // while it shows; the screen's own context would
-                            // put that inset back under the banner.
-                            child: Builder(
-                              builder: (context) => MediaQuery.removePadding(
-                                context: context,
-                                removeBottom: true,
-                                child: _TabContent(
-                                  session: _session,
-                                  state: state,
-                                  bloc: _bloc,
-                                  quickActionsController: _quickActionsController,
-                                  connectComposerController:
-                                      _connectComposerController,
-                                  onOpenProfile: _openProfile,
+                          Column(
+                            children: [
+                              Expanded(
+                                // Read from a context below the offline banner,
+                                // which has already taken the status-bar inset
+                                // while it shows; the screen's own context would
+                                // put that inset back under the banner.
+                                child: Builder(
+                                  builder: (context) => MediaQuery.removePadding(
+                                    context: context,
+                                    removeBottom: true,
+                                    child: _TabContent(
+                                      session: _session,
+                                      state: state,
+                                      bloc: _bloc,
+                                      quickActionsController: _quickActionsController,
+                                      connectComposerController:
+                                          _connectComposerController,
+                                      onOpenProfile: _openProfile,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                              if (!keyboardOpen)
+                                _BottomTabs(
+                                  state: state,
+                                  bloc: _bloc,
+                                  onOpenComposer: _openConnectComposer,
+                                ),
+                            ],
                           ),
+                          if (state.applyLeaveOpen)
+                            _ApplyLeaveSheet(state: state, bloc: _bloc),
+                          // Their own tree, over every tab, when the garden is on.
                           if (!keyboardOpen)
-                            _BottomTabs(
-                              state: state,
-                              bloc: _bloc,
-                              onOpenComposer: _openConnectComposer,
+                            Positioned.fill(
+                              child: FloatingTree(session: _session, refreshKey: state.tab),
                             ),
                         ],
                       ),
-                      if (state.applyLeaveOpen)
-                        _ApplyLeaveSheet(state: state, bloc: _bloc),
-                      // Their own tree, over every tab, when the garden is on.
-                      if (!keyboardOpen)
-                        Positioned.fill(
-                          child: FloatingTree(session: _session, refreshKey: state.tab),
-                        ),
-                    ],
+                    ),
                   ),
+                  if (_profileOpen)
+                    _ProfileScreen(
+                      key: ValueKey(_profileOpenings),
+                      openOn: _profileOpenOn,
+                      session: _session,
+                      dashboard: state.dashboard!,
+                      bloc: _bloc,
+                      onBack: _closeProfile,
+                      onLogout: _logout,
+                      onOpenComposer: _connectComposerController.openComposer,
+                      onNotifications: () => _openNotifications(context),
+                      onProfilePhotoUpdated: _updateProfilePhoto,
+                    ),
+                ],
+              ),
             ),
           ),
         );

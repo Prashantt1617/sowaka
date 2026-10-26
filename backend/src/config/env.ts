@@ -69,6 +69,10 @@ function emailOrgList(raw: string | undefined): string[] {
   return orgs.length > 0 ? orgs : [...DEFAULT_EMAIL_ORGS];
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   /**
@@ -171,6 +175,42 @@ export const env = {
     serverSideEncryption: process.env.AWS_S3_SERVER_SIDE_ENCRYPTION ?? 'AES256',
     kmsKeyId: process.env.AWS_S3_KMS_KEY_ID ?? '',
     presignTtl: Number(process.env.AWS_S3_PRESIGN_TTL ?? 300),
+  },
+  /**
+   * Face ID: Amazon Rekognition matches the face at a punch against the one
+   * the employee enrolled. Whether a company uses it is HR's switch
+   * (Company.faceId); these are the service's own settings. Credentials are
+   * the S3 ones when set, otherwise the host's role, as for S3.
+   */
+  face: {
+    region: (process.env.FACE_AWS_REGION ?? process.env.AWS_REGION ?? 'ap-south-1').trim() || 'ap-south-1',
+    /** One collection per company: `<prefix><org>`. */
+    collectionPrefix: (process.env.FACE_COLLECTION_PREFIX ?? 'sowaka-').trim(),
+    /** How alike the punch face must be to the enrolled one, 0-100. */
+    matchThreshold: clamp(Number(process.env.FACE_MATCH_THRESHOLD) || 95, 80, 99.9),
+    /** How long a passed check may be used to punch, and only once. */
+    tokenTtlSeconds: clamp(Number(process.env.FACE_TOKEN_TTL_SECONDS) || 300, 30, 900),
+    /** Failed checks before the app offers to send the day to the manager. */
+    maxAttempts: clamp(Number(process.env.FACE_MAX_ATTEMPTS) || 3, 1, 10),
+    /** Each Rekognition call gives up after this long. */
+    timeoutMs: clamp(Number(process.env.FACE_REKOGNITION_TIMEOUT_MS) || 5000, 1000, 30_000),
+    /** Retries after the first try, for throttling and network errors only. */
+    retries: clamp(Number(process.env.FACE_REKOGNITION_RETRIES) || 1, 0, 5),
+    /**
+     * How long the check log is kept, in months (FACE_LOG_RETENTION_MONTHS).
+     * Nothing deletes on its own: `npm run face-log:cleanup` removes older rows.
+     */
+    logRetentionMonths: clamp(Number(process.env.FACE_LOG_RETENTION_MONTHS) || 12, 1, 120),
+    /** Where enrolment photos sit in the private bucket. */
+    photoPrefix: (process.env.FACE_PHOTO_PREFIX ?? 'faces').replace(/^\/+|\/+$/g, ''),
+    /**
+     * Rekognition Face Liveness: `on` once the Cognito identity pool the app
+     * streams through exists. Off, the app's own blink-or-turn check stands in.
+     */
+    liveness: (process.env.FACE_LIVENESS ?? '').trim().toLowerCase() === 'on',
+    livenessThreshold: clamp(Number(process.env.FACE_LIVENESS_THRESHOLD) || 90, 50, 99.9),
+    /** The identity pool the app gets its streaming credentials from. */
+    livenessIdentityPoolId: (process.env.FACE_LIVENESS_IDENTITY_POOL_ID ?? '').trim(),
   },
   /**
    * Sowaka's own Zoom account, as a server-to-server app: the backend creates

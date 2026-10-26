@@ -1,0 +1,118 @@
+/**
+ * Face ID: the face an employee enrolled, the checks made against it at a
+ * punch, and HR's switches for it.
+ *
+ * Biometric data under the DPDP Act, so only what the check needs is kept:
+ * Rekognition's face vector (in the company's collection, not here), the one
+ * enrolment photo (encrypted, in the private bucket, so a face can be
+ * re-indexed or a dispute looked into), and a log line per check with its
+ * score. Punch selfies are never stored.
+ */
+
+/**
+ * HR's switch, per company. Absent means off. There is no separate setup
+ * switch: someone who has not set up Face ID does so at their first punch
+ * once the check is on.
+ */
+export interface CompanyFaceIdSettings {
+  /** Every punch made in the app, in or out, needs a face check first. */
+  checkAtPunch?: boolean;
+  /** @deprecated The setup switch before setup moved to the first punch; ignored. */
+  setupRequired?: boolean;
+  updatedAt?: Date;
+  updatedBy?: string;
+}
+
+export type FaceIdSettingsView = { checkAtPunch: boolean };
+
+export function faceIdSettingsOf(company: { faceId?: CompanyFaceIdSettings } | null | undefined): FaceIdSettingsView {
+  return { checkAtPunch: company?.faceId?.checkAtPunch === true };
+}
+
+/** The face enrolled for one person, on their user record. */
+export interface UserFaceId {
+  /** Rekognition's id for the indexed face. */
+  faceId: string;
+  collectionId: string;
+  /** The enrolment photo in the private bucket. */
+  photoKey?: string;
+  enrolledAt: Date;
+  /** When and to which wording they consented. */
+  consentAt: Date;
+  consentVersion: string;
+  /** How the enrolment photo graded, for HR's list. */
+  quality?: { sharpness?: number; brightness?: number };
+}
+
+export type FaceCheckReason =
+  | 'matched'
+  | 'no_face'
+  | 'multiple_faces'
+  | 'too_dark'
+  | 'too_bright'
+  | 'blurry'
+  | 'face_turned'
+  | 'eyes_closed'
+  | 'face_covered'
+  | 'too_small'
+  | 'not_a_match'
+  | 'other_person'
+  | 'liveness_failed'
+  | 'not_enrolled'
+  | 'already_enrolled_elsewhere'
+  | 'unavailable';
+
+/**
+ * One check, pass or fail, for HR's log and the fallback's attempt count.
+ * A passed check carries the token that lets one punch through.
+ */
+export interface FaceVerification {
+  org: string;
+  userId: string;
+  /** A reset is logged too, as the record of a face removed; it is never a failure. */
+  kind: 'enrol' | 'verify' | 'reset';
+  at: Date;
+  passed: boolean;
+  reason: FaceCheckReason;
+  /** Similarity of the best match to this person's face, 0-100. */
+  similarity?: number;
+  /** Who the face matched when it was somebody else. */
+  matchedUserId?: string;
+  liveness?: {
+    mode: 'aws' | 'device' | 'none';
+    /** Rekognition's confidence, for an AWS session. */
+    confidence?: number;
+    sessionId?: string;
+    /** What the app says its own check asked and saw. Not trusted, only logged. */
+    challenge?: string;
+    devicePassed?: boolean;
+  };
+  durationMs?: number;
+  /** sha256 of the token handed back, for a passed verify or enrolment. */
+  tokenHash?: string;
+  expiresAt?: Date;
+  usedAt?: Date;
+  /** The punch the token let through. */
+  usedFor?: string;
+  error?: string;
+}
+
+/** A Face Liveness session the backend opened, so a result is only read by its owner, once. */
+export interface FaceLivenessSession {
+  sessionId: string;
+  org: string;
+  userId: string;
+  createdAt: Date;
+  usedAt?: Date;
+}
+
+/**
+ * The consent, as the one line the person ticks on the setup screen, word for
+ * word. Its version is recorded with the enrolment, with the time they
+ * agreed. Change the version with the words: an app that showed the old line
+ * is sent the new one to agree to before it can enrol.
+ */
+export const FACE_CONSENT_VERSION = '2026-10-v2';
+export const FACE_CONSENT_AGREE =
+  'I agree to Face ID keeping a template of my face, made from this selfie, to confirm it\u2019s me when I punch in. ' +
+  'It is stored by AWS in Mumbai and deleted when I leave.';

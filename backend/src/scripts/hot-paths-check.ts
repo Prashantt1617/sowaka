@@ -96,7 +96,7 @@ async function call(handler: (req: Request, res: Response, next: (error?: unknow
     check(`${label}: the team is the manager, the viewer and their reports`,
       JSON.stringify(workspace.team.map((m) => m.userId)) === JSON.stringify(['boss', 'mgr', 'a', 'b', 'c']), workspace.team.map((m) => m.userId));
     check(`${label}: an inline photo still reaches its row`, photo('a') === INLINE, photo('a'));
-    check(`${label}: a stored photo is its media path`, photo('b') === '/media/connect%2Fb.jpg', photo('b'));
+    check(`${label}: a stored photo is its media path`, photo('b') === '/media/connect%2Fb.jpg?w=256', photo('b'));
     check(`${label}: a linked photo is the link`, photo('c') === 'https://cdn.test/c.jpg' && photo('boss') === 'https://cdn.test/boss.jpg', [photo('c'), photo('boss')]);
     check(`${label}: no photo is null`, photo('mgr') === null, photo('mgr'));
     check(`${label}: the approver is named`, workspace.approverName === 'Bina Boss', workspace.approverName);
@@ -130,7 +130,7 @@ async function call(handler: (req: Request, res: Response, next: (error?: unknow
     check(`${label}: tagged people in the author's order, the unknown dropped`,
       JSON.stringify((view?.body.taggedPeople as { userId: string }[] | undefined)?.map((t) => t.userId)) === JSON.stringify(['b', 'c']), view?.body.taggedPeople);
     check(`${label}: the author's live photo and pill`, view?.author.photoUrl === 'https://cdn.test/c.jpg' && view.author.isLeadership === true, view?.author);
-    check(`${label}: a commenter's face`, view?.comments[0]?.photoUrl === '/media/connect%2Fb.jpg', view?.comments[0]);
+    check(`${label}: a commenter's face`, view?.comments[0]?.photoUrl === '/media/connect%2Fb.jpg?w=256', view?.comments[0]);
   }
   const card = feed.posts.find((p) => p.id === anniversary.id);
   check('an anniversary names the team and the joining month', card?.body.personDepartment === 'Eng' && card.body.joinedOn === new Date('2023-10-02').toISOString(), card?.body);

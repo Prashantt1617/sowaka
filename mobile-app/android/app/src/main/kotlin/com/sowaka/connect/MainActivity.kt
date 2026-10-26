@@ -28,6 +28,7 @@ class MainActivity : FlutterActivity() {
         "AppIconConvrse" to ".LauncherConvrse",
         "AppIconAcmt" to ".LauncherAcmt",
         "AppIconCde" to ".LauncherCde",
+        "AppIconHrorgsol" to ".LauncherHrorgsol",
     )
 
     /** The icon asked for, held until the app is in the background. */

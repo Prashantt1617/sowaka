@@ -1,8 +1,7 @@
 import 'dart:async';
 
-import 'package:socket_io_client/socket_io_client.dart' as io;
-
 import '../../../services/api_config.dart';
+import '../../../services/session_socket.dart';
 import '../../auth/data/auth_models.dart';
 
 enum ConnectChangeAction { created, updated, deleted }
@@ -51,7 +50,9 @@ class ConnectSocketService {
   final AuthSession session;
   final String _baseUrl;
 
-  io.Socket? _socket;
+  /// The sign-in's one socket, shared with the requests channel; see
+  /// [SessionSocket].
+  SessionSocket? _shared;
   final _changes = StreamController<ConnectChange>.broadcast();
   final _reconnects = StreamController<void>.broadcast();
   bool _hasConnectedOnce = false;
@@ -62,44 +63,42 @@ class ConnectSocketService {
   /// caller should refetch to catch changes missed while disconnected.
   Stream<void> get reconnects => _reconnects.stream;
 
-  bool get isConnected => _socket?.connected ?? false;
+  bool get isConnected => _shared?.socket.connected ?? false;
+
+  void _onConnect(dynamic _) {
+    if (_hasConnectedOnce) {
+      if (!_reconnects.isClosed) _reconnects.add(null);
+    }
+    _hasConnectedOnce = true;
+  }
+
+  void _onChanged(dynamic data) {
+    if (data is! Map) return;
+    final change = ConnectChange.fromJson(Map<String, dynamic>.from(data));
+    if (change != null && !_changes.isClosed) _changes.add(change);
+  }
 
   void connect() {
-    if (_socket != null) return;
-    final socket = io.io(
-      _baseUrl,
-      io.OptionBuilder()
-          .setPath('/connect/socket')
-          // WebSocket first: the proxy in front of the API passes the upgrade
-          // through, so this connects directly without a polling handshake.
-          // Polling stays listed purely as a fallback for networks that block
-          // WebSocket outright.
-          .setTransports(['websocket', 'polling'])
-          .setAuth({'token': session.token})
-          .enableReconnection()
-          .enableForceNew()
-          .build(),
-    );
-
-    socket.onConnect((_) {
-      if (_hasConnectedOnce) {
-        if (!_reconnects.isClosed) _reconnects.add(null);
-      }
-      _hasConnectedOnce = true;
-    });
-
-    socket.on('connect:changed', (data) {
-      if (data is! Map) return;
-      final change = ConnectChange.fromJson(Map<String, dynamic>.from(data));
-      if (change != null && !_changes.isClosed) _changes.add(change);
-    });
-
-    _socket = socket;
+    if (_shared != null) return;
+    final shared = SessionSocket.acquire(session.token, baseUrl: _baseUrl);
+    // Already up (the requests channel opened it): the next connect is a
+    // reconnection, with changes missed in between.
+    _hasConnectedOnce = shared.socket.connected;
+    shared.socket
+      ..on('connect', _onConnect)
+      ..on('connect:changed', _onChanged);
+    _shared = shared;
   }
 
   void dispose() {
-    _socket?.dispose();
-    _socket = null;
+    final shared = _shared;
+    if (shared != null) {
+      shared.socket
+        ..off('connect', _onConnect)
+        ..off('connect:changed', _onChanged);
+      shared.release();
+    }
+    _shared = null;
     _changes.close();
     _reconnects.close();
   }

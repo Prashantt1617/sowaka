@@ -997,15 +997,49 @@ class ManagerBloc {
   /// Once a minute. Every five seconds was four hundred calls in a sitting,
   /// each competing with whatever the person was actually waiting for; a
   /// decision on a leave can show up a minute late.
+  ///
+  /// Only while the app is in front: it went on in the background for as
+  /// long as the OS kept the app alive (2,288 `/leaves/mine` in 17 h).
   void _startLeavePolling() {
     _leavePollingTimer?.cancel();
+    _pollingWanted = true;
+    if (_inBackground) return;
     _leavePollingTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       unawaited(_refreshLeavesSilently());
     });
   }
 
-  /// The policy is re-read on the same poll, but only once a minute — it
-  /// changes rarely, and the app should not need a restart when it does.
+  /// The poll has been started (the dashboard is loaded), whether or not it
+  /// is running now.
+  bool _pollingWanted = false;
+  bool _inBackground = false;
+
+  /// The app went behind another or came back. Behind, the minute's poll
+  /// stops; back in front, it starts again and reads at once if it missed a
+  /// turn, so a decision made meanwhile is there on return.
+  void setInBackground(bool background) {
+    if (background == _inBackground) return;
+    _inBackground = background;
+    if (background) {
+      _leavePollingTimer?.cancel();
+      _leavePollingTimer = null;
+      _backgroundSince = DateTime.now();
+      return;
+    }
+    final since = _backgroundSince;
+    _backgroundSince = null;
+    if (!_pollingWanted || _controller.isClosed) return;
+    _startLeavePolling();
+    if (since != null && DateTime.now().difference(since) >= const Duration(seconds: 60)) {
+      unawaited(_refreshLeavesSilently());
+    }
+  }
+
+  DateTime? _backgroundSince;
+
+  /// The policy and the review snapshot are re-read on the same poll, but
+  /// only every ten minutes: they change rarely, and the app should not need
+  /// a restart when they do. Once a minute was ~990 calls of each in 17 h.
   DateTime? _policyReadAt;
 
   /// The team list with each report's review brought up to date, leaving
@@ -1045,7 +1079,7 @@ class ManagerBloc {
     try {
       final readPolicy =
           _policyReadAt == null ||
-          DateTime.now().difference(_policyReadAt!) > const Duration(minutes: 1);
+          DateTime.now().difference(_policyReadAt!) > const Duration(minutes: 10);
       // Feedback rides the same throttle: a review stays editable until the
       // cycle closes, so an employee holding the page open should see a
       // revision without signing out.

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../../services/api_client.dart';
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import 'care_models.dart';
@@ -17,10 +18,13 @@ class CareApiException implements Exception {
   String toString() => message;
 }
 
+/// The sign-in whose company refused Care; see [CareApiService.catalog].
+String? _careRefusedFor;
+
 class CareApiService {
   CareApiService({required this.session, String? baseUrl, http.Client? client})
     : _baseUrl = baseUrl ?? ApiConfig.baseUrl,
-      _client = client ?? http.Client();
+      _client = client ?? ApiClient.shared;
 
   final AuthSession session;
   final String _baseUrl;
@@ -64,8 +68,20 @@ class CareApiService {
   }
 
   /// Read once per tab life; the media list changes only when Sowaka swaps a file.
+  ///
+  /// A company without Care is refused (403); that is remembered for the
+  /// session (this sign-in), so it is not asked again on every rebuild.
   Future<CareCatalog> catalog() async {
-    final json = await _request('GET', '/care/catalog');
+    if (_careRefusedFor == session.token) {
+      throw const CareApiException('Care is not available for your company.', statusCode: 403);
+    }
+    final Map<String, dynamic> json;
+    try {
+      json = await _request('GET', '/care/catalog');
+    } on CareApiException catch (error) {
+      if (error.statusCode == 403) _careRefusedFor = session.token;
+      rethrow;
+    }
     return CareCatalog.fromJson(
       json['catalog'] as Map<String, dynamic>? ?? const {},
     );

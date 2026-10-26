@@ -9,7 +9,34 @@ export type RegularizationStatus = 'pending' | 'approved' | 'declined';
  * out-of-location request is a punch taken away from every office, which the
  * manager settles because HR chose that over marking the day present outright.
  */
-export type RegularizationKind = 'correction' | 'out_of_location';
+export type RegularizationKind = 'correction' | 'out_of_location' | 'face_check';
+
+/**
+ * A punch-in the face check would not let through — it failed every try, or
+ * the face service could not be reached — sent to the manager instead, so the
+ * person is not stuck at the door. Approved, the day takes this punch time.
+ */
+export interface FaceCheckNote {
+  at: Date;
+  /** Which punch the check was for. Absent on the first rows: a punch-in. */
+  punchType?: 'in' | 'out';
+  /** The last check's reason, e.g. not_a_match or unavailable. */
+  reason: string;
+  attempts: number;
+  latitude?: number;
+  longitude?: number;
+  accuracy?: number;
+  officeName?: string;
+  distanceMeters?: number;
+  inside?: boolean;
+}
+
+/** The face check a punch went through on, kept with the punch. */
+export interface PunchFaceCheck {
+  similarity?: number;
+  liveness: 'aws' | 'device' | 'none';
+  at: Date;
+}
 
 /**
  * A punch taken outside every office, kept with the day so it reads as the
@@ -87,6 +114,8 @@ export interface AttendanceRecord {
    * The remark HR reads under "OOL check-ins".
    */
   outsideLocation?: OutsideLocationNote;
+  /** Set when the punch-in passed a Face ID check. */
+  punchInFace?: PunchFaceCheck;
   source: AttendanceSource;
   sourceKey: string;
   importedAt: Date;
@@ -103,6 +132,12 @@ export interface AttendanceRegularization {
   kind?: RegularizationKind;
   /** Out of location only: why, and where the punch was taken. */
   outsideLocation?: OutsideLocationNote;
+  /** Face check only: why the check refused, and where the punch was tried from. */
+  faceCheck?: FaceCheckNote;
+  /** A punch-out whose face check failed too, riding on a pending request. */
+  faceCheckOut?: FaceCheckNote;
+  /** Out of location: the face check the punch-in passed, carried to the day on approval. */
+  punchInFace?: PunchFaceCheck;
   /** What the day should be recorded as. */
   requestedDayType?: RegularizationDayType;
   /** @deprecated Punch times from corrections raised before day types. */

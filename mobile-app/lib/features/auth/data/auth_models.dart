@@ -22,6 +22,9 @@ class AuthUser {
     this.enabledTabs = const [],
     this.enabledGames,
     this.canCreateContests = false,
+    this.faceIdEnrolled = false,
+    this.faceIdAtPunch = false,
+    this.placementsEnabled = false,
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
@@ -62,7 +65,20 @@ class AuthUser {
           ? [for (final value in json['enabledGames'] as List) '$value']
           : null,
       canCreateContests: json['canCreateContests'] == true,
+      faceIdEnrolled: _faceId(json, 'enrolled'),
+      faceIdAtPunch: _faceId(json, 'atPunch'),
+      placementsEnabled: _feature(json, 'placements'),
     );
+  }
+
+  static bool _faceId(Map<String, dynamic> json, String key) {
+    final face = json['faceId'];
+    return face is Map && face[key] == true;
+  }
+
+  static bool _feature(Map<String, dynamic> json, String key) {
+    final features = json['features'];
+    return features is Map && features[key] == true;
   }
 
   final String id;
@@ -102,6 +118,18 @@ class AuthUser {
   /// Granted per person by the server, which refuses a contest without it.
   final bool canCreateContests;
 
+  /// Face ID: whether this person has set it up, and whether their punches
+  /// in the app are checked against it. Someone not set up does so at their
+  /// first checked punch. Both false from a server that predates Face ID.
+  final bool faceIdEnrolled;
+  final bool faceIdAtPunch;
+
+  /// Actions › Placements: the clients, candidates and placements of a
+  /// recruitment company, switched on per company by the server
+  /// (`features.placements`). False when the field is missing, so every other
+  /// company, and a server that predates it, never sees the card.
+  final bool placementsEnabled;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'email': email,
@@ -125,6 +153,11 @@ class AuthUser {
     'enabledTabs': enabledTabs,
     if (enabledGames != null) 'enabledGames': enabledGames,
     'canCreateContests': canCreateContests,
+    'faceId': {
+      'enrolled': faceIdEnrolled,
+      'atPunch': faceIdAtPunch,
+    },
+    'features': {'placements': placementsEnabled},
   };
 
   AuthUser copyWith({String? profilePhotoUrl, List<String>? interests}) => AuthUser(
@@ -150,6 +183,9 @@ class AuthUser {
     enabledTabs: enabledTabs,
     enabledGames: enabledGames,
     canCreateContests: canCreateContests,
+    faceIdEnrolled: faceIdEnrolled,
+    faceIdAtPunch: faceIdAtPunch,
+    placementsEnabled: placementsEnabled,
   );
 }
 

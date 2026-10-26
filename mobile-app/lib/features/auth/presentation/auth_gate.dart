@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../../routes/app_routes.dart';
+import '../../manager_shell/presentation/tablet_shell.dart';
 import '../../home/presentation/home_screen.dart';
 import '../data/auth_models.dart';
 import '../data/auth_api_service.dart';
@@ -31,25 +35,58 @@ class _AuthGateState extends State<AuthGate> {
     });
   }
 
-  Future<AuthSession?> _restoreSession() async {
-    // Run the restore and the splash animation together, then take whichever
-    // finishes last — a cached session resolves almost instantly and would
-    // otherwise cut the brand animation off mid-way.
-    final restored = _readSession();
-    await Future.wait<void>([
-      restored.then((_) {}),
-      Future<void>.delayed(SplashScreen.duration),
-    ]);
-    return restored;
-  }
+  /// How long past the splash the app waits for the fresh profile before it
+  /// opens on the one this device kept.
+  static const _refreshGrace = Duration(milliseconds: 600);
 
-  Future<AuthSession?> _readSession() async {
+  Future<AuthSession?> _restoreSession() async {
+    // Run the restore and the splash animation together — a cached session
+    // resolves almost instantly and would otherwise cut the brand animation
+    // off mid-way. The profile check rides along, but a slow network no
+    // longer holds the splash for as long as it takes: shortly after the
+    // animation the app opens on the session it kept, and the check carries
+    // on behind it.
+    final splash = Future<void>.delayed(SplashScreen.duration);
     final store = AuthSessionStore();
     final cached = await store.read();
-    if (cached == null) return null;
+    if (cached == null) {
+      await splash;
+      return null;
+    }
+    final refreshed = _refresh(store, cached);
+    await splash;
+    var late = false;
+    final session = await refreshed.timeout(
+      _refreshGrace,
+      onTimeout: () {
+        late = true;
+        return cached;
+      },
+    );
+    if (late) {
+      // Signed out elsewhere or offboarded meanwhile: the check, when it
+      // lands, ends the session it let in.
+      unawaited(
+        refreshed.then((result) {
+          if (result == null && mounted) {
+            appNavigatorKey.currentState?.pushNamedAndRemoveUntil(
+              AppRoutes.login,
+              (_) => false,
+            );
+          }
+        }),
+      );
+    }
+    return session;
+  }
 
+  /// The profile as the server has it now, kept for the next launch; null
+  /// when the session is over. Never throws: offline, the kept one stands.
+  Future<AuthSession?> _refresh(AuthSessionStore store, AuthSession cached) async {
     try {
-      final user = await AuthApiService().fetchCurrentUser(cached.token);
+      final user = await AuthApiService()
+          .fetchCurrentUser(cached.token)
+          .timeout(const Duration(seconds: 15));
       final refreshed = AuthSession(token: cached.token, user: user);
       await store.save(refreshed);
       return refreshed;

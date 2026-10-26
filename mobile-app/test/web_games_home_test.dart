@@ -372,6 +372,34 @@ void main() {
       expect(harness.surface.events.last, 'refresh');
     });
 
+    testWidgets('one tap, one open: what the page asks for while a game is opening is dropped', (tester) async {
+      final harness = _Harness(_page);
+      await tester.pumpWidget(harness.build());
+      await _settle(tester);
+
+      // A live game's card tapped three times, and a contest, before the game is closed.
+      void ask(String type, Map<String, dynamic> data) =>
+          harness.surface.onMessage(jsonEncode({'id': null, 'type': type, 'data': data}));
+      ask('openGame', {'key': 'scribble'});
+      ask('openGame', {'key': 'scribble'});
+      await _settle(tester);
+      ask('openGame', {'key': 'scribble'});
+      ask('openContest', {'postId': 'post-1'});
+      await _settle(tester);
+      expect(harness.games, [('scribble', null)]);
+      expect(harness.contests, isEmpty);
+
+      // Back from it, the next tap opens again.
+      harness.gameClosed.complete();
+      await _settle(tester);
+      harness.gameClosed = Completer<void>();
+      ask('openGame', {'key': 'scribble'});
+      await _settle(tester);
+      expect(harness.games, [('scribble', null), ('scribble', null)]);
+      harness.gameClosed.complete();
+      await _settle(tester);
+    });
+
     testWidgets('home answers with the server JSON, pictures made whole', (tester) async {
       final harness = _Harness((request) {
         if (request.url.path == '/games/home') {
@@ -616,6 +644,13 @@ void main() {
         'haptic:success',
         'haptic:light',
       ]);
+    });
+
+    test('an invite opens its game on the room; a bad start id opens it plain', () async {
+      await send('openGame', {'key': 'scribble', 'challengeId': 'room:AB12CD'});
+      await send('openGame', {'key': 'scribble', 'challengeId': 'lobby:AB12CD'});
+      await send('openGame', {'key': 'scribble', 'challengeId': 'room:<script>'});
+      expect(calls, ['game:scribble:room:AB12CD', 'game:scribble:null', 'game:scribble:null']);
     });
 
     test('a refusal rejects with the server message and status', () async {

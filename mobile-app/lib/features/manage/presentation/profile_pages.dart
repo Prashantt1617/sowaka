@@ -11,6 +11,7 @@ enum ProfileTab {
   orgChart('Org chart'),
   grow('Grow'),
   rank('Rank'),
+  posts('Post'),
   counselor('Counselor'),
   documentation('Documentation'),
   settings('Settings');
@@ -21,17 +22,20 @@ enum ProfileTab {
 }
 
 /// What anyone in the company sees on a colleague's profile: their
-/// attendance, who they are, where they sit, and where they stand on points.
-/// Nothing about their requests, their reviews or their documents.
+/// attendance, who they are, where they sit, where they stand on points, and
+/// what they have posted. Nothing about their requests, their reviews or
+/// their documents.
 ///
 /// This is the one list to edit to widen or narrow the colleague view. The
 /// server reads a colleague's month for anyone in the same company
-/// (`getTeamMemberAttendance`).
+/// (`getTeamMemberAttendance`), and their posts as the viewer's own feed
+/// would show them (`/connect/users/:userId/posts`).
 const colleagueProfileTabs = [
   ProfileTab.workDetail,
   ProfileTab.attendance,
   ProfileTab.orgChart,
   ProfileTab.rank,
+  ProfileTab.posts,
 ];
 
 /// The tabs on someone else's profile.
@@ -40,7 +44,7 @@ const colleagueProfileTabs = [
 /// report — keeps everything their profile has always shown the viewer: their
 /// day, their details, where they sit and their growth; the requests waiting on
 /// the viewer when the viewer is the one who decides them; their documents when
-/// HR has filed any. Rank is on every profile. Everyone else gets
+/// HR has filed any. Rank and Post are on every profile. Everyone else gets
 /// [colleagueProfileTabs].
 List<ProfileTab> memberProfileTabs({
   required bool inViewerChain,
@@ -55,6 +59,7 @@ List<ProfileTab> memberProfileTabs({
     ProfileTab.orgChart,
     ProfileTab.grow,
     ProfileTab.rank,
+    ProfileTab.posts,
     if (hasDocuments) ProfileTab.documentation,
   ];
 }
@@ -73,13 +78,75 @@ List<ProfileTab> ownProfileTabs({
   ProfileTab.orgChart,
   if (hasManager) ProfileTab.grow,
   ProfileTab.rank,
+  ProfileTab.posts,
   if (showsHelp) ProfileTab.counselor,
   ProfileTab.settings,
 ];
 
+/// Whether profiles carry Post: where the company has Connect to have posted
+/// in, as the bottom bar decides it.
+bool profileShowsPosts(List<String> enabledTabs) =>
+    visibleTabs(enabledTabs).contains(ManagerTab.connect);
+
+/// The feed under the profiles while the shell is mounted, which a profile's
+/// Post tab shares: its directory for tagging, its composer for editing, and
+/// its list, kept in step with what is done on the profile. Set and cleared
+/// by the shell.
+ConnectComposerController? _profileFeed;
+
+/// One person's posts for their profile's Post tab, loading from the start
+/// so the tab's badge has its count; and the page around it rebuilt when the
+/// count changes. Disposed with the page.
+final class _ProfilePosts {
+  _ProfilePosts(AuthSession session, String userId, VoidCallback onCount)
+    : bloc =
+          _profileFeed?.personPosts(session, userId) ??
+          ConnectBloc(session: session, authorUserId: userId) {
+    _count = bloc.stream
+        .map((state) => state.total)
+        .distinct()
+        .listen((_) => onCount());
+    unawaited(bloc.load());
+  }
+
+  final ConnectBloc bloc;
+  late final StreamSubscription<int?> _count;
+
+  /// How many there are, once the first page has said.
+  int? get total => bloc.state.total;
+
+  Widget tab(AuthSession session) => PersonPostsTab(
+    bloc: bloc,
+    session: session,
+    feed: _profileFeed,
+    onOpenPerson: openPersonProfile,
+  );
+
+  void dispose() {
+    _count.cancel();
+    bloc.dispose();
+  }
+}
+
 /// Another person's profile: a report's from the Team tab, or anyone's in the
 /// company from wherever their name was tapped. Which tabs it carries is
 /// [memberProfileTabs]'s to say.
+/// The tab a profile opens on, by where it was opened from; null keeps the
+/// profile's usual first tab.
+ProfileTab? openingTabFor(ProfileEntry from) => switch (from) {
+  ProfileEntry.feed => ProfileTab.posts,
+  ProfileEntry.team || ProfileEntry.orgChart => ProfileTab.orgChart,
+  ProfileEntry.elsewhere => null,
+};
+
+/// The tab shown: the one tapped, else [openOn] once the profile has it (the
+/// Post tab appears when the posts arrive), else the first.
+int _shownTab(List<ProfileTab> tabs, int? tapped, ProfileTab? openOn) {
+  if (tapped != null) return tapped.clamp(0, tabs.length - 1);
+  final wanted = openOn == null ? -1 : tabs.indexOf(openOn);
+  return wanted < 0 ? 0 : wanted;
+}
+
 class _TeamMemberProfilePage extends StatefulWidget {
   const _TeamMemberProfilePage({
     required this.member,
@@ -89,6 +156,7 @@ class _TeamMemberProfilePage extends StatefulWidget {
     required this.onOpenComposer,
     this.canManage = true,
     this.publicOnly = false,
+    this.openOn,
   });
 
   final TeamMember member;
@@ -105,16 +173,41 @@ class _TeamMemberProfilePage extends StatefulWidget {
   /// viewer's own team, so only [colleagueProfileTabs] have anything to show.
   final bool publicOnly;
 
+  /// The tab to open on, from where the profile was opened ([openingTabFor]).
+  final ProfileTab? openOn;
+
   @override
   State<_TeamMemberProfilePage> createState() => _TeamMemberProfilePageState();
 }
 
 class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
-  int _tab = 0;
+  /// The tab tapped; null until one is, while [widget.openOn] decides.
+  int? _tab;
 
   late final ProfileApiService _profileService = ProfileApiService(
     session: widget.bloc.service.session,
   );
+
+  /// Their posts; null, and no Post tab, where the company has no Connect.
+  _ProfilePosts? _posts;
+
+  @override
+  void initState() {
+    super.initState();
+    final session = widget.bloc.service.session;
+    final userId = widget.member.userId;
+    if (userId.isNotEmpty && profileShowsPosts(session.user.enabledTabs)) {
+      _posts = _ProfilePosts(session, userId, () {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _posts?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -269,14 +362,18 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
     final data = bloc.state.dashboard ?? widget.data;
     final present = member.todayStatus == TeamPresenceStatus.present;
     final today = DateTime.now();
-    final tabs = widget.publicOnly
-        ? colleagueProfileTabs
-        : memberProfileTabs(
-            inViewerChain: member.inViewerChain,
-            viewerCanManage: widget.canManage,
-            hasDocuments: member.documents.isNotEmpty,
-          );
-    final selected = _tab.clamp(0, tabs.length - 1);
+    final posts = _posts;
+    final tabs = [
+      for (final tab in widget.publicOnly
+          ? colleagueProfileTabs
+          : memberProfileTabs(
+              inViewerChain: member.inViewerChain,
+              viewerCanManage: widget.canManage,
+              hasDocuments: member.documents.isNotEmpty,
+            ))
+        if (tab != ProfileTab.posts || posts != null) tab,
+    ];
+    final selected = _shownTab(tabs, _tab, widget.openOn);
     // Whether they are in today is their attendance, so it shows only where
     // their Attendance tab does.
     final showsPresence = tabs.contains(ProfileTab.attendance);
@@ -354,15 +451,15 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
             value: _joiningDateLabel(born),
           ),
       ],
+      // Their team as the Team tab draws one's own: their manager, them,
+      // their peers and the people they lead.
       ProfileTab.orgChart => [
-        if (member.orgChart.length > 1)
-          _OrgChartCard(
-            nodes: member.orgChart,
-            selfName: member.name,
-            selfPhotoUrl: member.photoUrl,
-          )
-        else
-          const _ProfileTabNote('No reporting line to show yet.'),
+        _PersonTeamChart(
+          member: member,
+          data: data,
+          service: _profileService,
+          viewerUserId: bloc.service.session.user.id,
+        ),
       ],
       // No "your manager" line here: the reader usually is the manager, and
       // the month row's due card says what to do.
@@ -371,6 +468,9 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
       ],
       ProfileTab.rank => [
         _RankHistory(service: _profileService, userId: member.userId),
+      ],
+      ProfileTab.posts => [
+        if (posts != null) posts.tab(widget.bloc.service.session),
       ],
       ProfileTab.documentation => [
         _DocumentationList(documents: member.documents),
@@ -422,6 +522,10 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
                 recognition: _nonEmpty(member.recognitionLabel),
               ),
               tabs: [for (final tab in tabs) tab.label],
+              counts: [
+                for (final tab in tabs)
+                  tab == ProfileTab.posts ? posts?.total : null,
+              ],
               selected: selected,
               onChanged: (index) => setState(() => _tab = index),
               children: content,
@@ -449,8 +553,10 @@ class _ColleagueProfileLoader extends StatefulWidget {
     required this.bloc,
     required this.onNotifications,
     required this.onOpenComposer,
+    this.openOn,
   });
 
+  final ProfileTab? openOn;
   final String userId;
   final ManagerDashboard data;
   final ManagerBloc bloc;
@@ -480,6 +586,7 @@ class _ColleagueProfileLoaderState extends State<_ColleagueProfileLoader> {
             onOpenComposer: widget.onOpenComposer,
             canManage: false,
             publicOnly: true,
+            openOn: widget.openOn,
           );
         }
         final error = snapshot.error;
@@ -586,6 +693,7 @@ class _ProfileScrollFrame extends StatelessWidget {
   const _ProfileScrollFrame({
     required this.hero,
     required this.tabs,
+    this.counts = const [],
     required this.selected,
     required this.onChanged,
     required this.children,
@@ -593,6 +701,10 @@ class _ProfileScrollFrame extends StatelessWidget {
 
   final Widget hero;
   final List<String> tabs;
+
+  /// A count to wear beside each tab's label, in the tabs' order; null (or
+  /// missing) for none.
+  final List<int?> counts;
   final int selected;
   final ValueChanged<int> onChanged;
   final List<Widget> children;
@@ -625,6 +737,7 @@ class _ProfileScrollFrame extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: _ProfileTabs(
                   labels: tabs,
+                  counts: counts,
                   selected: selected,
                   onChanged: onChanged,
                 ),
@@ -632,6 +745,7 @@ class _ProfileScrollFrame extends StatelessWidget {
             ),
             selected: selected,
             tabs: tabs,
+            counts: counts,
           ),
         ),
         SliverToBoxAdapter(
@@ -652,11 +766,17 @@ class _ProfileScrollFrame extends StatelessWidget {
 
 /// The tab row, held at the top of the page once it scrolls there.
 class _PinnedTabs extends SliverPersistentHeaderDelegate {
-  _PinnedTabs({required this.child, required this.selected, required this.tabs});
+  _PinnedTabs({
+    required this.child,
+    required this.selected,
+    required this.tabs,
+    this.counts = const [],
+  });
 
   final Widget child;
   final int selected;
   final List<String> tabs;
+  final List<int?> counts;
 
   static const _height = 42.0;
 
@@ -672,7 +792,9 @@ class _PinnedTabs extends SliverPersistentHeaderDelegate {
 
   @override
   bool shouldRebuild(_PinnedTabs old) =>
-      old.selected != selected || old.tabs.join() != tabs.join();
+      old.selected != selected ||
+      old.tabs.join() != tabs.join() ||
+      old.counts.join(',') != counts.join(',');
 }
 
 /// Who the profile is (node 3106:50096): the photo, the name, the role. Someone
@@ -910,6 +1032,7 @@ bool profileShowsHelp(List<String> enabledTabs) => enabledTabs.contains('talk');
 
 class _ProfileScreen extends StatefulWidget {
   const _ProfileScreen({
+    super.key,
     required this.session,
     required this.dashboard,
     required this.bloc,
@@ -918,8 +1041,11 @@ class _ProfileScreen extends StatefulWidget {
     required this.onNotifications,
     required this.onOpenComposer,
     required this.onProfilePhotoUpdated,
+    this.openOn,
   });
 
+  /// The tab to open on, from where the profile was opened ([openingTabFor]).
+  final ProfileTab? openOn;
   final AuthSession session;
   final ManagerDashboard dashboard;
   final ManagerBloc bloc;
@@ -934,12 +1060,38 @@ class _ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<_ProfileScreen> {
-  /// Which profile tab is open. Request first, as the design opens it.
-  int _tab = 0;
+  /// The tab tapped; null until one is, while [widget.openOn] decides (and
+  /// without one, Request first, as the design opens it).
+  int? _tab;
 
   late final ProfileApiService _profileService = ProfileApiService(
     session: widget.bloc.service.session,
   );
+
+  /// One's own posts; null, and no Post tab, where the company has no
+  /// Connect.
+  _ProfilePosts? _posts;
+
+  @override
+  void initState() {
+    super.initState();
+    final session = widget.session;
+    final enabled = session.user.enabledTabs;
+    // A company whose app is Help alone has no tabs to show them in.
+    if (session.user.id.isNotEmpty &&
+        profileShowsWork(enabled) &&
+        profileShowsPosts(enabled)) {
+      _posts = _ProfilePosts(session, session.user.id, () {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _posts?.dispose();
+    super.dispose();
+  }
 
   /// The Request tab: every request of theirs, newest first, or a line
   /// saying there are none.
@@ -1109,11 +1261,15 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     final worksHere = profileShowsWork(user.enabledTabs);
     final helpHere = profileShowsHelp(user.enabledTabs);
     final helpOnly = !worksHere && helpHere;
-    final tabs = ownProfileTabs(
-      hasManager: dashboard.hasManager,
-      showsHelp: helpHere,
-    );
-    final selected = _tab.clamp(0, tabs.length - 1);
+    final posts = _posts;
+    final tabs = [
+      for (final tab in ownProfileTabs(
+        hasManager: dashboard.hasManager,
+        showsHelp: helpHere,
+      ))
+        if (tab != ProfileTab.posts || posts != null) tab,
+    ];
+    final selected = _shownTab(tabs, _tab, widget.openOn);
     final today = DateTime.now();
     final todayRecord = dashboard.attendance
         .where(
@@ -1207,12 +1363,18 @@ class _ProfileScreenState extends State<_ProfileScreen> {
             value: _formatDate(user.birthday),
           ),
       ],
+      // The Team tab's own team — the same people, laid out the same way.
       ProfileTab.orgChart => [
-        if (dashboard.myOrgChart.length > 1)
-          _OrgChartCard(
-            nodes: dashboard.myOrgChart,
-            selfName: user.name,
-            selfPhotoUrl: user.profilePhotoUrl,
+        if (dashboard.team.any((member) => !member.isSelf))
+          _ProfileTeamChart(
+            team: dashboard.team,
+            coreTitle: 'My Team',
+            viewerUserId: user.id,
+            photo: ProfilePhoto(
+              name: user.name,
+              url: user.profilePhotoUrl,
+              size: 40,
+            ),
           )
         else
           const _ProfileTabNote(
@@ -1223,6 +1385,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
         _ProfileGrowTab(data: dashboard, bloc: bloc, managerName: reportsTo),
       ],
       ProfileTab.rank => [_RankHistory(service: _profileService)],
+      ProfileTab.posts => [if (posts != null) posts.tab(session)],
       ProfileTab.counselor => [HelpProfileSection(session: session)],
       // One's own documents are not loaded with the workspace.
       ProfileTab.documentation => const <Widget>[],
@@ -1256,6 +1419,10 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                 ? _ProfileScrollFrame(
                     hero: hero,
                     tabs: [for (final tab in tabs) tab.label],
+                    counts: [
+                      for (final tab in tabs)
+                        tab == ProfileTab.posts ? posts?.total : null,
+                    ],
                     selected: selected,
                     onChanged: (index) => setState(() => _tab = index),
                     children: content,
@@ -1973,160 +2140,158 @@ class _PresencePill extends StatelessWidget {
 
 // ── Where they sit, and their documents ──────────────────────────────────────
 
-/// The reporting line (node 3106:49385): the chain above in a single column,
-/// the person themselves highlighted with their photo, and whoever reports to
-/// them hanging below. Anyone on it opens their own profile.
-class _OrgChartCard extends StatelessWidget {
-  const _OrgChartCard({
-    required this.nodes,
-    required this.selfName,
-    this.selfPhotoUrl,
+/// The Org chart on a profile: the person's team as the Team tab draws it —
+/// their manager, them and their peers, then the teams they lead — at the size
+/// the profile's cards have always had. Anyone on it opens their own profile,
+/// through the same opener as anywhere else, so what that profile shows is
+/// [memberProfileTabs]'s to say. The person it is about is already open.
+///
+/// [team] carries who each one is to that person ([_teamTree]). [photo] draws
+/// the person's own face as the hero above draws it.
+class _ProfileTeamChart extends StatefulWidget {
+  const _ProfileTeamChart({
+    required this.team,
+    required this.coreTitle,
+    required this.viewerUserId,
+    required this.photo,
   });
 
-  final List<OrgChartNode> nodes;
-  final String selfName;
-  final String? selfPhotoUrl;
+  final List<TeamMember> team;
+  final String coreTitle;
+  final String viewerUserId;
+  final Widget photo;
+
+  @override
+  State<_ProfileTeamChart> createState() => _ProfileTeamChartState();
+}
+
+class _ProfileTeamChartState extends State<_ProfileTeamChart> {
+  /// Which team is open, by title, as on the Team tab.
+  String? _openTeam;
 
   @override
   Widget build(BuildContext context) {
-    final reports = nodes.where((item) => item.isReport).length;
+    const sizing = _TeamSizing.profile;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final (index, node) in nodes.indexed) ...[
-          if (index > 0 && !(node.isReport && !nodes[index - 1].isReport))
-            // The line that joins one card to the next.
-            Padding(
-              padding: EdgeInsets.only(left: node.isReport ? 71 : 53),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  width: 2,
-                  height: 16,
-                  color: const Color(0xFFDDDDDD),
-                ),
-              ),
-            ),
-          if (node.isReport && index > 0 && !nodes[index - 1].isReport)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 16, 0, 8),
-              child: Text(
-                reports == 1 ? 'REPORTS TO THEM' : '$reports REPORT TO THEM',
-                style: ProfileStyle.sora(
-                  10,
-                  weight: FontWeight.w700,
-                  color: const Color(0xFF929292),
-                  spacing: .5,
-                ),
-              ),
-            ),
-          Padding(
-            padding: EdgeInsets.only(left: node.isReport ? 18 : 0),
-            child: _OrgChartNodeCard(
-              node: node,
-              photo: node.isSelf
-                  ? ProfilePhoto(name: selfName, url: selfPhotoUrl, size: 40)
-                  : null,
-              onTap: node.isSelf || node.userId.isEmpty
-                  ? null
-                  : () => openPersonProfile(node.userId),
-            ),
-          ),
-        ],
-      ],
+      children: _teamTree(
+        members: widget.team,
+        coreTitle: widget.coreTitle,
+        sizing: sizing,
+        openTeam: _openTeam,
+        onToggle: (title) =>
+            setState(() => _openTeam = _openTeam == title ? null : title),
+        row: (member) => _TeamPersonRow(
+          member: member,
+          name: _teamRowName(member, you: member.userId == widget.viewerUserId),
+          sizing: sizing,
+          photo: member.isSelf
+              ? SizedBox.square(dimension: sizing.photo, child: widget.photo)
+              : null,
+          onTap: member.isSelf || member.userId.isEmpty
+              ? null
+              : () => openPersonProfile(member.userId, from: ProfileEntry.orgChart),
+        ),
+      ),
     );
   }
 }
 
-class _OrgChartNodeCard extends StatelessWidget {
-  const _OrgChartNodeCard({required this.node, this.photo, this.onTap});
+/// Someone else's Org chart: their team, fetched as anyone in the company may
+/// see it. A server from before `/profile/people/:userId/team` still has the
+/// reporting line the profile came with, so the chart is drawn from that —
+/// their manager and their reports — with the photos the viewer's own team
+/// already has.
+class _PersonTeamChart extends StatefulWidget {
+  const _PersonTeamChart({
+    required this.member,
+    required this.data,
+    required this.service,
+    required this.viewerUserId,
+  });
 
-  final OrgChartNode node;
-  final Widget? photo;
-  final VoidCallback? onTap;
+  final TeamMember member;
+  final ManagerDashboard data;
+  final ProfileApiService service;
+  final String viewerUserId;
+
+  @override
+  State<_PersonTeamChart> createState() => _PersonTeamChartState();
+}
+
+class _PersonTeamChartState extends State<_PersonTeamChart> {
+  late final Future<List<TeamMember>> _team = widget.service
+      .fetchPersonTeam(widget.member.userId)
+      .then((team) => team.isEmpty ? _fromReportingLine() : team)
+      .catchError((Object _) => _fromReportingLine());
+
+  /// Their manager — the card just above them on the line — them, and their
+  /// reports, as the Team tab would group them.
+  List<TeamMember> _fromReportingLine() {
+    final member = widget.member;
+    final nodes = member.orgChart;
+    final selfAt = nodes.indexWhere((node) => node.isSelf);
+    final known = {
+      for (final person in [
+        ...widget.data.team,
+        ...widget.data.recognitionCandidates,
+      ])
+        person.userId: person,
+    };
+    TeamMember seen(OrgChartNode node, int id, {required String role}) {
+      final person = known[node.userId];
+      return TeamMember.fromJson({
+        'userId': node.userId,
+        'name': node.name,
+        'designation': node.designation,
+        'department': person?.team ?? 'Team',
+        'photoUrl': person?.photoUrl,
+        'isManager': role == 'manager',
+        'reportsToViewer': role == 'report',
+      }, id);
+    }
+
+    return [
+      if (selfAt > 0 && !nodes[selfAt - 1].isReport)
+        seen(nodes[selfAt - 1], 1, role: 'manager'),
+      TeamMember.fromJson({
+        'userId': member.userId,
+        'name': member.name,
+        'designation': member.designation,
+        'department': member.team,
+        'photoUrl': member.photoUrl,
+        'isSelf': true,
+      }, 2),
+      for (final (index, node) in nodes.where((node) => node.isReport).indexed)
+        seen(node, index + 3, role: 'report'),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
-    final self = node.isSelf;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(color: Color(0x1A000000), blurRadius: 3, offset: Offset(0, 1)),
-          BoxShadow(color: Color(0x1A000000), blurRadius: 2, offset: Offset(0, 1)),
-        ],
-      ),
-      child: Material(
-        color: self ? const Color(0xFFF7F7FF) : Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: self ? const Color(0xFFBEEDFF) : const Color(0xFFF7F7F9),
-            width: 1.114,
-          ),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(13.114),
-            child: Row(
-              children: [
-                photo ??
-                    Container(
-                      width: 40,
-                      height: 40,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF7F7F7),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: const Color(0xFFF7F7F9),
-                          width: 1.114,
-                        ),
-                      ),
-                      child: SvgPicture.asset(
-                        'assets/icons/profile_org_person.svg',
-                        width: 20,
-                        height: 20,
-                      ),
-                    ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        node.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: ProfileStyle.sora(
-                          14,
-                          weight: FontWeight.w700,
-                          height: 20,
-                        ),
-                      ),
-                      if (node.designation.isNotEmpty)
-                        Text(
-                          node.designation.toUpperCase(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: ProfileStyle.sora(
-                            11,
-                            weight: FontWeight.w600,
-                            color: ProfileStyle.tertiary,
-                            height: 16.5,
-                            spacing: 0.55,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
+    final member = widget.member;
+    return FutureBuilder<List<TeamMember>>(
+      future: _team,
+      builder: (context, snapshot) {
+        final team = snapshot.data;
+        if (team == null) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: CircularProgressIndicator(color: MColors.terra),
             ),
-          ),
-        ),
-      ),
+          );
+        }
+        if (team.where((person) => !person.isSelf).isEmpty) {
+          return const _ProfileTabNote('No reporting line to show yet.');
+        }
+        return _ProfileTeamChart(
+          team: team,
+          coreTitle: "${member.name.trim().split(' ').first}'s Team",
+          viewerUserId: widget.viewerUserId,
+          photo: _TeamMemberPhoto(member: member, size: 40),
+        );
+      },
     );
   }
 }
@@ -2610,15 +2775,11 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
 /// Seeded/uploaded photos without S3 configured fall back to `data:` URIs
 /// (see `_remoteImage` in connect_feed_screen.dart) — `Image.network` can't
 /// load those, only real http(s) URLs, so profile photos need the same split.
-ImageProvider _profileImage(String url) {
-  if (url.startsWith('data:')) {
-    final base64Part = url.split(',').last;
-    return MemoryImage(base64Decode(base64Part));
-  }
-  // Cached on disk by URL: a photo seen once is not fetched again, on this
-  // scroll or the next launch. Keys are immutable, so the cache never goes stale.
-  return CachedNetworkImageProvider(resolveMediaUrl(url));
-}
+///
+/// The small copy, decoded small; [full] (the photo opened full screen, to
+/// pinch and zoom) the upload as it came.
+ImageProvider _profileImage(String url, {bool full = false}) =>
+    full ? mediaImageProvider(url, original: true) : avatarImageProvider(url);
 
 /// [url] full screen, pinch to zoom ([showPhotoViewer]).
 Future<void> _openProfilePhoto(
@@ -2628,7 +2789,7 @@ Future<void> _openProfilePhoto(
   Widget? action,
 }) => showPhotoViewer(
   context,
-  image: _profileImage(url),
+  image: _profileImage(url, full: true),
   label: label,
   action: action,
 );
@@ -2749,46 +2910,64 @@ class _ProfileAvatar extends StatelessWidget {
 class _ProfileTabs extends StatelessWidget {
   const _ProfileTabs({
     required this.labels,
+    this.counts = const [],
     required this.selected,
     required this.onChanged,
   });
 
   final List<String> labels;
+
+  /// A count beside a label ("Post 12"), by index; null or missing for none.
+  final List<int?> counts;
   final int selected;
   final ValueChanged<int> onChanged;
 
   /// Up to this many tabs share the bar equally; more scroll.
   static const _fitsAcross = 3;
 
-  Widget _tab(int index, {required bool stretched}) => InkWell(
-    onTap: () => onChanged(index),
-    child: Container(
-      padding: const EdgeInsets.only(bottom: 13),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: index == selected
-                ? const Color(0xFF222222)
-                : Colors.transparent,
-            width: 1.114,
+  Widget _tab(int index, {required bool stretched}) {
+    final label = Text(
+      labels[index],
+      textAlign: stretched ? TextAlign.center : TextAlign.start,
+      style: TextStyle(
+        fontFamily: 'Sora',
+        color: index == selected
+            ? const Color(0xFF222222)
+            : const Color(0xFF717171),
+        fontSize: 14,
+        height: 20 / 14,
+        fontWeight: index == selected ? FontWeight.w700 : FontWeight.w500,
+      ),
+    );
+    final count = index < counts.length ? counts[index] : null;
+    return InkWell(
+      onTap: () => onChanged(index),
+      child: Container(
+        padding: const EdgeInsets.only(bottom: 13),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: index == selected
+                  ? const Color(0xFF222222)
+                  : Colors.transparent,
+              width: 1.114,
+            ),
           ),
         ),
+        child: count == null || count <= 0
+            ? label
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  label,
+                  const SizedBox(width: 4),
+                  _TabCountBadge(count),
+                ],
+              ),
       ),
-      child: Text(
-        labels[index],
-        textAlign: stretched ? TextAlign.center : TextAlign.start,
-        style: TextStyle(
-          fontFamily: 'Sora',
-          color: index == selected
-              ? const Color(0xFF222222)
-              : const Color(0xFF717171),
-          fontSize: 14,
-          height: 20 / 14,
-          fontWeight: index == selected ? FontWeight.w700 : FontWeight.w500,
-        ),
-      ),
-    ),
-  );
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2828,6 +3007,35 @@ class _ProfileTabs extends StatelessWidget {
       ),
     );
   }
+}
+
+/// How many there are, beside a tab's label: the blue pill on "Post 12"
+/// (node 3965:56224). Round at one digit, as at two.
+class _TabCountBadge extends StatelessWidget {
+  const _TabCountBadge(this.count);
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    constraints: const BoxConstraints(minWidth: 20),
+    padding: const EdgeInsets.all(4),
+    decoration: BoxDecoration(
+      color: const Color(0xFF0571A6),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      count > 99 ? '99+' : '$count',
+      textAlign: TextAlign.center,
+      style: const TextStyle(
+        fontFamily: 'Sora',
+        color: Colors.white,
+        fontSize: 10,
+        height: 12 / 10,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
 }
 
 /// One line of the Work detail tab (node 3074:45990): the glyph in a soft
@@ -3323,9 +3531,10 @@ class _FootnoteLink extends StatelessWidget {
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
-/// The Settings tab on one's own profile (node 3857:82656): the privacy
-/// policy, the people they have blocked, log out, and deleting the account.
-/// Log out asks first ([confirmLogOut]); the rest open what they always did.
+/// The Settings tab on one's own profile (node 4194:21788): the privacy
+/// policy, the people they have blocked, deleting the account, and log out,
+/// each a glyph and its name in the same ink. Log out asks first
+/// ([confirmLogOut]); the rest open what they always did.
 class ProfileSettingsTab extends StatelessWidget {
   const ProfileSettingsTab({
     super.key,
@@ -3358,7 +3567,6 @@ class ProfileSettingsTab extends StatelessWidget {
           key: const ValueKey('profile-settings-privacy'),
           label: 'Privacy Policy',
           icon: const _PrivacyPolicyGlyph(),
-          arrowAsset: 'assets/icons/settings_arrow.svg',
           onTap: () => _open(context, ApiConfig.privacyPolicyUrl),
         ),
         // The only way back from a block, which is why the block sheet
@@ -3371,7 +3579,6 @@ class ProfileSettingsTab extends StatelessWidget {
             width: 19.99,
             height: 19.99,
           ),
-          arrowAsset: 'assets/icons/settings_arrow.svg',
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => BlockedPeopleScreen(session: session),
@@ -3379,51 +3586,43 @@ class ProfileSettingsTab extends StatelessWidget {
           ),
         ),
         _SettingsRow(
-          key: const ValueKey('profile-settings-logout'),
-          label: 'Log out',
-          color: ProfileStyle.tertiary,
-          icon: SvgPicture.asset(
-            'assets/icons/settings_log_out.svg',
-            width: 19.99,
-            height: 19.99,
-          ),
-          arrowAsset: 'assets/icons/settings_arrow_grey.svg',
-          onTap: () => confirmLogOut(context, onLogOut),
-        ),
-        _SettingsRow(
           key: const ValueKey('profile-settings-delete'),
           label: 'Delete my account',
-          color: const Color(0xFFFF5A5F),
           icon: SvgPicture.asset(
             'assets/icons/settings_delete.svg',
             width: 19.99,
             height: 19.99,
           ),
-          arrowAsset: 'assets/icons/settings_arrow_red.svg',
           onTap: () => _open(context, ApiConfig.dataDeletionUrl),
+        ),
+        _SettingsRow(
+          key: const ValueKey('profile-settings-logout'),
+          label: 'Log out',
+          icon: SvgPicture.asset(
+            'assets/icons/settings_log_out.svg',
+            width: 19.99,
+            height: 19.99,
+          ),
+          onTap: () => confirmLogOut(context, onLogOut),
         ),
       ],
     );
   }
 }
 
-/// One 40pt line of Settings: the glyph on its soft disc, the label, and the
-/// arrow at the far end, all in the row's colour.
+/// One 40pt line of Settings: the glyph on its soft disc and the label
+/// beside it.
 class _SettingsRow extends StatelessWidget {
   const _SettingsRow({
     super.key,
     required this.label,
     required this.icon,
-    required this.arrowAsset,
     required this.onTap,
-    this.color = ProfileStyle.ink,
   });
 
   final String label;
   final Widget icon;
-  final String arrowAsset;
   final VoidCallback onTap;
-  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -3455,15 +3654,10 @@ class _SettingsRow extends StatelessWidget {
                   style: ProfileStyle.sora(
                     14,
                     weight: FontWeight.w500,
-                    color: color,
+                    color: ProfileStyle.ink,
                     height: 20,
                   ),
                 ),
-              ),
-              // Drawn pointing left; the design turns it to point on.
-              Transform.flip(
-                flipX: true,
-                child: SvgPicture.asset(arrowAsset, width: 20, height: 20),
               ),
             ],
           ),
@@ -3858,6 +4052,11 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
                   width: 30,
                   height: 30,
                   fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => AvatarBadge(
+                    initial: widget.data.managerInitial,
+                    index: 1,
+                    size: 30,
+                  ),
                 ),
               ),
             },

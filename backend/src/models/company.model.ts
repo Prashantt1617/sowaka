@@ -1,3 +1,5 @@
+import type { CompanyFaceIdSettings } from './face.model';
+
 /**
  * Pay Schedule (PRD §5.1 / ORG-3). The payroll run derives actual working days
  * from `weekoffDays` + holidays; this captures the org's declared cadence and,
@@ -117,6 +119,8 @@ export interface Company {
    * dashboard cannot raise it, and adding an employee past it is refused.
    */
   maxUsers?: number;
+  /** Face ID at punch-in, HR's to switch on; see CompanyFaceIdSettings. Absent is off. */
+  faceId?: CompanyFaceIdSettings;
   /** Features only some companies have; see CompanyFeatures. Absent is all off. */
   features?: CompanyFeatures;
   createdAt?: number;

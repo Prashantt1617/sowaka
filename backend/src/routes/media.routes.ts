@@ -2,8 +2,21 @@ import { Router } from 'express';
 import { connectMedia } from '../config/db';
 import { logger } from '../utils/logger';
 import { isConnectMediaKey, readConnectMedia } from '../services/s3-connect-media.service';
+import { requestedWidth } from '../services/image-fit';
+import {
+  mediaCacheControl,
+  mediaCandidates,
+  rememberMissingCopy,
+  type MediaCandidate,
+} from '../services/media-lookup';
 
 export const mediaRouter = Router();
+
+/** S3's answer for a key that was never written (as against one it failed to read). */
+function isMissingObject(error: unknown) {
+  const failure = error as { name?: string; $metadata?: { httpStatusCode?: number } } | undefined;
+  return failure?.name === 'NoSuchKey' || failure?.$metadata?.httpStatusCode === 404;
+}
 
 // helmet() sets `Cross-Origin-Resource-Policy: same-origin` on everything,
 // which a browser applies to an <img> too: the dashboard and the Flutter web
@@ -31,6 +44,9 @@ mediaRouter.get('/:key', async (req, res, next) => {
       res.status(404).json({ success: false, message: 'Media not found' });
       return;
     }
+    // `?w=720` for the copy a phone draws at that width, `?original=1` for
+    // the upload as it came; neither is the largest copy there is.
+    const wanted = requestedWidth(req.query);
     // Held in S3: stream it back through this host, so a client only ever
     // has to reach the API. Anything else is the Mongo fallback below.
     if (!objectKey.startsWith('mongo/')) {
@@ -50,12 +66,25 @@ mediaRouter.get('/:key', async (req, res, next) => {
       // for good. Enough of those and no image or video loaded at all.
       let readerGone = false;
       res.on('close', () => { readerGone = true; });
-      const object = await readConnectMedia(objectKey, range).catch(() => undefined);
+      // The copy at the width asked for if there is one, else the next best,
+      // else the original (see [mediaCandidates]).
+      let object: Awaited<ReturnType<typeof readConnectMedia>> | undefined;
+      let served: MediaCandidate | undefined;
+      for (const candidate of mediaCandidates(objectKey, wanted)) {
+        object = await readConnectMedia(candidate.key, range).catch((error: unknown) => {
+          if (candidate.copy && isMissingObject(error)) rememberMissingCopy(candidate.key);
+          return undefined;
+        });
+        if (readerGone || res.destroyed || object?.body) {
+          served = candidate;
+          break;
+        }
+      }
       if (readerGone || res.destroyed) {
         (object?.body as (NodeJS.ReadableStream & { destroy?: () => void }) | undefined)?.destroy?.();
         return;
       }
-      if (!object?.body) {
+      if (!object?.body || !served) {
         res.status(404).json({ success: false, message: 'Media not found' });
         return;
       }
@@ -65,8 +94,7 @@ mediaRouter.get('/:key', async (req, res, next) => {
         res.setHeader('Content-Length', String(object.contentLength));
       }
       if (object.contentRange) res.setHeader('Content-Range', object.contentRange);
-      // Immutable per key, as below.
-      res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+      res.setHeader('Cache-Control', mediaCacheControl(served, wanted, objectKey));
       res.status(object.contentRange ? 206 : 200);
       // pipe() does not forward the source's errors. An S3 socket reset
       // part-way through a video would otherwise be an unhandled 'error' on
@@ -82,8 +110,17 @@ mediaRouter.get('/:key', async (req, res, next) => {
       stream.pipe(res);
       return;
     }
-    const media = await connectMedia().findOne({ objectKey });
-    if (!media) {
+    let media: { contentType: string; bytes: Buffer } | null = null;
+    let served: MediaCandidate | undefined;
+    for (const candidate of mediaCandidates(objectKey, wanted)) {
+      media = await connectMedia().findOne({ objectKey: candidate.key });
+      if (media) {
+        served = candidate;
+        break;
+      }
+      if (candidate.copy) rememberMissingCopy(candidate.key);
+    }
+    if (!media || !served) {
       res.status(404).json({ success: false, message: 'Media not found' });
       return;
     }
@@ -93,7 +130,7 @@ mediaRouter.get('/:key', async (req, res, next) => {
     res.setHeader('Accept-Ranges', 'bytes');
     // Content is immutable per key, so let clients cache it hard rather than
     // refetching megabytes on every feed render.
-    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    res.setHeader('Cache-Control', mediaCacheControl(served, wanted, objectKey));
     // `bytes=N-M`, `bytes=N-`, and the suffix form `bytes=-N` (the LAST n
     // bytes, which a video probe asks for to find the moov atom — read as
     // 0..n it would hand back the wrong bytes under a truthful header).

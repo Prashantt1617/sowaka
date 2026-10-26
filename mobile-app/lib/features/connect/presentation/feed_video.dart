@@ -1,11 +1,65 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../services/api_config.dart';
 import '../../shared/network_status.dart';
+
+/// Where feed videos are kept on the phone once watched, so a loop, a scroll
+/// back or the next launch plays the file rather than streaming it again.
+///
+/// One `.mov` was fetched 3,832 times in 17 hours, mostly as ranged pieces:
+/// the player streamed it afresh on every loop, and nothing was kept.
+class FeedVideoCache {
+  const FeedVideoCache();
+
+  /// Keeps nothing and finds nothing: every video streams. For tests, which
+  /// have no disk.
+  static const FeedVideoCache none = _NoVideoCache();
+
+  static final CacheManager _files = CacheManager(
+    Config(
+      'feedVideos',
+      // A video's key never changes, so a kept copy never goes stale; these
+      // bound the space it takes, oldest seen first out.
+      stalePeriod: const Duration(days: 14),
+      maxNrOfCacheObjects: 30,
+    ),
+  );
+
+  static final Set<String> _keeping = <String>{};
+
+  /// The phone's copy of [url], or null when there is none (yet).
+  Future<File?> cached(String url) async {
+    try {
+      return (await _files.getFileFromCache(url))?.file;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Downloads [url] to the phone in the background, once, for next time.
+  void keep(String url) {
+    if (!_keeping.add(url)) return;
+    unawaited(
+      _files.downloadFile(url).then<void>((_) {}, onError: (Object _) {}).whenComplete(() => _keeping.remove(url)),
+    );
+  }
+}
+
+class _NoVideoCache extends FeedVideoCache {
+  const _NoVideoCache();
+
+  @override
+  Future<File?> cached(String url) async => null;
+
+  @override
+  void keep(String url) {}
+}
 
 /// A video posted to the feed, or picked for a post and not yet sent. As on
 /// Instagram it has no play button: it plays by itself, looping, once most
@@ -16,8 +70,12 @@ import '../../shared/network_status.dart';
 /// landscape stays landscape. The corner button opens it full screen on the
 /// same player, so it carries on from where it was.
 ///
-/// Only one plays at a time. The player is made when the card is built and
-/// goes with it, so only the cards near the screen hold one.
+/// Only one plays at a time. The player is made only once a quarter of the
+/// card is on screen, not when the card is built (the list builds cards well
+/// ahead of the screen, and each one used to start downloading its video),
+/// and goes with the card. Until then the card shows a still frame. The
+/// first play streams while a copy is downloaded to the phone; every loop
+/// after, and every later showing, plays that copy.
 ///
 /// Given a [header], it is a video post's own card (node 3752:27075): who
 /// posted it over the top of the video on a shade that keeps it legible, and
@@ -51,6 +109,9 @@ class FeedVideo extends StatefulWidget {
   @visibleForTesting
   static void resetSound() => _FeedVideoState._soundOn = false;
 
+  /// Where watched videos are kept; [FeedVideoCache.none] in tests.
+  static FeedVideoCache cache = const FeedVideoCache();
+
   @override
   State<FeedVideo> createState() => _FeedVideoState();
 }
@@ -80,8 +141,24 @@ class _FeedVideoState extends State<FeedVideo> {
   static const double _startAt = 0.6;
   static const double _stopBelow = 0.5;
 
+  /// How much of it must be on screen before its player is made at all.
+  static const double _openAt = 0.25;
+
   VideoPlayerController? _controller;
   bool _failed = false;
+
+  /// A player is on its way (the phone's copy is being looked for).
+  bool _opening = false;
+
+  /// Bumped whenever the player is thrown away, so one still being made for
+  /// the old video is not put in its place.
+  int _generation = 0;
+
+  /// Playing from the network rather than the phone's copy: it does not loop
+  /// by itself, since a looping network player streams the whole video again
+  /// each time round; at the end it moves to the copy, once there is one.
+  bool _streaming = false;
+  bool _looping = false;
 
   /// Held down: paused until the finger lifts.
   bool _held = false;
@@ -99,7 +176,9 @@ class _FeedVideoState extends State<FeedVideo> {
   void initState() {
     super.initState();
     NetworkStatus.offline.addListener(_onNetworkChanged);
-    _open();
+    // A file on this phone costs nothing to open; a posted video waits until
+    // it is on screen (see [_followSight]).
+    if (widget.filePath != null) unawaited(_open());
   }
 
   @override
@@ -130,19 +209,34 @@ class _FeedVideoState extends State<FeedVideo> {
     NetworkStatus.offline.removeListener(_onNetworkChanged);
     _scroll?.removeListener(_followSight);
     if (identical(_playing, this)) _playing = null;
+    _generation += 1;
+    _controller?.removeListener(_onTick);
     _controller?.dispose();
     super.dispose();
   }
 
-  void _open() {
+  String get _url => resolveMediaUrl(widget.url!);
+
+  /// Makes the player: on the phone's copy when there is one, else streaming.
+  Future<void> _open() async {
+    if (_opening || _controller != null) return;
+    _opening = true;
+    final generation = _generation;
     final path = widget.filePath;
+    final File? kept = path != null ? null : await FeedVideo.cache.cached(_url);
+    _opening = false;
+    if (!mounted || generation != _generation) return;
+    _streaming = path == null && kept == null;
     final controller = path != null
         ? VideoPlayerController.file(File(path))
-        : VideoPlayerController.networkUrl(Uri.parse(resolveMediaUrl(widget.url!)));
-    _controller = controller;
+        : kept != null
+        ? VideoPlayerController.file(kept)
+        : VideoPlayerController.networkUrl(Uri.parse(_url));
+    controller.addListener(_onTick);
+    setState(() => _controller = controller);
     controller.initialize().then((_) {
       if (!mounted || !identical(_controller, controller)) return;
-      controller.setLooping(true);
+      controller.setLooping(!_streaming);
       controller.setVolume(_soundOn ? 1 : 0);
       setState(() {});
       _followSightSoon();
@@ -151,12 +245,69 @@ class _FeedVideoState extends State<FeedVideo> {
     });
   }
 
+  /// Thrown away and made again: a retry, or another video in this card.
   void _reopen() {
     final old = _controller;
     if (identical(_playing, this)) _playing = null;
-    setState(() => _failed = false);
-    _open();
+    _generation += 1;
+    _opening = false;
+    old?.removeListener(_onTick);
+    setState(() {
+      _failed = false;
+      _controller = null;
+    });
     old?.dispose();
+    if (widget.filePath != null) {
+      unawaited(_open());
+    } else {
+      _followSightSoon();
+    }
+  }
+
+  /// A streamed video that has played to its end goes round again: on the
+  /// phone's copy if it has arrived (from then on it loops by itself, with
+  /// nothing more downloaded), else streamed once more.
+  void _onTick() {
+    final controller = _controller;
+    if (controller == null || !_streaming || _looping || !controller.value.isCompleted) return;
+    _looping = true;
+    unawaited(_loopAgain(controller).whenComplete(() => _looping = false));
+  }
+
+  Future<void> _loopAgain(VideoPlayerController streamed) async {
+    final generation = _generation;
+    final keepGoing = identical(_playing, this) && !_held;
+    // Full screen holds this player, so it stays on it until it is back.
+    final kept = _fullScreen ? null : await FeedVideo.cache.cached(_url);
+    if (!mounted || generation != _generation || !identical(_controller, streamed)) return;
+    if (kept != null) {
+      final local = VideoPlayerController.file(kept);
+      try {
+        await local.initialize();
+      } catch (_) {
+        await local.dispose();
+        return _streamAgain(streamed, keepGoing);
+      }
+      if (!mounted || generation != _generation || !identical(_controller, streamed)) {
+        await local.dispose();
+        return;
+      }
+      await local.setLooping(true);
+      await local.setVolume(streamed.value.volume);
+      local.addListener(_onTick);
+      streamed.removeListener(_onTick);
+      _streaming = false;
+      setState(() => _controller = local);
+      if (identical(_playing, this) && !_held) unawaited(local.play());
+      await streamed.dispose();
+      return;
+    }
+    await _streamAgain(streamed, keepGoing);
+  }
+
+  Future<void> _streamAgain(VideoPlayerController streamed, bool keepGoing) async {
+    await streamed.seekTo(Duration.zero);
+    if (keepGoing && identical(_playing, this) && !_held) await streamed.play();
   }
 
   void _onNetworkChanged() {
@@ -171,6 +322,8 @@ class _FeedVideoState extends State<FeedVideo> {
     _playing = this;
     controller.setVolume(_soundOn ? 1 : 0);
     controller.play();
+    // Watched, not scrolled past: worth keeping on the phone for the loop.
+    if (_streaming) FeedVideo.cache.keep(_url);
   }
 
   void _pause() {
@@ -219,7 +372,13 @@ class _FeedVideoState extends State<FeedVideo> {
   /// plain sight; stops once it is mostly gone.
   void _followSight() {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized || !mounted || _fullScreen) return;
+    if (!mounted) return;
+    if (controller == null) {
+      // Not made yet: made once enough of it is in sight.
+      if (!_failed && _shown && widget.url != null && _inSight() >= _openAt) unawaited(_open());
+      return;
+    }
+    if (!controller.value.isInitialized || _fullScreen) return;
     final seen = _shown ? _inSight() : 0.0;
     if (controller.value.isPlaying || identical(_playing, this)) {
       if (seen < _stopBelow) _pause();
@@ -281,6 +440,20 @@ class _FeedVideoState extends State<FeedVideo> {
   Widget build(BuildContext context) {
     final controller = _controller;
     final header = widget.header;
+    if (!_failed && controller == null) {
+      // Not on screen yet, so no player and nothing downloaded: a still
+      // frame in its place, with who posted it. (The server keeps no poster
+      // image of a video yet, so the frame is plain.)
+      return _VideoFrame(
+        aspectRatio: 4 / 5,
+        onTap: () => unawaited(_open()),
+        child: _withHeader(
+          const Center(
+            child: Icon(Icons.movie_outlined, size: 32, color: Color(0x99FFFFFF)),
+          ),
+        ),
+      );
+    }
     if (_failed || controller == null) {
       return _VideoFrame(
         aspectRatio: 4 / 5,

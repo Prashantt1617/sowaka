@@ -278,6 +278,8 @@ export type CalendarDayDTO = {
   punchOut: string | null;
   lateByMinutes: number;
   earlyByMinutes?: number;
+  /** Leave without pay for half the day: half a day of loss of pay. */
+  halfDay?: true;
   /** Set when HR marked the day: what it would have been, and who changed it. */
   hr?: { previousStatus: CalendarDayStatus; previousLabel: string | null; note?: string; setByName?: string; setAt: string };
 };
@@ -445,6 +447,11 @@ export type LeaveTypeRule = {
   advanceDays: number;
   allowBackdated: boolean;
   backdatedDays: number;
+  /**
+   * Leave without pay: no balance (it can always be applied for) and every
+   * approved day is loss of pay. Only HR sets it, here. Never on comp-off.
+   */
+  unpaid?: boolean;
   /** Off means nobody can apply for it; leave already taken keeps reading. */
   active: boolean;
 };
@@ -921,7 +928,8 @@ export function deleteEngagementPost(postId: string) {
 
 // ---- Reports › Attendance ----
 
-export type ReportStatus = 'present' | 'half_day' | 'missed_punch' | 'on_leave' | 'absent';
+/** 'unpaid_leave' is an approved day of a leave-without-pay type: not leave (paid), not absent. */
+export type ReportStatus = 'present' | 'half_day' | 'missed_punch' | 'on_leave' | 'unpaid_leave' | 'absent';
 
 export type ReportPersonDTO = {
   name: string;
@@ -955,7 +963,7 @@ export type AttendanceReportDTO = {
   days: ReportDayDTO[];
   /** Days each person did not owe (left out of `days`); absent from an older server. */
   offDays?: [string, string, 'week_off' | 'holiday'][];
-  /** `userId|date` of the leave days that were half a day off. */
+  /** `userId|date` of the leave days (paid or unpaid) that were half a day off. */
   halfDayLeave?: string[];
 };
 
@@ -1024,3 +1032,54 @@ export const setReportingManager = (employeeUserId: string, managerUserId: strin
   api<{ movedRequests: number }>(`/admin/reporting/employees/${employeeUserId}/manager`, { method: 'PUT', body: { managerUserId } });
 export const clearReportingManager = (employeeUserId: string) =>
   api<unknown>(`/admin/reporting/employees/${employeeUserId}/manager`, { method: 'DELETE' });
+
+// ------------------------------------------------------------------ Face ID
+
+export type FaceIdSettingsDTO = { checkAtPunch: boolean };
+
+export type FaceIdPersonDTO = {
+  userId: string;
+  name: string;
+  employeeId: string | null;
+  department: string | null;
+  designation: string | null;
+  enrolled: boolean;
+  enrolledAt: string | null;
+  lastCheckAt: string | null;
+  lastCheckPassed: boolean | null;
+  failedLast30Days: number;
+};
+
+export type FaceIdOverviewDTO = {
+  settings: FaceIdSettingsDTO;
+  liveness: 'aws' | 'device';
+  matchThreshold: number;
+  enrolledCount: number;
+  people: FaceIdPersonDTO[];
+};
+
+export type FaceCheckDTO = {
+  at: string;
+  userId: string;
+  name: string;
+  employeeId: string | null;
+  kind: 'enrol' | 'verify';
+  passed: boolean;
+  reason: string;
+  message: string;
+  similarity: number | null;
+  /** Set when the face matched a colleague's: someone punching in for someone else. */
+  matchedName: string | null;
+  liveness: 'aws' | 'device' | 'none';
+  livenessConfidence: number | null;
+  deviceCheckPassed: boolean | null;
+  usedForPunch: boolean;
+};
+
+export const getFaceIdOverview = () => api<FaceIdOverviewDTO>('/admin/face-id');
+export const updateFaceIdSettings = (input: FaceIdSettingsDTO) =>
+  api<{ settings: FaceIdSettingsDTO }>('/admin/face-id/settings', { method: 'PATCH', body: input }).then((r) => r.settings);
+export const resetFaceId = (userId: string) =>
+  api<{ removed: boolean }>(`/admin/face-id/people/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+export const getFaceChecks = (from: string, to: string, all = false) =>
+  api<{ checks: FaceCheckDTO[] }>(`/admin/face-id/checks?from=${from}&to=${to}${all ? '&all=true' : ''}`).then((r) => r.checks);

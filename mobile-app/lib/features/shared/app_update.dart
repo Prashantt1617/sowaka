@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/api_config.dart';
+import '../auth/data/auth_models.dart';
 import '../auth/data/auth_session_store.dart';
 
 /// What the server says about the app in this person's hand.
@@ -59,11 +60,12 @@ class AppUpdateService {
     return null;
   }
 
-  Future<AppUpdateStatus> check() async {
+  /// [session] is the signed-in one when the caller has already read it.
+  Future<AppUpdateStatus> check({AuthSession? session}) async {
     final platform = AppUpdateService.platform;
     if (platform == null) return AppUpdateStatus.none;
     // Whose rule applies is known only once someone has signed in.
-    final session = await AuthSessionStore().read();
+    session ??= await AuthSessionStore().read();
     if (session == null) return AppUpdateStatus.none;
     final info = await PackageInfo.fromPlatform();
     final version = info.buildNumber.isEmpty
@@ -123,9 +125,16 @@ class AppUpdateGate extends StatefulWidget {
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
-  /// Asks again now: called once someone is signed in, since the check at
-  /// launch had no company to ask about.
+  /// Asks again now.
   static void recheck() => _recheck.value += 1;
+
+  static final _signedIn = ValueNotifier<int>(0);
+
+  /// Someone is signed in: asks, unless the check at launch already asked for
+  /// this same session. Only a launch with nobody signed in had no company to
+  /// ask about; one that restored a session asked once already, and the home
+  /// screen asking again was a second /app/update on every launch.
+  static void signedIn() => _signedIn.value += 1;
 
   @override
   State<AppUpdateGate> createState() => _AppUpdateGateState();
@@ -142,12 +151,14 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     AppUpdateGate._recheck.addListener(_check);
+    AppUpdateGate._signedIn.addListener(_checkForNewSession);
     _check();
   }
 
   @override
   void dispose() {
     AppUpdateGate._recheck.removeListener(_check);
+    AppUpdateGate._signedIn.removeListener(_checkForNewSession);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -159,7 +170,13 @@ class _AppUpdateGateState extends State<AppUpdateGate>
 
   bool _again = false;
 
-  Future<void> _check() async {
+  /// The session the last check asked for (null: nobody signed in).
+  String? _askedFor;
+  bool _asked = false;
+
+  void _checkForNewSession() => _check(onlyForNewSession: true);
+
+  Future<void> _check({bool onlyForNewSession = false}) async {
     // A recheck asked for mid-check runs once that one is done, not never.
     if (_checking) {
       _again = true;
@@ -167,7 +184,11 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     }
     _checking = true;
     try {
-      final status = await _service.check();
+      final session = await AuthSessionStore().read();
+      if (onlyForNewSession && _asked && session?.token == _askedFor) return;
+      _asked = true;
+      _askedFor = session?.token;
+      final status = await _service.check(session: session);
       AppUpdateStatus? offer;
       if (status.mode == AppUpdateMode.optional) {
         final prefs = await SharedPreferences.getInstance();
@@ -177,8 +198,9 @@ class _AppUpdateGateState extends State<AppUpdateGate>
       }
       AppUpdateGate.optional.value = offer;
       if (mounted) setState(() => _status = status);
-    } catch (_) {
+    } catch (error) {
       // Offline or the server is away: carry on as before.
+      debugPrint('Update check skipped: $error');
     } finally {
       _checking = false;
       if (_again && mounted) {

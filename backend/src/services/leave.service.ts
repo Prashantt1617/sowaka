@@ -145,8 +145,9 @@ export async function applyForLeave(
 
   // Unlimited leave keeps no balance, so there is nothing here to overdraw:
   // the manager's decision is the whole control. Checking anyway would refuse
-  // people against days their policy never gave them.
-  const tracksBalance = (await leaveRulesFor(userId)).balanceTracked ?? true;
+  // people against days their policy never gave them. Leave without pay is
+  // unlimited the same way, type by type: its days are paid for in payroll.
+  const tracksBalance = rule.unpaid !== true && ((await leaveRulesFor(userId)).balanceTracked ?? true);
 
   // You cannot spend leave you do not have. Checked against the balance of
   // each period the leave touches — a year, or a month for a type processed
@@ -313,8 +314,9 @@ async function leaveBalanceOf(userId: string, year: number, asOf: Date) {
   const employee = settled(employeeR);
   if (!employee) throw new LeaveError(404, 'Employee not found');
   const allRules = settled(rulesR);
-  const rules = allRules.filter((rule) => rule.resetOn !== 'monthly');
-  const monthlyRules = allRules.filter((rule) => rule.resetOn === 'monthly');
+  // Leave without pay keeps no balance, so it has neither walk nor opening.
+  const rules = allRules.filter((rule) => rule.resetOn !== 'monthly' && !rule.unpaid);
+  const monthlyRules = allRules.filter((rule) => rule.resetOn === 'monthly' && !rule.unpaid);
   const approved = settled(approvedR);
   const used: Record<string, number> = {};
   for (const leave of approved) {
@@ -348,12 +350,16 @@ async function leaveBalanceOf(userId: string, year: number, asOf: Date) {
     monthly[rule.key as Leave['type']] = monthlyRows[i];
   });
   const item = (key: Leave['type']) => monthly[key] ?? balanceItem(entitlement(key), used[key] ?? 0);
+  // Leave without pay has no balance: nothing accrues, nothing runs out, and
+  // the app says "Unlimited · unpaid" instead of a count. What was taken this
+  // year is still told.
+  const unpaidItem = (key: Leave['type']) => ({ ...balanceItem(0, round(used[key] ?? 0)), unlimited: true as const, unpaid: true as const });
 
   return {
     year,
     // Every type on their template, in the template's order — what the app
     // shows. A type HR adds appears here without an app release.
-    types: allRules.map((rule) => ({ key: rule.key, name: rule.name, ...item(rule.key) })),
+    types: allRules.map((rule) => ({ key: rule.key, name: rule.name, ...(rule.unpaid ? unpaidItem(rule.key) : item(rule.key)) })),
     // The four original types by name, for app builds that predate `types`.
     ...(Object.fromEntries(LEAVE_TYPE_KEYS.map((key) => [key, item(key)])) as Record<'sick' | 'casual' | 'earned' | 'comp_off', ReturnType<typeof item>>),
   };

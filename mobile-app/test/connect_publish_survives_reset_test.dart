@@ -160,4 +160,58 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets('a feed built afresh carries on with the session\'s bloc and socket, '
+      'and the company directory is read once', (tester) async {
+    tester.view.physicalSize = const Size(1179, 2556);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    var feedReads = 0;
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/connect/feed')) {
+        feedReads++;
+        return http.Response(jsonEncode({'success': true, 'posts': [_existing]}), 200);
+      }
+      return http.Response(jsonEncode({'success': true}), 200);
+    });
+    final api = ConnectApiService(session: _session, baseUrl: 'https://example.test', client: client);
+    final controller = ConnectComposerController();
+    final socket = _CountingSocket();
+    Widget feed(int reset) => MaterialApp(
+      home: Scaffold(
+        body: ConnectFeedScreen(
+          key: ValueKey('connect-tab-$reset'),
+          session: _session,
+          profileAction: const SizedBox.shrink(),
+          composerController: controller,
+          api: api,
+          socket: socket,
+        ),
+      ),
+    );
+    for (var reset = 0; reset < 4; reset++) {
+      await tester.pumpWidget(feed(reset));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+      expect(find.text('Already here'), findsOneWidget);
+    }
+    // The first page and the second, once; one socket, never closed.
+    expect(feedReads, lessThanOrEqualTo(2));
+    expect(socket.connects, 1);
+    expect(socket.disposes, 0);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+    expect(socket.disposes, 1);
+  });
+}
+
+class _CountingSocket extends _QuietSocket {
+  int connects = 0;
+  int disposes = 0;
+  @override
+  void connect() => connects += 1;
+  @override
+  void dispose() => disposes += 1;
 }

@@ -5,4 +5,6 @@
     <color name="ic_launcher_convrse_background">#FFFFFF</color>
     <color name="ic_launcher_acmt_background">#FFFFFF</color>
     <color name="ic_launcher_cde_background">#FFFFFF</color>
+    <!-- The cream the HR Organization's Solutions logo is drawn on. -->
+    <color name="ic_launcher_hrorgsol_background">#FFFFF7</color>
 </resources>
