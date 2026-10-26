@@ -3,7 +3,6 @@
 /// the check is run.
 class FaceIdStatus {
   const FaceIdStatus({
-    required this.setupRequired,
     required this.checkAtPunch,
     required this.enrolled,
     required this.consent,
@@ -14,7 +13,6 @@ class FaceIdStatus {
   });
 
   factory FaceIdStatus.fromJson(Map<String, dynamic> json) => FaceIdStatus(
-    setupRequired: json['setupRequired'] == true,
     checkAtPunch: json['checkAtPunch'] == true,
     enrolled: json['enrolled'] == true,
     consent: FaceConsent.fromJson(json['consent'] as Map<String, dynamic>? ?? const {}),
@@ -24,7 +22,6 @@ class FaceIdStatus {
     fallbackAvailable: json['fallbackAvailable'] == true,
   );
 
-  final bool setupRequired;
   final bool checkAtPunch;
   final bool enrolled;
   final FaceConsent consent;

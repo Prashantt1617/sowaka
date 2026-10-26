@@ -3,23 +3,32 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../attendance/data/punch_location_service.dart';
 import '../manager/data/manager_api_service.dart';
 import 'face_camera.dart';
 import 'face_capture_layout.dart';
+import 'face_check_screen.dart';
 import 'face_id_models.dart';
 
-/// Setting up Face ID, on the selfie punch-in's own screens (Figma
-/// 4194:21786) with setup's words. The consent is on the same screen: one
+/// Setting up Face ID, at the first punch the company checks (Figma
+/// 4194:21786, with setup's words). The consent is on the same screen: one
 /// line to agree to, word for word, above the button.
-/// Pops true once a face is enrolled, false or null otherwise.
+///
+/// The setup is that punch's face check: the server hands back the same
+/// punch token a passed check does, and this pops with it, so the punch goes
+/// on to the location without a second selfie. A failed setup says why, with
+/// the tries left; after three, or while the face service is down, the punch
+/// can go to the manager instead. Null when closed.
 class FaceSetupScreen extends StatefulWidget {
-  const FaceSetupScreen({super.key, required this.api, this.allowLater = false});
+  const FaceSetupScreen({super.key, required this.api, this.type = 'in', this.readLocation});
 
   final ManagerApiService api;
 
-  /// Offer "Do this later" when the face service is down: setup is
-  /// compulsory, but nobody should be stuck at it for AWS's sake.
-  final bool allowLater;
+  /// 'in' or 'out': the punch this setup is for.
+  final String type;
+
+  /// Where the phone is, for a punch sent to the manager. Optional.
+  final Future<PunchReading> Function()? readLocation;
 
   @override
   State<FaceSetupScreen> createState() => _FaceSetupScreenState();
@@ -31,10 +40,11 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
   String? _loadProblem;
   bool _agreed = false;
   bool _busy = false;
-  bool _done = false;
+  bool _sendingFallback = false;
+  bool _fallbackOpen = false;
+  int? _attemptsLeft;
   String? _problemTitle;
   String? _problem;
-  bool _unavailable = false;
 
   @override
   void initState() {
@@ -49,7 +59,11 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
     setState(() => _loadProblem = null);
     try {
       final status = await widget.api.fetchFaceStatus();
-      if (mounted) setState(() => _consent = status.consent);
+      if (!mounted) return;
+      setState(() {
+        _consent = status.consent;
+        _fallbackOpen = status.fallbackAvailable;
+      });
     } on ManagerApiException catch (error) {
       if (mounted) setState(() => _loadProblem = error.offline ? 'No internet connection. Connect and try again.' : error.message);
     } catch (_) {
@@ -63,7 +77,6 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_done) return;
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
       unawaited(_camera.pause());
     } else if (state == AppLifecycleState.resumed && !_camera.ready && !_busy) {
@@ -94,23 +107,28 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
         return;
       }
       // The consent's version goes with the photo: the server records when
-      // they agreed, and to which words.
-      await widget.api.enrolFace(jpeg: photo, consentVersion: consent.version);
+      // they agreed, and to which line.
+      final token = await widget.api.enrolFace(jpeg: photo, consentVersion: consent.version);
+      FaceCheckOutcome.enrolledThisRun = true;
       if (!mounted) return;
-      await _camera.pause();
-      setState(() => _done = true);
+      // A server without setup tokens: the punch screen asks for the selfie.
+      Navigator.of(context).pop(token == null ? const FaceCheckOutcome.needsCheck() : FaceCheckOutcome.passed(token));
+      return;
     } on ManagerApiException catch (error) {
       final face = error.details?['face'];
       final reason = face is Map ? face['reason'] as String? : null;
       if (reason == 'consent_changed' && face is Map && face['consent'] is Map<String, dynamic>) {
-        // The wording changed since it was shown: agree to the new one first.
+        // The line changed since it was shown: agree to the new one first.
         setState(() {
           _consent = FaceConsent.fromJson(face['consent'] as Map<String, dynamic>);
           _agreed = false;
         });
-        _fail('Consent updated', 'The Face ID wording has changed. Read it and agree again.');
+        _fail('Consent updated', 'The Face ID consent has changed. Read it and agree again.');
       } else {
-        _unavailable = reason == 'unavailable';
+        setState(() {
+          if (face is Map && face['attemptsLeft'] is num) _attemptsLeft = (face['attemptsLeft'] as num).toInt();
+          if (face is Map && face['fallback'] == true) _fallbackOpen = true;
+        });
         _fail(
           FaceCheckResult(passed: false, reason: reason ?? 'not_a_match', message: error.message).title,
           error.offline ? 'No internet connection. Connect and try again.' : error.message,
@@ -133,31 +151,36 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
     });
   }
 
+  Future<void> _sendFallback() async {
+    if (_sendingFallback) return;
+    setState(() => _sendingFallback = true);
+    PunchReading? reading;
+    try {
+      reading = await widget.readLocation?.call().timeout(const Duration(seconds: 12));
+    } catch (_) {
+      // The manager sees the request without a place rather than not at all.
+    }
+    try {
+      await widget.api.requestFaceFallback(type: widget.type, reading: reading);
+      if (mounted) Navigator.of(context).pop(const FaceCheckOutcome.fallbackSent());
+    } on ManagerApiException catch (error) {
+      _fail('Request not sent', error.offline ? 'No internet connection. Connect and try again.' : error.message);
+    } finally {
+      if (mounted) setState(() => _sendingFallback = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    void leave() => Navigator.of(context).pop(_done);
-    if (_done) {
-      return FaceCaptureLayout(
-        stepTitle: 'Face ID',
-        heading: 'Set up Face ID',
-        instructions: 'Position your face inside the oval to\nset up Face ID.',
-        camera: null,
-        guide: FaceGuide.solid,
-        status: const FaceStatusRow.detected(
-          title: 'Face ID is set up',
-          body: 'From now on, a quick selfie confirms\nit’s you when you punch in.',
-        ),
-        action: FaceCaptureAction(label: 'Continue', caption: '', onTap: leave),
-        onBack: leave,
-        onClose: leave,
-      );
-    }
-
+    final punchIn = widget.type != 'out';
+    final punchWord = punchIn ? 'punch-in' : 'punch-out';
+    final label = punchIn ? 'Set up & punch in' : 'Set up & punch out';
     final signal = _camera.signal;
     final detected = signal == FaceSignal.detected;
     final cameraProblem = _camera.cameraProblem;
-    const label = 'Take selfie & set up';
-    const caption = 'This selfie is what your punch-ins are matched with.';
+    final caption = _attemptsLeft != null && _attemptsLeft! > 0
+        ? '$_attemptsLeft ${_attemptsLeft == 1 ? 'try' : 'tries'} left.'
+        : 'Your later punches are matched with this selfie.';
     FaceStatusRow? status;
     var action = FaceCaptureAction(
       label: label,
@@ -179,10 +202,10 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
         title: 'Face not detected',
         body: 'Move into the oval, face a light source\nand make sure your face is uncovered.',
       );
-      action = const FaceCaptureAction(label: label, caption: 'Capture unlocks when a face is detected.', enabled: false, onTap: null);
+      action = FaceCaptureAction(label: label, caption: 'Capture unlocks when a face is detected.', enabled: false, onTap: null);
     } else if (detected && !_camera.challengeDone) {
       status = FaceStatusRow.detected(body: _camera.challenge.prompt);
-      action = const FaceCaptureAction(label: label, caption: 'Capture unlocks once you have done that.', enabled: false, onTap: null);
+      action = FaceCaptureAction(label: label, caption: 'Capture unlocks once you have done that.', enabled: false, onTap: null);
     } else if (_problem != null) {
       status = FaceStatusRow.problem(title: _problemTitle ?? 'Try again', body: _problem!);
     } else if (_loadProblem != null) {
@@ -193,8 +216,23 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
       );
     }
 
+    // Out of tries, or the service is down: the manager can be asked instead.
+    Widget? below;
+    if (_fallbackOpen && cameraProblem == null) {
+      action = FaceCaptureAction(
+        label: 'Send $punchWord to manager',
+        caption: 'Your manager or HR approves the $punchWord.',
+        busy: _sendingFallback,
+        onTap: _sendFallback,
+      );
+      below = detected && _camera.challengeDone && _agreed
+          ? FaceQuietLink(label: 'Try setting up again', onTap: _busy ? null : _enrol)
+          : null;
+    }
+
+    void close() => Navigator.of(context).pop();
     return FaceCaptureLayout(
-      stepTitle: 'Face ID',
+      stepTitle: punchIn ? 'Punch in' : 'Punch out',
       heading: 'Set up Face ID',
       instructions: 'Position your face inside the oval to\nset up Face ID.',
       camera: _camera.controller,
@@ -207,11 +245,9 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
         onRetry: _loadProblem == null ? null : _load,
       ),
       action: action,
-      below: widget.allowLater && _unavailable
-          ? FaceQuietLink(label: 'Do this later', onTap: () => Navigator.of(context).pop(false))
-          : null,
-      onBack: () => Navigator.of(context).pop(false),
-      onClose: () => Navigator.of(context).pop(false),
+      below: below,
+      onBack: close,
+      onClose: close,
     );
   }
 }

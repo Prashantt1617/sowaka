@@ -62,16 +62,14 @@ class _HomeScreenState extends State<HomeScreen> {
     await AppIcon.use(branding.iosIconName);
   }
 
-  Future<void> _finishOnboarding(String photoUrl, List<String> interests, bool faceEnrolled) async {
+  Future<void> _finishOnboarding(String photoUrl, List<String> interests) async {
     final session = _session;
     if (session == null) return;
     final updated = AuthSession(
       token: session.token,
       user: session.user.copyWith(
         profilePhotoUrl: photoUrl.isEmpty ? null : photoUrl,
-        // Empty when the interests step was not asked: keep the ones they have.
-        interests: interests.isEmpty ? null : interests,
-        faceIdEnrolled: faceEnrolled ? true : null,
+        interests: interests,
       ),
     );
     await AuthSessionStore().save(updated);

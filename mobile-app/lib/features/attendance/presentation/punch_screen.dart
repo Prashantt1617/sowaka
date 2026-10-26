@@ -195,17 +195,23 @@ class _PunchScreenState extends State<PunchScreen> {
       type: widget.type,
       readLocation: widget.geofenced ? _location.read : null,
     );
-    FaceCheckOutcome? outcome = await navigator.push<FaceCheckOutcome>(
-      MaterialPageRoute(builder: (_) => check()),
+    // Someone not set up does it here, at their first checked punch, and the
+    // setup is this punch's check: it hands back the same punch token.
+    FaceSetupScreen setup() => FaceSetupScreen(
+      api: widget.api,
+      type: widget.type,
+      readLocation: widget.geofenced ? _location.read : null,
     );
+    final enrolled = widget.api.session.user.faceIdEnrolled || FaceCheckOutcome.enrolledThisRun;
+    FaceCheckOutcome? outcome = await navigator.push<FaceCheckOutcome>(
+      MaterialPageRoute(builder: (_) => enrolled ? check() : setup()),
+    );
+    // HR reset their Face ID since the profile was read.
     if (outcome?.needsSetup == true) {
-      final enrolled = await navigator.push<bool>(
-        MaterialPageRoute(builder: (_) => FaceSetupScreen(api: widget.api)),
-      );
-      if (enrolled != true) return false;
-      outcome = await navigator.push<FaceCheckOutcome>(
-        MaterialPageRoute(builder: (_) => check()),
-      );
+      outcome = await navigator.push<FaceCheckOutcome>(MaterialPageRoute(builder: (_) => setup()));
+    }
+    if (outcome?.needsCheck == true) {
+      outcome = await navigator.push<FaceCheckOutcome>(MaterialPageRoute(builder: (_) => check()));
     }
     if (!mounted || outcome == null) return false;
     if (outcome.fallbackSent) {

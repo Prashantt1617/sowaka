@@ -774,16 +774,19 @@ class ManagerApiService {
   Future<FaceIdStatus> fetchFaceStatus() async =>
       FaceIdStatus.fromJson(await _face(_jsonRequest('GET', '/face/status')));
 
-  /// The consented setup photo. Throws with the server's reason (too dark,
-  /// more than one face, …) in `details['face']`.
-  Future<void> enrolFace({required Uint8List jpeg, required String consentVersion}) async {
+  /// The consented setup photo. Answers with the punch token the setup earns
+  /// (it is that punch's face check). Throws with the server's reason (too
+  /// dark, more than one face, …), the tries left and whether the manager
+  /// fallback is open, in `details['face']`.
+  Future<String?> enrolFace({required Uint8List jpeg, required String consentVersion}) async {
     final request =
         http.MultipartRequest('POST', Uri.parse('$_baseUrl/face/enrol'))
           ..headers['Authorization'] = 'Bearer ${session.token}'
           ..fields['consent'] = 'true'
           ..fields['consentVersion'] = consentVersion
           ..files.add(http.MultipartFile.fromBytes('photo', jpeg, filename: 'face.jpg'));
-    await _face(request);
+    final json = await _face(request);
+    return json['token'] as String?;
   }
 
   /// A selfie, or a finished Face Liveness session, checked by the server.
