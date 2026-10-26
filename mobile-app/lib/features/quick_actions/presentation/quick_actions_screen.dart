@@ -1505,7 +1505,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         trailingLabels: {
           for (final label in _pickableLeaveLabels)
             if (_isUnpaidLeave(label))
-              label: 'Unlimited · unpaid'
+              label: 'Unpaid'
             else if (_balanceFor(label) != null)
               label: left(_balanceFor(label)!),
         },
@@ -2871,8 +2871,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     for (final type in types) {
       final balance = _balanceFor(type.name);
       final allowance = type.unpaid
-          ? '${type.name} — unlimited, and unpaid: each day of it is taken '
-                'off your pay'
+          ? '${type.name} — unpaid: each day of it is taken off your pay'
           : balance == null
           ? type.name
           : '${type.name} — ${formatDays(balance.total)} days a year, '
@@ -6095,9 +6094,10 @@ class _LeaveBalanceCard extends StatelessWidget {
     return _LeaveFigureCard(
       iconAsset: _leaveTypeIcon(label).asset,
       label: label,
-      // Leave without pay has no count to show, and no bar to fill.
+      // Leave without pay has no count to show, and no bar to fill: it says
+      // unpaid, and nothing about how much of it there is.
       value: item.unpaid
-          ? 'Unlimited'
+          ? 'Unpaid'
           : '${formatDays(item.remaining)}/${formatDays(item.total)}',
       footer: [
         if (item.unpaid)
