@@ -10,6 +10,7 @@ import { OtpDeliveryError, sendOtpEmail } from './email.service';
 import { logger } from '../utils/logger';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { Company, DEFAULT_APP_TABS } from '../models/company.model';
+import { faceIdSettingsOf } from '../models/face.model';
 import { supportRoleOf } from '../models/support.model';
 import { enabledGamesOf } from './game-catalog.service';
 
@@ -411,6 +412,8 @@ async function toAuthUser(
     isLeadership: user.isLeadership === true,
     // Whether the composer offers contests; the server refuses one without it.
     canCreateContests: user.canCreateContests === true,
+    // Whether the app asks them to set up Face ID, and whether they have.
+    faceId: { required: faceIdSettingsOf(company).setupRequired, enrolled: Boolean(user.faceId?.faceId) },
   };
 }
 
