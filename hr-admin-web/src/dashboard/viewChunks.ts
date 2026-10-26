@@ -49,6 +49,9 @@ const LOADERS: Partial<Record<View, Loader>> = {
   oolcheckins: () => import('./views/OutOfLocation').then((m) => ({ default: m.OutOfLocation })),
   support: () => import('./views/SupportDesk').then((m) => ({ default: m.SupportDesk })),
   suwi: () => import('./views/SuwiSettings').then((m) => ({ default: m.SuwiSettings })),
+  placements: () => import('./views/Placements').then((m) => ({ default: m.Placements })),
+  placementclients: () => import('./views/Placements').then((m) => ({ default: m.PlacementClients })),
+  placementcustomers: () => import('./views/Placements').then((m) => ({ default: m.PlacementCustomers })),
 };
 
 /**

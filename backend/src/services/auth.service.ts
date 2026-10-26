@@ -12,6 +12,7 @@ import { resolveProfilePhoto } from './s3-connect-media.service';
 import { Company, DEFAULT_APP_TABS } from '../models/company.model';
 import { supportRoleOf } from '../models/support.model';
 import { enabledGamesOf } from './game-catalog.service';
+import { placementsFeatureOf } from './placements.service';
 
 const defaultCompany = 'Sowaka';
 
@@ -411,6 +412,11 @@ async function toAuthUser(
     isLeadership: user.isLeadership === true,
     // Whether the composer offers contests; the server refuses one without it.
     canCreateContests: user.canCreateContests === true,
+    // Features only some companies have, so the app and the dashboard show
+    // their screens only there; the server refuses their routes elsewhere.
+    features: {
+      placements: placementsFeatureOf(company),
+    },
   };
 }
 

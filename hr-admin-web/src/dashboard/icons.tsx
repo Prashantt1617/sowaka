@@ -56,6 +56,29 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M4 21V4M4 5h11l-1.5 3L15 11H4" />
     </svg>
   ),
+  // A person handed on: a placement.
+  placements: (
+    <svg {...base(18, 'currentColor')}>
+      <circle cx="9" cy="7.5" r="3" />
+      <path d="M3.5 19v-1A3.5 3.5 0 0 1 7 14.5h4" />
+      <path d="M15 15h6M18 12l3 3-3 3" />
+    </svg>
+  ),
+  // A company: the building that hires.
+  placementclients: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="4" y="3" width="11" height="18" rx="1.5" />
+      <path d="M15 9h4a1 1 0 0 1 1 1v11M8 7h3M8 11h3M8 15h3M3 21h18" />
+    </svg>
+  ),
+  // A candidate: a person with their CV.
+  placementcustomers: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <circle cx="12" cy="9.5" r="2.5" />
+      <path d="M8 17a4 4 0 0 1 8 0" />
+    </svg>
+  ),
   games: (
     <svg {...base(18, 'currentColor')}>
       <path d="M7 8h10a4 4 0 0 1 3.7 5.5l-1.2 3a2 2 0 0 1-3.2.8L14.8 16H9.2l-1.5 1.3a2 2 0 0 1-3.2-.8l-1.2-3A4 4 0 0 1 7 8z" />

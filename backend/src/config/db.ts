@@ -52,6 +52,7 @@ import { SupportEvent, SupportMessage, SupportTicket, SupportTopicList } from '.
 import { PolicyDocument } from '../models/policy-document.model';
 import { AppPage } from '../models/app-page.model';
 import { EmployeeActivity } from '../models/employee-activity.model';
+import { Placement, PlacementClient, PlacementCustomer } from '../models/placement.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -366,6 +367,19 @@ export function appPages(): Collection<AppPage> {
 /** Each employee's change history, newest first on their profile; see EmployeeActivity. */
 export function employeeActivity(): Collection<EmployeeActivity> {
   return getDb().collection<EmployeeActivity>('employee_activity');
+}
+
+/** Placements (see models/placement.model.ts): a placement agency's clients, candidates and placements. */
+export function placementClients(): Collection<PlacementClient> {
+  return getDb().collection<PlacementClient>('placement_clients');
+}
+
+export function placementCustomers(): Collection<PlacementCustomer> {
+  return getDb().collection<PlacementCustomer>('placement_customers');
+}
+
+export function placements(): Collection<Placement> {
+  return getDb().collection<Placement>('placements');
 }
 
 async function ensureIndexes(database: Db): Promise<void> {

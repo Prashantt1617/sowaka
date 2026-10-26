@@ -23,6 +23,7 @@ import { helpRouter } from './help.routes';
 import { careRouter } from './care.routes';
 import { profileRouter } from './profile.routes';
 import { supportAdminRouter, supportRouter } from './support.routes';
+import { placementsAdminRouter, placementsRouter } from './placements.routes';
 import { gamesRouter, playRouter, squadWebRouter } from './game-catalog.routes';
 import { cupRouter } from './cup.routes';
 import { cupAdminRouter } from './cup-admin.routes';
@@ -63,6 +64,8 @@ router.use('/admin/kpi', kpiRouter);
 router.use('/admin/relay', relayRouter);
 // The Diwali Cup on the office TV, and HR's void (see cup-bets.service).
 router.use('/admin/cup', cupAdminRouter);
+// Placements, for a placement agency: only a company with features.placements.
+router.use('/admin/placements', placementsAdminRouter);
 router.use('/relay', relayPlayerRouter);
 router.use('/talk', talkRouter);
 router.use('/garden', gardenRouter);
@@ -83,3 +86,4 @@ router.use('/help', helpRouter);
 router.use('/care', careRouter);
 router.use('/profile', profileRouter);
 router.use('/support', supportRouter);
+router.use('/placements', placementsRouter);

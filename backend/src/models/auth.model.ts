@@ -55,4 +55,6 @@ export interface AuthUser {
   enabledTabs?: string[];
   /** The games switched on for this person's company; see Company.enabledGames. */
   enabledGames?: string[];
+  /** Features this person's company has; see Company.features. */
+  features?: { placements: boolean };
 }

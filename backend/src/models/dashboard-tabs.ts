@@ -17,6 +17,8 @@ export const DASHBOARD_TABS = [
   'payschedule', 'taxdetails', 'payheads', 'statutorycomponents', 'templates', 'paiddays', 'payruns', 'payrolldash', 'payrollreports', 'payrollbulk',
   'reimbursements', 'reimbursementtypes',
   'games', 'engagementposts', 'relaygame', 'contentreports',
+  // Only for a company with features.placements; its routes check that too.
+  'placements',
 ] as const;
 export type DashboardTab = (typeof DASHBOARD_TABS)[number];
 
@@ -75,6 +77,8 @@ const RULES: Rule[] = [
   { path: /^\/admin\/games/, read: ['games', 'engagementposts'], write: ['games', 'engagementposts'] },
   { path: /^\/admin\/relay/, read: ['relaygame', 'engagementposts'], write: ['relaygame'] },
   { path: /^\/admin\/connect\/reports/, read: ['contentreports'], write: ['contentreports'] },
+  // Placements: a placement agency's clients, candidates and placements, reading included.
+  { path: /^\/admin\/placements/, read: ['placements'], write: ['placements'] },
   { path: /^\/holidays/, write: ['holidaybank'] },
 ];
 

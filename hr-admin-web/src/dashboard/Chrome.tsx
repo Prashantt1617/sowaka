@@ -87,7 +87,15 @@ const CONNECT: NavItem[] = [
   { key: 'cuptv', label: 'Tournament TV' },
   { key: 'contentreports', label: 'Moderate feed' },
 ];
+// Placements: a placement agency's own work, so it comes first; only a
+// company with the feature sees it (see access.ts).
+const PLACEMENTS: NavItem[] = [
+  { key: 'placements', label: 'Placements' },
+  { key: 'placementclients', label: 'Clients' },
+  { key: 'placementcustomers', label: 'Customers' },
+];
 export const SECTIONS: { title: string; items: NavItem[] }[] = [
+  { title: 'PLACEMENTS', items: PLACEMENTS },
   { title: 'REQUESTS', items: REQUESTS },
   { title: 'SUPPORT', items: SUPPORT },
   { title: 'PEOPLE', items: PEOPLE },
@@ -342,6 +350,8 @@ export function Sidebar() {
           <div
             style={{
               fontSize: 17, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              // A long name on two lines, a size down, rather than cut off.
+              ...(brand.wordmark?.twoLines ? { fontSize: 14.5, lineHeight: 1.2, whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const } : null),
               // Their own weight, case and colour when they have one.
               fontWeight: brand.wordmark?.weight ?? 700,
               letterSpacing: brand.wordmark?.letterSpacing ?? '-.01em',

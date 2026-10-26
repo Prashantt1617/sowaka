@@ -40,6 +40,7 @@ import { GardenError } from '../services/garden.service';
 import { HelpError } from '../services/help.service';
 import { CareError } from '../services/care.service';
 import { SupportError } from '../services/support.service';
+import { PlacementsError } from '../services/placements.service';
 import { redactTicket } from '../services/scribble-ticket.service';
 
 export const notFoundHandler = (request: Request, response: Response) => {
@@ -133,6 +134,7 @@ function getStatusCode(error: unknown): number {
     || error instanceof SupportError
     || error instanceof ReimbursementTypeError
     || error instanceof ReportError
+    || error instanceof PlacementsError
   ) {
     return error.statusCode;
   }
