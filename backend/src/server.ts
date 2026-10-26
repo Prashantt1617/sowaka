@@ -40,6 +40,13 @@ logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v
     });
   });
 
+  // nginx keeps its upstream connections open for reuse, longer than Node's
+  // 5 s default. Node closing an idle one just as nginx sends a request down
+  // it is the occasional "connection reset" the app saw. Node now outlasts
+  // nginx, and the header timeout must stay above the keep-alive one.
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 66_000;
+
   // The game rides the same socket server, as its own namespace: one upgrade
   // path through the proxy, one way of authenticating a handshake.
   const io = initConnectRealtime(server);
