@@ -13,6 +13,7 @@ import 'dashboard_cache.dart';
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import 'manager_models.dart';
+import '../../face_id/face_id_models.dart';
 
 class ManagerApiService {
   ManagerApiService({
@@ -319,6 +320,8 @@ class ManagerApiService {
     /// Punch without saying why — allowed where the day is marked present
     /// without a manager's decision.
     bool skipReason = false,
+    /// What a passed face check handed back, where the company checks faces.
+    String? faceToken,
   }) async {
     final json = await _request(
       'POST',
@@ -328,6 +331,7 @@ class ManagerApiService {
         ...?reading?.toJson(),
         if (reason != null) 'reason': reason,
         if (skipReason) 'skipReason': true,
+        'faceToken': ?faceToken,
       },
     );
     return AttendanceRecord.fromJson(json);
@@ -732,6 +736,71 @@ class ManagerApiService {
     final json = await _send(request);
     return json['photoUrl'] as String;
   }
+
+  /// Whether Face ID is on for the company, and whether this person has set it up.
+  Future<FaceIdStatus> fetchFaceStatus() async =>
+      FaceIdStatus.fromJson(await _face(_jsonRequest('GET', '/face/status')));
+
+  /// The consented setup photo. Throws with the server's reason (too dark,
+  /// more than one face, …) in `details['face']`.
+  Future<void> enrolFace({required Uint8List jpeg, required String consentVersion}) async {
+    final request =
+        http.MultipartRequest('POST', Uri.parse('$_baseUrl/face/enrol'))
+          ..headers['Authorization'] = 'Bearer ${session.token}'
+          ..fields['consent'] = 'true'
+          ..fields['consentVersion'] = consentVersion
+          ..files.add(http.MultipartFile.fromBytes('photo', jpeg, filename: 'face.jpg'));
+    await _face(request);
+  }
+
+  /// A selfie, or a finished Face Liveness session, checked by the server.
+  /// The app's own blink-or-turn result goes along for the log only.
+  Future<FaceCheckResult> verifyFace({
+    Uint8List? jpeg,
+    String? livenessSessionId,
+    String? challenge,
+    bool? devicePassed,
+  }) async {
+    final request =
+        http.MultipartRequest('POST', Uri.parse('$_baseUrl/face/verify'))
+          ..headers['Authorization'] = 'Bearer ${session.token}';
+    if (jpeg != null) {
+      request.files.add(http.MultipartFile.fromBytes('photo', jpeg, filename: 'face.jpg'));
+    }
+    if (livenessSessionId != null) request.fields['livenessSessionId'] = livenessSessionId;
+    if (challenge != null) request.fields['challenge'] = challenge;
+    if (devicePassed != null) request.fields['devicePassed'] = '$devicePassed';
+    return FaceCheckResult.fromJson(await _face(request));
+  }
+
+  Future<FaceLivenessSession> startFaceLiveness() async =>
+      FaceLivenessSession.fromJson(await _face(_jsonRequest('POST', '/face/liveness-session')));
+
+  /// Today's punch-in to the manager, once the face check has failed enough.
+  Future<void> requestFaceFallback({PunchReading? reading}) async {
+    await _face(_jsonRequest('POST', '/face/fallback', body: {...?reading?.toJson()}));
+  }
+
+  http.Request _jsonRequest(String method, String path, {Map<String, dynamic>? body}) {
+    final request = http.Request(method, Uri.parse('$_baseUrl$path'))
+      ..headers.addAll({
+        'Authorization': 'Bearer ${session.token}',
+        'Content-Type': 'application/json',
+      });
+    if (body != null) request.body = jsonEncode(body);
+    return request;
+  }
+
+  /// A face call never hangs the punch: past the limit it fails as the face
+  /// service being unavailable, which the screen offers the fallback for.
+  Future<Map<String, dynamic>> _face(http.BaseRequest request) =>
+      _send(request).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw const ManagerApiException(
+          "Face check isn't available right now. Try again in a minute.",
+          details: {'face': {'reason': 'unavailable'}},
+        ),
+      );
 
   Future<Map<String, dynamic>> _request(
     String method,
