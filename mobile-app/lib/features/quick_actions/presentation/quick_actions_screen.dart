@@ -15,11 +15,15 @@ import '../../manager/bloc/manager_bloc.dart';
 import '../../manager/data/manager_models.dart';
 import '../../requests/presentation/request_summary.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
+import '../../placements/data/placements_api_service.dart';
+import '../../placements/data/placements_models.dart';
 import '../../policies/data/policies_api_service.dart';
 import '../../policies/data/policies_models.dart';
 import '../../policies/presentation/policy_body_view.dart';
 import '../../shared/app_toast.dart';
 import '../../support/presentation/support_desk_screen.dart';
+
+part 'placements_screen.dart';
 
 class QuickActionsController extends ChangeNotifier {
   _QuickActionsScreenState? _state;
@@ -67,6 +71,9 @@ enum _QuickPage {
   applyReimbursement,
   policies,
   policy,
+
+  /// Placements, with its own pages inside it ([PlacementsScreen]).
+  placements,
   calendar,
   wizard,
   success,
@@ -552,6 +559,7 @@ class QuickActionsScreen extends StatefulWidget {
     required this.onNotifications,
     required this.onOpenComposer,
     this.policies,
+    this.placements,
   });
 
   final ManagerBloc bloc;
@@ -564,6 +572,10 @@ class QuickActionsScreen extends StatefulWidget {
   /// Where the company's own policies come from. Supplied by tests; the
   /// screen makes its own otherwise.
   final PoliciesApiService? policies;
+
+  /// Where Placements are read and saved. Supplied by tests; the screen makes
+  /// its own otherwise.
+  final PlacementsApiService? placements;
 
   @override
   State<QuickActionsScreen> createState() => _QuickActionsScreenState();
@@ -613,6 +625,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   _QuickPage _policyReturnPage = _QuickPage.policies;
   late final PoliciesApiService _policiesApi =
       widget.policies ?? PoliciesApiService(session: widget.bloc.session);
+  late final PlacementsApiService _placementsApi =
+      widget.placements ?? PlacementsApiService(session: widget.bloc.session);
+
+  /// Placements keeps its own pages; Back asks it first.
+  final _placementsKey = GlobalKey<_PlacementsScreenState>();
   DateTime? _policiesFetchedAt;
   bool _policiesFetching = false;
   static const _policiesStale = Duration(minutes: 2);
@@ -789,6 +806,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   void _back() {
+    // Inside Placements, Back is its own until its hub.
+    if (_page == _QuickPage.placements &&
+        (_placementsKey.currentState?.back() ?? false)) {
+      return;
+    }
     // Out of a calendar paged to another month: the page underneath reads
     // today's punch from the same days, so this month comes back with it.
     final now = DateTime.now();
@@ -863,6 +885,14 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         _QuickPage.applyReimbursement => _applyReimbursementForm(),
         _QuickPage.policies => _policies(),
         _QuickPage.policy => _policyDetail(),
+        _QuickPage.placements => PlacementsScreen(
+          key: _placementsKey,
+          api: _placementsApi,
+          onClose: _back,
+          profileAction: widget.profileAction,
+          onNotifications: widget.onNotifications,
+          onQuickCreate: _showQuickCreateComingSoon,
+        ),
         _QuickPage.calendar => _calendar(),
         _QuickPage.wizard => _wizard(),
         _QuickPage.success => _success(),
@@ -1065,6 +1095,19 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                           'assets/icons/action_card_reimbursement_rupee.png',
                       imageSize: 28,
                     ),
+                    // A recruitment company's clients, candidates and
+                    // placements: only where the server switched it on.
+                    if (widget.bloc.session.user.placementsEnabled)
+                      _HomeActionCard(
+                        key: const ValueKey('placements-card'),
+                        icon: Icons.work_rounded,
+                        color: const Color(0xFF0571A6),
+                        tint: const Color(0xFFE0F2FE),
+                        title: 'Placements',
+                        subtitle: 'Clients & candidates',
+                        onTap: () => _open(_QuickPage.placements),
+                        imageAsset: 'assets/icons/placements_briefcase.png',
+                      ),
                     // Support desk (node 2896:32193): a concern raised to HR
                     // and the chat on it. Its pages keep the tabs under them,
                     // as Leave and Overtime do.
@@ -5984,6 +6027,7 @@ class _FormSubmitBar extends StatelessWidget {
 
 class _LeaveHeaderButton extends StatelessWidget {
   const _LeaveHeaderButton({
+    super.key,
     required this.onTap,
     this.enabled = true,
     this.label = 'Apply Leave',
@@ -6415,6 +6459,7 @@ class _HubRequestCard extends StatelessWidget {
     required this.footerIcon,
     required this.footerText,
     this.iconSize = 16,
+    this.statusTint,
     this.onTap,
   });
 
@@ -6440,6 +6485,9 @@ class _HubRequestCard extends StatelessWidget {
   final Color statusColor;
   final ({String asset, double size}) footerIcon;
   final String footerText;
+
+  /// Sets the status on a pill of this colour; the requests leave it bare.
+  final Color? statusTint;
   final VoidCallback? onTap;
 
   @override
@@ -6512,11 +6560,17 @@ class _HubRequestCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                    Padding(
+                    Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
                         vertical: 4,
                       ),
+                      decoration: statusTint == null
+                          ? null
+                          : BoxDecoration(
+                              color: statusTint,
+                              borderRadius: BorderRadius.circular(99),
+                            ),
                       child: Text(
                         status,
                         style: TextStyle(
@@ -7029,6 +7083,7 @@ class _FormTextArea extends StatelessWidget {
 
 class _FormTextField extends StatelessWidget {
   const _FormTextField({
+    super.key,
     required this.controller,
     required this.hintText,
     this.keyboardType,
@@ -7149,6 +7204,7 @@ class _LeaveFieldLabel extends StatelessWidget {
 
 class _LeaveDropdownField extends StatelessWidget {
   const _LeaveDropdownField({
+    super.key,
     required this.value,
     required this.filled,
     required this.onTap,
