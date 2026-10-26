@@ -342,6 +342,8 @@ export function Sidebar() {
           <div
             style={{
               fontSize: 17, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              // A long name on two lines, a size down, rather than cut off.
+              ...(brand.wordmark?.twoLines ? { fontSize: 14.5, lineHeight: 1.2, whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const } : null),
               // Their own weight, case and colour when they have one.
               fontWeight: brand.wordmark?.weight ?? 700,
               letterSpacing: brand.wordmark?.letterSpacing ?? '-.01em',

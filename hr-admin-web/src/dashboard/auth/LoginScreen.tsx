@@ -93,7 +93,13 @@ export function LoginScreen() {
           boxShadow: backdrop ? '0 24px 60px rgba(0,0,0,.35)' : '0 20px 50px rgba(60,40,24,.12)',
         }}
       >
-        {brand.wordmark ? (
+        {brand.logo ? (
+          // Their own logo carries the name; only "HR Admin" is added.
+          <div style={{ marginBottom: 22 }}>
+            <img src={brand.logo} alt={brand.name ?? ''} style={{ display: 'block', height: 104, maxWidth: '100%', borderRadius: 12, objectFit: 'contain' }} />
+            <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-3)', marginTop: 8 }}>HR Admin</div>
+          </div>
+        ) : brand.wordmark ? (
           // Their name carries the branding, so only "HR Admin" is added.
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22 }}>
             {brand.icon && (

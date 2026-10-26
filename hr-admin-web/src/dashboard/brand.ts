@@ -22,9 +22,14 @@ export type Brand = {
    * rather than a logo file. A picture of a wordmark looks pasted on beside
    * type the browser is rendering; the same letters in their style do not.
    */
-  wordmark?: { text: string; weight: number; letterSpacing: string; color: string; lowercase?: boolean };
+  wordmark?: { text: string; weight: number; letterSpacing: string; color: string; lowercase?: boolean; twoLines?: boolean };
   /** Behind the sign-in card. */
   backdrop?: string;
+  /**
+   * Their whole logo, mark and name together, for the sign-in card: a company
+   * whose name is too long to set beside the mark shows the logo they drew.
+   */
+  logo?: string;
 };
 
 const BRANDS: Record<string, Brand> = {
@@ -47,6 +52,15 @@ const BRANDS: Record<string, Brand> = {
     icon: '/brand/cde-icon.png',
     // Their mark is CDE in cyan, indigo and magenta; the indigo carries best as type.
     wordmark: { text: 'CDE Enterprises', weight: 700, letterSpacing: '-.01em', color: '#33308C' },
+  },
+  hrorgsol: {
+    name: "HR Organization's Solutions",
+    // The hand and person mark from their logo, cropped square.
+    icon: '/brand/hrorgsol-icon.png',
+    // Their logo is black on cream, the name in a light, widely spaced capital;
+    // too long for one line beside the mark, so it takes two.
+    wordmark: { text: "HR Organization's Solutions", weight: 500, letterSpacing: '.01em', color: '#111111', twoLines: true },
+    logo: '/brand/hrorgsol-logo.jpg',
   },
 };
 
