@@ -196,6 +196,11 @@ export const env = {
     timeoutMs: clamp(Number(process.env.FACE_REKOGNITION_TIMEOUT_MS) || 8000, 1000, 30_000),
     /** Retries after the first try, for throttling and network errors only. */
     retries: clamp(Number(process.env.FACE_REKOGNITION_RETRIES) || 2, 0, 5),
+    /**
+     * How long the check log is kept, in months (FACE_LOG_RETENTION_MONTHS).
+     * Nothing deletes on its own: `npm run face-log:cleanup` removes older rows.
+     */
+    logRetentionMonths: clamp(Number(process.env.FACE_LOG_RETENTION_MONTHS) || 12, 1, 120),
     /** Where enrolment photos sit in the private bucket. */
     photoPrefix: (process.env.FACE_PHOTO_PREFIX ?? 'faces').replace(/^\/+|\/+$/g, ''),
     /**

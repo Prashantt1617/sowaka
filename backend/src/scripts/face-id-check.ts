@@ -1,11 +1,11 @@
 /**
  * Scratch-database check of Face ID with Rekognition faked: consent and the
- * enrolment photo's quality gate, one face per account, the check at a
- * punch-in and the token it hands back (single use, this person's only,
+ * enrolment photo's quality gate, one face per account, the check at an
+ * in-app punch, in or out, and the token it hands back (single use, this person's only,
  * short-lived, given back when the punch fails further on), the refusals,
  * the manager fallback after three tries or while the service is down, Face
  * Liveness sessions, HR's switches, reset and log, and the face going with a
- * deleted employee. It drops and recreates its own database, and refuses any
+ * deleted employee, and the log's retention cleanup. It drops and recreates its own database, and refuses any
  * other. Run with
  * MONGODB_DB=face_verify_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= npm run face-id:check
  */
@@ -18,7 +18,7 @@ import { env } from '../config/env';
 import { decideRegularization, recordPunch } from '../services/attendance.service';
 import { deleteEmployeeForAdmin } from '../services/admin.service';
 import {
-  claimFaceToken, enrolFace, FACE_MESSAGES, faceIdOverviewForAdmin, faceStatusFor, listFaceChecksForAdmin,
+  claimFaceToken, enrolFace, FACE_MESSAGES, faceCheckNeeded, pruneFaceLog, faceIdOverviewForAdmin, faceStatusFor, listFaceChecksForAdmin,
   requestFaceFallback, resetFaceIdForAdmin, startLivenessSession, updateFaceIdSettingsForAdmin, verifyFace,
 } from '../services/face-id.service';
 import { FACE_CONSENT_VERSION } from '../models/face.model';
@@ -136,7 +136,7 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
   // --- off by default
   const off = await faceStatusFor('asha');
   check('off by default: no setup asked, no check at punch', !off.setupRequired && !off.checkAtPunch && !off.enrolled, off);
-  check('the consent wording and its version come with the status', off.consent.version === FACE_CONSENT_VERSION && off.consent.paragraphs.length >= 4, off.consent);
+  check('the consent line and its version come with the status', off.consent.version === FACE_CONSENT_VERSION && off.consent.agree.startsWith('I agree to Face ID keeping a template'), off.consent);
   check('without Face Liveness the app runs its own check', off.liveness.mode === 'device', off.liveness);
   const punchedOff = await recordPunch('chetan', 'in');
   check('switched off, a geotagged punch-in needs no face', typeof (punchedOff as { punchIn?: string }).punchIn === 'string', punchedOff);
@@ -181,8 +181,13 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
   check('enrolled, no check: the punch is refused with verify first', noToken?.status === 403 && noToken.face?.reason === 'check_required', noToken);
   const forged = await refusal(() => recordPunch('asha', 'in', undefined, undefined, false, 'made-up-token'));
   check('a made-up token is refused', forged?.status === 403 && forged.face?.reason === 'check_expired', forged);
-  const out = await recordPunch('esha', 'out').catch((error) => ({ refusedWith: (error as Error).message }));
-  check('a punch-out is not face-checked', (out as { refusedWith?: string }).refusedWith === 'Punch in before punching out', out);
+  const oldApp = await refusal(() => recordPunch('esha', 'out'));
+  check('a punch-out is face-checked too, and an old app is told to update',
+    oldApp?.status === 403 && oldApp.face?.updateApp === true && /Update the Sowaka app/.test(oldApp.message ?? ''), oldApp);
+  check('geotag and in-app punches are checked; biometric and Auto Punch are not',
+    ['Geotag (powered by Sowaka)', 'In-app punch in', 'Biometric', 'Present by default (Auto Punch)']
+      .map((format) => faceCheckNeeded({ setupRequired: true, checkAtPunch: true }, format)).join() === 'true,true,false,false');
+  check('nothing is checked while the switch is off', !faceCheckNeeded({ setupRequired: true, checkAtPunch: false }, 'In-app punch in'));
 
   // --- the check: wrong faces fail, with reasons, and count towards the fallback
   const asBala = await verifyFace('asha', { photo: await photo(402), challenge: 'blink', devicePassed: true });
@@ -230,16 +235,36 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
   // --- the way out: three failures, or the service down, go to the manager
   for (const height of [402, 403, 407]) await verifyFace('esha', { photo: await photo(height) });
   const fallback = await requestFaceFallback('esha', { latitude: 28.4596, longitude: 77.0267, accuracy: 12 });
-  check('after three tries the punch-in goes to the manager', fallback.title === 'Face check request' && Boolean(fallback.id), fallback);
+  check('after three tries the punch-in goes to the manager', fallback.title === 'Punch-in without face check' && Boolean(fallback.id), fallback);
   const row = await attendanceRegularizations().findOne({ userId: 'esha', kind: 'face_check' });
   check('as a correction request, with the time, the tries and where from',
     row?.status === 'pending' && row.managerUserId === 'mgr' && row.punchIn instanceof Date && row.faceCheck?.attempts === 3 && row.faceCheck.inside === true && row.faceCheck.officeName === 'HQ', row);
   check('only one per day', (await refusal(() => requestFaceFallback('esha')))?.status === 409);
-  const pendingOut = await recordPunch('esha', 'out', { latitude: 28.4596, longitude: 77.0267, accuracy: 12 }) as { request?: unknown; punchOut?: string };
-  check('the punch-out rides on the request', Boolean(pendingOut.request) && typeof pendingOut.punchOut === 'string', pendingOut);
+  const outPass = await verifyFace('esha', { photo: await photo(410) });
+  const pendingOut = await recordPunch('esha', 'out', { latitude: 28.4596, longitude: 77.0267, accuracy: 12 }, undefined, false, outPass.token) as { request?: unknown; punchOut?: string };
+  check('a checked punch-out rides on the request', Boolean(pendingOut.request) && typeof pendingOut.punchOut === 'string', pendingOut);
+  check('and spends its token', (await refusal(() => claimFaceToken('esha', outPass.token, 'again')))?.status === 403);
   await decideRegularization('mgr', row!._id!.toHexString(), { decision: 'approved' });
   const eshaDay = await attendanceRecords().findOne({ employeeId: 'E-E' });
   check('approved, the day takes the punch-in and punch-out', eshaDay?.punchIn?.getTime() === row!.punchIn!.getTime() && Boolean(eshaDay?.punchOut), eshaDay);
+
+  // --- a punch-out whose check fails three times goes to the manager too
+  const chetanIn = await (async () => {
+    await enrolFace('chetan', { photo: await photo(408), ...consent });
+    const pass = await verifyFace('chetan', { photo: await photo(408) });
+    return recordPunch('chetan', 'in', { latitude: 28.4596, longitude: 77.0267, accuracy: 12 }, undefined, false, pass.token) as Promise<{ punchIn?: string }>;
+  })();
+  check('Chetan punches in with his face', typeof chetanIn.punchIn === 'string', chetanIn);
+  const earlyOut = await refusal(() => requestFaceFallback('chetan', undefined, 'out'));
+  check('the punch-out fallback stays shut before the tries run out', earlyOut?.status === 409, earlyOut);
+  for (const height of [402, 403, 407]) await verifyFace('chetan', { photo: await photo(height) });
+  const outFallback = await requestFaceFallback('chetan', undefined, 'out');
+  check('after three tries the punch-out goes to the manager', outFallback.title === 'Punch-out without face check', outFallback);
+  const outRow = await attendanceRegularizations().findOne({ userId: 'chetan', kind: 'face_check' });
+  check('as a request for the punch-out alone', outRow?.punchOut instanceof Date && !outRow.punchIn && outRow.faceCheck?.punchType === 'out', outRow);
+  await decideRegularization('mgr', outRow!._id!.toHexString(), { decision: 'approved' });
+  const chetanDay = await attendanceRecords().findOne({ employeeId: 'E-C2' });
+  check('approved, the day keeps its punch-in and takes the punch-out', Boolean(chetanDay?.punchIn) && chetanDay?.punchOut?.getTime() === outRow!.punchOut!.getTime(), chetanDay);
 
   await users().updateOne({ userId: 'bala' }, { $set: { employeeId: 'E-B2' } });
   const down = await verifyFace('bala', { photo: await photo(406) });
@@ -270,7 +295,7 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
   // --- HR: who has set it up, the log, reset, and deleting an employee
   const overview = await faceIdOverviewForAdmin('hr');
   const ashaRow = overview.people.find((row) => row.userId === 'asha');
-  check('HR sees who has set it up', overview.enrolledCount === 4 && overview.people.find((row) => row.userId === 'chetan')?.enrolled === false, overview.enrolledCount);
+  check('HR sees who has set it up', overview.enrolledCount === 5 && overview.people.find((row) => row.userId === 'mgr')?.enrolled === false, overview.enrolledCount);
   check("HR sees each person's failures this month", (ashaRow?.failedLast30Days ?? 0) >= 4, ashaRow);
   const checks = await listFaceChecksForAdmin('hr', {});
   check('the failed checks, named, with the colleague a face matched', checks.length > 0 && checks.every((row) => !row.passed) && checks.some((row) => row.matchedName === 'Bala'), checks.slice(0, 2));
@@ -283,6 +308,17 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
   await deleteEmployeeForAdmin('hr', 'dev', 'Dev');
   check("deleting an employee deletes their face", !collections.get(collection)!.some((face) => face.externalImageId === 'dev'), collections.get(collection));
   check('every reason has words', Object.values(FACE_MESSAGES).every((message) => message.length > 5));
+
+  // --- the log's retention: counted first, deleted only when asked
+  const old = new Date(Date.now() - 400 * 86_400_000);
+  await faceVerifications().insertOne({ org: ORG, userId: 'asha', kind: 'verify', at: old, passed: false, reason: 'not_a_match' });
+  const recent = await faceVerifications().countDocuments({ at: { $gte: new Date(Date.now() - 86_400_000) } });
+  const dry = await pruneFaceLog();
+  check('a dry run counts the year-old row and deletes nothing', dry.checks === 1 && !dry.deleted && (await faceVerifications().countDocuments({ at: old })) === 1, dry);
+  const applied = await pruneFaceLog({ apply: true });
+  check('applied, it deletes only rows past the retention',
+    applied.checks === 1 && (await faceVerifications().countDocuments({ at: old })) === 0
+      && (await faceVerifications().countDocuments({ at: { $gte: new Date(Date.now() - 86_400_000) } })) === recent, applied);
   console.log(`(${calls} fake Rekognition calls)`);
 
   await db.dropDatabase();
