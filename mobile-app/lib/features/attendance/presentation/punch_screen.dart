@@ -145,10 +145,10 @@ class _PunchScreenState extends State<PunchScreen> {
   /// within this punch, so a server that keeps refusing cannot loop them.
   int _faceRetries = 0;
 
-  /// Face first, then location: where the company checks faces, a geotagged
-  /// punch-in opens the selfie (Figma 4194:21786) before anything else.
-  bool get _needsFace =>
-      _punchingIn && widget.geofenced && (widget.api.session.user.faceIdAtPunch || _serverAskedForFace);
+  /// Face first, then location: where the company checks faces, every punch
+  /// made here — geotagged or in-app, in or out — opens the selfie (Figma
+  /// 4194:21786) before anything else.
+  bool get _needsFace => widget.api.session.user.faceIdAtPunch || _serverAskedForFace;
 
   @override
   void initState() {
@@ -185,12 +185,18 @@ class _PunchScreenState extends State<PunchScreen> {
   }
 
   /// The selfie, and Face ID setup first where it is missing. True with a
-  /// token to punch with; false when closed, or when the punch-in went to the
+  /// token to punch with; false when closed, or when the punch went to the
   /// manager instead, which this screen then shows as the request it is.
   Future<bool> _checkFace() async {
     final navigator = Navigator.of(context);
+    // Only a geotagged punch sends where it was tried from with a request.
+    FaceCheckScreen check() => FaceCheckScreen(
+      api: widget.api,
+      type: widget.type,
+      readLocation: widget.geofenced ? _location.read : null,
+    );
     FaceCheckOutcome? outcome = await navigator.push<FaceCheckOutcome>(
-      MaterialPageRoute(builder: (_) => FaceCheckScreen(api: widget.api, readLocation: _location.read)),
+      MaterialPageRoute(builder: (_) => check()),
     );
     if (outcome?.needsSetup == true) {
       final enrolled = await navigator.push<bool>(
@@ -198,7 +204,7 @@ class _PunchScreenState extends State<PunchScreen> {
       );
       if (enrolled != true) return false;
       outcome = await navigator.push<FaceCheckOutcome>(
-        MaterialPageRoute(builder: (_) => FaceCheckScreen(api: widget.api, readLocation: _location.read)),
+        MaterialPageRoute(builder: (_) => check()),
       );
     }
     if (!mounted || outcome == null) return false;
@@ -219,7 +225,7 @@ class _PunchScreenState extends State<PunchScreen> {
   /// one that expired while the employee chose a reason: back to the camera
   /// once, then the punch again.
   bool _refusedForFace(ManagerApiException error) {
-    if (error.details?['face'] == null || _faceRetries >= 1 || !_punchingIn) return false;
+    if (error.details?['face'] == null || _faceRetries >= 1) return false;
     _faceRetries += 1;
     _faceToken = null;
     _serverAskedForFace = true;

@@ -10,7 +10,7 @@ import 'face_capture_layout.dart';
 import 'face_id_models.dart';
 import 'face_liveness.dart';
 
-/// How the face check before a punch-in ended.
+/// How the face check before a punch ended.
 class FaceCheckOutcome {
   const FaceCheckOutcome.passed(String this.token) : fallbackSent = false, needsSetup = false;
   const FaceCheckOutcome.fallbackSent() : token = null, fallbackSent = true, needsSetup = false;
@@ -26,7 +26,8 @@ class FaceCheckOutcome {
   final bool needsSetup;
 }
 
-/// The selfie before a punch-in (Figma 4194:21786). Face first, then the
+/// The selfie before a punch, in or out (Figma 4194:21786; a punch-out has
+/// the same screens with its own words). Face first, then the
 /// location: the punch screen opens this, and goes on to the location check
 /// with the token it hands back.
 ///
@@ -36,9 +37,12 @@ class FaceCheckOutcome {
 /// while the face service is down, it offers to send the punch-in to the
 /// manager, so nobody is shut out at the door. Null when closed.
 class FaceCheckScreen extends StatefulWidget {
-  const FaceCheckScreen({super.key, required this.api, this.readLocation});
+  const FaceCheckScreen({super.key, required this.api, this.type = 'in', this.readLocation});
 
   final ManagerApiService api;
+
+  /// 'in' or 'out': the same selfie guards both, with the punch's own words.
+  final String type;
 
   /// Where the phone is, for a punch-in sent to the manager. Optional: the
   /// request goes without it if the location cannot be read.
@@ -197,7 +201,7 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
       // The manager sees the request without a place rather than not at all.
     }
     try {
-      await widget.api.requestFaceFallback(reading: reading);
+      await widget.api.requestFaceFallback(type: widget.type, reading: reading);
       if (mounted) Navigator.of(context).pop(const FaceCheckOutcome.fallbackSent());
     } on ManagerApiException catch (error) {
       if (mounted) setState(() => _problem = error.offline ? 'No internet connection. Connect and try again.' : error.message);
@@ -216,11 +220,14 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
     final detected = signal == FaceSignal.detected;
     final noFace = signal == FaceSignal.notDetected;
     final promptDone = _camera.challengeDone;
+    final punchIn = widget.type != 'out';
+    final punchLabel = punchIn ? 'Take selfie & punch in' : 'Take selfie & punch out';
+    final punchWord = punchIn ? 'punch-in' : 'punch-out';
 
     FaceStatusRow? status;
     var action = FaceCaptureAction(
-      label: 'Take selfie & punch in',
-      caption: 'Your selfie will confirm your punch-in.',
+      label: punchLabel,
+      caption: 'Your selfie will confirm your $punchWord.',
       busy: _busy,
       // Before the first frame is read (4010:63873) the button is drawn as
       // the design has it; it waits for detection rather than taking a photo
@@ -241,8 +248,8 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
         title: 'Face not detected',
         body: 'Move into the oval, face a light source\nand make sure your face is uncovered.',
       );
-      action = const FaceCaptureAction(
-        label: 'Take selfie & punch in',
+      action = FaceCaptureAction(
+        label: punchLabel,
         caption: 'Capture unlocks when a face is detected.',
         enabled: false,
         onTap: null,
@@ -250,8 +257,8 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
     } else if (detected && !promptDone) {
       // The phone's own prompt, in the detected row's place, until it is done.
       status = FaceStatusRow.detected(body: _camera.challenge.prompt);
-      action = const FaceCaptureAction(
-        label: 'Take selfie & punch in',
+      action = FaceCaptureAction(
+        label: punchLabel,
         caption: 'Capture unlocks once you have done that.',
         enabled: false,
         onTap: null,
@@ -272,10 +279,10 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
     Widget? below;
     if (_fallbackOpen && cameraProblem == null) {
       action = FaceCaptureAction(
-        label: 'Send punch-in to manager',
+        label: 'Send $punchWord to manager',
         caption: result?.reason == 'unavailable'
-            ? 'Face check is unavailable. Your manager or HR approves the punch-in.'
-            : 'Your manager or HR approves the punch-in.',
+            ? 'Face check is unavailable. Your manager or HR approves the $punchWord.'
+            : 'Your manager or HR approves the $punchWord.',
         busy: _sendingFallback,
         onTap: _sendFallback,
       );
@@ -292,7 +299,7 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
     }
 
     return FaceCaptureLayout(
-      stepTitle: 'Punch in',
+      stepTitle: punchIn ? 'Punch in' : 'Punch out',
       heading: 'Take a selfie',
       instructions: 'Position your face inside the oval to\nconfirm your attendance.',
       camera: _camera.controller,

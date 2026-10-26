@@ -776,9 +776,9 @@ class ManagerApiService {
   Future<FaceLivenessSession> startFaceLiveness() async =>
       FaceLivenessSession.fromJson(await _face(_jsonRequest('POST', '/face/liveness-session')));
 
-  /// Today's punch-in to the manager, once the face check has failed enough.
-  Future<void> requestFaceFallback({PunchReading? reading}) async {
-    await _face(_jsonRequest('POST', '/face/fallback', body: {...?reading?.toJson()}));
+  /// Today's punch to the manager, once the face check has failed enough.
+  Future<void> requestFaceFallback({String type = 'in', PunchReading? reading}) async {
+    await _face(_jsonRequest('POST', '/face/fallback', body: {'type': type, ...?reading?.toJson()}));
   }
 
   http.Request _jsonRequest(String method, String path, {Map<String, dynamic>? body}) {
