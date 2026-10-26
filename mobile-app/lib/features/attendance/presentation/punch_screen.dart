@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'slide_to_punch.dart';
 
 import '../data/punch_location_service.dart';
+import '../../face_id/face_check_screen.dart';
+import '../../face_id/face_setup_screen.dart';
 import '../../manager/data/manager_api_service.dart';
 import '../../manager/data/manager_models.dart';
 
@@ -130,6 +134,22 @@ class _PunchScreenState extends State<PunchScreen> {
 
   bool get _punchingIn => widget.type == 'in';
 
+  /// The token a passed face check handed back, spent by the next punch.
+  String? _faceToken;
+
+  /// The server asked for a face this session knew nothing of: HR switched
+  /// the check on since the profile was last read.
+  bool _serverAskedForFace = false;
+
+  /// How many times a refused token has sent the person back to the camera
+  /// within this punch, so a server that keeps refusing cannot loop them.
+  int _faceRetries = 0;
+
+  /// Face first, then location: where the company checks faces, a geotagged
+  /// punch-in opens the selfie (Figma 4194:21786) before anything else.
+  bool get _needsFace =>
+      _punchingIn && widget.geofenced && (widget.api.session.user.faceIdAtPunch || _serverAskedForFace);
+
   @override
   void initState() {
     super.initState();
@@ -139,6 +159,7 @@ class _PunchScreenState extends State<PunchScreen> {
   }
 
   Future<void> _punch() async {
+    if (_needsFace && _faceToken == null && !await _checkFace()) return;
     if (!widget.geofenced) {
       await _send(null);
       return;
@@ -163,15 +184,63 @@ class _PunchScreenState extends State<PunchScreen> {
     await _send(reading);
   }
 
+  /// The selfie, and Face ID setup first where it is missing. True with a
+  /// token to punch with; false when closed, or when the punch-in went to the
+  /// manager instead, which this screen then shows as the request it is.
+  Future<bool> _checkFace() async {
+    final navigator = Navigator.of(context);
+    FaceCheckOutcome? outcome = await navigator.push<FaceCheckOutcome>(
+      MaterialPageRoute(builder: (_) => FaceCheckScreen(api: widget.api, readLocation: _location.read)),
+    );
+    if (outcome?.needsSetup == true) {
+      final enrolled = await navigator.push<bool>(
+        MaterialPageRoute(builder: (_) => FaceSetupScreen(api: widget.api)),
+      );
+      if (enrolled != true) return false;
+      outcome = await navigator.push<FaceCheckOutcome>(
+        MaterialPageRoute(builder: (_) => FaceCheckScreen(api: widget.api, readLocation: _location.read)),
+      );
+    }
+    if (!mounted || outcome == null) return false;
+    if (outcome.fallbackSent) {
+      setState(() {
+        _raisedRequest = true;
+        _busy = false;
+        _stage = _PunchStage.requested;
+        _requestedAt = DateTime.now();
+      });
+      return false;
+    }
+    _faceToken = outcome.token;
+    return _faceToken != null;
+  }
+
+  /// A punch the server refused for want of a face check — none taken, or
+  /// one that expired while the employee chose a reason: back to the camera
+  /// once, then the punch again.
+  bool _refusedForFace(ManagerApiException error) {
+    if (error.details?['face'] == null || _faceRetries >= 1 || !_punchingIn) return false;
+    _faceRetries += 1;
+    _faceToken = null;
+    _serverAskedForFace = true;
+    setState(() {
+      _busy = false;
+      _stage = _PunchStage.ready;
+    });
+    unawaited(_punch());
+    return true;
+  }
+
   /// Sends the punch and shows however it landed.
   Future<void> _send(PunchReading? reading) async {
     _reading = reading;
     setState(() => _busy = true);
     try {
-      final record = await widget.api.recordPunch(widget.type, reading: reading);
+      final record = await widget.api.recordPunch(widget.type, reading: reading, faceToken: _faceToken);
       _recorded(record);
     } on ManagerApiException catch (error) {
       if (!mounted) return;
+      if (_refusedForFace(error)) return;
       // 409 outside the fence is the one refusal with somewhere to go next:
       // the employee says why, and HR's policy decides what that leads to.
       final office = error.details?['office'] as Map<String, dynamic>?;
@@ -207,6 +276,8 @@ class _PunchScreenState extends State<PunchScreen> {
   /// The punch went through — as a recorded punch, or as an out of location
   /// request the manager now holds.
   void _recorded(AttendanceRecord record) {
+    // Spent: the server takes a token once.
+    _faceToken = null;
     final request = record.request;
     if (request != null) {
       _raisedRequest = true;
@@ -247,10 +318,12 @@ class _PunchScreenState extends State<PunchScreen> {
         reading: _reading,
         reason: reason,
         skipReason: reason == null,
+        faceToken: _faceToken,
       );
       _recorded(record);
     } on ManagerApiException catch (error) {
       if (!mounted) return;
+      if (_refusedForFace(error)) return;
       setState(() {
         _busy = false;
         _stage = _PunchStage.blocked;
