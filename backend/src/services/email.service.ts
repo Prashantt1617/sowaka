@@ -30,9 +30,16 @@ const transporter =
  * Gated on `emailOrgs`, not `notifyOrgs`: push and in-app notifications are a
  * separate decision, and restricting mail must not silently mute an org's app.
  */
-export async function isAllowedRecipient(email: string): Promise<boolean> {
+export async function isAllowedRecipient(
+  email: string,
+  /** The recipient's record when the caller has just read it: no second read. */
+  known?: { org?: string } | null,
+): Promise<boolean> {
   if (env.emailOrgs.length === 0) return true;
-  const user = await users().findOne({ email: email.trim().toLowerCase() });
+  const user =
+    known !== undefined
+      ? known
+      : await users().findOne({ email: email.trim().toLowerCase() }, { projection: { _id: 0, org: 1 } });
   const allowed = Boolean(user?.org && env.emailOrgs.includes(user.org));
   if (!allowed) {
     logger.info('Email suppressed: recipient is outside EMAIL_ORGS', {
@@ -44,8 +51,13 @@ export async function isAllowedRecipient(email: string): Promise<boolean> {
   return allowed;
 }
 
-export async function sendOtpEmail(email: string, otp: string): Promise<void> {
-  if (!(await isAllowedRecipient(email))) return;
+export async function sendOtpEmail(
+  email: string,
+  otp: string,
+  /** The recipient as sign-in already read them, so their org is not read again. */
+  recipient?: { org?: string },
+): Promise<void> {
+  if (!(await isAllowedRecipient(email, recipient))) return;
   if (!transporter) {
     // Only a developer's own machine may stand in for SMTP, and only there is
     // the code itself safe to write down. Keyed off `isLocal` rather than

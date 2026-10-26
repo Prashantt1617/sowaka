@@ -48,7 +48,8 @@ export async function teammates(req: Request, res: Response, next: NextFunction)
     // company — the apps already out ask exactly that way, so they get
     // everyone without an update. Without one, the welcome screen's team.
     const scope = req.query.scope === 'company' || limit !== undefined ? 'company' : 'team';
-    const result = await getTeammates(req.auth?.userId ?? '', limit, scope);
+    // The viewer as the auth check just read them: no second read of them.
+    const result = await getTeammates(req.auth?.userId ?? '', limit, scope, req.auth?.user);
     res.status(200).json({ success: true, ...result });
   } catch (error) {
     next(error);

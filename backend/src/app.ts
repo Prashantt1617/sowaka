@@ -8,6 +8,7 @@ import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import { requestContext } from './middleware/request-context.middleware';
 import { router } from './routes';
 import { redactTicket } from './services/scribble-ticket.service';
+import { runWithRequestId } from './utils/optional';
 
 export const app = express();
 
@@ -49,6 +50,8 @@ app.use(
   ),
 );
 
+// So a service deep in a route can log which request it was serving.
+app.use((req, _res, next) => runWithRequestId(req.requestId, next));
 app.use(router);
 
 app.use(notFoundHandler);

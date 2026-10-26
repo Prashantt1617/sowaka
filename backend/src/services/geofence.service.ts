@@ -53,8 +53,10 @@ export type GeofenceVerdict =
 export async function locateForPunch(
   org: string,
   reading: { latitude: number; longitude: number; accuracy?: number },
+  /** The org's active offices, when the caller has already read them. */
+  known?: Office[],
 ): Promise<GeofenceVerdict> {
-  const sites = await offices().find({ org, active: true }).toArray();
+  const sites = known ?? (await offices().find({ org, active: true }).toArray());
   if (sites.length === 0) return { inside: false, reason: 'no_offices' };
 
   let nearest: Office | undefined;

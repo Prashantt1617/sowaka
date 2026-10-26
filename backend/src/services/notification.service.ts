@@ -5,6 +5,7 @@ import { connectPosts, deviceTokens, getDb, notifications, users } from '../conf
 import { env } from '../config/env';
 import { sendNotificationEmail } from './email.service';
 import { logger } from '../utils/logger';
+import type { AppNotification } from '../models/notification.model';
 
 /** Greeting name for email copy; falls back to a neutral form when unset. */
 function firstName(name?: string): string {
@@ -79,6 +80,30 @@ export async function listNotifications(userId: string) {
 /** The newest hundred rows of someone's inbox, as stored. */
 export function listNotificationRows(userId: string) {
   return notifications().find({ userId }).sort({ createdAt: -1 }).limit(100).toArray();
+}
+
+/**
+ * The rows the bell's dot is about: the unread ones among the hundred the
+ * inbox shows, without their bodies, so someone with nothing unread costs one
+ * indexed read and a few bytes. The inbox resolves an older "requests waiting"
+ * reminder as soon as a newer one exists, read or not, so the newest of those
+ * comes along whatever its state and only it may be counted.
+ */
+export async function listUnreadNotificationRows(userId: string): Promise<AppNotification[]> {
+  const rows = await notifications()
+    .aggregate<AppNotification>([
+      { $match: { userId } },
+      { $sort: { createdAt: -1 } },
+      // The inbox's own hundred: an unread row older than those is not shown.
+      { $limit: 100 },
+      { $match: { $or: [{ readAt: { $exists: false } }, { scenario: 'pending_requests_reminder' }] } },
+      { $project: { _id: 0, body: 0 } },
+    ])
+    .toArray();
+  const latestReminder = rows.find((row) => row.scenario === 'pending_requests_reminder');
+  return rows.filter(
+    (row) => !row.readAt && (row.scenario !== 'pending_requests_reminder' || row === latestReminder),
+  );
 }
 
 /**
@@ -162,8 +187,13 @@ export async function notifyUsers(userIds: string[], input: NotificationInput) {
   const uniqueIds = [...new Set(userIds.filter(Boolean))];
   if (!uniqueIds.length) return;
   // Someone who has left hears nothing more from the app.
+  // Only what is used below: whole records carry older accounts' inline
+  // photos, and every notification the app sends comes through here.
   const all = await users()
-    .find({ userId: { $in: uniqueIds }, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } })
+    .find(
+      { userId: { $in: uniqueIds }, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } },
+      { projection: { _id: 0, userId: 1, org: 1, email: 1, name: 1 } },
+    )
     .toArray();
   // Same allowlist the mail transport enforces — see `env.notifyOrgs`. Applied
   // here too so a suppressed org gets no push and no stored notification

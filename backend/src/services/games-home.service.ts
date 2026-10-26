@@ -46,7 +46,8 @@ import { rosterFor } from './profile.service';
 import { presignConnectMedia, resolveProfilePhoto } from './s3-connect-media.service';
 import { openInvitesFor } from './scribble-room.service';
 import { liveSquadFor } from './secret-squad.service';
-import { logger } from '../utils/logger';
+import { optional } from '../utils/optional';
+import { requestViewer } from '../middleware/request-viewer';
 
 const CONTEST_TYPES: ConnectPostType[] = ['caption_challenge', 'photo_story_challenge', 'most_likely'];
 const CONTEST_KIND: Record<string, 'caption' | 'photo' | 'mostLikely'> = {
@@ -64,6 +65,10 @@ const PLAYING_FACES = 3;
 type PhotoFields = Pick<User, 'userId' | 'name' | 'profilePhotoKey' | 'profilePhotoUrl'>;
 
 async function requireViewer(userId: string): Promise<User> {
+  // The signed-in person as the auth check read them, when it is them: one
+  // round trip fewer ahead of everything else.
+  const known = requestViewer(userId);
+  if (known) return known as User;
   const viewer = await users().findOne(
     { userId },
     // A legacy inline photo can be large, and nothing here draws the viewer's.
@@ -98,14 +103,27 @@ async function photoOf(row: Partial<PhotoFields> | null | undefined): Promise<st
   return url ?? null;
 }
 
+/**
+ * Only a photo kept as a link, read straight from the record: `photoOf` never
+ * shows an inline one, and on older accounts that is a base64 image of
+ * hundreds of KB that would otherwise cross the link for nothing.
+ */
+const LINK_PHOTO_ONLY = {
+  $cond: [
+    { $regexMatch: { input: { $ifNull: ['$profilePhotoUrl', ''] }, regex: '^http' } },
+    '$profilePhotoUrl',
+    '$$REMOVE',
+  ],
+};
+
 /** Name and photo for a handful of people, in one read. */
 async function peopleById(userIds: string[]): Promise<Map<string, { name: string; photoUrl: string | null }>> {
   const ids = [...new Set(userIds.filter(Boolean))];
   if (ids.length === 0) return new Map();
   const rows = await users()
-    .find(
+    .find<PhotoFields>(
       { userId: { $in: ids } },
-      { projection: { _id: 0, userId: 1, name: 1, profilePhotoKey: 1, profilePhotoUrl: 1 } },
+      { projection: { _id: 0, userId: 1, name: 1, profilePhotoKey: 1, profilePhotoUrl: LINK_PHOTO_ONLY } },
     )
     .toArray();
   return new Map(
@@ -362,13 +380,20 @@ export interface LiveRelay {
   faces: { name: string; initials: string; photoUrl: string | null }[];
 }
 
-/** The company's Hint Relay, while it is on or still to come. */
-async function liveRelayFor(viewer: User, now: Date): Promise<LiveRelay | null> {
-  const org = feedOrgOf(viewer);
-  const event = await relayEvents().findOne(
-    { org, status: { $in: ['scheduled', 'live'] } },
+type RelayEventRow = { id: string; name?: string; status: string; startsAt?: Date; lobbyOpensAt?: Date };
+
+/** The company's Hint Relay event, while it is on or still to come. */
+function liveRelayEventFor(viewer: User): Promise<RelayEventRow | null> {
+  return relayEvents().findOne<RelayEventRow>(
+    { org: feedOrgOf(viewer), status: { $in: ['scheduled', 'live'] } },
     { sort: { updatedAt: -1 }, projection: { _id: 0, id: 1, name: 1, status: 1, startsAt: 1, lobbyOpensAt: 1 } },
   );
+}
+
+/** The company's Hint Relay, while it is on or still to come. */
+async function liveRelayFor(viewer: User, eventP: Promise<RelayEventRow | null>, now: Date): Promise<LiveRelay | null> {
+  const org = feedOrgOf(viewer);
+  const event = await eventP;
   if (!event) return null;
   const [post, teams] = await Promise.all([
     connectPosts().findOne(
@@ -559,13 +584,20 @@ export interface PlayingNow {
  */
 async function playingNowFor(
   viewer: User,
-  roster: Contender[],
-  relay: LiveRelay | null,
+  rosterP: Promise<Contender[]>,
+  /** The relay's event as it is read for the card; only its id and status are used. */
+  relayP: Promise<Pick<RelayEventRow, 'id' | 'status'> | null>,
   now: Date,
 ): Promise<PlayingNow> {
   if (!viewer.org) return { count: 0, people: [] };
   const cutoff = new Date(now.getTime() - PLAYING_NOW_WINDOW_MS);
-  const [scorers, challenges, paid, present] = await Promise.all([
+  // The heartbeats wait only on the event, not on the rest of its card.
+  const presentP = relayP.then((relay) =>
+    relay?.status === 'live'
+      ? relayPresence().distinct('userId', { eventId: relay.id, lastSeenAt: { $gte: cutoff } })
+      : ([] as string[]),
+  );
+  const [scorers, challenges, paid, present, roster] = await Promise.all([
     gameScores().distinct('userId', { org: viewer.org, updatedAt: { $gte: cutoff } }),
     gameChallenges()
       .find(
@@ -582,9 +614,8 @@ async function playingNowFor(
       createdAt: { $gte: cutoff },
       source: { $in: ['game_challenge', 'hint_relay'] },
     }),
-    relay?.status === 'live'
-      ? relayPresence().distinct('userId', { eventId: relay.eventId, lastSeenAt: { $gte: cutoff } })
-      : Promise.resolve([] as string[]),
+    presentP,
+    rosterP,
   ]);
   const active = new Set<string>([...scorers, ...paid, ...present]);
   for (const c of challenges) {
@@ -616,35 +647,48 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
   // Every section starts as soon as what it needs is in, rather than in
   // rounds: the home is one request, and its slowest chain is what it costs.
   const rosterP = rosterFor(viewer);
-  const gamesP = catalogFor(viewer);
+  const gamesP = homeCatalogFor(viewer);
   const blockedP = blockedUserIdsFor(viewer.userId);
   const mineP = myScoresFor(viewer);
-  const relayP = liveRelayFor(viewer, now).catch(() => null);
-  // An office's Secret Squad, while it is on: a fault there must not take the home down.
+  const relayEventP = liveRelayEventFor(viewer);
+  // Each section is one card or row of the home. A fault in one shows the
+  // home without it, logged, rather than no home at all; only the viewer,
+  // the roster their points are ranked in and the games themselves must be
+  // there.
+  const context = { userId: viewer.userId };
+  const relayP = optional('Games home relay', () => liveRelayFor(viewer, relayEventP, now), null, context);
+  // An office's Secret Squad, while it is on.
   const squadP = gamesP.then((games) =>
     games.some((game) => game.key === LIVE_ONLY_GAME)
-      ? liveSquadFor(viewer).catch((error) => {
-        logger.error('Games home Secret Squad failed', { userId: viewer.userId }, error);
-        return null;
-      })
+      ? optional('Games home Secret Squad', () => liveSquadFor(viewer), null, context)
       : null,
   );
   const [roster, games, banner, liveContests, liveRelay, challenges, invites, yourGames, playingNow, liveSquad] = await Promise.all([
     rosterP,
     gamesP,
-    Promise.all([gamesP, mineP, blockedP]).then(([games, mine, blocked]) =>
-      scoreBannerFor(viewer, games, mine, blocked, now),
+    optional(
+      'Games home banner',
+      () => Promise.all([gamesP, mineP, blockedP]).then(([games, mine, blocked]) => scoreBannerFor(viewer, games, mine, blocked, now)),
+      null,
+      context,
     ),
-    liveContestsFor(viewer, blockedP, now),
+    optional('Games home contests', () => liveContestsFor(viewer, blockedP, now), [] as LiveContest[], context),
     relayP,
-    challengesFor(viewer, gamesP, now),
+    optional('Games home challenges', () => challengesFor(viewer, gamesP, now), [] as HomeChallenge[], context),
     // A fault in the live store must not take the whole home down with it.
-    invitesFor(viewer, gamesP).catch((error) => {
-      logger.error('Games home invites failed', { userId: viewer.userId }, error);
-      return [] as HomeInvite[];
-    }),
-    Promise.all([gamesP, mineP]).then(([games, mine]) => playedGamesFor(viewer, games, mine)),
-    Promise.all([rosterP, relayP]).then(([roster, relay]) => playingNowFor(viewer, roster, relay, now)),
+    optional('Games home invites', () => invitesFor(viewer, gamesP), [] as HomeInvite[], context),
+    optional(
+      'Games home your games',
+      () => Promise.all([gamesP, mineP]).then(([games, mine]) => playedGamesFor(viewer, games, mine)),
+      [] as PlayedGame[],
+      context,
+    ),
+    optional(
+      'Games home playing now',
+      () => playingNowFor(viewer, rosterP, relayEventP.catch(() => null), now),
+      { count: 0, people: [] } as PlayingNow,
+      context,
+    ),
     squadP,
   ]);
   const ranked = rankByPoints(roster);
@@ -670,6 +714,35 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
 
 /** The game the tab lists only while it is live. */
 const LIVE_ONLY_GAME = 'secret-squad';
+
+/**
+ * How long the home keeps a company's catalog. It changes when Sowaka edits a
+ * game or a company's list, a few times a year, and reading it was two round
+ * trips (the company, then its games) at the head of most of the home's
+ * chains. A change shows on the home within this; the Games list itself
+ * (GET /games) still reads fresh.
+ */
+export const HOME_CATALOG_MS = 60_000;
+const homeCatalogs = new Map<string, { at: number; games: Promise<PublicGame[]> }>();
+
+/** `catalogFor`, kept per company for `HOME_CATALOG_MS`. A failed read is not kept. */
+export function homeCatalogFor(viewer: Pick<User, 'userId' | 'name' | 'org'>, at = Date.now()): Promise<PublicGame[]> {
+  const key = viewer.org ?? '';
+  const kept = homeCatalogs.get(key);
+  if (kept && at - kept.at < HOME_CATALOG_MS) return kept.games;
+  const games = catalogFor(viewer);
+  homeCatalogs.set(key, { at, games });
+  games.catch(() => {
+    if (homeCatalogs.get(key)?.games === games) homeCatalogs.delete(key);
+  });
+  if (homeCatalogs.size > 1000) homeCatalogs.delete(homeCatalogs.keys().next().value!);
+  return games;
+}
+
+/** For the checks: forget every kept catalog. */
+export function forgetHomeCatalogs(): void {
+  homeCatalogs.clear();
+}
 
 // ---------------------------------------------------------------- leaderboard
 

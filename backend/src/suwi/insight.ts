@@ -135,7 +135,8 @@ export async function leaveSafety<R extends { id: string; userId: string; daysWa
   if (!checkable.length) return { checked: 0, safe, checkFirst };
   const [docs, people] = await Promise.all([
     leaves().find({ _id: { $in: checkable.map((r) => new ObjectId(r.id)) } }).toArray(),
-    users().find({ org, userId: { $in: checkable.map((r) => r.userId) } }).toArray(),
+    // Not their inline photos or documents, which no check reads.
+    users().find({ org, userId: { $in: checkable.map((r) => r.userId) } }, { projection: { profilePhotoUrl: 0, documents: 0 } }).toArray(),
   ]);
   const byId = new Map(docs.map((d) => [d._id.toHexString(), d]));
   const person = new Map(people.map((p) => [p.userId, p]));

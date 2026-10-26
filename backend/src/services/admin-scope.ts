@@ -8,10 +8,19 @@ import { requestUserFor } from './request-user';
  * "org-wide" for the HR dashboard. If the admin has no org set, falls back to
  * every user (single-tenant deployments).
  */
-export async function orgUsers(adminUserId: string): Promise<User[]> {
+export async function orgUsers(
+  adminUserId: string,
+  /**
+   * Only these fields of each person, for a caller that reads no more: whole
+   * records carry older accounts' inline photos, and a company's worth of
+   * those is megabytes. Every record whole when absent.
+   */
+  fields?: string[],
+): Promise<User[]> {
   const filter = await orgFilterFor(adminUserId);
   if (!filter) return [];
-  return users().find(filter).toArray();
+  const projection = fields ? Object.fromEntries([['_id', 0], ...fields.map((field) => [field, 1])]) : undefined;
+  return users().find(filter, projection ? { projection } : {}).toArray();
 }
 
 /** The filter `orgUsers` scopes by; null when the caller has no user record. */
