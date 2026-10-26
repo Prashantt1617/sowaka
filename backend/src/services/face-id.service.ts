@@ -88,11 +88,15 @@ async function enrolmentOf(userId: string): Promise<UserFaceId | undefined> {
   return row?.faceId?.faceId ? row.faceId : undefined;
 }
 
-/** Failed verifications since the last pass, within the window: what the fallback counts. */
+/**
+ * Failed checks since the last pass, within the window: what the fallback
+ * counts. A failed setup counts like a failed check, since setup is the first
+ * punch's check.
+ */
 async function recentFailures(userId: string): Promise<{ failures: number; lastReason?: FaceCheckReason }> {
   const since = new Date(Date.now() - ATTEMPT_WINDOW_MS);
   const rows = await faceVerifications()
-    .find({ userId, kind: 'verify', at: { $gte: since } }, { projection: { _id: 0, passed: 1, reason: 1 } })
+    .find({ userId, kind: { $in: ['enrol', 'verify'] }, at: { $gte: since } }, { projection: { _id: 0, passed: 1, reason: 1 } })
     .sort({ at: -1 })
     .limit(env.face.maxAttempts + 5)
     .toArray();
@@ -132,7 +136,7 @@ export async function faceStatusFor(userId: string) {
     recentFailures(userId),
   ]);
   return {
-    ...settings,
+    checkAtPunch: settings.checkAtPunch,
     enrolled: Boolean(enrolment),
     enrolledAt: enrolment?.enrolledAt?.toISOString(),
     consent: consentView(),
@@ -236,30 +240,32 @@ export async function enrolFace(
   const collectionId = collectionIdFor(org);
   const engine = faceEngine();
   const base = { org, userId, kind: 'enrol' as const, at: new Date(), liveness: { mode: 'none' as const } };
+  /**
+   * A failed setup, logged, with the tries left: at a punch it is that
+   * punch's check, so three of them open the manager fallback as checks do.
+   */
+  const refuse = async (reason: FaceCheckReason, extra: Partial<FaceVerification> = {}) => {
+    await log({ ...base, passed: false, reason, durationMs: Date.now() - started, ...extra });
+    const [state, settings] = await Promise.all([recentFailures(userId), settingsForOrg(org)]);
+    return failure(reason, {
+      attemptsLeft: Math.max(0, env.face.maxAttempts - state.failures),
+      fallback: settings.checkAtPunch && fallbackOpen(state),
+    });
+  };
   try {
     await engine.ensureCollection(collectionId);
     const faces = await engine.detectFaces(image);
     const problem = enrolmentProblem(faces);
-    if (problem) {
-      await log({ ...base, passed: false, reason: problem, durationMs: Date.now() - started });
-      throw failure(problem);
-    }
+    if (problem) throw await refuse(problem);
     // One face, one account: a face already enrolled for someone else would
     // let them punch in as this person, which is the whole thing to prevent.
     const matches = (await engine.searchFace(collectionId, image, env.face.matchThreshold)) ?? [];
     const elsewhere = matches.find((match) => match.externalImageId && match.externalImageId !== userId);
     if (elsewhere) {
-      await log({
-        ...base, passed: false, reason: 'already_enrolled_elsewhere', similarity: elsewhere.similarity,
-        matchedUserId: elsewhere.externalImageId, durationMs: Date.now() - started,
-      });
-      throw failure('already_enrolled_elsewhere');
+      throw await refuse('already_enrolled_elsewhere', { similarity: elsewhere.similarity, matchedUserId: elsewhere.externalImageId });
     }
     const indexed = await engine.indexFace(collectionId, image, userId);
-    if (!indexed) {
-      await log({ ...base, passed: false, reason: 'no_face', durationMs: Date.now() - started });
-      throw failure('no_face');
-    }
+    if (!indexed) throw await refuse('no_face');
     let photoKey: string | undefined;
     if (hasReceiptStorage()) {
       try {
@@ -298,13 +304,20 @@ export async function enrolFace(
     if (previous?.faceId?.photoKey && previous.faceId.photoKey !== photoKey) {
       await deleteFacePhoto(previous.faceId.photoKey).catch(() => undefined);
     }
-    await log({ ...base, passed: true, reason: 'matched', durationMs: Date.now() - started });
-    return { enrolled: true, enrolledAt: now.toISOString() };
+    // Setting up at a punch is that punch's check: the face was just
+    // matched against nobody else's and taken live, so it hands back the
+    // same single-use token a passed check does, and the punch goes on
+    // without a second selfie.
+    const token = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + env.face.tokenTtlSeconds * 1000);
+    await log({ ...base, passed: true, reason: 'matched', durationMs: Date.now() - started, tokenHash: hashToken(token), expiresAt });
+    return { enrolled: true, enrolledAt: now.toISOString(), token, expiresAt: expiresAt.toISOString() };
   } catch (error) {
     if (error instanceof FaceServiceUnavailable) {
       logger.error('Face enrolment: Rekognition unavailable', { userId, org }, error);
       await log({ ...base, passed: false, reason: 'unavailable', error: error.message, durationMs: Date.now() - started });
-      throw new FaceIdError(503, "Face ID can't be set up right now. Try again in a few minutes.", { face: { reason: 'unavailable' } });
+      const settings = await settingsForOrg(org);
+      throw new FaceIdError(503, FACE_MESSAGES.unavailable, { face: { reason: 'unavailable', fallback: settings.checkAtPunch } });
     }
     throw error;
   }
@@ -461,7 +474,7 @@ export async function claimFaceToken(userId: string, token: unknown, usedFor: st
   const now = new Date();
   const row = raw
     ? await faceVerifications().findOneAndUpdate(
-        { tokenHash: hashToken(raw), userId, kind: 'verify', passed: true, usedAt: { $exists: false }, expiresAt: { $gt: now } },
+        { tokenHash: hashToken(raw), userId, kind: { $in: ['verify', 'enrol'] }, passed: true, usedAt: { $exists: false }, expiresAt: { $gt: now } },
         { $set: { usedAt: now, usedFor } },
       )
     : null;
@@ -617,7 +630,7 @@ export async function forgetFace(user: Pick<User, 'userId' | 'org' | 'faceId'>, 
   await users().updateOne({ userId: user.userId }, { $unset: { faceId: '' }, $set: { updatedAt: new Date() } });
   forgetAuthUser(user.userId);
   await log({
-    org: user.org ?? '', userId: user.userId, kind: 'enrol', at: new Date(), passed: false, reason: 'not_enrolled',
+    org: user.org ?? '', userId: user.userId, kind: 'reset', at: new Date(), passed: false, reason: 'not_enrolled',
     error: by ? `reset by ${by}` : 'removed',
   });
   return { removed: true };
@@ -646,7 +659,7 @@ export async function faceIdOverviewForAdmin(adminUserId: string) {
       .toArray(),
     faceVerifications()
       .aggregate<{ _id: string; failed: number; lastAt: Date; lastPassed: boolean }>([
-        { $match: { org, kind: 'verify', at: { $gte: since } } },
+        { $match: { org, kind: { $in: ['enrol', 'verify'] }, at: { $gte: since } } },
         { $sort: { at: -1 } },
         { $group: { _id: '$userId', failed: { $sum: { $cond: ['$passed', 0, 1] } }, lastAt: { $first: '$at' }, lastPassed: { $first: '$passed' } } },
       ])
@@ -670,7 +683,6 @@ export async function faceIdOverviewForAdmin(adminUserId: string) {
   });
   return {
     settings: faceIdSettingsOf(company),
-    rawSettings: { setupRequired: company?.faceId?.setupRequired === true, checkAtPunch: company?.faceId?.checkAtPunch === true },
     liveness: env.face.liveness ? 'aws' : 'device',
     matchThreshold: env.face.matchThreshold,
     enrolledCount: rows.filter((row) => row.enrolled).length,
@@ -678,15 +690,18 @@ export async function faceIdOverviewForAdmin(adminUserId: string) {
   };
 }
 
-export async function updateFaceIdSettingsForAdmin(adminUserId: string, input: { setupRequired?: unknown; checkAtPunch?: unknown }) {
+export async function updateFaceIdSettingsForAdmin(adminUserId: string, input: { checkAtPunch?: unknown }) {
   const org = await adminOrg(adminUserId);
-  const set: Record<string, unknown> = { 'faceId.updatedAt': new Date(), 'faceId.updatedBy': adminUserId };
-  for (const key of ['setupRequired', 'checkAtPunch'] as const) {
-    if (input[key] === undefined) continue;
-    if (typeof input[key] !== 'boolean') throw new FaceIdError(400, `${key} must be true or false`);
-    set[`faceId.${key}`] = input[key];
-  }
-  const updated = await companies().findOneAndUpdate({ id: org }, { $set: set }, { returnDocument: 'after', projection: { _id: 0, faceId: 1 } });
+  if (typeof input.checkAtPunch !== 'boolean') throw new FaceIdError(400, 'checkAtPunch must be true or false');
+  const updated = await companies().findOneAndUpdate(
+    { id: org },
+    {
+      $set: { 'faceId.checkAtPunch': input.checkAtPunch, 'faceId.updatedAt': new Date(), 'faceId.updatedBy': adminUserId },
+      // The old setup switch, if it was ever set: setup now happens at the first punch.
+      $unset: { 'faceId.setupRequired': '' },
+    },
+    { returnDocument: 'after', projection: { _id: 0, faceId: 1 } },
+  );
   if (!updated) throw new FaceIdError(404, 'Company not found');
   return faceIdSettingsOf(updated);
 }

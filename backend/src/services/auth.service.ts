@@ -412,10 +412,9 @@ async function toAuthUser(
     isLeadership: user.isLeadership === true,
     // Whether the composer offers contests; the server refuses one without it.
     canCreateContests: user.canCreateContests === true,
-    // Whether the app asks them to set up Face ID, whether they have, and
-    // whether a geotagged punch-in is face-checked: no extra call at the punch.
+    // Whether their punches are face-checked and whether they have set up
+    // Face ID, so the punch screen knows which to open: no extra call.
     faceId: {
-      required: faceIdSettingsOf(company).setupRequired,
       enrolled: Boolean(user.faceId?.faceId),
       atPunch: faceIdSettingsOf(company).checkAtPunch,
     },

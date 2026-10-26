@@ -9,22 +9,24 @@
  * score. Punch selfies are never stored.
  */
 
-/** HR's switches, per company. Absent means both off. */
+/**
+ * HR's switch, per company. Absent means off. There is no separate setup
+ * switch: someone who has not set up Face ID does so at their first punch
+ * once the check is on.
+ */
 export interface CompanyFaceIdSettings {
-  /** Everyone must set up Face ID in the app, whatever their attendance source. */
-  setupRequired?: boolean;
-  /** A geotagged punch-in needs a face check first. Implies setup. */
+  /** Every punch made in the app, in or out, needs a face check first. */
   checkAtPunch?: boolean;
+  /** @deprecated The setup switch before setup moved to the first punch; ignored. */
+  setupRequired?: boolean;
   updatedAt?: Date;
   updatedBy?: string;
 }
 
-export type FaceIdSettingsView = { setupRequired: boolean; checkAtPunch: boolean };
+export type FaceIdSettingsView = { checkAtPunch: boolean };
 
 export function faceIdSettingsOf(company: { faceId?: CompanyFaceIdSettings } | null | undefined): FaceIdSettingsView {
-  const checkAtPunch = company?.faceId?.checkAtPunch === true;
-  // Checking a face nobody has enrolled refuses everyone, so the check implies the setup.
-  return { setupRequired: checkAtPunch || company?.faceId?.setupRequired === true, checkAtPunch };
+  return { checkAtPunch: company?.faceId?.checkAtPunch === true };
 }
 
 /** The face enrolled for one person, on their user record. */
@@ -67,7 +69,8 @@ export type FaceCheckReason =
 export interface FaceVerification {
   org: string;
   userId: string;
-  kind: 'enrol' | 'verify';
+  /** A reset is logged too, as the record of a face removed; it is never a failure. */
+  kind: 'enrol' | 'verify' | 'reset';
   at: Date;
   passed: boolean;
   reason: FaceCheckReason;
@@ -85,7 +88,7 @@ export interface FaceVerification {
     devicePassed?: boolean;
   };
   durationMs?: number;
-  /** sha256 of the token handed back, for a passed verify. */
+  /** sha256 of the token handed back, for a passed verify or enrolment. */
   tokenHash?: string;
   expiresAt?: Date;
   usedAt?: Date;

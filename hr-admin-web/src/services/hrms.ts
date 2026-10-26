@@ -1035,7 +1035,7 @@ export const clearReportingManager = (employeeUserId: string) =>
 
 // ------------------------------------------------------------------ Face ID
 
-export type FaceIdSettingsDTO = { setupRequired: boolean; checkAtPunch: boolean };
+export type FaceIdSettingsDTO = { checkAtPunch: boolean };
 
 export type FaceIdPersonDTO = {
   userId: string;
@@ -1051,10 +1051,7 @@ export type FaceIdPersonDTO = {
 };
 
 export type FaceIdOverviewDTO = {
-  /** As applied: checking at punch-in implies setup. */
   settings: FaceIdSettingsDTO;
-  /** As HR set the two switches. */
-  rawSettings: FaceIdSettingsDTO;
   liveness: 'aws' | 'device';
   matchThreshold: number;
   enrolledCount: number;
@@ -1080,7 +1077,7 @@ export type FaceCheckDTO = {
 };
 
 export const getFaceIdOverview = () => api<FaceIdOverviewDTO>('/admin/face-id');
-export const updateFaceIdSettings = (input: Partial<FaceIdSettingsDTO>) =>
+export const updateFaceIdSettings = (input: FaceIdSettingsDTO) =>
   api<{ settings: FaceIdSettingsDTO }>('/admin/face-id/settings', { method: 'PATCH', body: input }).then((r) => r.settings);
 export const resetFaceId = (userId: string) =>
   api<{ removed: boolean }>(`/admin/face-id/people/${encodeURIComponent(userId)}`, { method: 'DELETE' });

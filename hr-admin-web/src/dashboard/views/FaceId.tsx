@@ -1,11 +1,12 @@
-// Shifts › Face ID — the company's switches, who has set it up, and the checks
+// Shifts › Face ID — the company's switch, who has set it up, and the checks
 // that failed.
 //
-// Both switches start off, so it can be rolled out a company at a time: first
-// ask everyone to set it up, then, once most have, check faces at punch-in.
-// The enrolment photos and face templates are never shown here — only who has
+// One switch, off by default, so it can be rolled out a company at a time.
+// Nobody is asked to set up ahead: once it is on, whoever has not set up Face
+// ID does so at their next punch, and that setup is the punch's check. The
+// enrolment photos and face templates are never shown here — only who has
 // one, and the outcome and score of each check. A reset deletes the face, and
-// the person is asked to set it up again in the app.
+// the person sets it up again at their next punch.
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { STAT } from '../theme';
@@ -63,7 +64,7 @@ export function FaceId() {
   );
   const failed30 = people.reduce((sum, p) => sum + p.failedLast30Days, 0);
 
-  const save = async (input: Partial<FaceIdSettingsDTO>) => {
+  const save = async (input: FaceIdSettingsDTO) => {
     setSaving(true);
     try {
       await updateFaceIdSettings(input);
@@ -90,7 +91,7 @@ export function FaceId() {
     }
   };
 
-  const raw = data?.rawSettings;
+  const on = data?.settings.checkAtPunch === true;
   const st = overview.state;
 
   return (
@@ -105,22 +106,14 @@ export function FaceId() {
       <Card padded style={{ marginBottom: 20 }}>
         <h3 style={cardTitle}>Face ID</h3>
         <p style={{ ...cardNote, margin: '4px 0 16px' }}>
-          Confirms it is really the employee punching. Turn on setup first; check faces at punches once most people have set it up, and force the app update for the company at the same time: older apps cannot punch while faces are checked.
+          Confirms it is really the employee punching. Force the app update for the company when you turn it on: older apps cannot punch while faces are checked.
         </p>
         <SettingRow
-          title="Ask everyone to set up Face ID"
-          note="Everyone at the company is asked once in the app, whatever their attendance source."
-          on={raw?.setupRequired === true || raw?.checkAtPunch === true}
-          locked={raw?.checkAtPunch === true}
-          disabled={saving || st !== 'ready'}
-          onToggle={() => void save({ setupRequired: !(raw?.setupRequired === true) })}
-        />
-        <SettingRow
           title="Check faces at punch-in and punch-out"
-          note="Geotag and in-app punches, both ways; biometric devices and Auto Punch are not checked. A selfie must match before the location check. After three failed tries the punch goes to the manager as a request."
-          on={raw?.checkAtPunch === true}
+          note="Geotag and in-app punches, both ways; biometric devices and Auto Punch are not checked. Anyone not set up sets up Face ID at their next punch. A selfie must match before the location check; after three failed tries the punch goes to the manager as a request."
+          on={on}
           disabled={saving || st !== 'ready'}
-          onToggle={() => void save({ checkAtPunch: !(raw?.checkAtPunch === true) })}
+          onToggle={() => void save({ checkAtPunch: !on })}
         />
       </Card>
 
@@ -226,12 +219,10 @@ function Person({ name, userId, sub }: { name: string; userId: string; sub: stri
   );
 }
 
-function SettingRow({ title, note, on, locked, disabled, onToggle }: {
+function SettingRow({ title, note, on, disabled, onToggle }: {
   title: string;
   note: string;
   on: boolean;
-  /** On because another switch implies it. */
-  locked?: boolean;
   disabled: boolean;
   onToggle: () => void;
 }) {
@@ -239,18 +230,18 @@ function SettingRow({ title, note, on, locked, disabled, onToggle }: {
     <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 0', borderTop: '1px solid var(--line)' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{title}</div>
-        <div style={cardNote}>{locked ? 'On while faces are checked at punches.' : note}</div>
+        <div style={cardNote}>{note}</div>
       </div>
       <button
         type="button"
         role="switch"
         aria-checked={on}
         aria-label={title}
-        disabled={disabled || locked}
+        disabled={disabled}
         onClick={onToggle}
         style={{
-          width: 40, height: 22, borderRadius: 99, border: 'none', padding: 2, cursor: disabled || locked ? 'default' : 'pointer',
-          background: on ? 'var(--accent)' : 'var(--line)', opacity: disabled || locked ? 0.6 : 1, transition: 'background .15s',
+          width: 40, height: 22, borderRadius: 99, border: 'none', padding: 2, cursor: disabled ? 'default' : 'pointer',
+          background: on ? 'var(--accent)' : 'var(--line)', opacity: disabled ? 0.6 : 1, transition: 'background .15s',
           display: 'flex', justifyContent: on ? 'flex-end' : 'flex-start',
         }}
       >
