@@ -1746,15 +1746,20 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     // current calendar month meant a pending request from an earlier month sat
     // in the list while the totals above it read zero.
     final thisMonth = requests;
-    final totalHours = thisMonth
-        .where((request) => request.decision != LeaveDecision.declined)
-        .fold<double>(0, (sum, request) => sum + request.hours);
-    final approvedHours = thisMonth
-        .where((request) => request.decision == LeaveDecision.approved)
-        .fold<double>(0, (sum, request) => sum + request.hours);
-    final pendingHours = thisMonth
-        .where((request) => request.decision == LeaveDecision.pending)
-        .fold<double>(0, (sum, request) => sum + request.hours);
+    // Counted in the days the claims were made in, as comp-off is credited:
+    // half a day or a whole one each.
+    double days(bool Function(OvertimeRequest) counts) => thisMonth
+        .where(counts)
+        .fold<double>(0, (sum, request) => sum + _overtimeDays(request));
+    final totalDays = days(
+      (request) => request.decision != LeaveDecision.declined,
+    );
+    final approvedDays = days(
+      (request) => request.decision == LeaveDecision.approved,
+    );
+    final pendingDays = days(
+      (request) => request.decision == LeaveDecision.pending,
+    );
     final visible = requests
         .where(
           (request) => _overtimeHistoryView
@@ -1775,31 +1780,23 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       ),
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        _QuickStatsCard(
+        _HubSummaryCard(
           label: 'Overview',
-          stats: [
-            (_hoursMinutesLabel(totalHours), 'Total', const Color(0xFF111827)),
-            // Same order as the reimbursement overview: total, pending, then
-            // approved.
-            (
-              _hoursMinutesLabel(pendingHours),
-              'Pending',
-              const Color(0xFFFB2C36),
-            ),
-            (
-              _hoursMinutesLabel(approvedHours),
-              'Approved',
-              const Color(0xFF16A34A),
-            ),
-          ],
+          total: _daysLabel(totalDays, capital: true),
+          iconAsset: 'assets/icons/overtime_hourglass.png',
+          approved: approvedDays,
+          pending: pendingDays,
+          approvedLabel: _daysLabel(approvedDays),
+          approvedCaption: 'Approved',
+          pendingLabel: _daysLabel(pendingDays),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         LeaveViewSwitch(
           history: _overtimeHistoryView,
           onChanged: (value) => setState(() => _overtimeHistoryView = value),
           firstLabel: 'Requests',
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         if (visible.isEmpty)
           _HubEmptyState(
             iconAsset: 'assets/icons/action_card_overtime_hourglass.png',
@@ -1813,18 +1810,20 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ...visible.map(
             (request) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: _QuickRequestCard(
-                title: _short(request.workDate),
-                subtitle: request.note.isEmpty
-                    ? request.timeRangeLabel
-                    : request.note,
+              child: _HubRequestCard(
+                iconAsset: request.halfDayClaim
+                    ? 'assets/icons/overtime_half_day.png'
+                    : 'assets/icons/overtime_full_day.png',
+                title: request.halfDayClaim ? 'Half-day' : 'Full-day',
+                date: _short(request.workDate),
                 status: _decision(request.decision),
                 statusColor: switch (request.decision) {
                   LeaveDecision.approved => const Color(0xFF16A34A),
                   _ => const Color(0xFFFB2C36),
                 },
-                footerText: request.hoursLabel,
-                onViewDetails: () => _showRequestDetail(
+                footerIcon: _HubRequestCard.clockIcon,
+                footerText: _hoursMinutesLabel(request.hours),
+                onTap: () => _showRequestDetail(
                   RequestSummary(
                     screenTitle: 'Overtime',
                     successTitle: '',
@@ -2375,22 +2374,24 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       ),
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        _QuickStatsCard(
+        _HubSummaryCard(
           label: 'Overview',
-          stats: [
-            (_money(claimed), 'Total Claimed', const Color(0xFF111827)),
-            (_money(pending), 'Pending', const Color(0xFFFB2C36)),
-            (_money(reimbursed), 'Approved', const Color(0xFF16A34A)),
-          ],
+          total: _money(claimed),
+          iconAsset: 'assets/icons/request_reimbursement_money.png',
+          approved: reimbursed,
+          pending: pending,
+          approvedLabel: _money(reimbursed),
+          approvedCaption: 'Reimbursed',
+          pendingLabel: _money(pending),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         LeaveViewSwitch(
           history: _reimbursementHistoryView,
           onChanged: (value) =>
               setState(() => _reimbursementHistoryView = value),
           firstLabel: 'Claims',
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         if (visible.isEmpty)
           _HubEmptyState(
             iconAsset: 'assets/icons/action_card_reimbursement_money.png',
@@ -2406,15 +2407,19 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ...visible.map(
             (claim) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: _QuickRequestCard(
+              child: _HubRequestCard(
+                iconAsset: _claimCategoryIcon(claim.category),
+                iconSize: 20,
                 title: claim.category,
-                subtitle: _short(claim.expenseDate),
-                status: '${_money(claim.amount)} · ${claim.statusLabel}',
+                date: _short(claim.expenseDate),
+                status: claim.statusLabel,
                 statusColor: switch (claim.status) {
                   'Paid' || 'Approved' => const Color(0xFF16A34A),
-                  _ => const Color(0xFFFB2C36),
+                  _ => const Color(0xFFFF383C),
                 },
-                onViewDetails: () => _showRequestDetail(
+                footerIcon: _HubRequestCard.walletIcon,
+                footerText: _money(claim.amount),
+                onTap: () => _showRequestDetail(
                   RequestSummary(
                     screenTitle: 'Reimbursement',
                     successTitle: '',
@@ -6316,6 +6321,14 @@ class _HubRequestCard extends StatelessWidget {
     asset: 'assets/icons/request_card_calendar.svg',
     size: 12.6667,
   );
+  static const clockIcon = (
+    asset: 'assets/icons/request_card_clock.svg',
+    size: 14.0,
+  );
+  static const walletIcon = (
+    asset: 'assets/icons/request_card_wallet.svg',
+    size: 14.0,
+  );
 
   final String iconAsset;
   final double iconSize;
@@ -6441,6 +6454,7 @@ class _HubRequestCard extends StatelessWidget {
                         footerText,
                         style: const TextStyle(
                           fontFamily: 'Sora',
+                          fontFamilyFallback: _soraFallback,
                           color: Color(0xFF6B7280),
                           fontSize: 12,
                           height: 16 / 12,
@@ -6564,58 +6578,195 @@ class _PolicyRow extends StatelessWidget {
   }
 }
 
-class _QuickStatsCard extends StatelessWidget {
-  const _QuickStatsCard({required this.label, required this.stats});
+/// The summary over a hub's list (nodes 3464:64148 and 3464:64232): the total
+/// claimed beside the action's picture, then a bar of what has been approved
+/// against what is still pending, with the two figures under its ends.
+class _HubSummaryCard extends StatelessWidget {
+  const _HubSummaryCard({
+    required this.label,
+    required this.total,
+    required this.iconAsset,
+    required this.approved,
+    required this.pending,
+    required this.approvedLabel,
+    required this.approvedCaption,
+    required this.pendingLabel,
+  });
 
   final String label;
-  final List<(String value, String caption, Color color)> stats;
+  final String total;
+  final String iconAsset;
+
+  /// The two parts of the bar, in whatever the hub counts in.
+  final double approved;
+  final double pending;
+  final String approvedLabel;
+  final String approvedCaption;
+  final String pendingLabel;
+
+  static const _caption = TextStyle(
+    fontFamily: 'Sora',
+    color: Color(0xFF9CA3AF),
+    fontSize: 10,
+    height: 15 / 10,
+  );
+
+  static const _figure = TextStyle(
+    fontFamily: 'Sora',
+    fontFamilyFallback: _soraFallback,
+    fontSize: 12,
+    height: 16.2 / 12,
+    letterSpacing: -0.16,
+    fontWeight: FontWeight.w600,
+  );
 
   @override
   Widget build(BuildContext context) {
+    final whole = approved + pending;
     return _FormCard(
       children: [
         Text(
           label.toUpperCase(),
           style: const TextStyle(
+            fontFamily: 'Sora',
             color: Color(0xFF9CA3AF),
             fontSize: 12,
+            height: 16 / 12,
             fontWeight: FontWeight.w600,
             letterSpacing: .3,
           ),
         ),
-        const SizedBox(height: 12),
-        Row(
-          children: stats
-              .map(
-                (stat) => Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        stat.$1,
-                        style: TextStyle(
-                          color: stat.$3,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Text('Total Claimed', style: _caption),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      total,
+                      style: const TextStyle(
+                        fontFamily: 'Sora',
+                        fontFamilyFallback: _soraFallback,
+                        color: Color(0xFF111827),
+                        fontSize: 14,
+                        height: 20 / 14,
+                        fontWeight: FontWeight.w700,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        stat.$2,
-                        style: const TextStyle(
-                          color: Color(0xFF9CA3AF),
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              )
-              .toList(),
+              ),
+              _IllustrationTile(asset: iconAsset),
+            ],
+          ),
+        ),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Container(
+            height: 8,
+            // Nothing claimed yet: an empty track rather than a red one.
+            color: whole <= 0
+                ? const Color(0xFFEBEBEB)
+                : const Color(0xB3FF383C),
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: whole <= 0 ? 0 : (approved / whole).clamp(0, 1),
+              heightFactor: 1,
+              child: const ColoredBox(color: Color(0xFF34C759)),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    approvedLabel,
+                    style: _figure.copyWith(color: const Color(0xFF16A34A)),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(approvedCaption, style: _caption),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    pendingLabel,
+                    style: _figure.copyWith(color: const Color(0xFFFB2C36)),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2),
+                    child: Text('Pending', style: _caption),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ],
     );
   }
+}
+
+/// Sora has no rupee sign; amounts take it from the app's own font rather
+/// than whatever the phone falls back to.
+const _soraFallback = ['Plus Jakarta Sans'];
+
+/// The days an overtime claim is worth: half a day or a whole one.
+double _overtimeDays(OvertimeRequest request) => request.halfDayClaim ? 0.5 : 1;
+
+/// "8 days", "1 day", "12.5 Days" — the summary's total is capitalised.
+String _daysLabel(double days, {bool capital = false}) {
+  final unit = days == 1 ? 'day' : 'days';
+  return '${formatDays(days)} ${capital ? unit.replaceFirst('d', 'D') : unit}';
+}
+
+/// The picture a claim category is drawn with (node 3464:64217), found from
+/// the name HR gave the type. One the designs have no picture for gets the
+/// Reimbursement summary's banknotes.
+String _claimCategoryIcon(String category) {
+  final name = category.toLowerCase();
+  bool any(List<String> words) => words.any(name.contains);
+  if (any(['hotel', 'stay', 'accommodation', 'lodging'])) {
+    return 'assets/icons/claim_hotel.png';
+  }
+  if (any(['transport', 'travel', 'cab', 'taxi', 'fuel', 'commute'])) {
+    return 'assets/icons/claim_transport_car.png';
+  }
+  if (any(['book', 'course', 'training', 'learning', 'education'])) {
+    return 'assets/icons/claim_book_course.png';
+  }
+  if (any(['meal', 'food', 'lunch', 'dinner'])) {
+    return 'assets/icons/claim_meal.png';
+  }
+  if (any(['tool', 'software', 'subscription', 'licen'])) {
+    return 'assets/icons/claim_tools_software.png';
+  }
+  if (any(['device', 'hardware', 'equipment', 'gadget', 'keyboard'])) {
+    return 'assets/icons/claim_devices_keyboard.png';
+  }
+  if (any(['internet', 'broadband', 'wifi', 'wi-fi', 'data'])) {
+    return 'assets/icons/claim_internet_globe.png';
+  }
+  return 'assets/icons/request_reimbursement_money.png';
 }
 
 class _QuickRequestCard extends StatelessWidget {
@@ -6624,7 +6775,6 @@ class _QuickRequestCard extends StatelessWidget {
     required this.subtitle,
     required this.status,
     required this.statusColor,
-    this.footerText,
     this.onViewDetails,
   });
 
@@ -6632,7 +6782,6 @@ class _QuickRequestCard extends StatelessWidget {
   final String subtitle;
   final String status;
   final Color statusColor;
-  final String? footerText;
 
   /// Opens everything the request was filled in with, plus the response.
   final VoidCallback? onViewDetails;
@@ -6694,29 +6843,6 @@ class _QuickRequestCard extends StatelessWidget {
               ),
             ],
           ),
-          if (footerText != null) ...[
-            const SizedBox(height: 10),
-            const Divider(height: 1, color: Color(0xFFF3F4F6)),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                SvgPicture.asset(
-                  'assets/icons/schedule_clock_gray.svg',
-                  width: 14,
-                  height: 14,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  footerText!,
-                  style: const TextStyle(
-                    color: Color(0xFF6B7280),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ],
           if (onViewDetails case final open?) ...[
             const SizedBox(height: 4),
             _ViewDetailsLink(onTap: open),
