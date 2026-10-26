@@ -134,12 +134,13 @@ Future<void> close(WidgetTester tester, ManagerBloc bloc) async {
 
 void main() {
   group('which tabs a profile has', () {
-    test('a colleague: attendance, work detail, org chart and rank', () {
+    test('a colleague: attendance, work detail, org chart, rank and posts', () {
       expect(colleagueProfileTabs, [
         ProfileTab.workDetail,
         ProfileTab.attendance,
         ProfileTab.orgChart,
         ProfileTab.rank,
+        ProfileTab.posts,
       ]);
       expect(
         memberProfileTabs(
@@ -151,7 +152,7 @@ void main() {
       );
     });
 
-    test('a report keeps everything it had, plus Rank', () {
+    test('a report keeps everything it had, plus Rank and Post', () {
       expect(
         memberProfileTabs(
           inViewerChain: true,
@@ -165,6 +166,7 @@ void main() {
           ProfileTab.orgChart,
           ProfileTab.grow,
           ProfileTab.rank,
+          ProfileTab.posts,
           ProfileTab.documentation,
         ],
       );
