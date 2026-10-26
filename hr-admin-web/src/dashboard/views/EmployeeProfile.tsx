@@ -31,6 +31,7 @@ import { canOpen, SALARY_DETAILS } from '../access';
 import { getEmployeePayslips, getPaymentDetails, inr as inrPaise, savePaymentDetails, type PaymentDetailsDTO, type PaymentDetailsInput, type PayrollRunDTO, type PayslipDTO } from '../../services/payroll';
 import { EmployeeSalary } from './EmployeeSalary';
 import { EmployeeActivity } from './EmployeeActivity';
+import { isSelfOrBelow } from './selfOrBelow';
 import { IncomeTaxCard } from './IncomeTaxCard';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
 import { downloadPayslipPdf } from '../payslip';
@@ -1053,17 +1054,6 @@ function DeleteEmployee({ emp, onClose, onDeleted }: { emp: Emp; onClose: () => 
   );
 }
 
-function isSelfOrBelow(emps: Emp[], editorId: string, emp: Emp): boolean {
-  const byId = new Map(emps.map((e) => [e.id, e]));
-  const seen = new Set<string>();
-  let current: Emp | undefined = emp;
-  while (current && !seen.has(current.id)) {
-    if (current.id === editorId) return true;
-    seen.add(current.id);
-    current = current.managerId ? byId.get(current.managerId) : undefined;
-  }
-  return false;
-}
 
 type DetailsForm = {
   firstName: string; middleName: string; lastName: string; employeeId: string; joiningDate: string;
@@ -1151,7 +1141,7 @@ function ManagerPicker({ emp, value, onChange }: { emp: Emp; value: { id: string
  * Full name and work email stay in view but locked. The reporting manager is
  * one of the fields; only what changed is sent.
  */
-function BasicDetailsEditor({ emp, onDone }: { emp: Emp; onDone: () => void }) {
+export function BasicDetailsEditor({ emp, onDone }: { emp: Emp; onDone: () => void }) {
   const { emps, flash, reload } = useStore();
   const before = detailsOf(emp);
   const [form, setForm] = useState<DetailsForm>(before);
@@ -1276,7 +1266,7 @@ function BasicDetailsEditor({ emp, onDone }: { emp: Emp; onDone: () => void }) {
  * Which shift template this person follows, changeable here (for someone with
  * the edit right). A change starts the next day; today stays on the old one.
  */
-function ShiftPicker({ emp, onChanged }: { emp: Emp; onChanged: () => void }) {
+export function ShiftPicker({ emp, onChanged }: { emp: Emp; onChanged: () => void }) {
   const { flash } = useStore();
   const [shifts, setShifts] = useState<ShiftDTO[] | null>(null);
   const [picked, setPicked] = useState('');

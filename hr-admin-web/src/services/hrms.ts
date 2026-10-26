@@ -933,6 +933,11 @@ export type ReportPersonDTO = {
   punchFormat: string;
   /** Who they report to, by name; empty at the top of the tree. */
   manager: string;
+  /** Their shift, HH:MM; absent from an older server. */
+  shiftStart?: string;
+  shiftEnd?: string;
+  /** Null when nobody on their shift is marked late. */
+  lateGraceMinutes?: number | null;
 };
 
 /** [userId, date, status, lateByMinutes, punchIn, punchOut, leaveType, source, earlyByMinutes, shiftRunning] */

@@ -1,127 +1,137 @@
-// Reports › Attendance — how today, this week or this month went, one row per
-// employee.
+// Reports › Attendance — today, this week, this month or a custom range, one
+// row per employee, as the attendance report prototype draws it.
 //
-// Every number counts people, not days: one row per employee, one status per
-// employee per day, picked in a fixed order (on leave, week off or holiday,
-// late, present, not punched in yet, missed punch). Today lists each person's
-// status and punches; a week is a grid of short chips; a month is each
-// person's totals. A custom range under eight days is the grid, longer is the
-// totals.
+// Each employee gets one status a day: leave first, then week off or holiday,
+// then missed punch (only once the shift has ended), then late, then present.
+// Before the shift ends, anyone without an in-punch is Not punched in yet.
+// Today lists each person's punches; a week is a grid of chips; a month, or a
+// custom range of eight days or more, is each person's totals. Pressing a row
+// opens that person's basic details beside the report, with the one Edit.
 //
 // The server grades the days (the same grading payroll reads); this page only
-// turns each graded day into its one status, so nothing here can disagree with
-// a payslip about a punch. Today, the week and the month come from one
-// request, so switching between them is instant. The filters live in this
-// tab's session, so leaving the page and coming back finds them as they were.
+// turns each graded day into its one status. Today, the week and the month come
+// from one request, so switching between them is instant. The filters live in
+// this tab's session.
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { WorkSheet } from 'xlsx';
 import { expandReport, getAttendanceReport } from '../../services/hrms';
 import type { AttendanceReportDTO, ReportPersonDTO, ReportRow } from '../../services/hrms';
-import { Card, DateRange, EmptyRow, ListPending, SearchInput, SelectBox, SkeletonCards, StatusTabs } from '../ui';
+import { DateRange, ListPending } from '../ui';
 import type { LoadState } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { IconDownload } from './peopleTable';
+import { IconClose } from '../icons';
 import { useAuth } from '../auth/AuthContext';
+import { useStore } from '../store';
+import { BasicDetailsEditor, ShiftPicker } from './EmployeeProfile';
+import { isSelfOrBelow } from './selfOrBelow';
+import { PdEdit, PdLock } from './pdIcons';
 import * as L from './look';
 import './look.css';
+import './attendance-report.css';
 
-/**
- * The last report for a range, kept in this tab so coming back to the page —
- * or re-picking a range already seen — paints at once and refreshes behind.
- */
-const cacheKey = (userId: string, from: string, to: string) => `sowaka.report.v2.${userId}.${from}.${to}`;
-const readCached = (key: string): AttendanceReportDTO | null => {
+const cacheKey = (userId: string, from: string, to: string) => `sowaka.report.v3.${userId}.${from}.${to}`;
+const readCached = (key: string): { at: string; report: AttendanceReportDTO } | null => {
   try {
     const raw = sessionStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as AttendanceReportDTO) : null;
+    return raw ? (JSON.parse(raw) as { at: string; report: AttendanceReportDTO }) : null;
   } catch {
     return null;
   }
 };
-const writeCached = (key: string, report: AttendanceReportDTO) => {
+const writeCached = (key: string, value: { at: string; report: AttendanceReportDTO }) => {
   try {
-    sessionStorage.setItem(key, JSON.stringify(report));
+    sessionStorage.setItem(key, JSON.stringify(value));
   } catch {
     // Quota or private mode: the page still works, it just won't paint early.
   }
 };
 
 // ── one status per employee per day ──────────────────────────────────────
-/** The day's one status, as its chip reads. */
-type Code = 'LV' | 'HL' | 'WO' | 'H' | 'L' | 'P' | 'NY' | 'MP' | 'A';
-const CODE: Record<Code, { label: string; tone: { bg: string; fg: string } }> = {
-  LV: { label: 'On leave', tone: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' } },
-  HL: { label: 'Half day leave', tone: { bg: 'var(--t-sky)', fg: 'var(--t-sky-i)' } },
-  WO: { label: 'Week off', tone: { bg: 'var(--surface-2)', fg: 'var(--ink-3)' } },
-  H: { label: 'Holiday', tone: { bg: 'var(--t-butter)', fg: 'var(--t-butter-i)' } },
-  L: { label: 'Late', tone: { bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' } },
-  P: { label: 'Present', tone: { bg: 'var(--ok-bg)', fg: 'var(--ok)' } },
-  NY: { label: 'Not punched in yet', tone: { bg: 'var(--surface-2)', fg: 'var(--ink-2)' } },
-  MP: { label: 'Missed punch', tone: { bg: 'var(--t-peach)', fg: 'var(--t-peach-i)' } },
-  A: { label: 'Absent (marked by HR)', tone: { bg: 'var(--bad-bg)', fg: 'var(--bad)' } },
+type Code = 'P' | 'L' | 'HD' | 'LV' | 'MP' | 'NP' | 'WO' | 'H' | 'A';
+const TONE: Record<Code | 'future', { bg: string; fg: string }> = {
+  P: { bg: 'var(--ar-p-bg)', fg: 'var(--ar-p-fg)' },
+  L: { bg: 'var(--ar-l-bg)', fg: 'var(--ar-l-fg)' },
+  HD: { bg: 'var(--ar-hd-bg)', fg: 'var(--ar-hd-fg)' },
+  LV: { bg: 'var(--ar-lv-bg)', fg: 'var(--ar-lv-fg)' },
+  MP: { bg: 'var(--ar-mp-bg)', fg: 'var(--ar-mp-fg)' },
+  NP: { bg: 'var(--ar-np-bg)', fg: 'var(--ar-np-fg)' },
+  WO: { bg: 'var(--ar-wo-bg)', fg: 'var(--ar-wo-fg)' },
+  H: { bg: 'var(--ar-wo-bg)', fg: 'var(--ar-wo-fg)' },
+  A: { bg: 'var(--ar-mp-bg)', fg: 'var(--ar-mp-fg)' },
+  future: { bg: 'transparent', fg: 'var(--ink-4, #9CA3AF)' },
 };
-/** The legend under a grid, in the order a day's status is decided. */
-const LEGEND: Code[] = ['P', 'L', 'MP', 'LV', 'HL', 'WO', 'H', 'NY'];
-const PRESENT = new Set<Code>(['P', 'L']);
-const LEAVE = new Set<Code>(['LV', 'HL']);
+const LEGEND: [Code, string][] = [['P', 'Present'], ['L', 'Late'], ['HD', 'Half day'], ['LV', 'On leave'], ['MP', 'Missed punch'], ['NP', 'Not punched in yet'], ['WO', 'Week off'], ['H', 'Holiday']];
 
-/**
- * A graded day as its one status. The server has already said whether a punch
- * is missing for this person's shift (a single-punch shift needs only the
- * punch-in); a day with an in-time is present, or late, unless it is missing
- * its out-punch after the shift ended. While the shift is still running nothing
- * is missed yet: an in-time is present with the out-punch pending, and no
- * in-time is not punched in yet.
- */
-function codeOf(row: ReportRow, halfLeave: boolean): Code {
-  if (row.status === 'on_leave') return halfLeave ? 'HL' : 'LV';
-  if (row.shiftRunning) return row.punchIn ? (row.late ? 'L' : 'P') : 'NY';
-  // HR's own mark, which has no punches behind it.
-  if (row.source === 'hr') return row.status === 'absent' ? 'A' : 'P';
-  if (row.status === 'missed_punch') return 'MP';
-  if (row.punchIn) return row.late ? 'L' : 'P';
-  // Present by default: nobody punches, and the working day is a present day.
-  if (row.status === 'present') return 'P';
-  return 'MP';
-}
-
-/** Whether a person had one of these statuses on any of these dates. */
-const had = (p: PersonDays, codes: Set<Code>, dates: string[]) => dates.some((d) => {
-  const c = p.days.get(d)?.code;
-  return c !== undefined && codes.has(c);
-});
-
-/** One person over the days on screen. */
-type PersonDays = {
-  userId: string;
-  person: ReportPersonDTO;
-  /** By date: the status, and the graded day behind it (none on a week off or holiday). */
-  days: Map<string, { code: Code; row?: ReportRow }>;
+type Day = {
+  code: Code;
+  /** What the pill says: a leave shows its type. */
+  label: string;
+  /** Why, in the Mode column: which punch is missing, or when the shift ends. */
+  mode: string;
+  late: boolean;
+  punchIn: string | null;
+  punchOut: string | null;
+  /** In, and the shift still running: the out-punch is Pending, not missing. */
+  pending: boolean;
+  /** Leave taken that day: 1, or 0.5 for half-day leave. */
+  leave: number;
 };
 
-/** A person's totals over a set of dates; statuses only count up to today. */
-function totalsOf(p: PersonDays, dates: string[], today: string) {
-  const t = { working: 0, present: 0, late: 0, missed: 0, leave: 0 };
-  for (const date of dates) {
-    const d = p.days.get(date);
-    if (!d || d.code === 'WO' || d.code === 'H') continue;
-    t.working += 1;
-    if (date > today) continue;
-    if (PRESENT.has(d.code)) t.present += 1;
-    if (d.code === 'L') t.late += 1;
-    if (d.code === 'MP') t.missed += 1;
-    if (d.code === 'LV') t.leave += 1;
-    if (d.code === 'HL') t.leave += 0.5;
+const LEAVE_LABEL: Record<string, string> = { sick: 'Sick', casual: 'Casual', earned: 'Earned', comp_off: 'Comp off' };
+const leaveLabel = (type: string | null) => {
+  if (!type) return 'On leave';
+  if (/leave/i.test(type)) return type;
+  const name = LEAVE_LABEL[type] ?? type.split('_').map((w) => w && w[0].toUpperCase() + w.slice(1)).join(' ');
+  return `${name} leave`;
+};
+
+const clock = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase() : '—';
+/** 18:30 → 06:30 PM. */
+const hhmm = (t?: string) => {
+  if (!t || !/^\d{1,2}:\d{2}$/.test(t)) return '';
+  const [h, m] = t.split(':').map(Number);
+  return `${String(h % 12 || 12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+};
+
+function dayOf(row: ReportRow, person: ReportPersonDTO, halfLeave: boolean): Day {
+  const base = { mode: '', late: false, punchIn: row.punchIn, punchOut: row.punchOut, pending: false, leave: 0 };
+  if (row.status === 'on_leave') {
+    return halfLeave
+      ? { ...base, code: 'HD', label: 'Half day', leave: 0.5 }
+      : { ...base, code: 'LV', label: leaveLabel(row.leaveType), leave: 1 };
   }
-  return t;
+  // HR's own mark has no punches behind it.
+  if (row.source === 'hr') {
+    if (row.status === 'absent') return { ...base, code: 'A', label: 'Absent (marked by HR)' };
+    return row.status === 'half_day' ? { ...base, code: 'HD', label: 'Half day' } : { ...base, code: 'P', label: 'Present' };
+  }
+  const late = row.late;
+  if (row.shiftRunning) {
+    if (!row.punchIn) return { ...base, code: 'NP', label: 'Not punched in yet', mode: person.shiftEnd ? `Shift ends ${hhmm(person.shiftEnd)}` : '' };
+    return { ...base, code: late ? 'L' : 'P', label: late ? 'Late' : 'Present', late, pending: !row.punchOut };
+  }
+  if (!row.punchIn && !row.punchOut) {
+    // Present by default: nobody punches, and a working day is a present day.
+    if (row.status === 'present') return { ...base, code: 'P', label: 'Present' };
+    return { ...base, code: 'MP', label: 'Missed punch', mode: 'Both punches missing' };
+  }
+  if (!row.punchIn) return { ...base, code: 'MP', label: 'Missed punch', mode: 'Missing punch-in' };
+  if (row.status === 'missed_punch') return { ...base, code: 'MP', label: 'Missed punch', mode: `Missing punch-out${late ? ' · came in late' : ''}`, late };
+  return { ...base, code: late ? 'L' : 'P', label: late ? 'Late' : 'Present', late };
 }
+/** Present counts any day with an in-punch, late, half day and a missing out-punch included. */
+const presentLike = (d: Day) => d.code === 'P' || d.code === 'L' || d.code === 'HD' || (d.code === 'MP' && Boolean(d.punchIn));
+
+type Person = { userId: string; person: ReportPersonDTO; days: Map<string, Day> };
 
 // ── the range ─────────────────────────────────────────────────────────────
-/** A date as YYYY-MM-DD on this computer's calendar, which is the office's. */
-const isoOf = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const isoOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const dateOf = (iso: string) => new Date(`${iso}T00:00:00`);
 const addDays = (iso: string, n: number) => {
-  const d = new Date(`${iso}T00:00:00`);
+  const d = dateOf(iso);
   d.setDate(d.getDate() + n);
   return isoOf(d);
 };
@@ -130,64 +140,49 @@ const datesBetween = (from: string, to: string) => {
   for (let d = from; d <= to && out.length < 400; d = addDays(d, 1)) out.push(d);
   return out;
 };
+const MON = (iso: string) => dateOf(iso).toLocaleDateString('en-GB', { month: 'short' });
+const WD = (iso: string) => dateOf(iso).toLocaleDateString('en-GB', { weekday: 'short' });
+const DAY = (iso: string) => dateOf(iso).getDate();
 
 type Period = 'today' | 'week' | 'month' | 'custom';
-const PERIODS: Period[] = ['today', 'week', 'month', 'custom'];
-const PERIOD_LABEL: Record<Period, string> = { today: 'Today', week: 'This week', month: 'This month', custom: 'Custom' };
-/** Under this many days a custom range is the week grid; from it on, the month totals. */
+const PERIODS: [Period, string][] = [['today', 'Today'], ['week', 'This week'], ['month', 'This month'], ['custom', 'Custom']];
+const TITLE: Record<Period, string> = { today: 'Today', week: 'This week', month: 'This month', custom: 'Custom range' };
 const GRID_MAX_DAYS = 7;
 
-/** Today, this week (Monday to Sunday, as the shifts' weekly offs run) and this calendar month. */
 function presetRanges(today: string) {
-  const now = new Date(`${today}T00:00:00`);
+  const now = dateOf(today);
   const monday = addDays(today, -((now.getDay() + 6) % 7));
-  const monthStart = `${today.slice(0, 7)}-01`;
   const monthEnd = isoOf(new Date(now.getFullYear(), now.getMonth() + 1, 0));
   return {
     today: { from: today, to: today },
     week: { from: monday, to: addDays(monday, 6) },
-    month: { from: monthStart, to: monthEnd },
+    month: { from: `${today.slice(0, 7)}-01`, to: monthEnd },
   };
 }
 
+/** "Mon 19 – Sun 25 Oct 2026", or with both months when it spans two. */
+function spanLabel(from: string, to: string, withDays: boolean) {
+  const year = dateOf(to).getFullYear();
+  const sameMonth = from.slice(0, 7) === to.slice(0, 7);
+  if (withDays) return sameMonth ? `${WD(from)} ${DAY(from)} – ${WD(to)} ${DAY(to)} ${MON(to)} ${year}` : `${WD(from)} ${DAY(from)} ${MON(from)} – ${WD(to)} ${DAY(to)} ${MON(to)} ${year}`;
+  return sameMonth ? `${DAY(from)}–${DAY(to)} ${MON(to)} ${year}` : `${DAY(from)} ${MON(from)} – ${DAY(to)} ${MON(to)} ${year}`;
+}
+
 // ── attendance sources ────────────────────────────────────────────────────
-/** The shift template's punch format, as the filter and the rows name it. */
-const SOURCE_LABEL: Record<string, string> = {
-  'Biometric': 'Biometric',
-  'Geotag (powered by Sowaka)': 'Geotag',
-  'In-app punch in': 'In-app',
-  'Present by default (Auto Punch)': 'Auto punch',
+const SHORT_SOURCE: Record<string, string> = {
+  'Biometric': 'Biometric', 'Geotag (powered by Sowaka)': 'Geotag', 'In-app punch in': 'In-app', 'Present by default (Auto Punch)': 'Auto punch',
 };
-const sourceName = (format: string) => SOURCE_LABEL[format] ?? format;
-/** How a punch reached us: the biometric import, or the app (Geotag and in-app alike). */
-const punchedVia = (format: string): string | null =>
-  format === 'Biometric' ? 'sql_import' : format === 'Present by default (Auto Punch)' ? null : 'manual';
+const shortSource = (f: string) => SHORT_SOURCE[f] ?? f;
+const AUTO = 'Present by default (Auto Punch)';
 
 // ── filters, kept for this tab ────────────────────────────────────────────
-type Card3 = 'present' | 'on_leave' | 'missed';
-type Saved = {
-  period: Period;
-  custom: { from: string; to: string };
-  department: string;
-  manager: string;
-  source: string;
-  search: string;
-  card: Card3 | 'all';
-};
-const DEFAULTS: Saved = {
-  period: 'today', custom: { from: '', to: '' }, department: 'all', manager: 'all', source: 'all', search: '', card: 'all',
-};
-const filtersKey = (userId: string) => `sowaka.report.filters.v2.${userId}`;
+type Saved = { period: Period; custom: { from: string; to: string }; department: string; manager: string; source: string };
+const DEFAULTS: Saved = { period: 'today', custom: { from: '', to: '' }, department: 'all', manager: 'all', source: 'all' };
+const filtersKey = (userId: string) => `sowaka.report.filters.v3.${userId}`;
 const readFilters = (userId: string): Saved => {
   try {
-    const raw = sessionStorage.getItem(filtersKey(userId));
-    const saved = raw ? (JSON.parse(raw) as Partial<Saved>) : {};
-    return {
-      ...DEFAULTS,
-      ...saved,
-      period: PERIODS.includes(saved.period as Period) ? (saved.period as Period) : DEFAULTS.period,
-      custom: { ...DEFAULTS.custom, ...(saved.custom ?? {}) },
-    };
+    const saved = JSON.parse(sessionStorage.getItem(filtersKey(userId)) ?? '{}') as Partial<Saved>;
+    return { ...DEFAULTS, ...saved, period: PERIODS.some(([p]) => p === saved.period) ? (saved.period as Period) : 'today', custom: { ...DEFAULTS.custom, ...(saved.custom ?? {}) } };
   } catch {
     return DEFAULTS;
   }
@@ -200,514 +195,440 @@ const writeFilters = (userId: string, saved: Saved) => {
   }
 };
 
-const CARDS: { key: Card3; label: string; codes: Set<Code> }[] = [
-  { key: 'present', label: 'Present', codes: PRESENT },
-  { key: 'on_leave', label: 'On leave', codes: LEAVE },
-  { key: 'missed', label: 'Missed punch', codes: new Set<Code>(['MP']) },
-];
-
-const PAGE = 25;
-
-const clock = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
-const dayHead = (iso: string) => {
-  const d = new Date(`${iso}T00:00:00`);
-  return { wd: d.toLocaleDateString('en-IN', { weekday: 'short' }), dm: d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) };
-};
-const dayLabel = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-const days = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+const PAGE = 50;
+const NOTE = 'Day status: leave, then week off or holiday, then missed punch (only once the shift has ended), then late, then present. Before the shift ends, anyone without an in-punch shows as Not punched in yet.';
 
 export function AttendanceReport() {
   const { user } = useAuth();
   const userId = user?.id ?? '';
   const [saved] = useState(() => readFilters(userId));
-
   const [range, setRange] = useState(() => ({ period: saved.period, custom: saved.custom }));
   const { period, custom } = range;
-  // Worked out afresh each render, so a page left open overnight moves to the new today.
   const today = isoOf(new Date());
   const presets = useMemo(() => presetRanges(today), [today]);
-  // One request covers today, the week and the month; Custom asks for its own.
   const fetchFrom = period === 'custom' ? custom.from || custom.to : [presets.week.from, presets.month.from].sort()[0];
   const fetchTo = period === 'custom' ? custom.to || custom.from : [presets.week.to, presets.month.to].sort()[1];
-  const shownRange = period === 'custom' ? { from: fetchFrom, to: fetchTo } : presets[period];
-  const dates = useMemo(() => (shownRange.from && shownRange.to ? datesBetween(shownRange.from, shownRange.to) : []), [shownRange.from, shownRange.to]);
-  const view: 'today' | 'grid' | 'totals' = period === 'today' ? 'today'
-    : period === 'week' ? 'grid'
-      : period === 'month' ? 'totals'
-        : dates.length <= GRID_MAX_DAYS ? 'grid' : 'totals';
+  const shownFrom = period === 'custom' ? fetchFrom : presets[period].from;
+  const shownTo = period === 'custom' ? fetchTo : presets[period].to;
+  const dates = useMemo(() => (shownFrom && shownTo ? datesBetween(shownFrom, shownTo) : []), [shownFrom, shownTo]);
+  const countedDates = useMemo(() => dates.filter((d) => d <= today), [dates, today]);
+  const view: 'today' | 'grid' | 'totals' = period === 'today' ? 'today' : period === 'week' || (period === 'custom' && dates.length <= GRID_MAX_DAYS) ? 'grid' : 'totals';
 
-  const [report, setReport] = useState<AttendanceReportDTO | null>(null);
-  const [reportFor, setReportFor] = useState('');
+  const [loaded, setLoaded] = useState<{ key: string; at: string; report: AttendanceReportDTO } | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
-
   const [department, setDepartment] = useState(saved.department);
   const [manager, setManager] = useState(saved.manager);
   const [source, setSource] = useState(saved.source);
-  const [search, setSearch] = useState(saved.search);
-  const [card, setCard] = useState<Card3 | 'all'>(saved.card);
   const [page, setPage] = useState(1);
+  const [openId, setOpenId] = useState<string | null>(null);
 
-  useEffect(() => {
-    writeFilters(userId, { period, custom, department, manager, source, search, card });
-  }, [userId, period, custom, department, manager, source, search, card]);
+  useEffect(() => { writeFilters(userId, { period, custom, department, manager, source }); }, [userId, period, custom, department, manager, source]);
 
   const pickPeriod = (next: Period) =>
-    setRange((prev) => ({ period: next, custom: next === 'custom' ? (prev.custom.from ? prev.custom : presets.week) : prev.custom }));
+    setRange((prev) => ({ period: next, custom: next === 'custom' ? (prev.custom.from ? prev.custom : { from: presets.month.from, to: today }) : prev.custom }));
   const editRange = (side: 'from' | 'to', value: string) =>
     setRange((prev) => {
-      const base = prev.period === 'custom' ? prev.custom : presets[prev.period];
-      const next = { ...base, [side]: value };
+      const next = { ...prev.custom, [side]: value };
       if (!next.from && !next.to) return { period: 'today', custom: DEFAULTS.custom };
       return { period: 'custom', custom: next };
     });
-  const clearFilters = () => {
-    setDepartment('all');
-    setManager('all');
-    setSource('all');
-    setSearch('');
-    setCard('all');
-  };
-  const narrowed = department !== 'all' || manager !== 'all' || source !== 'all' || search.trim() !== '';
 
   useEffect(() => {
     if (!fetchFrom || !fetchTo) return;
     let live = true;
     const key = cacheKey(userId, fetchFrom, fetchTo);
     const cached = readCached(key);
-    if (!cached) setRefreshing(false);
-    if (cached) {
-      setReport(cached);
-      setReportFor(key);
-      setRefreshing(true);
-    }
+    if (cached) setLoaded({ key, ...cached });
     setError('');
-    // A date input fires on every edit; without a pause, typing a year is several requests.
     const timer = setTimeout(() => {
       getAttendanceReport({ from: fetchFrom, to: fetchTo })
-        .then((data) => {
+        .then((report) => {
           if (!live) return;
-          setReport(data);
-          setReportFor(key);
-          writeCached(key, data);
+          const value = { at: new Date().toISOString(), report };
+          setLoaded({ key, ...value });
+          writeCached(key, value);
         })
-        .catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load the report'); })
-        .finally(() => { if (live) setRefreshing(false); });
+        .catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load the report'); });
     }, cached ? 150 : 400);
     return () => { live = false; clearTimeout(timer); };
   }, [fetchFrom, fetchTo, userId, attempt]);
 
-  const shown = report && reportFor === cacheKey(userId, fetchFrom, fetchTo) ? report : null;
+  const shown = loaded && loaded.key === cacheKey(userId, fetchFrom, fetchTo) ? loaded.report : null;
   const reportState: LoadState = shown ? 'ready' : error ? 'error' : 'loading';
 
-  // Everyone, each with one status per date: graded days, then the days they did not owe.
-  const everyone = useMemo<PersonDays[]>(() => {
+  const everyone = useMemo<Person[]>(() => {
     if (!shown) return [];
     const half = new Set(shown.halfDayLeave ?? []);
-    const byUser = new Map<string, PersonDays>();
+    const byUser = new Map<string, Person>();
     for (const [id, person] of Object.entries(shown.people)) byUser.set(id, { userId: id, person, days: new Map() });
     for (const row of expandReport(shown)) {
-      byUser.get(row.userId)?.days.set(row.date, { code: codeOf(row, half.has(`${row.userId}|${row.date}`)), row });
+      const p = byUser.get(row.userId);
+      if (p) p.days.set(row.date, dayOf(row, p.person, half.has(`${row.userId}|${row.date}`)));
     }
-    for (const [id, date, kind] of shown.offDays ?? []) byUser.get(id)?.days.set(date, { code: kind === 'holiday' ? 'H' : 'WO' });
+    const off = { mode: '', late: false, punchIn: null, punchOut: null, pending: false, leave: 0 };
+    for (const [id, date, kind] of shown.offDays ?? []) {
+      byUser.get(id)?.days.set(date, kind === 'holiday' ? { ...off, code: 'H', label: 'Holiday' } : { ...off, code: 'WO', label: 'Week off' });
+    }
     return [...byUser.values()].sort((a, b) => a.person.name.localeCompare(b.person.name));
   }, [shown]);
 
-  // Who the page is about, before a card narrows the list.
-  const scoped = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return everyone.filter(({ person: p }) =>
-      (department === 'all' || p.department === department)
-      && (manager === 'all' || p.manager === manager)
-      && (source === 'all' || p.punchFormat === source)
-      && (!q || p.name.toLowerCase().includes(q) || p.employeeId.toLowerCase().includes(q)));
-  }, [everyone, department, manager, source, search]);
+  const list = useMemo(() => everyone.filter(({ person: p }) =>
+    (department === 'all' || p.department === department)
+    && (manager === 'all' || p.manager === manager)
+    && (source === 'all' || p.punchFormat === source)), [everyone, department, manager, source]);
 
-  // Past and present dates of the range: a day that has not come yet has no status.
-  const countedDates = useMemo(() => dates.filter((d) => d <= today), [dates, today]);
-  const cardCounts = useMemo(
-    () => Object.fromEntries(CARDS.map((c) => [c.key, scoped.filter((p) => had(p, c.codes, countedDates)).length])) as Record<Card3, number>,
-    [scoped, countedDates],
-  );
-  const listed = useMemo(() => {
-    if (card === 'all') return scoped;
-    const codes = CARDS.find((c) => c.key === card)!.codes;
-    return scoped.filter((p) => had(p, codes, countedDates));
-  }, [scoped, card, countedDates]);
-
-  // With one source picked: of the people expected on it, who punched in and out that way.
-  const coverage = useMemo(() => {
-    const via = source === 'all' ? null : punchedVia(source);
-    if (!via || !scoped.length) return null;
-    const columns = period === 'custom'
-      ? [{ label: `${dayLabel(shownRange.from)} – ${dayLabel(shownRange.to)}`, dates: countedDates }]
-      : (['today', 'week', 'month'] as const).map((k) => ({ label: PERIOD_LABEL[k], dates: datesBetween(presets[k].from, presets[k].to).filter((d) => d <= today) }));
-    return columns.map((col) => {
-      let punchedIn = 0;
-      let punchedOut = 0;
-      for (const p of scoped) {
-        const rows = col.dates.map((d) => p.days.get(d)?.row).filter((r): r is ReportRow => Boolean(r) && r!.source === via);
-        if (rows.some((r) => r.punchIn)) punchedIn += 1;
-        if (rows.some((r) => r.punchOut)) punchedOut += 1;
-      }
-      return { label: col.label, expected: scoped.length, punchedIn, punchedOut };
-    });
-  }, [scoped, source, period, countedDates, today, presets, shownRange.from, shownRange.to]);
-
-  const pick = (key: Card3) => setCard((c) => (c === key ? 'all' : key));
-  useEffect(() => { setPage(1); }, [department, manager, source, search, card, period, fetchFrom, fetchTo]);
-  const pages = Math.max(1, Math.ceil(listed.length / PAGE));
-  const current = Math.min(page, pages);
-  const pageRows = listed.slice((current - 1) * PAGE, current * PAGE);
-  const cardWords = period === 'today' ? 'today' : 'on at least one day';
-
-  // ── export: what is on screen, then every day behind it ──────────────
-  const widths = (rows: Record<string, unknown>[]) =>
-    Object.keys(rows[0] ?? {}).map((key) => ({ wch: Math.max(key.length, ...rows.map((r) => String(r[key] ?? '').length)) + 2 }));
-  const sheet = (XLSX: typeof import('xlsx'), rows: Record<string, unknown>[]): WorkSheet => {
-    const ws = XLSX.utils.json_to_sheet(rows);
-    ws['!cols'] = widths(rows);
-    return ws;
-  };
-  const who = (p: PersonDays) => ({ 'Employee ID': p.person.employeeId, 'Name': p.person.name, 'Department': p.person.department, 'Manager': p.person.manager || '' });
-  const mainRows = (): Record<string, unknown>[] => listed.map((p) => {
-    if (view === 'today') {
-      const d = p.days.get(today);
-      return {
-        ...who(p),
-        'Status': d ? CODE[d.code].label : '',
-        'In time': d?.row?.punchIn ? clock(d.row.punchIn) : '',
-        'Out time': d?.row?.punchOut ? clock(d.row.punchOut) : d?.row?.punchIn && d.row.shiftRunning ? 'Pending' : '',
-        'Attendance source': sourceName(p.person.punchFormat),
-      };
-    }
-    if (view === 'grid') {
-      return { ...who(p), ...Object.fromEntries(dates.map((d) => {
-        const c = d > today ? undefined : p.days.get(d)?.code;
-        return [d, c ? CODE[c].label : ''];
-      })) };
-    }
-    const t = totalsOf(p, dates, today);
+  const statusIn = (p: Person) => countedDates.map((d) => p.days.get(d)).filter((d): d is Day => Boolean(d));
+  const counts = useMemo(() => {
+    const per = list.map(statusIn);
+    const n = (f: (days: Day[]) => boolean) => per.filter(f).length;
     return {
-      ...who(p), 'Working days': t.working, 'Present days': t.present, 'Late days': t.late, 'Missed punch days': t.missed,
-      'Leave days': t.leave, 'Attendance source': sourceName(p.person.punchFormat),
+      present: n((ds) => ds.some(presentLike)),
+      late: n((ds) => ds.some((d) => d.late)),
+      half: n((ds) => ds.some((d) => d.code === 'HD')),
+      leave: n((ds) => ds.some((d) => d.code === 'LV')),
+      missed: n((ds) => ds.some((d) => d.code === 'MP')),
+      notYet: n((ds) => ds.some((d) => d.code === 'NP')),
+      punchedIn: n((ds) => ds.some((d) => Boolean(d.punchIn))),
+      punchedOut: n((ds) => ds.some((d) => Boolean(d.punchOut))),
     };
-  });
-  const dayRows = () => listed.flatMap((p) => countedDates.map((d) => {
-    const day = p.days.get(d);
-    if (!day) return null;
-    return {
-      ...who(p), 'Date': d, 'Status': CODE[day.code].label,
-      'In time': day.row?.punchIn ? clock(day.row.punchIn) : '', 'Out time': day.row?.punchOut ? clock(day.row.punchOut) : '',
-      'Late by (min)': day.row?.late ? day.row.lateByMinutes : '', 'Leave type': day.row?.leaveType ?? '',
-      'Punched via': day.row?.source === 'sql_import' ? 'Biometric device' : day.row?.source === 'manual' ? 'App' : day.row?.source === 'hr' ? 'Marked by HR' : '',
-    };
-  }).filter((r): r is NonNullable<typeof r> => r !== null));
-  const filterRows = () => [
-    { 'Filter': 'Period', 'Value': period === 'custom' ? 'Custom range' : PERIOD_LABEL[period] },
-    { 'Filter': 'From', 'Value': shownRange.from },
-    { 'Filter': 'To', 'Value': shownRange.to },
-    { 'Filter': 'Department', 'Value': department === 'all' ? 'All departments' : department },
-    { 'Filter': 'Manager', 'Value': manager === 'all' ? 'All managers' : manager },
-    { 'Filter': 'Attendance source', 'Value': source === 'all' ? 'All sources' : sourceName(source) },
-    { 'Filter': 'Search', 'Value': search.trim() || '—' },
-    { 'Filter': 'Employees', 'Value': card === 'all' ? 'Everyone' : `${CARDS.find((c) => c.key === card)!.label} ${cardWords}` },
+    // statusIn reads only countedDates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list, countedDates]);
+  const graces = [...new Set(list.map((p) => p.person.lateGraceMinutes).filter((g): g is number => typeof g === 'number'))];
+  const scope = view === 'today' ? 'today' : 'at least once';
+  const cards: { label: string; value: number; sub: string; color: string }[] = [
+    { label: 'Employees', value: list.length, sub: 'Matching the filters', color: 'var(--ink)' },
+    { label: 'Present', value: counts.present, sub: `${view === 'today' ? 'Punched in today' : `Present ${scope}`}, late included`, color: 'var(--ar-n-present)' },
+    { label: 'Late', value: counts.late, sub: graces.length === 1 ? `In after the ${graces[0]}-min grace` : 'In after the grace', color: 'var(--ar-n-late)' },
+    { label: 'Half day', value: counts.half, sub: 'Half-day leave with a punch', color: 'var(--ar-n-half)' },
+    { label: 'On leave', value: counts.leave, sub: 'Approved full-day leave', color: 'var(--ar-n-leave)' },
+    { label: 'Missed punch', value: counts.missed, sub: 'Shift over, a punch missing', color: 'var(--ar-n-missed)' },
+    ...(view === 'today' ? [{ label: 'Not punched in yet', value: counts.notYet, sub: 'Shift still running', color: 'var(--ar-n-np)' }] : []),
   ];
-  const slug = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+  const totalsOf = (p: Person) => {
+    const t = { work: 0, present: 0, late: 0, missed: 0, leave: 0 };
+    for (const date of dates) {
+      const d = p.days.get(date);
+      if (!d || d.code === 'WO' || d.code === 'H') continue;
+      t.work += 1;
+      if (date > today) continue;
+      if (presentLike(d)) t.present += d.code === 'HD' ? 0.5 : 1;
+      if (d.late) t.late += 1;
+      if (d.code === 'MP') t.missed += 1;
+      t.leave += d.leave;
+    }
+    return t;
+  };
+  const workingDays = useMemo(() => {
+    const tally = new Map<number, number>();
+    for (const p of list) {
+      const w = dates.filter((d) => { const c = p.days.get(d)?.code; return c && c !== 'WO' && c !== 'H'; }).length;
+      tally.set(w, (tally.get(w) ?? 0) + 1);
+    }
+    return [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
+  }, [list, dates]);
+
+  const asOf = loaded?.at ? new Date(loaded.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase() : '';
+  const periodLabel = !shownFrom ? ''
+    : period === 'today' ? `${dateOf(today).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).replace(/^(\w+)/, '$1,').replace(',,', ',')}${asOf ? ` · as of ${asOf}` : ''}`
+      : period === 'week' ? spanLabel(shownFrom, shownTo, true)
+        : period === 'month' ? `${dateOf(today).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })} · ${workingDays} working days, counted to today`
+          : `${spanLabel(shownFrom, shownTo, false)} · ${view === 'grid' ? 'day view' : 'totals'}`;
+
+  const coverage = source !== 'all' && source !== AUTO && list.length
+    ? { name: shortSource(source), expected: list.length, punchedIn: counts.punchedIn, punchedOut: counts.punchedOut, none: list.length - counts.punchedIn }
+    : null;
+
+  useEffect(() => { setPage(1); }, [department, manager, source, period, fetchFrom, fetchTo]);
+  const pages = Math.max(1, Math.ceil(list.length / PAGE));
+  const current = Math.min(page, pages);
+  const rows = list.slice((current - 1) * PAGE, current * PAGE);
+
+  // ── export: what is on screen ──────────────────────────────────────────
   const exportExcel = async () => {
     const XLSX = await import('xlsx');
+    const who = (p: Person) => ({ 'Employee ID': p.person.employeeId, 'Name': p.person.name, 'Department': p.person.department, 'Manager': p.person.manager || '' });
+    const main: Record<string, unknown>[] = list.map((p) => {
+      if (view === 'today') {
+        const d = p.days.get(today);
+        return {
+          ...who(p), 'Template': p.person.template ?? 'Default', 'Shift': p.person.shiftStart ? `${p.person.shiftStart}–${p.person.shiftEnd}` : '',
+          'In': d?.punchIn ? clock(d.punchIn) : '', 'Out': d?.punchOut ? clock(d.punchOut) : d?.pending ? 'Pending' : '',
+          'Status': d?.label ?? '', 'Mode': d?.mode ?? '', 'Attendance source': p.person.punchFormat,
+        };
+      }
+      if (view === 'grid') return { ...who(p), ...Object.fromEntries(dates.map((date) => [date, date > today ? '' : p.days.get(date)?.label ?? ''])) };
+      const t = totalsOf(p);
+      return { ...who(p), 'Working days': t.work, 'Present': t.present, 'Late': t.late, 'Missed punch days': t.missed, 'Leave days': t.leave, 'Attendance source': p.person.punchFormat };
+    });
+    const sheet = (rowsOut: Record<string, unknown>[]): WorkSheet => {
+      const ws = XLSX.utils.json_to_sheet(rowsOut);
+      ws['!cols'] = Object.keys(rowsOut[0] ?? {}).map((k) => ({ wch: Math.max(k.length, ...rowsOut.map((r) => String(r[k] ?? '').length)) + 2 }));
+      return ws;
+    };
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, sheet(XLSX, mainRows()), view === 'today' ? 'Today' : view === 'grid' ? 'Days' : 'Totals');
-    const each = dayRows();
-    if (view !== 'today' && each.length) XLSX.utils.book_append_sheet(wb, sheet(XLSX, each), 'Every day');
-    XLSX.utils.book_append_sheet(wb, sheet(XLSX, filterRows()), 'Filters');
-    const suffix = [`${shownRange.from}-to-${shownRange.to}`, department !== 'all' && slug(department), source !== 'all' && slug(sourceName(source)), card !== 'all' && card].filter(Boolean).join('-');
-    XLSX.writeFile(wb, `attendance-${suffix}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, sheet(main), TITLE[period]);
+    XLSX.utils.book_append_sheet(wb, sheet([
+      { Filter: 'Period', Value: periodLabel },
+      { Filter: 'Department', Value: department === 'all' ? 'All departments' : department },
+      { Filter: 'Manager', Value: manager === 'all' ? 'All managers' : manager },
+      { Filter: 'Attendance source', Value: source === 'all' ? 'All sources' : source },
+    ]), 'Filters');
+    XLSX.writeFile(wb, `attendance-${shownFrom}-to-${shownTo}.xlsx`);
   };
 
+  const open = openId ? everyone.find((p) => p.userId === openId) ?? null : null;
+
   return (
-    <div style={{ animation: 'fade .3s ease both' }}>
-      {/* ── the range ─────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        <StatusTabs<Period> options={PERIODS} active={period} onSelect={pickPeriod} labels={PERIOD_LABEL} />
-        {period === 'custom'
-          ? <DateRange from={custom.from} to={custom.to} onFrom={(v) => editRange('from', v)} onTo={(v) => editRange('to', v)} />
-          : <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>{period === 'today' ? dayLabel(today) : `${dayLabel(shownRange.from)} – ${dayLabel(shownRange.to)}`}</span>}
-        {refreshing && <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>Refreshing…</span>}
-        <ExportButton label="Export Excel" disabled={!listed.length} onClick={() => void exportExcel()} />
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        <SearchInput value={search} onChange={setSearch} placeholder="Search name or employee ID…" />
-        <SelectBox value={department} onChange={setDepartment}>
-          <option value="all">All departments</option>
-          {(shown?.departments ?? []).map((d) => <option key={d} value={d}>{d}</option>)}
-        </SelectBox>
-        <SelectBox value={manager} onChange={setManager}>
-          <option value="all">All managers</option>
-          {(shown?.managers ?? []).map((m) => <option key={m} value={m}>{m}</option>)}
-        </SelectBox>
-        <SelectBox value={source} onChange={setSource}>
-          <option value="all">All attendance sources</option>
-          {(shown?.punchFormats ?? []).map((f) => <option key={f} value={f}>{sourceName(f)}</option>)}
-        </SelectBox>
-        {(narrowed || card !== 'all') && (
-          <button type="button" onClick={clearFilters} className="lk-btn" style={{ ...L.btnGhost, height: 40, fontSize: 13 }}>
-            Clear filters
-          </button>
-        )}
+    <div className="ar">
+      <div className="ar-top">
+        <div style={{ display: 'flex', gap: 2, padding: 4, borderRadius: 999, background: 'var(--surface)', border: '1px solid var(--line)' }} role="tablist">
+          {PERIODS.map(([p, label]) => (
+            <button key={p} type="button" role="tab" aria-selected={period === p} onClick={() => pickPeriod(p)}
+              style={{ border: 0, borderRadius: 999, padding: '10px 18px', fontSize: 14, fontWeight: 500, fontFamily: 'inherit', cursor: 'pointer', background: period === p ? 'var(--sel)' : 'transparent', color: period === p ? 'var(--on-sel)' : 'var(--ink-2)' }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {period === 'custom' && <DateRange from={custom.from} to={custom.to} onFrom={(v) => editRange('from', v)} onTo={(v) => editRange('to', v)} />}
+        <span className="ar-period">{periodLabel}</span>
       </div>
 
-      {error && shown && <div style={{ marginBottom: 14, fontSize: 13, color: 'var(--bad)', fontWeight: 400 }}>{error}</div>}
+      <div className="ar-filters">
+        <LabeledSelect label="Department" value={department} onChange={setDepartment} options={[['all', 'All departments'], ...(shown?.departments ?? []).map((d): [string, string] => [d, d])]} />
+        <LabeledSelect label="Manager" value={manager} onChange={setManager} options={[['all', 'All managers'], ...(shown?.managers ?? []).map((m): [string, string] => [m, m])]} />
+        <LabeledSelect label="Attendance source" value={source} onChange={setSource} options={[['all', 'All sources'], ...(shown?.punchFormats ?? []).map((f): [string, string] => [f, f])]} />
+      </div>
+      <button type="button" className="lk-btn-p ar-export" onClick={() => void exportExcel()} disabled={!list.length}
+        style={{ ...L.btnPrimary, cursor: list.length ? 'pointer' : 'not-allowed', opacity: list.length ? 1 : 0.5 }}>
+        <IconDownload /> Export Excel
+      </button>
 
-      {/* ── three counts of people, each also the filter ─────────────── */}
-      {!shown && <SkeletonCards count={3} minWidth={160} style={{ marginBottom: 20 }} />}
+      {error && shown && <div style={{ marginBottom: 14, fontSize: 13, color: 'var(--bad)' }}>{error}</div>}
+
+      {coverage && (
+        <div className="ar-cov">
+          <div className="ar-cov-h">
+            <div className="ar-cov-k">{coverage.name} coverage · {TITLE[period]}</div>
+            <div className="ar-cov-t">{coverage.expected} {coverage.expected === 1 ? 'person is' : 'people are'} expected to punch with {coverage.name}</div>
+          </div>
+          <div className="ar-cov-n">
+            <div><span>Punched in</span><b style={{ color: 'var(--ar-n-present)' }}>{coverage.punchedIn}</b><small>of {coverage.expected}</small></div>
+            <div><span>Punched out</span><b style={{ color: 'var(--ar-n-leave)' }}>{coverage.punchedOut}</b><small>of {coverage.expected}</small></div>
+            <div><span>{view === 'today' ? 'No punch yet' : 'No punch'}</span><b style={{ color: 'var(--ar-t-missed)' }}>{coverage.none}</b></div>
+          </div>
+        </div>
+      )}
+
       {shown && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 20 }}>
-          {CARDS.map((c) => (
-            <CountCard
-              key={c.key}
-              label={c.label}
-              value={cardCounts[c.key]}
-              of={scoped.length}
-              note={`${c.label === 'Present' ? 'present' : c.label === 'On leave' ? 'on leave' : 'with a missed punch'} ${cardWords}`}
-              tone={CODE[c.key === 'present' ? 'P' : c.key === 'on_leave' ? 'LV' : 'MP'].tone}
-              active={card === c.key}
-              onClick={() => pick(c.key)}
-            />
+        <div className="ar-cards">
+          {cards.map((c) => (
+            <div key={c.label} className="ar-card">
+              <div className="ar-card-l">{c.label}</div>
+              <div className="ar-card-n" style={{ color: c.color }}>{c.value}</div>
+              <div className="ar-card-s">{c.sub}</div>
+            </div>
           ))}
         </div>
       )}
 
-      {/* ── one source picked: did the people on it punch that way ────── */}
-      {shown && coverage && (
-        <Card padded style={{ marginBottom: 20 }}>
-          <div style={{ ...L.cardTitle, fontSize: 14 }}>{sourceName(source)} coverage</div>
-          <div style={{ ...L.cardNote, marginTop: 2, marginBottom: 12 }}>
-            People expected to punch with {sourceName(source)}, and how many punched in and out that way at least once.
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="ar-cov">
-              <thead>
-                <tr><th />{coverage.map((c) => <th key={c.label}>{c.label}</th>)}</tr>
-              </thead>
-              <tbody>
-                <tr><th>Expected on {sourceName(source)}</th>{coverage.map((c) => <td key={c.label}>{c.expected}</td>)}</tr>
-                <tr><th>Punched in via {sourceName(source)}</th>{coverage.map((c) => <td key={c.label}>{c.punchedIn}</td>)}</tr>
-                <tr><th>Punched out via {sourceName(source)}</th>{coverage.map((c) => <td key={c.label}>{c.punchedOut}</td>)}</tr>
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
+      <div className="ar-h"><b>{TITLE[period]}</b>{shown && <span>{list.length} {list.length === 1 ? 'person' : 'people'} · one row per employee</span>}</div>
 
-      {/* ── the people ───────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-        <span style={{ ...L.cardTitle }}>{card === 'all' ? 'Everyone' : `${CARDS.find((c) => c.key === card)!.label} ${cardWords}`}</span>
-        {shown && <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}>{listed.length} {listed.length === 1 ? 'person' : 'people'}</span>}
-        {shown && view === 'totals' && dates.some((d) => d > today) && (
-          <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}>· Working days cover the whole range; the other counts run to today.</span>
-        )}
-      </div>
-
-      <Card style={{ padding: 20 }}>
+      <div className="ar-box">
         {!shown ? (
-          <ListPending state={reportState} errorText={error || undefined} onRetry={() => setAttempt((n) => n + 1)} rows={8} cols={5} />
-        ) : everyone.length === 0 ? (
-          <EmptyRow text="Nobody is on the roll for this range." />
-        ) : pageRows.length === 0 ? (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5, fontWeight: 400 }}>
-            <div>Nobody matches these filters.</div>
-            <button type="button" onClick={clearFilters} className="lk-btn" style={{ ...L.btnSm, marginTop: 14 }}>Clear filters</button>
-          </div>
+          <ListPending state={reportState} errorText={error || undefined} onRetry={() => setAttempt((n) => n + 1)} rows={8} cols={6} />
+        ) : !rows.length ? (
+          <div className="ar-empty">{everyone.length ? 'Nobody matches these filters.' : 'Nobody is on the roll for this range.'}</div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            {view === 'today' && <TodayTable rows={pageRows} today={today} />}
-            {view === 'grid' && <WeekGrid rows={pageRows} dates={dates} today={today} />}
-            {view === 'totals' && <TotalsTable rows={pageRows} dates={dates} today={today} />}
-          </div>
-        )}
-        {shown && view === 'grid' && pageRows.length > 0 && (
-          <div className="ar-legend">
-            {LEGEND.map((c) => <span key={c}><Chip code={c} /> {CODE[c].label}</span>)}
-          </div>
-        )}
-        {listed.length > PAGE && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 0 0' }}>
-            <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
-              Showing {(current - 1) * PAGE + 1}–{Math.min(current * PAGE, listed.length)} of {listed.length}
-            </span>
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <PageButton label="Previous" disabled={current <= 1} onClick={() => setPage(current - 1)} />
-              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', padding: '0 6px' }}>{current} / {pages}</span>
-              <PageButton label="Next" disabled={current >= pages} onClick={() => setPage(current + 1)} />
+          <>
+            {view === 'grid' && (
+              <div className="ar-legend">
+                {LEGEND.map(([c, label]) => <span key={c}><Chip code={c} /> {label}</span>)}
+              </div>
+            )}
+            <div className="ar-scroll">
+              {view === 'today' && (
+                <table className="ar-t">
+                  <thead><tr><th>Employee</th><th>Template</th><th>In</th><th>Out</th><th>Hours</th><th>Status</th><th>Mode</th></tr></thead>
+                  <tbody>
+                    {rows.map((p) => {
+                      const d = p.days.get(today);
+                      return (
+                        <tr key={p.userId} onClick={() => setOpenId(p.userId)}>
+                          <td><Who p={p} sub={`${p.person.employeeId} · ${p.person.department}`} /></td>
+                          <td className="ar-tpl"><b>{p.person.template ?? 'Default'}{p.person.shiftStart ? ` ${p.person.shiftStart}–${p.person.shiftEnd}` : ''}</b><small>{p.person.punchFormat}</small></td>
+                          <td>{clock(d?.punchIn ?? null)}</td>
+                          <td>{d?.pending ? <span className="ar-pending">Pending</span> : clock(d?.punchOut ?? null)}</td>
+                          <td>{hours(d)}</td>
+                          <td>{d ? <span className="ar-pill" style={{ background: TONE[d.code].bg, color: TONE[d.code].fg }}>{d.label}</span> : '—'}</td>
+                          <td className="ar-mode">{d?.mode ?? ''}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+              {view === 'grid' && (
+                <table className="ar-t ar-grid">
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      {dates.map((d) => <th key={d}>{WD(d)} {DAY(d)}{d === today ? ' · Today' : ''}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((p) => (
+                      <tr key={p.userId} onClick={() => setOpenId(p.userId)}>
+                        <td><Who p={p} sub={`${p.person.employeeId} · ${p.person.punchFormat}`} /></td>
+                        {dates.map((date) => {
+                          const d = date > today ? undefined : p.days.get(date);
+                          return (
+                            <td key={date}>
+                              {d ? <Chip code={d.code} title={`${DAY(date)} ${MON(date)}: ${d.label}${d.mode ? ` (${d.mode})` : ''}`} /> : <span className="ar-chip" style={{ color: TONE.future.fg }}>—</span>}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {view === 'totals' && (
+                <table className="ar-t">
+                  <thead><tr><th>Employee</th><th className="num">Working days</th><th className="num">Present</th><th className="num">Late</th><th className="num">Missed punch days</th><th className="num">Leave days</th><th>Attendance source</th></tr></thead>
+                  <tbody>
+                    {rows.map((p) => {
+                      const t = totalsOf(p);
+                      return (
+                        <tr key={p.userId} onClick={() => setOpenId(p.userId)}>
+                          <td><Who p={p} sub={`${p.person.employeeId} · ${p.person.department}`} /></td>
+                          <td className="num">{t.work}</td>
+                          <td className="num" style={{ color: 'var(--ar-t-present)', fontWeight: 500 }}>{t.present}</td>
+                          <td className="num" style={{ color: 'var(--ar-t-late)' }}>{t.late}</td>
+                          <td className="num" style={{ color: 'var(--ar-t-missed)' }}>{t.missed}</td>
+                          <td className="num" style={{ color: 'var(--ar-t-leave)' }}>{t.leave}</td>
+                          <td>{p.person.punchFormat}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
-          </div>
+            {view === 'totals' && <div className="ar-foot">Present includes late days and counts a half day as 0.5. A day with both punches missing counts as one missed-punch day. Days after today are not counted.</div>}
+            {list.length > PAGE && (
+              <div className="ar-pager">
+                Showing {(current - 1) * PAGE + 1}–{Math.min(current * PAGE, list.length)} of {list.length}
+                <div>
+                  <button type="button" className="lk-btn" style={L.btnSm} disabled={current <= 1} onClick={() => setPage(current - 1)}>Previous</button>
+                  <span>{current} / {pages}</span>
+                  <button type="button" className="lk-btn" style={L.btnSm} disabled={current >= pages} onClick={() => setPage(current + 1)}>Next</button>
+                </div>
+              </div>
+            )}
+          </>
         )}
-      </Card>
-    </div>
-  );
-}
-
-function Who({ p }: { p: PersonDays }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-      <PersonAvatar name={p.person.name} userId={p.userId} />
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.person.name}</div>
-        <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {p.person.employeeId} · {p.person.department}
-        </div>
       </div>
+      <p className="ar-note">{NOTE}</p>
+
+      {open && <EmployeeDrawer person={open} onClose={() => setOpenId(null)} />}
     </div>
   );
 }
 
-function TodayTable({ rows, today }: { rows: PersonDays[]; today: string }) {
-  return (
-    <table className="ar-t">
-      <thead><tr><th>Employee</th><th>Status</th><th>In time</th><th>Out time</th><th>Attendance source</th></tr></thead>
-      <tbody>
-        {rows.map((p) => {
-          const d = p.days.get(today);
-          const row = d?.row;
-          return (
-            <tr key={p.userId}>
-              <td><Who p={p} /></td>
-              <td>{d ? <StatusPill code={d.code} /> : '—'}{row?.late && d?.code === 'L' ? <span className="ar-sub">by {row.lateByMinutes} min</span> : null}</td>
-              <td>{clock(row?.punchIn ?? null)}</td>
-              <td>{row?.punchOut ? clock(row.punchOut) : row?.punchIn && row.shiftRunning ? <span style={{ color: 'var(--accent-ink)' }}>Pending</span> : '—'}</td>
-              <td>{sourceName(p.person.punchFormat)}</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
+function hours(d: Day | undefined) {
+  if (!d?.punchIn || !d.punchOut) return '—';
+  const mins = Math.round((new Date(d.punchOut).getTime() - new Date(d.punchIn).getTime()) / 60_000);
+  return mins > 0 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : '—';
 }
 
-function WeekGrid({ rows, dates, today }: { rows: PersonDays[]; dates: string[]; today: string }) {
+function Who({ p, sub }: { p: Person; sub: string }) {
   return (
-    <table className="ar-t ar-grid">
-      <thead>
-        <tr>
-          <th>Employee</th>
-          {dates.map((d) => {
-            const h = dayHead(d);
-            return <th key={d} className={d === today ? 'ar-today' : undefined}>{h.wd}<span className="ar-sub">{h.dm}</span></th>;
-          })}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((p) => (
-          <tr key={p.userId}>
-            <td><Who p={p} /></td>
-            {dates.map((d) => {
-              const day = d > today ? undefined : p.days.get(d);
-              return (
-                <td key={d} className={d === today ? 'ar-today' : undefined}>
-                  {day ? <Chip code={day.code} title={`${CODE[day.code].label}${day.row?.punchIn ? ` · in ${clock(day.row.punchIn)}` : ''}${day.row?.punchOut ? ` · out ${clock(day.row.punchOut)}` : ''}`} /> : null}
-                </td>
-              );
-            })}
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function TotalsTable({ rows, dates, today }: { rows: PersonDays[]; dates: string[]; today: string }) {
-  return (
-    <table className="ar-t">
-      <thead>
-        <tr><th>Employee</th><th>Working days</th><th>Present days</th><th>Late days</th><th>Missed punch days</th><th>Leave days</th><th>Attendance source</th></tr>
-      </thead>
-      <tbody>
-        {rows.map((p) => {
-          const t = totalsOf(p, dates, today);
-          return (
-            <tr key={p.userId}>
-              <td><Who p={p} /></td>
-              <td className="ar-n">{t.working}</td>
-              <td className="ar-n">{t.present}</td>
-              <td className="ar-n">{t.late || '—'}</td>
-              <td className="ar-n" style={t.missed ? { color: 'var(--t-peach-i)' } : undefined}>{t.missed || '—'}</td>
-              <td className="ar-n">{t.leave ? days(t.leave) : '—'}</td>
-              <td>{sourceName(p.person.punchFormat)}</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <div className="ar-who">
+      <PersonAvatar name={p.person.name} userId={p.userId} size={40} />
+      <div style={{ minWidth: 0 }}><b>{p.person.name}</b><small>{sub}</small></div>
+    </div>
   );
 }
 
 function Chip({ code, title }: { code: Code; title?: string }) {
-  const { tone, label } = CODE[code];
-  return <span className="ar-chip" title={title ?? label} style={{ background: tone.bg, color: tone.fg }}>{code}</span>;
+  return <span className="ar-chip" title={title} style={{ background: TONE[code].bg, color: TONE[code].fg }}>{code}</span>;
 }
 
-function StatusPill({ code }: { code: Code }) {
-  const { tone, label } = CODE[code];
-  return <span className="ar-pill" style={{ background: tone.bg, color: tone.fg }}>{label}</span>;
-}
-
-/** A count of people that is also the filter: pressed, the list is those people. */
-function CountCard({ label, value, of, note, tone, active, onClick }: {
-  label: string; value: number; of: number; note: string; tone: { bg: string; fg: string }; active: boolean; onClick: () => void;
-}) {
+function LabeledSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: [string, string][] }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      title={active ? 'Press to show everyone' : `Show only the people ${note}`}
-      style={{
-        textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer',
-        background: active ? tone.bg : 'var(--surface)',
-        border: '1px solid transparent',
-        boxShadow: active ? `0 0 0 1px ${tone.fg}, var(--shadow)` : 'var(--shadow)',
-        borderRadius: 'var(--r-lg)', padding: '14px 16px', minHeight: 96, transition: 'background .12s, box-shadow .12s',
-      }}
-    >
-      <div style={{ fontSize: 12.5, color: active ? tone.fg : 'var(--ink-2)', fontWeight: 400 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6, color: tone.fg, fontVariantNumeric: 'tabular-nums' }}>
-        {value}<span style={{ fontSize: 13, color: 'var(--ink-3)', letterSpacing: 0, marginLeft: 6 }}>of {of}</span>
-      </div>
-      <div style={{ fontSize: 11.5, color: active ? tone.fg : 'var(--ink-3)', fontWeight: 400, marginTop: 4, opacity: active ? 0.85 : 1 }}>{note}</div>
-    </button>
+    <label className="ar-sel">
+      <span>{label}</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+    </label>
   );
 }
 
-function ExportButton({ label, disabled, onClick }: { label: string; disabled: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="lk-btn-p"
-      style={{ ...L.btnPrimary, marginLeft: 'auto', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}
-    >
-      <IconDownload /> {label}
-    </button>
-  );
-}
-
-function PageButton({ label, disabled, onClick }: { label: string; disabled: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        height: 34, padding: '0 12px', borderRadius: 10, border: '1px solid var(--line)', background: 'var(--surface)',
-        fontSize: 13, fontWeight: 500, color: 'var(--ink)', fontFamily: 'inherit',
-        cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.45 : 1,
-      }}
-    >
-      {label}
-    </button>
+/** A person's basic details beside the report, with the profile's one Edit. */
+function EmployeeDrawer({ person, onClose }: { person: Person; onClose: () => void }) {
+  const s = useStore();
+  const { user } = useAuth();
+  const emp = s.emps.find((e) => e.id === person.userId);
+  const [editing, setEditing] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  const canEdit = Boolean(emp) && user?.canEditEmployees === true && (user.dashboardAdmin === true || isSelfOrBelow(s.emps, user.id, emp!));
+  const p = person.person;
+  const fields: [string, string, boolean][] = [
+    ['Full name', emp?.name ?? p.name, true],
+    ['Work email', emp?.email || '—', true],
+    ['Phone', emp?.phone || '—', false],
+    ['Department', emp?.team || p.department, false],
+    ['Designation', emp?.role || '—', false],
+    ['Reporting manager', emp?.manager || p.manager || '—', false],
+    ['Shift', `${p.template ?? 'Default'}${p.shiftStart ? ` ${p.shiftStart}–${p.shiftEnd}` : ''}`, false],
+    ['Attendance source', shortSource(p.punchFormat), false],
+    ['Work location', emp?.location || p.location || '—', false],
+    ['Date of joining', emp?.joining || '—', false],
+  ];
+  // On the page itself: the report fades in with a transform, which would trap a fixed layer under the top bar.
+  return createPortal(
+    <div className="ar-dim" onClick={onClose}>
+      <aside className="ar-drawer" role="dialog" aria-label={`${p.name}'s details`} onClick={(e) => e.stopPropagation()}>
+        <div className="ar-dr-h">
+          <PersonAvatar name={p.name} userId={person.userId} size={56} />
+          <div style={{ minWidth: 0 }}><b>{p.name}</b><small>{p.employeeId}{emp?.role ? ` · ${emp.role}` : ''}</small></div>
+          <button type="button" className="ar-dr-x" onClick={onClose} aria-label="Close"><IconClose size={16} stroke="currentColor" /></button>
+        </div>
+        <div className="ar-dr-card">
+          <div className="ar-dr-ct">
+            <b>Basic details</b>
+            {canEdit && !editing && <button type="button" className="pd-sec-act" onClick={() => setEditing(true)}><PdEdit /> Edit</button>}
+          </div>
+          {editing && emp ? (
+            <>
+              <BasicDetailsEditor emp={emp} onDone={() => setEditing(false)} />
+              <div className="ar-dr-sub">
+                <div className="ar-dr-f"><span>Shift template</span></div>
+                <ShiftPicker emp={emp} onChanged={() => undefined} />
+              </div>
+            </>
+          ) : (
+            <>
+              {fields.map(([label, value, locked]) => (
+                <div key={label} className="ar-dr-f">
+                  <span>{label}{locked && <i><PdLock size={12} /> Locked</i>}</span>
+                  <div>{value}</div>
+                </div>
+              ))}
+              <p className="ar-dr-note">Full name and work email can&apos;t be edited here. Every other field, including reporting manager, is edited with the one Edit button.</p>
+            </>
+          )}
+        </div>
+      </aside>
+    </div>,
+    document.body,
   );
 }

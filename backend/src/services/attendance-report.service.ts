@@ -42,6 +42,11 @@ export type ReportPerson = {
   punchFormat: PunchFormat;
   /** Who they report to, by name; empty at the top of the tree. */
   manager: string;
+  /** Their shift at the end of the range, HH:MM in office time. */
+  shiftStart: string;
+  shiftEnd: string;
+  /** Minutes after the start before a punch-in is late; null when nobody on it is marked late. */
+  lateGraceMinutes: number | null;
 };
 
 /**
@@ -386,6 +391,9 @@ export async function attendanceReport(
       template: policy.templateName,
       punchFormat: policy.correction.punchFormat,
       manager,
+      shiftStart: policy.startTime,
+      shiftEnd: policy.endTime,
+      lateGraceMinutes: policy.lateMarkingEnabled === false ? null : policy.lateGraceMinutes,
     };
 
     for (let t = first; t <= last; t += DAY_MS) {
