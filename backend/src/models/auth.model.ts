@@ -55,6 +55,6 @@ export interface AuthUser {
   enabledTabs?: string[];
   /** The games switched on for this person's company; see Company.enabledGames. */
   enabledGames?: string[];
-  /** Face ID: whether their company asks them to set it up, and whether they have. */
-  faceId?: { required: boolean; enrolled: boolean };
+  /** Face ID: whether their company asks them to set it up, whether they have, and whether punch-in checks it. */
+  faceId?: { required: boolean; enrolled: boolean; atPunch: boolean };
 }
