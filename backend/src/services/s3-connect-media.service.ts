@@ -150,18 +150,27 @@ export async function readConnectMedia(objectKey: string, range?: string) {
   };
 }
 
-/** True if a Connect object is stored at `objectKey` (S3 or the Mongo fallback). */
-export async function hasConnectObject(objectKey: string) {
+/**
+ * The size and type of the Connect object at `objectKey` (S3 or the Mongo
+ * fallback) without reading it, or undefined when there is none.
+ */
+export async function statConnectObject(
+  objectKey: string,
+): Promise<{ size: number; contentType: string } | undefined> {
   if (objectKey.startsWith('mongo/')) {
-    return (await connectMedia().countDocuments({ objectKey }, { limit: 1 })) > 0;
+    const media = await connectMedia().findOne(
+      { objectKey },
+      { projection: { _id: 0, size: 1, contentType: 1 } },
+    );
+    return media ? { size: media.size, contentType: media.contentType } : undefined;
   }
-  if (!isConnectMediaKey(objectKey)) return false;
+  if (!isConnectMediaKey(objectKey)) return undefined;
   validateConfiguration();
   try {
-    await getClient().send(new HeadObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));
-    return true;
+    const head = await getClient().send(new HeadObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));
+    return { size: head.ContentLength ?? 0, contentType: head.ContentType ?? 'application/octet-stream' };
   } catch (error) {
-    if ((error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 404) return false;
+    if ((error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 404) return undefined;
     throw error;
   }
 }
