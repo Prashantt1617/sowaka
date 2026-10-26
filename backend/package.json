@@ -35,6 +35,7 @@
     "face-id:check": "tsx src/scripts/face-id-check.ts",
     "face-id:e2e": "tsx src/scripts/face-id-e2e.ts",
     "face-log:cleanup": "tsx src/scripts/face-log-cleanup.ts",
+    "placements:check": "tsx src/scripts/placements-check.ts",
     "most-likely:check": "tsx src/scripts/most-likely-taggers-check.ts",
     "payroll:zoho-check": "tsx src/scripts/payroll-zoho-check.ts",
     "payroll:payslip-check": "tsx src/scripts/payroll-payslip-check.ts",
