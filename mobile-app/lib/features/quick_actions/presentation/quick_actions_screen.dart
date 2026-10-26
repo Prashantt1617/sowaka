@@ -1052,13 +1052,12 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                         onNotifications: widget.onNotifications,
                         // The shell's tabs under the desk; a pick comes back
                         // to the shell first, once anything unsent is let go.
-                        tabs: visibleTabs(
-                          widget.bloc.session.user.enabledTabs,
-                        ),
+                        tabs: visibleTabs(widget.bloc.session.user.enabledTabs),
                         selectedTab: widget.bloc.state.tab,
                         onSelectTab: (tab) {
-                          Navigator.of(context)
-                              .popUntil((route) => route.isFirst);
+                          Navigator.of(
+                            context,
+                          ).popUntil((route) => route.isFirst);
                           widget.bloc.add(ChangeManagerTab(tab, fresh: true));
                         },
                       ),
@@ -1108,48 +1107,50 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
         // With no balance to count down, what matters is what has been asked
-        // for and how it went — node 2217:12436.
+        // for and how it went (node 3464:64477); otherwise the balance strip
+        // of node 3464:64024.
         if (!widget.dashboard.shift.leaveBalanceTracked) ...[
-          const SizedBox(height: 16),
-          _LeaveYearSummaryCard(leaves: widget.dashboard.myLeaves),
+          const _HomeSectionLabel('This Year'),
+          const SizedBox(height: 12),
+          _LeaveYearCards(leaves: widget.dashboard.myLeaves),
         ] else ...[
           const _HomeSectionLabel('Leave Balance'),
           const SizedBox(height: 12),
-          SizedBox(
-            height: 108,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final label in _accruingLeaveLabels) ...[
+                for (final (index, label) in _accruingLeaveLabels.indexed) ...[
+                  if (index > 0) const SizedBox(width: 8),
                   _LeaveBalanceCard(label: label, item: _balanceFor(label)!),
-                  const SizedBox(width: 8),
                 ],
               ],
             ),
           ),
         ],
-        const SizedBox(height: 4),
-        Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: RichText(
-            text: TextSpan(
-              style: const TextStyle(color: _Q.inkSoft, fontSize: 12),
-              children: [
-                const TextSpan(text: 'Read detailed leave policy '),
-                TextSpan(
-                  text: 'leave policy',
-                  style: const TextStyle(
-                    color: Color(0xFF0571A6),
-                    fontWeight: FontWeight.w700,
-                  ),
-                  recognizer: TapGestureRecognizer()
-                    ..onTap = _openLeavePolicy,
-                ),
-              ],
+        const SizedBox(height: 2),
+        RichText(
+          text: TextSpan(
+            style: const TextStyle(
+              fontFamily: 'Sora',
+              color: Color(0xFF717171),
+              fontSize: 10,
+              height: 16.2 / 10,
+              letterSpacing: -0.16,
             ),
+            children: [
+              const TextSpan(text: 'For more information check out our '),
+              TextSpan(
+                text: 'leave policy',
+                style: const TextStyle(color: Color(0xFF0571A6)),
+                recognizer: TapGestureRecognizer()..onTap = _openLeavePolicy,
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         LeaveViewSwitch(
           history: _leaveHistoryView,
           onChanged: (history) => setState(() => _leaveHistoryView = history),
@@ -1170,6 +1171,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               padding: const EdgeInsets.only(bottom: 12),
               child: _LeaveRequestCard(
                 request: request,
+                label: _leaveLabelFor(request),
                 onViewDetails: () => _showRequestDetail(
                   RequestSummary(
                     screenTitle: 'Leave',
@@ -1210,6 +1212,16 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   /// them. Switching a type off in the dashboard takes it out of the picker,
   /// the balance strip and the day counts here.
   List<String> get _leaveLabels => widget.dashboard.shift.applicableLeaveLabels;
+
+  /// A request's type in full, as the policy names it — the server sends
+  /// "Casual" for "Casual Leave". A type the policy no longer lists keeps the
+  /// name it was filed under.
+  String _leaveLabelFor(LeaveRequest request) => _leaveLabels.firstWhere(
+    (label) =>
+        label == request.type ||
+        label.replaceAll(RegExp(r'\s+[Ll]eave$'), '').trim() == request.type,
+    orElse: () => request.type,
+  );
 
   /// Every type this employee has a balance for — including one that has run
   /// down to zero, which stays on show, and comp-off once overtime has
@@ -5667,11 +5679,15 @@ class _HubScaffold extends StatelessWidget {
         // nested — Flutter doesn't dedupe that) double-pads under the
         // notch on a real iPhone while looking fine on macOS/simulator
         // where the top inset is 0.
+        // The form header of Figma 4194:21787: a round back (or close) button
+        // on grey, the title beside it, and the screen's own action on the
+        // right.
         SafeArea(
           top: false,
           bottom: false,
           child: Container(
-            padding: const EdgeInsets.fromLTRB(16, 8, 18, 12),
+            height: 60,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             decoration: const BoxDecoration(
               color: Colors.white,
               border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
@@ -5680,31 +5696,45 @@ class _HubScaffold extends StatelessWidget {
               children: [
                 Material(
                   color: const Color(0xFFF7F7F9),
-                  borderRadius: BorderRadius.circular(12),
+                  shape: const CircleBorder(),
                   child: InkWell(
                     onTap: onBack,
-                    borderRadius: BorderRadius.circular(12),
+                    customBorder: const CircleBorder(),
                     child: SizedBox(
-                      width: 38,
-                      height: 38,
+                      width: 36,
+                      height: 36,
                       child: Center(
                         child: closeIcon
-                            ? const Icon(
-                                Icons.close_rounded,
-                                size: 20,
-                                color: Color(0xFF2A2A2A),
+                            ? SvgPicture.asset(
+                                'assets/icons/hub_close_x.svg',
+                                width: 15.9987,
+                                height: 15.9987,
                               )
                             : SvgPicture.asset(
-                                'assets/icons/chevron_back.svg',
-                                width: 20,
-                                height: 20,
+                                'assets/icons/chevron_left_small.svg',
+                                width: 17.9833,
+                                height: 17.9833,
                               ),
                       ),
                     ),
                   ),
                 ),
                 const SizedBox(width: 10),
-                Expanded(child: Text(title, style: _QText.topbar)),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Sora',
+                      color: Color(0xFF222222),
+                      fontSize: 16,
+                      height: 24 / 16,
+                      letterSpacing: -0.2,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
                 ?trailing,
               ],
             ),
@@ -5714,7 +5744,7 @@ class _HubScaffold extends StatelessWidget {
           child: ColoredBox(
             color: backgroundColor ?? _Q.bg,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(18, 20, 18, 28),
+              padding: const EdgeInsets.fromLTRB(16, 17, 16, 20),
               children: children,
             ),
           ),
@@ -5893,9 +5923,12 @@ class _LeaveHeaderButton extends StatelessWidget {
               : Text(
                   label,
                   style: TextStyle(
+                    fontFamily: 'Sora',
                     color: live ? Colors.white : const Color(0xFF9CA3AF),
                     fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                    height: 16.2 / 12,
+                    letterSpacing: -0.16,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
         ),
@@ -5904,9 +5937,10 @@ class _LeaveHeaderButton extends StatelessWidget {
   }
 }
 
-/// This year's requests, for people with no balance to show (node 2217:12436).
-class _LeaveYearSummaryCard extends StatelessWidget {
-  const _LeaveYearSummaryCard({required this.leaves});
+/// This year's requests, for people with no balance to show (node 3464:64477):
+/// what has been approved and what is still waiting, a card each.
+class _LeaveYearCards extends StatelessWidget {
+  const _LeaveYearCards({required this.leaves});
 
   final List<LeaveRequest> leaves;
 
@@ -5922,53 +5956,23 @@ class _LeaveYearSummaryCard extends StatelessWidget {
     final pending = thisYear
         .where((leave) => leave.decision == LeaveDecision.pending)
         .length;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0A000000),
-            blurRadius: 2,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'THIS YEAR',
-            style: TextStyle(
-              fontFamily: 'Sora',
-              color: Color(0xFF9CA3AF),
-              fontSize: 12,
-              height: 16 / 12,
-              letterSpacing: 0.3,
-              fontWeight: FontWeight.w600,
-            ),
+          _LeaveFigureCard(
+            iconAsset: 'assets/icons/leave_year_approved_badge.png',
+            iconSize: 28,
+            label: 'Approved Leave',
+            value: '$approved',
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _LeaveYearFigure(
-                value: '${thisYear.length}',
-                label: 'Total request',
-                color: const Color(0xFF111827),
-              ),
-              _LeaveYearFigure(
-                value: '$approved',
-                label: 'Approved',
-                color: const Color(0xFF16A34A),
-              ),
-              _LeaveYearFigure(
-                value: '$pending',
-                label: 'Pending',
-                color: const Color(0xFFFF383C),
-              ),
-            ],
+          const SizedBox(width: 8),
+          _LeaveFigureCard(
+            iconAsset: 'assets/icons/attendance_review_clock.png',
+            iconSize: 30,
+            label: 'Pending Leave',
+            value: '$pending',
           ),
         ],
       ),
@@ -5976,48 +5980,8 @@ class _LeaveYearSummaryCard extends StatelessWidget {
   }
 }
 
-/// One of the three figures: the count over its name.
-class _LeaveYearFigure extends StatelessWidget {
-  const _LeaveYearFigure({
-    required this.value,
-    required this.label,
-    required this.color,
-  });
-
-  final String value;
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Expanded(
-    child: Column(
-      children: [
-        Text(
-          value,
-          style: TextStyle(
-            fontFamily: 'Sora',
-            color: color,
-            fontSize: 16,
-            height: 24 / 16,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: const TextStyle(
-            fontFamily: 'Sora',
-            color: Color(0xFF9CA3AF),
-            fontSize: 10,
-            height: 15 / 10,
-            fontWeight: FontWeight.w400,
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
+/// One type's balance (node 3464:64043): its picture, what is left of the
+/// year's days, and a bar of the same.
 class _LeaveBalanceCard extends StatelessWidget {
   const _LeaveBalanceCard({required this.label, required this.item});
 
@@ -6026,8 +5990,78 @@ class _LeaveBalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final share = item.total <= 0
+        ? 0.0
+        : (item.remaining / item.total).clamp(0.0, 1.0);
+    return _LeaveFigureCard(
+      iconAsset: _leaveTypeIcon(label).asset,
+      label: label,
+      value: '${formatDays(item.remaining)}/${formatDays(item.total)}',
+      footer: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Container(
+            height: 8,
+            color: const Color(0xFFD1D5DB),
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: share,
+              heightFactor: 1,
+              child: const ColoredBox(color: Color(0xFF0571A6)),
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 22,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                // A monthly type is this month's figure, and lapses with it.
+                item.monthly
+                    ? 'days for ${item.periodLabel}'
+                    : 'days available',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'Sora',
+                  color: Color(0xFF484848),
+                  fontSize: 10,
+                  height: 16.2 / 10,
+                  letterSpacing: -0.16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The bordered card the Leave screen counts in: a picture, a name, a figure,
+/// and anything that goes under the figure.
+class _LeaveFigureCard extends StatelessWidget {
+  const _LeaveFigureCard({
+    required this.iconAsset,
+    required this.label,
+    required this.value,
+    this.iconSize = 24,
+    this.footer = const [],
+  });
+
+  final String iconAsset;
+  final double iconSize;
+  final String label;
+  final String value;
+  final List<Widget> footer;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      width: 144,
+      width: 155,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -6037,35 +6071,95 @@ class _LeaveBalanceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _IllustrationTile(asset: iconAsset, size: iconSize),
+          const SizedBox(height: 8),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
+              fontFamily: 'Sora',
               color: Color(0xFF222222),
               fontSize: 11,
-              fontWeight: FontWeight.w600,
+              height: 16.5 / 11,
+              fontWeight: FontWeight.w500,
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            '${formatDays(item.remaining)}/${formatDays(item.total)}',
-            style: const TextStyle(
-              color: Color(0xFF222222),
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontFamily: 'Sora',
+                color: Color(0xFF222222),
+                fontSize: 16,
+                height: 16.2 / 16,
+                letterSpacing: -0.16,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            // A monthly type is this month's figure, and lapses with it.
-            item.monthly ? 'days for ${item.periodLabel}' : 'days available',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Color(0xFF222222), fontSize: 10),
-          ),
+          ...footer,
         ],
       ),
     );
   }
+}
+
+/// The white tile an illustrated icon sits on across the Actions screens
+/// (node 3464:64045): 40 square, a 12 corner, and a faint shadow under it.
+class _IllustrationTile extends StatelessWidget {
+  const _IllustrationTile({required this.asset, this.size = 24});
+
+  final String asset;
+
+  /// The picture's own size inside the tile; most are 24, a few are drawn
+  /// larger so their artwork reads the same.
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 40,
+    height: 40,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x14000000),
+          blurRadius: 1.5,
+          offset: Offset(0, 1),
+        ),
+      ],
+    ),
+    child: Image.asset(asset, width: size, height: size, fit: BoxFit.cover),
+  );
+}
+
+/// The picture a leave type is drawn with (Figma 4194:21787), found from the
+/// name HR gave it so a renamed type keeps its picture, and the size it is
+/// drawn at beside a request's name. A type the designs have no picture for
+/// gets the Leave action's calendar.
+({String asset, double size}) _leaveTypeIcon(String label) {
+  final name = label.toLowerCase();
+  if (name.contains('casual')) {
+    return (asset: 'assets/icons/leave_type_casual_suitcase.png', size: 16);
+  }
+  if (name.contains('sick')) {
+    return (asset: 'assets/icons/leave_type_sick_face.png', size: 16);
+  }
+  if (name.contains('earned') || name.contains('privilege')) {
+    return (asset: 'assets/icons/punch/target.png', size: 16);
+  }
+  if (name.contains('lwp') ||
+      name.contains('without pay') ||
+      name.contains('loss of pay') ||
+      name.contains('unpaid')) {
+    return (asset: 'assets/icons/leave_type_lwp.png', size: 20);
+  }
+  return (asset: 'assets/icons/team/calendar.png', size: 16);
 }
 
 class LeaveViewSwitch extends StatelessWidget {
@@ -6098,6 +6192,7 @@ class LeaveViewSwitch extends StatelessWidget {
               onTap: () => onChanged(false),
             ),
           ),
+          const SizedBox(width: 4),
           Expanded(
             child: _LeaveViewSwitchItem(
               label: secondLabel,
@@ -6133,10 +6228,11 @@ class _LeaveViewSwitchItem extends StatelessWidget {
           color: selected ? Colors.white : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           boxShadow: selected
-              ? [
+              ? const [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: .1),
+                    color: Color(0x1A000000),
                     blurRadius: 1.5,
+                    offset: Offset(0, 1),
                   ),
                 ]
               : null,
@@ -6145,8 +6241,10 @@ class _LeaveViewSwitchItem extends StatelessWidget {
           label,
           textAlign: TextAlign.center,
           style: TextStyle(
+            fontFamily: 'Sora',
             color: selected ? const Color(0xFF0571A6) : const Color(0xFF9CA3AF),
             fontSize: 12,
+            height: 16 / 12,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -6156,106 +6254,206 @@ class _LeaveViewSwitchItem extends StatelessWidget {
 }
 
 class _LeaveRequestCard extends StatelessWidget {
-  const _LeaveRequestCard({required this.request, this.onViewDetails});
+  const _LeaveRequestCard({
+    required this.request,
+    required this.label,
+    this.onViewDetails,
+  });
 
   final LeaveRequest request;
+
+  /// The type as the policy names it, "Casual Leave".
+  final String label;
 
   /// Opens the same summary the request was sent on, attachment included.
   final VoidCallback? onViewDetails;
 
   @override
   Widget build(BuildContext context) {
-    final (label, color, tint) = switch (request.decision) {
-      LeaveDecision.approved => (
-        'Approved',
-        const Color(0xFF16A34A),
-        const Color(0xFFDCFCE7),
-      ),
-      LeaveDecision.pending => (
-        'Pending',
-        const Color(0xFFFF383C),
-        const Color(0xFFFEE2E2),
-      ),
-      LeaveDecision.declined => (
-        'Declined',
-        const Color(0xFF6B7280),
-        const Color(0xFFF3F4F6),
-      ),
+    final (status, color) = switch (request.decision) {
+      LeaveDecision.approved => ('Approved', const Color(0xFF16A34A)),
+      LeaveDecision.pending => ('Pending', const Color(0xFFFF383C)),
+      LeaveDecision.declined => ('Declined', const Color(0xFF6B7280)),
     };
     final range = _sameDay(request.start, request.end)
         ? _short(request.start)
         : '${_short(request.start)} – ${_short(request.end)}';
-    return Container(
-      padding: const EdgeInsets.all(16),
+    final icon = _leaveTypeIcon(label);
+    return _HubRequestCard(
+      iconAsset: icon.asset,
+      iconSize: icon.size,
+      title: label,
+      date: range,
+      status: status,
+      statusColor: color,
+      footerIcon: _HubRequestCard.calendarIcon,
+      footerText: request.halfDay
+          ? 'Half Day'
+          : '${request.daysLabel} Day${request.days == 1 ? '' : 's'}',
+      onTap: onViewDetails,
+    );
+  }
+}
+
+/// One request in a hub's list (nodes 4202:22179, 3464:64180, 3464:64264):
+/// its picture and name over the date, the decision on the right, and what it
+/// came to under a rule. Tapping it opens everything it was sent with.
+class _HubRequestCard extends StatelessWidget {
+  const _HubRequestCard({
+    required this.iconAsset,
+    required this.title,
+    required this.date,
+    required this.status,
+    required this.statusColor,
+    required this.footerIcon,
+    required this.footerText,
+    this.iconSize = 16,
+    this.onTap,
+  });
+
+  /// The footer pictures of the designs, each drawn in a 14 square.
+  static const calendarIcon = (
+    asset: 'assets/icons/request_card_calendar.svg',
+    size: 12.6667,
+  );
+
+  final String iconAsset;
+  final double iconSize;
+  final String title;
+  final String date;
+  final String status;
+  final Color statusColor;
+  final ({String asset, double size}) footerIcon;
+  final String footerText;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
-            color: Colors.black.withValues(alpha: .04),
+            color: Color(0x0A000000),
             blurRadius: 2,
-            offset: const Offset(0, 1),
+            offset: Offset(0, 1),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${request.type} leave request',
-                  style: const TextStyle(
-                    color: Color(0xFF111827),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Image.asset(
+                                iconAsset,
+                                width: iconSize,
+                                height: iconSize,
+                                fit: BoxFit.cover,
+                              ),
+                              // The larger pictures carry their own margin.
+                              SizedBox(width: iconSize > 16 ? 4 : 5),
+                              Flexible(
+                                child: Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontFamily: 'Sora',
+                                    color: Color(0xFF111827),
+                                    fontSize: 14,
+                                    height: 20 / 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            date,
+                            style: const TextStyle(
+                              fontFamily: 'Sora',
+                              color: Color(0xFF6B7280),
+                              fontSize: 12,
+                              height: 16 / 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      child: Text(
+                        status,
+                        style: TextStyle(
+                          fontFamily: 'Sora',
+                          color: statusColor,
+                          fontSize: 11,
+                          height: 16.5 / 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.only(top: 8),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      top: BorderSide(color: Color(0xFFF3F4F6), width: 0.8),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: Center(
+                          child: SvgPicture.asset(
+                            footerIcon.asset,
+                            width: footerIcon.size,
+                            height: footerIcon.size,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        footerText,
+                        style: const TextStyle(
+                          fontFamily: 'Sora',
+                          color: Color(0xFF6B7280),
+                          fontSize: 12,
+                          height: 16 / 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: tint,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Text(
-                range,
-                style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                '${request.daysLabel} day${request.days == 1 ? '' : 's'}',
-                style: const TextStyle(
-                  color: Color(0xFF111827),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          if (onViewDetails case final open?) ...[
-            const SizedBox(height: 4),
-            _ViewDetailsLink(onTap: open),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -6925,10 +7123,12 @@ class _HomeSectionLabel extends StatelessWidget {
   Widget build(BuildContext context) => Text(
     text.toUpperCase(),
     style: const TextStyle(
-      color: Color(0xFF717171),
+      fontFamily: 'Sora',
+      color: Color(0xFF9CA3AF),
       fontSize: 12,
-      fontWeight: FontWeight.w800,
-      letterSpacing: .9,
+      height: 16 / 12,
+      fontWeight: FontWeight.w600,
+      letterSpacing: .6,
     ),
   );
 }
@@ -8204,11 +8404,6 @@ class _QText {
     fontSize: 23,
     fontWeight: FontWeight.w800,
     letterSpacing: -0.4,
-  );
-  static const topbar = TextStyle(
-    color: _Q.ink,
-    fontSize: 19,
-    fontWeight: FontWeight.w800,
   );
   static const section = TextStyle(
     color: _Q.inkFaint,
