@@ -1,5 +1,6 @@
 // Placements, for a company that is a placement agency: its clients (the
-// companies hiring), customers (the candidates) and placements. Only a company
+// companies hiring), customers (the candidates; the dashboard and the app call
+// them candidates, the API customers) and placements. Only a company
 // whose signed-in profile says features.placements has them; the server
 // refuses everyone else. See backend/docs/placements-api.md.
 import { api } from './http';
@@ -10,6 +11,15 @@ export const PLACEMENT_STATUSES: PlacementStatus[] = ['shortlisted', 'interviewi
 /** Who added it, and how many placements use it, as the dashboard's lists carry them. */
 type AdminExtras = { createdByUserId: string; createdByName: string; createdAt: string; updatedAt: string };
 
+/** One open role at a client, with what it pays. */
+export type PlacementDesignation = {
+  id: string;
+  title: string;
+  budgetRupees: number | null;
+  budgetPeriod: 'month' | 'year';
+  description: string;
+};
+
 export type PlacementClient = AdminExtras & {
   id: string;
   name: string;
@@ -17,10 +27,20 @@ export type PlacementClient = AdminExtras & {
   phone: string;
   email: string;
   industry: string;
+  /** Where the company is: a city or a full address. */
   city: string;
   notes: string;
+  designations: PlacementDesignation[];
+  /** The one-time onboarding fee (2,500 unless set), whether it was received, when, and its UPI reference. */
+  feeRupees: number | null;
+  feePaid: boolean;
+  feePaidAt: string | null;
+  feeReference: string;
   placements: number;
 };
+
+/** Where a candidate stands across their placements. */
+export type CandidateStage = 'not_placed' | 'in_process' | 'joined';
 
 export type PlacementCustomer = AdminExtras & {
   id: string;
@@ -31,7 +51,14 @@ export type PlacementCustomer = AdminExtras & {
   experienceYears: number | null;
   skills: string[];
   city: string;
+  address: string;
+  /** The introduction: skills, strengths and what they are looking for. */
   notes: string;
+  stage: CandidateStage;
+  /** Taken off the lists from the app, with why and by whom; HR can restore them. */
+  removedAt: string | null;
+  removedReason: string;
+  removedByUserId: string;
   placements: number;
 };
 
@@ -60,15 +87,21 @@ export type PlacementsSummary = {
   placements: { total: number; byStatus: Record<PlacementStatus, number> };
 };
 
-export type ClientInput = Pick<PlacementClient, 'name' | 'contactName' | 'phone' | 'email' | 'industry' | 'city' | 'notes'>;
-export type CustomerInput = Pick<PlacementCustomer, 'name' | 'phone' | 'email' | 'currentRole' | 'city' | 'notes'> & {
+export type ClientInput = Pick<
+  PlacementClient,
+  'name' | 'contactName' | 'phone' | 'email' | 'industry' | 'city' | 'notes' | 'designations' | 'feeRupees' | 'feePaid' | 'feeReference'
+>;
+export type CustomerInput = Pick<PlacementCustomer, 'name' | 'phone' | 'email' | 'currentRole' | 'city' | 'address' | 'notes'> & {
   experienceYears: number | null;
   skills: string[];
 };
 export type PlacementInput = Pick<Placement, 'customerId' | 'clientId' | 'position' | 'status' | 'interviewDate' | 'joiningDate' | 'ctcRupees' | 'feeRupees' | 'notes'>;
 
-/** Filters the dashboard's lists take; empty ones are left off. */
-export type PlacementFilters = { q?: string; status?: string; clientId?: string; customerId?: string; createdBy?: string; from?: string; to?: string };
+/** Filters the dashboard's lists take; empty ones are left off. `removed` is the candidates list's: `only` or `exclude`, else everyone. */
+export type PlacementFilters = {
+  q?: string; status?: string; clientId?: string; customerId?: string; createdBy?: string; from?: string; to?: string;
+  removed?: string;
+};
 
 function qs(filters: PlacementFilters): string {
   const params = new URLSearchParams();
@@ -103,4 +136,6 @@ export const createPlacementCustomer = (input: CustomerInput) =>
   api<{ customer: PlacementCustomer }>(`${BASE}/customers`, { method: 'POST', body: input }).then((r) => r.customer);
 export const updatePlacementCustomer = (id: string, input: Partial<CustomerInput>) =>
   api<{ customer: PlacementCustomer }>(`${BASE}/customers/${id}`, { method: 'PATCH', body: input }).then((r) => r.customer);
+export const restorePlacementCustomer = (id: string) =>
+  api<{ customer: PlacementCustomer }>(`${BASE}/customers/${id}/restore`, { method: 'POST' }).then((r) => r.customer);
 export const deletePlacementCustomer = (id: string) => api(`${BASE}/customers/${id}`, { method: 'DELETE' });

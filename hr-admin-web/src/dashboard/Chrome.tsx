@@ -93,7 +93,7 @@ const CONNECT: NavItem[] = [
 const PLACEMENTS: NavItem[] = [
   { key: 'placements', label: 'Placements' },
   { key: 'placementclients', label: 'Clients' },
-  { key: 'placementcustomers', label: 'Customers' },
+  { key: 'placementcustomers', label: 'Candidates' },
 ];
 export const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'PLACEMENTS', items: PLACEMENTS },
