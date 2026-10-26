@@ -54,7 +54,8 @@ export async function fallback(req: Request, res: Response, next: NextFunction) 
     const reading = Number.isFinite(lat) && Number.isFinite(lng)
       ? { latitude: lat, longitude: lng, accuracy: Number.isFinite(Number(body.accuracy)) ? Number(body.accuracy) : undefined }
       : undefined;
-    res.status(201).json({ success: true, request: await requestFaceFallback(userId(req), reading) });
+    const type = body.type === 'out' ? 'out' : 'in';
+    res.status(201).json({ success: true, request: await requestFaceFallback(userId(req), reading, type) });
   } catch (error) { next(error); }
 }
 

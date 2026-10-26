@@ -142,11 +142,12 @@ export async function recordPunch(
   // work is not tied to a building — so asking them for a fix would refuse a
   // punch their own policy says needs none.
   const geofenced = policy.correction.punchFormat === 'Geotag (powered by Sowaka)';
-  // Face first, then location: where the company checks faces, a geotagged
-  // punch-in spends the token a passed check handed back, or is refused. The
+  // Face first, then location: where the company checks faces, a punch made
+  // in the app (geotagged or in-app, in or out) spends the token a passed
+  // check handed back, or is refused. The
   // token is given back if the punch fails further on (outside the office,
   // say), so the same check carries the retry with a reason.
-  if (!faceCheckNeeded(faceIdSettingsOf(company), type, geofenced)) {
+  if (!faceCheckNeeded(faceIdSettingsOf(company), policy.correction.punchFormat)) {
     return locateAndWrite();
   }
   let claimed: Awaited<ReturnType<typeof claimFaceToken>>;
@@ -1056,7 +1057,7 @@ function toRegularizationView(value: AttendanceRegularization) {
     title: kind === 'out_of_location'
       ? `Out of location request${outsideLocation?.reason ? ` (${outsideLocation.reason})` : ''}`
       : kind === 'face_check'
-        ? 'Punch-in without face check'
+        ? (value.faceCheck?.punchType === 'out' ? 'Punch-out without face check' : 'Punch-in without face check')
         : 'Attendance correction',
     outsideLocation: outsideLocationView(outsideLocation),
     requestedPunchIn: punchIn?.toISOString(),

@@ -18,6 +18,8 @@ export type RegularizationKind = 'correction' | 'out_of_location' | 'face_check'
  */
 export interface FaceCheckNote {
   at: Date;
+  /** Which punch the check was for. Absent on the first rows: a punch-in. */
+  punchType?: 'in' | 'out';
   /** The last check's reason, e.g. not_a_match or unavailable. */
   reason: string;
   attempts: number;
@@ -132,6 +134,8 @@ export interface AttendanceRegularization {
   outsideLocation?: OutsideLocationNote;
   /** Face check only: why the check refused, and where the punch was tried from. */
   faceCheck?: FaceCheckNote;
+  /** A punch-out whose face check failed too, riding on a pending request. */
+  faceCheckOut?: FaceCheckNote;
   /** Out of location: the face check the punch-in passed, carried to the day on approval. */
   punchInFace?: PunchFaceCheck;
   /** What the day should be recorded as. */

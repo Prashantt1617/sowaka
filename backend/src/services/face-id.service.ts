@@ -6,7 +6,7 @@ import {
 import { env } from '../config/env';
 import { AttendanceRegularization, FaceCheckNote, PunchFaceCheck } from '../models/attendance.model';
 import {
-  FACE_CONSENT_AGREE, FACE_CONSENT_PARAGRAPHS, FACE_CONSENT_TEXT, FACE_CONSENT_VERSION, FaceCheckReason, faceIdSettingsOf, FaceIdSettingsView, FaceVerification, UserFaceId,
+  FACE_CONSENT_AGREE, FACE_CONSENT_VERSION, FaceCheckReason, faceIdSettingsOf, FaceIdSettingsView, FaceVerification, UserFaceId,
 } from '../models/face.model';
 import { User } from '../models/user.model';
 import { requestViewer } from '../middleware/request-viewer';
@@ -118,9 +118,9 @@ async function underHourlyCap(userId: string, kind: 'enrol' | 'verify', cap: num
   }
 }
 
-/** The consent the app shows, word for word, and the version it sends back with the enrolment. */
+/** The consent line the app shows, word for word, and the version it sends back with the enrolment. */
 function consentView() {
-  return { version: FACE_CONSENT_VERSION, text: FACE_CONSENT_TEXT, paragraphs: FACE_CONSENT_PARAGRAPHS, agree: FACE_CONSENT_AGREE };
+  return { version: FACE_CONSENT_VERSION, agree: FACE_CONSENT_AGREE };
 }
 
 /** What the app needs to decide whether to ask for setup, and how to check. */
@@ -434,9 +434,16 @@ function round(value?: number) {
 
 // ------------------------------------------------------------------ punch
 
-/** Whether this person's punch-in needs a face check: their company checks, and the shift is geotagged. */
-export function faceCheckNeeded(settings: FaceIdSettingsView, type: 'in' | 'out', geotagged: boolean) {
-  return settings.checkAtPunch && geotagged && type === 'in';
+/**
+ * The punch formats whose punches are taken in the app, and so are checked:
+ * geotagged and in-app punch in, both ways. A biometric device's punches
+ * arrive from the device, and an Auto Punch day has none, so neither is.
+ */
+const APP_PUNCH_FORMATS = new Set(['Geotag (powered by Sowaka)', 'In-app punch in']);
+
+/** Whether this punch needs a face check: the company checks, and the shift punches in the app. */
+export function faceCheckNeeded(settings: FaceIdSettingsView, punchFormat: string) {
+  return settings.checkAtPunch && APP_PUNCH_FORMATS.has(punchFormat);
 }
 
 /**
@@ -460,14 +467,17 @@ export async function claimFaceToken(userId: string, token: unknown, usedFor: st
     : null;
   if (!row) {
     const enrolled = Boolean(await enrolmentOf(userId));
-    // Worded for an app that predates Face ID too, which shows the message as it is.
-    throw new FaceIdError(
-      enrolled ? 403 : 428,
-      enrolled
-        ? 'Verify your face to punch in. If the app does not ask you to, update it from the store.'
-        : 'Set up Face ID to punch in. If the app does not offer it, update it from the store.',
-      { face: { reason: enrolled ? (raw ? 'check_expired' : 'check_required') : 'not_enrolled', setup: !enrolled } },
-    );
+    // No token at all is, in practice, an app from before Face ID: it shows
+    // this message as it is, so the message says what to do. The current app
+    // reads `details.face` and opens the selfie or the setup instead.
+    const message = !raw
+      ? 'Your company now checks your face when you punch in or out. Update the Sowaka app from the App Store or Google Play to punch.'
+      : enrolled
+        ? 'Your face check has expired. Take the selfie again to punch.'
+        : 'Set up Face ID to punch.';
+    throw new FaceIdError(enrolled ? 403 : 428, message, {
+      face: { reason: enrolled ? (raw ? 'check_expired' : 'check_required') : 'not_enrolled', setup: !enrolled, updateApp: !raw },
+    });
   }
   return {
     face: { similarity: row.similarity, liveness: row.liveness?.mode ?? 'none', at: row.at },
@@ -489,11 +499,13 @@ export async function claimFaceToken(userId: string, token: unknown, usedFor: st
 export async function requestFaceFallback(
   userId: string,
   reading?: { latitude: number; longitude: number; accuracy?: number },
+  /** The punch the check was for; a punch-in when an older build leaves it out. */
+  type: 'in' | 'out' = 'in',
 ) {
   const user = await personFor(userId);
   if (!user.employeeId) throw new FaceIdError(409, 'Employee ID is not configured');
   const settings = await settingsForOrg(user.org);
-  if (!settings.checkAtPunch) throw new FaceIdError(409, 'Your company does not check faces at punch-in');
+  if (!settings.checkAtPunch) throw new FaceIdError(409, 'Your company does not check faces at punch-in or punch-out');
   const state = await recentFailures(userId);
   if (!fallbackOpen(state)) {
     throw new FaceIdError(409, `Try the face check again. After ${env.face.maxAttempts} tries you can send it to your manager.`, {
@@ -506,10 +518,24 @@ export async function requestFaceFallback(
     attendanceRecords().findOne({ employeeId: user.employeeId, workDate }),
     attendanceRegularizations().findOne({ userId, workDate, status: 'pending' }),
   ]);
-  if (today?.punchIn) throw new FaceIdError(409, 'Already punched in today');
-  if (pending) throw new FaceIdError(409, 'A request for today is already with your manager');
+  const note: FaceCheckNote = { at, punchType: type, reason: state.lastReason ?? 'not_a_match', attempts: state.failures };
+  if (type === 'in') {
+    if (today?.punchIn) throw new FaceIdError(409, 'Already punched in today');
+    if (pending) throw new FaceIdError(409, 'A request for today is already with your manager');
+  } else {
+    if (today?.punchOut) throw new FaceIdError(409, 'Already punched out today');
+    if (pending) {
+      // The day is open only as a request the manager has not settled: the
+      // punch-out rides on it, as a punch-out does on an out-of-location one.
+      if ((pending.kind !== 'out_of_location' && pending.kind !== 'face_check') || pending.punchOut) {
+        throw new FaceIdError(409, 'A request for today is already with your manager');
+      }
+      await attendanceRegularizations().updateOne({ _id: pending._id }, { $set: { punchOut: at, faceCheckOut: note } });
+      return { id: pending._id.toHexString(), workDate, requestedAt: at.toISOString(), title: 'Punch-out without face check', note: pending.note ?? '' };
+    }
+    if (!today?.punchIn) throw new FaceIdError(409, 'Punch in before punching out');
+  }
 
-  const note: FaceCheckNote = { at, reason: state.lastReason ?? 'not_a_match', attempts: state.failures };
   if (reading && Number.isFinite(reading.latitude) && Number.isFinite(reading.longitude)) {
     // Where it was tried from, for the manager to weigh; never a refusal here.
     const sites = await offices().find({ org: user.org, active: true }).toArray();
@@ -519,9 +545,10 @@ export async function requestFaceFallback(
       ...(verdict ? { officeName: verdict.office?.name, distanceMeters: verdict.distanceMeters, inside: verdict.inside } : {}),
     });
   }
+  const punch = type === 'in' ? 'punch-in' : 'punch-out';
   const reasonText = note.reason === 'unavailable'
-    ? 'Face check was unavailable'
-    : `Face check did not pass after ${note.attempts} tries`;
+    ? `Face check was unavailable at ${punch}`
+    : `Face check did not pass after ${note.attempts} tries at ${punch}`;
   const row: AttendanceRegularization = {
     userId,
     employeeId: user.employeeId,
@@ -530,7 +557,8 @@ export async function requestFaceFallback(
     workDate,
     kind: 'face_check',
     faceCheck: note,
-    punchIn: at,
+    // Approved, the day takes this time for the punch that was tried.
+    ...(type === 'in' ? { punchIn: at } : { punchOut: at }),
     note: reasonText,
     status: 'pending',
     createdAt: at,
@@ -538,7 +566,39 @@ export async function requestFaceFallback(
   const result = await attendanceRegularizations().insertOne(row);
   await notifyCorrectionSubmitted({ employeeUserId: userId, requestId: String(result.insertedId), workDate, reason: reasonText })
     .catch((error) => logger.error('Face fallback notification failed', { userId }, error));
-  return { id: result.insertedId.toHexString(), workDate, requestedAt: at.toISOString(), title: 'Face check request', note: reasonText };
+  return {
+    id: result.insertedId.toHexString(), workDate, requestedAt: at.toISOString(),
+    title: type === 'in' ? 'Punch-in without face check' : 'Punch-out without face check', note: reasonText,
+  };
+}
+
+// --------------------------------------------------------------- retention
+
+/**
+ * The check log older than FACE_LOG_RETENTION_MONTHS (12 by default), and
+ * liveness sessions older than a day, which are only ever read within
+ * minutes. Counts only, unless `apply`. Run by hand with
+ * `npm run face-log:cleanup`; no scheduler calls it yet.
+ */
+export async function pruneFaceLog(options: { apply?: boolean; now?: Date } = {}) {
+  const now = options.now ?? new Date();
+  const before = new Date(now);
+  before.setUTCMonth(before.getUTCMonth() - env.face.logRetentionMonths);
+  const sessionsBefore = new Date(now.getTime() - 86_400_000);
+  const checks = { at: { $lt: before } };
+  const sessions = { createdAt: { $lt: sessionsBefore } };
+  if (!options.apply) {
+    const [checkRows, sessionRows] = await Promise.all([
+      faceVerifications().countDocuments(checks),
+      faceLivenessSessions().countDocuments(sessions),
+    ]);
+    return { before: before.toISOString(), checks: checkRows, sessions: sessionRows, deleted: false };
+  }
+  const [checkRows, sessionRows] = await Promise.all([
+    faceVerifications().deleteMany(checks),
+    faceLivenessSessions().deleteMany(sessions),
+  ]);
+  return { before: before.toISOString(), checks: checkRows.deletedCount, sessions: sessionRows.deletedCount, deleted: true };
 }
 
 // ------------------------------------------------------------------ remove
