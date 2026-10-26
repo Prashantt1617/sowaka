@@ -1,8 +1,9 @@
-import { ObjectId } from 'mongodb';
+import { ObjectId, type WithId } from 'mongodb';
 import { attendanceRecords, attendanceRegularizations, offices, users } from '../config/db';
 import { PunchLocation } from '../models/office.model';
 import { User } from '../models/user.model';
 import { locateForPunch, officeView, placeLabel, punchLocationFrom } from './geofence.service';
+import { logger } from '../utils/logger';
 import {
   AttendanceRecord,
   AttendanceRegularization,
@@ -110,19 +111,31 @@ export async function recordPunch(
   skipReason = false,
 ) {
   if (type !== 'in' && type !== 'out') throw new AttendanceError(400, 'type must be in or out');
-  const found = await users().findOne({ userId });
+  // The person as the auth check read them, when the punch is their own.
+  const found =
+    requestViewer(userId) ?? (await users().findOne({ userId }, { projection: { profilePhotoUrl: 0 } }));
   if (!found?.employeeId) throw new AttendanceError(409, 'Employee ID is not configured');
   const employee = { ...found, employeeId: found.employeeId };
 
   let location: PunchLocation | undefined;
   const org = employee.org ?? '';
+  // The shift, the org's offices and the day as it stands are independent,
+  // so they are read together: one after another they were most of a punch's
+  // two seconds. The offices are read whether or not the shift turns out to
+  // be geotagged; a few small records cost nothing beside a round trip.
+  const workDate = new Date().toISOString().slice(0, 10);
+  const [policy, orgOffices, today] = await Promise.all([
+    policyForUser(userId),
+    org ? offices().find({ org, active: true }).toArray() : Promise.resolve([]),
+    attendanceRecords().findOne({ employeeId: employee.employeeId, workDate }),
+  ]);
+  const preloaded = { workDate, record: today };
   // Only a geotagged shift is checked against an office. In-app punch-in is the
   // same punch without the location question — HR chooses it for people whose
   // work is not tied to a building — so asking them for a fix would refuse a
   // punch their own policy says needs none.
-  const policy = await policyForUser(userId);
   const geofenced = policy.correction.punchFormat === 'Geotag (powered by Sowaka)';
-  const sites = geofenced && org ? await offices().countDocuments({ org, active: true }) : 0;
+  const sites = geofenced && org ? orgOffices.length : 0;
   if (sites > 0) {
     if (!reading) {
       throw new AttendanceError(
@@ -130,7 +143,7 @@ export async function recordPunch(
         'Location is required to punch. Turn location on and try again.',
       );
     }
-    const verdict = await locateForPunch(org, reading);
+    const verdict = await locateForPunch(org, reading, orgOffices);
     location = punchLocationFrom(reading, verdict);
     if (!verdict.inside && verdict.reason === 'inaccurate') {
       throw new AttendanceError(
@@ -190,10 +203,10 @@ export async function recordPunch(
       if (rules.outcome === 'request' && type === 'in') {
         return requestOutOfLocation(employee, note, location);
       }
-      return writePunch(employee, type, location, policy, note);
+      return writePunch(employee, type, location, policy, note, preloaded);
     }
   }
-  return writePunch(employee, type, location, policy);
+  return writePunch(employee, type, location, policy, undefined, preloaded);
 }
 
 /**
@@ -206,15 +219,22 @@ async function writePunch(
   location: PunchLocation | undefined,
   policy: { minFullDayHours: number; minHalfDayHours: number },
   outside?: OutsideLocationNote,
+  /** The day's record as read alongside the policy, if it is still the same day. */
+  preloaded?: { workDate: string; record: WithId<AttendanceRecord> | null },
 ) {
   const { userId } = employee;
   const now = new Date();
   const workDate = now.toISOString().slice(0, 10);
-  const existing = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
+  const existing =
+    preloaded && preloaded.workDate === workDate
+      ? preloaded.record
+      : await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
 
+  // The write hands back the day as it now stands, rather than a read after it.
+  let updated: WithId<AttendanceRecord> | null;
   if (type === 'in') {
     if (existing?.punchIn) throw new AttendanceError(409, 'Already punched in today');
-    await attendanceRecords().updateOne(
+    updated = await attendanceRecords().findOneAndUpdate(
       { employeeId: employee.employeeId, workDate },
       {
         $set: {
@@ -228,7 +248,7 @@ async function writePunch(
         },
         $setOnInsert: { source: 'manual', sourceKey: `manual|${employee.employeeId}|${workDate}`, importedAt: now },
       },
-      { upsert: true },
+      { upsert: true, returnDocument: 'after' },
     );
   } else {
     if (!existing?.punchIn) {
@@ -251,7 +271,7 @@ async function writePunch(
       throw new AttendanceError(409, 'Punch in before punching out');
     }
     if (existing?.punchOut) throw new AttendanceError(409, 'Already punched out today');
-    await attendanceRecords().updateOne(
+    updated = await attendanceRecords().findOneAndUpdate(
       { employeeId: employee.employeeId, workDate },
       {
         $set: {
@@ -263,12 +283,16 @@ async function writePunch(
           ...(outside && !existing?.outsideLocation ? { outsideLocation: outside } : {}),
         },
       },
+      { returnDocument: 'after' },
     );
   }
 
-  const updated = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
+  // The employee's own "You're in" lands in their inbox after the punch has
+  // answered, not before: the button waited on its round trips.
+  const tell = (sent: Promise<void>) =>
+    void sent.catch((error) => logger.error('Punch notification failed', { userId, type }, error));
   if (type === 'in') {
-    await notifyPunchedIn(userId, now);
+    tell(notifyPunchedIn(userId, now));
   } else if (updated?.punchIn && updated?.punchOut) {
     // Grade the day the way the app does, so the message agrees with the
     // calendar the employee is about to open.
@@ -278,7 +302,7 @@ async function writePunch(
       : worked >= policy.minHalfDayHours * 60
         ? 'half'
         : 'short';
-    await notifyPunchedOut(userId, now, worked, band);
+    tell(notifyPunchedOut(userId, now, worked, band));
   }
   // The same shape as a row of `mine`, since the app swaps the day's row for
   // this: leaving out the day type would blank a regularised day until refresh.
