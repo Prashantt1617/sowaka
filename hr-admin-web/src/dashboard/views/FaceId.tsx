@@ -105,7 +105,7 @@ export function FaceId() {
       <Card padded style={{ marginBottom: 20 }}>
         <h3 style={cardTitle}>Face ID</h3>
         <p style={{ ...cardNote, margin: '4px 0 16px' }}>
-          Confirms it is really the employee punching in. Turn on setup first; check faces at punch-in once most people have set it up.
+          Confirms it is really the employee punching. Turn on setup first; check faces at punches once most people have set it up, and force the app update for the company at the same time: older apps cannot punch while faces are checked.
         </p>
         <SettingRow
           title="Ask everyone to set up Face ID"
@@ -116,8 +116,8 @@ export function FaceId() {
           onToggle={() => void save({ setupRequired: !(raw?.setupRequired === true) })}
         />
         <SettingRow
-          title="Check faces at geotagged punch-in"
-          note="A selfie must match before the location check. After three failed tries the punch-in goes to the manager as a request."
+          title="Check faces at punch-in and punch-out"
+          note="Geotag and in-app punches, both ways; biometric devices and Auto Punch are not checked. A selfie must match before the location check. After three failed tries the punch goes to the manager as a request."
           on={raw?.checkAtPunch === true}
           disabled={saving || st !== 'ready'}
           onToggle={() => void save({ checkAtPunch: !(raw?.checkAtPunch === true) })}
@@ -189,7 +189,7 @@ export function FaceId() {
             </div>
             {shownChecks.map((c, i) => (
               <div key={`${c.userId}-${c.at}-${i}`} style={TR(CHECK_COLS, i === shownChecks.length - 1)}>
-                <Person name={c.name} userId={c.userId} sub={[c.employeeId, c.kind === 'enrol' ? 'Setup' : 'Punch-in'].filter(Boolean).join(' · ')} />
+                <Person name={c.name} userId={c.userId} sub={[c.employeeId, c.kind === 'enrol' ? 'Setup' : 'Punch'].filter(Boolean).join(' · ')} />
                 <div style={{ fontWeight: 400 }}>{when(c.at)}</div>
                 <div style={{ fontWeight: 400, minWidth: 0 }} title={c.message}>{c.message}</div>
                 <div style={{ fontWeight: 400, fontVariantNumeric: 'tabular-nums' }}>{c.similarity == null ? '—' : `${c.similarity.toFixed(1)}%`}</div>
@@ -239,7 +239,7 @@ function SettingRow({ title, note, on, locked, disabled, onToggle }: {
     <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 0', borderTop: '1px solid var(--line)' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{title}</div>
-        <div style={cardNote}>{locked ? 'On while faces are checked at punch-in.' : note}</div>
+        <div style={cardNote}>{locked ? 'On while faces are checked at punches.' : note}</div>
       </div>
       <button
         type="button"
