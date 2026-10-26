@@ -739,6 +739,7 @@ class _TeamPersonRow extends StatelessWidget {
     this.dot,
     this.details = const [],
     this.sizing = _TeamSizing.teamTab,
+    this.photo,
   });
 
   final TeamMember member;
@@ -747,6 +748,10 @@ class _TeamPersonRow extends StatelessWidget {
   final Color? dot;
   final List<Widget> details;
   final _TeamSizing sizing;
+
+  /// Drawn in place of [member]'s photo: a profile's own face, as its hero
+  /// draws it.
+  final Widget? photo;
 
   @override
   Widget build(BuildContext context) {
@@ -763,7 +768,7 @@ class _TeamPersonRow extends StatelessWidget {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                _TeamMemberPhoto(member: member, size: sizing.photo),
+                photo ?? _TeamMemberPhoto(member: member, size: sizing.photo),
                 if (dot != null)
                   Positioned(
                     right: 0,
