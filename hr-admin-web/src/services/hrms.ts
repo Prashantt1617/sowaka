@@ -445,6 +445,11 @@ export type LeaveTypeRule = {
   advanceDays: number;
   allowBackdated: boolean;
   backdatedDays: number;
+  /**
+   * Leave without pay: no balance (it can always be applied for) and every
+   * approved day is loss of pay. Only HR sets it, here. Never on comp-off.
+   */
+  unpaid?: boolean;
   /** Off means nobody can apply for it; leave already taken keeps reading. */
   active: boolean;
 };
