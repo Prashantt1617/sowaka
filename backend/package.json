@@ -24,6 +24,7 @@
     "auth-speed:check": "tsx src/scripts/auth-speed-check.ts",
     "hot-paths:check": "tsx src/scripts/hot-paths-check.ts",
     "image-fit:check": "tsx src/scripts/image-fit-check.ts",
+    "media:backfill": "tsx src/scripts/media-copies-backfill.ts",
     "employee-details:check": "tsx src/scripts/employee-details-check.ts",
     "celebrations:check": "tsx src/scripts/connect-celebrations-check.ts",
     "squad:check": "tsx src/scripts/secret-squad-check.ts",
