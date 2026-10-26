@@ -508,7 +508,12 @@ export async function kpiTemplateAudience(
 ) {
   const org = await requireOrg(adminUserId);
   const period = requirePeriod(periodInput);
-  const template = await kpiTemplates().findOne({ _id: objectId(id, 'Template id'), org });
+  // The template and the roster together; of each person only what the
+  // audience shows, never an inline photo.
+  const [template, roster] = await Promise.all([
+    kpiTemplates().findOne({ _id: objectId(id, 'Template id'), org }),
+    users().find({ org }, { projection: ROSTER_FIELDS }).sort({ name: 1 }).toArray(),
+  ]);
   if (!template) throw new KpiError(404, 'Template not found');
 
   const locations = template.locations ?? [];
@@ -516,7 +521,6 @@ export async function kpiTemplateAudience(
   const departments = template.departments ?? [];
   const managerUserIds = template.managerUserIds ?? [];
 
-  const roster = await users().find({ org }).sort({ name: 1 }).toArray();
   const matched = roster.filter((u) => {
     if (locations.length && !locations.includes(u.location ?? '')) return false;
     if (designations.length && !designations.includes(u.designation ?? '')) return false;
@@ -572,7 +576,7 @@ export async function resolveKpiAudience(
   const departments = facet(input.departments);
   const managerUserIds = facet(input.managerUserIds);
 
-  const roster = await users().find({ org }).sort({ name: 1 }).toArray();
+  const roster = await users().find({ org }, { projection: ROSTER_FIELDS }).sort({ name: 1 }).toArray();
   const matched = roster.filter((u) => {
     if (locations.length && !locations.includes(u.location ?? '')) return false;
     if (designations.length && !designations.includes(u.designation ?? '')) return false;
@@ -630,7 +634,7 @@ export async function kpiTemplateMembers(
   const assignments = await kpiAssignments().find({ org, period, templateId: id }).toArray();
   if (!assignments.length) return { period, templateName: template.name, members: [] };
 
-  const roster = await users().find({ org }).toArray();
+  const roster = await users().find({ org }, { projection: ROSTER_FIELDS }).toArray();
   const byId = new Map(roster.map((u) => [u.userId, u]));
   const nameById = new Map(roster.map((u) => [u.userId, u.name]));
 
@@ -657,6 +661,14 @@ export async function kpiTemplateMembers(
 
   return { period, templateName: template.name, members };
 }
+
+/**
+ * What the audience and member lists read of each person. Whole records
+ * carry older accounts' inline photos, a company's worth of them megabytes.
+ */
+const ROSTER_FIELDS = {
+  _id: 0, userId: 1, name: 1, employeeId: 1, designation: 1, location: 1, branch: 1, department: 1, managerUserId: 1,
+} as const;
 
 /** Assigns one template to many employees for a cycle, replacing what they had. */
 export async function assignTemplateToUsers(
