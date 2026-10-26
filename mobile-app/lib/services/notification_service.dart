@@ -33,17 +33,38 @@ class AppNotificationService {
   AuthSession? _session;
 
   /// Done once [initialize] has run, whether or not it worked. The app no
-  /// longer waits for it before drawing; what needs Firebase waits here.
-  Future<void> get ready => _ready.future;
+  /// longer waits for it before drawing; what needs Firebase waits here, and
+  /// never for long: a setup that hangs leaves pushes off, nothing else.
+  Future<void> get ready => _ready.future.timeout(
+    _setupLimit,
+    onTimeout: () =>
+        debugPrint('Notification setup still not done; going on without it'),
+  );
   final _ready = Completer<void>();
+
+  /// How long any one step of push setup, or a device registration, may take.
+  static const _setupLimit = Duration(seconds: 10);
 
   Future<void> initialize() async {
     try {
-      await _initializeFirebase();
+      await _initializeFirebase().timeout(_setupLimit);
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-      // The channel and the push that opened the app are independent.
-      final initialFuture = FirebaseMessaging.instance.getInitialMessage();
-      if (!kIsWeb) await _initializeLocalNotifications();
+      // The channel and the push that opened the app are independent, and
+      // either failing leaves the other.
+      final initialFuture = FirebaseMessaging.instance
+          .getInitialMessage()
+          .timeout(_setupLimit)
+          .catchError((Object error) {
+            debugPrint('Opening push not read: $error');
+            return null;
+          });
+      if (!kIsWeb) {
+        try {
+          await _initializeLocalNotifications().timeout(_setupLimit);
+        } catch (error) {
+          debugPrint('Local notifications not set up: $error');
+        }
+      }
       FirebaseMessaging.onMessage.listen((message) {
         if (!_received.isClosed) {
           _received.add(Map<String, dynamic>.from(message.data));
@@ -59,7 +80,10 @@ class AppNotificationService {
         pendingDestination = Map<String, dynamic>.from(initial.data);
       }
       FirebaseMessaging.instance.onTokenRefresh.listen(
-        (token) => _register(token),
+        (token) => _register(token).catchError(
+          (Object error) =>
+              debugPrint('FCM token refresh not registered: $error'),
+        ),
       );
     } catch (error, stackTrace) {
       debugPrint('Notification initialization failed: $error');
@@ -130,9 +154,15 @@ class AppNotificationService {
     );
   }
 
+  /// Never throws and never holds anyone up: the home screen calls this
+  /// without waiting, and a push that cannot be set up is no reason to stop.
   Future<void> attachSession(AuthSession session) async {
     _session = session;
-    await requestPermission();
+    try {
+      await requestPermission();
+    } catch (error) {
+      debugPrint('Notification permission or registration failed: $error');
+    }
   }
 
   /// Signing out: the device stops standing for this account, so pushes for
@@ -168,9 +198,11 @@ class AppNotificationService {
         defaultValue:
             'BHqyJO-motjY5x1ouLWFjMGNdLp-nLTQRNUPa0XynKJxQ_XpMUla_IcUE9qeqNdPwCoOjwYj88Ag1ebVmwfWRvM',
       );
-      final token = await FirebaseMessaging.instance.getToken(
-        vapidKey: kIsWeb && webVapidKey.isNotEmpty ? webVapidKey : null,
-      );
+      final token = await FirebaseMessaging.instance
+          .getToken(
+            vapidKey: kIsWeb && webVapidKey.isNotEmpty ? webVapidKey : null,
+          )
+          .timeout(_setupLimit);
       if (token != null) {
         // The same token for the same person was handed over lately: every
         // launch used to post it again.
@@ -271,21 +303,23 @@ class AppNotificationService {
   Future<void> _register(String token) async {
     final session = _session;
     if (session == null) return;
-    final response = await http.post(
-      Uri.parse('${ApiConfig.baseUrl}/notifications/devices'),
-      headers: {
-        'Authorization': 'Bearer ${session.token}',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'token': token,
-        'platform': kIsWeb
-            ? 'web'
-            : defaultTargetPlatform == TargetPlatform.iOS
-            ? 'ios'
-            : 'android',
-      }),
-    );
+    final response = await http
+        .post(
+          Uri.parse('${ApiConfig.baseUrl}/notifications/devices'),
+          headers: {
+            'Authorization': 'Bearer ${session.token}',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'token': token,
+            'platform': kIsWeb
+                ? 'web'
+                : defaultTargetPlatform == TargetPlatform.iOS
+                ? 'ios'
+                : 'android',
+          }),
+        )
+        .timeout(_setupLimit);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError(
         'Device registration failed (${response.statusCode}): ${response.body}',

@@ -198,8 +198,9 @@ class _AppUpdateGateState extends State<AppUpdateGate>
       }
       AppUpdateGate.optional.value = offer;
       if (mounted) setState(() => _status = status);
-    } catch (_) {
+    } catch (error) {
       // Offline or the server is away: carry on as before.
+      debugPrint('Update check skipped: $error');
     } finally {
       _checking = false;
       if (_again && mounted) {

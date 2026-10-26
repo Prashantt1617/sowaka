@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -16,6 +17,15 @@ class AuthApiException implements Exception {
   @override
   String toString() => message;
 }
+
+/// How long a sign-in call may take before the person is told to try again.
+/// Sending the code can take a mail retry (up to ~21 s on the server), and
+/// CloudFront gives up at 30 s.
+const _signInLimit = Duration(seconds: 30);
+
+/// The welcome screen's team and the profile check are extras: they give up
+/// sooner, and whatever needs them carries on without.
+const _extraLimit = Duration(seconds: 10);
 
 class AuthApiService {
   AuthApiService({String? baseUrl, http.Client? client})
@@ -43,10 +53,9 @@ class AuthApiService {
     final uri = Uri.parse(
       '$_baseUrl/auth/teammates${limit == null ? '' : '?limit=$limit'}',
     );
-    final response = await _client.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await _client
+        .get(uri, headers: {'Authorization': 'Bearer $token'})
+        .timeout(_extraLimit);
     final raw = utf8.decode(response.bodyBytes);
     final data = raw.isEmpty
         ? <String, dynamic>{}
@@ -83,10 +92,9 @@ class AuthApiService {
 
   Future<AuthUser> fetchCurrentUser(String token) async {
     final uri = Uri.parse('$_baseUrl/auth/me');
-    final response = await _client.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await _client
+        .get(uri, headers: {'Authorization': 'Bearer $token'})
+        .timeout(_extraLimit);
     final raw = utf8.decode(response.bodyBytes);
     final data = raw.isEmpty
         ? <String, dynamic>{}
@@ -109,11 +117,20 @@ class AuthApiService {
     Map<String, dynamic> body,
   ) async {
     final uri = Uri.parse('$_baseUrl$path');
-    final response = await _client.post(
-      uri,
-      headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode(body),
-    );
+    final http.Response response;
+    try {
+      response = await _client
+          .post(
+            uri,
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode(body),
+          )
+          .timeout(_signInLimit);
+    } on TimeoutException {
+      throw const AuthApiException(
+        'This is taking too long. Check your connection and try again.',
+      );
+    }
     final raw = utf8.decode(response.bodyBytes);
     final data = raw.isEmpty
         ? <String, dynamic>{}
