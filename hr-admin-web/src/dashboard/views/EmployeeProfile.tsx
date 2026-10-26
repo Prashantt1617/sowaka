@@ -18,7 +18,7 @@ import { Avatar, ListPending, LoadError, LoadingFigure, Pill, Skeleton, Skeleton
 import type { LoadState } from '../ui';
 import { useLoad } from '../useLoad';
 import { PersonAvatar } from '../PersonAvatar';
-import { PdBank, PdCalendar, PdChart, PdClock, PdEdit, PdFile, PdStar, PdTarget, PdTrash, PdUser } from './pdIcons';
+import { PdBank, PdCalendar, PdChart, PdClock, PdEdit, PdFile, PdLock, PdStar, PdTarget, PdTrash, PdUser } from './pdIcons';
 import './people.css';
 import { periodLabel, periodShort } from '../period';
 import { EmployeeKpiPanel } from './KpiAssign';
@@ -240,7 +240,8 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
       {tab === 'profile' && (
         <div className="pd-psecs">
           <div className="pd-psecs">
-            <div data-focus="details"><Section title="Basic details" icon={<PdUser />} action={canEditDetails ? <button type="button" onClick={() => setEditingDetails(true)} className="pd-sec-act"><PdEdit /> Edit details</button> : undefined}>
+            <div data-focus="details"><Section title="Basic details" icon={<PdUser />} action={canEditDetails && !editingDetails ? <button type="button" onClick={() => setEditingDetails(true)} className="pd-sec-act"><PdEdit /> Edit</button> : undefined}>
+            {editingDetails ? <BasicDetailsEditor emp={emp} onDone={() => setEditingDetails(false)} /> : (
             <Grid>
               <Row label="First name" value={d.firstName} />
               <Row label="Middle name" value={d.middleName || '—'} />
@@ -255,9 +256,10 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
               <Row label="Mobile number" value={emp.phone || '—'} />
               <Row label="Gender" value={emp.gender || '—'} />
               <Row label="Date of birth" value={showDate(emp.birthday)} />
-              <ManagerRow emp={emp} />
+              <Row label="Reporting manager" value={emp.manager || '—'} />
               <Row label="Director / substantial interest" value={emp.isDirector ? 'Yes' : 'No'} />
             </Grid>
+            )}
           </Section></div>
             {canEditDetails && (
               <div data-focus="shift"><Section title="Shift template" icon={<PdClock />}>
@@ -295,7 +297,6 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
         </div>
       )}
 
-      {editingDetails && <EditDetails emp={emp} onClose={() => setEditingDetails(false)} />}
 
       {tab === 'performance' && (
         <div className="pd-psecs">
@@ -985,77 +986,6 @@ function Grid({ children }: { children: ReactNode }) {
   return <div className="pd-pfg">{children}</div>;
 }
 
-// Reporting manager, changeable here. The server checks the new manager is in
-// the same company and isn't someone who reports to this person.
-function ManagerRow({ emp }: { emp: Emp }) {
-  const { emps, flash, reload } = useStore();
-  const [current, setCurrent] = useState({ id: emp.managerId, name: emp.manager });
-  const [editing, setEditing] = useState(false);
-  const [q, setQ] = useState('');
-  const [saving, setSaving] = useState(false);
-  useEffect(() => { setCurrent({ id: emp.managerId, name: emp.manager }); }, [emp.managerId, emp.manager]);
-  const needle = q.trim().toLowerCase();
-  const options = emps
-    .filter((e) => e.id !== emp.id && e.id !== current.id)
-    .filter((e) => !needle || e.name.toLowerCase().includes(needle) || (e.employeeId ?? '').toLowerCase().includes(needle))
-    // Everyone can be a manager, not only people who already are: list them all.
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const save = async (next: Emp | null) => {
-    setSaving(true);
-    try {
-      if (next) {
-        const r = await setReportingManager(emp.id, next.id);
-        setCurrent({ id: next.id, name: next.name });
-        flash(`${emp.name} now reports to ${next.name}${r.movedRequests ? ` · ${r.movedRequests} pending request${r.movedRequests === 1 ? '' : 's'} moved to them` : ''}`);
-      } else {
-        await clearReportingManager(emp.id);
-        setCurrent({ id: '', name: '' });
-        flash(`${emp.name} no longer has a reporting manager`);
-      }
-      setEditing(false); setQ('');
-      void reload();
-    } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Could not change the manager', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-  const link: CSSProperties = { background: 'none', border: 'none', padding: 0, color: 'var(--hi)', fontWeight: 400, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' };
-  return (
-    <div className="pd-pf">
-      <span className="pl">Reporting manager</span>
-      <div className="pv" style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-        <span>{current.name || '—'}</span>
-        {!editing && <button type="button" onClick={() => setEditing(true)} style={link}>Change</button>}
-      </div>
-      {editing && (
-        <div style={{ gridColumn: 2, marginTop: 8, border: '1px solid var(--line)', borderRadius: 16, padding: 10, maxWidth: 440, background: 'var(--surface)', boxShadow: '0 18px 40px -12px rgba(20,16,60,.28)' }}>
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or employee ID" aria-label="Search for the new manager"
-            className="pd-inp" style={{ width: '100%', height: 40, borderRadius: 999 }} />
-          {options.length > 0 && <div style={{ padding: '8px 6px 0', fontSize: 11.5, color: 'var(--ink-3)' }}>{options.length} {options.length === 1 ? 'person' : 'people'}</div>}
-          <div className="scry" style={{ marginTop: 4, display: 'grid', maxHeight: 320, overflowY: 'auto' }}>
-            {options.length === 0 && <div style={{ padding: '8px 4px', fontSize: 13, color: 'var(--ink-4)' }}>Nobody matches.</div>}
-            {options.map((o) => (
-              <button key={o.id} type="button" disabled={saving} onClick={() => save(o)}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 6px', border: 'none', borderRadius: 10, background: 'transparent', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
-                <Avatar name={o.name} size={28} font={11} src={o.photoUrl} />
-                <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{o.name}</span>
-                  <span style={{ display: 'block', fontSize: 11.5, color: 'var(--ink-3)' }}>{[o.employeeId, o.role].filter(Boolean).join(' · ')}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 14, marginTop: 8, borderTop: '1px solid var(--line)', paddingTop: 8, paddingLeft: 6, paddingRight: 6 }}>
-            <button type="button" onClick={() => { setEditing(false); setQ(''); }} style={{ ...link, color: 'var(--ink-3)' }}>Cancel</button>
-            {current.id && <button type="button" disabled={saving} onClick={() => save(null)} style={{ ...link, color: 'var(--bad)', marginLeft: 'auto' }}>Remove manager</button>}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function Row({ label, value, strong }: { label: string; value: string; wide?: boolean; strong?: boolean }) {
   return (
     <div className="pd-pf">
@@ -1144,11 +1074,79 @@ function detailsOf(emp: Emp): DetailsForm {
   };
 }
 
-/** Every Basic detail of one person, editable; only what changed is sent. */
-function EditDetails({ emp, onClose }: { emp: Emp; onClose: () => void }) {
+/** A field that stays in view while the rest are edited, greyed and locked. */
+function LockedField({ label, value }: { label: string; value: string }) {
+  return (
+    <Field label={label}>
+      <div title="This field can't be edited" aria-disabled="true"
+        style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface-2, var(--line-2, #f3f3f7))', color: 'var(--ink-4)', cursor: 'not-allowed' }}>
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value || '—'}</span>
+        <span style={{ display: 'inline-flex', color: 'var(--ink-4)' }} aria-label="This field can't be edited"><PdLock size={14} /></span>
+      </div>
+    </Field>
+  );
+}
+
+/**
+ * The reporting manager, as a field like any other: a search over everyone at
+ * the company (anyone can be a manager), or no manager at all.
+ */
+function ManagerPicker({ emp, value, onChange }: { emp: Emp; value: { id: string; name: string }; onChange: (next: { id: string; name: string }) => void }) {
+  const { emps } = useStore();
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const needle = q.trim().toLowerCase();
+  const options = emps
+    .filter((e) => e.id !== emp.id && e.id !== value.id)
+    .filter((e) => !needle || e.name.toLowerCase().includes(needle) || (e.employeeId ?? '').toLowerCase().includes(needle))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const pick = (next: { id: string; name: string }) => { onChange(next); setOpen(false); setQ(''); };
+  return (
+    <div style={{ position: 'relative' }}>
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open}
+        style={{ ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}>
+        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: value.id ? 'var(--ink)' : 'var(--ink-4)' }}>{value.name || 'No reporting manager'}</span>
+        <span aria-hidden style={{ color: 'var(--ink-3)', fontSize: 11 }}>▾</span>
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', zIndex: 20, top: 'calc(100% + 6px)', left: 0, right: 0, border: '1px solid var(--line)', borderRadius: 16, padding: 10, background: 'var(--surface)', boxShadow: '0 18px 40px -12px rgba(20,16,60,.28)' }}>
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or employee ID" aria-label="Search for the reporting manager"
+            className="pd-inp" style={{ width: '100%', height: 40, borderRadius: 999 }} />
+          {options.length > 0 && <div style={{ padding: '8px 6px 0', fontSize: 11.5, color: 'var(--ink-3)' }}>{options.length} {options.length === 1 ? 'person' : 'people'}</div>}
+          <div className="scry" role="listbox" style={{ marginTop: 4, display: 'grid', maxHeight: 280, overflowY: 'auto' }}>
+            {options.length === 0 && <div style={{ padding: '8px 4px', fontSize: 13, color: 'var(--ink-4)' }}>Nobody matches.</div>}
+            {options.map((o) => (
+              <button key={o.id} type="button" role="option" aria-selected={false} onClick={() => pick({ id: o.id, name: o.name })}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 6px', border: 'none', borderRadius: 10, background: 'transparent', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+                <Avatar name={o.name} size={28} font={11} src={o.photoUrl} />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{o.name}</span>
+                  <span style={{ display: 'block', fontSize: 11.5, color: 'var(--ink-3)' }}>{[o.employeeId, o.role].filter(Boolean).join(' · ')}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          {value.id && (
+            <div style={{ borderTop: '1px solid var(--line)', marginTop: 8, paddingTop: 8 }}>
+              <button type="button" onClick={() => pick({ id: '', name: '' })} style={{ background: 'none', border: 'none', padding: '0 6px', color: 'var(--bad)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>No reporting manager</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Basic details, edited in place: every editable field at once, one Save.
+ * Full name and work email stay in view but locked. The reporting manager is
+ * one of the fields; only what changed is sent.
+ */
+function BasicDetailsEditor({ emp, onDone }: { emp: Emp; onDone: () => void }) {
   const { emps, flash, reload } = useStore();
   const before = detailsOf(emp);
   const [form, setForm] = useState<DetailsForm>(before);
+  const [manager, setManager] = useState({ id: emp.managerId, name: emp.manager });
   const [saving, setSaving] = useState(false);
   const [touched, setTouched] = useState(false);
   const [saved, setSaved] = useState<{ departments: string[]; designations: string[] }>({ departments: [], designations: [] });
@@ -1159,19 +1157,12 @@ function EditDetails({ emp, onClose }: { emp: Emp; onClose: () => void }) {
   }, []);
   const uniq = (values: string[]) => [...new Set(values.map((v) => v.trim()).filter((v) => v && v !== '—'))].sort();
   const set = <K extends keyof DetailsForm>(k: K, v: DetailsForm[K]) => setForm((f) => ({ ...f, [k]: v }));
-  const missing = {
-    firstName: !form.firstName.trim(),
-    email: !/^\S+@\S+\.\S+$/.test(form.email.trim()),
-    joiningDate: !form.joiningDate,
-  };
+  const missing = { joiningDate: !form.joiningDate };
 
   const save = async () => {
     setTouched(true);
     if (Object.values(missing).some(Boolean)) return;
-    const name = [form.firstName, form.middleName, form.lastName].map((w) => w.trim()).filter(Boolean).join(' ');
     const changes: EmployeeDetailsInput = {};
-    if (name !== emp.name) changes.name = name;
-    if (form.email.trim().toLowerCase() !== before.email.toLowerCase()) changes.email = form.email.trim();
     if (form.employeeId.trim() !== before.employeeId) changes.employeeId = form.employeeId.trim();
     if (form.joiningDate !== before.joiningDate) changes.joiningDate = form.joiningDate;
     if (form.birthday !== before.birthday) changes.birthday = form.birthday;
@@ -1182,13 +1173,19 @@ function EditDetails({ emp, onClose }: { emp: Emp; onClose: () => void }) {
     if (form.department.trim() !== before.department) changes.department = form.department.trim();
     if (form.empType !== before.empType) changes.employeeType = EMP_TYPE_VALUE[form.empType];
     if (form.isDirector !== before.isDirector) changes.isDirector = form.isDirector;
-    if (Object.keys(changes).length === 0) { onClose(); return; }
+    const managerChanged = manager.id !== (emp.managerId || '');
+    if (Object.keys(changes).length === 0 && !managerChanged) { onDone(); return; }
     setSaving(true);
     try {
-      await updateEmployeeDetails(emp.id, changes);
-      flash(`${name}'s details saved`);
+      if (Object.keys(changes).length > 0) await updateEmployeeDetails(emp.id, changes);
+      let moved = 0;
+      if (managerChanged) {
+        if (manager.id) moved = (await setReportingManager(emp.id, manager.id)).movedRequests ?? 0;
+        else await clearReportingManager(emp.id);
+      }
+      flash(`Basic details updated${moved ? ` · ${moved} pending request${moved === 1 ? '' : 's'} moved to ${manager.name}` : ''}`);
       await reload();
-      onClose();
+      onDone();
     } catch (e) {
       flash(e instanceof ApiError ? e.message : 'Could not save the details', 'error');
     } finally {
@@ -1196,89 +1193,71 @@ function EditDetails({ emp, onClose }: { emp: Emp; onClose: () => void }) {
     }
   };
 
-  const emailChanged = form.email.trim().toLowerCase() !== before.email.toLowerCase();
   const idChanged = form.employeeId.trim() !== before.employeeId && before.employeeId !== '';
   return (
-    <div className="pd-scrim">
-      <div className="bg" onClick={saving ? undefined : onClose} />
-      <div role="dialog" aria-label={`Edit ${emp.name}'s details`} className="pd-modal" style={{ width: 'min(760px, 100%)', maxHeight: '100%', overflow: 'hidden' }}>
-        <div className="pd-md-h">
-          <div>
-            <h3>Edit details</h3>
-            <div className="pd-md-sub">{emp.name}{before.employeeId ? ` · ${before.employeeId}` : ''}</div>
-          </div>
+    <div style={{ paddingTop: 8 }}>
+      <div style={grid3}>
+        <LockedField label="First name" value={before.firstName} />
+        <LockedField label="Middle name" value={before.middleName} />
+        <LockedField label="Last name" value={before.lastName} />
+      </div>
+      <div style={grid2}>
+        <Field label="Employee ID">
+          <input value={form.employeeId} onChange={(e) => set('employeeId', e.target.value.toUpperCase())} style={inputStyle} />
+        </Field>
+        <Field label="Date of joining" required error={touched && missing.joiningDate}>
+          <input type="date" value={form.joiningDate} onChange={(e) => set('joiningDate', e.target.value)} style={inputStyle} />
+        </Field>
+      </div>
+      <div style={grid2}>
+        <LockedField label="Work email" value={before.email} />
+        <Field label="Mobile number">
+          <input value={form.mobile} onChange={(e) => set('mobile', e.target.value)} placeholder="+91 98765 43210" style={inputStyle} />
+        </Field>
+      </div>
+      {idChanged && (
+        <div style={{ ...infoCallout, marginBottom: 18 }}>
+          <span style={infoIcon}>i</span>
+          <span>Punches are matched by <strong>Employee ID</strong>: the biometric device must use the new ID too.</span>
         </div>
-        <div style={{ padding: '20px 20px 4px', overflowY: 'auto' }}>
-          <div style={grid3}>
-            <Field label="First name" required error={touched && missing.firstName}>
-              <input autoFocus value={form.firstName} onChange={(e) => set('firstName', e.target.value)} style={inputStyle} />
-            </Field>
-            <Field label="Middle name">
-              <input value={form.middleName} onChange={(e) => set('middleName', e.target.value)} style={inputStyle} />
-            </Field>
-            <Field label="Last name">
-              <input value={form.lastName} onChange={(e) => set('lastName', e.target.value)} style={inputStyle} />
-            </Field>
-          </div>
-          <div style={grid2}>
-            <Field label="Employee ID">
-              <input value={form.employeeId} onChange={(e) => set('employeeId', e.target.value.toUpperCase())} style={inputStyle} />
-            </Field>
-            <Field label="Date of Joining" required error={touched && missing.joiningDate}>
-              <input type="date" value={form.joiningDate} onChange={(e) => set('joiningDate', e.target.value)} style={inputStyle} />
-            </Field>
-          </div>
-          <div style={grid2}>
-            <Field label="Work Email" required error={touched && missing.email}>
-              <input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} style={inputStyle} />
-            </Field>
-            <Field label="Mobile Number">
-              <input value={form.mobile} onChange={(e) => set('mobile', e.target.value)} placeholder="+91 98765 43210" style={inputStyle} />
-            </Field>
-          </div>
-          {(emailChanged || idChanged) && (
-            <div style={{ ...infoCallout, marginBottom: 18 }}>
-              <span style={infoIcon}>i</span>
-              <span>
-                {emailChanged && <>{form.firstName.trim() || 'They'} will sign in with the new <strong>email</strong>, and payslips go there from now on. </>}
-                {idChanged && <>Punches are matched by <strong>Employee ID</strong>: the biometric device must use the new ID too.</>}
-              </span>
-            </div>
-          )}
-          <div style={grid2}>
-            <Field label="Gender">
-              <Select value={form.gender} onChange={(v) => set('gender', v)} placeholder="Select gender" options={GENDER_CHOICES} />
-            </Field>
-            <Field label="Date of birth">
-              <input type="date" value={form.birthday} onChange={(e) => set('birthday', e.target.value)} style={inputStyle} />
-            </Field>
-          </div>
-          <div style={grid2}>
-            <Field label="Designation">
-              <TypeOrPick id="edit-emp-designation" value={form.designation} onChange={(v) => set('designation', v)} placeholder="Type or pick a designation" options={uniq([...emps.map((e) => e.role), ...saved.designations])} />
-            </Field>
-            <Field label="Department">
-              <TypeOrPick id="edit-emp-department" value={form.department} onChange={(v) => set('department', v)} placeholder="Type or pick a department" options={uniq([...emps.map((e) => e.team), ...saved.departments])} />
-            </Field>
-          </div>
-          <div style={grid2}>
-            <Field label="Work Location">
-              <TypeOrPick id="edit-emp-location" value={form.location} onChange={(v) => set('location', v)} placeholder="Type or pick a location" options={uniq(emps.map((e) => e.location))} />
-            </Field>
-            <Field label="Employee type">
-              <Select value={form.empType} onChange={(v) => set('empType', v || before.empType)} placeholder="Select type" options={Object.keys(EMP_TYPE_VALUE)} />
-            </Field>
-          </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: 400, color: 'var(--ink-2)', cursor: 'pointer', marginBottom: 16 }}>
-            <input type="checkbox" checked={form.isDirector} onChange={(e) => set('isDirector', e.target.checked)} style={{ width: 16, height: 16, accentColor: 'var(--accent)' }} />
-            <span>Employee is a <strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Director / person with substantial interest</strong> in the company.</span>
-          </label>
-          <div className="pd-subnote" style={{ marginBottom: 16 }}>The reporting manager is changed on the profile itself.</div>
-        </div>
-        <div className="pd-md-f line">
-          <button type="button" disabled={saving} onClick={onClose} className="pd-btn">Cancel</button>
-          <button type="button" disabled={saving} onClick={save} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
-        </div>
+      )}
+      <div style={grid2}>
+        <Field label="Designation">
+          <TypeOrPick id="edit-emp-designation" value={form.designation} onChange={(v) => set('designation', v)} placeholder="Type or pick a designation" options={uniq([...emps.map((e) => e.role), ...saved.designations])} />
+        </Field>
+        <Field label="Department">
+          <TypeOrPick id="edit-emp-department" value={form.department} onChange={(v) => set('department', v)} placeholder="Type or pick a department" options={uniq([...emps.map((e) => e.team), ...saved.departments])} />
+        </Field>
+      </div>
+      <div style={grid2}>
+        <Field label="Work location">
+          <TypeOrPick id="edit-emp-location" value={form.location} onChange={(v) => set('location', v)} placeholder="Type or pick a location" options={uniq(emps.map((e) => e.location))} />
+        </Field>
+        <Field label="Employee type">
+          <Select value={form.empType} onChange={(v) => set('empType', v || before.empType)} placeholder="Select type" options={Object.keys(EMP_TYPE_VALUE)} />
+        </Field>
+      </div>
+      <div style={grid2}>
+        <Field label="Gender">
+          <Select value={form.gender} onChange={(v) => set('gender', v)} placeholder="Select gender" options={GENDER_CHOICES} />
+        </Field>
+        <Field label="Date of birth">
+          <input type="date" value={form.birthday} onChange={(e) => set('birthday', e.target.value)} style={inputStyle} />
+        </Field>
+      </div>
+      <div style={grid2}>
+        <Field label="Reporting manager">
+          <ManagerPicker emp={emp} value={manager} onChange={setManager} />
+        </Field>
+        <div />
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: 400, color: 'var(--ink-2)', cursor: 'pointer', marginBottom: 16 }}>
+        <input type="checkbox" checked={form.isDirector} onChange={(e) => set('isDirector', e.target.checked)} style={{ width: 16, height: 16, accentColor: 'var(--accent)' }} />
+        <span>Employee is a <strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Director / person with substantial interest</strong> in the company.</span>
+      </label>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button type="button" disabled={saving} onClick={onDone} className="pd-btn">Cancel</button>
+        <button type="button" disabled={saving} onClick={() => void save()} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
       </div>
     </div>
   );
