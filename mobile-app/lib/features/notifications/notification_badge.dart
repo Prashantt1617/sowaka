@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../../services/api_client.dart';
 import '../../services/api_config.dart';
 import '../auth/data/auth_models.dart';
 
@@ -14,16 +15,33 @@ class NotificationBadge {
 
   static final ValueNotifier<bool> hasNew = ValueNotifier(false);
 
-  /// Reads the inbox and lights the dot when anything in it is unread. Quiet
-  /// on failure: a missing dot is not worth an error.
+  /// Asks the server how many are unread and lights the dot when any are.
+  /// Quiet on failure: a missing dot is not worth an error.
+  ///
+  /// The count, not the inbox: reading a hundred notifications (about 1.5 s
+  /// on the server) to light one dot was done at every launch and every
+  /// return to the app. A server from before the count (404) is asked for
+  /// the inbox as before.
   static Future<void> refresh(
     AuthSession session, {
     http.Client? client,
   }) async {
+    final api = client ?? ApiClient.shared;
+    final headers = {'Authorization': 'Bearer ${session.token}'};
     try {
-      final response = await (client ?? http.Client()).get(
+      final counted = await api.get(
+        Uri.parse('${ApiConfig.baseUrl}/notifications/unread-count'),
+        headers: headers,
+      );
+      if (counted.statusCode >= 200 && counted.statusCode < 300) {
+        final unread = (jsonDecode(counted.body) as Map<String, dynamic>)['unread'];
+        if (unread is num) hasNew.value = unread > 0;
+        return;
+      }
+      if (counted.statusCode != 404) return;
+      final response = await api.get(
         Uri.parse('${ApiConfig.baseUrl}/notifications'),
-        headers: {'Authorization': 'Bearer ${session.token}'},
+        headers: headers,
       );
       if (response.statusCode < 200 || response.statusCode >= 300) return;
       final items =
