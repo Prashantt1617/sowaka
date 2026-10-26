@@ -5,6 +5,8 @@ import { EmployeeDocument, User } from '../models/user.model';
 import { orgUsers, orgUsersWithRows, sortLikeMongo } from './admin-scope';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { deleteEmployeeDocument, presignReceiptDownload, uploadEmployeeDocument } from './s3-receipt.service';
+import { forgetFace } from './face-id.service';
+import { logger } from '../utils/logger';
 
 export class AdminError extends Error {
   constructor(public statusCode: number, message: string) { super(message); }
@@ -430,6 +432,13 @@ export async function deleteEmployeeForAdmin(adminUserId: string, employeeUserId
     salaryStructures().deleteMany({ org: admin.org, userId: employeeUserId }),
     employeePaymentDetails().deleteMany({ org: admin.org, userId: employeeUserId } as never),
   ]);
+  // Their face goes with them: from the collection, and the photo from the
+  // bucket. A failure is logged for removal by hand rather than keeping the
+  // account, which HR has asked to delete.
+  await forgetFace(employee).catch((error) =>
+    logger.error('Face ID data not removed with the employee; remove it by hand', {
+      employeeUserId, collectionId: employee.faceId?.collectionId, faceId: employee.faceId?.faceId, photoKey: employee.faceId?.photoKey,
+    }, error));
   await users().deleteOne({ userId: employeeUserId, org: admin.org });
   return { userId: employeeUserId, deleted: true };
 }

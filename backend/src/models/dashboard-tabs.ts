@@ -11,7 +11,7 @@ export const DASHBOARD_TABS = [
   // Not a sidebar tab: the Salary details tab on an employee's profile, given
   // on its own because opening Employees should not show what people earn.
   'salarydetails',
-  'holidaybank', 'shifttypes', 'shiftbulk', 'offices',
+  'holidaybank', 'shifttypes', 'shiftbulk', 'offices', 'faceid',
   'kpi', 'kpitemplates', 'kpibulk', 'feedback', 'cycle',
   'attendancereport',
   'payschedule', 'taxdetails', 'payheads', 'statutorycomponents', 'templates', 'paiddays', 'payruns', 'payrolldash', 'payrollreports',
@@ -64,6 +64,8 @@ const RULES: Rule[] = [
   { path: /^\/admin\/out-of-location/, read: ['oolcheckins'] },
   { path: /^\/admin\/reports\/attendance/, read: ['attendancereport', 'overview', 'employees', 'payruns'] },
   // Set-up
+  // Face ID: who has enrolled and the check log are biometric records, so even reading needs the tab.
+  { path: /^\/admin\/face-id/, read: ['faceid'], write: ['faceid'] },
   { path: /^\/admin\/offices/, write: ['offices'] },
   { path: /^\/admin\/(shifts|shift-policy)/, write: ['shifttypes', 'shiftbulk'] },
   { path: /^\/admin\/reimbursement-types/, write: ['reimbursementtypes'] },
