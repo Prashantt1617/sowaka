@@ -113,9 +113,9 @@ class ConnectComposerController {
     onPostDeleted: (postId) => _state?._bloc.forgetPost(postId),
   );
 
-  /// The company directory the feed has loaded, for tagging someone in a
-  /// comment on a profile's post. Empty until it has.
-  List<ConnectTeammate> get _people => _state?._taggablePeople ?? const [];
+  /// The company directory, for tagging someone in a comment on a profile's
+  /// post: the feed's, else the one kept for the session. Empty until read.
+  List<ConnectTeammate> get _feedPeople => _state?._taggablePeople ?? _people ?? const [];
 
   /// Edits [post] in the feed's composer — a profile has none of its own,
   /// nor the lists and directory it needs — then has [alsoIn] read it again.

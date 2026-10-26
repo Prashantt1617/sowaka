@@ -47,7 +47,7 @@ class _PersonPostsTabState extends State<PersonPostsTab>
   AuthSession get _session => widget.session;
 
   @override
-  List<ConnectTeammate> get _taggablePeople => widget.feed?._people ?? const [];
+  List<ConnectTeammate> get _taggablePeople => widget.feed?._feedPeople ?? const [];
 
   @override
   ValueChanged<String>? get _onOpenPerson => widget.onOpenPerson;
