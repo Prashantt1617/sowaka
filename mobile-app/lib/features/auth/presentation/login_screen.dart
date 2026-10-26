@@ -120,15 +120,12 @@ class _LoginScreenState extends State<LoginScreen>
     AuthSession session,
     String photoUrl,
     List<String> interests,
-    bool faceEnrolled,
   ) async {
     final updated = AuthSession(
       token: session.token,
       user: session.user.copyWith(
         profilePhotoUrl: photoUrl.isEmpty ? null : photoUrl,
-        // Empty when the interests step was not asked: keep the ones they have.
-        interests: interests.isEmpty ? null : interests,
-        faceIdEnrolled: faceEnrolled ? true : null,
+        interests: interests,
       ),
     );
     await AuthSessionStore().save(updated);
@@ -222,8 +219,8 @@ class _LoginScreenState extends State<LoginScreen>
                     key: const ValueKey('onboarding'),
                     session: signedIn,
                     api: ManagerApiService(session: signedIn),
-                    onDone: (photoUrl, interests, faceEnrolled) =>
-                        _finishOnboarding(signedIn, photoUrl, interests, faceEnrolled),
+                    onDone: (photoUrl, interests) =>
+                        _finishOnboarding(signedIn, photoUrl, interests),
                     onChangeEmail: () => _changeEmail(signedIn),
                   ),
                 AuthStep.success => _SuccessStep(

@@ -22,7 +22,6 @@ class AuthUser {
     this.enabledTabs = const [],
     this.enabledGames,
     this.canCreateContests = false,
-    this.faceIdRequired = false,
     this.faceIdEnrolled = false,
     this.faceIdAtPunch = false,
   });
@@ -65,7 +64,6 @@ class AuthUser {
           ? [for (final value in json['enabledGames'] as List) '$value']
           : null,
       canCreateContests: json['canCreateContests'] == true,
-      faceIdRequired: _faceId(json, 'required'),
       faceIdEnrolled: _faceId(json, 'enrolled'),
       faceIdAtPunch: _faceId(json, 'atPunch'),
     );
@@ -113,11 +111,9 @@ class AuthUser {
   /// Granted per person by the server, which refuses a contest without it.
   final bool canCreateContests;
 
-  /// Face ID: the company asks everyone to set it up (whatever their
-  /// attendance source), whether this person has, and whether a geotagged
-  /// punch-in is checked against it. All false from a server that predates
-  /// Face ID, which then never asks.
-  final bool faceIdRequired;
+  /// Face ID: whether this person has set it up, and whether their punches
+  /// in the app are checked against it. Someone not set up does so at their
+  /// first checked punch. Both false from a server that predates Face ID.
   final bool faceIdEnrolled;
   final bool faceIdAtPunch;
 
@@ -145,17 +141,12 @@ class AuthUser {
     if (enabledGames != null) 'enabledGames': enabledGames,
     'canCreateContests': canCreateContests,
     'faceId': {
-      'required': faceIdRequired,
       'enrolled': faceIdEnrolled,
       'atPunch': faceIdAtPunch,
     },
   };
 
-  AuthUser copyWith({
-    String? profilePhotoUrl,
-    List<String>? interests,
-    bool? faceIdEnrolled,
-  }) => AuthUser(
+  AuthUser copyWith({String? profilePhotoUrl, List<String>? interests}) => AuthUser(
     id: id,
     email: email,
     name: name,
@@ -178,8 +169,7 @@ class AuthUser {
     enabledTabs: enabledTabs,
     enabledGames: enabledGames,
     canCreateContests: canCreateContests,
-    faceIdRequired: faceIdRequired,
-    faceIdEnrolled: faceIdEnrolled ?? this.faceIdEnrolled,
+    faceIdEnrolled: faceIdEnrolled,
     faceIdAtPunch: faceIdAtPunch,
   );
 }

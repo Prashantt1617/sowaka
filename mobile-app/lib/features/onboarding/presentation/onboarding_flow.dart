@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../auth/data/auth_models.dart';
-import '../../face_id/face_setup_screen.dart';
 import '../../manager/data/manager_api_service.dart';
 import '../../shared/image_crop_sheet.dart';
 import '../../shared/image_source_sheet.dart';
@@ -19,15 +18,8 @@ import '../../shared/image_source_sheet.dart';
 /// Someone who joined before the interests step existed has a photo and no
 /// interests; they are asked the one question they have not answered rather
 /// than being sent round the whole flow again.
-///
-/// Face ID comes last, for everyone at a company that asks for it, whatever
-/// their attendance source: someone already onboarded is asked for that alone.
 bool needsOnboarding(AuthUser user) =>
-    (user.profilePhotoUrl ?? '').isEmpty ||
-    user.interests.isEmpty ||
-    _needsFaceId(user);
-
-bool _needsFaceId(AuthUser user) => user.faceIdRequired && !user.faceIdEnrolled;
+    (user.profilePhotoUrl ?? '').isEmpty || user.interests.isEmpty;
 
 class OnboardingFlow extends StatefulWidget {
   const OnboardingFlow({
@@ -41,9 +33,8 @@ class OnboardingFlow extends StatefulWidget {
   final AuthSession session;
   final ManagerApiService api;
 
-  /// Called with the photo's URL (empty if unchanged), the interests, and
-  /// whether Face ID was set up here, once everything is done.
-  final void Function(String photoUrl, List<String> interests, bool faceEnrolled) onDone;
+  /// Called with the photo's URL (empty if unchanged) once everything is done.
+  final void Function(String photoUrl, List<String> interests) onDone;
 
   /// Signed in with the wrong address: back to the email screen, signed out.
   final VoidCallback? onChangeEmail;
@@ -70,7 +61,7 @@ class OnboardingFlow extends StatefulWidget {
   State<OnboardingFlow> createState() => _OnboardingFlowState();
 }
 
-enum _Step { photo, interests, faceId }
+enum _Step { photo, interests }
 
 class _Interest {
   const _Interest(this.label, this.icon, {this.width = 24, this.height = 24});
@@ -97,7 +88,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   late final List<_Step> _steps = [
     if ((widget.session.user.profilePhotoUrl ?? '').isEmpty) _Step.photo,
     if (widget.session.user.interests.isEmpty) _Step.interests,
-    if (_needsFaceId(widget.session.user)) _Step.faceId,
   ];
   int _at = 0;
 
@@ -190,31 +180,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     return _TopLink(label: 'Change email', onTap: _busy ? null : change);
   }
 
-  bool _faceEnrolled = false;
-
   void _finish() {
-    widget.onDone(_photoUrl, _picked.toList(), _faceEnrolled);
+    widget.onDone(_photoUrl, _picked.toList());
   }
-
-  /// Face ID set up in its own screens, camera and all; this step is only the
-  /// door to them, and is not passed until a face is enrolled.
-  Future<void> _setUpFaceId() async {
-    if (_busy) return;
-    final enrolled = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => FaceSetupScreen(api: widget.api, allowLater: true)),
-    );
-    if (!mounted) return;
-    if (enrolled == true) {
-      _faceEnrolled = true;
-      _finish();
-      return;
-    }
-    setState(() => _faceLater = true);
-  }
-
-  /// They left setup because the face service was down: the app lets them
-  /// in for now and asks again on the next launch.
-  bool _faceLater = false;
 
   Future<void> _continueFromInterests() async {
     if (_picked.isEmpty || _busy) return;
@@ -230,10 +198,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       // should not be held at a door over them.
     }
     if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _next();
-    });
+    setState(() => _busy = false);
+    widget.onDone(_photoUrl, chosen);
   }
 
   @override
@@ -269,14 +235,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                       Align(alignment: Alignment.centerLeft, child: action),
                       const SizedBox(height: 14),
                     ],
-                    _Progress(step: _step.index),
+                    _Progress(step: _step == _Step.photo ? 0 : 1),
                     const SizedBox(height: 48),
                     Expanded(
-                      child: switch (_step) {
-                        _Step.photo => _photoStep(),
-                        _Step.interests => _interestsStep(),
-                        _Step.faceId => _faceIdStep(),
-                      },
+                      child: _step == _Step.photo
+                          ? _photoStep()
+                          : _interestsStep(),
                     ),
                     if (_problem != null) ...[
                       Text(
@@ -291,36 +255,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                       const SizedBox(height: 12),
                     ],
                     _Continue(
-                      label: _step == _Step.faceId ? 'Set up Face ID' : 'Continue',
-                      enabled: switch (_step) {
-                        _Step.photo => _photoPath != null,
-                        _Step.interests => _picked.isNotEmpty,
-                        _Step.faceId => true,
-                      },
+                      enabled: _step == _Step.photo
+                          ? _photoPath != null
+                          : _picked.isNotEmpty,
                       busy: _busy,
-                      onTap: switch (_step) {
-                        _Step.photo => _continueFromPhoto,
-                        _Step.interests => _continueFromInterests,
-                        _Step.faceId => _setUpFaceId,
-                      },
+                      onTap: _step == _Step.photo
+                          ? _continueFromPhoto
+                          : _continueFromInterests,
                     ),
-                    if (_step == _Step.faceId && _faceLater) ...[
-                      const SizedBox(height: 8),
-                      Center(
-                        child: TextButton(
-                          onPressed: _finish,
-                          child: const Text(
-                            'Do this later',
-                            style: TextStyle(
-                              fontFamily: 'Sora',
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF9197A2),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -464,48 +406,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               );
             },
           ),
-        ],
-      ),
-    );
-  }
-
-  /// Face ID's step (a plain placeholder until its design arrives): what it
-  /// is for, and the button that opens setup.
-  Widget _faceIdStep() {
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          const _Introduction(
-            title: 'Set up Face ID',
-            body: 'Your company confirms it\u2019s you at punch-in with a quick '
-                'selfie. Set it up once now; it takes a minute.',
-          ),
-          const SizedBox(height: 32),
-          Container(
-            width: 144,
-            height: 144,
-            decoration: BoxDecoration(
-              color: _field,
-              shape: BoxShape.circle,
-              border: Border.all(color: _line, width: 2),
-            ),
-            child: Center(
-              child: SvgPicture.asset(
-                'assets/icons/face/scan_face.svg',
-                width: 56,
-                height: 56,
-                colorFilter: const ColorFilter.mode(_brandDeep, BlendMode.srcIn),
-              ),
-            ),
-          ),
-          if (_faceLater) ...[
-            const SizedBox(height: 20),
-            const Text(
-              'Face ID is not set up yet. You will be asked again next time.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontFamily: 'Sora', fontSize: 13, color: _muted),
-            ),
-          ],
         ],
       ),
     );
@@ -692,10 +592,8 @@ class _Continue extends StatelessWidget {
     required this.enabled,
     required this.busy,
     required this.onTap,
-    this.label = 'Continue',
   });
 
-  final String label;
   final bool enabled;
   final bool busy;
   final VoidCallback onTap;
@@ -722,9 +620,9 @@ class _Continue extends StatelessWidget {
                     strokeWidth: 2,
                   ),
                 )
-              : Text(
-                  label,
-                  style: const TextStyle(
+              : const Text(
+                  'Continue',
+                  style: TextStyle(
                     fontFamily: 'Sora',
                     fontSize: 16,
                     height: 24 / 16,

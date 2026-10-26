@@ -12,9 +12,14 @@ import 'face_liveness.dart';
 
 /// How the face check before a punch ended.
 class FaceCheckOutcome {
-  const FaceCheckOutcome.passed(String this.token) : fallbackSent = false, needsSetup = false;
-  const FaceCheckOutcome.fallbackSent() : token = null, fallbackSent = true, needsSetup = false;
-  const FaceCheckOutcome.needsSetup() : token = null, fallbackSent = false, needsSetup = true;
+  const FaceCheckOutcome.passed(String this.token) : fallbackSent = false, needsSetup = false, needsCheck = false;
+  const FaceCheckOutcome.fallbackSent() : token = null, fallbackSent = true, needsSetup = false, needsCheck = false;
+  const FaceCheckOutcome.needsSetup() : token = null, fallbackSent = false, needsSetup = true, needsCheck = false;
+  const FaceCheckOutcome.needsCheck() : token = null, fallbackSent = false, needsSetup = false, needsCheck = true;
+
+  /// Set up in this run of the app: the profile the app holds still says
+  /// not, until it is read again at the next launch.
+  static bool enrolledThisRun = false;
 
   /// Spent by the punch: the server's proof the face matched.
   final String? token;
@@ -24,6 +29,9 @@ class FaceCheckOutcome {
 
   /// Face ID is not set up (or HR reset it): set it up first.
   final bool needsSetup;
+
+  /// Set up, but with no punch token to show for it: take the selfie.
+  final bool needsCheck;
 }
 
 /// The selfie before a punch, in or out (Figma 4194:21786; a punch-out has
