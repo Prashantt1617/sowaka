@@ -104,28 +104,12 @@ export interface FaceLivenessSession {
 }
 
 /**
- * Shown on the consent step, paragraph by paragraph, and recorded with the
- * enrolment as its version. Change the version with the words: an app that
- * showed the old ones is asked to show the new ones before enrolling.
+ * The consent, as the one line the person ticks on the setup screen, word for
+ * word. Its version is recorded with the enrolment, with the time they
+ * agreed. Change the version with the words: an app that showed the old line
+ * is sent the new one to agree to before it can enrol.
  */
-export const FACE_CONSENT_VERSION = '2026-10-v1';
-export const FACE_CONSENT_PARAGRAPHS = [
-  'Face ID checks that it’s really you when you punch in.',
-  'What we collect: one setup photo of your face, turned into a face template. ' +
-    'The selfie taken at each punch-in is checked against it and thrown away straight after. ' +
-    'Only the result and the match score are kept.',
-  'Where it’s kept: the face template in Amazon Rekognition, in Mumbai. ' +
-    'The setup photo, encrypted, in Sowaka’s private storage. ' +
-    'Both are used only for the punch-in check. Nobody at your company, HR included, can view them.',
-  'HR can reset your Face ID, and you then set it up again. ' +
-    'Your face template and setup photo are deleted when you leave the company.',
-  'Questions? Contact your HR team.',
-];
-export const FACE_CONSENT_TEXT = FACE_CONSENT_PARAGRAPHS.join('\n\n');
-/**
- * The short line the person ticks on the setup screen itself, with the
- * paragraphs above behind "Learn more".
- */
+export const FACE_CONSENT_VERSION = '2026-10-v2';
 export const FACE_CONSENT_AGREE =
-  'I agree to Face ID keeping a template of my face, made from this selfie, to confirm it’s me when I punch in. ' +
+  'I agree to Face ID keeping a template of my face, made from this selfie, to confirm it\u2019s me when I punch in. ' +
   'It is stored by AWS in Mumbai and deleted when I leave.';
