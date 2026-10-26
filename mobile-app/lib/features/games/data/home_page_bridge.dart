@@ -167,6 +167,10 @@ class HomePageActions {
 /// A server id: a challenge's, a post's, a person's, a game's key.
 final RegExp _id = RegExp(r'^[A-Za-z0-9_-]{1,80}$');
 
+/// What a game opens on: a challenge's id, or `room:<code>` for an invite to
+/// a live room (Scribble and Tile Up read the prefix themselves).
+final RegExp _startId = RegExp(r'^(room:)?[A-Za-z0-9_-]{1,80}$');
+
 /// The app's half of the home's bridge: reads one message, does what it
 /// asks, and returns the JavaScript that answers it. Null for a message that
 /// needs no answer (fire and forget) or cannot be answered.
@@ -234,7 +238,13 @@ class HomePageBridge {
     switch (type) {
       case 'openGame':
         final key = idOf('key');
-        if (key != null) actions.openGame(key, idOf('challengeId'));
+        final start = data['challengeId'];
+        if (key != null) {
+          actions.openGame(
+            key,
+            start is String && _startId.hasMatch(start) ? start : null,
+          );
+        }
       case 'openContest':
         final post = idOf('postId');
         if (post != null) actions.openContest(post);

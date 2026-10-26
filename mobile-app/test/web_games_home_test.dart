@@ -646,6 +646,13 @@ void main() {
       ]);
     });
 
+    test('an invite opens its game on the room; a bad start id opens it plain', () async {
+      await send('openGame', {'key': 'scribble', 'challengeId': 'room:AB12CD'});
+      await send('openGame', {'key': 'scribble', 'challengeId': 'lobby:AB12CD'});
+      await send('openGame', {'key': 'scribble', 'challengeId': 'room:<script>'});
+      expect(calls, ['game:scribble:room:AB12CD', 'game:scribble:null', 'game:scribble:null']);
+    });
+
     test('a refusal rejects with the server message and status', () async {
       final reply = await send('acceptChallenge', {'id': 'gone'}, id: 'h9');
       expect(reply, contains('"h9", false'));
