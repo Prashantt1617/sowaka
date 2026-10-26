@@ -105,6 +105,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
   late final QuickActionsController _quickActionsController;
   final _connectComposerController = ConnectComposerController();
   bool _profileOpen = false;
+  /// The tab one's own profile opens on, and a count of openings so a profile
+  /// opened afresh (from the feed, say, while it was open) starts on it again.
+  ProfileTab? _profileOpenOn = ProfileTab.orgChart;
+  int _profileOpenings = 0;
   /// Whether the punch screen has already been offered this session, so
   /// closing it does not bring it straight back on the next rebuild.
   bool _punchPrompted = false;
@@ -349,7 +353,12 @@ class _ManagerScreenState extends State<ManagerScreen> {
     _connectComposerController.openComposer();
   }
 
-  void _openProfile() => setState(() => _profileOpen = true);
+  /// One's own profile, from the avatar or the Team tab: on the org chart.
+  void _openProfile({ProfileTab? on = ProfileTab.orgChart}) => setState(() {
+    _profileOpen = true;
+    _profileOpenOn = on;
+    _profileOpenings++;
+  });
 
   void _closeProfile() => setState(() => _profileOpen = false);
 
@@ -405,7 +414,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
         // a push about anyone else lands on the Team tab alone.
         _bloc.add(const ChangeManagerTab(ManagerTab.manage));
         if (_teamMember(employeeUserId) != null) {
-          _openTeamMember(employeeUserId);
+          _openTeamMember(employeeUserId, ProfileEntry.elsewhere);
         }
       // The requests queue, under either name the server has used.
       case 'manage_leave':
@@ -544,12 +553,13 @@ class _ManagerScreenState extends State<ManagerScreen> {
   /// fetched as the colleague view ([colleagueProfileTabs]). False only when
   /// there is nobody to open. Registered as [openPersonProfile], so other
   /// libraries reach it without importing the shell.
-  bool _openTeamMember(String userId) {
+  bool _openTeamMember(String userId, ProfileEntry from) {
     final dashboard = _bloc.state.dashboard;
     if (!mounted || userId.isEmpty || dashboard == null) return false;
+    final openOn = openingTabFor(from);
     if (userId == _session.user.id) {
       Navigator.of(context).popUntil((route) => route.isFirst);
-      setState(() => _profileOpen = true);
+      _openProfile(on: openOn);
       return true;
     }
     final member = _teamMember(userId);
@@ -563,6 +573,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
                 onNotifications: () => _openNotifications(context),
                 onOpenComposer: _connectComposerController.openComposer,
                 canManage: _bloc.state.canManage,
+                openOn: openOn,
               )
             : _ColleagueProfileLoader(
                 userId: userId,
@@ -570,6 +581,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
                 bloc: _bloc,
                 onNotifications: () => _openNotifications(context),
                 onOpenComposer: _connectComposerController.openComposer,
+                openOn: openOn,
               ),
       ),
     );
@@ -750,6 +762,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
                   ),
                   if (_profileOpen)
                     _ProfileScreen(
+                      key: ValueKey(_profileOpenings),
+                      openOn: _profileOpenOn,
                       session: _session,
                       dashboard: state.dashboard!,
                       bloc: _bloc,

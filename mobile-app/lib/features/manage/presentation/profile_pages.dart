@@ -131,6 +131,22 @@ final class _ProfilePosts {
 /// Another person's profile: a report's from the Team tab, or anyone's in the
 /// company from wherever their name was tapped. Which tabs it carries is
 /// [memberProfileTabs]'s to say.
+/// The tab a profile opens on, by where it was opened from; null keeps the
+/// profile's usual first tab.
+ProfileTab? openingTabFor(ProfileEntry from) => switch (from) {
+  ProfileEntry.feed => ProfileTab.posts,
+  ProfileEntry.team || ProfileEntry.orgChart => ProfileTab.orgChart,
+  ProfileEntry.elsewhere => null,
+};
+
+/// The tab shown: the one tapped, else [openOn] once the profile has it (the
+/// Post tab appears when the posts arrive), else the first.
+int _shownTab(List<ProfileTab> tabs, int? tapped, ProfileTab? openOn) {
+  if (tapped != null) return tapped.clamp(0, tabs.length - 1);
+  final wanted = openOn == null ? -1 : tabs.indexOf(openOn);
+  return wanted < 0 ? 0 : wanted;
+}
+
 class _TeamMemberProfilePage extends StatefulWidget {
   const _TeamMemberProfilePage({
     required this.member,
@@ -140,6 +156,7 @@ class _TeamMemberProfilePage extends StatefulWidget {
     required this.onOpenComposer,
     this.canManage = true,
     this.publicOnly = false,
+    this.openOn,
   });
 
   final TeamMember member;
@@ -156,12 +173,16 @@ class _TeamMemberProfilePage extends StatefulWidget {
   /// viewer's own team, so only [colleagueProfileTabs] have anything to show.
   final bool publicOnly;
 
+  /// The tab to open on, from where the profile was opened ([openingTabFor]).
+  final ProfileTab? openOn;
+
   @override
   State<_TeamMemberProfilePage> createState() => _TeamMemberProfilePageState();
 }
 
 class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
-  int _tab = 0;
+  /// The tab tapped; null until one is, while [widget.openOn] decides.
+  int? _tab;
 
   late final ProfileApiService _profileService = ProfileApiService(
     session: widget.bloc.service.session,
@@ -352,7 +373,7 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
             ))
         if (tab != ProfileTab.posts || posts != null) tab,
     ];
-    final selected = _tab.clamp(0, tabs.length - 1);
+    final selected = _shownTab(tabs, _tab, widget.openOn);
     // Whether they are in today is their attendance, so it shows only where
     // their Attendance tab does.
     final showsPresence = tabs.contains(ProfileTab.attendance);
@@ -532,8 +553,10 @@ class _ColleagueProfileLoader extends StatefulWidget {
     required this.bloc,
     required this.onNotifications,
     required this.onOpenComposer,
+    this.openOn,
   });
 
+  final ProfileTab? openOn;
   final String userId;
   final ManagerDashboard data;
   final ManagerBloc bloc;
@@ -563,6 +586,7 @@ class _ColleagueProfileLoaderState extends State<_ColleagueProfileLoader> {
             onOpenComposer: widget.onOpenComposer,
             canManage: false,
             publicOnly: true,
+            openOn: widget.openOn,
           );
         }
         final error = snapshot.error;
@@ -1008,6 +1032,7 @@ bool profileShowsHelp(List<String> enabledTabs) => enabledTabs.contains('talk');
 
 class _ProfileScreen extends StatefulWidget {
   const _ProfileScreen({
+    super.key,
     required this.session,
     required this.dashboard,
     required this.bloc,
@@ -1016,8 +1041,11 @@ class _ProfileScreen extends StatefulWidget {
     required this.onNotifications,
     required this.onOpenComposer,
     required this.onProfilePhotoUpdated,
+    this.openOn,
   });
 
+  /// The tab to open on, from where the profile was opened ([openingTabFor]).
+  final ProfileTab? openOn;
   final AuthSession session;
   final ManagerDashboard dashboard;
   final ManagerBloc bloc;
@@ -1032,8 +1060,9 @@ class _ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<_ProfileScreen> {
-  /// Which profile tab is open. Request first, as the design opens it.
-  int _tab = 0;
+  /// The tab tapped; null until one is, while [widget.openOn] decides (and
+  /// without one, Request first, as the design opens it).
+  int? _tab;
 
   late final ProfileApiService _profileService = ProfileApiService(
     session: widget.bloc.service.session,
@@ -1240,7 +1269,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
       ))
         if (tab != ProfileTab.posts || posts != null) tab,
     ];
-    final selected = _tab.clamp(0, tabs.length - 1);
+    final selected = _shownTab(tabs, _tab, widget.openOn);
     final today = DateTime.now();
     final todayRecord = dashboard.attendance
         .where(
@@ -2161,7 +2190,7 @@ class _ProfileTeamChartState extends State<_ProfileTeamChart> {
               : null,
           onTap: member.isSelf || member.userId.isEmpty
               ? null
-              : () => openPersonProfile(member.userId),
+              : () => openPersonProfile(member.userId, from: ProfileEntry.orgChart),
         ),
       ),
     );

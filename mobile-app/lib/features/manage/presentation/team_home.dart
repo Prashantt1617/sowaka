@@ -655,6 +655,7 @@ class _TeamMemberRow extends StatelessWidget {
                 onNotifications: onNotifications,
                 onOpenComposer: onOpenComposer,
                 canManage: canManage,
+                openOn: ProfileTab.orgChart,
               ),
             ),
           ),

@@ -30,7 +30,7 @@ class _ConnectTab extends StatelessWidget {
   /// and anyone else in the company opens the colleague view.
   void _openPerson(BuildContext context, String userId) {
     if (userId.isEmpty) return;
-    openPersonProfile(userId);
+    openPersonProfile(userId, from: ProfileEntry.feed);
   }
 
   @override
