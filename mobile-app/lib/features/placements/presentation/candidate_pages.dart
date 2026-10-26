@@ -1,12 +1,85 @@
-import 'dart:async';
+part of '../../quick_actions/presentation/quick_actions_screen.dart';
 
-import 'package:flutter/material.dart';
+/// The blue of the Actions pages' buttons and links.
+const _candBlue = Color(0xFF0571A6);
 
-import '../data/placements_api_service.dart';
-import '../data/placements_models.dart';
-import 'client_pages.dart';
-import 'placement_form_page.dart';
-import 'placements_style.dart';
+/// Sora, in the Actions pages' warm ink unless told otherwise.
+TextStyle _candStyle(
+  double size, {
+  FontWeight weight = FontWeight.w400,
+  Color color = _Q.ink,
+  double? height,
+}) => TextStyle(
+  fontFamily: 'Sora',
+  fontFamilyFallback: _soraFallback,
+  fontSize: size,
+  fontWeight: weight,
+  color: color,
+  height: height,
+);
+
+/// A section heading on a candidate's page, as the Actions pages set them,
+/// with an optional action at its end.
+class _CandidateSectionLabel extends StatelessWidget {
+  const _CandidateSectionLabel(this.text, {this.trailing});
+
+  final String text;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: Text(
+          text.toUpperCase(),
+          style: _QText.section.copyWith(
+            fontFamily: 'Sora',
+            fontFamilyFallback: _soraFallback,
+          ),
+        ),
+      ),
+      ?trailing,
+    ],
+  );
+}
+
+/// A white card on the page, as the Leave hub and its forms draw them.
+class _CandidateCard extends StatelessWidget {
+  const _CandidateCard({
+    required this.child,
+    this.onTap,
+    this.padding = const EdgeInsets.all(16),
+  });
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final EdgeInsets padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 2,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(padding: padding, child: child),
+        ),
+      ),
+    );
+  }
+}
 
 /// My candidates: the ones the signed-in person added, newest first, with a
 /// search, a filter by where each stands, and Add.
@@ -61,6 +134,8 @@ class _CandidatesPageState extends State<CandidatesPage> {
     if (mounted) unawaited(_load());
   }
 
+  void _add() => _open(CandidateFormPage(api: widget.api));
+
   List<PlacementCustomer> get _shown {
     final q = _search.text.trim().toLowerCase();
     final rows = (_rows ?? const <PlacementCustomer>[]).where((c) {
@@ -81,18 +156,16 @@ class _CandidatesPageState extends State<CandidatesPage> {
   @override
   Widget build(BuildContext context) {
     final rows = _rows;
+    final shown = _shown;
     return PlPage(
       title: 'My candidates',
       subtitle: rows == null ? null : '${rows.length} candidates',
-      actions: [
-        PlAddButton(onTap: () => _open(CandidateFormPage(api: widget.api))),
-        const SizedBox(width: 8),
-      ],
+      actions: [PlAddButton(onTap: _add)],
       body: RefreshIndicator(
-        color: Pl.accent,
+        color: _candBlue,
         onRefresh: _load,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: [
             PlListControls(
               search: _search,
@@ -103,27 +176,34 @@ class _CandidatesPageState extends State<CandidatesPage> {
               newest: _newest,
               onSort: () => setState(() => _newest = !_newest),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             if (rows == null && _error == null)
               const PlState.loading()
             else if (rows == null)
               PlState.message(_error, onRetry: _load)
             else if (rows.isEmpty)
-              const PlState.message(
-                'No candidates yet. Tap Add to log your first one.',
+              _HubEmptyState(
+                iconAsset: 'assets/icons/connect_icon_user.png',
+                text: 'No candidates yet.\nAdd one to log your first.',
+                buttonLabel: 'Add candidate',
+                onTap: _add,
               )
-            else if (_shown.isEmpty)
-              const PlState.message('No candidates match.')
+            else if (shown.isEmpty)
+              const _HubEmptyState(
+                iconAsset: 'assets/icons/connect_icon_user.png',
+                text: 'No candidates match.',
+              )
             else
-              for (final c in _shown) ...[
-                _CandidateRow(
-                  candidate: c,
-                  onTap: () => _open(
-                    CandidateDetailPage(api: widget.api, candidateId: c.id),
+              for (final c in shown)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _CandidateRow(
+                    candidate: c,
+                    onTap: () => _open(
+                      CandidateDetailPage(api: widget.api, candidateId: c.id),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 10),
-              ],
           ],
         ),
       ),
@@ -131,6 +211,8 @@ class _CandidatesPageState extends State<CandidatesPage> {
   }
 }
 
+/// A candidate in the list, as the Leave hub draws a request: the name, what
+/// they do, where they stand, and when they were added.
 class _CandidateRow extends StatelessWidget {
   const _CandidateRow({required this.candidate, required this.onTap});
 
@@ -140,31 +222,20 @@ class _CandidateRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = candidate;
-    return PlCard(
+    final colors = stageColors(c.stage);
+    return _HubRequestCard(
+      iconAsset: 'assets/icons/connect_icon_user.png',
+      iconSize: 18,
+      title: c.name,
+      date: c.subtitle.isEmpty ? 'No designation yet' : c.subtitle,
+      status: c.stage.label,
+      statusColor: colors.text,
+      statusTint: colors.background,
+      footerIcon: _HubRequestCard.calendarIcon,
+      footerText: c.createdAt == null
+          ? 'Added'
+          : 'Added ${plDate(c.createdAt)}',
       onTap: onTap,
-      child: Row(
-        children: [
-          PlInitials(c.name, round: true, warm: true),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(c.name, style: Pl.text(15, weight: FontWeight.w700)),
-                if (c.subtitle.isNotEmpty)
-                  Text(c.subtitle, style: Pl.text(13, color: Pl.muted)),
-                if (c.createdAt != null)
-                  Text(
-                    'Added ${plDate(c.createdAt)}',
-                    style: Pl.text(12, color: Pl.faint),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          PlPill(c.stage.label, stageColors(c.stage)),
-        ],
-      ),
     );
   }
 }
@@ -251,16 +322,16 @@ class _CandidateDetailPageState extends State<CandidateDetailPage> {
           PlIconButton(
             label: 'Remove candidate',
             icon: Icons.delete_outline_rounded,
-            color: Pl.danger,
+            color: const Color(0xFFB3261E),
             onTap: () => _remove(page.candidate),
           ),
         ],
       ],
       body: RefreshIndicator(
-        color: Pl.accent,
+        color: _candBlue,
         onRefresh: _load,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: [
             if (page == null && _error == null)
               const PlState.loading()
@@ -277,31 +348,43 @@ class _CandidateDetailPageState extends State<CandidateDetailPage> {
   List<Widget> _content(PlacementCandidatePage page) {
     final c = page.candidate;
     final byYou = c.createdByUserId == _me;
+    final role = [
+      c.currentRole,
+      if (c.experienceYears != null)
+        '${yearsLabel(c.experienceYears!)} experience',
+    ].where((p) => p.isNotEmpty).join(' · ');
     return [
-      PlCard(
-        radius: 20,
-        padding: const EdgeInsets.all(18),
+      _CandidateCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               children: [
-                PlInitials(c.name, size: 56, round: true, warm: true),
-                const SizedBox(width: 14),
+                PlInitials(c.name, size: 52, round: true, warm: true),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(c.name, style: Pl.text(20, weight: FontWeight.w700)),
-                      if (c.currentRole.isNotEmpty || c.experienceYears != null)
-                        Text(
-                          [
-                            c.currentRole,
-                            if (c.experienceYears != null)
-                              '${yearsLabel(c.experienceYears!)} experience',
-                          ].where((p) => p.isNotEmpty).join(' · '),
-                          style: Pl.text(14, color: Pl.muted),
+                      Text(
+                        c.name,
+                        style: _candStyle(
+                          18,
+                          weight: FontWeight.w700,
+                          height: 24 / 18,
                         ),
+                      ),
+                      if (role.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          role,
+                          style: _candStyle(
+                            12.5,
+                            color: _Q.inkSoft,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -309,37 +392,26 @@ class _CandidateDetailPageState extends State<CandidateDetailPage> {
             ),
             if (c.phone.isNotEmpty || c.address.isNotEmpty) ...[
               const SizedBox(height: 14),
+              const Divider(height: 1, thickness: 0.8, color: _Q.line),
+              const SizedBox(height: 14),
               if (c.phone.isNotEmpty) _InfoLine(Icons.call_outlined, c.phone),
               if (c.address.isNotEmpty) ...[
-                const SizedBox(height: 8),
+                if (c.phone.isNotEmpty) const SizedBox(height: 10),
                 _InfoLine(Icons.place_outlined, c.address),
               ],
             ],
             if (c.notes.isNotEmpty) ...[
-              const SizedBox(height: 14),
+              const SizedBox(height: 16),
+              const _LeaveFieldLabel('Introduction'),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Pl.stone,
+                  color: const Color(0xFFF7F7F9),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Introduction',
-                      style: Pl.text(
-                        12,
-                        weight: FontWeight.w700,
-                        color: Pl.faint,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      c.notes,
-                      style: Pl.text(14, color: Pl.ink2, height: 1.5),
-                    ),
-                  ],
+                child: Text(
+                  c.notes,
+                  style: _candStyle(13, color: _Q.ink, height: 1.5),
                 ),
               ),
             ],
@@ -349,13 +421,17 @@ class _CandidateDetailPageState extends State<CandidateDetailPage> {
                 byYou ? 'Added by you' : 'Added',
                 if (c.createdAt != null) plDate(c.createdAt),
               ].join(' · '),
-              style: Pl.text(12, color: Pl.faint),
+              style: _candStyle(
+                11.5,
+                weight: FontWeight.w600,
+                color: _Q.inkFaint,
+              ),
             ),
           ],
         ),
       ),
       const SizedBox(height: 22),
-      PlSectionHeading(
+      _CandidateSectionLabel(
         'Placements',
         trailing: PlAddButton(
           label: 'Add placement',
@@ -365,26 +441,38 @@ class _CandidateDetailPageState extends State<CandidateDetailPage> {
       ),
       const SizedBox(height: 12),
       if (page.placements.isEmpty)
-        const PlState.message('Not put forward anywhere yet.')
+        const _HubEmptyState(
+          iconAsset: 'assets/icons/placements_briefcase.png',
+          text: 'Not put forward anywhere yet.',
+        )
       else
-        for (final p in page.placements) ...[
-          _PlacementCard(
-            placement: p,
-            client: page.clientOf(p),
-            onClient: () =>
-                _open(ClientDetailPage(api: widget.api, clientId: p.clientId)),
-            onUpdate: () => _open(
-              PlacementFormPage(api: widget.api, candidate: c, existing: p),
+        for (final p in page.placements)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _PlacementCard(
+              placement: p,
+              client: page.clientOf(p),
+              onClient: () => _open(
+                ClientDetailPage(api: widget.api, clientId: p.clientId),
+              ),
+              // Only whoever logged the placement moves it along.
+              onUpdate: p.createdByUserId == _me
+                  ? () => _open(
+                      PlacementFormPage(
+                        api: widget.api,
+                        candidate: c,
+                        existing: p,
+                      ),
+                    )
+                  : null,
             ),
           ),
-          const SizedBox(height: 10),
-        ],
+      const SizedBox(height: 10),
+      const _CandidateSectionLabel('Activity'),
       const SizedBox(height: 12),
-      PlSectionHeading('Activity'),
-      const SizedBox(height: 12),
-      PlCard(
+      _CandidateCard(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        child: Column(children: [for (final a in _activity(page)) a]),
+        child: Column(children: _activity(page)),
       ),
     ];
   }
@@ -406,20 +494,27 @@ class _CandidateDetailPageState extends State<CandidateDetailPage> {
       at: c.createdAt,
       what: 'Candidate added',
       by: c.createdByUserId,
-      dot: Pl.accent,
+      dot: _candBlue,
     ));
     items.sort((a, b) => (b.at ?? DateTime(0)).compareTo(a.at ?? DateTime(0)));
     return [
-      for (final item in items)
-        Padding(
+      for (final (index, item) in items.indexed)
+        Container(
           padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: index == 0
+              ? null
+              : const BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: Color(0xFFF3F4F6), width: 0.8),
+                  ),
+                ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 10,
-                height: 10,
-                margin: const EdgeInsets.only(top: 5),
+                width: 8,
+                height: 8,
+                margin: const EdgeInsets.only(top: 6),
                 decoration: BoxDecoration(
                   color: item.dot,
                   shape: BoxShape.circle,
@@ -432,14 +527,22 @@ class _CandidateDetailPageState extends State<CandidateDetailPage> {
                   children: [
                     Text(
                       item.what,
-                      style: Pl.text(14, weight: FontWeight.w600),
+                      style: _candStyle(
+                        13,
+                        weight: FontWeight.w600,
+                        height: 20 / 13,
+                      ),
                     ),
                     Text(
                       [
                         if (item.at != null) plDate(item.at),
                         if (item.by == _me) 'by you',
                       ].join(' · '),
-                      style: Pl.text(12, color: Pl.faint),
+                      style: _candStyle(
+                        12,
+                        color: _Q.inkFaint,
+                        height: 16 / 12,
+                      ),
                     ),
                   ],
                 ),
@@ -462,19 +565,17 @@ class _InfoLine extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 18, color: Pl.icon),
+        Icon(icon, size: 16, color: _Q.inkFaint),
         const SizedBox(width: 10),
-        Expanded(
-          child: Text(text, style: Pl.text(14, color: Pl.ink2)),
-        ),
+        Expanded(child: Text(text, style: _candStyle(13, height: 1.4))),
       ],
     );
   }
 }
 
 /// One placement on a candidate's page: the client (tap for its page), the
-/// role and its budget, where it stands, its dates and Update status. A
-/// dropped one is one line.
+/// role and its budget, where it stands, its dates and, for whoever logged
+/// it, Update status. A dropped one is one line.
 class _PlacementCard extends StatelessWidget {
   const _PlacementCard({
     required this.placement,
@@ -486,7 +587,9 @@ class _PlacementCard extends StatelessWidget {
   final Placement placement;
   final PlacementClient? client;
   final VoidCallback onClient;
-  final VoidCallback onUpdate;
+
+  /// Null when someone else logged the placement: then it is read-only.
+  final VoidCallback? onUpdate;
 
   @override
   Widget build(BuildContext context) {
@@ -508,17 +611,22 @@ class _PlacementCard extends StatelessWidget {
             children: [
               InkWell(
                 onTap: onClient,
+                borderRadius: BorderRadius.circular(6),
                 child: Text(
                   p.clientName.isEmpty ? 'Client' : p.clientName,
-                  style: Pl.text(
-                    15,
-                    weight: FontWeight.w700,
-                    color: Pl.accentDeep,
-                  ).copyWith(decoration: TextDecoration.underline),
+                  style: _candStyle(
+                    14,
+                    weight: FontWeight.w600,
+                    color: _candBlue,
+                    height: 20 / 14,
+                  ),
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(line.join(' · '), style: Pl.text(13, color: Pl.muted)),
+              const SizedBox(height: 4),
+              Text(
+                line.join(' · '),
+                style: _candStyle(12, color: _Q.inkSoft, height: 16 / 12),
+              ),
             ],
           ),
         ),
@@ -526,10 +634,8 @@ class _PlacementCard extends StatelessWidget {
         PlPill(p.status.label, statusColors(p.status)),
       ],
     );
-    if (dropped) return PlCard(onTap: onUpdate, child: heading);
-    return PlCard(
-      radius: 18,
-      padding: const EdgeInsets.all(16),
+    if (dropped) return _CandidateCard(onTap: onUpdate, child: heading);
+    return _CandidateCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -538,7 +644,7 @@ class _PlacementCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Pl.stone,
+              color: const Color(0xFFF7F7F9),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -552,11 +658,13 @@ class _PlacementCard extends StatelessWidget {
             const SizedBox(height: 10),
             Text(
               'Offered ${rupees(p.ctcRupees!)}',
-              style: Pl.text(13, weight: FontWeight.w600, color: Pl.ink2),
+              style: _candStyle(12.5, weight: FontWeight.w600),
             ),
           ],
-          const SizedBox(height: 12),
-          PlButton(label: 'Update status', outlined: true, onTap: onUpdate),
+          if (onUpdate != null) ...[
+            const SizedBox(height: 12),
+            PlButton(label: 'Update status', outlined: true, onTap: onUpdate),
+          ],
         ],
       ),
     );
@@ -575,15 +683,98 @@ class _DateCell extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: Pl.text(12, color: Pl.faint)),
+          Text(
+            label.toUpperCase(),
+            style: _candStyle(
+              11,
+              weight: FontWeight.w600,
+              color: _Q.inkFaint,
+            ).copyWith(letterSpacing: .3),
+          ),
+          const SizedBox(height: 2),
           Text(
             day == null ? 'Not set' : plDate(day),
-            style: Pl.text(
-              14,
-              weight: FontWeight.w700,
-              color: day == null ? Pl.faint : Pl.ink,
+            style: _candStyle(
+              13,
+              weight: FontWeight.w600,
+              color: day == null ? _Q.inkFaint : _Q.ink,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A one-line field drawn like [_FormTextField], with an optional fixed
+/// [prefix] ("+91") or [suffix] ("years") inside its border.
+class _AffixedFormField extends StatelessWidget {
+  const _AffixedFormField({
+    required this.controller,
+    required this.hintText,
+    this.keyboardType,
+    this.prefix,
+    this.suffix,
+    this.capitalization = TextCapitalization.none,
+  });
+
+  final TextEditingController controller;
+  final String hintText;
+  final TextInputType? keyboardType;
+  final String? prefix;
+  final String? suffix;
+  final TextCapitalization capitalization;
+
+  @override
+  Widget build(BuildContext context) {
+    final affixStyle = _candStyle(14, color: _Q.inkSoft);
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          if (prefix case final text?) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Text(text, style: affixStyle),
+            ),
+            Container(
+              width: 1,
+              height: 20,
+              margin: const EdgeInsets.only(left: 10),
+              color: const Color(0xFFE5E7EB),
+            ),
+          ],
+          Expanded(
+            child: TextField(
+              controller: controller,
+              keyboardType: keyboardType,
+              textCapitalization: capitalization,
+              style: const TextStyle(fontSize: 14, color: Color(0xFF111827)),
+              decoration: InputDecoration(
+                hintText: hintText,
+                hintStyle: const TextStyle(color: Color(0x80111827)),
+                filled: false,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                focusedErrorBorder: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 11,
+                ),
+              ),
+            ),
+          ),
+          if (suffix case final text?)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Text(text, style: affixStyle),
+            ),
         ],
       ),
     );
@@ -602,12 +793,14 @@ class CandidateFormPage extends StatefulWidget {
 }
 
 class _CandidateFormPageState extends State<CandidateFormPage> {
+  /// The number on file as the field first shows it: an Indian mobile
+  /// without its +91, anything else as it was saved.
+  late final String _initialPhone = (widget.existing?.phone ?? '')
+      .replaceFirst(RegExp(r'^\+91\s*'), '')
+      .trim();
+
   late final _name = TextEditingController(text: widget.existing?.name);
-  late final _phone = TextEditingController(
-    text: (widget.existing?.phone ?? '')
-        .replaceFirst(RegExp(r'^\+91\s*'), '')
-        .trim(),
-  );
+  late final _phone = TextEditingController(text: _initialPhone);
   late final _address = TextEditingController(
     text: widget.existing?.address.isNotEmpty == true
         ? widget.existing!.address
@@ -626,6 +819,14 @@ class _CandidateFormPageState extends State<CandidateFormPage> {
   String? _problem;
 
   @override
+  void initState() {
+    super.initState();
+    // The +91 in front follows what is typed: a number that already carries
+    // its own country code goes without it.
+    _phone.addListener(() => setState(() {}));
+  }
+
+  @override
   void dispose() {
     for (final c in [
       _name,
@@ -640,13 +841,20 @@ class _CandidateFormPageState extends State<CandidateFormPage> {
     super.dispose();
   }
 
+  /// An edit that leaves the number on file alone keeps it as it was, even
+  /// when it isn't a plain 10-digit Indian mobile.
+  bool get _phoneUnchanged =>
+      (widget.existing?.phone.trim() ?? '').isNotEmpty &&
+      _phone.text.trim() == _initialPhone;
+
   Future<void> _save() async {
+    final keepPhone = _phoneUnchanged;
     final digits = _phone.text.replaceAll(RegExp(r'\D'), '');
     final experience = _experience.text.trim();
     final years = experience.isEmpty ? null : double.tryParse(experience);
     final problem = _name.text.trim().isEmpty
         ? 'Enter their full name.'
-        : digits.length != 10
+        : !keepPhone && digits.length != 10
         ? 'Enter a 10-digit mobile number.'
         : experience.isNotEmpty && (years == null || years < 0)
         ? 'Enter work experience in years, 0 for a fresher.'
@@ -663,7 +871,7 @@ class _CandidateFormPageState extends State<CandidateFormPage> {
       final saved = await widget.api.saveCandidate(
         id: widget.existing?.id,
         name: _name.text,
-        phone: '+91 $digits',
+        phone: keepPhone ? widget.existing!.phone.trim() : '+91 $digits',
         address: _address.text,
         experienceYears: years,
         designation: _designation.text,
@@ -683,66 +891,98 @@ class _CandidateFormPageState extends State<CandidateFormPage> {
   @override
   Widget build(BuildContext context) {
     final editing = widget.existing != null;
+    final ownCode = _phone.text.trimLeft().startsWith('+');
     return PlPage(
       title: editing ? 'Edit candidate' : 'Add candidate',
       subtitle: 'Candidate database',
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          PlField(
-            label: 'Full name',
-            controller: _name,
-            hint: 'As on ID proof',
-            capitalization: TextCapitalization.words,
-          ),
-          const SizedBox(height: 18),
-          PlField(
-            label: 'Phone number',
-            controller: _phone,
-            hint: '10-digit mobile',
-            prefix: '+91',
-            keyboard: TextInputType.phone,
-          ),
-          const SizedBox(height: 18),
-          PlField(
-            label: 'Address',
-            controller: _address,
-            hint: 'House, street, area, city, PIN',
-            lines: 3,
-          ),
-          const SizedBox(height: 18),
-          PlField(
-            label: 'Work experience',
-            controller: _experience,
-            hint: '0',
-            suffix: 'years',
-            keyboard: const TextInputType.numberWithOptions(decimal: true),
-            note: 'Enter 0 for a fresher.',
-          ),
-          const SizedBox(height: 18),
-          PlField(
-            label: 'Designation',
-            controller: _designation,
-            hint: 'Current or preferred role',
-          ),
-          const SizedBox(height: 18),
-          PlField(
-            label: 'Introduction about the candidate',
-            controller: _intro,
-            hint:
-                "A few lines on skills, strengths and what they're looking for",
-            lines: 4,
-          ),
-          const SizedBox(height: 24),
-          if (_problem != null) ...[
-            Text(
-              _problem!,
-              textAlign: TextAlign.center,
-              style: Pl.text(13, color: Pl.danger),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+              children: [
+                _FormCard(
+                  children: [
+                    const _LeaveFieldLabel('Full name'),
+                    _AffixedFormField(
+                      controller: _name,
+                      hintText: 'As on ID proof',
+                      capitalization: TextCapitalization.words,
+                    ),
+                    const SizedBox(height: 16),
+                    const _LeaveFieldLabel('Phone number'),
+                    _AffixedFormField(
+                      controller: _phone,
+                      hintText: '10-digit mobile',
+                      prefix: ownCode ? null : '+91',
+                      keyboardType: TextInputType.phone,
+                    ),
+                    const SizedBox(height: 16),
+                    const _LeaveFieldLabel('Address'),
+                    _FormTextArea(
+                      controller: _address,
+                      hintText: 'House, street, area, city, PIN',
+                    ),
+                    const SizedBox(height: 16),
+                    const _LeaveFieldLabel('Work experience'),
+                    _AffixedFormField(
+                      controller: _experience,
+                      hintText: '0',
+                      suffix: 'years',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Enter 0 for a fresher.',
+                      style: _candStyle(11.5, color: _Q.inkFaint),
+                    ),
+                    const SizedBox(height: 16),
+                    const _LeaveFieldLabel('Designation'),
+                    _FormTextField(
+                      controller: _designation,
+                      hintText: 'Current or preferred role',
+                    ),
+                    const SizedBox(height: 16),
+                    const _LeaveFieldLabel('Introduction about the candidate'),
+                    _FormTextArea(
+                      controller: _intro,
+                      height: 108,
+                      hintText:
+                          "A few lines on skills, strengths and what they're "
+                          'looking for',
+                    ),
+                  ],
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-          ],
-          PlButton(
+          ),
+          // Under the form, where it is seen whichever field was last.
+          if (_problem case final problem?)
+            ColoredBox(
+              color: const Color(0xFFF7F7F9),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    problem,
+                    style: _candStyle(
+                      12,
+                      weight: FontWeight.w600,
+                      color: const Color(0xFFB3261E),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          _FormSubmitBar(
             label: editing ? 'Save changes' : 'Save candidate',
             busy: _saving,
             onTap: _save,
@@ -803,13 +1043,13 @@ class _RemoveCandidateSheetState extends State<RemoveCandidateSheet> {
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: EdgeInsets.fromLTRB(
-        20,
+        16,
         12,
-        20,
-        24 + MediaQuery.of(context).padding.bottom,
+        16,
+        20 + MediaQuery.of(context).padding.bottom,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -820,38 +1060,38 @@ class _RemoveCandidateSheetState extends State<RemoveCandidateSheet> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Pl.field,
+                color: const Color(0xFFE5E7EB),
                 borderRadius: BorderRadius.circular(4),
               ),
             ),
           ),
           const SizedBox(height: 18),
           Container(
-            width: 52,
-            height: 52,
+            width: 48,
+            height: 48,
             decoration: const BoxDecoration(
-              color: Pl.dangerSoft,
+              color: Color(0xFFFEE2E2),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.delete_outline_rounded, color: Pl.danger),
+            child: const Icon(
+              Icons.delete_outline_rounded,
+              color: Color(0xFFB3261E),
+            ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           Text(
             'Remove ${widget.candidate.name}?',
-            style: Pl.text(20, weight: FontWeight.w700),
+            style: _candStyle(18, weight: FontWeight.w700, height: 24 / 18),
           ),
           const SizedBox(height: 6),
           Text(
             "They'll move to Removed and stop counting toward your performance "
             'incentive. Your admin can see removed candidates and restore them.',
-            style: Pl.text(14, color: Pl.muted, height: 1.55),
+            style: _candStyle(13, color: _Q.inkSoft, height: 1.5),
           ),
           const SizedBox(height: 18),
-          Text(
-            'Reason',
-            style: Pl.text(13, weight: FontWeight.w600, color: Pl.ink2),
-          ),
-          const SizedBox(height: 10),
+          const _LeaveFieldLabel('Reason'),
+          const SizedBox(height: 4),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -864,11 +1104,11 @@ class _RemoveCandidateSheetState extends State<RemoveCandidateSheet> {
                 ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Pl.stone,
+              color: const Color(0xFFF7F7F9),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -876,22 +1116,30 @@ class _RemoveCandidateSheetState extends State<RemoveCandidateSheet> {
               children: [
                 const Icon(
                   Icons.info_outline_rounded,
-                  size: 18,
-                  color: Pl.muted,
+                  size: 16,
+                  color: _Q.inkFaint,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    "A candidate with a Joined placement can't be removed. Ask your admin.",
-                    style: Pl.text(13, color: Pl.ink2, height: 1.5),
+                    "A candidate with a Joined placement can't be removed. "
+                    'Ask your admin.',
+                    style: _candStyle(12, color: _Q.inkSoft, height: 1.5),
                   ),
                 ),
               ],
             ),
           ),
-          if (_problem != null) ...[
+          if (_problem case final problem?) ...[
             const SizedBox(height: 12),
-            Text(_problem!, style: Pl.text(13, color: Pl.danger)),
+            Text(
+              problem,
+              style: _candStyle(
+                12,
+                weight: FontWeight.w600,
+                color: const Color(0xFFB3261E),
+              ),
+            ),
           ],
           const SizedBox(height: 18),
           PlButton(

@@ -17,9 +17,6 @@ import '../../requests/presentation/request_summary.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
 import '../../placements/data/placements_api_service.dart';
 import '../../placements/data/placements_models.dart';
-import '../../placements/presentation/candidate_pages.dart';
-import '../../placements/presentation/client_pages.dart';
-import '../../placements/presentation/placements_style.dart';
 import '../../policies/data/policies_api_service.dart';
 import '../../policies/data/policies_models.dart';
 import '../../policies/presentation/policy_body_view.dart';
@@ -27,6 +24,10 @@ import '../../shared/app_toast.dart';
 import '../../support/presentation/support_desk_screen.dart';
 
 part 'placements_screen.dart';
+part '../../placements/presentation/placements_style.dart';
+part '../../placements/presentation/candidate_pages.dart';
+part '../../placements/presentation/client_pages.dart';
+part '../../placements/presentation/placement_form_page.dart';
 
 class QuickActionsController extends ChangeNotifier {
   _QuickActionsScreenState? _state;

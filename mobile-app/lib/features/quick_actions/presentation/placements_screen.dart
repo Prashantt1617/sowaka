@@ -27,6 +27,9 @@ class PlacementsScreen extends StatefulWidget {
 }
 
 class _PlacementsScreenState extends State<PlacementsScreen> {
+  /// Placements' own pages stack here, inside the Actions tab, so the app's
+  /// header and bottom bar stay on screen.
+  final _nav = GlobalKey<NavigatorState>();
   List<PlacementCustomer>? _candidates;
   List<PlacementClient>? _clients;
   String? _error;
@@ -37,9 +40,14 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
     unawaited(_load());
   }
 
-  /// Back within Placements: its pages are routes of their own, so the hub
-  /// has nothing to go back through.
-  bool back() => false;
+  /// Back within Placements: one page back, or false on the hub, where Back
+  /// leaves it.
+  bool back() {
+    final nav = _nav.currentState;
+    if (nav == null || !nav.canPop()) return false;
+    nav.pop();
+    return true;
+  }
 
   Future<void> _load() async {
     try {
@@ -63,14 +71,26 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
   }
 
   Future<void> _open(Widget page) async {
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => page));
+    await _nav.currentState?.push(
+      MaterialPageRoute<void>(builder: (_) => page),
+    );
     if (mounted) unawaited(_load());
   }
 
   @override
   Widget build(BuildContext context) {
+    return _PlacementsChrome(
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: widget.onQuickCreate,
+      child: Navigator(
+        key: _nav,
+        onGenerateRoute: (_) => MaterialPageRoute<void>(builder: (_) => _hub()),
+      ),
+    );
+  }
+
+  Widget _hub() {
     final candidates = _candidates;
     final clients = _clients;
     int stage(CandidateStage s) =>
@@ -87,12 +107,14 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
       onQuickCreate: widget.onQuickCreate,
       backgroundColor: Pl.ground,
       children: [
+        // A note at the top, as the Apply leave form sets one (node
+        // 691:19752): what this is for, on a tint.
         Container(
-          padding: const EdgeInsets.all(16),
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Pl.accentSoft,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Pl.accentTint),
+            color: _Q.terraTint,
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -100,15 +122,16 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
               Text(
                 'Log your candidates, clients and placements.',
                 style: Pl.text(
-                  15,
+                  12,
                   weight: FontWeight.w700,
-                  color: Pl.accentText,
+                  color: _Q.terraDeep,
+                  height: 16.2 / 12,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 'Your performance incentive is connected to this.',
-                style: Pl.text(13, color: Pl.accentText),
+                style: Pl.text(12, color: _Q.terraDeep, height: 16.2 / 12),
               ),
             ],
           ),
@@ -117,9 +140,11 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
         if (_error != null && candidates == null)
           PlState.message(_error, onRetry: _load)
         else ...[
+          const _HomeSectionLabel('Candidates'),
+          const SizedBox(height: 12),
           _PlacementsHubCard(
             key: const ValueKey('placements-candidates'),
-            icon: Icons.person_search_outlined,
+            iconAsset: 'assets/icons/connect_icon_user.png',
             title: 'My candidates',
             count: candidates?.length,
             stats: [
@@ -129,10 +154,12 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
             ],
             onTap: () => _open(CandidatesPage(api: widget.api)),
           ),
+          const SizedBox(height: 20),
+          const _HomeSectionLabel('Clients'),
           const SizedBox(height: 12),
           _PlacementsHubCard(
             key: const ValueKey('placements-clients'),
-            icon: Icons.apartment_outlined,
+            iconAsset: 'assets/icons/placements_client_building.png',
             title: 'My clients',
             count: clients?.length,
             stats: [
@@ -142,11 +169,16 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
             ],
             onTap: () => _open(ClientsPage(api: widget.api)),
           ),
-          const SizedBox(height: 14),
-          Text(
+          const SizedBox(height: 12),
+          const Text(
             'Open a list to add, edit or log a placement.',
-            textAlign: TextAlign.center,
-            style: Pl.text(13, color: Pl.muted),
+            style: TextStyle(
+              fontFamily: Pl.font,
+              color: Color(0xFF717171),
+              fontSize: 10,
+              height: 16.2 / 10,
+              letterSpacing: -0.16,
+            ),
           ),
         ],
       ],
@@ -154,17 +186,20 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
   }
 }
 
+/// A list's card on the hub, as the hubs' summary cards are drawn
+/// ([_HubSummaryCard]): the list's picture and name with its count, then
+/// its figures, each over its caption.
 class _PlacementsHubCard extends StatelessWidget {
   const _PlacementsHubCard({
     super.key,
-    required this.icon,
+    required this.iconAsset,
     required this.title,
     required this.count,
     required this.stats,
     required this.onTap,
   });
 
-  final IconData icon;
+  final String iconAsset;
   final String title;
 
   /// Null while loading.
@@ -175,70 +210,107 @@ class _PlacementsHubCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PlCard(
-      radius: 20,
-      padding: const EdgeInsets.all(16),
       onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Pl.accentTint,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, color: Pl.accent),
-              ),
-              const SizedBox(width: 12),
+              Image.asset(iconAsset, width: 20, height: 20, fit: BoxFit.cover),
+              const SizedBox(width: 6),
               Expanded(
-                child: Text(title, style: Pl.text(17, weight: FontWeight.w700)),
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Pl.text(14, weight: FontWeight.w600, height: 20 / 14),
+                ),
               ),
               Text(
                 count == null ? '…' : '$count',
-                style: Pl.text(20, weight: FontWeight.w700),
+                style: Pl.text(14, weight: FontWeight.w700, height: 20 / 14),
               ),
-              const SizedBox(width: 4),
-              const Icon(Icons.chevron_right_rounded, color: Pl.icon),
+              const SizedBox(width: 2),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: Pl.faint,
+              ),
             ],
           ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              for (final (index, (n, label)) in stats.indexed) ...[
-                if (index > 0) const SizedBox(width: 8),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 10,
-                      horizontal: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Pl.stone,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          count == null ? '–' : '$n',
-                          style: Pl.text(18, weight: FontWeight.w700),
-                        ),
-                        Text(
-                          label,
-                          textAlign: TextAlign.center,
-                          style: Pl.text(12, color: Pl.muted),
-                        ),
-                      ],
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.only(top: 12),
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: Pl.line, width: 0.8)),
+            ),
+            child: Row(
+              children: [
+                for (final (index, (n, label)) in stats.indexed) ...[
+                  if (index > 0) const SizedBox(width: 8),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 10,
+                        horizontal: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Pl.stone,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            count == null ? '–' : '$n',
+                            style: Pl.text(
+                              14,
+                              weight: FontWeight.w700,
+                              height: 20 / 14,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            label,
+                            textAlign: TextAlign.center,
+                            style: Pl.text(
+                              10,
+                              weight: FontWeight.w400,
+                              color: Pl.faint,
+                              height: 15 / 10,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
         ],
       ),
     );
   }
+}
+
+/// What every Placements page needs for the app's header, handed down past
+/// Placements' own navigator.
+class _PlacementsChrome extends InheritedWidget {
+  const _PlacementsChrome({
+    required this.profileAction,
+    required this.onNotifications,
+    required this.onQuickCreate,
+    required super.child,
+  });
+
+  final Widget profileAction;
+  final VoidCallback onNotifications;
+  final VoidCallback onQuickCreate;
+
+  static _PlacementsChrome? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_PlacementsChrome>();
+
+  @override
+  bool updateShouldNotify(_PlacementsChrome old) =>
+      profileAction != old.profileAction;
 }
