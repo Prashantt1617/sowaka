@@ -5,12 +5,14 @@
   --ar-l-bg: #F6D776; --ar-l-fg: #5B4300;
   --ar-mp-bg: #C2362F; --ar-mp-fg: #FFFFFF;
   --ar-lv-bg: #E0EAFF; --ar-lv-fg: #1E40AF;
+  --ar-lwp-bg: #FCE7F3; --ar-lwp-fg: #9D174D;
   --ar-hd-bg: #EDE4FF; --ar-hd-fg: #5B21B6;
   --ar-np-bg: #EEF0F3; --ar-np-fg: #374151;
   --ar-wo-bg: #F4F4F6; --ar-wo-fg: #6B7280;
   --ar-n-present: #2E7D4F; --ar-n-late: #4F46E5; --ar-n-half: #7C5A12;
   --ar-n-leave: #1D4ED8; --ar-n-missed: #B45309; --ar-n-np: #4B5563;
   --ar-t-present: #2E7D4F; --ar-t-late: #B45309; --ar-t-missed: #C2362F; --ar-t-leave: #1D4ED8;
+  --ar-n-lwp: #BE185D;
   --ar-pending: #2563EB;
 }
 @media (prefers-color-scheme: dark) {
@@ -19,12 +21,14 @@
     --ar-l-bg: #4A3A0B; --ar-l-fg: #F6D776;
     --ar-mp-bg: #B5342D; --ar-mp-fg: #FFFFFF;
     --ar-lv-bg: #1C2A4D; --ar-lv-fg: #A9C1FF;
+    --ar-lwp-bg: #47182F; --ar-lwp-fg: #F9A8D4;
     --ar-hd-bg: #2E2147; --ar-hd-fg: #CDB6FF;
     --ar-np-bg: #2A2B30; --ar-np-fg: #C9CDD4;
     --ar-wo-bg: #232328; --ar-wo-fg: #8B8F98;
     --ar-n-present: #6FCF97; --ar-n-late: #9C95FF; --ar-n-half: #E0B85A;
     --ar-n-leave: #7FA6FF; --ar-n-missed: #F29B52; --ar-n-np: #B7BCC5;
     --ar-t-present: #6FCF97; --ar-t-late: #F29B52; --ar-t-missed: #FF7A72; --ar-t-leave: #7FA6FF;
+    --ar-n-lwp: #F472B6;
     --ar-pending: #7FA6FF;
   }
 }
@@ -33,12 +37,14 @@
   --ar-l-bg: #4A3A0B; --ar-l-fg: #F6D776;
   --ar-mp-bg: #B5342D; --ar-mp-fg: #FFFFFF;
   --ar-lv-bg: #1C2A4D; --ar-lv-fg: #A9C1FF;
+  --ar-lwp-bg: #47182F; --ar-lwp-fg: #F9A8D4;
   --ar-hd-bg: #2E2147; --ar-hd-fg: #CDB6FF;
   --ar-np-bg: #2A2B30; --ar-np-fg: #C9CDD4;
   --ar-wo-bg: #232328; --ar-wo-fg: #8B8F98;
   --ar-n-present: #6FCF97; --ar-n-late: #9C95FF; --ar-n-half: #E0B85A;
   --ar-n-leave: #7FA6FF; --ar-n-missed: #F29B52; --ar-n-np: #B7BCC5;
   --ar-t-present: #6FCF97; --ar-t-late: #F29B52; --ar-t-missed: #FF7A72; --ar-t-leave: #7FA6FF;
+  --ar-n-lwp: #F472B6;
   --ar-pending: #7FA6FF;
 }
 

@@ -278,6 +278,8 @@ export type CalendarDayDTO = {
   punchOut: string | null;
   lateByMinutes: number;
   earlyByMinutes?: number;
+  /** Leave without pay for half the day: half a day of loss of pay. */
+  halfDay?: true;
   /** Set when HR marked the day: what it would have been, and who changed it. */
   hr?: { previousStatus: CalendarDayStatus; previousLabel: string | null; note?: string; setByName?: string; setAt: string };
 };
@@ -926,7 +928,8 @@ export function deleteEngagementPost(postId: string) {
 
 // ---- Reports › Attendance ----
 
-export type ReportStatus = 'present' | 'half_day' | 'missed_punch' | 'on_leave' | 'absent';
+/** 'unpaid_leave' is an approved day of a leave-without-pay type: not leave (paid), not absent. */
+export type ReportStatus = 'present' | 'half_day' | 'missed_punch' | 'on_leave' | 'unpaid_leave' | 'absent';
 
 export type ReportPersonDTO = {
   name: string;
@@ -960,7 +963,7 @@ export type AttendanceReportDTO = {
   days: ReportDayDTO[];
   /** Days each person did not owe (left out of `days`); absent from an older server. */
   offDays?: [string, string, 'week_off' | 'holiday'][];
-  /** `userId|date` of the leave days that were half a day off. */
+  /** `userId|date` of the leave days (paid or unpaid) that were half a day off. */
   halfDayLeave?: string[];
 };
 
