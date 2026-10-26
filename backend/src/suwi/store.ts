@@ -27,6 +27,8 @@ export interface SuwiAuditEntry {
   question?: string;
   answer?: string;
   tools?: { name: string; label: string; ms: number; ok: boolean }[];
+  /** The file sent with the question (its name only; the file itself is not kept). */
+  attachment?: { name: string; kind: 'image' | 'spreadsheet' };
   /** A confirmed or undone action, recorded as "via Suwi". */
   action?: { proposalId: string; kind: string; title: string; result: 'done' | 'failed' | 'undone'; message?: string };
   model?: string;

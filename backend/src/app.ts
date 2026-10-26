@@ -34,6 +34,8 @@ app.use(
 app.use(compression());
 // An employee import carries the whole sheet (up to 2,000 rows).
 app.use('/admin/employees/import', express.json({ limit: '5mb' }));
+// A question to Suwi may carry one file: an image up to 5 MB (base64) or a spreadsheet's rows.
+app.use('/suwi/ask', express.json({ limit: '8mb' }));
 app.use(express.json());
 morgan.token('request-id', (req) => (req as Request).requestId ?? '-');
 // A Scribble page reloads itself with a credential in its query string
