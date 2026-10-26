@@ -81,6 +81,7 @@ class _ProfileAvatarAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final url = photoUrl;
+    final badge = AvatarBadge(initial: initial, index: 1, size: size);
     return Semantics(
       button: true,
       label: label,
@@ -88,13 +89,16 @@ class _ProfileAvatarAction extends StatelessWidget {
         borderRadius: BorderRadius.circular(99),
         onTap: onTap,
         child: url == null || url.isEmpty
-            ? AvatarBadge(initial: initial, index: 1, size: size)
+            ? badge
             : ClipOval(
                 child: Image(
                   image: _profileImage(url),
                   width: size,
                   height: size,
                   fit: BoxFit.cover,
+                  // A photo that cannot be fetched (no network, or the API
+                  // out of reach) shows the initial, not an error box.
+                  errorBuilder: (_, _, _) => badge,
                 ),
               ),
       ),

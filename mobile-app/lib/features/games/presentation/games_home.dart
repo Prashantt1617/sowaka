@@ -699,33 +699,45 @@ class _BrandLockup extends StatelessWidget {
       valueListenable: OrgBranding.current,
       builder: (context, branding, _) {
         final logo = branding.homeLogoAsset;
+        final lettered = Container(
+          height: 26,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFB23500),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            branding.wordmark,
+            style: GamesStyle.sora(
+              12,
+              weight: FontWeight.w800,
+              color: Colors.white,
+            ),
+          ),
+        );
         final Widget badge = logo == null
-            ? Container(
-                height: 26,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFB23500),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  branding.wordmark,
-                  style: GamesStyle.sora(
-                    12,
-                    weight: FontWeight.w800,
-                    color: Colors.white,
+            ? lettered
+            : Image.asset(
+                logo,
+                height: 18,
+                fit: BoxFit.contain,
+                // A logo that fails to load shows the lettered badge, not
+                // an error box as wide as its message.
+                errorBuilder: (_, _, _) => lettered,
+                frameBuilder: (_, image, _, _) => Container(
+                  height: 26,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
                   ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0x1A160D2C)),
+                  ),
+                  child: image,
                 ),
-              )
-            : Container(
-                height: 26,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0x1A160D2C)),
-                ),
-                child: Image.asset(logo, height: 18, fit: BoxFit.contain),
               );
         return Row(
           mainAxisSize: MainAxisSize.min,

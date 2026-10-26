@@ -151,6 +151,11 @@ class _FeedbackList extends StatelessWidget {
                             width: 42,
                             height: 42,
                             fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => AvatarBadge(
+                              initial: data.managerInitial,
+                              index: 1,
+                              size: 42,
+                            ),
                           ),
                         ),
                 ],
@@ -1292,6 +1297,11 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                 width: 30,
                 height: 30,
                 fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => AvatarBadge(
+                  initial: state.dashboard?.managerInitial ?? '?',
+                  index: 1,
+                  size: 30,
+                ),
               ),
             ),
             _ => AvatarBadge(
