@@ -81,6 +81,20 @@ export async function getEmployeePeriodInputs(
   };
 }
 
+/**
+ * Whether any of these people has approved leave touching the period — one
+ * cheap read, so a run where every template pays all days skips the calendar
+ * unless there is leave in it that could be leave without pay.
+ */
+export async function anyApprovedLeave(userIds: string[], range: PeriodRange): Promise<boolean> {
+  if (userIds.length === 0) return false;
+  const found = await leaves().countDocuments(
+    { userId: { $in: userIds }, status: 'approved', startDate: { $lte: range.end }, endDate: { $gte: range.start } },
+    { limit: 1 },
+  );
+  return found > 0;
+}
+
 // Approved leave days overlapping the period (calendar days, clipped). Informational:
 // LOP defaults to 0 because the Leave module has no paid/unpaid distinction — the
 // run takes an explicit lopDays override instead. See INT-1 follow-up.

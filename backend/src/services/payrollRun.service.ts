@@ -24,13 +24,14 @@ import { esiCoveredThisPeriod, statutorySettingsFor, workStateOf } from './statu
 import { computePayslip, projectedTaxable, taxableAfterMealExemption } from './payroll-run.calculator';
 import { overtimePayFor } from '../shared/payroll/overtime';
 import {
+  anyApprovedLeave,
   computeWorkingDays,
   getEmployeePeriodInputs,
   parsePeriod,
 } from './payroll-inputs.service';
 import type { PeriodRange } from './payroll-inputs.service';
 import { resolveRuleSet } from './statutory.service';
-import { attendanceCountsForPeriod, payrollDeductions } from './deduction.service';
+import { attendanceCountsForPeriod, payrollDeductions, unpaidLeaveDeduction } from './deduction.service';
 import { payslipHtml } from './payslip-html';
 import { employeeCalendar } from './attendance-report.service';
 import { companies } from '../config/db';
@@ -198,7 +199,12 @@ async function buildRunPayslips(
   // Each person's Paid Days Template (else the company's Default) says how attendance becomes paid days.
   const paidDaysFor = await paidDaysResolver(org);
   const docksForAttendance = structures.some((s) => !(paidDaysFor(s.paidDaysTemplateCode)?.allDaysPaid ?? false));
-  const attendance = docksForAttendance ? await attendanceCountsForPeriod(adminUserId, period) : new Map();
+  // Leave without pay is docked even where every day is paid, so a month with
+  // any approved leave in it reads the calendar too; whether a leave is unpaid
+  // is the calendar's to say, from the shift that covered the day.
+  const attendance = docksForAttendance || (await anyApprovedLeave(structures.map((s) => s.userId), range))
+    ? await attendanceCountsForPeriod(adminUserId, period)
+    : new Map();
 
   const employees = await users()
     .find({ userId: { $in: structures.map((s) => s.userId) } })
@@ -280,10 +286,13 @@ async function buildRunPayslips(
     const paidDays = paidDaysFor(structure.paidDaysTemplateCode);
     const paidDaysOn = !(paidDays?.allDaysPaid ?? false);
     const docked = paidDaysOn ? payrollDeductions(paidDays?.deductionRules, attendance.get(structure.userId)) : { days: 0, lines: [] };
-    // The template's paid-leave allowance covers the first days docked.
+    // Leave without pay, on any template: the employee asked for it unpaid.
+    const unpaidLeave = unpaidLeaveDeduction(attendance.get(structure.userId));
+    // The template's paid-leave allowance covers the first days docked — not
+    // leave without pay, which it would otherwise turn back into paid leave.
     const allowance = paidDaysOn ? paidDays?.monthlyPaidLeaveDays ?? 0 : 0;
     // Days before joining are not loss of pay but not paid either (attendance has no punches for them).
-    const attendanceLopDays = Math.min(Math.max(Math.max(0, docked.days - allowance), notYetEmployedDays), workingDays);
+    const attendanceLopDays = Math.min(Math.max(Math.max(0, docked.days - allowance) + unpaidLeave.days, notYetEmployedDays), workingDays);
     const lopEnteredByHr = lopOverrides[structure.userId] !== undefined;
     const lopDays = lopEnteredByHr ? clampLop(lopOverrides[structure.userId], workingDays) : attendanceLopDays;
     // Overtime: what HR typed on the run, else the template's rule applied to
@@ -397,7 +406,7 @@ async function buildRunPayslips(
         ...(Object.keys(amounts).length ? { componentAmounts: amounts } : {}),
         ...(tds ? { tds } : {}),
         ...(reimbTax && reimbTax.paidPaise > 0 ? { reimbursementTax: { paidPaise: reimbTax.paidPaise, exemptPaise: reimbTax.exemptPaise, taxablePaise: reimbTax.taxablePaise } } : {}),
-        attendanceDeductions: docked.lines,
+        attendanceDeductions: [...docked.lines, ...unpaidLeave.lines],
         paidLeaveDaysApplied: Math.min(allowance, docked.days),
         payableDays: slip.payableDays,
         approvedLeaveDays: periodInputs.approvedLeaveDays,
