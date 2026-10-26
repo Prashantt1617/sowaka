@@ -49,8 +49,9 @@ async function timed<T>(label: string, run: () => Promise<T>): Promise<T> {
     check('the face is indexed', Boolean(indexed?.faceId));
 
     const same = await timed('SearchFacesByImage (same person)', () => engine.searchFace(COLLECTION, samePhoto, 80));
+    const top = same?.[0];
     check(`the same person matches at ${env.face.matchThreshold} or above`,
-      same?.[0]?.faceId === indexed?.faceId && same[0].externalImageId === 'person-a' && same[0].similarity >= env.face.matchThreshold,
+      top?.faceId === indexed?.faceId && top?.externalImageId === 'person-a' && (top?.similarity ?? 0) >= env.face.matchThreshold,
       same?.map((match) => ({ id: match.externalImageId, similarity: Number(match.similarity.toFixed(3)) })));
 
     const other = await timed('SearchFacesByImage (other person)', () => engine.searchFace(COLLECTION, otherPhoto, 0));
