@@ -71,8 +71,9 @@ class GamesHomeView extends StatefulWidget {
   /// [onOpenContest] is not given.
   final ValueChanged<String>? onOpenPost;
 
-  /// Opens a live contest's entries over this tab, Back returning here.
-  final ValueChanged<String>? onOpenContest;
+  /// Opens a live contest's entries over this tab, Back returning here;
+  /// completes when they are closed.
+  final Future<void> Function(String postId)? onOpenContest;
 
   /// Opens someone's profile by userId: a leaderboard row or podium place
   /// tapped. Nobody on the board is tappable when not given.
@@ -147,6 +148,12 @@ class _GamesHomeViewState extends State<GamesHomeView>
 
   /// A challenge being accepted, so its button cannot be pressed twice.
   String? _accepting;
+
+  /// A game or a contest on its way open, or open: every other tap that
+  /// would open one is dropped until it is closed again, so a quick second
+  /// tap never opens it twice (the shell may read the catalog before it
+  /// pushes the game).
+  bool _opening = false;
 
   @override
   void initState() {
@@ -374,10 +381,21 @@ class _GamesHomeViewState extends State<GamesHomeView>
 
   Future<void> _openGame(GameCatalogEntry game, {String? challengeId}) async {
     final open = widget.onOpenGame;
-    if (open == null) return;
-    await open(context, game, challengeId: challengeId);
+    if (open == null || _opening) return;
+    await _once(() => open(context, game, challengeId: challengeId));
     // Back from a round: a new best, a challenge played, points won.
     if (mounted) unawaited(_refresh());
+  }
+
+  /// Runs [open] (a pushed page) unless one already is; see [_opening].
+  Future<void> _once(Future<void> Function() open) async {
+    if (_opening) return;
+    _opening = true;
+    try {
+      await open();
+    } finally {
+      _opening = false;
+    }
   }
 
   void _openPost(String? postId) {
@@ -391,13 +409,13 @@ class _GamesHomeViewState extends State<GamesHomeView>
     if (postId.isEmpty) return;
     final open = widget.onOpenContest;
     if (open == null) return _openPost(postId);
-    open(postId);
+    unawaited(_once(() => open(postId)));
   }
 
   /// Accept on a challenge: answered here, then the game opens on it, where
   /// the round starts. One already answered still opens, and says so there.
   Future<void> _takeUp(HomeChallenge challenge) async {
-    if (_accepting != null) return;
+    if (_accepting != null || _opening) return;
     final game = _game(challenge.gameKey);
     if (game == null) {
       showAppToast(context, 'That game is not available any more.');

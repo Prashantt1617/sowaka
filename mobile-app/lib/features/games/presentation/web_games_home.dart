@@ -192,6 +192,9 @@ class _WebGamesHomeState extends State<WebGamesHome>
   /// Whether the tab was looked at when last brought in line ([_sync]).
   bool _looked = false;
 
+  /// A game or a contest the page asked for, on its way open or open ([_over]).
+  bool _opening = false;
+
   /// Page loads so far: an answer is only handed to the load it was asked in.
   int _loads = 0;
   final _random = math.Random();
@@ -501,11 +504,17 @@ class _WebGamesHomeState extends State<WebGamesHome>
   }
 
   /// Runs [open] (a pushed route) and has the page read its data when it
-  /// closes.
+  /// closes. One at a time: the page's taps on a card while a game or a
+  /// contest is on its way open (the catalog read, the route pushed) or open
+  /// are dropped, so a quick second tap never opens it — or joins its room —
+  /// twice.
   Future<void> _over(Future<void> Function() open) async {
+    if (_opening) return;
+    _opening = true;
     try {
       await open();
     } finally {
+      _opening = false;
       if (mounted) _refresh();
     }
   }

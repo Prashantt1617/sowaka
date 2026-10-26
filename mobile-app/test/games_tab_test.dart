@@ -4,6 +4,7 @@
 // and the rank shown only on them; the tab asking nothing of the server until
 // it is looked at; the pane's looping pictures and its one-second clocks,
 // each running only while the tab is looked at.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -241,6 +242,8 @@ void main() {
     List<GameCatalogEntry> fallback = const [],
     bool reduceMotion = true,
     DateTime Function()? now,
+    OpenCatalogGame? onOpenGame,
+    Future<void> Function(String postId)? onOpenContest,
   }) => MaterialApp(
     // The pane's pictures loop for as long as they are on screen, which
     // pumpAndSettle would wait on forever; held still here, as under the
@@ -258,8 +261,10 @@ void main() {
         canOpen: (game) =>
             game.kind == GameKind.native ? game.key == 'gratitude-garden' : game.hasWebPage,
         fallbackGames: fallback,
-        onOpenGame: (_, game, {challengeId}) async => opened.add((game.key, challengeId)),
+        onOpenGame:
+            onOpenGame ?? (_, game, {challengeId}) async => opened.add((game.key, challengeId)),
         onOpenPost: posts.add,
+        onOpenContest: onOpenContest,
         onOpenPerson: people.add,
       ),
     ),
@@ -408,6 +413,75 @@ void main() {
     expect(find.byKey(const ValueKey('explore-game-gratitude-garden')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('play-odd-one-out')));
     expect(opened.last, ('odd-one-out', null));
+  });
+
+  testWidgets('one tap, one open: taps while a game or a contest is opening are dropped', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393 * 3, 852 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final contests = <String>[];
+    var contestClosed = Completer<void>();
+    var gameClosed = Completer<void>();
+    final service = serviceAnswering((_) => _json(_fullHome()));
+    await tester.pumpWidget(
+      host(
+        service,
+        onOpenGame: (_, game, {challengeId}) {
+          opened.add((game.key, challengeId));
+          return gameClosed.future;
+        },
+        onOpenContest: (postId) {
+          contests.add(postId);
+          return contestClosed.future;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The live contest tapped again and again while its entries open: once.
+    await tester.drag(find.byKey(const ValueKey('games-live')), const Offset(-360, 0));
+    await tester.pumpAndSettle();
+    final contest = find.byKey(const ValueKey('live-contest-post-photo'));
+    await tester.tap(contest);
+    await tester.tap(contest);
+    await tester.pump();
+    await tester.tap(contest);
+    // Nor does a game open over it, nor a challenge get accepted.
+    await tester.tap(find.byKey(const ValueKey('accept-ch-2')));
+    await tester.pump();
+    expect(contests, ['post-photo']);
+    expect(opened, isEmpty);
+
+    // Back from it, the card opens again.
+    contestClosed.complete();
+    await tester.pump();
+    contestClosed = Completer<void>();
+    await tester.tap(contest);
+    expect(contests, ['post-photo', 'post-photo']);
+    contestClosed.complete();
+    await tester.pump();
+
+    // A game the same: one open until it is closed.
+    final play = find.descendant(
+      of: find.byKey(const ValueKey('your-game-odd-one-out')),
+      matching: find.text('Play'),
+    );
+    await scrollTo(tester, play);
+    await tester.ensureVisible(play);
+    await tester.pumpAndSettle();
+    await tester.tap(play);
+    await tester.tap(play);
+    await tester.pump();
+    expect(opened, [('odd-one-out', null)]);
+    gameClosed.complete();
+    await tester.pumpAndSettle();
+    gameClosed = Completer<void>();
+    await tester.tap(play);
+    expect(opened, [('odd-one-out', null), ('odd-one-out', null)]);
+    gameClosed.complete();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('a contest with entries shows them in its picture, one a second', (tester) async {
