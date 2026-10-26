@@ -1,9 +1,9 @@
 import crypto from 'crypto';
-import { forgetAuthToken } from './auth-cache';
+import { forgetAuthToken, rememberAuth } from './auth-cache';
 import type { Filter } from 'mongodb';
 import { env } from '../config/env';
 import { authSessions, companies, otpChallenges, users } from '../config/db';
-import { AuthUser } from '../models/auth.model';
+import { AuthSessionDocument, AuthUser } from '../models/auth.model';
 import { User } from '../models/user.model';
 import { generateOtp, hashOtp, isValidEmail } from '../utils/otp.util';
 import { OtpDeliveryError, sendOtpEmail } from './email.service';
@@ -22,32 +22,38 @@ export async function requestLoginOtp(emailInput: string): Promise<void> {
   if (!isValidEmail(email)) {
     throw new AuthError(400, 'Please enter a valid work email');
   }
-  await requireEligibleUser(email);
+  // Only whether they may sign in, and their org for the mail gate: the whole
+  // record carries the profile photo.
+  const user = await requireEligibleUser(email, { _id: 0, lifecycleStatus: 1, org: 1 });
 
   const otp = generateOtp();
   const now = Date.now();
-  await otpChallenges().updateOne(
-    { email },
-    {
-      $set: {
-        email,
-        otpHash: hashOtp(email, otp),
-        expiresAt: now + env.otpTtlMinutes * 60 * 1000,
-        attempts: 0,
-        createdAt: now,
-      },
-    },
-    { upsert: true },
-  );
-
-  try {
-    await sendOtpEmail(email, otp);
-  } catch (error) {
+  // The code is kept and mailed at the same time, not one after the other:
+  // the cluster is a round trip away and the mail is a second or so, and the
+  // person is watching a spinner. A mail that fails still ends in the 503; a
+  // code kept but never mailed is replaced by the next request.
+  const delivery = sendOtpEmail(email, otp, user).catch((error: unknown) => {
     if (error instanceof OtpDeliveryError) {
       throw new AuthError(503, "We couldn't send your sign-in code just now. Please try again in a minute.");
     }
     throw error;
-  }
+  });
+  await Promise.all([
+    otpChallenges().updateOne(
+      { email },
+      {
+        $set: {
+          email,
+          otpHash: hashOtp(email, otp),
+          expiresAt: now + env.otpTtlMinutes * 60 * 1000,
+          attempts: 0,
+          createdAt: now,
+        },
+      },
+      { upsert: true },
+    ),
+    delivery,
+  ]);
 }
 
 export async function verifyLoginOtp(
@@ -61,9 +67,11 @@ export async function verifyLoginOtp(
     throw new AuthError(400, 'Invalid email or code');
   }
 
-  const existingUser = await requireEligibleUser(email);
-
-  const challenge = await otpChallenges().findOne({ email });
+  // The person and their code in one round trip rather than two.
+  const [existingUser, challenge] = await Promise.all([
+    requireEligibleUser(email),
+    otpChallenges().findOne({ email }),
+  ]);
   if (!challenge) {
     throw new AuthError(400, 'Code expired or not requested');
   }
@@ -101,17 +109,27 @@ export async function verifyLoginOtp(
     throw new AuthError(401, 'Incorrect code');
   }
 
-  await otpChallenges().deleteOne({ email });
-
-  const user = await completeLogin(existingUser);
+  // Everything signing in writes and reads goes in one round trip: the code
+  // spent, the session kept, and the person brought up to date. One after
+  // another they were six trips, well over a second before "You're in".
   const token = crypto.randomBytes(32).toString('hex');
-  await authSessions().insertOne({
+  const session: AuthSessionDocument = {
     tokenHash: hashSessionToken(token),
-    userId: user.id,
+    userId: existingUser.userId,
     createdAt: new Date(),
     expiresAt: new Date(Date.now() + env.authSessionTtlDays * 24 * 60 * 60 * 1000),
-  });
-  return { token, user };
+  };
+  const [, signedIn] = await Promise.all([
+    otpChallenges().deleteOne({ email }),
+    completeLogin(existingUser),
+    authSessions().insertOne({ ...session }),
+  ]);
+
+  // The app's first calls with the new token (its profile, the welcome
+  // screen's team, the home screen) then skip the session lookup.
+  const { profilePhotoUrl: _photo, ...withoutPhoto } = signedIn.record;
+  rememberAuth(session.tokenHash, session, withoutPhoto);
+  return { token, user: signedIn.user };
 }
 
 export async function revokeSession(token: string): Promise<void> {
@@ -157,8 +175,8 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-async function requireEligibleUser(email: string): Promise<User> {
-  const user = await users().findOne({ email });
+async function requireEligibleUser(email: string, projection?: Record<string, 0 | 1>): Promise<User> {
+  const user = await users().findOne({ email }, projection ? { projection } : undefined);
   if (!user) {
     throw new AuthError(403, 'This email is not registered. Contact HR for access');
   }
@@ -168,116 +186,140 @@ async function requireEligibleUser(email: string): Promise<User> {
   return user;
 }
 
-async function completeLogin(user: User): Promise<AuthUser> {
-  const role = (await users().countDocuments({ managerUserId: user.userId }, { limit: 1 }))
-    ? 'manager'
-    : 'employee';
-
+async function completeLogin(user: User): Promise<{ user: AuthUser; record: User }> {
+  // Whether anyone reports to them, the sign-in stamp, and their company and
+  // manager are all independent: asked together. The role is written apart,
+  // and only on the rare sign-in where it has changed.
   const now = new Date();
-  await users().updateOne(
-    { userId: user.userId },
-    { $set: { role, lastLoginAt: now, updatedAt: now } },
-  );
+  const [reports, , company, manager] = await Promise.all([
+    users().countDocuments({ managerUserId: user.userId }, { limit: 1 }),
+    users().updateOne({ userId: user.userId }, { $set: { lastLoginAt: now, updatedAt: now } }),
+    companyFor(user.org),
+    managerNameFor(user.managerUserId),
+  ]);
+  const role = reports ? 'manager' : 'employee';
+  if (role !== user.role) {
+    await users().updateOne({ userId: user.userId }, { $set: { role, updatedAt: now } });
+  }
 
-  return toAuthUser({ ...user, role });
+  const record: User = { ...user, role, lastLoginAt: now, updatedAt: now };
+  return {
+    user: await toAuthUser(record, { company: company ?? null, manager: manager ?? null }),
+    record,
+  };
 }
 
 /**
- * The people shown on the post-login welcome screen: your own team, not the
- * whole company. The same idea of a team as the manager workspace: your
- * manager heading it, whoever reports to your manager and works in your
- * department, and your own reports if you have any. Someone with none of
- * those sees their department instead, and with no department either the
- * screen simply has no team section.
- *
- * Projected deliberately: a full user document carries the profile photo, and
- * this runs right after sign-in.
+ * The people a teammate list shows, with only what it draws: name, role and
+ * the photo. A photo held as a link comes back as the link; one an older
+ * account keeps inline (a base64 data URI of hundreds of KB) stays behind
+ * unless asked for, since a company-sized list of those would be megabytes
+ * long. One round trip.
  */
-/**
- * Everyone the viewer can tag in a post or a comment: the whole company, by
- * name, bar themselves, counsellors (a pool shared across companies) and
- * anyone who has left. Photos come only as links: an older account's photo
- * kept inline would make a company-sized list megabytes long.
- */
-async function companyForTagging(viewerUserId: string, org: string, limit: number) {
-  const rows = await users()
-    .find(
+type TeammateRow = Pick<
+  User,
+  'userId' | 'name' | 'designation' | 'department' | 'role' | 'profilePhotoKey' | 'profilePhotoUrl' | 'managerUserId'
+>;
+function teammateRows(match: Filter<User>, { inlinePhotos = false } = {}): Promise<TeammateRow[]> {
+  return users()
+    .aggregate<TeammateRow>([
+      { $match: match },
+      { $sort: { name: 1 } },
       {
-        userId: { $ne: viewerUserId },
-        lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
-        isCounsellor: { $ne: true },
-        $or: [{ org }, { org: { $exists: false }, email: { $regex: `@${org.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$` } }],
+        $project: {
+          _id: 0, userId: 1, name: 1, designation: 1, department: 1, role: 1, profilePhotoKey: 1, managerUserId: 1,
+          profilePhotoUrl: inlinePhotos
+            ? 1
+            : {
+                $cond: [
+                  { $regexMatch: { input: { $ifNull: ['$profilePhotoUrl', ''] }, regex: '^http' } },
+                  '$profilePhotoUrl',
+                  '$$REMOVE',
+                ],
+              },
+        },
       },
-      { projection: { _id: 0, userId: 1, name: 1, designation: 1, department: 1, role: 1, profilePhotoKey: 1 } },
-    )
-    .sort({ name: 1 })
+    ])
     .toArray();
-  const shown = rows.slice(0, limit);
-  const links = new Map(
-    (
-      await users()
-        .find(
-          { userId: { $in: shown.map((row) => row.userId) }, profilePhotoUrl: { $regex: '^http' } },
-          { projection: { _id: 0, userId: 1, profilePhotoUrl: 1 } },
-        )
-        .toArray()
-    ).map((row) => [row.userId, row.profilePhotoUrl]),
-  );
-  const teammates = await Promise.all(
-    shown.map(async (row) => ({
+}
+
+/**
+ * Everyone at the company: their org, or (older accounts with no org) an
+ * address at its domain. The org half is what the index serves; the address
+ * half only ever looks at the few records with no org.
+ */
+function inOrgFilter(viewerUserId: string, org: string): Filter<User> {
+  return {
+    userId: { $ne: viewerUserId },
+    lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
+    $or: [{ org }, { org: { $exists: false }, email: { $regex: `@${org.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$` } }],
+  };
+}
+
+async function toTeammates(rows: TeammateRow[]) {
+  return Promise.all(
+    rows.map(async (row) => ({
       userId: row.userId,
       name: row.name,
       designation: row.designation ?? row.role ?? 'Teammate',
       department: row.department ?? '',
-      photoUrl: await resolveProfilePhoto({ profilePhotoKey: row.profilePhotoKey, profilePhotoUrl: links.get(row.userId) }),
+      photoUrl: await resolveProfilePhoto(row),
     })),
   );
-  return { teammates, total: rows.length };
+}
+
+/**
+ * Everyone the viewer can tag in a post or a comment: the whole company, by
+ * name, bar themselves, counsellors (a pool shared across companies) and
+ * anyone who has left.
+ */
+async function companyForTagging(viewerUserId: string, org: string, limit: number) {
+  const rows = await teammateRows({ ...inOrgFilter(viewerUserId, org), isCounsellor: { $ne: true } });
+  return { teammates: await toTeammates(rows.slice(0, limit)), total: rows.length };
 }
 
 /**
  * The viewer's team, for the welcome screen: their manager, the people under
- * the same manager in their department, and their own reports. With
- * `scope: 'company'` (the tag picker), everyone at the company instead.
+ * the same manager in their department, and their own reports. Someone with
+ * none of those sees their department instead, and with no department either
+ * the screen simply has no team section. With `scope: 'company'` (the tag
+ * picker), everyone at the company instead.
+ *
+ * The viewer is the record the auth check already read, when there is one.
  */
-export async function getTeammates(viewerUserId: string, limit = 12, scope: 'team' | 'company' = 'team') {
-  const viewer = await users().findOne(
-    { userId: viewerUserId },
-    { projection: { _id: 0, org: 1, email: 1, managerUserId: 1, department: 1 } },
-  );
+export async function getTeammates(
+  viewerUserId: string,
+  limit = 12,
+  scope: 'team' | 'company' = 'team',
+  preloaded?: Pick<User, 'org' | 'email' | 'managerUserId' | 'department'>,
+) {
+  const viewer =
+    preloaded ??
+    (await users().findOne(
+      { userId: viewerUserId },
+      { projection: { _id: 0, org: 1, email: 1, managerUserId: 1, department: 1 } },
+    ));
   if (!viewer) return { teammates: [], total: 0 };
   const org = viewer.org ?? viewer.email.split('@').at(1) ?? 'default';
   if (scope === 'company') return companyForTagging(viewerUserId, org, limit);
-  const projection = {
-    _id: 0, userId: 1, name: 1, designation: 1, department: 1,
-    role: 1, profilePhotoKey: 1, profilePhotoUrl: 1, managerUserId: 1,
-  };
-  const inOrg: Filter<User> = {
-    userId: { $ne: viewerUserId },
-    lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
-    $or: [{ org }, { email: { $regex: `@${org}$` } }],
-  };
+  const inOrg = inOrgFilter(viewerUserId, org);
   const department = viewer.department ?? '';
 
-  const related = await users()
-    .find(
+  // A team is a handful of people, and the welcome screen has always shown
+  // an older account's inline photo too.
+  const related = await teammateRows({
+    ...inOrg,
+    $and: [
       {
-        ...inOrg,
-        $and: [
-          {
-            $or: [
-              ...(viewer.managerUserId
-                ? [{ userId: viewer.managerUserId }, { managerUserId: viewer.managerUserId }]
-                : []),
-              { managerUserId: viewerUserId },
-            ],
-          },
+        $or: [
+          ...(viewer.managerUserId
+            ? [{ userId: viewer.managerUserId }, { managerUserId: viewer.managerUserId }]
+            : []),
+          { managerUserId: viewerUserId },
         ],
       },
-      { projection },
-    )
-    .sort({ name: 1 })
-    .toArray();
+    ],
+  }, { inlinePhotos: true });
   const manager = related.find((row) => row.userId === viewer.managerUserId);
   const team = [
     ...(manager ? [manager] : []),
@@ -290,22 +332,9 @@ export async function getTeammates(viewerUserId: string, limit = 12, scope: 'tea
 
   let rows = team;
   if (rows.length === 0 && department.length > 0) {
-    rows = await users()
-      .find({ ...inOrg, department }, { projection })
-      .sort({ name: 1 })
-      .toArray();
+    rows = await teammateRows({ ...inOrg, department }, { inlinePhotos: true });
   }
-  const total = rows.length;
-  const teammates = await Promise.all(
-    rows.slice(0, limit).map(async (row) => ({
-      userId: row.userId,
-      name: row.name,
-      designation: row.designation ?? row.role ?? 'Teammate',
-      department: row.department ?? '',
-      photoUrl: await resolveProfilePhoto(row),
-    })),
-  );
-  return { teammates, total };
+  return { teammates: await toTeammates(rows.slice(0, limit)), total: rows.length };
 }
 
 function companyFor(org: string | undefined) {
