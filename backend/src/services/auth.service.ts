@@ -190,16 +190,30 @@ async function completeLogin(user: User): Promise<{ user: AuthUser; record: User
   // Whether anyone reports to them, the sign-in stamp, and their company and
   // manager are all independent: asked together. The role is written apart,
   // and only on the rare sign-in where it has changed.
+  //
+  // Only the role is needed to sign in. The stamp, the company's name and the
+  // manager's are extras: one that fails is logged and the sign-in goes on
+  // (the company falls back to the org, the manager to none).
   const now = new Date();
+  const extra = <T>(what: string, work: Promise<T>) =>
+    work.catch((error: unknown) => {
+      logger.warn('Sign-in went on without one of its extras', {
+        what,
+        userId: user.userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    });
   const [reports, , company, manager] = await Promise.all([
     users().countDocuments({ managerUserId: user.userId }, { limit: 1 }),
-    users().updateOne({ userId: user.userId }, { $set: { lastLoginAt: now, updatedAt: now } }),
-    companyFor(user.org),
-    managerNameFor(user.managerUserId),
+    extra('lastLoginAt', users().updateOne({ userId: user.userId }, { $set: { lastLoginAt: now, updatedAt: now } })),
+    extra('company', Promise.resolve(companyFor(user.org))),
+    extra('manager', Promise.resolve(managerNameFor(user.managerUserId))),
   ]);
   const role = reports ? 'manager' : 'employee';
   if (role !== user.role) {
-    await users().updateOne({ userId: user.userId }, { $set: { role, updatedAt: now } });
+    // Not waited for: the answer already carries the new role.
+    void extra('role', users().updateOne({ userId: user.userId }, { $set: { role, updatedAt: now } }));
   }
 
   const record: User = { ...user, role, lastLoginAt: now, updatedAt: now };

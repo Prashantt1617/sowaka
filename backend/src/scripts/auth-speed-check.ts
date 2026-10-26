@@ -72,7 +72,12 @@ async function rejects(work: Promise<unknown>, status: number) {
   const session = await authSessions().findOne({ tokenHash });
   check('the session is kept', session?.userId === 'mgr' && session.expiresAt > new Date(), session);
   check('the code is spent', (await otpChallenges().findOne({ email: 'mgr@sowaka.test' })) === null);
-  const record = await users().findOne({ userId: 'mgr' });
+  // The role is written after the answer, so it is given a moment.
+  let record = await users().findOne({ userId: 'mgr' });
+  for (let tries = 0; record?.role !== 'manager' && tries < 20; tries += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    record = await users().findOne({ userId: 'mgr' });
+  }
   check('the role is written', record?.role === 'manager', record?.role);
   check('the sign-in is stamped', record?.lastLoginAt instanceof Date, record?.lastLoginAt);
   const remembered = cachedAuth(tokenHash);
