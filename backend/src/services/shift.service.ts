@@ -224,6 +224,9 @@ function leaveType(value: unknown): LeaveTypeRule {
     advanceDays: days(source.advanceDays, 'Advance window', 30),
     allowBackdated: flag(source.allowBackdated, true),
     backdatedDays: days(source.backdatedDays, 'Backdating window', 3),
+    // Leave without pay. Comp-off is a balance earned by overtime, so it can
+    // never be unpaid. Written only when on, so a paid type reads as before.
+    ...(key !== 'comp_off' && flag(source.unpaid, false) ? { unpaid: true } : {}),
   };
 }
 
@@ -852,6 +855,8 @@ export type ShiftPolicyView = {
     advanceDays: number;
     allowBackdated: boolean;
     backdatedDays: number;
+    /** Leave without pay: no balance to show or check, and every day of it is loss of pay. */
+    unpaid: boolean;
   }[];
   /**
    * Whether this employee has a leave balance. With it off they are on
@@ -920,6 +925,7 @@ export function shiftPolicyViewOf(policy: ResolvedShiftPolicy): ShiftPolicyView 
         advanceDays: type.advanceDays,
         allowBackdated: type.allowBackdated,
         backdatedDays: type.backdatedDays,
+        unpaid: type.unpaid === true,
       })),
     leaveBalanceTracked: policy.leave.balanceTracked ?? true,
     correction: {

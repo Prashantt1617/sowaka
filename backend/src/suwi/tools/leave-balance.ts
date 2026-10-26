@@ -51,6 +51,8 @@ defineTools({
           key: t.key, name: t.name, total: t.total, used: t.used, remaining: t.remaining,
           pendingDays: pendingBy[t.key]?.days ?? 0, pendingRequests: pendingBy[t.key]?.count ?? 0,
           ...((t as { cadence?: string; period?: string }).cadence === 'monthly' ? { cadence: 'monthly', period: (t as { period?: string }).period } : {}),
+          // No balance at all: total and remaining mean nothing, used is what was taken (and docked).
+          ...((t as { unpaid?: boolean }).unpaid ? { leaveWithoutPay: true, balance: 'unlimited; every approved day is loss of pay' } : {}),
         })),
       },
       links: [{ label: `Open ${person.name.split(' ')[0]}'s requests`, userId: person.userId, tab: 'requests' }, { label: 'Open leave requests', view: 'leave' }],
