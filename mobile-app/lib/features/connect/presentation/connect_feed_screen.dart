@@ -24,6 +24,7 @@ import 'feed_video.dart';
 import 'game_play_screen.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
 import '../../notifications/presentation/notification_inbox_screen.dart';
+import '../../profile/presentation/profile_style.dart' show ProfileEmptyNote;
 import '../../../services/api_config.dart';
 import '../../../services/linkified_text.dart';
 import '../../relay/presentation/relay_post_card.dart';
@@ -42,6 +43,7 @@ part 'contest_composer.dart';
 part 'contest_entries_route.dart';
 part 'engagement_cards.dart';
 part 'engagement_entries_sheet.dart';
+part 'person_posts_tab.dart';
 part 'poll_post_card.dart';
 part 'post_card_host.dart';
 part 'post_likes_sheet.dart';
@@ -103,6 +105,31 @@ class ConnectComposerController {
   /// top (from a notification).
   void openPost(String postId, {bool comments = false, bool inPlace = false}) =>
       _state?._revealPost(postId, comments: comments, inPlace: inPlace);
+
+  /// A bloc for [userId]'s own posts, for the Posts tab on their profile.
+  /// What is liked, commented on, voted on or deleted there is put into the
+  /// feed under it too, so going back shows the same.
+  ConnectBloc personPosts(AuthSession session, String userId) => ConnectBloc(
+    session: session,
+    authorUserId: userId,
+    onPostSaved: (post) => _state?._bloc.adoptPost(post),
+    onPostDeleted: (postId) => _state?._bloc.forgetPost(postId),
+  );
+
+  /// The company directory the feed has loaded, for tagging someone in a
+  /// comment on a profile's post. Empty until it has.
+  List<ConnectTeammate> get _people => _state?._taggablePeople ?? const [];
+
+  /// Edits [post] in the feed's composer — a profile has none of its own,
+  /// nor the lists and directory it needs — then has [alsoIn] read it again.
+  Future<void> _editPost(ConnectPost post, {required ConnectBloc alsoIn}) async {
+    final state = _state;
+    if (state == null || !await state._openComposer(post.type, existing: post)) return;
+    await alsoIn.ensurePost(post.id, keepOnTop: false);
+  }
+
+  /// Someone was blocked from a profile: the feed drops them too.
+  void _refresh() => _state?._bloc.refresh();
 }
 
 class ConnectFeedScreen extends StatefulWidget {
@@ -641,12 +668,17 @@ class _ConnectPostCard extends StatefulWidget {
     this.onSubmitCaption,
     this.onDeleteCaption,
     this.onVoteCaption,
+    this.conversation = true,
   });
 
   final ConnectPost post;
   final bool busy;
   final bool canManage;
   final VoidCallback onLike;
+
+  /// The latest comments and the comment box under the likes; false on a
+  /// profile's Post tab (see `_PostFooter.conversation`).
+  final bool conversation;
 
   /// Likes the post and never unlikes it; null while a double-tap should do
   /// nothing.
@@ -827,6 +859,7 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
                 viewerColor: widget.viewerColor,
                 viewerPhotoUrl: widget.viewerPhotoUrl,
                 mentions: _mentions,
+                conversation: widget.conversation,
               ),
           ],
         ),
@@ -907,6 +940,7 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
                 viewerColor: widget.viewerColor,
                 viewerPhotoUrl: widget.viewerPhotoUrl,
                 mentions: _mentions,
+                conversation: widget.conversation,
               ),
             ],
           ),
@@ -4307,6 +4341,7 @@ class _PostFooter extends StatelessWidget {
     required this.viewerColor,
     this.viewerPhotoUrl = '',
     this.mentions,
+    this.conversation = true,
   });
 
   final ConnectPost post;
@@ -4322,6 +4357,11 @@ class _PostFooter extends StatelessWidget {
   /// The "@" tags in [controller]; null where tagging is not offered.
   final _CommentMentions? mentions;
 
+  /// The latest comments and a box to write one, under the likes. False on a
+  /// profile's Post tab, which draws only the likes and comments row (node
+  /// 3965:56279); the comments sheet still opens from it.
+  final bool conversation;
+
   @override
   Widget build(BuildContext context) {
     // Transparent, not opaque white: the card behind it may be tinted (see
@@ -4332,10 +4372,17 @@ class _PostFooter extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Color(0x66EBEBEB))),
-            ),
+            padding: conversation
+                ? const EdgeInsets.symmetric(horizontal: 16, vertical: 10)
+                // The Post tab's row (node 3965:56280): the heart 30 under
+                // the text and 23 over the card's edge, with no rule above —
+                // the text's own 14 and the heart's 4 counted in.
+                : const EdgeInsets.fromLTRB(16, 12, 16, 18),
+            decoration: conversation
+                ? const BoxDecoration(
+                    border: Border(top: BorderSide(color: Color(0x66EBEBEB))),
+                  )
+                : null,
             child: Row(
               children: [
                 // The heart likes; the count beside it lists who did.
@@ -4414,7 +4461,7 @@ class _PostFooter extends StatelessWidget {
               ],
             ),
           ),
-          if (post.comments.isNotEmpty)
+          if (conversation && post.comments.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
               child: Column(
@@ -4509,7 +4556,7 @@ class _PostFooter extends StatelessWidget {
                 }).toList(),
               ),
             ),
-          if (mentions case final tags?)
+          if (mentions case final tags? when conversation)
             ValueListenableBuilder<TextEditingValue>(
               valueListenable: controller,
               builder: (context, _, _) {
@@ -4525,66 +4572,67 @@ class _PostFooter extends StatelessWidget {
                 );
               },
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                _InitialAvatar(
-                  initials: viewerInitials,
-                  color: viewerColor,
-                  photoUrl: viewerPhotoUrl,
-                  size: 32,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    minLines: 1,
-                    maxLines: 3,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => onComment(),
-                    decoration: InputDecoration(
-                      hintText: 'Write a comment...',
-                      hintStyle: const TextStyle(
-                        color: _ConnectColors.faint,
-                        fontSize: 12.5,
-                      ),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.send_rounded, size: 18),
-                        color: _ConnectColors.blue,
-                        onPressed: onComment,
-                      ),
-                      filled: true,
-                      fillColor: const Color(0xFFF7F7F9),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(99),
-                        borderSide: const BorderSide(
-                          color: _ConnectColors.cardBorder,
+          if (conversation)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _InitialAvatar(
+                    initials: viewerInitials,
+                    color: viewerColor,
+                    photoUrl: viewerPhotoUrl,
+                    size: 32,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: controller,
+                      minLines: 1,
+                      maxLines: 3,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => onComment(),
+                      decoration: InputDecoration(
+                        hintText: 'Write a comment...',
+                        hintStyle: const TextStyle(
+                          color: _ConnectColors.faint,
+                          fontSize: 12.5,
                         ),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(99),
-                        borderSide: const BorderSide(
-                          color: _ConnectColors.cardBorder,
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.send_rounded, size: 18),
+                          color: _ConnectColors.blue,
+                          onPressed: onComment,
                         ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(99),
-                        borderSide: const BorderSide(
-                          color: _ConnectColors.terra,
+                        filled: true,
+                        fillColor: const Color(0xFFF7F7F9),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(99),
+                          borderSide: const BorderSide(
+                            color: _ConnectColors.cardBorder,
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(99),
+                          borderSide: const BorderSide(
+                            color: _ConnectColors.cardBorder,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(99),
+                          borderSide: const BorderSide(
+                            color: _ConnectColors.terra,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );

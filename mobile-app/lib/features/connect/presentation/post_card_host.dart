@@ -30,8 +30,14 @@ mixin _PostCardHost<T extends StatefulWidget> on State<T> {
   String get _viewerPhotoUrl => _session.user.profilePhotoUrl ?? '';
 
   /// One post's card, as the feed draws it: the celebrant's own wishes, a game
-  /// that draws its whole card itself, or the standard post.
-  Widget _postCard(ConnectPost post, ConnectState state, {Key? key}) {
+  /// that draws its whole card itself, or the standard post — with its latest
+  /// comments and comment box unless [conversation] is false.
+  Widget _postCard(
+    ConnectPost post,
+    ConnectState state, {
+    Key? key,
+    bool conversation = true,
+  }) {
     // The celebrant's own birthday or anniversary: their wishes, not
     // a card asking them to wish themselves.
     if (_isCelebrant(post, _session.user.id)) {
@@ -58,6 +64,7 @@ mixin _PostCardHost<T extends StatefulWidget> on State<T> {
     return _ConnectPostCard(
       key: key,
       post: post,
+      conversation: conversation,
       busy: state.busyPostId == post.id,
       canManage:
           post.author.userId.isNotEmpty &&
