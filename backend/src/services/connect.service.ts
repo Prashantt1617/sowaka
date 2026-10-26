@@ -183,44 +183,13 @@ export async function getConnectFeed(
     blockedUserIdsFor(viewerUserId),
   ]);
   if (!viewer) throw new ConnectError(404, 'User not found');
-  const org = orgForUser(viewer);
+  const { org, blockFilter, audienceFilter } = feedVisibility(viewer, blockedUserIds);
   const typeFilter =
     options.types && options.types.length > 0 ? { type: { $in: options.types } } : {};
-  const limit = Math.min(FEED_MAX_LIMIT, Math.max(1, Math.floor(options.limit ?? FEED_DEFAULT_LIMIT)));
+  const limit = feedPageLimit(options.limit);
   const after = decodeFeedCursor(options.cursor);
-  // Everything older than the cursor, in the feed's own order, so a post
-  // published in between two pages shifts nothing already shown.
-  const cursorFilter = after
-    ? {
-        $or: [
-          { publishedAt: { $lt: after.publishedAt } },
-          { publishedAt: after.publishedAt, createdAt: { $lt: after.createdAt } },
-          ...(after.id
-            ? [{ publishedAt: after.publishedAt, createdAt: after.createdAt, _id: { $lt: after.id } }]
-            : []),
-        ],
-      }
-    : {};
+  const cursorFilter = olderThanCursor(after);
 
-  // Blocking is a personal mute: a blocked colleague's own posts drop out of
-  // this viewer's feed. Official announcements are exempt — an employee who
-  // has muted a colleague who happens to work in HR must still see what the
-  // company tells everyone.
-  const blockFilter =
-    blockedUserIds.length > 0
-      ? {
-          $nor: [
-            {
-              'author.userId': { $in: blockedUserIds },
-              type: { $nin: ANNOUNCEMENT_POST_TYPES },
-            },
-          ],
-        }
-      : {};
-
-  // Company-wide, the viewer's teams, or a custom list they are on — the
-  // same rule `requireVisiblePost` applies to a single post.
-  const audienceFilter = feedAudienceFilter(viewer);
   // Up to FEED_MAX_PINNED pinned posts lead the first page while their pins
   // last. The paged list leaves out exactly the ones that page showed, on
   // every page, by the ids the cursor carries: a pin past the limit keeps its
@@ -279,6 +248,143 @@ export async function getConnectFeed(
   const paged = hasMore ? page.slice(0, limit) : page;
   const posts = [...pinned, ...paged];
 
+  return {
+    posts: await viewFeedPage(posts, viewerUserId, blockedUserIds),
+    // From the last post in feed order — never a pinned one, which sits
+    // outside it — with the first page's pins passed along to the next.
+    nextCursor:
+      hasMore && paged.length > 0 ? encodeFeedCursor(paged[paged.length - 1], shownPinnedIds) : null,
+  };
+}
+
+/**
+ * One person's own posts, newest first, for the Posts tab on their profile:
+ * exactly what this viewer's feed would show of theirs, a page at a time on
+ * the feed's cursor. No pins — a profile is in the order things were posted.
+ *
+ * Someone outside the viewer's company is not found, as their profile is not.
+ * Someone the viewer has blocked shows only what a block never hides — their
+ * announcements — as in the feed. `total`, how many there are in all for the
+ * tab's badge, comes with the first page only.
+ */
+export async function getConnectPersonPosts(
+  viewerUserId: string,
+  personUserId: string,
+  options: { limit?: number; cursor?: string } = {},
+) {
+  // The viewer, the person and the block list are independent reads.
+  const [viewer, person, blockedUserIds] = await Promise.all([
+    requestViewer(viewerUserId) ?? users().findOne({ userId: viewerUserId }, { projection: { profilePhotoUrl: 0 } }),
+    personUserId
+      ? users().findOne({ userId: personUserId }, { projection: { _id: 0, userId: 1, org: 1, email: 1 } })
+      : Promise.resolve(null),
+    blockedUserIdsFor(viewerUserId),
+  ]);
+  if (!viewer) throw new ConnectError(404, 'User not found');
+  const { org, blockFilter, audienceFilter } = feedVisibility(viewer, blockedUserIds);
+  if (!person || orgForUser(person) !== org) throw new ConnectError(404, 'Person not found');
+  const limit = feedPageLimit(options.limit);
+  const after = decodeFeedCursor(options.cursor);
+  const theirs = { org, 'author.userId': personUserId, ...blockFilter };
+
+  const [rows, total] = await Promise.all([
+    connectPosts()
+      .find({ ...theirs, $and: [audienceFilter, ...(after ? [olderThanCursor(after)] : [])] })
+      .sort({ publishedAt: -1, createdAt: -1, _id: -1 })
+      // One more than the page, to know whether another page follows.
+      .limit(limit + 1)
+      .toArray(),
+    after ? Promise.resolve(null) : connectPosts().countDocuments({ ...theirs, $and: [audienceFilter] }),
+  ]);
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  return {
+    posts: (await viewFeedPage(page, viewerUserId, blockedUserIds)).map(cardFields),
+    nextCursor: hasMore && page.length > 0 ? encodeFeedCursor(page[page.length - 1]) : null,
+    ...(total === null ? {} : { total }),
+  };
+}
+
+/**
+ * A post as its card reads it (`ConnectPost.fromJson` in the app), and
+ * nothing else: not the like list, the votes, who acted on it or the stored
+ * ids, which the feed's view still carries from the document underneath.
+ */
+function cardFields(view: Awaited<ReturnType<typeof viewPost>>) {
+  return {
+    id: view.id,
+    type: view.type,
+    tag: view.tag,
+    tagIcon: view.tagIcon,
+    tagColor: view.tagColor,
+    tagTint: view.tagTint,
+    author: view.author,
+    audience: view.audience,
+    body: view.body,
+    liked: view.liked,
+    likeCount: view.likeCount,
+    commentCount: view.commentCount,
+    comments: view.comments,
+    publishedAt: view.publishedAt,
+    selectedPollOptionId: view.selectedPollOptionId,
+    actionValue: view.actionValue,
+  };
+}
+
+/** How many posts a page holds: what the app asked for, within the feed's bounds. */
+function feedPageLimit(asked: number | undefined) {
+  return Math.min(FEED_MAX_LIMIT, Math.max(1, Math.floor(asked ?? FEED_DEFAULT_LIMIT)));
+}
+
+/**
+ * Everything older than the cursor, in the feed's own order, so a post
+ * published in between two pages shifts nothing already shown.
+ */
+function olderThanCursor(after: ReturnType<typeof decodeFeedCursor>): Record<string, unknown> {
+  if (!after) return {};
+  return {
+    $or: [
+      { publishedAt: { $lt: after.publishedAt } },
+      { publishedAt: after.publishedAt, createdAt: { $lt: after.createdAt } },
+      ...(after.id
+        ? [{ publishedAt: after.publishedAt, createdAt: after.createdAt, _id: { $lt: after.id } }]
+        : []),
+    ],
+  };
+}
+
+/**
+ * What a viewer's feed may show, wherever it is read — the feed itself, or one
+ * person's posts on their profile: their company's posts, to an audience they
+ * are in, less what they have muted.
+ */
+function feedVisibility(viewer: Omit<User, 'profilePhotoUrl'>, blockedUserIds: string[]) {
+  // Blocking is a personal mute: a blocked colleague's own posts drop out of
+  // this viewer's feed. Official announcements are exempt — an employee who
+  // has muted a colleague who happens to work in HR must still see what the
+  // company tells everyone.
+  const blockFilter =
+    blockedUserIds.length > 0
+      ? {
+          $nor: [
+            {
+              'author.userId': { $in: blockedUserIds },
+              type: { $nin: ANNOUNCEMENT_POST_TYPES },
+            },
+          ],
+        }
+      : {};
+  return {
+    org: orgForUser(viewer),
+    blockFilter,
+    // Company-wide, the viewer's teams, or a custom list they are on — the
+    // same rule `requireVisiblePost` applies to a single post.
+    audienceFilter: feedAudienceFilter(viewer),
+  };
+}
+
+/** A page of posts as this viewer's cards draw them, everyone on it read once for the page. */
+async function viewFeedPage(posts: ConnectPost[], viewerUserId: string, blockedUserIds: string[]) {
   // `post.author.photoUrl` is a snapshot frozen at creation time (see
   // `createConnectPost`), so a post predates whatever profile photo its
   // author later uploads. Resolve the live photo for everyone shown in this
@@ -319,18 +425,11 @@ export async function getConnectFeed(
     ),
   );
 
-  const views = await Promise.all(
+  return Promise.all(
     posts.map((post) =>
       viewPost(post, viewerUserId, authorPhotoUrls, blockedUserIds, relayStatuses, leaderIds, people),
     ),
   );
-  return {
-    posts: views,
-    // From the last post in feed order — never a pinned one, which sits
-    // outside it — with the first page's pins passed along to the next.
-    nextCursor:
-      hasMore && paged.length > 0 ? encodeFeedCursor(paged[paged.length - 1], shownPinnedIds) : null,
-  };
 }
 
 /**
