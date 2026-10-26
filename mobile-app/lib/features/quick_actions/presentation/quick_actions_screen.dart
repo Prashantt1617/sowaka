@@ -1047,12 +1047,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                         onNotifications: widget.onNotifications,
                         // The shell's tabs under the desk; a pick comes back
                         // to the shell first, once anything unsent is let go.
-                        tabs: visibleTabs(widget.bloc.session.user.enabledTabs),
+                        tabs: visibleTabs(
+                          widget.bloc.session.user.enabledTabs,
+                        ),
                         selectedTab: widget.bloc.state.tab,
                         onSelectTab: (tab) {
-                          Navigator.of(
-                            context,
-                          ).popUntil((route) => route.isFirst);
+                          Navigator.of(context)
+                              .popUntil((route) => route.isFirst);
                           widget.bloc.add(ChangeManagerTab(tab, fresh: true));
                         },
                       ),

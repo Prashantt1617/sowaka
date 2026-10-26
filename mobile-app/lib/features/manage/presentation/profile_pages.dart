@@ -3323,9 +3323,10 @@ class _FootnoteLink extends StatelessWidget {
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
-/// The Settings tab on one's own profile (node 3857:82656): the privacy
-/// policy, the people they have blocked, log out, and deleting the account.
-/// Log out asks first ([confirmLogOut]); the rest open what they always did.
+/// The Settings tab on one's own profile (node 4194:21788): the privacy
+/// policy, the people they have blocked, deleting the account, and log out,
+/// each a glyph and its name in the same ink. Log out asks first
+/// ([confirmLogOut]); the rest open what they always did.
 class ProfileSettingsTab extends StatelessWidget {
   const ProfileSettingsTab({
     super.key,
@@ -3358,7 +3359,6 @@ class ProfileSettingsTab extends StatelessWidget {
           key: const ValueKey('profile-settings-privacy'),
           label: 'Privacy Policy',
           icon: const _PrivacyPolicyGlyph(),
-          arrowAsset: 'assets/icons/settings_arrow.svg',
           onTap: () => _open(context, ApiConfig.privacyPolicyUrl),
         ),
         // The only way back from a block, which is why the block sheet
@@ -3371,7 +3371,6 @@ class ProfileSettingsTab extends StatelessWidget {
             width: 19.99,
             height: 19.99,
           ),
-          arrowAsset: 'assets/icons/settings_arrow.svg',
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => BlockedPeopleScreen(session: session),
@@ -3379,51 +3378,43 @@ class ProfileSettingsTab extends StatelessWidget {
           ),
         ),
         _SettingsRow(
-          key: const ValueKey('profile-settings-logout'),
-          label: 'Log out',
-          color: ProfileStyle.tertiary,
-          icon: SvgPicture.asset(
-            'assets/icons/settings_log_out.svg',
-            width: 19.99,
-            height: 19.99,
-          ),
-          arrowAsset: 'assets/icons/settings_arrow_grey.svg',
-          onTap: () => confirmLogOut(context, onLogOut),
-        ),
-        _SettingsRow(
           key: const ValueKey('profile-settings-delete'),
           label: 'Delete my account',
-          color: const Color(0xFFFF5A5F),
           icon: SvgPicture.asset(
             'assets/icons/settings_delete.svg',
             width: 19.99,
             height: 19.99,
           ),
-          arrowAsset: 'assets/icons/settings_arrow_red.svg',
           onTap: () => _open(context, ApiConfig.dataDeletionUrl),
+        ),
+        _SettingsRow(
+          key: const ValueKey('profile-settings-logout'),
+          label: 'Log out',
+          icon: SvgPicture.asset(
+            'assets/icons/settings_log_out.svg',
+            width: 19.99,
+            height: 19.99,
+          ),
+          onTap: () => confirmLogOut(context, onLogOut),
         ),
       ],
     );
   }
 }
 
-/// One 40pt line of Settings: the glyph on its soft disc, the label, and the
-/// arrow at the far end, all in the row's colour.
+/// One 40pt line of Settings: the glyph on its soft disc and the label
+/// beside it.
 class _SettingsRow extends StatelessWidget {
   const _SettingsRow({
     super.key,
     required this.label,
     required this.icon,
-    required this.arrowAsset,
     required this.onTap,
-    this.color = ProfileStyle.ink,
   });
 
   final String label;
   final Widget icon;
-  final String arrowAsset;
   final VoidCallback onTap;
-  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -3455,15 +3446,10 @@ class _SettingsRow extends StatelessWidget {
                   style: ProfileStyle.sora(
                     14,
                     weight: FontWeight.w500,
-                    color: color,
+                    color: ProfileStyle.ink,
                     height: 20,
                   ),
                 ),
-              ),
-              // Drawn pointing left; the design turns it to point on.
-              Transform.flip(
-                flipX: true,
-                child: SvgPicture.asset(arrowAsset, width: 20, height: 20),
               ),
             ],
           ),
