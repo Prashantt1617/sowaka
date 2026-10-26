@@ -415,7 +415,12 @@ class LeaveBalanceItem {
     required this.total,
     this.monthly = false,
     this.period = '',
+    this.unpaid = false,
   });
+
+  /// Leave without pay: no balance at all, so nothing runs out — every day of
+  /// it is unpaid instead. [remaining] and [total] mean nothing then.
+  final bool unpaid;
 
   /// Days, which can be fractional — comp-off is credited in halves and a
   /// half-day leave spends half a day.
@@ -443,6 +448,7 @@ class LeaveBalanceItem {
       total: (json['total'] as num?)?.toDouble() ?? 0,
       monthly: json['cadence'] == 'monthly',
       period: json['period'] as String? ?? '',
+      unpaid: json['unpaid'] == true || json['unlimited'] == true,
     );
   }
 }
@@ -554,6 +560,7 @@ class LeaveRequest {
     required this.avatarIndex,
     required this.team,
     required this.type,
+    this.typeKey = '',
     required this.start,
     required this.end,
     required this.days,
@@ -577,6 +584,10 @@ class LeaveRequest {
   final int avatarIndex;
   final String team;
   final String type;
+
+  /// The type's key on the template ('casual', 'without_pay'), as the server
+  /// sent it; [type] is its display name.
+  final String typeKey;
   final DateTime start;
   final DateTime end;
 
@@ -629,6 +640,7 @@ class LeaveRequest {
           : typeValue.isEmpty
           ? 'Leave'
           : '${typeValue[0].toUpperCase()}${typeValue.substring(1)}',
+      typeKey: typeValue,
       start: start,
       end: end,
       days:
@@ -661,6 +673,7 @@ class LeaveRequest {
       avatarIndex: avatarIndex,
       team: team,
       type: type,
+      typeKey: typeKey,
       start: start,
       end: end,
       days: days,
@@ -978,8 +991,8 @@ class ServerDayStatus {
   /// YYYY-MM-DD.
   final String date;
 
-  /// present, half_day, absent, missed_punch, on_leave, week_off, holiday or
-  /// upcoming.
+  /// present, half_day, absent, missed_punch, on_leave, unpaid_leave (leave
+  /// without pay), week_off, holiday or upcoming.
   final String status;
   final String? label;
 
@@ -1417,6 +1430,7 @@ class LeaveTypeWindow {
     this.advanceDays = 30,
     this.allowBackdated = true,
     this.backdatedDays = 3,
+    this.unpaid = false,
   });
 
   final String key;
@@ -1424,6 +1438,9 @@ class LeaveTypeWindow {
   final int advanceDays;
   final bool allowBackdated;
   final int backdatedDays;
+
+  /// Leave without pay, as HR set it: unlimited, and unpaid in payroll.
+  final bool unpaid;
 
   /// The furthest ahead this type can be applied for.
   DateTime latestFrom(DateTime today) => today.add(Duration(days: advanceDays));
@@ -1439,6 +1456,7 @@ class LeaveTypeWindow {
         advanceDays: (json['advanceDays'] as num?)?.toInt() ?? 30,
         allowBackdated: json['allowBackdated'] as bool? ?? true,
         backdatedDays: (json['backdatedDays'] as num?)?.toInt() ?? 3,
+        unpaid: json['unpaid'] as bool? ?? false,
       );
 }
 
@@ -1621,6 +1639,10 @@ class ShiftPolicy {
         .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
         .replaceAll(RegExp(r'^_+|_+$'), '');
   }
+
+  /// Whether a leave type, by key or display name, is leave without pay.
+  bool isUnpaidLeave(String keyOrLabel) =>
+      windowForLeave(keyOrLabel)?.unpaid ?? false;
 
   /// The window for one leave type by its display name, or null if unknown.
   LeaveTypeWindow? windowForLeave(String label) {
@@ -2274,6 +2296,7 @@ class PayslipDay {
     'half_day' => status == 'half_day' || status == 'missed_punch',
     'leave' => status == 'on_leave',
     'missed_punch' => status == 'missed_punch',
+    'unpaid_leave' => status == 'unpaid_leave',
     _ => false,
   };
 }
