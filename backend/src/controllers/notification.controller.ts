@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
-import { listNotificationRows, withoutDeletedPosts, markAllNotificationsRead, markNotificationRead, registerDeviceToken, sendTestPush, unregisterDeviceToken } from '../services/notification.service';
+import { listNotificationRows, listUnreadNotificationRows, withoutDeletedPosts, markAllNotificationsRead, markNotificationRead, registerDeviceToken, sendTestPush, unregisterDeviceToken } from '../services/notification.service';
 import { resolveNotifications, withoutEndedGames } from '../services/notification-resolution.service';
 
 const userId = (req: Request) => req.auth!.userId;
@@ -29,6 +29,29 @@ export async function notificationInbox(req: Request, res: Response, next: NextF
     const live = new Set(current);
     // `resolved` is `rows`, row for row, some marked resolved.
     res.json({ success: true, notifications: resolved.filter((_, i) => keep.has(rows[i]) && live.has(rows[i])) });
+  } catch (error) { next(error); }
+}
+/**
+ * How many rows the inbox would show unread, for the bell's dot, without
+ * sending the inbox: unread, not about a deleted post or an ended game, and
+ * not already done with (resolved), exactly as the inbox counts them.
+ */
+export async function unreadNotificationCount(req: Request, res: Response, next: NextFunction) {
+  try {
+    const rows = await listUnreadNotificationRows(userId(req));
+    if (rows.length === 0) {
+      res.json({ success: true, unread: 0 });
+      return;
+    }
+    const [kept, resolved, current] = await Promise.all([
+      withoutDeletedPosts(rows),
+      resolveNotifications(userId(req), rows),
+      withoutEndedGames(rows),
+    ]);
+    const keep = new Set(kept);
+    const live = new Set(current);
+    const unread = resolved.filter((row, i) => keep.has(rows[i]) && live.has(rows[i]) && !row.resolved).length;
+    res.json({ success: true, unread });
   } catch (error) { next(error); }
 }
 export async function readNotification(req: Request, res: Response, next: NextFunction) {

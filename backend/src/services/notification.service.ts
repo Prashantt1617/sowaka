@@ -82,6 +82,19 @@ export function listNotificationRows(userId: string) {
 }
 
 /**
+ * The unread rows among those the inbox shows, for the bell's dot: only these
+ * cross the link, not the whole hundred, and someone with nothing unread costs
+ * one indexed read.
+ */
+export function listUnreadNotificationRows(userId: string) {
+  return notifications()
+    .find({ userId, readAt: { $exists: false } })
+    .sort({ createdAt: -1 })
+    .limit(100)
+    .toArray();
+}
+
+/**
  * A notification about a post that has since been deleted leads nowhere.
  * Deleting a post now removes its notifications too; this covers the ones
  * written before that, and any a delete raced with.
