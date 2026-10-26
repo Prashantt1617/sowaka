@@ -13,6 +13,7 @@ import {
   imageCopies,
   POST_IMAGE_EDGE,
   requestedWidth,
+  withoutMetadata,
 } from '../services/image-fit';
 import { mediaCacheControl, mediaCandidates, rememberMissingCopy } from '../services/media-lookup';
 
@@ -104,6 +105,19 @@ async function picture(width: number, height: number, format: 'jpeg' | 'png', al
   rememberMissingCopy(`${key}@w720`, now);
   check('a copy found missing is not looked for again', mediaCandidates(key, 700, now + 1000)[0].key === `${key}@w1080`);
   check('but is after ten minutes', mediaCandidates(key, 700, now + 11 * 60_000)[0].key === `${key}@w720`);
+
+  // The original is what full screen shows: it must not say where it was taken.
+  const tagged = await sharp({ create: { width: 800, height: 600, channels: 3, background: '#a33' } })
+    .jpeg()
+    .withExif({ IFD0: { Copyright: 'Somewhere' }, IFD3: { GPSLatitudeRef: 'N', GPSLatitude: '12/1 58/1 0/1' } })
+    .toBuffer();
+  const before = await sharp(tagged).metadata();
+  const clean = await withoutMetadata({ originalName: 'IMG.jpg', contentType: 'image/jpeg', size: tagged.length, bytes: tagged });
+  const after = await sharp(clean.bytes).metadata();
+  check('a stored original keeps no EXIF (GPS included)', Boolean(before.exif) && !after.exif, [Boolean(before.exif), Boolean(after.exif)]);
+  check('and keeps its full size and format', after.width === 800 && clean.contentType === 'image/jpeg');
+  const clip = { originalName: 'v.mp4', contentType: 'video/mp4', size: 3, bytes: Buffer.from('abc') };
+  check('a video is kept exactly as it came', (await withoutMetadata(clip)) === clip);
 
   const year = 'private, max-age=31536000, immutable';
   check('a copy is kept a year, privately', mediaCacheControl({ key: `${key}@w720`, copy: true }, 700, key) === year);

@@ -70,6 +70,38 @@ export function imageCopies(file: ConnectMediaFile, copies: MediaCopies): Promis
   return fitAt(file, COPY_WIDTHS[copies]);
 }
 
+/**
+ * The original as it is kept: full size and in its own format, but turned the
+ * way the camera held it and without its metadata. A phone photo carries where
+ * it was taken, and anyone who opens the picture full screen gets the original.
+ * Anything that is not a still picture, or that fails to decode, is kept as it
+ * came. Never throws.
+ */
+export async function withoutMetadata(file: ConnectMediaFile): Promise<ConnectMediaFile> {
+  if (!RESIZABLE.has(file.contentType)) return file;
+  try {
+    const image = sharp(file.bytes, { failOn: 'none' });
+    const meta = await image.metadata();
+    if ((meta.pages ?? 1) > 1) return file;
+    // sharp writes no EXIF, XMP or IPTC unless asked to.
+    const upright = image.rotate();
+    const bytes = await (file.contentType === 'image/png'
+      ? upright.png({ compressionLevel: 9 })
+      : file.contentType === 'image/webp'
+        ? upright.webp({ quality: 92 })
+        : upright.jpeg({ quality: 92, mozjpeg: true })
+    ).toBuffer();
+    return { ...file, size: bytes.length, bytes };
+  } catch (error) {
+    logger.warn('Original kept as uploaded: its metadata could not be removed', {
+      contentType: file.contentType,
+      size: file.size,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return file;
+  }
+}
+
 /** Decoded once, then fitted to each edge in turn. Never throws. */
 async function fitAt(file: ConnectMediaFile, edges: readonly number[]): Promise<MediaCopy[]> {
   if (!RESIZABLE.has(file.contentType)) return [];

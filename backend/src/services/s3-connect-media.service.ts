@@ -11,7 +11,7 @@ import { env } from '../config/env';
 import { s3EncryptionParams } from '../utils/s3-encryption.util';
 import { connectMedia } from '../config/db';
 import { logger } from '../utils/logger';
-import { AVATAR_EDGE, copyKey, imageCopies, MEDIA_WIDTHS, type MediaCopies, type MediaCopy } from './image-fit';
+import { AVATAR_EDGE, copyKey, imageCopies, MEDIA_WIDTHS, withoutMetadata, type MediaCopies, type MediaCopy } from './image-fit';
 
 export type ConnectMediaFile = {
   originalName: string;
@@ -28,7 +28,9 @@ let client: S3Client | undefined;
  * that fails to store is logged, `/media` serves the original in its place,
  * and the upload still succeeds.
  */
-export async function uploadConnectMedia(userId: string, file: ConnectMediaFile, copies?: MediaCopies) {
+export async function uploadConnectMedia(userId: string, upload: ConnectMediaFile, copies?: MediaCopies) {
+  // A picture's original loses its metadata (where it was taken) before it is kept.
+  const file = copies ? await withoutMetadata(upload) : upload;
   const made = copies ? await imageCopies(file, copies) : [];
   if (!hasS3Configuration()) return storeInMongo(file, made);
   try {
