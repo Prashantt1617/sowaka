@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import { listNotificationRows, listUnreadNotificationRows, withoutDeletedPosts, markAllNotificationsRead, markNotificationRead, registerDeviceToken, sendTestPush, unregisterDeviceToken } from '../services/notification.service';
 import { resolveNotifications, withoutEndedGames } from '../services/notification-resolution.service';
+import { optional } from '../utils/optional';
 
 const userId = (req: Request) => req.auth!.userId;
 export async function testNotification(req: Request, res: Response, next: NextFunction) {
@@ -20,8 +21,11 @@ export async function notificationInbox(req: Request, res: Response, next: NextF
     // Whether a row's post is gone, whether it has been overtaken by events and
     // whether its game has ended are separate questions about the same rows, so
     // they are asked side by side rather than one after another.
+    //
+    // Each filter fails on its own: should the posts be unreadable, the rows
+    // about them stay in rather than the inbox not opening.
     const [kept, resolved, current] = await Promise.all([
-      withoutDeletedPosts(rows),
+      optional('Inbox deleted-posts filter', () => withoutDeletedPosts(rows), rows),
       resolveNotifications(userId(req), rows),
       withoutEndedGames(rows),
     ]);
@@ -44,7 +48,7 @@ export async function unreadNotificationCount(req: Request, res: Response, next:
       return;
     }
     const [kept, resolved, current] = await Promise.all([
-      withoutDeletedPosts(rows),
+      optional('Unread count deleted-posts filter', () => withoutDeletedPosts(rows), rows),
       resolveNotifications(userId(req), rows),
       withoutEndedGames(rows),
     ]);
