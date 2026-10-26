@@ -310,3 +310,11 @@ table.pd-t { width: 100%; border-collapse: separate !important; border-spacing: 
 .pd-md-f { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 0 20px 20px; flex: none; }
 .pd-md-f.line { border-top: 1px solid var(--line); padding-top: 16px; }
 .pd-label { display: flex; flex-direction: column; gap: 6px; font-size: 11.5px; font-weight: 400; color: var(--ink-2); }
+
+/* Profile › Activity: one change per line, old value struck, new value after */
+.pd-act-i { align-items: flex-start; padding: 10px 0; }
+.pd-act-i .pd-li-i { margin-top: 1px; }
+.pd-act-from { color: var(--ink-3); font-size: 12.5px; }
+.pd-act-ch { display: flex; flex-direction: column; gap: 2px; margin: 3px 0 4px; font-size: 12.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+.pd-act-ch s { color: var(--ink-3); }
+.pd-act-ch em { font-style: normal; color: var(--ink); }

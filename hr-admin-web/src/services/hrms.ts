@@ -343,6 +343,17 @@ export type EmployeeDetailsInput = {
 export const updateEmployeeDetails = (userId: string, input: EmployeeDetailsInput) =>
   api<{ employee: { userId: string; changed: string[] } }>(`/admin/employees/${userId}`, { method: 'PATCH', body: input });
 
+// —— People › Activity ——
+export type EmployeeActivityDTO = {
+  id: string; at: string; by: string; via: 'dashboard' | 'suwi' | 'import';
+  kind: 'details' | 'manager' | 'shift' | 'kpi' | 'paid_days' | 'created';
+  title: string; changes: { field: string; label: string; from: string; to: string }[];
+  effectiveFrom: string | null; proposalTitle: string | null;
+};
+/** Who changed what on this person, newest first; `before` is the last id already shown. */
+export const getEmployeeActivity = (userId: string, before?: string) =>
+  api<{ items: EmployeeActivityDTO[]; more: boolean }>(`/admin/employees/${userId}/activity${before ? `?before=${before}` : ''}`);
+
 // —— People › Import ——
 export type EmployeeImportChange = { field: string; label: string; from: string; to: string; kind: 'changed' | 'added' | 'removed' };
 export type EmployeeImportPreview = {

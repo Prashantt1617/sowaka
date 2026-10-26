@@ -46,7 +46,7 @@ function EmployeesBody() {
     if (!req) return;
     const e = s.emps.find((x) => x.id === req.userId);
     if (e) {
-      const tabs: Record<string, ProfileTab> = { calendar: 'calendar', salary: 'salary', performance: 'performance', requests: 'requests', orgchart: 'orgchart' };
+      const tabs: Record<string, ProfileTab> = { calendar: 'calendar', salary: 'salary', performance: 'performance', requests: 'requests', orgchart: 'orgchart', activity: 'activity' };
       setInitialTab(req.tab ? tabs[req.tab] : undefined);
       setSelected(e);
     }

@@ -30,6 +30,7 @@ import { useAuth } from '../auth/AuthContext';
 import { canOpen, SALARY_DETAILS } from '../access';
 import { getEmployeePayslips, getPaymentDetails, inr as inrPaise, savePaymentDetails, type PaymentDetailsDTO, type PaymentDetailsInput, type PayrollRunDTO, type PayslipDTO } from '../../services/payroll';
 import { EmployeeSalary } from './EmployeeSalary';
+import { EmployeeActivity } from './EmployeeActivity';
 import { IncomeTaxCard } from './IncomeTaxCard';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
 import { downloadPayslipPdf } from '../payslip';
@@ -227,13 +228,13 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
         </div>
       </section>
 
-      {/* One page, five views of the same person. */}
+      {/* One page, several views of the same person. */}
       <div className="pd-ptabs">
         <StatusTabs<ProfileTab>
-          options={seesSalary ? ['profile', 'performance', 'calendar', 'requests', 'salary', 'orgchart'] : ['profile', 'performance', 'calendar', 'requests', 'orgchart']}
+          options={seesSalary ? ['profile', 'performance', 'calendar', 'requests', 'salary', 'orgchart', 'activity'] : ['profile', 'performance', 'calendar', 'requests', 'orgchart', 'activity']}
           active={tab}
           onSelect={setTab}
-          labels={{ profile: 'Profile', performance: 'Performance', calendar: 'Calendar', requests: 'Requests', salary: 'Salary details', orgchart: 'Org chart' }}
+          labels={{ profile: 'Profile', performance: 'Performance', calendar: 'Calendar', requests: 'Requests', salary: 'Salary details', orgchart: 'Org chart', activity: 'Activity' }}
         />
       </div>
 
@@ -429,6 +430,14 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
         </div>
       )}
 
+      {tab === 'activity' && (
+        <div className="pd-psecs">
+          <Section title="Activity" icon={<PdClock />}>
+            <EmployeeActivity userId={emp.id} />
+          </Section>
+        </div>
+      )}
+
       {tab === 'orgchart' && (
         <div>
       {/* Reporting line — this person's slice of the org chart */}
@@ -488,7 +497,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
   );
 }
 
-export type ProfileTab = 'profile' | 'performance' | 'calendar' | 'requests' | 'salary' | 'orgchart';
+export type ProfileTab = 'profile' | 'performance' | 'calendar' | 'requests' | 'salary' | 'orgchart' | 'activity';
 
 // —— Calendar: one month, every day named ————————————————————————————————
 const CAL_TONE: Record<CalendarDayStatus, { bg: string; fg: string; label: string }> = {

@@ -3,6 +3,7 @@ import { feedbackRecords, kpiAssignments, kpiParameters, kpiTemplates, users } f
 import { requestViewer } from '../middleware/request-viewer';
 import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
 import { currentPeriodFor, nextPeriod } from './cycle';
+import { logActivity } from './employee-activity.service';
 
 export class KpiError extends Error {
   constructor(
@@ -704,6 +705,10 @@ export async function assignTemplateToUsers(
     })),
   );
 
+  void logActivity(...found.map((u) => ({
+    org, userId: u.userId, byUserId: adminUserId, kind: 'kpi' as const, title: `KPI template ${template.name} for ${period}`,
+    changes: [{ field: 'kpiTemplate', label: `KPI template (${period})`, from: '', to: template.name }],
+  })));
   return { templateId, period, assigned: found.length };
 }
 

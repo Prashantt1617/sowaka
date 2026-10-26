@@ -1,6 +1,7 @@
 import { attendanceRegularizations, overtimeRequests, reimbursementClaims, users } from '../config/db';
 import { User } from '../models/user.model';
 import { invalidateAttendanceReport } from './attendance-report.service';
+import { logActivity, nameOfUser } from './employee-activity.service';
 
 const inactiveStatuses = new Set(['offboarded', 'terminated']);
 
@@ -113,6 +114,13 @@ export async function assignManager(
   const movedRequests = await movePendingRequests(employeeUserId, managerUserId);
   // The attendance report names each person's manager.
   if (org) invalidateAttendanceReport(org);
+  if (previousManagerUserId !== managerUserId) {
+    void nameOfUser(previousManagerUserId).then((from) => logActivity({
+      org: employee.org ?? '', userId: employeeUserId, byUserId: actorUserId, kind: 'manager',
+      title: `Reporting manager changed to ${manager.name}`,
+      changes: [{ field: 'managerUserId', label: 'Reporting manager', from, to: manager.name ?? '' }],
+    }));
+  }
 
   return {
     employee: toEmployeeSummary(updatedEmployee),
@@ -136,6 +144,11 @@ export async function removeManager(actorUserId: string, employeeUserIdInput: st
 
   if (employee.managerUserId) {
     await syncManagerRole(employee.managerUserId);
+    void nameOfUser(employee.managerUserId).then((from) => logActivity({
+      org: employee.org ?? '', userId: employeeUserId, byUserId: actorUserId, kind: 'manager',
+      title: 'Reporting manager removed',
+      changes: [{ field: 'managerUserId', label: 'Reporting manager', from, to: '' }],
+    }));
   }
   if (org) invalidateAttendanceReport(org);
 

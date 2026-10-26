@@ -30,6 +30,7 @@ import {
   updateEmployeeDetailsForAdmin,
   deleteEmployeeForAdmin,
 } from '../services/admin.service';
+import { listEmployeeActivity } from '../services/employee-activity.service';
 import { getCompanySettings, getOrganisationProfile, updateCompanySettings, updateOrganisationProfile } from '../services/company-settings.service';
 
 function adminUserId(req: Request): string {
@@ -148,6 +149,16 @@ export async function attendanceReportHandler(req: Request, res: Response, next:
       success: true,
       report: await attendanceReport(adminUserId(req), { from: str(req.query.from), to: str(req.query.to) }),
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** The profile's Activity list: who changed what on this person, newest first. */
+export async function employeeActivityHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const before = typeof req.query.before === 'string' ? req.query.before : undefined;
+    res.status(200).json({ success: true, ...(await listEmployeeActivity(adminUserId(req), String(req.params.userId ?? ''), { before, limit: Number(req.query.limit) || undefined })) });
   } catch (error) {
     next(error);
   }
