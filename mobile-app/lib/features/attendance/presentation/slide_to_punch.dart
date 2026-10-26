@@ -22,6 +22,9 @@ class SlideToPunch extends StatefulWidget {
     this.height = 60,
     this.enabled = true,
     this.reversed = false,
+    this.knobInset = 5,
+    this.labelStyle,
+    this.knobIcon = true,
   });
 
   /// Punching out is the filled control of nodes 2303:53902 and 2303:54154: the
@@ -34,6 +37,9 @@ class SlideToPunch extends StatefulWidget {
     required Color color,
     this.height = 60,
     this.enabled = true,
+    this.knobInset = 5,
+    this.labelStyle,
+    this.knobIcon = true,
   }) : track = color,
        fill = Color.alphaBlend(Colors.black.withValues(alpha: .12), color),
        knob = Colors.white,
@@ -56,6 +62,17 @@ class SlideToPunch extends StatefulWidget {
 
   /// Right to left, for closing the day.
   final bool reversed;
+
+  /// The gap between the knob and the edge of the bar, all round.
+  final double knobInset;
+
+  /// The label's own type, where a design sets it; [labelColor] at 15 bold
+  /// otherwise.
+  final TextStyle? labelStyle;
+
+  /// The arrow (and, once it counts, the tick) on the knob. The Actions card
+  /// of Figma 4166:19856 draws a plain knob.
+  final bool knobIcon;
 
   @override
   State<SlideToPunch> createState() => _SlideToPunchState();
@@ -84,13 +101,13 @@ class _SlideToPunchState extends State<SlideToPunch>
 
   @override
   Widget build(BuildContext context) {
-    final knobSize = widget.height - 10;
+    final knobSize = widget.height - widget.knobInset * 2;
     final committing = _progress >= _commitAt;
     return Opacity(
       opacity: widget.enabled ? 1 : .55,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final span = constraints.maxWidth - knobSize - 10;
+          final span = constraints.maxWidth - knobSize - widget.knobInset * 2;
           final travelled = span * _progress;
           return Semantics(
             button: true,
@@ -125,20 +142,26 @@ class _SlideToPunchState extends State<SlideToPunch>
                         opacity: 1 - (_progress * 1.6).clamp(0.0, 1.0),
                         child: Text(
                           widget.label,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: widget.labelColor,
-                          ),
+                          style:
+                              widget.labelStyle ??
+                              TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: widget.labelColor,
+                              ),
                         ),
                       ),
                     ),
                     AnimatedPositioned(
                       duration: Duration(milliseconds: _dragging ? 0 : 260),
                       curve: Curves.easeOutBack,
-                      left: widget.reversed ? null : 5 + travelled,
-                      right: widget.reversed ? 5 + travelled : null,
-                      top: 5,
+                      left: widget.reversed
+                          ? null
+                          : widget.knobInset + travelled,
+                      right: widget.reversed
+                          ? widget.knobInset + travelled
+                          : null,
+                      top: widget.knobInset,
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onHorizontalDragStart: widget.enabled
@@ -186,7 +209,9 @@ class _SlideToPunchState extends State<SlideToPunch>
                                 : widget.reversed
                                 ? Icons.arrow_back_rounded
                                 : Icons.arrow_forward_rounded,
-                            color: widget.knob == Colors.white
+                            color: !widget.knobIcon
+                                ? Colors.transparent
+                                : widget.knob == Colors.white
                                 ? widget.track
                                 : Colors.white,
                             size: 21,

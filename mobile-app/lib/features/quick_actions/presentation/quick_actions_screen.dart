@@ -886,11 +886,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     // How long the shift runs, from the org's shift policy — never a fixed day.
     final standardShift = widget.dashboard.shift.window;
     final expectedOut = punchIn?.add(standardShift);
-    final progress = punchIn == null
-        ? 0.0
-        : ((punchOut ?? DateTime.now()).difference(punchIn).inMinutes /
-                  standardShift.inMinutes)
-              .clamp(0.0, 1.0);
 
     final monthStart = DateTime(today.year, today.month, 1);
     final todayOnly = _dateOnly(today);
@@ -947,14 +942,14 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           child: ColoredBox(
             color: const Color(0xFFF7F7F9),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+              padding: const EdgeInsets.fromLTRB(16, 17, 16, 24),
               children: [
                 _HomeAttendanceCard(
                   date: today,
                   punchIn: punchIn,
                   punchOut: punchOut,
                   expectedOut: expectedOut,
-                  progress: progress,
+                  shiftLength: standardShift,
                   needsCorrection: needsCorrection,
                   onTap: () => _open(_QuickPage.calendar),
                   onPunch: widget.dashboard.shift.punchesFromApp
@@ -973,7 +968,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 ],
                 const SizedBox(height: 16),
                 const _HomeSectionLabel('Actions'),
-                const SizedBox(height: 2),
+                const SizedBox(height: 12),
                 GridView(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -989,9 +984,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     crossAxisCount: 2,
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
-                    // 38 icon + 10 + title + 2 + up to two subtitle lines,
-                    // plus 14px padding top and bottom.
-                    mainAxisExtent: 142,
+                    // The design's row (node 4166:19896): a 40 tile, 10, a 21
+                    // title, 2 and a 16 subtitle inside 16 of padding, with
+                    // the card stretched to the row.
+                    mainAxisExtent: 123.185,
                   ),
                   children: [
                     // Someone marked present automatically has no attendance to
@@ -1008,11 +1004,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                         // what it is for rather than a number that would be
                         // wrong for these people.
                         subtitle: widget.dashboard.shift.leaveBalanceTracked
-                            ? '$leaveDaysAvailable days available'
+                            ? '${formatDays(leaveDaysAvailable)} days available'
                             : 'Apply & view requests',
                         onTap: () => _open(_QuickPage.leave),
-                        imageAsset:
-                            'assets/icons/action_card_leave_calendar.png',
+                        imageAsset: 'assets/icons/team/calendar.png',
                       ),
                     if (!autoPresent && widget.dashboard.overtimeEnabled)
                       _HomeActionCard(
@@ -1022,8 +1017,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                         title: 'Overtime',
                         subtitle: 'Request & view hours',
                         onTap: () => _open(_QuickPage.overtime),
-                        imageAsset:
-                            'assets/icons/action_card_overtime_hourglass.png',
+                        imageAsset: 'assets/icons/overtime_hourglass.png',
                       ),
                     _HomeActionCard(
                       icon: Icons.payments_rounded,
@@ -1033,7 +1027,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       subtitle: 'Track your claims',
                       onTap: () => _open(_QuickPage.reimbursements),
                       imageAsset:
-                          'assets/icons/action_card_reimbursement_money.png',
+                          'assets/icons/action_card_reimbursement_rupee.png',
+                      imageSize: 28,
                     ),
                     // Support desk (node 2896:32193): a concern raised to HR
                     // and the chat on it. Its pages keep the tabs under them,
@@ -1073,7 +1068,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       subtitle: 'Company guidelines',
                       onTap: () => _open(_QuickPage.policies),
                       imageAsset:
-                          'assets/icons/action_card_policies_pencil.png',
+                          'assets/icons/connect_icon_my_post_pencil.png',
                     ),
                   ],
                 ),
@@ -7317,13 +7312,16 @@ class _MissedPunchBanner extends StatelessWidget {
   }
 }
 
+/// Today's attendance on the Actions home (Figma 4166:19856): the date and
+/// whether the day is counted, then, once it has started, how far into the
+/// shift it is and the two punches, with the slider that closes it last.
 class _HomeAttendanceCard extends StatelessWidget {
   const _HomeAttendanceCard({
     required this.date,
     required this.punchIn,
     required this.punchOut,
     required this.expectedOut,
-    required this.progress,
+    required this.shiftLength,
     required this.needsCorrection,
     required this.onTap,
     this.onPunch,
@@ -7335,7 +7333,9 @@ class _HomeAttendanceCard extends StatelessWidget {
   final DateTime? punchIn;
   final DateTime? punchOut;
   final DateTime? expectedOut;
-  final double progress;
+
+  /// How long the shift runs, from the org's shift policy, for the bar.
+  final Duration shiftLength;
   final bool needsCorrection;
   final VoidCallback onTap;
 
@@ -7352,232 +7352,352 @@ class _HomeAttendanceCard extends StatelessWidget {
   /// is no punch-out to slide and no second time to show.
   final bool singlePunch;
 
+  /// "09:42 AM".
   static String _clock(DateTime? value) {
     if (value == null) return '-';
     final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
     final minute = value.minute.toString().padLeft(2, '0');
-    return '$hour:$minute ${value.hour >= 12 ? 'PM' : 'AM'}';
+    return '${hour.toString().padLeft(2, '0')}:$minute '
+        '${value.hour >= 12 ? 'PM' : 'AM'}';
   }
+
+  static const _punchLabel = TextStyle(
+    fontFamily: 'Sora',
+    color: Color(0xFF717171),
+    fontSize: 10,
+    height: 15 / 10,
+    fontWeight: FontWeight.w500,
+    letterSpacing: .25,
+  );
+
+  static const _punchTime = TextStyle(
+    fontFamily: 'Sora',
+    color: Color(0xFF222222),
+    fontSize: 14,
+    height: 20 / 14,
+    fontWeight: FontWeight.w600,
+  );
+
+  Widget _punch(String label, String time) => SizedBox(
+    width: 93,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: _punchLabel),
+        const SizedBox(height: 2),
+        Text(time, style: _punchTime),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFEBEBEB)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: .05),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    final punch = onPunch;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFF7F7F9),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: SvgPicture.asset(
-                      'assets/icons/attendance_card_small_icon.svg',
-                      width: 18,
-                      height: 18,
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF7F7F9),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: const Color(0xFFEBEBEB)),
+                      ),
+                      child: SvgPicture.asset(
+                        'assets/icons/attendance_card_calendar.svg',
+                        width: 16,
+                        height: 16,
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text(
-                    'Attendance',
-                    style: TextStyle(
-                      color: Color(0xFF222222),
-                      fontSize: 16.5,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                SvgPicture.asset(
-                  'assets/icons/chevron_right_expand.svg',
-                  width: 20,
-                  height: 20,
-                  colorFilter: const ColorFilter.mode(
-                    Color(0xFF717171),
-                    BlendMode.srcIn,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${date.day} ${_monthName(date.month)} ${date.year}',
-                    style: const TextStyle(
-                      color: Color(0xFF484848),
-                      fontSize: 14,
-                      height: 16.2 / 14,
-                      letterSpacing: -0.16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                // Present once the day has a punch against it, or when nobody
-                // has to punch at all (node 2412:82314).
-                if (punchIn != null || autoPresent)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDF4),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF00C950),
-                            shape: BoxShape.circle,
-                          ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Attendance',
+                        style: TextStyle(
+                          fontFamily: 'Sora',
+                          color: Color(0xFF111827),
+                          fontSize: 16,
+                          height: 16.2 / 16,
+                          letterSpacing: -0.16,
+                          fontWeight: FontWeight.w600,
                         ),
-                        const SizedBox(width: 4),
-                        const Text(
-                          'Present',
-                          style: TextStyle(
-                            color: Color(0xFF008236),
-                            fontSize: 12,
-                            height: 16 / 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-              ],
-            ),
-            if (onPunch case final punch?) ...[
-              const SizedBox(height: 12),
-              // Punch in while the day has not started, punch out once it has.
-              // A day with both punches recorded has nothing left to slide.
-              if (punchIn == null)
-                SlideToPunch(
-                  label: 'Slide to Punch In',
-                  onComplete: () => punch('in'),
-                )
-              else if (!singlePunch && punchOut == null)
-                SlideToPunch.filled(
-                  label: 'Slide to Punch Out',
-                  color: const Color(0xFF34A853),
-                  onComplete: () => punch('out'),
+                    SvgPicture.asset(
+                      'assets/icons/chevron_right_expand.svg',
+                      width: 19.9854,
+                      height: 19.9854,
+                    ),
+                  ],
                 ),
-            ],
-            if (autoPresent) ...[
-              const SizedBox(height: 10),
-              const Text(
-                'Marked present automatically — no punching needed.',
-                style: TextStyle(color: Color(0xFF717171), fontSize: 13),
-              ),
-            ] else if (punchIn != null) ...[
-              // Only once the day has started: before that the slider is the
-              // whole card, and a pair of empty times under it said nothing.
-              const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(99),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  minHeight: 6,
-                  backgroundColor: const Color(0xFFEBEBEB),
-                  valueColor: const AlwaysStoppedAnimation(Color(0xFF0571A6)),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${date.day.toString().padLeft(2, '0')} '
+                        '${_shortMonthNames[date.month - 1]}, '
+                        '${_fullWeekdayNames[date.weekday - 1]}',
+                        style: const TextStyle(
+                          fontFamily: 'Sora',
+                          color: Color(0xFF484848),
+                          fontSize: 14,
+                          height: 16.2 / 14,
+                          letterSpacing: -0.16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    // Present once the day has a punch against it, or when
+                    // nobody has to punch at all (node 2412:82314).
+                    if (punchIn != null || autoPresent)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0FDF4),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF00C950),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Text(
+                              'Present',
+                              style: TextStyle(
+                                fontFamily: 'Sora',
+                                color: Color(0xFF008236),
+                                fontSize: 12,
+                                height: 16 / 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'PUNCH-IN',
-                          style: TextStyle(
-                            color: Color(0xFF717171),
-                            fontSize: 10,
-                            height: 15 / 10,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: .25,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _clock(punchIn),
-                          style: const TextStyle(
-                            color: Color(0xFF222222),
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    width: 1,
-                    height: 32,
-                    color: const Color(0xFFEBEBEB),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'PUNCH-OUT',
-                          style: TextStyle(
-                            color: Color(0xFF717171),
-                            fontSize: 10,
-                            height: 15 / 10,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: .25,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          // Not required on a single-punch shift, rather than
-                          // missing: nobody is expected to punch out.
-                          singlePunch ? 'NR' : _clock(punchOut),
-                          style: const TextStyle(
-                            color: Color(0xFF222222),
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
+                // Punch in while the day has not started: before that the
+                // slider is the whole card, and a pair of empty times under it
+                // said nothing.
+                if (punch != null && punchIn == null) ...[
+                  const SizedBox(height: 16),
+                  SlideToPunch(
+                    label: 'Slide to Punch In',
+                    onComplete: () => punch('in'),
                   ),
                 ],
-              ),
-            ],
-          ],
+                if (autoPresent) ...[
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Marked present automatically — no punching needed.',
+                    style: TextStyle(color: Color(0xFF717171), fontSize: 13),
+                  ),
+                ] else if (punchIn case final start?) ...[
+                  const SizedBox(height: 24),
+                  _ShiftProgress(
+                    punchIn: start,
+                    punchOut: punchOut,
+                    shiftLength: shiftLength,
+                    // A single-punch day has no span to count.
+                    showClock: !singlePunch,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _punch('PUNCH-IN', _clock(punchIn)),
+                        Container(
+                          width: 1,
+                          height: 32,
+                          color: const Color(0xFFEBEBEB),
+                        ),
+                        // Not required on a single-punch shift, rather than
+                        // missing: nobody is expected to punch out.
+                        _punch(
+                          'PUNCH-OUT',
+                          singlePunch ? 'NR' : _clock(punchOut),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // A day with both punches recorded has nothing left to
+                  // slide.
+                  if (punch != null && !singlePunch && punchOut == null) ...[
+                    const SizedBox(height: 16),
+                    SlideToPunch.filled(
+                      label: 'Slide to Punch Out',
+                      color: const Color(0xFF00C0E8),
+                      height: 48,
+                      knobInset: 7,
+                      knobIcon: false,
+                      labelStyle: const TextStyle(
+                        fontFamily: 'Sora',
+                        color: Color(0x66FFFFFF),
+                        fontSize: 13,
+                        height: 19.5 / 13,
+                        letterSpacing: .2,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      onComplete: () => punch('out'),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// How far into the shift the day is: a bar of the shift's length, the time
+/// it has reached on the left and the time worked so far on the right,
+/// counting each second until the punch-out.
+class _ShiftProgress extends StatefulWidget {
+  const _ShiftProgress({
+    required this.punchIn,
+    required this.punchOut,
+    required this.shiftLength,
+    this.showClock = true,
+  });
+
+  final DateTime punchIn;
+  final DateTime? punchOut;
+  final Duration shiftLength;
+  final bool showClock;
+
+  @override
+  State<_ShiftProgress> createState() => _ShiftProgressState();
+}
+
+class _ShiftProgressState extends State<_ShiftProgress> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _schedule();
+  }
+
+  @override
+  void didUpdateWidget(_ShiftProgress oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _schedule();
+  }
+
+  /// Ticks only while the day is open and its clock is on show.
+  void _schedule() {
+    final running = widget.punchOut == null && widget.showClock;
+    if (running && _tick == null) {
+      _tick = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => setState(() {}),
+      );
+    } else if (!running) {
+      _tick?.cancel();
+      _tick = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  static String _two(int value) => value.toString().padLeft(2, '0');
+
+  @override
+  Widget build(BuildContext context) {
+    final upTo = widget.punchOut ?? DateTime.now();
+    final worked = upTo.difference(widget.punchIn);
+    final share = widget.shiftLength.inSeconds <= 0
+        ? 0.0
+        : (worked.inSeconds / widget.shiftLength.inSeconds).clamp(0.0, 1.0);
+    final hour = upTo.hour % 12 == 0 ? 12 : upTo.hour % 12;
+    const label = TextStyle(
+      fontFamily: 'Sora',
+      fontSize: 10,
+      height: 16.2 / 10,
+      letterSpacing: -0.16,
+      fontWeight: FontWeight.w600,
+    );
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(99),
+          child: Container(
+            height: 6,
+            color: const Color(0xFFEBEBEB),
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: share,
+              heightFactor: 1,
+              child: const DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.all(Radius.circular(99)),
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF0571A6), Color(0xFF0EA5E9)],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (widget.showClock) ...[
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${_two(hour)}:${_two(upTo.minute)}'
+                '${upTo.hour >= 12 ? 'PM' : 'AM'}',
+                style: label.copyWith(color: const Color(0xFF717171)),
+              ),
+              Text(
+                '${_two(worked.inHours)}:${_two(worked.inMinutes % 60)}:'
+                '${_two(worked.inSeconds % 60)}',
+                style: label.copyWith(color: const Color(0xFF0571A6)),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 6),
+      ],
     );
   }
 }
@@ -7592,6 +7712,7 @@ class _HomeActionCard extends StatelessWidget {
     required this.subtitle,
     required this.onTap,
     this.imageAsset,
+    this.imageSize = 24,
   });
 
   final IconData icon;
@@ -7602,55 +7723,68 @@ class _HomeActionCard extends StatelessWidget {
   final VoidCallback onTap;
   final String? imageAsset;
 
+  /// The picture's size in its tile (node 4166:19897): 24, or 28 for the
+  /// rupee whose artwork has more air round it.
+  final double imageSize;
+
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFEBEBEB)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: .05),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
+    final image = imageAsset;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (image != null)
+                  _IllustrationTile(asset: image, size: imageSize)
+                else
+                  _IconTile(icon: icon, color: color, tint: tint, size: 40),
+                const SizedBox(height: 10),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Sora',
+                    color: Color(0xFF222222),
+                    fontSize: 14,
+                    height: 21 / 14,
+                    letterSpacing: -0.1,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Sora',
+                    color: Color(0xFF484848),
+                    fontSize: 12,
+                    height: 16 / 12,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _IconTile(
-              icon: icon,
-              color: color,
-              tint: tint,
-              size: 38,
-              imageAsset: imageAsset,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFF222222),
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Color(0xFF717171), fontSize: 12),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -8287,30 +8421,23 @@ class _IconTile extends StatelessWidget {
     required this.color,
     required this.tint,
     this.size = 44,
-    this.imageAsset,
   });
   final IconData icon;
   final Color color;
   final Color tint;
   final double size;
-  final String? imageAsset;
 
+  // The illustrated icons sit on white in an [_IllustrationTile]; this is the
+  // tinted plate the flat glyph icons need.
   @override
   Widget build(BuildContext context) => Container(
     width: size,
     height: size,
     decoration: BoxDecoration(
-      // The illustrated icons carry their own colour, so they sit on white;
-      // only the flat glyph icons need a tinted plate behind them.
-      color: imageAsset != null ? Colors.white : tint,
+      color: tint,
       borderRadius: BorderRadius.circular(13),
     ),
-    child: imageAsset != null
-        ? Padding(
-            padding: const EdgeInsets.all(5),
-            child: Image.asset(imageAsset!, fit: BoxFit.contain),
-          )
-        : Icon(icon, color: color, size: 22),
+    child: Icon(icon, color: color, size: 22),
   );
 }
 
