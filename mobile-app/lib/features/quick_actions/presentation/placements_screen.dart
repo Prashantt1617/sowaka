@@ -246,7 +246,7 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
         const SizedBox(height: 12),
         _summarySection(),
         const SizedBox(height: 16),
-        const _HomeSectionLabel('Actions'),
+        const _HomeSectionLabel('Add New'),
         const SizedBox(height: 12),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -255,7 +255,7 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
               child: _PlacementsAddTile(
                 key: const ValueKey('placements-add-placement'),
                 iconAsset: _placementsIcon,
-                label: 'Add Placement',
+                label: 'Placement',
                 onTap: _openPlacementForm,
               ),
             ),
@@ -264,7 +264,7 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
               child: _PlacementsAddTile(
                 key: const ValueKey('placements-add-client'),
                 iconAsset: _clientsIcon,
-                label: 'Add Client',
+                label: 'Client',
                 onTap: () => _openClientForm(),
               ),
             ),
@@ -274,7 +274,7 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
                 key: const ValueKey('placements-add-customer'),
                 iconAsset: _customersIcon,
                 iconSize: 26,
-                label: 'Add Customer',
+                label: 'Customer',
                 onTap: () => _openCustomerForm(),
               ),
             ),
@@ -294,6 +294,7 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
       if (_summaryError case final error? when !_summaryLoading) {
         return _PlacementsSectionError(
           key: const ValueKey('placements-summary-error'),
+          what: 'The summary',
           message: error,
           onRetry: _loadSummary,
         );
@@ -336,6 +337,7 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
         return [
           _PlacementsSectionError(
             key: const ValueKey('placements-list-error'),
+            what: 'Your placements',
             message: error,
             onRetry: _loadPlacements,
           ),
@@ -386,7 +388,8 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
       profileAction: widget.profileAction,
       onNotifications: widget.onNotifications,
       onQuickCreate: widget.onQuickCreate,
-      footer: _FormSubmitBar(
+      footer: _PlacementsFormFooter(
+        problem: _serverError,
         label: 'Update Status',
         enabled: picked != placement.status && !_submitting,
         busy: _submitting,
@@ -394,14 +397,11 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
       ),
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        if (_serverError case final error?) ...[
-          _FormProblem(error),
-          const SizedBox(height: 12),
-        ],
         _FormCard(
           children: [
             _LeaveFieldLabel('Status'),
             _LeaveDropdownField(
+              key: const ValueKey('placement-status-field'),
               value: picked.label,
               filled: true,
               onTap: _pickDetailStatus,
@@ -556,7 +556,8 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
       profileAction: widget.profileAction,
       onNotifications: widget.onNotifications,
       onQuickCreate: widget.onQuickCreate,
-      footer: _FormSubmitBar(
+      footer: _PlacementsFormFooter(
+        problem: problem,
         label: 'Add Placement',
         enabled:
             _placementComplete && _placementProblem == null && !_submitting,
@@ -565,10 +566,6 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
       ),
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        if (problem != null) ...[
-          _FormProblem(problem),
-          const SizedBox(height: 12),
-        ],
         _FormCard(
           children: [
             _LeaveFieldLabel('Customer'),
@@ -847,7 +844,8 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
       profileAction: widget.profileAction,
       onNotifications: widget.onNotifications,
       onQuickCreate: widget.onQuickCreate,
-      footer: _FormSubmitBar(
+      footer: _PlacementsFormFooter(
+        problem: problem,
         label: 'Add Client',
         enabled:
             _clientName.text.trim().isNotEmpty &&
@@ -858,10 +856,6 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
       ),
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        if (problem != null) ...[
-          _FormProblem(problem),
-          const SizedBox(height: 12),
-        ],
         _FormCard(
           children: [
             _LeaveFieldLabel('Company Name'),
@@ -1040,7 +1034,8 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
       profileAction: widget.profileAction,
       onNotifications: widget.onNotifications,
       onQuickCreate: widget.onQuickCreate,
-      footer: _FormSubmitBar(
+      footer: _PlacementsFormFooter(
+        problem: problem,
         label: 'Add Customer',
         enabled: _customerComplete && _customerProblem == null && !_submitting,
         busy: _submitting,
@@ -1048,10 +1043,6 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
       ),
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
-        if (problem != null) ...[
-          _FormProblem(problem),
-          const SizedBox(height: 12),
-        ],
         _FormCard(
           children: [
             _LeaveFieldLabel('Name'),
@@ -1418,6 +1409,7 @@ class _PlacementStatusCard extends StatelessWidget {
                 // Nothing placed yet: an empty track.
                 ? const ColoredBox(color: Color(0xFFEBEBEB))
                 : Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       for (final status in counted)
                         Expanded(
@@ -1431,36 +1423,34 @@ class _PlacementStatusCard extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        // Spread across the card, and onto a second line on a narrow phone
+        // rather than cutting a name short.
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          spacing: 12,
+          runSpacing: 8,
           children: [
             for (final status in PlacementStatus.values)
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${summary.count(status)}',
-                      style: TextStyle(
-                        fontFamily: 'Sora',
-                        color: _placementStatusColors(status).fg,
-                        fontSize: 12,
-                        height: 16.2 / 12,
-                        letterSpacing: -0.16,
-                        fontWeight: FontWeight.w600,
-                      ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${summary.count(status)}',
+                    style: TextStyle(
+                      fontFamily: 'Sora',
+                      color: _placementStatusColors(status).fg,
+                      fontSize: 12,
+                      height: 16.2 / 12,
+                      letterSpacing: -0.16,
+                      fontWeight: FontWeight.w600,
                     ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        status.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: _caption.copyWith(fontSize: 9),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(status.label, style: _caption),
+                  ),
+                ],
               ),
           ],
         ),
@@ -1566,10 +1556,13 @@ class _PlacementsSectionLoading extends StatelessWidget {
 class _PlacementsSectionError extends StatelessWidget {
   const _PlacementsSectionError({
     super.key,
+    required this.what,
     required this.message,
     required this.onRetry,
   });
 
+  /// The section, to say what did not load when the server gave no reason.
+  final String what;
   final String message;
   final VoidCallback onRetry;
 
@@ -1578,7 +1571,11 @@ class _PlacementsSectionError extends StatelessWidget {
     return _FormCard(
       children: [
         Text(
-          message,
+          // "Something went wrong. Try again." over a Try again link says it
+          // twice; the section's name says more.
+          message == PlacementsApiException.failed
+              ? '$what didn\'t load.'
+              : message,
           style: const TextStyle(
             fontFamily: 'Sora',
             color: Color(0xFF484848),
@@ -1610,7 +1607,49 @@ class _PlacementsSectionError extends StatelessWidget {
   }
 }
 
-/// Why a form cannot go yet, in the Leave form's red line.
+/// The button under a form, with why it cannot go yet over it in the Leave
+/// form's red line — down here rather than at the top, so it is in sight
+/// whichever field is being typed in.
+class _PlacementsFormFooter extends StatelessWidget {
+  const _PlacementsFormFooter({
+    required this.problem,
+    required this.label,
+    required this.onTap,
+    required this.enabled,
+    required this.busy,
+  });
+
+  final String? problem;
+  final String label;
+  final VoidCallback onTap;
+  final bool enabled;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (problem case final problem?)
+          ColoredBox(
+            color: const Color(0xFFF7F7F9),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              child: _FormProblem(problem),
+            ),
+          ),
+        _FormSubmitBar(
+          label: label,
+          enabled: enabled,
+          busy: busy,
+          onTap: onTap,
+        ),
+      ],
+    );
+  }
+}
+
 class _FormProblem extends StatelessWidget {
   const _FormProblem(this.text);
 

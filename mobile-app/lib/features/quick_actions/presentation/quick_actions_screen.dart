@@ -628,8 +628,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   late final PlacementsApiService _placementsApi =
       widget.placements ?? PlacementsApiService(session: widget.bloc.session);
 
-  /// Placements keeps its own pages; Back asks it first.
-  final _placementsKey = GlobalKey<_PlacementsScreenState>();
+  /// Placements keeps its own pages; Back asks it first. A fresh key each
+  /// time it opens, so one still fading out never shares it.
+  var _placementsKey = GlobalKey<_PlacementsScreenState>();
   DateTime? _policiesFetchedAt;
   bool _policiesFetching = false;
   static const _policiesStale = Duration(minutes: 2);
@@ -726,6 +727,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   void _open(_QuickPage page) {
+    if (page == _QuickPage.placements) {
+      _placementsKey = GlobalKey<_PlacementsScreenState>();
+    }
     setState(() => _page = page);
     widget.controller._navigationChanged();
     // Read again whenever the list is opened, so an edit shows the next time
