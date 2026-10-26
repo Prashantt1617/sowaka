@@ -15,6 +15,7 @@ import {
 import { User } from '../models/user.model';
 import { RecognitionNomination } from '../models/recognition.model';
 import { notifyUsers } from './notification.service';
+import { optional } from '../utils/optional';
 import { assignedParametersFor, assignedParametersForMany } from './kpi.service';
 import { currentPeriodFor, cycleInfoFor } from './cycle';
 import { policiesForPeople, policyForUser, shiftPolicyViewOf } from './shift.service';
@@ -202,8 +203,14 @@ export async function getFeedbackSnapshot(
   // five: everything that needs only the viewer goes out together, then the
   // reports' records for the cycle. Of the approver only the name is used.
   const [approver, cycle, reportRows, ownHistory] = await Promise.all([
+    // Only a name, with "Your manager" standing in: not worth failing for.
     viewer.managerUserId
-      ? users().findOne({ userId: viewer.managerUserId }, { projection: { _id: 0, name: 1 } })
+      ? optional(
+          'Feedback snapshot approver',
+          () => users().findOne({ userId: viewer.managerUserId }, { projection: { _id: 0, name: 1 } }),
+          null,
+          { userId: managerUserId },
+        )
       : Promise.resolve(null),
     cycleInfoFor(viewer.org ?? ''),
     users()
@@ -310,11 +317,16 @@ export async function getManagerWorkspace(
       getCompanyConfig(manager.org),
       // Only the holidays this employee observes: their own work location's,
       // plus the all-locations days. Another office's holiday is not a day
-      // off here.
-      holidaysForUser(manager),
+      // off here. The list is a side panel; the workspace opens without it.
+      optional('Workspace holidays', () => holidaysForUser(manager), [] as Awaited<ReturnType<typeof holidaysForUser>>, { userId: managerUserId }),
       // The one field the auth check left behind, for the viewer's own row.
       preloaded
-        ? users().findOne({ userId: managerUserId }, { projection: { _id: 0, profilePhotoUrl: 1, profilePhotoKey: 1 } })
+        ? optional(
+            'Workspace own photo',
+            () => users().findOne({ userId: managerUserId }, { projection: { _id: 0, profilePhotoUrl: 1, profilePhotoKey: 1 } }),
+            null,
+            { userId: managerUserId },
+          )
         : Promise.resolve(null),
     ]);
   if (ownPhoto) {
@@ -376,11 +388,41 @@ export async function getManagerWorkspace(
   const inlinePhotoIds = reports
     .filter((report) => report.userId !== managerUserId && (report as RosterUser).hasInlinePhoto)
     .map((report) => report.userId);
+  // Faces only: without them the rows show initials.
   const inlinePhotosPromise = inlinePhotoIds.length
-    ? users()
-        .find({ userId: { $in: inlinePhotoIds } }, { projection: { _id: 0, userId: 1, profilePhotoUrl: 1 } })
-        .toArray()
+    ? optional(
+        'Workspace inline photos',
+        () => users()
+          .find({ userId: { $in: inlinePhotoIds } }, { projection: { _id: 0, userId: 1, profilePhotoUrl: 1 } })
+          .toArray(),
+        [] as Pick<User, 'userId' | 'profilePhotoUrl'>[],
+        { userId: managerUserId },
+      )
     : Promise.resolve([]);
+  // Recognition is a tab of its own: this cycle's nominations, the history,
+  // and the names of past nominees who have since left the org (read as soon
+  // as the history is in, rather than after everything else). Should any of
+  // it fail, the tab is empty and the rest of the workspace stands.
+  const recognition = { userId: managerUserId };
+  const nominationHistoryPromise = optional(
+    'Workspace recognition history',
+    () => recognitionNominations().find({ managerUserId }).sort({ period: -1, updatedAt: -1 }).limit(50).toArray(),
+    [] as RecognitionNomination[],
+    recognition,
+  );
+  const nomineeUsersPromise = nominationHistoryPromise.then((history) => {
+    // The roster is already here; only someone who has since left the org
+    // needs a read of their own.
+    const missing = [...new Set(history.map((n) => n.employeeUserId))].filter((id) => !orgUsersById.has(id));
+    return missing.length
+      ? optional(
+          'Workspace past nominees',
+          () => users().find({ userId: { $in: missing } }).project<{ userId: string; name: string }>({ userId: 1, name: 1 }).toArray(),
+          [] as { userId: string; name: string }[],
+          recognition,
+        )
+      : [];
+  });
   const todaysMarksPromise = reportIds.length
     ? attendanceOverrides().find({ userId: { $in: reportIds }, workDate: istToday }, { projection: { _id: 0, userId: 1, status: 1 } }).toArray()
     : Promise.resolve([]);
@@ -420,12 +462,8 @@ export async function getManagerWorkspace(
           { $group: { _id: '$employeeUserId', record: { $first: '$$ROOT' } } },
         ])
         .toArray(),
-      recognitionNominations().find({ managerUserId, period }).toArray(),
-      recognitionNominations()
-        .find({ managerUserId })
-        .sort({ period: -1, updatedAt: -1 })
-        .limit(50)
-        .toArray(),
+      optional('Workspace nominations', () => recognitionNominations().find({ managerUserId, period }).toArray(), [] as RecognitionNomination[], recognition),
+      nominationHistoryPromise,
       feedbackRecords()
         .find({ employeeUserId: managerUserId, status: 'sent' })
         .sort({ period: 1 })
@@ -457,8 +495,14 @@ export async function getManagerWorkspace(
         .find({ userId: { $in: reportIds }, status: 'approved', startDate: { $lte: todayStartUtc() }, endDate: { $gte: todayStartUtc() } })
         .project<{ userId: string }>({ userId: 1 })
         .toArray(),
-      // The viewer's own KPIs for this cycle, worded as HR wrote them.
-      assignedParametersFor(manager.org ?? '', manager.userId, period, { fallbackToLatest: true }),
+      // The viewer's own KPIs for this cycle, worded as HR wrote them: a
+      // card of their own, shown empty should the read fail.
+      optional(
+        'Workspace own KPIs',
+        () => assignedParametersFor(manager.org ?? '', manager.userId, period, { fallbackToLatest: true }),
+        [] as Awaited<ReturnType<typeof assignedParametersFor>>,
+        { userId: managerUserId },
+      ),
     ]);
   // A report's punch record may be keyed by userId (self-service app punches)
   // or employeeId (SQL-imported punches) — check both, preferring employeeId
@@ -495,12 +539,7 @@ export async function getManagerWorkspace(
   // Resolve nominee names for the current + historical nominations (a past
   // nominee may no longer be a direct report).
   const nomineeIds = [...new Set(nominationHistory.map((n) => n.employeeUserId))];
-  // The roster is already here; only someone who has since left the org
-  // needs a read of their own.
-  const missingNomineeIds = nomineeIds.filter((id) => !orgUsersById.has(id));
-  const nomineeUsers = missingNomineeIds.length
-    ? await users().find({ userId: { $in: missingNomineeIds } }).project<{ userId: string; name: string }>({ userId: 1, name: 1 }).toArray()
-    : [];
+  const nomineeUsers = await nomineeUsersPromise;
   const nomineeName = new Map<string, string>([
     ...nomineeIds.flatMap((id) => (orgUsersById.has(id) ? [[id, orgUsersById.get(id)!.name] as const] : [])),
     ...nomineeUsers.map((u) => [u.userId, u.name] as const),

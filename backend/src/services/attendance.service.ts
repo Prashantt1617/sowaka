@@ -13,7 +13,7 @@ import {
   RegularizationStatus,
 } from '../models/attendance.model';
 import { approvalRulesFor, isWeekOffDay, managerMayDecide, policyForUser, shiftPolicyFor } from './shift.service';
-import { orgUsers } from './admin-scope';
+import { orgUsers, orgUsersWithRows, sortLikeMongo } from './admin-scope';
 import { DayMark, HALF_DAY_CORRECTION_OUTCOMES, ShiftPolicyRules } from '../models/shift.model';
 import { holidayDatesForUser } from './holiday.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
@@ -201,7 +201,7 @@ export async function recordPunch(
       // closes a day the punch-in already opened, so it is recorded with the
       // remark whichever outcome HR chose.
       if (rules.outcome === 'request' && type === 'in') {
-        return requestOutOfLocation(employee, note, location);
+        return requestOutOfLocation(employee, note, location, preloaded);
       }
       return writePunch(employee, type, location, policy, note, preloaded);
     }
@@ -329,13 +329,18 @@ async function requestOutOfLocation(
   employee: { userId: string; employeeId: string; managerUserId?: string },
   note: OutsideLocationNote,
   location: PunchLocation,
+  /** The day's record as read alongside the policy, if it is still the same day. */
+  preloaded?: { workDate: string; record: WithId<AttendanceRecord> | null },
 ) {
   const { userId } = employee;
   const workDate = note.at.toISOString().slice(0, 10);
   if (!employee.managerUserId) {
     throw new AttendanceError(409, 'A manager must be assigned before an out-of-location punch can be sent to them');
   }
-  const existing = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
+  const existing =
+    preloaded && preloaded.workDate === workDate
+      ? preloaded.record
+      : await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
   if (existing?.punchIn) throw new AttendanceError(409, 'Already punched in today');
   const pending = await attendanceRegularizations().findOne({ userId, workDate, status: 'pending' });
   if (pending) {
@@ -353,9 +358,12 @@ async function requestOutOfLocation(
   };
   const result = await attendanceRegularizations().insertOne(row);
   void location;
-  await notifyOutOfLocationSubmitted({
+  // The employee and their approver hear once the request is saved, after the
+  // punch has answered: finding the approver and their rules is a few round
+  // trips the button need not wait on.
+  void notifyOutOfLocationSubmitted({
     employeeUserId: userId, requestId: String(result.insertedId), workDate, reason: note.reason, place: placeLabel(note.distanceMeters, note.officeName),
-  });
+  }).catch((error) => logger.error('Out-of-location notification failed', { userId, workDate }, error));
   return {
     workDate,
     outsideLocation: outsideLocationView(note),
@@ -750,15 +758,18 @@ export async function getManagerRegularizations(managerUserId: string) {
  * Pending first, then newest, because the queue is the reason to open it.
  */
 export async function listAllRegularizationsForAdmin(adminUserId: string) {
-  const employees = await orgUsers(adminUserId);
+  // The roster and its requests in one round trip, and of the roster only
+  // what the rows name: the whole company's records, inline photos and all,
+  // were most of this page's wait. Everyone is kept, not only those with a
+  // request, since a row names its manager too.
+  const { employees, rows } = await orgUsersWithRows(adminUserId, attendanceRegularizations(), {
+    userFields: ['userId', 'name', 'employeeId'],
+  });
   if (employees.length === 0) return [];
   const byUserId = new Map(employees.map((employee) => [employee.userId, employee]));
-  const values = await attendanceRegularizations()
-    .find({ userId: { $in: employees.map((employee) => employee.userId) } })
-    .sort({ status: -1, createdAt: -1 })
-    .toArray();
-  // The roster is already in hand, so the rows need not read their people again.
-  const enriched = await enrichRegularizations(values, byUserId);
+  const values = sortLikeMongo(rows, [['status', -1], ['createdAt', -1]]);
+  // The people behind the rows, with their faces, are read beside their punches.
+  const enriched = await enrichRegularizations(values);
   // HR is looking across managers, so each row has to say whose call it is.
   return enriched.map((value) => ({
     ...value,
@@ -831,7 +842,7 @@ export async function adminDecideRegularization(
   }
   // Same org check the other dashboard overrides make: an admin decides for
   // their own company and nobody else's.
-  const employees = await orgUsers(adminUserId);
+  const employees = await orgUsers(adminUserId, ['userId']);
   if (!employees.some((employee) => employee.userId === pending.userId)) {
     throw new AttendanceError(404, 'Correction request not found');
   }
@@ -1034,7 +1045,8 @@ export async function listOutOfLocationForAdmin(adminUserId: string, fromInput: 
   const to = parseDate(toInput, 'to');
   if (to < from) throw new AttendanceError(400, 'to cannot be before from');
   if (daysBetween(from, to) > 366) throw new AttendanceError(400, 'Date range cannot exceed a year');
-  const employees = await orgUsers(adminUserId);
+  // Only what `who` below names.
+  const employees = await orgUsers(adminUserId, ['userId', 'name', 'employeeId', 'department', 'managerUserId']);
   if (employees.length === 0) return [];
   const byUserId = new Map(employees.map((employee) => [employee.userId, employee]));
   const userIds = employees.map((employee) => employee.userId);

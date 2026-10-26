@@ -96,11 +96,16 @@ export function closingSoonEmail(a: {
 /** A manager's reports and which of them have a sent review for the cycle. */
 export async function feedbackProgress(manager: User, period: string) {
   const reports = await users()
-    .find({
-      org: manager.org,
-      managerUserId: manager.userId,
-      lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
-    })
+    .find(
+      {
+        org: manager.org,
+        managerUserId: manager.userId,
+        lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
+      },
+      // Every caller names and counts them; an inline photo or a pile of
+      // documents would cross the link for nothing (the inbox asks this).
+      { projection: { profilePhotoUrl: 0, documents: 0 } },
+    )
     .sort({ name: 1 })
     .toArray();
   if (reports.length === 0) return { reports, done: [] as User[], pending: [] as User[] };

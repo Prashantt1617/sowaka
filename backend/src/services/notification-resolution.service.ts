@@ -29,6 +29,7 @@ import { feedbackProgress } from './feedback-notifications.service';
 import { istParts } from './notification-time';
 import { pendingFor } from './request-notifications.service';
 import { logger } from '../utils/logger';
+import { currentRequestId } from '../utils/optional';
 
 export type InboxRow = AppNotification & { resolved?: true };
 
@@ -39,18 +40,21 @@ const objectIds = (ids: string[]) => ids.filter((id) => ObjectId.isValid(id)).ma
 
 export async function resolveNotifications(userId: string, rows: AppNotification[], now = new Date()): Promise<InboxRow[]> {
   const resolved = new Set<string>();
-  try {
-    await Promise.all([
-      punchReminders(userId, rows, now, resolved),
-      fixedDays(userId, rows, resolved),
-      decidedRequests(rows, resolved),
-      pendingReminders(userId, rows, now, resolved),
-      feedbackDue(userId, rows, now, resolved),
-    ]);
-  } catch (error) {
-    // The inbox still opens; rows simply keep their colour.
-    logger.error('Inbox resolution failed', { userId }, error);
-  }
+  // Each kind of row is settled on its own: one that cannot be checked keeps
+  // its colour, and the rest are still resolved. The inbox opens either way.
+  const checks = {
+    punchReminders: () => punchReminders(userId, rows, now, resolved),
+    fixedDays: () => fixedDays(userId, rows, resolved),
+    decidedRequests: () => decidedRequests(rows, resolved),
+    pendingReminders: () => pendingReminders(userId, rows, now, resolved),
+    feedbackDue: () => feedbackDue(userId, rows, now, resolved),
+  };
+  const outcomes = await Promise.allSettled(Object.values(checks).map((check) => check()));
+  outcomes.forEach((outcome, index) => {
+    if (outcome.status === 'rejected') {
+      logger.error('Inbox resolution failed', { requestId: currentRequestId(), userId, part: Object.keys(checks)[index] }, outcome.reason);
+    }
+  });
   return rows.map((row) => (resolved.has(row.id) ? { ...row, resolved: true as const } : row));
 }
 
@@ -103,7 +107,7 @@ export async function withoutEndedGames(rows: InboxRow[], now = new Date()): Pro
     }
   } catch (error) {
     // The inbox still opens, ended games and all.
-    logger.error('Inbox ended-games filter failed', {}, error);
+    logger.error('Inbox ended-games filter failed', { requestId: currentRequestId() }, error);
     return rows;
   }
   return rows.filter((row) => !ended.has(row.id));
@@ -170,11 +174,12 @@ async function decidedRequests(rows: AppNotification[], resolved: Set<string>) {
   const pendingIds = async (ids: ObjectId[], find: (ids: ObjectId[]) => Promise<Array<{ _id?: ObjectId }>>) =>
     ids.length ? (await find(ids)).map((row) => String(row._id)) : [];
   const projection = { projection: { _id: 1 } };
-  const stillPending = new Set([
-    ...await pendingIds(idsOf('leave'), (ids) => leaves().find({ _id: { $in: ids }, status: 'pending' }, projection).toArray()),
-    ...await pendingIds(idsOf('overtime'), (ids) => overtimeRequests().find({ _id: { $in: ids }, status: 'pending' }, projection).toArray()),
-    ...await pendingIds(idsOf('attendance'), (ids) => attendanceRegularizations().find({ _id: { $in: ids }, status: 'pending' }, projection).toArray()),
-  ]);
+  // Three collections, asked side by side rather than one after another.
+  const stillPending = new Set((await Promise.all([
+    pendingIds(idsOf('leave'), (ids) => leaves().find({ _id: { $in: ids }, status: 'pending' }, projection).toArray()),
+    pendingIds(idsOf('overtime'), (ids) => overtimeRequests().find({ _id: { $in: ids }, status: 'pending' }, projection).toArray()),
+    pendingIds(idsOf('attendance'), (ids) => attendanceRegularizations().find({ _id: { $in: ids }, status: 'pending' }, projection).toArray()),
+  ])).flat());
   for (const row of asks) {
     if (!stillPending.has(row.data.requestId)) resolved.add(row.id);
   }

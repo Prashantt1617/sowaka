@@ -26,6 +26,33 @@ export async function appPageFor(org: string | undefined, key: string): Promise<
     }
   }
   if (!org) return null;
+  const cacheKey = `${key}|${org}`;
+  const kept = served.get(cacheKey);
+  if (kept && Date.now() - kept.at < APP_PAGE_MS) return kept.page;
+  const read = readPage(org, key);
+  served.set(cacheKey, { at: Date.now(), page: read });
+  // A failed read is not kept: the next request asks again.
+  read.catch(() => {
+    if (served.get(cacheKey)?.page === read) served.delete(cacheKey);
+  });
+  return read;
+}
+
+/**
+ * How long a page is kept per company. The Games home page is a whole HTML
+ * document (~140 KB) read on every open of the tab, and on a link where every
+ * read of it took seconds that was the tab's wait. Sowaka uploads a new
+ * version from a script, a few times a week; it reaches the app within this.
+ */
+export const APP_PAGE_MS = 60_000;
+const served = new Map<string, { at: number; page: Promise<ServedAppPage | null> }>();
+
+/** For the checks: forget every kept page. */
+export function forgetAppPages(): void {
+  served.clear();
+}
+
+async function readPage(org: string, key: string): Promise<ServedAppPage | null> {
   const page = await appPages().findOne(
     { key, enabledOrgs: org },
     { projection: { _id: 0, html: 1, version: 1, enabledOrgs: 1 } },

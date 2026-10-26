@@ -12,6 +12,7 @@ import {
 } from './connect-notifications.service';
 import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
 import { logger } from '../utils/logger';
+import { optional } from '../utils/optional';
 import { blockedUserIdsFor } from './connect-blocks.service';
 import { requestViewer } from '../middleware/request-viewer';
 import { fitImage, POST_IMAGE_EDGE } from './image-fit';
@@ -298,13 +299,15 @@ export async function getConnectFeed(
         .filter((id): id is string => Boolean(id)),
     ),
   ];
-  // Authors' photos and the games' states are independent too.
+  // Authors' photos and the games' states are independent too. Without the
+  // states a game card guesses from its start time, as it did before them,
+  // so a fault there does not take the page down.
   const [authors, relayStatuses] = await Promise.all([
     users()
       .find({ userId: { $in: authorIds } })
       .project<PagePerson>(PAGE_PERSON_PROJECTION)
       .toArray(),
-    relayStatusesFor(posts),
+    optional('Feed game states', () => relayStatusesFor(posts), new Map<string, string>(), { userId: viewerUserId }),
   ]);
   const people = new Map(authors.map((author) => [author.userId, author]));
   const leaderIds = new Set(authors.filter((author) => author.isLeadership === true).map((author) => author.userId));
