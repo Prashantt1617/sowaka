@@ -121,8 +121,20 @@ export interface Company {
   maxUsers?: number;
   /** Face ID at punch-in, HR's to switch on; see CompanyFaceIdSettings. Absent is off. */
   faceId?: CompanyFaceIdSettings;
+  /** Features only some companies have; see CompanyFeatures. Absent is all off. */
+  features?: CompanyFeatures;
   createdAt?: number;
   updatedAt?: Date;
+}
+
+/**
+ * Features a company has only when Sowaka switches them on, by setting the
+ * field in the database: there is no dashboard control. Absent or false is
+ * off, and the server refuses the feature's routes.
+ */
+export interface CompanyFeatures {
+  /** Placements: clients, candidates and placements, for an HR placement agency. */
+  placements?: boolean;
 }
 
 /** Versions by store: the App Store and Play Store builds ship separately. */
