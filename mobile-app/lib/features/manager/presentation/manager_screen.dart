@@ -163,8 +163,13 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // The bell's dot: anything unread since the inbox was last opened, read
     // now and again whenever the app comes back to the front.
     unawaited(NotificationBadge.refresh(_session));
+    // The minute's poll of leaves runs only while the app is in front.
     _lifecycle = AppLifecycleListener(
-      onResume: () => unawaited(NotificationBadge.refresh(_session)),
+      onPause: () => _bloc.setInBackground(true),
+      onResume: () {
+        _bloc.setInBackground(false);
+        unawaited(NotificationBadge.refresh(_session));
+      },
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // The tablet rail lives above the navigator, so it reads the bloc from
