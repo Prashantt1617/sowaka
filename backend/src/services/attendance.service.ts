@@ -201,7 +201,7 @@ export async function recordPunch(
       // closes a day the punch-in already opened, so it is recorded with the
       // remark whichever outcome HR chose.
       if (rules.outcome === 'request' && type === 'in') {
-        return requestOutOfLocation(employee, note, location);
+        return requestOutOfLocation(employee, note, location, preloaded);
       }
       return writePunch(employee, type, location, policy, note, preloaded);
     }
@@ -329,13 +329,18 @@ async function requestOutOfLocation(
   employee: { userId: string; employeeId: string; managerUserId?: string },
   note: OutsideLocationNote,
   location: PunchLocation,
+  /** The day's record as read alongside the policy, if it is still the same day. */
+  preloaded?: { workDate: string; record: WithId<AttendanceRecord> | null },
 ) {
   const { userId } = employee;
   const workDate = note.at.toISOString().slice(0, 10);
   if (!employee.managerUserId) {
     throw new AttendanceError(409, 'A manager must be assigned before an out-of-location punch can be sent to them');
   }
-  const existing = await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
+  const existing =
+    preloaded && preloaded.workDate === workDate
+      ? preloaded.record
+      : await attendanceRecords().findOne({ employeeId: employee.employeeId, workDate });
   if (existing?.punchIn) throw new AttendanceError(409, 'Already punched in today');
   const pending = await attendanceRegularizations().findOne({ userId, workDate, status: 'pending' });
   if (pending) {
@@ -353,9 +358,12 @@ async function requestOutOfLocation(
   };
   const result = await attendanceRegularizations().insertOne(row);
   void location;
-  await notifyOutOfLocationSubmitted({
+  // The employee and their approver hear once the request is saved, after the
+  // punch has answered: finding the approver and their rules is a few round
+  // trips the button need not wait on.
+  void notifyOutOfLocationSubmitted({
     employeeUserId: userId, requestId: String(result.insertedId), workDate, reason: note.reason, place: placeLabel(note.distanceMeters, note.officeName),
-  });
+  }).catch((error) => logger.error('Out-of-location notification failed', { userId, workDate }, error));
   return {
     workDate,
     outsideLocation: outsideLocationView(note),
