@@ -70,4 +70,16 @@ void main() {
     expect(layout.rest, 0);
     expect(layout.width, 0);
   });
+
+  test('the smaller faces on a profile keep to the same rules', () {
+    // The Org chart on a profile draws the Team tab's cards at its own 40pt.
+    for (final width in widths) {
+      for (var members = 0; members <= 12; members++) {
+        final layout = TeamFacesLayout.forWidth(width, members, faceSize: 40);
+        expect(layout.width, lessThanOrEqualTo(width + 0.001));
+        expect(layout.faceCount + layout.rest, members);
+      }
+    }
+    expect(TeamFacesLayout.forWidth(240, 5, faceSize: 40).overlapping, isFalse);
+  });
 }

@@ -21,7 +21,7 @@ class ProfileApiException implements Exception {
 }
 
 /// What a profile reads beyond the workspace: the leaderboard, one's own
-/// credit history, and a colleague's public profile.
+/// credit history, and a colleague's public profile and team.
 class ProfileApiService {
   ProfileApiService({
     required this.session,
@@ -72,6 +72,27 @@ class ProfileApiService {
       throw const ProfileApiException('Person not found', statusCode: 404);
     }
     return TeamMember.fromJson(person, id);
+  }
+
+  /// [userId]'s team as the Team tab draws one's own, for the Org chart on
+  /// their profile: their manager, them, the peers under that manager in their
+  /// department, and their own reports. Who each one is comes back relative to
+  /// [userId] — `isSelf` is them, `isManager` their manager, `reportsToViewer`
+  /// someone who reports to them — which is what the Team tab's layout reads.
+  Future<List<TeamMember>> fetchPersonTeam(String userId) async {
+    final json = await _get(
+      '/profile/people/${Uri.encodeComponent(userId)}/team',
+    );
+    final rows = json['team'] as List<dynamic>? ?? const [];
+    return [
+      for (final (index, row) in rows.whereType<Map<String, dynamic>>().indexed)
+        TeamMember.fromJson({
+          ...row,
+          'isSelf': row['role'] == 'self',
+          'isManager': row['role'] == 'manager',
+          'reportsToViewer': row['role'] == 'report',
+        }, index + 1),
+    ];
   }
 
   Future<Map<String, dynamic>> _get(String path) async {

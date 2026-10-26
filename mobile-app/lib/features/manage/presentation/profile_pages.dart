@@ -354,15 +354,15 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
             value: _joiningDateLabel(born),
           ),
       ],
+      // Their team as the Team tab draws one's own: their manager, them,
+      // their peers and the people they lead.
       ProfileTab.orgChart => [
-        if (member.orgChart.length > 1)
-          _OrgChartCard(
-            nodes: member.orgChart,
-            selfName: member.name,
-            selfPhotoUrl: member.photoUrl,
-          )
-        else
-          const _ProfileTabNote('No reporting line to show yet.'),
+        _PersonTeamChart(
+          member: member,
+          data: data,
+          service: _profileService,
+          viewerUserId: bloc.service.session.user.id,
+        ),
       ],
       // No "your manager" line here: the reader usually is the manager, and
       // the month row's due card says what to do.
@@ -1207,12 +1207,18 @@ class _ProfileScreenState extends State<_ProfileScreen> {
             value: _formatDate(user.birthday),
           ),
       ],
+      // The Team tab's own team — the same people, laid out the same way.
       ProfileTab.orgChart => [
-        if (dashboard.myOrgChart.length > 1)
-          _OrgChartCard(
-            nodes: dashboard.myOrgChart,
-            selfName: user.name,
-            selfPhotoUrl: user.profilePhotoUrl,
+        if (dashboard.team.any((member) => !member.isSelf))
+          _ProfileTeamChart(
+            team: dashboard.team,
+            coreTitle: 'My Team',
+            viewerUserId: user.id,
+            photo: ProfilePhoto(
+              name: user.name,
+              url: user.profilePhotoUrl,
+              size: 40,
+            ),
           )
         else
           const _ProfileTabNote(
@@ -1973,160 +1979,158 @@ class _PresencePill extends StatelessWidget {
 
 // ── Where they sit, and their documents ──────────────────────────────────────
 
-/// The reporting line (node 3106:49385): the chain above in a single column,
-/// the person themselves highlighted with their photo, and whoever reports to
-/// them hanging below. Anyone on it opens their own profile.
-class _OrgChartCard extends StatelessWidget {
-  const _OrgChartCard({
-    required this.nodes,
-    required this.selfName,
-    this.selfPhotoUrl,
+/// The Org chart on a profile: the person's team as the Team tab draws it —
+/// their manager, them and their peers, then the teams they lead — at the size
+/// the profile's cards have always had. Anyone on it opens their own profile,
+/// through the same opener as anywhere else, so what that profile shows is
+/// [memberProfileTabs]'s to say. The person it is about is already open.
+///
+/// [team] carries who each one is to that person ([_teamTree]). [photo] draws
+/// the person's own face as the hero above draws it.
+class _ProfileTeamChart extends StatefulWidget {
+  const _ProfileTeamChart({
+    required this.team,
+    required this.coreTitle,
+    required this.viewerUserId,
+    required this.photo,
   });
 
-  final List<OrgChartNode> nodes;
-  final String selfName;
-  final String? selfPhotoUrl;
+  final List<TeamMember> team;
+  final String coreTitle;
+  final String viewerUserId;
+  final Widget photo;
+
+  @override
+  State<_ProfileTeamChart> createState() => _ProfileTeamChartState();
+}
+
+class _ProfileTeamChartState extends State<_ProfileTeamChart> {
+  /// Which team is open, by title, as on the Team tab.
+  String? _openTeam;
 
   @override
   Widget build(BuildContext context) {
-    final reports = nodes.where((item) => item.isReport).length;
+    const sizing = _TeamSizing.profile;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final (index, node) in nodes.indexed) ...[
-          if (index > 0 && !(node.isReport && !nodes[index - 1].isReport))
-            // The line that joins one card to the next.
-            Padding(
-              padding: EdgeInsets.only(left: node.isReport ? 71 : 53),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  width: 2,
-                  height: 16,
-                  color: const Color(0xFFDDDDDD),
-                ),
-              ),
-            ),
-          if (node.isReport && index > 0 && !nodes[index - 1].isReport)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 16, 0, 8),
-              child: Text(
-                reports == 1 ? 'REPORTS TO THEM' : '$reports REPORT TO THEM',
-                style: ProfileStyle.sora(
-                  10,
-                  weight: FontWeight.w700,
-                  color: const Color(0xFF929292),
-                  spacing: .5,
-                ),
-              ),
-            ),
-          Padding(
-            padding: EdgeInsets.only(left: node.isReport ? 18 : 0),
-            child: _OrgChartNodeCard(
-              node: node,
-              photo: node.isSelf
-                  ? ProfilePhoto(name: selfName, url: selfPhotoUrl, size: 40)
-                  : null,
-              onTap: node.isSelf || node.userId.isEmpty
-                  ? null
-                  : () => openPersonProfile(node.userId),
-            ),
-          ),
-        ],
-      ],
+      children: _teamTree(
+        members: widget.team,
+        coreTitle: widget.coreTitle,
+        sizing: sizing,
+        openTeam: _openTeam,
+        onToggle: (title) =>
+            setState(() => _openTeam = _openTeam == title ? null : title),
+        row: (member) => _TeamPersonRow(
+          member: member,
+          name: _teamRowName(member, you: member.userId == widget.viewerUserId),
+          sizing: sizing,
+          photo: member.isSelf
+              ? SizedBox.square(dimension: sizing.photo, child: widget.photo)
+              : null,
+          onTap: member.isSelf || member.userId.isEmpty
+              ? null
+              : () => openPersonProfile(member.userId),
+        ),
+      ),
     );
   }
 }
 
-class _OrgChartNodeCard extends StatelessWidget {
-  const _OrgChartNodeCard({required this.node, this.photo, this.onTap});
+/// Someone else's Org chart: their team, fetched as anyone in the company may
+/// see it. A server from before `/profile/people/:userId/team` still has the
+/// reporting line the profile came with, so the chart is drawn from that —
+/// their manager and their reports — with the photos the viewer's own team
+/// already has.
+class _PersonTeamChart extends StatefulWidget {
+  const _PersonTeamChart({
+    required this.member,
+    required this.data,
+    required this.service,
+    required this.viewerUserId,
+  });
 
-  final OrgChartNode node;
-  final Widget? photo;
-  final VoidCallback? onTap;
+  final TeamMember member;
+  final ManagerDashboard data;
+  final ProfileApiService service;
+  final String viewerUserId;
+
+  @override
+  State<_PersonTeamChart> createState() => _PersonTeamChartState();
+}
+
+class _PersonTeamChartState extends State<_PersonTeamChart> {
+  late final Future<List<TeamMember>> _team = widget.service
+      .fetchPersonTeam(widget.member.userId)
+      .then((team) => team.isEmpty ? _fromReportingLine() : team)
+      .catchError((Object _) => _fromReportingLine());
+
+  /// Their manager — the card just above them on the line — them, and their
+  /// reports, as the Team tab would group them.
+  List<TeamMember> _fromReportingLine() {
+    final member = widget.member;
+    final nodes = member.orgChart;
+    final selfAt = nodes.indexWhere((node) => node.isSelf);
+    final known = {
+      for (final person in [
+        ...widget.data.team,
+        ...widget.data.recognitionCandidates,
+      ])
+        person.userId: person,
+    };
+    TeamMember seen(OrgChartNode node, int id, {required String role}) {
+      final person = known[node.userId];
+      return TeamMember.fromJson({
+        'userId': node.userId,
+        'name': node.name,
+        'designation': node.designation,
+        'department': person?.team ?? 'Team',
+        'photoUrl': person?.photoUrl,
+        'isManager': role == 'manager',
+        'reportsToViewer': role == 'report',
+      }, id);
+    }
+
+    return [
+      if (selfAt > 0 && !nodes[selfAt - 1].isReport)
+        seen(nodes[selfAt - 1], 1, role: 'manager'),
+      TeamMember.fromJson({
+        'userId': member.userId,
+        'name': member.name,
+        'designation': member.designation,
+        'department': member.team,
+        'photoUrl': member.photoUrl,
+        'isSelf': true,
+      }, 2),
+      for (final (index, node) in nodes.where((node) => node.isReport).indexed)
+        seen(node, index + 3, role: 'report'),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
-    final self = node.isSelf;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(color: Color(0x1A000000), blurRadius: 3, offset: Offset(0, 1)),
-          BoxShadow(color: Color(0x1A000000), blurRadius: 2, offset: Offset(0, 1)),
-        ],
-      ),
-      child: Material(
-        color: self ? const Color(0xFFF7F7FF) : Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: self ? const Color(0xFFBEEDFF) : const Color(0xFFF7F7F9),
-            width: 1.114,
-          ),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(13.114),
-            child: Row(
-              children: [
-                photo ??
-                    Container(
-                      width: 40,
-                      height: 40,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF7F7F7),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: const Color(0xFFF7F7F9),
-                          width: 1.114,
-                        ),
-                      ),
-                      child: SvgPicture.asset(
-                        'assets/icons/profile_org_person.svg',
-                        width: 20,
-                        height: 20,
-                      ),
-                    ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        node.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: ProfileStyle.sora(
-                          14,
-                          weight: FontWeight.w700,
-                          height: 20,
-                        ),
-                      ),
-                      if (node.designation.isNotEmpty)
-                        Text(
-                          node.designation.toUpperCase(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: ProfileStyle.sora(
-                            11,
-                            weight: FontWeight.w600,
-                            color: ProfileStyle.tertiary,
-                            height: 16.5,
-                            spacing: 0.55,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
+    final member = widget.member;
+    return FutureBuilder<List<TeamMember>>(
+      future: _team,
+      builder: (context, snapshot) {
+        final team = snapshot.data;
+        if (team == null) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: CircularProgressIndicator(color: MColors.terra),
             ),
-          ),
-        ),
-      ),
+          );
+        }
+        if (team.where((person) => !person.isSelf).isEmpty) {
+          return const _ProfileTabNote('No reporting line to show yet.');
+        }
+        return _ProfileTeamChart(
+          team: team,
+          coreTitle: "${member.name.trim().split(' ').first}'s Team",
+          viewerUserId: widget.viewerUserId,
+          photo: _TeamMemberPhoto(member: member, size: 40),
+        );
+      },
     );
   }
 }
