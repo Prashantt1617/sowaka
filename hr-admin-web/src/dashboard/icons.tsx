@@ -177,6 +177,12 @@ export const navIcon: Record<View, ReactElement> = {
       <circle cx="12" cy="11" r="2.2" />
     </svg>
   ),
+  faceid: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" />
+      <path d="M9 9.5h.01M15 9.5h.01M9.5 15a3.5 3.5 0 0 0 5 0" />
+    </svg>
+  ),
   oolcheckins: (
     <svg {...base(18, 'currentColor')}>
       <path d="M12 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 4.8-6 10-6 10z" />
