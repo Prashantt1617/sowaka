@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The hand and person mark on cream, for the launcher alias the app enables
+     once an HR Organization's Solutions employee signs in. Same layering as
+     ic_launcher.xml. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_hrorgsol_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_hrorgsol_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_hrorgsol_foreground" />
+</adaptive-icon>

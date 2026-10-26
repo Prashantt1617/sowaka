@@ -108,6 +108,18 @@ class OrgBranding {
       homeLogoAsset: 'assets/images/cde_logo.png',
       iosIconName: 'AppIconCde',
     ),
+    'hrorgsol': OrgBranding(
+      org: 'hrorgsol',
+      wordmark: 'HR Organization\'s Solutions',
+      tagline: 'Your app is powered by',
+      // The hand and person mark over the name, in black: drawn for a light
+      // ground, so the splash goes light. The icon is the mark alone on the
+      // logo's cream.
+      logoAsset: 'assets/images/hrorgsol_logo.png',
+      light: true,
+      homeLogoAsset: 'assets/images/hrorgsol_logo.png',
+      iosIconName: 'AppIconHrorgsol',
+    ),
   };
 
   /// The branding for an org id, or Sowaka's when there is none for it.
