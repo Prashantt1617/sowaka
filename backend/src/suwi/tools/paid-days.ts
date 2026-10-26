@@ -15,18 +15,20 @@ import { addDays, appShowsLine, istToday, norm, resolveTeam } from './team';
 const PLURAL: Record<DeductionTrigger, [string, string]> = {
   late: ['late arrival', 'late arrivals'], early: ['early leave', 'early leaves'], absent: ['absent day', 'absent days'],
   half_day: ['half day', 'half days'], leave: ['leave day', 'leave days'], missed_punch: ['missed punch', 'missed punches'],
+  unpaid_leave: ['day of leave without pay', 'days of leave without pay'],
 };
 const ruleWords = (r: SalaryDeductionRule) => `every ${r.every === 1 ? PLURAL[r.trigger][0] : `${r.every} ${PLURAL[r.trigger][1]}`} cost${r.every === 1 ? 's' : ''} ${r.deductDays} paid day${r.deductDays === 1 ? '' : 's'}${r.active ? '' : ' (switched off)'}`;
 
 /** The template's rules in plain words. */
 export function paidDaysWords(t: { allDaysPaid: boolean; deductionRules: SalaryDeductionRule[]; monthlyPaidLeaveDays: number }): string[] {
-  if (t.allDaysPaid) return ['Every day of the month is paid; the attendance calendar is not read.'];
+  if (t.allDaysPaid) return ['Every day of the month is paid; the attendance calendar is not read, except for leave without pay, which is always loss of pay.'];
   const ignored = t.deductionRules.filter((r) => r.trigger === 'absent' || r.trigger === 'half_day');
   return [
     'Loss of pay starts from the calendar: each absent day costs a paid day and each half day half a day (a missed punch costs what the shift says it counts as). The base is the days in the month.',
     t.deductionRules.filter((r) => !ignored.includes(r)).length ? `On top of that: ${t.deductionRules.filter((r) => !ignored.includes(r)).map(ruleWords).join('; ')}.` : 'No extra rules for lates, early leaves or missed punches.',
     ...(ignored.length ? ['Rules on absent days or half days are not applied again: the calendar already docks those.'] : []),
     t.monthlyPaidLeaveDays ? (t.monthlyPaidLeaveDays === 1 ? 'The first day docked each month is covered by paid leave.' : `The first ${t.monthlyPaidLeaveDays} days docked each month are covered by paid leave.`) : 'No paid-leave allowance offsets what is docked.',
+    'Leave without pay is always loss of pay, a half day as half, and no allowance covers it.',
   ];
 }
 
@@ -36,7 +38,7 @@ export function workedExample(t: { allDaysPaid: boolean; deductionRules: SalaryD
   const base = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const s = { absent: 1, half_day: 2, late: 4, early: 2, missed_punch: 1, leave: 1, ...(sample ?? {}) };
   // The sample's missed punch counts as a half day, the commonest shift setting.
-  const counts: DeductionCounts = { late: s.late, early: s.early, absent: s.absent, half_day: s.half_day, leave: s.leave, missed_punch: s.missed_punch, missedPunchLopCount: 0, missedPunchLop: 0 };
+  const counts: DeductionCounts = { late: s.late, early: s.early, absent: s.absent, half_day: s.half_day, leave: s.leave, missed_punch: s.missed_punch, unpaid_leave: 0, missedPunchLopCount: 0, missedPunchLop: 0, unpaidLeaveLop: 0 };
   if (t.allDaysPaid) return { month, daysInMonth: base, sample: s, lines: [], lop: 0, paidDays: base, text: `In ${month} (${base} days) every day is paid, whatever the calendar says: ${base} paid days.` };
   const docked = payrollDeductions(t.deductionRules, counts);
   const lop = Math.max(0, docked.days - t.monthlyPaidLeaveDays);

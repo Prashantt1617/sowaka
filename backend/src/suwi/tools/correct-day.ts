@@ -15,11 +15,12 @@ import { monthName } from './payroll-actions';
 
 const lopDays = (n: number) => `${n === 0.5 ? '½' : n} day${n === 1 || n === 0.5 ? '' : 's'}`;
 
-const LABEL: Record<string, string> = { present: 'Present', half_day: 'Half day', absent: 'Absent', on_leave: 'On leave', week_off: 'Week off', holiday: 'Holiday', missed_punch: 'Missed punch', upcoming: 'Upcoming' };
+const LABEL: Record<string, string> = { present: 'Present', half_day: 'Half day', absent: 'Absent', on_leave: 'On leave', unpaid_leave: 'Leave without pay', week_off: 'Week off', holiday: 'Holiday', missed_punch: 'Missed punch', upcoming: 'Upcoming' };
 
-/** Paid days a graded day costs: an absence a day, a half day half, a missed punch whatever the shift says. */
-function lopOf(day: Pick<CalendarDay, 'status' | 'countsAs'>): number {
+/** Paid days a graded day costs: an absence a day, a half day half, a missed punch whatever the shift says, leave without pay its days. */
+function lopOf(day: Pick<CalendarDay, 'status' | 'countsAs'> & { halfDay?: boolean }): number {
   if (day.status === 'absent') return 1;
+  if (day.status === 'unpaid_leave') return day.halfDay ? 0.5 : 1;
   if (day.status === 'half_day') return 0.5;
   if (day.status === 'missed_punch') return day.countsAs === 'Absent' ? 1 : day.countsAs === 'Half Day' ? 0.5 : 0;
   return 0;
@@ -69,12 +70,16 @@ defineTools(
       const structure = await salaryStructures().findOne({ org: ctx.org, userId }, { projection: { _id: 0, paidDaysTemplateCode: 1 } });
       const pdt = structure ? await paidDaysTemplates().findOne(structure.paidDaysTemplateCode ? { org: ctx.org, code: structure.paidDaysTemplateCode } : { org: ctx.org, isDefault: true }) : null;
       const allPaid = pdt?.allDaysPaid === true;
+      // Leave without pay is docked even on a template that pays every day.
+      const unpaidLeaveLop = !day.hr && day.status === 'unpaid_leave' ? lopOf(day) : 0;
       const existing = await attendanceOverrides().findOne({ org: ctx.org, userId, workDate: date }, { projection: { _id: 0 } });
       if (existing?.status === status && (existing.note ?? '') === str(i.note)) return { data: { nothingToDo: true, message: `${date} is already marked ${LABEL[status]} by HR.` } };
       const policy = shiftPolicyViewOf(await policyForUser(userId, date));
       const first = person.name.split(' ')[0];
       const payLine = allPaid
-        ? `No pay effect: ${first}'s paid-days template (${pdt!.name}) pays every day of the month, so the calendar is not read by payroll.`
+        ? unpaidLeaveLop > 0
+          ? `+${unpaidLeaveLop} paid day${unpaidLeaveLop === 1 ? '' : 's'} for ${M}: it was leave without pay, which payroll docks even though ${first}'s paid-days template (${pdt!.name}) pays every other day.`
+          : `No pay effect: ${first}'s paid-days template (${pdt!.name}) pays every day of the month, so the calendar is not read by payroll.`
         : delta === 0
           ? `No change in paid days: ${LABEL[day.status]} and ${LABEL[status]} cost the same (${lopDays(after)} of loss of pay, out of ${base} days in ${M}).`
           : `${delta > 0 ? `+${delta}` : delta} paid day${Math.abs(delta) === 1 ? '' : 's'} for ${M} (out of ${base}): it was ${lopDays(currentLop)} of loss of pay; it becomes ${after}.`;

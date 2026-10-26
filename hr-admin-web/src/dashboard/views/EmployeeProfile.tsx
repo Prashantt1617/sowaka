@@ -507,6 +507,8 @@ const CAL_TONE: Record<CalendarDayStatus, { bg: string; fg: string; label: strin
   missed_punch: { bg: 'var(--t-peach)', fg: 'var(--warn)', label: 'Missed punch' },
   absent: { bg: 'var(--bad-bg)', fg: 'var(--bad)', label: 'Absent' },
   on_leave: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)', label: 'On leave' },
+  // Its own day: unpaid, so neither leave nor an absence.
+  unpaid_leave: { bg: 'var(--t-plum)', fg: 'var(--t-plum-i)', label: 'Leave without pay' },
   week_off: { bg: 'var(--surface-2)', fg: 'var(--ink-4)', label: 'Week off' },
   holiday: { bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)', label: 'Holiday' },
   upcoming: { bg: 'var(--surface)', fg: 'var(--ink-4)', label: 'Upcoming' },
@@ -665,7 +667,7 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
 
   // Monday-first grid, the way the app lays the month out.
   const lead = shown ? (new Date(`${shown.month}-01T00:00:00Z`).getUTCDay() + 6) % 7 : 0;
-  const worked = shown ? shown.totals.present + shown.totals.half_day + shown.totals.missed_punch + shown.totals.absent + shown.totals.on_leave : 0;
+  const worked = shown ? shown.totals.present + shown.totals.half_day + shown.totals.missed_punch + shown.totals.absent + shown.totals.on_leave + (shown.totals.unpaid_leave ?? 0) : 0;
 
   return (
     // Inside the payroll run's dialog it sits flat; on the profile it is its own card.
@@ -691,9 +693,9 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
       )}
       {shown && (
         <div className="pd-legend">
-          {(['present', 'half_day', 'missed_punch', 'absent', 'on_leave', 'week_off', 'holiday'] as CalendarDayStatus[]).map((k) => (
+          {(['present', 'half_day', 'missed_punch', 'absent', 'on_leave', 'unpaid_leave', 'week_off', 'holiday'] as CalendarDayStatus[]).map((k) => (
             <span key={k}>
-              <i style={{ background: k === 'week_off' ? 'var(--line-2)' : CAL_TONE[k].fg }} />{CAL_TONE[k].label} <span style={{ color: 'var(--ink-3)' }}>{shown.totals[k]}</span>
+              <i style={{ background: k === 'week_off' ? 'var(--line-2)' : CAL_TONE[k].fg }} />{CAL_TONE[k].label} <span style={{ color: 'var(--ink-3)' }}>{shown.totals[k] ?? 0}</span>
             </span>
           ))}
           <span style={{ marginLeft: 'auto', color: 'var(--ink-3)' }}>{worked} working days so far</span>
@@ -716,7 +718,9 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
           ))}
           {(shown?.days ?? []).map((day) => {
             const tone = CAL_TONE[day.status];
-            const detail = day.status === 'on_leave' ? (LEAVE_NAMES[day.label ?? ''] ?? (day.label ?? '').split('_').map((w) => w && w[0].toUpperCase() + w.slice(1)).join(' ') + ' leave')
+            const leaveName = LEAVE_NAMES[day.label ?? ''] ?? (day.label ?? '').split('_').map((w) => w && w[0].toUpperCase() + w.slice(1)).join(' ') + ' leave';
+            const detail = day.status === 'on_leave' ? leaveName
+              : day.status === 'unpaid_leave' ? (day.halfDay ? 'Half day' : '')
               : day.status === 'holiday' || day.status === 'week_off' ? day.label
                 : day.status === 'upcoming' ? ''
                   : day.label ?? (day.punchIn ? `${clockOf(day.punchIn)} – ${clockOf(day.punchOut)}` : '');

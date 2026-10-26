@@ -133,10 +133,10 @@ defineTools({
     if (dep) criteria.push(`Department contains "${i.department}"`);
     if (who) criteria.push(`Name contains "${i.name}"`);
     const r = await attendanceReport(ctx.userId, { from, to });
-    const per = new Map<string, { present: number; halfDay: number; late: number; early: number; missed: number; absent: number; leave: number }>();
+    const per = new Map<string, { present: number; halfDay: number; late: number; early: number; missed: number; absent: number; leave: number; unpaidLeave: number }>();
     for (const [uid, , status, late, , , , , early] of r.days) {
-      const p = per.get(uid) ?? { present: 0, halfDay: 0, late: 0, early: 0, missed: 0, absent: 0, leave: 0 };
-      if (status === 'present') p.present++; else if (status === 'half_day') p.halfDay++; else if (status === 'missed_punch') p.missed++; else if (status === 'absent') p.absent++; else if (status === 'on_leave') p.leave++;
+      const p = per.get(uid) ?? { present: 0, halfDay: 0, late: 0, early: 0, missed: 0, absent: 0, leave: 0, unpaidLeave: 0 };
+      if (status === 'present') p.present++; else if (status === 'half_day') p.halfDay++; else if (status === 'missed_punch') p.missed++; else if (status === 'absent') p.absent++; else if (status === 'on_leave') p.leave++; else if (status === 'unpaid_leave') p.unpaidLeave++;
       if (late > 0) p.late++;
       if (early > 0) p.early++;
       per.set(uid, p);
@@ -146,9 +146,9 @@ defineTools({
     if (num(i.minLate, 0)) criteria.push(`At least ${i.minLate} late arrivals`);
     if (num(i.minAbsent, 0)) criteria.push(`At least ${i.minAbsent} absences`);
     rows = rows.sort((a, b) => b.absent - a.absent || b.late - a.late);
-    const total = (k: 'present' | 'halfDay' | 'late' | 'early' | 'missed' | 'absent' | 'leave') => rows.reduce((t, x) => t + x[k], 0);
+    const total = (k: 'present' | 'halfDay' | 'late' | 'early' | 'missed' | 'absent' | 'leave' | 'unpaidLeave') => rows.reduce((t, x) => t + x[k], 0);
     return {
-      data: { report: R.title, criteria, people: rows.length, rows: rows.slice(0, limit), more: Math.max(0, rows.length - limit), totals: { present: total('present'), halfDays: total('halfDay'), lates: total('late'), earlyExits: total('early'), missedPunches: total('missed'), absences: total('absent'), leaveDays: total('leave') } },
+      data: { report: R.title, criteria, people: rows.length, rows: rows.slice(0, limit), more: Math.max(0, rows.length - limit), totals: { present: total('present'), halfDays: total('halfDay'), lates: total('late'), earlyExits: total('early'), missedPunches: total('missed'), absences: total('absent'), leaveDays: total('leave'), leaveWithoutPayDays: total('unpaidLeave') } },
       links,
     };
   },

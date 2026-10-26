@@ -216,6 +216,19 @@ export interface LeaveTypeRule {
   allowBackdated: boolean;
   /** How far back, when backdating is allowed. */
   backdatedDays: number;
+  /**
+   * Leave without pay. Only HR sets it, on the template. Such a type keeps no
+   * balance — it can always be applied for, and approval is the whole control
+   * — and every approved day of it is loss of pay: a day of its own on the
+   * calendar ('unpaid_leave'), not leave and not an absence. Absent means a
+   * paid type, which is every type written before this existed.
+   */
+  unpaid?: boolean;
+}
+
+/** Whether `key` is a leave-without-pay type among `types`. */
+export function isUnpaidLeaveType(types: LeaveTypeRule[] | undefined, key: string): boolean {
+  return (types ?? []).some((type) => type.key === key && type.unpaid === true);
 }
 
 /**

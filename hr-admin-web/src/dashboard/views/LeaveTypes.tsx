@@ -7,6 +7,9 @@ import { Card } from '../ui';
 // left, and anything still remaining lapses. Lapse is the tail of the other
 // two, so it is shown rather than set — asking for it again as a choice is what
 // made the earlier draft confusing.
+//
+// Leave without pay is a switch on the type, HR's alone: such a type has no
+// balance, so none of the accrual or year-end questions are asked for it.
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import type { LeaveTypeRule } from '../../services/hrms';
 
@@ -90,6 +93,8 @@ export function AddLeaveType({ existing, onAdd }: { existing: LeaveTypeRule[]; o
 /** Closed by default: the header is the summary, the chevron opens it for editing. */
 export function LeaveTypeCard({ row, onChange, onRemove }: { row: LeaveTypeRule; onChange: (patch: Partial<LeaveTypeRule>) => void; onRemove?: () => void }) {
   const isCompOff = row.key === 'comp_off';
+  // Leave without pay keeps no balance, so accrual and year-end mean nothing for it.
+  const unpaid = !isCompOff && row.unpaid === true;
   const monthly = row.resetOn === 'monthly';
   const annual = +(row.perMonth * 12).toFixed(1);
   const [open, setOpen] = useState(false);
@@ -105,7 +110,7 @@ export function LeaveTypeCard({ row, onChange, onRemove }: { row: LeaveTypeRule;
         <span style={{ width: 11, height: 11, borderRadius: 3, background: swatchFor(row.key), flexShrink: 0 }} />
         <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-.2px', color: 'var(--ink)' }}>{row.name}</div>
         <span style={annualPill}>
-          {isCompOff ? 'earned from overtime' : monthly ? `${row.perMonth} ${row.perMonth === 1 ? 'day' : 'days'} / month` : `${annual} days / year`}
+          {isCompOff ? 'earned from overtime' : unpaid ? 'Unlimited · unpaid' : monthly ? `${row.perMonth} ${row.perMonth === 1 ? 'day' : 'days'} / month` : `${annual} days / year`}
         </span>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transition: 'transform .18s', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
           <polyline points="6 9 12 15 18 9" />
@@ -122,41 +127,62 @@ export function LeaveTypeCard({ row, onChange, onRemove }: { row: LeaveTypeRule;
         />
         <div style={{ fontSize: 12.5, color: 'var(--ink-4)', marginTop: 6 }}>What employees see in the app.</div>
 
-        <MiniLabel>Accrual</MiniLabel>
-        {isCompOff ? (
-          <div style={note}>
-            Comp-off is not accrued. The balance moves when overtime is approved — a full day adds
-            1 day, a half day adds 0.5. Everything below still applies to what is left unused.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <div style={fieldLabel}>Leaves earned per month</div>
-            <Suffixed value={String(row.perMonth)} onChange={(v) => onChange({ perMonth: Number(v) || 0 })} suffix="/ month" width={150} step="0.5" />
-            {!monthly && (
-              <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-                = <strong style={{ color: 'var(--ink)' }}>{annual}</strong> / year
-              </span>
+        {!isCompOff && (
+          <>
+            <MiniLabel>Pay</MiniLabel>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={fieldLabel}>Leave without pay</div>
+              <YesNo value={unpaid} onChange={(v) => onChange({ unpaid: v })} />
+            </div>
+            {unpaid && (
+              <div style={{ ...note, marginTop: 10 }}>
+                No balance: it can always be applied for, and is approved like any other leave. Every
+                approved day is loss of pay in payroll, half a day for a half day, even on a paid days
+                template that pays all days. Calendars show it as Leave without pay, not as leave or absent.
+              </div>
             )}
-          </div>
+          </>
         )}
 
-        <MiniLabel>When is the balance processed?</MiniLabel>
-        <select value={row.resetOn} onChange={(e) => onChange({ resetOn: e.target.value as LeaveTypeRule['resetOn'] })} style={{ ...input, width: 'auto', cursor: 'pointer' }}>
-          {RESET_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        {!unpaid && (
+          <>
+            <MiniLabel>Accrual</MiniLabel>
+            {isCompOff ? (
+              <div style={note}>
+                Comp-off is not accrued. The balance moves when overtime is approved — a full day adds
+                1 day, a half day adds 0.5. Everything below still applies to what is left unused.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <div style={fieldLabel}>Leaves earned per month</div>
+                <Suffixed value={String(row.perMonth)} onChange={(v) => onChange({ perMonth: Number(v) || 0 })} suffix="/ month" width={150} step="0.5" />
+                {!monthly && (
+                  <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>
+                    = <strong style={{ color: 'var(--ink)' }}>{annual}</strong> / year
+                  </span>
+                )}
+              </div>
+            )}
 
-        <MiniLabel>{row.resetOn === 'monthly' ? 'How many unused days can be carried into the next month?' : 'How many unused days can be carried forward?'}</MiniLabel>
-        <Suffixed value={String(row.carryForwardDays)} onChange={(v) => onChange({ carryForwardDays: Number(v) || 0 })} suffix="days" width={180} />
+            <MiniLabel>When is the balance processed?</MiniLabel>
+            <select value={row.resetOn} onChange={(e) => onChange({ resetOn: e.target.value as LeaveTypeRule['resetOn'] })} style={{ ...input, width: 'auto', cursor: 'pointer' }}>
+              {RESET_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
 
-        <MiniLabel>What happens to the remaining days?</MiniLabel>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <select value={row.encashment} onChange={(e) => onChange({ encashment: e.target.value as LeaveTypeRule['encashment'] })} style={{ ...input, width: 'auto', cursor: 'pointer' }}>
-            {ENCASH_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          {row.encashment === 'limit' && (
-            <Suffixed value={String(row.encashLimitDays)} onChange={(v) => onChange({ encashLimitDays: Number(v) || 0 })} suffix="days" width={160} />
-          )}
-        </div>
+            <MiniLabel>{row.resetOn === 'monthly' ? 'How many unused days can be carried into the next month?' : 'How many unused days can be carried forward?'}</MiniLabel>
+            <Suffixed value={String(row.carryForwardDays)} onChange={(v) => onChange({ carryForwardDays: Number(v) || 0 })} suffix="days" width={180} />
+
+            <MiniLabel>What happens to the remaining days?</MiniLabel>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <select value={row.encashment} onChange={(e) => onChange({ encashment: e.target.value as LeaveTypeRule['encashment'] })} style={{ ...input, width: 'auto', cursor: 'pointer' }}>
+                {ENCASH_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              {row.encashment === 'limit' && (
+                <Suffixed value={String(row.encashLimitDays)} onChange={(v) => onChange({ encashLimitDays: Number(v) || 0 })} suffix="days" width={160} />
+              )}
+            </div>
+          </>
+        )}
 
         <MiniLabel>When can it be applied for?</MiniLabel>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -172,10 +198,12 @@ export function LeaveTypeCard({ row, onChange, onRemove }: { row: LeaveTypeRule;
         </div>
 
         {/* Not a question: whatever carry-forward and encashment don't take, lapses. */}
-        <div style={lapseRow}>
-          <span style={lapseTag}>automatic</span>
-          <span>Any balance still left after that will <strong>lapse</strong>.</span>
-        </div>
+        {!unpaid && (
+          <div style={lapseRow}>
+            <span style={lapseTag}>automatic</span>
+            <span>Any balance still left after that will <strong>lapse</strong>.</span>
+          </div>
+        )}
 
         {onRemove && (
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--line)' }}>

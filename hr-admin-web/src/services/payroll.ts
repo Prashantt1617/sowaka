@@ -362,7 +362,8 @@ export type StructureListRow = {
 };
 
 // —— Attendance deductions, as a salary template defines them ——
-export type DeductionTrigger = 'late' | 'early' | 'absent' | 'half_day' | 'leave' | 'missed_punch';
+/** 'unpaid_leave' is only ever a payslip line: the calendar docks it on every template, so no rule counts it. */
+export type DeductionTrigger = 'late' | 'early' | 'absent' | 'half_day' | 'leave' | 'missed_punch' | 'unpaid_leave';
 export const DEDUCTION_TRIGGER_LABELS: Record<DeductionTrigger, string> = {
   late: 'Late arrivals',
   early: 'Early leaves',
@@ -370,6 +371,7 @@ export const DEDUCTION_TRIGGER_LABELS: Record<DeductionTrigger, string> = {
   half_day: 'Half days',
   leave: 'Leave days',
   missed_punch: 'Missed punches',
+  unpaid_leave: 'Leave without pay',
 };
 /** Every `every` occurrences in a month cost `deductDays` paid days. */
 export type SalaryDeductionRule = { trigger: DeductionTrigger; every: number; deductDays: number; active: boolean };

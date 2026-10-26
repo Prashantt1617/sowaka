@@ -16,6 +16,8 @@ export type DeductionCounts = Record<DeductionTrigger, number> & {
   /** Missed punches the shift counts as an absence or a half day, and the days they cost. */
   missedPunchLopCount: number;
   missedPunchLop: number;
+  /** The days of leave without pay (`unpaid_leave` counts them), a half day as half. */
+  unpaidLeaveLop: number;
 };
 
 export interface AttendanceDeductionLine {
@@ -28,7 +30,7 @@ export interface AttendanceDeductionLine {
   deductDays: number;
 }
 
-const emptyCounts = (): DeductionCounts => ({ late: 0, early: 0, absent: 0, half_day: 0, leave: 0, missed_punch: 0, missedPunchLopCount: 0, missedPunchLop: 0 });
+const emptyCounts = (): DeductionCounts => ({ late: 0, early: 0, absent: 0, half_day: 0, leave: 0, missed_punch: 0, unpaid_leave: 0, missedPunchLopCount: 0, missedPunchLop: 0, unpaidLeaveLop: 0 });
 
 /** Everyone's counts for a YYYY-MM period, keyed by userId. A future month counts nothing. */
 export async function attendanceCountsForPeriod(adminUserId: string, period: string): Promise<Map<string, DeductionCounts>> {
@@ -41,14 +43,21 @@ export async function attendanceCountsForPeriod(adminUserId: string, period: str
   const to = monthEnd < today ? monthEnd : today;
   const report = await attendanceReport(adminUserId, { from, to });
   const missedPunchMarks = await missedPunchMarksFor(adminUserId, report.days, from, to);
+  const halfDayLeave = new Set(report.halfDayLeave);
   // Only graded working days are in the report: week offs and holidays are
-  // not, and an approved leave is on_leave, so all of those stay paid.
+  // not, and an approved leave is on_leave, so all of those stay paid. Leave
+  // without pay is its own status, and is the one leave that is not.
   for (const [userId, date, status, lateBy, , , , , earlyBy] of report.days) {
     const c = counts.get(userId) ?? emptyCounts();
     const missedPunchMark = missedPunchMarks.get(`${userId}|${date}`);
     if (status === 'absent') c.absent += 1;
     else if (status === 'half_day') c.half_day += 1;
     else if (status === 'on_leave') c.leave += 1;
+    else if (status === 'unpaid_leave') {
+      // Half a day of it is half a day unpaid; the other half was worked.
+      c.unpaid_leave += 1;
+      c.unpaidLeaveLop += halfDayLeave.has(`${userId}|${date}`) ? 0.5 : 1;
+    }
     else if (status === 'missed_punch') {
       // Paid as whatever the shift says that gap counts as.
       const lop = missedPunchMark === 'Absent' ? 1 : missedPunchMark === 'Present' ? 0 : 0.5;
@@ -115,6 +124,19 @@ export function payrollDeductions(
   const extra = deductionsUnder((rules ?? []).filter((rule) => rule.trigger !== 'absent' && rule.trigger !== 'half_day' && !(calendarDocksMissed && rule.trigger === 'missed_punch')), counts);
   const lines = [...calendar, ...extra.lines];
   return { lines, days: lines.reduce((total, line) => total + line.days, 0) };
+}
+
+/**
+ * Leave without pay, as a line of its own: every approved day of it is loss of
+ * pay, half a day for half a day. Docked on every paid days template — one
+ * that pays all days included — and never offset by its paid-leave allowance,
+ * because the employee asked for these days unpaid. Empty when there is none.
+ */
+export function unpaidLeaveDeduction(counts: DeductionCounts | undefined): { lines: AttendanceDeductionLine[]; days: number } {
+  const count = counts?.unpaid_leave ?? 0;
+  if (count <= 0) return { lines: [], days: 0 };
+  const days = counts!.unpaidLeaveLop;
+  return { lines: [{ label: DEDUCTION_TRIGGER_LABELS.unpaid_leave, count, days, trigger: 'unpaid_leave', every: 1, deductDays: days / count }], days };
 }
 
 /** One line per active rule, and the paid days they cost together. */

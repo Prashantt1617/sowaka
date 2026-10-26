@@ -881,7 +881,8 @@ function ComponentNav({ unused, onPick }: { unused: PayHeadDTO[]; onPick: (code:
 // Absent days and half days always cost pay straight from the calendar (one
 // day, and half a day, each), so a template rule on them would count those
 // days twice: the server ignores such rules and they are not offered here.
-const CALENDAR_TRIGGERS = new Set<DeductionTrigger>(['absent', 'half_day']);
+// Leave without pay is the same, on every template, and no rule may count it.
+const CALENDAR_TRIGGERS = new Set<DeductionTrigger>(['absent', 'half_day', 'unpaid_leave']);
 const TRIGGERS = (Object.keys(DEDUCTION_TRIGGER_LABELS) as DeductionTrigger[]).filter((t) => !CALENDAR_TRIGGERS.has(t));
 function CalendarNote() {
   return (

@@ -2,7 +2,7 @@ import { attendanceOverrides, attendanceRecords, holidays, leaves, shiftAssignme
 import { requestViewer } from '../middleware/request-viewer';
 import { AttendanceOverride, HrDayStatus } from '../models/attendance.model';
 import { Leave } from '../models/leave.model';
-import { DayMark, OrgShiftPolicy, PunchFormat, ShiftTemplate } from '../models/shift.model';
+import { DayMark, OrgShiftPolicy, PunchFormat, ShiftTemplate, isUnpaidLeaveType } from '../models/shift.model';
 import { User } from '../models/user.model';
 import { getOrgShiftPolicy, isWeekOffDay, onShiftSetupChanged } from './shift.service';
 import { SHIFT_UTC_OFFSET, markForDay, minutesAfterShiftStart, minutesBeforeShiftEnd, normalisePunches } from './attendance.service';
@@ -29,8 +29,14 @@ import { holidaysForUser } from './holiday.service';
  * and the dashboard does its own counting, which is instant.
  */
 
-/** What a graded day came out as. */
-export type DayStatus = 'present' | 'half_day' | 'missed_punch' | 'on_leave' | 'absent';
+/**
+ * What a graded day came out as.
+ *
+ * 'unpaid_leave' is an approved day of a leave-without-pay type: off, owing
+ * nothing to correct, and loss of pay — so it is neither 'on_leave' (paid) nor
+ * 'absent' (a gap). Every reader that counts days names it on its own.
+ */
+export type DayStatus = 'present' | 'half_day' | 'missed_punch' | 'on_leave' | 'unpaid_leave' | 'absent';
 
 export type ReportPerson = {
   name: string;
@@ -79,7 +85,7 @@ export type AttendanceReport = {
    * Only the dashboard's week grid reads it; payroll and Suwi grade `days`.
    */
   offDays: [string, string, 'week_off' | 'holiday'][];
-  /** `userId|date` of the leave days in `days` that were half a day off. */
+  /** `userId|date` of the leave days in `days` (paid or unpaid) that were half a day off. */
   halfDayLeave: string[];
 };
 
@@ -429,7 +435,9 @@ export async function attendanceReport(
       const leave = leaveOn(user.userId, day);
       if (leave) {
         leaveTypes.add(leave.type);
-        days.push([user.userId, key, 'on_leave', 0, null, null, leave.type, null, 0]);
+        // The shift covering the day says whether its type is paid.
+        const status: DayStatus = isUnpaidLeaveType(onDay.leave?.types, leave.type) ? 'unpaid_leave' : 'on_leave';
+        days.push([user.userId, key, status, 0, null, null, leave.type, null, 0]);
         if (leave.halfDay) halfDayLeave.push(`${user.userId}|${key}`);
         continue;
       }
@@ -530,6 +538,8 @@ export interface CalendarDay {
   hr?: { previousStatus: CalendarDayStatus; previousLabel: string | null; note?: string; setByName?: string; setAt: string };
   /** A missed punch: what the shift says that gap counts as, which is what payroll pays it as. */
   countsAs?: DayMark;
+  /** Leave without pay for half the day: half a day of loss of pay, not a whole one. */
+  halfDay?: true;
   punchIn: string | null;
   punchOut: string | null;
   lateByMinutes: number;
@@ -575,6 +585,7 @@ async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, fro
   const add = (
     date: string, status: CalendarDayStatus, label: string | null = null,
     punchIn: Date | null = null, punchOut: Date | null = null, lateByMinutes = 0, earlyByMinutes = 0, countsAs?: DayMark,
+    halfDay = false,
   ) => {
     // HR's mark replaces the graded day; the graded day is kept as "previous".
     const mark = marks.get(`${user.userId}|${date}`);
@@ -587,6 +598,7 @@ async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, fro
       lateByMinutes: mark ? 0 : lateByMinutes,
       earlyByMinutes: mark ? 0 : earlyByMinutes,
       ...(!mark && countsAs ? { countsAs } : {}),
+      ...(!mark && halfDay ? { halfDay: true as const } : {}),
       ...(mark ? {
         hr: {
           previousStatus: status,
@@ -607,7 +619,11 @@ async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, fro
     if (holiday) { add(key, 'holiday', holiday); continue; }
     if (isWeekOffDay(day, onDay.weeklyOff)) { add(key, 'week_off', 'Week off'); continue; }
     const leave = approvedLeaves.find((l) => l.startDate <= day && l.endDate >= day);
-    if (leave) { add(key, 'on_leave', leave.type); continue; }
+    if (leave) {
+      if (isUnpaidLeaveType(onDay.leave?.types, leave.type)) add(key, 'unpaid_leave', leave.type, null, null, 0, 0, undefined, leave.halfDay === true);
+      else add(key, 'on_leave', leave.type);
+      continue;
+    }
     if (key > today) { add(key, 'upcoming'); continue; }
     if (onDay.correction.punchFormat === 'Present by default (Auto Punch)') { add(key, 'present', 'Auto punch'); continue; }
 
@@ -655,7 +671,7 @@ export async function employeeCalendar(
 
   const days = await gradeEmployeeDays(org, setup, user, from, to);
   const totals: Record<CalendarDayStatus, number> = {
-    present: 0, half_day: 0, missed_punch: 0, absent: 0, on_leave: 0, week_off: 0, holiday: 0, upcoming: 0,
+    present: 0, half_day: 0, missed_punch: 0, absent: 0, on_leave: 0, unpaid_leave: 0, week_off: 0, holiday: 0, upcoming: 0,
   };
   for (const day of days) totals[day.status] += 1;
   const current = dayPolicyResolver(setup)(user, keyOf(new Date()));
@@ -678,6 +694,8 @@ export interface EmployeeDayStatus {
   reason: string | null;
   /** A missed punch: what it counts as. */
   countsAs?: DayMark;
+  /** Leave without pay for half the day. */
+  halfDay?: true;
   /** Who decided: the punches and rules, or HR. */
   source: 'rules' | 'hr';
   /**
@@ -706,6 +724,7 @@ export async function employeeDayStatuses(org: string | undefined, userId: strin
       : day.status === 'half_day' && day.lateByMinutes > 0 ? `Late by ${day.lateByMinutes} min`
       : day.status === 'half_day' && day.earlyByMinutes > 0 ? `Left ${day.earlyByMinutes} min early`
       : day.status === 'missed_punch' && day.countsAs ? `${day.label ?? 'Missed punch'} · counts as ${day.countsAs}`
+      : day.status === 'unpaid_leave' ? (day.halfDay ? 'Leave without pay · half day' : 'Leave without pay')
       : day.label;
     return {
       date: day.date,
@@ -713,6 +732,7 @@ export async function employeeDayStatuses(org: string | undefined, userId: strin
       label: day.label,
       reason,
       ...(day.countsAs ? { countsAs: day.countsAs } : {}),
+      ...(day.halfDay ? { halfDay: true as const } : {}),
       source: day.hr ? 'hr' : 'rules',
       final: Boolean(day.hr) || day.date < today,
     };

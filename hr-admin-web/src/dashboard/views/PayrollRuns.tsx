@@ -465,7 +465,7 @@ function LopCalendar({ slip, period, editable, onMarked, onExplain, onClose }: {
             onChanged={() => undefined}
             startMonth={period}
             editableMonth={editable ? period : undefined}
-            highlight={(d) => (d.status === 'absent' ? 'LOP' : d.status === 'half_day' ? 'LOP ½' : null)}
+            highlight={(d) => (d.status === 'absent' ? 'LOP' : d.status === 'half_day' ? 'LOP ½' : d.status === 'unpaid_leave' ? (d.halfDay ? 'LOP ½' : 'LOP') : null)}
             onMarked={onMarked}
           />
           {!editable && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 12 }}>This run is submitted, so its days are locked. Reopen it to change them.</div>}

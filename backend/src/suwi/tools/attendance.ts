@@ -18,8 +18,8 @@ const emptyWeek = () => Object.fromEntries(WEEKDAYS.map((d) => [d, 0])) as Recor
  */
 const DEVICE_SYNC_NOTE = 'Punches still on an offline device are not in the data (an imported row only exists once the device has synced), so missed punches cannot be separated from punches waiting on a device sync. Check the device if several people on one biometric shift miss the same day.';
 
-type Count = { present: number; halfDay: number; late: number; early: number; missed: number; absent: number; leave: number; notPunchedInYet: number; lateDays: string[]; earlyDays: string[]; missedDays: string[]; absentDays: string[]; lateByWeekday: Record<string, number> };
-const empty = (): Count => ({ present: 0, halfDay: 0, late: 0, early: 0, missed: 0, absent: 0, leave: 0, notPunchedInYet: 0, lateDays: [], earlyDays: [], missedDays: [], absentDays: [], lateByWeekday: emptyWeek() });
+type Count = { present: number; halfDay: number; late: number; early: number; missed: number; absent: number; leave: number; unpaidLeave: number; notPunchedInYet: number; lateDays: string[]; earlyDays: string[]; missedDays: string[]; absentDays: string[]; lateByWeekday: Record<string, number> };
+const empty = (): Count => ({ present: 0, halfDay: 0, late: 0, early: 0, missed: 0, absent: 0, leave: 0, unpaidLeave: 0, notPunchedInYet: 0, lateDays: [], earlyDays: [], missedDays: [], absentDays: [], lateByWeekday: emptyWeek() });
 
 /** Per-person counts and the days behind them, from the org report's rows. */
 export function countReport(days: Awaited<ReturnType<typeof attendanceReport>>['days'], keepDays = 8, today?: string) {
@@ -29,7 +29,7 @@ export function countReport(days: Awaited<ReturnType<typeof attendanceReport>>['
     const p = per.get(uid) ?? empty();
     // Today isn't over: a working day with no punch yet is not an absence.
     if (today && date === today && status === 'absent' && !punchIn && !punchOut) p.notPunchedInYet++;
-    else if (status === 'present') p.present++; else if (status === 'half_day') p.halfDay++; else if (status === 'missed_punch') { p.missed++; push(p.missedDays, date); } else if (status === 'absent') { p.absent++; push(p.absentDays, date); } else if (status === 'on_leave') p.leave++;
+    else if (status === 'present') p.present++; else if (status === 'half_day') p.halfDay++; else if (status === 'missed_punch') { p.missed++; push(p.missedDays, date); } else if (status === 'absent') { p.absent++; push(p.absentDays, date); } else if (status === 'on_leave') p.leave++; else if (status === 'unpaid_leave') p.unpaidLeave++;
     // A single-punch day is already a missed punch; it is not also late or early (the same rule payroll uses).
     if (status !== 'missed_punch' && late > 0) { p.late++; push(p.lateDays, date); p.lateByWeekday[weekdayOf(date)]++; }
     if (status !== 'missed_punch' && early > 0) { p.early++; push(p.earlyDays, date); }
@@ -43,14 +43,14 @@ defineTools(
     name: 'attendance_summary',
     area: 'attendance',
     label: (i) => `Attendance ${i.from ?? 'from the 1st'} to ${i.to ?? 'today'}`,
-    description: 'Attendance per person for a date range (default: this month to today): days present, half days, late arrivals (with the days and a count per weekday), early exits, missed punches, absences, leave. Optionally only people with at least N lates / absences / missed punches / early exits, or one department or manager. Use for "who was late 3+ times", "missed punches this week", "which weekday are people late most". For "who is absent or on leave today", one call with from=to=today is enough. Today is not over, so a working day today with no punch yet is notPunchedInYet, not absent.',
+    description: 'Attendance per person for a date range (default: this month to today): days present, half days, late arrivals (with the days and a count per weekday), early exits, missed punches, absences, leave, leave without pay (unpaidLeave: unpaid, not absent). Optionally only people with at least N lates / absences / missed punches / early exits, or one department or manager. Use for "who was late 3+ times", "missed punches this week", "which weekday are people late most". For "who is absent or on leave today", one call with from=to=today is enough. Today is not over, so a working day today with no punch yet is notPunchedInYet, not absent.',
     input_schema: {
       type: 'object',
       properties: {
         from: { type: 'string', description: 'YYYY-MM-DD' }, to: { type: 'string', description: 'YYYY-MM-DD' },
         minLate: { type: 'number' }, minAbsent: { type: 'number' }, minMissed: { type: 'number' }, minEarly: { type: 'number' },
         department: { type: 'string' }, manager: { type: 'string', description: "Manager's name: only their reports" },
-        status: { type: 'string', enum: ['absent', 'on_leave', 'missed_punch', 'half_day', 'present', 'late', 'early'], description: 'Only people with this on at least one day' },
+        status: { type: 'string', enum: ['absent', 'on_leave', 'unpaid_leave', 'missed_punch', 'half_day', 'present', 'late', 'early'], description: 'Only people with this on at least one day' },
         limit: { type: 'number' },
       },
     },
@@ -66,7 +66,7 @@ defineTools(
       if (dep) rows = rows.filter((x) => x.department.toLowerCase().includes(dep));
       if (mgr) rows = rows.filter((x) => x.manager.toLowerCase().includes(mgr));
       rows = rows.filter((x) => x.late >= num(i.minLate, 0) && x.absent >= num(i.minAbsent, 0) && x.missed >= num(i.minMissed, 0) && x.early >= num(i.minEarly, 0));
-      if (want) rows = rows.filter((x) => (want === 'absent' ? x.absent : want === 'on_leave' ? x.leave : want === 'missed_punch' ? x.missed : want === 'half_day' ? x.halfDay : want === 'late' ? x.late : want === 'early' ? x.early : x.present) > 0);
+      if (want) rows = rows.filter((x) => (want === 'absent' ? x.absent : want === 'on_leave' ? x.leave : want === 'unpaid_leave' ? x.unpaidLeave : want === 'missed_punch' ? x.missed : want === 'half_day' ? x.halfDay : want === 'late' ? x.late : want === 'early' ? x.early : x.present) > 0);
       rows.sort((a, b) => b.late - a.late || b.absent - a.absent || b.missed - a.missed || b.early - a.early);
       // Lates across everyone matching, per weekday, so "Monday lates" has a number.
       const lateByWeekday = emptyWeek();
@@ -88,7 +88,7 @@ defineTools(
     name: 'person_attendance',
     area: 'attendance',
     label: (i) => `${i.name ?? 'Their'} calendar for ${i.month ?? 'this month'}`,
-    description: "One person's day-by-day attendance for a month: each day's mark (present, half day, late, early, missed punch and what it counts as, absent, leave, weekly off, holiday, HR's marks). Needs their userId (find it with search_people).",
+    description: "One person's day-by-day attendance for a month: each day's mark (present, half day, late, early, missed punch and what it counts as, absent, leave, leave without pay, weekly off, holiday, HR's marks). Needs their userId (find it with search_people).",
     input_schema: { type: 'object', properties: { userId: { type: 'string' }, name: { type: 'string', description: 'Their name, for the label' }, month: { type: 'string', description: 'YYYY-MM' } }, required: ['userId'] },
     api: { method: 'GET', path: '/admin/employees/x/calendar' },
     async run(ctx, i) {

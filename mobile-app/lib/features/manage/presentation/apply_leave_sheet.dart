@@ -36,12 +36,23 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
   }
 
   /// The short labels for the types this employee may apply for: on a
-  /// tracked balance, only those with days left to spend.
+  /// tracked balance, only those with days left to spend. Leave without pay
+  /// has no balance to run out, so it is always among them.
   List<String> get _leaveTypeLabels => [
     for (final label in _shift.applicableLeaveLabels)
-      if (!_shift.leaveBalanceTracked || (_remainingFor(label) ?? 0) > 0)
+      if (!_shift.leaveBalanceTracked ||
+          _isUnpaid(label) ||
+          (_remainingFor(label) ?? 0) > 0)
         label.replaceAll(' Leave', ''),
   ];
+
+  /// Leave without pay, as HR set it on the type (or as the balance says).
+  bool _isUnpaid(String label) =>
+      _shift.isUnpaidLeave(label) ||
+      (widget.state.dashboard?.leaveBalance
+              .forKey(_shift.leaveKeyFor(label))
+              ?.unpaid ??
+          false);
 
   ShiftPolicy get _shift =>
       widget.state.dashboard?.shift ?? const ShiftPolicy();
@@ -110,7 +121,9 @@ class _ApplyLeaveSheetState extends State<_ApplyLeaveSheet> {
     to: _endDate,
     today: DateTime.now(),
     maxDays: _maxLeaveApplyDays,
-    availableDays: _shift.leaveBalanceTracked ? _remainingFor(_type) : null,
+    availableDays: _shift.leaveBalanceTracked && !_isUnpaid(_type)
+        ? _remainingFor(_type)
+        : null,
   );
 
   /// What is left of this type, by key, so a renamed type still matches.

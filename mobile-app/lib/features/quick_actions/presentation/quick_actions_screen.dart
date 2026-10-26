@@ -75,7 +75,17 @@ enum _QuickPage {
 
 enum _QuickFlow { leave, overtime, reimbursement }
 
-enum AttendanceFilter { missedPunch, present, late, halfDay, leave, holiday }
+enum AttendanceFilter {
+  missedPunch,
+  present,
+  late,
+  halfDay,
+  leave,
+
+  /// Leave without pay: a heading of its own, never under Leave.
+  leaveWithoutPay,
+  holiday,
+}
 
 enum AttendanceKind {
   present,
@@ -83,6 +93,10 @@ enum AttendanceKind {
   weekoff,
   halfDay,
   leaveApproved,
+
+  /// An approved day of a leave-without-pay type: off, and unpaid — its own
+  /// day, neither leave nor absent.
+  leaveWithoutPay,
   leavePending,
   holiday,
   future,
@@ -242,6 +256,18 @@ List<AttendanceDayView> buildAttendanceDays({
       }
       if (leave != null && leaveStatus != LeaveDecision.declined) {
         final approved = leaveStatus == LeaveDecision.approved;
+        if (approved && shift.isUnpaidLeave(leave.typeKey)) {
+          return AttendanceDayView(
+            date: date,
+            kind: AttendanceKind.leaveWithoutPay,
+            title: leave.halfDay
+                ? 'Leave without pay · Half day'
+                : 'Leave without pay',
+            cellLabel: 'LWP',
+            leave: leave,
+            record: record,
+          );
+        }
         return AttendanceDayView(
           date: date,
           kind: approved
@@ -462,6 +488,12 @@ AttendanceDayView _settledByServer(
     'half_day' => (AttendanceKind.halfDay, 'Half day', 'Half day'),
     'absent' => (AttendanceKind.attention, 'Absent', 'Absent'),
     'on_leave' => (AttendanceKind.leaveApproved, 'Leave', 'Leave'),
+    // The server's reason already says it, half day and all.
+    'unpaid_leave' => (
+      AttendanceKind.leaveWithoutPay,
+      'LWP',
+      server.reason ?? 'Leave without pay',
+    ),
     'week_off' => (AttendanceKind.weekoff, 'Week off', 'Weekly off'),
     'holiday' => (AttendanceKind.holiday, 'Holiday', server.label ?? 'Holiday'),
     'missed_punch' => switch (server.countsAs) {
@@ -925,10 +957,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     // to act on.
     final autoPresent = widget.dashboard.shift.markedPresentAutomatically;
 
-    final leaveDaysAvailable = _accruingLeaveLabels.fold<double>(
-      0,
-      (total, label) => total + _balanceFor(label)!.remaining,
-    );
+    // Leave without pay has no days to count: it is not in the total.
+    final leaveDaysAvailable = _accruingLeaveLabels
+        .where((label) => !_isUnpaidLeave(label))
+        .fold<double>(
+          0,
+          (total, label) => total + _balanceFor(label)!.remaining,
+        );
 
     return Column(
       key: const ValueKey('quick-home'),
@@ -1221,21 +1256,32 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   /// Every type this employee has a balance for — including one that has run
   /// down to zero, which stays on show, and comp-off once overtime has
-  /// credited any. A type with nothing to its name is left out.
+  /// credited any. A type with nothing to its name is left out. Leave without
+  /// pay stays on show, as unlimited.
   List<String> get _accruingLeaveLabels => [
     for (final label in _leaveLabels)
-      if ((_balanceFor(label)?.total ?? 0) > 0) label,
+      if ((_balanceFor(label)?.total ?? 0) > 0 ||
+          (_balanceFor(label)?.unpaid ?? false))
+        label,
   ];
 
   /// What the form may be filed under: the types with days left to spend. On
-  /// unlimited leave every type is open, since nothing is being counted.
+  /// unlimited leave every type is open, since nothing is being counted; leave
+  /// without pay is always open, since it has no balance to run out.
   List<String> get _pickableLeaveLabels =>
       !widget.dashboard.shift.leaveBalanceTracked
       ? _leaveLabels
       : [
           for (final label in _leaveLabels)
-            if ((_balanceFor(label)?.remaining ?? 0) > 0) label,
+            if (_isUnpaidLeave(label) ||
+                (_balanceFor(label)?.remaining ?? 0) > 0)
+              label,
         ];
+
+  /// Leave without pay, as HR set it on the type (or as the balance says).
+  bool _isUnpaidLeave(String label) =>
+      widget.dashboard.shift.isUnpaidLeave(label) ||
+      (_balanceFor(label)?.unpaid ?? false);
 
   /// The policy key behind a display name, so a type HR renames still finds
   /// its balance and its window.
@@ -1249,13 +1295,14 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   /// a balance: the server skips the check then, so the form must too, or a
   /// type with no accrual would read as "none left" on an unlimited policy.
   double? _spendableDays(String label) =>
-      widget.dashboard.shift.leaveBalanceTracked
+      widget.dashboard.shift.leaveBalanceTracked && !_isUnpaidLeave(label)
       ? _balanceFor(label)?.remaining
       : null;
 
   Widget _applyLeaveForm() {
     final balanceItem = _leaveType == null ? null : _balanceFor(_leaveType!);
-    final double? balanceForType = balanceItem?.remaining;
+    final unpaid = _leaveType != null && _isUnpaidLeave(_leaveType!);
+    final double? balanceForType = unpaid ? null : balanceItem?.remaining;
     return _HubScaffold(
       key: const ValueKey('apply-leave'),
       title: 'Leave',
@@ -1284,6 +1331,26 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               reason,
               style: const TextStyle(
                 color: Color(0xFFB3261E),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (unpaid) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFCE7F3),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Text(
+              'Leave without pay: no balance to run out. Approved days are '
+              'unpaid in payroll, half a day for a half day.',
+              style: TextStyle(
+                color: Color(0xFF9D174D),
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -1437,7 +1504,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         },
         trailingLabels: {
           for (final label in _pickableLeaveLabels)
-            if (_balanceFor(label) != null) label: left(_balanceFor(label)!),
+            if (_isUnpaidLeave(label))
+              label: 'Unlimited · unpaid'
+            else if (_balanceFor(label) != null)
+              label: left(_balanceFor(label)!),
         },
       ),
     );
@@ -2800,7 +2870,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final lines = <String>[];
     for (final type in types) {
       final balance = _balanceFor(type.name);
-      final allowance = balance == null
+      final allowance = type.unpaid
+          ? '${type.name} — unlimited, and unpaid: each day of it is taken '
+                'off your pay'
+          : balance == null
           ? type.name
           : '${type.name} — ${formatDays(balance.total)} days a year, '
                 '${formatDays(balance.remaining)} left';
@@ -3178,6 +3251,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       case AttendanceKind.present:
       case AttendanceKind.halfDay:
       case AttendanceKind.leaveApproved:
+      case AttendanceKind.leaveWithoutPay:
       case AttendanceKind.leavePending:
       case AttendanceKind.holiday:
       case AttendanceKind.weekoff:
@@ -3227,6 +3301,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     if (day.kind == AttendanceKind.leaveApproved ||
         day.kind == AttendanceKind.leavePending) {
       return 'This day is booked as leave.';
+    }
+    if (day.kind == AttendanceKind.leaveWithoutPay) {
+      return 'This day is booked as leave without pay.';
     }
     if (date.isBefore(rules.earliestFrom(today))) {
       return 'Corrections can only be raised up to '
@@ -4239,6 +4316,7 @@ class AttendanceFilterChips extends StatelessWidget {
       (AttendanceFilter.late, 'Late'),
       (AttendanceFilter.halfDay, 'Half-day'),
       (AttendanceFilter.leave, 'Leave'),
+      (AttendanceFilter.leaveWithoutPay, 'Leave Without Pay'),
       (AttendanceFilter.holiday, 'Holiday'),
     ];
     return SingleChildScrollView(
@@ -4246,16 +4324,20 @@ class AttendanceFilterChips extends StatelessWidget {
       clipBehavior: Clip.none,
       child: Row(
         children: [
-          for (final (filter, label) in order) ...[
-            _AttendanceFilterChip(
-              label: label,
-              count: counts[filter] ?? 0,
-              selected: selected == filter,
-              tone: _attendanceFilterTone(filter),
-              onTap: () => toggle(filter),
-            ),
-            if (filter != AttendanceFilter.holiday) const SizedBox(width: 8),
-          ],
+          for (final (filter, label) in order)
+            // Most people never take leave without pay; its heading only
+            // shows in a month that has some.
+            if (filter != AttendanceFilter.leaveWithoutPay ||
+                (counts[filter] ?? 0) > 0) ...[
+              _AttendanceFilterChip(
+                label: label,
+                count: counts[filter] ?? 0,
+                selected: selected == filter,
+                tone: _attendanceFilterTone(filter),
+                onTap: () => toggle(filter),
+              ),
+              if (filter != AttendanceFilter.holiday) const SizedBox(width: 8),
+            ],
         ],
       ),
     );
@@ -4273,6 +4355,10 @@ class AttendanceFilterChips extends StatelessWidget {
       AttendanceFilter.present || AttendanceFilter.halfDay => (
         const Color(0xFFEAFFE6),
         const Color(0xFF34C759),
+      ),
+      AttendanceFilter.leaveWithoutPay => (
+        const Color(0xFFFCE7F3),
+        const Color(0xFF9D174D),
       ),
       _ => (const Color(0xFFE3F0F7), const Color(0xFF0571A6)),
     };
@@ -4396,6 +4482,12 @@ _AttendanceCellStyle _attendanceGridCellStyle(AttendanceKind kind) =>
       AttendanceKind.leaveApproved => const _AttendanceCellStyle(
         color: Color(0xFF0571A6),
       ),
+      // Leave without pay: off like leave, but its own colour, since it is
+      // unpaid — the same rose the HR dashboard draws it in.
+      AttendanceKind.leaveWithoutPay => const _AttendanceCellStyle(
+        color: Color(0xFF9D174D),
+        fill: Color(0xFFFCE7F3),
+      ),
       AttendanceKind.leavePending => const _AttendanceCellStyle(
         color: Color(0xFF0571A6),
         dashedBorder: Color(0xFF0571A6),
@@ -4413,6 +4505,7 @@ Color _attendanceListRowColor(AttendanceKind kind) => switch (kind) {
   AttendanceKind.regularizationPending => const Color(0xFFFF383C),
   AttendanceKind.leaveApproved ||
   AttendanceKind.leavePending => const Color(0xFF0571A6),
+  AttendanceKind.leaveWithoutPay => const Color(0xFF9D174D),
   AttendanceKind.future => const Color(0xFF2A2A2A),
 };
 
@@ -4877,6 +4970,11 @@ AttendanceTagStyle attendanceTagStyle(AttendanceKind kind) => switch (kind) {
     bg: const Color(0xFFDBEAFE),
     fg: const Color(0xFF0571A6),
     label: 'On Leave',
+  ),
+  AttendanceKind.leaveWithoutPay => (
+    bg: const Color(0xFFFCE7F3),
+    fg: const Color(0xFF9D174D),
+    label: 'Leave Without Pay',
   ),
   AttendanceKind.leavePending => (
     bg: const Color(0xFFDBEAFE),
@@ -5997,21 +6095,27 @@ class _LeaveBalanceCard extends StatelessWidget {
     return _LeaveFigureCard(
       iconAsset: _leaveTypeIcon(label).asset,
       label: label,
-      value: '${formatDays(item.remaining)}/${formatDays(item.total)}',
+      // Leave without pay has no count to show, and no bar to fill.
+      value: item.unpaid
+          ? 'Unlimited'
+          : '${formatDays(item.remaining)}/${formatDays(item.total)}',
       footer: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: Container(
-            height: 8,
-            color: const Color(0xFFD1D5DB),
-            alignment: Alignment.centerLeft,
-            child: FractionallySizedBox(
-              widthFactor: share,
-              heightFactor: 1,
-              child: const ColoredBox(color: Color(0xFF0571A6)),
+        if (item.unpaid)
+          const SizedBox(height: 8)
+        else
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: Container(
+              height: 8,
+              color: const Color(0xFFD1D5DB),
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: share,
+                heightFactor: 1,
+                child: const ColoredBox(color: Color(0xFF0571A6)),
+              ),
             ),
           ),
-        ),
         SizedBox(
           height: 22,
           child: Padding(
@@ -6020,7 +6124,9 @@ class _LeaveBalanceCard extends StatelessWidget {
               alignment: Alignment.centerLeft,
               child: Text(
                 // A monthly type is this month's figure, and lapses with it.
-                item.monthly
+                item.unpaid
+                    ? 'unpaid'
+                    : item.monthly
                     ? 'days for ${item.periodLabel}'
                     : 'days available',
                 maxLines: 1,
@@ -8745,6 +8851,7 @@ bool matchesAttendanceFilter(AttendanceDayView day, AttendanceFilter? filter) {
     AttendanceFilter.leave =>
       kind == AttendanceKind.leaveApproved ||
           kind == AttendanceKind.leavePending,
+    AttendanceFilter.leaveWithoutPay => kind == AttendanceKind.leaveWithoutPay,
     AttendanceFilter.holiday => kind == AttendanceKind.holiday,
   };
 }

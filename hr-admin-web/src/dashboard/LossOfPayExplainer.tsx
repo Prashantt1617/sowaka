@@ -16,6 +16,7 @@ const TRIGGER_DAY: Record<DeductionTrigger, (d: CalendarDayDTO) => boolean> = {
   half_day: (d) => d.status === 'half_day' || d.status === 'missed_punch',
   leave: (d) => d.status === 'on_leave',
   missed_punch: (d) => d.status === 'missed_punch',
+  unpaid_leave: (d) => d.status === 'unpaid_leave',
 };
 const clock = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }) : '—');
 const dayLabel = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' });
@@ -60,7 +61,9 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
               <div key={line.trigger ?? line.label} style={{ marginTop: 16 }}>
                 <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 14, padding: '12px 14px' }}>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>
-                    {label}: every {line.every ?? '—'} → {line.deductDays ?? '—'} paid {line.deductDays === 1 ? 'day' : 'days'}
+                    {trigger === 'unpaid_leave'
+                      ? `${label}: every day unpaid, a half day half · ${line.count} ${line.count === 1 ? 'day' : 'days'} taken`
+                      : `${label}: every ${line.every ?? '—'} → ${line.deductDays ?? '—'} paid ${line.deductDays === 1 ? 'day' : 'days'}`}
                   </div>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--bad)', marginTop: 4 }}>
                     Total deducted days → {fmt(line.days)}
@@ -83,6 +86,7 @@ export function LossOfPayExplainer({ userId, payslip, onClose }: { userId: strin
                             {trigger === 'half_day' && (d.status === 'missed_punch' ? `Single punch · ${d.label ?? 'missed punch'} · in ${clock(d.punchIn)}` : `Half day · ${clock(d.punchIn)} – ${clock(d.punchOut)}`)}
                             {trigger === 'leave' && (d.label ?? 'On leave')}
                             {trigger === 'missed_punch' && (d.label ?? 'Missed punch')}
+                            {trigger === 'unpaid_leave' && `Leave without pay${d.halfDay ? ' · half day' : ''}`}
                           </td>
                         </tr>
                       ))}

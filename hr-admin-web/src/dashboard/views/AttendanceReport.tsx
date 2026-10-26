@@ -1,7 +1,8 @@
 // Reports › Attendance — today, this week, this month or a custom range, one
 // row per employee, as the attendance report prototype draws it.
 //
-// Each employee gets one status a day: leave first, then week off or holiday,
+// Each employee gets one status a day: leave first (leave without pay is its
+// own, LWP: neither leave nor absent), then week off or holiday,
 // then missed punch (only once the shift has ended), then late, then present.
 // Before the shift ends, anyone without an in-punch is Not punched in yet.
 // Today lists each person's punches; a week is a grid of chips; a month, or a
@@ -49,12 +50,13 @@ const writeCached = (key: string, value: { at: string; report: AttendanceReportD
 };
 
 // ── one status per employee per day ──────────────────────────────────────
-type Code = 'P' | 'L' | 'HD' | 'LV' | 'MP' | 'NP' | 'WO' | 'H' | 'A';
+type Code = 'P' | 'L' | 'HD' | 'LV' | 'LWP' | 'MP' | 'NP' | 'WO' | 'H' | 'A';
 const TONE: Record<Code | 'future', { bg: string; fg: string }> = {
   P: { bg: 'var(--ar-p-bg)', fg: 'var(--ar-p-fg)' },
   L: { bg: 'var(--ar-l-bg)', fg: 'var(--ar-l-fg)' },
   HD: { bg: 'var(--ar-hd-bg)', fg: 'var(--ar-hd-fg)' },
   LV: { bg: 'var(--ar-lv-bg)', fg: 'var(--ar-lv-fg)' },
+  LWP: { bg: 'var(--ar-lwp-bg)', fg: 'var(--ar-lwp-fg)' },
   MP: { bg: 'var(--ar-mp-bg)', fg: 'var(--ar-mp-fg)' },
   NP: { bg: 'var(--ar-np-bg)', fg: 'var(--ar-np-fg)' },
   WO: { bg: 'var(--ar-wo-bg)', fg: 'var(--ar-wo-fg)' },
@@ -62,7 +64,7 @@ const TONE: Record<Code | 'future', { bg: string; fg: string }> = {
   A: { bg: 'var(--ar-mp-bg)', fg: 'var(--ar-mp-fg)' },
   future: { bg: 'transparent', fg: 'var(--ink-4, #9CA3AF)' },
 };
-const LEGEND: [Code, string][] = [['P', 'Present'], ['L', 'Late'], ['HD', 'Half day'], ['LV', 'On leave'], ['MP', 'Missed punch'], ['NP', 'Not punched in yet'], ['WO', 'Week off'], ['H', 'Holiday']];
+const LEGEND: [Code, string][] = [['P', 'Present'], ['L', 'Late'], ['HD', 'Half day'], ['LV', 'On leave'], ['LWP', 'Leave without pay'], ['MP', 'Missed punch'], ['NP', 'Not punched in yet'], ['WO', 'Week off'], ['H', 'Holiday']];
 
 type Day = {
   code: Code;
@@ -77,6 +79,8 @@ type Day = {
   pending: boolean;
   /** Leave taken that day: 1, or 0.5 for half-day leave. */
   leave: number;
+  /** Leave without pay that day: 1, or 0.5 for a half day. Never counted as leave. */
+  unpaid: number;
 };
 
 const LEAVE_LABEL: Record<string, string> = { sick: 'Sick', casual: 'Casual', earned: 'Earned', comp_off: 'Comp off' };
@@ -97,7 +101,12 @@ const hhmm = (t?: string) => {
 };
 
 function dayOf(row: ReportRow, person: ReportPersonDTO, halfLeave: boolean): Day {
-  const base = { mode: '', late: false, punchIn: row.punchIn, punchOut: row.punchOut, pending: false, leave: 0 };
+  const base = { mode: '', late: false, punchIn: row.punchIn, punchOut: row.punchOut, pending: false, leave: 0, unpaid: 0 };
+  if (row.status === 'unpaid_leave') {
+    return halfLeave
+      ? { ...base, code: 'LWP', label: 'Leave without pay (half day)', unpaid: 0.5 }
+      : { ...base, code: 'LWP', label: 'Leave without pay', unpaid: 1 };
+  }
   if (row.status === 'on_leave') {
     return halfLeave
       ? { ...base, code: 'HD', label: 'Half day', leave: 0.5 }
@@ -196,7 +205,7 @@ const writeFilters = (userId: string, saved: Saved) => {
 };
 
 const PAGE = 50;
-const NOTE = 'Day status: leave, then week off or holiday, then missed punch (only once the shift has ended), then late, then present. Before the shift ends, anyone without an in-punch shows as Not punched in yet.';
+const NOTE = 'Day status: leave (or leave without pay, LWP: unpaid, and neither leave nor absent), then week off or holiday, then missed punch (only once the shift has ended), then late, then present. Before the shift ends, anyone without an in-punch shows as Not punched in yet.';
 
 export function AttendanceReport() {
   const { user } = useAuth();
@@ -266,7 +275,7 @@ export function AttendanceReport() {
       const p = byUser.get(row.userId);
       if (p) p.days.set(row.date, dayOf(row, p.person, half.has(`${row.userId}|${row.date}`)));
     }
-    const off = { mode: '', late: false, punchIn: null, punchOut: null, pending: false, leave: 0 };
+    const off = { mode: '', late: false, punchIn: null, punchOut: null, pending: false, leave: 0, unpaid: 0 };
     for (const [id, date, kind] of shown.offDays ?? []) {
       byUser.get(id)?.days.set(date, kind === 'holiday' ? { ...off, code: 'H', label: 'Holiday' } : { ...off, code: 'WO', label: 'Week off' });
     }
@@ -287,6 +296,7 @@ export function AttendanceReport() {
       late: n((ds) => ds.some((d) => d.late)),
       half: n((ds) => ds.some((d) => d.code === 'HD')),
       leave: n((ds) => ds.some((d) => d.code === 'LV')),
+      unpaid: n((ds) => ds.some((d) => d.code === 'LWP')),
       missed: n((ds) => ds.some((d) => d.code === 'MP')),
       notYet: n((ds) => ds.some((d) => d.code === 'NP')),
       punchedIn: n((ds) => ds.some((d) => Boolean(d.punchIn))),
@@ -303,21 +313,25 @@ export function AttendanceReport() {
     { label: 'Late', value: counts.late, sub: graces.length === 1 ? `In after the ${graces[0]}-min grace` : 'In after the grace', color: 'var(--ar-n-late)' },
     { label: 'Half day', value: counts.half, sub: 'Half-day leave with a punch', color: 'var(--ar-n-half)' },
     { label: 'On leave', value: counts.leave, sub: 'Approved full-day leave', color: 'var(--ar-n-leave)' },
+    ...(counts.unpaid ? [{ label: 'Leave without pay', value: counts.unpaid, sub: 'Approved, and unpaid', color: 'var(--ar-n-lwp)' }] : []),
     { label: 'Missed punch', value: counts.missed, sub: 'Shift over, a punch missing', color: 'var(--ar-n-missed)' },
     ...(view === 'today' ? [{ label: 'Not punched in yet', value: counts.notYet, sub: 'Shift still running', color: 'var(--ar-n-np)' }] : []),
   ];
 
   const totalsOf = (p: Person) => {
-    const t = { work: 0, present: 0, late: 0, missed: 0, leave: 0 };
+    const t = { work: 0, present: 0, late: 0, missed: 0, leave: 0, unpaid: 0 };
     for (const date of dates) {
       const d = p.days.get(date);
       if (!d || d.code === 'WO' || d.code === 'H') continue;
       t.work += 1;
       if (date > today) continue;
       if (presentLike(d)) t.present += d.code === 'HD' ? 0.5 : 1;
+      // Half a day without pay is half a day worked, as half-day leave is.
+      if (d.code === 'LWP' && d.unpaid === 0.5) t.present += 0.5;
       if (d.late) t.late += 1;
       if (d.code === 'MP') t.missed += 1;
       t.leave += d.leave;
+      t.unpaid += d.unpaid;
     }
     return t;
   };
@@ -361,7 +375,7 @@ export function AttendanceReport() {
       }
       if (view === 'grid') return { ...who(p), ...Object.fromEntries(dates.map((date) => [date, date > today ? '' : p.days.get(date)?.label ?? ''])) };
       const t = totalsOf(p);
-      return { ...who(p), 'Working days': t.work, 'Present': t.present, 'Late': t.late, 'Missed punch days': t.missed, 'Leave days': t.leave, 'Attendance source': p.person.punchFormat };
+      return { ...who(p), 'Working days': t.work, 'Present': t.present, 'Late': t.late, 'Missed punch days': t.missed, 'Leave days': t.leave, 'Leave without pay days': t.unpaid, 'Attendance source': p.person.punchFormat };
     });
     const sheet = (rowsOut: Record<string, unknown>[]): WorkSheet => {
       const ws = XLSX.utils.json_to_sheet(rowsOut);
@@ -497,7 +511,7 @@ export function AttendanceReport() {
               )}
               {view === 'totals' && (
                 <table className="ar-t">
-                  <thead><tr><th>Employee</th><th className="num">Working days</th><th className="num">Present</th><th className="num">Late</th><th className="num">Missed punch days</th><th className="num">Leave days</th><th>Attendance source</th></tr></thead>
+                  <thead><tr><th>Employee</th><th className="num">Working days</th><th className="num">Present</th><th className="num">Late</th><th className="num">Missed punch days</th><th className="num">Leave days</th><th className="num">LWP days</th><th>Attendance source</th></tr></thead>
                   <tbody>
                     {rows.map((p) => {
                       const t = totalsOf(p);
@@ -509,6 +523,7 @@ export function AttendanceReport() {
                           <td className="num" style={{ color: 'var(--ar-t-late)' }}>{t.late}</td>
                           <td className="num" style={{ color: 'var(--ar-t-missed)' }}>{t.missed}</td>
                           <td className="num" style={{ color: 'var(--ar-t-leave)' }}>{t.leave}</td>
+                          <td className="num" style={{ color: t.unpaid ? 'var(--ar-n-lwp)' : undefined }}>{t.unpaid}</td>
                           <td>{p.person.punchFormat}</td>
                         </tr>
                       );
@@ -517,7 +532,7 @@ export function AttendanceReport() {
                 </table>
               )}
             </div>
-            {view === 'totals' && <div className="ar-foot">Present includes late days and counts a half day as 0.5. A day with both punches missing counts as one missed-punch day. Days after today are not counted.</div>}
+            {view === 'totals' && <div className="ar-foot">Present includes late days and counts a half day as 0.5. Leave days are paid leave; LWP days are leave without pay, a half day as 0.5. A day with both punches missing counts as one missed-punch day. Days after today are not counted.</div>}
             {list.length > PAGE && (
               <div className="ar-pager">
                 Showing {(current - 1) * PAGE + 1}–{Math.min(current * PAGE, list.length)} of {list.length}
