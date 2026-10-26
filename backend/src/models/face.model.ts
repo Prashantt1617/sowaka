@@ -122,5 +122,10 @@ export const FACE_CONSENT_PARAGRAPHS = [
   'Questions? Contact your HR team.',
 ];
 export const FACE_CONSENT_TEXT = FACE_CONSENT_PARAGRAPHS.join('\n\n');
-/** The line the person ticks. */
-export const FACE_CONSENT_AGREE = 'I agree to Face ID using my face this way.';
+/**
+ * The short line the person ticks on the setup screen itself, with the
+ * paragraphs above behind "Learn more".
+ */
+export const FACE_CONSENT_AGREE =
+  'I agree to Face ID keeping a template of my face, made from this selfie, to confirm it’s me when I punch in. ' +
+  'It is stored by AWS in Mumbai and deleted when I leave.';
