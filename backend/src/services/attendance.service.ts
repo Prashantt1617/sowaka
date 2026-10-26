@@ -1,13 +1,15 @@
 import { ObjectId, type WithId } from 'mongodb';
-import { attendanceRecords, attendanceRegularizations, offices, users } from '../config/db';
+import { attendanceRecords, attendanceRegularizations, companies, offices, users } from '../config/db';
 import { PunchLocation } from '../models/office.model';
 import { User } from '../models/user.model';
 import { locateForPunch, officeView, placeLabel, punchLocationFrom } from './geofence.service';
 import { logger } from '../utils/logger';
+import { claimFaceToken, faceCheckNeeded, FaceIdError, faceIdSettingsOf } from './face-id.service';
 import {
   AttendanceRecord,
   AttendanceRegularization,
   OutsideLocationNote,
+  PunchFaceCheck,
   REGULARIZATION_DAY_TYPES,
   RegularizationDayType,
   RegularizationStatus,
@@ -109,8 +111,12 @@ export async function recordPunch(
    * the reason, so nobody is made to give one.
    */
   skipReason = false,
+  /** The token a passed Face ID check handed back, where the company checks faces. */
+  faceToken?: string,
 ) {
   if (type !== 'in' && type !== 'out') throw new AttendanceError(400, 'type must be in or out');
+  // Narrowed once, for the closure below, which TypeScript does not narrow into.
+  const kind = type;
   // The person as the auth check read them, when the punch is their own.
   const found =
     requestViewer(userId) ?? (await users().findOne({ userId }, { projection: { profilePhotoUrl: 0 } }));
@@ -124,10 +130,11 @@ export async function recordPunch(
   // two seconds. The offices are read whether or not the shift turns out to
   // be geotagged; a few small records cost nothing beside a round trip.
   const workDate = new Date().toISOString().slice(0, 10);
-  const [policy, orgOffices, today] = await Promise.all([
+  const [policy, orgOffices, today, company] = await Promise.all([
     policyForUser(userId),
     org ? offices().find({ org, active: true }).toArray() : Promise.resolve([]),
     attendanceRecords().findOne({ employeeId: employee.employeeId, workDate }),
+    org ? companies().findOne({ id: org }, { projection: { _id: 0, faceId: 1 } }) : Promise.resolve(null),
   ]);
   const preloaded = { workDate, record: today };
   // Only a geotagged shift is checked against an office. In-app punch-in is the
@@ -135,78 +142,101 @@ export async function recordPunch(
   // work is not tied to a building — so asking them for a fix would refuse a
   // punch their own policy says needs none.
   const geofenced = policy.correction.punchFormat === 'Geotag (powered by Sowaka)';
-  const sites = geofenced && org ? orgOffices.length : 0;
-  if (sites > 0) {
-    if (!reading) {
-      throw new AttendanceError(
-        428,
-        'Location is required to punch. Turn location on and try again.',
-      );
-    }
-    const verdict = await locateForPunch(org, reading, orgOffices);
-    location = punchLocationFrom(reading, verdict);
-    if (!verdict.inside && verdict.reason === 'inaccurate') {
-      throw new AttendanceError(
-        409,
-        'Your location is not precise enough yet. Move near a window and try again.',
-        { location, office: verdict.office ? officeView(verdict.office) : undefined },
-      );
-    }
-    if (!verdict.inside) {
-      // Outside every office. What happens next is HR's call, per shift: the
-      // punch either becomes a request the manager settles, or the day is
-      // marked present with the reason and the pin kept beside it. Either way
-      // the employee says why first — so a punch without a reason is sent
-      // back with the list to choose from, and comes again with one.
-      const rules = policy.correction.outsideLocation;
-      const office = verdict.office ? officeView(verdict.office) : undefined;
-      const reason = (reasonInput ?? '').replace(/\s+/g, ' ').trim();
-      // A reason is optional where nobody decides on it: the day is marked
-      // present outright, or this is a punch-out, which is recorded whatever
-      // the outcome. A punch-in that becomes a request needs one — it is what
-      // the manager decides on.
-      const reasonOptional = rules.outcome === 'present' || type === 'out';
-      if (!reason && !(reasonOptional && skipReason)) {
+  // Face first, then location: where the company checks faces, a geotagged
+  // punch-in spends the token a passed check handed back, or is refused. The
+  // token is given back if the punch fails further on (outside the office,
+  // say), so the same check carries the retry with a reason.
+  if (!faceCheckNeeded(faceIdSettingsOf(company), type, geofenced)) {
+    return locateAndWrite();
+  }
+  let claimed: Awaited<ReturnType<typeof claimFaceToken>>;
+  try {
+    claimed = await claimFaceToken(userId, faceToken, `punch-${type} ${workDate}`);
+  } catch (error) {
+    if (error instanceof FaceIdError) throw new AttendanceError(error.statusCode, error.message, error.details);
+    throw error;
+  }
+  try {
+    return await locateAndWrite(claimed.face);
+  } catch (error) {
+    await claimed.release();
+    throw error;
+  }
+
+  async function locateAndWrite(face?: PunchFaceCheck) {
+    const sites = geofenced && org ? orgOffices.length : 0;
+    if (sites > 0) {
+      if (!reading) {
+        throw new AttendanceError(
+          428,
+          'Location is required to punch. Turn location on and try again.',
+        );
+      }
+      const verdict = await locateForPunch(org, reading, orgOffices);
+      location = punchLocationFrom(reading, verdict);
+      if (!verdict.inside && verdict.reason === 'inaccurate') {
         throw new AttendanceError(
           409,
-          'You are outside the approved attendance area.',
-          { location, office, outsideLocation: { outcome: rules.outcome, reasons: rules.reasons, reasonOptional } },
+          'Your location is not precise enough yet. Move near a window and try again.',
+          { location, office: verdict.office ? officeView(verdict.office) : undefined },
         );
       }
-      const chosen = reason
-        ? rules.reasons.find((item) => item.toLowerCase() === reason.toLowerCase())
-        : '';
-      if (chosen === undefined) {
-        throw new AttendanceError(
-          400,
-          'Choose one of the reasons your company allows',
-          { location, office, outsideLocation: { outcome: rules.outcome, reasons: rules.reasons } },
-        );
+      if (!verdict.inside) {
+        // Outside every office. What happens next is HR's call, per shift: the
+        // punch either becomes a request the manager settles, or the day is
+        // marked present with the reason and the pin kept beside it. Either way
+        // the employee says why first — so a punch without a reason is sent
+        // back with the list to choose from, and comes again with one.
+        const rules = policy.correction.outsideLocation;
+        const office = verdict.office ? officeView(verdict.office) : undefined;
+        const reason = (reasonInput ?? '').replace(/\s+/g, ' ').trim();
+        // A reason is optional where nobody decides on it: the day is marked
+        // present outright, or this is a punch-out, which is recorded whatever
+        // the outcome. A punch-in that becomes a request needs one — it is what
+        // the manager decides on.
+        const reasonOptional = rules.outcome === 'present' || kind === 'out';
+        if (!reason && !(reasonOptional && skipReason)) {
+          throw new AttendanceError(
+            409,
+            'You are outside the approved attendance area.',
+            { location, office, outsideLocation: { outcome: rules.outcome, reasons: rules.reasons, reasonOptional } },
+          );
+        }
+        const chosen = reason
+          ? rules.reasons.find((item) => item.toLowerCase() === reason.toLowerCase())
+          : '';
+        if (chosen === undefined) {
+          throw new AttendanceError(
+            400,
+            'Choose one of the reasons your company allows',
+            { location, office, outsideLocation: { outcome: rules.outcome, reasons: rules.reasons } },
+          );
+        }
+        const at = new Date();
+        const note: OutsideLocationNote = {
+          reason: chosen,
+          punchType: kind,
+          at,
+          latitude: reading.latitude,
+          longitude: reading.longitude,
+          accuracy: reading.accuracy,
+          officeId: verdict.office?.id,
+          officeName: verdict.office?.name,
+          distanceMeters: verdict.distanceMeters,
+        };
+        location = { ...location, offsite: true };
+        // The request flow is about being marked present, so it applies to the
+        // punch that marks the day: the punch-in. A punch-out from outside only
+        // closes a day the punch-in already opened, so it is recorded with the
+        // remark whichever outcome HR chose.
+        if (rules.outcome === 'request' && kind === 'in') {
+          return requestOutOfLocation(employee, note, location, face);
+        }
+        return writePunch(employee, kind, location, policy, note, preloaded, face);
       }
-      const at = new Date();
-      const note: OutsideLocationNote = {
-        reason: chosen,
-        punchType: type,
-        at,
-        latitude: reading.latitude,
-        longitude: reading.longitude,
-        accuracy: reading.accuracy,
-        officeId: verdict.office?.id,
-        officeName: verdict.office?.name,
-        distanceMeters: verdict.distanceMeters,
-      };
-      location = { ...location, offsite: true };
-      // The request flow is about being marked present, so it applies to the
-      // punch that marks the day: the punch-in. A punch-out from outside only
-      // closes a day the punch-in already opened, so it is recorded with the
-      // remark whichever outcome HR chose.
-      if (rules.outcome === 'request' && type === 'in') {
-        return requestOutOfLocation(employee, note, location);
-      }
-      return writePunch(employee, type, location, policy, note, preloaded);
     }
+    return writePunch(employee, kind, location, policy, undefined, preloaded, face);
   }
-  return writePunch(employee, type, location, policy, undefined, preloaded);
 }
 
 /**
@@ -221,6 +251,8 @@ async function writePunch(
   outside?: OutsideLocationNote,
   /** The day's record as read alongside the policy, if it is still the same day. */
   preloaded?: { workDate: string; record: WithId<AttendanceRecord> | null },
+  /** The Face ID check the punch-in went through on. */
+  face?: PunchFaceCheck,
 ) {
   const { userId } = employee;
   const now = new Date();
@@ -245,6 +277,7 @@ async function writePunch(
           updatedAt: now,
           ...(location ? { punchInLocation: location } : {}),
           ...(outside ? { outsideLocation: outside } : {}),
+          ...(face ? { punchInFace: face } : {}),
         },
         $setOnInsert: { source: 'manual', sourceKey: `manual|${employee.employeeId}|${workDate}`, importedAt: now },
       },
@@ -256,7 +289,7 @@ async function writePunch(
       // has not settled. The punch-out then rides on the request, and lands
       // on the day with the punch-in when the request is approved.
       const pending = await attendanceRegularizations().findOne({
-        userId, workDate, status: 'pending', kind: 'out_of_location',
+        userId, workDate, status: 'pending', kind: { $in: ['out_of_location', 'face_check'] },
       });
       if (pending) {
         if (pending.punchOut) throw new AttendanceError(409, 'Already punched out today');
@@ -329,6 +362,7 @@ async function requestOutOfLocation(
   employee: { userId: string; employeeId: string; managerUserId?: string },
   note: OutsideLocationNote,
   location: PunchLocation,
+  face?: PunchFaceCheck,
 ) {
   const { userId } = employee;
   const workDate = note.at.toISOString().slice(0, 10);
@@ -349,6 +383,7 @@ async function requestOutOfLocation(
   const row: AttendanceRegularization = {
     userId, employeeId: employee.employeeId, managerUserId: employee.managerUserId,
     workDate, kind: 'out_of_location', requestedDayType: 'full_day', outsideLocation: note,
+    ...(face ? { punchInFace: face } : {}),
     note: '', status: 'pending', createdAt: note.at,
   };
   const result = await attendanceRegularizations().insertOne(row);
@@ -885,7 +920,10 @@ async function applyRegularizationDecision(
     // An approved out-of-location day keeps where it was worked from, and the
     // punch the employee actually took, so HR's view of the day is the truth.
     const outside = result.kind === 'out_of_location' && result.outsideLocation
-      ? { outsideLocation: result.outsideLocation, punchIn: result.outsideLocation.at, dayType: result.requestedDayType ?? 'full_day' }
+      ? {
+          outsideLocation: result.outsideLocation, punchIn: result.outsideLocation.at, dayType: result.requestedDayType ?? 'full_day',
+          ...(result.punchInFace ? { punchInFace: result.punchInFace } : {}),
+        }
       : {};
     await attendanceRecords().updateOne(
       { employeeId: result.employeeId, workDate: result.workDate },
@@ -1017,7 +1055,9 @@ function toRegularizationView(value: AttendanceRegularization) {
     // heading — and a change of wording never waits for an app release.
     title: kind === 'out_of_location'
       ? `Out of location request${outsideLocation?.reason ? ` (${outsideLocation.reason})` : ''}`
-      : 'Attendance correction',
+      : kind === 'face_check'
+        ? 'Punch-in without face check'
+        : 'Attendance correction',
     outsideLocation: outsideLocationView(outsideLocation),
     requestedPunchIn: punchIn?.toISOString(),
     requestedPunchOut: punchOut?.toISOString(),
