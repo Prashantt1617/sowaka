@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -30,7 +29,6 @@ import '../../relay/presentation/relay_post_card.dart';
 import '../../squad/presentation/secret_squad_post_card.dart';
 import '../../shared/app_toast.dart';
 import '../../shared/network_status.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 // The engagement contests (caption, photo, Most Likely), their entries
 // sheet, and the poll card are drawn in their own files: this one was already
@@ -10150,24 +10148,10 @@ List<String> _bodyStringList(ConnectPost post, String key) {
       .toList();
 }
 
-/// Media served from Mongo fallback storage (no S3 configured) presigns to a
-/// `data:` URI rather than an http(s) URL — `NetworkImage`/`Image.network`
-/// issue an HTTP GET and cannot render those, so decode inline instead.
-ImageProvider _remoteImage(String url) {
-  if (url.startsWith('data:')) {
-    final comma = url.indexOf(',');
-    if (comma != -1) {
-      try {
-        return MemoryImage(base64Decode(url.substring(comma + 1)));
-      } catch (_) {
-        // Fall through to NetworkImage, which will simply fail to load.
-      }
-    }
-  }
-  // Cached on disk by URL: a photo seen once is not fetched again, on this
-  // scroll or the next launch. Keys are immutable, so the cache never goes stale.
-  return CachedNetworkImageProvider(resolveMediaUrl(url));
-}
+/// A picture in the feed: the server's 1080 px copy, decoded at that width,
+/// cached on disk (see [mediaImageProvider]; legacy `data:` URIs decoded in
+/// place). Faces keep the small copy their URL already asks for.
+ImageProvider _remoteImage(String url) => mediaImageProvider(url, width: feedImageWidth);
 
 Color _hexColor(String value, Color fallback) {
   final normalized = value.replaceFirst('#', '');

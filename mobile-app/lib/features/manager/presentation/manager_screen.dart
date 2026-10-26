@@ -1,6 +1,5 @@
 import 'dart:async';
 import '../../manage/presentation/team_faces_layout.dart';
-import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -53,7 +52,6 @@ import '../../care/presentation/care_tab.dart';
 import '../../garden/presentation/garden_screen.dart';
 import '../../garden/presentation/floating_tree.dart';
 import '../../profile/profile.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 part '../../connect/presentation/connect_tab.dart';
 part '../../games/presentation/games_tab.dart';

@@ -2610,15 +2610,11 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
 /// Seeded/uploaded photos without S3 configured fall back to `data:` URIs
 /// (see `_remoteImage` in connect_feed_screen.dart) — `Image.network` can't
 /// load those, only real http(s) URLs, so profile photos need the same split.
-ImageProvider _profileImage(String url) {
-  if (url.startsWith('data:')) {
-    final base64Part = url.split(',').last;
-    return MemoryImage(base64Decode(base64Part));
-  }
-  // Cached on disk by URL: a photo seen once is not fetched again, on this
-  // scroll or the next launch. Keys are immutable, so the cache never goes stale.
-  return CachedNetworkImageProvider(resolveMediaUrl(url));
-}
+///
+/// The small copy, decoded small; [full] (the photo opened full screen, to
+/// pinch and zoom) the upload as it came.
+ImageProvider _profileImage(String url, {bool full = false}) =>
+    full ? mediaImageProvider(url, original: true) : avatarImageProvider(url);
 
 /// [url] full screen, pinch to zoom ([showPhotoViewer]).
 Future<void> _openProfilePhoto(
@@ -2628,7 +2624,7 @@ Future<void> _openProfilePhoto(
   Widget? action,
 }) => showPhotoViewer(
   context,
-  image: _profileImage(url),
+  image: _profileImage(url, full: true),
   label: label,
   action: action,
 );
