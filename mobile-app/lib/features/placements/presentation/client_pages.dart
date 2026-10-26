@@ -1,11 +1,4 @@
-import 'dart:async';
-
-import 'package:flutter/material.dart';
-
-import '../data/placements_api_service.dart';
-import '../data/placements_models.dart';
-import 'candidate_pages.dart';
-import 'placements_style.dart';
+part of '../../quick_actions/presentation/quick_actions_screen.dart';
 
 /// My clients: the companies the signed-in person added, with a search, a
 /// filter by onboarding fee, and Add.

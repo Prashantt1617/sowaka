@@ -1,6 +1,4 @@
-import 'package:flutter/material.dart';
-
-import '../data/placements_models.dart';
+part of '../../quick_actions/presentation/quick_actions_screen.dart';
 
 /// The Placements pages' look, as the "Placements Quick Action" canvas draws
 /// it: warm greys, white cards on a stone ground, one orange accent, Plus
@@ -117,47 +115,87 @@ class PlPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Pl.ground,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-              child: Row(
-                children: [
-                  PlIconButton(
-                    label: 'Back',
-                    icon: Icons.chevron_left_rounded,
-                    plain: true,
+    final chrome = _PlacementsChrome.of(context);
+    // The Actions pages' frame, as [_HubScaffold] draws it: the app's
+    // header, a round Back and the title on white, then the page.
+    return Material(
+      color: _Q.bg,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (chrome != null)
+            AppHomeHeader(
+              profileAction: chrome.profileAction,
+              onNotifications: chrome.onNotifications,
+              onQuickCreate: chrome.onQuickCreate,
+            )
+          else
+            SizedBox(height: MediaQuery.of(context).padding.top),
+          Container(
+            constraints: const BoxConstraints(minHeight: 60),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
+            ),
+            child: Row(
+              children: [
+                Material(
+                  color: const Color(0xFFF7F7F9),
+                  shape: const CircleBorder(),
+                  child: InkWell(
                     onTap: onBack ?? () => Navigator.of(context).maybePop(),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Pl.text(titleSize, weight: FontWeight.w700),
+                    customBorder: const CircleBorder(),
+                    child: SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: Center(
+                        child: SvgPicture.asset(
+                          'assets/icons/chevron_left_small.svg',
+                          width: 17.9833,
+                          height: 17.9833,
                         ),
-                        if (subtitle != null)
-                          Text(subtitle!, style: Pl.text(12, color: Pl.muted)),
-                      ],
+                      ),
                     ),
                   ),
-                  ...actions,
-                ],
-              ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Sora',
+                          color: Color(0xFF222222),
+                          fontSize: 16,
+                          height: 24 / 16,
+                          letterSpacing: -0.2,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (subtitle != null)
+                        Text(
+                          subtitle!,
+                          style: const TextStyle(
+                            fontFamily: 'Sora',
+                            color: _Q.inkSoft,
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                ...actions,
+              ],
             ),
-            Expanded(child: body),
-          ],
-        ),
+          ),
+          Expanded(child: body),
+        ],
       ),
     );
   }

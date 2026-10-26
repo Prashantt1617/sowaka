@@ -27,6 +27,9 @@ class PlacementsScreen extends StatefulWidget {
 }
 
 class _PlacementsScreenState extends State<PlacementsScreen> {
+  /// Placements' own pages stack here, inside the Actions tab, so the app's
+  /// header and bottom bar stay on screen.
+  final _nav = GlobalKey<NavigatorState>();
   List<PlacementCustomer>? _candidates;
   List<PlacementClient>? _clients;
   String? _error;
@@ -37,9 +40,14 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
     unawaited(_load());
   }
 
-  /// Back within Placements: its pages are routes of their own, so the hub
-  /// has nothing to go back through.
-  bool back() => false;
+  /// Back within Placements: one page back, or false on the hub, where Back
+  /// leaves it.
+  bool back() {
+    final nav = _nav.currentState;
+    if (nav == null || !nav.canPop()) return false;
+    nav.pop();
+    return true;
+  }
 
   Future<void> _load() async {
     try {
@@ -63,14 +71,26 @@ class _PlacementsScreenState extends State<PlacementsScreen> {
   }
 
   Future<void> _open(Widget page) async {
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => page));
+    await _nav.currentState?.push(
+      MaterialPageRoute<void>(builder: (_) => page),
+    );
     if (mounted) unawaited(_load());
   }
 
   @override
   Widget build(BuildContext context) {
+    return _PlacementsChrome(
+      profileAction: widget.profileAction,
+      onNotifications: widget.onNotifications,
+      onQuickCreate: widget.onQuickCreate,
+      child: Navigator(
+        key: _nav,
+        onGenerateRoute: (_) => MaterialPageRoute<void>(builder: (_) => _hub()),
+      ),
+    );
+  }
+
+  Widget _hub() {
     final candidates = _candidates;
     final clients = _clients;
     int stage(CandidateStage s) =>
@@ -241,4 +261,26 @@ class _PlacementsHubCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// What every Placements page needs for the app's header, handed down past
+/// Placements' own navigator.
+class _PlacementsChrome extends InheritedWidget {
+  const _PlacementsChrome({
+    required this.profileAction,
+    required this.onNotifications,
+    required this.onQuickCreate,
+    required super.child,
+  });
+
+  final Widget profileAction;
+  final VoidCallback onNotifications;
+  final VoidCallback onQuickCreate;
+
+  static _PlacementsChrome? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_PlacementsChrome>();
+
+  @override
+  bool updateShouldNotify(_PlacementsChrome old) =>
+      profileAction != old.profileAction;
 }

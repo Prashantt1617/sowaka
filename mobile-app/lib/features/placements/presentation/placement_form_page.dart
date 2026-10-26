@@ -1,10 +1,4 @@
-import 'dart:async';
-
-import 'package:flutter/material.dart';
-
-import '../data/placements_api_service.dart';
-import '../data/placements_models.dart';
-import 'placements_style.dart';
+part of '../../quick_actions/presentation/quick_actions_screen.dart';
 
 /// Put a candidate forward to a client's role, or ([existing]) update where
 /// it stands. Opened from the candidate's page, so the candidate is fixed;

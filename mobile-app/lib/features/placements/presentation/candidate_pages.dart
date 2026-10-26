@@ -1,12 +1,4 @@
-import 'dart:async';
-
-import 'package:flutter/material.dart';
-
-import '../data/placements_api_service.dart';
-import '../data/placements_models.dart';
-import 'client_pages.dart';
-import 'placement_form_page.dart';
-import 'placements_style.dart';
+part of '../../quick_actions/presentation/quick_actions_screen.dart';
 
 /// My candidates: the ones the signed-in person added, newest first, with a
 /// search, a filter by where each stands, and Add.
