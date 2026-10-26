@@ -58,6 +58,8 @@ dependencies:
   printing: ^5.14.3
   pdf: ^3.12.0
   cached_network_image: ^4.0.4
+  # Feed videos kept on the phone once watched (already here, under cached_network_image).
+  flutter_cache_manager: ^3.4.1
   path_provider: ^2.1.6
   package_info_plus: ^9.0.1
   mobile_scanner: ^7.4.2
