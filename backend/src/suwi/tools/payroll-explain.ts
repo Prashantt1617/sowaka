@@ -26,14 +26,18 @@ function lineDiffs(now: { code: string; name: string; paise: number }[], before:
   return out.sort((x, y) => Math.abs(y.changePaise) - Math.abs(x.changePaise));
 }
 
-/** Absent and half days in a month, from the same calendar the dashboard shows. */
+/** Absent and half days, and leave without pay, in a month, from the same calendar the dashboard shows. */
 async function lostDays(ctx: SuwiContext, userId: string, month: string) {
   try {
     const cal = await employeeCalendar(ctx.userId, userId, month);
     const absent = cal.days.filter((d) => d.status === 'absent').map((d) => d.date);
     const half = cal.days.filter((d) => d.status === 'half_day').map((d) => d.date);
     const hrMarked = cal.days.filter((d) => d.hr).map((d) => `${d.date} (${d.status})`);
-    return { absentDays: absent.length, absentDates: absent.slice(0, 12), halfDays: half.length, halfDayDates: half.slice(0, 12), markedByHr: hrMarked.slice(0, 8) };
+    const unpaid = cal.days.filter((d) => d.status === 'unpaid_leave').map((d) => (d.halfDay ? `${d.date} (half day)` : d.date));
+    return {
+      absentDays: absent.length, absentDates: absent.slice(0, 12), halfDays: half.length, halfDayDates: half.slice(0, 12), markedByHr: hrMarked.slice(0, 8),
+      ...(unpaid.length ? { leaveWithoutPayDays: unpaid.length, leaveWithoutPayDates: unpaid.slice(0, 12) } : {}),
+    };
   } catch {
     return undefined;
   }

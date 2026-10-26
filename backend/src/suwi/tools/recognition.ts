@@ -87,7 +87,7 @@ defineTools({
       const per = new Map<string, { present: number; bad: number }>();
       for (const [uid, , status, late, , , , , early] of r.days) {
         const c = per.get(uid) ?? { present: 0, bad: 0 };
-        if (status === 'present' && late === 0 && early === 0) c.present++; else if (status !== 'on_leave') c.bad++;
+        if (status === 'present' && late === 0 && early === 0) c.present++; else if (status !== 'on_leave' && status !== 'unpaid_leave') c.bad++;
         per.set(uid, c);
       }
       for (const [uid, c] of per) if (c.bad === 0 && c.present >= 40) add(uid, { kind: 'perfect_attendance', evidence: `${c.present} working days present and on time from ${quarterFrom} to ${ctx.today}, with no absence, late mark, half day or missed punch.`, link: { label: 'Open attendance report', view: 'attendancereport' } });
