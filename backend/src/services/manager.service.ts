@@ -7,6 +7,7 @@ import {
   attendanceOverrides,
 } from '../config/db';
 import { getCompanyConfig } from './company-settings.service';
+import { AVATAR_EDGE, fitImage } from './image-fit';
 import {
   FeedbackParameter,
   FeedbackRecordStatus,
@@ -164,7 +165,8 @@ export async function updateProfilePhoto(userId: string, file: ConnectMediaFile)
   let photoUrl: string;
   let objectKey: string;
   try {
-    const uploaded = await uploadConnectMedia(userId, file);
+    // Stored at the size it is drawn, not the camera's.
+    const uploaded = await uploadConnectMedia(userId, await fitImage(file, AVATAR_EDGE));
     objectKey = uploaded.objectKey;
     photoUrl = await presignConnectMedia(objectKey);
   } catch {

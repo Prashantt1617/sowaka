@@ -14,6 +14,7 @@ import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.
 import { logger } from '../utils/logger';
 import { blockedUserIdsFor } from './connect-blocks.service';
 import { requestViewer } from '../middleware/request-viewer';
+import { fitImage, POST_IMAGE_EDGE } from './image-fit';
 import {
   CELEBRANT_MAX_PINNED,
   celebrantOfPost,
@@ -1929,7 +1930,10 @@ async function storeConnectMediaMany(
   files: ConnectMediaFile[],
 ): Promise<UploadedMedia[]> {
   try {
-    return await Promise.all(files.map((file) => uploadConnectMedia(userId, file)));
+    // Pictures are stored at the most a phone draws them; video as it came.
+    return await Promise.all(
+      files.map(async (file) => uploadConnectMedia(userId, await fitImage(file, POST_IMAGE_EDGE))),
+    );
   } catch {
     throw new ConnectError(503, 'Media storage is unavailable');
   }

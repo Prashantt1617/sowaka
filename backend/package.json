@@ -23,6 +23,7 @@
     "notifications:check": "tsx src/scripts/notifications-check.ts",
     "auth-speed:check": "tsx src/scripts/auth-speed-check.ts",
     "hot-paths:check": "tsx src/scripts/hot-paths-check.ts",
+    "image-fit:check": "tsx src/scripts/image-fit-check.ts",
     "employee-details:check": "tsx src/scripts/employee-details-check.ts",
     "celebrations:check": "tsx src/scripts/connect-celebrations-check.ts",
     "squad:check": "tsx src/scripts/secret-squad-check.ts",
@@ -54,6 +55,7 @@
     "mysql2": "^3.14.2",
     "nodemailer": "^9.0.1",
     "pg": "^8.16.3",
+    "sharp": "^0.34.5",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
