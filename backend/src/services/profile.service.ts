@@ -260,3 +260,105 @@ export async function getPersonProfile(viewerUserId: string, personUserId: strin
     orgChart: buildOrgChart(person, byId),
   };
 }
+
+export type PersonTeamRole = 'manager' | 'self' | 'peer' | 'report';
+
+export interface PersonTeamMember {
+  userId: string;
+  name: string;
+  designation: string;
+  department: string;
+  photoUrl: string | null;
+  role: PersonTeamRole;
+}
+
+/**
+ * Who is on [person]'s team and as what, from their company's active roster:
+ * their manager, them, their reports, then the peers under that manager in
+ * their department. Kept apart from the reads so it can be checked on its own.
+ */
+export function teamAround(
+  person: User,
+  roster: User[],
+): Array<[User, PersonTeamRole]> {
+  const byName = (a: User, b: User) => a.name.localeCompare(b.name);
+  const manager = person.managerUserId
+    ? roster.find((user) => user.userId === person.managerUserId && user.userId !== person.userId)
+    : undefined;
+  const peers = manager
+    ? roster
+        .filter(
+          (user) =>
+            user.managerUserId === manager.userId &&
+            user.userId !== person.userId &&
+            (user.department ?? '') === (person.department ?? ''),
+        )
+        .sort(byName)
+    : [];
+  const reports = roster
+    .filter((user) => user.managerUserId === person.userId && user.userId !== person.userId)
+    .sort(byName);
+
+  // Each person once: someone who is both, in a reporting loop, keeps the
+  // first place they were given.
+  const seen = new Set<string>();
+  const team: Array<[User, PersonTeamRole]> = [];
+  for (const [user, role] of [
+    ...(manager ? [[manager, 'manager'] as const] : []),
+    [person, 'self'] as const,
+    ...reports.map((user) => [user, 'report'] as const),
+    ...peers.map((user) => [user, 'peer'] as const),
+  ]) {
+    if (seen.has(user.userId)) continue;
+    seen.add(user.userId);
+    team.push([user, role]);
+  }
+
+  return team;
+}
+
+/**
+ * Someone's team as the Team tab draws one's own, for the Org chart on their
+ * profile: their manager heading it, them, whoever else reports to that
+ * manager in their department, and their own reports — the same people
+ * `getManagerWorkspace` puts in the viewer's team, worked out for [personUserId]
+ * instead. Names, designations and photos only, as anyone in the company may
+ * see them; scoped to the viewer's company, like the profile itself.
+ */
+export async function getPersonTeam(
+  viewerUserId: string,
+  personUserId: string,
+): Promise<PersonTeamMember[]> {
+  const viewer = await requireViewer(viewerUserId);
+  const notFound = new ManagerError(404, 'Person not found');
+  if (!viewer.org || !personUserId) throw notFound;
+
+  const roster = await users()
+    .find(
+      { org: viewer.org, lifecycleStatus: { $nin: inactive }, isCounsellor: { $ne: true } },
+      {
+        projection: {
+          _id: 0,
+          userId: 1,
+          name: 1,
+          designation: 1,
+          department: 1,
+          managerUserId: 1,
+        },
+      },
+    )
+    .toArray();
+  const person = roster.find((user) => user.userId === personUserId);
+  if (!person) throw notFound;
+
+  const team = teamAround(person, roster);
+  const photos = await photosFor(team.map(([user]) => user.userId));
+  return team.map(([user, role]) => ({
+    userId: user.userId,
+    name: user.name,
+    designation: user.designation ?? '',
+    department: user.department ?? user.designation ?? 'Team',
+    photoUrl: photos.get(user.userId) ?? null,
+    role,
+  }));
+}
