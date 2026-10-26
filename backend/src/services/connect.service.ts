@@ -258,6 +258,80 @@ export async function getConnectFeed(
   };
 }
 
+/**
+ * One person's own posts, newest first, for the Posts tab on their profile:
+ * exactly what this viewer's feed would show of theirs, a page at a time on
+ * the feed's cursor. No pins — a profile is in the order things were posted.
+ *
+ * Someone outside the viewer's company is not found, as their profile is not.
+ * Someone the viewer has blocked shows only what a block never hides — their
+ * announcements — as in the feed. `total`, how many there are in all for the
+ * tab's badge, comes with the first page only.
+ */
+export async function getConnectPersonPosts(
+  viewerUserId: string,
+  personUserId: string,
+  options: { limit?: number; cursor?: string } = {},
+) {
+  // The viewer, the person and the block list are independent reads.
+  const [viewer, person, blockedUserIds] = await Promise.all([
+    requestViewer(viewerUserId) ?? users().findOne({ userId: viewerUserId }, { projection: { profilePhotoUrl: 0 } }),
+    personUserId
+      ? users().findOne({ userId: personUserId }, { projection: { _id: 0, userId: 1, org: 1, email: 1 } })
+      : Promise.resolve(null),
+    blockedUserIdsFor(viewerUserId),
+  ]);
+  if (!viewer) throw new ConnectError(404, 'User not found');
+  const { org, blockFilter, audienceFilter } = feedVisibility(viewer, blockedUserIds);
+  if (!person || orgForUser(person) !== org) throw new ConnectError(404, 'Person not found');
+  const limit = feedPageLimit(options.limit);
+  const after = decodeFeedCursor(options.cursor);
+  const theirs = { org, 'author.userId': personUserId, ...blockFilter };
+
+  const [rows, total] = await Promise.all([
+    connectPosts()
+      .find({ ...theirs, $and: [audienceFilter, ...(after ? [olderThanCursor(after)] : [])] })
+      .sort({ publishedAt: -1, createdAt: -1, _id: -1 })
+      // One more than the page, to know whether another page follows.
+      .limit(limit + 1)
+      .toArray(),
+    after ? Promise.resolve(null) : connectPosts().countDocuments({ ...theirs, $and: [audienceFilter] }),
+  ]);
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  return {
+    posts: (await viewFeedPage(page, viewerUserId, blockedUserIds)).map(cardFields),
+    nextCursor: hasMore && page.length > 0 ? encodeFeedCursor(page[page.length - 1]) : null,
+    ...(total === null ? {} : { total }),
+  };
+}
+
+/**
+ * A post as its card reads it (`ConnectPost.fromJson` in the app), and
+ * nothing else: not the like list, the votes, who acted on it or the stored
+ * ids, which the feed's view still carries from the document underneath.
+ */
+function cardFields(view: Awaited<ReturnType<typeof viewPost>>) {
+  return {
+    id: view.id,
+    type: view.type,
+    tag: view.tag,
+    tagIcon: view.tagIcon,
+    tagColor: view.tagColor,
+    tagTint: view.tagTint,
+    author: view.author,
+    audience: view.audience,
+    body: view.body,
+    liked: view.liked,
+    likeCount: view.likeCount,
+    commentCount: view.commentCount,
+    comments: view.comments,
+    publishedAt: view.publishedAt,
+    selectedPollOptionId: view.selectedPollOptionId,
+    actionValue: view.actionValue,
+  };
+}
+
 /** How many posts a page holds: what the app asked for, within the feed's bounds. */
 function feedPageLimit(asked: number | undefined) {
   return Math.min(FEED_MAX_LIMIT, Math.max(1, Math.floor(asked ?? FEED_DEFAULT_LIMIT)));

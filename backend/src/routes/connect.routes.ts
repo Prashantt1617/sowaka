@@ -5,6 +5,7 @@ import {
   commentOnConnectPost,
   connectFeed,
   connectLinkPreview,
+  connectPersonPosts,
   connectPost,
   connectPostLikes,
   createPost,
@@ -38,6 +39,8 @@ connectRouter.get('/feed', connectFeed);
 // Composer preview: resolve a link's artwork before the post is created.
 connectRouter.get('/link-preview', connectLinkPreview);
 connectRouter.get('/posts/:postId', connectPost);
+// The Posts tab on a profile: what the viewer's feed would show of theirs.
+connectRouter.get('/users/:userId/posts', connectPersonPosts);
 // The likes list: who liked a post, latest first.
 connectRouter.get('/posts/:postId/likes', connectPostLikes);
 connectRouter.get('/games/:gameId', playerGame);

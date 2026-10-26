@@ -7,6 +7,7 @@ import {
   deleteConnectComment,
   deleteConnectPost,
   getConnectFeed,
+  getConnectPersonPosts,
   parsePostTypeList,
   getConnectPost,
   getConnectPostLikes,
@@ -40,6 +41,24 @@ export async function connectFeed(req: Request, res: Response, next: NextFunctio
       cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined,
     });
     res.status(200).json({ success: true, posts, nextCursor });
+  } catch (error) {
+    handleConnectError(error, next);
+  }
+}
+
+/** One person's posts for their profile, a page at a time on the feed's cursor. */
+export async function connectPersonPosts(req: Request, res: Response, next: NextFunction) {
+  try {
+    const limit = Number(req.query.limit);
+    const { posts, nextCursor, total } = await getConnectPersonPosts(
+      requireUserId(req),
+      String(req.params.userId ?? ''),
+      {
+        ...(Number.isFinite(limit) ? { limit } : {}),
+        cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined,
+      },
+    );
+    res.status(200).json({ success: true, posts, nextCursor, ...(total === undefined ? {} : { total }) });
   } catch (error) {
     handleConnectError(error, next);
   }
