@@ -24,6 +24,7 @@ class AuthUser {
     this.canCreateContests = false,
     this.faceIdEnrolled = false,
     this.faceIdAtPunch = false,
+    this.placementsEnabled = false,
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
@@ -66,12 +67,18 @@ class AuthUser {
       canCreateContests: json['canCreateContests'] == true,
       faceIdEnrolled: _faceId(json, 'enrolled'),
       faceIdAtPunch: _faceId(json, 'atPunch'),
+      placementsEnabled: _feature(json, 'placements'),
     );
   }
 
   static bool _faceId(Map<String, dynamic> json, String key) {
     final face = json['faceId'];
     return face is Map && face[key] == true;
+  }
+
+  static bool _feature(Map<String, dynamic> json, String key) {
+    final features = json['features'];
+    return features is Map && features[key] == true;
   }
 
   final String id;
@@ -117,6 +124,12 @@ class AuthUser {
   final bool faceIdEnrolled;
   final bool faceIdAtPunch;
 
+  /// Actions › Placements: the clients, candidates and placements of a
+  /// recruitment company, switched on per company by the server
+  /// (`features.placements`). False when the field is missing, so every other
+  /// company, and a server that predates it, never sees the card.
+  final bool placementsEnabled;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'email': email,
@@ -144,6 +157,7 @@ class AuthUser {
       'enrolled': faceIdEnrolled,
       'atPunch': faceIdAtPunch,
     },
+    'features': {'placements': placementsEnabled},
   };
 
   AuthUser copyWith({String? profilePhotoUrl, List<String>? interests}) => AuthUser(
@@ -171,6 +185,7 @@ class AuthUser {
     canCreateContests: canCreateContests,
     faceIdEnrolled: faceIdEnrolled,
     faceIdAtPunch: faceIdAtPunch,
+    placementsEnabled: placementsEnabled,
   );
 }
 
