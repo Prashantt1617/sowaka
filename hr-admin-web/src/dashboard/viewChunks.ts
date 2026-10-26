@@ -50,6 +50,9 @@ const LOADERS: Partial<Record<View, Loader>> = {
   faceid: () => import('./views/FaceId').then((m) => ({ default: m.FaceId })),
   support: () => import('./views/SupportDesk').then((m) => ({ default: m.SupportDesk })),
   suwi: () => import('./views/SuwiSettings').then((m) => ({ default: m.SuwiSettings })),
+  placements: () => import('./views/Placements').then((m) => ({ default: m.Placements })),
+  placementclients: () => import('./views/Placements').then((m) => ({ default: m.PlacementClients })),
+  placementcustomers: () => import('./views/Placements').then((m) => ({ default: m.PlacementCustomers })),
 };
 
 /**

@@ -57,4 +57,6 @@ export interface AuthUser {
   enabledGames?: string[];
   /** Face ID: whether they have set it up, and whether their punches are checked. */
   faceId?: { enrolled: boolean; atPunch: boolean };
+  /** Features this person's company has; see Company.features. */
+  features?: { placements: boolean };
 }
