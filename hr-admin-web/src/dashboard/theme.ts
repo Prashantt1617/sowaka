@@ -184,7 +184,7 @@ export const TITLES: Record<View, [string, string]> = {
   contentreports: ['Reported content', 'Connect · posts and comments employees have reported'],
   placements: ['Placements', 'Placements · candidates put forward to clients, from shortlist to joining'],
   placementclients: ['Clients', 'Placements · the companies hiring'],
-  placementcustomers: ['Customers', 'Placements · the candidates being placed'],
+  placementcustomers: ['Candidates', 'Placements · the candidates being placed'],
   suwi: ['Suwi', 'Your HR assistant · what it may do, and what it did'],
 };
 
