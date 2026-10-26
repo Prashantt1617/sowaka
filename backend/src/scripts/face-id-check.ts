@@ -168,9 +168,12 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
   await enrolFace('bala', { photo: await photo(402), ...consent });
   await enrolFace('dev', { photo: await photo(409), ...consent });
   await enrolFace('esha', { photo: await photo(410), ...consent });
-  const again = await enrolFace('asha', { photo: await photo(401), ...consent });
+  // Whoever holds an enrolled phone must not swap in their own face: setting
+  // up again goes through HR's reset.
+  const again = await refusal(async () => enrolFace('asha', { photo: await photo(402), ...consent }));
+  check('setting up again is refused, pointing to HR', again?.status === 409 && again.face?.reason === 'already_enrolled', again);
   const ashaFaces = collections.get(collection)!.filter((face) => face.externalImageId === 'asha');
-  check('enrolling again replaces the old face rather than adding one', again.enrolled && ashaFaces.length === 1, ashaFaces);
+  check('and her one enrolled face stays', ashaFaces.length === 1, ashaFaces);
 
   // --- HR switches it on
   const settings = await updateFaceIdSettingsForAdmin('hr', { checkAtPunch: true });

@@ -233,6 +233,13 @@ export async function enrolFace(
     });
   }
   if (!input.photo?.length) throw new FaceIdError(400, 'Take a photo of your face', { face: { reason: 'no_face' } });
+  // Set up once: a second setup would let whoever holds the phone swap in
+  // their own face and punch with it. Setting up again goes through HR's reset.
+  if (await enrolmentOf(userId)) {
+    throw new FaceIdError(409, 'Face ID is already set up. Ask HR to reset it if you need to set it up again.', {
+      face: { reason: 'already_enrolled' },
+    });
+  }
   await underHourlyCap(userId, 'enrol', ENROL_PER_HOUR);
 
   const started = Date.now();
@@ -733,7 +740,8 @@ export async function listFaceChecksForAdmin(
   const from = day(query.from, new Date(Date.now() - 7 * 86_400_000));
   const to = new Date(day(query.to, new Date()).getTime() + 86_400_000);
   const filter: Record<string, unknown> = { org, at: { $gte: from, $lt: to } };
-  if (query.all !== 'true') filter.passed = false;
+  // Failed checks only: a reset is logged as not passed, but it is not a failure.
+  if (query.all !== 'true') Object.assign(filter, { passed: false, kind: { $in: ['enrol', 'verify'] } });
   if (typeof query.userId === 'string' && query.userId) filter.userId = query.userId;
   const rows = await faceVerifications()
     .find(filter, { projection: { _id: 0, tokenHash: 0 } })

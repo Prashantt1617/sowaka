@@ -193,9 +193,9 @@ export const env = {
     /** Failed checks before the app offers to send the day to the manager. */
     maxAttempts: clamp(Number(process.env.FACE_MAX_ATTEMPTS) || 3, 1, 10),
     /** Each Rekognition call gives up after this long. */
-    timeoutMs: clamp(Number(process.env.FACE_REKOGNITION_TIMEOUT_MS) || 8000, 1000, 30_000),
+    timeoutMs: clamp(Number(process.env.FACE_REKOGNITION_TIMEOUT_MS) || 5000, 1000, 30_000),
     /** Retries after the first try, for throttling and network errors only. */
-    retries: clamp(Number(process.env.FACE_REKOGNITION_RETRIES) || 2, 0, 5),
+    retries: clamp(Number(process.env.FACE_REKOGNITION_RETRIES) || 1, 0, 5),
     /**
      * How long the check log is kept, in months (FACE_LOG_RETENTION_MONTHS).
      * Nothing deletes on its own: `npm run face-log:cleanup` removes older rows.

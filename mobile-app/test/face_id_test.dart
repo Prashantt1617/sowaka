@@ -275,6 +275,25 @@ void main() {
     expect(FaceCheckOutcome.enrolledThisRun, isTrue);
   });
 
+  testWidgets('already set up elsewhere: setup steps aside for the selfie check', (tester) async {
+    _enrolReply = () => http.Response(jsonEncode({
+      'success': false,
+      'message': 'Face ID is already set up. Ask HR to reset it if you need to set it up again.',
+      'details': {'face': {'reason': 'already_enrolled'}},
+    }), 409);
+    await pumpPunch(tester, type: 'in');
+    await tester.tap(find.byType(Checkbox));
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump();
+    await tester.tap(find.text('Set up & punch in'));
+    await tester.pumpAndSettle();
+    expect(FaceCheckOutcome.enrolledThisRun, isTrue);
+    // The check, not setup again: no consent line, and no punch without a face.
+    expect(find.text('Take a selfie'), findsOneWidget);
+    expect(find.text('I agree to Face ID keeping a template of my face.'), findsNothing);
+    expect(_punchBody, isNull);
+  });
+
   testWidgets('a setup that fails says why, and after three the punch-out can go to the manager', (tester) async {
     var tries = 0;
     _enrolReply = () {

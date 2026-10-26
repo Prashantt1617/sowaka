@@ -145,6 +145,14 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     } on ManagerApiException catch (error) {
       final face = error.details?['face'];
       final reason = face is Map ? face['reason'] as String? : null;
+      if (reason == 'already_enrolled') {
+        // Set up already (on another phone, or before this profile was
+        // read): nothing to set up, so the punch takes the selfie check.
+        FaceCheckOutcome.enrolledThisRun = true;
+        if (mounted)
+          Navigator.of(context).pop(const FaceCheckOutcome.needsCheck());
+        return;
+      }
       if (reason == 'consent_changed' &&
           face is Map &&
           face['consent'] is Map<String, dynamic>) {
