@@ -1,3 +1,5 @@
+import type { UserFaceId } from './face.model';
+
 export type EmployeeType = 'intern' | 'full_time' | 'contract';
 
 export type UserLifecycleStatus =
@@ -148,6 +150,8 @@ export interface User {
    */
   helpIntake?: HelpIntake;
   helpMatch?: HelpMatch;
+  /** The face enrolled for Face ID; absent until they set it up, or after HR resets it. */
+  faceId?: UserFaceId;
   createdAt?: number;
   updatedAt?: Date;
   lastLoginAt?: Date;

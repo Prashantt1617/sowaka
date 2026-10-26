@@ -31,6 +31,9 @@
     "celebrations:check": "tsx src/scripts/connect-celebrations-check.ts",
     "profile-posts:check": "tsx src/scripts/profile-posts-check.ts",
     "squad:check": "tsx src/scripts/secret-squad-check.ts",
+    "face-id:check": "tsx src/scripts/face-id-check.ts",
+    "face-id:e2e": "tsx src/scripts/face-id-e2e.ts",
+    "face-log:cleanup": "tsx src/scripts/face-log-cleanup.ts",
     "most-likely:check": "tsx src/scripts/most-likely-taggers-check.ts",
     "payroll:zoho-check": "tsx src/scripts/payroll-zoho-check.ts",
     "payroll:payslip-check": "tsx src/scripts/payroll-payslip-check.ts",
@@ -40,6 +43,7 @@
     "api:only": "tsx src/scripts/api-only.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-rekognition": "^3.1079.0",
     "@aws-sdk/client-s3": "^3.1079.0",
     "@aws-sdk/s3-request-presigner": "^3.1079.0",
     "@smithy/node-http-handler": "^4.9.3",

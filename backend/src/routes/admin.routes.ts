@@ -61,6 +61,7 @@ import {
   updateReimbursementTypeHandler,
 } from '../controllers/reimbursement-type.controller';
 import { adminListReports, adminReviewReport } from '../controllers/moderation.controller';
+import { adminFaceChecks, adminFaceOverview, adminFaceReset, adminFaceSettings } from '../controllers/face.controller';
 import { adminCreateGame, adminDeleteGame, adminListGames, adminPublishGame, adminUpdateGame } from '../controllers/game.controller';
 
 // HR dashboard surface: org-wide reads + request overrides. Every route requires
@@ -81,6 +82,11 @@ adminRouter.get('/reimbursements', listReimbursements);
 adminRouter.get('/regularizations', listRegularizations);
 // Punches taken away from every office — what HR reads as "OOL check-ins".
 adminRouter.get('/out-of-location', listOutOfLocation);
+// Face ID: the company's switches, who has set it up, resets and the check log.
+adminRouter.get('/face-id', adminFaceOverview);
+adminRouter.patch('/face-id/settings', adminFaceSettings);
+adminRouter.delete('/face-id/people/:userId', adminFaceReset);
+adminRouter.get('/face-id/checks', adminFaceChecks);
 // The offices a geotagged punch is checked against.
 adminRouter.get('/offices', listOfficesHandler);
 adminRouter.post('/offices', saveOfficeHandler);

@@ -106,6 +106,34 @@ export async function uploadSupportAttachment(org: string, ticketId: string, fil
   return { objectKey, contentType: file.contentType, size: file.size };
 }
 
+/**
+ * The photo a Face ID was enrolled from. Same bucket and encryption, under its
+ * own prefix (`faces/<org>/<userId>/`), with a random name. Never presigned
+ * for anyone: it is kept to re-index a face or look into a dispute, and is
+ * deleted with the face.
+ */
+export async function uploadFacePhoto(org: string, userId: string, bytes: Buffer) {
+  validateConfiguration();
+  const safe = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const objectKey = [env.face.photoPrefix, safe(org), safe(userId), `${randomUUID()}.jpg`].filter(Boolean).join('/');
+  await getClient().send(
+    new PutObjectCommand({
+      Bucket: env.s3.bucket,
+      Key: objectKey,
+      Body: bytes,
+      ContentType: 'image/jpeg',
+      ContentLength: bytes.length,
+      ...s3EncryptionParams(),
+    }),
+  );
+  return objectKey;
+}
+
+export async function deleteFacePhoto(objectKey: string) {
+  validateConfiguration();
+  await getClient().send(new DeleteObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));
+}
+
 export async function deleteSupportAttachment(objectKey: string) {
   validateConfiguration();
   await getClient().send(new DeleteObjectCommand({ Bucket: env.s3.bucket, Key: objectKey }));

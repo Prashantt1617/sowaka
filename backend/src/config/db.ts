@@ -52,6 +52,7 @@ import { SupportEvent, SupportMessage, SupportTicket, SupportTopicList } from '.
 import { PolicyDocument } from '../models/policy-document.model';
 import { AppPage } from '../models/app-page.model';
 import { EmployeeActivity } from '../models/employee-activity.model';
+import { FaceLivenessSession, FaceVerification } from '../models/face.model';
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -96,6 +97,15 @@ export function getDb(): Db {
     throw new Error('Database not connected. Call connectDb() first.');
   }
   return db;
+}
+
+/** Every Face ID check, pass or fail; a passed one carries its single-use punch token. */
+export function faceVerifications(): Collection<FaceVerification> {
+  return getDb().collection<FaceVerification>('face_verifications');
+}
+
+export function faceLivenessSessions(): Collection<FaceLivenessSession> {
+  return getDb().collection<FaceLivenessSession>('face_liveness_sessions');
 }
 
 export function otpChallenges(): Collection<OtpChallenge> {

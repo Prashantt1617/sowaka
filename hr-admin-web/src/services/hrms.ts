@@ -1024,3 +1024,57 @@ export const setReportingManager = (employeeUserId: string, managerUserId: strin
   api<{ movedRequests: number }>(`/admin/reporting/employees/${employeeUserId}/manager`, { method: 'PUT', body: { managerUserId } });
 export const clearReportingManager = (employeeUserId: string) =>
   api<unknown>(`/admin/reporting/employees/${employeeUserId}/manager`, { method: 'DELETE' });
+
+// ------------------------------------------------------------------ Face ID
+
+export type FaceIdSettingsDTO = { setupRequired: boolean; checkAtPunch: boolean };
+
+export type FaceIdPersonDTO = {
+  userId: string;
+  name: string;
+  employeeId: string | null;
+  department: string | null;
+  designation: string | null;
+  enrolled: boolean;
+  enrolledAt: string | null;
+  lastCheckAt: string | null;
+  lastCheckPassed: boolean | null;
+  failedLast30Days: number;
+};
+
+export type FaceIdOverviewDTO = {
+  /** As applied: checking at punch-in implies setup. */
+  settings: FaceIdSettingsDTO;
+  /** As HR set the two switches. */
+  rawSettings: FaceIdSettingsDTO;
+  liveness: 'aws' | 'device';
+  matchThreshold: number;
+  enrolledCount: number;
+  people: FaceIdPersonDTO[];
+};
+
+export type FaceCheckDTO = {
+  at: string;
+  userId: string;
+  name: string;
+  employeeId: string | null;
+  kind: 'enrol' | 'verify';
+  passed: boolean;
+  reason: string;
+  message: string;
+  similarity: number | null;
+  /** Set when the face matched a colleague's: someone punching in for someone else. */
+  matchedName: string | null;
+  liveness: 'aws' | 'device' | 'none';
+  livenessConfidence: number | null;
+  deviceCheckPassed: boolean | null;
+  usedForPunch: boolean;
+};
+
+export const getFaceIdOverview = () => api<FaceIdOverviewDTO>('/admin/face-id');
+export const updateFaceIdSettings = (input: Partial<FaceIdSettingsDTO>) =>
+  api<{ settings: FaceIdSettingsDTO }>('/admin/face-id/settings', { method: 'PATCH', body: input }).then((r) => r.settings);
+export const resetFaceId = (userId: string) =>
+  api<{ removed: boolean }>(`/admin/face-id/people/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+export const getFaceChecks = (from: string, to: string, all = false) =>
+  api<{ checks: FaceCheckDTO[] }>(`/admin/face-id/checks?from=${from}&to=${to}${all ? '&all=true' : ''}`).then((r) => r.checks);

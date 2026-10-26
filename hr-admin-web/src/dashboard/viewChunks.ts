@@ -47,6 +47,7 @@ const LOADERS: Partial<Record<View, Loader>> = {
   holidaybank: () => import('./views/HolidayBank').then((m) => ({ default: m.HolidayBank })),
   offices: () => import('./views/Offices').then((m) => ({ default: m.Offices })),
   oolcheckins: () => import('./views/OutOfLocation').then((m) => ({ default: m.OutOfLocation })),
+  faceid: () => import('./views/FaceId').then((m) => ({ default: m.FaceId })),
   support: () => import('./views/SupportDesk').then((m) => ({ default: m.SupportDesk })),
   suwi: () => import('./views/SuwiSettings').then((m) => ({ default: m.SuwiSettings })),
 };
