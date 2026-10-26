@@ -35,6 +35,9 @@ class ManagerApiService {
   /// is answered from here instead of the network.
   Map<String, Map<String, dynamic>>? _replay;
 
+  /// The last dashboard load kept a list as it was because its read failed.
+  bool _partial = false;
+
   /// The dashboard as this person last saw it, from the device, or null
   /// when there is none or it no longer parses. Never touches the network.
   Future<ManagerDashboard?> fetchDashboardFromCache() async {
@@ -83,7 +86,7 @@ class ManagerApiService {
         onCore: onCore,
         attendanceMonth: attendanceMonth ?? startedAt,
       );
-      if (recording != null) {
+      if (recording != null && !_partial) {
         unawaited(DashboardCache.write(session.user.id, recording, startedAt: startedAt));
       }
       return dashboard;
@@ -97,24 +100,53 @@ class ManagerApiService {
     void Function(ManagerDashboard core)? onCore,
     required DateTime attendanceMonth,
   }) async {
+    // Each part on its own, all at once. Only the workspace is the page: a
+    // list that fails keeps what was on screen (or starts empty) rather than
+    // failing the rest, and the load is then not kept as the device's copy,
+    // which would be missing that list. Answering from the copy, a missing
+    // reply still fails the copy, as before.
+    _partial = false;
+    Future<T> kept<T>(Future<T> part, T fallback) => _replay != null
+        ? part
+        : part.catchError((Object error) {
+            debugPrint('Dashboard part not loaded, kept as it was: $error');
+            _partial = true;
+            return fallback;
+          });
     final workspaceFuture = _request('GET', '/manager/workspace');
-    final myLeavesFuture = fetchMyLeaves();
-    final managerLeavesFuture = fetchManagerLeaves();
+    final myLeavesFuture = kept(fetchMyLeaves(), previous?.myLeaves ?? const <LeaveRequest>[]);
+    final managerLeavesFuture = kept(fetchManagerLeaves(), previous?.leaves ?? const <LeaveRequest>[]);
     final balanceFuture = _request('GET', '/leaves/balance');
-    final myOvertimeFuture = fetchMyOvertime();
-    final overtimeFuture = fetchManagerOvertime();
-    final reimbursementsFuture = fetchMyReimbursements();
-    final reimbursementTypesFuture = fetchReimbursementTypes();
+    final myOvertimeFuture = kept(fetchMyOvertime(), previous?.myOvertime ?? const <OvertimeRequest>[]);
+    final overtimeFuture = kept(fetchManagerOvertime(), previous?.overtime ?? const <OvertimeRequest>[]);
+    final reimbursementsFuture = kept(
+      fetchMyReimbursements(),
+      previous?.myReimbursements ?? const <ReimbursementClaim>[],
+    );
+    final reimbursementTypesFuture = kept(
+      fetchReimbursementTypes(),
+      previous?.reimbursementTypes ?? const <ReimbursementType>[],
+    );
     final managerReimbursementsFuture = session.user.role == 'manager'
-        ? fetchManagerReimbursements()
+        ? kept(fetchManagerReimbursements(), previous?.reimbursements ?? const <ReimbursementClaim>[])
         : Future<List<ReimbursementClaim>>.value(const []);
     final month = attendanceMonth;
-    final attendanceFuture = fetchAttendance(
-      DateTime(month.year, month.month, 1),
-      DateTime(month.year, month.month + 1, 0),
+    final attendanceFuture = kept(
+      fetchAttendance(
+        DateTime(month.year, month.month, 1),
+        DateTime(month.year, month.month + 1, 0),
+      ),
+      (
+        previous?.attendance ?? const <AttendanceRecord>[],
+        previous?.regularizations ?? const <AttendanceRegularization>[],
+        previous?.serverDays ?? const <String, ServerDayStatus>{},
+      ),
     );
     final regularizationInboxFuture = session.user.role == 'manager'
-        ? fetchManagerAttendanceRegularizations()
+        ? kept(
+            fetchManagerAttendanceRegularizations(),
+            previous?.managerRegularizations ?? const <AttendanceRegularization>[],
+          )
         : Future<List<AttendanceRegularization>>.value(const []);
     final workspace = await workspaceFuture;
     final teamValues = workspace['team'] as List<dynamic>? ?? const [];

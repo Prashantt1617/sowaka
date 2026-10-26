@@ -637,10 +637,29 @@ class _ManagerScreenState extends State<ManagerScreen> {
 
         if (state.status == ManagerLoadStatus.failure ||
             state.dashboard == null) {
+          // Said, with a way to try again: it used to be the words alone,
+          // and the only way out was closing the app.
           return Scaffold(
             backgroundColor: const Color(0xFFF7F7F9),
             body: Center(
-              child: Text(state.error ?? 'Could not load manager view'),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      state.error ?? 'Could not load manager view',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    TextButton(
+                      key: const ValueKey('manager-load-retry'),
+                      onPressed: () => _bloc.add(const LoadManagerDashboard()),
+                      child: const Text('Try again'),
+                    ),
+                  ],
+                ),
+              ),
             ),
           );
         }
