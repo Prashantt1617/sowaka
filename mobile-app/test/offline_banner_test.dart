@@ -62,6 +62,24 @@ void main() {
     expect(find.text('No internet connection.'), findsNothing);
   });
 
+  testWidgets('the content under the banner is kept, not built again, as the network comes and goes', (
+    tester,
+  ) async {
+    var built = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: OfflineAware(child: _CountsBuilds(onInit: () => built += 1))),
+      ),
+    );
+    for (var i = 0; i < 3; i++) {
+      NetworkStatus.reportFailure(const SocketException('down'));
+      await tester.pump();
+      NetworkStatus.reportSuccess();
+      await tester.pump();
+    }
+    expect(built, 1);
+  });
+
   testWidgets('the launch screen is white, with the banner over a skeleton', (tester) async {
     NetworkStatus.reportFailure(const SocketException('down'));
     await tester.pumpWidget(const MaterialApp(home: OfflineSkeletonScreen()));
@@ -69,4 +87,24 @@ void main() {
     expect(tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor, Colors.white);
     NetworkStatus.reportSuccess();
   });
+}
+
+/// Counts how often its state is made: once, unless something above throws it away.
+class _CountsBuilds extends StatefulWidget {
+  const _CountsBuilds({required this.onInit});
+  final VoidCallback onInit;
+
+  @override
+  State<_CountsBuilds> createState() => _CountsBuildsState();
+}
+
+class _CountsBuildsState extends State<_CountsBuilds> {
+  @override
+  void initState() {
+    super.initState();
+    widget.onInit();
+  }
+
+  @override
+  Widget build(BuildContext context) => const Text('feed');
 }

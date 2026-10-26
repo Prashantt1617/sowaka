@@ -665,59 +665,74 @@ class _ManagerScreenState extends State<ManagerScreen> {
           child: Scaffold(
             backgroundColor: const Color(0xFFF7F7F9),
             body: OfflineAware(
-              child: _profileOpen
-                ? _ProfileScreen(
-                    session: _session,
-                    dashboard: state.dashboard!,
-                    bloc: _bloc,
-                    onBack: _closeProfile,
-                    onLogout: _logout,
-                    onOpenComposer: _connectComposerController.openComposer,
-                    onNotifications: () => _openNotifications(context),
-                    onProfilePhotoUpdated: _updateProfilePhoto,
-                  )
-                : Stack(
-                    children: [
-                      Column(
+              // The profile opens over the tabs, which stay built beneath it
+              // (hidden, their videos paused): swapping the tabs out for the
+              // profile built every one of them again on the way back, with a
+              // new feed, socket and directory read each time.
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Offstage(
+                    offstage: _profileOpen,
+                    child: TickerMode(
+                      enabled: !_profileOpen,
+                      child: Stack(
                         children: [
-                          Expanded(
-                            // Read from a context below the offline banner,
-                            // which has already taken the status-bar inset
-                            // while it shows; the screen's own context would
-                            // put that inset back under the banner.
-                            child: Builder(
-                              builder: (context) => MediaQuery.removePadding(
-                                context: context,
-                                removeBottom: true,
-                                child: _TabContent(
-                                  session: _session,
-                                  state: state,
-                                  bloc: _bloc,
-                                  quickActionsController: _quickActionsController,
-                                  connectComposerController:
-                                      _connectComposerController,
-                                  onOpenProfile: _openProfile,
+                          Column(
+                            children: [
+                              Expanded(
+                                // Read from a context below the offline banner,
+                                // which has already taken the status-bar inset
+                                // while it shows; the screen's own context would
+                                // put that inset back under the banner.
+                                child: Builder(
+                                  builder: (context) => MediaQuery.removePadding(
+                                    context: context,
+                                    removeBottom: true,
+                                    child: _TabContent(
+                                      session: _session,
+                                      state: state,
+                                      bloc: _bloc,
+                                      quickActionsController: _quickActionsController,
+                                      connectComposerController:
+                                          _connectComposerController,
+                                      onOpenProfile: _openProfile,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                              if (!keyboardOpen)
+                                _BottomTabs(
+                                  state: state,
+                                  bloc: _bloc,
+                                  onOpenComposer: _openConnectComposer,
+                                ),
+                            ],
                           ),
+                          if (state.applyLeaveOpen)
+                            _ApplyLeaveSheet(state: state, bloc: _bloc),
+                          // Their own tree, over every tab, when the garden is on.
                           if (!keyboardOpen)
-                            _BottomTabs(
-                              state: state,
-                              bloc: _bloc,
-                              onOpenComposer: _openConnectComposer,
+                            Positioned.fill(
+                              child: FloatingTree(session: _session, refreshKey: state.tab),
                             ),
                         ],
                       ),
-                      if (state.applyLeaveOpen)
-                        _ApplyLeaveSheet(state: state, bloc: _bloc),
-                      // Their own tree, over every tab, when the garden is on.
-                      if (!keyboardOpen)
-                        Positioned.fill(
-                          child: FloatingTree(session: _session, refreshKey: state.tab),
-                        ),
-                    ],
+                    ),
                   ),
+                  if (_profileOpen)
+                    _ProfileScreen(
+                      session: _session,
+                      dashboard: state.dashboard!,
+                      bloc: _bloc,
+                      onBack: _closeProfile,
+                      onLogout: _logout,
+                      onOpenComposer: _connectComposerController.openComposer,
+                      onNotifications: () => _openNotifications(context),
+                      onProfilePhotoUpdated: _updateProfilePhoto,
+                    ),
+                ],
+              ),
             ),
           ),
         );
