@@ -8,6 +8,7 @@
 import { ObjectId } from 'mongodb';
 import { SuwiContext } from './tools';
 import { auditCol, proposalsCol, SuwiProposal } from './store';
+import { withActivityVia } from '../services/employee-activity.service';
 
 export class SuwiActionError extends Error {
   constructor(public readonly statusCode: number, message: string) {
@@ -41,6 +42,7 @@ export function proposalView(p: SuwiProposal) {
   return {
     id: p._id!.toHexString(), kind: p.kind, area: p.area, title: p.title, summary: p.summary, lines: p.lines,
     effectiveFrom: p.effectiveFrom, undoable: p.undoable, typeToConfirm: p.typeToConfirm, status: p.status, message: p.message,
+    ...(p.preview ? { preview: p.preview } : {}),
   };
 }
 
@@ -70,7 +72,7 @@ export async function confirmProposal(userId: string, org: string, id: string, t
   if (!claimed.modifiedCount) throw new SuwiActionError(409, 'This action is already being handled');
   const ex = EXECUTORS.get(p.kind)!;
   try {
-    const r = await ex.run(p);
+    const r = await withActivityVia({ via: 'suwi', proposalTitle: p.title }, () => ex.run(p));
     await proposalsCol().updateOne({ _id: p._id }, { $set: { message: r.message, ...(r.undo ? { undo: r.undo } : {}) } });
     await auditCol().insertOne({ org, userId, kind: 'action', at: new Date(), action: { proposalId: id, kind: p.kind, title: p.title, result: 'done', message: r.message } });
     return { ...proposalView({ ...p, status: 'done', message: r.message }), undoable: p.undoable && Boolean(ex.undo) };
@@ -91,7 +93,7 @@ export async function undoProposal(userId: string, org: string, id: string) {
   const p = await mine(userId, org, id);
   const ex = EXECUTORS.get(p.kind);
   if (p.status !== 'done' || !p.undoable || !ex?.undo) throw new SuwiActionError(409, 'This action cannot be undone');
-  const message = await ex.undo(p);
+  const message = await withActivityVia({ via: 'suwi', proposalTitle: `Undo: ${p.title}` }, () => ex.undo!(p));
   await proposalsCol().updateOne({ _id: p._id }, { $set: { status: 'undone', message } });
   await auditCol().insertOne({ org, userId, kind: 'action', at: new Date(), action: { proposalId: id, kind: p.kind, title: p.title, result: 'undone', message } });
   return proposalView({ ...p, status: 'undone', message });

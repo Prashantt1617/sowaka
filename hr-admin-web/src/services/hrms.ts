@@ -343,6 +343,17 @@ export type EmployeeDetailsInput = {
 export const updateEmployeeDetails = (userId: string, input: EmployeeDetailsInput) =>
   api<{ employee: { userId: string; changed: string[] } }>(`/admin/employees/${userId}`, { method: 'PATCH', body: input });
 
+// —— People › Activity ——
+export type EmployeeActivityDTO = {
+  id: string; at: string; by: string; via: 'dashboard' | 'suwi' | 'import';
+  kind: 'details' | 'manager' | 'shift' | 'kpi' | 'paid_days' | 'created';
+  title: string; changes: { field: string; label: string; from: string; to: string }[];
+  effectiveFrom: string | null; proposalTitle: string | null;
+};
+/** Who changed what on this person, newest first; `before` is the last id already shown. */
+export const getEmployeeActivity = (userId: string, before?: string) =>
+  api<{ items: EmployeeActivityDTO[]; more: boolean }>(`/admin/employees/${userId}/activity${before ? `?before=${before}` : ''}`);
+
 // —— People › Import ——
 export type EmployeeImportChange = { field: string; label: string; from: string; to: string; kind: 'changed' | 'added' | 'removed' };
 export type EmployeeImportPreview = {
@@ -922,10 +933,15 @@ export type ReportPersonDTO = {
   punchFormat: string;
   /** Who they report to, by name; empty at the top of the tree. */
   manager: string;
+  /** Their shift, HH:MM; absent from an older server. */
+  shiftStart?: string;
+  shiftEnd?: string;
+  /** Null when nobody on their shift is marked late. */
+  lateGraceMinutes?: number | null;
 };
 
-/** [userId, date, status, lateByMinutes, punchIn, punchOut, leaveType, source] */
-export type ReportDayDTO = [string, string, ReportStatus, number, string | null, string | null, string | null, string | null, number?];
+/** [userId, date, status, lateByMinutes, punchIn, punchOut, leaveType, source, earlyByMinutes, shiftRunning] */
+export type ReportDayDTO = [string, string, ReportStatus, number, string | null, string | null, string | null, string | null, number?, 1?];
 
 export type AttendanceReportDTO = {
   from: string;
@@ -937,6 +953,10 @@ export type AttendanceReportDTO = {
   managers: string[];
   people: Record<string, ReportPersonDTO>;
   days: ReportDayDTO[];
+  /** Days each person did not owe (left out of `days`); absent from an older server. */
+  offDays?: [string, string, 'week_off' | 'holiday'][];
+  /** `userId|date` of the leave days that were half a day off. */
+  halfDayLeave?: string[];
 };
 
 /** One employee's one day, with who they are folded back in. */
@@ -951,13 +971,19 @@ export type ReportRow = ReportPersonDTO & {
   punchOut: string | null;
   leaveType: string | null;
   source: string | null;
+  /**
+   * The shift is still under way and a punch has not come yet: the punch is
+   * pending, not missed. Only ever set on today (or last night's overnight).
+   */
+  shiftRunning: boolean;
 };
 
 /** The wire shape is tuples pointing at people; the page wants rows. */
 export function expandReport(report: AttendanceReportDTO): ReportRow[] {
-  return report.days.map(([userId, date, status, lateBy, punchIn, punchOut, leaveType, source, earlyBy]) => ({
+  return report.days.map(([userId, date, status, lateBy, punchIn, punchOut, leaveType, source, earlyBy, running]) => ({
     ...(report.people[userId] ?? { name: '—', employeeId: '—', department: '—', location: '—', template: null, punchFormat: '—', manager: '' }),
     userId, date, status, late: lateBy > 0, lateByMinutes: lateBy, earlyByMinutes: earlyBy ?? 0, punchIn, punchOut, leaveType, source,
+    shiftRunning: running === 1,
   }));
 }
 

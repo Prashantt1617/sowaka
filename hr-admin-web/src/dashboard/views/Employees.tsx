@@ -46,14 +46,17 @@ function EmployeesBody() {
     if (!req) return;
     const e = s.emps.find((x) => x.id === req.userId);
     if (e) {
-      const tabs: Record<string, ProfileTab> = { calendar: 'calendar', salary: 'salary', performance: 'performance', requests: 'requests', orgchart: 'orgchart' };
+      const tabs: Record<string, ProfileTab> = { calendar: 'calendar', salary: 'salary', performance: 'performance', requests: 'requests', orgchart: 'orgchart', activity: 'activity' };
       setInitialTab(req.tab ? tabs[req.tab] : undefined);
       setSelected(e);
     }
     s.clearProfileRequest();
   }, [req, s]);
 
-  if (selected) return <EmployeeProfile key={selected.id} emp={selected} initialTab={initialTab} onBack={() => { setSelected(null); setInitialTab(undefined); }} onOpen={setSelected} />;
+  // The live record, not the row as it was clicked: after an edit the store
+  // reloads, and the profile has to show (and edit from) what was saved.
+  const open = selected ? s.emps.find((x) => x.id === selected.id) ?? selected : null;
+  if (open) return <EmployeeProfile key={open.id} emp={open} initialTab={initialTab} onBack={() => { setSelected(null); setInitialTab(undefined); }} onOpen={setSelected} />;
 
   // Departments actually present in this org, rather than a fixed list that
   // may name teams the company does not have.

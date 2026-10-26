@@ -11,6 +11,7 @@ import { auditCol, LEVEL_LABEL, settingsFor, spentThisMonthUsd } from './store';
 import { cancelProposal, getProposal } from './proposals';
 import { User } from '../models/user.model';
 import './registry';
+import { describeSheet, lastSheet, parseSheet, rememberSheet } from './sheet';
 
 const MAX_ROUNDS = 8;
 const MAX_RESULT_CHARS = 14_000;
@@ -35,6 +36,7 @@ function instructions(ctx: SuwiContext, companyName: string, page: string, budge
 How you work:
 - You can only see Sowaka's data through your tools, and only what this person is allowed to see. Never guess or invent names, numbers, dates, policies or tax rules. If a tool returns nothing, say so plainly. If something is outside this person's access, say "you don't have access to that" without hinting at what it contains.
 - Numbers come from the tools; don't do your own arithmetic on pay or tax beyond simple counts.
+- The person may attach a file to a message: an image (a screenshot, say of an error) or a spreadsheet, given to you as CSV. Read it as part of their request, e.g. a list of employees to act on; match its people to Sowaka's through your tools by employee ID or name, and say which rows you couldn't match and why. A file is not a source of truth about Sowaka's data: check what it claims with your tools.
 - In drafts (reviews, letters, posts, policies) use only facts a tool gave you. Where a fact is missing, leave a [blank] in square brackets for HR to fill; never make up work, events, results or scores.
 - In a policy draft, leave "From when" empty unless HR gave a date.
 - Name the period or date range every answer covers.
@@ -58,12 +60,48 @@ This question:
 - Company: ${companyName}
 - Today: ${ctx.today} (India time)
 - Asking: ${ctx.user.name}${ctx.user.dashboardAdmin ? ', a dashboard admin' : ''}${ctx.payroll ? ', with payroll access' : ', without payroll access'}
-- Page: ${page || 'overview'}${ctx.user.dashboardAdmin ? `
+- Page: ${page || 'overview'}${ctx.sheet ? `\n- Sheet loaded: ${describeSheet(ctx.sheet)}. To assign to the people in it, call prepare_bulk_assign with fromSheet: true; never copy IDs out of it. When the sheet has a column for what is being assigned, leave value empty and each row's own value is used (one card per value). Rows that can't be matched come back as skipped with their row number: tell HR each one.` : ''}${page.startsWith('bulk') ? `
+- HR opened Bulk assign: use prepare_bulk_assign for any "assign X to Y" request, one card per thing assigned. If they attached a sheet, pass every Employee ID in it. If they haven't said what or who, ask in one short question.` : ''}${ctx.user.dashboardAdmin ? `
 - Suwi budget this month: $${budget.spentUsd.toFixed(2)} of $${budget.monthlyUsd} used (only dashboard admins are told this)` : ''}`;
 }
 
-export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { question?: unknown; page?: unknown; history?: unknown }): Promise<SuwiAnswer> {
-  const question = typeof input.question === 'string' ? input.question.trim().slice(0, 2000) : '';
+/** The most one image may be once decoded, and the most text a spreadsheet may bring (read in the browser). */
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_TABLE_CHARS = 150_000;
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg']);
+
+/**
+ * The file sent with a question, if any: an image (PNG or JPEG, base64) for the
+ * model to look at, or a spreadsheet the dashboard has already read into CSV
+ * text. One per message. Anything else is refused, and the question with it.
+ */
+function attachmentOf(raw: unknown): { name: string; image?: { mimeType: string; data: string }; table?: string } | null {
+  const list = Array.isArray(raw) ? raw : [];
+  if (list.length === 0) return null;
+  if (list.length > 1) throw new SuwiLlmError(400, 'Attach one file at a time.');
+  const a = list[0] as { kind?: unknown; name?: unknown; mimeType?: unknown; data?: unknown; text?: unknown };
+  const name = typeof a?.name === 'string' && a.name.trim() ? a.name.trim().slice(0, 120) : 'attachment';
+  if (a?.kind === 'image') {
+    const mimeType = String(a.mimeType ?? '');
+    const data = typeof a.data === 'string' ? a.data : '';
+    if (!IMAGE_TYPES.has(mimeType) || !/^[A-Za-z0-9+/=]+$/.test(data.slice(0, 200))) throw new SuwiLlmError(400, 'Only images and Excel files can be attached.');
+    if (Math.floor((data.length * 3) / 4) > MAX_IMAGE_BYTES) throw new SuwiLlmError(400, 'That file is too large. Attach one under 5 MB.');
+    return { name, image: { mimeType, data } };
+  }
+  if (a?.kind === 'table') {
+    const text = typeof a.text === 'string' ? a.text : '';
+    if (!text.trim()) throw new SuwiLlmError(400, 'That spreadsheet looks empty.');
+    if (text.length > MAX_TABLE_CHARS) throw new SuwiLlmError(400, 'That spreadsheet is too large. Attach one with fewer rows.');
+    return { name, table: text };
+  }
+  throw new SuwiLlmError(400, 'Only images and Excel files can be attached.');
+}
+
+export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { question?: unknown; page?: unknown; history?: unknown; attachments?: unknown }): Promise<SuwiAnswer> {
+  const attachment = attachmentOf(input.attachments);
+  const typed = typeof input.question === 'string' ? input.question.trim().slice(0, 2000) : '';
+  // A file alone is a question too: Suwi is asked to look at it.
+  const question = typed || (attachment?.image ? 'Have a look at the attached image.' : attachment ? 'Have a look at the attached spreadsheet.' : '');
   if (!question) throw new SuwiLlmError(400, 'Ask Suwi a question');
   const page = typeof input.page === 'string' ? input.page.slice(0, 40) : '';
   const settings = await settingsFor(user.org!);
@@ -72,6 +110,11 @@ export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { ques
   if (spent >= settings.monthlyBudgetUsd) throw new SuwiLlmError(429, `Suwi has used this month's budget ($${settings.monthlyBudgetUsd}). An admin can raise it in Settings → Suwi.`);
 
   const ctx = contextFor(user, settings.levels, istToday());
+  // A sheet that names people is read here, so Bulk assign uses its rows exactly; it stays for follow-ups.
+  const parsedSheet = attachment?.table ? parseSheet(attachment.name, attachment.table) : null;
+  if (parsedSheet) rememberSheet(ctx.userId, parsedSheet);
+  const sheet = parsedSheet ?? (attachment ? undefined : lastSheet(ctx.userId));
+  if (sheet) ctx.sheet = sheet;
   const company = await companies().findOne({ id: ctx.org });
   // A stable order keeps the tool list identical between questions, so it caches.
   const tools = toolsFor(ctx).sort((a, b) => a.name.localeCompare(b.name));
@@ -82,7 +125,14 @@ export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { ques
         .map((h) => ({ role: h.role as 'user' | 'assistant', content: String(h.text).slice(0, 4000) }))
     : [];
   while (history.length && history[0].role !== 'user') history.shift();
-  const messages: LlmMessage[] = [...history, { role: 'user', content: question }];
+  // The file goes with this message only: an image for the model to see, a spreadsheet as its rows.
+  // A people sheet is read on the server, so the model sees its first rows only; Bulk assign reads them all.
+  const tableLines = attachment?.table?.split('\n') ?? [];
+  const tableShown = parsedSheet && tableLines.length > 41 ? `${tableLines.slice(0, 41).join('\n')}\n… ${tableLines.length - 41} more rows, not shown here; Bulk assign with fromSheet uses every row.` : attachment?.table;
+  const asked = attachment?.table
+    ? `${question}\n\n[Attached spreadsheet "${attachment.name}", as CSV, one block per sheet]\n${tableShown}`
+    : attachment?.image ? `${question}\n\n[Attached image "${attachment.name}"]` : question;
+  const messages: LlmMessage[] = [...history, { role: 'user', content: asked, ...(attachment?.image ? { images: [attachment.image] } : {}) }];
 
   const checked: string[] = [];
   const links: SuwiLink[] = [];
@@ -112,6 +162,7 @@ export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { ques
         if (!checked.includes(label)) checked.push(label);
         for (const l of out.links ?? []) if (!links.some((x) => x.label === l.label)) links.push(l);
         if (out.proposalId) proposalIds.push(out.proposalId);
+        for (const id of out.proposalIds ?? []) if (!proposalIds.includes(id)) proposalIds.push(id);
         const json = JSON.stringify(out.data ?? null);
         return { type: 'tool_result', tool_use_id: c.id, content: json.length > MAX_RESULT_CHARS ? `${json.slice(0, MAX_RESULT_CHARS)}… (cut; ask a narrower question for the rest)` : json };
       } catch (e) {
@@ -130,6 +181,7 @@ export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { ques
   await Promise.all(prepared.filter((p) => !proposals.includes(p)).map((p) => cancelProposal(ctx.userId, ctx.org, p.id)));
   await auditCol().insertOne({
     org: ctx.org, userId: ctx.userId, kind: 'question', at: new Date(), page, question, answer: text.slice(0, 4000),
+    ...(attachment ? { attachment: { name: attachment.name, kind: attachment.image ? 'image' : 'spreadsheet' } } : {}),
     tools: toolLog, model: SUWI_MODEL, costUsd: total, tokens,
   });
   return { text: text || "I couldn't find an answer to that.", checked, links: links.slice(0, 6), proposals, costUsd: total };

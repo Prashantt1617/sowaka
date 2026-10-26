@@ -28,6 +28,7 @@ import { assignShiftToUsers } from './shift.service';
 import { assignTemplateToUsers } from './kpi.service';
 import { setPaymentDetails } from './employeePayment.service';
 import { currentPeriodFor, nextPeriod } from './cycle';
+import { detailChanges, detailsTitle, logActivity, nameOfUser, withActivityVia } from './employee-activity.service';
 
 type Field = 'employeeId' | 'name' | 'email' | 'phone' | 'gender' | 'birthday' | 'joiningDate' | 'designation' | 'department'
   | 'location' | 'state' | 'branch' | 'employeeType' | 'manager' | 'isDirector'
@@ -558,7 +559,12 @@ export async function previewImport(adminUserId: string, input: { fileName?: unk
  * Applies a previewed import. `declined` leaves out single changes HR turned
  * down ({ row, field }); `skipRows` leaves out whole rows (e.g. a new person).
  */
-export async function applyImport(adminUserId: string, importId: string, choices: { declined?: unknown; skipRows?: unknown } = {}) {
+/** Every change an import makes shows on the person's Activity as made by import. */
+export function applyImport(adminUserId: string, importId: string, choices: { declined?: unknown; skipRows?: unknown } = {}) {
+  return withActivityVia({ via: 'import' }, () => applyImportNow(adminUserId, importId, choices));
+}
+
+async function applyImportNow(adminUserId: string, importId: string, choices: { declined?: unknown; skipRows?: unknown }) {
   const admin = await requireImporter(adminUserId);
   if (!ObjectId.isValid(importId)) throw new AdminError(400, 'Invalid import');
   const imp = await imports().findOne({ _id: new ObjectId(importId), org: admin.org });
@@ -603,6 +609,8 @@ export async function applyImport(adminUserId: string, importId: string, choices
     } catch (err) { failed.push({ row: w.row, message: (err as Error).message }); }
   }
   // Then the changes, and managers that point at people just created.
+  const existingIds = imp.writes.map((w) => w.userId).filter((id): id is string => Boolean(id));
+  const beforeById = new Map((await users().find({ userId: { $in: existingIds }, org: admin.org }).toArray()).map((u) => [u.userId, u]));
   let updated = 0;
   const groups = { shift: new Map<string, string[]>(), kpi: new Map<string, string[]>() };
   for (const w of imp.writes) {
@@ -631,6 +639,7 @@ export async function applyImport(adminUserId: string, importId: string, choices
         if ($set.employeeId && await users().findOne({ org: admin.org, employeeId: $set.employeeId, userId: { $ne: userId } })) throw new Error(`Employee ID ${$set.employeeId} is already used`);
         await users().updateOne({ userId, org: admin.org }, { $set: { ...$set, updatedAt: new Date() }, ...(Object.keys($unset).length ? { $unset } : {}) });
         touched = true;
+        logImportedChange(admin.org ?? '', adminUserId, userId, beforeById.get(userId), $set, $unset);
       } catch (err) { failed.push({ row: w.row, message: (err as Error).message }); }
     }
     // Templates, salary and bank details, for existing and new people alike.
@@ -654,6 +663,22 @@ export async function applyImport(adminUserId: string, importId: string, choices
   const result = { created, updated, failed };
   await imports().updateOne({ _id: imp._id }, { $set: { status: 'applied', appliedAt: new Date(), result } });
   return result;
+}
+
+/** One row's details and manager change, for the person's Activity. */
+function logImportedChange(org: string, byUserId: string, userId: string, before: User | undefined, $set: Record<string, unknown>, $unset: Record<string, ''>) {
+  if (before) {
+    const changes = detailChanges(before, $set, $unset);
+    void logActivity({ org, userId, byUserId, kind: 'details', title: detailsTitle(changes), changes });
+  }
+  const from = before?.managerUserId;
+  const to = typeof $set.managerUserId === 'string' ? $set.managerUserId : 'managerUserId' in $unset ? undefined : from;
+  if (from === to) return;
+  void Promise.all([nameOfUser(from), nameOfUser(to)]).then(([fromName, toName]) => logActivity({
+    org, userId, byUserId, kind: 'manager',
+    title: toName ? `Reporting manager changed to ${toName}` : 'Reporting manager removed',
+    changes: [{ field: 'managerUserId', label: 'Reporting manager', from: fromName, to: toName }],
+  }));
 }
 
 export async function cancelImport(adminUserId: string, importId: string) {

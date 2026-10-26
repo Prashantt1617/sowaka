@@ -11,6 +11,8 @@ import './tools/engagement-plan';
 import './tools/peopleTasks';
 import './tools/designations';
 import './tools/manager';
+import './tools/details';
+import './tools/bulk';
 import './tools/exit';
 import './tools/letters';
 import './tools/attendance-patterns';

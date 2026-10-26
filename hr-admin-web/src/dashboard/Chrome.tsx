@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import type { View } from './theme';
 import { prefetchView } from './viewChunks';
 import { TITLES } from './theme';
-import { IconBell, IconCheck, IconLogout, IconSearch, Logo, navIcon } from './icons';
+import { IconBell, IconCheck, IconLogout, Logo, navIcon } from './icons';
 import { useStore } from './store';
 import type { StoreList } from './store';
 import { PersonAvatar } from './PersonAvatar';
@@ -70,6 +70,7 @@ const PAYROLL: NavItem[] = [
   { key: 'paiddays', label: 'Paid Days Templates' },
   { key: 'payruns', label: 'Payroll Runs' },
   { key: 'payrollreports', label: 'Payroll Reports' },
+  { key: 'payrollbulk', label: 'Bulk Assign' },
 ];
 
 // Claims sits below Payroll: the claims people raise and what can be claimed,
@@ -398,16 +399,6 @@ export function Sidebar() {
 const svgProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: ReactNode }[] = [
   {
-    mode: 'system',
-    label: 'Match system',
-    icon: (
-      <svg {...svgProps}>
-        <rect x="3" y="4" width="18" height="12" rx="2" />
-        <path d="M8 20h8M12 16v4" />
-      </svg>
-    ),
-  },
-  {
     mode: 'light',
     label: 'Light',
     icon: (
@@ -428,13 +419,17 @@ const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: ReactNode }[] = [
   },
 ];
 
-/** System / Light / Dark — a small segmented control in the top bar. */
+/**
+ * Light / Dark in the top bar. With nothing picked the dashboard follows the
+ * device, and the switch lights whichever of the two that is.
+ */
 function ThemeSwitch() {
   const [mode, setMode] = useState<ThemeMode>(readThemeMode);
+  const shown = mode === 'system' ? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : mode;
   return (
     <div role="radiogroup" aria-label="Theme" style={{ display: 'flex', alignItems: 'center', gap: 2, height: 42, padding: 4, borderRadius: 999, border: '1px solid var(--line)', background: 'var(--surface-2)', flexShrink: 0 }}>
       {THEME_OPTIONS.map((o) => {
-        const on = mode === o.mode;
+        const on = shown === o.mode;
         return (
           <button
             key={o.mode}
@@ -507,10 +502,6 @@ export function Topbar() {
           gap: 12,
         }}
       >
-        <div className="ds-field" style={{ display: 'flex', alignItems: 'center', flex: 1, maxWidth: 460, minWidth: 0, height: 40, background: 'var(--surface)', border: '1px solid var(--line-2)', borderRadius: 999, padding: '0 12px', gap: 6, color: 'var(--ink-3)' }}>
-          <IconSearch size={15} stroke="var(--ink-3)" />
-          <input placeholder="Search people, requests…" className="ds-top-search" style={{ border: 'none', outline: 'none', background: 'none', fontSize: 13, width: '100%', height: '100%', padding: '1px 2px', color: 'var(--ink)' }} />
-        </div>
         <div style={{ flex: 1 }} />
         {!suwiOff && (
           <button type="button" onClick={() => setSuwiOpen(!suwiOpen)} aria-expanded={suwiOpen} title="Ask Suwi, your HR assistant" className="ds-suwi-btn"

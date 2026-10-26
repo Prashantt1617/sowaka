@@ -5,7 +5,7 @@ import { Leave } from '../models/leave.model';
 import { DayMark, OrgShiftPolicy, PunchFormat, ShiftTemplate } from '../models/shift.model';
 import { User } from '../models/user.model';
 import { getOrgShiftPolicy, isWeekOffDay, onShiftSetupChanged } from './shift.service';
-import { markForDay, minutesAfterShiftStart, minutesBeforeShiftEnd, normalisePunches } from './attendance.service';
+import { SHIFT_UTC_OFFSET, markForDay, minutesAfterShiftStart, minutesBeforeShiftEnd, normalisePunches } from './attendance.service';
 import { holidaysForUser } from './holiday.service';
 
 /**
@@ -42,14 +42,26 @@ export type ReportPerson = {
   punchFormat: PunchFormat;
   /** Who they report to, by name; empty at the top of the tree. */
   manager: string;
+  /** Their shift at the end of the range, HH:MM in office time. */
+  shiftStart: string;
+  shiftEnd: string;
+  /** Minutes after the start before a punch-in is late; null when nobody on it is marked late. */
+  lateGraceMinutes: number | null;
 };
 
 /**
- * One graded day: [userId, date, status, lateByMinutes, punchIn, punchOut, leaveType, source, earlyByMinutes].
+ * One graded day: [userId, date, status, lateByMinutes, punchIn, punchOut, leaveType, source, earlyByMinutes, shiftRunning?].
  * `lateByMinutes` and `earlyByMinutes` are 0 when they were within grace;
  * times are ISO strings or null.
+ *
+ * `shiftRunning` is 1 on a day whose shift has not ended yet and whose
+ * punches are still incomplete — today, mostly. The status stays what the
+ * punches so far grade to (payroll and Suwi read it unchanged); the flag lets
+ * the dashboard say "not punched in yet" instead of "missed punch" while the
+ * punch can still come. Left off every other day, so older readers see the
+ * same nine fields.
  */
-export type ReportDay = [string, string, DayStatus, number, string | null, string | null, string | null, string | null, number];
+export type ReportDay = [string, string, DayStatus, number, string | null, string | null, string | null, string | null, number, 1?];
 
 export type AttendanceReport = {
   from: string;
@@ -61,6 +73,14 @@ export type AttendanceReport = {
   managers: string[];
   people: Record<string, ReportPerson>;
   days: ReportDay[];
+  /**
+   * The days in the range each person did not owe, which `days` leaves out:
+   * [userId, date, 'week_off' | 'holiday'], HR's own such marks included.
+   * Only the dashboard's week grid reads it; payroll and Suwi grade `days`.
+   */
+  offDays: [string, string, 'week_off' | 'holiday'][];
+  /** `userId|date` of the leave days in `days` that were half a day off. */
+  halfDayLeave: string[];
 };
 
 export class ReportError extends Error {
@@ -81,6 +101,16 @@ const keyOf = (date: Date) => date.toISOString().slice(0, 10);
 /** Minutes short of the shift's end, once the grace period is spent. */
 function earlyBy(punchOut: Date, startTime: string, endTime: string, graceMinutes: number): number {
   return Math.max(0, minutesBeforeShiftEnd(punchOut, startTime, endTime) - graceMinutes);
+}
+
+/**
+ * Whether the shift covering `key` is still under way: before its end in
+ * office time. An end at or before the start is the next morning's.
+ */
+function shiftStillRunning(key: string, startTime: string, endTime: string, now: number): boolean {
+  let end = new Date(`${key}T${endTime}:00.000${SHIFT_UTC_OFFSET}`).getTime();
+  if (endTime <= startTime) end += DAY_MS;
+  return Number.isFinite(end) && now < end;
 }
 
 /** Minutes past the shift's start, once the grace period is spent. */
@@ -328,6 +358,8 @@ export async function attendanceReport(
   // ── grade every working day ───────────────────────────────────────────
   const people: Record<string, ReportPerson> = {};
   const days: ReportDay[] = [];
+  const offDays: AttendanceReport['offDays'] = [];
+  const halfDayLeave: string[] = [];
   const departments = new Set<string>();
   const templateNames = new Set<string>();
   const leaveTypes = new Set<string>();
@@ -336,6 +368,10 @@ export async function attendanceReport(
   const nameOf = new Map(roster.map((u) => [u.userId, u.name]));
   const first = dayOf(from).getTime();
   const last = dayOf(to).getTime();
+  // Only a day from yesterday on can still be under way (an overnight shift
+  // that started yesterday); older days are settled and skip the check.
+  const now = Date.now();
+  const recentDay = keyOf(new Date(now - 2 * DAY_MS));
 
   for (const user of roster) {
     // The row that names the person describes where they stand at the end of
@@ -355,6 +391,9 @@ export async function attendanceReport(
       template: policy.templateName,
       punchFormat: policy.correction.punchFormat,
       manager,
+      shiftStart: policy.startTime,
+      shiftEnd: policy.endTime,
+      lateGraceMinutes: policy.lateMarkingEnabled === false ? null : policy.lateGraceMinutes,
     };
 
     for (let t = first; t <= last; t += DAY_MS) {
@@ -365,7 +404,10 @@ export async function attendanceReport(
       // HR's mark on the day outranks everything below it.
       const hrMark = marks.get(`${user.userId}|${key}`);
       if (hrMark) {
-        if (hrMark.status === 'week_off' || hrMark.status === 'holiday') continue;
+        if (hrMark.status === 'week_off' || hrMark.status === 'holiday') {
+          offDays.push([user.userId, key, hrMark.status]);
+          continue;
+        }
         if (hrMark.status === 'on_leave') {
           leaveTypes.add('Marked by HR');
           days.push([user.userId, key, 'on_leave', 0, null, null, 'Marked by HR', 'hr', 0]);
@@ -375,12 +417,20 @@ export async function attendanceReport(
         continue;
       }
       // Not a day they owed us, so not a day to grade.
-      if (isWeekOffDay(day, onDay.weeklyOff) || isHoliday(user, key)) continue;
+      if (isHoliday(user, key)) {
+        offDays.push([user.userId, key, 'holiday']);
+        continue;
+      }
+      if (isWeekOffDay(day, onDay.weeklyOff)) {
+        offDays.push([user.userId, key, 'week_off']);
+        continue;
+      }
 
       const leave = leaveOn(user.userId, day);
       if (leave) {
         leaveTypes.add(leave.type);
         days.push([user.userId, key, 'on_leave', 0, null, null, leave.type, null, 0]);
+        if (leave.halfDay) halfDayLeave.push(`${user.userId}|${key}`);
         continue;
       }
 
@@ -425,14 +475,18 @@ export async function attendanceReport(
               ? 'half_day'
               : 'absent';
 
-      days.push([
+      const graded: ReportDay = [
         user.userId, key, status, over,
         punchIn ? punchIn.toISOString() : null,
         punchOut ? punchOut.toISOString() : null,
         null,
         record?.source ?? null,
         short,
-      ]);
+      ];
+      // A punch that is missing only because the shift is not over yet.
+      if ((status === 'absent' || status === 'missed_punch') && key >= recentDay
+        && shiftStillRunning(key, onDay.startTime, onDay.endTime, now)) graded.push(1);
+      days.push(graded);
     }
   }
 
@@ -446,6 +500,8 @@ export async function attendanceReport(
     managers: [...managers].sort(),
     people,
     days,
+    offDays,
+    halfDayLeave,
   };
   reportCache.set(cacheKey, { expires: Date.now() + REPORT_TTL_MS, value: report });
   return report;
