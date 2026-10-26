@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../../../services/api_client.dart';
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import '../../manager/data/manager_models.dart';
@@ -27,7 +28,7 @@ class ProfileApiService {
     String? baseUrl,
     http.Client? client,
   }) : _baseUrl = baseUrl ?? ApiConfig.baseUrl,
-       _client = client ?? testClient ?? http.Client();
+       _client = client ?? testClient ?? ApiClient.shared;
 
   /// Answers every request a profile page makes, in tests. The pages build
   /// their own service from the session, so this is where a test reaches it.

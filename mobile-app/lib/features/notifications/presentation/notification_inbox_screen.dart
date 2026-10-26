@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 
+import '../../../services/api_client.dart';
 import '../../../services/api_config.dart';
 import '../../../services/notification_service.dart';
 import '../../auth/data/auth_models.dart';
@@ -88,7 +89,7 @@ class NotificationInboxScreen extends StatefulWidget {
 
 class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
   late Future<List<Map<String, dynamic>>> _items = _load();
-  late final http.Client _client = widget.client ?? http.Client();
+  late final http.Client _client = widget.client ?? ApiClient.shared;
 
   Map<String, String> get headers => {
     'Authorization': 'Bearer ${widget.session.token}',
@@ -96,12 +97,6 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
   };
 
   DateTime _now() => widget.now?.call() ?? DateTime.now();
-
-  @override
-  void dispose() {
-    if (widget.client == null) _client.close();
-    super.dispose();
-  }
 
   Future<List<Map<String, dynamic>>> _load() async {
     final response = await _client.get(

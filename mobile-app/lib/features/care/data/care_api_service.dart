@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../../services/api_client.dart';
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import 'care_models.dart';
@@ -20,7 +21,7 @@ class CareApiException implements Exception {
 class CareApiService {
   CareApiService({required this.session, String? baseUrl, http.Client? client})
     : _baseUrl = baseUrl ?? ApiConfig.baseUrl,
-      _client = client ?? http.Client();
+      _client = client ?? ApiClient.shared;
 
   final AuthSession session;
   final String _baseUrl;

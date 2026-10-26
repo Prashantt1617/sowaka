@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../../../services/api_client.dart';
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import '../../talk/data/talk_api_service.dart';
@@ -40,7 +41,7 @@ void forgetHelpHome() {
 class HelpApiService {
   HelpApiService({required this.session, String? baseUrl, http.Client? client})
     : _baseUrl = baseUrl ?? ApiConfig.baseUrl,
-      _client = client ?? http.Client(),
+      _client = client ?? ApiClient.shared,
       talk = TalkApiService(session: session, baseUrl: baseUrl, client: client);
 
   final AuthSession session;

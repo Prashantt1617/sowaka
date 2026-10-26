@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../../shared/network_status.dart';
 import 'dashboard_cache.dart';
 
+import '../../../services/api_client.dart';
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import 'manager_models.dart';
@@ -20,7 +21,7 @@ class ManagerApiService {
     String? baseUrl,
     http.Client? client,
   }) : _baseUrl = baseUrl ?? ApiConfig.baseUrl,
-       _client = client ?? http.Client();
+       _client = client ?? ApiClient.shared;
 
   final AuthSession session;
   final String _baseUrl;

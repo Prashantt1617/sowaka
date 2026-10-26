@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
+import '../../../services/api_client.dart';
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import '../../manager/data/dashboard_cache.dart';
@@ -17,7 +18,7 @@ class ConnectApiService {
     String? baseUrl,
     http.Client? client,
   }) : _baseUrl = baseUrl ?? ApiConfig.baseUrl,
-       _client = client ?? http.Client();
+       _client = client ?? ApiClient.shared;
 
   final AuthSession session;
   final String _baseUrl;
