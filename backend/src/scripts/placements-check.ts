@@ -284,6 +284,97 @@ async function call(who: string, method: string, path: string, body?: unknown): 
     check('and is gone', (await call('pia', 'DELETE', `/admin/placements/clients/${c.id}`)).status === 404);
     const lone = (await call('pia', 'POST', '/admin/placements/customers', { name: 'Unplaced', phone: '9000000002' })).body.customer;
     check('a customer on no placement can be deleted', (await call('pia', 'DELETE', `/admin/placements/customers/${lone.id}`)).status === 200);
+
+    // ------------------------------------------------------------ the app's pages
+    console.log('a client with its roles and onboarding fee');
+    await refuse('a role needs a title', '/placements/clients', { name: 'A', designations: [{ budgetRupees: 1 }] }, /designations\[0\]\.title is required/);
+    await refuse('a budget is per month or year', '/placements/clients', { name: 'A', designations: [{ title: 'X', budgetPeriod: 'week' }] }, /budgetPeriod must be month or year/);
+    await refuse('fee received is true or false', '/placements/clients', { name: 'A', feePaid: 'yes' }, /feePaid must be true or false/);
+    const marwarReply = await call('ravi', 'POST', '/placements/clients', {
+      name: 'Marwar Retail Pvt Ltd', city: 'Ratanada, Jodhpur',
+      designations: [
+        { title: 'Store manager', budgetRupees: 35000, budgetPeriod: 'month', description: 'Run daily store operations' },
+        { title: 'Sales executive', budgetRupees: '18000' },
+      ],
+    });
+    const marwar = marwarReply.body.client ?? {};
+    check('a client is created with its roles', marwarReply.status === 201 && marwar.designations?.length === 2, marwarReply);
+    check('each role has an id, and a budget is per month unless said', marwar.designations?.every((d: Json) => typeof d.id === 'string') && marwar.designations?.[1]?.budgetPeriod === 'month' && marwar.designations?.[1]?.budgetRupees === 18000, marwar.designations);
+    check('the onboarding fee is 2,500 unless said, not yet received', marwar.feeRupees === 2500 && marwar.feePaid === false && marwar.feePaidAt === null && marwar.feeReference === '', marwar);
+    check('someone else cannot edit it from the app (403)', (await call('sita', 'PATCH', `/placements/clients/${marwar.id}`, { name: 'X' })).status === 403);
+    const keptRole = marwar.designations?.[0];
+    const paid = await call('ravi', 'PATCH', `/placements/clients/${marwar.id}`, {
+      feePaid: true, feeReference: 'UPI 4411',
+      designations: [{ ...keptRole, budgetRupees: 36000 }, { title: 'Cashier', budgetPeriod: 'year', budgetRupees: 240000 }],
+    });
+    const pc = paid.body.client ?? {};
+    check('its creator marks the fee received, with the reference and when', paid.status === 200 && pc.feePaid === true && pc.feeReference === 'UPI 4411' && Boolean(pc.feePaidAt), pc);
+    check('an edited role keeps its id; a removed one goes; a new one gets one', pc.designations?.[0]?.id === keptRole?.id && pc.designations?.[0]?.budgetRupees === 36000 && pc.designations?.length === 2 && pc.designations?.[1]?.id !== keptRole?.id, pc.designations);
+    check('HR can edit it from the app too', (await call('hema', 'PATCH', `/placements/clients/${marwar.id}`, { city: 'Ratanada, Jodhpur 342001' })).status === 200);
+    const unpaid = (await call('ravi', 'PATCH', `/placements/clients/${marwar.id}`, { feePaid: false })).body.client;
+    check('marking it not received clears when', unpaid?.feePaid === false && unpaid?.feePaidAt === null, unpaid);
+    await call('ravi', 'PATCH', `/placements/clients/${marwar.id}`, { feePaid: true });
+    const myClients = (await call('ravi', 'GET', '/placements/clients?mine=1')).body.clients ?? [];
+    const allClients = (await call('ravi', 'GET', '/placements/clients')).body.clients ?? [];
+    check('mine=1: only the clients they added', myClients.some((x: Json) => x.id === marwar.id) && !myClients.some((x: Json) => x.id === client2.id), myClients.map((x: Json) => x.name));
+    check('without it, the company\'s (for the client picker)', allClients.some((x: Json) => x.id === client2.id), allClients.map((x: Json) => x.name));
+    check('a search finds a client by its location', ((await call('ravi', 'GET', '/placements/clients?q=ratanada')).body.clients ?? []).length === 1);
+
+    console.log('a candidate page');
+    const arjunReply = await call('ravi', 'POST', '/placements/customers', {
+      name: 'Arjun Bhati', phone: '9876500001', address: '12 Shastri Nagar, Jodhpur 342003', currentRole: 'Sales executive', experienceYears: 2, notes: 'Field sales, Hindi and Marwari',
+    });
+    const arjun = arjunReply.body.customer ?? {};
+    check('a candidate keeps their address', arjunReply.status === 201 && arjun.address === '12 Shastri Nagar, Jodhpur 342003' && arjun.removedAt === null, arjun);
+    const placed = (await call('ravi', 'POST', '/placements', { customerId: arjun.id, clientId: marwar.id, position: 'Sales executive', status: 'interviewing', interviewDate: '2026-10-28' })).body.placement;
+    const page = await call('ravi', 'GET', `/placements/customers/${arjun.id}`);
+    check('their page has them, their placements and those clients\' roles', page.status === 200 && page.body.customer?.id === arjun.id && page.body.placements?.[0]?.id === placed?.id && page.body.clients?.[0]?.designations?.length === 2, page.body);
+    check('and where they stand: in process', page.body.customer?.stage === 'in_process', page.body.customer);
+    const sana = (await call('ravi', 'POST', '/placements/customers', { name: 'Sana Khan', phone: '9876500002', experienceYears: 0 })).body.customer;
+    const listed = (await call('ravi', 'GET', '/placements/customers')).body.customers ?? [];
+    const stageOf = (id: string) => listed.find((x: Json) => x.id === id)?.stage;
+    check('the list says where each stands', stageOf(arjun.id) === 'in_process' && stageOf(customer2.id) === 'joined' && stageOf(sana.id) === 'not_placed', listed.map((x: Json) => [x.name, x.stage]));
+    const myCustomers = (await call('ravi', 'GET', '/placements/customers?mine=1')).body.customers ?? [];
+    check('mine=1: only the candidates they added', myCustomers.some((x: Json) => x.id === arjun.id) && !myCustomers.some((x: Json) => x.id === customer2.id), myCustomers.map((x: Json) => x.name));
+    const clientPage = await call('sita', 'GET', `/placements/clients/${marwar.id}`);
+    check('a client\'s page has the candidates placed there', clientPage.status === 200 && clientPage.body.client?.id === marwar.id && clientPage.body.placements?.[0]?.customerName === 'Arjun Bhati', clientPage.body);
+    check('another company cannot open it (403)', (await call('omar', 'GET', `/placements/clients/${marwar.id}`)).status === 403);
+    check('an unknown client is 404', (await call('ravi', 'GET', '/placements/clients/nope')).status === 404);
+    check('someone else cannot edit a candidate from the app (403)', (await call('sita', 'PATCH', `/placements/customers/${arjun.id}`, { address: 'X' })).status === 403);
+    const edited = (await call('ravi', 'PATCH', `/placements/customers/${arjun.id}`, { address: '14 Shastri Nagar', experienceYears: 2.5 })).body.customer;
+    check('its creator can', edited?.address === '14 Shastri Nagar' && edited?.experienceYears === 2.5, edited);
+
+    console.log('removing a candidate');
+    const noReason = await call('ravi', 'POST', `/placements/customers/${u.id}/remove`, {});
+    check('a removal needs a reason', noReason.status === 400 && /reason is required/.test(noReason.body.message), noReason);
+    check('only by whoever added them, or HR (403)', (await call('sita', 'POST', `/placements/customers/${u.id}/remove`, { reason: 'Duplicate entry' })).status === 403);
+    const joinedOne = await call('sita', 'POST', `/placements/customers/${customer2.id}/remove`, { reason: 'Not interested' });
+    check('not one who has joined somewhere (409)', joinedOne.status === 409 && /Joined placement/.test(joinedOne.body.message), joinedOne);
+    check('their creator removes them', (await call('ravi', 'POST', `/placements/customers/${u.id}/remove`, { reason: 'Duplicate entry' })).status === 200);
+    check('they are off the app\'s list', !((await call('ravi', 'GET', '/placements/customers')).body.customers ?? []).some((x: Json) => x.id === u.id));
+    check('their page is not found', (await call('ravi', 'GET', `/placements/customers/${u.id}`)).status === 404);
+    check('and they cannot be put forward', (await call('ravi', 'POST', '/placements', { customerId: u.id, clientId: marwar.id, position: 'Cashier' })).status === 400);
+    check('nor removed twice', (await call('ravi', 'POST', `/placements/customers/${u.id}/remove`, { reason: 'Other' })).status === 404);
+    const frozen = ((await admin(`?customerId=${u.id}`)).body.placements ?? [])[0];
+    if (frozen) {
+      const moved = await call('ravi', 'PATCH', `/placements/${frozen.id}`, { status: 'joined' });
+      check('their open placements cannot be moved on from the app (409)', moved.status === 409 && /removed/.test(moved.body.message), moved);
+    }
+    check('nor are they counted on the summary', (await call('ravi', 'GET', '/placements/summary')).body.customers === ((await call('ravi', 'GET', '/placements/customers')).body.customers ?? []).length);
+    const removedRow = ((await admin('/customers')).body.customers ?? []).find((x: Json) => x.id === u.id);
+    check('HR still sees them, with why and who', Boolean(removedRow?.removedAt) && removedRow?.removedReason === 'Duplicate entry' && removedRow?.removedByUserId === 'ravi', removedRow);
+    check('removed=only lists just the removed', ids(await admin('/customers?removed=only'), 'customers') === u.id);
+    check('removed=exclude leaves them out', !((await admin('/customers?removed=exclude')).body.customers ?? []).some((x: Json) => x.id === u.id));
+    const restored = await call('pia', 'POST', `/admin/placements/customers/${u.id}/restore`);
+    check('HR restores them', restored.status === 200 && restored.body.customer?.removedAt === null && restored.body.customer?.removedReason === '', restored.body);
+    check('and they are back on the list', ((await call('ravi', 'GET', '/placements/customers')).body.customers ?? []).some((x: Json) => x.id === u.id));
+    check('an employee cannot restore (403)', (await call('ravi', 'POST', `/admin/placements/customers/${u.id}/restore`)).status === 403);
+
+    console.log('removing a client from the app');
+    check('not someone else\'s (403)', (await call('sita', 'DELETE', `/placements/clients/${marwar.id}`)).status === 403);
+    check('not one with placements (409)', (await call('ravi', 'DELETE', `/placements/clients/${marwar.id}`)).status === 409);
+    const spare = (await call('ravi', 'POST', '/placements/clients', { name: 'Spare Co' })).body.client;
+    check('its creator removes one with none', (await call('ravi', 'DELETE', `/placements/clients/${spare.id}`)).status === 200);
   } catch (error) {
     console.error('\ncheck crashed:', error);
     failed += 1;

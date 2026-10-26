@@ -57,8 +57,15 @@ class PlacementsApiService {
       PlacementsSummary.fromJson(await _json('GET', '/placements/summary'));
 
   /// Clients by name; [query] narrows them on the server.
-  Future<List<PlacementClient>> fetchClients({String query = ''}) async {
-    final json = await _json('GET', _withQuery('/placements/clients', query));
+  /// The company's clients, or with [mine] only those the signed-in person added.
+  Future<List<PlacementClient>> fetchClients({
+    String query = '',
+    bool mine = false,
+  }) async {
+    final json = await _json(
+      'GET',
+      _withQuery('/placements/clients', query, mine: mine),
+    );
     return [
       for (final item in json['clients'] as List<dynamic>? ?? const [])
         if (item is Map<String, dynamic>) PlacementClient.fromJson(item),
@@ -93,8 +100,14 @@ class PlacementsApiService {
   }
 
   /// Candidates by name; [query] narrows them on the server.
-  Future<List<PlacementCustomer>> fetchCustomers({String query = ''}) async {
-    final json = await _json('GET', _withQuery('/placements/customers', query));
+  Future<List<PlacementCustomer>> fetchCustomers({
+    String query = '',
+    bool mine = false,
+  }) async {
+    final json = await _json(
+      'GET',
+      _withQuery('/placements/customers', query, mine: mine),
+    );
     return [
       for (final item in json['customers'] as List<dynamic>? ?? const [])
         if (item is Map<String, dynamic>) PlacementCustomer.fromJson(item),
@@ -132,6 +145,126 @@ class PlacementsApiService {
 
   /// The placements this person made, newest first as the server orders
   /// them; [status] keeps one status only.
+  /// A client's page: the client and every placement at it.
+  Future<PlacementClientPage> fetchClient(String id) async {
+    final json = await _json(
+      'GET',
+      '/placements/clients/${Uri.encodeComponent(id)}',
+    );
+    return PlacementClientPage(
+      client: PlacementClient.fromJson(_object(json, 'client')),
+      placements: _placements(json),
+    );
+  }
+
+  /// A candidate's page: them, their placements and those clients.
+  Future<PlacementCandidatePage> fetchCandidate(String id) async {
+    final json = await _json(
+      'GET',
+      '/placements/customers/${Uri.encodeComponent(id)}',
+    );
+    return PlacementCandidatePage(
+      candidate: PlacementCustomer.fromJson(_object(json, 'customer')),
+      placements: _placements(json),
+      clients: [
+        for (final item in json['clients'] as List<dynamic>? ?? const [])
+          if (item is Map<String, dynamic>) PlacementClient.fromJson(item),
+      ],
+    );
+  }
+
+  /// Adds a client ([id] null) or saves every field of one.
+  Future<PlacementClient> saveClient({
+    String? id,
+    required String name,
+    required String location,
+    required List<PlacementDesignation> designations,
+    required bool feePaid,
+    required String feeReference,
+  }) async {
+    final json = await _json(
+      id == null ? 'POST' : 'PATCH',
+      id == null
+          ? '/placements/clients'
+          : '/placements/clients/${Uri.encodeComponent(id)}',
+      body: {
+        'name': name.trim(),
+        'city': location.trim(),
+        'designations': [for (final role in designations) role.toJson()],
+        'feePaid': feePaid,
+        'feeReference': feeReference.trim(),
+      },
+    );
+    return PlacementClient.fromJson(_object(json, 'client'));
+  }
+
+  Future<void> deleteClient(String id) =>
+      _json('DELETE', '/placements/clients/${Uri.encodeComponent(id)}');
+
+  /// Adds a candidate ([id] null) or saves every field of one.
+  Future<PlacementCustomer> saveCandidate({
+    String? id,
+    required String name,
+    required String phone,
+    required String address,
+    double? experienceYears,
+    required String designation,
+    required String introduction,
+  }) async {
+    final json = await _json(
+      id == null ? 'POST' : 'PATCH',
+      id == null
+          ? '/placements/customers'
+          : '/placements/customers/${Uri.encodeComponent(id)}',
+      body: {
+        'name': name.trim(),
+        'phone': phone.trim(),
+        'address': address.trim(),
+        'experienceYears': experienceYears,
+        'currentRole': designation.trim(),
+        'notes': introduction.trim(),
+      },
+    );
+    return PlacementCustomer.fromJson(_object(json, 'customer'));
+  }
+
+  /// Takes a candidate off the lists, with why; HR can restore them.
+  Future<void> removeCandidate(String id, String reason) => _json(
+    'POST',
+    '/placements/customers/${Uri.encodeComponent(id)}/remove',
+    body: {'reason': reason},
+  );
+
+  /// Saves every field of a placement the app edits, clearing what is empty.
+  Future<Placement> savePlacement(
+    String id, {
+    required PlacementStatus status,
+    DateTime? interviewDate,
+    DateTime? joiningDate,
+    double? ctcRupees,
+    String notes = '',
+  }) async {
+    final json = await _json(
+      'PATCH',
+      '/placements/${Uri.encodeComponent(id)}',
+      body: {
+        'status': status.key,
+        'interviewDate': interviewDate == null
+            ? null
+            : placementDay(interviewDate),
+        'joiningDate': joiningDate == null ? null : placementDay(joiningDate),
+        'ctcRupees': ctcRupees,
+        'notes': notes.trim(),
+      },
+    );
+    return Placement.fromJson(_object(json, 'placement'));
+  }
+
+  List<Placement> _placements(Map<String, dynamic> json) => [
+    for (final item in json['placements'] as List<dynamic>? ?? const [])
+      if (item is Map<String, dynamic>) Placement.fromJson(item),
+  ];
+
   Future<List<Placement>> fetchMyPlacements({PlacementStatus? status}) async {
     final json = await _json(
       'GET',
@@ -204,9 +337,14 @@ class PlacementsApiService {
       if (value.trim().isNotEmpty) key: value.trim(),
   };
 
-  String _withQuery(String path, String query) => query.trim().isEmpty
-      ? path
-      : '$path?q=${Uri.encodeQueryComponent(query.trim())}';
+  String _withQuery(String path, String query, {bool mine = false}) {
+    final params = [
+      if (mine) 'mine=1',
+      if (query.trim().isNotEmpty)
+        'q=${Uri.encodeQueryComponent(query.trim())}',
+    ];
+    return params.isEmpty ? path : '$path?${params.join('&')}';
+  }
 
   Map<String, dynamic> _object(Map<String, dynamic> json, String key) =>
       json[key] is Map<String, dynamic>

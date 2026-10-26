@@ -7,7 +7,7 @@ import type { View } from './theme';
 export const SALARY_DETAILS = 'salarydetails';
 export type AccessKey = View | typeof SALARY_DETAILS;
 
-/** The Placements section's pages; Clients and Customers go with the placements tab. */
+/** The Placements section's pages; Clients and Candidates go with the placements tab. */
 export const PLACEMENT_VIEWS: AccessKey[] = ['placements', 'placementclients', 'placementcustomers'];
 
 /** Every tab, unless HR limited them. People › Accesses is an admin's alone; Support desk needs a Support role. */

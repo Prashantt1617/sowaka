@@ -6,17 +6,24 @@ import {
   adminDeleteCustomerHandler,
   adminDeletePlacementHandler,
   adminPlacementsHandler,
+  adminRestoreCustomerHandler,
   adminUpdateClientHandler,
   adminUpdateCustomerHandler,
   adminUpdatePlacementHandler,
+  clientHandler,
   clientsHandler,
   createClientHandler,
   createCustomerHandler,
   createPlacementHandler,
+  customerHandler,
   customersHandler,
+  deleteClientHandler,
   placementsHandler,
+  removeCustomerHandler,
   requirePlacementsMiddleware,
   summaryHandler,
+  updateClientHandler,
+  updateCustomerHandler,
   updatePlacementHandler,
 } from '../controllers/placements.controller';
 import { requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
@@ -32,8 +39,14 @@ placementsRouter.use(requireAuth, requirePlacementsMiddleware);
 placementsRouter.get('/summary', summaryHandler);
 placementsRouter.get('/clients', clientsHandler);
 placementsRouter.post('/clients', createClientHandler);
+placementsRouter.get('/clients/:id', clientHandler);
+placementsRouter.patch('/clients/:id', updateClientHandler);
+placementsRouter.delete('/clients/:id', deleteClientHandler);
 placementsRouter.get('/customers', customersHandler);
 placementsRouter.post('/customers', createCustomerHandler);
+placementsRouter.get('/customers/:id', customerHandler);
+placementsRouter.patch('/customers/:id', updateCustomerHandler);
+placementsRouter.post('/customers/:id/remove', removeCustomerHandler);
 placementsRouter.get('/', placementsHandler);
 placementsRouter.post('/', createPlacementHandler);
 placementsRouter.patch('/:id', updatePlacementHandler);
@@ -52,6 +65,7 @@ placementsAdminRouter.delete('/clients/:id', adminDeleteClientHandler);
 placementsAdminRouter.get('/customers', adminCustomersHandler);
 placementsAdminRouter.post('/customers', createCustomerHandler);
 placementsAdminRouter.patch('/customers/:id', adminUpdateCustomerHandler);
+placementsAdminRouter.post('/customers/:id/restore', adminRestoreCustomerHandler);
 placementsAdminRouter.delete('/customers/:id', adminDeleteCustomerHandler);
 placementsAdminRouter.get('/', adminPlacementsHandler);
 placementsAdminRouter.post('/', createPlacementHandler);

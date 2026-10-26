@@ -233,6 +233,30 @@ admin of the company; anyone else gets `403`. A new status is added to
 { "success": true, "placement": { /* PlacementView */ } }
 ```
 
+### The app's pages (added for 1.3.9 (47))
+
+New fields, all optional on read (older records lack them):
+
+- Client: `designations: [{ id, title, budgetRupees, budgetPeriod: "month"|"year", description }]`,
+  `feeRupees` (onboarding fee; 2500 unless sent), `feePaid`, `feePaidAt`, `feeReference`.
+  `city` is shown as "Company location" (a city or a full address).
+- Customer (candidate): `address`; `notes` is the introduction; `removedAt`, `removedReason`,
+  `removedByUserId`; lists and pages add `stage`: `not_placed` | `in_process` | `joined`.
+
+Routes (a client or candidate is changed from the app by whoever added it, or a dashboard admin;
+anyone else gets 403):
+
+- `GET /placements/clients?mine=1`, `GET /placements/customers?mine=1`: only those the caller added.
+  Removed candidates are never on the app's lists.
+- `GET /placements/clients/:id` → `{ client, placements }`
+- `PATCH /placements/clients/:id`, `DELETE /placements/clients/:id` (409 while it has placements)
+- `GET /placements/customers/:id` → `{ customer, placements, clients }` (404 once removed)
+- `PATCH /placements/customers/:id`
+- `POST /placements/customers/:id/remove` `{ reason }`: 409 if any placement is joined; a removed
+  candidate cannot be put forward.
+- Dashboard: `GET /admin/placements/customers?removed=only|exclude`,
+  `POST /admin/placements/customers/:id/restore`.
+
 ## Dashboard routes
 
 Under `/admin/placements`: signed in, with HR dashboard access, and the

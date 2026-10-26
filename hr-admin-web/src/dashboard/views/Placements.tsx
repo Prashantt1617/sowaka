@@ -1,5 +1,6 @@
 // Placements — for a company that is a placement agency: its placements, its
-// clients (the companies hiring) and its customers (the candidates). Recruiters
+// clients (the companies hiring) and its candidates (`customers` in the API and
+// the code; the app and this page call them candidates). Recruiters
 // add them from the app's Actions tab; HR reads, edits, deletes and exports
 // them here. Only a company with features.placements sees the section, and
 // the server refuses everyone else.
@@ -24,20 +25,21 @@ import {
   PLACEMENT_STATUSES,
   createPlacement, createPlacementClient, createPlacementCustomer,
   deletePlacement, deletePlacementClient, deletePlacementCustomer,
-  getPlacementsSummary, listPlacementClients, listPlacementCustomers, listPlacements,
+  getPlacementsSummary, listPlacementClients, listPlacementCustomers, listPlacements, restorePlacementCustomer,
   updatePlacement, updatePlacementClient, updatePlacementCustomer,
-  type ClientInput, type CustomerInput, type Placement, type PlacementClient, type PlacementCustomer,
-  type PlacementFilters, type PlacementInput, type PlacementStatus, type PlacementsSummary,
+  type CandidateStage, type ClientInput, type CustomerInput, type Placement, type PlacementClient, type PlacementCustomer,
+  type PlacementDesignation, type PlacementFilters, type PlacementInput, type PlacementStatus, type PlacementsSummary,
 } from '../../services/placements';
 
 // ── shared ────────────────────────────────────────────────────────────────
 
+// The app's words for each status; the API keeps its own values.
 const STATUS_LABEL: Record<PlacementStatus, string> = {
-  shortlisted: 'Shortlisted',
-  interviewing: 'Interviewing',
-  offered: 'Offered',
+  shortlisted: 'Profile shared',
+  interviewing: 'Interview scheduled',
+  offered: 'Selected',
   joined: 'Joined',
-  dropped: 'Dropped',
+  dropped: 'Rejected / dropped',
 };
 // The dashboard's solid pills: grey not started, yellow in progress, blue offered, green joined, red dropped.
 const STATUS_TONE: Record<PlacementStatus, PillTone> = {
@@ -47,6 +49,13 @@ const STATUS_TONE: Record<PlacementStatus, PillTone> = {
   joined: STAT.Approved,
   dropped: STAT.Declined,
 };
+
+/** Where a candidate stands across their placements, as the app says it. */
+const STAGE_LABEL: Record<CandidateStage, string> = { not_placed: 'Not placed', in_process: 'In process', joined: 'Joined' };
+const STAGE_TONE: Record<CandidateStage, PillTone> = { not_placed: FSTAT.Draft, in_process: STAT.Pending, joined: STAT.Approved };
+const REMOVED_TONE = STAT.Declined;
+/** A client's onboarding fee: green once received, yellow until then. */
+const feePill = (c: PlacementClient) => <Pill label={c.feePaid ? 'Fee paid' : 'Fee pending'} tone={c.feePaid ? STAT.Approved : STAT.Pending} />;
 
 const rupees = (n: number | null) => (n === null ? '—' : `₹${n.toLocaleString('en-IN')}`);
 /** 29 Oct 2026, from a YYYY-MM-DD day or an ISO time. */
@@ -212,11 +221,11 @@ function TextInput({ value, onChange, placeholder, type = 'text', autoFocus }: {
   return <input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="ds-inp" style={inp} autoFocus={autoFocus} />;
 }
 
-function RupeeInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function RupeeInput({ value, onChange, placeholder, step = '1000' }: { value: string; onChange: (v: string) => void; placeholder?: string; step?: string }) {
   return (
     <div className="ds-inp" style={unitBox}>
       <span style={{ padding: '0 12px', color: 'var(--ink-3)', borderRight: '1px solid var(--line)', fontSize: 13, alignSelf: 'stretch', display: 'flex', alignItems: 'center' }}>₹</span>
-      <input type="number" min="0" step="1000" value={value} onChange={(e) => onChange(e.target.value)} style={unitInput} />
+      <input type="number" min="0" step={step} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} style={unitInput} />
     </div>
   );
 }
@@ -225,7 +234,7 @@ const numberOrNull = (v: string) => (v.trim() === '' ? null : Number(v));
 
 // ── Placements ────────────────────────────────────────────────────────────
 
-const P_COLS = '1.6fr 1.3fr 1.3fr 0.75fr 0.75fr 0.9fr 1fr 1.15fr 0.8fr';
+const P_COLS = '1.6fr 1.2fr 1.25fr 0.75fr 0.75fr 0.9fr 1fr 1.4fr 0.8fr';
 
 export function Placements() {
   const { flash } = useStore();
@@ -261,7 +270,7 @@ export function Placements() {
   };
 
   const exportRows = () => exportSheet('Placements', list.rows.map((p) => ({
-    Customer: p.customerName,
+    Candidate: p.customerName,
     Client: p.clientName,
     Position: p.position,
     Status: STATUS_LABEL[p.status],
@@ -309,7 +318,7 @@ export function Placements() {
           {list.state === 'ready' && <CountLine shown={list.rows.length} noun={list.rows.length === 1 ? 'placement' : 'placements'} />}
         </div>
         <Filters
-          q={f.q} onQ={f.setQ} placeholder="Search position, client or customer…"
+          q={f.q} onQ={f.setQ} placeholder="Search position, client or candidate…"
           creators={creators} createdBy={f.filters.createdBy} onCreatedBy={f.set('createdBy')}
           from={f.filters.from} to={f.filters.to} onFrom={f.set('from')} onTo={f.set('to')}
         >
@@ -320,7 +329,7 @@ export function Placements() {
         </Filters>
 
         <div style={TH(P_COLS)}>
-          <Th>CUSTOMER</Th>
+          <Th>CANDIDATE</Th>
           <Th>CLIENT</Th>
           <Th>POSITION</Th>
           <Th>INTERVIEW</Th>
@@ -335,11 +344,11 @@ export function Placements() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
               <Avatar name={p.customerName || '?'} />
               <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <div style={{ ...cellName, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.customerName || 'Removed customer'}</div>
+                <div style={{ ...cellName, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.customerName || 'Deleted candidate'}</div>
                 <div style={cellSub}>Added {fmtDay(p.createdAt)}</div>
               </div>
             </div>
-            <div style={ellipsis}>{p.clientName || 'Removed client'}</div>
+            <div style={ellipsis}>{p.clientName || 'Deleted client'}</div>
             <div style={ellipsis}>{p.position}</div>
             <div style={ellipsis}>{fmtDay(p.interviewDate)}</div>
             <div style={ellipsis}>{fmtDay(p.joiningDate)}</div>
@@ -389,8 +398,8 @@ function PlacementDrawer({ p, onClose, onEdit, onDelete, onStatus }: {
   const { emps } = useStore();
   const nameOf = (userId: string) => emps.find((e) => e.id === userId)?.name ?? (userId === p.createdByUserId ? p.createdByName : 'Former employee');
   return (
-    <Sheet width={540} onClose={onClose}>
-      <SheetHead title={p.customerName || 'Removed customer'} subtitle={`${p.position} · ${p.clientName || 'Removed client'}`} onClose={onClose} />
+    <Sheet width={620} onClose={onClose}>
+      <SheetHead title={p.customerName || 'Deleted candidate'} subtitle={`${p.position} · ${p.clientName || 'Deleted client'}`} onClose={onClose} />
       <div style={{ padding: 20 }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18 }}>
           <div>
@@ -448,8 +457,11 @@ function PlacementForm({ initial, clients, customers, onClose, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // A candidate removed from the app can't be put forward; one already on this placement stays pickable.
+  const pickable = customers.filter((c) => !c.removedAt || c.id === initial?.customerId);
+
   const save = async () => {
-    if (!customerId) { setError('Pick the customer being placed'); return; }
+    if (!customerId) { setError('Pick the candidate being placed'); return; }
     if (!clientId) { setError('Pick the client'); return; }
     if (!position.trim()) { setError('Give the position'); return; }
     setSaving(true); setError('');
@@ -459,18 +471,25 @@ function PlacementForm({ initial, clients, customers, onClose, onSaved }: {
       ctcRupees: numberOrNull(ctc), feeRupees: numberOrNull(fee), notes: notes.trim(),
     };
     try {
-      if (initial) await updatePlacement(initial.id, input);
-      else await createPlacement(input);
+      if (initial) {
+        // The candidate and client only when they change: the server checks them again then, and refuses a removed candidate.
+        const { customerId: cu, clientId: cl, ...rest } = input;
+        await updatePlacement(initial.id, {
+          ...rest,
+          ...(cu !== initial.customerId ? { customerId: cu } : {}),
+          ...(cl !== initial.clientId ? { clientId: cl } : {}),
+        });
+      } else await createPlacement(input);
       onSaved(initial ? 'Placement saved' : 'Placement added');
     } catch (e) { setError(message(e)); } finally { setSaving(false); }
   };
 
   return (
     <FormSheet title={initial ? 'Edit placement' : 'New placement'} error={error} saving={saving} onClose={onClose} onSave={() => void save()}>
-      <Field label="Customer" required note={customers.length ? undefined : 'Add the candidate under Customers first.'}>
+      <Field label="Candidate" required note={pickable.length ? undefined : 'Add the candidate under Candidates first.'}>
         <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className="ds-inp" style={inp}>
-          <option value="">Pick a customer</option>
-          {customers.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.phone}</option>)}
+          <option value="">Pick a candidate</option>
+          {pickable.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.phone}{c.removedAt ? ' (removed)' : ''}</option>)}
         </select>
       </Field>
       <Field label="Client" required note={clients.length ? undefined : 'Add the company under Clients first.'}>
@@ -502,7 +521,10 @@ function PlacementForm({ initial, clients, customers, onClose, onSaved }: {
 
 // ── Clients ───────────────────────────────────────────────────────────────
 
-const C_COLS = '1.6fr 1.4fr 1.4fr 1fr 0.8fr 1.1fr 0.8fr';
+const C_COLS = '1.6fr 1.3fr 1.3fr 1fr 0.8fr 0.9fr 1fr 0.8fr';
+
+const budgetText = (d: PlacementDesignation) => (d.budgetRupees === null ? 'Budget not given' : `${rupees(d.budgetRupees)} a ${d.budgetPeriod}`);
+const feePaidOn = (c: PlacementClient) => (c.feePaid ? (c.feePaidAt ? fmtDay(c.feePaidAt) : 'Received') : 'Not yet');
 
 export function PlacementClients() {
   const { flash } = useStore();
@@ -519,14 +541,17 @@ export function PlacementClients() {
       await deletePlacementClient(c.id);
       setOpenId(null);
       list.reload();
-      flash(`${c.name} removed`);
+      flash(`${c.name} deleted`);
     } catch (e) { flash(message(e), 'error'); }
   };
 
   const exportRows = () => exportSheet('Clients', list.rows.map((c) => ({
-    Client: c.name, 'Contact person': c.contactName, Phone: c.phone, Email: c.email, Industry: c.industry, City: c.city,
+    Client: c.name, 'Contact person': c.contactName, Phone: c.phone, Email: c.email, Industry: c.industry, Location: c.city,
+    Roles: c.designations.map((d) => (d.budgetRupees === null ? d.title : `${d.title} (₹${d.budgetRupees.toLocaleString('en-IN')} a ${d.budgetPeriod})`)).join('; '),
+    'Onboarding fee (₹)': c.feeRupees ?? '', 'Fee status': c.feePaid ? 'Paid' : 'Pending', 'Fee received on': c.feePaid && c.feePaidAt ? c.feePaidAt.slice(0, 10) : '',
+    'UPI / transaction reference': c.feeReference,
     Placements: c.placements, 'Added by': c.createdByName, 'Added on': c.createdAt.slice(0, 10), Notes: c.notes,
-  })), [26, 22, 16, 28, 18, 14, 11, 20, 12, 40]);
+  })), [26, 22, 16, 28, 18, 24, 40, 14, 11, 14, 24, 11, 20, 12, 40]);
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
@@ -541,7 +566,7 @@ export function PlacementClients() {
 
       <Card padded>
         <Filters
-          q={f.q} onQ={f.setQ} placeholder="Search client, contact or city…"
+          q={f.q} onQ={f.setQ} placeholder="Search client, contact or location…"
           creators={creators} createdBy={f.filters.createdBy} onCreatedBy={f.set('createdBy')}
           from={f.filters.from} to={f.filters.to} onFrom={f.set('from')} onTo={f.set('to')}
           trailing={list.state === 'ready' && <span style={{ marginLeft: 'auto' }}><CountLine shown={list.rows.length} noun={list.rows.length === 1 ? 'client' : 'clients'} /></span>}
@@ -550,8 +575,9 @@ export function PlacementClients() {
           <Th>CLIENT</Th>
           <Th>CONTACT</Th>
           <Th>EMAIL</Th>
-          <Th>CITY</Th>
+          <Th>LOCATION</Th>
           <Th align="right">PLACEMENTS</Th>
+          <Th>FEE</Th>
           <Th>ADDED BY</Th>
           <Th align="right">ACTION</Th>
         </div>
@@ -561,7 +587,7 @@ export function PlacementClients() {
               <Avatar name={c.name} />
               <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <div style={{ ...cellName, ...ellipsis }}>{c.name}</div>
-                <div style={cellSub}>{c.industry || 'Industry not given'}</div>
+                <div style={{ ...cellSub, ...ellipsis }}>{c.industry || 'Industry not given'}</div>
               </div>
             </div>
             <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -569,13 +595,14 @@ export function PlacementClients() {
               {c.phone && <div style={cellSub}>{c.phone}</div>}
             </div>
             <div style={ellipsis}>{c.email || '—'}</div>
-            <div style={ellipsis}>{c.city || '—'}</div>
+            <div style={ellipsis} title={c.city || undefined}>{c.city || '—'}</div>
             <div style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{c.placements}</div>
+            <div>{feePill(c)}</div>
             <div style={ellipsis}>{c.createdByName || '—'}</div>
             <RowActions onEdit={() => setEditing(c)} onDelete={() => void remove(c)} />
           </div>
         ))}
-        <ListPending state={list.state} onRetry={list.reload} cols={6} />
+        <ListPending state={list.state} onRetry={list.reload} cols={7} />
         {list.state === 'ready' && list.rows.length === 0 && <EmptyRow text={f.query.q || f.filters.createdBy !== 'all' || f.filters.from || f.filters.to ? 'No clients match your filters.' : 'No clients yet. Add the companies you hire for.'} />}
       </Card>
 
@@ -583,16 +610,43 @@ export function PlacementClients() {
         <Sheet onClose={() => setOpenId(null)}>
           <SheetHead title={open.name} subtitle={[open.industry, open.city].filter(Boolean).join(' · ') || 'Client'} onClose={() => setOpenId(null)} />
           <div style={{ padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18 }}>
+              <div>
+                <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, marginBottom: 3 }}>Onboarding fee</div>
+                <div style={{ fontSize: 30, fontWeight: 400, letterSpacing: '-.03em', lineHeight: 1.15 }}>{rupees(open.feeRupees)}</div>
+              </div>
+              {feePill(open)}
+            </div>
             <InfoGrid
               cells={[
                 { label: 'CONTACT PERSON', value: open.contactName || '—' },
                 { label: 'PHONE', value: open.phone || '—' },
                 { label: 'EMAIL', value: open.email || '—', wide: true },
                 { label: 'INDUSTRY', value: open.industry || '—' },
-                { label: 'CITY', value: open.city || '—' },
+                { label: 'LOCATION', value: open.city || '—' },
+                { label: 'Fee received on', value: feePaidOn(open) },
+                { label: 'UPI / transaction reference', value: open.feeReference || '—' },
                 { label: 'ADDED BY', value: `${open.createdByName || '—'} · ${fmtDay(open.createdAt)}`, wide: true },
               ]}
             />
+            {open.designations.length === 0 ? (
+              <RemarkBlock label="ROLES" text="No roles added yet." filled={false} marginBottom={18} />
+            ) : (
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ ...eyebrow, marginBottom: 8 }}>ROLES · {open.designations.length}</div>
+                <div style={{ border: '1px solid var(--line)', borderRadius: 16, overflow: 'hidden' }}>
+                  {open.designations.map((d, i) => (
+                    <div key={d.id} style={{ padding: '10px 14px', borderTop: i ? '1px solid var(--line)' : undefined }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                        <div style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 500, ...ellipsis }}>{d.title}</div>
+                        <div style={{ fontSize: 12.5, color: d.budgetRupees === null ? 'var(--ink-3)' : 'var(--ink-2)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{budgetText(d)}</div>
+                      </div>
+                      {d.description && <div style={{ ...cellSub, marginTop: 2, whiteSpace: 'pre-wrap' }}>{d.description}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <RemarkBlock label="NOTES" text={open.notes || 'No notes.'} filled={!!open.notes} marginBottom={18} />
             <LinkedPlacements filter={{ clientId: open.id }} count={open.placements} show="customer" />
           </div>
@@ -607,20 +661,47 @@ export function PlacementClients() {
   );
 }
 
+/** A role row as the form holds it, the budget as typed. A new row's id is the form's own; the server gives it a real one. */
+type RoleDraft = { id: string; title: string; budget: string; budgetPeriod: 'month' | 'year'; description: string; isNew: boolean };
+let draftSeq = 0;
+const newRole = (): RoleDraft => ({ id: `new-${++draftSeq}`, title: '', budget: '', budgetPeriod: 'month', description: '', isNew: true });
+
 function ClientForm({ initial, onClose, onSaved }: { initial: PlacementClient | null; onClose: () => void; onSaved: (text: string) => void }) {
-  const [form, setForm] = useState<ClientInput>({
+  const [form, setForm] = useState({
     name: initial?.name ?? '', contactName: initial?.contactName ?? '', phone: initial?.phone ?? '', email: initial?.email ?? '',
     industry: initial?.industry ?? '', city: initial?.city ?? '', notes: initial?.notes ?? '',
+    // The server charges 2,500 unless told otherwise; a new client shows it.
+    fee: initial ? (initial.feeRupees != null ? String(initial.feeRupees) : '') : '2500',
+    feeReference: initial?.feeReference ?? '',
   });
-  const set = (key: keyof ClientInput) => (value: string) => setForm((f) => ({ ...f, [key]: value }));
+  const [feePaid, setFeePaid] = useState(initial?.feePaid ?? false);
+  const [roles, setRoles] = useState<RoleDraft[]>(() => (initial?.designations ?? []).map((d) => ({
+    id: d.id, title: d.title, budget: d.budgetRupees != null ? String(d.budgetRupees) : '', budgetPeriod: d.budgetPeriod, description: d.description, isNew: false,
+  })));
+  const set = (key: keyof typeof form) => (value: string) => setForm((f) => ({ ...f, [key]: value }));
+  const setRole = (id: string, patch: Partial<RoleDraft>) => setRoles((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const save = async () => {
     if (!form.name.trim()) { setError('Give the client a name'); return; }
+    // A row left blank is dropped; one with a budget or description needs its title.
+    const kept = roles.filter((r) => r.title.trim() || r.budget.trim() || r.description.trim());
+    if (kept.some((r) => !r.title.trim())) { setError('Give each role a title, or remove it'); return; }
     setSaving(true); setError('');
+    const { fee, ...rest } = form;
+    const input: ClientInput = {
+      ...rest,
+      feeRupees: numberOrNull(fee),
+      feePaid,
+      designations: kept.map((r) => ({
+        // A new row goes without an id, so the server makes one; an existing row keeps its own.
+        id: r.isNew ? '' : r.id,
+        title: r.title.trim(), budgetRupees: numberOrNull(r.budget), budgetPeriod: r.budgetPeriod, description: r.description.trim(),
+      })),
+    };
     try {
-      if (initial) await updatePlacementClient(initial.id, form);
-      else await createPlacementClient(form);
+      if (initial) await updatePlacementClient(initial.id, input);
+      else await createPlacementClient(input);
       onSaved(`${form.name.trim()} saved`);
     } catch (e) { setError(message(e)); } finally { setSaving(false); }
   };
@@ -632,10 +713,38 @@ function ClientForm({ initial, onClose, onSaved }: { initial: PlacementClient | 
         <Field label="Phone"><TextInput type="tel" value={form.phone} onChange={set('phone')} placeholder="+91 98450 12345" /></Field>
         <Field label="Email"><TextInput type="email" value={form.email} onChange={set('email')} placeholder="name@company.com" /></Field>
       </div>
-      <div style={grid2}>
-        <Field label="Industry"><TextInput value={form.industry} onChange={set('industry')} placeholder="e.g. Logistics" /></Field>
-        <Field label="City"><TextInput value={form.city} onChange={set('city')} placeholder="e.g. Bengaluru" /></Field>
+      <Field label="Industry"><TextInput value={form.industry} onChange={set('industry')} placeholder="e.g. Logistics" /></Field>
+      <Field label="Location"><TextInput value={form.city} onChange={set('city')} placeholder="City or full address" /></Field>
+
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ ...fieldLabel, display: 'block', marginBottom: 6 }}>Roles</label>
+        {roles.map((r) => (
+          <div key={r.id} style={roleBox}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}><TextInput value={r.title} onChange={(v) => setRole(r.id, { title: v })} placeholder="Designation, e.g. Warehouse supervisor" /></div>
+              <button type="button" className="ds-icon-btn" style={{ ...iconBtn(34), color: 'var(--bad)', flexShrink: 0 }} title="Remove role" onClick={() => setRoles((rs) => rs.filter((x) => x.id !== r.id))}><IconTrash /></button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 8, marginBottom: 10 }}>
+              <RupeeInput value={r.budget} onChange={(v) => setRole(r.id, { budget: v })} placeholder="Budget" />
+              <select value={r.budgetPeriod} onChange={(e) => setRole(r.id, { budgetPeriod: e.target.value as 'month' | 'year' })} className="ds-inp" style={inp} aria-label="Budget per">
+                <option value="month">a month</option>
+                <option value="year">a year</option>
+              </select>
+            </div>
+            <textarea value={r.description} onChange={(e) => setRole(r.id, { description: e.target.value })} rows={2} className="ds-inp" style={textareaStyle} placeholder="What the role involves, who they want" />
+          </div>
+        ))}
+        <button type="button" onClick={() => setRoles((rs) => [...rs, newRole()])} className={btnClass()} style={btn()}>
+          <IconPlus size={15} stroke="currentColor" /> Add role
+        </button>
       </div>
+
+      <Field label="Onboarding fee" note="Charged once, when you take the client on."><RupeeInput value={form.fee} onChange={set('fee')} step="500" /></Field>
+      <label style={checkRow}>
+        <input type="checkbox" checked={feePaid} onChange={(e) => setFeePaid(e.target.checked)} />
+        Payment received
+      </label>
+      <Field label="UPI / transaction reference"><TextInput value={form.feeReference} onChange={set('feeReference')} placeholder="e.g. 4321 0987 6543" /></Field>
       <Field label="Notes">
         <textarea value={form.notes} onChange={(e) => set('notes')(e.target.value)} rows={3} className="ds-inp" style={textareaStyle} placeholder="Openings, terms, anything to remember" />
       </Field>
@@ -643,18 +752,29 @@ function ClientForm({ initial, onClose, onSaved }: { initial: PlacementClient | 
   );
 }
 
-// ── Customers ─────────────────────────────────────────────────────────────
+// ── Candidates (customers in the API) ─────────────────────────────────────
 
-const U_COLS = '1.6fr 1.3fr 0.8fr 1.6fr 0.9fr 0.8fr 1fr 0.8fr';
+const U_COLS = '1.6fr 1.2fr 0.8fr 1.4fr 0.9fr 0.9fr 0.8fr 1fr 0.8fr';
+
+type RemovedView = 'active' | 'removed' | 'all';
+const REMOVED_VIEWS: RemovedView[] = ['all', 'active', 'removed'];
+const REMOVED_LABEL: Record<RemovedView, string> = { all: 'All', active: 'Active', removed: 'Removed' };
+/** The list's `removed` param for each view; `all` is left off, so everyone comes back. */
+const REMOVED_PARAM: Record<RemovedView, string> = { active: 'exclude', removed: 'only', all: 'all' };
+
+const candidatePill = (c: PlacementCustomer) => (c.removedAt ? <Pill label="Removed" tone={REMOVED_TONE} /> : <Pill label={STAGE_LABEL[c.stage]} tone={STAGE_TONE[c.stage]} />);
 
 export function PlacementCustomers() {
-  const { flash } = useStore();
+  const { flash, emps } = useStore();
+  const [view, setView] = useState<RemovedView>('active');
   const f = useFilters({ createdBy: 'all', from: '', to: '' });
-  const list = useList(listPlacementCustomers, f.query);
+  const list = useList(listPlacementCustomers, { ...f.query, removed: REMOVED_PARAM[view] });
   const creators = useCreators(list.rows);
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState<PlacementCustomer | 'new' | null>(null);
   const open = openId ? list.rows.find((c) => c.id === openId) ?? null : null;
+  const nameOf = (userId: string, row: PlacementCustomer) =>
+    emps.find((e) => e.id === userId)?.name ?? (userId && userId === row.createdByUserId ? row.createdByName : 'Former employee');
 
   const remove = async (c: PlacementCustomer) => {
     if (!window.confirm(`Delete ${c.name}?`)) return;
@@ -662,14 +782,31 @@ export function PlacementCustomers() {
       await deletePlacementCustomer(c.id);
       setOpenId(null);
       list.reload();
-      flash(`${c.name} removed`);
+      flash(`${c.name} deleted`);
     } catch (e) { flash(message(e), 'error'); }
   };
 
-  const exportRows = () => exportSheet('Customers', list.rows.map((c) => ({
-    Customer: c.name, Phone: c.phone, Email: c.email, 'Current role': c.currentRole, 'Experience (years)': c.experienceYears ?? '',
-    Skills: c.skills.join(', '), City: c.city, Placements: c.placements, 'Added by': c.createdByName, 'Added on': c.createdAt.slice(0, 10), Notes: c.notes,
-  })), [24, 16, 28, 22, 10, 30, 14, 11, 20, 12, 40]);
+  const restore = async (c: PlacementCustomer) => {
+    try {
+      await restorePlacementCustomer(c.id);
+      // Off the Removed list once restored, so the drawer closes there.
+      if (view === 'removed') setOpenId(null);
+      list.reload();
+      flash(`${c.name} restored`);
+    } catch (e) { flash(message(e), 'error'); }
+  };
+
+  const exportRows = () => exportSheet('Candidates', list.rows.map((c) => ({
+    Candidate: c.name, Phone: c.phone, Email: c.email, 'Current role': c.currentRole, 'Experience (years)': c.experienceYears ?? '',
+    Skills: c.skills.join(', '), City: c.city, Address: c.address, Stage: STAGE_LABEL[c.stage], Placements: c.placements,
+    Removed: c.removedAt ? 'Yes' : 'No', 'Removed on': c.removedAt ? c.removedAt.slice(0, 10) : '', 'Removed because': c.removedReason,
+    'Added by': c.createdByName, 'Added on': c.createdAt.slice(0, 10), Introduction: c.notes,
+  })), [24, 16, 28, 22, 10, 30, 14, 36, 12, 11, 9, 12, 30, 20, 12, 40]);
+
+  const filtered = !!(f.query.q || f.filters.createdBy !== 'all' || f.filters.from || f.filters.to);
+  const emptyText = filtered
+    ? 'No candidates match your filters.'
+    : view === 'removed' ? 'No removed candidates.' : 'No candidates yet. Add the candidates you place.';
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
@@ -678,23 +815,27 @@ export function PlacementCustomers() {
           <IconDownload stroke="currentColor" /> Export Excel
         </button>
         <button onClick={() => setEditing('new')} className={btnClass('primary')} style={btn('primary')}>
-          <IconPlus size={15} stroke="currentColor" /> Add customer
+          <IconPlus size={15} stroke="currentColor" /> Add candidate
         </button>
       </PageActions>
 
       <Card padded>
+        <div style={{ ...toolbar, justifyContent: 'space-between' }}>
+          <StatusTabs<RemovedView> options={REMOVED_VIEWS} active={view} onSelect={setView} labels={REMOVED_LABEL} />
+          {list.state === 'ready' && <CountLine shown={list.rows.length} noun={list.rows.length === 1 ? 'candidate' : 'candidates'} />}
+        </div>
         <Filters
           q={f.q} onQ={f.setQ} placeholder="Search name, phone, role or skill…"
           creators={creators} createdBy={f.filters.createdBy} onCreatedBy={f.set('createdBy')}
           from={f.filters.from} to={f.filters.to} onFrom={f.set('from')} onTo={f.set('to')}
-          trailing={list.state === 'ready' && <span style={{ marginLeft: 'auto' }}><CountLine shown={list.rows.length} noun={list.rows.length === 1 ? 'customer' : 'customers'} /></span>}
         />
         <div style={TH(U_COLS)}>
-          <Th>CUSTOMER</Th>
+          <Th>CANDIDATE</Th>
           <Th>PHONE</Th>
           <Th align="right">EXPERIENCE</Th>
           <Th>SKILLS</Th>
           <Th>CITY</Th>
+          <Th>STAGE</Th>
           <Th align="right">PLACEMENTS</Th>
           <Th>ADDED BY</Th>
           <Th align="right">ACTION</Th>
@@ -705,7 +846,9 @@ export function PlacementCustomers() {
               <Avatar name={c.name} />
               <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <div style={{ ...cellName, ...ellipsis }}>{c.name}</div>
-                <div style={cellSub}>{c.currentRole || 'Role not given'}</div>
+                {c.removedAt
+                  ? <div style={{ ...cellSub, ...ellipsis }} title={c.removedReason || undefined}>Removed {fmtDay(c.removedAt)}{c.removedReason ? ` · ${c.removedReason}` : ''}</div>
+                  : <div style={{ ...cellSub, ...ellipsis }}>{c.currentRole || 'Role not given'}</div>}
               </div>
             </div>
             <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -715,19 +858,32 @@ export function PlacementCustomers() {
             <div style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{c.experienceYears === null ? '—' : `${c.experienceYears} yrs`}</div>
             <div style={{ display: 'flex', gap: 6, overflow: 'hidden' }}>{c.skills.length ? c.skills.slice(0, 2).map((s) => <Tag key={s}>{s}</Tag>) : '—'}{c.skills.length > 2 && <span style={{ ...cellSub, alignSelf: 'center' }}>+{c.skills.length - 2}</span>}</div>
             <div style={ellipsis}>{c.city || '—'}</div>
+            <div style={{ minWidth: 0 }}>{candidatePill(c)}</div>
             <div style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{c.placements}</div>
             <div style={ellipsis}>{c.createdByName || '—'}</div>
             <RowActions onEdit={() => setEditing(c)} onDelete={() => void remove(c)} />
           </div>
         ))}
-        <ListPending state={list.state} onRetry={list.reload} cols={7} />
-        {list.state === 'ready' && list.rows.length === 0 && <EmptyRow text={f.query.q || f.filters.createdBy !== 'all' || f.filters.from || f.filters.to ? 'No customers match your filters.' : 'No customers yet. Add the candidates you place.'} />}
+        <ListPending state={list.state} onRetry={list.reload} cols={8} />
+        {list.state === 'ready' && list.rows.length === 0 && <EmptyRow text={emptyText} />}
       </Card>
 
       {open && (
         <Sheet onClose={() => setOpenId(null)}>
-          <SheetHead title={open.name} subtitle={[open.currentRole, open.city].filter(Boolean).join(' · ') || 'Customer'} onClose={() => setOpenId(null)} />
+          <SheetHead title={open.name} subtitle={[open.currentRole, open.city].filter(Boolean).join(' · ') || 'Candidate'} onClose={() => setOpenId(null)} />
           <div style={{ padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
+              <Pill label={STAGE_LABEL[open.stage]} tone={STAGE_TONE[open.stage]} />
+              {open.removedAt && <Pill label="Removed" tone={REMOVED_TONE} />}
+            </div>
+            {open.removedAt && (
+              <RemarkBlock
+                label={`REMOVED · ${fmtDay(open.removedAt)} · BY ${nameOf(open.removedByUserId, open)}`}
+                text={open.removedReason || 'No reason given.'}
+                filled={!!open.removedReason}
+                marginBottom={18}
+              />
+            )}
             <InfoGrid
               cells={[
                 { label: 'PHONE', value: open.phone },
@@ -735,16 +891,24 @@ export function PlacementCustomers() {
                 { label: 'EMAIL', value: open.email || '—', wide: true },
                 { label: 'CURRENT ROLE', value: open.currentRole || '—' },
                 { label: 'CITY', value: open.city || '—' },
+                { label: 'ADDRESS', value: open.address ? <span style={{ whiteSpace: 'pre-wrap' }}>{open.address}</span> : '—', wide: true },
                 { label: 'SKILLS', value: open.skills.length ? <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>{open.skills.map((s) => <Tag key={s}>{s}</Tag>)}</span> : '—', wide: true },
                 { label: 'ADDED BY', value: `${open.createdByName || '—'} · ${fmtDay(open.createdAt)}`, wide: true },
               ]}
             />
-            <RemarkBlock label="NOTES" text={open.notes || 'No notes.'} filled={!!open.notes} marginBottom={18} />
+            <RemarkBlock label="INTRODUCTION" text={open.notes || 'No introduction.'} filled={!!open.notes} marginBottom={18} />
             <LinkedPlacements filter={{ customerId: open.id }} count={open.placements} show="client" />
           </div>
           <SheetFoot>
             <button onClick={() => void remove(open)} className={btnClass('no')} style={btn('no')} disabled={open.placements > 0} title={open.placements > 0 ? 'On a placement: delete or move those first' : undefined}>Delete</button>
-            <button onClick={() => setEditing(open)} className={btnClass('primary')} style={btn('primary')}><IconEdit /> Edit</button>
+            {open.removedAt ? (
+              <>
+                <button onClick={() => setEditing(open)} className={btnClass()} style={btn()}><IconEdit /> Edit</button>
+                <button onClick={() => void restore(open)} className={btnClass('primary')} style={btn('primary')}>Restore</button>
+              </>
+            ) : (
+              <button onClick={() => setEditing(open)} className={btnClass('primary')} style={btn('primary')}><IconEdit /> Edit</button>
+            )}
           </SheetFoot>
         </Sheet>
       )}
@@ -757,13 +921,13 @@ function CustomerForm({ initial, onClose, onSaved }: { initial: PlacementCustome
   const [form, setForm] = useState({
     name: initial?.name ?? '', phone: initial?.phone ?? '', email: initial?.email ?? '', currentRole: initial?.currentRole ?? '',
     experienceYears: initial?.experienceYears != null ? String(initial.experienceYears) : '', skills: initial?.skills.join(', ') ?? '',
-    city: initial?.city ?? '', notes: initial?.notes ?? '',
+    city: initial?.city ?? '', address: initial?.address ?? '', notes: initial?.notes ?? '',
   });
   const set = (key: keyof typeof form) => (value: string) => setForm((f) => ({ ...f, [key]: value }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const save = async () => {
-    if (!form.name.trim()) { setError('Give the customer’s name'); return; }
+    if (!form.name.trim()) { setError('Give the candidate’s name'); return; }
     if (!form.phone.trim()) { setError('Give a phone number'); return; }
     setSaving(true); setError('');
     const input: CustomerInput = {
@@ -778,7 +942,7 @@ function CustomerForm({ initial, onClose, onSaved }: { initial: PlacementCustome
     } catch (e) { setError(message(e)); } finally { setSaving(false); }
   };
   return (
-    <FormSheet title={initial ? 'Edit customer' : 'New customer'} error={error} saving={saving} onClose={onClose} onSave={() => void save()}>
+    <FormSheet title={initial ? 'Edit candidate' : 'New candidate'} error={error} saving={saving} onClose={onClose} onSave={() => void save()}>
       <Field label="Full name" required><TextInput value={form.name} onChange={set('name')} placeholder="e.g. Arjun Mehta" autoFocus /></Field>
       <div style={grid2}>
         <Field label="Phone" required><TextInput type="tel" value={form.phone} onChange={set('phone')} placeholder="98765 43210" /></Field>
@@ -790,14 +954,17 @@ function CustomerForm({ initial, onClose, onSaved }: { initial: PlacementCustome
       </div>
       <Field label="Skills" note="Separate skills with commas."><TextInput value={form.skills} onChange={set('skills')} placeholder="Inventory, SAP, Team handling" /></Field>
       <Field label="City"><TextInput value={form.city} onChange={set('city')} placeholder="e.g. Mysuru" /></Field>
-      <Field label="Notes">
-        <textarea value={form.notes} onChange={(e) => set('notes')(e.target.value)} rows={3} className="ds-inp" style={textareaStyle} placeholder="Notice period, expected CTC, anything to remember" />
+      <Field label="Address">
+        <textarea value={form.address} onChange={(e) => set('address')(e.target.value)} rows={2} className="ds-inp" style={textareaStyle} placeholder="House, street, area, PIN" />
+      </Field>
+      <Field label="Introduction">
+        <textarea value={form.notes} onChange={(e) => set('notes')(e.target.value)} rows={3} className="ds-inp" style={textareaStyle} placeholder="Skills, strengths and what they are looking for" />
       </Field>
     </FormSheet>
   );
 }
 
-/** The placements a client or customer is on, in their drawer. */
+/** The placements a client or candidate is on, in their drawer. */
 function LinkedPlacements({ filter, count, show }: { filter: PlacementFilters; count: number; show: 'client' | 'customer' }) {
   const list = useList(listPlacements, filter, count > 0);
   if (count === 0) return <RemarkBlock label="PLACEMENTS" text="Not on any placement yet." filled={false} />;
@@ -828,4 +995,8 @@ const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', 
 // As Reimbursement Types draws its form.
 const unitBox: CSSProperties = { ...inp, display: 'flex', alignItems: 'center', padding: 0, overflow: 'hidden' };
 const unitInput: CSSProperties = { border: 'none', outline: 'none', padding: '0 12px', height: '100%', fontSize: 13, width: '100%', color: 'var(--ink)', background: 'transparent' };
+// As Reimbursement Types draws its "Available in the app" box.
+const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', cursor: 'pointer', marginBottom: 16, accentColor: 'var(--accent)' };
+// One role in the client form, boxed as the drawers box their lists.
+const roleBox: CSSProperties = { border: '1px solid var(--line)', borderRadius: 16, padding: 12, marginBottom: 10 };
 const errorTag: CSSProperties = { fontSize: 13, fontWeight: 600, color: 'var(--bad)', background: 'var(--bad-bg)', borderRadius: 14, padding: '10px 14px', marginBottom: 6 };
