@@ -22,7 +22,7 @@ export async function managerWorkspace(req: Request, res: Response, next: NextFu
 /** Feedback as it stands now — re-read while the app runs. */
 export async function myFeedbackSnapshot(req: Request, res: Response, next: NextFunction) {
   try {
-    res.status(200).json({ success: true, ...(await getFeedbackSnapshot(requireUserId(req))) });
+    res.status(200).json({ success: true, ...(await getFeedbackSnapshot(requireUserId(req), req.auth?.user)) });
   } catch (error) {
     next(error);
   }

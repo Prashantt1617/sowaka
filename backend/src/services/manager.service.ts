@@ -187,35 +187,44 @@ export async function updateProfilePhoto(userId: string, file: ConnectMediaFile)
  * sign-in goes stale the moment a manager revises one. Kept small and separate
  * from the workspace, which aggregates far more than this needs.
  */
-export async function getFeedbackSnapshot(managerUserId: string) {
-  const viewer = await users().findOne({ userId: managerUserId });
+export async function getFeedbackSnapshot(
+  managerUserId: string,
+  /** The viewer as the auth check already read them. */
+  preloaded?: Pick<User, 'org' | 'managerUserId'>,
+) {
+  const viewer =
+    preloaded ??
+    (await users().findOne({ userId: managerUserId }, { projection: { _id: 0, org: 1, managerUserId: 1 } }));
   if (!viewer) throw new ManagerError(404, 'User not found');
-  const approver = viewer.managerUserId
-    ? await users().findOne({ userId: viewer.managerUserId })
-    : null;
-  const cycle = await cycleInfoFor(viewer.org ?? '');
-  const reportIds = (
-    await users()
-      .find({
-        managerUserId,
-        org: viewer.org ?? '',
-        lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
-      })
-      .project({ userId: 1 })
-      .toArray()
-  ).map((row) => (row as { userId: string }).userId);
-
-  const [ownHistory, reportRecords] = await Promise.all([
+  // Polled by every open app once a minute, so it is two round trips, not
+  // five: everything that needs only the viewer goes out together, then the
+  // reports' records for the cycle. Of the approver only the name is used.
+  const [approver, cycle, reportRows, ownHistory] = await Promise.all([
+    viewer.managerUserId
+      ? users().findOne({ userId: viewer.managerUserId }, { projection: { _id: 0, name: 1 } })
+      : Promise.resolve(null),
+    cycleInfoFor(viewer.org ?? ''),
+    users()
+      .find(
+        {
+          managerUserId,
+          org: viewer.org ?? '',
+          lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
+        },
+        { projection: { _id: 0, userId: 1 } },
+      )
+      .toArray(),
     feedbackRecords()
       .find({ employeeUserId: managerUserId, status: 'sent' })
       .sort({ period: 1 })
       .toArray(),
-    reportIds.length
-      ? feedbackRecords()
-          .find({ managerUserId, employeeUserId: { $in: reportIds }, period: cycle.period })
-          .toArray()
-      : Promise.resolve([]),
   ]);
+  const reportIds = reportRows.map((row) => row.userId);
+  const reportRecords = reportIds.length
+    ? await feedbackRecords()
+        .find({ managerUserId, employeeUserId: { $in: reportIds }, period: cycle.period })
+        .toArray()
+    : [];
 
   return {
     period: cycle.period,
@@ -237,6 +246,9 @@ export async function getFeedbackSnapshot(managerUserId: string) {
     })),
   };
 }
+
+/** A roster record as the workspace reads it: an inline photo left behind, and marked. */
+type RosterUser = User & { hasInlinePhoto?: boolean };
 
 export async function getManagerWorkspace(
   managerUserId: string,
@@ -265,7 +277,31 @@ export async function getManagerWorkspace(
       approverFuture,
       // Every batch at once: a roster past the default first batch of 101
       // went back to the cluster for the rest.
-      users().find(orgFilter, { batchSize: 100_000 }).toArray(),
+      //
+      // Each record bar an inline photo: an older account keeps its photo as
+      // a base64 data URI of hundreds of KB, and the whole company's of those
+      // made this the slowest call the app makes. A photo kept as a link stays;
+      // an inline one is marked, and read below only for the people shown.
+      users()
+        .aggregate<RosterUser>(
+          [
+            { $match: orgFilter },
+            {
+              $set: {
+                hasInlinePhoto: { $regexMatch: { input: { $ifNull: ['$profilePhotoUrl', ''] }, regex: '^data:' } },
+                profilePhotoUrl: {
+                  $cond: [
+                    { $regexMatch: { input: { $ifNull: ['$profilePhotoUrl', ''] }, regex: '^data:' } },
+                    '$$REMOVE',
+                    '$profilePhotoUrl',
+                  ],
+                },
+              },
+            },
+          ],
+          { batchSize: 100_000 },
+        )
+        .toArray(),
       cycleInfoFor(manager.org ?? ''),
       // Company config for the overtime apply flow: which weekdays are
       // week-offs, whether overtime is enabled for this user's department.
@@ -334,6 +370,15 @@ export async function getManagerWorkspace(
   const today = new Date().toISOString().slice(0, 10);
   // HR's marks on today, by Indian date, read alongside everything below.
   const istToday = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  // The inline photos of the people shown, left out of the roster above.
+  const inlinePhotoIds = reports
+    .filter((report) => report.userId !== managerUserId && (report as RosterUser).hasInlinePhoto)
+    .map((report) => report.userId);
+  const inlinePhotosPromise = inlinePhotoIds.length
+    ? users()
+        .find({ userId: { $in: inlinePhotoIds } }, { projection: { _id: 0, userId: 1, profilePhotoUrl: 1 } })
+        .toArray()
+    : Promise.resolve([]);
   const todaysMarksPromise = reportIds.length
     ? attendanceOverrides().find({ userId: { $in: reportIds }, workDate: istToday }, { projection: { _id: 0, userId: 1, status: 1 } }).toArray()
     : Promise.resolve([]);
@@ -426,6 +471,10 @@ export async function getManagerWorkspace(
     todaysAttendance.filter((record) => record.userId).map((record) => [record.userId, record]),
   );
   const todaysMarks = new Map((await todaysMarksPromise).map((mark) => [mark.userId, mark.status]));
+  for (const row of await inlinePhotosPromise) {
+    const report = byId.get(row.userId);
+    if (report && !report.profilePhotoKey) report.profilePhotoUrl = row.profilePhotoUrl;
+  }
   const todaysRecordFor = (report: (typeof reports)[number]) =>
     (report.employeeId && attendanceByEmployeeId.get(report.employeeId)) ||
     attendanceByUserId.get(report.userId);
