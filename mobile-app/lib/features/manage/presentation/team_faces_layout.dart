@@ -9,6 +9,7 @@ class TeamFacesLayout {
     required this.faceCount,
     required this.rest,
     required this.step,
+    this.faceSize = face,
   });
 
   /// How many photos are drawn.
@@ -21,7 +22,11 @@ class TeamFacesLayout {
   /// an overlap when they do not.
   final double step;
 
-  bool get overlapping => step < face;
+  /// How wide one face is drawn: [face] on the Team tab, smaller where the
+  /// same card sits inside a profile.
+  final double faceSize;
+
+  bool get overlapping => step < faceSize;
 
   static const double face = 56;
   static const double gap = 4;
@@ -31,24 +36,50 @@ class TeamFacesLayout {
   static const int maxShown = 5;
 
   /// [width] is the card's inner width; [members] how many people are on it.
-  factory TeamFacesLayout.forWidth(double width, int members) {
+  /// [faceSize] is how wide each face is drawn; the overlap shrinks with it,
+  /// so a smaller row is pulled together in the same proportion.
+  factory TeamFacesLayout.forWidth(
+    double width,
+    int members, {
+    double faceSize = face,
+  }) {
     if (members <= 0) {
-      return const TeamFacesLayout(faceCount: 0, rest: 0, step: face + gap);
+      return TeamFacesLayout(
+        faceCount: 0,
+        rest: 0,
+        step: faceSize + gap,
+        faceSize: faceSize,
+      );
     }
     // n faces with a gap between them take (face + gap)·n − gap.
-    final fitWithGap = ((width + gap) / (face + gap)).floor();
+    final fitWithGap = ((width + gap) / (faceSize + gap)).floor();
     if (members <= fitWithGap && members <= maxShown) {
-      return TeamFacesLayout(faceCount: members, rest: 0, step: face + gap);
+      return TeamFacesLayout(
+        faceCount: members,
+        rest: 0,
+        step: faceSize + gap,
+        faceSize: faceSize,
+      );
     }
     // Overlapped, n items take (face − overlap)·(n − 1) + face.
-    final step = face - overlap;
-    final slots = ((width - face) / step).floor() + 1;
+    final step = faceSize - overlap * faceSize / face;
+    final slots = ((width - faceSize) / step).floor() + 1;
     if (members <= slots && members <= maxShown) {
-      return TeamFacesLayout(faceCount: members, rest: 0, step: step);
+      return TeamFacesLayout(
+        faceCount: members,
+        rest: 0,
+        step: step,
+        faceSize: faceSize,
+      );
     }
     // Only one circle fits: the count alone says more than a lone face.
     if (slots <= 1) {
-      return TeamFacesLayout(faceCount: 0, rest: members, step: step);
+      return TeamFacesLayout(
+        faceCount: 0,
+        rest: members,
+        step: step,
+        faceSize: faceSize,
+      );
     }
     // One slot goes to the bubble.
     final faceCount = (slots - 1).clamp(1, maxShown);
@@ -56,11 +87,12 @@ class TeamFacesLayout {
       faceCount: faceCount,
       rest: members - faceCount,
       step: step,
+      faceSize: faceSize,
     );
   }
 
   /// The width the row actually needs, for the overflow check.
   double get width => faceCount + rest.clamp(0, 1) == 0
       ? 0
-      : step * (faceCount + rest.clamp(0, 1) - 1) + face;
+      : step * (faceCount + rest.clamp(0, 1) - 1) + faceSize;
 }
