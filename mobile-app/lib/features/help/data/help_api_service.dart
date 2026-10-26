@@ -32,10 +32,16 @@ String? _lastHelpHomeFor;
 HelpHome? helpHomeFor(String userId) =>
     _lastHelpHomeFor == userId ? _lastHelpHome : null;
 
+/// The session whose company refused Help (403: Help is not on its plan).
+/// Remembered until sign-out, so the profile and the tab do not ask again at
+/// every rebuild and every open only to be refused each time.
+String? _helpRefusedFor;
+
 /// Forgets it. Called when the person signs out.
 void forgetHelpHome() {
   _lastHelpHome = null;
   _lastHelpHomeFor = null;
+  _helpRefusedFor = null;
 }
 
 class HelpApiService {
@@ -86,7 +92,17 @@ class HelpApiService {
   }
 
   Future<HelpHome> home() async {
-    final home = HelpHome.fromJson(await _request('GET', '/help/home'));
+    if (_helpRefusedFor == session.token) {
+      throw const TalkApiException('Help is not available for your company.', statusCode: 403);
+    }
+    final Map<String, dynamic> json;
+    try {
+      json = await _request('GET', '/help/home');
+    } on TalkApiException catch (error) {
+      if (error.statusCode == 403) _helpRefusedFor = session.token;
+      rethrow;
+    }
+    final home = HelpHome.fromJson(json);
     _lastHelpHome = home;
     _lastHelpHomeFor = session.user.id;
     return home;
