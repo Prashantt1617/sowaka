@@ -13,6 +13,7 @@ import {
 import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
 import { logger } from '../utils/logger';
 import { blockedUserIdsFor } from './connect-blocks.service';
+import { requestViewer } from '../middleware/request-viewer';
 import {
   CELEBRANT_MAX_PINNED,
   celebrantOfPost,
@@ -177,7 +178,7 @@ export async function getConnectFeed(
   // The viewer and their block list are independent reads: one round trip,
   // not two in a row.
   const [viewer, blockedUserIds] = await Promise.all([
-    users().findOne({ userId: viewerUserId }),
+    requestViewer(viewerUserId) ?? users().findOne({ userId: viewerUserId }, { projection: { profilePhotoUrl: 0 } }),
     blockedUserIdsFor(viewerUserId),
   ]);
   if (!viewer) throw new ConnectError(404, 'User not found');
@@ -281,6 +282,9 @@ export async function getConnectFeed(
   // `createConnectPost`), so a post predates whatever profile photo its
   // author later uploads. Resolve the live photo for everyone shown in this
   // page in one query rather than trusting the stale snapshot.
+  //
+  // The people a card names — a kudos' or a celebration's person, anyone
+  // tagged — come in the same read, rather than one read per card.
   const authorIds = [
     ...new Set(
       posts
@@ -288,6 +292,7 @@ export async function getConnectFeed(
           post.author.userId,
           // Whoever commented, so their face shows under the post too.
           ...post.comments.map((comment) => comment.userId),
+          ...namedPeopleOf(post),
         ])
         .filter((id): id is string => Boolean(id)),
     ),
@@ -296,15 +301,11 @@ export async function getConnectFeed(
   const [authors, relayStatuses] = await Promise.all([
     users()
       .find({ userId: { $in: authorIds } })
-      .project<{ userId: string; profilePhotoKey?: string; profilePhotoUrl?: string; isLeadership?: boolean }>({
-        userId: 1,
-        profilePhotoKey: 1,
-        profilePhotoUrl: 1,
-        isLeadership: 1,
-      })
+      .project<PagePerson>(PAGE_PERSON_PROJECTION)
       .toArray(),
     relayStatusesFor(posts),
   ]);
+  const people = new Map(authors.map((author) => [author.userId, author]));
   const leaderIds = new Set(authors.filter((author) => author.isLeadership === true).map((author) => author.userId));
   const authorPhotoUrls = new Map(
     await Promise.all(
@@ -316,7 +317,9 @@ export async function getConnectFeed(
   );
 
   const views = await Promise.all(
-    posts.map((post) => viewPost(post, viewerUserId, authorPhotoUrls, blockedUserIds, relayStatuses, leaderIds)),
+    posts.map((post) =>
+      viewPost(post, viewerUserId, authorPhotoUrls, blockedUserIds, relayStatuses, leaderIds, people),
+    ),
   );
   return {
     posts: views,
@@ -1244,7 +1247,11 @@ async function reverseChallengePoints(post: ConnectPost) {
  * someone report something.
  */
 export async function requireVisiblePost(viewerUserId: string, postId: string) {
-  const viewer = await users().findOne({ userId: viewerUserId });
+  // The viewer as the auth check read them, when this request is theirs: a
+  // round trip saved on every post opened, liked or commented on.
+  const viewer =
+    requestViewer(viewerUserId) ??
+    (await users().findOne({ userId: viewerUserId }, { projection: { profilePhotoUrl: 0 } }));
   if (!viewer) throw new ConnectError(404, 'User not found');
   const post = await connectPosts().findOne({ id: postId, org: orgForUser(viewer) });
   if (!post) throw new ConnectError(404, 'Post not found');
@@ -1268,7 +1275,9 @@ async function requireEditablePost(
   postId: string,
   purpose: 'edit' | 'delete' = 'edit',
 ) {
-  const viewer = await users().findOne({ userId: viewerUserId });
+  const viewer =
+    requestViewer(viewerUserId) ??
+    (await users().findOne({ userId: viewerUserId }, { projection: { profilePhotoUrl: 0 } }));
   if (!viewer) throw new ConnectError(404, 'User not found');
   const post = await connectPosts().findOne({ id: postId, org: orgForUser(viewer) });
   if (!post) throw new ConnectError(404, 'Post not found');
@@ -1321,6 +1330,27 @@ async function commentPhotoUrls(
   return resolved;
 }
 
+/** Someone a feed page shows: an author, a commenter, or a person a card names. */
+type PagePerson = Pick<
+  User,
+  'userId' | 'name' | 'designation' | 'department' | 'joiningDate' | 'profilePhotoKey' | 'profilePhotoUrl' | 'isLeadership'
+>;
+const PAGE_PERSON_PROJECTION = {
+  _id: 0, userId: 1, name: 1, designation: 1, department: 1, joiningDate: 1,
+  profilePhotoKey: 1, profilePhotoUrl: 1, isLeadership: 1,
+} as const;
+
+/** The people a post's card names beyond its author: a kudos' or celebration's person, and anyone tagged. */
+function namedPeopleOf(post: ConnectPost): string[] {
+  const body = post.body ?? {};
+  return [
+    ...(typeof body.personUserId === 'string' && body.personUserId.length > 0 ? [body.personUserId] : []),
+    ...(Array.isArray(body.taggedUserIds)
+      ? (body.taggedUserIds as unknown[]).filter((id): id is string => typeof id === 'string')
+      : []),
+  ];
+}
+
 async function viewPost(
   post: ConnectPost,
   viewerUserId: string,
@@ -1328,10 +1358,44 @@ async function viewPost(
   knownBlockedUserIds?: string[],
   relayStatuses?: Map<string, string>,
   leaderIds?: Set<string>,
+  /** Everyone the feed page shows, read once for the page. */
+  people?: Map<string, PagePerson>,
 ) {
-  // The feed resolves this once for the whole page; every other caller renders
-  // a single post after a write and looks it up here.
-  const blockedUserIds = knownBlockedUserIds ?? (await blockedUserIdsFor(viewerUserId));
+  // The feed resolves these once for the whole page. Every other caller
+  // renders a single post after a write, and its reads — the block list, the
+  // author, the people the card names, the game's state — are independent of
+  // one another, so they go out together rather than one after another.
+  const personUserId =
+    typeof post.body?.personUserId === 'string' && post.body.personUserId.length > 0
+      ? post.body.personUserId
+      : undefined;
+  const taggedUserIds =
+    Array.isArray(post.body?.taggedUserIds) && post.body.taggedUserIds.length > 0
+      ? (post.body.taggedUserIds as string[])
+      : undefined;
+  const eventId = post.type === 'relay_game' && typeof post.body?.eventId === 'string' ? post.body.eventId : undefined;
+  const [blockedUserIds, authorUser, person, taggedPeople, relayStatus] = await Promise.all([
+    knownBlockedUserIds ?? blockedUserIdsFor(viewerUserId),
+    post.author.userId && !authorPhotoUrls
+      ? users().findOne(
+          { userId: post.author.userId },
+          { projection: { _id: 0, profilePhotoKey: 1, profilePhotoUrl: 1, isLeadership: 1 } },
+        )
+      : null,
+    personUserId
+      ? people
+        ? (people.get(personUserId) ?? null)
+        : users().findOne({ userId: personUserId }, { projection: PAGE_PERSON_PROJECTION })
+      : null,
+    taggedUserIds ? resolveTaggedPeople(taggedUserIds, people) : undefined,
+    eventId
+      ? relayStatuses
+        ? relayStatuses.get(eventId)
+        : relayEvents()
+            .findOne({ id: eventId }, { projection: { _id: 0, status: 1 } })
+            .then((event) => event?.status)
+      : undefined,
+  ]);
   let authorPhotoUrl = post.author.photoUrl;
   // Read live like the photo, so the Leadership pill follows the person's
   // flag onto posts written before it was set.
@@ -1342,15 +1406,9 @@ async function viewPost(
         authorPhotoUrl = authorPhotoUrls.get(post.author.userId);
       }
       authorIsLeadership = leaderIds?.has(post.author.userId) ?? false;
-    } else {
-      const authorUser = await users().findOne(
-        { userId: post.author.userId },
-        { projection: { _id: 0, profilePhotoKey: 1, profilePhotoUrl: 1, isLeadership: 1 } },
-      );
-      if (authorUser) {
-        authorPhotoUrl = await resolveProfilePhoto(authorUser);
-        authorIsLeadership = authorUser.isLeadership === true;
-      }
+    } else if (authorUser) {
+      authorPhotoUrl = await resolveProfilePhoto(authorUser);
+      authorIsLeadership = authorUser.isLeadership === true;
     }
   }
   const liked = post.likedBy.includes(viewerUserId);
@@ -1373,16 +1431,8 @@ async function viewPost(
   }
   // Kudos name the person they are about; their face is read now rather than
   // stored, so it follows whatever photo they have today.
-  if (typeof body.personUserId === 'string' && body.personUserId.length > 0) {
+  if (personUserId) {
     const celebration = post.type === 'birthday' || post.type === 'anniversary';
-    const person = await users().findOne(
-      { userId: body.personUserId },
-      {
-        projection: celebration
-          ? { _id: 0, profilePhotoKey: 1, profilePhotoUrl: 1, department: 1, designation: 1, joiningDate: 1 }
-          : { _id: 0, profilePhotoKey: 1, profilePhotoUrl: 1 },
-      },
-    );
     body.photoUrl = (await resolveProfilePhoto(person)) ?? body.photoUrl;
     // A birthday or anniversary card names the person's team, and an
     // anniversary the month they joined ("Since Oct 2023") — read now, so
@@ -1397,18 +1447,12 @@ async function viewPost(
   }
   // Tags store ids only, so a tagged person's name and photo are always
   // current rather than frozen at the moment the post was written.
-  if (Array.isArray(body.taggedUserIds) && body.taggedUserIds.length > 0) {
-    body.taggedPeople = await resolveTaggedPeople(body.taggedUserIds as string[]);
+  if (taggedPeople) {
+    body.taggedPeople = taggedPeople;
   }
   // A game post carries its event's current status, so the feed card shows
   // the right state on first paint rather than after its own fetch.
-  if (post.type === 'relay_game' && typeof body.eventId === 'string') {
-    const status = relayStatuses
-      ? relayStatuses.get(body.eventId)
-      : (await relayEvents().findOne({ id: body.eventId }, { projection: { _id: 0, status: 1 } }))
-          ?.status;
-    if (status) body.status = status;
-  }
+  if (relayStatus) body.status = relayStatus;
   const objectKeys = mediaObjectKeys(body);
   if (objectKeys.length > 0) {
     const urls = await Promise.all(
@@ -2059,14 +2103,23 @@ async function mostLikelyTaggers(userIds: string[]): Promise<Map<string, MostLik
   );
 }
 
-async function resolveTaggedPeople(userIds: string[]) {
-  const tagged = await users()
-    .find({ userId: { $in: userIds } })
-    .project<{ userId: string; name: string; designation?: string; profilePhotoKey?: string; profilePhotoUrl?: string }>({
-      _id: 0, userId: 1, name: 1, designation: 1, profilePhotoKey: 1, profilePhotoUrl: 1,
-    })
-    .toArray();
-  const byId = new Map(tagged.map((person) => [person.userId, person]));
+async function resolveTaggedPeople(
+  userIds: string[],
+  /** The feed page's people, already read: no read of its own. */
+  known?: Map<string, Pick<User, 'userId' | 'name' | 'designation' | 'profilePhotoKey' | 'profilePhotoUrl'>>,
+) {
+  const byId =
+    known ??
+    new Map(
+      (
+        await users()
+          .find({ userId: { $in: userIds } })
+          .project<{ userId: string; name: string; designation?: string; profilePhotoKey?: string; profilePhotoUrl?: string }>({
+            _id: 0, userId: 1, name: 1, designation: 1, profilePhotoKey: 1, profilePhotoUrl: 1,
+          })
+          .toArray()
+      ).map((person) => [person.userId, person]),
+    );
   const resolved = await Promise.all(
     // Preserve the author's ordering, and drop anyone since offboarded or deleted.
     userIds
