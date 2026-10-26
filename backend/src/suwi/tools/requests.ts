@@ -11,18 +11,44 @@ import { daysWaiting, INSIGHT_ROUTE, mayRead } from '../insight';
 
 export type PendingRow = { type: 'leave' | 'overtime' | 'correction' | 'checkin' | 'claim'; id: string; userId: string; name: string; department?: string; what: string; dates: string; submitted: string; daysWaiting: number; manager?: string };
 
+/**
+ * The org-wide lists `pendingRows` reads, for a caller that reads the same
+ * list more than once in one answer (the notices read the leave and the
+ * claims twice each) and hands each one over to be read only once.
+ */
+export interface AdminLists {
+  leave: typeof listAllLeavesForAdmin;
+  claims: typeof listAllReimbursementsForAdmin;
+}
+
+/** `AdminLists` that each read at most once, whoever asks first. */
+export function sharedAdminLists(): AdminLists {
+  const once = <T>(read: (userId: string) => Promise<T>) => {
+    const kept = new Map<string, Promise<T>>();
+    return (userId: string) => {
+      if (!kept.has(userId)) kept.set(userId, read(userId));
+      return kept.get(userId)!;
+    };
+  };
+  return { leave: once(listAllLeavesForAdmin), claims: once(listAllReimbursementsForAdmin) };
+}
+
 /** Every pending request this person may see, newest last. */
-export async function pendingRows(ctx: { userId: string; today: string; user: { dashboardAdmin?: boolean; dashboardTabs?: string[] } }, type: string): Promise<PendingRow[]> {
+export async function pendingRows(
+  ctx: { userId: string; today: string; user: { dashboardAdmin?: boolean; dashboardTabs?: string[] } },
+  type: string,
+  lists: AdminLists = { leave: listAllLeavesForAdmin, claims: listAllReimbursementsForAdmin },
+): Promise<PendingRow[]> {
   const out: PendingRow[] = [];
   const day = (d: Date | string | number | undefined) => (d == null ? '' : new Date(d).toISOString().slice(0, 10));
   const want = (t: string, route: string) => (!type || type === t) && mayRead(ctx.user, route);
   const wantRegs = want('corrections', INSIGHT_ROUTE.correction) || want('checkins', INSIGHT_ROUTE.ool);
   // The four lists are independent; fetch them side by side.
   const [leaveList, otList, regList, claimList] = await Promise.all([
-    want('leave', INSIGHT_ROUTE.leave) ? listAllLeavesForAdmin(ctx.userId) : null,
+    want('leave', INSIGHT_ROUTE.leave) ? lists.leave(ctx.userId) : null,
     want('overtime', INSIGHT_ROUTE.overtime) ? listAllOvertimeForAdmin(ctx.userId) : null,
     wantRegs ? listAllRegularizationsForAdmin(ctx.userId) : null,
-    want('claims', INSIGHT_ROUTE.claim) ? listAllReimbursementsForAdmin(ctx.userId) : null,
+    want('claims', INSIGHT_ROUTE.claim) ? lists.claims(ctx.userId) : null,
   ]);
   if (leaveList) {
     for (const l of leaveList.filter((x) => x.status === 'pending')) {

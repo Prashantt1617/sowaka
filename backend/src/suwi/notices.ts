@@ -7,11 +7,10 @@
 import { connectPosts, relayEvents, reimbursementTypes } from '../config/db';
 import { tabsForRequest } from '../models/dashboard-tabs';
 import { hasAllDashboardTabs } from '../middleware/admin.middleware';
-import { listAllReimbursementsForAdmin } from '../services/reimbursement.service';
 import { peopleTasks } from '../services/peopleTasks.service';
 import { SuwiContext } from './tools';
 import { leaveSafety } from './insight';
-import { pendingRows } from './tools/requests';
+import { pendingRows, sharedAdminLists } from './tools/requests';
 
 /** Days a request may wait before Suwi calls it overdue (Sowaka has no escalation setting of its own). */
 export const ESCALATION_DAYS = 3;
@@ -67,12 +66,16 @@ async function computeNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
   // leave, so they start as soon as the leave list is in rather than after
   // every list (overtime is the slowest): the same leave rows pendingRows
   // gives below, read on their own.
-  const leaveSafe = quietly(() => pendingRows(ctx, 'leave')).then((rows) => (rows ? quietly(() => leaveSafety(ctx.org, ctx.userId, today, rows)) : null));
+  //
+  // The leave and the claims lists are each wanted twice here (the pile, and
+  // the safety checks or the claims notice), so each is read once and shared.
+  const lists = sharedAdminLists();
+  const leaveSafe = quietly(() => pendingRows(ctx, 'leave', lists)).then((rows) => (rows ? quietly(() => leaveSafety(ctx.org, ctx.userId, today, rows)) : null));
   // Every list at once: each is a few round trips to the database.
   // The waiting pile is the same rows pending_requests and review_requests read, so the counts agree.
   const [pending, claims, types, tasks, relay, recent] = await Promise.all([
-    quietly(() => pendingRows(ctx, '')),
-    may(ctx, '/admin/reimbursements') ? quietly(() => listAllReimbursementsForAdmin(ctx.userId)) : null,
+    quietly(() => pendingRows(ctx, '', lists)),
+    may(ctx, '/admin/reimbursements') ? quietly(() => lists.claims(ctx.userId)) : null,
     may(ctx, '/admin/reimbursements') ? quietly(() => reimbursementTypes().find({ org: ctx.org }).project<{ name: string; maxLimit: number }>({ name: 1, maxLimit: 1 }).toArray()) : null,
     seesPeople ? quietly(() => peopleTasks(ctx.userId)) : null,
     may(ctx, '/admin/relay') ? quietly(() => relayEvents().countDocuments({ org: ctx.org, status: { $in: ['scheduled', 'live'] } })) : null,
