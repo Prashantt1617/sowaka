@@ -6,6 +6,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../features/auth/data/auth_models.dart';
 import '../firebase_options.dart';
@@ -31,10 +32,17 @@ class AppNotificationService {
   Map<String, dynamic>? pendingDestination;
   AuthSession? _session;
 
+  /// Done once [initialize] has run, whether or not it worked. The app no
+  /// longer waits for it before drawing; what needs Firebase waits here.
+  Future<void> get ready => _ready.future;
+  final _ready = Completer<void>();
+
   Future<void> initialize() async {
     try {
       await _initializeFirebase();
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+      // The channel and the push that opened the app are independent.
+      final initialFuture = FirebaseMessaging.instance.getInitialMessage();
       if (!kIsWeb) await _initializeLocalNotifications();
       FirebaseMessaging.onMessage.listen((message) {
         if (!_received.isClosed) {
@@ -45,8 +53,9 @@ class AppNotificationService {
       FirebaseMessaging.onMessageOpenedApp.listen(
         (message) => _emit(message.data),
       );
-      final initial = await FirebaseMessaging.instance.getInitialMessage();
-      if (initial != null) {
+      final initial = await initialFuture;
+      // A push tapped meanwhile is newer than the one that opened the app.
+      if (initial != null && pendingDestination == null) {
         pendingDestination = Map<String, dynamic>.from(initial.data);
       }
       FirebaseMessaging.instance.onTokenRefresh.listen(
@@ -55,6 +64,8 @@ class AppNotificationService {
     } catch (error, stackTrace) {
       debugPrint('Notification initialization failed: $error');
       debugPrintStack(stackTrace: stackTrace);
+    } finally {
+      if (!_ready.isCompleted) _ready.complete();
     }
   }
 
@@ -63,6 +74,7 @@ class AppNotificationService {
   /// throws `[core/no-app]`. Sign-in calls this before anything else, so an
   /// unguarded throw here surfaces as an unhandled exception on every launch.
   Future<void> requestPermission() async {
+    await ready;
     if (Firebase.apps.isEmpty) return;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       await _local
@@ -130,6 +142,7 @@ class AppNotificationService {
     final session = _session;
     _session = null;
     if (session == null) return;
+    await _forgetRegistration();
     try {
       final token = await FirebaseMessaging.instance.getToken();
       if (token == null) return;
@@ -159,6 +172,9 @@ class AppNotificationService {
         vapidKey: kIsWeb && webVapidKey.isNotEmpty ? webVapidKey : null,
       );
       if (token != null) {
+        // The same token for the same person was handed over lately: every
+        // launch used to post it again.
+        if (await _registeredLately(token, _session!.user.id)) return;
         debugPrint('Registering ${kIsWeb ? 'web' : 'native'} FCM token');
         await _register(token);
       } else {
@@ -170,10 +186,58 @@ class AppNotificationService {
     }
   }
 
-  void consumePending() {
+  /// Opens the push the app was launched from, once [initialize] has found
+  /// it: the home screen asks on its first frame, which may now come first.
+  Future<void> consumePending() async {
+    await ready;
     final pending = pendingDestination;
     pendingDestination = null;
     if (pending != null) _opened.add(pending);
+  }
+
+  static const _registeredKey = 'notifications.registered_device';
+
+  /// How long a registration stands before the launch hands the token over
+  /// again anyway, in case the server has let it go.
+  static const _registrationLasts = Duration(days: 7);
+
+  Future<bool> _registeredLately(String token, String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_registeredKey);
+      if (raw == null) return false;
+      final kept = jsonDecode(raw) as Map<String, dynamic>;
+      final at = DateTime.tryParse('${kept['at']}');
+      return kept['token'] == token &&
+          kept['userId'] == userId &&
+          at != null &&
+          DateTime.now().difference(at) < _registrationLasts;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _rememberRegistration(String token, String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _registeredKey,
+        jsonEncode({
+          'token': token,
+          'userId': userId,
+          'at': DateTime.now().toIso8601String(),
+        }),
+      );
+    } catch (_) {
+      // Not remembered: the next launch registers once more, nothing worse.
+    }
+  }
+
+  Future<void> _forgetRegistration() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_registeredKey);
+    } catch (_) {}
   }
 
   void openDestination(Map<String, dynamic> data) => _emit(data);
@@ -227,6 +291,7 @@ class AppNotificationService {
         'Device registration failed (${response.statusCode}): ${response.body}',
       );
     }
+    await _rememberRegistration(token, session.user.id);
     debugPrint('FCM device token registered');
   }
 }

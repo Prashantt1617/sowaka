@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'features/manager_shell/presentation/tablet_shell.dart';
@@ -8,7 +10,11 @@ import 'services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AppNotificationService.instance.initialize();
+  // Not waited for: Firebase, the local notification channel and the push
+  // that opened the app took their turns before the first frame, a few
+  // hundred milliseconds of blank screen on every launch. Whatever needs them
+  // (the permission prompt, the opened push) waits on [ready] instead.
+  unawaited(AppNotificationService.instance.initialize());
   runApp(const HrmsMobileApp());
 }
 
