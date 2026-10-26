@@ -104,7 +104,7 @@ async function linesFor(userId: string, n: number) {
   const back = await users().findOne({ userId: 'staff' });
   ok('Undo puts both fields back', back?.department === 'Ops' && !back?.phone, { department: back?.department, phone: back?.phone });
   rows = await linesFor('staff', 3);
-  ok('Undo leaves its own line', rows[2]?.via === 'suwi' && rows[2]?.proposalTitle?.startsWith('Undo:'), rows[2]);
+  ok('Undo leaves its own line', rows[2]?.via === 'suwi' && rows[2]?.proposalTitle?.startsWith('Undo:') === true, rows[2]);
 
   console.log('Reading');
   const page = await listEmployeeActivity('founder', 'staff', { limit: 2 });
