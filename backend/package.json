@@ -29,6 +29,7 @@
     "suwi-bulk:check": "tsx src/scripts/suwi-bulk-check.ts",
     "celebrations:check": "tsx src/scripts/connect-celebrations-check.ts",
     "squad:check": "tsx src/scripts/secret-squad-check.ts",
+    "placements:check": "tsx src/scripts/placements-check.ts",
     "most-likely:check": "tsx src/scripts/most-likely-taggers-check.ts",
     "payroll:zoho-check": "tsx src/scripts/payroll-zoho-check.ts",
     "payroll:payslip-check": "tsx src/scripts/payroll-payslip-check.ts",
