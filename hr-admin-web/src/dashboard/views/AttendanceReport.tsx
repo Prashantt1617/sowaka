@@ -1,24 +1,23 @@
-// Reports › Attendance — how a date range went, for everyone, on one page.
+// Reports › Attendance — how today, this week or this month went, one row per
+// employee.
 //
-// Filters first, then the totals, then the days. The totals are not a summary
-// sitting above the real controls: each card is the filter. Press Present and
-// the list is the present days; press Missed punch and it opens into the three
-// ways a punch can be missing, because "a punch is missing" is never the whole
-// question — which one, and was it the one this shift needs.
+// Every number counts people, not days: one row per employee, one status per
+// employee per day, picked in a fixed order (on leave, week off or holiday,
+// late, present, not punched in yet, missed punch). Today lists each person's
+// status and punches; a week is a grid of short chips; a month is each
+// person's totals. A custom range under eight days is the grid, longer is the
+// totals.
 //
-// The date range is the server's; everything else is applied here to the days
-// already graded, so a filter changes the page instantly and never re-runs a
-// month of grading. The export carries exactly what the filters show.
-//
-// The range is a period first — today, this week, this month — with the dates
-// beside it for anything else; editing a date makes it a custom range. The
-// filters live in this tab's session, so leaving the page and coming back
-// finds them as they were.
+// The server grades the days (the same grading payroll reads); this page only
+// turns each graded day into its one status, so nothing here can disagree with
+// a payslip about a punch. Today, the week and the month come from one
+// request, so switching between them is instant. The filters live in this
+// tab's session, so leaving the page and coming back finds them as they were.
 import { useEffect, useMemo, useState } from 'react';
 import type { WorkSheet } from 'xlsx';
 import { expandReport, getAttendanceReport } from '../../services/hrms';
-import type { AttendanceReportDTO, ReportRow } from '../../services/hrms';
-import { Card, DateRange, EmptyRow, ListPending, Pill, SearchInput, SelectBox, SkeletonCards, StatusTabs } from '../ui';
+import type { AttendanceReportDTO, ReportPersonDTO, ReportRow } from '../../services/hrms';
+import { Card, DateRange, EmptyRow, ListPending, SearchInput, SelectBox, SkeletonCards, StatusTabs } from '../ui';
 import type { LoadState } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { IconDownload } from './peopleTable';
@@ -29,11 +28,8 @@ import './look.css';
 /**
  * The last report for a range, kept in this tab so coming back to the page —
  * or re-picking a range already seen — paints at once and refreshes behind.
- * The link to the database has measured anywhere from under a second to the
- * better part of a minute for the same answer; a stale table that fills in is
- * a better wait than an empty one.
  */
-const cacheKey = (userId: string, from: string, to: string) => `sowaka.report.${userId}.${from}.${to}`;
+const cacheKey = (userId: string, from: string, to: string) => `sowaka.report.v2.${userId}.${from}.${to}`;
 const readCached = (key: string): AttendanceReportDTO | null => {
   try {
     const raw = sessionStorage.getItem(key);
@@ -50,96 +46,138 @@ const writeCached = (key: string, report: AttendanceReportDTO) => {
   }
 };
 
+// ── one status per employee per day ──────────────────────────────────────
+/** The day's one status, as its chip reads. */
+type Code = 'LV' | 'HL' | 'WO' | 'H' | 'L' | 'P' | 'NY' | 'MP' | 'A';
+const CODE: Record<Code, { label: string; tone: { bg: string; fg: string } }> = {
+  LV: { label: 'On leave', tone: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' } },
+  HL: { label: 'Half day leave', tone: { bg: 'var(--t-sky)', fg: 'var(--t-sky-i)' } },
+  WO: { label: 'Week off', tone: { bg: 'var(--surface-2)', fg: 'var(--ink-3)' } },
+  H: { label: 'Holiday', tone: { bg: 'var(--t-butter)', fg: 'var(--t-butter-i)' } },
+  L: { label: 'Late', tone: { bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' } },
+  P: { label: 'Present', tone: { bg: 'var(--ok-bg)', fg: 'var(--ok)' } },
+  NY: { label: 'Not punched in yet', tone: { bg: 'var(--surface-2)', fg: 'var(--ink-2)' } },
+  MP: { label: 'Missed punch', tone: { bg: 'var(--t-peach)', fg: 'var(--t-peach-i)' } },
+  A: { label: 'Absent (marked by HR)', tone: { bg: 'var(--bad-bg)', fg: 'var(--bad)' } },
+};
+/** The legend under a grid, in the order a day's status is decided. */
+const LEGEND: Code[] = ['P', 'L', 'MP', 'LV', 'HL', 'WO', 'H', 'NY'];
+const PRESENT = new Set<Code>(['P', 'L']);
+const LEAVE = new Set<Code>(['LV', 'HL']);
+
 /**
- * What a card filters to. Late is a flag on a day, not a status, so it is its
- * own; so is a punch that has not come yet because the shift is still on.
+ * A graded day as its one status. The server has already said whether a punch
+ * is missing for this person's shift (a single-punch shift needs only the
+ * punch-in); a day with an in-time is present, or late, unless it is missing
+ * its out-punch after the shift ended. While the shift is still running nothing
+ * is missed yet: an in-time is present with the out-punch pending, and no
+ * in-time is not punched in yet.
  */
-type Facet = 'present' | 'half_day' | 'missed' | 'on_leave' | 'late' | 'pending';
-type Filter = 'all' | Facet;
-/** Which punch is missing. A day with no punch at all is the third kind. */
-type Gap = 'in' | 'out' | 'both';
-type GapFilter = 'all' | Gap;
+function codeOf(row: ReportRow, halfLeave: boolean): Code {
+  if (row.status === 'on_leave') return halfLeave ? 'HL' : 'LV';
+  if (row.shiftRunning) return row.punchIn ? (row.late ? 'L' : 'P') : 'NY';
+  // HR's own mark, which has no punches behind it.
+  if (row.source === 'hr') return row.status === 'absent' ? 'A' : 'P';
+  if (row.status === 'missed_punch') return 'MP';
+  if (row.punchIn) return row.late ? 'L' : 'P';
+  // Present by default: nobody punches, and the working day is a present day.
+  if (row.status === 'present') return 'P';
+  return 'MP';
+}
 
-const FACETS: { key: Facet; label: string; note: string }[] = [
-  { key: 'present', label: 'Present', note: 'Full days' },
-  { key: 'half_day', label: 'Half day', note: 'Both punches available' },
-  { key: 'missed', label: 'Missed punch', note: 'One or both punches missing' },
-  { key: 'on_leave', label: 'On leave', note: 'Approved leave' },
-  { key: 'late', label: 'Late', note: 'In after the grace' },
-  // Only shown while someone's shift is still running, so mostly on today.
-  { key: 'pending', label: 'Not punched yet', note: 'Shift still running' },
-];
+/** Whether a person had one of these statuses on any of these dates. */
+const had = (p: PersonDays, codes: Set<Code>, dates: string[]) => dates.some((d) => {
+  const c = p.days.get(d)?.code;
+  return c !== undefined && codes.has(c);
+});
 
-const GAPS: { key: Gap; label: string }[] = [
-  { key: 'in', label: 'Missing punch-in' },
-  { key: 'out', label: 'Missing punch-out' },
-  { key: 'both', label: 'Both punches missing' },
-];
-
-const TONE: Record<Facet, { bg: string; fg: string }> = {
-  present: { bg: 'var(--ok-bg)', fg: 'var(--ok)' },
-  half_day: { bg: 'var(--warn-bg)', fg: 'var(--warn)' },
-  missed: { bg: 'var(--t-peach)', fg: 'var(--warn)' },
-  on_leave: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
-  late: { bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' },
-  pending: { bg: 'var(--surface-2)', fg: 'var(--ink-2)' },
+/** One person over the days on screen. */
+type PersonDays = {
+  userId: string;
+  person: ReportPersonDTO;
+  /** By date: the status, and the graded day behind it (none on a week off or holiday). */
+  days: Map<string, { code: Code; row?: ReportRow }>;
 };
 
-// The same statuses as solid pills in the day list.
-const SOLID = new Map<{ bg: string; fg: string }, { bg: string; fg: string }>([
-  [TONE.present, L.TONES.ok],
-  [TONE.half_day, L.TONES.info],
-  [TONE.missed, L.TONES.bad],
-  [TONE.on_leave, L.TONES.info],
-  [TONE.late, L.TONES.warn],
-  [TONE.pending, L.TONES.mute],
-]);
-const solid = (t: { bg: string; fg: string }) => SOLID.get(t) ?? t;
+/** A person's totals over a set of dates; statuses only count up to today. */
+function totalsOf(p: PersonDays, dates: string[], today: string) {
+  const t = { working: 0, present: 0, late: 0, missed: 0, leave: 0 };
+  for (const date of dates) {
+    const d = p.days.get(date);
+    if (!d || d.code === 'WO' || d.code === 'H') continue;
+    t.working += 1;
+    if (date > today) continue;
+    if (PRESENT.has(d.code)) t.present += 1;
+    if (d.code === 'L') t.late += 1;
+    if (d.code === 'MP') t.missed += 1;
+    if (d.code === 'LV') t.leave += 1;
+    if (d.code === 'HL') t.leave += 0.5;
+  }
+  return t;
+}
 
-const LEAVE_LABEL: Record<string, string> = {
-  sick: 'Sick', casual: 'Casual', earned: 'Earned', comp_off: 'Comp off',
-};
-/** 'emergency' -> 'Emergency': a type HR added reads as a word, not a key. */
-const leaveName = (key: string) => LEAVE_LABEL[key] ?? key.split('_').map((w) => w && w[0].toUpperCase() + w.slice(1)).join(' ');
-
-const PAGE = 20;
-
+// ── the range ─────────────────────────────────────────────────────────────
 /** A date as YYYY-MM-DD on this computer's calendar, which is the office's. */
 const isoOf = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const addDays = (iso: string, n: number) => {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + n);
+  return isoOf(d);
+};
+const datesBetween = (from: string, to: string) => {
+  const out: string[] = [];
+  for (let d = from; d <= to && out.length < 400; d = addDays(d, 1)) out.push(d);
+  return out;
+};
 
-/** The quick ranges, each ending today: nothing after today has been worked yet. */
 type Period = 'today' | 'week' | 'month' | 'custom';
 const PERIODS: Period[] = ['today', 'week', 'month', 'custom'];
 const PERIOD_LABEL: Record<Period, string> = { today: 'Today', week: 'This week', month: 'This month', custom: 'Custom' };
-function rangeOf(period: Exclude<Period, 'custom'>): { from: string; to: string } {
-  const now = new Date();
-  const to = isoOf(now);
-  if (period === 'today') return { from: to, to };
-  if (period === 'week') {
-    // The week starts on Monday, as the shifts' weekly offs do.
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-    return { from: isoOf(monday), to };
-  }
-  return { from: `${to.slice(0, 7)}-01`, to };
+/** Under this many days a custom range is the week grid; from it on, the month totals. */
+const GRID_MAX_DAYS = 7;
+
+/** Today, this week (Monday to Sunday, as the shifts' weekly offs run) and this calendar month. */
+function presetRanges(today: string) {
+  const now = new Date(`${today}T00:00:00`);
+  const monday = addDays(today, -((now.getDay() + 6) % 7));
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const monthEnd = isoOf(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+  return {
+    today: { from: today, to: today },
+    week: { from: monday, to: addDays(monday, 6) },
+    month: { from: monthStart, to: monthEnd },
+  };
 }
 
-/** Everything the filters hold, kept for this tab so coming back finds them. */
+// ── attendance sources ────────────────────────────────────────────────────
+/** The shift template's punch format, as the filter and the rows name it. */
+const SOURCE_LABEL: Record<string, string> = {
+  'Biometric': 'Biometric',
+  'Geotag (powered by Sowaka)': 'Geotag',
+  'In-app punch in': 'In-app',
+  'Present by default (Auto Punch)': 'Auto punch',
+};
+const sourceName = (format: string) => SOURCE_LABEL[format] ?? format;
+/** How a punch reached us: the biometric import, or the app (Geotag and in-app alike). */
+const punchedVia = (format: string): string | null =>
+  format === 'Biometric' ? 'sql_import' : format === 'Present by default (Auto Punch)' ? null : 'manual';
+
+// ── filters, kept for this tab ────────────────────────────────────────────
+type Card3 = 'present' | 'on_leave' | 'missed';
 type Saved = {
   period: Period;
   custom: { from: string; to: string };
   department: string;
   manager: string;
-  mode: string;
+  source: string;
   search: string;
-  filter: Filter;
-  gap: GapFilter;
+  card: Card3 | 'all';
 };
 const DEFAULTS: Saved = {
-  period: 'month', custom: { from: '', to: '' }, department: 'all', manager: 'all', mode: 'all', search: '', filter: 'all', gap: 'all',
+  period: 'today', custom: { from: '', to: '' }, department: 'all', manager: 'all', source: 'all', search: '', card: 'all',
 };
-const filtersKey = (userId: string) => `sowaka.report.filters.${userId}`;
+const filtersKey = (userId: string) => `sowaka.report.filters.v2.${userId}`;
 const readFilters = (userId: string): Saved => {
   try {
     const raw = sessionStorage.getItem(filtersKey(userId));
@@ -162,151 +200,83 @@ const writeFilters = (userId: string, saved: Saved) => {
   }
 };
 
-/** Auto punch has nobody punching, so there is no punch coverage to show for it. */
-const AUTO_PUNCH = 'Present by default (Auto Punch)';
+const CARDS: { key: Card3; label: string; codes: Set<Code> }[] = [
+  { key: 'present', label: 'Present', codes: PRESENT },
+  { key: 'on_leave', label: 'On leave', codes: LEAVE },
+  { key: 'missed', label: 'Missed punch', codes: new Set<Code>(['MP']) },
+];
 
-/**
- * Which punch a day is missing. The server has already decided *whether* one
- * is missing for this person's shift — on a single-punch shift a punch-in
- * alone is a full day and never lands here — so this only has to say which.
- * A punch-out with no punch-in is a missing punch-in whatever the shift: the
- * punch-in is the one every shift needs.
- */
-const gapOf = (row: ReportRow): Gap | null => {
-  // Not missed yet: the shift is still on and the punch can still come.
-  if (row.shiftRunning) return null;
-  if (row.status === 'absent') return 'both';
-  if (row.status !== 'missed_punch') return null;
-  return row.punchIn ? 'out' : 'in';
-};
-
-const matches = (row: ReportRow, facet: Facet): boolean => {
-  switch (facet) {
-    case 'present': return row.status === 'present';
-    case 'half_day': return row.status === 'half_day';
-    case 'missed': return (row.status === 'missed_punch' || row.status === 'absent') && !row.shiftRunning;
-    case 'on_leave': return row.status === 'on_leave';
-    case 'late': return row.late;
-    case 'pending': return row.shiftRunning;
-  }
-};
-
-/** Counts for a set of days. Cheap enough to run on every filter change. */
-function tally(rows: ReportRow[]) {
-  const counts = {
-    employees: new Set(rows.map((r) => r.userId)).size,
-    days: rows.length,
-    present: 0, half_day: 0, missed: 0, on_leave: 0, late: 0, pending: 0,
-    in: 0, out: 0, both: 0,
-  };
-  for (const row of rows) {
-    for (const facet of FACETS) if (matches(row, facet.key)) counts[facet.key] += 1;
-    const gap = gapOf(row);
-    if (gap) counts[gap] += 1;
-  }
-  return counts;
-}
+const PAGE = 25;
 
 const clock = (iso: string | null) =>
   iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
-const hours = (row: ReportRow) => {
-  if (!row.punchIn || !row.punchOut) return '—';
-  const h = (new Date(row.punchOut).getTime() - new Date(row.punchIn).getTime()) / 3_600_000;
-  return `${Math.floor(h)}h ${Math.round((h % 1) * 60)}m`;
+const dayHead = (iso: string) => {
+  const d = new Date(`${iso}T00:00:00`);
+  return { wd: d.toLocaleDateString('en-IN', { weekday: 'short' }), dm: d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) };
 };
-const dayLabel = (iso: string) =>
-  new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' });
-
-/** The status a day shows. A day with nothing on it is a missed punch of the third kind. */
-const statusOf = (row: ReportRow): { label: string; tone: { bg: string; fg: string } } => {
-  if (row.shiftRunning) return { label: row.punchIn ? 'Punch-out pending' : 'Not punched in yet', tone: TONE.pending };
-  switch (row.status) {
-    case 'present': return { label: 'Present', tone: TONE.present };
-    case 'half_day': return { label: 'Half day', tone: TONE.half_day };
-    case 'on_leave': return { label: 'On leave', tone: TONE.on_leave };
-    default: return { label: 'Missed punch', tone: TONE.missed };
-  }
-};
-const gapLabel = (row: ReportRow) => {
-  const gap = gapOf(row);
-  return gap ? GAPS.find((g) => g.key === gap)!.label : '';
-};
-const detail = (row: ReportRow) =>
-  row.shiftRunning ? 'Shift still running'
-  : row.leaveType ? `${leaveName(row.leaveType)} leave`
-    : gapLabel(row)
-      || (row.late ? `Late by ${row.lateByMinutes} min`
-        : row.source === 'sql_import' ? 'Biometric device'
-          : row.source === 'manual' ? 'App punch' : '');
+const dayLabel = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+const days = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
 export function AttendanceReport() {
   const { user } = useAuth();
   const userId = user?.id ?? '';
-  // What this tab last had on, read once; written back below on every change.
   const [saved] = useState(() => readFilters(userId));
 
-  // The quick range and the custom dates move together: clearing the dates
-  // sends two edits in one go, and each has to see the other's result.
   const [range, setRange] = useState(() => ({ period: saved.period, custom: saved.custom }));
   const { period, custom } = range;
-  // A preset is worked out afresh, so "Today" left on overnight means the new
-  // today. A custom range with one end cleared reads as that one day.
-  const preset = period === 'custom' ? null : rangeOf(period);
-  const from = preset ? preset.from : custom.from || custom.to;
-  const to = preset ? preset.to : custom.to || custom.from;
+  // Worked out afresh each render, so a page left open overnight moves to the new today.
+  const today = isoOf(new Date());
+  const presets = useMemo(() => presetRanges(today), [today]);
+  // One request covers today, the week and the month; Custom asks for its own.
+  const fetchFrom = period === 'custom' ? custom.from || custom.to : [presets.week.from, presets.month.from].sort()[0];
+  const fetchTo = period === 'custom' ? custom.to || custom.from : [presets.week.to, presets.month.to].sort()[1];
+  const shownRange = period === 'custom' ? { from: fetchFrom, to: fetchTo } : presets[period];
+  const dates = useMemo(() => (shownRange.from && shownRange.to ? datesBetween(shownRange.from, shownRange.to) : []), [shownRange.from, shownRange.to]);
+  const view: 'today' | 'grid' | 'totals' = period === 'today' ? 'today'
+    : period === 'week' ? 'grid'
+      : period === 'month' ? 'totals'
+        : dates.length <= GRID_MAX_DAYS ? 'grid' : 'totals';
 
   const [report, setReport] = useState<AttendanceReportDTO | null>(null);
-  // Which range the report on screen is for: another range shows its own
-  // skeleton (or its cached copy), never the last range's days.
   const [reportFor, setReportFor] = useState('');
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [department, setDepartment] = useState(saved.department);
   const [manager, setManager] = useState(saved.manager);
-  const [mode, setMode] = useState(saved.mode);
+  const [source, setSource] = useState(saved.source);
   const [search, setSearch] = useState(saved.search);
-  const [filter, setFilter] = useState<Filter>(saved.filter);
-  const [gap, setGap] = useState<GapFilter>(saved.gap);
+  const [card, setCard] = useState<Card3 | 'all'>(saved.card);
   const [page, setPage] = useState(1);
 
   useEffect(() => {
-    writeFilters(userId, { period, custom, department, manager, mode, search, filter, gap });
-  }, [userId, period, custom, department, manager, mode, search, filter, gap]);
+    writeFilters(userId, { period, custom, department, manager, source, search, card });
+  }, [userId, period, custom, department, manager, source, search, card]);
 
-  /** Picking a quick range; Custom starts from the dates on screen. */
   const pickPeriod = (next: Period) =>
-    setRange((prev) => ({ period: next, custom: next === 'custom' ? { from, to } : prev.custom }));
-  /** Editing a date makes the range a custom one; clearing both goes back to this month. */
+    setRange((prev) => ({ period: next, custom: next === 'custom' ? (prev.custom.from ? prev.custom : presets.week) : prev.custom }));
   const editRange = (side: 'from' | 'to', value: string) =>
     setRange((prev) => {
-      const base = prev.period === 'custom' ? prev.custom : rangeOf(prev.period);
+      const base = prev.period === 'custom' ? prev.custom : presets[prev.period];
       const next = { ...base, [side]: value };
-      if (!next.from && !next.to) return { period: 'month', custom: DEFAULTS.custom };
+      if (!next.from && !next.to) return { period: 'today', custom: DEFAULTS.custom };
       return { period: 'custom', custom: next };
     });
   const clearFilters = () => {
     setDepartment('all');
     setManager('all');
-    setMode('all');
+    setSource('all');
     setSearch('');
-    setFilter('all');
-    setGap('all');
+    setCard('all');
   };
-  // Who is counted at all, before any card narrows the list.
-  const narrowed = department !== 'all' || manager !== 'all' || mode !== 'all' || search.trim() !== '';
-  const filtered = narrowed || filter !== 'all';
-
-  // True while a fresh copy is on its way and a cached one is already showing.
-  const [refreshing, setRefreshing] = useState(false);
+  const narrowed = department !== 'all' || manager !== 'all' || source !== 'all' || search.trim() !== '';
 
   useEffect(() => {
-    if (!from || !to) return;
+    if (!fetchFrom || !fetchTo) return;
     let live = true;
-    const key = cacheKey(userId, from, to);
-    // Whatever this tab last saw for the range goes up immediately.
+    const key = cacheKey(userId, fetchFrom, fetchTo);
     const cached = readCached(key);
-    // A range with no copy yet shows its skeleton, not "Refreshing…" left over from the last one.
     if (!cached) setRefreshing(false);
     if (cached) {
       setReport(cached);
@@ -314,10 +284,9 @@ export function AttendanceReport() {
       setRefreshing(true);
     }
     setError('');
-    // A date input fires on every edit, and each intermediate value is a
-    // complete date; without a pause here, typing a year is several requests.
+    // A date input fires on every edit; without a pause, typing a year is several requests.
     const timer = setTimeout(() => {
-      getAttendanceReport({ from, to })
+      getAttendanceReport({ from: fetchFrom, to: fetchTo })
         .then((data) => {
           if (!live) return;
           setReport(data);
@@ -328,66 +297,73 @@ export function AttendanceReport() {
         .finally(() => { if (live) setRefreshing(false); });
     }, cached ? 150 : 400);
     return () => { live = false; clearTimeout(timer); };
-  }, [from, to, userId, attempt]);
+  }, [fetchFrom, fetchTo, userId, attempt]);
 
-  const shown = report && reportFor === cacheKey(userId, from, to) ? report : null;
+  const shown = report && reportFor === cacheKey(userId, fetchFrom, fetchTo) ? report : null;
   const reportState: LoadState = shown ? 'ready' : error ? 'error' : 'loading';
-  const all = useMemo(() => (shown ? expandReport(shown) : []), [shown]);
 
-  // Everything but the card: this is the population the totals describe.
+  // Everyone, each with one status per date: graded days, then the days they did not owe.
+  const everyone = useMemo<PersonDays[]>(() => {
+    if (!shown) return [];
+    const half = new Set(shown.halfDayLeave ?? []);
+    const byUser = new Map<string, PersonDays>();
+    for (const [id, person] of Object.entries(shown.people)) byUser.set(id, { userId: id, person, days: new Map() });
+    for (const row of expandReport(shown)) {
+      byUser.get(row.userId)?.days.set(row.date, { code: codeOf(row, half.has(`${row.userId}|${row.date}`)), row });
+    }
+    for (const [id, date, kind] of shown.offDays ?? []) byUser.get(id)?.days.set(date, { code: kind === 'holiday' ? 'H' : 'WO' });
+    return [...byUser.values()].sort((a, b) => a.person.name.localeCompare(b.person.name));
+  }, [shown]);
+
+  // Who the page is about, before a card narrows the list.
   const scoped = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return all.filter((r) =>
-      (department === 'all' || r.department === department)
-      && (manager === 'all' || r.manager === manager)
-      && (mode === 'all' || r.punchFormat === mode)
-      && (!q || r.name.toLowerCase().includes(q) || r.employeeId.toLowerCase().includes(q)));
-  }, [all, department, manager, mode, search]);
-  const totals = useMemo(() => tally(scoped), [scoped]);
-  // The pending card only earns its place while a shift is still running.
-  const facets = FACETS.filter((f) => f.key !== 'pending' || totals.pending > 0 || filter === 'pending');
+    return everyone.filter(({ person: p }) =>
+      (department === 'all' || p.department === department)
+      && (manager === 'all' || p.manager === manager)
+      && (source === 'all' || p.punchFormat === source)
+      && (!q || p.name.toLowerCase().includes(q) || p.employeeId.toLowerCase().includes(q)));
+  }, [everyone, department, manager, source, search]);
 
-  // With one attendance mode picked: of the people due to punch that way, who did.
-  const coverage = useMemo(() => {
-    if (mode === 'all' || mode === AUTO_PUNCH) return null;
-    const due = new Set<string>();
-    const punchedIn = new Set<string>();
-    const punchedOut = new Set<string>();
-    for (const r of scoped) {
-      if (r.status !== 'on_leave') due.add(r.userId);
-      if (r.punchIn) punchedIn.add(r.userId);
-      if (r.punchOut) punchedOut.add(r.userId);
-    }
-    // Nobody left to cover (a search that matches no one, a range of leave): no strip.
-    if (due.size === 0) return null;
-    const none = [...due].filter((id) => !punchedIn.has(id) && !punchedOut.has(id)).length;
-    return { due: due.size, punchedIn: punchedIn.size, punchedOut: punchedOut.size, none };
-  }, [scoped, mode]);
-  const periodWords = period === 'custom' ? `${dayLabel(from)} – ${dayLabel(to)}` : PERIOD_LABEL[period];
-
-  // The card narrows the list; under Missed punch, the gap narrows it again.
+  // Past and present dates of the range: a day that has not come yet has no status.
+  const countedDates = useMemo(() => dates.filter((d) => d <= today), [dates, today]);
+  const cardCounts = useMemo(
+    () => Object.fromEntries(CARDS.map((c) => [c.key, scoped.filter((p) => had(p, c.codes, countedDates)).length])) as Record<Card3, number>,
+    [scoped, countedDates],
+  );
   const listed = useMemo(() => {
-    if (filter === 'all') return scoped;
-    const byFacet = scoped.filter((r) => matches(r, filter));
-    if (filter !== 'missed' || gap === 'all') return byFacet;
-    return byFacet.filter((r) => gapOf(r) === gap);
-  }, [scoped, filter, gap]);
+    if (card === 'all') return scoped;
+    const codes = CARDS.find((c) => c.key === card)!.codes;
+    return scoped.filter((p) => had(p, codes, countedDates));
+  }, [scoped, card, countedDates]);
 
-  const pick = (facet: Facet) => {
-    // Pressing the active card clears it; leaving Missed punch clears its gap.
-    const next: Filter = filter === facet ? 'all' : facet;
-    setFilter(next);
-    if (next !== 'missed') setGap('all');
-  };
+  // With one source picked: of the people expected on it, who punched in and out that way.
+  const coverage = useMemo(() => {
+    const via = source === 'all' ? null : punchedVia(source);
+    if (!via || !scoped.length) return null;
+    const columns = period === 'custom'
+      ? [{ label: `${dayLabel(shownRange.from)} – ${dayLabel(shownRange.to)}`, dates: countedDates }]
+      : (['today', 'week', 'month'] as const).map((k) => ({ label: PERIOD_LABEL[k], dates: datesBetween(presets[k].from, presets[k].to).filter((d) => d <= today) }));
+    return columns.map((col) => {
+      let punchedIn = 0;
+      let punchedOut = 0;
+      for (const p of scoped) {
+        const rows = col.dates.map((d) => p.days.get(d)?.row).filter((r): r is ReportRow => Boolean(r) && r!.source === via);
+        if (rows.some((r) => r.punchIn)) punchedIn += 1;
+        if (rows.some((r) => r.punchOut)) punchedOut += 1;
+      }
+      return { label: col.label, expected: scoped.length, punchedIn, punchedOut };
+    });
+  }, [scoped, source, period, countedDates, today, presets, shownRange.from, shownRange.to]);
 
-  // A filter change lands on page one; the page is otherwise clamped to what exists.
-  useEffect(() => { setPage(1); }, [department, manager, mode, search, filter, gap, from, to]);
-  const people = useMemo(() => new Set(listed.map((r) => r.userId)).size, [listed]);
+  const pick = (key: Card3) => setCard((c) => (c === key ? 'all' : key));
+  useEffect(() => { setPage(1); }, [department, manager, source, search, card, period, fetchFrom, fetchTo]);
   const pages = Math.max(1, Math.ceil(listed.length / PAGE));
   const current = Math.min(page, pages);
   const pageRows = listed.slice((current - 1) * PAGE, current * PAGE);
+  const cardWords = period === 'today' ? 'today' : 'on at least one day';
 
-  // ── export ─────────────────────────────────────────────────────────────
+  // ── export: what is on screen, then every day behind it ──────────────
   const widths = (rows: Record<string, unknown>[]) =>
     Object.keys(rows[0] ?? {}).map((key) => ({ wch: Math.max(key.length, ...rows.map((r) => String(r[key] ?? '').length)) + 2 }));
   const sheet = (XLSX: typeof import('xlsx'), rows: Record<string, unknown>[]): WorkSheet => {
@@ -395,235 +371,169 @@ export function AttendanceReport() {
     ws['!cols'] = widths(rows);
     return ws;
   };
-  // One row per attendance mode, then everyone — the totals the cards show,
-  // in a shape a spreadsheet can add up.
-  const summaryRows = () => {
-    const modes = [...new Set(scoped.map((r) => r.punchFormat))].sort();
-    const row = (name: string, rows: ReportRow[]) => {
-      const t = tally(rows);
+  const who = (p: PersonDays) => ({ 'Employee ID': p.person.employeeId, 'Name': p.person.name, 'Department': p.person.department, 'Manager': p.person.manager || '' });
+  const mainRows = (): Record<string, unknown>[] => listed.map((p) => {
+    if (view === 'today') {
+      const d = p.days.get(today);
       return {
-        'Attendance mode': name,
-        'Employees': t.employees,
-        'Working days': t.days,
-        'Present': t.present,
-        'Half day': t.half_day,
-        'Missed punch': t.missed,
-        'Missing punch-in': t.in,
-        'Missing punch-out': t.out,
-        'Both punches missing': t.both,
-        'On leave': t.on_leave,
-        'Late': t.late,
-        'Not punched yet': t.pending,
+        ...who(p),
+        'Status': d ? CODE[d.code].label : '',
+        'In time': d?.row?.punchIn ? clock(d.row.punchIn) : '',
+        'Out time': d?.row?.punchOut ? clock(d.row.punchOut) : d?.row?.punchIn && d.row.shiftRunning ? 'Pending' : '',
+        'Attendance source': sourceName(p.person.punchFormat),
       };
+    }
+    if (view === 'grid') {
+      return { ...who(p), ...Object.fromEntries(dates.map((d) => {
+        const c = d > today ? undefined : p.days.get(d)?.code;
+        return [d, c ? CODE[c].label : ''];
+      })) };
+    }
+    const t = totalsOf(p, dates, today);
+    return {
+      ...who(p), 'Working days': t.working, 'Present days': t.present, 'Late days': t.late, 'Missed punch days': t.missed,
+      'Leave days': t.leave, 'Attendance source': sourceName(p.person.punchFormat),
     };
-    return [...modes.map((m) => row(m, scoped.filter((r) => r.punchFormat === m))), row('All modes', scoped)];
-  };
-  // Employee-wise: each person's days sit together, in date order, so a
-  // month reads down the sheet the way HR reads a register.
-  const dayRows = () => [...listed].sort((a, b) => a.name.localeCompare(b.name) || a.date.localeCompare(b.date)).map((r) => ({
-    'Employee ID': r.employeeId,
-    'Name': r.name,
-    'Department': r.department,
-    'Manager': r.manager || '',
-    'Location': r.location,
-    'Shift template': r.template ?? 'Org policy',
-    'Attendance mode': r.punchFormat,
-    'Date': r.date,
-    'Status': statusOf(r).label,
-    'Gap': gapLabel(r),
-    'Late': r.late ? 'Yes' : 'No',
-    'Late by (min)': r.late ? r.lateByMinutes : '',
-    'Punch in': clock(r.punchIn),
-    'Punch out': r.shiftRunning && r.punchIn && !r.punchOut ? 'Pending' : clock(r.punchOut),
-    'Hours': hours(r),
-    'Leave type': r.leaveType ? leaveName(r.leaveType) : '',
-    'Source': r.source ?? '',
-  }));
-  // What the file was cut to, so a sheet passed on still says what it covers.
+  });
+  const dayRows = () => listed.flatMap((p) => countedDates.map((d) => {
+    const day = p.days.get(d);
+    if (!day) return null;
+    return {
+      ...who(p), 'Date': d, 'Status': CODE[day.code].label,
+      'In time': day.row?.punchIn ? clock(day.row.punchIn) : '', 'Out time': day.row?.punchOut ? clock(day.row.punchOut) : '',
+      'Late by (min)': day.row?.late ? day.row.lateByMinutes : '', 'Leave type': day.row?.leaveType ?? '',
+      'Punched via': day.row?.source === 'sql_import' ? 'Biometric device' : day.row?.source === 'manual' ? 'App' : day.row?.source === 'hr' ? 'Marked by HR' : '',
+    };
+  }).filter((r): r is NonNullable<typeof r> => r !== null));
   const filterRows = () => [
     { 'Filter': 'Period', 'Value': period === 'custom' ? 'Custom range' : PERIOD_LABEL[period] },
-    { 'Filter': 'From', 'Value': from },
-    { 'Filter': 'To', 'Value': to },
+    { 'Filter': 'From', 'Value': shownRange.from },
+    { 'Filter': 'To', 'Value': shownRange.to },
     { 'Filter': 'Department', 'Value': department === 'all' ? 'All departments' : department },
     { 'Filter': 'Manager', 'Value': manager === 'all' ? 'All managers' : manager },
-    { 'Filter': 'Attendance mode', 'Value': mode === 'all' ? 'All attendance modes' : mode },
+    { 'Filter': 'Attendance source', 'Value': source === 'all' ? 'All sources' : sourceName(source) },
     { 'Filter': 'Search', 'Value': search.trim() || '—' },
-    { 'Filter': 'Days', 'Value': filter === 'all' ? 'All days' : FACETS.find((f) => f.key === filter)!.label },
-    ...(filter === 'missed' ? [{ 'Filter': 'Which punch', 'Value': gap === 'all' ? 'All missed' : GAPS.find((g) => g.key === gap)!.label }] : []),
+    { 'Filter': 'Employees', 'Value': card === 'all' ? 'Everyone' : `${CARDS.find((c) => c.key === card)!.label} ${cardWords}` },
   ];
   const slug = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  const suffix = [
-    `${from}-to-${to}`,
-    department !== 'all' && slug(department),
-    manager !== 'all' && slug(manager),
-    mode !== 'all' && slug(mode),
-    filter !== 'all' && filter,
-    gap !== 'all' && gap,
-  ].filter(Boolean).join('-');
   const exportExcel = async () => {
-    // The spreadsheet library is large; it is fetched the first time someone exports.
     const XLSX = await import('xlsx');
     const wb = XLSX.utils.book_new();
-    // The punches are the sheet the file opens on; the totals sit behind them.
-    XLSX.utils.book_append_sheet(wb, sheet(XLSX, dayRows()), 'Attendance');
-    XLSX.utils.book_append_sheet(wb, sheet(XLSX, summaryRows()), 'Summary');
+    XLSX.utils.book_append_sheet(wb, sheet(XLSX, mainRows()), view === 'today' ? 'Today' : view === 'grid' ? 'Days' : 'Totals');
+    const each = dayRows();
+    if (view !== 'today' && each.length) XLSX.utils.book_append_sheet(wb, sheet(XLSX, each), 'Every day');
     XLSX.utils.book_append_sheet(wb, sheet(XLSX, filterRows()), 'Filters');
+    const suffix = [`${shownRange.from}-to-${shownRange.to}`, department !== 'all' && slug(department), source !== 'all' && slug(sourceName(source)), card !== 'all' && card].filter(Boolean).join('-');
     XLSX.writeFile(wb, `attendance-${suffix}.xlsx`);
   };
-  const canExport = listed.length > 0;
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
-      {/* ── filters ───────────────────────────────────────────────────── */}
+      {/* ── the range ─────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <StatusTabs<Period> options={PERIODS} active={period} onSelect={pickPeriod} labels={PERIOD_LABEL} />
-        <DateRange from={from} to={to} onFrom={(v) => editRange('from', v)} onTo={(v) => editRange('to', v)} />
+        {period === 'custom'
+          ? <DateRange from={custom.from} to={custom.to} onFrom={(v) => editRange('from', v)} onTo={(v) => editRange('to', v)} />
+          : <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>{period === 'today' ? dayLabel(today) : `${dayLabel(shownRange.from)} – ${dayLabel(shownRange.to)}`}</span>}
         {refreshing && <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>Refreshing…</span>}
-        <ExportButton label="Export Excel" disabled={!canExport} onClick={() => void exportExcel()} />
+        <ExportButton label="Export Excel" disabled={!listed.length} onClick={() => void exportExcel()} />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         <SearchInput value={search} onChange={setSearch} placeholder="Search name or employee ID…" />
         <SelectBox value={department} onChange={setDepartment}>
           <option value="all">All departments</option>
-          {(report?.departments ?? []).map((d) => <option key={d} value={d}>{d}</option>)}
+          {(shown?.departments ?? []).map((d) => <option key={d} value={d}>{d}</option>)}
         </SelectBox>
         <SelectBox value={manager} onChange={setManager}>
           <option value="all">All managers</option>
-          {(report?.managers ?? []).map((m) => <option key={m} value={m}>{m}</option>)}
+          {(shown?.managers ?? []).map((m) => <option key={m} value={m}>{m}</option>)}
         </SelectBox>
-        <SelectBox value={mode} onChange={setMode}>
-          <option value="all">All attendance modes</option>
-          {(report?.punchFormats ?? []).map((f) => <option key={f} value={f}>{f}</option>)}
+        <SelectBox value={source} onChange={setSource}>
+          <option value="all">All attendance sources</option>
+          {(shown?.punchFormats ?? []).map((f) => <option key={f} value={f}>{sourceName(f)}</option>)}
         </SelectBox>
-        {filtered && (
+        {(narrowed || card !== 'all') && (
           <button type="button" onClick={clearFilters} className="lk-btn" style={{ ...L.btnGhost, height: 40, fontSize: 13 }}>
             Clear filters
           </button>
         )}
       </div>
 
-      {error && shown && (
-        <div style={{ marginBottom: 14, fontSize: 13, color: 'var(--bad)', fontWeight: 400 }}>{error}</div>
-      )}
+      {error && shown && <div style={{ marginBottom: 14, fontSize: 13, color: 'var(--bad)', fontWeight: 400 }}>{error}</div>}
 
-      {/* ── the totals, which are the filter ──────────────────────────── */}
-      {/* ── one attendance mode: did the people on it punch ─────────── */}
-      {shown && coverage && (
-        <Card padded style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 240px', minWidth: 0 }}>
-            <div style={{ ...L.cardTitle, fontSize: 14 }}>{mode} coverage · {periodWords}</div>
-            <div style={{ ...L.cardNote, marginTop: 2 }}>
-              {coverage.due} {coverage.due === 1 ? 'person was' : 'people were'} due to punch with {mode}
-              {period === 'today' ? ' today' : ' on at least one day'}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
-            <Coverage label="Punched in" value={coverage.punchedIn} of={coverage.due} color="var(--ok)" />
-            <Coverage label="Punched out" value={coverage.punchedOut} of={coverage.due} color="var(--accent-ink)" />
-            <Coverage label={period === 'today' ? 'No punch yet' : 'No punch'} value={coverage.none} color="var(--bad)" />
-          </div>
-        </Card>
-      )}
-
-      {!shown && <SkeletonCards count={6} minWidth={120} style={{ marginBottom: 20 }} />}
-      {shown && <div style={{ display: 'grid', gridTemplateColumns: `repeat(${facets.length + 1}, 1fr)`, gap: 16, marginBottom: filter === 'missed' ? 12 : 20 }}>
-        <div style={{ background: 'var(--surface)', border: '1px solid transparent', borderRadius: 'var(--r-lg)', padding: '14px 16px', minHeight: 96, boxShadow: 'var(--shadow)' }}>
-          <div style={{ fontSize: 12.5, color: 'var(--ink-2)', fontWeight: 400 }}>Employees</div>
-          <div style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6 }}>{totals.employees}</div>
-          <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, marginTop: 4 }}>{narrowed ? 'Matching the filters' : 'With a working day'}</div>
-        </div>
-        {facets.map((f) => (
-          <FilterCard
-            key={f.key}
-            label={f.label}
-            note={f.note}
-            value={totals[f.key]}
-            tone={TONE[f.key]}
-            active={filter === f.key}
-            onClick={() => pick(f.key)}
-          />
-        ))}
-      </div>}
-
-      {/* Missed punch opens into which punch is missing. */}
-      {filter === 'missed' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400, marginRight: 4 }}>Which punch</span>
-          <GapChip label="All missed" value={totals.missed} active={gap === 'all'} onClick={() => setGap('all')} />
-          {GAPS.map((g) => (
-            <GapChip key={g.key} label={g.label} value={totals[g.key]} active={gap === g.key} onClick={() => setGap(gap === g.key ? 'all' : g.key)} />
+      {/* ── three counts of people, each also the filter ─────────────── */}
+      {!shown && <SkeletonCards count={3} minWidth={160} style={{ marginBottom: 20 }} />}
+      {shown && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 20 }}>
+          {CARDS.map((c) => (
+            <CountCard
+              key={c.key}
+              label={c.label}
+              value={cardCounts[c.key]}
+              of={scoped.length}
+              note={`${c.label === 'Present' ? 'present' : c.label === 'On leave' ? 'on leave' : 'with a missed punch'} ${cardWords}`}
+              tone={CODE[c.key === 'present' ? 'P' : c.key === 'on_leave' ? 'LV' : 'MP'].tone}
+              active={card === c.key}
+              onClick={() => pick(c.key)}
+            />
           ))}
         </div>
       )}
 
-      {/* ── the days ──────────────────────────────────────────────────── */}
+      {/* ── one source picked: did the people on it punch that way ────── */}
+      {shown && coverage && (
+        <Card padded style={{ marginBottom: 20 }}>
+          <div style={{ ...L.cardTitle, fontSize: 14 }}>{sourceName(source)} coverage</div>
+          <div style={{ ...L.cardNote, marginTop: 2, marginBottom: 12 }}>
+            People expected to punch with {sourceName(source)}, and how many punched in and out that way at least once.
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="ar-cov">
+              <thead>
+                <tr><th />{coverage.map((c) => <th key={c.label}>{c.label}</th>)}</tr>
+              </thead>
+              <tbody>
+                <tr><th>Expected on {sourceName(source)}</th>{coverage.map((c) => <td key={c.label}>{c.expected}</td>)}</tr>
+                <tr><th>Punched in via {sourceName(source)}</th>{coverage.map((c) => <td key={c.label}>{c.punchedIn}</td>)}</tr>
+                <tr><th>Punched out via {sourceName(source)}</th>{coverage.map((c) => <td key={c.label}>{c.punchedOut}</td>)}</tr>
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* ── the people ───────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-        <span style={{ ...L.cardTitle }}>
-          {filter === 'all' ? 'All days' : FACETS.find((f) => f.key === filter)!.label}
-          {filter === 'missed' && gap !== 'all' ? ` · ${GAPS.find((g) => g.key === gap)!.label}` : ''}
-        </span>
-        {shown && <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}>
-          {listed.length} {listed.length === 1 ? 'day' : 'days'} · {people} {people === 1 ? 'person' : 'people'}
-        </span>}
+        <span style={{ ...L.cardTitle }}>{card === 'all' ? 'Everyone' : `${CARDS.find((c) => c.key === card)!.label} ${cardWords}`}</span>
+        {shown && <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}>{listed.length} {listed.length === 1 ? 'person' : 'people'}</span>}
+        {shown && view === 'totals' && dates.some((d) => d > today) && (
+          <span style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}>· Working days cover the whole range; the other counts run to today.</span>
+        )}
       </div>
 
       <Card style={{ padding: 20 }}>
-        <div style={{ display: 'grid', background: 'var(--surface-2)', borderRadius: 12, gridTemplateColumns: LIST_COLS, gap: 12, padding: '10px 12px', fontSize: 12, fontWeight: 400, letterSpacing: 0, color: 'var(--ink-3)', lineHeight: 1.5 }}>
-          <div className="lk-cap">EMPLOYEE</div>
-          <div className="lk-cap">TEMPLATE</div>
-          <div className="lk-cap">DATE</div>
-          <div className="lk-cap">IN</div>
-          <div className="lk-cap">OUT</div>
-          <div className="lk-cap">HOURS</div>
-          <div className="lk-cap">STATUS</div>
-          <div className="lk-cap">MODE</div>
-        </div>
         {!shown ? (
-          <ListPending state={reportState} errorText={error || undefined} onRetry={() => setAttempt((n) => n + 1)} rows={8} cols={8} />
-        ) : all.length === 0 ? (
-          <EmptyRow text="Nobody was due to work in this range. Week-offs and holidays are not graded." />
+          <ListPending state={reportState} errorText={error || undefined} onRetry={() => setAttempt((n) => n + 1)} rows={8} cols={5} />
+        ) : everyone.length === 0 ? (
+          <EmptyRow text="Nobody is on the roll for this range." />
         ) : pageRows.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13.5, fontWeight: 400 }}>
-            <div>No days match these filters.</div>
-            <div style={{ fontSize: 12.5, marginTop: 4 }}>Try another department, manager, attendance mode or name.</div>
-            {filtered && (
-              <button type="button" onClick={clearFilters} className="lk-btn" style={{ ...L.btnSm, marginTop: 14 }}>
-                Clear filters
-              </button>
-            )}
+            <div>Nobody matches these filters.</div>
+            <button type="button" onClick={clearFilters} className="lk-btn" style={{ ...L.btnSm, marginTop: 14 }}>Clear filters</button>
           </div>
-        ) : pageRows.map((r) => {
-          const status = statusOf(r);
-          return (
-            <div key={`${r.userId}-${r.date}`} className="lk-row" style={{ display: 'grid', gridTemplateColumns: LIST_COLS, gap: 12, padding: '10px 12px', borderBottom: '1px solid var(--line)', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-                <PersonAvatar name={r.name} userId={r.userId} />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {r.employeeId} · {r.department}
-                  </div>
-                </div>
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.template ?? 'Org policy'}</div>
-                <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.punchFormat}</div>
-              </div>
-              <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink)' }}>{dayLabel(r.date)}</div>
-              <div style={{ fontSize: 13.5, fontWeight: 400, color: r.punchIn || r.shiftRunning ? 'var(--ink)' : 'var(--warn)' }}>{clock(r.punchIn)}</div>
-              {r.shiftRunning && r.punchIn && !r.punchOut
-                ? <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--accent-ink)' }}>Pending</div>
-                : <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink)' }}>{clock(r.punchOut)}</div>}
-              <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink)' }}>{hours(r)}</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <Pill label={status.label} tone={solid(status.tone)} />
-                {r.late && <Pill label="Late" tone={solid(TONE.late)} />}
-              </div>
-              <div style={{ fontSize: 13.5, fontWeight: 400, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail(r) || '—'}</div>
-            </div>
-          );
-        })}
-        {listed.length > 0 && (
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            {view === 'today' && <TodayTable rows={pageRows} today={today} />}
+            {view === 'grid' && <WeekGrid rows={pageRows} dates={dates} today={today} />}
+            {view === 'totals' && <TotalsTable rows={pageRows} dates={dates} today={today} />}
+          </div>
+        )}
+        {shown && view === 'grid' && pageRows.length > 0 && (
+          <div className="ar-legend">
+            {LEGEND.map((c) => <span key={c}><Chip code={c} /> {CODE[c].label}</span>)}
+          </div>
+        )}
+        {listed.length > PAGE && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 0 0' }}>
             <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>
               Showing {(current - 1) * PAGE + 1}–{Math.min(current * PAGE, listed.length)} of {listed.length}
@@ -640,16 +550,120 @@ export function AttendanceReport() {
   );
 }
 
-/** A total that is also the filter: the same card as everywhere else, pressable, lit when it is the one in force. */
-function FilterCard({ label, note, value, tone, active, onClick }: {
-  label: string; note: string; value: number; tone: { bg: string; fg: string }; active: boolean; onClick: () => void;
+function Who({ p }: { p: PersonDays }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+      <PersonAvatar name={p.person.name} userId={p.userId} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.person.name}</div>
+        <div style={{ fontSize: 11.5, color: 'var(--ink-3)', fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {p.person.employeeId} · {p.person.department}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TodayTable({ rows, today }: { rows: PersonDays[]; today: string }) {
+  return (
+    <table className="ar-t">
+      <thead><tr><th>Employee</th><th>Status</th><th>In time</th><th>Out time</th><th>Attendance source</th></tr></thead>
+      <tbody>
+        {rows.map((p) => {
+          const d = p.days.get(today);
+          const row = d?.row;
+          return (
+            <tr key={p.userId}>
+              <td><Who p={p} /></td>
+              <td>{d ? <StatusPill code={d.code} /> : '—'}{row?.late && d?.code === 'L' ? <span className="ar-sub">by {row.lateByMinutes} min</span> : null}</td>
+              <td>{clock(row?.punchIn ?? null)}</td>
+              <td>{row?.punchOut ? clock(row.punchOut) : row?.punchIn && row.shiftRunning ? <span style={{ color: 'var(--accent-ink)' }}>Pending</span> : '—'}</td>
+              <td>{sourceName(p.person.punchFormat)}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function WeekGrid({ rows, dates, today }: { rows: PersonDays[]; dates: string[]; today: string }) {
+  return (
+    <table className="ar-t ar-grid">
+      <thead>
+        <tr>
+          <th>Employee</th>
+          {dates.map((d) => {
+            const h = dayHead(d);
+            return <th key={d} className={d === today ? 'ar-today' : undefined}>{h.wd}<span className="ar-sub">{h.dm}</span></th>;
+          })}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((p) => (
+          <tr key={p.userId}>
+            <td><Who p={p} /></td>
+            {dates.map((d) => {
+              const day = d > today ? undefined : p.days.get(d);
+              return (
+                <td key={d} className={d === today ? 'ar-today' : undefined}>
+                  {day ? <Chip code={day.code} title={`${CODE[day.code].label}${day.row?.punchIn ? ` · in ${clock(day.row.punchIn)}` : ''}${day.row?.punchOut ? ` · out ${clock(day.row.punchOut)}` : ''}`} /> : null}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function TotalsTable({ rows, dates, today }: { rows: PersonDays[]; dates: string[]; today: string }) {
+  return (
+    <table className="ar-t">
+      <thead>
+        <tr><th>Employee</th><th>Working days</th><th>Present days</th><th>Late days</th><th>Missed punch days</th><th>Leave days</th><th>Attendance source</th></tr>
+      </thead>
+      <tbody>
+        {rows.map((p) => {
+          const t = totalsOf(p, dates, today);
+          return (
+            <tr key={p.userId}>
+              <td><Who p={p} /></td>
+              <td className="ar-n">{t.working}</td>
+              <td className="ar-n">{t.present}</td>
+              <td className="ar-n">{t.late || '—'}</td>
+              <td className="ar-n" style={t.missed ? { color: 'var(--t-peach-i)' } : undefined}>{t.missed || '—'}</td>
+              <td className="ar-n">{t.leave ? days(t.leave) : '—'}</td>
+              <td>{sourceName(p.person.punchFormat)}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function Chip({ code, title }: { code: Code; title?: string }) {
+  const { tone, label } = CODE[code];
+  return <span className="ar-chip" title={title ?? label} style={{ background: tone.bg, color: tone.fg }}>{code}</span>;
+}
+
+function StatusPill({ code }: { code: Code }) {
+  const { tone, label } = CODE[code];
+  return <span className="ar-pill" style={{ background: tone.bg, color: tone.fg }}>{label}</span>;
+}
+
+/** A count of people that is also the filter: pressed, the list is those people. */
+function CountCard({ label, value, of, note, tone, active, onClick }: {
+  label: string; value: number; of: number; note: string; tone: { bg: string; fg: string }; active: boolean; onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      title={active ? `Showing ${label.toLowerCase()} days — press to show all` : `Show ${label.toLowerCase()} days`}
+      title={active ? 'Press to show everyone' : `Show only the people ${note}`}
       style={{
         textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer',
         background: active ? tone.bg : 'var(--surface)',
@@ -659,40 +673,10 @@ function FilterCard({ label, note, value, tone, active, onClick }: {
       }}
     >
       <div style={{ fontSize: 12.5, color: active ? tone.fg : 'var(--ink-2)', fontWeight: 400 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6, color: tone.fg }}>{value}</div>
-      <div style={{ fontSize: 11.5, color: active ? tone.fg : 'var(--ink-3)', fontWeight: 400, marginTop: 4, opacity: active ? 0.85 : 1 }}>{note}</div>
-    </button>
-  );
-}
-
-/** One figure in the coverage strip: the same light number as the cards, in its tone. */
-function Coverage({ label, value, of, color }: { label: string; value: number; of?: number; color: string }) {
-  return (
-    <div>
-      <div style={{ fontSize: 12.5, color: 'var(--ink-2)', fontWeight: 400 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6, color, fontVariantNumeric: 'tabular-nums' }}>
-        {value}
-        {of != null && <span style={{ fontSize: 12.5, color: 'var(--ink-3)', letterSpacing: 0, marginLeft: 6 }}>of {of}</span>}
+      <div style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6, color: tone.fg, fontVariantNumeric: 'tabular-nums' }}>
+        {value}<span style={{ fontSize: 13, color: 'var(--ink-3)', letterSpacing: 0, marginLeft: 6 }}>of {of}</span>
       </div>
-    </div>
-  );
-}
-
-function GapChip({ label, value, active, onClick }: { label: string; value: number; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: 'inherit', cursor: 'pointer',
-        background: active ? 'var(--sel)' : 'var(--surface)', color: active ? 'var(--on-sel)' : 'var(--ink-2)',
-        border: `1px solid ${active ? 'var(--sel)' : 'var(--line)'}`, borderRadius: 99, height: 36, padding: '0 14px',
-        fontSize: 12.5, fontWeight: 400,
-      }}
-    >
-      {label}
-      <span style={{ fontSize: 12, fontWeight: 500, color: active ? 'inherit' : 'var(--ink-3)', opacity: active ? 0.8 : 1 }}>{value}</span>
+      <div style={{ fontSize: 11.5, color: active ? tone.fg : 'var(--ink-3)', fontWeight: 400, marginTop: 4, opacity: active ? 0.85 : 1 }}>{note}</div>
     </button>
   );
 }
@@ -727,5 +711,3 @@ function PageButton({ label, disabled, onClick }: { label: string; disabled: boo
     </button>
   );
 }
-
-const LIST_COLS = '2fr 1.5fr 1.1fr .8fr .8fr .8fr 1.3fr 1.4fr';

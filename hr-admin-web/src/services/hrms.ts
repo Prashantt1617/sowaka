@@ -948,6 +948,10 @@ export type AttendanceReportDTO = {
   managers: string[];
   people: Record<string, ReportPersonDTO>;
   days: ReportDayDTO[];
+  /** Days each person did not owe (left out of `days`); absent from an older server. */
+  offDays?: [string, string, 'week_off' | 'holiday'][];
+  /** `userId|date` of the leave days that were half a day off. */
+  halfDayLeave?: string[];
 };
 
 /** One employee's one day, with who they are folded back in. */

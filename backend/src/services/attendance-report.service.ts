@@ -68,6 +68,14 @@ export type AttendanceReport = {
   managers: string[];
   people: Record<string, ReportPerson>;
   days: ReportDay[];
+  /**
+   * The days in the range each person did not owe, which `days` leaves out:
+   * [userId, date, 'week_off' | 'holiday'], HR's own such marks included.
+   * Only the dashboard's week grid reads it; payroll and Suwi grade `days`.
+   */
+  offDays: [string, string, 'week_off' | 'holiday'][];
+  /** `userId|date` of the leave days in `days` that were half a day off. */
+  halfDayLeave: string[];
 };
 
 export class ReportError extends Error {
@@ -345,6 +353,8 @@ export async function attendanceReport(
   // ── grade every working day ───────────────────────────────────────────
   const people: Record<string, ReportPerson> = {};
   const days: ReportDay[] = [];
+  const offDays: AttendanceReport['offDays'] = [];
+  const halfDayLeave: string[] = [];
   const departments = new Set<string>();
   const templateNames = new Set<string>();
   const leaveTypes = new Set<string>();
@@ -386,7 +396,10 @@ export async function attendanceReport(
       // HR's mark on the day outranks everything below it.
       const hrMark = marks.get(`${user.userId}|${key}`);
       if (hrMark) {
-        if (hrMark.status === 'week_off' || hrMark.status === 'holiday') continue;
+        if (hrMark.status === 'week_off' || hrMark.status === 'holiday') {
+          offDays.push([user.userId, key, hrMark.status]);
+          continue;
+        }
         if (hrMark.status === 'on_leave') {
           leaveTypes.add('Marked by HR');
           days.push([user.userId, key, 'on_leave', 0, null, null, 'Marked by HR', 'hr', 0]);
@@ -396,12 +409,20 @@ export async function attendanceReport(
         continue;
       }
       // Not a day they owed us, so not a day to grade.
-      if (isWeekOffDay(day, onDay.weeklyOff) || isHoliday(user, key)) continue;
+      if (isHoliday(user, key)) {
+        offDays.push([user.userId, key, 'holiday']);
+        continue;
+      }
+      if (isWeekOffDay(day, onDay.weeklyOff)) {
+        offDays.push([user.userId, key, 'week_off']);
+        continue;
+      }
 
       const leave = leaveOn(user.userId, day);
       if (leave) {
         leaveTypes.add(leave.type);
         days.push([user.userId, key, 'on_leave', 0, null, null, leave.type, null, 0]);
+        if (leave.halfDay) halfDayLeave.push(`${user.userId}|${key}`);
         continue;
       }
 
@@ -471,6 +492,8 @@ export async function attendanceReport(
     managers: [...managers].sort(),
     people,
     days,
+    offDays,
+    halfDayLeave,
   };
   reportCache.set(cacheKey, { expires: Date.now() + REPORT_TTL_MS, value: report });
   return report;
