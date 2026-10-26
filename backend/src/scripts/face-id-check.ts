@@ -1,6 +1,7 @@
 /**
  * Scratch-database check of Face ID with Rekognition faked: consent and the
- * enrolment photo's quality gate, one face per account, the check at an
+ * enrolment photo's quality gate, one face per account, setup at the first
+ * punch (its token carrying that punch), the check at an
  * in-app punch, in or out, and the token it hands back (single use, this person's only,
  * short-lived, given back when the punch fails further on), the refusals,
  * the manager fallback after three tries or while the service is down, Face
@@ -129,13 +130,14 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
     person('chetan', 'Chetan', { employeeId: 'E-C' }),
     person('dev', 'Dev', { employeeId: 'E-D' }),
     person('esha', 'Esha', { employeeId: 'E-E' }),
+    person('gita', 'Gita', { employeeId: 'E-G' }),
   ] as never[]);
   const collection = collectionIdFor(ORG);
   check('a company gets its own collection', collection === 'sowaka-sowaka', collection);
 
   // --- off by default
   const off = await faceStatusFor('asha');
-  check('off by default: no setup asked, no check at punch', !off.setupRequired && !off.checkAtPunch && !off.enrolled, off);
+  check('off by default: no check at punch', !off.checkAtPunch && !off.enrolled, off);
   check('the consent line and its version come with the status', off.consent.version === FACE_CONSENT_VERSION && off.consent.agree.startsWith('I agree to Face ID keeping a template'), off.consent);
   check('without Face Liveness the app runs its own check', off.liveness.mode === 'device', off.liveness);
   const punchedOff = await recordPunch('chetan', 'in');
@@ -172,7 +174,7 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
 
   // --- HR switches it on
   const settings = await updateFaceIdSettingsForAdmin('hr', { checkAtPunch: true });
-  check('checking at punch implies setup for everyone', settings.checkAtPunch && settings.setupRequired, settings);
+  check('one switch: faces checked at punches', settings.checkAtPunch === true, settings);
   check('a setting must be true or false', (await refusal(() => updateFaceIdSettingsForAdmin('hr', { checkAtPunch: 'yes' })))?.status === 400);
   await users().updateOne({ userId: 'chetan' }, { $set: { employeeId: 'E-C2' } });
   const notSetUp = await refusal(() => recordPunch('chetan', 'in'));
@@ -186,8 +188,8 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
     oldApp?.status === 403 && oldApp.face?.updateApp === true && /Update the Sowaka app/.test(oldApp.message ?? ''), oldApp);
   check('geotag and in-app punches are checked; biometric and Auto Punch are not',
     ['Geotag (powered by Sowaka)', 'In-app punch in', 'Biometric', 'Present by default (Auto Punch)']
-      .map((format) => faceCheckNeeded({ setupRequired: true, checkAtPunch: true }, format)).join() === 'true,true,false,false');
-  check('nothing is checked while the switch is off', !faceCheckNeeded({ setupRequired: true, checkAtPunch: false }, 'In-app punch in'));
+      .map((format) => faceCheckNeeded({ checkAtPunch: true }, format)).join() === 'true,true,false,false');
+  check('nothing is checked while the switch is off', !faceCheckNeeded({ checkAtPunch: false }, 'In-app punch in'));
 
   // --- the check: wrong faces fail, with reasons, and count towards the fallback
   const asBala = await verifyFace('asha', { photo: await photo(402), challenge: 'blink', devicePassed: true });
@@ -249,12 +251,26 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
   check('approved, the day takes the punch-in and punch-out', eshaDay?.punchIn?.getTime() === row!.punchIn!.getTime() && Boolean(eshaDay?.punchOut), eshaDay);
 
   // --- a punch-out whose check fails three times goes to the manager too
-  const chetanIn = await (async () => {
-    await enrolFace('chetan', { photo: await photo(408), ...consent });
-    const pass = await verifyFace('chetan', { photo: await photo(408) });
-    return recordPunch('chetan', 'in', { latitude: 28.4596, longitude: 77.0267, accuracy: 12 }, undefined, false, pass.token) as Promise<{ punchIn?: string }>;
-  })();
-  check('Chetan punches in with his face', typeof chetanIn.punchIn === 'string', chetanIn);
+  // --- setup at the first punch: Chetan has not set up Face ID
+  const setUpAtPunch = await enrolFace('chetan', { photo: await photo(408), ...consent });
+  check('setting up at a punch hands back a punch token', typeof setUpAtPunch.token === 'string' && Boolean(setUpAtPunch.expiresAt), setUpAtPunch);
+  const tokenRow = await faceVerifications().findOne({ userId: 'chetan', kind: 'enrol', passed: true });
+  check('the same five minutes as a check', Math.abs(tokenRow!.expiresAt!.getTime() - tokenRow!.at.getTime() - 300_000) < 5000, tokenRow?.expiresAt);
+  check("Bala cannot spend Chetan's setup token", (await refusal(() => claimFaceToken('bala', setUpAtPunch.token, 'x')))?.status === 403);
+  const chetanIn = await recordPunch('chetan', 'in', { latitude: 28.4596, longitude: 77.0267, accuracy: 12 }, undefined, false, setUpAtPunch.token) as { punchIn?: string };
+  check('the setup carries that punch, with no second selfie', typeof chetanIn.punchIn === 'string', chetanIn);
+  check('and the setup token is spent', (await refusal(() => claimFaceToken('chetan', setUpAtPunch.token, 'again')))?.status === 403);
+  const later = await refusal(() => recordPunch('chetan', 'out', { latitude: 28.4596, longitude: 77.0267, accuracy: 12 }));
+  check('every later punch needs the normal check', later?.status === 403 && later.face?.reason === 'check_required', later);
+
+  // --- a setup that fails three times at a punch opens the same fallback
+  const setupFails: Awaited<ReturnType<typeof refusal>>[] = [];
+  for (const height of [403, 404, 405]) setupFails.push(await refusal(async () => enrolFace('gita', { photo: await photo(height), ...consent })));
+  check('each failed setup says why, with the tries left',
+    JSON.stringify(setupFails.map((r) => [r?.face?.reason, r?.face?.attemptsLeft])) === JSON.stringify([['no_face', 2], ['too_dark', 1], ['multiple_faces', 0]]), setupFails.map((r) => r?.face));
+  check('the third opens the fallback', setupFails[2]?.face?.fallback === true, setupFails[2]?.face);
+  const gitaFallback = await requestFaceFallback('gita');
+  check('and the punch-in goes to the manager', gitaFallback.title === 'Punch-in without face check', gitaFallback);
   const earlyOut = await refusal(() => requestFaceFallback('chetan', undefined, 'out'));
   check('the punch-out fallback stays shut before the tries run out', earlyOut?.status === 409, earlyOut);
   for (const height of [402, 403, 407]) await verifyFace('chetan', { photo: await photo(height) });
@@ -300,7 +316,10 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
   const checks = await listFaceChecksForAdmin('hr', {});
   check('the failed checks, named, with the colleague a face matched', checks.length > 0 && checks.every((row) => !row.passed) && checks.some((row) => row.matchedName === 'Bala'), checks.slice(0, 2));
   check('the log never carries a token', checks.every((row) => !('tokenHash' in row)));
+  const failsBeforeReset = (await faceStatusFor('asha')).failedAttempts;
   await resetFaceIdForAdmin('hr', 'asha');
+  check('a reset is logged, and is not a failed try', (await faceStatusFor('asha')).failedAttempts === failsBeforeReset
+    && (await faceVerifications().countDocuments({ userId: 'asha', kind: 'reset' })) === 1);
   const reset = await users().findOne({ userId: 'asha' });
   check('reset removes the enrolment and the face from the collection',
     !reset?.faceId && !collections.get(collection)!.some((face) => face.externalImageId === 'asha'), reset?.faceId);
