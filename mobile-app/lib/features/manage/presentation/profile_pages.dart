@@ -135,7 +135,7 @@ final class _ProfilePosts {
 /// profile's usual first tab.
 ProfileTab? openingTabFor(ProfileEntry from) => switch (from) {
   ProfileEntry.feed => ProfileTab.posts,
-  ProfileEntry.team || ProfileEntry.orgChart => ProfileTab.orgChart,
+  ProfileEntry.team || ProfileEntry.orgChart => ProfileTab.workDetail,
   ProfileEntry.elsewhere => null,
 };
 

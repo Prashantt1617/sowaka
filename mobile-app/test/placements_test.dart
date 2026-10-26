@@ -38,22 +38,6 @@ http.Response _json(Object body, [int status = 200]) => http.Response.bytes(
   headers: {'content-type': 'application/json; charset=utf-8'},
 );
 
-final _summaryJson = {
-  'success': true,
-  'clients': 4,
-  'customers': 9,
-  'placements': {
-    'total': 6,
-    'byStatus': {
-      'shortlisted': 2,
-      'interviewing': 1,
-      'offered': 1,
-      'joined': 1,
-      'dropped': 1,
-    },
-  },
-};
-
 const _shift = {
   'name': 'Default',
   'startTime': '09:30',
@@ -70,22 +54,95 @@ Map<String, dynamic> _placement(
   String id,
   String customer,
   String status, {
+  String clientId = 'cl-1',
+  String clientName = 'Marwar Retail Pvt Ltd',
+  String position = 'Sales executive',
   String? joiningDate,
 }) => {
   'id': id,
-  'customerId': 'cu-$id',
+  'customerId': 'cu-1',
   'customerName': customer,
-  'clientId': 'cl-1',
-  'clientName': 'Acme Industries',
-  'position': 'Accountant',
+  'clientId': clientId,
+  'clientName': clientName,
+  'position': position,
   'status': status,
-  'interviewDate': '2026-11-02',
+  'interviewDate': '2026-10-28',
   'joiningDate': joiningDate,
-  'ctcRupees': 600000,
-  'feeRupees': 50000,
+  'ctcRupees': null,
   'notes': '',
-  'createdAt': '2026-10-20T10:00:00.000Z',
-  'updatedAt': '2026-10-20T10:00:00.000Z',
+  'createdByUserId': 'tanvi',
+  'createdAt': '2026-10-24T10:00:00.000Z',
+  'updatedAt': '2026-10-26T10:00:00.000Z',
+  'history': [
+    {
+      'status': 'shortlisted',
+      'at': '2026-10-25T10:00:00.000Z',
+      'byUserId': 'tanvi',
+    },
+    {'status': status, 'at': '2026-10-26T10:00:00.000Z', 'byUserId': 'tanvi'},
+  ],
+};
+
+final _marwar = {
+  'id': 'cl-1',
+  'name': 'Marwar Retail Pvt Ltd',
+  'city': 'Ratanada, Jodhpur',
+  'designations': [
+    {
+      'id': 'd1',
+      'title': 'Store manager',
+      'budgetRupees': 35000,
+      'budgetPeriod': 'month',
+      'description': 'Run daily store operations',
+    },
+    {
+      'id': 'd2',
+      'title': 'Sales executive',
+      'budgetRupees': 18000,
+      'budgetPeriod': 'month',
+      'description': '',
+    },
+  ],
+  'feeRupees': 2500,
+  'feePaid': true,
+  'feeReference': 'UPI 4411',
+  'createdByUserId': 'tanvi',
+  'createdAt': '2026-09-30T10:00:00.000Z',
+};
+
+final _blueGate = {
+  'id': 'cl-2',
+  'name': 'Blue Gate Hotels',
+  'city': 'Sardarpura, Jodhpur',
+  'designations': [],
+  'feeRupees': 2500,
+  'feePaid': false,
+  'createdByUserId': 'tanvi',
+  'createdAt': '2026-10-25T10:00:00.000Z',
+};
+
+final _arjun = {
+  'id': 'cu-1',
+  'name': 'Arjun Bhati',
+  'phone': '+91 9876500001',
+  'address': 'Shastri Nagar, Jodhpur',
+  'currentRole': 'Sales executive',
+  'experienceYears': 2,
+  'notes': 'Field sales, Hindi and Marwari',
+  'stage': 'in_process',
+  'createdByUserId': 'tanvi',
+  'createdAt': '2026-10-24T10:00:00.000Z',
+};
+
+final _sana = {
+  'id': 'cu-2',
+  'name': 'Sana Khan',
+  'phone': '+91 9876500002',
+  'currentRole': 'Front desk',
+  'experienceYears': 0,
+  'stage': 'not_placed',
+  'createdByUserId': 'tanvi',
+  'createdAt': '2026-10-26T10:00:00.000Z',
 };
 
 /// A fake `/placements`: [replies] answers a route first, by "METHOD path";
@@ -107,64 +164,48 @@ class _FakePlacements {
     final key = '${request.method} ${request.url.path}';
     if (replies[key] case final reply?) return reply(request);
     return switch (key) {
-      'GET /placements/summary' => _json(_summaryJson),
-      'GET /placements' => _json({
-        'success': true,
-        'placements': [
-          _placement('p1', 'Asha Verma', 'interviewing'),
-          _placement('p2', 'Rohit Nair', 'joined', joiningDate: '2026-10-01'),
-        ],
-      }),
       'GET /placements/clients' => _json({
         'success': true,
-        'clients': [
-          {
-            'id': 'cl-1',
-            'name': 'Acme Industries',
-            'industry': 'Manufacturing',
-            'city': 'Pune',
-          },
-        ],
+        'clients': [_marwar, _blueGate],
       }),
       'GET /placements/customers' => _json({
         'success': true,
-        'customers': [
-          {
-            'id': 'cu-1',
-            'name': 'Asha Verma',
-            'phone': '9876543210',
-            'currentRole': 'Accountant',
-          },
-        ],
+        'customers': [_arjun, _sana],
+      }),
+      'GET /placements/customers/cu-1' => _json({
+        'success': true,
+        'customer': _arjun,
+        'placements': [_placement('p1', 'Arjun Bhati', 'interviewing')],
+        'clients': [_marwar],
+      }),
+      'GET /placements/clients/cl-1' => _json({
+        'success': true,
+        'client': _marwar,
+        'placements': [_placement('p1', 'Arjun Bhati', 'interviewing')],
       }),
       'POST /placements/clients' => _json({
         'success': true,
-        'client': {
-          'id': 'cl-new',
-          ...jsonDecode(request.body) as Map<String, dynamic>,
-        },
+        'client': {'id': 'cl-new', ..._body(request)},
       }, 201),
       'POST /placements/customers' => _json({
         'success': true,
-        'customer': {
-          'id': 'cu-new',
-          ...jsonDecode(request.body) as Map<String, dynamic>,
-        },
+        'customer': {'id': 'cu-new', ..._body(request)},
       }, 201),
+      'POST /placements/customers/cu-1/remove' => _json({'success': true}),
       'POST /placements' => _json({
         'success': true,
         'placement': {
           'id': 'p-new',
-          'customerName': 'Asha Verma',
-          'clientName': 'Acme Industries',
-          ...jsonDecode(request.body) as Map<String, dynamic>,
+          'customerName': 'Arjun Bhati',
+          'clientName': 'Marwar Retail Pvt Ltd',
+          ..._body(request),
         },
       }, 201),
       _ when request.method == 'PATCH' => _json({
         'success': true,
         'placement': {
-          ..._placement('p1', 'Asha Verma', 'interviewing'),
-          ...jsonDecode(request.body) as Map<String, dynamic>,
+          ..._placement('p1', 'Arjun Bhati', 'interviewing'),
+          ..._body(request),
         },
       }),
       _ => _json({'success': false, 'message': 'Route not found'}, 404),
@@ -243,13 +284,61 @@ void main() {
     await tester.pump();
   }
 
-  Future<void> tapText(WidgetTester tester, String text) async {
-    final target = find.text(text).last;
-    await tester.ensureVisible(target);
-    // The jump lands on the next frame.
-    await tester.pump();
+  /// Taps [text] on the page in front, scrolling to it if it is below (or
+  /// above) the fold; pages underneath are never found.
+  Future<void> tapText(
+    WidgetTester tester,
+    String text, {
+    bool first = false,
+  }) async {
+    final scrollable = find
+        .byWidgetPredicate(
+          (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+        )
+        .hitTestable()
+        .last;
+    for (final delta in [300.0, -300.0]) {
+      if (find.text(text).hitTestable().evaluate().isNotEmpty) break;
+      try {
+        await tester.scrollUntilVisible(
+          find.text(text).hitTestable(),
+          delta,
+          scrollable: scrollable,
+          maxScrolls: 20,
+        );
+      } on StateError {
+        // Not that way.
+      }
+    }
+    final shown = find.text(text).hitTestable();
+    final target = first ? shown.first : shown.last;
     await tester.tap(target);
     await settle(tester);
+  }
+
+  /// Types into the field showing [hint], scrolling to it first.
+  Future<void> typeInto(WidgetTester tester, String hint, String text) async {
+    final field = find.widgetWithText(TextField, hint);
+    for (final delta in [-300.0, 300.0]) {
+      if (field.hitTestable().evaluate().isNotEmpty) break;
+      try {
+        await tester.scrollUntilVisible(
+          field.hitTestable(),
+          delta,
+          scrollable: find
+              .byWidgetPredicate(
+                (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+              )
+              .hitTestable()
+              .last,
+          maxScrolls: 20,
+        );
+      } on StateError {
+        // Not that way.
+      }
+    }
+    await tester.enterText(field.hitTestable(), text);
+    await tester.pump();
   }
 
   Future<void> capture(WidgetTester tester, String name) async {
@@ -362,270 +451,200 @@ void main() {
       await tester.tap(card);
       await settle(tester);
       expect(find.byKey(const ValueKey('placements-hub')), findsOneWidget);
-      expect(find.text('Asha Verma'), findsOneWidget);
+      expect(find.text('My candidates'), findsOneWidget);
     });
   });
 
   group('the hub', () {
-    testWidgets('draws the summary, the Add buttons and the placements', (
+    testWidgets('counts my candidates and clients, from the lists of mine', (
       tester,
     ) async {
       final fake = await pumpPlacements(tester);
-      expect(fake.sentTo('GET', '/placements').single.url.query, 'mine=1');
-      expect(find.text('6'), findsOneWidget); // total
-      expect(find.text('4'), findsOneWidget); // clients
-      expect(find.text('9'), findsOneWidget); // customers
-      expect(find.text('Clients'), findsOneWidget);
-      expect(find.text('Customers'), findsOneWidget);
       expect(
-        find.byKey(const ValueKey('placements-add-client')),
+        fake.sentTo('GET', '/placements/customers').single.url.query,
+        'mine=1',
+      );
+      expect(
+        fake.sentTo('GET', '/placements/clients').single.url.query,
+        'mine=1',
+      );
+      expect(find.text('My candidates'), findsOneWidget);
+      expect(find.text('My clients'), findsOneWidget);
+      // Candidates: 1 not placed, 1 in process, 0 joined; clients: 2 roles,
+      // 1 fee paid, 1 pending.
+      Finder stat(String card, String label) => find.descendant(
+        of: find.byKey(ValueKey(card)),
+        matching: find
+            .ancestor(of: find.text(label), matching: find.byType(Column))
+            .first,
+      );
+      expect(
+        find.descendant(
+          of: stat('placements-candidates', 'Joined'),
+          matching: find.text('0'),
+        ),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('placements-add-customer')),
+        find.descendant(
+          of: stat('placements-clients', 'Open roles'),
+          matching: find.text('2'),
+        ),
         findsOneWidget,
       );
-      expect(find.text('Asha Verma'), findsOneWidget);
-      expect(find.text('Accountant · Acme Industries'), findsNWidgets(2));
-      // The status on its pill, after the legend's own "Interviewing".
-      expect(find.text('Interviewing'), findsNWidgets(2));
-      expect(find.text('Interview 2 Nov 2026'), findsOneWidget);
-      expect(find.text('Joined 1 Oct 2026'), findsOneWidget);
-      await capture(tester, 'placements_hub');
+      await capture(tester, 'placements-hub');
     });
 
-    testWidgets('a failing summary leaves the placements', (tester) async {
+    testWidgets('a list that fails says why, with Try again', (tester) async {
       await pumpPlacements(
         tester,
         _FakePlacements({
-          'GET /placements/summary': (_) =>
-              _json({'success': false, 'message': 'boom'}, 500),
-        }),
-      );
-      expect(
-        find.byKey(const ValueKey('placements-summary-error')),
-        findsOneWidget,
-      );
-      expect(find.text('The summary didn\'t load.'), findsOneWidget);
-      expect(find.text('Asha Verma'), findsOneWidget);
-      expect(find.text('Rohit Nair'), findsOneWidget);
-      await capture(tester, 'placements_hub_summary_failed');
-    });
-
-    testWidgets('a refused list says why, and leaves the summary', (
-      tester,
-    ) async {
-      final fake = _FakePlacements({
-        'GET /placements': (_) => _json({
-          'success': false,
-          'message': 'Placements are not enabled for your company',
-        }, 403),
-      });
-      await pumpPlacements(tester, fake);
-      expect(
-        find.byKey(const ValueKey('placements-list-error')),
-        findsOneWidget,
-      );
-      expect(
-        find.text('Placements are not enabled for your company'),
-        findsOneWidget,
-      );
-      expect(find.text('9'), findsOneWidget);
-
-      // Try again reads the list once more, and this time it comes.
-      fake.replies.remove('GET /placements');
-      final retry = find.descendant(
-        of: find.byKey(const ValueKey('placements-list-error')),
-        matching: find.text('Try again'),
-      );
-      await tester.ensureVisible(retry);
-      await tester.tap(retry);
-      await settle(tester);
-      expect(find.text('Asha Verma'), findsOneWidget);
-    });
-
-    testWidgets('a placement opens on its detail, and its status changes', (
-      tester,
-    ) async {
-      final fake = await pumpPlacements(tester);
-      await tapText(tester, 'Asha Verma');
-      expect(find.byKey(const ValueKey('placement-detail')), findsOneWidget);
-      expect(find.text('₹600,000'), findsOneWidget);
-      await capture(tester, 'placement_detail');
-
-      // Nothing to send until a different status is picked.
-      await tapText(tester, 'Update Status');
-      expect(fake.sent.where((r) => r.method == 'PATCH'), isEmpty);
-
-      await tester.tap(find.byKey(const ValueKey('placement-status-field')));
-      await settle(tester);
-      await tapText(tester, 'Joined');
-      await tapText(tester, 'Update Status');
-      final patch = fake.sent.singleWhere((r) => r.method == 'PATCH');
-      expect(patch.url.path, '/placements/p1');
-      expect(_body(patch), {'status': 'joined'});
-      expect(find.text('Status changed to Joined'), findsOneWidget);
-    });
-  });
-
-  group('Add client', () {
-    testWidgets('needs a name, and a real email when one is given', (
-      tester,
-    ) async {
-      final fake = await pumpPlacements(tester);
-      await tapKey(tester, 'placements-add-client');
-      expect(find.byKey(const ValueKey('client-form')), findsOneWidget);
-
-      await tapText(tester, 'Add Client');
-      expect(fake.sentTo('POST', '/placements/clients'), isEmpty);
-
-      await type(tester, 'client-name', 'Acme Industries');
-      await type(tester, 'client-email', 'hr@acme');
-      expect(find.text('Enter a valid email address.'), findsOneWidget);
-      await capture(tester, 'client_form_problem');
-      await tapText(tester, 'Add Client');
-      expect(fake.sentTo('POST', '/placements/clients'), isEmpty);
-
-      await type(tester, 'client-phone', '12');
-      await type(tester, 'client-email', 'hr@acme.in');
-      expect(
-        find.text('Enter a valid phone number, with at least 10 digits.'),
-        findsOneWidget,
-      );
-      await type(tester, 'client-phone', '98765 43210');
-      expect(find.text('Enter a valid email address.'), findsNothing);
-
-      await tapText(tester, 'Add Client');
-      final sent = fake.sentTo('POST', '/placements/clients').single;
-      expect(_body(sent), {
-        'name': 'Acme Industries',
-        'phone': '98765 43210',
-        'email': 'hr@acme.in',
-      });
-      expect(find.text('Client Added'), findsOneWidget);
-    });
-
-    testWidgets('shows what the server said when it refuses', (tester) async {
-      await pumpPlacements(
-        tester,
-        _FakePlacements({
-          'POST /placements/clients': (_) => _json({
+          'GET /placements/customers': (_) => _json({
             'success': false,
-            'message': 'A client with this name already exists',
-          }, 400),
+            'message': 'Placements is not switched on',
+          }, 403),
         }),
       );
-      await tapKey(tester, 'placements-add-client');
-      await type(tester, 'client-name', 'Acme Industries');
-      await tapText(tester, 'Add Client');
-      expect(
-        find.text('A client with this name already exists'),
-        findsOneWidget,
-      );
-      expect(find.byKey(const ValueKey('client-form')), findsOneWidget);
+      expect(find.text('Placements is not switched on'), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
     });
   });
 
-  group('Add customer', () {
-    testWidgets('needs a name and a phone, and checks the rest', (
+  group('candidates', () {
+    testWidgets('the list opens a candidate, and their client from there', (
       tester,
     ) async {
       final fake = await pumpPlacements(tester);
-      await tapKey(tester, 'placements-add-customer');
-      expect(find.byKey(const ValueKey('customer-form')), findsOneWidget);
+      await tapText(tester, 'My candidates');
+      expect(find.text('Arjun Bhati'), findsOneWidget);
+      expect(find.text('Sana Khan'), findsOneWidget);
+      expect(find.text('In process'), findsWidgets);
+      // The filter.
+      await tapText(tester, 'Not placed', first: true);
+      expect(find.text('Arjun Bhati'), findsNothing);
+      await tapText(tester, 'All', first: true);
+      await tapText(tester, 'Arjun Bhati');
+      expect(fake.sentTo('GET', '/placements/customers/cu-1'), hasLength(1));
+      expect(find.text('Field sales, Hindi and Marwari'), findsOneWidget);
+      expect(find.text('Shastri Nagar, Jodhpur'), findsOneWidget);
+      expect(find.text('Sales executive · ₹18,000 / month'), findsOneWidget);
+      expect(find.text('Interview scheduled'), findsWidgets);
+      expect(find.text('Candidate added'), findsOneWidget);
+      await capture(tester, 'placements-candidate');
+      await tapText(tester, 'Marwar Retail Pvt Ltd');
+      expect(fake.sentTo('GET', '/placements/clients/cl-1'), hasLength(1));
+      expect(find.text('Store manager'), findsOneWidget);
+      expect(find.text('₹35,000 / month'), findsOneWidget);
+      expect(find.text('Candidates at this client'), findsOneWidget);
+    });
 
-      await type(tester, 'customer-name', 'Asha Verma');
-      await tapText(tester, 'Add Customer');
-      expect(fake.sentTo('POST', '/placements/customers'), isEmpty);
-
-      await type(tester, 'customer-phone', '98765');
-      expect(
-        find.text('Enter a valid phone number, with at least 10 digits.'),
-        findsOneWidget,
-      );
-      await type(tester, 'customer-phone', '+91 98765 43210');
-      await type(tester, 'customer-experience', 'three');
-      expect(
-        find.text('Enter the years of experience as a number, like 3 or 4.5.'),
-        findsOneWidget,
-      );
-      await type(tester, 'customer-experience', '3.5');
-
-      await type(tester, 'customer-skill', 'Tally, Excel');
+    testWidgets('Add candidate needs a name and a 10-digit mobile', (
+      tester,
+    ) async {
+      final fake = await pumpPlacements(tester);
+      await tapText(tester, 'My candidates');
       await tapText(tester, 'Add');
-      expect(find.text('Tally'), findsOneWidget);
-      expect(find.text('Excel'), findsOneWidget);
-      await capture(tester, 'customer_form');
-      await type(tester, 'customer-skill', 'GST');
+      await tapText(tester, 'Save candidate');
+      expect(find.text('Enter their full name.'), findsOneWidget);
+      await typeInto(tester, 'As on ID proof', 'Neha Choudhary');
+      await typeInto(tester, '10-digit mobile', '98765');
+      await tapText(tester, 'Save candidate');
+      expect(find.text('Enter a 10-digit mobile number.'), findsOneWidget);
+      await typeInto(tester, '10-digit mobile', '98765 43210');
+      await typeInto(tester, '0', '4');
+      await typeInto(tester, 'Current or preferred role', 'Accountant');
+      await tapText(tester, 'Save candidate');
+      final body = _body(fake.sentTo('POST', '/placements/customers').single);
+      expect(body['name'], 'Neha Choudhary');
+      expect(body['phone'], '+91 9876543210');
+      expect(body['experienceYears'], 4);
+      expect(body['currentRole'], 'Accountant');
+    });
 
-      await tapText(tester, 'Add Customer');
-      final sent = fake.sentTo('POST', '/placements/customers').single;
-      expect(_body(sent), {
-        'name': 'Asha Verma',
-        'phone': '+91 98765 43210',
-        'experienceYears': 3.5,
-        'skills': ['Tally', 'Excel', 'GST'],
-      });
-      expect(find.text('Customer Added'), findsOneWidget);
+    testWidgets('Remove asks why, and sends it', (tester) async {
+      final fake = await pumpPlacements(tester);
+      await tapText(tester, 'My candidates');
+      await tapText(tester, 'Arjun Bhati');
+      await tester.tap(find.bySemanticsLabel('Remove candidate'));
+      await settle(tester);
+      expect(find.text('Remove Arjun Bhati?'), findsOneWidget);
+      await tapText(tester, 'Not interested');
+      await tapText(tester, 'Remove candidate');
+      final sent = fake.sentTo('POST', '/placements/customers/cu-1/remove');
+      expect(_body(sent.single)['reason'], 'Not interested');
+      expect(find.text('My candidates'), findsOneWidget);
     });
   });
 
-  group('Add placement', () {
-    testWidgets('needs a customer, a client and a position', (tester) async {
-      final fake = await pumpPlacements(tester);
-      await tapText(tester, 'Add Placement');
-      expect(find.byKey(const ValueKey('placement-form')), findsOneWidget);
-      expect(find.text('Shortlisted'), findsOneWidget);
-
-      await type(tester, 'placement-position', 'Accountant');
-      await tapText(tester, 'Add Placement');
-      expect(fake.sentTo('POST', '/placements'), isEmpty);
-
-      await tapText(tester, 'Select customer');
-      expect(fake.sentTo('GET', '/placements/customers'), hasLength(1));
-      await tapText(tester, 'Asha Verma');
-      await tapText(tester, 'Select client');
-      await tapText(tester, 'Acme Industries');
-
-      await type(tester, 'placement-ctc', '6 lakh');
-      expect(
-        find.text('Enter the CTC in rupees, digits only.'),
-        findsOneWidget,
-      );
-      await tapText(tester, 'Add Placement');
-      expect(fake.sentTo('POST', '/placements'), isEmpty);
-      await type(tester, 'placement-ctc', '6,00,000');
-      await type(tester, 'placement-fee', '50000');
-      await capture(tester, 'placement_form');
-
-      await tapText(tester, 'Add Placement');
-      final sent = fake.sentTo('POST', '/placements').single;
-      expect(_body(sent), {
-        'customerId': 'cu-1',
-        'clientId': 'cl-1',
-        'position': 'Accountant',
-        'status': 'shortlisted',
-        'ctcRupees': 600000.0,
-        'feeRupees': 50000.0,
-      });
-      expect(find.text('Placement Added'), findsOneWidget);
-      await capture(tester, 'placement_added');
-    });
-
-    testWidgets('"Add new" customer comes back with them chosen', (
+  group('placements', () {
+    testWidgets('Add placement picks the client, then one of its roles', (
       tester,
     ) async {
       final fake = await pumpPlacements(tester);
-      await tapText(tester, 'Add Placement');
-      await tapText(tester, 'Select customer');
-      await tapText(tester, 'Add new customer');
-      expect(find.byKey(const ValueKey('customer-form')), findsOneWidget);
-      await type(tester, 'customer-name', 'Meera Iyer');
-      await type(tester, 'customer-phone', '9123456780');
-      await tapText(tester, 'Add Customer');
-      expect(fake.sentTo('POST', '/placements/customers'), hasLength(1));
-      expect(find.byKey(const ValueKey('placement-form')), findsOneWidget);
-      expect(find.text('Meera Iyer'), findsOneWidget);
+      await tapText(tester, 'My candidates');
+      await tapText(tester, 'Arjun Bhati');
+      await tapText(tester, 'Add placement');
+      await tapText(tester, 'Save placement');
+      expect(find.text('Select the client company.'), findsOneWidget);
+      await tapText(tester, 'Select client');
+      await tapText(tester, 'Marwar Retail Pvt Ltd');
+      await tapText(tester, "Choose from the client's roles");
+      expect(find.text('₹35,000 / month'), findsOneWidget);
+      await tapText(tester, 'Store manager');
+      await tapText(tester, 'Interview scheduled');
+      await capture(tester, 'placements-add');
+      await tapText(tester, 'Save placement');
+      final body = _body(fake.sentTo('POST', '/placements').single);
+      expect(body['clientId'], 'cl-1');
+      expect(body['customerId'], 'cu-1');
+      expect(body['position'], 'Store manager');
+      expect(body['status'], 'interviewing');
+    });
+
+    testWidgets('Update status saves every field, clearing what is empty', (
+      tester,
+    ) async {
+      final fake = await pumpPlacements(tester);
+      await tapText(tester, 'My candidates');
+      await tapText(tester, 'Arjun Bhati');
+      await tapText(tester, 'Update status');
+      await tapText(tester, 'Selected');
+      await tester.tap(find.byTooltip('Clear Interview date'));
+      await tester.pump();
+      await tapText(tester, 'Save changes');
+      final body = _body(fake.sentTo('PATCH', '/placements/p1').single);
+      expect(body['status'], 'offered');
+      expect(
+        body.containsKey('interviewDate') && body['interviewDate'] == null,
+        isTrue,
+      );
+    });
+  });
+
+  group('clients', () {
+    testWidgets('Add client sends its roles and the fee', (tester) async {
+      final fake = await pumpPlacements(tester);
+      await tapText(tester, 'My clients');
+      expect(find.text('Fee pending'), findsWidgets);
+      await tapText(tester, 'Add');
+      await tapText(tester, 'Save client');
+      expect(find.text('Enter the company name.'), findsOneWidget);
+      await typeInto(tester, 'Registered or trade name', 'Thar Agro Foods');
+      await typeInto(tester, 'City or full address', 'Pali Road, Jodhpur');
+      await typeInto(tester, 'e.g. Store manager', 'Accountant');
+      await typeInto(tester, 'Amount', '22000');
+      await tapText(tester, 'Payment received');
+      await tapText(tester, 'Save client');
+      final body = _body(fake.sentTo('POST', '/placements/clients').single);
+      expect(body['name'], 'Thar Agro Foods');
+      expect(body['city'], 'Pali Road, Jodhpur');
+      expect(body['feePaid'], isTrue);
+      expect((body['designations'] as List).single, {
+        'title': 'Accountant',
+        'budgetRupees': 22000.0,
+        'budgetPeriod': 'month',
+        'description': '',
+      });
     });
   });
 }

@@ -107,7 +107,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
   bool _profileOpen = false;
   /// The tab one's own profile opens on, and a count of openings so a profile
   /// opened afresh (from the feed, say, while it was open) starts on it again.
-  ProfileTab? _profileOpenOn = ProfileTab.orgChart;
+  ProfileTab? _profileOpenOn = ProfileTab.workDetail;
   int _profileOpenings = 0;
   /// Whether the punch screen has already been offered this session, so
   /// closing it does not bring it straight back on the next rebuild.
@@ -353,8 +353,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
     _connectComposerController.openComposer();
   }
 
-  /// One's own profile, from the avatar or the Team tab: on the org chart.
-  void _openProfile({ProfileTab? on = ProfileTab.orgChart}) => setState(() {
+  /// One's own profile, from the avatar or the Team tab: on Work detail.
+  void _openProfile({ProfileTab? on = ProfileTab.workDetail}) => setState(() {
     _profileOpen = true;
     _profileOpenOn = on;
     _profileOpenings++;
