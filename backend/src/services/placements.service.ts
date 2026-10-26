@@ -14,8 +14,10 @@ import { companies, placementClients, placementCustomers, placements, users } fr
 import type { Company } from '../models/company.model';
 import {
   PLACEMENT_STATUSES,
+  DEFAULT_ONBOARDING_FEE_RUPEES,
   type Placement,
   type PlacementClient,
+  type PlacementDesignation,
   type PlacementCustomer,
   type PlacementStatus,
   type PlacementStatusChange,
@@ -81,6 +83,9 @@ const MAX_SKILLS = 30;
 const MAX_SKILL = 40;
 const MAX_RUPEES = 1_000_000_000;
 const MAX_YEARS = 60;
+const MAX_DESIGNATIONS = 30;
+const MAX_REFERENCE = 100;
+const MAX_REASON = 200;
 const APP_LIMIT = 200;
 const ADMIN_LIMIT = 2000;
 
@@ -156,6 +161,40 @@ function skillList(value: unknown): string[] {
   return skills;
 }
 
+function flag(value: unknown, field: string): boolean {
+  if (value === null || value === undefined || value === '') return false;
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  throw bad(`${field} must be true or false`);
+}
+
+/**
+ * A client's open roles. A role keeps the id it was sent with, so an edit
+ * keeps it; a new one gets its own.
+ */
+function designationList(value: unknown): PlacementDesignation[] {
+  if (value === null || value === undefined || value === '') return [];
+  if (!Array.isArray(value)) throw bad('designations must be a list of roles');
+  if (value.length > MAX_DESIGNATIONS) throw bad(`Up to ${MAX_DESIGNATIONS} designations`);
+  const seen = new Set<string>();
+  return value.map((item, index) => {
+    const row = bodyOf(item);
+    const where = `designations[${index}]`;
+    const sentId = typeof row.id === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(row.id) ? row.id : '';
+    const id = sentId && !seen.has(sentId) ? sentId : randomUUID();
+    seen.add(id);
+    const period = row.budgetPeriod === undefined || row.budgetPeriod === null || row.budgetPeriod === '' ? 'month' : row.budgetPeriod;
+    if (period !== 'month' && period !== 'year') throw bad(`${where}.budgetPeriod must be month or year`);
+    return {
+      id,
+      title: text(row.title, `${where}.title`, MAX_NAME, true),
+      budgetRupees: amount(row.budgetRupees, `${where}.budgetRupees`, MAX_RUPEES, 2),
+      budgetPeriod: period,
+      description: text(row.description, `${where}.description`, MAX_NOTES),
+    };
+  });
+}
+
 function status(value: unknown): PlacementStatus {
   const v = typeof value === 'string' ? value.trim().toLowerCase() : '';
   if (!PLACEMENT_STATUSES.includes(v as PlacementStatus)) throw bad(`status must be one of ${PLACEMENT_STATUSES.join(', ')}`);
@@ -187,7 +226,8 @@ function fields<T extends Record<string, unknown>>(
   return out;
 }
 
-type ClientFields = Pick<PlacementClient, 'name' | 'contactName' | 'phone' | 'email' | 'industry' | 'city' | 'notes'>;
+type ClientFields = Pick<PlacementClient, 'name' | 'contactName' | 'phone' | 'email' | 'industry' | 'city' | 'notes'> &
+  Required<Pick<PlacementClient, 'designations' | 'feeRupees' | 'feePaid' | 'feeReference'>>;
 const CLIENT_FIELDS: { [K in keyof ClientFields]: (value: unknown) => ClientFields[K] } = {
   name: (v) => text(v, 'name', MAX_NAME, true),
   contactName: (v) => text(v, 'contactName', MAX_NAME),
@@ -196,9 +236,14 @@ const CLIENT_FIELDS: { [K in keyof ClientFields]: (value: unknown) => ClientFiel
   industry: (v) => text(v, 'industry', MAX_SHORT),
   city: (v) => text(v, 'city', MAX_SHORT),
   notes: (v) => text(v, 'notes', MAX_NOTES),
+  designations: designationList,
+  feeRupees: (v) => amount(v, 'feeRupees', MAX_RUPEES, 2),
+  feePaid: (v) => flag(v, 'feePaid'),
+  feeReference: (v) => text(v, 'feeReference', MAX_REFERENCE),
 };
 
-type CustomerFields = Pick<PlacementCustomer, 'name' | 'phone' | 'email' | 'currentRole' | 'experienceYears' | 'skills' | 'city' | 'notes'>;
+type CustomerFields = Pick<PlacementCustomer, 'name' | 'phone' | 'email' | 'currentRole' | 'experienceYears' | 'skills' | 'city' | 'notes'> &
+  Required<Pick<PlacementCustomer, 'address'>>;
 const CUSTOMER_FIELDS: { [K in keyof CustomerFields]: (value: unknown) => CustomerFields[K] } = {
   name: (v) => text(v, 'name', MAX_NAME, true),
   phone: (v) => phone(v, true),
@@ -207,6 +252,7 @@ const CUSTOMER_FIELDS: { [K in keyof CustomerFields]: (value: unknown) => Custom
   experienceYears: (v) => amount(v, 'experienceYears', MAX_YEARS, 1),
   skills: skillList,
   city: (v) => text(v, 'city', MAX_SHORT),
+  address: (v) => text(v, 'address', MAX_NOTES),
   notes: (v) => text(v, 'notes', MAX_NOTES),
 };
 
@@ -276,6 +322,11 @@ function clientView(c: PlacementClient): ClientView {
     industry: c.industry ?? '',
     city: c.city ?? '',
     notes: c.notes ?? '',
+    designations: Array.isArray(c.designations) ? c.designations : [],
+    feeRupees: c.feeRupees ?? null,
+    feePaid: c.feePaid === true,
+    feePaidAt: c.feePaidAt ?? null,
+    feeReference: c.feeReference ?? '',
     createdByUserId: c.createdByUserId,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
@@ -292,7 +343,11 @@ function customerView(c: PlacementCustomer): CustomerView {
     experienceYears: c.experienceYears ?? null,
     skills: Array.isArray(c.skills) ? c.skills : [],
     city: c.city ?? '',
+    address: c.address ?? '',
     notes: c.notes ?? '',
+    removedAt: c.removedAt ?? null,
+    removedReason: c.removedReason ?? '',
+    removedByUserId: c.removedByUserId ?? '',
     createdByUserId: c.createdByUserId,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
@@ -411,12 +466,42 @@ export async function placementsSummary(caller: PlacementsCaller) {
   return { clients: clientCount, customers: customerCount, placements: { total, byStatus } };
 }
 
+// ---------------------------------------------------------------- who may change it
+
+const mineOnly = (query: Body) => query.mine === '1' || query.mine === 'true';
+
+/** From the app, a record is changed by the person who added it, or by HR. */
+function mayChange(caller: PlacementsCaller, row: { createdByUserId: string }, what: string) {
+  if (row.createdByUserId !== caller.userId && !caller.admin) {
+    throw new PlacementsError(403, `Only the person who added this ${what}, or HR, can change it`);
+  }
+}
+
+/** Where a candidate stands across their placements: joined anywhere, in process anywhere, or neither. */
+export type CandidateStage = 'not_placed' | 'in_process' | 'joined';
+const IN_PROCESS: readonly PlacementStatus[] = ['shortlisted', 'interviewing', 'offered'];
+function stageOf(statuses: PlacementStatus[]): CandidateStage {
+  if (statuses.includes('joined')) return 'joined';
+  if (statuses.some((s) => IN_PROCESS.includes(s))) return 'in_process';
+  return 'not_placed';
+}
+
+/** A candidate still on the lists (not removed); `removedAt` absent or null. */
+const LISTED = { removedAt: null } as const;
+
 // ---------------------------------------------------------------- clients
 
 export async function listClients(caller: PlacementsCaller, query: Body) {
   const q = searchOf(query.q);
   const rows = await placementClients()
-    .find({ org: caller.org, ...(q ? { name: q } : {}) }, { projection: { _id: 0 } })
+    .find(
+      {
+        org: caller.org,
+        ...(mineOnly(query) ? { createdByUserId: caller.userId } : {}),
+        ...(q ? { $or: [{ name: q }, { city: q }] } : {}),
+      },
+      { projection: { _id: 0 } },
+    )
     .sort({ createdAt: -1, id: 1 })
     .limit(APP_LIMIT)
     .toArray();
@@ -438,28 +523,54 @@ export async function listClientsForAdmin(caller: PlacementsCaller, query: Body)
   return rows.map((row) => ({ ...clientView(row), createdByName: creatorName(row), placements: usedCount(row) }));
 }
 
+/** One client, with every placement at it (the app's client page). */
+export async function getClient(caller: PlacementsCaller, id: string) {
+  const client = await placementClients().findOne({ org: caller.org, id }, { projection: { _id: 0 } });
+  if (!client) throw new PlacementsError(404, 'Client not found');
+  const rows = await placementRows(caller.org, { clientId: id }, { limit: APP_LIMIT });
+  return { client: clientView(client), placements: rows };
+}
+
 export async function createClient(caller: PlacementsCaller, input: unknown) {
   const parsed = fields<ClientFields>(bodyOf(input), false, CLIENT_FIELDS) as ClientFields;
   const now = new Date();
-  const client: PlacementClient = { id: randomUUID(), org: caller.org, ...parsed, createdByUserId: caller.userId, createdAt: now, updatedAt: now };
+  const client: PlacementClient = {
+    id: randomUUID(),
+    org: caller.org,
+    ...parsed,
+    feeRupees: parsed.feeRupees ?? DEFAULT_ONBOARDING_FEE_RUPEES,
+    feePaidAt: parsed.feePaid ? now : null,
+    createdByUserId: caller.userId,
+    createdAt: now,
+    updatedAt: now,
+  };
   await placementClients().insertOne({ ...client });
   return clientView(client);
 }
 
-export async function updateClient(caller: PlacementsCaller, id: string, input: unknown) {
-  const changes = fields<ClientFields>(bodyOf(input), true, CLIENT_FIELDS);
+/** From the app (`app`), only its creator or HR; the dashboard is HR already. */
+export async function updateClient(caller: PlacementsCaller, id: string, input: unknown, app = false) {
+  const changes: Partial<PlacementClient> = fields<ClientFields>(bodyOf(input), true, CLIENT_FIELDS);
+  const current = await placementClients().findOne({ org: caller.org, id }, { projection: { _id: 0, createdByUserId: 1, feePaid: 1 } });
+  if (!current) throw new PlacementsError(404, 'Client not found');
+  if (app) mayChange(caller, current, 'client');
+  const now = new Date();
+  // When the fee was received: set as it turns paid, cleared as it turns unpaid.
+  if (changes.feePaid === true && current.feePaid !== true) changes.feePaidAt = now;
+  if (changes.feePaid === false) changes.feePaidAt = null;
   const updated = await placementClients().findOneAndUpdate(
     { org: caller.org, id },
-    { $set: { ...changes, updatedAt: new Date() } },
+    { $set: { ...changes, updatedAt: now } },
     { returnDocument: 'after', projection: { _id: 0 } },
   );
   if (!updated) throw new PlacementsError(404, 'Client not found');
   return clientView(updated);
 }
 
-export async function deleteClient(caller: PlacementsCaller, id: string) {
-  const client = await placementClients().findOne({ org: caller.org, id }, { projection: { _id: 0, name: 1 } });
+export async function deleteClient(caller: PlacementsCaller, id: string, app = false) {
+  const client = await placementClients().findOne({ org: caller.org, id }, { projection: { _id: 0, name: 1, createdByUserId: 1 } });
   if (!client) throw new PlacementsError(404, 'Client not found');
+  if (app) mayChange(caller, client, 'client');
   const used = await placements().countDocuments({ org: caller.org, clientId: id });
   if (used > 0) {
     throw new PlacementsError(409, `${client.name} is on ${used} placement${used === 1 ? '' : 's'}: delete or move those first`);
@@ -469,30 +580,84 @@ export async function deleteClient(caller: PlacementsCaller, id: string) {
 
 // ---------------------------------------------------------------- customers
 
+/** Each listed candidate's placement statuses, read with the rows. */
+function stagesLookup(org: string): Document {
+  return {
+    $lookup: {
+      from: placements().collectionName,
+      localField: 'id',
+      foreignField: 'customerId',
+      pipeline: [{ $match: { org } }, { $project: { _id: 0, status: 1 } }],
+      as: 'stages',
+    },
+  };
+}
+type WithStages = { stages?: { status: PlacementStatus }[] };
+const stageOfRow = (row: WithStages) => stageOf((row.stages ?? []).map((s) => s.status));
+
+/** The app's lists: removed candidates are not on them. */
 export async function listCustomers(caller: PlacementsCaller, query: Body) {
   const q = searchOf(query.q);
+  const { org } = caller;
   const rows = await placementCustomers()
-    .find({ org: caller.org, ...(q ? { $or: [{ name: q }, { phone: q }] } : {}) }, { projection: { _id: 0 } })
-    .sort({ createdAt: -1, id: 1 })
-    .limit(APP_LIMIT)
+    .aggregate<PlacementCustomer & WithStages>([
+      {
+        $match: {
+          org,
+          ...LISTED,
+          ...(mineOnly(query) ? { createdByUserId: caller.userId } : {}),
+          ...(q ? { $or: [{ name: q }, { phone: q }, { currentRole: q }] } : {}),
+        },
+      },
+      { $sort: { createdAt: -1, id: 1 } },
+      { $limit: APP_LIMIT },
+      stagesLookup(org),
+    ])
     .toArray();
-  return rows.map(customerView);
+  return rows.map((row) => ({ ...customerView(row), stage: stageOfRow(row) }));
 }
 
+/** `removed`: `only` the removed, `exclude` them, or by default everyone. */
 export async function listCustomersForAdmin(caller: PlacementsCaller, query: Body) {
   const q = searchOf(query.q);
   const { org } = caller;
   const search = q ? { $or: [{ name: q }, { phone: q }, { email: q }, { currentRole: q }, { city: q }, { skills: q }] } : {};
+  const removed = query.removed === 'only' ? { removedAt: { $ne: null } } : query.removed === 'exclude' ? LISTED : {};
   const rows = await placementCustomers()
-    .aggregate<PlacementCustomer & Joined>([
-      { $match: { org, ...adminFilters(query), ...search } },
+    .aggregate<PlacementCustomer & Joined & WithStages>([
+      { $match: { org, ...adminFilters(query), ...search, ...removed } },
       { $sort: { createdAt: -1, id: 1 } },
       { $limit: ADMIN_LIMIT },
       creatorLookup(org),
       usedLookup(org, 'customerId'),
+      stagesLookup(org),
     ])
     .toArray();
-  return rows.map((row) => ({ ...customerView(row), createdByName: creatorName(row), placements: usedCount(row) }));
+  return rows.map((row) => ({
+    ...customerView(row),
+    stage: stageOfRow(row),
+    createdByName: creatorName(row),
+    placements: usedCount(row),
+  }));
+}
+
+/**
+ * One candidate, with their placements and the clients those are at (for
+ * each role's budget). A removed candidate is not found from the app.
+ */
+export async function getCustomer(caller: PlacementsCaller, id: string) {
+  const customer = await placementCustomers().findOne({ org: caller.org, id, ...LISTED }, { projection: { _id: 0 } });
+  if (!customer) throw new PlacementsError(404, 'Candidate not found');
+  const rows = await placementRows(caller.org, { customerId: id }, { limit: APP_LIMIT });
+  const clientIds = [...new Set(rows.map((row) => row.clientId))];
+  const clients = clientIds.length
+    ? await placementClients().find({ org: caller.org, id: { $in: clientIds } }, { projection: { _id: 0 } }).toArray()
+    : [];
+  return {
+    customer: { ...customerView(customer), stage: stageOf(rows.map((row) => row.status)) },
+    placements: rows,
+    clients: clients.map(clientView),
+  };
 }
 
 export async function createCustomer(caller: PlacementsCaller, input: unknown) {
@@ -503,11 +668,47 @@ export async function createCustomer(caller: PlacementsCaller, input: unknown) {
   return customerView(customer);
 }
 
-export async function updateCustomer(caller: PlacementsCaller, id: string, input: unknown) {
+/** From the app (`app`), only its creator or HR, and never a removed candidate. */
+export async function updateCustomer(caller: PlacementsCaller, id: string, input: unknown, app = false) {
   const changes = fields<CustomerFields>(bodyOf(input), true, CUSTOMER_FIELDS);
+  if (app) {
+    const current = await placementCustomers().findOne({ org: caller.org, id, ...LISTED }, { projection: { _id: 0, createdByUserId: 1 } });
+    if (!current) throw new PlacementsError(404, 'Candidate not found');
+    mayChange(caller, current, 'candidate');
+  }
   const updated = await placementCustomers().findOneAndUpdate(
     { org: caller.org, id },
     { $set: { ...changes, updatedAt: new Date() } },
+    { returnDocument: 'after', projection: { _id: 0 } },
+  );
+  if (!updated) throw new PlacementsError(404, 'Customer not found');
+  return customerView(updated);
+}
+
+/**
+ * Takes a candidate off the lists, with why: they stop counting for the
+ * person who added them, and HR can restore them. Not one who has joined
+ * somewhere: that placement is what the incentive is paid on.
+ */
+export async function removeCustomer(caller: PlacementsCaller, id: string, input: unknown) {
+  const reason = text(bodyOf(input).reason, 'reason', MAX_REASON, true);
+  const customer = await placementCustomers().findOne({ org: caller.org, id, ...LISTED }, { projection: { _id: 0, createdByUserId: 1 } });
+  if (!customer) throw new PlacementsError(404, 'Candidate not found');
+  mayChange(caller, customer, 'candidate');
+  const joined = await placements().countDocuments({ org: caller.org, customerId: id, status: 'joined' });
+  if (joined > 0) throw new PlacementsError(409, "A candidate with a Joined placement can't be removed. Ask your admin.");
+  const now = new Date();
+  await placementCustomers().updateOne(
+    { org: caller.org, id },
+    { $set: { removedAt: now, removedReason: reason, removedByUserId: caller.userId, updatedAt: now } },
+  );
+}
+
+/** HR puts a removed candidate back on the lists. */
+export async function restoreCustomer(caller: PlacementsCaller, id: string) {
+  const updated = await placementCustomers().findOneAndUpdate(
+    { org: caller.org, id },
+    { $set: { removedAt: null, removedReason: '', removedByUserId: '', updatedAt: new Date() } },
     { returnDocument: 'after', projection: { _id: 0 } },
   );
   if (!updated) throw new PlacementsError(404, 'Customer not found');
@@ -545,9 +746,10 @@ export async function listPlacementsForAdmin(caller: PlacementsCaller, query: Bo
 async function linkedNames(org: string, clientId: string, customerId: string) {
   const [client, customer] = await Promise.all([
     placementClients().findOne({ org, id: clientId }, { projection: { _id: 0, name: 1 } }),
-    placementCustomers().findOne({ org, id: customerId }, { projection: { _id: 0, name: 1 } }),
+    placementCustomers().findOne({ org, id: customerId }, { projection: { _id: 0, name: 1, removedAt: 1 } }),
   ]);
   if (!customer) throw bad('customerId does not match a customer of your company');
+  if (customer.removedAt) throw bad('This candidate was removed; HR can restore them');
   if (!client) throw bad('clientId does not match a client of your company');
   return { clientName: client.name, customerName: customer.name };
 }

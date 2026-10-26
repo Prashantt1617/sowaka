@@ -7,6 +7,8 @@ import {
   deleteClient,
   deleteCustomer,
   deletePlacement,
+  getClient,
+  getCustomer,
   listClients,
   listClientsForAdmin,
   listCustomers,
@@ -14,7 +16,9 @@ import {
   listPlacements,
   listPlacementsForAdmin,
   placementsSummary,
+  removeCustomer,
   requirePlacementsOn,
+  restoreCustomer,
   updateClient,
   updateCustomer,
   updatePlacement,
@@ -66,6 +70,18 @@ export const clientsHandler = handle(async (req) => ({ clients: await listClient
 export const customersHandler = handle(async (req) => ({ customers: await listCustomers(caller(req), query(req)) }));
 export const placementsHandler = handle(async (req) => ({ placements: await listPlacements(caller(req), query(req)) }));
 export const updatePlacementHandler = handle(async (req) => ({ placement: await updatePlacement(caller(req), id(req), body(req)) }));
+export const clientHandler = handle((req) => getClient(caller(req), id(req)));
+export const updateClientHandler = handle(async (req) => ({ client: await updateClient(caller(req), id(req), body(req), true) }));
+export const deleteClientHandler = handle(async (req) => {
+  await deleteClient(caller(req), id(req), true);
+  return {};
+});
+export const customerHandler = handle((req) => getCustomer(caller(req), id(req)));
+export const updateCustomerHandler = handle(async (req) => ({ customer: await updateCustomer(caller(req), id(req), body(req), true) }));
+export const removeCustomerHandler = handle(async (req) => {
+  await removeCustomer(caller(req), id(req), body(req));
+  return {};
+});
 
 // Dashboard
 export const adminClientsHandler = handle(async (req) => ({ clients: await listClientsForAdmin(caller(req), query(req)) }));
@@ -76,6 +92,7 @@ export const adminDeleteClientHandler = handle(async (req) => {
 });
 export const adminCustomersHandler = handle(async (req) => ({ customers: await listCustomersForAdmin(caller(req), query(req)) }));
 export const adminUpdateCustomerHandler = handle(async (req) => ({ customer: await updateCustomer(caller(req), id(req), body(req)) }));
+export const adminRestoreCustomerHandler = handle(async (req) => ({ customer: await restoreCustomer(caller(req), id(req)) }));
 export const adminDeleteCustomerHandler = handle(async (req) => {
   await deleteCustomer(caller(req), id(req));
   return {};
