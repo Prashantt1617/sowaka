@@ -51,6 +51,11 @@ export interface SuwiProposal {
   undoable: boolean;
   /** What HR must type to confirm a big change (a count or a name), if anything. */
   typeToConfirm?: string;
+  /**
+   * A bulk change, person by person: what each one has now and what they get,
+   * and who was left out and why. Shown as a table on the card.
+   */
+  preview?: { field: string; rows: { name: string; current: string; next: string }[]; skipped: { who: string; reason: string }[] };
   /** Everything the executor needs; never shown to Claude after creation. */
   payload: Record<string, unknown>;
   /** Filled by the executor so Undo can put things back. */

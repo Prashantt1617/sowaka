@@ -42,6 +42,7 @@ export function proposalView(p: SuwiProposal) {
   return {
     id: p._id!.toHexString(), kind: p.kind, area: p.area, title: p.title, summary: p.summary, lines: p.lines,
     effectiveFrom: p.effectiveFrom, undoable: p.undoable, typeToConfirm: p.typeToConfirm, status: p.status, message: p.message,
+    ...(p.preview ? { preview: p.preview } : {}),
   };
 }
 

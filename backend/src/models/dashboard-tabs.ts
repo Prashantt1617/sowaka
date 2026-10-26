@@ -14,7 +14,7 @@ export const DASHBOARD_TABS = [
   'holidaybank', 'shifttypes', 'shiftbulk', 'offices',
   'kpi', 'kpitemplates', 'kpibulk', 'feedback', 'cycle',
   'attendancereport',
-  'payschedule', 'taxdetails', 'payheads', 'statutorycomponents', 'templates', 'paiddays', 'payruns', 'payrolldash', 'payrollreports',
+  'payschedule', 'taxdetails', 'payheads', 'statutorycomponents', 'templates', 'paiddays', 'payruns', 'payrolldash', 'payrollreports', 'payrollbulk',
   'reimbursements', 'reimbursementtypes',
   'games', 'engagementposts', 'relaygame', 'contentreports',
 ] as const;

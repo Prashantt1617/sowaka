@@ -59,7 +59,8 @@ This question:
 - Company: ${companyName}
 - Today: ${ctx.today} (India time)
 - Asking: ${ctx.user.name}${ctx.user.dashboardAdmin ? ', a dashboard admin' : ''}${ctx.payroll ? ', with payroll access' : ', without payroll access'}
-- Page: ${page || 'overview'}${ctx.user.dashboardAdmin ? `
+- Page: ${page || 'overview'}${page.startsWith('bulk') ? `
+- HR opened Bulk assign: use prepare_bulk_assign for any "assign X to Y" request, one card per thing assigned. If they attached a sheet, pass every Employee ID in it. If they haven't said what or who, ask in one short question.` : ''}${ctx.user.dashboardAdmin ? `
 - Suwi budget this month: $${budget.spentUsd.toFixed(2)} of $${budget.monthlyUsd} used (only dashboard admins are told this)` : ''}`;
 }
 

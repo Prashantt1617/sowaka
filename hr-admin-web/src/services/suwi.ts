@@ -7,6 +7,8 @@ export type SuwiProposal = {
   lines: { text: string; why?: string; tone?: 'info' | 'warn' }[];
   effectiveFrom?: string; undoable: boolean; typeToConfirm?: string;
   status: 'pending' | 'done' | 'failed' | 'cancelled' | 'undone' | 'expired'; message?: string;
+  /** A bulk change: each person's current and new value, and who was left out. */
+  preview?: { field: string; rows: { name: string; current: string; next: string }[]; skipped: { who: string; reason: string }[] };
 };
 export type SuwiAnswer = { text: string; checked: string[]; links: SuwiLink[]; proposals: SuwiProposal[]; costUsd: number };
 export type SuwiHistoryTurn = { role: 'user' | 'assistant'; text: string };

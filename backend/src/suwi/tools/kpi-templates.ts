@@ -24,7 +24,7 @@ async function roster(ctx: SuwiContext) {
 }
 
 /** The live cycle and the first one a change can land in, with its first day. */
-async function cycles(ctx: SuwiContext) {
+export async function cycles(ctx: SuwiContext) {
   const live = await cycleInfoFor(ctx.org);
   const next = nextPeriod(live.period);
   const [y, m] = next.split('-').map(Number);
@@ -47,7 +47,7 @@ async function peopleFor(ctx: SuwiContext, i: Record<string, unknown>) {
 }
 
 /** What each person holds for the cycle now, so the card can warn and Undo can restore. */
-async function currentAssignments(ctx: SuwiContext, period: string, userIds: string[]) {
+export async function currentAssignments(ctx: SuwiContext, period: string, userIds: string[]) {
   const rows = await listKpiAssignments(ctx.userId, period);
   const out: Record<string, { parameterIds: string[]; weights: Record<string, number>; templateId: string | null } | null> = {};
   for (const id of userIds) {

@@ -435,3 +435,26 @@
   .sora.on { transform: none; transition: opacity .2s ease, visibility 0s linear .2s; }
   .sora.on { transition: opacity .2s ease, visibility 0s; }
 }
+
+/* Bulk assign: the guide that opens it, its examples, and the card's table of people */
+.sora-bulk { border-style: dashed; }
+.sora-bulk.on { background: var(--hi-soft); color: var(--hi); border-style: solid; }
+.suwi-guide p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+.suwi-guide p:first-child { color: var(--ink); font-size: 13.5px; }
+.suwi-guide b { color: var(--ink); font-weight: 600; }
+.suwi-guide-exs { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 10px; }
+.suwi-guide-ex { text-align: left; font: inherit; font-size: 13px; line-height: 1.4; color: var(--hi); background: var(--hi-soft); border: 1px solid color-mix(in srgb, var(--hi) 22%, transparent); border-radius: 10px; padding: 8px 10px; cursor: pointer; }
+.suwi-guide-ex:hover { border-color: var(--hi); }
+.suwi-guide-n { color: var(--ink-3) !important; font-size: 12px !important; margin-bottom: 0 !important; }
+.suwi-prev { margin: 8px 0 4px; }
+.suwi-prev-h { font-size: 12.5px; color: var(--ink-2); margin-bottom: 6px; }
+.suwi-prev-s { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+.suwi-prev table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.suwi-prev th { text-align: left; font-weight: 500; color: var(--ink-3); background: var(--surface-2); padding: 6px 8px; white-space: nowrap; }
+.suwi-prev td { padding: 6px 8px; border-top: 1px solid var(--line); color: var(--ink); }
+.suwi-prev td:last-child { color: var(--hi); font-weight: 500; }
+.suwi-prev tr.same td { color: var(--ink-3); font-weight: 400; }
+.suwi-prev-k { margin-top: 8px; font-size: 12.5px; }
+.suwi-prev-k b { color: var(--warn); font-weight: 600; }
+.suwi-prev-k ul { margin: 4px 0 0; padding-left: 18px; color: var(--ink-2); }
+.suwi-prev-k span { color: var(--ink); }

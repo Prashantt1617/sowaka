@@ -29,6 +29,7 @@ export type View =
   | 'templates'
   | 'paiddays'
   | 'payrolldash'
+  | 'payrollbulk'
   | 'payrollreports'
   | 'statutorycomponents'
   | 'payruns'
@@ -138,7 +139,7 @@ export const TITLES: Record<View, [string, string]> = {
   feedback: ['Performance Reviews', 'Performance · manager reviews & recognition'],
   kpi: ['KPI Parameters', 'Performance · define measurable KPIs'],
   kpitemplates: ['Templates', 'Performance · weighted sets of KPI parameters'],
-  kpibulk: ['Bulk Assign', 'Performance · put a template on everyone its rules select'],
+  kpibulk: ['Bulk Assign', 'Performance · through Suwi'],
   shifttypes: ['Templates', 'Shifts · timings, breaks, segmentation & grace rules'],
   holidaybank: ['Holiday Bank', 'Shifts · master list of holidays, applied by location'],
   offices: ['Offices', 'Shifts · where a geotagged punch may be taken from'],
@@ -156,6 +157,7 @@ export const TITLES: Record<View, [string, string]> = {
   templates: ['Salary Templates', 'Payroll · reusable pay groups'],
   paiddays: ['Paid Days Templates', 'Payroll · how attendance becomes paid days'],
   payrolldash: ['Payroll Dashboard', 'Payroll · the month at a glance'],
+  payrollbulk: ['Bulk Assign', 'Payroll · through Suwi'],
   payrollreports: ['Payroll Reports', 'Payroll · summaries, registers and statutory reports'],
   statutorycomponents: ['Statutory Components', 'Payroll · EPF, ESI, PT, LWF & more'],
   payruns: ['Payroll Runs', 'Payroll · monthly runs and payslips'],
@@ -169,7 +171,7 @@ export const TITLES: Record<View, [string, string]> = {
   usersroles: ['Accesses', 'People · users, roles and permissions'],
   cycle: ['Cycle', 'Performance · the monthly review cycle'],
   reimbursementtypes: ['Reimbursement Types', 'Claims · what can be claimed, and the cap on each'],
-  shiftbulk: ['Bulk Assign', 'Shifts · put employees on a shift'],
+  shiftbulk: ['Bulk Assign', 'Shifts · through Suwi'],
   games: ['Games', 'Connect · hosted games and leaderboards'],
   relaygame: ['Relay game', 'Connect · launch-event teams and questions'],
   cuptv: ['Tournament TV', 'Connect · the tournament live, for the office screen'],

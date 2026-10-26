@@ -70,6 +70,7 @@ const PAYROLL: NavItem[] = [
   { key: 'paiddays', label: 'Paid Days Templates' },
   { key: 'payruns', label: 'Payroll Runs' },
   { key: 'payrollreports', label: 'Payroll Reports' },
+  { key: 'payrollbulk', label: 'Bulk Assign' },
 ];
 
 // Claims sits below Payroll: the claims people raise and what can be claimed,
