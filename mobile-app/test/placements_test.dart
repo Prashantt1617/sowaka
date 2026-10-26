@@ -14,6 +14,7 @@ import 'package:http/testing.dart';
 import 'package:mobile_app/features/auth/data/auth_models.dart';
 import 'package:mobile_app/features/manager/bloc/manager_bloc.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
+import 'package:mobile_app/features/manager_shell/presentation/app_home_header.dart';
 import 'package:mobile_app/features/placements/data/placements_api_service.dart';
 import 'package:mobile_app/features/quick_actions/presentation/quick_actions_screen.dart';
 
@@ -561,6 +562,28 @@ void main() {
       expect(body['currentRole'], 'Accountant');
     });
 
+    testWidgets('the pages keep the app header, and Back steps to the hub', (
+      tester,
+    ) async {
+      await pumpPlacements(tester);
+      expect(find.byType(AppHomeHeader), findsOneWidget);
+      await tapText(tester, 'My candidates');
+      // A frame more: the route under an opaque one goes offstage once the
+      // transition has finished.
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byKey(const ValueKey('placements-hub')), findsNothing);
+      expect(find.byType(AppHomeHeader), findsOneWidget);
+      // The Actions tab's Back calls the screen's back(): one page back,
+      // then false on the hub, where Back leaves Placements.
+      final screen = tester.state(find.byType(PlacementsScreen)) as dynamic;
+      expect(screen.back(), isTrue);
+      await settle(tester);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byKey(const ValueKey('placements-hub')), findsOneWidget);
+      expect(find.byType(AppHomeHeader), findsOneWidget);
+      expect(screen.back(), isFalse);
+    });
+
     testWidgets('Remove asks why, and sends it', (tester) async {
       final fake = await pumpPlacements(tester);
       await tapText(tester, 'My candidates');
@@ -591,7 +614,16 @@ void main() {
       await tapText(tester, "Choose from the client's roles");
       expect(find.text('₹35,000 / month'), findsOneWidget);
       await tapText(tester, 'Store manager');
+      // Status is a picker, as Apply leave's Duration is: open it, choose.
+      await tapKey(tester, 'placement-status');
       await tapText(tester, 'Interview scheduled');
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('placement-status')),
+          matching: find.text('Interview scheduled'),
+        ),
+        findsOneWidget,
+      );
       await capture(tester, 'placements-add');
       await tapText(tester, 'Save placement');
       final body = _body(fake.sentTo('POST', '/placements').single);
@@ -608,6 +640,7 @@ void main() {
       await tapText(tester, 'My candidates');
       await tapText(tester, 'Arjun Bhati');
       await tapText(tester, 'Update status');
+      await tapKey(tester, 'placement-status');
       await tapText(tester, 'Selected');
       await tester.tap(find.byTooltip('Clear Interview date'));
       await tester.pump();
@@ -619,6 +652,47 @@ void main() {
         isTrue,
       );
     });
+  });
+
+  testWidgets('Update keeps paise and opens a date older than two years', (
+    tester,
+  ) async {
+    final fake = await pumpPlacements(
+      tester,
+      _FakePlacements({
+        'GET /placements/customers/cu-1': (_) => _json({
+          'success': true,
+          'customer': _arjun,
+          'placements': [
+            {
+              ..._placement('p1', 'Arjun Bhati', 'offered'),
+              'interviewDate': '2020-03-15',
+              'ctcRupees': 25000.5,
+            },
+          ],
+          'clients': [_marwar],
+        }),
+      }),
+    );
+    await tapText(tester, 'My candidates');
+    await tapText(tester, 'Arjun Bhati');
+    await tapText(tester, 'Update status');
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('placement-salary')),
+        matching: find.text('25000.50'),
+      ),
+      findsOneWidget,
+    );
+    // The picker's window reaches back to the saved day, so it opens.
+    await tapText(tester, '15 Mar 2020');
+    expect(tester.takeException(), isNull);
+    expect(find.byType(DatePickerDialog), findsOneWidget);
+    await tapText(tester, 'Cancel');
+    await tapText(tester, 'Save changes');
+    final body = _body(fake.sentTo('PATCH', '/placements/p1').single);
+    expect(body['ctcRupees'], 25000.5);
+    expect('${body['interviewDate']}', startsWith('2020-03-15'));
   });
 
   group('clients', () {

@@ -1,34 +1,45 @@
 part of '../../quick_actions/presentation/quick_actions_screen.dart';
 
-/// The Placements pages' look, as the "Placements Quick Action" canvas draws
-/// it: warm greys, white cards on a stone ground, one orange accent, Plus
-/// Jakarta Sans.
+/// The Placements pages' look: the Actions pages' own (Leave, Overtime,
+/// Reimbursement). Sora on the grey ground of the Leave hub, white cards with
+/// a hairline shadow, grey upper-case labels, the app's blue on what is
+/// pressed, and the Actions terra for Placements' own touches.
 abstract final class Pl {
-  static const font = 'Plus Jakarta Sans';
+  static const font = 'Sora';
 
-  static const ground = Color(0xFFF7F5F3);
+  /// The Leave hub's and the Apply leave form's ground.
+  static const ground = Color(0xFFF7F7F9);
   static const card = Colors.white;
-  static const border = Color(0xFFE7E2DD);
-  static const line = Color(0xFFEFEBE7);
-  static const field = Color(0xFFD6D0CA);
-  static const chip = Color(0xFFF0ECE8);
-  static const stone = Color(0xFFF5F2EF);
+  static const border = Color(0xFFF3F4F6);
+  static const line = Color(0xFFF3F4F6);
 
-  static const ink = Color(0xFF1C1917);
-  static const ink2 = Color(0xFF44403C);
-  static const muted = Color(0xFF57534E);
-  static const faint = Color(0xFF6B635D);
-  static const icon = Color(0xFF78716C);
-  static const hint = Color(0xFF8A827C);
+  /// A field's outline, as [_FormTextField] draws it.
+  static const field = Color(0xFFE5E7EB);
+  static const chip = Color(0xFFF3F4F6);
+  static const stone = Color(0xFFF7F7F9);
 
-  static const accent = Color(0xFFEA580C);
-  static const accentDeep = Color(0xFFC2410C);
-  static const accentSoft = Color(0xFFFFF7ED);
-  static const accentTint = Color(0xFFFFEDD5);
-  static const accentText = Color(0xFF9A3412);
-  static const accentDash = Color(0xFFFDBA74);
+  static const ink = Color(0xFF111827);
+  static const ink2 = Color(0xFF374151);
+  static const muted = Color(0xFF6B7280);
+  static const faint = Color(0xFF9CA3AF);
+  static const icon = Color(0xFF6B7280);
+  static const hint = Color(0x80111827);
 
-  static const danger = Color(0xFFB91C1C);
+  static const accent = Color(0xFF0571A6);
+  static const accentDeep = Color(0xFF0571A6);
+  static const accentSoft = Color(0xFFF0F9FF);
+  static const accentTint = Color(0xFFE0F2FE);
+  static const accentText = Color(0xFF075985);
+  static const accentDash = Color(0xFF96B7C7);
+
+  /// The app's blue: the Actions pages' buttons, picked chips and links.
+  static const action = Color(0xFF0571A6);
+
+  /// [action] on a button that is not ready yet.
+  static const actionMuted = Color(0xFF96B7C7);
+  static const actionTint = Color(0xFFE0F2FE);
+
+  static const danger = Color(0xFFB3261E);
   static const dangerSoft = Color(0xFFFEE2E2);
 
   static TextStyle text(
@@ -38,6 +49,7 @@ abstract final class Pl {
     double? height,
   }) => TextStyle(
     fontFamily: font,
+    fontFamilyFallback: _soraFallback,
     fontSize: size,
     fontWeight: weight,
     color: color,
@@ -48,11 +60,12 @@ abstract final class Pl {
 /// The colours of a status pill.
 typedef PillColors = ({Color background, Color text});
 
-const _green = (background: Color(0xFFDCFCE7), text: Color(0xFF166534));
-const _orange = (background: Pl.accentTint, text: Pl.accentText);
-const _blue = (background: Color(0xFFDBEAFE), text: Color(0xFF1E40AF));
-const _grey = (background: Pl.chip, text: Pl.ink2);
-const _purple = (background: Color(0xFFEDE9FE), text: Color(0xFF5B21B6));
+// The decisions' colours on the Leave and Overtime hubs.
+const _green = (background: Color(0xFFDCFCE7), text: Color(0xFF16A34A));
+const _orange = (background: _Q.terraTint, text: _Q.terra);
+const _blue = (background: Color(0xFFDBEAFE), text: Pl.action);
+const _grey = (background: Pl.chip, text: Pl.muted);
+const _purple = (background: _Q.plumTint, text: _Q.plum);
 
 PillColors stageColors(CandidateStage stage) => switch (stage) {
   CandidateStage.joined => _green,
@@ -93,7 +106,7 @@ String initialsOf(String name) {
   return letters.isEmpty ? '?' : letters.join();
 }
 
-/// The page frame: a stone ground under the design's header (a round Back,
+/// The page frame: the grey ground under the design's header (a round Back,
 /// the title with an optional line under it, and the page's own actions).
 class PlPage extends StatelessWidget {
   const PlPage({
@@ -119,7 +132,7 @@ class PlPage extends StatelessWidget {
     // The Actions pages' frame, as [_HubScaffold] draws it: the app's
     // header, a round Back and the title on white, then the page.
     return Material(
-      color: _Q.bg,
+      color: Pl.ground,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -201,7 +214,7 @@ class PlPage extends StatelessWidget {
   }
 }
 
-/// A 44 px round button with an icon: white on a border, or [plain].
+/// A round button with an icon: on the grey of the header's Back, or [plain].
 class PlIconButton extends StatelessWidget {
   const PlIconButton({
     super.key,
@@ -224,17 +237,15 @@ class PlIconButton extends StatelessWidget {
       button: true,
       label: label,
       child: Material(
-        color: plain ? Colors.transparent : Pl.card,
-        shape: CircleBorder(
-          side: plain ? BorderSide.none : const BorderSide(color: Pl.border),
-        ),
+        color: plain ? Colors.transparent : Pl.ground,
+        shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: onTap,
           child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(icon, size: plain ? 26 : 19, color: color),
+            width: plain ? 40 : 36,
+            height: plain ? 40 : 36,
+            child: Icon(icon, size: plain ? 22 : 18, color: color),
           ),
         ),
       ),
@@ -242,7 +253,8 @@ class PlIconButton extends StatelessWidget {
   }
 }
 
-/// The orange "+ Add" pill: filled in a page header, outlined in a section.
+/// "Add", as the Leave hub's Apply Leave in the header ([_LeaveHeaderButton]);
+/// [outlined], the same on white in a section.
 class PlAddButton extends StatelessWidget {
   const PlAddButton({
     super.key,
@@ -257,32 +269,36 @@ class PlAddButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fg = outlined ? Pl.accentDeep : Colors.white;
+    final live = onTap != null;
+    final fg = outlined
+        ? (live ? Pl.action : Pl.faint)
+        : (live ? Colors.white : Pl.faint);
     return Material(
-      color: outlined ? Pl.accentSoft : Pl.accent,
-      shape: StadiumBorder(
-        side: outlined
-            ? const BorderSide(color: Pl.accent, width: 1.5)
-            : BorderSide.none,
+      color: outlined ? Pl.card : (live ? Pl.action : const Color(0xFFE5E7EB)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: outlined ? const BorderSide(color: Pl.field) : BorderSide.none,
       ),
       child: InkWell(
-        customBorder: const StadiumBorder(),
+        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
-        child: Container(
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.add_rounded,
-                size: 18,
-                color: outlined ? Pl.accent : fg,
-              ),
-              const SizedBox(width: 6),
+              Icon(Icons.add_rounded, size: 14, color: fg),
+              const SizedBox(width: 4),
               Text(
                 label,
-                style: Pl.text(14, weight: FontWeight.w700, color: fg),
+                style: TextStyle(
+                  fontFamily: Pl.font,
+                  color: fg,
+                  fontSize: 12,
+                  height: 16.2 / 12,
+                  letterSpacing: -0.16,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -292,13 +308,14 @@ class PlAddButton extends StatelessWidget {
   }
 }
 
-/// A white card with the design's border.
+/// A white card with the hairline shadow of [_FormCard] and the hubs'
+/// request cards.
 class PlCard extends StatelessWidget {
   const PlCard({
     super.key,
     required this.child,
     this.onTap,
-    this.padding = const EdgeInsets.all(14),
+    this.padding = const EdgeInsets.all(16),
     this.radius = 16,
   });
 
@@ -309,22 +326,32 @@ class PlCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(radius),
-      side: const BorderSide(color: Pl.border),
-    );
-    return Material(
-      color: Pl.card,
-      shape: shape,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(padding: padding, child: child),
+    final corners = BorderRadius.circular(radius);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: corners,
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 2,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Pl.card,
+        borderRadius: corners,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(padding: padding, child: child),
+        ),
       ),
     );
   }
 }
 
+/// A status, as the hubs set a decision on a pill.
 class PlPill extends StatelessWidget {
   const PlPill(this.label, this.colors, {super.key});
 
@@ -337,12 +364,17 @@ class PlPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: colors.background,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(99),
       ),
       child: Text(
         label,
         maxLines: 1,
-        style: Pl.text(12, weight: FontWeight.w700, color: colors.text),
+        style: Pl.text(
+          11,
+          weight: FontWeight.w600,
+          color: colors.text,
+          height: 16.5 / 11,
+        ),
       ),
     );
   }
@@ -362,7 +394,7 @@ class PlInitials extends StatelessWidget {
   final double size;
   final bool round;
 
-  /// Candidates are orange; companies stone.
+  /// Candidates are terra; companies grey.
   final bool warm;
 
   @override
@@ -378,7 +410,7 @@ class PlInitials extends StatelessWidget {
       child: Text(
         initialsOf(name),
         style: Pl.text(
-          size * 0.33,
+          size * 0.31,
           weight: FontWeight.w700,
           color: warm ? Pl.accentText : Pl.ink2,
         ),
@@ -387,7 +419,8 @@ class PlInitials extends StatelessWidget {
   }
 }
 
-/// A choice chip in a row of filters or statuses.
+/// A choice chip in a row of filters or statuses: the picked one in the
+/// app's blue, as the Upcoming / History switch picks.
 class PlChoice extends StatelessWidget {
   const PlChoice({
     super.key,
@@ -403,26 +436,25 @@ class PlChoice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected ? Pl.accentSoft : Pl.card,
-      shape: StadiumBorder(
-        side: BorderSide(
-          color: selected ? Pl.accent : Pl.field,
-          width: selected ? 1.5 : 1,
-        ),
+      color: selected ? Pl.actionTint : Pl.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: selected ? Pl.action : Pl.field),
       ),
       child: InkWell(
-        customBorder: const StadiumBorder(),
+        borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Container(
-          constraints: const BoxConstraints(minHeight: 40),
+          constraints: const BoxConstraints(minHeight: 36),
           padding: const EdgeInsets.symmetric(horizontal: 14),
           alignment: Alignment.center,
           child: Text(
             label,
             style: Pl.text(
-              13,
-              weight: selected ? FontWeight.w700 : FontWeight.w600,
-              color: selected ? Pl.accentDeep : Pl.ink2,
+              12,
+              weight: FontWeight.w700,
+              color: selected ? Pl.action : Pl.muted,
+              height: 16 / 12,
             ),
           ),
         ),
@@ -460,12 +492,16 @@ class PlListControls extends StatelessWidget {
         TextField(
           controller: search,
           textInputAction: TextInputAction.search,
-          style: Pl.text(15),
+          style: _plFieldText,
           decoration: plInput(hint).copyWith(
             prefixIcon: const Icon(
               Icons.search_rounded,
-              color: Pl.icon,
-              size: 20,
+              color: Pl.faint,
+              size: 18,
+            ),
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 40,
+              minHeight: 40,
             ),
           ),
         ),
@@ -488,33 +524,35 @@ class PlListControls extends StatelessWidget {
         const SizedBox(height: 12),
         Row(
           children: [
-            Expanded(
-              child: Text(
-                'Sorted by date added',
-                style: Pl.text(13, color: Pl.muted),
-              ),
-            ),
+            const Expanded(child: _HomeSectionLabel('Sorted by date added')),
             Material(
               color: Pl.card,
-              shape: const StadiumBorder(side: BorderSide(color: Pl.field)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: Pl.field),
+              ),
               child: InkWell(
-                customBorder: const StadiumBorder(),
+                borderRadius: BorderRadius.circular(12),
                 onTap: onSort,
                 child: Container(
-                  height: 40,
+                  height: 36,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(
                         Icons.swap_vert_rounded,
-                        size: 18,
-                        color: Pl.accent,
+                        size: 16,
+                        color: Pl.action,
                       ),
                       const SizedBox(width: 6),
                       Text(
                         newest ? 'Newest first' : 'Oldest first',
-                        style: Pl.text(13, weight: FontWeight.w700),
+                        style: Pl.text(
+                          12,
+                          weight: FontWeight.w600,
+                          color: Pl.ink,
+                        ),
                       ),
                     ],
                   ),
@@ -528,29 +566,36 @@ class PlListControls extends StatelessWidget {
   }
 }
 
-/// A form field's box.
-InputDecoration plInput(String hint) => InputDecoration(
-  hintText: hint,
-  hintStyle: Pl.text(15, color: Pl.hint),
-  isDense: true,
-  filled: true,
-  fillColor: Pl.card,
-  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-  border: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(12),
-    borderSide: const BorderSide(color: Pl.field),
-  ),
-  enabledBorder: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(12),
-    borderSide: const BorderSide(color: Pl.field),
-  ),
-  focusedBorder: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(12),
-    borderSide: const BorderSide(color: Pl.accent, width: 1.5),
-  ),
+/// What a field's words are set in, as [_FormTextField] sets them.
+const _plFieldText = TextStyle(
+  fontFamily: Pl.font,
+  fontFamilyFallback: _soraFallback,
+  fontSize: 14,
+  color: Pl.ink,
 );
 
-/// A labelled field.
+/// A field's box, as [_FormTextField] draws it: a grey outline on white.
+InputDecoration plInput(String hint) {
+  final outline = OutlineInputBorder(
+    borderRadius: BorderRadius.circular(12),
+    borderSide: const BorderSide(color: Pl.field),
+  );
+  return InputDecoration(
+    hintText: hint,
+    hintStyle: Pl.text(14, weight: FontWeight.w400, color: Pl.hint),
+    isDense: true,
+    filled: true,
+    fillColor: Pl.card,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+    border: outline,
+    enabledBorder: outline,
+    disabledBorder: outline,
+    focusedBorder: outline,
+  );
+}
+
+/// A labelled field: the form's grey upper-case label ([_LeaveFieldLabel])
+/// over a [_FormTextField], or a [_FormTextArea] when it takes [lines].
 class PlField extends StatelessWidget {
   const PlField({
     super.key,
@@ -587,53 +632,57 @@ class PlField extends StatelessWidget {
       maxLines: lines,
       keyboardType: keyboard ?? (lines > 1 ? TextInputType.multiline : null),
       textCapitalization: capitalization,
-      style: Pl.text(15),
-      decoration: plInput(hint),
+      textAlignVertical: lines > 1 ? TextAlignVertical.top : null,
+      style: _plFieldText,
+      decoration: plInput(
+        hint,
+      ).copyWith(contentPadding: lines > 1 ? const EdgeInsets.all(12) : null),
     );
+    Widget row = Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (prefix != null) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Pl.stone,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Pl.field),
+            ),
+            child: Text(
+              prefix!,
+              style: Pl.text(14, weight: FontWeight.w600, color: Pl.ink2),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+        Expanded(child: input),
+        if (suffix != null) ...[
+          const SizedBox(width: 10),
+          Center(
+            child: Text(suffix!, style: Pl.text(14, color: Pl.muted)),
+          ),
+        ],
+      ],
+    );
+    if (prefix != null || suffix != null) row = IntrinsicHeight(child: row);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          label,
-          style: Pl.text(13, weight: FontWeight.w600, color: Pl.ink2),
-        ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            if (prefix != null) ...[
-              Container(
-                height: 48,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Pl.stone,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Pl.field),
-                ),
-                child: Text(
-                  prefix!,
-                  style: Pl.text(15, weight: FontWeight.w600, color: Pl.ink2),
-                ),
-              ),
-              const SizedBox(width: 8),
-            ],
-            Expanded(child: input),
-            if (suffix != null) ...[
-              const SizedBox(width: 10),
-              Text(suffix!, style: Pl.text(15, color: Pl.muted)),
-            ],
-          ],
-        ),
+        _LeaveFieldLabel(label),
+        row,
         if (note != null) ...[
           const SizedBox(height: 6),
-          Text(note!, style: Pl.text(12, color: Pl.faint)),
+          Text(note!, style: Pl.text(11.5, color: Pl.faint, height: 1.4)),
         ],
       ],
     );
   }
 }
 
-/// The page's main button: orange, or [danger] red, or [outlined].
+/// The page's main button, as [_FormSubmitBar] draws it: the app's blue,
+/// muted until it can be pressed; or [danger] red, or [outlined] on white.
 class PlButton extends StatelessWidget {
   const PlButton({
     super.key,
@@ -652,38 +701,45 @@ class PlButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final live = onTap != null || busy;
     final fill = outlined
-        ? Colors.transparent
-        : (danger ? Pl.danger : Pl.accent);
+        ? Pl.card
+        : danger
+        ? (live ? Pl.danger : const Color(0xFFE3A9A5))
+        : (live ? Pl.action : Pl.actionMuted);
+    final fg = outlined ? (danger ? Pl.danger : Pl.ink) : Colors.white;
     return Opacity(
-      opacity: onTap == null && !busy ? 0.5 : 1,
+      opacity: outlined && !live ? 0.5 : 1,
       child: Material(
         color: fill,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           side: outlined ? const BorderSide(color: Pl.field) : BorderSide.none,
         ),
         child: InkWell(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           onTap: busy ? null : onTap,
           child: SizedBox(
-            height: 52,
+            height: 49,
             child: Center(
               child: busy
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Colors.white,
+                        color: outlined ? Pl.action : Colors.white,
                       ),
                     )
                   : Text(
                       label,
-                      style: Pl.text(
-                        16,
-                        weight: FontWeight.w700,
-                        color: outlined ? Pl.ink : Colors.white,
+                      style: TextStyle(
+                        fontFamily: Pl.font,
+                        color: fg,
+                        fontSize: 16,
+                        height: 16.2 / 16,
+                        letterSpacing: -0.16,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
             ),
@@ -694,17 +750,29 @@ class PlButton extends StatelessWidget {
   }
 }
 
-/// What a page shows while it loads, when it fails, or when a list is empty.
+/// What a page shows while it loads, when it fails, or when a list is empty:
+/// a spinner, or the hubs' empty state ([_HubEmptyState]) with its picture,
+/// its line, and Try again.
 class PlState extends StatelessWidget {
   const PlState.loading({super.key})
     : message = null,
       onRetry = null,
+      iconAsset = _defaultIcon,
       loading = true;
-  const PlState.message(this.message, {super.key, this.onRetry})
-    : loading = false;
+  const PlState.message(
+    this.message, {
+    super.key,
+    this.onRetry,
+    this.iconAsset = _defaultIcon,
+  }) : loading = false;
+
+  static const _defaultIcon = 'assets/icons/placements_briefcase.png';
 
   final String? message;
   final VoidCallback? onRetry;
+
+  /// The picture over the line.
+  final String iconAsset;
   final bool loading;
 
   @override
@@ -713,29 +781,53 @@ class PlState extends StatelessWidget {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 48),
         child: Center(
-          child: CircularProgressIndicator(strokeWidth: 2.4, color: Pl.accent),
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2, color: Pl.action),
+          ),
         ),
       );
     }
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 12),
+      padding: const EdgeInsets.fromLTRB(16, 40, 16, 24),
       child: Column(
         children: [
+          Image.asset(iconAsset, width: 46, height: 46, fit: BoxFit.contain),
+          const SizedBox(height: 12),
           Text(
             message ?? '',
             textAlign: TextAlign.center,
-            style: Pl.text(14, color: Pl.muted, height: 1.5),
+            style: const TextStyle(
+              fontFamily: Pl.font,
+              color: Color(0xFF484848),
+              fontSize: 12,
+              height: 16.2 / 12,
+              letterSpacing: -0.16,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           if (onRetry != null) ...[
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: onRetry,
-              child: Text(
-                'Try again',
-                style: Pl.text(
-                  14,
-                  weight: FontWeight.w700,
-                  color: Pl.accentDeep,
+            const SizedBox(height: 8),
+            Material(
+              color: Pl.action,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                onTap: onRetry,
+                borderRadius: BorderRadius.circular(16),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Text(
+                    'Try again',
+                    style: TextStyle(
+                      fontFamily: Pl.font,
+                      color: Colors.white,
+                      fontSize: 12,
+                      height: 16.2 / 12,
+                      letterSpacing: -0.16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -746,7 +838,8 @@ class PlState extends StatelessWidget {
   }
 }
 
-/// A section's heading, with an optional action at its end.
+/// A section's heading, with an optional action at its end: a card title's
+/// weight, in the words given.
 class PlSectionHeading extends StatelessWidget {
   const PlSectionHeading(this.title, {super.key, this.trailing});
 
@@ -758,7 +851,10 @@ class PlSectionHeading extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: Text(title, style: Pl.text(16, weight: FontWeight.w700)),
+          child: Text(
+            title,
+            style: Pl.text(14, weight: FontWeight.w700, height: 20 / 14),
+          ),
         ),
         ?trailing,
       ],
@@ -771,7 +867,7 @@ void plToast(BuildContext context, String message) {
     ?..hideCurrentSnackBar()
     ..showSnackBar(
       SnackBar(
-        content: Text(message, style: Pl.text(14, color: Colors.white)),
+        content: Text(message, style: Pl.text(13, color: Colors.white)),
       ),
     );
 }

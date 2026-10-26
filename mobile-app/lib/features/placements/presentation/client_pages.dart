@@ -1,5 +1,106 @@
 part of '../../quick_actions/presentation/quick_actions_screen.dart';
 
+/// The Actions pages' look (Leave, Reimbursement, Apply leave) for the client
+/// pages: Sora on white cards over the light grey ground.
+class _ClientLook {
+  static const ink = Color(0xFF111827);
+  static const soft = Color(0xFF6B7280);
+  static const faint = Color(0xFF9CA3AF);
+  static const rule = Color(0xFFF3F4F6);
+  static const blue = Color(0xFF0571A6);
+  static const danger = Color(0xFFB3261E);
+  static const paid = Color(0xFF16A34A);
+
+  static TextStyle text(
+    double size, {
+    FontWeight weight = FontWeight.w400,
+    Color color = ink,
+    double? height,
+  }) => TextStyle(
+    fontFamily: 'Sora',
+    fontFamilyFallback: _soraFallback,
+    fontSize: size,
+    fontWeight: weight,
+    color: color,
+    height: height,
+  );
+
+  /// The section label between cards, as the hubs set theirs.
+  static final section = _QText.section.copyWith(
+    fontFamily: 'Sora',
+    fontFamilyFallback: _soraFallback,
+  );
+}
+
+/// A section label over a group of cards, with an optional action.
+class _ClientSectionLabel extends StatelessWidget {
+  const _ClientSectionLabel(this.text, {this.trailing});
+
+  final String text;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(child: Text(text, style: _ClientLook.section)),
+        ?trailing,
+      ],
+    );
+  }
+}
+
+/// A white hub card, as [_HubRequestCard] and [_FormCard] draw theirs.
+class _ClientHubCard extends StatelessWidget {
+  const _ClientHubCard({required this.child, this.onTap});
+
+  final Widget child;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 2,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(padding: const EdgeInsets.all(16), child: child),
+        ),
+      ),
+    );
+  }
+}
+
+/// The fee as the hubs show a status: green once paid, amber until then.
+Widget _feeStatus(bool paid) => Container(
+  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+  decoration: BoxDecoration(
+    color: paid ? const Color(0xFFDCFCE7) : _Q.goldTint,
+    borderRadius: BorderRadius.circular(99),
+  ),
+  child: Text(
+    feeLabel(paid),
+    style: _ClientLook.text(
+      11,
+      weight: FontWeight.w600,
+      color: paid ? _ClientLook.paid : _Q.gold,
+      height: 16.5 / 11,
+    ),
+  ),
+);
+
 /// My clients: the companies the signed-in person added, with a search, a
 /// filter by onboarding fee, and Add.
 class ClientsPage extends StatefulWidget {
@@ -77,13 +178,12 @@ class _ClientsPageState extends State<ClientsPage> {
       subtitle: rows == null ? null : '${rows.length} companies',
       actions: [
         PlAddButton(onTap: () => _open(ClientFormPage(api: widget.api))),
-        const SizedBox(width: 8),
       ],
       body: RefreshIndicator(
-        color: Pl.accent,
+        color: _ClientLook.blue,
         onRefresh: _load,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: [
             PlListControls(
               search: _search,
@@ -94,17 +194,23 @@ class _ClientsPageState extends State<ClientsPage> {
               newest: _newest,
               onSort: () => setState(() => _newest = !_newest),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             if (rows == null && _error == null)
               const PlState.loading()
             else if (rows == null)
               PlState.message(_error, onRetry: _load)
             else if (rows.isEmpty)
-              const PlState.message(
-                'No clients yet. Tap Add to log your first company.',
+              _HubEmptyState(
+                iconAsset: 'assets/icons/placements_client_building.png',
+                text: 'No clients yet.\nAdd your first company to start.',
+                buttonLabel: 'Add client',
+                onTap: () => _open(ClientFormPage(api: widget.api)),
               )
             else if (_shown.isEmpty)
-              const PlState.message('No clients match.')
+              const _HubEmptyState(
+                iconAsset: 'assets/icons/placements_client_building.png',
+                text: 'No clients match.',
+              )
             else
               for (final c in _shown) ...[
                 _ClientRow(
@@ -112,7 +218,7 @@ class _ClientsPageState extends State<ClientsPage> {
                   onTap: () =>
                       _open(ClientDetailPage(api: widget.api, clientId: c.id)),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
               ],
           ],
         ),
@@ -121,6 +227,8 @@ class _ClientsPageState extends State<ClientsPage> {
   }
 }
 
+/// A client in the list, laid out like the hubs' request cards: the company
+/// and its location over the fee, then its roles under a rule.
 class _ClientRow extends StatelessWidget {
   const _ClientRow({required this.client, required this.onTap});
 
@@ -131,51 +239,96 @@ class _ClientRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = client;
     final roles = c.designations.map((d) => d.title).join(', ');
-    return PlCard(
+    return _ClientHubCard(
       onTap: onTap,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              PlInitials(c.name),
-              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(c.name, style: Pl.text(15, weight: FontWeight.w700)),
-                    if (c.city.isNotEmpty)
-                      Text(c.city, style: Pl.text(13, color: Pl.muted)),
+                    Row(
+                      children: [
+                        Image.asset(
+                          'assets/icons/placements_client_building.png',
+                          width: 16,
+                          height: 16,
+                          fit: BoxFit.cover,
+                        ),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            c.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: _ClientLook.text(
+                              14,
+                              weight: FontWeight.w600,
+                              height: 20 / 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      [
+                        if (c.city.isNotEmpty) c.city,
+                        if (c.createdAt != null)
+                          'Added ${plShortDate(c.createdAt)}',
+                      ].join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _ClientLook.text(
+                        12,
+                        color: _ClientLook.soft,
+                        height: 16 / 12,
+                      ),
+                    ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              PlPill(feeLabel(c.feePaid), feeColors(c.feePaid)),
+              _feeStatus(c.feePaid),
             ],
           ),
-          const SizedBox(height: 10),
-          const Divider(height: 1, color: Pl.line),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              const Icon(Icons.work_outline_rounded, size: 16, color: Pl.icon),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  roles.isEmpty ? 'No roles added' : roles,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Pl.text(13, color: roles.isEmpty ? Pl.faint : Pl.ink2),
-                ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.only(top: 8),
+            decoration: const BoxDecoration(
+              border: Border(
+                top: BorderSide(color: _ClientLook.rule, width: 0.8),
               ),
-              if (c.createdAt != null)
-                Text(
-                  'Added ${plShortDate(c.createdAt)}',
-                  style: Pl.text(12, color: Pl.faint),
+            ),
+            child: Row(
+              children: [
+                SvgPicture.asset(
+                  'assets/icons/work_grade.svg',
+                  width: 14,
+                  height: 14,
                 ),
-            ],
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    roles.isEmpty ? 'No roles added' : roles,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _ClientLook.text(
+                      12,
+                      weight: FontWeight.w600,
+                      color: roles.isEmpty
+                          ? _ClientLook.faint
+                          : _ClientLook.soft,
+                      height: 16 / 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -235,25 +388,34 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
     final sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Remove ${client.name}?',
-          style: Pl.text(18, weight: FontWeight.w700),
+          style: _ClientLook.text(16, weight: FontWeight.w700),
         ),
         content: Text(
           'The client and its roles are deleted. A client with placements '
           "can't be removed.",
-          style: Pl.text(14, color: Pl.muted, height: 1.5),
+          style: _ClientLook.text(13, color: _ClientLook.soft, height: 1.5),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: Text('Cancel', style: Pl.text(14, weight: FontWeight.w700)),
+            child: Text(
+              'Cancel',
+              style: _ClientLook.text(14, weight: FontWeight.w600),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
             child: Text(
               'Remove',
-              style: Pl.text(14, weight: FontWeight.w700, color: Pl.danger),
+              style: _ClientLook.text(
+                14,
+                weight: FontWeight.w600,
+                color: _ClientLook.danger,
+              ),
             ),
           ),
         ],
@@ -289,16 +451,16 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
           PlIconButton(
             label: 'Remove client',
             icon: Icons.delete_outline_rounded,
-            color: Pl.danger,
+            color: _ClientLook.danger,
             onTap: () => _remove(page.client),
           ),
         ],
       ],
       body: RefreshIndicator(
-        color: Pl.accent,
+        color: _ClientLook.blue,
         onRefresh: _load,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: [
             if (page == null && _error == null)
               const PlState.loading()
@@ -315,69 +477,87 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
   List<Widget> _content(PlacementClientPage page, bool mine) {
     final c = page.client;
     return [
-      PlCard(
-        radius: 20,
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                PlInitials(c.name, size: 56),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(c.name, style: Pl.text(20, weight: FontWeight.w700)),
-                      if (c.city.isNotEmpty)
-                        Text(c.city, style: Pl.text(14, color: Pl.muted)),
-                    ],
-                  ),
+      _FormCard(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F7F9),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            const Divider(height: 1, color: Pl.line),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Onboarding fee',
-                        style: Pl.text(12, color: Pl.faint),
-                      ),
-                      Text(
-                        c.feeRupees == null ? '—' : rupees(c.feeRupees!),
-                        style: Pl.text(16, weight: FontWeight.w700),
-                      ),
-                      if (c.feeReference.isNotEmpty)
-                        Text(
-                          'Ref ${c.feeReference}',
-                          style: Pl.text(12, color: Pl.faint),
-                        ),
-                    ],
-                  ),
+                alignment: Alignment.center,
+                child: Image.asset(
+                  'assets/icons/placements_client_building.png',
+                  width: 24,
+                  height: 24,
+                  fit: BoxFit.contain,
                 ),
-                PlPill(feeLabel(c.feePaid), feeColors(c.feePaid)),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Text(
-              [
-                c.createdByUserId == _me ? 'Added by you' : 'Added',
-                if (c.createdAt != null) plDate(c.createdAt),
-              ].join(' · '),
-              style: Pl.text(12, color: Pl.faint),
-            ),
-          ],
-        ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      c.name,
+                      style: _ClientLook.text(
+                        16,
+                        weight: FontWeight.w700,
+                        height: 22 / 16,
+                      ),
+                    ),
+                    if (c.city.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        c.city,
+                        style: _ClientLook.text(12, color: _ClientLook.soft),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1, thickness: 0.8, color: _ClientLook.rule),
+          const SizedBox(height: 12),
+          const _LeaveFieldLabel('Onboarding fee'),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      c.feeRupees == null ? '—' : rupees(c.feeRupees!),
+                      style: _ClientLook.text(18, weight: FontWeight.w700),
+                    ),
+                    if (c.feeReference.isNotEmpty)
+                      Text(
+                        'Ref ${c.feeReference}',
+                        style: _ClientLook.text(12, color: _ClientLook.faint),
+                      ),
+                  ],
+                ),
+              ),
+              _feeStatus(c.feePaid),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            [
+              c.createdByUserId == _me ? 'Added by you' : 'Added',
+              if (c.createdAt != null) plDate(c.createdAt),
+            ].join(' · '),
+            style: _ClientLook.text(11, color: _ClientLook.faint),
+          ),
+        ],
       ),
-      const SizedBox(height: 22),
-      PlSectionHeading(
+      const SizedBox(height: 20),
+      _ClientSectionLabel(
         'Designations',
         trailing: mine
             ? PlAddButton(
@@ -390,20 +570,26 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
       ),
       const SizedBox(height: 12),
       if (c.designations.isEmpty)
-        const PlState.message('No roles added for this client yet.')
+        const _HubEmptyState(
+          iconAsset: 'assets/icons/placements_briefcase.png',
+          text: 'No roles added for this client yet.',
+        )
       else
         for (final role in c.designations) ...[
           _RoleCard(role: role, placements: page.placements),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
         ],
-      const SizedBox(height: 12),
-      PlSectionHeading('Candidates at this client'),
+      const SizedBox(height: 8),
+      const _ClientSectionLabel('Candidates at this client'),
       const SizedBox(height: 12),
       if (page.placements.isEmpty)
-        const PlState.message('No candidates put forward here yet.')
+        const _HubEmptyState(
+          iconAsset: 'assets/icons/connect_icon_user.png',
+          text: 'No candidates put forward here yet.',
+        )
       else
         for (final p in page.placements) ...[
-          PlCard(
+          _ClientHubCard(
             onTap: () => _open(
               CandidateDetailPage(api: widget.api, candidateId: p.customerId),
             ),
@@ -417,11 +603,18 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
                     children: [
                       Text(
                         p.customerName,
-                        style: Pl.text(15, weight: FontWeight.w700),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: _ClientLook.text(
+                          14,
+                          weight: FontWeight.w600,
+                          height: 20 / 14,
+                        ),
                       ),
+                      const SizedBox(height: 2),
                       Text(
                         _placementLine(p),
-                        style: Pl.text(13, color: Pl.muted),
+                        style: _ClientLook.text(12, color: _ClientLook.soft),
                       ),
                     ],
                   ),
@@ -431,7 +624,7 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
         ],
     ];
   }
@@ -471,45 +664,60 @@ class _RoleCard extends StatelessWidget {
       PlacementStatus.interviewing: 'in interview',
       PlacementStatus.shortlisted: 'profile shared',
     };
-    return PlCard(
-      radius: 18,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  role.title,
-                  style: Pl.text(15, weight: FontWeight.w700),
+    return _FormCard(
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                role.title,
+                style: _ClientLook.text(
+                  14,
+                  weight: FontWeight.w600,
+                  height: 20 / 14,
                 ),
               ),
-              if (role.budgetLabel.isNotEmpty)
-                Text(
-                  role.budgetLabel,
-                  style: Pl.text(14, weight: FontWeight.w600, color: Pl.ink2),
-                ),
-            ],
-          ),
-          if (role.description.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              role.description,
-              style: Pl.text(13, color: Pl.muted, height: 1.5),
             ),
+            if (role.budgetLabel.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Text(
+                role.budgetLabel,
+                style: _ClientLook.text(
+                  13,
+                  weight: FontWeight.w600,
+                  color: _ClientLook.blue,
+                  height: 20 / 13,
+                ),
+              ),
+            ],
           ],
-          if (counts.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(
+        ),
+        if (role.description.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            role.description,
+            style: _ClientLook.text(12, color: _ClientLook.soft, height: 1.5),
+          ),
+        ],
+        if (counts.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.only(top: 8),
+            decoration: const BoxDecoration(
+              border: Border(
+                top: BorderSide(color: _ClientLook.rule, width: 0.8),
+              ),
+            ),
+            child: Wrap(
               spacing: 12,
               children: [
                 for (final entry in words.entries)
                   if ((counts[entry.key] ?? 0) > 0)
                     Text(
                       '${counts[entry.key]} ${entry.value}',
-                      style: Pl.text(
+                      style: _ClientLook.text(
                         12,
                         weight: FontWeight.w600,
                         color: statusColors(entry.key).text,
@@ -517,9 +725,9 @@ class _RoleCard extends StatelessWidget {
                     ),
               ],
             ),
-          ],
+          ),
         ],
-      ),
+      ],
     );
   }
 }
@@ -576,6 +784,9 @@ class ClientFormPage extends StatefulWidget {
 }
 
 class _ClientFormPageState extends State<ClientFormPage> {
+  /// The fee a new client is asked for; an existing one shows its own.
+  static const _newClientFee = 2500.0;
+
   late final _name = TextEditingController(text: widget.existing?.name);
   late final _location = TextEditingController(text: widget.existing?.city);
   late final _reference = TextEditingController(
@@ -603,6 +814,31 @@ class _ClientFormPageState extends State<ClientFormPage> {
       role.dispose();
     }
     super.dispose();
+  }
+
+  /// Takes a role out of the form. Its fields are still in the tree until
+  /// the next frame, so their controllers are let go after it.
+  void _removeRole(_RoleFields role) {
+    setState(() => _roles.remove(role));
+    WidgetsBinding.instance.addPostFrameCallback((_) => role.dispose());
+  }
+
+  Future<void> _pickPeriod(_RoleFields role) async {
+    const month = 'Per month';
+    const year = 'Per year';
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _LeavePickerSheet(
+        options: const [month, year],
+        selected: role.perYear ? year : month,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => role.perYear = picked == year);
   }
 
   Future<void> _save() async {
@@ -661,95 +897,149 @@ class _ClientFormPageState extends State<ClientFormPage> {
 
   @override
   Widget build(BuildContext context) {
-    final editing = widget.existing != null;
-    final fee = widget.existing?.feeRupees ?? 2500;
+    final existing = widget.existing;
+    final editing = existing != null;
+    // A client saved before fees were recorded has none: say so, rather than
+    // showing the new-client amount as though it had been agreed.
+    final fee = editing
+        ? (existing.feeRupees == null ? 'Not set' : rupees(existing.feeRupees!))
+        : rupees(_newClientFee);
     return PlPage(
       title: editing ? 'Edit client' : 'Add client',
       subtitle: 'Company database',
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          PlField(
-            label: 'Company name',
-            controller: _name,
-            hint: 'Registered or trade name',
-            capitalization: TextCapitalization.words,
-          ),
-          const SizedBox(height: 18),
-          PlField(
-            label: 'Company location',
-            controller: _location,
-            hint: 'City or full address',
-          ),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Designations',
-                  style: Pl.text(16, weight: FontWeight.w700),
-                ),
-              ),
-              Text(
-                'Open roles at this client',
-                style: Pl.text(12, color: Pl.muted),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          for (final (index, role) in _roles.indexed) ...[
-            _roleCard(index, role),
-            const SizedBox(height: 10),
-          ],
-          _AddRoleButton(
-            onTap: () => setState(() => _roles.add(_RoleFields())),
-          ),
-          const SizedBox(height: 24),
-          Text('Onboarding fee', style: Pl.text(16, weight: FontWeight.w700)),
-          const SizedBox(height: 10),
-          PlCard(
-            radius: 18,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: [
-                Text(rupees(fee), style: Pl.text(28, weight: FontWeight.w700)),
+                _FormCard(
+                  children: [
+                    const _LeaveFieldLabel('Company name'),
+                    _FormTextField(
+                      controller: _name,
+                      hintText: 'Registered or trade name',
+                    ),
+                    const SizedBox(height: 16),
+                    const _LeaveFieldLabel('Company location'),
+                    _FormTextField(
+                      controller: _location,
+                      hintText: 'City or full address',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                const _ClientSectionLabel('Designations'),
                 const SizedBox(height: 4),
                 Text(
-                  'Collect the one-time onboarding fee from the client.',
-                  style: Pl.text(13, color: Pl.muted, height: 1.45),
+                  'Open roles at this client',
+                  style: _ClientLook.text(12, color: _ClientLook.soft),
                 ),
                 const SizedBox(height: 12),
-                const Divider(height: 1, color: Pl.line),
-                CheckboxListTile(
-                  value: _paid,
-                  onChanged: (v) => setState(() => _paid = v ?? false),
-                  contentPadding: EdgeInsets.zero,
-                  activeColor: Pl.accentDeep,
-                  title: Text(
-                    'Payment received',
-                    style: Pl.text(15, weight: FontWeight.w600),
-                  ),
+                for (final (index, role) in _roles.indexed) ...[
+                  _roleCard(index, role),
+                  const SizedBox(height: 12),
+                ],
+                _AddRoleButton(
+                  onTap: () => setState(() => _roles.add(_RoleFields())),
                 ),
-                PlField(
-                  label: 'UPI / transaction reference',
-                  controller: _reference,
-                  hint: 'Optional',
-                  capitalization: TextCapitalization.characters,
+                const SizedBox(height: 20),
+                const _ClientSectionLabel('Onboarding fee'),
+                const SizedBox(height: 12),
+                _FormCard(
+                  children: [
+                    Text(
+                      fee,
+                      style: _ClientLook.text(
+                        22,
+                        weight: FontWeight.w700,
+                        color: existing?.feeRupees == null && editing
+                            ? _ClientLook.faint
+                            : _ClientLook.ink,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Collect the one-time onboarding fee from the client.',
+                      style: _ClientLook.text(
+                        12,
+                        color: _ClientLook.soft,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Divider(
+                      height: 1,
+                      thickness: 0.8,
+                      color: _ClientLook.rule,
+                    ),
+                    InkWell(
+                      onTap: () => setState(() => _paid = !_paid),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Payment received',
+                                style: _ClientLook.text(
+                                  14,
+                                  weight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            Checkbox(
+                              value: _paid,
+                              onChanged: (v) =>
+                                  setState(() => _paid = v ?? false),
+                              activeColor: _ClientLook.blue,
+                              side: const BorderSide(
+                                color: Color(0xFFD1D5DB),
+                                width: 1.5,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const _LeaveFieldLabel('UPI / transaction reference'),
+                    _FormTextField(
+                      controller: _reference,
+                      hintText: 'Optional',
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 24),
-          if (_problem != null) ...[
-            Text(
-              _problem!,
-              textAlign: TextAlign.center,
-              style: Pl.text(13, color: Pl.danger),
+          if (_problem != null)
+            ColoredBox(
+              color: const Color(0xFFF7F7F9),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    _problem!,
+                    style: _ClientLook.text(
+                      12,
+                      weight: FontWeight.w600,
+                      color: _ClientLook.danger,
+                    ),
+                  ),
+                ),
+              ),
             ),
-            const SizedBox(height: 12),
-          ],
-          PlButton(
+          _FormSubmitBar(
             label: editing ? 'Save changes' : 'Save client',
             busy: _saving,
             onTap: _save,
@@ -760,107 +1050,66 @@ class _ClientFormPageState extends State<ClientFormPage> {
   }
 
   Widget _roleCard(int index, _RoleFields role) {
-    return PlCard(
-      radius: 18,
-      padding: const EdgeInsets.fromLTRB(16, 6, 6, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    // Keyed by the role itself, so taking one out never hands its text to
+    // the card that moves up into its place.
+    return KeyedSubtree(
+      key: ObjectKey(role),
+      child: _FormCard(
         children: [
           Row(
             children: [
               Expanded(
                 child: Text(
                   'ROLE ${index + 1}',
-                  style: Pl.text(
+                  style: _ClientLook.text(
                     12,
                     weight: FontWeight.w700,
-                    color: Pl.accentDeep,
-                  ),
+                    color: _ClientLook.blue,
+                  ).copyWith(letterSpacing: .6),
                 ),
               ),
               PlIconButton(
                 label: 'Remove role',
                 icon: Icons.delete_outline_rounded,
                 plain: true,
-                color: Pl.icon,
-                onTap: () => setState(() {
-                  _roles.removeAt(index).dispose();
-                }),
+                color: _ClientLook.faint,
+                onTap: () => _removeRole(role),
               ),
             ],
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                PlField(
-                  label: 'Designation',
-                  controller: role.title,
-                  hint: 'e.g. Store manager',
+          const SizedBox(height: 4),
+          const _LeaveFieldLabel('Designation'),
+          _FormTextField(
+            controller: role.title,
+            hintText: 'e.g. Store manager',
+          ),
+          const SizedBox(height: 16),
+          const _LeaveFieldLabel('Budget (₹)'),
+          Row(
+            children: [
+              Expanded(
+                child: _FormTextField(
+                  controller: role.budget,
+                  hintText: 'Amount',
+                  keyboardType: TextInputType.number,
                 ),
-                const SizedBox(height: 14),
-                Text(
-                  'Budget',
-                  style: Pl.text(13, weight: FontWeight.w600, color: Pl.ink2),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 124,
+                child: _LeaveDropdownField(
+                  value: role.perYear ? 'Per year' : 'Per month',
+                  filled: true,
+                  onTap: () => _pickPeriod(role),
                 ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: role.budget,
-                        keyboardType: TextInputType.number,
-                        style: Pl.text(15),
-                        decoration: plInput('Amount').copyWith(
-                          prefixText: '₹ ',
-                          prefixStyle: Pl.text(
-                            15,
-                            weight: FontWeight.w600,
-                            color: Pl.ink2,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      height: 48,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      decoration: BoxDecoration(
-                        color: Pl.card,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Pl.field),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<bool>(
-                          value: role.perYear,
-                          style: Pl.text(14),
-                          onChanged: (v) =>
-                              setState(() => role.perYear = v ?? false),
-                          items: const [
-                            DropdownMenuItem(
-                              value: false,
-                              child: Text('/ month'),
-                            ),
-                            DropdownMenuItem(
-                              value: true,
-                              child: Text('/ year'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                PlField(
-                  label: 'Description about the job',
-                  controller: role.description,
-                  hint: 'Responsibilities, timings, skills needed',
-                  lines: 4,
-                ),
-              ],
-            ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const _LeaveFieldLabel('Description about the job'),
+          _FormTextArea(
+            controller: role.description,
+            hintText: 'Responsibilities, timings, skills needed',
           ),
         ],
       ),
@@ -868,6 +1117,7 @@ class _ClientFormPageState extends State<ClientFormPage> {
   }
 }
 
+/// "Add another designation": a dashed outline like the receipt upload.
 class _AddRoleButton extends StatelessWidget {
   const _AddRoleButton({required this.onTap});
 
@@ -876,30 +1126,37 @@ class _AddRoleButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Pl.accentSoft,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Pl.accentDash, width: 1.5),
-      ),
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
-        child: SizedBox(
-          height: 52,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.add_rounded, color: Pl.accent, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Add another designation',
-                style: Pl.text(
-                  15,
-                  weight: FontWeight.w700,
-                  color: Pl.accentDeep,
+        borderRadius: BorderRadius.circular(12),
+        child: CustomPaint(
+          foregroundPainter: const _DashedRoundRectPainter(
+            color: Color(0xFFBFD7E4),
+            radius: 12,
+          ),
+          child: SizedBox(
+            height: 48,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.add_rounded,
+                  color: _ClientLook.blue,
+                  size: 18,
                 ),
-              ),
-            ],
+                const SizedBox(width: 6),
+                Text(
+                  'Add another designation',
+                  style: _ClientLook.text(
+                    13,
+                    weight: FontWeight.w600,
+                    color: _ClientLook.blue,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
