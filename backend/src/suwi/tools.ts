@@ -14,6 +14,7 @@ import { tabsForRequest } from '../models/dashboard-tabs';
 import { hasAllDashboardTabs } from '../middleware/admin.middleware';
 import { hasPayrollAccess } from '../services/payrollAccess.service';
 import { LlmTool } from './llm';
+import type { ParsedSheet } from './sheet';
 
 export type SuwiArea = 'requests' | 'attendance' | 'people' | 'payroll' | 'claims' | 'performance' | 'connect' | 'settings';
 export const SUWI_AREAS: { key: SuwiArea; label: string; covers: string }[] = [
@@ -36,6 +37,8 @@ export interface SuwiContext {
   levels: Record<SuwiArea, SuwiLevel>;
   /** Today in the company's calendar, YYYY-MM-DD. */
   today: string;
+  /** The spreadsheet HR attached to this question, or in the last half hour, read into rows. */
+  sheet?: ParsedSheet;
 }
 
 export interface SuwiLink { label: string; view?: string; userId?: string; tab?: string }
@@ -46,6 +49,8 @@ export interface ToolOutput {
   links?: SuwiLink[];
   /** A prepared change, shown as a "What will happen" card; nothing is saved yet. */
   proposalId?: string;
+  /** Several cards at once (a sheet with a different value per row: one card per value). */
+  proposalIds?: string[];
 }
 
 export interface SuwiTool {

@@ -11,6 +11,7 @@ import { auditCol, LEVEL_LABEL, settingsFor, spentThisMonthUsd } from './store';
 import { cancelProposal, getProposal } from './proposals';
 import { User } from '../models/user.model';
 import './registry';
+import { describeSheet, lastSheet, parseSheet, rememberSheet } from './sheet';
 
 const MAX_ROUNDS = 8;
 const MAX_RESULT_CHARS = 14_000;
@@ -59,7 +60,7 @@ This question:
 - Company: ${companyName}
 - Today: ${ctx.today} (India time)
 - Asking: ${ctx.user.name}${ctx.user.dashboardAdmin ? ', a dashboard admin' : ''}${ctx.payroll ? ', with payroll access' : ', without payroll access'}
-- Page: ${page || 'overview'}${page.startsWith('bulk') ? `
+- Page: ${page || 'overview'}${ctx.sheet ? `\n- Sheet loaded: ${describeSheet(ctx.sheet)}. To assign to the people in it, call prepare_bulk_assign with fromSheet: true; never copy IDs out of it. When the sheet has a column for what is being assigned, leave value empty and each row's own value is used (one card per value). Rows that can't be matched come back as skipped with their row number: tell HR each one.` : ''}${page.startsWith('bulk') ? `
 - HR opened Bulk assign: use prepare_bulk_assign for any "assign X to Y" request, one card per thing assigned. If they attached a sheet, pass every Employee ID in it. If they haven't said what or who, ask in one short question.` : ''}${ctx.user.dashboardAdmin ? `
 - Suwi budget this month: $${budget.spentUsd.toFixed(2)} of $${budget.monthlyUsd} used (only dashboard admins are told this)` : ''}`;
 }
@@ -109,6 +110,11 @@ export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { ques
   if (spent >= settings.monthlyBudgetUsd) throw new SuwiLlmError(429, `Suwi has used this month's budget ($${settings.monthlyBudgetUsd}). An admin can raise it in Settings → Suwi.`);
 
   const ctx = contextFor(user, settings.levels, istToday());
+  // A sheet that names people is read here, so Bulk assign uses its rows exactly; it stays for follow-ups.
+  const parsedSheet = attachment?.table ? parseSheet(attachment.name, attachment.table) : null;
+  if (parsedSheet) rememberSheet(ctx.userId, parsedSheet);
+  const sheet = parsedSheet ?? (attachment ? undefined : lastSheet(ctx.userId));
+  if (sheet) ctx.sheet = sheet;
   const company = await companies().findOne({ id: ctx.org });
   // A stable order keeps the tool list identical between questions, so it caches.
   const tools = toolsFor(ctx).sort((a, b) => a.name.localeCompare(b.name));
@@ -120,8 +126,11 @@ export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { ques
     : [];
   while (history.length && history[0].role !== 'user') history.shift();
   // The file goes with this message only: an image for the model to see, a spreadsheet as its rows.
+  // A people sheet is read on the server, so the model sees its first rows only; Bulk assign reads them all.
+  const tableLines = attachment?.table?.split('\n') ?? [];
+  const tableShown = parsedSheet && tableLines.length > 41 ? `${tableLines.slice(0, 41).join('\n')}\n… ${tableLines.length - 41} more rows, not shown here; Bulk assign with fromSheet uses every row.` : attachment?.table;
   const asked = attachment?.table
-    ? `${question}\n\n[Attached spreadsheet "${attachment.name}", as CSV, one block per sheet]\n${attachment.table}`
+    ? `${question}\n\n[Attached spreadsheet "${attachment.name}", as CSV, one block per sheet]\n${tableShown}`
     : attachment?.image ? `${question}\n\n[Attached image "${attachment.name}"]` : question;
   const messages: LlmMessage[] = [...history, { role: 'user', content: asked, ...(attachment?.image ? { images: [attachment.image] } : {}) }];
 
@@ -153,6 +162,7 @@ export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { ques
         if (!checked.includes(label)) checked.push(label);
         for (const l of out.links ?? []) if (!links.some((x) => x.label === l.label)) links.push(l);
         if (out.proposalId) proposalIds.push(out.proposalId);
+        for (const id of out.proposalIds ?? []) if (!proposalIds.includes(id)) proposalIds.push(id);
         const json = JSON.stringify(out.data ?? null);
         return { type: 'tool_result', tool_use_id: c.id, content: json.length > MAX_RESULT_CHARS ? `${json.slice(0, MAX_RESULT_CHARS)}… (cut; ask a narrower question for the rest)` : json };
       } catch (e) {

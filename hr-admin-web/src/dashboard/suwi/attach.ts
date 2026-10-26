@@ -62,7 +62,8 @@ export async function readAttachment(file: File): Promise<Attached> {
   if (ext === 'csv') {
     text = (await file.text()).trim();
   } else {
-    // The library only when someone attaches a workbook.
+    // The library only when someone attaches a workbook. Blank rows are kept so
+    // Suwi's row numbers match the spreadsheet's.
     const XLSX = await import('xlsx');
     let book;
     try {
@@ -71,7 +72,7 @@ export async function readAttachment(file: File): Promise<Attached> {
       throw new AttachError('Could not read that spreadsheet. Save it as XLSX or CSV and try again.');
     }
     const blocks = book.SheetNames.slice(0, MAX_SHEETS)
-      .map((sheetName) => ({ sheetName, csv: XLSX.utils.sheet_to_csv(book.Sheets[sheetName], { blankrows: false }).trim() }))
+      .map((sheetName) => ({ sheetName, csv: XLSX.utils.sheet_to_csv(book.Sheets[sheetName]).replace(/(\n,*)+$/, '').trim() }))
       .filter((b) => b.csv);
     text = blocks.length === 1 ? blocks[0].csv : blocks.map((b) => `--- Sheet: ${b.sheetName} ---\n${b.csv}`).join('\n\n');
   }
