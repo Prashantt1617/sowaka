@@ -87,7 +87,15 @@ const CONNECT: NavItem[] = [
   { key: 'cuptv', label: 'Tournament TV' },
   { key: 'contentreports', label: 'Moderate feed' },
 ];
+// Placements: a placement agency's own work, so it comes first; only a
+// company with the feature sees it (see access.ts).
+const PLACEMENTS: NavItem[] = [
+  { key: 'placements', label: 'Placements' },
+  { key: 'placementclients', label: 'Clients' },
+  { key: 'placementcustomers', label: 'Customers' },
+];
 export const SECTIONS: { title: string; items: NavItem[] }[] = [
+  { title: 'PLACEMENTS', items: PLACEMENTS },
   { title: 'REQUESTS', items: REQUESTS },
   { title: 'SUPPORT', items: SUPPORT },
   { title: 'PEOPLE', items: PEOPLE },

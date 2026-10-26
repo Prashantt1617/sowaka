@@ -9,6 +9,7 @@ import { useStore } from '../store';
 import './people.css';
 import { useAuth } from '../auth/AuthContext';
 import { refreshMe } from '../../services/auth';
+import type { AuthUser } from '../../services/auth';
 import { ApiError } from '../../services/http';
 import { getAllEmployees, listDashboardAccesses, setDashboardAccess } from '../../services/hrms';
 import type { DashboardAccessDTO, EmployeeDTO } from '../../services/hrms';
@@ -17,7 +18,7 @@ import { ListPending, Spinner } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { IconPlus } from '../icons';
 import { OVERVIEW_ITEM, SECTIONS } from '../Chrome';
-import { SALARY_DETAILS } from '../access';
+import { PLACEMENT_VIEWS, SALARY_DETAILS } from '../access';
 import type { AccessKey } from '../access';
 
 type SubTab = 'users' | 'roles';
@@ -33,10 +34,12 @@ type Unit = { key: string; title: string; tabs: AccessKey[]; hint: string };
 const titleCase = (t: string) => t.charAt(0) + t.slice(1).toLowerCase();
 // A section left with no tabs (Support: its desk is a role) is not a unit,
 // or it would read as given to everyone.
+// Placements' Clients and Customers come with its one tab, `placements`.
+const RIDES_ALONG = new Set<AccessKey>(PLACEMENT_VIEWS.filter((v) => v !== 'placements'));
 const SECTION_UNITS: Unit[] = SECTIONS.flatMap((s) => {
   const items = s.items.filter((i) => i.key !== 'usersroles' && i.key !== 'support' && i.key !== 'cuptv');
   if (items.length === 0) return [];
-  return [{ key: s.title, title: titleCase(s.title), tabs: items.map((i) => i.key), hint: items.map((i) => i.label).join(' · ') }];
+  return [{ key: s.title, title: titleCase(s.title), tabs: items.filter((i) => !RIDES_ALONG.has(i.key)).map((i) => i.key), hint: items.map((i) => i.label).join(' · ') }];
 });
 const UNITS: Unit[] = [
   { key: 'overview', title: OVERVIEW_ITEM.label, tabs: ['overview'], hint: 'Pending requests at a glance' },
@@ -46,6 +49,8 @@ const UNITS: Unit[] = [
     : [u]),
 ];
 const ALL_TABS: AccessKey[] = UNITS.flatMap((u) => u.tabs);
+/** What this company can give: Placements only where the company has it. */
+const unitsFor = (me: AuthUser | null | undefined) => UNITS.filter((u) => u.key !== 'PLACEMENTS' || me?.features?.placements === true);
 const unitByTitle = (title: string) => UNITS.find((u) => u.title === title)!;
 const tabsOf = (...titles: string[]): AccessKey[] => titles.flatMap((t) => unitByTitle(t).tabs);
 const hasUnit = (tabs: Set<AccessKey> | AccessKey[], u: Unit) => u.tabs.every((t) => (Array.isArray(tabs) ? tabs.includes(t) : tabs.has(t)));
@@ -128,12 +133,13 @@ function UsersTab() {
   const save = async (access: boolean) => {
     if (!editing) return;
     // Only whole sections are given: a half-ticked one left from before is dropped.
-    const given = UNITS.filter((u) => hasUnit(editing.tabs, u)).flatMap((u) => u.tabs);
+    const units = unitsFor(me);
+    const given = units.filter((u) => hasUnit(editing.tabs, u)).flatMap((u) => u.tabs);
     // A Support role alone is enough: someone can work tickets and open nothing else.
     if (access && !editing.admin && given.length === 0 && !editing.supportRole) { flash('Tick at least one, or give a Support role, or remove their access'); return; }
     setSaving(true);
     try {
-      const everything = ALL_TABS.every((t) => given.includes(t));
+      const everything = units.every((u) => hasUnit(given, u));
       await setDashboardAccess(editing.person.userId, access
         ? { access: true, admin: editing.admin, tabs: editing.admin || everything ? null : given, supportRole: editing.supportRole }
         : { access: false });
@@ -205,6 +211,8 @@ function UsersTab() {
 
 function EditAccess({ editing, setEditing, saving, onSave, self }: { editing: Editing; setEditing: (e: Editing | null) => void; saving: boolean; onSave: (access: boolean) => void; self: boolean }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const { user: me } = useAuth();
+  const units = unitsFor(me);
   const toggle = (u: Unit) => {
     const tabs = new Set(editing.tabs);
     const on = !hasUnit(tabs, u);
@@ -255,8 +263,8 @@ function EditAccess({ editing, setEditing, saving, onSave, self }: { editing: Ed
 
         {!editing.admin && (
           <>
-            <div className="pd-eyebrow" style={{ margin: '20px 0 4px' }}>WHAT THEY CAN OPEN · {UNITS.filter((u) => hasUnit(editing.tabs, u)).length} of {UNITS.length}</div>
-            {UNITS.map((u, i) => (
+            <div className="pd-eyebrow" style={{ margin: '20px 0 4px' }}>WHAT THEY CAN OPEN · {units.filter((u) => hasUnit(editing.tabs, u)).length} of {units.length}</div>
+            {units.map((u, i) => (
               <label key={u.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderTop: i === 0 ? 'none' : '1px solid var(--line)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={hasUnit(editing.tabs, u)} onChange={() => toggle(u)} style={{ marginTop: 3, width: 16, height: 16, accentColor: 'var(--accent)' }} />
                 <span style={{ minWidth: 0 }}>

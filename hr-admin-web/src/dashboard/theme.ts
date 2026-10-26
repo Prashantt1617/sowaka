@@ -49,6 +49,9 @@ export type View =
   | 'cuptv'
   | 'engagementposts'
   | 'contentreports'
+  | 'placements'
+  | 'placementclients'
+  | 'placementcustomers'
   | 'suwi';
 
 /** A leave type as the lists show it: 'Casual', 'Comp-off', or a type HR added, 'Emergency'. */
@@ -177,6 +180,9 @@ export const TITLES: Record<View, [string, string]> = {
   cuptv: ['Tournament TV', 'Connect · the tournament live, for the office screen'],
   engagementposts: ['Engagement posts', 'Connect · challenges published for people to play'],
   contentreports: ['Reported content', 'Connect · posts and comments employees have reported'],
+  placements: ['Placements', 'Placements · candidates put forward to clients, from shortlist to joining'],
+  placementclients: ['Clients', 'Placements · the companies hiring'],
+  placementcustomers: ['Customers', 'Placements · the candidates being placed'],
   suwi: ['Suwi', 'Your HR assistant · what it may do, and what it did'],
 };
 
