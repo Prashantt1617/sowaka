@@ -71,7 +71,7 @@ void main() {
     final session = _session();
     await _pump(
       tester,
-      OnboardingFlow(session: session, api: _FakeApi(session: session), onDone: (_, _) {}),
+      OnboardingFlow(session: session, api: _FakeApi(session: session), onDone: (_, _, _) {}),
     );
     expect(find.text('Add a profile photo'), findsOneWidget);
     expect(find.text('What are you into?'), findsNothing);
@@ -81,7 +81,7 @@ void main() {
     final session = _session(photoUrl: 'https://example.test/old.png');
     await _pump(
       tester,
-      OnboardingFlow(session: session, api: _FakeApi(session: session), onDone: (_, _) {}),
+      OnboardingFlow(session: session, api: _FakeApi(session: session), onDone: (_, _, _) {}),
     );
     expect(find.text('What are you into?'), findsOneWidget);
     expect(find.text('Add a profile photo'), findsNothing);
@@ -97,7 +97,7 @@ void main() {
       OnboardingFlow(
         session: session,
         api: api,
-        onDone: (photoUrl, interests) {
+        onDone: (photoUrl, interests, _) {
           donePhoto = photoUrl;
           doneInterests = interests;
         },
@@ -133,7 +133,7 @@ void main() {
     var done = false;
     await _pump(
       tester,
-      OnboardingFlow(session: session, api: api, onDone: (_, _) => done = true),
+      OnboardingFlow(session: session, api: api, onDone: (_, _, _) => done = true),
     );
     await tester.tap(find.text('Travel'));
     await tester.pump();
@@ -146,7 +146,7 @@ void main() {
     final session = _session(photoUrl: 'https://example.test/old.png');
     await _pump(
       tester,
-      OnboardingFlow(session: session, api: _FakeApi(session: session), onDone: (_, _) {}),
+      OnboardingFlow(session: session, api: _FakeApi(session: session), onDone: (_, _, _) {}),
     );
     for (final label in ['Music', 'Travel', 'Fitness', 'Art']) {
       await tester.tap(find.text(label));
