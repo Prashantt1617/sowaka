@@ -355,6 +355,12 @@ async function call(who: string, method: string, path: string, body?: unknown): 
     check('their page is not found', (await call('ravi', 'GET', `/placements/customers/${u.id}`)).status === 404);
     check('and they cannot be put forward', (await call('ravi', 'POST', '/placements', { customerId: u.id, clientId: marwar.id, position: 'Cashier' })).status === 400);
     check('nor removed twice', (await call('ravi', 'POST', `/placements/customers/${u.id}/remove`, { reason: 'Other' })).status === 404);
+    const frozen = ((await admin(`?customerId=${u.id}`)).body.placements ?? [])[0];
+    if (frozen) {
+      const moved = await call('ravi', 'PATCH', `/placements/${frozen.id}`, { status: 'joined' });
+      check('their open placements cannot be moved on from the app (409)', moved.status === 409 && /removed/.test(moved.body.message), moved);
+    }
+    check('nor are they counted on the summary', (await call('ravi', 'GET', '/placements/summary')).body.customers === ((await call('ravi', 'GET', '/placements/customers')).body.customers ?? []).length);
     const removedRow = ((await admin('/customers')).body.customers ?? []).find((x: Json) => x.id === u.id);
     check('HR still sees them, with why and who', Boolean(removedRow?.removedAt) && removedRow?.removedReason === 'Duplicate entry' && removedRow?.removedByUserId === 'ravi', removedRow);
     check('removed=only lists just the removed', ids(await admin('/customers?removed=only'), 'customers') === u.id);

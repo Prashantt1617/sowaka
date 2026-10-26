@@ -455,7 +455,7 @@ export async function placementsSummary(caller: PlacementsCaller) {
   const { org } = caller;
   const [clientCount, customerCount, byStatusRows] = await Promise.all([
     placementClients().countDocuments({ org }),
-    placementCustomers().countDocuments({ org }),
+    placementCustomers().countDocuments({ org, ...LISTED }),
     placements()
       .aggregate<{ _id: PlacementStatus; n: number }>([{ $match: { org } }, { $group: { _id: '$status', n: { $sum: 1 } } }])
       .toArray(),
@@ -786,6 +786,11 @@ export async function updatePlacement(caller: PlacementsCaller, id: string, inpu
   if (!current) throw new PlacementsError(404, 'Placement not found');
   if (!dashboard && current.createdByUserId !== caller.userId && !caller.admin) {
     throw new PlacementsError(403, 'Only the person who added this placement, or HR, can change it');
+  }
+  if (!dashboard) {
+    // A removed candidate's placements stay as they were until HR restores them.
+    const listed = await placementCustomers().countDocuments({ org: caller.org, id: current.customerId, ...LISTED });
+    if (listed === 0) throw new PlacementsError(409, 'This candidate was removed; HR can restore them');
   }
   const changes: Partial<PlacementEdit & PlacementLinks> = fields<PlacementEdit>(body, true, PLACEMENT_EDIT_FIELDS);
   let names = { clientName: current.clientName, customerName: current.customerName };
