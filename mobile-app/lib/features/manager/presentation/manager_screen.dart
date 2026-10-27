@@ -353,7 +353,9 @@ class _ManagerScreenState extends State<ManagerScreen> {
     _connectComposerController.openComposer();
   }
 
-  /// One's own profile, from the avatar or the Team tab: on Work detail.
+  /// One's own profile: from the avatar, Actions and anywhere else on Work
+  /// detail; [on] puts another tab first (Post from the feed, Org chart from
+  /// the Team tab or an org chart — [openingTabFor]).
   void _openProfile({ProfileTab? on = ProfileTab.workDetail}) => setState(() {
     _profileOpen = true;
     _profileOpenOn = on;

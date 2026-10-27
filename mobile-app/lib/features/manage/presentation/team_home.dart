@@ -638,8 +638,15 @@ class _TeamMemberRow extends StatelessWidget {
     final recognition = member.recognitionLabel;
 
     // Your own row is your own profile — the same screen as the photo in
-    // the header, not a read-only view of yourself as a team member.
-    final openSelf = member.isSelf ? onOpenProfile : null;
+    // the header, not a read-only view of yourself as a team member — opened
+    // from the Team tab, so on its Org chart as anyone else's row is.
+    final openSelf = member.isSelf
+        ? () {
+            if (!openPersonProfile(member.userId, from: ProfileEntry.team)) {
+              onOpenProfile?.call();
+            }
+          }
+        : null;
     return _TeamPersonRow(
       member: member,
       name: _teamRowName(member, you: member.isSelf),
@@ -655,7 +662,7 @@ class _TeamMemberRow extends StatelessWidget {
                 onNotifications: onNotifications,
                 onOpenComposer: onOpenComposer,
                 canManage: canManage,
-                openOn: ProfileTab.workDetail,
+                openOn: openingTabFor(ProfileEntry.team),
               ),
             ),
           ),

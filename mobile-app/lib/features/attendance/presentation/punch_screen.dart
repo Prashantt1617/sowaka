@@ -195,8 +195,8 @@ class _PunchScreenState extends State<PunchScreen> {
       type: widget.type,
       readLocation: widget.geofenced ? _location.read : null,
     );
-    // Someone not set up does it here, at their first checked punch, and the
-    // setup is this punch's check: it hands back the same punch token.
+    // Someone not set up does it here, at their first checked punch: setup,
+    // its success screen, then the selfie check, whose outcome it hands back.
     FaceSetupScreen setup() => FaceSetupScreen(
       api: widget.api,
       type: widget.type,

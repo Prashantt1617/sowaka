@@ -50,38 +50,7 @@ class FaceCaptureLayout extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Step navigation (4005:51552): 56 high, 16 in, a 40 box each side.
-            SizedBox(
-              height: 56,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    _NavButton(
-                      label: 'Back',
-                      alignment: Alignment.centerLeft,
-                      onTap: onBack,
-                      child: SvgPicture.asset('$_asset/arrow_left.svg', width: 24, height: 24),
-                    ),
-                    Expanded(
-                      child: Text(
-                        stepTitle,
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: _sora(16, FontWeight.w600, _ink, height: 16.2 / 16, spacing: -0.16),
-                      ),
-                    ),
-                    _NavButton(
-                      label: 'Close',
-                      alignment: Alignment.centerRight,
-                      onTap: onClose,
-                      child: SvgPicture.asset('$_asset/close.svg', width: 20, height: 20),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            FaceStepHeader(title: stepTitle, onBack: onBack, onClose: onClose),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -122,6 +91,55 @@ class FaceCaptureLayout extends StatelessWidget {
                   if (below case final link?) ...[const SizedBox(height: 4), Center(child: link)],
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The step navigation (4005:51552): 56 high, 16 in, a 40 box each side.
+/// Without [onBack] the arrow's box stays empty, for a step with nowhere to
+/// go back to.
+class FaceStepHeader extends StatelessWidget {
+  const FaceStepHeader({super.key, required this.title, this.onBack, this.onClose});
+
+  final String title;
+  final VoidCallback? onBack;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 56,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            if (onBack == null)
+              const SizedBox(width: 40, height: 40)
+            else
+              _NavButton(
+                label: 'Back',
+                alignment: Alignment.centerLeft,
+                onTap: onBack,
+                child: SvgPicture.asset('$_asset/arrow_left.svg', width: 24, height: 24),
+              ),
+            Expanded(
+              child: Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: _sora(16, FontWeight.w600, _ink, height: 16.2 / 16, spacing: -0.16),
+              ),
+            ),
+            _NavButton(
+              label: 'Close',
+              alignment: Alignment.centerRight,
+              onTap: onClose,
+              child: SvgPicture.asset('$_asset/close.svg', width: 20, height: 20),
             ),
           ],
         ),
@@ -218,9 +236,20 @@ class _CameraCard extends StatelessWidget {
 /// Face detection status (4005:51569): the icon and heading on one line,
 /// the guidance under it, 8 apart.
 class FaceStatusRow extends StatelessWidget {
+  /// Only once a face is in the oval and the phone's prompt is done.
   const FaceStatusRow.detected({super.key, this.title = 'Face detected', required this.body})
     : _icon = 'circle_check.svg',
       _color = _brand;
+
+  /// Still looking: the camera opening, or a face waiting on the prompt,
+  /// which [body] then carries. Neutral, in the design's own type.
+  const FaceStatusRow.detecting({
+    super.key,
+    this.title = 'Detecting your face…',
+    this.body = 'Hold your phone at eye level and\nlook straight at the camera.',
+  })
+    : _icon = 'scan_face_status.svg',
+      _color = _ink;
 
   const FaceStatusRow.problem({super.key, required this.title, required this.body})
     : _icon = 'circle_alert.svg',
