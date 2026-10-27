@@ -24,32 +24,12 @@ enum FaceSignal {
   unavailable,
 }
 
-/// The phone's own live-person prompt, picked at random so a recording made
-/// for one cannot answer another.
-enum FaceChallenge {
-  blink('blink', 'Blink once, then look at the camera.'),
-  turnLeft('turn_left', 'Turn your head a little to your left, then back.'),
-  turnRight('turn_right', 'Turn your head a little to your right, then back.');
-
-  const FaceChallenge(this.key, this.prompt);
-  final String key;
-  final String prompt;
-}
-
 /// The front camera with ML Kit face detection on its preview frames.
 ///
-/// What this stops, and what it does not: the prompt (blink, or turn your
-/// head, chosen at random) defeats a printed photo or a still on another
-/// screen held up to an unmodified app, because a still cannot blink or turn
-/// on cue. It does not stop a video of the person that happens to do the
-/// same, a good 3D mask, or a modified app that skips the prompt — the
-/// result is only reported to the server and logged, never trusted. The
-/// server's face match is what decides; Rekognition Face Liveness is the
-/// stronger check, ready to switch on.
+/// Two checks of its own, [FaceRealness], say whether the face is a real
+/// one before the selfie is taken; the server's match says whose it is.
 class FaceCamera extends ChangeNotifier {
-  FaceCamera({Random? random})
-    : challenge = FaceChallenge
-          .values[(random ?? Random()).nextInt(FaceChallenge.values.length)];
+  FaceCamera({Random? random});
 
   /// How the screens make one. Only a test replaces it, with a camera that
   /// needs no device.
@@ -61,8 +41,6 @@ class FaceCamera extends ChangeNotifier {
   /// not leave someone unable to punch, and the server's failed tries are
   /// what open sending the punch to the manager.
   static Duration patience = const Duration(seconds: 15);
-
-  final FaceChallenge challenge;
 
   CameraController? _camera;
   CameraDescription? _description;
@@ -76,24 +54,22 @@ class FaceCamera extends ChangeNotifier {
   String? cameraProblem;
   bool permissionDenied = false;
 
-  /// The live prompt (blink or turn) is no longer asked: the face in the
-  /// oval is enough, so this is always done. Kept so the screens and the
-  /// server's log read as before.
+  /// The live prompt (blink or turn) is no longer asked: always done. Kept
+  /// so the screens and the server's log read as before.
   bool challengeDone = true;
 
   /// The last frame a single, near face was seen in: the selfie is taken
   /// from it, silently, with no shutter sound or flash.
   _Frame? _lastFace;
 
+  /// The phone's own two checks that the face is a real one, run while the
+  /// face is in the oval and before the selfie; see [FaceRealness].
+  final liveness = FaceRealness();
+
   /// Detection gave up waiting (see [patience]); the screens read it as
   /// [FaceSignal.unavailable].
   bool waived = false;
   Timer? _patienceTimer;
-
-  // The prompt's progress, for the face being tracked: a different face
-  // starts it again, so one person cannot blink for another.
-  int? _trackingId;
-  int _stage = 0;
 
   CameraController? get controller => _camera;
   bool get ready => _camera?.value.isInitialized == true;
@@ -156,6 +132,7 @@ class FaceCamera extends ChangeNotifier {
       _detector ??= FaceDetector(
         options: FaceDetectorOptions(
           enableClassification: true,
+          enableLandmarks: true,
           enableTracking: true,
           minFaceSize: 0.15,
           performanceMode: FaceDetectorMode.fast,
@@ -192,8 +169,12 @@ class FaceCamera extends ChangeNotifier {
         _set(FaceSignal.notDetected);
         return;
       }
-      _follow(near.first);
       _lastFace = _Frame.of(image, input.metadata?.rotation.rawValue ?? 0);
+      liveness.seeFace(
+        near.first,
+        shortSide,
+        _faceBrightness(image, near.first),
+      );
       _set(FaceSignal.detected);
     } on MissingPluginException {
       _set(FaceSignal.unavailable);
@@ -201,38 +182,6 @@ class FaceCamera extends ChangeNotifier {
       // One bad frame is not the detector gone; the next frame tries again.
     } finally {
       _processing = false;
-    }
-  }
-
-  void _follow(Face face) {
-    if (challengeDone) return;
-    if (face.trackingId != _trackingId) {
-      _trackingId = face.trackingId;
-      _stage = 0;
-    }
-    switch (challenge) {
-      case FaceChallenge.blink:
-        final left = face.leftEyeOpenProbability;
-        final right = face.rightEyeOpenProbability;
-        if (left == null || right == null) return;
-        final open = left > 0.75 && right > 0.75;
-        final shut = left < 0.25 && right < 0.25;
-        // Open, then shut, then open again.
-        if (_stage == 0 && open) _stage = 1;
-        if (_stage == 1 && shut) _stage = 2;
-        if (_stage == 2 && open) challengeDone = true;
-      case FaceChallenge.turnLeft:
-      case FaceChallenge.turnRight:
-        // ML Kit's Y angle is positive when the face turns to the person's
-        // own left (towards the right of the camera's picture).
-        final yaw = face.headEulerAngleY;
-        if (yaw == null) return;
-        final turned = challenge == FaceChallenge.turnLeft
-            ? yaw > 18
-            : yaw < -18;
-        if (_stage == 0 && yaw.abs() < 10) _stage = 1;
-        if (_stage == 1 && turned) _stage = 2;
-        if (_stage == 2 && yaw.abs() < 10) challengeDone = true;
     }
   }
 
@@ -334,8 +283,7 @@ class FaceCamera extends ChangeNotifier {
   /// After a failed check: look again.
   Future<void> resume() async {
     _lastFace = null;
-    _stage = 0;
-    _trackingId = null;
+    liveness.reset();
     _set(FaceSignal.starting);
     await _startDetecting();
   }
@@ -369,6 +317,129 @@ class FaceCamera extends ChangeNotifier {
 /// frame is not leaving), so a failed check is never retried on its own.
 /// Never while detection is [FaceCamera.waived]: with no face to watch, the
 /// button is the only way.
+/// The mean luma over the face's box, from the frame's Y plane (the first
+/// bytes of an NV21 frame; the green channel of a BGRA one, which is close
+/// enough): what the screen flash is measured against.
+double _faceBrightness(CameraImage image, Face face) {
+  final plane = image.planes.first;
+  final bgra = defaultTargetPlatform == TargetPlatform.iOS;
+  final box = face.boundingBox;
+  // The frame is the sensor's, unrotated; the box is in the input's rotated
+  // space. The oval sits mid-frame, so a mid-frame sample is close enough.
+  final x0 = (image.width * 0.3).round(), x1 = (image.width * 0.7).round();
+  final y0 = (image.height * 0.3).round(), y1 = (image.height * 0.7).round();
+  var sum = 0, n = 0;
+  for (var y = y0; y < y1; y += 4) {
+    final row = y * plane.bytesPerRow;
+    for (var x = x0; x < x1; x += 4) {
+      final at = bgra ? row + x * 4 + 1 : row + x;
+      if (at >= plane.bytes.length) break;
+      sum += plane.bytes[at];
+      n++;
+    }
+  }
+  assert(box.width > 0);
+  return n == 0 ? 0 : sum / n;
+}
+
+/// Two checks, on the phone, that the face in the oval is a real one and not
+/// a picture of one — each a first filter, not a wall; the server's match
+/// still decides whose face it is.
+///
+/// Movement: a real face coming a little closer grows unevenly — the nose,
+/// nearest the camera, spreads faster than the eyes behind it — while a flat
+/// photo scales evenly. [moved] is set once the face has grown by
+/// [growNeeded] and the nose-to-eyes ratio shifted by [parallaxNeeded].
+///
+/// Flash: the screen goes white for a moment ([FaceFlash]); a real face,
+/// lit by it, brightens by at least [brightenNeeded]; a picture on another
+/// screen, which makes its own light, does not. In bright light the flash is
+/// too faint to see, so a face already brighter than [tooBright] skips it.
+class FaceRealness {
+  static double growNeeded = 0.12;
+  static double parallaxNeeded = 0.035;
+  static double brightenNeeded = 6;
+  static double tooBright = 170;
+
+  double? _width0, _ratio0;
+  double _widthNow = 0, _ratioNow = 0;
+  bool moved = false;
+
+  double? _lumaBefore;
+  double _lumaNow = 0;
+  bool flashing = false;
+  bool? lit;
+
+  /// Whether the flash can tell anything here: not in bright light.
+  bool get flashUseful => _lumaNow < tooBright;
+
+  /// Whether both checks have passed, or been skipped for the light.
+  bool get passed => moved && (lit == true || !flashUseful);
+
+  /// What the line on the camera should ask for, or null once done.
+  String? get ask => moved ? null : 'Move a little closer';
+
+  void seeFace(Face face, double shortSide, double luma) {
+    _lumaNow = luma;
+    final eyeL = face.landmarks[FaceLandmarkType.leftEye]?.position;
+    final eyeR = face.landmarks[FaceLandmarkType.rightEye]?.position;
+    final nose = face.landmarks[FaceLandmarkType.noseBase]?.position;
+    _widthNow = face.boundingBox.width / shortSide;
+    if (eyeL != null && eyeR != null && nose != null) {
+      final eyeMidX = (eyeL.x + eyeR.x) / 2, eyeMidY = (eyeL.y + eyeR.y) / 2;
+      final eyes = sqrt(pow(eyeL.x - eyeR.x, 2) + pow(eyeL.y - eyeR.y, 2));
+      final noseDrop = sqrt(
+        pow(nose.x - eyeMidX, 2) + pow(nose.y - eyeMidY, 2),
+      );
+      _ratioNow = eyes == 0 ? 0 : noseDrop / eyes;
+    }
+    _width0 ??= _widthNow;
+    _ratio0 ??= _ratioNow;
+    if (!moved && _ratio0 != null) {
+      final grew = _widthNow / _width0! - 1;
+      final shifted = (_ratioNow - _ratio0!).abs();
+      if (grew >= growNeeded && shifted >= parallaxNeeded) moved = true;
+      // Moving away resets the baseline, so the next approach counts.
+      if (grew < -0.05) {
+        _width0 = _widthNow;
+        _ratio0 = _ratioNow;
+      }
+    }
+    if (flashing) {
+      _lumaBefore ??= luma;
+    } else if (_lumaBefore != null && lit == null) {
+      // The frame after the flash ended was lit by it on a real face.
+      lit = luma - _lumaBefore! >= brightenNeeded;
+      _lumaBefore = null;
+    }
+  }
+
+  /// The screen is white: the next frames are the lit ones.
+  void flashOn() {
+    flashing = true;
+    _lumaBefore = _lumaNow;
+  }
+
+  /// Back to normal: judge from what the lit frames showed.
+  void flashOff(double litLuma) {
+    flashing = false;
+    if (_lumaBefore != null) {
+      lit = litLuma - _lumaBefore! >= brightenNeeded;
+      _lumaBefore = null;
+    }
+  }
+
+  double get lumaNow => _lumaNow;
+
+  void reset() {
+    _width0 = _ratio0 = null;
+    moved = false;
+    _lumaBefore = null;
+    flashing = false;
+    lit = null;
+  }
+}
+
 class FaceAutoCapture {
   FaceAutoCapture({
     required this.camera,
@@ -378,6 +449,16 @@ class FaceAutoCapture {
 
   /// How long the face holds still before the selfie is taken.
   static Duration hold = const Duration(milliseconds: 700);
+
+  /// How long the screen stays white for the flash check.
+  static Duration flash = const Duration(milliseconds: 350);
+
+  /// Whether the phone's liveness checks gate the selfie. Off in tests
+  /// that have no frames to feed them.
+  static bool checkLiveness = true;
+
+  /// Set while the screen is white: the layout draws it.
+  final ValueNotifier<bool> flashOnScreen = ValueNotifier(false);
 
   /// How long the face is gone before the next try can be automatic.
   static Duration away = const Duration(milliseconds: 500);
@@ -402,6 +483,7 @@ class FaceAutoCapture {
       armed &&
       camera.signal == FaceSignal.detected &&
       camera.challengeDone &&
+      (!checkLiveness || camera.liveness.moved) &&
       allowed();
 
   /// Call on every change to the camera or to [allowed]'s answer.
@@ -421,8 +503,39 @@ class FaceAutoCapture {
     _hold ??= Timer(hold, () {
       _hold = null;
       if (!_ready) return;
+      if (checkLiveness &&
+          camera.liveness.flashUseful &&
+          camera.liveness.lit == null) {
+        _runFlash();
+        return;
+      }
+      if (checkLiveness &&
+          camera.liveness.flashUseful &&
+          camera.liveness.lit == false) {
+        // Did not light up: not taken on its own; the button is the way.
+        spend();
+        return;
+      }
       spend();
       onCapture();
+    });
+  }
+
+  /// The screen goes white for [flash], the face is read under it, and the
+  /// selfie follows if it lit up.
+  void _runFlash() {
+    camera.liveness.flashOn();
+    flashOnScreen.value = true;
+    Timer(flash, () {
+      flashOnScreen.value = false;
+      camera.liveness.flashOff(camera.liveness.lumaNow);
+      if (_disposed) return;
+      if (_ready && camera.liveness.lit == true) {
+        spend();
+        onCapture();
+      } else if (camera.liveness.lit == false) {
+        spend();
+      }
     });
   }
 
@@ -434,10 +547,14 @@ class FaceAutoCapture {
     _hold = null;
   }
 
+  /// Whether the last flash found no real face: the line says so.
+  bool get flashFailed => checkLiveness && camera.liveness.lit == false;
+
   void dispose() {
     _disposed = true;
     _hold?.cancel();
     _away?.cancel();
+    flashOnScreen.dispose();
   }
 }
 

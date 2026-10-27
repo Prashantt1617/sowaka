@@ -1,4 +1,5 @@
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -22,7 +23,12 @@ class FaceCaptureLayout extends StatelessWidget {
     this.below,
     this.busy = false,
     this.onClose,
+    this.flash,
   });
+
+  /// True while the screen goes white for the phone's flash check; the
+  /// whole page lights up so the face is lit by it.
+  final ValueListenable<bool>? flash;
 
   /// "Set up your Face ID", "Punch-in": 20/600 on the camera, 25 down.
   final String heading;
@@ -56,7 +62,7 @@ class FaceCaptureLayout extends StatelessWidget {
         ? preview!.value.previewSize
         : null;
     final failed = state == FaceCaptureState.failed;
-    return Scaffold(
+    final page = Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
         bottom: false,
@@ -255,6 +261,21 @@ class FaceCaptureLayout extends StatelessWidget {
           ),
         ),
       ),
+    );
+    final flashing = flash;
+    if (flashing == null) return page;
+    return ValueListenableBuilder<bool>(
+      valueListenable: flashing,
+      builder: (_, on, child) => Stack(
+        fit: StackFit.expand,
+        children: [
+          child!,
+          // The flash: the page goes white, the camera still reading under it.
+          if (on)
+            const ColoredBox(key: ValueKey('face-flash'), color: Colors.white),
+        ],
+      ),
+      child: page,
     );
   }
 }

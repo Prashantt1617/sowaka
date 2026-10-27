@@ -165,6 +165,8 @@ void main() {
     _requests.clear();
     FaceCheckOutcome.enrolledThisRun = false;
     FaceCamera.create = () => _camera = _FakeCamera();
+    // No frames reach the fake camera, so the phone's own checks stand aside.
+    FaceAutoCapture.checkLiveness = false;
     GeolocatorPlatform.instance = _FakeGeolocator();
     FaceSetupScreen.successPause = const Duration(milliseconds: 1500);
     FaceCheckScreen.matchedPause = const Duration(milliseconds: 900);

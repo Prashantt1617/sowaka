@@ -367,10 +367,17 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
         onTap: _capture,
       );
     } else {
-      // Looking, or found: the line says which, and the selfie takes itself.
+      // Looking, or found: the line says which, and the selfie takes itself
+      // once the phone's own checks are done — a little movement, then the
+      // flash. A flash that lit nothing up leaves the button as the way.
       state = FaceCaptureState.looking;
       line = detected
-          ? 'Hold still'
+          ? (_auto.flashFailed
+                ? 'Could not read your face. Tap the button to try.'
+                : (FaceAutoCapture.checkLiveness
+                          ? _camera.liveness.ask
+                          : null) ??
+                      'Hold still')
           : signal == FaceSignal.notDetected
           ? 'Keep your face inside the oval'
           : 'Position your face inside the oval';
@@ -404,6 +411,7 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
       caption: caption,
       below: below,
       busy: _busy && action == null,
+      flash: _auto.flashOnScreen,
       onClose: _close,
     );
   }
