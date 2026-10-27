@@ -26,8 +26,8 @@ enum FaceSignal {
 
 /// The front camera with ML Kit face detection on its preview frames.
 ///
-/// Two checks of its own, [FaceRealness], say whether the face is a real
-/// one before the selfie is taken; the server's match says whose it is.
+/// Checks of its own, [FaceRealness], say whether the face is a real one
+/// before the selfie is taken; the server's match says whose it is.
 class FaceCamera extends ChangeNotifier {
   FaceCamera({Random? random});
 
@@ -35,12 +35,16 @@ class FaceCamera extends ChangeNotifier {
   /// needs no device.
   static FaceCamera Function() create = FaceCamera.new;
 
-  /// How long the phone keeps looking for a face it is happy with, from
-  /// the camera opening and again from each failed try. Past it the screen
-  /// says "Face not detected" and offers Try Again, which takes the selfie
-  /// for the server to judge: a phone that cannot see a face in dim light,
-  /// behind glasses or on a slow camera must not leave someone stuck.
+  /// How long the phone keeps looking for a face, from the camera opening,
+  /// again from each failed try, and from the last frame a face was seen
+  /// in. Past it the screen says "Face not detected" and offers Try Again,
+  /// which looks again.
   static Duration patience = const Duration(seconds: 3);
+
+  /// How long a face that is seen has to turn and blink ([FaceRealness])
+  /// before the phone gives up on it the same way: a photo held in the oval
+  /// never does either, and must not sit there forever.
+  static Duration promptPatience = const Duration(seconds: 10);
 
   CameraController? _camera;
   CameraDescription? _description;
@@ -54,26 +58,30 @@ class FaceCamera extends ChangeNotifier {
   String? cameraProblem;
   bool permissionDenied = false;
 
-  /// The live prompt (blink or turn) is no longer asked: always done. Kept
-  /// so the screens and the server's log read as before.
+  /// Whether the prompts may be skipped. Only a test's camera sets it false:
+  /// the real one asks for the turn and the blink every time.
   bool challengeDone = true;
 
   /// The last frame a single, near face was seen in: the selfie is taken
   /// from it, silently, with no shutter sound or flash.
   _Frame? _lastFace;
 
-  /// The phone's own two checks that the face is a real one, run while the
+  /// The phone's own checks that the face is a real one, run while the
   /// face is in the oval and before the selfie; see [FaceRealness].
   final liveness = FaceRealness();
 
-  /// Detection gave up waiting (see [patience]): the screens show "Face not
-  /// detected" with Try Again, and a tap takes the selfie.
+  /// Detection gave up waiting (see [patience] and [promptPatience]): the
+  /// screens show "Face not detected" with Try Again, which looks again.
   bool waived = false;
   Timer? _patienceTimer;
+  DateTime? _lastSeen;
+  DateTime? _firstSeen;
 
   /// The next wait for a face, from now: after a failed try, or a tap.
   void waitAgain() {
     waived = false;
+    _lastSeen = null;
+    _firstSeen = null;
     _patienceTimer?.cancel();
     _patienceTimer = null;
     if (_disposed) return;
@@ -82,6 +90,25 @@ class FaceCamera extends ChangeNotifier {
 
   void _giveUp() {
     if (_disposed) return;
+    _patienceTimer = null;
+    final seen = _lastSeen;
+    if (seen != null && !waived) {
+      // A face is being watched: the wait is from the last frame it was in.
+      final since = DateTime.now().difference(seen);
+      if (since < patience) {
+        _patienceTimer = Timer(patience - since, _giveUp);
+        return;
+      }
+    }
+    giveUpNow();
+  }
+
+  /// Stop looking this try: the flash found no real face, or the prompts
+  /// went unanswered.
+  void giveUpNow() {
+    if (_disposed || waived) return;
+    _patienceTimer?.cancel();
+    _patienceTimer = null;
     waived = true;
     notifyListeners();
   }
@@ -185,6 +212,16 @@ class FaceCamera extends ChangeNotifier {
         shortSide,
         _faceBrightness(image, near.first),
       );
+      final now = DateTime.now();
+      _lastSeen = now;
+      _firstSeen ??= now;
+      if (!liveness.challengesDone &&
+          now.difference(_firstSeen!) >= promptPatience) {
+        // Seen all this time and never turned or blinked: not a face the
+        // phone will vouch for.
+        giveUpNow();
+        return;
+      }
       _set(FaceSignal.detected);
     } on MissingPluginException {
       _set(FaceSignal.unavailable);
@@ -318,15 +355,16 @@ class FaceCamera extends ChangeNotifier {
   }
 }
 
-/// Takes the selfie on its own: once the face is in the oval and the prompt
-/// is done, and it has held there for [hold], [onCapture] runs — the same
-/// capture the button makes, which stays as the way to take it by hand.
+/// Takes the selfie on its own: once the face is in the oval, the prompts
+/// are answered and it has held there for [hold], the flash runs and
+/// [onCapture] follows. A tap never takes it instead: that would let a photo
+/// skip the checks.
 ///
 /// Once per try: a capture, automatic or by hand, spends it, and it comes
 /// back only after the face has left the oval for [away] (a flicker of one
 /// frame is not leaving), so a failed check is never retried on its own.
-/// Never while detection is [FaceCamera.waived]: with no face to watch, the
-/// button is the only way.
+/// Never while detection is [FaceCamera.waived]: there is nothing to take.
+///
 /// The mean luma over the face's box, from the frame's Y plane (the first
 /// bytes of an NV21 frame; the green channel of a BGRA one, which is close
 /// enough): what the screen flash is measured against.
@@ -352,28 +390,39 @@ double _faceBrightness(CameraImage image, Face face) {
   return n == 0 ? 0 : sum / n;
 }
 
-/// Two checks, on the phone, that the face in the oval is a real one and not
-/// a picture of one — each a first filter, not a wall; the server's match
+/// Three checks, on the phone, that the face in the oval is a real one and
+/// not a picture of one — each a first filter, not a wall; the server's match
 /// still decides whose face it is.
 ///
-/// Movement: a real face coming a little closer grows unevenly — the nose,
-/// nearest the camera, spreads faster than the eyes behind it — while a flat
-/// photo scales evenly. [moved] is set once the face has grown by
-/// [growNeeded] and the nose-to-eyes ratio shifted by [parallaxNeeded].
+/// Turn: the line asks for a small turn of the head. On a real face the nose,
+/// nearer the camera than the eyes, swings sideways against the eye line as
+/// the head turns; on a flat photo turned the same way, nose and eyes shrink
+/// together and their ratio never changes. [turned] is set once the head has
+/// swung by [turnDegrees] (ML Kit's own yaw) and the nose moved along the eye
+/// line by [noseShiftNeeded] of the distance between the eyes.
 ///
-/// Flash: the screen goes white for a moment ([FaceFlash]); a real face,
-/// lit by it, brightens by at least [brightenNeeded]; a picture on another
-/// screen, which makes its own light, does not. In bright light the flash is
-/// too faint to see, so a face already brighter than [tooBright] skips it.
+/// Blink: the line then asks for a blink. ML Kit's eye-open probabilities
+/// fall under [closedBelow] and come back over [openAbove]; a photo never
+/// closes its eyes. A blink counts whenever it comes, prompted or not.
+///
+/// Flash: the screen goes white for a moment ([FaceAutoCapture.flash]); a
+/// real face, lit by it, brightens by at least [brightenNeeded]; a picture on
+/// another screen, which makes its own light, does not. In bright light the
+/// flash is too faint to see, so a face already brighter than [tooBright]
+/// skips it.
 class FaceRealness {
-  static double growNeeded = 0.12;
-  static double parallaxNeeded = 0.035;
+  static double turnDegrees = 12;
+  static double noseShiftNeeded = 0.06;
+  static double closedBelow = 0.3;
+  static double openAbove = 0.6;
   static double brightenNeeded = 6;
   static double tooBright = 170;
 
-  double? _width0, _ratio0;
-  double _widthNow = 0, _ratioNow = 0;
-  bool moved = false;
+  double? _yaw0, _offset0;
+  bool turned = false;
+
+  bool _eyesClosed = false;
+  bool blinked = false;
 
   double? _lumaBefore;
   double _lumaNow = 0;
@@ -383,36 +432,46 @@ class FaceRealness {
   /// Whether the flash can tell anything here: not in bright light.
   bool get flashUseful => _lumaNow < tooBright;
 
-  /// Whether both checks have passed, or been skipped for the light.
-  bool get passed => moved && (lit == true || !flashUseful);
+  /// Whether the two prompts have been answered: the selfie waits on them.
+  bool get challengesDone => turned && blinked;
+
+  /// Whether every check has passed, or been skipped for the light.
+  bool get passed => challengesDone && (lit == true || !flashUseful);
 
   /// What the line on the camera should ask for, or null once done.
-  String? get ask => moved ? null : 'Move a little closer';
+  String? get ask => !turned
+      ? 'Turn your head a little to one side'
+      : !blinked
+      ? 'Blink once'
+      : null;
 
   void seeFace(Face face, double shortSide, double luma) {
     _lumaNow = luma;
+    final yaw = face.headEulerAngleY;
     final eyeL = face.landmarks[FaceLandmarkType.leftEye]?.position;
     final eyeR = face.landmarks[FaceLandmarkType.rightEye]?.position;
     final nose = face.landmarks[FaceLandmarkType.noseBase]?.position;
-    _widthNow = face.boundingBox.width / shortSide;
-    if (eyeL != null && eyeR != null && nose != null) {
-      final eyeMidX = (eyeL.x + eyeR.x) / 2, eyeMidY = (eyeL.y + eyeR.y) / 2;
+    if (yaw != null && eyeL != null && eyeR != null && nose != null) {
       final eyes = sqrt(pow(eyeL.x - eyeR.x, 2) + pow(eyeL.y - eyeR.y, 2));
-      final noseDrop = sqrt(
-        pow(nose.x - eyeMidX, 2) + pow(nose.y - eyeMidY, 2),
-      );
-      _ratioNow = eyes == 0 ? 0 : noseDrop / eyes;
+      if (eyes > 0) {
+        final offset = (nose.x - (eyeL.x + eyeR.x) / 2) / eyes;
+        _yaw0 ??= yaw;
+        _offset0 ??= offset;
+        if (!turned) {
+          final swung = (yaw - _yaw0!).abs();
+          final shifted = (offset - _offset0!).abs();
+          if (swung >= turnDegrees && shifted >= noseShiftNeeded) turned = true;
+        }
+      }
     }
-    _width0 ??= _widthNow;
-    _ratio0 ??= _ratioNow;
-    if (!moved && _ratio0 != null) {
-      final grew = _widthNow / _width0! - 1;
-      final shifted = (_ratioNow - _ratio0!).abs();
-      if (grew >= growNeeded && shifted >= parallaxNeeded) moved = true;
-      // Moving away resets the baseline, so the next approach counts.
-      if (grew < -0.05) {
-        _width0 = _widthNow;
-        _ratio0 = _ratioNow;
+    final left = face.leftEyeOpenProbability;
+    final right = face.rightEyeOpenProbability;
+    if (!blinked && (left != null || right != null)) {
+      final open = min(left ?? 1, right ?? 1);
+      if (open <= closedBelow) {
+        _eyesClosed = true;
+      } else if (_eyesClosed && open >= openAbove) {
+        blinked = true;
       }
     }
     if (flashing) {
@@ -442,8 +501,10 @@ class FaceRealness {
   double get lumaNow => _lumaNow;
 
   void reset() {
-    _width0 = _ratio0 = null;
-    moved = false;
+    _yaw0 = _offset0 = null;
+    turned = false;
+    _eyesClosed = false;
+    blinked = false;
     _lumaBefore = null;
     flashing = false;
     lit = null;
@@ -493,7 +554,7 @@ class FaceAutoCapture {
       armed &&
       camera.signal == FaceSignal.detected &&
       camera.challengeDone &&
-      (!checkLiveness || camera.liveness.moved) &&
+      (!checkLiveness || camera.liveness.challengesDone) &&
       allowed();
 
   /// Call on every change to the camera or to [allowed]'s answer.
@@ -545,7 +606,7 @@ class FaceAutoCapture {
         onCapture();
       } else if (camera.liveness.lit == false) {
         spend();
-        camera._giveUp();
+        camera.giveUpNow();
       }
     });
   }
@@ -556,6 +617,13 @@ class FaceAutoCapture {
     _spent = true;
     _hold?.cancel();
     _hold = null;
+  }
+
+  /// Try Again: the next capture may be automatic without the face leaving.
+  void rearm() {
+    _spent = false;
+    _away?.cancel();
+    _away = null;
   }
 
   /// Whether the last flash found no real face: the line says so.

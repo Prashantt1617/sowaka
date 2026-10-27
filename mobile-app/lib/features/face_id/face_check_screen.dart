@@ -203,6 +203,7 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
     setState(() {
       _busy = true;
       _problem = null;
+      _dismissed = false;
     });
     try {
       final photo = await _camera.capture();
@@ -215,9 +216,10 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
       }
       final result = await widget.api.verifyFace(
         jpeg: photo,
-        // No live prompt is asked any more: the server logs that honestly.
-        challenge: 'none',
-        devicePassed: false,
+        // What the phone asked for and saw, for the server's log: the turn
+        // and the blink, and whether the flash lit the face too.
+        challenge: _camera.liveness.challengesDone ? 'turn+blink' : 'none',
+        devicePassed: _camera.liveness.passed,
       );
       await _judge(result);
     } on ManagerApiException catch (error) {
@@ -238,6 +240,21 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
   /// Matched: the tick is on the camera until [_onTimer] hands the token on.
   bool _matched = false;
   Timer? _onTimer;
+
+  /// Try Again was tapped on a failed check: the camera looks again, and
+  /// the reason is off the screen until the next answer.
+  bool _dismissed = false;
+
+  /// Try Again: never a selfie straight away — that would let a photo skip
+  /// the phone's checks — but another look, with the prompts asked again.
+  void _lookAgain() {
+    if (_busy || !mounted) return;
+    setState(() => _dismissed = true);
+    _camera.waitAgain();
+    _auto.rearm();
+    unawaited(_camera.resume());
+    _auto.check();
+  }
 
   Future<void> _judge(FaceCheckResult result) async {
     if (!mounted) return;
@@ -333,7 +350,7 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
     FaceCaptureButton? action;
     String? caption;
     Widget? below;
-    final failed = result != null || _problem != null;
+    final failed = (result != null || _problem != null) && !_dismissed;
     if (cameraProblem != null) {
       state = FaceCaptureState.failed;
       line = cameraProblem;
@@ -352,28 +369,25 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
         label: 'Try Again',
         busy: _busy,
         enabled: detected || signal == FaceSignal.unavailable,
-        onTap: _capture,
+        onTap: signal == FaceSignal.unavailable ? _capture : _lookAgain,
       );
       caption = result != null && result.attemptsLeft > 0
           ? '${result.attemptsLeft} out of 3 ${result.attemptsLeft == 1 ? 'try' : 'tries'} left'
           : result?.message ?? _problem;
     } else if (_camera.waived) {
-      // The phone could not read a face in time (4266:26076): the dark
-      // camera, Face not detected, and Try Again takes the selfie anyway,
-      // for the server to judge.
+      // The phone could not read a face in time, or it never turned and
+      // blinked (4266:26076): the dark camera, Face not detected, and Try
+      // Again looks again.
       state = FaceCaptureState.failed;
       line = 'Face not detected';
       action = FaceCaptureButton(
         label: 'Try Again',
         busy: _busy,
-        onTap: () {
-          _camera.waitAgain();
-          _capture();
-        },
+        onTap: _lookAgain,
       );
       caption = result != null && result.attemptsLeft > 0
           ? '${result.attemptsLeft} out of 3 ${result.attemptsLeft == 1 ? 'try' : 'tries'} left'
-          : 'Keep your face inside the oval, facing the light.';
+          : 'Keep your face inside the oval, then turn your head and blink when asked.';
     } else if (signal == FaceSignal.unavailable) {
       // This phone cannot find faces at all: the button takes the selfie.
       state = FaceCaptureState.looking;
@@ -385,8 +399,8 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
       );
     } else {
       // Looking, or found: the line says which, and the selfie takes itself
-      // once the phone's own checks are done — a little movement, then the
-      // flash.
+      // once the phone's own checks are done — the turn, the blink, then
+      // the flash.
       state = FaceCaptureState.looking;
       line = detected
           ? (FaceAutoCapture.checkLiveness ? _camera.liveness.ask : null) ??

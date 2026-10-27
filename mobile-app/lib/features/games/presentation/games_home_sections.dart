@@ -474,6 +474,10 @@ class _LiveTitle extends StatelessWidget {
   }
 }
 
+/// Games played in a room with colleagues (Scribble, Tile Up): the card says
+/// so, as the web Games page does, instead of calling them a solo challenge.
+const _groupGames = {'scribble', 'tile-up'};
+
 /// Up to two faces, then "+N", as the waiting players show (node 3755:28558):
 /// 24pt faces in a 1.5pt ring, each over the last by 8pt.
 class _FacePile extends StatelessWidget {
@@ -1204,7 +1208,13 @@ class _GameCardLarge extends StatelessWidget {
                       padding: const EdgeInsets.only(left: 0.33, top: 0.36),
                       child: Align(
                         alignment: Alignment.topLeft,
-                        child: game.isWeb
+                        child: _groupGames.contains(game.key)
+                            ? const _TypeTag(
+                                label: 'GROUP GAME',
+                                icon: 'tag_team.svg',
+                                color: GamesStyle.blue,
+                              )
+                            : game.isWeb
                             ? const _TypeTag(
                                 label: 'SOLO CHALLENGE',
                                 icon: 'tag_solo.svg',

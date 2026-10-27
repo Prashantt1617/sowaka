@@ -150,6 +150,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     setState(() {
       _busy = true;
       _problem = null;
+      _dismissed = false;
     });
     try {
       final photo = await _camera.capture();
@@ -259,6 +260,21 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     });
   }
 
+  /// Try Again was tapped on a failed setup: the camera looks again, and
+  /// the reason is off the screen until the next answer.
+  bool _dismissed = false;
+
+  /// Try Again: never a selfie straight away — that would let a photo skip
+  /// the phone's checks — but another look, with the prompts asked again.
+  void _lookAgain() {
+    if (_busy || !mounted) return;
+    setState(() => _dismissed = true);
+    _camera.waitAgain();
+    _auto.rearm();
+    unawaited(_camera.resume());
+    _auto.check();
+  }
+
   Future<void> _sendFallback() async {
     if (_sendingFallback) return;
     setState(() => _sendingFallback = true);
@@ -351,7 +367,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
             ? Geolocator.openAppSettings
             : _camera.start,
       );
-    } else if (_problem != null) {
+    } else if (_problem != null && !_dismissed) {
       // A failed setup (4266:26076): the reason, Try again, the tries left.
       state = FaceCaptureState.failed;
       line = _problemTitle ?? 'Try again';
@@ -359,28 +375,25 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
         label: 'Try Again',
         busy: _busy,
         enabled: detected || signal == FaceSignal.unavailable,
-        onTap: _enrol,
+        onTap: signal == FaceSignal.unavailable ? _enrol : _lookAgain,
       );
       caption = tries != null && tries > 0
           ? '$tries out of 3 ${tries == 1 ? 'try' : 'tries'} left'
           : _problem;
     } else if (_camera.waived) {
-      // The phone could not read a face in time (4266:26076): the dark
-      // camera, Face not detected, and Try Again takes the selfie anyway,
-      // for the server to judge.
+      // The phone could not read a face in time, or it never turned and
+      // blinked (4266:26076): the dark camera, Face not detected, and Try
+      // Again looks again.
       state = FaceCaptureState.failed;
       line = 'Face not detected';
       action = FaceCaptureButton(
         label: 'Try Again',
         busy: _busy,
-        onTap: () {
-          _camera.waitAgain();
-          _enrol();
-        },
+        onTap: _lookAgain,
       );
       caption = tries != null && tries > 0
           ? '$tries out of 3 ${tries == 1 ? 'try' : 'tries'} left'
-          : 'Keep your face inside the oval, facing the light.';
+          : 'Keep your face inside the oval, then turn your head and blink when asked.';
     } else if (signal == FaceSignal.unavailable) {
       // This phone cannot find faces at all: the button takes the selfie.
       state = FaceCaptureState.looking;
@@ -392,8 +405,8 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       );
     } else {
       // Looking, or found: the line says which, and the selfie takes itself
-      // once the phone's own checks are done — a little movement, then the
-      // flash.
+      // once the phone's own checks are done — the turn, the blink, then
+      // the flash.
       state = FaceCaptureState.looking;
       line = detected
           ? (FaceAutoCapture.checkLiveness ? _camera.liveness.ask : null) ??

@@ -6,6 +6,9 @@
  * Invites look colleagues up in the database; the live test covers them.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import blocked from '../content/scribble-blocked.json';
 import { N, MID, evaluate, hasWord, words, rackValue, newBag, BAG } from '../services/tileup-rules';
 import {
   TILEUP,
@@ -68,10 +71,32 @@ function die(seed = 7) {
 
 async function main() {
   // ---------------------------------------------------------------- rules
-  await check('dictionary: the page\'s 111,199 words, chai and selfie in, xyzzy out', () => {
-    assert.equal(words().size, 111_199);
+  await check('dictionary: the page\'s 283,564 words, chai, selfie, qi and za in, xyzzy and rude words out', () => {
+    assert.equal(words().size, 283_564);
     assert.ok(hasWord('chai') && hasWord('selfie') && hasWord('cat'));
+    assert.ok(hasWord('qi') && hasWord('za') && hasWord('aa') && hasWord('xu') && hasWord('quixotry'));
+    for (const word of blocked as string[]) assert.ok(!hasWord(word), `${word} is out`);
     assert.ok(!hasWord('xyzzy'));
+  });
+  await check('dictionary: the page carries the same list as the server', () => {
+    const html = readFileSync(resolve(__dirname, '../../game-pages/tile-up.html'), 'utf8');
+    const start = html.indexOf('const FC="') + 10;
+    const packed = html.slice(start, html.indexOf('";', start));
+    const page = new Set<string>();
+    let prev = '';
+    let i = 0;
+    while (i < packed.length) {
+      const k = packed.charCodeAt(i) - 48;
+      i++;
+      let j = i;
+      while (j < packed.length) { const c = packed.charCodeAt(j); if (c >= 48 && c <= 57) break; j++; }
+      const w = prev.slice(0, k) + packed.slice(i, j);
+      page.add(w);
+      prev = w;
+      i = j;
+    }
+    assert.equal(page.size, words().size);
+    for (const w of words()) assert.ok(page.has(w), `${w} missing from the page`);
   });
   await check('bag: 100 tiles, 2 blanks; rack value skips blanks', () => {
     assert.equal(newBag().length, 100);
