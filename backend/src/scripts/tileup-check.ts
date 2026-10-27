@@ -68,9 +68,11 @@ function die(seed = 7) {
 
 async function main() {
   // ---------------------------------------------------------------- rules
-  await check('dictionary: the page\'s 111,199 words, chai and selfie in, xyzzy out', () => {
-    assert.equal(words().size, 111_199);
+  await check('dictionary: the page\'s 283,564 words, chai, selfie, qi and za in, xyzzy and rude words out', () => {
+    assert.equal(words().size, 283_564);
     assert.ok(hasWord('chai') && hasWord('selfie') && hasWord('cat'));
+    assert.ok(hasWord('qi') && hasWord('za') && hasWord('aa') && hasWord('xu') && hasWord('quixotry'));
+    assert.ok(!hasWord('fuck') && !hasWord('chutiya'));
     assert.ok(!hasWord('xyzzy'));
   });
   await check('bag: 100 tiles, 2 blanks; rack value skips blanks', () => {

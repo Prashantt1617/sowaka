@@ -133,7 +133,8 @@ export function evaluate(board: string[], tiles: PlacedTile[], has?: (word: stri
 }
 
 /**
- * The dictionary: the same 111,199 words the page carries (packed so each word
+ * The dictionary: the same 283,564 words the page carries (CSW21, NWL2020, ENABLE
+ * and the Hunspell list it started with, less a short rude-word list; packed so each word
  * spells only what differs from the one before it: a digit for the letters it
  * shares, then the rest), unpacked once on first use.
  */

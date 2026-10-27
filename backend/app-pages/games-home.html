@@ -1101,7 +1101,7 @@ svg{overflow:visible}
   }
   /** ALL GAMES, an app-store style list: the games you have played first (with your rank), the team game, then the rest. */
   /** What kind of game a row is: played together, or on your own (with challenges for a web game). */
-  var GROUP_GAMES = { scribble: true };
+  var GROUP_GAMES = { scribble: true, 'tile-up': true };
   function kindLabel(g) { return GROUP_GAMES[g.key] ? 'Group game' : g.kind === 'web' ? 'Solo challenge' : 'Solo game'; }
 
   function gameList(home, played) {
