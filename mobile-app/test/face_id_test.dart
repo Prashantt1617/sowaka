@@ -1,7 +1,11 @@
 // Face ID: who is asked to set it up, the selfie screens (Figma 4194:21786)
 // in each state the camera can be in, and a failed check's way out to the
 // manager, against a fake server. A layout that overflows fails the test.
+//
+// `flutter test --update-goldens --dart-define=SCREENSHOTS=<dir> test/face_id_test.dart`
+// also writes the setup and check screens to <dir> as PNGs.
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,13 +15,14 @@ import 'package:http/testing.dart';
 import 'package:mobile_app/features/auth/data/auth_models.dart';
 import 'package:mobile_app/features/face_id/face_camera.dart';
 import 'package:mobile_app/features/face_id/face_check_screen.dart';
+import 'package:mobile_app/features/face_id/face_setup_screen.dart';
 import 'package:mobile_app/features/face_id/face_id_models.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
 import 'package:mobile_app/features/attendance/presentation/punch_screen.dart';
 
 /// A front camera that needs no device: the test says what it sees.
 class _FakeCamera extends FaceCamera {
-  _FakeCamera() : super();
+  _FakeCamera({super.random});
 
   void sees(FaceSignal next, {bool prompted = false}) {
     signal = next;
@@ -86,6 +91,8 @@ http.Client _server({required Map<String, dynamic> verify}) => MockClient((reque
 
 late _FakeCamera _camera;
 
+const _screenshots = String.fromEnvironment('SCREENSHOTS');
+
 Future<FaceCheckOutcome?> Function() _pumpCheck(WidgetTester tester, http.Client client) {
   FaceCheckOutcome? outcome;
   var popped = false;
@@ -137,9 +144,10 @@ void main() {
 
   testWidgets('the selfie screen in each state the camera can be in', (tester) async {
     await _pumpCheck(tester, _server(verify: {'passed': true, 'token': 'tok'}))();
-    // Before the first frame (4010:63873): no status row.
+    // Before the first frame (4010:63873): still detecting, never "Face detected".
     expect(find.text('Take a selfie'), findsOneWidget);
     expect(find.text('Front camera'), findsOneWidget);
+    expect(find.text('Detecting your face…'), findsOneWidget);
     expect(find.text('Face detected'), findsNothing);
     expect(find.text('Face not detected'), findsNothing);
 
@@ -149,18 +157,108 @@ void main() {
     expect(find.text('Face not detected'), findsOneWidget);
     expect(find.text('Capture unlocks when a face is detected.'), findsOneWidget);
 
-    // A face, but the phone's prompt not done yet.
+    // A face, but the phone's prompt not done yet: still detecting, with
+    // the prompt as the instruction.
     _camera.sees(FaceSignal.detected);
     await tester.pump();
-    expect(find.text('Face detected'), findsOneWidget);
+    expect(find.text('Face detected'), findsNothing);
+    expect(find.text('Detecting your face…'), findsOneWidget);
     expect(find.text(_camera.challenge.prompt), findsOneWidget);
+    expect(find.text('Capture unlocks once you have done that.'), findsOneWidget);
 
-    // Face detected (4005:51535): ready.
+    // Face detected (4005:51535): a face and the prompt done.
     _camera.sees(FaceSignal.detected, prompted: true);
     await tester.pump();
+    expect(find.text('Face detected'), findsOneWidget);
+    expect(find.text('Detecting your face…'), findsNothing);
+    expect(find.text(_camera.challenge.prompt), findsNothing);
     expect(find.text("You're all set. Look at the camera and\nhold still while you take your selfie."), findsOneWidget);
     expect(find.text('Your selfie will confirm your punch-in.'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('setup says "Face detected" only once the face is in and the prompt done', (tester) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = ManagerApiService(
+      session: AuthSession(token: 't', user: _user(atPunch: true)),
+      baseUrl: 'https://example.test',
+      client: _server(verify: const {}),
+    );
+    await tester.pumpWidget(MaterialApp(home: FaceSetupScreen(api: api)));
+    await tester.pumpAndSettle();
+    expect(find.text('Set up Face ID'), findsOneWidget);
+    expect(find.text('Detecting your face…'), findsOneWidget);
+    expect(find.text('Face detected'), findsNothing);
+
+    _camera.sees(FaceSignal.detected);
+    await tester.pump();
+    expect(find.text('Face detected'), findsNothing);
+    expect(find.text('Detecting your face…'), findsOneWidget);
+    expect(find.text(_camera.challenge.prompt), findsOneWidget);
+
+    _camera.sees(FaceSignal.notDetected);
+    await tester.pump();
+    expect(find.text('Face not detected'), findsOneWidget);
+    expect(find.text('Detecting your face…'), findsNothing);
+
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump();
+    expect(find.text('Face detected'), findsOneWidget);
+    expect(find.text('Detecting your face…'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('screenshots: setup and check, starting, detecting with the prompt, detected', (tester) async {
+    if (_screenshots.isEmpty) return;
+    for (final (family, file) in [
+      ('Sora', 'assets/fonts/sora/Sora-Variable.ttf'),
+      ('Plus Jakarta Sans', 'assets/fonts/plus_jakarta_sans/PlusJakartaSans-Variable.ttf'),
+    ]) {
+      await tester.runAsync(() => (FontLoader(family)..addFont(rootBundle.load(file))).load());
+    }
+    tester.view.physicalSize = const Size(393 * 2, 852 * 2);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    // The blink prompt, every run.
+    FaceCamera.create = () => _camera = _FakeCamera(random: Random(1));
+    final api = ManagerApiService(
+      session: AuthSession(token: 't', user: _user(enrolled: true, atPunch: true)),
+      baseUrl: 'https://example.test',
+      client: _server(verify: const {}),
+    );
+
+    Future<void> settle() async {
+      await tester.pump();
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    Future<void> shoot(Type screen, String name) =>
+        expectLater(find.byType(screen), matchesGoldenFile(Uri.file('$_screenshots/$name.png')));
+
+    for (final (screen, prefix) in [(FaceSetupScreen, 'setup'), (FaceCheckScreen, 'check')]) {
+      await tester.pumpWidget(MaterialApp(
+        key: ValueKey(prefix),
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(fontFamily: 'Plus Jakarta Sans'),
+        home: screen == FaceSetupScreen ? FaceSetupScreen(api: api) : FaceCheckScreen(api: api),
+      ));
+      await settle();
+      await shoot(screen, '$prefix-1-starting');
+      if (screen == FaceSetupScreen) {
+        await tester.tap(find.byType(Checkbox));
+      }
+      _camera.sees(FaceSignal.detected);
+      await settle();
+      expect(find.text('Face detected'), findsNothing);
+      await shoot(screen, '$prefix-2-detecting-prompt');
+      _camera.sees(FaceSignal.detected, prompted: true);
+      await settle();
+      expect(find.text('Face detected'), findsOneWidget);
+      await shoot(screen, '$prefix-3-detected');
+    }
   });
 
   testWidgets('a punch-out has the same selfie with its own words, and its own fallback', (tester) async {

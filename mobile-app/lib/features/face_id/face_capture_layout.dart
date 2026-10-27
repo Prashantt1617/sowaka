@@ -218,9 +218,20 @@ class _CameraCard extends StatelessWidget {
 /// Face detection status (4005:51569): the icon and heading on one line,
 /// the guidance under it, 8 apart.
 class FaceStatusRow extends StatelessWidget {
+  /// Only once a face is in the oval and the phone's prompt is done.
   const FaceStatusRow.detected({super.key, this.title = 'Face detected', required this.body})
     : _icon = 'circle_check.svg',
       _color = _brand;
+
+  /// Still looking: the camera opening, or a face waiting on the prompt,
+  /// which [body] then carries. Neutral, in the design's own type.
+  const FaceStatusRow.detecting({
+    super.key,
+    this.title = 'Detecting your face…',
+    this.body = 'Hold your phone at eye level and\nlook straight at the camera.',
+  })
+    : _icon = 'scan_face_status.svg',
+      _color = _ink;
 
   const FaceStatusRow.problem({super.key, required this.title, required this.body})
     : _icon = 'circle_alert.svg',
