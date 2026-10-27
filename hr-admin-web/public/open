@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Open in Sowaka Connect</title>
+<!-- Where a notification email's link lands when the phone did not hand it to
+     the app: the app is not installed, or the link was opened on a computer.
+     The https link itself opens the app on a phone that has it (universal
+     links / app links); this page only offers the app's own scheme and the
+     stores. Served from the dashboard bucket at /open, next to /.well-known;
+     the deploy uploads it with its content type set, since it has no extension. -->
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #F7F7F9; color: #1F1F24; font-family: "Plus Jakarta Sans", -apple-system, "Segoe UI", Roboto, sans-serif; padding: 24px 16px; }
+  .card { width: 100%; max-width: 420px; background: #fff; border: 1px solid #E8E8F0; border-radius: 24px; padding: 32px 24px; text-align: center; }
+  .mark { width: 64px; height: 64px; border-radius: 18px; background: #0571A6; color: #fff; font-weight: 800; font-size: 30px; line-height: 64px; margin: 0 auto 20px; }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  p { margin: 0 0 20px; color: #55555F; line-height: 1.5; }
+  .btn { display: block; width: 100%; padding: 14px 18px; border-radius: 14px; text-decoration: none; font-weight: 700; margin-top: 10px; }
+  .open { background: #0571A6; color: #fff; }
+  .store { background: #F1F3F6; color: #1F1F24; }
+  .hint { font-size: 13px; color: #8A8A94; margin: 18px 0 0; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="mark">S</div>
+    <h1>Open in Sowaka Connect</h1>
+    <p id="what">This link opens in the Sowaka Connect app.</p>
+    <a class="btn open" id="open" href="#">Open the app</a>
+    <a class="btn store" id="ios" href="https://apps.apple.com/app/id6791144997">Get it on the App Store</a>
+    <a class="btn store" id="android" href="https://play.google.com/store/apps/details?id=com.sowaka.connect">Get it on Google Play</a>
+    <p class="hint" id="hint">Already have the app? Tap Open the app, or find this in the app's notifications.</p>
+  </main>
+<script>
+(function () {
+  var q = location.search || '';
+  var params = new URLSearchParams(q);
+  var what = document.getElementById('what');
+  var type = params.get('type'), view = params.get('view'), dest = params.get('destination');
+  var names = { leave: 'leave', overtime: 'overtime', attendance: 'attendance' };
+  if (view === 'inbox' && type) what.textContent = 'A ' + (names[type] || type) + ' request is waiting for your review in the Sowaka Connect app.';
+  else if (type === 'attendance') what.textContent = 'Your attendance is in the Sowaka Connect app.';
+  else if (type) what.textContent = 'Your ' + (names[type] || type) + ' request is in the Sowaka Connect app.';
+  else if (dest === 'grow_feedback') what.textContent = 'Your team’s feedback is in the Sowaka Connect app.';
+  var ua = navigator.userAgent || '';
+  var android = /Android/i.test(ua), ios = /iPhone|iPad|iPod/i.test(ua);
+  var open = document.getElementById('open');
+  // The app's own scheme: opens the app where it is installed, does nothing where not.
+  open.href = 'sowaka://open' + q;
+  if (android) {
+    open.href = 'intent://open' + q + '#Intent;scheme=sowaka;package=com.sowaka.connect;S.browser_fallback_url=' + encodeURIComponent('https://play.google.com/store/apps/details?id=com.sowaka.connect') + ';end';
+    document.getElementById('ios').hidden = true;
+  } else if (ios) {
+    document.getElementById('android').hidden = true;
+  } else {
+    open.hidden = true;
+    document.getElementById('hint').textContent = 'Open this link on your phone, where the Sowaka Connect app is.';
+  }
+})();
+</script>
+</body>
+</html>

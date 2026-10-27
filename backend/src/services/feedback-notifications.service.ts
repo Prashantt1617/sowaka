@@ -15,7 +15,7 @@
  */
 import { feedbackRecords, notifications, users } from '../config/db';
 import { User } from '../models/user.model';
-import { env } from '../config/env';
+import { APP_LINK, withAppLink } from './app-link';
 import { logger } from '../utils/logger';
 import { notifyUsers } from './notification.service';
 import { sendNotificationEmail } from './email.service';
@@ -47,7 +47,7 @@ const SIGNIFICANCE =
   + 'Timely and thoughtful feedback is one of the qualities of a strong manager and plays an '
   + 'important role in both your team’s growth and your own development as a leader.';
 
-const cta = (label: string) => `${label}:\n${env.appWebUrl}`;
+const cta = (label: string) => `${label}:\n${APP_LINK}`;
 
 // ------------------------------------------------------------------- copy
 // Composed by pure functions so the wording can be rendered and checked
@@ -133,9 +133,9 @@ async function hrEmails(org: string): Promise<string[]> {
 }
 
 /** Email to the manager alone: nobody else is copied (Rules sheet, "Email copy"). */
-async function mailManager(manager: User, mail: Mail, _copyOthers: boolean): Promise<void> {
+async function mailManager(manager: User, mail: Mail, period: string): Promise<void> {
   const first = manager.name?.trim().split(/\s+/).at(0) || 'there';
-  await sendNotificationEmail(manager.email, mail.subject, mail.body.replaceAll('{firstName}', first));
+  await sendNotificationEmail(manager.email, mail.subject, withAppLink(mail.body.replaceAll('{firstName}', first), { destination: 'grow_feedback', period }));
 }
 
 /** Once per manager per cycle: the daily run re-derives everything, so it checks what was sent. */
@@ -188,7 +188,7 @@ export async function sendCycleOpenNotices(org: string, now = new Date()): Promi
     });
     await mailManager(manager, cycleOpenEmail({
       cycle: cycleName(period), closes: longDate(last), done: done.length, total: reports.length, pending: pending.map((p) => p.name),
-    }), false);
+    }), period);
     sent += 1;
   }
   logger.info('Feedback cycle open notices sent', { org, period, managers: sent });

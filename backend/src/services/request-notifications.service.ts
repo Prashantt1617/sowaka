@@ -17,7 +17,7 @@
  */
 import { attendanceRegularizations, leaves, overtimeRequests, users } from '../config/db';
 import { User } from '../models/user.model';
-import { env } from '../config/env';
+import { APP_LINK } from './app-link';
 import { logger } from '../utils/logger';
 import { notifications } from '../config/db';
 import { notifyUsers } from './notification.service';
@@ -50,7 +50,7 @@ export function hoursWorked(minutes: number): string {
 
 export const leaveLabel = (type: string) => leaveTypeLabel(type);
 
-const link = (label: string) => `${label}:\n${env.appWebUrl}`;
+const link = (label: string) => `${label}:\n${APP_LINK}`;
 const firstName = (name?: string) => (name ?? '').trim().split(/\s+/)[0] || 'there';
 /** The decider's reason, quoted, or nothing. */
 const quoted = (who: string, reason: string) => (reason.trim() ? `${who}: "${reason.trim()}"` : '');

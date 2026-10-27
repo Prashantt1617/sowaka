@@ -86,8 +86,9 @@ export const env = {
   /** True for an origin the dashboard may call from; see [isDashboardOrigin]. */
   isDashboardOrigin,
   mobileAppApiBaseUrl: process.env.MOBILE_APP_API_BASE_URL ?? 'http://10.0.2.2:4000',
-  // Where notification emails point their "view this" links.
-  appWebUrl: process.env.APP_WEB_URL ?? 'https://dikcsyvq9i7v1.cloudfront.net',
+  // The app's link domain: notification emails point their "view this" links at `${appWebUrl}/open?...`,
+  // which opens the app where it is installed (see services/app-link.ts) and the dashboard's /open page where not.
+  appWebUrl: process.env.APP_WEB_URL ?? 'https://go.getsowaka.com',
   mongoUri: process.env.MONGODB_URI ?? '',
   mongoDbName: process.env.MONGODB_DB ?? 'sowaka',
   /** Most connections to the cluster at once (MONGO_MAX_POOL). The cluster is a ~200 ms round trip away, so each request holds one for a while. */

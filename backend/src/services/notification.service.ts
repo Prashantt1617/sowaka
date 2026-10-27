@@ -4,6 +4,7 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { connectPosts, deviceTokens, getDb, notifications, users } from '../config/db';
 import { env } from '../config/env';
 import { sendNotificationEmail } from './email.service';
+import { withAppLink } from './app-link';
 import { logger } from '../utils/logger';
 import type { AppNotification } from '../models/notification.model';
 
@@ -228,7 +229,7 @@ export async function notifyUsers(userIds: string[], input: NotificationInput) {
       void sendNotificationEmail(
         user.email,
         email.subject,
-        email.body.replaceAll('{firstName}', firstName(user.name)),
+        withAppLink(email.body.replaceAll('{firstName}', firstName(user.name)), record.data as Record<string, unknown> | undefined),
         email.cc,
       );
     }
