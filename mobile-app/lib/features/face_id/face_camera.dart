@@ -35,12 +35,12 @@ class FaceCamera extends ChangeNotifier {
   /// needs no device.
   static FaceCamera Function() create = FaceCamera.new;
 
-  /// How long the phone holds capture for its own face detection and prompt.
-  /// Past it, capture unlocks and the server's match decides: a phone that
-  /// cannot see a face in dim light, behind glasses or on a slow camera must
-  /// not leave someone unable to punch, and the server's failed tries are
-  /// what open sending the punch to the manager.
-  static Duration patience = const Duration(seconds: 15);
+  /// How long the phone keeps looking for a face it is happy with, from
+  /// the camera opening and again from each failed try. Past it the screen
+  /// says "Face not detected" and offers Try Again, which takes the selfie
+  /// for the server to judge: a phone that cannot see a face in dim light,
+  /// behind glasses or on a slow camera must not leave someone stuck.
+  static Duration patience = const Duration(seconds: 3);
 
   CameraController? _camera;
   CameraDescription? _description;
@@ -66,10 +66,25 @@ class FaceCamera extends ChangeNotifier {
   /// face is in the oval and before the selfie; see [FaceRealness].
   final liveness = FaceRealness();
 
-  /// Detection gave up waiting (see [patience]); the screens read it as
-  /// [FaceSignal.unavailable].
+  /// Detection gave up waiting (see [patience]): the screens show "Face not
+  /// detected" with Try Again, and a tap takes the selfie.
   bool waived = false;
   Timer? _patienceTimer;
+
+  /// The next wait for a face, from now: after a failed try, or a tap.
+  void waitAgain() {
+    waived = false;
+    _patienceTimer?.cancel();
+    _patienceTimer = null;
+    if (_disposed) return;
+    _patienceTimer = Timer(patience, _giveUp);
+  }
+
+  void _giveUp() {
+    if (_disposed) return;
+    waived = true;
+    notifyListeners();
+  }
 
   CameraController? get controller => _camera;
   bool get ready => _camera?.value.isInitialized == true;
@@ -140,19 +155,14 @@ class FaceCamera extends ChangeNotifier {
       );
       if (!camera.value.isStreamingImages)
         await camera.startImageStream(_onFrame);
-      _patienceTimer ??= Timer(patience, () {
-        if (_disposed || (signal == FaceSignal.detected && challengeDone))
-          return;
-        waived = true;
-        _set(FaceSignal.unavailable);
-      });
+      _patienceTimer ??= Timer(patience, _giveUp);
     } catch (_) {
       _set(FaceSignal.unavailable);
     }
   }
 
   Future<void> _onFrame(CameraImage image) async {
-    if (_processing || _disposed || waived) return;
+    if (_processing || _disposed) return;
     _processing = true;
     try {
       final input = _inputImage(image);
@@ -186,8 +196,7 @@ class FaceCamera extends ChangeNotifier {
   }
 
   void _set(FaceSignal next) {
-    // A frame still being read when detection gave up does not take it back.
-    if (_disposed || (waived && next != FaceSignal.unavailable)) return;
+    if (_disposed) return;
     signal = next;
     notifyListeners();
   }
@@ -284,6 +293,7 @@ class FaceCamera extends ChangeNotifier {
   Future<void> resume() async {
     _lastFace = null;
     liveness.reset();
+    waitAgain();
     _set(FaceSignal.starting);
     await _startDetecting();
   }
@@ -535,6 +545,7 @@ class FaceAutoCapture {
         onCapture();
       } else if (camera.liveness.lit == false) {
         spend();
+        camera._giveUp();
       }
     });
   }

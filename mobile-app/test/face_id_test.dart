@@ -973,83 +973,111 @@ void main() {
     expect(_count('/face/verify'), 1);
   });
 
-  for (final waived in [true, false]) {
-    final why = waived
-        ? 'detection gave up waiting'
-        : 'the phone cannot detect faces';
-    testWidgets(
-      '$why: the check has its button, which takes the selfie, and nothing is automatic',
-      (tester) async {
-        final opened = await _openCheck(
-          tester,
-          _server(verify: {'passed': true, 'token': 'tok'}),
-        );
-        expect(_cameraButton, findsNothing);
-        _camera.waived = waived;
-        _camera.sees(FaceSignal.unavailable, prompted: true);
-        await tester.pump(const Duration(seconds: 2));
-        expect(_count('/face/verify'), 0);
-        expect(find.text(_holdLine), findsNothing);
-        expect(find.text(_tapLine), findsOneWidget);
-        expect(_cameraButton, findsOneWidget);
-        expect(find.text('Take selfie & punch in'), findsOneWidget);
-        expect(_live(tester, _cameraButton), isTrue);
-        _expectNoResult();
-        await tester.tap(find.text('Take selfie & punch in'));
-        await tester.pumpAndSettle();
-        expect(_count('/face/verify'), 1);
-        expect(_field(_verifyBody!, 'challenge'), 'none');
-        expect(_field(_verifyBody!, 'devicePassed'), 'false');
-        expect(find.text(_detectedLine), findsOneWidget);
-        expect(_tick, findsOneWidget);
-        await tester.pump(FaceCheckScreen.matchedPause);
-        await tester.pumpAndSettle();
-        expect(opened.outcome?.token, 'tok');
-      },
-    );
+  testWidgets(
+    'the phone cannot detect faces: the check has its button, which takes the selfie, and nothing is automatic',
+    (tester) async {
+      final opened = await _openCheck(
+        tester,
+        _server(verify: {'passed': true, 'token': 'tok'}),
+      );
+      expect(_cameraButton, findsNothing);
+      _camera.sees(FaceSignal.unavailable, prompted: true);
+      await tester.pump(const Duration(seconds: 2));
+      expect(_count('/face/verify'), 0);
+      expect(find.text(_holdLine), findsNothing);
+      expect(find.text(_tapLine), findsOneWidget);
+      expect(_cameraButton, findsOneWidget);
+      expect(find.text('Take selfie & punch in'), findsOneWidget);
+      expect(_live(tester, _cameraButton), isTrue);
+      _expectNoResult();
+      await tester.tap(find.text('Take selfie & punch in'));
+      await tester.pumpAndSettle();
+      expect(_count('/face/verify'), 1);
+      expect(_field(_verifyBody!, 'challenge'), 'none');
+      expect(_field(_verifyBody!, 'devicePassed'), 'false');
+      expect(find.text(_detectedLine), findsOneWidget);
+      expect(_tick, findsOneWidget);
+      await tester.pump(FaceCheckScreen.matchedPause);
+      await tester.pumpAndSettle();
+      expect(opened.outcome?.token, 'tok');
+    },
+  );
 
-    testWidgets(
-      '$why: setup has its button on the camera once they agree, and it sets up',
-      (tester) async {
-        await pumpPunch(
-          tester,
-          type: 'in',
-          verify: {'passed': true, 'token': 'verify-tok'},
-        );
-        _camera.waived = waived;
-        _camera.sees(FaceSignal.unavailable, prompted: true);
-        await tester.pump(const Duration(seconds: 2));
-        // The intro still: its button is the consent, nothing is sent by it.
-        expect(find.byType(FaceSetupIntro), findsOneWidget);
-        expect(_cameraButton, findsNothing);
-        expect(_count('/face/enrol'), 0);
-        await _startSetup(tester);
-        expect(_count('/face/enrol'), 0);
-        expect(find.text(_tapLine), findsOneWidget);
-        expect(find.text(_holdLine), findsNothing);
-        expect(_cameraButton, findsOneWidget);
-        expect(find.text('Set up Face ID'), findsOneWidget);
-        expect(_live(tester, _cameraButton), isTrue);
-        await tester.pump(const Duration(seconds: 2));
-        expect(
-          _count('/face/enrol'),
-          0,
-          reason: 'nothing is automatic without detection',
-        );
-        _expectNoResult();
-        await tester.tap(_cameraButton);
-        await tester.pumpAndSettle();
-        expect(_count('/face/enrol'), 1);
-        expect(find.text(_setUpLine), findsOneWidget);
-        expect(_tick, findsOneWidget);
-        expect(_cameraButton, findsNothing);
-        // Let the tick move on to the check before the test ends.
-        await tester.pump(FaceSetupScreen.successPause);
-        await tester.pumpAndSettle();
-        expect(find.byType(FaceCheckScreen), findsOneWidget);
-      },
-    );
-  }
+  testWidgets(
+    'the phone cannot detect faces: setup has its button on the camera once they agree, and it sets up',
+    (tester) async {
+      await pumpPunch(
+        tester,
+        type: 'in',
+        verify: {'passed': true, 'token': 'verify-tok'},
+      );
+      _camera.sees(FaceSignal.unavailable, prompted: true);
+      await tester.pump(const Duration(seconds: 2));
+      // The intro still: its button is the consent, nothing is sent by it.
+      expect(find.byType(FaceSetupIntro), findsOneWidget);
+      expect(_cameraButton, findsNothing);
+      expect(_count('/face/enrol'), 0);
+      await _startSetup(tester);
+      expect(_count('/face/enrol'), 0);
+      expect(find.text(_tapLine), findsOneWidget);
+      expect(find.text(_holdLine), findsNothing);
+      expect(_cameraButton, findsOneWidget);
+      expect(find.text('Set up Face ID'), findsOneWidget);
+      expect(_live(tester, _cameraButton), isTrue);
+      await tester.pump(const Duration(seconds: 2));
+      expect(
+        _count('/face/enrol'),
+        0,
+        reason: 'nothing is automatic without detection',
+      );
+      _expectNoResult();
+      await tester.tap(_cameraButton);
+      await tester.pumpAndSettle();
+      expect(_count('/face/enrol'), 1);
+      expect(find.text(_setUpLine), findsOneWidget);
+      expect(_tick, findsOneWidget);
+      expect(_cameraButton, findsNothing);
+      // Let the tick move on to the check before the test ends.
+      await tester.pump(FaceSetupScreen.successPause);
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'no face read in time: Face not detected, the dark camera and Try Again, which takes the selfie',
+    (tester) async {
+      final opened = await _openCheck(
+        tester,
+        _server(verify: {'passed': true, 'token': 'tok'}),
+      );
+      // The phone saw no face it was happy with: after its patience, the
+      // failure screen (4266:26076), though nothing was sent.
+      _camera.sees(FaceSignal.notDetected, prompted: true);
+      await tester.pump();
+      expect(_cameraButton, findsNothing);
+      _camera.waived = true;
+      _camera.notifyListeners();
+      await tester.pump();
+      expect(_count('/face/verify'), 0);
+      expect(find.text('Face not detected'), findsOneWidget);
+      expect(find.text('Try Again'), findsOneWidget);
+      expect(
+        find.text('Keep your face inside the oval, facing the light.'),
+        findsOneWidget,
+      );
+      expect(_live(tester, _cameraButton), isTrue);
+      expect(_tick, findsNothing);
+      expect(find.text(_detectedLine), findsNothing);
+      // Try Again takes the selfie for the server to judge.
+      await tester.tap(find.text('Try Again'));
+      await tester.pumpAndSettle();
+      expect(_count('/face/verify'), 1);
+      expect(find.text(_detectedLine), findsOneWidget);
+      await tester.pump(FaceCheckScreen.matchedPause);
+      await tester.pumpAndSettle();
+      expect(opened.outcome?.token, 'tok');
+    },
+  );
 
   testWidgets(
     'after a failed check Try Again comes back, locked while the face is out, with the tries left',
@@ -1418,32 +1446,33 @@ void main() {
       expect(find.byType(FaceCheckScreen), findsNothing);
     });
 
-    testWidgets('the check: the page goes white for the flash, then the selfie', (
-      tester,
-    ) async {
-      FaceAutoCapture.checkLiveness = true;
-      addTearDown(() => FaceAutoCapture.checkLiveness = false);
-      await pumpScreen(tester, () => FaceCheckScreen(api: api()));
-      await settle(tester);
-      // The face, come a little closer: movement passed, the flash still owed.
-      _camera.liveness.moved = true;
-      _camera.sees(FaceSignal.detected);
-      await tester.pump();
-      expect(find.text('Hold still'), findsOneWidget);
-      await tester.pump(FaceAutoCapture.hold);
-      await tester.pump();
-      expect(find.byKey(const ValueKey('face-flash')), findsOneWidget);
-      expect(_count('/face/verify'), 0);
-      await shoot('check-flash');
-      // Lit up under it: the selfie follows.
-      _camera.liveness.flashOff(_camera.liveness.lumaNow + 20);
-      await tester.pump(FaceAutoCapture.flash);
-      await tester.pump();
-      expect(find.byKey(const ValueKey('face-flash')), findsNothing);
-      await settle(tester);
-      expect(_count('/face/verify'), 1);
-      expect(find.text(_detectedLine), findsOneWidget);
-    });
+    testWidgets(
+      'the check: the page goes white for the flash, then the selfie',
+      (tester) async {
+        FaceAutoCapture.checkLiveness = true;
+        addTearDown(() => FaceAutoCapture.checkLiveness = false);
+        await pumpScreen(tester, () => FaceCheckScreen(api: api()));
+        await settle(tester);
+        // The face, come a little closer: movement passed, the flash still owed.
+        _camera.liveness.moved = true;
+        _camera.sees(FaceSignal.detected);
+        await tester.pump();
+        expect(find.text('Hold still'), findsOneWidget);
+        await tester.pump(FaceAutoCapture.hold);
+        await tester.pump();
+        expect(find.byKey(const ValueKey('face-flash')), findsOneWidget);
+        expect(_count('/face/verify'), 0);
+        await shoot('check-flash');
+        // Lit up under it: the selfie follows.
+        _camera.liveness.flashOff(_camera.liveness.lumaNow + 20);
+        await tester.pump(FaceAutoCapture.flash);
+        await tester.pump();
+        expect(find.byKey(const ValueKey('face-flash')), findsNothing);
+        await settle(tester);
+        expect(_count('/face/verify'), 1);
+        expect(find.text(_detectedLine), findsOneWidget);
+      },
+    );
 
     testWidgets('the check: a failed try, with Try Again and the tries left', (
       tester,
