@@ -15,8 +15,12 @@ class FaceIdStatus {
   factory FaceIdStatus.fromJson(Map<String, dynamic> json) => FaceIdStatus(
     checkAtPunch: json['checkAtPunch'] == true,
     enrolled: json['enrolled'] == true,
-    consent: FaceConsent.fromJson(json['consent'] as Map<String, dynamic>? ?? const {}),
-    liveness: FaceLivenessConfig.fromJson(json['liveness'] as Map<String, dynamic>? ?? const {}),
+    consent: FaceConsent.fromJson(
+      json['consent'] as Map<String, dynamic>? ?? const {},
+    ),
+    liveness: FaceLivenessConfig.fromJson(
+      json['liveness'] as Map<String, dynamic>? ?? const {},
+    ),
     maxAttempts: (json['maxAttempts'] as num?)?.toInt() ?? 3,
     failedAttempts: (json['failedAttempts'] as num?)?.toInt() ?? 0,
     fallbackAvailable: json['fallbackAvailable'] == true,
@@ -49,13 +53,18 @@ class FaceConsent {
 /// How the live-person check runs: Rekognition Face Liveness streamed from
 /// the phone ('aws'), or the app's own blink-or-turn prompt ('device').
 class FaceLivenessConfig {
-  const FaceLivenessConfig({required this.mode, this.region, this.identityPoolId});
+  const FaceLivenessConfig({
+    required this.mode,
+    this.region,
+    this.identityPoolId,
+  });
 
-  factory FaceLivenessConfig.fromJson(Map<String, dynamic> json) => FaceLivenessConfig(
-    mode: json['mode'] as String? ?? 'device',
-    region: json['region'] as String?,
-    identityPoolId: json['identityPoolId'] as String?,
-  );
+  factory FaceLivenessConfig.fromJson(Map<String, dynamic> json) =>
+      FaceLivenessConfig(
+        mode: json['mode'] as String? ?? 'device',
+        region: json['region'] as String?,
+        identityPoolId: json['identityPoolId'] as String?,
+      );
 
   final String mode;
   final String? region;
@@ -76,14 +85,17 @@ class FaceCheckResult {
     this.fallbackAvailable = false,
   });
 
-  factory FaceCheckResult.fromJson(Map<String, dynamic> json) => FaceCheckResult(
-    passed: json['passed'] == true,
-    reason: json['reason'] as String? ?? 'not_a_match',
-    message: json['message'] as String? ?? "This doesn't match the face set up for your account.",
-    token: json['token'] as String?,
-    attemptsLeft: (json['attemptsLeft'] as num?)?.toInt() ?? 0,
-    fallbackAvailable: json['fallbackAvailable'] == true,
-  );
+  factory FaceCheckResult.fromJson(Map<String, dynamic> json) =>
+      FaceCheckResult(
+        passed: json['passed'] == true,
+        reason: json['reason'] as String? ?? 'not_a_match',
+        message:
+            json['message'] as String? ??
+            "This doesn't match the face set up for your account.",
+        token: json['token'] as String?,
+        attemptsLeft: (json['attemptsLeft'] as num?)?.toInt() ?? 0,
+        fallbackAvailable: json['fallbackAvailable'] == true,
+      );
 
   final bool passed;
   final String reason;
@@ -113,13 +125,18 @@ class FaceCheckResult {
 
 /// A Face Liveness session the server opened for the phone to stream into.
 class FaceLivenessSession {
-  const FaceLivenessSession({required this.sessionId, required this.region, required this.identityPoolId});
+  const FaceLivenessSession({
+    required this.sessionId,
+    required this.region,
+    required this.identityPoolId,
+  });
 
-  factory FaceLivenessSession.fromJson(Map<String, dynamic> json) => FaceLivenessSession(
-    sessionId: json['sessionId'] as String? ?? '',
-    region: json['region'] as String? ?? 'ap-south-1',
-    identityPoolId: json['identityPoolId'] as String? ?? '',
-  );
+  factory FaceLivenessSession.fromJson(Map<String, dynamic> json) =>
+      FaceLivenessSession(
+        sessionId: json['sessionId'] as String? ?? '',
+        region: json['region'] as String? ?? 'ap-south-1',
+        identityPoolId: json['identityPoolId'] as String? ?? '',
+      );
 
   final String sessionId;
   final String region;

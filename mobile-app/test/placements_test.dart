@@ -5,6 +5,7 @@
 // `flutter test --update-goldens --dart-define=SCREENSHOTS=<dir> test/placements_test.dart`
 // also writes the screens to <dir> as PNGs.
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -233,6 +234,15 @@ void main() {
       ),
     ]) {
       await (FontLoader(family)..addFont(rootBundle.load(file))).load();
+    }
+    // The icons, for screenshots only: tests draw them as boxes otherwise.
+    if (_screenshots.isNotEmpty) {
+      final icons = File('/opt/homebrew/share/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf');
+      if (icons.existsSync()) {
+        await (FontLoader('MaterialIcons')
+              ..addFont(Future.value(ByteData.sublistView(icons.readAsBytesSync()))))
+            .load();
+      }
     }
   });
 
@@ -508,6 +518,54 @@ void main() {
       );
       expect(find.text('Placements is not switched on'), findsOneWidget);
       expect(find.text('Try again'), findsOneWidget);
+    });
+  });
+
+  group('sorting and counts', () {
+    testWidgets('the sort tab offers five orders; a filter says how many show', (tester) async {
+      await pumpPlacements(tester);
+      await tapText(tester, 'My candidates');
+      expect(find.byKey(const ValueKey('placements-shown')), findsOneWidget);
+      expect(find.text('2 candidates'), findsWidgets);
+      await tapText(tester, 'Not placed', first: true);
+      expect(find.text('1 of 2 candidates'), findsOneWidget);
+      await capture(tester, 'placements-filtered-count');
+      await tapText(tester, 'All', first: true);
+      await tester.tap(find.byKey(const ValueKey('placements-sort')));
+      await settle(tester);
+      for (final label in ['Last added', 'Last updated', 'Alphabetically', 'Added this week', 'Added this month']) {
+        expect(find.text(label), findsWidgets);
+      }
+      await capture(tester, 'placements-sort-options');
+      await tapText(tester, 'Alphabetically');
+      // A–Z: Arjun before Sana, and the tab says what it is sorted by.
+      final arjun = tester.getTopLeft(find.text('Arjun Bhati')).dy;
+      final sana = tester.getTopLeft(find.text('Sana Khan')).dy;
+      expect(arjun < sana, isTrue);
+      expect(find.text('Alphabetically'), findsOneWidget);
+      await capture(tester, 'placements-sorted-alphabetically');
+    });
+
+    test('this week and this month keep only those added then, newest first', () {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final monday = today.subtract(Duration(days: today.weekday - 1));
+      final rows = [
+        (name: 'old', at: DateTime(now.year - 1)),
+        (name: 'month', at: DateTime(now.year, now.month, 1, 9)),
+        (name: 'week', at: monday.add(const Duration(hours: 9))),
+        (name: 'today', at: now),
+      ];
+      List<String> names(PlSort sort) => sort
+          .apply(rows, added: (r) => r.at, updated: (r) => r.at, name: (r) => r.name)
+          .map((r) => r.name)
+          .toList();
+      expect(names(PlSort.thisWeek).first, 'today');
+      expect(names(PlSort.thisWeek), isNot(contains('old')));
+      expect(names(PlSort.thisMonth), isNot(contains('old')));
+      expect(names(PlSort.thisMonth), contains('month'));
+      expect(names(PlSort.lastAdded).last, 'old');
+      expect(names(PlSort.alphabetical), ['month', 'old', 'today', 'week']);
     });
   });
 

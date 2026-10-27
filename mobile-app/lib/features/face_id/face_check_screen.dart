@@ -12,10 +12,25 @@ import 'face_liveness.dart';
 
 /// How the face check before a punch ended.
 class FaceCheckOutcome {
-  const FaceCheckOutcome.passed(String this.token) : fallbackSent = false, needsSetup = false, needsCheck = false;
-  const FaceCheckOutcome.fallbackSent() : token = null, fallbackSent = true, needsSetup = false, needsCheck = false;
-  const FaceCheckOutcome.needsSetup() : token = null, fallbackSent = false, needsSetup = true, needsCheck = false;
-  const FaceCheckOutcome.needsCheck() : token = null, fallbackSent = false, needsSetup = false, needsCheck = true;
+  const FaceCheckOutcome.passed(String this.token)
+    : fallbackSent = false,
+      needsSetup = false,
+      needsCheck = false;
+  const FaceCheckOutcome.fallbackSent()
+    : token = null,
+      fallbackSent = true,
+      needsSetup = false,
+      needsCheck = false;
+  const FaceCheckOutcome.needsSetup()
+    : token = null,
+      fallbackSent = false,
+      needsSetup = true,
+      needsCheck = false;
+  const FaceCheckOutcome.needsCheck()
+    : token = null,
+      fallbackSent = false,
+      needsSetup = false,
+      needsCheck = true;
 
   /// Set up in this run of the app: the profile the app holds still says
   /// not, until it is read again at the next launch.
@@ -39,13 +54,18 @@ class FaceCheckOutcome {
 /// location: the punch screen opens this, and goes on to the location check
 /// with the token it hands back.
 ///
-/// It never decides anything itself. The phone's prompt (blink, or turn your
-/// head) and its face detection only gate the button; the server matches the
-/// face and answers with a token or a reason. After the tries run out, or
+/// It never decides anything itself. The phone's face detection only says
+/// when to take the selfie; the server matches the face and answers with a
+/// token or a reason, and only then does the camera say "Face id detected". After the tries run out, or
 /// while the face service is down, it offers to send the punch-in to the
 /// manager, so nobody is shut out at the door. Null when closed.
 class FaceCheckScreen extends StatefulWidget {
-  const FaceCheckScreen({super.key, required this.api, this.type = 'in', this.readLocation});
+  const FaceCheckScreen({
+    super.key,
+    required this.api,
+    this.type = 'in',
+    this.readLocation,
+  });
 
   final ManagerApiService api;
 
@@ -56,11 +76,15 @@ class FaceCheckScreen extends StatefulWidget {
   /// request goes without it if the location cannot be read.
   final Future<PunchReading> Function()? readLocation;
 
+  /// How long "Face id detected" stays on the camera before the punch goes on.
+  static Duration matchedPause = const Duration(milliseconds: 900);
+
   @override
   State<FaceCheckScreen> createState() => _FaceCheckScreenState();
 }
 
-class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingObserver {
+class _FaceCheckScreenState extends State<FaceCheckScreen>
+    with WidgetsBindingObserver {
   final FaceCamera _camera = FaceCamera.create();
   FaceIdStatus? _status;
   FaceCheckResult? _result;
@@ -119,7 +143,8 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
       unawaited(_camera.pause());
     } else if (state == AppLifecycleState.resumed && !_camera.ready && !_busy) {
       unawaited(_camera.start());
@@ -128,6 +153,7 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
 
   @override
   void dispose() {
+    _onTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _camera.removeListener(_changed);
     _auto.dispose();
@@ -135,7 +161,9 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
     super.dispose();
   }
 
-  bool get _fallbackOpen => _result?.fallbackAvailable == true || (_result == null && _status?.fallbackAvailable == true);
+  bool get _fallbackOpen =>
+      _result?.fallbackAvailable == true ||
+      (_result == null && _status?.fallbackAvailable == true);
 
   /// Face Liveness, once the company's server has it on: AWS's own detector
   /// streams the check, and the server reads the result and matches the face.
@@ -143,7 +171,10 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
     const liveness = FaceLiveness();
     if (!await liveness.isAvailable()) {
       if (mounted) {
-        setState(() => _problem = "This version of the app can't run your company's face check. Update it from the store.");
+        setState(
+          () => _problem =
+              "This version of the app can't run your company's face check. Update it from the store.",
+        );
       }
       return;
     }
@@ -156,7 +187,9 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
         identityPoolId: session.identityPoolId,
       );
       if (ran == 'cancelled') return;
-      await _judge(await widget.api.verifyFace(livenessSessionId: session.sessionId));
+      await _judge(
+        await widget.api.verifyFace(livenessSessionId: session.sessionId),
+      );
     } on ManagerApiException catch (error) {
       _refused(error);
     } finally {
@@ -174,31 +207,47 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
     try {
       final photo = await _camera.capture();
       if (photo == null) {
-        setState(() => _problem = 'The camera did not take the photo. Try again.');
+        setState(
+          () => _problem = 'The camera did not take the photo. Try again.',
+        );
         await _camera.resume();
         return;
       }
       final result = await widget.api.verifyFace(
         jpeg: photo,
-        challenge: _camera.signal == FaceSignal.unavailable ? 'none' : _camera.challenge.key,
-        devicePassed: _camera.challengeDone,
+        // No live prompt is asked any more: the server logs that honestly.
+        challenge: 'none',
+        devicePassed: false,
       );
       await _judge(result);
     } on ManagerApiException catch (error) {
       _refused(error);
       await _camera.resume();
     } catch (_) {
-      if (mounted) setState(() => _problem = "Face check isn't available right now. Try again in a minute.");
+      if (mounted)
+        setState(
+          () => _problem =
+              "Face check isn't available right now. Try again in a minute.",
+        );
       await _camera.resume();
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
+  /// Matched: the tick is on the camera until [_onTimer] hands the token on.
+  bool _matched = false;
+  Timer? _onTimer;
+
   Future<void> _judge(FaceCheckResult result) async {
     if (!mounted) return;
     if (result.passed && result.token != null) {
-      Navigator.of(context).pop(FaceCheckOutcome.passed(result.token!));
+      // Face id detected (4266:26221): the tick, then the punch.
+      setState(() => _matched = true);
+      _onTimer = Timer(FaceCheckScreen.matchedPause, () {
+        if (mounted)
+          Navigator.of(context).pop(FaceCheckOutcome.passed(result.token!));
+      });
       return;
     }
     setState(() => _result = result);
@@ -214,9 +263,16 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
       return;
     }
     setState(() {
-      _problem = error.offline ? 'No internet connection. Connect and try again.' : error.message;
+      _problem = error.offline
+          ? 'No internet connection. Connect and try again.'
+          : error.message;
       if (face is Map && face['fallback'] == true) {
-        _result = FaceCheckResult(passed: false, reason: reason ?? 'unavailable', message: error.message, fallbackAvailable: true);
+        _result = FaceCheckResult(
+          passed: false,
+          reason: reason ?? 'unavailable',
+          message: error.message,
+          fallbackAvailable: true,
+        );
       }
     });
   }
@@ -226,15 +282,23 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
     setState(() => _sendingFallback = true);
     PunchReading? reading;
     try {
-      reading = await widget.readLocation?.call().timeout(const Duration(seconds: 12));
+      reading = await widget.readLocation?.call().timeout(
+        const Duration(seconds: 12),
+      );
     } catch (_) {
       // The manager sees the request without a place rather than not at all.
     }
     try {
       await widget.api.requestFaceFallback(type: widget.type, reading: reading);
-      if (mounted) Navigator.of(context).pop(const FaceCheckOutcome.fallbackSent());
+      if (mounted)
+        Navigator.of(context).pop(const FaceCheckOutcome.fallbackSent());
     } on ManagerApiException catch (error) {
-      if (mounted) setState(() => _problem = error.offline ? 'No internet connection. Connect and try again.' : error.message);
+      if (mounted)
+        setState(
+          () => _problem = error.offline
+              ? 'No internet connection. Connect and try again.'
+              : error.message,
+        );
     } finally {
       if (mounted) setState(() => _sendingFallback = false);
     }
@@ -248,104 +312,106 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
     final result = _result;
     final cameraProblem = _camera.cameraProblem;
     final detected = signal == FaceSignal.detected;
-    final noFace = signal == FaceSignal.notDetected;
-    final promptDone = _camera.challengeDone;
     final punchIn = widget.type != 'out';
-    final punchLabel = punchIn ? 'Take selfie & punch in' : 'Take selfie & punch out';
     final punchWord = punchIn ? 'punch-in' : 'punch-out';
+    final heading = punchIn ? 'Punch-in' : 'Punch-out';
 
-    FaceStatusRow? status;
-    var action = FaceCaptureAction(
-      label: punchLabel,
-      // Ready, and the selfie will be taken without a tap; the button stays,
-      // for after a failed try and for a phone that cannot detect a face.
-      caption: detected && promptDone && _auto.armed
-          ? "Hold still — we'll take it automatically."
-          : 'Your selfie will confirm your $punchWord.',
-      busy: _busy,
-      // Before the first frame is read (4010:63873) the button is drawn as
-      // the design has it; it waits for detection rather than taking a photo
-      // of nobody, unless this phone cannot detect faces at all.
-      onTap: signal == FaceSignal.starting ? null : _capture,
-    );
-
-    if (cameraProblem != null) {
-      status = FaceStatusRow.problem(title: 'Camera unavailable', body: cameraProblem);
-      action = FaceCaptureAction(
-        label: _camera.permissionDenied ? 'Open Settings' : 'Try again',
-        caption: '',
-        onTap: _camera.permissionDenied ? Geolocator.openAppSettings : _camera.start,
+    // The camera (4266:26221 / 4266:26076): the heading, the oval, one line.
+    // "Face id detected" and the tick come only once the server has matched
+    // the face (4266:26221); a failed try darkens the camera (4266:26076).
+    if (_matched) {
+      return FaceCaptureLayout(
+        heading: heading,
+        camera: _camera.controller,
+        state: FaceCaptureState.detected,
+        line: 'Face id detected',
+        onClose: _close,
       );
-    } else if (noFace) {
-      // Face not detected (4005:51579): capture stays locked.
-      status = const FaceStatusRow.problem(
-        title: 'Face not detected',
-        body: 'Move into the oval, face a light source\nand make sure your face is uncovered.',
-      );
-      action = FaceCaptureAction(
-        label: punchLabel,
-        caption: 'Capture unlocks when a face is detected.',
-        enabled: false,
-        onTap: null,
-      );
-    } else if (detected && !promptDone) {
-      // Not "Face detected" yet: still detecting, with the phone's own
-      // prompt as the instruction until it is done.
-      status = FaceStatusRow.detecting(body: _camera.challenge.prompt);
-      action = FaceCaptureAction(
-        label: punchLabel,
-        caption: 'Capture unlocks once you have done that.',
-        enabled: false,
-        onTap: null,
-      );
-    } else if (result != null) {
-      // The last check failed: its reason stays until the next try.
-      status = FaceStatusRow.problem(title: result.title, body: result.message);
-    } else if (_problem != null) {
-      status = FaceStatusRow.problem(title: 'Face check unavailable', body: _problem!);
-    } else if (detected) {
-      // Face detected (4005:51535): a face, and the prompt done.
-      status = const FaceStatusRow.detected(
-        body: "You're all set. Look at the camera and\nhold still while you take your selfie.",
-      );
-    } else if (signal == FaceSignal.starting) {
-      // The camera or the detector has not answered yet.
-      status = const FaceStatusRow.detecting();
     }
-
-    // Out of tries, or the service is down: the manager can be asked instead.
+    FaceCaptureState state;
+    String? line;
+    FaceCaptureButton? action;
+    String? caption;
     Widget? below;
+    final failed = result != null || _problem != null;
+    if (cameraProblem != null) {
+      state = FaceCaptureState.failed;
+      line = cameraProblem;
+      action = FaceCaptureButton(
+        label: _camera.permissionDenied ? 'Open Settings' : 'Try again',
+        onTap: _camera.permissionDenied
+            ? Geolocator.openAppSettings
+            : _camera.start,
+      );
+    } else if (failed) {
+      // The last check failed (4266:26076): its reason, Try Again, the tries
+      // left. The reason stays until the next try.
+      state = FaceCaptureState.failed;
+      line = result?.title ?? 'Face check unavailable';
+      action = FaceCaptureButton(
+        label: 'Try Again',
+        busy: _busy,
+        enabled: detected || signal == FaceSignal.unavailable,
+        onTap: _capture,
+      );
+      caption = result != null && result.attemptsLeft > 0
+          ? '${result.attemptsLeft} out of 3 ${result.attemptsLeft == 1 ? 'try' : 'tries'} left'
+          : result?.message ?? _problem;
+    } else if (signal == FaceSignal.unavailable) {
+      // This phone cannot find faces: the button takes the selfie.
+      state = FaceCaptureState.looking;
+      line = 'Look at the camera and tap the button.';
+      action = FaceCaptureButton(
+        label: punchIn ? 'Take selfie & punch in' : 'Take selfie & punch out',
+        busy: _busy,
+        onTap: _capture,
+      );
+    } else {
+      // Looking, or found: the line says which, and the selfie takes itself
+      // once the phone's own checks are done — a little movement, then the
+      // flash. A flash that lit nothing up leaves the button as the way.
+      state = FaceCaptureState.looking;
+      line = detected
+          ? (_auto.flashFailed
+                ? 'Could not read your face. Tap the button to try.'
+                : (FaceAutoCapture.checkLiveness
+                          ? _camera.liveness.ask
+                          : null) ??
+                      'Hold still')
+          : signal == FaceSignal.notDetected
+          ? 'Keep your face inside the oval'
+          : 'Position your face inside the oval';
+    }
+    // Out of tries, or the service is down: the manager can be asked instead.
     if (_fallbackOpen && cameraProblem == null) {
-      action = FaceCaptureAction(
+      state = FaceCaptureState.failed;
+      line = result?.title ?? 'Face check unavailable';
+      action = FaceCaptureButton(
         label: 'Send $punchWord to manager',
-        caption: result?.reason == 'unavailable'
-            ? 'Face check is unavailable. Your manager or HR approves the $punchWord.'
-            : 'Your manager or HR approves the $punchWord.',
         busy: _sendingFallback,
         onTap: _sendFallback,
       );
-      below = (detected && promptDone) || signal == FaceSignal.unavailable
-          ? FaceQuietLink(label: 'Take another selfie', onTap: _busy ? null : _capture)
+      caption = result?.reason == 'unavailable'
+          ? 'Face check is unavailable. Your manager or HR approves the $punchWord.'
+          : 'Your manager or HR approves the $punchWord.';
+      below = detected || signal == FaceSignal.unavailable
+          ? FaceQuietLink(
+              label: 'Take another selfie',
+              onCamera: true,
+              onTap: _busy ? null : _capture,
+            )
           : null;
-    } else if (result != null && result.attemptsLeft > 0 && action.enabled) {
-      action = FaceCaptureAction(
-        label: action.label,
-        caption: '${result.attemptsLeft} ${result.attemptsLeft == 1 ? 'try' : 'tries'} left.',
-        busy: action.busy,
-        onTap: action.onTap,
-      );
     }
-
     return FaceCaptureLayout(
-      stepTitle: punchIn ? 'Punch in' : 'Punch out',
-      heading: 'Take a selfie',
-      instructions: 'Position your face inside the oval to\nconfirm your attendance.',
+      heading: heading,
       camera: _camera.controller,
-      guide: detected || signal == FaceSignal.starting || signal == FaceSignal.unavailable ? FaceGuide.solid : FaceGuide.dashed,
-      status: status,
+      state: state,
+      line: line,
       action: action,
+      caption: caption,
       below: below,
-      onBack: _close,
+      busy: _busy && action == null,
+      flash: _auto.flashOnScreen,
       onClose: _close,
     );
   }

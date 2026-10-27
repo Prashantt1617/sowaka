@@ -119,7 +119,7 @@ class _ClientsPageState extends State<ClientsPage> {
   List<PlacementClient>? _rows;
   String? _error;
   String _filter = _all;
-  bool _newest = true;
+  PlSort _sort = PlSort.lastAdded;
 
   @override
   void initState() {
@@ -162,12 +162,12 @@ class _ClientsPageState extends State<ClientsPage> {
           c.name.toLowerCase().contains(q) ||
           c.city.toLowerCase().contains(q);
     }).toList();
-    rows.sort((a, b) {
-      final at = a.createdAt ?? DateTime(0);
-      final bt = b.createdAt ?? DateTime(0);
-      return _newest ? bt.compareTo(at) : at.compareTo(bt);
-    });
-    return rows;
+    return _sort.apply(
+      rows,
+      added: (c) => c.createdAt,
+      updated: (c) => c.updatedAt,
+      name: (c) => c.name,
+    );
   }
 
   @override
@@ -191,8 +191,11 @@ class _ClientsPageState extends State<ClientsPage> {
               filters: [_all, feeLabel(true), feeLabel(false)],
               filter: _filter,
               onFilter: (f) => setState(() => _filter = f),
-              newest: _newest,
-              onSort: () => setState(() => _newest = !_newest),
+              sort: _sort,
+              onSort: (sort) => setState(() => _sort = sort),
+              shown: _rows == null ? null : _shown.length,
+              total: _rows?.length,
+              noun: 'clients',
             ),
             const SizedBox(height: 12),
             if (rows == null && _error == null)

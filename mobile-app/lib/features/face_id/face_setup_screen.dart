@@ -9,14 +9,14 @@ import 'face_camera.dart';
 import 'face_capture_layout.dart';
 import 'face_check_screen.dart';
 import 'face_id_models.dart';
-import 'face_setup_success.dart';
 
 /// Setting up Face ID, at the first punch the company checks (Figma
-/// 4194:21786, with setup's words). The consent is on the same screen: one
-/// line to agree to, word for word, above the button.
+/// 4194:21786): a page that says what it is for, with the consent under its
+/// button (4200:55075) — pressing Set up Face ID is agreeing — then the
+/// camera, where the selfie takes itself once the face is in the oval.
 ///
-/// Once set up it says so ("Face ID is set up"), then, at a punch, opens the
-/// selfie check, and pops with however that check ended: the punch goes on
+/// Once set up it says so on the camera ("Face id successfully set up", with
+/// the tick), then, at a punch, opens the selfie check, and pops with however that check ended: the punch goes on
 /// with the check's token, as after any passed check. In onboarding there is
 /// no punch, so it pops after the success screen. A failed setup says why,
 /// with the tries left; after three, or while the face service is down, the
@@ -41,6 +41,10 @@ class FaceSetupScreen extends StatefulWidget {
   /// Set up during onboarding, with no punch to make: no punch words, and
   /// no sending a punch to the manager, and no selfie check after it.
   final bool onboarding;
+
+  /// How long "Face id successfully set up" stays on the camera before the
+  /// selfie check (or, in onboarding, the way out).
+  static Duration successPause = const Duration(milliseconds: 1500);
 
   @override
   State<FaceSetupScreen> createState() => _FaceSetupScreenState();
@@ -71,8 +75,12 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     onCapture: _enrol,
   );
 
-  /// Set up: the success screen is showing, and the camera is let go.
+  /// The consent's words changed under them: the intro says so, once.
+  bool _consentChanged = false;
+
+  /// Set up: the tick is on the camera until [_onTimer] moves on.
   bool _setUp = false;
+  Timer? _onTimer;
 
   @override
   void initState() {
@@ -127,6 +135,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
 
   @override
   void dispose() {
+    _onTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _camera.removeListener(_changed);
     _auto.dispose();
@@ -156,15 +165,17 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       // they agreed, and to which line.
       // The token a setup may hand back goes unused: the punch carries the
       // selfie check's own, taken next.
-      await widget.api.enrolFace(
-        jpeg: photo,
-        consentVersion: consent.version,
-      );
+      await widget.api.enrolFace(jpeg: photo, consentVersion: consent.version);
       FaceCheckOutcome.enrolledThisRun = true;
       if (!mounted) return;
-      // The check opens its own camera: this one is let go first.
-      unawaited(_camera.pause());
+      // "Face id successfully set up" on the camera for a moment, then on:
+      // the check opens its own camera, so this one is let go first.
       setState(() => _setUp = true);
+      _onTimer = Timer(FaceSetupScreen.successPause, () {
+        if (!mounted) return;
+        unawaited(_camera.pause());
+        unawaited(_afterSetUp());
+      });
       return;
     } on ManagerApiException catch (error) {
       final face = error.details?['face'];
@@ -187,10 +198,10 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
           );
           _agreed = false;
         });
-        _fail(
-          'Consent updated',
-          'The Face ID consent has changed. Read it and agree again.',
-        );
+        // Back on the intro, which says why; the camera starts clean.
+        _problem = null;
+        _problemTitle = null;
+        _consentChanged = true;
       } else {
         setState(() {
           if (face is Map && face['attemptsLeft'] is num)
@@ -220,9 +231,8 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     }
   }
 
-  /// From the success screen: out of onboarding, or on to the selfie check,
-  /// whose outcome (a pass, a punch sent to the manager, or closed) is the
-  /// punch's.
+  /// After the tick: out of onboarding, or on to the selfie check, whose
+  /// outcome (a pass, a punch sent to the manager, or closed) is the punch's.
   Future<void> _afterSetUp() async {
     final navigator = Navigator.of(context);
     if (widget.onboarding) {
@@ -280,207 +290,134 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
   Widget build(BuildContext context) {
     final punchIn = widget.type != 'out';
     final punchWord = punchIn ? 'punch-in' : 'punch-out';
-    if (_setUp) {
-      return FaceSetupSuccess(
-        stepTitle: widget.onboarding
-            ? 'Face ID'
-            : punchIn
-            ? 'Punch in'
-            : 'Punch out',
-        line: widget.onboarding
-            ? 'You can now punch in with a selfie.'
-            : 'Next, a selfie to confirm your $punchWord.',
-        onContinue: _afterSetUp,
-        onClose: () => Navigator.of(context).pop(),
+    final stepTitle = widget.onboarding
+        ? 'Face ID'
+        : punchIn
+        ? 'Punch in'
+        : 'Punch out';
+    void close() => Navigator.of(context).pop();
+    // The page before the camera (4200:55075): pressing Set up Face ID is
+    // the consent, so the camera only opens once they have agreed.
+    if (!_agreed) {
+      return FaceSetupIntro(
+        stepTitle: stepTitle,
+        consent: _consent?.agree,
+        problem:
+            _loadProblem ??
+            (_consentChanged
+                ? 'The Face ID consent has changed. Read it and agree again.'
+                : null),
+        onRetry: _loadProblem == null ? null : _load,
+        onBack: close,
+        onStart: _consent == null
+            ? null
+            : () {
+                setState(() {
+                  _agreed = true;
+                  _consentChanged = false;
+                });
+                _auto.check();
+              },
       );
     }
-    final label = widget.onboarding
-        ? 'Set up Face ID'
-        : punchIn
-        ? 'Set up & punch in'
-        : 'Set up & punch out';
     final signal = _camera.signal;
     final detected = signal == FaceSignal.detected;
     final cameraProblem = _camera.cameraProblem;
-    final caption = _attemptsLeft != null && _attemptsLeft! > 0
-        ? '$_attemptsLeft ${_attemptsLeft == 1 ? 'try' : 'tries'} left.'
-        : detected && _camera.challengeDone && _auto.armed
-        ? "Hold still — we'll take it automatically."
-        : 'Your later punches are matched with this selfie.';
-    FaceStatusRow? status;
-    var action = FaceCaptureAction(
-      label: label,
-      caption: _agreed || _consent == null
-          ? caption
-          : 'Agree above to set up Face ID.',
-      busy: _busy,
-      // Locked until they agree, as well as until a face is in the oval.
-      enabled: _agreed,
-      onTap: signal == FaceSignal.starting || !_agreed ? null : _enrol,
-    );
-    if (cameraProblem != null) {
-      status = FaceStatusRow.problem(
-        title: 'Camera unavailable',
-        body: cameraProblem,
+    final tries = _attemptsLeft;
+
+    // The camera (4266:26005 onwards): the heading, the oval, and one line.
+    // "Face ID successfully set up" is drawn on it (4266:26184), with the
+    // tick, once the server has kept the face — never before.
+    if (_setUp) {
+      return FaceCaptureLayout(
+        heading: 'Set up your Face ID',
+        camera: _camera.controller,
+        state: FaceCaptureState.detected,
+        line: 'Face id successfully set up',
+        onClose: close,
       );
-      action = FaceCaptureAction(
+    }
+    FaceCaptureState state;
+    String? line;
+    FaceCaptureButton? action;
+    String? caption;
+    Widget? below;
+    if (cameraProblem != null) {
+      state = FaceCaptureState.failed;
+      line = cameraProblem;
+      action = FaceCaptureButton(
         label: _camera.permissionDenied ? 'Open Settings' : 'Try again',
-        caption: '',
         onTap: _camera.permissionDenied
             ? Geolocator.openAppSettings
             : _camera.start,
       );
-    } else if (signal == FaceSignal.notDetected) {
-      status = const FaceStatusRow.problem(
-        title: 'Face not detected',
-        body:
-            'Move into the oval, face a light source\nand make sure your face is uncovered.',
-      );
-      action = FaceCaptureAction(
-        label: label,
-        caption: 'Capture unlocks when a face is detected.',
-        enabled: false,
-        onTap: null,
-      );
-    } else if (detected && !_camera.challengeDone) {
-      // Not "Face detected" yet: still detecting, with the prompt to do.
-      status = FaceStatusRow.detecting(body: _camera.challenge.prompt);
-      action = FaceCaptureAction(
-        label: label,
-        caption: 'Capture unlocks once you have done that.',
-        enabled: false,
-        onTap: null,
-      );
     } else if (_problem != null) {
-      status = FaceStatusRow.problem(
-        title: _problemTitle ?? 'Try again',
-        body: _problem!,
+      // A failed setup (4266:26076): the reason, Try again, the tries left.
+      state = FaceCaptureState.failed;
+      line = _problemTitle ?? 'Try again';
+      action = FaceCaptureButton(
+        label: 'Try Again',
+        busy: _busy,
+        enabled: detected || signal == FaceSignal.unavailable,
+        onTap: _enrol,
       );
-    } else if (_loadProblem != null) {
-      status = FaceStatusRow.problem(
-        title: 'Face ID unavailable',
-        body: _loadProblem!,
+      caption = tries != null && tries > 0
+          ? '$tries out of 3 ${tries == 1 ? 'try' : 'tries'} left'
+          : _problem;
+    } else if (signal == FaceSignal.unavailable) {
+      // This phone cannot find faces: the button takes the selfie.
+      state = FaceCaptureState.looking;
+      line = 'Look at the camera and tap the button.';
+      action = FaceCaptureButton(
+        label: 'Set up Face ID',
+        busy: _busy,
+        onTap: _enrol,
       );
-    } else if (detected) {
-      status = const FaceStatusRow.detected(
-        body:
-            "You're all set. Look at the camera and\nhold still while you take your selfie.",
-      );
-    } else if (signal == FaceSignal.starting) {
-      status = const FaceStatusRow.detecting();
+    } else {
+      // Looking, or found: the line says which, and the selfie takes itself
+      // once the phone's own checks are done — a little movement, then the
+      // flash. A flash that lit nothing up leaves the button as the way.
+      state = FaceCaptureState.looking;
+      line = detected
+          ? (_auto.flashFailed
+                ? 'Could not read your face. Tap the button to try.'
+                : (FaceAutoCapture.checkLiveness
+                          ? _camera.liveness.ask
+                          : null) ??
+                      'Hold still')
+          : signal == FaceSignal.notDetected
+          ? 'Keep your face inside the oval'
+          : 'Position your face inside the oval';
     }
-
     // Out of tries, or the service is down: the manager can be asked instead.
-    Widget? below;
     if (_fallbackOpen && cameraProblem == null && !widget.onboarding) {
-      action = FaceCaptureAction(
+      state = FaceCaptureState.failed;
+      line ??= 'Face ID unavailable';
+      action = FaceCaptureButton(
         label: 'Send $punchWord to manager',
-        caption: 'Your manager or HR approves the $punchWord.',
         busy: _sendingFallback,
         onTap: _sendFallback,
       );
-      below = detected && _camera.challengeDone && _agreed
+      caption = 'Your manager or HR approves the $punchWord.';
+      below = detected
           ? FaceQuietLink(
               label: 'Try setting up again',
+              onCamera: true,
               onTap: _busy ? null : _enrol,
             )
           : null;
     }
-
-    void close() => Navigator.of(context).pop();
     return FaceCaptureLayout(
-      stepTitle: widget.onboarding
-          ? 'Face ID'
-          : punchIn
-          ? 'Punch in'
-          : 'Punch out',
-      heading: 'Set up Face ID',
-      instructions: 'Position your face inside the oval to\nset up Face ID.',
+      heading: 'Set up your Face ID',
       camera: _camera.controller,
-      guide: signal == FaceSignal.notDetected
-          ? FaceGuide.dashed
-          : FaceGuide.solid,
-      status: status,
-      aboveAction: _ConsentLine(
-        consent: _consent,
-        agreed: _agreed,
-        onChanged: _busy
-            ? null
-            : (value) {
-                setState(() => _agreed = value);
-                _auto.check();
-              },
-        onRetry: _loadProblem == null ? null : _load,
-      ),
+      state: state,
+      line: line,
       action: action,
+      caption: caption,
       below: below,
-      onBack: close,
+      busy: _busy && action == null,
+      flash: _auto.flashOnScreen,
       onClose: close,
-    );
-  }
-}
-
-/// The consent line and its tick, set in the action caption's type: the
-/// whole consent, word for word. Agreeing is something they do, never a default.
-class _ConsentLine extends StatelessWidget {
-  const _ConsentLine({
-    required this.consent,
-    required this.agreed,
-    required this.onChanged,
-    required this.onRetry,
-  });
-
-  final FaceConsent? consent;
-  final bool agreed;
-  final ValueChanged<bool>? onChanged;
-  final VoidCallback? onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final words = consent;
-    if (words == null) {
-      return Center(
-        child: onRetry == null
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: _brand),
-              )
-            : FaceQuietLink(label: 'Load the consent again', onTap: onRetry),
-      );
-    }
-    return Semantics(
-      checked: agreed,
-      label: words.agree,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onChanged == null ? null : () => onChanged!(!agreed),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 20,
-              height: 20,
-              child: Checkbox(
-                value: agreed,
-                activeColor: _brand,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-                onChanged: onChanged == null
-                    ? null
-                    : (value) => onChanged!(value ?? false),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                words.agree,
-                style: _sora(11, FontWeight.w400, _tertiary, height: 18 / 11),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
