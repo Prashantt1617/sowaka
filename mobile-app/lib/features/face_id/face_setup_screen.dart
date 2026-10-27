@@ -9,16 +9,18 @@ import 'face_camera.dart';
 import 'face_capture_layout.dart';
 import 'face_check_screen.dart';
 import 'face_id_models.dart';
+import 'face_setup_success.dart';
 
 /// Setting up Face ID, at the first punch the company checks (Figma
 /// 4194:21786, with setup's words). The consent is on the same screen: one
 /// line to agree to, word for word, above the button.
 ///
-/// The setup is that punch's face check: the server hands back the same
-/// punch token a passed check does, and this pops with it, so the punch goes
-/// on to the location without a second selfie. A failed setup says why, with
-/// the tries left; after three, or while the face service is down, the punch
-/// can go to the manager instead. Null when closed.
+/// Once set up it says so ("Face ID is set up"), then, at a punch, opens the
+/// selfie check, and pops with however that check ended: the punch goes on
+/// with the check's token, as after any passed check. In onboarding there is
+/// no punch, so it pops after the success screen. A failed setup says why,
+/// with the tries left; after three, or while the face service is down, the
+/// punch can go to the manager instead. Null when closed.
 class FaceSetupScreen extends StatefulWidget {
   const FaceSetupScreen({
     super.key,
@@ -37,7 +39,7 @@ class FaceSetupScreen extends StatefulWidget {
   final Future<PunchReading> Function()? readLocation;
 
   /// Set up during onboarding, with no punch to make: no punch words, and
-  /// no sending a punch to the manager. The token the setup earns goes unused.
+  /// no sending a punch to the manager, and no selfie check after it.
   final bool onboarding;
 
   @override
@@ -56,6 +58,9 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
   int? _attemptsLeft;
   String? _problemTitle;
   String? _problem;
+
+  /// Set up: the success screen is showing, and the camera is let go.
+  bool _setUp = false;
 
   @override
   void initState() {
@@ -97,7 +102,10 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
       unawaited(_camera.pause());
-    } else if (state == AppLifecycleState.resumed && !_camera.ready && !_busy) {
+    } else if (state == AppLifecycleState.resumed &&
+        !_camera.ready &&
+        !_busy &&
+        !_setUp) {
       unawaited(_camera.start());
     }
   }
@@ -129,18 +137,17 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       }
       // The consent's version goes with the photo: the server records when
       // they agreed, and to which line.
-      final token = await widget.api.enrolFace(
+      // The token a setup may hand back goes unused: the punch carries the
+      // selfie check's own, taken next.
+      await widget.api.enrolFace(
         jpeg: photo,
         consentVersion: consent.version,
       );
       FaceCheckOutcome.enrolledThisRun = true;
       if (!mounted) return;
-      // A server without setup tokens: the punch screen asks for the selfie.
-      Navigator.of(context).pop(
-        token == null
-            ? const FaceCheckOutcome.needsCheck()
-            : FaceCheckOutcome.passed(token),
-      );
+      // The check opens its own camera: this one is let go first.
+      unawaited(_camera.pause());
+      setState(() => _setUp = true);
       return;
     } on ManagerApiException catch (error) {
       final face = error.details?['face'];
@@ -196,6 +203,27 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     }
   }
 
+  /// From the success screen: out of onboarding, or on to the selfie check,
+  /// whose outcome (a pass, a punch sent to the manager, or closed) is the
+  /// punch's.
+  Future<void> _afterSetUp() async {
+    final navigator = Navigator.of(context);
+    if (widget.onboarding) {
+      navigator.pop(const FaceCheckOutcome.needsCheck());
+      return;
+    }
+    final outcome = await navigator.push<FaceCheckOutcome>(
+      MaterialPageRoute(
+        builder: (_) => FaceCheckScreen(
+          api: widget.api,
+          type: widget.type,
+          readLocation: widget.readLocation,
+        ),
+      ),
+    );
+    if (mounted) navigator.pop(outcome);
+  }
+
   void _fail(String title, String message) {
     if (!mounted) return;
     setState(() {
@@ -235,6 +263,20 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
   Widget build(BuildContext context) {
     final punchIn = widget.type != 'out';
     final punchWord = punchIn ? 'punch-in' : 'punch-out';
+    if (_setUp) {
+      return FaceSetupSuccess(
+        stepTitle: widget.onboarding
+            ? 'Face ID'
+            : punchIn
+            ? 'Punch in'
+            : 'Punch out',
+        line: widget.onboarding
+            ? 'You can now punch in with a selfie.'
+            : 'Next, a selfie to confirm your $punchWord.',
+        onContinue: _afterSetUp,
+        onClose: () => Navigator.of(context).pop(),
+      );
+    }
     final label = widget.onboarding
         ? 'Set up Face ID'
         : punchIn
