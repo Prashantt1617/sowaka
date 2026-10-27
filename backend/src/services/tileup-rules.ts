@@ -133,7 +133,8 @@ export function evaluate(board: string[], tiles: PlacedTile[], has?: (word: stri
 }
 
 /**
- * The dictionary: the same 111,199 words the page carries (packed so each word
+ * The dictionary: the same 283,564 words the page carries (CSW21, NWL2020, ENABLE
+ * and the Hunspell list it started with, less a short rude-word list; packed so each word
  * spells only what differs from the one before it: a digit for the letters it
  * shares, then the rest), unpacked once on first use.
  */
@@ -158,3 +159,8 @@ export function words(): Set<string> {
   return out;
 }
 export const hasWord = (word: string): boolean => words().has(word);
+
+// Unpacked at boot rather than inside the first play after a restart: the
+// unpack holds the event loop for a moment, which is nothing at boot and a
+// stall for every socket on the host mid-game.
+setImmediate(() => { words(); });
