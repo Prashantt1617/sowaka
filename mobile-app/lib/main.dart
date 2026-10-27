@@ -6,6 +6,7 @@ import 'features/manager_shell/presentation/tablet_shell.dart';
 import 'features/auth/presentation/auth_gate.dart';
 import 'features/shared/app_update.dart';
 import 'routes/app_routes.dart';
+import 'services/app_link_service.dart';
 import 'services/notification_service.dart';
 
 Future<void> main() async {
@@ -15,6 +16,9 @@ Future<void> main() async {
   // hundred milliseconds of blank screen on every launch. Whatever needs them
   // (the permission prompt, the opened push) waits on [ready] instead.
   unawaited(AppNotificationService.instance.initialize());
+  // The link the app was opened from (an email's "Review Request"), and the
+  // next ones: they go where a push would.
+  unawaited(AppLinkService.instance.start());
   runApp(const HrmsMobileApp());
 }
 

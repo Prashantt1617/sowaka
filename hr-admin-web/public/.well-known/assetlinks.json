@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.sowaka.connect",
+      "sha256_cert_fingerprints": [
+        "1A:03:0F:60:F7:72:1F:22:EA:01:D8:31:1B:84:0E:8B:E5:61:4F:A8:98:87:1F:68:EB:F3:3D:02:F3:36:3E:C0"
+      ]
+    }
+  }
+]
