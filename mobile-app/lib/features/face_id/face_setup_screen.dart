@@ -75,6 +75,9 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     onCapture: _enrol,
   );
 
+  /// The consent's words changed under them: the intro says so, once.
+  bool _consentChanged = false;
+
   /// Set up: the tick is on the camera until [_onTimer] moves on.
   bool _setUp = false;
   Timer? _onTimer;
@@ -195,10 +198,10 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
           );
           _agreed = false;
         });
-        _fail(
-          'Consent updated',
-          'The Face ID consent has changed. Read it and agree again.',
-        );
+        // Back on the intro, which says why; the camera starts clean.
+        _problem = null;
+        _problemTitle = null;
+        _consentChanged = true;
       } else {
         setState(() {
           if (face is Map && face['attemptsLeft'] is num)
@@ -299,13 +302,20 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       return FaceSetupIntro(
         stepTitle: stepTitle,
         consent: _consent?.agree,
-        problem: _loadProblem,
+        problem:
+            _loadProblem ??
+            (_consentChanged
+                ? 'The Face ID consent has changed. Read it and agree again.'
+                : null),
         onRetry: _loadProblem == null ? null : _load,
         onBack: close,
         onStart: _consent == null
             ? null
             : () {
-                setState(() => _agreed = true);
+                setState(() {
+                  _agreed = true;
+                  _consentChanged = false;
+                });
                 _auto.check();
               },
       );

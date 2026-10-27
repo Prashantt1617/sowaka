@@ -76,6 +76,9 @@ class FaceCheckScreen extends StatefulWidget {
   /// request goes without it if the location cannot be read.
   final Future<PunchReading> Function()? readLocation;
 
+  /// How long "Face id detected" stays on the camera before the punch goes on.
+  static Duration matchedPause = const Duration(milliseconds: 900);
+
   @override
   State<FaceCheckScreen> createState() => _FaceCheckScreenState();
 }
@@ -236,15 +239,12 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
   bool _matched = false;
   Timer? _onTimer;
 
-  /// How long "Face id detected" stays on the camera before the punch goes on.
-  static Duration matchedPause = const Duration(milliseconds: 900);
-
   Future<void> _judge(FaceCheckResult result) async {
     if (!mounted) return;
     if (result.passed && result.token != null) {
       // Face id detected (4266:26221): the tick, then the punch.
       setState(() => _matched = true);
-      _onTimer = Timer(matchedPause, () {
+      _onTimer = Timer(FaceCheckScreen.matchedPause, () {
         if (mounted)
           Navigator.of(context).pop(FaceCheckOutcome.passed(result.token!));
       });

@@ -36,6 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   file_picker: ^11.0.2
   geolocator: ^14.0.2
+  geolocator_platform_interface: ^4.2.6
   http: ^1.6.0
   image_picker: ^1.1.2
   http_parser: ^4.1.2
