@@ -1,10 +1,15 @@
-// The Org chart on a profile is the Team tab's team: on one's own, the same
-// people the Team tab shows; on anyone else's, their manager, them, their
-// peers and their reports, fetched for them. Everyone on it opens their own
-// profile, which shows what it always has.
+// The Org chart on a profile: the person's manager on top, the person under
+// them, and the people who report to the person under that — nothing else.
+// On one's own the manager reads "(Manager)" and one's own card "(You)"; on
+// someone else's their card is the highlighted one and the viewer, wherever
+// they are on it, reads "(You)". Everyone on it opens their own profile.
+//
+// Screenshots of both:
+// `flutter test --update-goldens --dart-define=SCREENSHOTS=<dir> test/profile_org_chart_test.dart`
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -14,23 +19,73 @@ import 'package:mobile_app/features/manager/data/manager_api_service.dart';
 import 'package:mobile_app/features/manager/presentation/manager_screen.dart';
 import 'package:mobile_app/features/profile/profile.dart';
 
+const _screenshots = String.fromEnvironment('SCREENSHOTS');
+
+const _brand = Color(0xFF0571A6);
+const _personFill = Color(0xFFE5F5FD);
+
+/// Who is who, as in the design's sample.
+const _designations = {
+  'harsh': 'Product Manager',
+  'ananya': 'UX Researcher',
+  'yami': 'Frontend Engineer',
+  'ankit': 'Senior Product Designer',
+  'sumit': 'QA Testing',
+  'raghav': 'UI/UX Designer II',
+  'shivani': 'Associate Product Designer',
+  'priya': 'UX Writer',
+  'meera': 'VP Product',
+};
+
+const _names = {
+  'harsh': 'Harsh Choudhary',
+  'ananya': 'Ananya Bisht',
+  'yami': 'Yami Guri',
+  'ankit': 'Ankit Tomar',
+  'sumit': 'Sumit Rana',
+  'raghav': 'Raghav Sharma',
+  'shivani': 'Shivani Singh',
+  'priya': 'Priya Nair',
+  'meera': 'Meera Iyer',
+};
+
+const _reports = ['yami', 'ankit', 'sumit', 'raghav', 'shivani'];
+
+/// Whether each is in today, for the dots: Harsh on leave, Sumit not in.
+const _marks = {'harsh': 'leave', 'sumit': 'not_in', 'raghav': 'leave'};
+
+/// A row of the viewer's own team, as `/manager/workspace` sends it.
 Map<String, dynamic> member(
-  String name, {
+  String id, {
   bool reportsToViewer = false,
   bool isSelf = false,
   bool isManager = false,
+  String? managerName,
 }) => {
-  'userId': name.toLowerCase(),
-  'name': name,
-  'department': 'Faculty',
-  'designation': 'Lecturer',
+  'userId': id,
+  'name': _names[id],
+  'department': 'Product',
+  'designation': _designations[id],
   'reportsToViewer': reportsToViewer,
   'inViewerChain': reportsToViewer,
   'isSelf': isSelf,
   'isManager': isManager,
-  'email': '${name.toLowerCase()}@example.test',
+  'managerName': managerName,
+  'todayMark': _marks[id] ?? 'present',
+  'todayStatus': _marks.containsKey(id) ? 'absent' : 'present',
+  'email': '$id@example.test',
   'parameters': <dynamic>[],
   'history': <dynamic>[],
+};
+
+/// A row of `/profile/people/:userId/team`.
+Map<String, dynamic> teamRow(String id, String role) => {
+  'userId': id,
+  'name': _names[id],
+  'designation': _designations[id],
+  'department': 'Product',
+  'photoUrl': null,
+  'role': role,
 };
 
 Map<String, dynamic> person(
@@ -52,23 +107,22 @@ http.Response ok(Map<String, dynamic> body) => http.Response(
   headers: {'content-type': 'application/json; charset=utf-8'},
 );
 
-/// Signs Pankaj in: Meera is his manager, Rana his peer, Haider reports to
-/// him. [team] answers `/profile/people/outsider/team`; null is a server from
-/// before that route.
+/// Signs [viewer] in with [team] as their own team. [personTeams] answers
+/// `/profile/people/:userId/team`; anyone not in it gets a server from before
+/// that route.
 Future<ManagerBloc> boot(
   WidgetTester tester, {
-  List<Map<String, dynamic>>? team,
+  required String viewer,
+  required List<Map<String, dynamic>> team,
+  Map<String, List<Map<String, dynamic>>> personTeams = const {},
+  String? managerName,
 }) async {
-  tester.view.physicalSize = const Size(1179, 2556);
-  tester.view.devicePixelRatio = 3;
+  // A phone: 393 by 852 at 2x.
+  tester.view.physicalSize = const Size(393 * 2, 852 * 2);
+  tester.view.devicePixelRatio = 2;
   addTearDown(tester.view.reset);
   final workspace = {
-    'team': [
-      member('Meera', isManager: true),
-      member('Pankaj', isSelf: true),
-      member('Haider', reportsToViewer: true),
-      member('Rana'),
-    ],
+    'team': team,
     'recognitionCandidates': <dynamic>[],
     'nominations': <dynamic>[],
     'myParameters': <dynamic>[],
@@ -77,8 +131,8 @@ Future<ManagerBloc> boot(
     'myOrgChart': <dynamic>[],
     'weekoffDays': [0],
     'shift': <String, dynamic>{},
-    'approverName': 'Meera',
-    'hasManager': true,
+    'approverName': managerName,
+    'hasManager': managerName != null,
     'teamLevel': 2,
   };
   final client = MockClient((request) async {
@@ -95,14 +149,16 @@ Future<ManagerBloc> boot(
   });
   ProfileApiService.testClient = MockClient((request) async {
     final path = request.url.path;
-    if (path.endsWith('/profile/people/outsider/team')) {
-      if (team == null) {
+    final teamOf = RegExp(r'/profile/people/([^/]+)/team$').firstMatch(path);
+    if (teamOf != null) {
+      final rows = personTeams[teamOf.group(1)];
+      if (rows == null) {
         return http.Response(
           '{"success":false,"message":"Route not found"}',
           404,
         );
       }
-      return ok({'team': team});
+      return ok({'team': rows});
     }
     if (path.endsWith('/profile/people/outsider')) {
       return ok({
@@ -123,8 +179,11 @@ Future<ManagerBloc> boot(
         ),
       });
     }
-    if (path.endsWith('/profile/people/boss')) {
-      return ok({'person': person('boss', 'Boss')});
+    final someone = RegExp(
+      r'/profile/people/([^/]+)$',
+    ).firstMatch(path)?.group(1);
+    if (_names[someone] case final name?) {
+      return ok({'person': person(someone!, name)});
     }
     return http.Response('{"success":false}', 404);
   });
@@ -132,12 +191,15 @@ Future<ManagerBloc> boot(
   final session = AuthSession(
     token: 'token',
     user: AuthUser(
-      id: 'pankaj',
-      email: 'pankaj@example.test',
-      name: 'Pankaj',
+      id: viewer,
+      email: '$viewer@example.test',
+      name: _names[viewer] ?? viewer,
       role: 'manager',
-      company: 'ACMT',
-      org: 'acmt',
+      company: 'Convrse',
+      org: 'convrse',
+      designation: _designations[viewer],
+      department: 'Product',
+      managerName: managerName,
     ),
   );
   final bloc = ManagerBloc(
@@ -151,6 +213,9 @@ Future<ManagerBloc> boot(
   await bloc.add(const LoadManagerDashboard());
   await tester.pumpWidget(
     MaterialApp(
+      debugShowCheckedModeBanner: false,
+      // The app's own type (main.dart), for the faces' initials.
+      theme: ThemeData(fontFamily: 'Plus Jakarta Sans'),
       home: ManagerScreen(session: session, bloc: bloc),
     ),
   );
@@ -172,87 +237,201 @@ Future<void> close(WidgetTester tester, ManagerBloc bloc) async {
   await tester.pump(const Duration(minutes: 1));
 }
 
+/// The card's own decoration, nearest above [name].
+BoxDecoration cardOf(WidgetTester tester, String name) {
+  final ink = find.ancestor(of: find.text(name), matching: find.byType(Ink));
+  return tester.widget<Ink>(ink.first).decoration! as BoxDecoration;
+}
+
+double leftOf(WidgetTester tester, String name) => tester
+    .getTopLeft(
+      find.ancestor(of: find.text(name), matching: find.byType(Ink)).first,
+    )
+    .dx;
+
+/// The screen as it stands, and again scrolled to the end of the chart.
+Future<void> capture(WidgetTester tester, String name, String last) async {
+  if (_screenshots.isEmpty) return;
+  final screen = find.byType(MaterialApp);
+  // Let the header's logo and the faces finish loading.
+  await tester.runAsync(
+    () => Future<void>.delayed(const Duration(milliseconds: 300)),
+  );
+  await tester.pumpAndSettle();
+  await expectLater(
+    screen,
+    matchesGoldenFile(Uri.file('$_screenshots/$name.png')),
+  );
+  await tester.scrollUntilVisible(
+    find.text(last),
+    200,
+    scrollable: find
+        .byWidgetPredicate(
+          (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+        )
+        .last,
+  );
+  await tester.drag(
+    find
+        .byWidgetPredicate(
+          (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+        )
+        .last,
+    const Offset(0, -400),
+  );
+  await tester.pumpAndSettle();
+  await expectLater(
+    screen,
+    matchesGoldenFile(Uri.file('$_screenshots/$name-scrolled.png')),
+  );
+}
+
 void main() {
-  testWidgets('one\'s own Org chart is the Team tab\'s team', (tester) async {
-    final bloc = await boot(tester);
-    expect(openPersonProfile('pankaj'), isTrue);
+  setUpAll(() async {
+    for (final (family, file) in [
+      ('Sora', 'assets/fonts/sora/Sora-Variable.ttf'),
+      (
+        'Plus Jakarta Sans',
+        'assets/fonts/plus_jakarta_sans/PlusJakartaSans-Variable.ttf',
+      ),
+    ]) {
+      await (FontLoader(family)..addFont(rootBundle.load(file))).load();
+    }
+  });
+
+  testWidgets('one\'s own Org chart: the manager, you, and your reports', (
+    tester,
+  ) async {
+    final bloc = await boot(
+      tester,
+      viewer: 'ananya',
+      managerName: 'Harsh Choudhary',
+      team: [
+        member('harsh', isManager: true),
+        member('ananya', isSelf: true),
+        // A peer: on the Team tab, not on the Org chart.
+        member('priya'),
+        for (final id in _reports) member(id, reportsToViewer: true),
+      ],
+    );
+    expect(openPersonProfile('ananya'), isTrue);
     await tester.pumpAndSettle();
     await openOrgChart(tester);
 
-    // Pankaj leads Haider, so — as on the Team tab — the team he belongs to
-    // is a card of faces, and his reports hang under Direct Reports.
-    expect(find.text('My Team'), findsOneWidget);
-    expect(find.text('Direct Reports'), findsOneWidget);
-    expect(find.text('Pankaj (You)'), findsOneWidget);
-    expect(find.text('Haider'), findsOneWidget);
-    expect(find.text('Meera (Manager)'), findsNothing);
+    expect(find.text('Harsh Choudhary (Manager)'), findsOneWidget);
+    expect(find.text('Ananya Bisht (You)'), findsOneWidget);
+    for (final id in _reports) {
+      expect(find.text(_names[id]!), findsOneWidget);
+    }
+    // Nobody else: no peers, no team headings.
+    expect(find.text('Priya Nair'), findsNothing);
+    expect(find.text('My Team'), findsNothing);
+    expect(find.text('Direct Reports'), findsNothing);
 
-    await tester.tap(find.text('My Team'));
-    await tester.pumpAndSettle();
-    expect(find.text('Meera (Manager)'), findsOneWidget);
-    expect(find.text('Rana'), findsOneWidget);
+    // One's own card: white, ringed in the brand blue.
+    final mine = cardOf(tester, 'Ananya Bisht (You)');
+    expect(mine.color, Colors.white);
+    expect((mine.border! as Border).top.color, _brand);
+    expect(cardOf(tester, 'Harsh Choudhary (Manager)').border, isNull);
+    // Each level indented under the one above.
+    final manager = leftOf(tester, 'Harsh Choudhary (Manager)');
+    final you = leftOf(tester, 'Ananya Bisht (You)');
+    final report = leftOf(tester, 'Yami Guri');
+    expect(you, greaterThan(manager));
+    expect(report, greaterThan(you));
+    expect(leftOf(tester, 'Shivani Singh'), report);
 
-    // A report on it opens their full profile, as from the Team tab.
-    await tester.ensureVisible(find.text('Haider'));
+    await capture(tester, 'own-profile', 'Shivani Singh');
+
+    // A report opens their own profile.
+    await tester.ensureVisible(find.text('Yami Guri'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Haider'));
+    await tester.tap(find.text('Yami Guri'));
     await tester.pumpAndSettle();
-    expect(find.text('Profile-Haider'), findsOneWidget);
-    expect(find.text('Request'), findsOneWidget);
+    expect(find.text('Profile-Yami'), findsOneWidget);
     await close(tester, bloc);
   });
 
   testWidgets(
-    'a colleague\'s Org chart is their team, and opens anyone on it',
+    'someone else\'s Org chart: their manager, them highlighted, their reports',
     (tester) async {
       final bloc = await boot(
         tester,
+        viewer: 'ankit',
+        managerName: 'Ananya Bisht',
         team: [
-          {
-            ...person('boss', 'Boss'),
-            'designation': 'Head of Sales',
-            'role': 'manager',
-          },
-          {...person('outsider', 'Outsider Person'), 'role': 'self'},
-          {...person('pankaj', 'Pankaj'), 'role': 'peer'},
-          {...person('sam', 'Sam'), 'role': 'peer'},
+          member('ananya', isManager: true, managerName: 'Harsh Choudhary'),
+          member('ankit', isSelf: true),
+          for (final id in _reports.where((id) => id != 'ankit')) member(id),
         ],
+        personTeams: {
+          'ananya': [
+            teamRow('harsh', 'manager'),
+            teamRow('ananya', 'self'),
+            teamRow('priya', 'peer'),
+            for (final id in _reports) teamRow(id, 'report'),
+          ],
+        },
       );
-      expect(openPersonProfile('outsider'), isTrue);
+      expect(openPersonProfile('ananya'), isTrue);
       await tester.pumpAndSettle();
       await openOrgChart(tester);
 
-      expect(find.text("Outsider's Team"), findsOneWidget);
-      expect(find.text('Boss (Manager)'), findsOneWidget);
-      expect(find.text('Outsider Person'), findsWidgets);
-      expect(find.text('Sam'), findsOneWidget);
-      // The viewer, when they are on it, is "(You)".
-      expect(find.text('Pankaj (You)'), findsOneWidget);
+      // Their manager, plain: "(Manager)" is one's own profile's word.
+      expect(find.text('Harsh Choudhary'), findsOneWidget);
+      expect(find.textContaining('(Manager)'), findsNothing);
+      // The viewer among their reports.
+      expect(find.text('Ankit Tomar (You)'), findsOneWidget);
+      expect(find.text('Ananya Bisht (You)'), findsNothing);
+      for (final id in _reports.where((id) => id != 'ankit')) {
+        expect(find.text(_names[id]!), findsOneWidget);
+      }
+      // No peers, and nobody above the manager.
+      expect(find.text('Priya Nair'), findsNothing);
+      expect(find.text('Meera Iyer'), findsNothing);
+      expect(find.text("Ananya's Team"), findsNothing);
 
-      await tester.tap(find.text('Boss (Manager)'));
+      // Their card, filled pale blue and ringed; the viewer's own is plain.
+      final theirs = tester
+          .widgetList<Ink>(find.byType(Ink))
+          .map((ink) => ink.decoration)
+          .whereType<BoxDecoration>()
+          .where((box) => box.color == _personFill)
+          .toList();
+      expect(theirs, hasLength(1));
+      expect((theirs.single.border! as Border).top.color, _brand);
+      expect(cardOf(tester, 'Ankit Tomar (You)').color, Colors.white);
+      expect(cardOf(tester, 'Ankit Tomar (You)').border, isNull);
+
+      await capture(tester, 'someone-elses-profile', 'Shivani Singh');
+
+      // Their manager opens their own profile.
+      await tester.ensureVisible(find.text('Harsh Choudhary'));
       await tester.pumpAndSettle();
-      expect(find.text('Profile-Boss'), findsOneWidget);
-      // Still the colleague view: nothing more than it always showed.
-      expect(find.text('Request'), findsNothing);
+      await tester.tap(find.text('Harsh Choudhary'));
+      await tester.pumpAndSettle();
+      expect(find.text('Profile-Harsh'), findsOneWidget);
       await close(tester, bloc);
     },
   );
 
   testWidgets('an older server: drawn from the reporting line', (tester) async {
-    final bloc = await boot(tester);
+    final bloc = await boot(
+      tester,
+      viewer: 'ananya',
+      managerName: 'Harsh Choudhary',
+      team: [member('harsh', isManager: true), member('ananya', isSelf: true)],
+    );
     expect(openPersonProfile('outsider'), isTrue);
     await tester.pumpAndSettle();
     await openOrgChart(tester);
 
-    // Their manager heads their team; the chain above them is not part of it.
-    expect(find.text('Boss (Manager)'), findsNothing);
-    expect(find.text("Outsider's Team"), findsOneWidget);
-    expect(find.text('Direct Reports'), findsOneWidget);
+    // Their manager — the card above them on the line — and their report;
+    // the chain above the manager is not part of it.
+    expect(find.text('Boss'), findsOneWidget);
     expect(find.text('Kid'), findsOneWidget);
     expect(find.text('Chief'), findsNothing);
-    await tester.tap(find.text("Outsider's Team"));
-    await tester.pumpAndSettle();
-    expect(find.text('Boss (Manager)'), findsOneWidget);
+    expect(leftOf(tester, 'Kid'), greaterThan(leftOf(tester, 'Boss')));
     await close(tester, bloc);
   });
 }
