@@ -1418,6 +1418,33 @@ void main() {
       expect(find.byType(FaceCheckScreen), findsNothing);
     });
 
+    testWidgets('the check: the page goes white for the flash, then the selfie', (
+      tester,
+    ) async {
+      FaceAutoCapture.checkLiveness = true;
+      addTearDown(() => FaceAutoCapture.checkLiveness = false);
+      await pumpScreen(tester, () => FaceCheckScreen(api: api()));
+      await settle(tester);
+      // The face, come a little closer: movement passed, the flash still owed.
+      _camera.liveness.moved = true;
+      _camera.sees(FaceSignal.detected);
+      await tester.pump();
+      expect(find.text('Hold still'), findsOneWidget);
+      await tester.pump(FaceAutoCapture.hold);
+      await tester.pump();
+      expect(find.byKey(const ValueKey('face-flash')), findsOneWidget);
+      expect(_count('/face/verify'), 0);
+      await shoot('check-flash');
+      // Lit up under it: the selfie follows.
+      _camera.liveness.flashOff(_camera.liveness.lumaNow + 20);
+      await tester.pump(FaceAutoCapture.flash);
+      await tester.pump();
+      expect(find.byKey(const ValueKey('face-flash')), findsNothing);
+      await settle(tester);
+      expect(_count('/face/verify'), 1);
+      expect(find.text(_detectedLine), findsOneWidget);
+    });
+
     testWidgets('the check: a failed try, with Try Again and the tries left', (
       tester,
     ) async {
