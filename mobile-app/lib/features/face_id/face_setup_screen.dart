@@ -364,8 +364,25 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       caption = tries != null && tries > 0
           ? '$tries out of 3 ${tries == 1 ? 'try' : 'tries'} left'
           : _problem;
+    } else if (_camera.waived) {
+      // The phone could not read a face in time (4266:26076): the dark
+      // camera, Face not detected, and Try Again takes the selfie anyway,
+      // for the server to judge.
+      state = FaceCaptureState.failed;
+      line = 'Face not detected';
+      action = FaceCaptureButton(
+        label: 'Try Again',
+        busy: _busy,
+        onTap: () {
+          _camera.waitAgain();
+          _enrol();
+        },
+      );
+      caption = tries != null && tries > 0
+          ? '$tries out of 3 ${tries == 1 ? 'try' : 'tries'} left'
+          : 'Keep your face inside the oval, facing the light.';
     } else if (signal == FaceSignal.unavailable) {
-      // This phone cannot find faces: the button takes the selfie.
+      // This phone cannot find faces at all: the button takes the selfie.
       state = FaceCaptureState.looking;
       line = 'Look at the camera and tap the button.';
       action = FaceCaptureButton(
@@ -376,15 +393,11 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     } else {
       // Looking, or found: the line says which, and the selfie takes itself
       // once the phone's own checks are done — a little movement, then the
-      // flash. A flash that lit nothing up leaves the button as the way.
+      // flash.
       state = FaceCaptureState.looking;
       line = detected
-          ? (_auto.flashFailed
-                ? 'Could not read your face. Tap the button to try.'
-                : (FaceAutoCapture.checkLiveness
-                          ? _camera.liveness.ask
-                          : null) ??
-                      'Hold still')
+          ? (FaceAutoCapture.checkLiveness ? _camera.liveness.ask : null) ??
+                'Hold still'
           : signal == FaceSignal.notDetected
           ? 'Keep your face inside the oval'
           : 'Position your face inside the oval';
