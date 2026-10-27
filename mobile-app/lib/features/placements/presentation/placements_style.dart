@@ -464,6 +464,56 @@ class PlChoice extends StatelessWidget {
 }
 
 /// The list pages' search box, filters and newest/oldest switch.
+/// How a list is ordered, or narrowed to a recent window and then ordered
+/// newest first.
+enum PlSort {
+  lastAdded('Last added'),
+  lastUpdated('Last updated'),
+  alphabetical('Alphabetically'),
+  thisWeek('Added this week'),
+  thisMonth('Added this month');
+
+  const PlSort(this.label);
+  final String label;
+
+  static PlSort byLabel(String label) =>
+      values.firstWhere((s) => s.label == label, orElse: () => lastAdded);
+
+  /// [rows] in this order, keeping only this week's or month's for those.
+  List<T> apply<T>(
+    Iterable<T> rows, {
+    required DateTime? Function(T) added,
+    required DateTime? Function(T) updated,
+    required String Function(T) name,
+  }) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final from = switch (this) {
+      // The week starts on Monday.
+      thisWeek => today.subtract(Duration(days: today.weekday - 1)),
+      thisMonth => DateTime(now.year, now.month),
+      _ => null,
+    };
+    final list = [
+      for (final row in rows)
+        if (from == null || !(added(row) ?? DateTime(0)).isBefore(from)) row,
+    ];
+    final zero = DateTime(0);
+    list.sort(switch (this) {
+      alphabetical => (a, b) => name(
+        a,
+      ).toLowerCase().compareTo(name(b).toLowerCase()),
+      lastUpdated => (a, b) => (updated(b) ?? added(b) ?? zero).compareTo(
+        updated(a) ?? added(a) ?? zero,
+      ),
+      _ => (a, b) => (added(b) ?? zero).compareTo(added(a) ?? zero),
+    });
+    return list;
+  }
+}
+
+/// The list pages' search box, then one row of tabs: the sort (an icon tab
+/// that opens the choices) and the filters; then how many of how many show.
 class PlListControls extends StatelessWidget {
   const PlListControls({
     super.key,
@@ -472,8 +522,11 @@ class PlListControls extends StatelessWidget {
     required this.filters,
     required this.filter,
     required this.onFilter,
-    required this.newest,
+    required this.sort,
     required this.onSort,
+    this.shown,
+    this.total,
+    this.noun = 'results',
   });
 
   final TextEditingController search;
@@ -481,11 +534,35 @@ class PlListControls extends StatelessWidget {
   final List<String> filters;
   final String filter;
   final ValueChanged<String> onFilter;
-  final bool newest;
-  final VoidCallback onSort;
+  final PlSort sort;
+  final ValueChanged<PlSort> onSort;
+
+  /// How many rows show after the filter, the sort's window and the search,
+  /// of how many there are; null while loading.
+  final int? shown;
+  final int? total;
+
+  /// "candidates", "clients".
+  final String noun;
+
+  Future<void> _pickSort(BuildContext context) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _LeavePickerSheet(
+        options: [for (final s in PlSort.values) s.label],
+        selected: sort.label,
+      ),
+    );
+    if (picked != null) onSort(PlSort.byLabel(picked));
+  }
 
   @override
   Widget build(BuildContext context) {
+    final sorted = sort != PlSort.lastAdded;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -499,10 +576,6 @@ class PlListControls extends StatelessWidget {
               color: Pl.faint,
               size: 18,
             ),
-            prefixIconConstraints: const BoxConstraints(
-              minWidth: 40,
-              minHeight: 40,
-            ),
           ),
         ),
         const SizedBox(height: 12),
@@ -510,6 +583,51 @@ class PlListControls extends StatelessWidget {
           scrollDirection: Axis.horizontal,
           child: Row(
             children: [
+              Semantics(
+                button: true,
+                label: 'Sort: ${sort.label}',
+                child: Material(
+                  key: const ValueKey('placements-sort'),
+                  color: sorted ? Pl.actionTint : Pl.card,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color: sorted ? Pl.action : Pl.field,
+                      width: sorted ? 1.5 : 1,
+                    ),
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => _pickSort(context),
+                    child: Container(
+                      constraints: const BoxConstraints(minHeight: 40),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.swap_vert_rounded,
+                            size: 18,
+                            color: Pl.action,
+                          ),
+                          if (sorted) ...[
+                            const SizedBox(width: 6),
+                            Text(
+                              sort.label,
+                              style: Pl.text(
+                                13,
+                                weight: FontWeight.w700,
+                                color: Pl.action,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               for (final label in filters) ...[
                 PlChoice(
                   label: label,
@@ -521,46 +639,14 @@ class PlListControls extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            const Expanded(child: _HomeSectionLabel('Sorted by date added')),
-            Material(
-              color: Pl.card,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: const BorderSide(color: Pl.field),
-              ),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: onSort,
-                child: Container(
-                  height: 36,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.swap_vert_rounded,
-                        size: 16,
-                        color: Pl.action,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        newest ? 'Newest first' : 'Oldest first',
-                        style: Pl.text(
-                          12,
-                          weight: FontWeight.w600,
-                          color: Pl.ink,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+        if (shown != null && total != null) ...[
+          const SizedBox(height: 12),
+          Text(
+            shown == total ? '$total $noun' : '$shown of $total $noun',
+            key: const ValueKey('placements-shown'),
+            style: Pl.text(13, weight: FontWeight.w600, color: Pl.muted),
+          ),
+        ],
       ],
     );
   }

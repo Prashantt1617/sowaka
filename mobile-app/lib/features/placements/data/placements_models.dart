@@ -121,6 +121,7 @@ class PlacementClient {
     this.feeReference = '',
     this.createdByUserId = '',
     this.createdAt,
+    this.updatedAt,
   });
 
   factory PlacementClient.fromJson(Map<String, dynamic> json) =>
@@ -144,6 +145,7 @@ class PlacementClient {
         feeReference: _text(json['feeReference']),
         createdByUserId: _text(json['createdByUserId']),
         createdAt: _time(json['createdAt']),
+        updatedAt: _time(json['updatedAt']),
       );
 
   final String id;
@@ -167,6 +169,7 @@ class PlacementClient {
   final String feeReference;
   final String createdByUserId;
   final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   /// The role named [title] here, if the client has it.
   PlacementDesignation? designationNamed(String title) {
@@ -199,6 +202,7 @@ class PlacementCustomer {
     this.stage = CandidateStage.notPlaced,
     this.createdByUserId = '',
     this.createdAt,
+    this.updatedAt,
   });
 
   factory PlacementCustomer.fromJson(Map<String, dynamic> json) =>
@@ -219,6 +223,7 @@ class PlacementCustomer {
         stage: CandidateStage.fromKey(json['stage']),
         createdByUserId: _text(json['createdByUserId']),
         createdAt: _time(json['createdAt']),
+        updatedAt: _time(json['updatedAt']),
       );
 
   final String id;
@@ -238,6 +243,7 @@ class PlacementCustomer {
   final CandidateStage stage;
   final String createdByUserId;
   final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   /// "Sales executive · 2 yrs", whatever there is of it.
   String get subtitle => [

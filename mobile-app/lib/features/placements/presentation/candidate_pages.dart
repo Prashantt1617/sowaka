@@ -99,7 +99,7 @@ class _CandidatesPageState extends State<CandidatesPage> {
   List<PlacementCustomer>? _rows;
   String? _error;
   String _filter = _all;
-  bool _newest = true;
+  PlSort _sort = PlSort.lastAdded;
 
   @override
   void initState() {
@@ -145,12 +145,12 @@ class _CandidatesPageState extends State<CandidatesPage> {
           c.phone.replaceAll(' ', '').contains(q.replaceAll(' ', '')) ||
           c.currentRole.toLowerCase().contains(q);
     }).toList();
-    rows.sort((a, b) {
-      final at = a.createdAt ?? DateTime(0);
-      final bt = b.createdAt ?? DateTime(0);
-      return _newest ? bt.compareTo(at) : at.compareTo(bt);
-    });
-    return rows;
+    return _sort.apply(
+      rows,
+      added: (c) => c.createdAt,
+      updated: (c) => c.updatedAt,
+      name: (c) => c.name,
+    );
   }
 
   @override
@@ -173,8 +173,11 @@ class _CandidatesPageState extends State<CandidatesPage> {
               filters: [_all, for (final s in CandidateStage.values) s.label],
               filter: _filter,
               onFilter: (f) => setState(() => _filter = f),
-              newest: _newest,
-              onSort: () => setState(() => _newest = !_newest),
+              sort: _sort,
+              onSort: (sort) => setState(() => _sort = sort),
+              shown: _rows == null ? null : _shown.length,
+              total: _rows?.length,
+              noun: 'candidates',
             ),
             const SizedBox(height: 12),
             if (rows == null && _error == null)
