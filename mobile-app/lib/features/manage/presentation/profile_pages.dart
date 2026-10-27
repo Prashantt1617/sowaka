@@ -131,20 +131,35 @@ final class _ProfilePosts {
 /// Another person's profile: a report's from the Team tab, or anyone's in the
 /// company from wherever their name was tapped. Which tabs it carries is
 /// [memberProfileTabs]'s to say.
-/// The tab a profile opens on, by where it was opened from; null keeps the
-/// profile's usual first tab.
+/// The tab a profile opens on, by where it was opened from: from a post,
+/// their posts; from the Team tab or any org chart, their org chart; from
+/// anywhere else, null, which keeps the profile's usual first tab.
 ProfileTab? openingTabFor(ProfileEntry from) => switch (from) {
   ProfileEntry.feed => ProfileTab.posts,
-  ProfileEntry.team || ProfileEntry.orgChart => ProfileTab.workDetail,
+  ProfileEntry.team || ProfileEntry.orgChart => ProfileTab.orgChart,
   ProfileEntry.elsewhere => null,
 };
 
-/// The tab shown: the one tapped, else [openOn] once the profile has it (the
-/// Post tab appears when the posts arrive), else the first.
-int _shownTab(List<ProfileTab> tabs, int? tapped, ProfileTab? openOn) {
-  if (tapped != null) return tapped.clamp(0, tabs.length - 1);
-  final wanted = openOn == null ? -1 : tabs.indexOf(openOn);
-  return wanted < 0 ? 0 : wanted;
+/// A profile's tabs as its bar lays them out: the one it opens on moved to
+/// the front, so it is the first thing seen and not scrolled off to the
+/// right, and the rest in their usual order. A profile without that tab
+/// (no Post where the company has no Connect) keeps its usual order.
+List<ProfileTab> profileTabsOpeningOn(
+  List<ProfileTab> tabs,
+  ProfileTab? openOn,
+) => openOn == null || !tabs.contains(openOn)
+    ? tabs
+    : [
+        openOn,
+        for (final tab in tabs)
+          if (tab != openOn) tab,
+      ];
+
+/// The tab shown: the one tapped, else the first — which is the one the
+/// profile opened on ([profileTabsOpeningOn]).
+int _shownTab(List<ProfileTab> tabs, ProfileTab? tapped) {
+  final index = tapped == null ? -1 : tabs.indexOf(tapped);
+  return index < 0 ? 0 : index;
 }
 
 class _TeamMemberProfilePage extends StatefulWidget {
@@ -181,8 +196,9 @@ class _TeamMemberProfilePage extends StatefulWidget {
 }
 
 class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
-  /// The tab tapped; null until one is, while [widget.openOn] decides.
-  int? _tab;
+  /// The tab tapped; null until one is, while the first — [widget.openOn]
+  /// where there is one — is shown.
+  ProfileTab? _tab;
 
   late final ProfileApiService _profileService = ProfileApiService(
     session: widget.bloc.service.session,
@@ -363,7 +379,7 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
     final present = member.todayStatus == TeamPresenceStatus.present;
     final today = DateTime.now();
     final posts = _posts;
-    final tabs = [
+    final tabs = profileTabsOpeningOn([
       for (final tab in widget.publicOnly
           ? colleagueProfileTabs
           : memberProfileTabs(
@@ -372,8 +388,8 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
               hasDocuments: member.documents.isNotEmpty,
             ))
         if (tab != ProfileTab.posts || posts != null) tab,
-    ];
-    final selected = _shownTab(tabs, _tab, widget.openOn);
+    ], widget.openOn);
+    final selected = _shownTab(tabs, _tab);
     // Whether they are in today is their attendance, so it shows only where
     // their Attendance tab does.
     final showsPresence = tabs.contains(ProfileTab.attendance);
@@ -527,7 +543,7 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
                   tab == ProfileTab.posts ? posts?.total : null,
               ],
               selected: selected,
-              onChanged: (index) => setState(() => _tab = index),
+              onChanged: (index) => setState(() => _tab = tabs[index]),
               children: content,
             ),
           ),
@@ -1060,9 +1076,9 @@ class _ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<_ProfileScreen> {
-  /// The tab tapped; null until one is, while [widget.openOn] decides (and
-  /// without one, Request first, as the design opens it).
-  int? _tab;
+  /// The tab tapped; null until one is, while the first — [widget.openOn]
+  /// where there is one, else Work detail — is shown.
+  ProfileTab? _tab;
 
   late final ProfileApiService _profileService = ProfileApiService(
     session: widget.bloc.service.session,
@@ -1262,14 +1278,14 @@ class _ProfileScreenState extends State<_ProfileScreen> {
     final helpHere = profileShowsHelp(user.enabledTabs);
     final helpOnly = !worksHere && helpHere;
     final posts = _posts;
-    final tabs = [
+    final tabs = profileTabsOpeningOn([
       for (final tab in ownProfileTabs(
         hasManager: dashboard.hasManager,
         showsHelp: helpHere,
       ))
         if (tab != ProfileTab.posts || posts != null) tab,
-    ];
-    final selected = _shownTab(tabs, _tab, widget.openOn);
+    ], widget.openOn);
+    final selected = _shownTab(tabs, _tab);
     final today = DateTime.now();
     final todayRecord = dashboard.attendance
         .where(
@@ -1424,7 +1440,7 @@ class _ProfileScreenState extends State<_ProfileScreen> {
                         tab == ProfileTab.posts ? posts?.total : null,
                     ],
                     selected: selected,
-                    onChanged: (index) => setState(() => _tab = index),
+                    onChanged: (index) => setState(() => _tab = tabs[index]),
                     children: content,
                   )
                 : SingleChildScrollView(

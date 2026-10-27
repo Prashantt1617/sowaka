@@ -175,6 +175,9 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     bloc.dispose();
+    // The notification service's wait for its setup runs out here rather
+    // than outliving the test.
+    await tester.pump(const Duration(seconds: 30));
   });
 
   testWidgets('Log out: Cancel keeps them signed in, Log Out signs out', (
