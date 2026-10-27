@@ -95,7 +95,6 @@ http.Client _server({required Map<String, dynamic> verify}) => MockClient((reque
 
 late _FakeCamera _camera;
 
-const _screenshots = String.fromEnvironment('SCREENSHOTS');
 const _automatic = "Hold still — we'll take it automatically.";
 
 int _count(String path) => _requests.where((p) => p.endsWith(path)).length;
@@ -636,7 +635,7 @@ void main() {
   });
 
   testWidgets('setup takes the selfie on its own, but only once they agree', (tester) async {
-    await pumpPunch(tester, type: 'in');
+    await pumpPunch(tester, type: 'in', verify: {'passed': true, 'reason': 'matched', 'token': 'verify-tok'});
     _camera.sees(FaceSignal.detected, prompted: true);
     await tester.pump(const Duration(seconds: 2));
     expect(_count('/face/enrol'), 0);
@@ -646,9 +645,19 @@ void main() {
     expect(find.text(_automatic), findsOneWidget);
     expect(_count('/face/enrol'), 0);
     await tester.pump(FaceAutoCapture.hold);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump();
     expect(_count('/face/enrol'), 1);
-    expect(_punchBody?['faceToken'], 'enrol-tok');
+    // Set up: the success screen, then the selfie check takes itself too, and
+    // the punch carries the check's token.
+    expect(find.text('Face ID is set up'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1600));
+    await tester.pumpAndSettle();
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump(FaceAutoCapture.hold);
+    await tester.pumpAndSettle();
+    expect(_count('/face/verify'), 1);
+    expect(_punchBody?['faceToken'], 'verify-tok');
     expect(find.text("You're punched in!"), findsOneWidget);
   });
 
