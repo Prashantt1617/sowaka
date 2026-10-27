@@ -68,6 +68,21 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
   bool _busy = false;
   bool _sendingFallback = false;
 
+  /// Whether the status has been read (or failed to be): until then, the
+  /// selfie is not taken on its own, in case the company uses Face Liveness.
+  bool _statusRead = false;
+  late final FaceAutoCapture _auto = FaceAutoCapture(
+    camera: _camera,
+    allowed: () =>
+        mounted &&
+        !_busy &&
+        _statusRead &&
+        _status?.liveness.aws != true &&
+        !_fallbackOpen &&
+        _camera.cameraProblem == null,
+    onCapture: _capture,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -90,11 +105,16 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
       if (status.liveness.aws) await _runLiveness(status);
     } catch (_) {
       // The check itself will say what is wrong; the status only adds to it.
+    } finally {
+      _statusRead = true;
+      _auto.check();
     }
   }
 
   void _changed() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    _auto.check();
   }
 
   @override
@@ -110,6 +130,7 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _camera.removeListener(_changed);
+    _auto.dispose();
     _camera.dispose();
     super.dispose();
   }
@@ -144,7 +165,8 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
   }
 
   Future<void> _capture() async {
-    if (_busy) return;
+    if (_busy || !mounted) return;
+    _auto.spend();
     setState(() {
       _busy = true;
       _problem = null;
@@ -235,7 +257,11 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
     FaceStatusRow? status;
     var action = FaceCaptureAction(
       label: punchLabel,
-      caption: 'Your selfie will confirm your $punchWord.',
+      // Ready, and the selfie will be taken without a tap; the button stays,
+      // for after a failed try and for a phone that cannot detect a face.
+      caption: detected && promptDone && _auto.armed
+          ? "Hold still — we'll take it automatically."
+          : 'Your selfie will confirm your $punchWord.',
       busy: _busy,
       // Before the first frame is read (4010:63873) the button is drawn as
       // the design has it; it waits for detection rather than taking a photo

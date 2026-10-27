@@ -56,6 +56,18 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
   int? _attemptsLeft;
   String? _problemTitle;
   String? _problem;
+  late final FaceAutoCapture _auto = FaceAutoCapture(
+    camera: _camera,
+    // Never before they agree: the consent is theirs to give first.
+    allowed: () =>
+        mounted &&
+        !_busy &&
+        _agreed &&
+        _consent != null &&
+        !(_fallbackOpen && !widget.onboarding) &&
+        _camera.cameraProblem == null,
+    onCapture: _enrol,
+  );
 
   @override
   void initState() {
@@ -75,6 +87,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
         _consent = status.consent;
         _fallbackOpen = status.fallbackAvailable;
       });
+      _auto.check();
     } on ManagerApiException catch (error) {
       if (mounted)
         setState(
@@ -89,7 +102,9 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
   }
 
   void _changed() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    _auto.check();
   }
 
   @override
@@ -106,13 +121,15 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _camera.removeListener(_changed);
+    _auto.dispose();
     _camera.dispose();
     super.dispose();
   }
 
   Future<void> _enrol() async {
     final consent = _consent;
-    if (consent == null || !_agreed || _busy) return;
+    if (consent == null || !_agreed || _busy || !mounted) return;
+    _auto.spend();
     setState(() {
       _busy = true;
       _problem = null;
@@ -245,6 +262,8 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     final cameraProblem = _camera.cameraProblem;
     final caption = _attemptsLeft != null && _attemptsLeft! > 0
         ? '$_attemptsLeft ${_attemptsLeft == 1 ? 'try' : 'tries'} left.'
+        : detected && _camera.challengeDone && _auto.armed
+        ? "Hold still — we'll take it automatically."
         : 'Your later punches are matched with this selfie.';
     FaceStatusRow? status;
     var action = FaceCaptureAction(
@@ -340,7 +359,12 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       aboveAction: _ConsentLine(
         consent: _consent,
         agreed: _agreed,
-        onChanged: _busy ? null : (value) => setState(() => _agreed = value),
+        onChanged: _busy
+            ? null
+            : (value) {
+                setState(() => _agreed = value);
+                _auto.check();
+              },
         onRetry: _loadProblem == null ? null : _load,
       ),
       action: action,
