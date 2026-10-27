@@ -282,7 +282,8 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
         onTap: null,
       );
     } else if (detected && !_camera.challengeDone) {
-      status = FaceStatusRow.detected(body: _camera.challenge.prompt);
+      // Not "Face detected" yet: still detecting, with the prompt to do.
+      status = FaceStatusRow.detecting(body: _camera.challenge.prompt);
       action = FaceCaptureAction(
         label: label,
         caption: 'Capture unlocks once you have done that.',
@@ -304,6 +305,8 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
         body:
             "You're all set. Look at the camera and\nhold still while you take your selfie.",
       );
+    } else if (signal == FaceSignal.starting) {
+      status = const FaceStatusRow.detecting();
     }
 
     // Out of tries, or the service is down: the manager can be asked instead.

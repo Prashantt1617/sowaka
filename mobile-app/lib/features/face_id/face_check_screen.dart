@@ -263,8 +263,9 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
         onTap: null,
       );
     } else if (detected && !promptDone) {
-      // The phone's own prompt, in the detected row's place, until it is done.
-      status = FaceStatusRow.detected(body: _camera.challenge.prompt);
+      // Not "Face detected" yet: still detecting, with the phone's own
+      // prompt as the instruction until it is done.
+      status = FaceStatusRow.detecting(body: _camera.challenge.prompt);
       action = FaceCaptureAction(
         label: punchLabel,
         caption: 'Capture unlocks once you have done that.',
@@ -277,10 +278,13 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
     } else if (_problem != null) {
       status = FaceStatusRow.problem(title: 'Face check unavailable', body: _problem!);
     } else if (detected) {
-      // Face detected (4005:51535).
+      // Face detected (4005:51535): a face, and the prompt done.
       status = const FaceStatusRow.detected(
         body: "You're all set. Look at the camera and\nhold still while you take your selfie.",
       );
+    } else if (signal == FaceSignal.starting) {
+      // The camera or the detector has not answered yet.
+      status = const FaceStatusRow.detecting();
     }
 
     // Out of tries, or the service is down: the manager can be asked instead.
