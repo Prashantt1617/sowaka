@@ -156,10 +156,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       // they agreed, and to which line.
       // The token a setup may hand back goes unused: the punch carries the
       // selfie check's own, taken next.
-      await widget.api.enrolFace(
-        jpeg: photo,
-        consentVersion: consent.version,
-      );
+      await widget.api.enrolFace(jpeg: photo, consentVersion: consent.version);
       FaceCheckOutcome.enrolledThisRun = true;
       if (!mounted) return;
       // The check opens its own camera: this one is let go first.
@@ -308,12 +305,23 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
         ? "Hold still — we'll take it automatically."
         : 'Your later punches are matched with this selfie.';
     FaceStatusRow? status;
+    // As on the check: the selfie takes itself once they agree and the face
+    // is in the oval, so no button until a try fails or detection is out.
+    final buttonless =
+        signal != FaceSignal.unavailable &&
+        _problem == null &&
+        _loadProblem == null;
     var action = FaceCaptureAction(
       label: label,
       caption: _agreed || _consent == null
-          ? caption
+          ? (buttonless &&
+                    caption ==
+                        'Your later punches are matched with this selfie.'
+                ? 'Your selfie is taken automatically.'
+                : caption)
           : 'Agree above to set up Face ID.',
       busy: _busy,
+      buttonless: buttonless,
       // Locked until they agree, as well as until a face is in the oval.
       enabled: _agreed,
       onTap: signal == FaceSignal.starting || !_agreed ? null : _enrol,
@@ -338,8 +346,11 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       );
       action = FaceCaptureAction(
         label: label,
-        caption: 'Capture unlocks when a face is detected.',
+        caption: buttonless
+            ? 'Your selfie is taken once your face is in the oval.'
+            : 'Capture unlocks when a face is detected.',
         enabled: false,
+        buttonless: buttonless,
         onTap: null,
       );
     } else if (detected && !_camera.challengeDone) {

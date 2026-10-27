@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
+import 'package:image/image.dart' as img;
 
 /// What the front camera sees, as far as the phone can tell.
 enum FaceSignal {
@@ -74,7 +76,14 @@ class FaceCamera extends ChangeNotifier {
   String? cameraProblem;
   bool permissionDenied = false;
 
-  bool challengeDone = false;
+  /// The live prompt (blink or turn) is no longer asked: the face in the
+  /// oval is enough, so this is always done. Kept so the screens and the
+  /// server's log read as before.
+  bool challengeDone = true;
+
+  /// The last frame a single, near face was seen in: the selfie is taken
+  /// from it, silently, with no shutter sound or flash.
+  _Frame? _lastFace;
 
   /// Detection gave up waiting (see [patience]); the screens read it as
   /// [FaceSignal.unavailable].
@@ -116,6 +125,9 @@ class FaceCamera extends ChangeNotifier {
         await camera.dispose();
         return;
       }
+      // Never the flash: the selfie is a frame of the preview, and the
+      // fallback photo must not light up the room either.
+      await camera.setFlashMode(FlashMode.off).catchError((_) {});
       cameraProblem = null;
       permissionDenied = false;
       notifyListeners();
@@ -181,6 +193,7 @@ class FaceCamera extends ChangeNotifier {
         return;
       }
       _follow(near.first);
+      _lastFace = _Frame.of(image, input.metadata?.rotation.rawValue ?? 0);
       _set(FaceSignal.detected);
     } on MissingPluginException {
       _set(FaceSignal.unavailable);
@@ -267,12 +280,29 @@ class FaceCamera extends ChangeNotifier {
     );
   }
 
-  /// Takes the selfie. Detection pauses for it and starts again with [resume].
+  /// Takes the selfie, silently: the last frame the face was seen in, turned
+  /// upright and saved as a JPEG, so there is no shutter sound and no flash.
+  /// That frame is checked for an upright face first; if it has none (an
+  /// orientation this phone reports oddly), a photo is taken instead, flash
+  /// off. Detection pauses for it and starts again with [resume].
   Future<Uint8List?> capture() async {
     final camera = _camera;
     if (camera == null || !camera.value.isInitialized) return null;
+    final frame = _lastFace;
     try {
       if (camera.value.isStreamingImages) await camera.stopImageStream();
+    } catch (_) {
+      // Already stopped.
+    }
+    if (frame != null) {
+      try {
+        final jpeg = await compute(_frameToJpeg, frame);
+        if (jpeg != null && await _hasUprightFace(jpeg)) return jpeg;
+      } catch (_) {
+        // Fall back to a photo.
+      }
+    }
+    try {
       final file = await camera.takePicture();
       return await file.readAsBytes();
     } catch (_) {
@@ -280,8 +310,30 @@ class FaceCamera extends ChangeNotifier {
     }
   }
 
-  /// After a failed check: look again, with the prompt still owed.
+  /// Whether the detector finds one face in [jpeg] as it stands, unrotated:
+  /// the check that the frame was turned the right way up.
+  Future<bool> _hasUprightFace(Uint8List jpeg) async {
+    final detector = _detector;
+    if (detector == null) return false;
+    final file = File(
+      '${Directory.systemTemp.path}/sowaka-face-${DateTime.now().microsecondsSinceEpoch}.jpg',
+    );
+    try {
+      await file.writeAsBytes(jpeg, flush: true);
+      final faces = await detector.processImage(
+        InputImage.fromFilePath(file.path),
+      );
+      return faces.length == 1;
+    } catch (_) {
+      return false;
+    } finally {
+      unawaited(file.delete().catchError((_) => file));
+    }
+  }
+
+  /// After a failed check: look again.
   Future<void> resume() async {
+    _lastFace = null;
     _stage = 0;
     _trackingId = null;
     _set(FaceSignal.starting);
@@ -318,7 +370,11 @@ class FaceCamera extends ChangeNotifier {
 /// Never while detection is [FaceCamera.waived]: with no face to watch, the
 /// button is the only way.
 class FaceAutoCapture {
-  FaceAutoCapture({required this.camera, required this.allowed, required this.onCapture});
+  FaceAutoCapture({
+    required this.camera,
+    required this.allowed,
+    required this.onCapture,
+  });
 
   /// How long the face holds still before the selfie is taken.
   static Duration hold = const Duration(milliseconds: 700);
@@ -342,7 +398,11 @@ class FaceAutoCapture {
   bool get armed => !_spent && !camera.waived;
 
   bool get _ready =>
-      !_disposed && armed && camera.signal == FaceSignal.detected && camera.challengeDone && allowed();
+      !_disposed &&
+      armed &&
+      camera.signal == FaceSignal.detected &&
+      camera.challengeDone &&
+      allowed();
 
   /// Call on every change to the camera or to [allowed]'s answer.
   void check() {
@@ -379,4 +439,78 @@ class FaceAutoCapture {
     _hold?.cancel();
     _away?.cancel();
   }
+}
+
+/// One preview frame, copied out of the camera's buffer (which is reused for
+/// the next frame), with the turn that makes it upright.
+class _Frame {
+  const _Frame({
+    required this.bytes,
+    required this.width,
+    required this.height,
+    required this.stride,
+    required this.bgra,
+    required this.rotation,
+  });
+
+  static _Frame? of(CameraImage image, int rotation) {
+    if (image.planes.length != 1) return null;
+    final plane = image.planes.first;
+    return _Frame(
+      bytes: Uint8List.fromList(plane.bytes),
+      width: image.width,
+      height: image.height,
+      stride: plane.bytesPerRow,
+      bgra: defaultTargetPlatform == TargetPlatform.iOS,
+      rotation: rotation,
+    );
+  }
+
+  final Uint8List bytes;
+  final int width;
+  final int height;
+  final int stride;
+
+  /// iOS sends BGRA; Android NV21 (a Y plane, then interleaved V and U).
+  final bool bgra;
+  final int rotation;
+}
+
+/// A frame as an upright JPEG, off the UI thread ([compute]). Null when the
+/// frame is not in a shape this reads.
+Uint8List? _frameToJpeg(_Frame f) {
+  img.Image picture;
+  if (f.bgra) {
+    picture = img.Image.fromBytes(
+      width: f.width,
+      height: f.height,
+      bytes: f.bytes.buffer,
+      rowStride: f.stride,
+      numChannels: 4,
+      order: img.ChannelOrder.bgra,
+    );
+  } else {
+    final uv = f.stride * f.height;
+    if (f.bytes.length < uv + f.stride * (f.height ~/ 2)) return null;
+    picture = img.Image(width: f.width, height: f.height);
+    for (var y = 0; y < f.height; y++) {
+      final row = y * f.stride;
+      final uvRow = uv + (y >> 1) * f.stride;
+      for (var x = 0; x < f.width; x++) {
+        final luma = f.bytes[row + x];
+        final at = uvRow + (x & ~1);
+        final v = f.bytes[at] - 128;
+        final u = f.bytes[at + 1] - 128;
+        picture.setPixelRgb(
+          x,
+          y,
+          (luma + 1.402 * v).round().clamp(0, 255),
+          (luma - 0.344136 * u - 0.714136 * v).round().clamp(0, 255),
+          (luma + 1.772 * u).round().clamp(0, 255),
+        );
+      }
+    }
+  }
+  if (f.rotation != 0) picture = img.copyRotate(picture, angle: f.rotation);
+  return Uint8List.fromList(img.encodeJpg(picture, quality: 88));
 }

@@ -61,13 +61,24 @@ class FaceCaptureLayout extends StatelessWidget {
                     Text(
                       heading,
                       textAlign: TextAlign.center,
-                      style: _sora(20, FontWeight.w600, _ink, height: 24 / 20, spacing: 0.4),
+                      style: _sora(
+                        20,
+                        FontWeight.w600,
+                        _ink,
+                        height: 24 / 20,
+                        spacing: 0.4,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       instructions,
                       textAlign: TextAlign.center,
-                      style: _sora(14, FontWeight.w400, _secondary, height: 22 / 14),
+                      style: _sora(
+                        14,
+                        FontWeight.w400,
+                        _secondary,
+                        height: 22 / 14,
+                      ),
                     ),
                     const SizedBox(height: 20),
                     _CameraCard(camera: camera, guide: guide),
@@ -86,9 +97,15 @@ class FaceCaptureLayout extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (aboveAction case final above?) ...[above, const SizedBox(height: 12)],
+                  if (aboveAction case final above?) ...[
+                    above,
+                    const SizedBox(height: 12),
+                  ],
                   action,
-                  if (below case final link?) ...[const SizedBox(height: 4), Center(child: link)],
+                  if (below case final link?) ...[
+                    const SizedBox(height: 4),
+                    Center(child: link),
+                  ],
                 ],
               ),
             ),
@@ -103,7 +120,12 @@ class FaceCaptureLayout extends StatelessWidget {
 /// Without [onBack] the arrow's box stays empty, for a step with nowhere to
 /// go back to.
 class FaceStepHeader extends StatelessWidget {
-  const FaceStepHeader({super.key, required this.title, this.onBack, this.onClose});
+  const FaceStepHeader({
+    super.key,
+    required this.title,
+    this.onBack,
+    this.onClose,
+  });
 
   final String title;
   final VoidCallback? onBack;
@@ -124,7 +146,11 @@ class FaceStepHeader extends StatelessWidget {
                 label: 'Back',
                 alignment: Alignment.centerLeft,
                 onTap: onBack,
-                child: SvgPicture.asset('$_asset/arrow_left.svg', width: 24, height: 24),
+                child: SvgPicture.asset(
+                  '$_asset/arrow_left.svg',
+                  width: 24,
+                  height: 24,
+                ),
               ),
             Expanded(
               child: Text(
@@ -132,14 +158,24 @@ class FaceStepHeader extends StatelessWidget {
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: _sora(16, FontWeight.w600, _ink, height: 16.2 / 16, spacing: -0.16),
+                style: _sora(
+                  16,
+                  FontWeight.w600,
+                  _ink,
+                  height: 16.2 / 16,
+                  spacing: -0.16,
+                ),
               ),
             ),
             _NavButton(
               label: 'Close',
               alignment: Alignment.centerRight,
               onTap: onClose,
-              child: SvgPicture.asset('$_asset/close.svg', width: 20, height: 20),
+              child: SvgPicture.asset(
+                '$_asset/close.svg',
+                width: 20,
+                height: 20,
+              ),
             ),
           ],
         ),
@@ -161,7 +197,9 @@ class _CameraCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final preview = camera;
-    final size = preview?.value.isInitialized == true ? preview!.value.previewSize : null;
+    final size = preview?.value.isInitialized == true
+        ? preview!.value.previewSize
+        : null;
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: Container(
@@ -185,7 +223,9 @@ class _CameraCard extends StatelessWidget {
               ),
             // Camera scrim: 4% black over a face, 14% while there is none.
             ColoredBox(
-              color: Colors.black.withValues(alpha: guide == FaceGuide.solid ? 0.04 : 0.14),
+              color: Colors.black.withValues(
+                alpha: guide == FaceGuide.solid ? 0.04 : 0.14,
+              ),
             ),
             Positioned(
               top: 16,
@@ -193,15 +233,27 @@ class _CameraCard extends StatelessWidget {
               right: 0,
               child: Center(
                 child: guide == FaceGuide.solid
-                    ? SvgPicture.asset('$_asset/face_guide.svg', width: 214, height: 258)
-                    : Image.asset('$_asset/face_guide_dashed.png', width: 214, height: 258),
+                    ? SvgPicture.asset(
+                        '$_asset/face_guide.svg',
+                        width: 214,
+                        height: 258,
+                      )
+                    : Image.asset(
+                        '$_asset/face_guide_dashed.png',
+                        width: 214,
+                        height: 258,
+                      ),
               ),
             ),
             if (guide == FaceGuide.dashed)
               // 56 square, centred 8 above the card's middle.
               Align(
                 alignment: const Alignment(0, -16 / (300 - 56)),
-                child: SvgPicture.asset('$_asset/scan_face.svg', width: 56, height: 56),
+                child: SvgPicture.asset(
+                  '$_asset/scan_face.svg',
+                  width: 56,
+                  height: 56,
+                ),
               ),
             // Camera label (4005:51566): a 50% ink pill, 12 from the bottom.
             Positioned(
@@ -210,7 +262,10 @@ class _CameraCard extends StatelessWidget {
               right: 0,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0x80172126),
                     borderRadius: BorderRadius.circular(100),
@@ -218,9 +273,21 @@ class _CameraCard extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      SvgPicture.asset('$_asset/camera.svg', width: 12, height: 12),
+                      SvgPicture.asset(
+                        '$_asset/camera.svg',
+                        width: 12,
+                        height: 12,
+                      ),
                       const SizedBox(width: 6),
-                      Text('Front camera', style: _sora(10, FontWeight.w400, Colors.white, height: 14 / 10)),
+                      Text(
+                        'Front camera',
+                        style: _sora(
+                          10,
+                          FontWeight.w400,
+                          Colors.white,
+                          height: 14 / 10,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -237,23 +304,29 @@ class _CameraCard extends StatelessWidget {
 /// the guidance under it, 8 apart.
 class FaceStatusRow extends StatelessWidget {
   /// Only once a face is in the oval and the phone's prompt is done.
-  const FaceStatusRow.detected({super.key, this.title = 'Face detected', required this.body})
-    : _icon = 'circle_check.svg',
-      _color = _brand;
+  const FaceStatusRow.detected({
+    super.key,
+    this.title = 'Face detected',
+    required this.body,
+  }) : _icon = 'circle_check.svg',
+       _color = _brand;
 
   /// Still looking: the camera opening, or a face waiting on the prompt,
   /// which [body] then carries. Neutral, in the design's own type.
   const FaceStatusRow.detecting({
     super.key,
     this.title = 'Detecting your face…',
-    this.body = 'Hold your phone at eye level and\nlook straight at the camera.',
-  })
-    : _icon = 'scan_face_status.svg',
-      _color = _ink;
+    this.body =
+        'Hold your phone at eye level and\nlook straight at the camera.',
+  }) : _icon = 'scan_face_status.svg',
+       _color = _ink;
 
-  const FaceStatusRow.problem({super.key, required this.title, required this.body})
-    : _icon = 'circle_alert.svg',
-      _color = _amber;
+  const FaceStatusRow.problem({
+    super.key,
+    required this.title,
+    required this.body,
+  }) : _icon = 'circle_alert.svg',
+       _color = _amber;
 
   final String title;
   final String body;
@@ -270,12 +343,25 @@ class FaceStatusRow extends StatelessWidget {
             SvgPicture.asset('$_asset/$_icon', width: 20, height: 20),
             const SizedBox(width: 8),
             Flexible(
-              child: Text(title, style: _sora(16, FontWeight.w600, _color, height: 16.2 / 16, spacing: -0.16)),
+              child: Text(
+                title,
+                style: _sora(
+                  16,
+                  FontWeight.w600,
+                  _color,
+                  height: 16.2 / 16,
+                  spacing: -0.16,
+                ),
+              ),
             ),
           ],
         ),
         const SizedBox(height: 8),
-        Text(body, textAlign: TextAlign.center, style: _sora(14, FontWeight.w400, _secondary, height: 22 / 14)),
+        Text(
+          body,
+          textAlign: TextAlign.center,
+          style: _sora(14, FontWeight.w400, _secondary, height: 22 / 14),
+        ),
       ],
     );
   }
@@ -291,6 +377,7 @@ class FaceCaptureAction extends StatelessWidget {
     required this.onTap,
     this.enabled = true,
     this.busy = false,
+    this.buttonless = false,
   });
 
   final String label;
@@ -299,9 +386,44 @@ class FaceCaptureAction extends StatelessWidget {
   final bool enabled;
   final bool busy;
 
+  /// While the face is being found and the selfie takes itself: no button,
+  /// only the caption (and a spinner while the selfie is checked).
+  final bool buttonless;
+
   @override
   Widget build(BuildContext context) {
     final live = enabled && !busy && onTap != null;
+    if (buttonless) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: 56,
+            child: Center(
+              child: busy
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        color: _brand,
+                        strokeWidth: 2.4,
+                      ),
+                    )
+                  : null,
+            ),
+          ),
+          if (caption.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              caption,
+              textAlign: TextAlign.center,
+              style: _sora(11, FontWeight.w400, _tertiary, height: 18 / 11),
+            ),
+          ],
+        ],
+      );
+    }
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -323,12 +445,21 @@ class FaceCaptureAction extends StatelessWidget {
                       ? const SizedBox(
                           width: 22,
                           height: 22,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
                         )
                       : Text(
                           label,
                           textAlign: TextAlign.center,
-                          style: _sora(16, FontWeight.w600, Colors.white, height: 24 / 16, spacing: -0.16),
+                          style: _sora(
+                            16,
+                            FontWeight.w600,
+                            Colors.white,
+                            height: 24 / 16,
+                            spacing: -0.16,
+                          ),
                         ),
                 ),
               ),
@@ -337,7 +468,11 @@ class FaceCaptureAction extends StatelessWidget {
         ),
         if (caption.isNotEmpty) ...[
           const SizedBox(height: 10),
-          Text(caption, textAlign: TextAlign.center, style: _sora(11, FontWeight.w400, _tertiary, height: 18 / 11)),
+          Text(
+            caption,
+            textAlign: TextAlign.center,
+            style: _sora(11, FontWeight.w400, _tertiary, height: 18 / 11),
+          ),
         ],
       ],
     );
@@ -357,13 +492,26 @@ class FaceQuietLink extends StatelessWidget {
     borderRadius: BorderRadius.circular(8),
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      child: Text(label, style: _sora(12, FontWeight.w600, const Color(0xFF0668D8), height: 18 / 12)),
+      child: Text(
+        label,
+        style: _sora(
+          12,
+          FontWeight.w600,
+          const Color(0xFF0668D8),
+          height: 18 / 12,
+        ),
+      ),
     ),
   );
 }
 
 class _NavButton extends StatelessWidget {
-  const _NavButton({required this.label, required this.alignment, required this.onTap, required this.child});
+  const _NavButton({
+    required this.label,
+    required this.alignment,
+    required this.onTap,
+    required this.child,
+  });
 
   final String label;
   final Alignment alignment;
@@ -377,12 +525,22 @@ class _NavButton extends StatelessWidget {
     child: InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
-      child: SizedBox(width: 40, height: 40, child: Align(alignment: alignment, child: child)),
+      child: SizedBox(
+        width: 40,
+        height: 40,
+        child: Align(alignment: alignment, child: child),
+      ),
     ),
   );
 }
 
-TextStyle _sora(double size, FontWeight weight, Color color, {double? height, double? spacing}) => TextStyle(
+TextStyle _sora(
+  double size,
+  FontWeight weight,
+  Color color, {
+  double? height,
+  double? spacing,
+}) => TextStyle(
   fontFamily: 'Sora',
   fontSize: size,
   fontWeight: weight,
