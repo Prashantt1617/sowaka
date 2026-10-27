@@ -1252,6 +1252,28 @@ class _ProfileScreenState extends State<_ProfileScreen> {
             ? 'People Manager'
             : 'Team Member');
     final department = _nonEmpty(user.department) ?? dashboard.managerTeam;
+    // One's own Org chart: the manager the Team tab shows, or the one HR has
+    // named; oneself; and the people who report to one.
+    final ownManager =
+        dashboard.team.where((member) => member.isManager).firstOrNull ??
+        switch (_nonEmpty(user.managerName)) {
+          final name? when dashboard.hasManager => _namedManager(name),
+          _ => null,
+        };
+    final ownSelf =
+        dashboard.team.where((member) => member.isSelf).firstOrNull ??
+        TeamMember.fromJson({
+          'userId': user.id,
+          'name': user.name,
+          'designation': designation,
+          'department': department,
+          'photoUrl': user.profilePhotoUrl,
+          'isSelf': true,
+        }, 1);
+    final ownReports = [
+      for (final member in dashboard.team)
+        if (member.reportsToViewer && !member.isSelf) member,
+    ];
     // Nobody above them: the row goes rather than reading "Your manager",
     // which is a placeholder, not an answer.
     final reportsTo = dashboard.hasManager
@@ -1363,18 +1385,27 @@ class _ProfileScreenState extends State<_ProfileScreen> {
             value: _formatDate(user.birthday),
           ),
       ],
-      // The Team tab's own team — the same people, laid out the same way.
+      // Their manager, them and the people they lead — the Team tab's own
+      // team without the peers.
       ProfileTab.orgChart => [
-        if (dashboard.team.any((member) => !member.isSelf))
-          _ProfileTeamChart(
-            team: dashboard.team,
-            coreTitle: 'My Team',
+        if (ownManager != null || ownReports.isNotEmpty)
+          _ProfileOrgChart(
+            manager: ownManager,
+            person: ownSelf,
+            reports: ownReports,
             viewerUserId: user.id,
-            photo: ProfilePhoto(
-              name: user.name,
-              url: user.profilePhotoUrl,
-              size: 40,
+            ownProfile: true,
+            personSubtitle: designation,
+            // One's own face as the hero above draws it.
+            personPhoto: _ProfileAvatar(
+              initials: _initials(user.name),
+              profilePhotoUrl: user.profilePhotoUrl,
+              size: 56,
             ),
+            // The dots the Team tab puts on the same faces.
+            dotFor: (member) => dashboard.team.contains(member)
+                ? _presenceDotColor(member)
+                : null,
           )
         else
           const _ProfileTabNote(
@@ -2140,68 +2171,348 @@ class _PresencePill extends StatelessWidget {
 
 // ── Where they sit, and their documents ──────────────────────────────────────
 
-/// The Org chart on a profile: the person's team as the Team tab draws it —
-/// their manager, them and their peers, then the teams they lead — at the size
-/// the profile's cards have always had. Anyone on it opens their own profile,
+/// Someone on a profile's Org chart HR has named as a manager but who is not
+/// on the team the profile came with: their name, and nothing to open.
+TeamMember _namedManager(String name) => TeamMember.fromJson({
+  'userId': '',
+  'name': name,
+  'designation': '',
+  'department': '',
+  'isManager': true,
+}, 1);
+
+/// The Org chart on a profile: the person's manager, the person, and the
+/// people who report to them — nothing above the manager, and no peers. Each
+/// level sits indented under the one above it, joined to it by a dotted line.
+///
+/// On one's own profile ([ownProfile]) the manager reads "(Manager)" and the
+/// person "(You)" on a white card ringed in the brand blue; on anyone else's
+/// the person's card is filled a pale blue and the viewer, wherever they are on
+/// it, reads "(You)". Anyone on it but the person opens their own profile,
 /// through the same opener as anywhere else, so what that profile shows is
 /// [memberProfileTabs]'s to say. The person it is about is already open.
 ///
-/// [team] carries who each one is to that person ([_teamTree]). [photo] draws
-/// the person's own face as the hero above draws it.
-class _ProfileTeamChart extends StatefulWidget {
-  const _ProfileTeamChart({
-    required this.team,
-    required this.coreTitle,
+/// [personPhoto] draws the person's own face as the hero above draws it.
+/// [dotFor] is the presence dot on a face, where the viewer already sees it.
+class _ProfileOrgChart extends StatelessWidget {
+  const _ProfileOrgChart({
+    required this.person,
+    required this.reports,
     required this.viewerUserId,
-    required this.photo,
+    required this.ownProfile,
+    this.manager,
+    this.personSubtitle,
+    this.personPhoto,
+    this.dotFor,
   });
 
-  final List<TeamMember> team;
-  final String coreTitle;
+  final TeamMember? manager;
+  final TeamMember person;
+  final List<TeamMember> reports;
   final String viewerUserId;
-  final Widget photo;
+  final bool ownProfile;
 
-  @override
-  State<_ProfileTeamChart> createState() => _ProfileTeamChartState();
-}
+  /// What the person's card says under their name, where their own row has
+  /// nothing to say.
+  final String? personSubtitle;
+  final Widget? personPhoto;
+  final Color? Function(TeamMember member)? dotFor;
 
-class _ProfileTeamChartState extends State<_ProfileTeamChart> {
-  /// Which team is open, by title, as on the Team tab.
-  String? _openTeam;
+  /// Where each level's line runs and where its cards start, from the left of
+  /// the card above it (orgchart-ref).
+  static const _managerLine = 14.0;
+  static const _personIndent = 28.0;
+  static const _reportsLine = 31.0;
+  static const _reportsIndent = 46.0;
+
+  bool _isViewer(TeamMember member) =>
+      member.userId.isNotEmpty && member.userId == viewerUserId;
+
+  VoidCallback? _open(TeamMember member) => member.userId.isEmpty
+      ? null
+      : () => openPersonProfile(member.userId, from: ProfileEntry.orgChart);
 
   @override
   Widget build(BuildContext context) {
-    const sizing = _TeamSizing.profile;
+    final manager = this.manager;
+    final personAt = manager == null ? 0.0 : _personIndent;
+    final reportsLine = personAt + _reportsLine;
+    final reportsAt = personAt + _reportsIndent;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: _teamTree(
-        members: widget.team,
-        coreTitle: widget.coreTitle,
-        sizing: sizing,
-        openTeam: _openTeam,
-        onToggle: (title) =>
-            setState(() => _openTeam = _openTeam == title ? null : title),
-        row: (member) => _TeamPersonRow(
-          member: member,
-          name: _teamRowName(member, you: member.userId == widget.viewerUserId),
-          sizing: sizing,
-          photo: member.isSelf
-              ? SizedBox.square(dimension: sizing.photo, child: widget.photo)
-              : null,
-          onTap: member.isSelf || member.userId.isEmpty
-              ? null
-              : () => openPersonProfile(member.userId, from: ProfileEntry.orgChart),
+      children: [
+        if (manager != null)
+          _OrgChartCard(
+            member: manager,
+            name: _isViewer(manager)
+                ? '${manager.name} (You)'
+                : ownProfile
+                ? '${manager.name} (Manager)'
+                : manager.name,
+            dot: dotFor?.call(manager),
+            onTap: _open(manager),
+          ),
+        _OrgChartBranch(
+          line: manager == null ? null : _managerLine,
+          indent: personAt,
+          gap: manager == null ? 0 : 16,
+          child: _OrgChartCard(
+            member: person,
+            name: ownProfile || _isViewer(person)
+                ? '${person.name} (You)'
+                : person.name,
+            subtitle: personSubtitle,
+            photo: personPhoto,
+            dot: dotFor?.call(person),
+            highlight: ownProfile
+                ? _OrgChartHighlight.outlined
+                : _OrgChartHighlight.filled,
+          ),
+        ),
+        for (final (index, report) in reports.indexed)
+          _OrgChartBranch(
+            line: reportsLine,
+            indent: reportsAt,
+            gap: index == 0 ? 16 : 14,
+            runsOn: index < reports.length - 1,
+            child: _OrgChartCard(
+              member: report,
+              name: _isViewer(report) ? '${report.name} (You)' : report.name,
+              dot: dotFor?.call(report),
+              onTap: _open(report),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// How the person a profile is about stands out on their own Org chart.
+enum _OrgChartHighlight { none, outlined, filled }
+
+/// One card on the Org chart, [indent]ed under the card above and [gap] below
+/// it, with a dotted [line] running down from that card and turning in to this
+/// one's middle. [runsOn] carries the line on past it, to the next card.
+class _OrgChartBranch extends StatelessWidget {
+  const _OrgChartBranch({
+    required this.child,
+    required this.indent,
+    required this.gap,
+    this.line,
+    this.runsOn = false,
+  });
+
+  final Widget child;
+  final double indent;
+  final double gap;
+  final double? line;
+  final bool runsOn;
+
+  @override
+  Widget build(BuildContext context) {
+    final line = this.line;
+    return Stack(
+      children: [
+        if (line != null)
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _OrgChartLinePainter(
+                x: line,
+                to: indent,
+                top: gap,
+                runsOn: runsOn,
+              ),
+            ),
+          ),
+        Padding(
+          padding: EdgeInsets.only(left: indent, top: gap),
+          child: child,
+        ),
+      ],
+    );
+  }
+}
+
+/// The dotted elbow (orgchart-ref): down from the top at [x], then across at
+/// the middle of the card below [top] to its left edge at [to].
+class _OrgChartLinePainter extends CustomPainter {
+  const _OrgChartLinePainter({
+    required this.x,
+    required this.to,
+    required this.top,
+    required this.runsOn,
+  });
+
+  final double x;
+  final double to;
+  final double top;
+  final bool runsOn;
+
+  static const _dash = 3.0;
+  static const _space = 3.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF9197A2)
+      ..strokeWidth = 1;
+    final elbow = top + (size.height - top) / 2;
+    final bottom = runsOn ? size.height : elbow;
+    for (var y = 0.0; y < bottom; y += _dash + _space) {
+      canvas.drawLine(
+        Offset(x, y),
+        Offset(x, math.min(y + _dash, bottom)),
+        paint,
+      );
+    }
+    for (var left = x + _space; left < to; left += _dash + _space) {
+      canvas.drawLine(
+        Offset(left, elbow),
+        Offset(math.min(left + _dash, to), elbow),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_OrgChartLinePainter old) =>
+      old.x != x || old.to != to || old.top != top || old.runsOn != runsOn;
+}
+
+/// A person on the Org chart (orgchart-ref): a white, rounded card with a
+/// light shadow, their 56pt face with its presence [dot] where there is one,
+/// their name and, under it, their designation.
+class _OrgChartCard extends StatelessWidget {
+  const _OrgChartCard({
+    required this.member,
+    required this.name,
+    this.subtitle,
+    this.photo,
+    this.dot,
+    this.highlight = _OrgChartHighlight.none,
+    this.onTap,
+  });
+
+  final TeamMember member;
+  final String name;
+  final String? subtitle;
+  final Widget? photo;
+  final Color? dot;
+  final _OrgChartHighlight highlight;
+  final VoidCallback? onTap;
+
+  static const _photo = 56.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final dot = this.dot;
+    final detail =
+        _nonEmpty(member.designation) ??
+        _nonEmpty(subtitle) ??
+        _nonEmpty(member.team);
+    final radius = BorderRadius.circular(16);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: radius,
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: highlight == _OrgChartHighlight.filled
+                ? const Color(0xFFE5F5FD)
+                : Colors.white,
+            borderRadius: radius,
+            border: highlight == _OrgChartHighlight.none
+                ? null
+                : Border.all(color: ProfileStyle.brand, width: 1.114),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x14000000),
+                blurRadius: 4,
+                offset: Offset(0, 2),
+              ),
+              BoxShadow(
+                color: Color(0x0F000000),
+                blurRadius: 1,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              SizedBox.square(
+                dimension: _photo,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    SizedBox.square(
+                      dimension: _photo,
+                      child:
+                          photo ??
+                          _TeamMemberPhoto(member: member, size: _photo),
+                    ),
+                    if (dot != null)
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          width: 14,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: dot,
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: ProfileStyle.sora(
+                        17,
+                        weight: FontWeight.w700,
+                        height: 25.5,
+                      ),
+                    ),
+                    if (detail != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        detail,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: ProfileStyle.sora(
+                          14,
+                          color: ProfileStyle.tertiary,
+                          height: 20,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// Someone else's Org chart: their team, fetched as anyone in the company may
-/// see it. A server from before `/profile/people/:userId/team` still has the
-/// reporting line the profile came with, so the chart is drawn from that —
-/// their manager and their reports — with the photos the viewer's own team
-/// already has.
+/// Someone else's Org chart: their manager, them and their reports, fetched as
+/// anyone in the company may see them. A server from before
+/// `/profile/people/:userId/team` still has the reporting line the profile
+/// came with, so the chart is drawn from that, with the photos the viewer's
+/// own team already has.
 class _PersonTeamChart extends StatefulWidget {
   const _PersonTeamChart({
     required this.member,
@@ -2226,7 +2537,7 @@ class _PersonTeamChartState extends State<_PersonTeamChart> {
       .catchError((Object _) => _fromReportingLine());
 
   /// Their manager — the card just above them on the line — them, and their
-  /// reports, as the Team tab would group them.
+  /// reports.
   List<TeamMember> _fromReportingLine() {
     final member = widget.member;
     final nodes = member.orgChart;
@@ -2270,6 +2581,12 @@ class _PersonTeamChartState extends State<_PersonTeamChart> {
   @override
   Widget build(BuildContext context) {
     final member = widget.member;
+    // Whether someone is in today shows only for the people the viewer's own
+    // Team tab already shows it for.
+    final known = {
+      for (final person in widget.data.team)
+        if (person.userId.isNotEmpty) person.userId: person,
+    };
     return FutureBuilder<List<TeamMember>>(
       future: _team,
       builder: (context, snapshot) {
@@ -2282,14 +2599,32 @@ class _PersonTeamChartState extends State<_PersonTeamChart> {
             ),
           );
         }
-        if (team.where((person) => !person.isSelf).isEmpty) {
+        final manager =
+            team.where((person) => person.isManager).firstOrNull ??
+            switch (_nonEmpty(member.managerName)) {
+              final name? => _namedManager(name),
+              null => null,
+            };
+        final reports = [
+          for (final person in team)
+            if (person.reportsToViewer && !person.isSelf) person,
+        ];
+        if (manager == null && reports.isEmpty) {
           return const _ProfileTabNote('No reporting line to show yet.');
         }
-        return _ProfileTeamChart(
-          team: team,
-          coreTitle: "${member.name.trim().split(' ').first}'s Team",
+        final self = team.where((person) => person.isSelf).firstOrNull;
+        return _ProfileOrgChart(
+          manager: manager,
+          person: self ?? member,
+          reports: reports,
           viewerUserId: widget.viewerUserId,
-          photo: _TeamMemberPhoto(member: member, size: 40),
+          ownProfile: false,
+          personSubtitle: member.designation,
+          personPhoto: _TeamMemberPhoto(member: member, size: 56),
+          dotFor: (person) => switch (known[person.userId]) {
+            final seen? => _presenceDotColor(seen),
+            null => null,
+          },
         );
       },
     );
