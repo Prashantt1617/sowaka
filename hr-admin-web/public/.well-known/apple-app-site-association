@@ -3,7 +3,7 @@
     "apps": [],
     "details": [
       {
-        "appIDs": ["W86YPZ2HGF.com.kritik.sowaka.dev"],
+        "appIDs": ["W86YPZ2HGF.com.tanvijadhav.sowaka"],
         "components": [
           { "/": "/open", "comment": "A notification email's link: the app opens what it is about" },
           { "/": "/open/*" }
