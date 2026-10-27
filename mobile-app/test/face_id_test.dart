@@ -3,7 +3,8 @@
 // manager, against a fake server. A layout that overflows fails the test.
 //
 // `flutter test --update-goldens --dart-define=SCREENSHOTS=<dir> test/face_id_test.dart`
-// also writes the setup, check and setup success screens to <dir> as PNGs.
+// also writes the setup, check and setup success screens, and the check and
+// setup screens ready to capture, to <dir> as PNGs.
 import 'dart:convert';
 import 'dart:math';
 
@@ -95,6 +96,9 @@ http.Client _server({required Map<String, dynamic> verify}) => MockClient((reque
 late _FakeCamera _camera;
 
 const _screenshots = String.fromEnvironment('SCREENSHOTS');
+const _automatic = "Hold still — we'll take it automatically.";
+
+int _count(String path) => _requests.where((p) => p.endsWith(path)).length;
 
 Future<FaceCheckOutcome?> Function() _pumpCheck(WidgetTester tester, http.Client client) {
   FaceCheckOutcome? outcome;
@@ -176,7 +180,7 @@ void main() {
     expect(find.text('Detecting your face…'), findsNothing);
     expect(find.text(_camera.challenge.prompt), findsNothing);
     expect(find.text("You're all set. Look at the camera and\nhold still while you take your selfie."), findsOneWidget);
-    expect(find.text('Your selfie will confirm your punch-in.'), findsOneWidget);
+    expect(find.text(_automatic), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -290,7 +294,7 @@ void main() {
     expect(find.text('Punch out'), findsOneWidget);
     _camera.sees(FaceSignal.detected, prompted: true);
     await tester.pump();
-    expect(find.text('Your selfie will confirm your punch-out.'), findsOneWidget);
+    expect(find.text(_automatic), findsOneWidget);
     await tester.tap(find.text('Take selfie & punch out'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Send punch-out to manager'));
@@ -558,6 +562,192 @@ void main() {
     await tester.pumpAndSettle();
     expect(_fallbackBody, contains('"type":"out"'));
     expect(_punchBody, isNull);
+  });
+
+  testWidgets('ready and held still: the selfie is taken without a tap, once', (tester) async {
+    await _pumpCheck(tester, _server(verify: {'passed': true, 'reason': 'matched', 'token': 'tok-auto'}))();
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump();
+    // Not before the hold.
+    await tester.pump(FaceAutoCapture.hold - const Duration(milliseconds: 100));
+    expect(_count('/face/verify'), 0);
+    // The face moving a little resets nothing; the hold ends and it is taken.
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pumpAndSettle();
+    expect(_count('/face/verify'), 1);
+    expect(find.text('Take a selfie'), findsNothing);
+  });
+
+  testWidgets('no automatic selfie before the prompt, or once detection has given up', (tester) async {
+    await _pumpCheck(tester, _server(verify: {'passed': true, 'token': 'tok'}))();
+    _camera.sees(FaceSignal.detected);
+    await tester.pump(const Duration(seconds: 2));
+    expect(_count('/face/verify'), 0);
+    // Waived (no detection on this phone): the button, as before.
+    _camera.waived = true;
+    _camera.sees(FaceSignal.unavailable, prompted: true);
+    await tester.pump(const Duration(seconds: 2));
+    expect(_count('/face/verify'), 0);
+    expect(find.text(_automatic), findsNothing);
+    expect(find.text('Your selfie will confirm your punch-in.'), findsOneWidget);
+    await tester.tap(find.text('Take selfie & punch in'));
+    await tester.pumpAndSettle();
+    expect(_count('/face/verify'), 1);
+  });
+
+  testWidgets('a failed check is not retried on its own until the face leaves and comes back', (tester) async {
+    await _pumpCheck(tester, _server(verify: {
+      'passed': false, 'reason': 'not_a_match', 'message': "This doesn't match the face set up for your account.",
+      'attemptsLeft': 2, 'fallbackAvailable': false,
+    }))();
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump(FaceAutoCapture.hold);
+    await tester.pumpAndSettle();
+    expect(_count('/face/verify'), 1);
+    expect(find.text('Face not matched'), findsOneWidget);
+
+    // Still in the oval, frame after frame: nothing more.
+    for (var i = 0; i < 5; i += 1) {
+      _camera.sees(FaceSignal.detected, prompted: true);
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+    expect(_count('/face/verify'), 1);
+
+    // A flicker of one frame is not leaving.
+    _camera.sees(FaceSignal.notDetected, prompted: true);
+    await tester.pump(const Duration(milliseconds: 100));
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump(const Duration(seconds: 2));
+    expect(_count('/face/verify'), 1);
+
+    // Gone, then back: the next try is automatic again.
+    _camera.sees(FaceSignal.notDetected, prompted: true);
+    await tester.pump(FaceAutoCapture.away + const Duration(milliseconds: 100));
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump(FaceAutoCapture.hold);
+    await tester.pumpAndSettle();
+    expect(_count('/face/verify'), 2);
+
+    // A tap still takes one by hand.
+    await tester.tap(find.text('Take selfie & punch in'));
+    await tester.pumpAndSettle();
+    expect(_count('/face/verify'), 3);
+  });
+
+  testWidgets('setup takes the selfie on its own, but only once they agree', (tester) async {
+    await pumpPunch(tester, type: 'in');
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump(const Duration(seconds: 2));
+    expect(_count('/face/enrol'), 0);
+    expect(find.text('Agree above to set up Face ID.'), findsOneWidget);
+    await tester.tap(find.byType(Checkbox));
+    await tester.pump();
+    expect(find.text(_automatic), findsOneWidget);
+    expect(_count('/face/enrol'), 0);
+    await tester.pump(FaceAutoCapture.hold);
+    await tester.pumpAndSettle();
+    expect(_count('/face/enrol'), 1);
+    expect(_punchBody?['faceToken'], 'enrol-tok');
+    expect(find.text("You're punched in!"), findsOneWidget);
+  });
+
+  testWidgets('a failed setup is not retried on its own while the face stays', (tester) async {
+    _enrolReply = () => http.Response(jsonEncode({
+      'success': false,
+      'message': "It's too dark. Move to a brighter spot or face a light.",
+      'details': {'face': {'reason': 'too_dark', 'attemptsLeft': 2, 'fallback': false}},
+    }), 422);
+    await pumpPunch(tester, type: 'in');
+    await tester.tap(find.byType(Checkbox));
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump(FaceAutoCapture.hold);
+    await tester.pumpAndSettle();
+    expect(_count('/face/enrol'), 1);
+    expect(find.text('Too dark'), findsOneWidget);
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump(const Duration(seconds: 3));
+    expect(_count('/face/enrol'), 1);
+    // Unticked: leaving and coming back takes nothing.
+    await tester.tap(find.byType(Checkbox));
+    _camera.sees(FaceSignal.notDetected, prompted: true);
+    await tester.pump(const Duration(seconds: 1));
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump(const Duration(seconds: 2));
+    expect(_count('/face/enrol'), 1);
+  });
+
+  group('screenshots', () {
+    setUpAll(() async {
+      for (final (family, file) in [
+        ('Sora', 'assets/fonts/sora/Sora-Variable.ttf'),
+        ('Plus Jakarta Sans', 'assets/fonts/plus_jakarta_sans/PlusJakartaSans-Variable.ttf'),
+      ]) {
+        await (FontLoader(family)..addFont(rootBundle.load(file))).load();
+      }
+    });
+
+    const shot = ValueKey('shot');
+    const phone = Size(393, 852);
+
+    /// A 393 x 852 phone drawn at 2x: a golden is captured at one pixel per
+    /// logical pixel, so the screen is laid out at the phone's size and
+    /// scaled up into a view twice as big.
+    Future<void> pumpScreen(WidgetTester tester, Widget screen) async {
+      tester.view.physicalSize = phone * 2;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(RepaintBoundary(
+        key: shot,
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(fontFamily: 'Plus Jakarta Sans'),
+          builder: (context, child) => FittedBox(
+            child: SizedBox.fromSize(
+              size: phone,
+              child: MediaQuery(
+                data: MediaQuery.of(context).copyWith(size: phone, devicePixelRatio: 2),
+                child: child!,
+              ),
+            ),
+          ),
+          home: screen,
+        ),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    ManagerApiService api() => ManagerApiService(
+      session: AuthSession(token: 't', user: _user(enrolled: true, atPunch: true)),
+      baseUrl: 'https://example.test',
+      client: _server(verify: const {'passed': true, 'token': 'tok'}),
+    );
+
+    testWidgets('the check, ready to take the selfie on its own', (tester) async {
+      await pumpScreen(tester, FaceCheckScreen(api: api()));
+      _camera.sees(FaceSignal.detected, prompted: true);
+      await tester.pump();
+      expect(find.text(_automatic), findsOneWidget);
+      if (_screenshots.isNotEmpty) {
+        await expectLater(find.byKey(shot), matchesGoldenFile(Uri.file('$_screenshots/face-check-auto.png')));
+      }
+    });
+
+    testWidgets('setup, agreed and ready to take the selfie on its own', (tester) async {
+      await pumpScreen(tester, FaceSetupScreen(api: api()));
+      await tester.tap(find.byType(Checkbox));
+      // The tick's own animation, done before the face is seen.
+      await tester.pump(const Duration(seconds: 1));
+      expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
+      _camera.sees(FaceSignal.detected, prompted: true);
+      // Long enough for the layout to settle, short of the hold.
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text(_automatic), findsOneWidget);
+      expect(_count('/face/enrol'), 0);
+      if (_screenshots.isNotEmpty) {
+        await expectLater(find.byKey(shot), matchesGoldenFile(Uri.file('$_screenshots/face-setup-auto.png')));
+      }
+    });
   });
 
   test('a failed check reads its reason as a heading', () {

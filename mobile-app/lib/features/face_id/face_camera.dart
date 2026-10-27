@@ -307,3 +307,76 @@ class FaceCamera extends ChangeNotifier {
     super.dispose();
   }
 }
+
+/// Takes the selfie on its own: once the face is in the oval and the prompt
+/// is done, and it has held there for [hold], [onCapture] runs — the same
+/// capture the button makes, which stays as the way to take it by hand.
+///
+/// Once per try: a capture, automatic or by hand, spends it, and it comes
+/// back only after the face has left the oval for [away] (a flicker of one
+/// frame is not leaving), so a failed check is never retried on its own.
+/// Never while detection is [FaceCamera.waived]: with no face to watch, the
+/// button is the only way.
+class FaceAutoCapture {
+  FaceAutoCapture({required this.camera, required this.allowed, required this.onCapture});
+
+  /// How long the face holds still before the selfie is taken.
+  static Duration hold = const Duration(milliseconds: 700);
+
+  /// How long the face is gone before the next try can be automatic.
+  static Duration away = const Duration(milliseconds: 500);
+
+  final FaceCamera camera;
+
+  /// What the screen adds: not busy, consent agreed, and so on. Asked again
+  /// when the hold ends.
+  final bool Function() allowed;
+  final VoidCallback onCapture;
+
+  Timer? _hold;
+  Timer? _away;
+  bool _spent = false;
+  bool _disposed = false;
+
+  /// Whether the next capture will be taken without a tap.
+  bool get armed => !_spent && !camera.waived;
+
+  bool get _ready =>
+      !_disposed && armed && camera.signal == FaceSignal.detected && camera.challengeDone && allowed();
+
+  /// Call on every change to the camera or to [allowed]'s answer.
+  void check() {
+    if (_disposed) return;
+    if (camera.signal == FaceSignal.notDetected) {
+      if (_spent) _away ??= Timer(away, () => _spent = false);
+    } else {
+      _away?.cancel();
+      _away = null;
+    }
+    if (!_ready) {
+      _hold?.cancel();
+      _hold = null;
+      return;
+    }
+    _hold ??= Timer(hold, () {
+      _hold = null;
+      if (!_ready) return;
+      spend();
+      onCapture();
+    });
+  }
+
+  /// A capture has started, by hand or not: no automatic one until the face
+  /// has left and come back.
+  void spend() {
+    _spent = true;
+    _hold?.cancel();
+    _hold = null;
+  }
+
+  void dispose() {
+    _disposed = true;
+    _hold?.cancel();
+    _away?.cancel();
+  }
+}
