@@ -50,38 +50,7 @@ class FaceCaptureLayout extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Step navigation (4005:51552): 56 high, 16 in, a 40 box each side.
-            SizedBox(
-              height: 56,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    _NavButton(
-                      label: 'Back',
-                      alignment: Alignment.centerLeft,
-                      onTap: onBack,
-                      child: SvgPicture.asset('$_asset/arrow_left.svg', width: 24, height: 24),
-                    ),
-                    Expanded(
-                      child: Text(
-                        stepTitle,
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: _sora(16, FontWeight.w600, _ink, height: 16.2 / 16, spacing: -0.16),
-                      ),
-                    ),
-                    _NavButton(
-                      label: 'Close',
-                      alignment: Alignment.centerRight,
-                      onTap: onClose,
-                      child: SvgPicture.asset('$_asset/close.svg', width: 20, height: 20),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            FaceStepHeader(title: stepTitle, onBack: onBack, onClose: onClose),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -122,6 +91,55 @@ class FaceCaptureLayout extends StatelessWidget {
                   if (below case final link?) ...[const SizedBox(height: 4), Center(child: link)],
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The step navigation (4005:51552): 56 high, 16 in, a 40 box each side.
+/// Without [onBack] the arrow's box stays empty, for a step with nowhere to
+/// go back to.
+class FaceStepHeader extends StatelessWidget {
+  const FaceStepHeader({super.key, required this.title, this.onBack, this.onClose});
+
+  final String title;
+  final VoidCallback? onBack;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 56,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            if (onBack == null)
+              const SizedBox(width: 40, height: 40)
+            else
+              _NavButton(
+                label: 'Back',
+                alignment: Alignment.centerLeft,
+                onTap: onBack,
+                child: SvgPicture.asset('$_asset/arrow_left.svg', width: 24, height: 24),
+              ),
+            Expanded(
+              child: Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: _sora(16, FontWeight.w600, _ink, height: 16.2 / 16, spacing: -0.16),
+              ),
+            ),
+            _NavButton(
+              label: 'Close',
+              alignment: Alignment.centerRight,
+              onTap: onClose,
+              child: SvgPicture.asset('$_asset/close.svg', width: 20, height: 20),
             ),
           ],
         ),

@@ -1,6 +1,9 @@
 // Face ID: who is asked to set it up, the selfie screens (Figma 4194:21786)
 // in each state the camera can be in, and a failed check's way out to the
 // manager, against a fake server. A layout that overflows fails the test.
+//
+// `flutter test --update-goldens --dart-define=SCREENSHOTS=<dir> test/face_id_test.dart`
+// also writes the setup success screens to <dir> as PNGs.
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -12,8 +15,11 @@ import 'package:mobile_app/features/auth/data/auth_models.dart';
 import 'package:mobile_app/features/face_id/face_camera.dart';
 import 'package:mobile_app/features/face_id/face_check_screen.dart';
 import 'package:mobile_app/features/face_id/face_id_models.dart';
+import 'package:mobile_app/features/face_id/face_setup_screen.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
 import 'package:mobile_app/features/attendance/presentation/punch_screen.dart';
+
+const _screenshots = String.fromEnvironment('SCREENSHOTS');
 
 /// A front camera that needs no device: the test says what it sees.
 class _FakeCamera extends FaceCamera {
@@ -225,14 +231,18 @@ void main() {
     expect(find.text('Take a selfie'), findsNothing);
   });
 
-  Future<void> pumpPunch(WidgetTester tester, {required String type}) async {
+  Future<void> pumpPunch(
+    WidgetTester tester, {
+    required String type,
+    Map<String, dynamic> verify = const {},
+  }) async {
     tester.view.physicalSize = const Size(393, 852);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final api = ManagerApiService(
       session: AuthSession(token: 't', user: _user(atPunch: true)),
       baseUrl: 'https://example.test',
-      client: _server(verify: const {}),
+      client: _server(verify: verify),
     );
     await tester.pumpWidget(MaterialApp(
       home: Builder(
@@ -250,8 +260,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('not set up: the first punch opens setup, and the setup carries the punch', (tester) async {
-    await pumpPunch(tester, type: 'in');
+  testWidgets('not set up: the first punch opens setup, says it is set up, then the selfie carries the punch',
+      (tester) async {
+    await pumpPunch(tester, type: 'in', verify: {'passed': true, 'reason': 'matched', 'token': 'verify-tok'});
     // Setup, not the check: the Selfie Punch-in screens with setup's words.
     expect(find.text('Set up Face ID'), findsOneWidget);
     expect(find.text('Punch in'), findsOneWidget);
@@ -268,12 +279,143 @@ void main() {
     await tester.tap(find.text('Set up & punch in'));
     await tester.pumpAndSettle();
     expect(_enrolBody, contains('v1'));
-    // No second selfie: the punch went with the setup's token.
-    expect(_requests.where((path) => path.endsWith('/face/verify')), isEmpty);
-    expect(_punchBody?['faceToken'], 'enrol-tok');
-    expect(find.text("You're punched in!"), findsOneWidget);
     expect(FaceCheckOutcome.enrolledThisRun, isTrue);
+    // Set up: the success screen, and no punch yet.
+    expect(find.text('Face ID is set up'), findsOneWidget);
+    expect(find.text('Next, a selfie to confirm your punch-in.'), findsOneWidget);
+    expect(find.text('Continue'), findsOneWidget);
+    expect(_punchBody, isNull);
+    expect(tester.takeException(), isNull);
+    // It goes on by itself, to the selfie check.
+    await tester.pump(const Duration(milliseconds: 1500));
+    await tester.pumpAndSettle();
+    expect(find.text('Face ID is set up'), findsNothing);
+    expect(find.text('Take a selfie'), findsOneWidget);
+    expect(_requests.where((path) => path.endsWith('/face/verify')), isEmpty);
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump();
+    await tester.tap(find.text('Take selfie & punch in'));
+    await tester.pumpAndSettle();
+    // The punch went with the check's token, not the setup's.
+    expect(_requests.where((path) => path.endsWith('/face/verify')).length, 1);
+    expect(_punchBody?['faceToken'], 'verify-tok');
+    expect(find.text("You're punched in!"), findsOneWidget);
+    expect(find.text('Take a selfie'), findsNothing);
   });
+
+  testWidgets('the success screen\'s Continue goes to the check at once; closing the check closes the punch',
+      (tester) async {
+    await pumpPunch(tester, type: 'out', verify: {'passed': true, 'token': 'verify-tok'});
+    await tester.tap(find.byType(Checkbox));
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump();
+    await tester.tap(find.text('Set up & punch out'));
+    await tester.pumpAndSettle();
+    expect(find.text('Next, a selfie to confirm your punch-out.'), findsOneWidget);
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(find.text('Take a selfie'), findsOneWidget);
+    // The timer, had it not been cancelled, would open a second check.
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(find.text('Take a selfie'), findsOneWidget);
+    await tester.tap(find.descendant(
+      of: find.byType(FaceCheckScreen),
+      matching: find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == 'Close'),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Take a selfie'), findsNothing);
+    expect(find.text('Face ID is set up'), findsNothing);
+    expect(_punchBody, isNull);
+  });
+
+  testWidgets('in onboarding the success screen ends the setup, with no selfie check', (tester) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = ManagerApiService(
+      session: AuthSession(token: 't', user: _user(atPunch: true)),
+      baseUrl: 'https://example.test',
+      client: _server(verify: {'passed': true, 'token': 'verify-tok'}),
+    );
+    var popped = false;
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: TextButton(
+            onPressed: () async {
+              await Navigator.of(context).push(MaterialPageRoute<FaceCheckOutcome>(
+                builder: (_) => FaceSetupScreen(api: api, onboarding: true),
+              ));
+              popped = true;
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(Checkbox));
+    _camera.sees(FaceSignal.detected, prompted: true);
+    await tester.pump();
+    await tester.tap(find.text('Set up Face ID').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Face ID is set up'), findsOneWidget);
+    expect(find.text('You can now punch in with a selfie.'), findsOneWidget);
+    expect(popped, isFalse);
+    await tester.pump(const Duration(milliseconds: 1500));
+    await tester.pumpAndSettle();
+    expect(popped, isTrue);
+    expect(find.text('Take a selfie'), findsNothing);
+    expect(_requests.where((path) => path.endsWith('/face/verify')), isEmpty);
+  });
+
+  // The success screen, at a punch and in onboarding, as PNGs (393x852 @2x).
+  for (final (name, onboarding) in [('success-punch-in', false), ('success-onboarding', true)]) {
+    testWidgets('screenshot: $name', (tester) async {
+      for (final (family, file) in [
+        ('Sora', 'assets/fonts/sora/Sora-Variable.ttf'),
+        ('Plus Jakarta Sans', 'assets/fonts/plus_jakarta_sans/PlusJakartaSans-Variable.ttf'),
+      ]) {
+        await (FontLoader(family)..addFont(rootBundle.load(file))).load();
+      }
+      tester.view.physicalSize = const Size(393 * 2, 852 * 2);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      final api = ManagerApiService(
+        session: AuthSession(token: 't', user: _user(atPunch: true)),
+        baseUrl: 'https://example.test',
+        client: _server(verify: {'passed': true, 'token': 'verify-tok'}),
+      );
+      await tester.pumpWidget(MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(fontFamily: 'Plus Jakarta Sans'),
+        home: FaceSetupScreen(api: api, onboarding: onboarding),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(Checkbox));
+      _camera.sees(FaceSignal.detected, prompted: true);
+      await tester.pump();
+      await tester.tap(find.text(onboarding ? 'Set up Face ID' : 'Set up & punch in').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Face ID is set up'), findsOneWidget);
+      // The tick is an asset image: decoded outside the fake clock.
+      await tester.runAsync(() async {
+        for (final element in find.byType(Image).evaluate()) {
+          final image = element.widget as Image;
+          await precacheImage(image.image, element);
+        }
+      });
+      await tester.pump();
+      if (_screenshots.isNotEmpty) {
+        await expectLater(find.byType(MaterialApp), matchesGoldenFile(Uri.file('$_screenshots/$name.png')));
+      }
+      // Let the auto-advance run out before the test ends.
+      await tester.pump(const Duration(milliseconds: 1500));
+      await tester.pumpAndSettle();
+    });
+  }
 
   testWidgets('already set up elsewhere: setup steps aside for the selfie check', (tester) async {
     _enrolReply = () => http.Response(jsonEncode({
