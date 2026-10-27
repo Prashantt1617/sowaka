@@ -159,3 +159,8 @@ export function words(): Set<string> {
   return out;
 }
 export const hasWord = (word: string): boolean => words().has(word);
+
+// Unpacked at boot rather than inside the first play after a restart: the
+// unpack holds the event loop for a moment, which is nothing at boot and a
+// stall for every socket on the host mid-game.
+setImmediate(() => { words(); });
