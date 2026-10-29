@@ -21,6 +21,10 @@ enum ConnectPostType {
   /// A Secret Squad session's announcement for one office: its own animated
   /// card, counting down to the lobby, with the way into the game.
   secretSquad,
+
+  /// Sowaka Engagements launching a game: a photo, GIF or video, a few
+  /// words and one button into the game. No likes or comments.
+  gameLaunch,
 }
 
 class ConnectTeammate {
@@ -151,6 +155,7 @@ String connectPostTypeToWire(ConnectPostType type) {
     ConnectPostType.mostLikely => 'most_likely',
     ConnectPostType.relayGame => 'relay_game',
     ConnectPostType.secretSquad => 'secret_squad',
+    ConnectPostType.gameLaunch => 'game_launch',
   };
 }
 
@@ -602,6 +607,7 @@ ConnectPostType _parseType(String? value) {
     // arrived as an ordinary post with no way into the game.
     'relay_game' => ConnectPostType.relayGame,
     'secret_squad' => ConnectPostType.secretSquad,
+    'game_launch' => ConnectPostType.gameLaunch,
     _ => ConnectPostType.leadership,
   };
 }
