@@ -565,6 +565,16 @@ class FaceCamera extends ChangeNotifier {
           .where((face) => face.boundingBox.width / shortSide >= minFaceShare)
           .toList();
       if (faces.length != 1 || near.length != 1) {
+        if (liveness.flashing && liveness.flashIndex >= 0 && liveness.flashIndex < 2 && _lastBox != null) {
+          // The colour can lose the detector a frame; the face has not moved
+          // in the moment since the last one, so the frame under the colour is
+          // kept for the server with the last box.
+          final under = FaceFrame.of(image, input.metadata?.rotation.rawValue ?? 0);
+          if (under != null) {
+            _litFrames[liveness.flashIndex] = under;
+            _litBoxes[liveness.flashIndex] = _lastBox;
+          }
+        }
         _set(FaceSignal.notDetected);
         return;
       }
