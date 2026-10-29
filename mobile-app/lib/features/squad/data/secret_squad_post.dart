@@ -206,6 +206,10 @@ class SquadStanding {
   }
 }
 
+/// Standings as a post carries them (`body.results`): the Secret Squad's,
+/// and a game launch's once its game is over. Null when there are none.
+List<SquadStanding>? parseSquadStandings(Object? value) => _standings(value);
+
 List<SquadStanding>? _standings(Object? value) {
   if (value is! List) return null;
   final rows = <SquadStanding>[];

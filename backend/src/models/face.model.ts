@@ -112,7 +112,9 @@ export interface FaceLivenessSession {
  * agreed. Change the version with the words: an app that showed the old line
  * is sent the new one to agree to before it can enrol.
  */
-export const FACE_CONSENT_VERSION = '2026-10-v2';
+// v3 (29 Oct 2026): the line about where it is stored was taken off the
+// setup screen at Sowaka's request; v2 had "It is stored by AWS in Mumbai and
+// deleted when I leave." Whoever agreed to v2 keeps that record.
+export const FACE_CONSENT_VERSION = '2026-10-v3';
 export const FACE_CONSENT_AGREE =
-  'I agree to Face ID keeping a template of my face, made from this selfie, to confirm it\u2019s me when I punch in. ' +
-  'It is stored by AWS in Mumbai and deleted when I leave.';
+  'I agree to Face ID keeping a template of my face, made from this selfie, to confirm it\u2019s me when I punch in.';

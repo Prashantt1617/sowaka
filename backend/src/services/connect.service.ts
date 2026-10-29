@@ -1,6 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { randomUUID } from 'node:crypto';
 import { audienceLists, companies, connectPosts, contentReports, gameScores, notifications, relayEvents, users } from '../config/db';
+import { gameLaunchResults } from './game-launch.service';
 import { cupLinkFor } from './cup.service';
 import { ConnectAudience, ConnectCaptionEntry, ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
@@ -1734,6 +1735,11 @@ async function viewPost(
     body.hostedUrl = cupLinkFor(body, { userId: viewerUserId, org: post.org }) ?? '';
     delete body.cupLinkBase;
     delete body.cupLinkUntil;
+  } else if (post.type === 'game_launch') {
+    // A timed launch that is over carries its game's standings from the
+    // window, as a Secret Squad card does once its game is over.
+    const results = await gameLaunchResults(post);
+    if (results) body.results = results;
   } else if (post.type === 'live_game' && typeof body.gameId === 'string') {
     const leaders = await gameScores()
       .find({ gameId: body.gameId, org: post.org })

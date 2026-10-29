@@ -9,7 +9,21 @@
  *     --title "Tile Up is here" --caption "Scrabble with your colleagues. Start a room and invite them." \
  *     --media /tmp/tile-up.gif [--action "Play Tile Up"] [--pin-hours 24]
  *   node dist/scripts/game-launch-post.js list --org sowaka
+ *   node dist/scripts/game-launch-post.js update --id <post id> [any of the flags below]
  *   node dist/scripts/game-launch-post.js unpost --id <post id>
+ *
+ * A tournament or a timed game: --starts 2026-10-29T18:00+05:30 puts a timer on
+ * top of the card ("<game> starts in 01h 12m 05s"), then "Live now"; --ends
+ * closes it ("This game has ended", the button off); --timer-label words it;
+ * --lock-until-start keeps the button off until it starts. --enable-game
+ * switches the game on for the company first (a tournament page is usually
+ * off between events).
+ *
+ * Every colour on the card comes from here, as #RRGGBB or #AARRGGBB:
+ *   --card-color --card-gradient "#a,#b" --border-color --text-color --muted-color
+ *   --timer-bg --timer-color --timer-label-color --live-color
+ *   --button-color --button-text-color
+ * Anything left out keeps the card's light default (and the button the game's accent).
  *
  * --game is a catalog key the company has switched on (`companies.enabledGames`);
  * the post is refused otherwise, since its button would open nothing. --media is
@@ -49,6 +63,66 @@ function parse(argv: string[]) {
   return { command, flags };
 }
 
+const COLOR = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const THEME_FLAGS: Record<string, string> = {
+  'card-color': 'card',
+  'border-color': 'border',
+  'text-color': 'text',
+  'muted-color': 'muted',
+  'timer-bg': 'timerBackground',
+  'timer-color': 'timerText',
+  'timer-label-color': 'timerLabel',
+  'live-color': 'live',
+  'button-color': 'button',
+  'button-text-color': 'buttonText',
+};
+
+/** The colours given on the command line, checked; none given is an empty theme. */
+function themeFrom(flags: Record<string, string>): Record<string, unknown> {
+  const theme: Record<string, unknown> = {};
+  for (const [flag, key] of Object.entries(THEME_FLAGS)) {
+    const value = flags[flag]?.trim();
+    if (value === undefined) continue;
+    if (!COLOR.test(value)) throw new Error(`--${flag} must be #RRGGBB or #AARRGGBB`);
+    theme[key] = value.toUpperCase();
+  }
+  if (flags['card-gradient'] !== undefined) {
+    const stops = flags['card-gradient'].split(',').map((stop) => stop.trim());
+    if (stops.length < 2 || !stops.every((stop) => COLOR.test(stop))) {
+      throw new Error('--card-gradient must be two or more colours, comma separated');
+    }
+    theme.cardGradient = stops.map((stop) => stop.toUpperCase());
+  }
+  return theme;
+}
+
+/** A start or end time, with its zone: "2026-10-29T18:00+05:30". */
+function timeFrom(flags: Record<string, string>, name: string): string | undefined {
+  const value = flags[name]?.trim();
+  if (value === undefined) return undefined;
+  if (value === 'none') return '';
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime()) || !/[+-]\d\d:?\d\d$|Z$/.test(value)) {
+    throw new Error(`--${name} must be a time with its zone, e.g. 2026-10-29T18:00+05:30 (or none)`);
+  }
+  return at.toISOString();
+}
+
+/** What the card shows, from the flags given: only those are set. */
+function bodyFrom(flags: Record<string, string>): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (flags.title !== undefined) body.title = flags.title.trim().slice(0, 80);
+  if (flags.caption !== undefined) body.text = flags.caption.trim().slice(0, 600);
+  if (flags.action !== undefined) body.actionLabel = flags.action.trim().slice(0, 40);
+  if (flags['timer-label'] !== undefined) body.timerLabel = flags['timer-label'].trim().slice(0, 60);
+  const startsAt = timeFrom(flags, 'starts');
+  if (startsAt !== undefined) body.startsAt = startsAt;
+  const endsAt = timeFrom(flags, 'ends');
+  if (endsAt !== undefined) body.endsAt = endsAt;
+  if (flags['lock-until-start'] !== undefined) body.lockUntilStart = flags['lock-until-start'] !== 'false';
+  return body;
+}
+
 function need(flags: Record<string, string>, name: string): string {
   const value = (flags[name] ?? '').trim();
   if (!value) throw new Error(`--${name} is required`);
@@ -69,7 +143,11 @@ async function main() {
       const game = await gameCatalog().findOne({ key: gameKey }, { projection: { _id: 0, key: 1, name: 1, active: 1, accentColor: 1 } });
       if (!game || game.active === false) throw new Error(`No active catalog game "${gameKey}"`);
       if (!(company.enabledGames ?? []).includes(gameKey)) {
-        throw new Error(`${org} does not have ${gameKey} switched on; its button would open nothing`);
+        if (flags['enable-game'] !== 'true') {
+          throw new Error(`${org} does not have ${gameKey} switched on; its button would open nothing (add --enable-game to switch it on)`);
+        }
+        await companies().updateOne({ id: org }, { $addToSet: { enabledGames: gameKey } });
+        console.log(`Switched ${gameKey} on for ${org}.`);
       }
       let media: Record<string, unknown> = { mediaKind: 'none' };
       if (flags.media) {
@@ -92,6 +170,10 @@ async function main() {
           mediaContentTypes: [contentType],
         };
       }
+      const timing = bodyFrom(flags);
+      if (timing.startsAt && timing.endsAt && new Date(timing.endsAt as string) <= new Date(timing.startsAt as string)) {
+        throw new Error('--ends must come after --starts');
+      }
       const now = new Date();
       const pinHours = Number(flags['pin-hours'] ?? 0);
       const post: ConnectPost = {
@@ -112,6 +194,8 @@ async function main() {
           text: caption,
           actionLabel: (flags.action ?? `Play ${game.name}`).slice(0, 40),
           accentColor: game.accentColor ?? '#0571A6',
+          ...bodyFrom(flags),
+          theme: themeFrom(flags),
           ...media,
         },
         likedBy: [],
@@ -140,6 +224,34 @@ async function main() {
       console.log(`${rows.length} game launch post(s) in ${org}.`);
       break;
     }
+    case 'update': {
+      const id = need(flags, 'id');
+      const post = await connectPosts().findOne({ id, type: 'game_launch' });
+      if (!post) throw new Error(`No game launch post ${id}`);
+      const changes = bodyFrom(flags);
+      const theme = themeFrom(flags);
+      const current = post.body as Record<string, unknown>;
+      const startsAt = (changes.startsAt ?? current.startsAt ?? '') as string;
+      const endsAt = (changes.endsAt ?? current.endsAt ?? '') as string;
+      if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) throw new Error('--ends must come after --starts');
+      const set: Record<string, unknown> = { updatedAt: new Date() };
+      for (const [key, value] of Object.entries(changes)) set[`body.${key}`] = value;
+      for (const [key, value] of Object.entries(theme)) set[`body.theme.${key}`] = value;
+      if (flags['reset-theme'] === 'true') {
+        set['body.theme'] = theme;
+        for (const key of Object.keys(theme)) delete set[`body.theme.${key}`];
+      }
+      if (flags['pin-hours'] !== undefined) {
+        const hours = Number(flags['pin-hours']);
+        set.pinnedUntil = hours > 0 ? new Date(Date.now() + hours * 3_600_000) : null;
+      }
+      if (Object.keys(set).length === 1) throw new Error('Nothing to change: give a flag such as --title or --starts');
+      // New times: the standings are for the new window, worked out again.
+      const retimed = changes.startsAt !== undefined || changes.endsAt !== undefined;
+      await connectPosts().updateOne({ id }, { $set: set, ...(retimed ? { $unset: { 'body.results': '', 'body.resultsWindow': '' } } : {}) });
+      console.log(`Updated ${id}: ${Object.keys(set).filter((key) => key !== 'updatedAt').join(', ')}.`);
+      break;
+    }
     case 'unpost': {
       const id = need(flags, 'id');
       const post = await connectPosts().findOne({ id, type: 'game_launch' });
@@ -151,7 +263,7 @@ async function main() {
       break;
     }
     default:
-      throw new Error('Commands: post, list, unpost (see the header of this file)');
+      throw new Error('Commands: post, list, update, unpost (see the header of this file)');
   }
   process.exit(0);
 }
