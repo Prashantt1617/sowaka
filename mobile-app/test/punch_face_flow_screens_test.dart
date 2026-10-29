@@ -448,7 +448,8 @@ void main() {
       await answerPrompts(tester);
       await tester.pumpAndSettle();
       expect(find.text('Send punch-in to manager'), findsOneWidget);
-      expect(find.text('Your manager or HR approves the punch-in.'), findsOneWidget);
+      expect(find.text('0 out of 5 tries left'), findsOneWidget);
+      expect(find.text('Your manager or HR approves the punch-in.'), findsNothing);
       await shot(tester, '23-out-of-tries-manager');
       await tester.tap(find.text('Send punch-in to manager'));
       await tester.pumpAndSettle();

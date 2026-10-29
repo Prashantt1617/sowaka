@@ -46,6 +46,11 @@ class FaceCamera extends ChangeNotifier {
   /// never does either, and must not sit there forever.
   static Duration promptPatience = const Duration(seconds: 10);
 
+  /// How much of the frame's short side a face must span to count: near
+  /// enough to read, not lined up in the oval. Where it stands does not
+  /// matter, and the selfie is framed on it before it is sent ([cropToFace]).
+  static double minFaceShare = 0.18;
+
   CameraController? _camera;
   CameraDescription? _description;
   FaceDetector? _detector;
@@ -200,7 +205,7 @@ class FaceCamera extends ChangeNotifier {
       final faces = await _detector!.processImage(input);
       final shortSide = min(image.width, image.height).toDouble();
       final near = faces
-          .where((face) => face.boundingBox.width / shortSide >= 0.28)
+          .where((face) => face.boundingBox.width / shortSide >= minFaceShare)
           .toList();
       if (faces.length != 1 || near.length != 1) {
         _set(FaceSignal.notDetected);
@@ -279,7 +284,10 @@ class FaceCamera extends ChangeNotifier {
   /// upright and saved as a JPEG, so there is no shutter sound and no flash.
   /// That frame is checked for an upright face first; if it has none (an
   /// orientation this phone reports oddly), a photo is taken instead, flash
-  /// off. Detection pauses for it and starts again with [resume].
+  /// off. Either way the picture is then framed on the face found in it
+  /// ([cropToFace]): the face fills the selfie wherever the person stood, so
+  /// someone a step back or off to one side is not refused for it. Detection
+  /// pauses for it and starts again with [resume].
   Future<Uint8List?> capture() async {
     final camera = _camera;
     if (camera == null || !camera.value.isInitialized) return null;
@@ -292,24 +300,36 @@ class FaceCamera extends ChangeNotifier {
     if (frame != null) {
       try {
         final jpeg = await compute(_frameToJpeg, frame);
-        if (jpeg != null && await _hasUprightFace(jpeg)) return jpeg;
+        final box = jpeg == null ? null : await _uprightFace(jpeg);
+        if (jpeg != null && box != null) return await _framed(jpeg, box);
       } catch (_) {
         // Fall back to a photo.
       }
     }
     try {
       final file = await camera.takePicture();
-      return await file.readAsBytes();
+      final photo = await file.readAsBytes();
+      final box = await _uprightFace(photo);
+      return box == null ? photo : await _framed(photo, box);
     } catch (_) {
       return null;
     }
   }
 
-  /// Whether the detector finds one face in [jpeg] as it stands, unrotated:
-  /// the check that the frame was turned the right way up.
-  Future<bool> _hasUprightFace(Uint8List jpeg) async {
+  /// [jpeg] cropped to [face], off the UI thread; as it was if that fails.
+  Future<Uint8List> _framed(Uint8List jpeg, Rect face) async {
+    try {
+      return await compute<(Uint8List, Rect), Uint8List?>(_cropJob, (jpeg, face)) ?? jpeg;
+    } catch (_) {
+      return jpeg;
+    }
+  }
+
+  /// The one face the detector finds in [jpeg] as it stands, unrotated (the
+  /// check that the frame was turned the right way up), or null.
+  Future<Rect?> _uprightFace(Uint8List jpeg) async {
     final detector = _detector;
-    if (detector == null) return false;
+    if (detector == null) return null;
     final file = File(
       '${Directory.systemTemp.path}/sowaka-face-${DateTime.now().microsecondsSinceEpoch}.jpg',
     );
@@ -318,9 +338,9 @@ class FaceCamera extends ChangeNotifier {
       final faces = await detector.processImage(
         InputImage.fromFilePath(file.path),
       );
-      return faces.length == 1;
+      return faces.length == 1 ? faces.first.boundingBox : null;
     } catch (_) {
-      return false;
+      return null;
     } finally {
       unawaited(file.delete().catchError((_) => file));
     }
@@ -670,6 +690,38 @@ class _Frame {
   /// iOS sends BGRA; Android NV21 (a Y plane, then interleaved V and U).
   final bool bgra;
   final int rotation;
+}
+
+Uint8List? _cropJob((Uint8List, Rect) job) => cropToFace(job.$1, job.$2);
+
+/// [jpeg] framed on [face] (a box in the picture's own upright pixels): a
+/// square about twice the face's size, centred a little below the eyes so
+/// the chin and hair stay in, kept inside the picture, at most 800 across.
+/// The face then fills the selfie whatever the distance or the side the
+/// person stood on. Null when there is nothing to gain (the face already
+/// fills the picture) or the picture cannot be read.
+@visibleForTesting
+Uint8List? cropToFace(Uint8List jpeg, Rect face) {
+  final decoded = img.decodeJpg(jpeg);
+  if (decoded == null || face.isEmpty) return null;
+  final picture = img.bakeOrientation(decoded);
+  final shortSide = min(picture.width, picture.height).toDouble();
+  var side = max(face.width, face.height) * 2.0;
+  if (side >= shortSide * 0.95) return null;
+  side = side.clamp(1.0, shortSide);
+  final centreX = face.center.dx;
+  final centreY = face.center.dy + face.height * 0.08;
+  final left = (centreX - side / 2).clamp(0.0, picture.width - side);
+  final top = (centreY - side / 2).clamp(0.0, picture.height - side);
+  var cropped = img.copyCrop(
+    picture,
+    x: left.round(),
+    y: top.round(),
+    width: side.round(),
+    height: side.round(),
+  );
+  if (cropped.width > 800) cropped = img.copyResize(cropped, width: 800, height: 800);
+  return Uint8List.fromList(img.encodeJpg(cropped, quality: 90));
 }
 
 /// A frame as an upright JPEG, off the UI thread ([compute]). Null when the

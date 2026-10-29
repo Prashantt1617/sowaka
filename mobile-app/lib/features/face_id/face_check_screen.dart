@@ -373,7 +373,8 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
       );
       caption = result != null && result.attemptsLeft > 0
           ? '${result.attemptsLeft} out of ${_status?.maxAttempts ?? 5} ${result.attemptsLeft == 1 ? 'try' : 'tries'} left'
-          : result?.message ?? _problem;
+          // Under the button only the tries left, as Figma 4289:26675 has it.
+          : null;
     } else if (_camera.waived) {
       // The phone could not read a face in time, or it never turned and
       // blinked (4266:26076): the dark camera, Face not detected, and Try
@@ -387,7 +388,7 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
       );
       caption = result != null && result.attemptsLeft > 0
           ? '${result.attemptsLeft} out of ${_status?.maxAttempts ?? 5} ${result.attemptsLeft == 1 ? 'try' : 'tries'} left'
-          : 'Keep your face inside the oval, then turn your head and blink when asked.';
+          : null;
     } else if (signal == FaceSignal.unavailable) {
       // This phone cannot find faces at all: the button takes the selfie.
       state = FaceCaptureState.looking;
@@ -418,20 +419,9 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
         busy: _sendingFallback,
         onTap: _sendFallback,
       );
-      caption = result?.reason == 'unavailable'
-          ? 'Face check is unavailable. Your manager or HR approves the $punchWord.'
-          : 'Your manager or HR approves the $punchWord.';
-      below = detected || signal == FaceSignal.unavailable
-          ? FaceQuietLink(
-              label: 'Take another selfie',
-              onCamera: true,
-              // Another look with the prompts, never a selfie straight away.
-              onTap: _busy
-                  ? null
-                  : signal == FaceSignal.unavailable
-                  ? _capture
-                  : _lookAgain,
-            )
+      // The tries are spent: said in the line under the button, nothing more.
+      caption = result != null && result.reason != 'unavailable' && result.attemptsLeft == 0
+          ? '0 out of ${_status?.maxAttempts ?? 5} tries left'
           : null;
     }
     return FaceCaptureLayout(

@@ -393,9 +393,10 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
         enabled: detected || signal == FaceSignal.unavailable,
         onTap: signal == FaceSignal.unavailable ? _enrol : _lookAgain,
       );
+      // Under the button only the tries left, as Figma 4289:26675 has it.
       caption = tries != null && tries > 0
           ? '$tries out of $_maxAttempts ${tries == 1 ? 'try' : 'tries'} left'
-          : _problem;
+          : null;
     } else if (_camera.waived) {
       // The phone could not read a face in time, or it never turned and
       // blinked (4266:26076): the dark camera, Face not detected, and Try
@@ -409,7 +410,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       );
       caption = tries != null && tries > 0
           ? '$tries out of $_maxAttempts ${tries == 1 ? 'try' : 'tries'} left'
-          : 'Keep your face inside the oval, then turn your head and blink when asked.';
+          : null;
     } else if (signal == FaceSignal.unavailable) {
       // This phone cannot find faces at all: the button takes the selfie.
       state = FaceCaptureState.looking;
@@ -440,15 +441,8 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
         busy: _sendingFallback,
         onTap: _sendFallback,
       );
-      caption = 'Your manager or HR approves the $punchWord.';
-      below = detected
-          ? FaceQuietLink(
-              label: 'Try setting up again',
-              onCamera: true,
-              // Another look with the prompts, never a selfie straight away.
-              onTap: _busy ? null : _lookAgain,
-            )
-          : null;
+      // The tries are spent: said in the line under the button, nothing more.
+      caption = tries == 0 ? '0 out of $_maxAttempts tries left' : null;
     }
     return FaceCaptureLayout(
       heading: 'Set up your Face ID',

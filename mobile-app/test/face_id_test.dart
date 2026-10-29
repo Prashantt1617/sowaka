@@ -512,10 +512,11 @@ void main() {
       expect(find.text('Face not matched'), findsOneWidget);
       expect(find.text('Send punch-out to manager'), findsOneWidget);
       expect(
-        find.text('Your manager or HR approves the punch-out.'),
+        find.text('0 out of 3 tries left'),
         findsOneWidget,
       );
-      expect(find.text('Take another selfie'), findsOneWidget);
+      // Nothing more under it (4289:26675): no second line, no link.
+      expect(find.text('Take another selfie'), findsNothing);
       _expectNoResult();
       await tester.tap(find.text('Send punch-out to manager'));
       await tester.pumpAndSettle();
@@ -593,11 +594,11 @@ void main() {
     await _faceHeld(tester);
     expect(find.text('Face not matched'), findsOneWidget);
     expect(
-      find.text('Your manager or HR approves the punch-in.'),
+      find.text('0 out of 3 tries left'),
       findsOneWidget,
     );
     expect(find.text('Try Again'), findsNothing);
-    expect(find.textContaining('tries left'), findsNothing);
+    expect(find.textContaining('tries left'), findsOneWidget);
     _expectNoResult();
     await tester.tap(find.text('Send punch-in to manager'));
     await tester.pumpAndSettle();
@@ -912,10 +913,10 @@ void main() {
       expect(find.text('Try Again'), findsNothing);
       expect(find.text('Send punch-out to manager'), findsOneWidget);
       expect(
-        find.text('Your manager or HR approves the punch-out.'),
+        find.text('0 out of 3 tries left'),
         findsOneWidget,
       );
-      expect(find.text('Try setting up again'), findsOneWidget);
+      expect(find.text('Try setting up again'), findsNothing);
       await tester.tap(find.text('Send punch-out to manager'));
       await tester.pumpAndSettle();
       expect(_fallbackBody, contains('"type":"out"'));
@@ -1041,11 +1042,12 @@ void main() {
       expect(_count('/face/verify'), 0);
       expect(find.text('Face not detected'), findsOneWidget);
       expect(find.text('Try Again'), findsOneWidget);
+      // Nothing under Try Again (4289:26675) while the tries are not known.
       expect(
         find.text(
           'Keep your face inside the oval, then turn your head and blink when asked.',
         ),
-        findsOneWidget,
+        findsNothing,
       );
       expect(_live(tester, _cameraButton), isTrue);
       expect(_tick, findsNothing);
@@ -1126,7 +1128,7 @@ void main() {
     expect(find.text('Face check unavailable'), findsOneWidget);
     expect(
       find.text('The camera did not take the photo. Try again.'),
-      findsOneWidget,
+      findsNothing,
     );
     expect(find.text('Try Again'), findsOneWidget);
     _expectNoResult();
