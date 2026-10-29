@@ -8,7 +8,8 @@
  * Liveness sessions, HR's switches, reset and log, and the face going with a
  * deleted employee, and the log's retention cleanup. It drops and recreates its own database, and refuses any
  * other. Run with
- * MONGODB_DB=face_verify_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= npm run face-id:check
+ * FACE_MAX_ATTEMPTS=3 MONGODB_DB=face_verify_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= npm run face-id:check
+ * (it counts three tries; production's default is five a day)
  */
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
