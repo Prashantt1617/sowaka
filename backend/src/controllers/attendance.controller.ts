@@ -1,8 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import {
   AttendanceError, decideRegularization, getManagerRegularizations, punchOfficesFor,
-  getMyAttendance, getTeamMemberAttendance, recordPunch, requestRegularization,
-} from '../services/attendance.service';
+  getMyAttendance, getTeamMemberAttendance, recordPunch, requestRegularization, checkPunchLocation } from '../services/attendance.service';
 
 function userId(req: Request) {
   if (!req.auth?.userId) throw new AttendanceError(401, 'Authentication required');
@@ -52,6 +51,25 @@ export async function punch(req: Request, res: Response, next: NextFunction) {
       typeof body.faceToken === 'string' ? body.faceToken : undefined,
     );
     res.json({ success: true, ...result });
+  } catch (error) { next(error); }
+}
+
+/** Where a punch from here would land: inside an office or not, without punching. */
+export async function punchCheck(req: Request, res: Response, next: NextFunction) {
+  try {
+    const body = req.body ?? {};
+    const lat = Number(body.latitude);
+    const lng = Number(body.longitude);
+    const reading =
+      Number.isFinite(lat) && Number.isFinite(lng)
+        ? {
+            latitude: lat,
+            longitude: lng,
+            accuracy: Number.isFinite(Number(body.accuracy)) ? Number(body.accuracy) : undefined,
+            mocked: body.mocked === true,
+          }
+        : undefined;
+    res.json({ success: true, ...(await checkPunchLocation(userId(req), reading)) });
   } catch (error) { next(error); }
 }
 

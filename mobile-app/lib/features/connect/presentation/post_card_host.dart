@@ -61,6 +61,11 @@ mixin _PostCardHost<T extends StatefulWidget> on State<T> {
     if (post.type == ConnectPostType.secretSquad) {
       return SecretSquadPostCard(key: key, post: post, session: _session);
     }
+    // Sowaka Engagements launching a game: its own card, one way into the
+    // game, and no likes or comments.
+    if (post.type == ConnectPostType.gameLaunch) {
+      return GameLaunchPostCard(key: key, post: post, session: _session);
+    }
     return _ConnectPostCard(
       key: key,
       post: post,

@@ -442,7 +442,7 @@ class FaceRealness {
   String? get ask => !turned
       ? 'Turn your head a little to one side'
       : !blinked
-      ? 'Blink once'
+      ? 'Blink your eye'
       : null;
 
   void seeFace(Face face, double shortSide, double luma) {

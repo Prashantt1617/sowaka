@@ -192,7 +192,7 @@ export const env = {
     /** How long a passed check may be used to punch, and only once. */
     tokenTtlSeconds: clamp(Number(process.env.FACE_TOKEN_TTL_SECONDS) || 300, 30, 900),
     /** Failed checks before the app offers to send the day to the manager. */
-    maxAttempts: clamp(Number(process.env.FACE_MAX_ATTEMPTS) || 3, 1, 10),
+    maxAttempts: clamp(Number(process.env.FACE_MAX_ATTEMPTS) || 5, 1, 10),
     /** Each Rekognition call gives up after this long. */
     timeoutMs: clamp(Number(process.env.FACE_REKOGNITION_TIMEOUT_MS) || 5000, 1000, 30_000),
     /** Retries after the first try, for throttling and network errors only. */

@@ -28,6 +28,9 @@ import '../../../services/api_config.dart';
 import '../../../services/linkified_text.dart';
 import '../../relay/presentation/relay_post_card.dart';
 import '../../squad/presentation/secret_squad_post_card.dart';
+import '../../games/data/games_api_service.dart';
+import '../../games/data/games_models.dart';
+import '../../games/presentation/web_game_screen.dart';
 import '../../shared/app_toast.dart';
 import '../../shared/network_status.dart';
 
@@ -41,6 +44,7 @@ part 'contest_composer.dart';
 part 'contest_entries_route.dart';
 part 'engagement_cards.dart';
 part 'engagement_entries_sheet.dart';
+part 'game_launch_post_card.dart';
 part 'person_posts_tab.dart';
 part 'poll_post_card.dart';
 part 'post_card_host.dart';
@@ -999,6 +1003,7 @@ bool _postShowsHeader(ConnectPostType type) {
     case ConnectPostType.mostLikely:
     case ConnectPostType.relayGame:
     case ConnectPostType.secretSquad:
+    case ConnectPostType.gameLaunch:
       return false;
   }
 }
@@ -2064,6 +2069,8 @@ class _PostBody extends StatelessWidget {
       ),
       // Drawn whole by _PollPostCard before it reaches here.
       ConnectPostType.survey => const SizedBox.shrink(),
+      // Drawn whole by GameLaunchPostCard before it reaches here.
+      ConnectPostType.gameLaunch => const SizedBox.shrink(),
       ConnectPostType.event => _EventBody(
         post: post,
         onAction: onAction,

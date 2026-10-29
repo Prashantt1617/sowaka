@@ -1183,6 +1183,46 @@ function punchWindowFor(
 }
 
 /**
+ * Where a punch from here would land, without punching: the app's location
+ * step (Figma 4309:24713) shows "You're inside the office area" and only then
+ * opens Face ID, so it asks first. Read-only: nothing is written, no face
+ * token is spent, and the punch itself is still judged on its own reading —
+ * this answer is only what the screen says next.
+ */
+export async function checkPunchLocation(
+  userId: string,
+  reading?: { latitude: number; longitude: number; accuracy?: number; mocked?: boolean },
+) {
+  const employee = requestViewer(userId) ?? (await users().findOne({ userId }, { projection: { _id: 0, org: 1 } }));
+  const org = employee?.org ?? '';
+  const [policy, orgOffices] = await Promise.all([
+    policyForUser(userId),
+    org ? offices().find({ org, active: true }).toArray() : Promise.resolve([]),
+  ]);
+  const geofenced = policy.correction.punchFormat === 'Geotag (powered by Sowaka)' && orgOffices.length > 0;
+  if (!geofenced) return { geofenced: false, inside: true as const };
+  if (!reading) {
+    throw new AttendanceError(428, 'Location is required to punch. Turn location on and try again.');
+  }
+  const verdict = await locateForPunch(org, reading, orgOffices);
+  const location = punchLocationFrom(reading, verdict);
+  const office = verdict.office ? officeView(verdict.office) : undefined;
+  if (verdict.inside) return { geofenced: true, inside: true as const, office, location };
+  if (verdict.reason === 'inaccurate') {
+    return {
+      geofenced: true, inside: false as const, inaccurate: true, office, location,
+      message: 'Your location is not precise enough yet. Move near a window and try again.',
+    };
+  }
+  const rules = policy.correction.outsideLocation;
+  return {
+    geofenced: true, inside: false as const, office, location,
+    message: 'You are outside the approved attendance area.',
+    outsideLocation: { outcome: rules.outcome, reasons: rules.reasons },
+  };
+}
+
+/**
  * The offices this employee may punch from, for the app to show before anyone
  * slides the control. An empty list means their org is not geofenced.
  */

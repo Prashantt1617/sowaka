@@ -76,7 +76,7 @@ class FaceCheckScreen extends StatefulWidget {
   /// request goes without it if the location cannot be read.
   final Future<PunchReading> Function()? readLocation;
 
-  /// How long "Face id detected" stays on the camera before the punch goes on.
+  /// How long "Verified" stays on the camera before the punch goes on.
   static Duration matchedPause = const Duration(milliseconds: 900);
 
   @override
@@ -341,7 +341,7 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
         heading: heading,
         camera: _camera.controller,
         state: FaceCaptureState.detected,
-        line: 'Face id detected',
+        line: 'Verified',
         onClose: _close,
       );
     }
@@ -372,7 +372,7 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
         onTap: signal == FaceSignal.unavailable ? _capture : _lookAgain,
       );
       caption = result != null && result.attemptsLeft > 0
-          ? '${result.attemptsLeft} out of 3 ${result.attemptsLeft == 1 ? 'try' : 'tries'} left'
+          ? '${result.attemptsLeft} out of ${_status?.maxAttempts ?? 5} ${result.attemptsLeft == 1 ? 'try' : 'tries'} left'
           : result?.message ?? _problem;
     } else if (_camera.waived) {
       // The phone could not read a face in time, or it never turned and
@@ -386,7 +386,7 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
         onTap: _lookAgain,
       );
       caption = result != null && result.attemptsLeft > 0
-          ? '${result.attemptsLeft} out of 3 ${result.attemptsLeft == 1 ? 'try' : 'tries'} left'
+          ? '${result.attemptsLeft} out of ${_status?.maxAttempts ?? 5} ${result.attemptsLeft == 1 ? 'try' : 'tries'} left'
           : 'Keep your face inside the oval, then turn your head and blink when asked.';
     } else if (signal == FaceSignal.unavailable) {
       // This phone cannot find faces at all: the button takes the selfie.
@@ -425,7 +425,12 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
           ? FaceQuietLink(
               label: 'Take another selfie',
               onCamera: true,
-              onTap: _busy ? null : _capture,
+              // Another look with the prompts, never a selfie straight away.
+              onTap: _busy
+                  ? null
+                  : signal == FaceSignal.unavailable
+                  ? _capture
+                  : _lookAgain,
             )
           : null;
     }

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import {
-  createRegularization, listInbox, listMine, listTeamMemberAttendance, punch, punchLocations, updateDecision,
+  createRegularization, listInbox, listMine, listTeamMemberAttendance, punch, punchCheck, punchLocations, updateDecision,
 } from '../controllers/attendance.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 
@@ -9,6 +9,7 @@ attendanceRouter.use(requireAuth);
 attendanceRouter.get('/mine', listMine);
 attendanceRouter.get('/team/:employeeUserId', listTeamMemberAttendance);
 attendanceRouter.post('/punch', punch);
+attendanceRouter.post('/punch/check', punchCheck);
 attendanceRouter.get('/punch-locations', punchLocations);
 attendanceRouter.post('/regularizations', createRegularization);
 attendanceRouter.get('/regularizations/inbox', listInbox);

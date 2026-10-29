@@ -1,6 +1,10 @@
-// The whole punch-in, screen by screen, as PNGs: the slider, Face ID setup
-// (the intro page, the camera looking and found, the tick), the selfie check
-// (looking, found, the tick), the location check and the punch. Only with
+// The check-in of Figma 4309:24713, screen by screen: the slider, the
+// location check, "You're inside the office area", then Face ID — set up and
+// verified in one go the first day, verified on the days after — with the
+// turn and blink prompts and the flash, "Verified", and punched in. Also the
+// failures: "Face not detected" with the day's tries left, the manager
+// approval once they are spent, and a punch from outside the office. As PNGs
+// only with
 //   flutter test --update-goldens --dart-define=SCREENSHOTS=<dir> test/punch_face_flow_screens_test.dart
 // Without SCREENSHOTS it checks the flow and writes nothing.
 import 'dart:convert';
@@ -35,8 +39,9 @@ class _FakeCamera extends FaceCamera {
   @override
   Future<Uint8List?> capture() async =>
       Uint8List.fromList([0xff, 0xd8, 0xff, 0xe0]);
+  /// As the real camera does: a new look asks the prompts again.
   @override
-  Future<void> resume() async {}
+  Future<void> resume() async => liveness.reset();
   @override
   Future<void> pause() async {}
 }
@@ -57,8 +62,8 @@ class _FakeGeolocator extends GeolocatorPlatform {
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 400));
     return Position(
-      latitude: 26.2389,
-      longitude: 73.0243,
+      latitude: 28.4595,
+      longitude: 77.0266,
       timestamp: DateTime.now(),
       accuracy: 12,
       altitude: 0,
@@ -73,6 +78,30 @@ class _FakeGeolocator extends GeolocatorPlatform {
 
 late _FakeCamera _camera;
 final _requests = <String>[];
+Map<String, dynamic>? _punchBody;
+
+/// Where the phone is, as the server's check answers it.
+Map<String, dynamic> _where = _inside;
+const _inside = {
+  'geofenced': true,
+  'inside': true,
+  'office': {'id': 'o1', 'name': 'Sowaka Office', 'city': 'Gurugram'},
+};
+const _outside = {
+  'geofenced': true,
+  'inside': false,
+  'office': {'id': 'o1', 'name': 'Sowaka Office', 'city': 'Gurugram'},
+  'location': {'distanceMeters': 2400},
+  'message': 'You are outside the approved attendance area.',
+  'outsideLocation': {
+    'outcome': 'request',
+    'reasons': ['Working from home', 'Client visit', 'Out of office'],
+  },
+};
+
+/// What the next selfie check answers.
+Map<String, dynamic> _verify = _matched;
+const _matched = {'passed': true, 'reason': 'matched', 'token': 'verify-tok'};
 
 http.Client _server() => MockClient((request) async {
   _requests.add(request.url.path);
@@ -82,14 +111,14 @@ http.Client _server() => MockClient((request) async {
       jsonEncode({
         'success': true,
         'checkAtPunch': true,
-        'enrolled': _requests.any((p) => p.endsWith('/face/enrol')),
+        'enrolled': true,
         'consent': {
           'version': 'v1',
           'agree':
-              "By proceeding, I agree to Face ID keeping a template of my face, made from this selfie, to confirm it's me when I punch in. It is stored by AWS in Mumbai and deleted when I leave.",
+              "By proceeding, I agree to Face ID keeping a template of my face, made from this selfie, to confirm it's me when I punch in.",
         },
         'liveness': {'mode': 'device'},
-        'maxAttempts': 3,
+        'maxAttempts': 5,
         'failedAttempts': 0,
         'fallbackAvailable': false,
       }),
@@ -98,26 +127,36 @@ http.Client _server() => MockClient((request) async {
   }
   if (path.endsWith('/face/enrol')) {
     await Future<void>.delayed(const Duration(milliseconds: 300));
-    return http.Response(jsonEncode({'success': true, 'enrolled': true}), 201);
+    return http.Response(
+      jsonEncode({'success': true, 'enrolled': true, 'token': 'enrol-tok'}),
+      201,
+    );
   }
   if (path.endsWith('/face/verify')) {
     await Future<void>.delayed(const Duration(milliseconds: 300));
+    return http.Response(jsonEncode({'success': true, ..._verify}), 200);
+  }
+  if (path.endsWith('/face/fallback')) {
     return http.Response(
       jsonEncode({
         'success': true,
-        'passed': true,
-        'reason': 'matched',
-        'token': 'verify-tok',
+        'request': {'id': 'r1'},
       }),
-      200,
+      201,
     );
   }
+  if (path.endsWith('/attendance/punch/check')) {
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    return http.Response(jsonEncode({'success': true, ..._where}), 200);
+  }
   if (path.endsWith('/attendance/punch')) {
+    _punchBody = jsonDecode(request.body) as Map<String, dynamic>;
     return http.Response(
       jsonEncode({
         'success': true,
-        'workDate': '2026-10-27',
-        'punchIn': '2026-10-27T04:00:00.000Z',
+        'workDate': '2026-10-29',
+        'punchIn': '2026-10-29T04:12:00.000Z',
+        'officeName': 'Sowaka Office',
       }),
       200,
     );
@@ -125,7 +164,7 @@ http.Client _server() => MockClient((request) async {
   return http.Response('{"success":true}', 200);
 });
 
-AuthSession _session() => AuthSession(
+AuthSession _session({required bool enrolled}) => AuthSession(
   token: 't',
   user: AuthUser.fromJson({
     'id': 'u1',
@@ -135,9 +174,11 @@ AuthSession _session() => AuthSession(
     'org': 'sowaka',
     'profilePhotoUrl': 'https://example.test/p.png',
     'interests': ['Music'],
-    'faceId': {'enrolled': false, 'atPunch': true},
+    'faceId': {'enrolled': enrolled, 'atPunch': true},
   }),
 );
+
+int _count(String path) => _requests.where((p) => p.endsWith(path)).length;
 
 void main() {
   setUpAll(() async {
@@ -163,14 +204,19 @@ void main() {
 
   setUp(() {
     _requests.clear();
+    _punchBody = null;
+    _where = _inside;
+    _verify = _matched;
     FaceCheckOutcome.enrolledThisRun = false;
     FaceCamera.create = () => _camera = _FakeCamera();
-    // No frames reach the fake camera, so the phone's own checks stand aside.
-    FaceAutoCapture.checkLiveness = false;
+    // The prompts and the flash are driven by hand below; the fake camera
+    // sends no frames for them to read.
+    FaceAutoCapture.checkLiveness = true;
     GeolocatorPlatform.instance = _FakeGeolocator();
     FaceSetupScreen.successPause = const Duration(milliseconds: 1500);
     FaceCheckScreen.matchedPause = const Duration(milliseconds: 900);
   });
+  tearDown(() => FaceAutoCapture.checkLiveness = false);
 
   Future<void> shot(WidgetTester tester, String name) async {
     if (_screenshots.isEmpty) return;
@@ -180,88 +226,260 @@ void main() {
     );
   }
 
+  Future<ManagerApiService> open(
+    WidgetTester tester, {
+    required bool enrolled,
+  }) async {
+    tester.view.physicalSize = const Size(393 * 2, 852 * 2);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    final api = ManagerApiService(
+      session: _session(enrolled: enrolled),
+      baseUrl: 'https://example.test',
+      client: _server(),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(fontFamily: 'Plus Jakarta Sans'),
+        home: PunchScreen(api: api, type: 'in', geofenced: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // The still art decoded up front, so the shots show it. The two map
+    // animations (locating.png, location_inside.png) are GIFs: loaded, they
+    // never stop moving and the test would never settle, so the shots leave
+    // them out; the phone plays them.
+    if (_screenshots.isNotEmpty) {
+      final context = tester.element(find.byType(PunchScreen));
+      await tester.runAsync(() async {
+        for (final name in [
+          'punched_in.png',
+          'request_sent.png',
+          'reason_1.png',
+          'reason_2.png',
+          'reason_3.png',
+        ]) {
+          await precacheImage(AssetImage('assets/icons/punch/$name'), context);
+        }
+        await precacheImage(const AssetImage('assets/icons/face/setup_intro.png'), context);
+      });
+    }
+    return api;
+  }
+
+  /// The slider dragged to the end, and the location check run through to
+  /// whatever the server says about where the phone is.
+  Future<void> slideAndLocate(WidgetTester tester, {String? checking}) async {
+    expect(find.text('Ready to start your day?'), findsOneWidget);
+    expect(find.text('Slide to Punch In'), findsOneWidget);
+    final slider = find.byType(SlideToPunch);
+    final knob = find
+        .descendant(of: slider, matching: find.byType(GestureDetector))
+        .last;
+    await tester.drag(knob, Offset(tester.getSize(slider).width, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('Checking your location…'), findsOneWidget);
+    if (checking != null) await shot(tester, checking);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pumpAndSettle();
+  }
+
+  /// A face in the oval answering the prompts: the turn, the blink, then the
+  /// flash, and the selfie takes itself. Shots of each step when [prefix].
+  Future<void> answerPrompts(WidgetTester tester, {String? prefix}) async {
+    _camera.sees(FaceSignal.detected);
+    await tester.pump();
+    expect(find.text('Turn your head a little to one side'), findsOneWidget);
+    if (prefix != null) await shot(tester, '$prefix-turn');
+    _camera.liveness.turned = true;
+    _camera.sees(FaceSignal.detected);
+    await tester.pump();
+    expect(find.text('Blink your eye'), findsOneWidget);
+    if (prefix != null) await shot(tester, '$prefix-blink');
+    _camera.liveness.blinked = true;
+    _camera.sees(FaceSignal.detected);
+    await tester.pump();
+    expect(find.text('Hold still'), findsOneWidget);
+    // Held: the page goes white for the flash, and the face lights up.
+    await tester.pump(FaceAutoCapture.hold);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('face-flash')), findsOneWidget);
+    if (prefix != null) await shot(tester, '$prefix-flash');
+    _camera.liveness.flashOff(_camera.liveness.lumaNow + 20);
+    await tester.pump(FaceAutoCapture.flash);
+    await tester.pump(const Duration(milliseconds: 400));
+  }
+
   testWidgets(
-    'punch in: slider, Face ID setup, the selfie check, the location, punched in',
+    'first day: slider, location, inside the office, Face ID set up and verified in one go, punched in',
     (tester) async {
-      tester.view.physicalSize = const Size(393 * 2, 852 * 2);
-      tester.view.devicePixelRatio = 2;
-      addTearDown(tester.view.reset);
-      final api = ManagerApiService(
-        session: _session(),
-        baseUrl: 'https://example.test',
-        client: _server(),
-      );
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: ThemeData(fontFamily: 'Plus Jakarta Sans'),
-          home: PunchScreen(api: api, type: 'in', geofenced: true),
-        ),
-      );
-      await tester.pumpAndSettle();
-      // 1. The punch screen with its slider.
-      expect(find.text('Slide to Punch In'), findsOneWidget);
-      await shot(tester, '01-slider');
-      // The knob is the GestureDetector inside the slider: drag it to the end.
-      final slider = find.byType(SlideToPunch);
-      final knob = find
-          .descendant(of: slider, matching: find.byType(GestureDetector))
-          .last;
-      await tester.drag(knob, Offset(tester.getSize(slider).width, 0));
+      await open(tester, enrolled: false);
+      await shot(tester, '01-ready');
+      await slideAndLocate(tester, checking: '02-checking-location');
+
+      // Inside the office: set up and verify, the first time.
+      expect(find.text("You're inside the office area"), findsOneWidget);
+      expect(find.text('Sowaka Office'), findsOneWidget);
+      expect(find.text('Setup & verify face id'), findsOneWidget);
+      expect(_count('/attendance/punch'), 0);
+      await shot(tester, '03-inside-office-first-day');
+      await tester.tap(find.text('Setup & verify face id'));
       await tester.pumpAndSettle();
 
-      // 2. Face ID setup: the intro page.
+      // The setup page, then the camera with the prompts.
       expect(find.text('Set up your Face ID'), findsOneWidget);
-      expect(find.text('For a clear face capture'), findsOneWidget);
-      await shot(tester, '02-setup-intro');
+      await shot(tester, '04-setup-intro');
       await tester.tap(find.text('Set up Face ID'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-      // 3. The camera, looking.
       expect(find.text('Position your face inside the oval'), findsOneWidget);
-      expect(find.text('Face id successfully set up'), findsNothing);
-      await shot(tester, '03-setup-camera-looking');
-      _camera.sees(FaceSignal.notDetected);
-      await tester.pump();
-      expect(find.text('Keep your face inside the oval'), findsOneWidget);
-      await shot(tester, '04-setup-camera-not-in-oval');
-      // 4. A face in the oval: "Hold still", no tick yet.
-      _camera.sees(FaceSignal.detected);
-      await tester.pump();
-      expect(find.text('Hold still'), findsOneWidget);
-      expect(find.text('Face id successfully set up'), findsNothing);
-      await shot(tester, '05-setup-camera-face-found');
-      // The selfie takes itself; the server keeps the face; only then the tick.
-      await tester.pump(FaceAutoCapture.hold);
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(_requests.where((p) => p.endsWith('/face/enrol')), hasLength(1));
-      expect(find.text('Face id successfully set up'), findsOneWidget);
-      await shot(tester, '06-setup-success');
+      await shot(tester, '05-camera-looking');
+      await answerPrompts(tester, prefix: '06-setup');
+      expect(_count('/face/enrol'), 1);
+      expect(find.text('Verified'), findsOneWidget);
+      await shot(tester, '07-setup-verified');
 
-      // 5. On to the selfie check.
+      // The setup is the day's check: the punch carries its token.
       await tester.pump(FaceSetupScreen.successPause);
       await tester.pumpAndSettle();
-      expect(find.text('Punch-in'), findsOneWidget);
-      expect(find.text('Position your face inside the oval'), findsOneWidget);
-      await shot(tester, '07-check-camera-looking');
-      _camera.sees(FaceSignal.detected);
-      await tester.pump();
-      expect(find.text('Hold still'), findsOneWidget);
-      expect(find.text('Face id detected'), findsNothing);
-      await shot(tester, '08-check-camera-face-found');
-      await tester.pump(FaceAutoCapture.hold);
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(_requests.where((p) => p.endsWith('/face/verify')), hasLength(1));
-      expect(find.text('Face id detected'), findsOneWidget);
-      await shot(tester, '09-check-matched');
-
-      // 6. The location check, then punched in.
-      await tester.pump(FaceCheckScreen.matchedPause);
-      await tester.pump(const Duration(milliseconds: 50));
-      await tester.pump(const Duration(milliseconds: 100));
-      await shot(tester, '10-location-check');
-      await tester.pumpAndSettle(const Duration(milliseconds: 200));
+      expect(_count('/face/verify'), 0);
+      expect(_punchBody?['faceToken'], 'enrol-tok');
+      expect(_punchBody?['latitude'], 28.4595);
       expect(find.text("You're punched in!"), findsOneWidget);
-      await shot(tester, '11-punched-in');
+      await shot(tester, '08-punched-in');
+    },
+  );
+
+  testWidgets(
+    'the days after: inside the office, Verify face id, Verified, punched in',
+    (tester) async {
+      await open(tester, enrolled: true);
+      await slideAndLocate(tester);
+      expect(find.text("You're inside the office area"), findsOneWidget);
+      expect(find.text('Verify face id'), findsOneWidget);
+      expect(find.text('Setup & verify face id'), findsNothing);
+      await shot(tester, '11-inside-office-next-day');
+      await tester.tap(find.text('Verify face id'));
+      await tester.pumpAndSettle();
+      expect(find.byType(FaceCheckScreen), findsOneWidget);
+      await answerPrompts(tester, prefix: '12-check');
+      expect(_count('/face/verify'), 1);
+      expect(find.text('Verified'), findsOneWidget);
+      await shot(tester, '13-check-verified');
+      await tester.pump(FaceCheckScreen.matchedPause);
+      await tester.pumpAndSettle();
+      expect(_punchBody?['faceToken'], 'verify-tok');
+      expect(find.text("You're punched in!"), findsOneWidget);
+    },
+  );
+
+  testWidgets('Verify face id tapped twice opens one camera', (tester) async {
+    await open(tester, enrolled: true);
+    await slideAndLocate(tester);
+    final verify = find.text('Verify face id');
+    await tester.tap(verify);
+    await tester.tap(verify, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.byType(FaceCheckScreen), findsOneWidget);
+  });
+
+  testWidgets(
+    'no office set up yet: no inside screen, straight to Face ID, then the punch',
+    (tester) async {
+      _where = {'geofenced': false, 'inside': true};
+      await open(tester, enrolled: true);
+      await slideAndLocate(tester);
+      expect(find.text("You're inside the office area"), findsNothing);
+      expect(find.byType(FaceCheckScreen), findsOneWidget);
+      await answerPrompts(tester);
+      await tester.pump(FaceCheckScreen.matchedPause);
+      await tester.pumpAndSettle();
+      expect(_punchBody?['faceToken'], 'verify-tok');
+    },
+  );
+
+  testWidgets(
+    'a failed check: the reason, Try Again and the day\'s tries left; once they are spent, the manager approves',
+    (tester) async {
+      await open(tester, enrolled: true);
+      await slideAndLocate(tester);
+      await tester.tap(find.text('Verify face id'));
+      await tester.pumpAndSettle();
+
+      // The phone sees no face it is happy with: Face not detected.
+      _camera.waived = true;
+      _camera.notifyListeners();
+      await tester.pump();
+      expect(find.text('Face not detected'), findsOneWidget);
+      expect(find.text('Try Again'), findsOneWidget);
+      expect(_count('/face/verify'), 0);
+      await shot(tester, '21-face-not-detected');
+
+      // Try Again looks again; the server refuses the match: four tries left.
+      _verify = {
+        'passed': false,
+        'reason': 'not_a_match',
+        'message': "This doesn't match the face set up for your account.",
+        'attemptsLeft': 4,
+        'fallbackAvailable': false,
+      };
+      await tester.tap(find.text('Try Again'));
+      await tester.pump();
+      await answerPrompts(tester);
+      await tester.pumpAndSettle();
+      expect(_count('/face/verify'), 1);
+      expect(find.text('Face not matched'), findsOneWidget);
+      expect(find.text('4 out of 5 tries left'), findsOneWidget);
+      await shot(tester, '22-face-not-matched-tries-left');
+
+      // The fifth failure of the day: the punch goes to the manager.
+      _verify = {
+        'passed': false,
+        'reason': 'not_a_match',
+        'message': "This doesn't match the face set up for your account.",
+        'attemptsLeft': 0,
+        'fallbackAvailable': true,
+      };
+      await tester.tap(find.text('Try Again'));
+      await tester.pump();
+      await answerPrompts(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('Send punch-in to manager'), findsOneWidget);
+      expect(find.text('Your manager or HR approves the punch-in.'), findsOneWidget);
+      await shot(tester, '23-out-of-tries-manager');
+      await tester.tap(find.text('Send punch-in to manager'));
+      await tester.pumpAndSettle();
+      expect(_count('/face/fallback'), 1);
+      expect(_punchBody, isNull);
+      expect(find.text('Request sent'), findsOneWidget);
+      await shot(tester, '24-request-sent');
+    },
+  );
+
+  testWidgets(
+    'outside the office: HR\'s reasons first, then Face ID, then the request',
+    (tester) async {
+      _where = _outside;
+      await open(tester, enrolled: true);
+      await slideAndLocate(tester);
+      expect(find.text("You're inside the office area"), findsNothing);
+      expect(find.text('You’re outside the office area'), findsOneWidget);
+      expect(find.text('Client visit'), findsOneWidget);
+      expect(find.byType(FaceCheckScreen), findsNothing);
+      await shot(tester, '31-outside-office');
+      await tester.tap(find.text('Client visit'));
+      await tester.pump();
+      await tester.tap(find.text('Send punch-in request'));
+      await tester.pumpAndSettle();
+      expect(find.byType(FaceCheckScreen), findsOneWidget);
+      await answerPrompts(tester);
+      await tester.pump(FaceCheckScreen.matchedPause);
+      await tester.pumpAndSettle();
+      expect(_punchBody?['reason'], 'Client visit');
+      expect(_punchBody?['faceToken'], 'verify-tok');
     },
   );
 }

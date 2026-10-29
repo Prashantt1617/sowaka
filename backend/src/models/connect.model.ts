@@ -15,7 +15,14 @@ export type ConnectPostType =
   | 'caption_challenge'
   | 'photo_story_challenge'
   | 'most_likely'
-  | 'secret_squad';
+  | 'secret_squad'
+  /**
+   * Sowaka Engagements launching a game in a company's feed: a photo, GIF or
+   * video, a few words, and one button into the game (`body.gameKey`, a
+   * catalog key). Posted by Sowaka with `src/scripts/game-launch-post.ts`,
+   * never from the app; nobody likes or comments on it.
+   */
+  | 'game_launch';
 
 export interface ConnectAuthor {
   userId?: string;

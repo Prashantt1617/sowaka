@@ -11,8 +11,9 @@ import '../../face_id/face_setup_screen.dart';
 import '../../manager/data/manager_api_service.dart';
 import '../../manager/data/manager_models.dart';
 
-/// What the punch screen is doing right now (nodes 2306:58967 onward).
-enum _PunchStage { ready, checking, sending, done, outside, blocked, requested }
+/// What the punch screen is doing right now (nodes 2306:58967 onward, and the
+/// check-in flow of Figma 4309:24713).
+enum _PunchStage { ready, checking, inside, sending, done, outside, blocked, requested }
 
 /// How a punch ended, for whoever opened the screen.
 class PunchOutcome {
@@ -137,6 +138,14 @@ class _PunchScreenState extends State<PunchScreen> {
   /// The token a passed face check handed back, spent by the next punch.
   String? _faceToken;
 
+  /// A Face ID screen is open: a second tap must not open another, or each
+  /// would spend one of the day's tries.
+  bool _faceOpen = false;
+
+  /// The punch being sent came from the inside screen, not the outside one:
+  /// a refusal for want of a face goes back to where it came from.
+  bool _fromInside = false;
+
   /// The server asked for a face this session knew nothing of: HR switched
   /// the check on since the profile was last read.
   bool _serverAskedForFace = false;
@@ -145,10 +154,15 @@ class _PunchScreenState extends State<PunchScreen> {
   /// within this punch, so a server that keeps refusing cannot loop them.
   int _faceRetries = 0;
 
-  /// Face first, then location: where the company checks faces, every punch
-  /// made here — geotagged or in-app, in or out — opens the selfie (Figma
-  /// 4194:21786) before anything else.
+  /// Where the company checks faces, every punch made here — geotagged or
+  /// in-app, in or out — passes Face ID (Figma 4194:21786). Since Figma
+  /// 4309:24713 the location comes first: the person learns they are inside
+  /// the office, then verifies it is them.
   bool get _needsFace => widget.api.session.user.faceIdAtPunch || _serverAskedForFace;
+
+  /// Whether this person still has Face ID to set up: their first checked
+  /// punch sets it up and verifies them in one go, and counts as the check.
+  bool get _faceSetUp => widget.api.session.user.faceIdEnrolled || FaceCheckOutcome.enrolledThisRun;
 
   @override
   void initState() {
@@ -158,9 +172,15 @@ class _PunchScreenState extends State<PunchScreen> {
     }
   }
 
+  /// The check-in (Figma 4309:24713): where the phone is first, "You're
+  /// inside the office area", and only then Face ID — set up and verified in
+  /// one go the first time, verified after that — and the punch. Outside
+  /// every office it is HR's reasons, as before, with Face ID before the
+  /// punch is sent. A shift that is not geotagged has no location to check:
+  /// Face ID, then the punch.
   Future<void> _punch() async {
-    if (_needsFace && _faceToken == null && !await _checkFace()) return;
     if (!widget.geofenced) {
+      if (_needsFace && _faceToken == null && !await _checkFace()) return;
       await _send(null);
       return;
     }
@@ -180,14 +200,96 @@ class _PunchScreenState extends State<PunchScreen> {
       });
       return;
     }
+    _reading = reading;
+    PunchLocationCheck where;
+    try {
+      where = await widget.api.checkPunchLocation(reading);
+    } on ManagerApiException catch (error) {
+      if (!mounted) return;
+      if (error.statusCode == 404) {
+        // A server from before the check: the punch itself says where it
+        // landed, so Face ID goes first, as it used to.
+        if (_needsFace && _faceToken == null && !await _checkFace()) return;
+        await _send(reading);
+        return;
+      }
+      setState(() {
+        _stage = _PunchStage.blocked;
+        _problem = error.offline ? 'No internet connection. Connect and try again.' : error.message;
+        _canOpenSettings = false;
+      });
+      return;
+    }
+    if (!mounted) return;
+    if (where.inaccurate) {
+      setState(() {
+        _stage = _PunchStage.blocked;
+        _problem = where.message ?? 'Your location is not precise enough yet. Move near a window and try again.';
+        _canOpenSettings = false;
+      });
+      return;
+    }
+    if (!where.geofenced) {
+      // Geotagged, but the company has no office to be inside yet: nothing
+      // to say about where they are. Face ID, then the punch.
+      if (_needsFace && _faceToken == null && !await _checkFace()) return;
+      if (!mounted) return;
+      setState(() => _stage = _PunchStage.sending);
+      await _send(reading);
+      return;
+    }
+    if (!where.inside) {
+      // Outside every office: HR's reasons, straight away.
+      setState(() {
+        _stage = _PunchStage.outside;
+        _reasons = where.reasons;
+        _marksPresent = where.marksPresent;
+        _reasonOptional = where.marksPresent || !_punchingIn;
+        if (!_reasons.contains(_selectedReason)) _selectedReason = null;
+        _officeLabel = where.officeName == null
+            ? null
+            : [where.officeName!, if ((where.officeCity ?? '').isNotEmpty) where.officeCity!].join(' · ');
+        _distanceMeters = where.distanceMeters;
+      });
+      return;
+    }
+    if (!_needsFace || _faceToken != null) {
+      // Nothing to verify: inside is the punch.
+      setState(() => _stage = _PunchStage.sending);
+      await _send(reading);
+      return;
+    }
+    setState(() {
+      _stage = _PunchStage.inside;
+      _officeName = where.officeName;
+    });
+  }
 
-    await _send(reading);
+  /// "Setup & verify face id" / "Verify face id" on the inside screen: the
+  /// camera, then the punch with the token it hands back.
+  Future<void> _verifyAndPunch() async {
+    if (_busy || _faceOpen) return;
+    if (_faceToken == null && !await _checkFace()) return;
+    if (!mounted) return;
+    _fromInside = true;
+    setState(() => _stage = _PunchStage.sending);
+    await _send(_reading);
   }
 
   /// The selfie, and Face ID setup first where it is missing. True with a
   /// token to punch with; false when closed, or when the punch went to the
   /// manager instead, which this screen then shows as the request it is.
   Future<bool> _checkFace() async {
+    if (_faceOpen) return false;
+    _faceOpen = true;
+    try {
+      return await _openFace();
+    } finally {
+      _faceOpen = false;
+    }
+  }
+
+  Future<bool> _openFace() async {
     final navigator = Navigator.of(context);
     // Only a geotagged punch sends where it was tried from with a request.
     FaceCheckScreen check() => FaceCheckScreen(
@@ -196,13 +298,13 @@ class _PunchScreenState extends State<PunchScreen> {
       readLocation: widget.geofenced ? _location.read : null,
     );
     // Someone not set up does it here, at their first checked punch: setup,
-    // its success screen, then the selfie check, whose outcome it hands back.
+    // "Verified", and the token the setup earned — the setup is the check.
     FaceSetupScreen setup() => FaceSetupScreen(
       api: widget.api,
       type: widget.type,
       readLocation: widget.geofenced ? _location.read : null,
     );
-    final enrolled = widget.api.session.user.faceIdEnrolled || FaceCheckOutcome.enrolledThisRun;
+    final enrolled = _faceSetUp;
     FaceCheckOutcome? outcome = await navigator.push<FaceCheckOutcome>(
       MaterialPageRoute(builder: (_) => enrolled ? check() : setup()),
     );
@@ -235,11 +337,12 @@ class _PunchScreenState extends State<PunchScreen> {
     _faceRetries += 1;
     _faceToken = null;
     _serverAskedForFace = true;
+    final inside = _fromInside && _stage == _PunchStage.sending && _reading != null;
     setState(() {
       _busy = false;
-      _stage = _PunchStage.ready;
+      _stage = inside ? _PunchStage.inside : _PunchStage.ready;
     });
-    unawaited(_punch());
+    unawaited(inside ? _verifyAndPunch() : _punch());
     return true;
   }
 
@@ -320,6 +423,10 @@ class _PunchScreenState extends State<PunchScreen> {
   /// The same punch again, with the reason the employee chose for being away
   /// — or, where none is needed, without one.
   Future<void> _sendWithReason(String? reason) async {
+    if (_busy || _faceOpen) return;
+    if (_needsFace && _faceToken == null && !await _checkFace()) return;
+    if (!mounted) return;
+    _fromInside = false;
     setState(() {
       _busy = true;
       _stage = _PunchStage.sending;
@@ -368,7 +475,10 @@ class _PunchScreenState extends State<PunchScreen> {
 
   Future<void> _dismiss() async {
     final alreadyIn = _alreadyIn;
-    if (_stage == _PunchStage.outside && _reasonOptional && !alreadyIn && !_busy) {
+    // Where the punch needs Face ID first, leaving is leaving: closing must
+    // not open the camera.
+    final faceFirst = _needsFace && _faceToken == null;
+    if (_stage == _PunchStage.outside && _reasonOptional && !alreadyIn && !_busy && !faceFirst) {
       await _sendWithReason(_selectedReason);
       if (!mounted || _stage != _PunchStage.done) return;
       _close(PunchOutcome(punched: true, officeName: _officeName));
@@ -418,6 +528,7 @@ class _PunchScreenState extends State<PunchScreen> {
                     child: switch (_stage) {
                   _PunchStage.ready => _ready(),
                   _PunchStage.checking => _checking(),
+                  _PunchStage.inside => _inside(),
                   _PunchStage.sending => _sending(),
                   _PunchStage.done => _done(),
                   _PunchStage.outside => _outside(),
@@ -427,16 +538,6 @@ class _PunchScreenState extends State<PunchScreen> {
                   ),
                 ),
               ),
-              if (_stage == _PunchStage.ready)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'When you punch-in, we check if your device location '
-                    'matches the office address',
-                    textAlign: TextAlign.center,
-                    style: _sora(11, FontWeight.w400, const Color(0xFF9E9E9E), height: 16 / 11),
-                  ),
-                ),
             ],
           ),
         ),
@@ -444,51 +545,83 @@ class _PunchScreenState extends State<PunchScreen> {
     );
   }
 
+  /// Ready (Figma 4245:24981): the question, the time large, the day, the
+  /// slider and the way to a leave instead. 177 under the close row, the
+  /// time block 359 high, so the slider sits where the design puts it.
   Widget _ready() {
     final now = DateTime.now();
+    // The design's 852-high phone; a shorter one gives up the gaps first, so
+    // the slider stays on screen without scrolling.
+    final short = (852 - MediaQuery.sizeOf(context).height).clamp(0.0, 400.0);
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // 115px below the close row, then the target at 130px (2412:86638).
-        const SizedBox(height: 91),
-        Image.asset(
-          'assets/icons/punch/target.png',
-          width: 130,
-          height: 130,
-          fit: BoxFit.cover,
-        ),
-        const SizedBox(height: 12),
-        Text(
-          _punchingIn ? 'Ready to start your day?' : 'Ready to wrap up?',
-          textAlign: TextAlign.center,
-          style: _sora(26, FontWeight.w700, _ink, height: 34 / 26),
-        ),
-        const SizedBox(height: 24),
-        // Current time and date, 40px apart with a 32px hairline between.
-        IntrinsicHeight(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _ReadyFact(label: 'CURRENT TIME', value: _clockLabel(now)),
-              Container(
-                width: 1,
-                height: 32,
-                margin: const EdgeInsets.symmetric(horizontal: 20),
-                color: const Color(0xFFDDDDDD),
-              ),
-              _ReadyFact(label: 'DATE', value: _dayAndMonth(now)),
-            ],
+        SizedBox(height: (177 - short * 0.6).clamp(24.0, 177.0)),
+        Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 8),
+          child: Text(
+            _punchingIn ? 'Ready to start your day?' : 'Ready to wrap up?',
+            textAlign: TextAlign.center,
+            style: _sora(26, FontWeight.w700, _ink, height: 34 / 26),
           ),
         ),
-        const SizedBox(height: 100),
+        SizedBox(
+          height: (359 - short * 0.4).clamp(170.0, 359.0),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 23),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        _clockDigits(now),
+                        style: _sora(64, FontWeight.w700, _ink, spacing: -0.16),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: Text(
+                          now.hour >= 12 ? 'PM' : 'AM',
+                          style: _sora(24, FontWeight.w600, _ink, height: 16.2 / 24, spacing: -0.16),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _longDay(now),
+                  textAlign: TextAlign.center,
+                  style: _sora(16, FontWeight.w600, _inkTertiary, height: 16.2 / 16, spacing: -0.16),
+                ),
+              ],
+            ),
+          ),
+        ),
         SlideToPunch(
           label: _busy
               ? (_punchingIn ? 'Punching you in…' : 'Punching you out…')
               : (_punchingIn ? 'Slide to Punch In' : 'Slide to Punch Out'),
           enabled: !_busy,
+          height: 74,
+          knobInset: 10,
+          track: const Color(0xFFEEF6FB),
+          fill: const Color(0xFFDCEEF7),
+          borderColor: const Color(0xFFE8E8F0),
+          labelStyle: _sora(14, FontWeight.w600, _brand, height: 16.2 / 14, spacing: -0.16),
+          // Drawn mirrored in the design (4245:25040): ">>", pointing the way to slide.
+          labelTrailing: Transform.flip(
+            flipX: true,
+            child: SvgPicture.asset(
+              'assets/icons/punch/slide_chevrons.svg',
+              width: 18,
+              height: 18,
+            ),
+          ),
           onComplete: _punch,
         ),
-        const SizedBox(height: 28),
         _QuietButton(
           label: 'Apply for a leave',
           onTap: () {
@@ -496,33 +629,32 @@ class _PunchScreenState extends State<PunchScreen> {
             widget.onRequestWfh?.call();
           },
         ),
-        const SizedBox(height: 12),
       ],
     );
   }
 
-  /// "17 Sep" — the day this punch will be recorded against.
-  static String _dayAndMonth(DateTime value) {
+  /// "Tuesday, 27 October" — the day this punch will be recorded against.
+  static String _longDay(DateTime value) {
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
     ];
-    return '${value.day} ${months[value.month - 1]}';
+    return '${days[value.weekday - 1]}, ${value.day} ${months[value.month - 1]}';
   }
 
-  /// "09:42 AM", as the design writes it.
-  static String _clockLabel(DateTime value) {
+  /// "09:42", as the design writes the time; AM or PM sits beside it.
+  static String _clockDigits(DateTime value) {
     final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
-    return '${hour.toString().padLeft(2, '0')}:'
-        '${value.minute.toString().padLeft(2, '0')} '
-        '${value.hour >= 12 ? 'PM' : 'AM'}';
+    return '${hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
   }
 
+  /// Checking (Figma 2412:86664): the pin, and one line. The close row stays
+  /// empty above it — the check finishes on its own.
   Widget _checking() {
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const SizedBox(height: 24),
+        const SizedBox(height: 115),
         Image.asset(
           'assets/icons/punch/locating.png',
           width: 282,
@@ -534,14 +666,109 @@ class _PunchScreenState extends State<PunchScreen> {
           textAlign: TextAlign.center,
           style: _sora(20, FontWeight.w700, _ink, height: 30 / 20),
         ),
-        const SizedBox(height: 12),
-        Text(
-          'Please wait while we verify that you are within the approved '
-          'attendance area.',
-          textAlign: TextAlign.center,
-          style: _sora(14, FontWeight.w400, const Color(0xFF484848), height: 22 / 14),
-        ),
       ],
+    );
+  }
+
+  /// Inside the office (Figma 4289:26331): the map pin, where, and Face ID —
+  /// "Setup & verify face id" the first time, when setting it up is the
+  /// check, and "Verify face id" every day after.
+  Widget _inside() {
+    final firstTime = !_faceSetUp;
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height * 0.7,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // The art is cropped from a larger square, as the design frames it.
+          SizedBox(
+            width: 161,
+            height: 165,
+            child: ClipRect(
+              child: OverflowBox(
+                maxWidth: 229,
+                maxHeight: 229,
+                alignment: const Alignment(-0.02, -0.04),
+                child: Image.asset(
+                  'assets/icons/punch/location_inside.png',
+                  width: 229,
+                  height: 229,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 37),
+          Text(
+            "You're inside the office area",
+            textAlign: TextAlign.center,
+            style: _sora(24, FontWeight.w700, _ink, height: 32 / 24),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            'Verify it is you to record your attendance.',
+            textAlign: TextAlign.center,
+            style: _sora(14, FontWeight.w400, const Color(0xFF484848), height: 21 / 14),
+          ),
+          const SizedBox(height: 24),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.5),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFDCE3EA), width: 1.115),
+                  ),
+                  child: Row(
+                    children: [
+                      SvgPicture.asset('assets/icons/punch/office_pin.svg', width: 21, height: 21),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _officeName ?? 'Your office',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _sora(12, FontWeight.w600, const Color(0xFF142A43), height: 18 / 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 32),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x400571A6), blurRadius: 4, offset: Offset(0, 2)),
+                    ],
+                  ),
+                  child: Material(
+                    color: _brand,
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      key: const ValueKey('punch-verify-face'),
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: _busy ? null : _verifyAndPunch,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        child: Text(
+                          firstTime ? 'Setup & verify face id' : 'Verify face id',
+                          textAlign: TextAlign.center,
+                          style: _sora(15, FontWeight.w600, Colors.white, height: 22.5 / 15),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -875,7 +1102,7 @@ class _QuietButton extends StatelessWidget {
   Widget build(BuildContext context) => InkWell(
     onTap: onTap,
     child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 18),
       child: Text(
         label,
         textAlign: TextAlign.center,
@@ -886,13 +1113,14 @@ class _QuietButton extends StatelessWidget {
 }
 
 /// Every line on these screens is set in Sora, as the design has it.
-TextStyle _sora(double size, FontWeight weight, Color color, {double? height}) =>
+TextStyle _sora(double size, FontWeight weight, Color color, {double? height, double? spacing}) =>
     TextStyle(
       fontFamily: 'Sora',
       fontSize: size,
       fontWeight: weight,
       color: color,
       height: height,
+      letterSpacing: spacing,
     );
 
 const _ink = Color(0xFF222222);
@@ -900,33 +1128,6 @@ const _inkTertiary = Color(0xFF717171);
 const _border = Color(0xFFEBEBEB);
 const _brand = Color(0xFF0571A6);
 
-/// One of the two facts above the slider: a quiet label over a bold value.
-class _ReadyFact extends StatelessWidget {
-  const _ReadyFact({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // 10/w500 uppercase with 0.25 tracking over 24/w600 (2412:86645).
-        Text(
-          label,
-          style: _sora(10, FontWeight.w500, _inkTertiary, height: 15 / 10)
-              .copyWith(letterSpacing: 0.25),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          value,
-          style: _sora(24, FontWeight.w600, _ink).copyWith(letterSpacing: -0.16),
-        ),
-      ],
-    );
-  }
-}
 
 const _navy = Color(0xFF142A43);
 const _muted = Color(0xFF586B7D);

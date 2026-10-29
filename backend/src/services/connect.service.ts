@@ -464,8 +464,15 @@ export async function getConnectPost(viewerUserId: string, postId: string) {
   return viewPost(post, viewerUserId);
 }
 
+/** Posts nobody likes or comments on: a game launch is a way into the game, not a conversation. */
+const QUIET_POST_TYPES = new Set(['game_launch']);
+function refuseConversation(post: { type: string }) {
+  if (QUIET_POST_TYPES.has(post.type)) throw new ConnectError(409, 'This post does not take likes or comments');
+}
+
 export async function toggleConnectReaction(viewerUserId: string, postId: string) {
   const post = await requireVisiblePost(viewerUserId, postId);
+  refuseConversation(post);
   const liked = post.likedBy.includes(viewerUserId);
   const update = liked
     ? { $pull: { likedBy: viewerUserId } }
@@ -590,6 +597,7 @@ export async function addConnectComment(
   mentionedUserIdsInput: string[] = [],
 ) {
   const post = await requireVisiblePost(viewerUserId, postId);
+  refuseConversation(post);
   const viewer = await users().findOne({ userId: viewerUserId });
   const text = textInput.trim();
   if (text.length < 1) throw new ConnectError(400, 'Comment cannot be empty');
@@ -2438,6 +2446,7 @@ function postMeta(type: ConnectPostType) {
     photo_story_challenge: ['Photo Challenge', '📸', '#6D28D9', '#F3E8FF'],
     most_likely: ['Most Likely', '🫵', '#6D28D9', '#F3E8FF'],
     secret_squad: ['Secret Squad', '🕵️', '#3A2E9E', '#EEEAFF'],
+    game_launch: ['Games', '🎮', '#0571A6', '#E8F3FA'],
   } satisfies Record<ConnectPostType, [string, string, string, string]>;
   const [tag, tagIcon, tagColor, tagTint] = meta[type];
   return { tag, tagIcon, tagColor, tagTint };
