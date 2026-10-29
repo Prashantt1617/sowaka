@@ -27,6 +27,7 @@ import '../../profile/presentation/profile_style.dart' show ProfileEmptyNote;
 import '../../../services/api_config.dart';
 import '../../../services/linkified_text.dart';
 import '../../relay/presentation/relay_post_card.dart';
+import '../../relay/presentation/relay_style.dart' show relayCountdown;
 import '../../squad/presentation/secret_squad_post_card.dart';
 import '../../games/data/games_api_service.dart';
 import '../../games/data/games_models.dart';

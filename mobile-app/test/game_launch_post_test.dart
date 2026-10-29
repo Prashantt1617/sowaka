@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -45,7 +46,7 @@ GamesApiService _games({required bool hasTileUp}) => GamesApiService(
   ),
 );
 
-ConnectPost _post() => ConnectPost.fromJson({
+ConnectPost _post({Map<String, dynamic> extra = const {}}) => ConnectPost.fromJson({
   'id': 'p1',
   'type': 'game_launch',
   'tag': 'Games',
@@ -68,6 +69,7 @@ ConnectPost _post() => ConnectPost.fromJson({
     'actionLabel': 'Play Tile Up',
     'accentColor': '#7C5CFF',
     'mediaKind': 'none',
+    ...extra,
   },
   'likes': 0,
   'likedByMe': false,
@@ -79,23 +81,57 @@ Future<void> _pump(
   WidgetTester tester, {
   required GamesApiService service,
   required Future<void> Function(BuildContext, GameCatalogEntry) openGame,
+  ConnectPost? post,
+  DateTime Function()? now,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(fontFamily: 'Plus Jakarta Sans'),
       home: Scaffold(
         body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
           child: GameLaunchPostCard(
-            post: _post(),
+            post: post ?? _post(),
             session: _session(),
             service: service,
             openGame: openGame,
+            now: now,
           ),
         ),
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  await tester.pump();
 }
+
+const _screenshots = String.fromEnvironment('SCREENSHOTS');
+
+/// The tournament's launch, dressed in its own colours.
+ConnectPost _tournament({bool lock = false}) => _post(
+  extra: {
+    'gameKey': 'diwali-cup',
+    'gameName': 'O-O-O Tournament',
+    'title': 'The Odd One Out Tournament',
+    'text': 'One knockout, live, with bets on the last eight. The lobby opens ten minutes before.',
+    'actionLabel': 'Enter the tournament',
+    'startsAt': '2026-10-29T12:30:00.000Z',
+    'endsAt': '2026-10-29T14:00:00.000Z',
+    if (lock) 'lockUntilStart': true,
+    'theme': {
+      'cardGradient': ['#15122B', '#2B1F5C'],
+      'border': '#2B1F5C',
+      'text': '#FFFFFF',
+      'muted': '#B9B2E0',
+      'timerBackground': '#FFFFFF',
+      'timerText': '#5E45D6',
+      'timerLabel': '#717171',
+      'live': '#FF5C5C',
+      'button': '#F5B82E',
+      'buttonText': '#15122B',
+    },
+  },
+);
 
 void main() {
   testWidgets('the post is parsed as a game launch', (tester) async {
@@ -161,5 +197,106 @@ void main() {
     await tester.pumpAndSettle();
     expect(opened, isEmpty);
     expect(find.text('Tile Up is not on for your company yet.'), findsOneWidget);
+  });
+
+  group('a timed launch', () {
+    setUpAll(() async {
+      if (_screenshots.isEmpty) return;
+      for (final (family, file) in [
+        ('Sora', 'assets/fonts/sora/Sora-Variable.ttf'),
+        ('Plus Jakarta Sans', 'assets/fonts/plus_jakarta_sans/PlusJakartaSans-Variable.ttf'),
+      ]) {
+        await (FontLoader(family)..addFont(rootBundle.load(file))).load();
+      }
+    });
+
+    Future<void> shot(WidgetTester tester, String name) async {
+      if (_screenshots.isEmpty) return;
+      await expectLater(find.byType(GameLaunchPostCard), matchesGoldenFile(Uri.file('$_screenshots/$name.png')));
+    }
+
+    testWidgets('before the start: the game\'s name and the countdown on top, the button open', (tester) async {
+      await _pump(
+        tester,
+        service: _games(hasTileUp: true),
+        openGame: (_, _) async {},
+        post: _tournament(),
+        now: () => DateTime.parse('2026-10-29T11:17:55.000Z'),
+      );
+      expect(find.text('O-O-O Tournament starts in'), findsOneWidget);
+      expect(find.text('01h 12m 05s'), findsOneWidget);
+      expect(find.text('Enter the tournament'), findsOneWidget);
+      expect(find.text('LIVE'), findsNothing);
+      await shot(tester, 'launch-upcoming');
+    });
+
+    testWidgets('locked until the start: the button says when it opens, and does nothing', (tester) async {
+      final opened = <String>[];
+      await _pump(
+        tester,
+        service: _games(hasTileUp: true),
+        openGame: (_, game) async => opened.add(game.key),
+        post: _tournament(lock: true),
+        now: () => DateTime.parse('2026-10-29T11:17:55.000Z'),
+      );
+      expect(find.textContaining('Opens at'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('game-launch-play')));
+      await tester.pumpAndSettle();
+      expect(opened, isEmpty);
+    });
+
+    testWidgets('started: LIVE beside Sowaka, and the time left until the end', (tester) async {
+      await _pump(
+        tester,
+        service: _games(hasTileUp: true),
+        openGame: (_, _) async {},
+        post: _tournament(),
+        now: () => DateTime.parse('2026-10-29T13:00:00.000Z'),
+      );
+      expect(find.text('LIVE'), findsOneWidget);
+      expect(find.text('Ends in'), findsOneWidget);
+      expect(find.text('01h 00m 00s'), findsOneWidget);
+      await shot(tester, 'launch-live');
+    });
+
+    testWidgets('over: ended, and the button is off', (tester) async {
+      final opened = <String>[];
+      await _pump(
+        tester,
+        service: _games(hasTileUp: true),
+        openGame: (_, game) async => opened.add(game.key),
+        post: _tournament(),
+        now: () => DateTime.parse('2026-10-29T15:00:00.000Z'),
+      );
+      expect(find.text('This game has ended'), findsOneWidget);
+      expect(find.text('Ended'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('game-launch-play')));
+      await tester.pumpAndSettle();
+      expect(opened, isEmpty);
+      await shot(tester, 'launch-ended');
+    });
+
+    testWidgets('the colours are the post\'s own', (tester) async {
+      await _pump(
+        tester,
+        service: _games(hasTileUp: true),
+        openGame: (_, _) async {},
+        post: _tournament(),
+        now: () => DateTime.parse('2026-10-29T11:17:55.000Z'),
+      );
+      final button = tester.widget<Material>(
+        find.ancestor(of: find.byKey(const ValueKey('game-launch-play')), matching: find.byType(Material)).first,
+      );
+      expect(button.color, const Color(0xFFF5B82E));
+      final title = tester.widget<Text>(find.text('The Odd One Out Tournament'));
+      expect(title.style?.color, Colors.white);
+      final clock = tester.widget<Text>(find.text('01h 12m 05s'));
+      expect(clock.style?.color, const Color(0xFF5E45D6));
+    });
+
+    testWidgets('an untimed launch has no timer', (tester) async {
+      await _pump(tester, service: _games(hasTileUp: true), openGame: (_, _) async {});
+      expect(find.byKey(const ValueKey('game-launch-timer')), findsNothing);
+    });
   });
 }
