@@ -138,6 +138,14 @@ class _PunchScreenState extends State<PunchScreen> {
   /// The token a passed face check handed back, spent by the next punch.
   String? _faceToken;
 
+  /// A Face ID screen is open: a second tap must not open another, or each
+  /// would spend one of the day's tries.
+  bool _faceOpen = false;
+
+  /// The punch being sent came from the inside screen, not the outside one:
+  /// a refusal for want of a face goes back to where it came from.
+  bool _fromInside = false;
+
   /// The server asked for a face this session knew nothing of: HR switched
   /// the check on since the profile was last read.
   bool _serverAskedForFace = false;
@@ -221,6 +229,15 @@ class _PunchScreenState extends State<PunchScreen> {
       });
       return;
     }
+    if (!where.geofenced) {
+      // Geotagged, but the company has no office to be inside yet: nothing
+      // to say about where they are. Face ID, then the punch.
+      if (_needsFace && _faceToken == null && !await _checkFace()) return;
+      if (!mounted) return;
+      setState(() => _stage = _PunchStage.sending);
+      await _send(reading);
+      return;
+    }
     if (!where.inside) {
       // Outside every office: HR's reasons, straight away.
       setState(() {
@@ -251,9 +268,10 @@ class _PunchScreenState extends State<PunchScreen> {
   /// "Setup & verify face id" / "Verify face id" on the inside screen: the
   /// camera, then the punch with the token it hands back.
   Future<void> _verifyAndPunch() async {
-    if (_busy) return;
+    if (_busy || _faceOpen) return;
     if (_faceToken == null && !await _checkFace()) return;
     if (!mounted) return;
+    _fromInside = true;
     setState(() => _stage = _PunchStage.sending);
     await _send(_reading);
   }
@@ -262,6 +280,16 @@ class _PunchScreenState extends State<PunchScreen> {
   /// token to punch with; false when closed, or when the punch went to the
   /// manager instead, which this screen then shows as the request it is.
   Future<bool> _checkFace() async {
+    if (_faceOpen) return false;
+    _faceOpen = true;
+    try {
+      return await _openFace();
+    } finally {
+      _faceOpen = false;
+    }
+  }
+
+  Future<bool> _openFace() async {
     final navigator = Navigator.of(context);
     // Only a geotagged punch sends where it was tried from with a request.
     FaceCheckScreen check() => FaceCheckScreen(
@@ -309,7 +337,7 @@ class _PunchScreenState extends State<PunchScreen> {
     _faceRetries += 1;
     _faceToken = null;
     _serverAskedForFace = true;
-    final inside = _stage == _PunchStage.sending && _reading != null;
+    final inside = _fromInside && _stage == _PunchStage.sending && _reading != null;
     setState(() {
       _busy = false;
       _stage = inside ? _PunchStage.inside : _PunchStage.ready;
@@ -395,9 +423,10 @@ class _PunchScreenState extends State<PunchScreen> {
   /// The same punch again, with the reason the employee chose for being away
   /// — or, where none is needed, without one.
   Future<void> _sendWithReason(String? reason) async {
-    if (_busy) return;
+    if (_busy || _faceOpen) return;
     if (_needsFace && _faceToken == null && !await _checkFace()) return;
     if (!mounted) return;
+    _fromInside = false;
     setState(() {
       _busy = true;
       _stage = _PunchStage.sending;
@@ -446,7 +475,10 @@ class _PunchScreenState extends State<PunchScreen> {
 
   Future<void> _dismiss() async {
     final alreadyIn = _alreadyIn;
-    if (_stage == _PunchStage.outside && _reasonOptional && !alreadyIn && !_busy) {
+    // Where the punch needs Face ID first, leaving is leaving: closing must
+    // not open the camera.
+    final faceFirst = _needsFace && _faceToken == null;
+    if (_stage == _PunchStage.outside && _reasonOptional && !alreadyIn && !_busy && !faceFirst) {
       await _sendWithReason(_selectedReason);
       if (!mounted || _stage != _PunchStage.done) return;
       _close(PunchOutcome(punched: true, officeName: _officeName));
@@ -518,9 +550,12 @@ class _PunchScreenState extends State<PunchScreen> {
   /// time block 359 high, so the slider sits where the design puts it.
   Widget _ready() {
     final now = DateTime.now();
+    // The design's 852-high phone; a shorter one gives up the gaps first, so
+    // the slider stays on screen without scrolling.
+    final short = (852 - MediaQuery.sizeOf(context).height).clamp(0.0, 400.0);
     return Column(
       children: [
-        const SizedBox(height: 177),
+        SizedBox(height: (177 - short * 0.6).clamp(24.0, 177.0)),
         Padding(
           padding: const EdgeInsets.only(top: 12, bottom: 8),
           child: Text(
@@ -530,7 +565,7 @@ class _PunchScreenState extends State<PunchScreen> {
           ),
         ),
         SizedBox(
-          height: 359,
+          height: (359 - short * 0.4).clamp(170.0, 359.0),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 23),
             child: Column(

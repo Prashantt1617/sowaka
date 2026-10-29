@@ -74,6 +74,8 @@ export function startOfTodayIst(now = new Date()): Date {
   return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - IST_OFFSET_MS);
 }
 const VERIFY_PER_HOUR = 20;
+/** How long an "unavailable" answer keeps the manager fallback open. */
+const UNAVAILABLE_FALLBACK_MS = 30 * 60_000;
 const ENROL_PER_HOUR = 10;
 
 export { faceIdSettingsOf };
@@ -104,7 +106,7 @@ async function enrolmentOf(userId: string): Promise<UserFaceId | undefined> {
 async function recentFailures(userId: string): Promise<{ failures: number; lastReason?: FaceCheckReason }> {
   const since = startOfTodayIst();
   const rows = await faceVerifications()
-    .find({ userId, kind: { $in: ['enrol', 'verify'] }, at: { $gte: since } }, { projection: { _id: 0, passed: 1, reason: 1 } })
+    .find({ userId, kind: { $in: ['enrol', 'verify'] }, at: { $gte: since } }, { projection: { _id: 0, passed: 1, reason: 1, at: 1 } })
     .sort({ at: -1 })
     .limit(env.face.maxAttempts + 5)
     .toArray();
@@ -113,7 +115,12 @@ async function recentFailures(userId: string): Promise<{ failures: number; lastR
     if (row.passed) break;
     failures += 1;
   }
-  return { failures, lastReason: rows[0]?.reason };
+  // The service being down is a moment, not a day: it opens the fallback
+  // only while it is recent.
+  const last = rows[0];
+  const recent = last?.at instanceof Date && Date.now() - last.at.getTime() < UNAVAILABLE_FALLBACK_MS;
+  const lastReason = last?.reason === 'unavailable' && !recent ? undefined : last?.reason;
+  return { failures, lastReason };
 }
 
 function fallbackOpen(state: { failures: number; lastReason?: FaceCheckReason }) {

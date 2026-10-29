@@ -376,6 +376,31 @@ void main() {
     },
   );
 
+  testWidgets('Verify face id tapped twice opens one camera', (tester) async {
+    await open(tester, enrolled: true);
+    await slideAndLocate(tester);
+    final verify = find.text('Verify face id');
+    await tester.tap(verify);
+    await tester.tap(verify, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.byType(FaceCheckScreen), findsOneWidget);
+  });
+
+  testWidgets(
+    'no office set up yet: no inside screen, straight to Face ID, then the punch',
+    (tester) async {
+      _where = {'geofenced': false, 'inside': true};
+      await open(tester, enrolled: true);
+      await slideAndLocate(tester);
+      expect(find.text("You're inside the office area"), findsNothing);
+      expect(find.byType(FaceCheckScreen), findsOneWidget);
+      await answerPrompts(tester);
+      await tester.pump(FaceCheckScreen.matchedPause);
+      await tester.pumpAndSettle();
+      expect(_punchBody?['faceToken'], 'verify-tok');
+    },
+  );
+
   testWidgets(
     'a failed check: the reason, Try Again and the day\'s tries left; once they are spent, the manager approves',
     (tester) async {

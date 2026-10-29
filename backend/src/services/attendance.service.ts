@@ -1183,10 +1183,6 @@ function punchWindowFor(
 }
 
 /**
- * The offices this employee may punch from, for the app to show before anyone
- * slides the control. An empty list means their org is not geofenced.
- */
-/**
  * Where a punch from here would land, without punching: the app's location
  * step (Figma 4309:24713) shows "You're inside the office area" and only then
  * opens Face ID, so it asks first. Read-only: nothing is written, no face
@@ -1226,6 +1222,10 @@ export async function checkPunchLocation(
   };
 }
 
+/**
+ * The offices this employee may punch from, for the app to show before anyone
+ * slides the control. An empty list means their org is not geofenced.
+ */
 export async function punchOfficesFor(userId: string) {
   const employee = await users().findOne({ userId });
   const org = employee?.org ?? '';

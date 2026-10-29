@@ -45,6 +45,11 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
         showAppToast(context, '${_gameName()} is not on for your company yet.');
         return;
       }
+      if (!game.hasWebPage) {
+        // Built into the app: its own screen is the Games tab's to open.
+        showAppToast(context, 'Open ${game.name} from the Games tab.');
+        return;
+      }
       await (widget.openGame ?? _openInApp)(context, game);
     } finally {
       if (mounted) setState(() => _opening = false);
@@ -56,23 +61,24 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
     return name.isEmpty ? 'This game' : name;
   }
 
-  /// The game from the catalog the phone keeps, else asked for now. Null
-  /// when the company does not have it.
+  /// The company's game from a fresh catalog, else the one the phone kept
+  /// (offline). Null when the company does not have it.
   Future<GameCatalogEntry?> _findGame() async {
     final service = widget.service ?? GamesApiService(session: widget.session);
-    bool opens(GameCatalogEntry game) =>
-        game.key == _gameKey && (game.hasWebPage || game.kind == 'native');
+    bool mine(GameCatalogEntry game) =>
+        game.key == _gameKey && (game.hasWebPage || game.kind == GameKind.native);
     try {
-      final kept = (await service.catalogFromCache())?.where(opens).firstOrNull;
-      if (kept != null) return kept;
-    } catch (_) {}
-    try {
-      return (await service.catalog()).where(opens).firstOrNull;
+      return (await service.catalog()).where(mine).firstOrNull;
     } catch (_) {
-      return null;
+      try {
+        return (await service.catalogFromCache())?.where(mine).firstOrNull;
+      } catch (_) {
+        return null;
+      }
     }
   }
 
+  /// The web game's own screen, as the Games tab opens it.
   Future<void> _openInApp(BuildContext context, GameCatalogEntry game) {
     return Navigator.of(context).push(
       MaterialPageRoute<void>(

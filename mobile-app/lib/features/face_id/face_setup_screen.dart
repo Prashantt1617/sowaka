@@ -67,6 +67,10 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
 
   /// The punch token the setup earned; handed to the punch after the tick.
   String? _token;
+
+  /// The company checks liveness with AWS Face Liveness, which setup does
+  /// not run: the punch then takes the selfie check after setup, as before.
+  bool _awsLiveness = false;
   String? _problemTitle;
   String? _problem;
   late final FaceAutoCapture _auto = FaceAutoCapture(
@@ -107,6 +111,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
         _consent = status.consent;
         _fallbackOpen = status.fallbackAvailable;
         _maxAttempts = status.maxAttempts;
+        _awsLiveness = status.liveness.aws;
       });
       _auto.check();
     } on ManagerApiException catch (error) {
@@ -247,7 +252,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       navigator.pop(const FaceCheckOutcome.needsCheck());
       return;
     }
-    if (_token case final token?) {
+    if (_token case final token? when !_awsLiveness) {
       navigator.pop(FaceCheckOutcome.passed(token));
       return;
     }
