@@ -618,12 +618,12 @@ enum FlashColour {
 /// match still decides whose face it is.
 ///
 /// Three prompts, in order, with the words the screen shows:
-///  1. "Slowly turn your head to one side" — a real nose, nearer the camera
+///  1. "Turn your head to one side" — a real nose, nearer the camera
 ///     than the eyes, swings along the eye line as the head turns; a flat
 ///     photo turned the same way keeps nose and eyes in step. [turned] once
 ///     ML Kit's yaw has swung [turnDegrees] and the nose has moved
 ///     [noseShiftNeeded] of the eye distance.
-///  2. "Now look straight at the camera" — back within [facedWithin] degrees,
+///  2. "Now face the camera" — back within [facedWithin] degrees,
 ///     so the blink and the selfie are taken front on.
 ///  3. "Blink now" — ML Kit's eye-open probabilities fall under
 ///     [closedBelow] and come back over [openAbove], after the prompt.
@@ -689,9 +689,9 @@ class FaceRealness {
 
   /// What the line on the camera should ask for, or null once done.
   String? get ask => !turned
-      ? 'Slowly turn your head to one side'
+      ? 'Turn your head to one side'
       : !faced
-      ? 'Now look straight at the camera'
+      ? 'Now face the camera'
       : !blinked
       ? 'Blink now'
       : null;

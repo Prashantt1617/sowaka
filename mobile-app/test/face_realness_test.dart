@@ -34,12 +34,12 @@ void main() {
   test('the prompts, in order: turn, face the camera, blink; then nothing', () {
     final r = FaceRealness(random: Random(1));
     r.seeFace(_face(), 1000, _dim);
-    expect(r.ask, 'Slowly turn your head to one side');
+    expect(r.ask, 'Turn your head to one side');
     expect(r.step, 0);
     // Turned 15°, the nose 9 px (of 100 between the eyes) off the eye line.
     r.seeFace(_face(eyes: 97, noseX: 9, yaw: 15), 1000, _dim);
     expect(r.turned, isTrue);
-    expect(r.ask, 'Now look straight at the camera');
+    expect(r.ask, 'Now face the camera');
     expect(r.step, 1);
     r.seeFace(_face(yaw: 2), 1000, _dim);
     expect(r.faced, isTrue);
@@ -136,6 +136,6 @@ void main() {
     expect(r.blinked, isFalse);
     expect(r.lit, isNull);
     expect(r.report, '');
-    expect(r.ask, 'Slowly turn your head to one side');
+    expect(r.ask, 'Turn your head to one side');
   });
 }
