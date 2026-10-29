@@ -84,6 +84,7 @@ Future<void> _pump(
   ConnectPost? post,
   DateTime Function()? now,
   bool still = false,
+  Future<ConnectPost> Function(String id)? fetchPost,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -105,6 +106,7 @@ Future<void> _pump(
             service: service,
             openGame: openGame,
             now: now,
+            fetchPost: fetchPost,
           ),
         ),
       ),
@@ -338,6 +340,57 @@ void main() {
       expect(sheet, findsOneWidget);
       expect(find.descendant(of: sheet, matching: find.text('Ishaan Roy')), findsOneWidget);
       expect(find.descendant(of: sheet, matching: find.text('#6')), findsOneWidget);
+    });
+      testWidgets('over with no standings in hand: read again a moment later, and the podium comes', (tester) async {
+      tester.view.physicalSize = const Size(393 * 2, 1400 * 2);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      final asked = <String>[];
+      await _pump(
+        tester,
+        service: _games(hasTileUp: true),
+        openGame: (_, _) async {},
+        post: _tournament(),
+        now: () => DateTime.parse('2026-10-29T15:00:00.000Z'),
+        still: true,
+        fetchPost: (id) async {
+          asked.add(id);
+          return _tournament(results: [
+            {'userId': 'p1', 'name': 'Ananya Bisht', 'points': 980, 'rank': 1},
+            {'userId': 'p2', 'name': 'Kritik', 'points': 870, 'rank': 2},
+          ]);
+        },
+      );
+      expect(find.text('This game has ended'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pump();
+      expect(asked, ['p1']);
+      expect(find.byKey(const ValueKey('game-launch-results')), findsOneWidget);
+      expect(find.text('View leaderboard'), findsOneWidget);
+    });
+
+    testWidgets('live with no end: the clock stops, and nothing ticks', (tester) async {
+      final post = _post(extra: {'startsAt': '2026-10-29T12:30:00.000Z'});
+      await _pump(
+        tester,
+        service: _games(hasTileUp: true),
+        openGame: (_, _) async {},
+        post: post,
+        now: () => DateTime.parse('2026-10-29T13:00:00.000Z'),
+      );
+      expect(find.text('Live now'), findsOneWidget);
+      expect(tester.binding.transientCallbackCount, 0);
+    });
+
+    testWidgets('locked until a start on another day: the button names the day', (tester) async {
+      await _pump(
+        tester,
+        service: _games(hasTileUp: true),
+        openGame: (_, _) async {},
+        post: _tournament(lock: true),
+        now: () => DateTime.parse('2026-10-28T09:00:00.000Z'),
+      );
+      expect(find.textContaining('Opens 29 Oct,'), findsOneWidget);
     });
   });
 }

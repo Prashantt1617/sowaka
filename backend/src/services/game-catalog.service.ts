@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { MongoServerError } from 'mongodb';
 import { companies, gameCatalog, gameScores } from '../config/db';
+import { noteLaunchScore } from './game-launch.service';
 import { env } from '../config/env';
 import { Company } from '../models/company.model';
 import {
@@ -355,6 +356,7 @@ export async function submitScore(viewer: GameViewer, key: string, raw: unknown)
   const scoring = requireScoring(entry);
   const score = parseScore(raw, Math.min(scoring.max ?? SCORE_CEILING, SCORE_CEILING));
   const improved = await keepBest(key, entry.org, viewer, score, scoring.higherIsBetter !== false);
+  await noteLaunchScore(key, entry.org, viewer, score, scoring.higherIsBetter !== false);
   return { score, improved, ...(await boardFor(key, entry.org, viewer.userId, scoring)) };
 }
 
@@ -371,6 +373,7 @@ export async function recordServerScore(org: string, key: string, player: GameVi
   const capped = Math.max(0, Math.min(Math.round(score), max));
   if (capped <= 0) return;
   await keepBest(key, org, { ...player, org }, capped, entry.scoring.higherIsBetter !== false);
+  await noteLaunchScore(key, org, player, capped, entry.scoring.higherIsBetter !== false);
 }
 
 /** The company's board (everyone with a score, up to LEADERBOARD_SIZE), and the viewer's own best. */

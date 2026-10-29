@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { randomUUID } from 'node:crypto';
-import { audienceLists, companies, connectPosts, contentReports, gameCatalog, gameScores, notifications, relayEvents, users } from '../config/db';
-import { catalogScoreId } from '../models/game-catalog.model';
+import { audienceLists, companies, connectPosts, contentReports, gameScores, notifications, relayEvents, users } from '../config/db';
+import { gameLaunchResults } from './game-launch.service';
 import { cupLinkFor } from './cup.service';
 import { ConnectAudience, ConnectCaptionEntry, ConnectPost, ConnectPostType } from '../models/connect.model';
 import { User } from '../models/user.model';
@@ -463,55 +463,6 @@ async function relayStatusesFor(posts: ConnectPost[]): Promise<Map<string, strin
 export async function getConnectPost(viewerUserId: string, postId: string) {
   const post = await requireVisiblePost(viewerUserId, postId);
   return viewPost(post, viewerUserId);
-}
-
-/**
- * The standings of a game launch whose end time has passed: everyone whose
- * best score in the game came between its start and its end, best first,
- * ranked 1, 2, 2, 4 on a tie, with their face. Kept on the post the first
- * time they are worked out, so a finished card reads them straight back.
- * Null for an untimed launch, or one still on.
- */
-async function gameLaunchResults(post: ConnectPost) {
-  const body = post.body as Record<string, unknown>;
-  if (Array.isArray(body.results)) return body.results;
-  const ends = typeof body.endsAt === 'string' ? new Date(body.endsAt) : null;
-  if (!ends || Number.isNaN(ends.getTime()) || ends.getTime() > Date.now()) return null;
-  const key = typeof body.gameKey === 'string' ? body.gameKey : '';
-  if (!key) return null;
-  const starts = typeof body.startsAt === 'string' ? new Date(body.startsAt) : new Date(0);
-  const game = await gameCatalog().findOne({ key }, { projection: { _id: 0, scoring: 1 } });
-  const lowerWins = game?.scoring?.higherIsBetter === false;
-  const rows = await gameScores()
-    .find({ gameId: catalogScoreId(key), org: post.org, achievedAt: { $gte: starts, $lte: ends } })
-    .sort({ score: lowerWins ? 1 : -1, achievedAt: 1 })
-    .limit(50)
-    .toArray();
-  const people = new Map(
-    (await users()
-      .find({ userId: { $in: rows.map((row) => row.userId) } }, { projection: { _id: 0, userId: 1, name: 1, profilePhotoKey: 1, profilePhotoUrl: 1 } })
-      .toArray()).map((person) => [person.userId, person]),
-  );
-  let rank = 0;
-  let last: number | undefined;
-  const results = await Promise.all(rows.map(async (row, index) => {
-    if (row.score !== last) {
-      rank = index + 1;
-      last = row.score;
-    }
-    const person = people.get(row.userId);
-    const name = person?.name || row.playerName || 'Player';
-    return {
-      userId: row.userId,
-      name,
-      initials: initialsFor(name),
-      points: Math.round(row.score),
-      rank,
-      photoUrl: person ? ((await resolveProfilePhoto(person).catch(() => undefined)) ?? null) : null,
-    };
-  }));
-  await connectPosts().updateOne({ id: post.id }, { $set: { 'body.results': results } });
-  return results;
 }
 
 /** Posts nobody likes or comments on: a game launch is a way into the game, not a conversation. */
@@ -1786,8 +1737,7 @@ async function viewPost(
     delete body.cupLinkUntil;
   } else if (post.type === 'game_launch') {
     // A timed launch that is over carries its game's standings from the
-    // window, as a Secret Squad card does once its game is over. Worked out
-    // once, at the first read after the end, and kept on the post.
+    // window, as a Secret Squad card does once its game is over.
     const results = await gameLaunchResults(post);
     if (results) body.results = results;
   } else if (post.type === 'live_game' && typeof body.gameId === 'string') {

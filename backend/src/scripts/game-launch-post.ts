@@ -170,6 +170,10 @@ async function main() {
           mediaContentTypes: [contentType],
         };
       }
+      const timing = bodyFrom(flags);
+      if (timing.startsAt && timing.endsAt && new Date(timing.endsAt as string) <= new Date(timing.startsAt as string)) {
+        throw new Error('--ends must come after --starts');
+      }
       const now = new Date();
       const pinHours = Number(flags['pin-hours'] ?? 0);
       const post: ConnectPost = {
@@ -226,6 +230,10 @@ async function main() {
       if (!post) throw new Error(`No game launch post ${id}`);
       const changes = bodyFrom(flags);
       const theme = themeFrom(flags);
+      const current = post.body as Record<string, unknown>;
+      const startsAt = (changes.startsAt ?? current.startsAt ?? '') as string;
+      const endsAt = (changes.endsAt ?? current.endsAt ?? '') as string;
+      if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) throw new Error('--ends must come after --starts');
       const set: Record<string, unknown> = { updatedAt: new Date() };
       for (const [key, value] of Object.entries(changes)) set[`body.${key}`] = value;
       for (const [key, value] of Object.entries(theme)) set[`body.theme.${key}`] = value;
@@ -238,7 +246,9 @@ async function main() {
         set.pinnedUntil = hours > 0 ? new Date(Date.now() + hours * 3_600_000) : null;
       }
       if (Object.keys(set).length === 1) throw new Error('Nothing to change: give a flag such as --title or --starts');
-      await connectPosts().updateOne({ id }, { $set: set });
+      // New times: the standings are for the new window, worked out again.
+      const retimed = changes.startsAt !== undefined || changes.endsAt !== undefined;
+      await connectPosts().updateOne({ id }, { $set: set, ...(retimed ? { $unset: { 'body.results': '', 'body.resultsWindow': '' } } : {}) });
       console.log(`Updated ${id}: ${Object.keys(set).filter((key) => key !== 'updatedAt').join(', ')}.`);
       break;
     }

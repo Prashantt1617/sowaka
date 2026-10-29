@@ -22,6 +22,7 @@ class GameLaunchPostCard extends StatefulWidget {
     this.service,
     this.openGame,
     this.now,
+    this.fetchPost,
   });
 
   final ConnectPost post;
@@ -35,6 +36,10 @@ class GameLaunchPostCard extends StatefulWidget {
 
   /// For tests: the clock the timer reads.
   final DateTime Function()? now;
+
+  /// For tests: how the post is read again once its game is over, for the
+  /// standings the server works out at the end.
+  final Future<ConnectPost> Function(String postId)? fetchPost;
 
   @override
   State<GameLaunchPostCard> createState() => _GameLaunchPostCardState();
@@ -78,6 +83,16 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
   bool _opening = false;
   Timer? _ticker;
 
+  /// The second hand: only the timer listens to it, so the rest of the card
+  /// (the media, the words, the button) is not redrawn every second.
+  late final ValueNotifier<DateTime> _clock = ValueNotifier(_now());
+  GameLaunchPhase? _lastPhase;
+
+  /// The standings read again after the end, while the feed's copy of the
+  /// post still has none.
+  Object? _lateResults;
+  final List<Timer> _refetches = [];
+
   Map<String, dynamic> get _body => widget.post.body;
   String get _gameKey => _bodyString(widget.post, 'gameKey');
   DateTime _now() => (widget.now ?? DateTime.now)();
@@ -108,28 +123,74 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
     _tick();
   }
 
-  /// Once a second while there is a clock to move: before the start, and
-  /// until the end. It stops itself once there is nothing left to count.
+  /// Whether a clock is still counting: before the start, and until the end
+  /// where there is one. Live with no end, or over, there is nothing to count.
+  bool get _counting {
+    if (!_timed) return false;
+    return switch (_phase) {
+      GameLaunchPhase.upcoming => true,
+      GameLaunchPhase.live => _endsAt != null,
+      GameLaunchPhase.ended => false,
+    };
+  }
+
+  /// Once a second while there is a clock to move. The card itself is redrawn
+  /// only when the phase turns (started, ended); the clock on its own.
   void _tick() {
-    final moving = _timed && _phase != GameLaunchPhase.ended;
-    if (!moving) {
+    _lastPhase ??= _phase;
+    if (_phase == GameLaunchPhase.ended) _fetchResultsLater();
+    if (!_counting) {
       _ticker?.cancel();
       _ticker = null;
       return;
     }
     _ticker ??= Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      setState(() {});
-      if (_phase == GameLaunchPhase.ended) {
+      _clock.value = _now();
+      final phase = _phase;
+      if (phase != _lastPhase) {
+        _lastPhase = phase;
+        setState(() {});
+        if (phase == GameLaunchPhase.ended) _fetchResultsLater();
+      }
+      if (!_counting) {
         _ticker?.cancel();
         _ticker = null;
       }
     });
   }
 
+  /// Over, and the post in hand has no standings yet: read it again a moment
+  /// after the end, and once more after the server has settled them, so the
+  /// podium comes without a pull to refresh.
+  void _fetchResultsLater() {
+    if (_refetches.isNotEmpty || _hasResults) return;
+    for (final wait in const [Duration(seconds: 5), Duration(minutes: 2, seconds: 30)]) {
+      _refetches.add(Timer(wait, _refetch));
+    }
+  }
+
+  bool get _hasResults => (parseSquadStandings(_lateResults ?? _body['results']) ?? const []).isNotEmpty;
+
+  Future<void> _refetch() async {
+    if (!mounted || _hasResults) return;
+    try {
+      final fetch = widget.fetchPost ?? (id) => ConnectApiService(session: widget.session).fetchPost(id);
+      final post = await fetch(widget.post.id);
+      final results = post.body['results'];
+      if (mounted && results is List && results.isNotEmpty) setState(() => _lateResults = results);
+    } catch (_) {
+      // The next feed read carries them.
+    }
+  }
+
   @override
   void dispose() {
     _ticker?.cancel();
+    for (final timer in _refetches) {
+      timer.cancel();
+    }
+    _clock.dispose();
     super.dispose();
   }
 
@@ -201,7 +262,7 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
       accent: accent,
     );
     final phase = _phase;
-    final results = parseSquadStandings(_body['results']) ?? const <SquadStanding>[];
+    final results = parseSquadStandings(_lateResults ?? _body['results']) ?? const <SquadStanding>[];
     final showBoard = phase == GameLaunchPhase.ended && results.isNotEmpty;
     final locked =
         (phase == GameLaunchPhase.ended && !showBoard) ||
@@ -274,12 +335,15 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
             else if (_timed)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: _LaunchTimer(
-                  key: const ValueKey('game-launch-timer'),
-                  phase: phase,
-                  label: _timerLabel(phase),
-                  value: _timerValue(phase),
-                  theme: theme,
+                child: ValueListenableBuilder<DateTime>(
+                  valueListenable: _clock,
+                  builder: (context, now, _) => _LaunchTimer(
+                    key: const ValueKey('game-launch-timer'),
+                    phase: phase,
+                    label: _timerLabel(phase),
+                    value: _timerValue(phase, now),
+                    theme: theme,
+                  ),
                 ),
               ),
             if (_hasPostMedia(post) && !showBoard)
@@ -372,8 +436,7 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
     };
   }
 
-  String _timerValue(GameLaunchPhase phase) {
-    final now = _now();
+  String _timerValue(GameLaunchPhase phase, DateTime now) {
     return switch (phase) {
       GameLaunchPhase.upcoming => relayCountdown(_startsAt!.difference(now).inSeconds),
       GameLaunchPhase.live => _endsAt == null ? 'Live now' : relayCountdown(_endsAt!.difference(now).inSeconds),
@@ -386,7 +449,11 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
     if (locked) {
       final at = _startsAt!;
       final hour = at.hour % 12 == 0 ? 12 : at.hour % 12;
-      return 'Opens at $hour:${at.minute.toString().padLeft(2, '0')} ${at.hour < 12 ? 'AM' : 'PM'}';
+      final time = '$hour:${at.minute.toString().padLeft(2, '0')} ${at.hour < 12 ? 'AM' : 'PM'}';
+      final now = _now();
+      if (at.year == now.year && at.month == now.month && at.day == now.day) return 'Opens at $time';
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return 'Opens ${at.day} ${months[at.month - 1]}, $time';
     }
     return label.isEmpty ? 'Play ${_gameName()}' : label;
   }
