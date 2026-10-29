@@ -83,11 +83,19 @@ Future<void> _pump(
   required Future<void> Function(BuildContext, GameCatalogEntry) openGame,
   ConnectPost? post,
   DateTime Function()? now,
+  bool still = false,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(fontFamily: 'Plus Jakarta Sans'),
+      // The results box loops its rays and confetti; still, it is its last frame.
+      builder: still
+          ? (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(disableAnimations: true),
+              child: child!,
+            )
+          : null,
       home: Scaffold(
         body: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -108,8 +116,9 @@ Future<void> _pump(
 const _screenshots = String.fromEnvironment('SCREENSHOTS');
 
 /// The tournament's launch, dressed in its own colours.
-ConnectPost _tournament({bool lock = false}) => _post(
+ConnectPost _tournament({bool lock = false, List<Map<String, dynamic>>? results}) => _post(
   extra: {
+    'results': ?results,
     'gameKey': 'diwali-cup',
     'gameName': 'O-O-O Tournament',
     'title': 'The Odd One Out Tournament',
@@ -205,6 +214,10 @@ void main() {
       for (final (family, file) in [
         ('Sora', 'assets/fonts/sora/Sora-Variable.ttf'),
         ('Plus Jakarta Sans', 'assets/fonts/plus_jakarta_sans/PlusJakartaSans-Variable.ttf'),
+        ('Lilita One', 'assets/fonts/lilita_one/LilitaOne-Regular.ttf'),
+        ('Figtree', 'assets/fonts/figtree/Figtree-Variable.ttf'),
+        ('Lexend', 'assets/fonts/lexend/Lexend-Variable.ttf'),
+        ('Manrope', 'assets/fonts/manrope/Manrope-Variable.ttf'),
       ]) {
         await (FontLoader(family)..addFont(rootBundle.load(file))).load();
       }
@@ -297,6 +310,34 @@ void main() {
     testWidgets('an untimed launch has no timer', (tester) async {
       await _pump(tester, service: _games(hasTileUp: true), openGame: (_, _) async {});
       expect(find.byKey(const ValueKey('game-launch-timer')), findsNothing);
+    });
+      testWidgets('over, with scores: the podium and the top 10, and View leaderboard opens everyone', (tester) async {
+      tester.view.physicalSize = const Size(393 * 2, 1400 * 2);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      final standings = [
+        for (final (i, name) in ['Ananya Bisht', 'Kritik', 'Divya Rao', 'Raghav Mehta', 'Tanvi Jadhav', 'Ishaan Roy'].indexed)
+          {'userId': 'p$i', 'name': name, 'points': 980 - i * 110, 'rank': i + 1},
+      ];
+      await _pump(
+        tester,
+        service: _games(hasTileUp: true),
+        openGame: (_, _) async {},
+        post: _tournament(results: standings),
+        now: () => DateTime.parse('2026-10-29T15:00:00.000Z'),
+        still: true,
+      );
+      expect(find.byKey(const ValueKey('game-launch-results')), findsOneWidget);
+      expect(find.byKey(const ValueKey('game-launch-timer')), findsNothing);
+      expect(find.text('View leaderboard'), findsOneWidget);
+      await shot(tester, 'launch-ended-leaderboard');
+      await tester.tap(find.byKey(const ValueKey('game-launch-play')));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      final sheet = find.byKey(const ValueKey('game-launch-leaderboard'));
+      expect(sheet, findsOneWidget);
+      expect(find.descendant(of: sheet, matching: find.text('Ishaan Roy')), findsOneWidget);
+      expect(find.descendant(of: sheet, matching: find.text('#6')), findsOneWidget);
     });
   });
 }

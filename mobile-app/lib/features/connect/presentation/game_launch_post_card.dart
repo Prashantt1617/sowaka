@@ -201,8 +201,10 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
       accent: accent,
     );
     final phase = _phase;
+    final results = parseSquadStandings(_body['results']) ?? const <SquadStanding>[];
+    final showBoard = phase == GameLaunchPhase.ended && results.isNotEmpty;
     final locked =
-        phase == GameLaunchPhase.ended ||
+        (phase == GameLaunchPhase.ended && !showBoard) ||
         (phase == GameLaunchPhase.upcoming && _body['lockUntilStart'] == true);
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -258,7 +260,18 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
                 ],
               ),
             ),
-            if (_timed)
+            // Over, with standings: the podium and the top 10, as the Secret
+            // Squad card has them once its game is over.
+            if (showBoard)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: SquadResultsBox(
+                  key: const ValueKey('game-launch-results'),
+                  results: results,
+                  viewerId: widget.session.user.id,
+                ),
+              )
+            else if (_timed)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: _LaunchTimer(
@@ -269,7 +282,7 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
                   theme: theme,
                 ),
               ),
-            if (_hasPostMedia(post))
+            if (_hasPostMedia(post) && !showBoard)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: _PostMediaFrame(child: _MediaPreview(post: post)),
@@ -303,7 +316,11 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
                   child: InkWell(
                     key: const ValueKey('game-launch-play'),
                     borderRadius: BorderRadius.circular(14),
-                    onTap: _opening || locked ? null : _play,
+                    onTap: _opening || locked
+                        ? null
+                        : showBoard
+                        ? () => _showLeaderboard(results, theme)
+                        : _play,
                     child: SizedBox(
                       height: 52,
                       child: Center(
@@ -314,7 +331,7 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
                                 child: CircularProgressIndicator(strokeWidth: 2.2, color: theme.buttonText),
                               )
                             : Text(
-                                _buttonLabel(phase, label, locked),
+                                showBoard ? 'View leaderboard' : _buttonLabel(phase, label, locked),
                                 style: TextStyle(color: theme.buttonText, fontSize: 15, fontWeight: FontWeight.w800),
                               ),
                       ),
@@ -325,6 +342,23 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Everyone's places in the game's window, best first, the viewer marked.
+  Future<void> _showLeaderboard(List<SquadStanding> results, _LaunchTheme theme) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) => _LaunchLeaderboardSheet(
+        title: '${_gameName()} leaderboard',
+        results: results,
+        viewerId: widget.session.user.id,
+        accent: theme.button,
       ),
     );
   }
@@ -445,3 +479,82 @@ class _LaunchLivePill extends StatelessWidget {
 /// White on a dark button, ink on a light one (a yellow game accent).
 Color _onAccent(Color accent) =>
     accent.computeLuminance() > 0.5 ? _ConnectColors.ink : Colors.white;
+
+/// "View leaderboard": the whole table from the card, as a sheet.
+class _LaunchLeaderboardSheet extends StatelessWidget {
+  const _LaunchLeaderboardSheet({
+    required this.title,
+    required this.results,
+    required this.viewerId,
+    required this.accent,
+  });
+
+  final String title;
+  final List<SquadStanding> results;
+  final String viewerId;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.7,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      builder: (context, scroll) => Column(
+        children: [
+          const SizedBox(height: 10),
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: const Color(0xFFDDDDDD), borderRadius: BorderRadius.circular(2))),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: _ConnectColors.ink, fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+          ),
+          Expanded(
+            child: ListView.separated(
+              key: const ValueKey('game-launch-leaderboard'),
+              controller: scroll,
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              itemCount: results.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final row = results[index];
+                final me = row.userId == viewerId;
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: me ? accent.withValues(alpha: 0.12) : const Color(0xFFF7F7F9),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 34,
+                        child: Text('#${row.rank}', style: const TextStyle(color: _ConnectColors.ink, fontSize: 14, fontWeight: FontWeight.w800)),
+                      ),
+                      _InitialAvatar(initials: row.initials, color: _ConnectColors.blue, size: 32, photoUrl: row.photoUrl ?? ''),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          me ? '${row.name} (You)' : row.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: _ConnectColors.ink, fontSize: 14, fontWeight: me ? FontWeight.w800 : FontWeight.w600),
+                        ),
+                      ),
+                      Text('${row.points}', style: const TextStyle(color: _ConnectColors.ink, fontSize: 14, fontWeight: FontWeight.w800)),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
