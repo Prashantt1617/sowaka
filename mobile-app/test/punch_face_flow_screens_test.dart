@@ -322,8 +322,9 @@ void main() {
       expect(flash, findsOneWidget);
       expect((tester.widget<ColoredBox>(flash)).color, liveness.colours[i].color);
       if (prefix != null && i == 0) await shot(tester, '$prefix-flash');
-      light = FaceRealness.answering(liveness.colours[i], light);
-      liveness.setLight(light);
+      // Each colour is judged against the light before the first, so each
+      // answer is from that same base, not stacked on the last.
+      liveness.setLight(FaceRealness.answering(liveness.colours[i], light));
       await tester.pump(FaceAutoCapture.flash);
       await tester.pump();
       expect(find.byKey(const ValueKey('face-flash')), findsNothing);

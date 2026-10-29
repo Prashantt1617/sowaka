@@ -101,6 +101,9 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _camera.addListener(_changed);
+    // Every try's record goes to the server, pass or fail, so the checks can
+    // be tuned on what phones actually measure.
+    _camera.onTryEnded = (summary) => unawaited(widget.api.logFaceTry(summary));
     unawaited(_camera.start());
     unawaited(_load());
   }
@@ -170,6 +173,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       _dismissed = false;
     });
     try {
+      _camera.noteCapture();
       final photo = await _camera.capture();
       if (photo == null) {
         _fail(

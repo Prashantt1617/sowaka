@@ -108,10 +108,11 @@ void main() {
     r.flashOn(0);
     r.flashOff(0, FaceRealness.answering(r.colours[0], _dim));
     expect(r.lit, isNull);
-    final after = FaceRealness.answering(r.colours[0], _dim);
-    r.setLight(after);
+    // A late, still-lit frame lands between the colours: it is not the
+    // baseline for the second, the reading before the first is.
+    r.setLight(FaceRealness.answering(r.colours[0], _dim));
     r.flashOn(1);
-    r.flashOff(1, FaceRealness.answering(r.colours[1], after));
+    r.flashOff(1, FaceRealness.answering(r.colours[1], _dim));
     expect(r.lit, isTrue);
     expect(r.report, matches(RegExp(r'^[rgb][-+]?\d+\.\d/[-+]?\d+\.\d [rgb][-+]?\d+\.\d/[-+]?\d+\.\d$')));
 
@@ -137,5 +138,30 @@ void main() {
     expect(r.lit, isNull);
     expect(r.report, '');
     expect(r.ask, 'Turn your head to one side');
+  });
+
+  test('the light under a colour is the mean of its frames, and the flash alone can start over', () {
+    final r = FaceRealness(random: Random(9));
+    r.seeFace(_face(), 1000, _dim);
+    r.seeFace(_face(eyes: 97, noseX: 9, yaw: 15), 1000, _dim);
+    r.seeFace(_face(yaw: 1), 1000, _dim);
+    r.seeFace(_face(open: 0.1), 1000, _dim);
+    r.seeFace(_face(open: 0.9), 1000, _dim);
+    expect(r.challengesDone, isTrue);
+    r.flashOn(0);
+    r.seeFace(_face(), 1000, const FaceLight(94, 128, 132));
+    r.seeFace(_face(), 1000, const FaceLight(98, 128, 136));
+    expect(r.litMean(_dim).luma, closeTo(96, 1e-9));
+    expect(r.litMean(_dim).cr, closeTo(134, 1e-9));
+    r.flashOff(0, r.litMean(_dim));
+    final first = r.colours;
+    r.resetFlash();
+    // The prompts stand; only the flashes are new.
+    expect(r.challengesDone, isTrue);
+    expect(r.lit, isNull);
+    expect(r.report, '');
+    expect(r.litBy, [null, null]);
+    expect(r.colours, hasLength(2));
+    expect(r.colours == first, isFalse);
   });
 }

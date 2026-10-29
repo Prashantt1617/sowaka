@@ -791,6 +791,14 @@ class ManagerApiService {
   /// (it is that punch's face check). Throws with the server's reason (too
   /// dark, more than one face, …), the tries left and whether the manager
   /// fallback is open, in `details['face']`.
+  /// What the phone measured on one Face ID try, pass or fail, for the
+  /// server's log. Never throws: a log must not get in the way of a punch.
+  Future<void> logFaceTry(String summary) async {
+    try {
+      await _request('POST', '/face/phone-log', body: {'summary': summary});
+    } catch (_) {}
+  }
+
   Future<String?> enrolFace({
     required Uint8List jpeg,
     required String consentVersion,

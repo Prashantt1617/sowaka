@@ -28,10 +28,12 @@ class FaceSpoofCheck {
   static const side = 80;
 
   /// How many frames are read while the face holds still, and the mean real
-  /// probability they must reach. Scores are logged with every selfie, so
-  /// this can be tuned on the fleet.
+  /// probability under which the frames are called a screen. A veto, set
+  /// low on purpose: the model is uncalibrated on this fleet, and a real
+  /// face must never be refused by it. Every score is logged with the
+  /// selfie, so the line can be raised from real numbers.
   static int samples = 3;
-  static double threshold = 0.6;
+  static double threshold = 0.15;
 
   static Future<FaceSpoofCheck?> Function() load = _load;
 
@@ -96,7 +98,9 @@ Rect spoofCropBox(Rect face, int width, int height) {
 }
 
 /// Off the UI thread: the frame upright, cropped to the model's box, at
-/// 80×80, as BGR floats 0..1 in channel-first order.
+/// 80×80, as BGR floats 0..255 in channel-first order: the model was trained
+/// on unscaled pixels (the project's ToTensor does not divide by 255), and
+/// fed 0..1 it calls every face, real or not, a spoof.
 List<List<List<double>>>? _prepare((FaceFrame, Rect) job) {
   final (frame, face) = job;
   final picture = frameToImage(frame);
@@ -113,9 +117,9 @@ List<List<List<double>>>? _prepare((FaceFrame, Rect) job) {
   for (var y = 0; y < FaceSpoofCheck.side; y++) {
     for (var x = 0; x < FaceSpoofCheck.side; x++) {
       final p = crop.getPixel(x, y);
-      planes[0][y][x] = p.b / 255;
-      planes[1][y][x] = p.g / 255;
-      planes[2][y][x] = p.r / 255;
+      planes[0][y][x] = p.b.toDouble();
+      planes[1][y][x] = p.g.toDouble();
+      planes[2][y][x] = p.r.toDouble();
     }
   }
   return planes;

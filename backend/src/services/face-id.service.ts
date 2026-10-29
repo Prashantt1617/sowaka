@@ -1,8 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import sharp from 'sharp';
 import {
-  attendanceRecords, attendanceRegularizations, companies, faceLivenessSessions, faceVerifications, offices, users,
-} from '../config/db';
+  attendanceRecords, attendanceRegularizations, companies, faceLivenessSessions, faceVerifications, offices, users, facePhoneLogs } from '../config/db';
 import { env } from '../config/env';
 import { AttendanceRegularization, FaceCheckNote, PunchFaceCheck } from '../models/attendance.model';
 import {
@@ -647,6 +646,19 @@ export async function pruneFaceLog(options: { apply?: boolean; now?: Date } = {}
  * face would keep matching; on an employee's deletion the caller logs and
  * carries on.
  */
+/**
+ * One try as the phone saw it ("0.0 prompts done | 3.4 spoof 0.41 0.38 0.44 |
+ * 5.1 captured r+1.2/-0.3 b+2.0/+0.1 s0.41/0.38/0.44"), kept 30 days with the
+ * person and the time, so the phone's own checks can be tuned on what real
+ * phones measure. Never refused: a bad line is just dropped.
+ */
+export async function logPhoneTry(userId: string, summaryInput: unknown) {
+  const summary = typeof summaryInput === 'string' ? summaryInput.trim().slice(0, 600) : '';
+  if (!summary) return;
+  const user = await users().findOne({ userId }, { projection: { _id: 0, org: 1 } });
+  await facePhoneLogs().insertOne({ org: user?.org ?? '', userId, at: new Date(), summary });
+}
+
 export async function forgetFace(user: Pick<User, 'userId' | 'org' | 'faceId'>, by?: string) {
   const enrolment = user.faceId;
   if (!enrolment?.faceId) return { removed: false };

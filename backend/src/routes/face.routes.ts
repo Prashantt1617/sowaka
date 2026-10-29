@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { enrol, faceStatus, fallback, livenessSession, verify } from '../controllers/face.controller';
+import { enrol, faceStatus, fallback, livenessSession, phoneLog, verify } from '../controllers/face.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { uploadFacePhoto } from '../middleware/face-photo-upload.middleware';
 
@@ -14,3 +14,5 @@ faceRouter.post('/enrol', uploadFacePhoto, enrol);
 faceRouter.post('/liveness-session', livenessSession);
 faceRouter.post('/verify', uploadFacePhoto, verify);
 faceRouter.post('/fallback', fallback);
+// What the phone measured on one try, pass or fail: the prompts' time, the colour flashes, the screen detector.
+faceRouter.post('/phone-log', phoneLog);
