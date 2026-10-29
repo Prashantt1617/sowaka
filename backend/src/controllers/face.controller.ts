@@ -19,7 +19,7 @@ export async function enrol(req: Request, res: Response, next: NextFunction) {
   try {
     const body = req.body ?? {};
     const result = await enrolFace(userId(req), {
-      photo: req.file?.buffer, consent: body.consent, consentVersion: body.consentVersion,
+      photo: req.file?.buffer, consent: body.consent, consentVersion: body.consentVersion, challenge: body.challenge,
     });
     res.status(201).json({ success: true, ...result });
   } catch (error) { next(error); }

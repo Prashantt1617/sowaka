@@ -234,7 +234,7 @@ function failure(reason: FaceCheckReason, extra: Record<string, unknown> = {}) {
 
 export async function enrolFace(
   userId: string,
-  input: { photo?: Buffer; consent?: unknown; consentVersion?: unknown },
+  input: { photo?: Buffer; consent?: unknown; consentVersion?: unknown; challenge?: unknown },
 ) {
   const user = await personFor(userId);
   const org = user.org!;
@@ -261,7 +261,9 @@ export async function enrolFace(
   const image = await normalise(input.photo);
   const collectionId = collectionIdFor(org);
   const engine = faceEngine();
-  const base = { org, userId, kind: 'enrol' as const, at: new Date(), liveness: { mode: 'none' as const } };
+  // What the phone asked for and measured (turn, blink, the colour flashes), kept for tuning.
+  const challenge = typeof input.challenge === 'string' ? input.challenge.slice(0, 80) : undefined;
+  const base = { org, userId, kind: 'enrol' as const, at: new Date(), liveness: { mode: 'none' as const, challenge } };
   /**
    * A failed setup, logged, with the tries left: at a punch it is that
    * punch's check, so three of them open the manager fallback as checks do.
@@ -385,7 +387,8 @@ export async function verifyFace(
 
   const started = Date.now();
   const engine = faceEngine();
-  const challenge = typeof input.challenge === 'string' ? input.challenge.slice(0, 40) : undefined;
+  // What the phone asked for and measured: the prompts, the colour flashes, the screen detector's score.
+  const challenge = typeof input.challenge === 'string' ? input.challenge.slice(0, 80) : undefined;
   let liveness: FaceVerification['liveness'] = env.face.liveness
     ? { mode: 'aws' }
     : { mode: 'device', challenge, devicePassed: input.devicePassed === true || input.devicePassed === 'true' };

@@ -24,11 +24,15 @@ class FaceCaptureLayout extends StatelessWidget {
     this.busy = false,
     this.onClose,
     this.flash,
+    this.progress,
   });
 
-  /// True while the screen goes white for the phone's flash check; the
-  /// whole page lights up so the face is lit by it.
-  final ValueListenable<bool>? flash;
+  /// The colour on the screen during the phone's light check, else null;
+  /// the whole page takes it so the face is lit by it.
+  final ValueListenable<Color?>? flash;
+
+  /// Which prompt is being answered, of how many: the dots under the words.
+  final (int, int)? progress;
 
   /// What the screen is ("Set up your Face ID", "Punch-in"), shown above the
   /// oval only while there is no [line] to show there instead.
@@ -85,11 +89,35 @@ class FaceCaptureLayout extends StatelessWidget {
                       top: 76,
                       left: 10,
                       right: 10,
-                      child: Text(
-                        top,
-                        key: const ValueKey('face-heading'),
-                        textAlign: TextAlign.center,
-                        style: _sora(20, FontWeight.w600, Colors.white, height: 24 / 20, spacing: 0.4),
+                      child: Column(
+                        children: [
+                          Text(
+                            top,
+                            key: const ValueKey('face-heading'),
+                            textAlign: TextAlign.center,
+                            style: _sora(20, FontWeight.w600, Colors.white, height: 24 / 20, spacing: 0.4),
+                          ),
+                          if (progress case (final done, final total))
+                            Padding(
+                              padding: const EdgeInsets.only(top: 10),
+                              child: Row(
+                                key: const ValueKey('face-steps'),
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  for (var i = 0; i < total; i++)
+                                    Container(
+                                      width: i < done ? 18 : 8,
+                                      height: 8,
+                                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                                      decoration: BoxDecoration(
+                                        color: i < done ? _brand : Colors.white.withValues(alpha: 0.35),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   // Face alignment guide (4289:26553): 287×453, 128 down; the
@@ -243,15 +271,15 @@ class FaceCaptureLayout extends StatelessWidget {
     );
     final flashing = flash;
     if (flashing == null) return page;
-    return ValueListenableBuilder<bool>(
+    return ValueListenableBuilder<Color?>(
       valueListenable: flashing,
-      builder: (_, on, child) => Stack(
+      builder: (_, colour, child) => Stack(
         fit: StackFit.expand,
         children: [
           child!,
-          // The flash: the page goes white, the camera still reading under it.
-          if (on)
-            const ColoredBox(key: ValueKey('face-flash'), color: Colors.white),
+          // The flash: the page takes the colour, the camera still reading under it.
+          if (colour != null)
+            ColoredBox(key: const ValueKey('face-flash'), color: colour),
         ],
       ),
       child: page,
