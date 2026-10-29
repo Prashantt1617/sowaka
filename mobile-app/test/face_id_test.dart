@@ -155,8 +155,8 @@ const _positionLine = 'Position your face inside the oval';
 const _keepLine = 'Keep your face inside the oval';
 const _holdLine = 'Hold still';
 const _tapLine = 'Look at the camera and tap the button.';
-const _setUpLine = 'Face id successfully set up';
-const _detectedLine = 'Face id detected';
+const _setUpLine = 'Verified';
+const _detectedLine = 'Verified';
 
 int _count(String path) => _requests.where((p) => p.endsWith(path)).length;
 
@@ -308,8 +308,8 @@ void main() {
         tester,
         _server(verify: {'passed': true, 'token': 'tok'}),
       );
-      // Starting (4266:26005): the heading on the camera, the line, no button.
-      expect(find.text('Punch-in'), findsOneWidget);
+      // Starting (4289:26545): the instruction above the oval, no button.
+      expect(find.byKey(const ValueKey('face-heading')), findsOneWidget);
       expect(find.text('Front camera'), findsOneWidget);
       expect(find.text(_positionLine), findsOneWidget);
       expect(find.text(_keepLine), findsNothing);
@@ -423,7 +423,7 @@ void main() {
       // sent yet. The face is already in the oval, so "Hold still".
       await _startSetup(tester);
       expect(_count('/face/enrol'), 0);
-      expect(find.text('Set up your Face ID'), findsOneWidget);
+      expect(find.byKey(const ValueKey('face-heading')), findsOneWidget);
       expect(find.text('Front camera'), findsOneWidget);
       expect(find.text(_consentWords), findsNothing);
       expect(find.text(_holdLine), findsOneWidget);
@@ -502,8 +502,7 @@ void main() {
         ),
         type: 'out',
       );
-      expect(find.text('Punch-out'), findsOneWidget);
-      expect(find.text('Punch-in'), findsNothing);
+      expect(find.byType(FaceCheckScreen), findsOneWidget);
       _camera.sees(FaceSignal.detected, prompted: true);
       await tester.pump();
       expect(find.text(_holdLine), findsOneWidget);
@@ -546,7 +545,7 @@ void main() {
       expect(_tick, findsOneWidget);
       expect(find.text(_holdLine), findsNothing);
       expect(_cameraButton, findsNothing);
-      expect(find.text('Punch-in'), findsOneWidget);
+      expect(find.byKey(const ValueKey('face-verified')), findsOneWidget);
       expect(opened.popped, isFalse);
       expect(tester.takeException(), isNull);
       // Then the punch, with the server's token.
@@ -674,41 +673,28 @@ void main() {
       expect(_field(_enrolBody!, 'consentVersion'), 'v1');
       expect(_field(_enrolBody!, 'consent'), 'true');
       expect(FaceCheckOutcome.enrolledThisRun, isTrue);
-      // Set up (4266:26184): the tick on the same camera, and no punch yet.
+      // Verified (4289:26644): the tick on the same camera, and no punch yet.
       expect(find.text(_setUpLine), findsOneWidget);
       expect(_tick, findsOneWidget);
       expect(find.text(_holdLine), findsNothing);
-      expect(find.text('Set up your Face ID'), findsOneWidget);
       expect(_cameraButton, findsNothing);
       expect(find.byType(FaceCheckScreen), findsNothing);
       expect(_punchBody, isNull);
       expect(tester.takeException(), isNull);
-      // It goes on by itself, to the selfie check.
+      // Then the punch, with the token the setup earned: the first day's
+      // setup is that day's check, so no second selfie.
       await tester.pump(FaceSetupScreen.successPause);
       await tester.pumpAndSettle();
-      expect(find.text(_setUpLine), findsNothing);
-      expect(_tick, findsNothing);
-      expect(find.byType(FaceCheckScreen), findsOneWidget);
-      expect(find.text('Punch-in'), findsOneWidget);
-      expect(_count('/face/verify'), 0);
-      await _faceHeld(tester);
-      expect(_count('/face/verify'), 1);
-      expect(find.text(_detectedLine), findsOneWidget);
-      expect(_tick, findsOneWidget);
-      expect(_punchBody, isNull);
-      await tester.pump(FaceCheckScreen.matchedPause);
-      await tester.pumpAndSettle();
-      // The punch went with the check's token, not the setup's.
-      expect(_count('/face/verify'), 1);
-      expect(_punchBody?['faceToken'], 'verify-tok');
-      expect(find.text("You're punched in!"), findsOneWidget);
       expect(find.byType(FaceCheckScreen), findsNothing);
+      expect(_count('/face/verify'), 0);
+      expect(_punchBody?['faceToken'], 'enrol-tok');
+      expect(find.text("You're punched in!"), findsOneWidget);
       expect(find.byType(FaceSetupScreen), findsNothing);
     },
   );
 
   testWidgets(
-    'closing the check that follows setup closes the punch, with nothing sent',
+    'closing setup on the camera closes the punch, with nothing sent',
     (tester) async {
       await pumpPunch(
         tester,
@@ -717,19 +703,9 @@ void main() {
       );
       expect(find.text('Punch out'), findsOneWidget);
       await _startSetup(tester);
-      await _faceHeld(tester);
-      expect(find.text(_setUpLine), findsOneWidget);
-      await tester.pump(FaceSetupScreen.successPause);
-      await tester.pumpAndSettle();
-      expect(find.text('Punch-out'), findsOneWidget);
-      expect(find.byType(FaceCheckScreen), findsOneWidget);
-      // Nothing more opens on its own.
-      await tester.pump(const Duration(seconds: 2));
-      await tester.pumpAndSettle();
-      expect(find.byType(FaceCheckScreen), findsOneWidget);
       await tester.tap(
         find.descendant(
-          of: find.byType(FaceCheckScreen),
+          of: find.byType(FaceCaptureLayout),
           matching: find.byWidgetPredicate(
             (widget) =>
                 widget is Semantics && widget.properties.label == 'Close',
@@ -737,9 +713,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.byType(FaceCheckScreen), findsNothing);
       expect(find.byType(FaceSetupScreen), findsNothing);
-      expect(_count('/face/verify'), 0);
+      expect(find.byType(FaceCheckScreen), findsNothing);
+      expect(_count('/face/enrol'), 0);
       expect(_punchBody, isNull);
     },
   );
@@ -783,8 +759,7 @@ void main() {
     await _startSetup(tester);
     _camera.sees(FaceSignal.detected, prompted: true);
     await tester.pump();
-    // The heading only: no button while the face is found.
-    expect(find.text('Set up your Face ID'), findsOneWidget);
+    // The instruction only: no button while the face is found.
     expect(find.text(_holdLine), findsOneWidget);
     expect(_cameraButton, findsNothing);
     _expectNoResult();
@@ -822,7 +797,6 @@ void main() {
     // The check, not setup again: no consent, no tick, and no punch without a face.
     expect(find.byType(FaceCheckScreen), findsOneWidget);
     expect(find.byType(FaceSetupScreen), findsNothing);
-    expect(find.text('Punch-in'), findsOneWidget);
     expect(find.text(_consentWords), findsNothing);
     _expectNoResult();
     expect(_punchBody, isNull);
@@ -883,7 +857,7 @@ void main() {
       expect(find.text(_setUpLine), findsOneWidget);
       await tester.pump(FaceSetupScreen.successPause);
       await tester.pumpAndSettle();
-      expect(find.byType(FaceCheckScreen), findsOneWidget);
+      expect(_punchBody?['faceToken'], 'enrol-tok');
     },
   );
 
@@ -1237,20 +1211,13 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(_count('/face/enrol'), 1);
-      // Set up: the tick, then the selfie check takes itself too, and the
-      // punch carries the check's token.
+      // Set up: the tick, then the punch with the setup's own token.
       expect(find.text(_setUpLine), findsOneWidget);
       await tester.pump(FaceSetupScreen.successPause);
       await tester.pumpAndSettle();
-      expect(find.byType(FaceCheckScreen), findsOneWidget);
-      _camera.sees(FaceSignal.detected, prompted: true);
-      await tester.pump(FaceAutoCapture.hold);
-      await tester.pumpAndSettle();
-      expect(_count('/face/verify'), 1);
-      expect(find.text(_detectedLine), findsOneWidget);
-      await tester.pump(FaceCheckScreen.matchedPause);
-      await tester.pumpAndSettle();
-      expect(_punchBody?['faceToken'], 'verify-tok');
+      expect(find.byType(FaceCheckScreen), findsNothing);
+      expect(_count('/face/verify'), 0);
+      expect(_punchBody?['faceToken'], 'enrol-tok');
       expect(find.text("You're punched in!"), findsOneWidget);
     },
   );
@@ -1430,10 +1397,10 @@ void main() {
       await settle(tester);
       expect(_tick, findsOneWidget);
       await shoot('setup-success');
-      // Let the tick move on to the check before the test ends.
+      // Let the tick hand its token back before the test ends.
       await tester.pump(FaceSetupScreen.successPause);
       await tester.pumpAndSettle();
-      expect(find.byType(FaceCheckScreen), findsOneWidget);
+      expect(find.byType(FaceSetupScreen), findsNothing);
     });
 
     testWidgets('the check: looking, then Face id detected with the tick', (

@@ -15,11 +15,12 @@ import 'face_id_models.dart';
 /// button (4200:55075) — pressing Set up Face ID is agreeing — then the
 /// camera, where the selfie takes itself once the face is in the oval.
 ///
-/// Once set up it says so on the camera ("Face id successfully set up", with
-/// the tick), then, at a punch, opens the selfie check, and pops with however that check ended: the punch goes on
-/// with the check's token, as after any passed check. In onboarding there is
-/// no punch, so it pops after the success screen. A failed setup says why,
-/// with the tries left; after three, or while the face service is down, the
+/// Once set up it says so on the camera ("Verified", with the tick, Figma
+/// 4289:26644) and, at a punch, pops with the token the setup earned: the
+/// first day's setup is that day's check (Figma 4309:24713, "Setup & verify
+/// face id"), so there is no second selfie. In onboarding there is no punch,
+/// so it pops after the tick. A failed setup says why, with the tries left;
+/// once the day's tries are spent, or while the face service is down, the
 /// punch can go to the manager instead. Null when closed.
 class FaceSetupScreen extends StatefulWidget {
   const FaceSetupScreen({
@@ -60,6 +61,12 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
   bool _sendingFallback = false;
   bool _fallbackOpen = false;
   int? _attemptsLeft;
+
+  /// The day's tries, as the server counts them (FACE_MAX_ATTEMPTS).
+  int _maxAttempts = 5;
+
+  /// The punch token the setup earned; handed to the punch after the tick.
+  String? _token;
   String? _problemTitle;
   String? _problem;
   late final FaceAutoCapture _auto = FaceAutoCapture(
@@ -99,6 +106,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       setState(() {
         _consent = status.consent;
         _fallbackOpen = status.fallbackAvailable;
+        _maxAttempts = status.maxAttempts;
       });
       _auto.check();
     } on ManagerApiException catch (error) {
@@ -163,14 +171,12 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
         return;
       }
       // The consent's version goes with the photo: the server records when
-      // they agreed, and to which line.
-      // The token a setup may hand back goes unused: the punch carries the
-      // selfie check's own, taken next.
-      await widget.api.enrolFace(jpeg: photo, consentVersion: consent.version);
+      // they agreed, and to which line. The token it hands back is the punch's:
+      // setting up is the first day's check.
+      _token = await widget.api.enrolFace(jpeg: photo, consentVersion: consent.version);
       FaceCheckOutcome.enrolledThisRun = true;
       if (!mounted) return;
-      // "Face id successfully set up" on the camera for a moment, then on:
-      // the check opens its own camera, so this one is let go first.
+      // "Verified" on the camera for a moment, then on to the punch.
       setState(() => _setUp = true);
       _onTimer = Timer(FaceSetupScreen.successPause, () {
         if (!mounted) return;
@@ -232,12 +238,17 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     }
   }
 
-  /// After the tick: out of onboarding, or on to the selfie check, whose
-  /// outcome (a pass, a punch sent to the manager, or closed) is the punch's.
+  /// After the tick: out of onboarding, or back to the punch with the
+  /// setup's token. Only a server that hands no token back (one from before
+  /// it did) still sends the person through a selfie check.
   Future<void> _afterSetUp() async {
     final navigator = Navigator.of(context);
     if (widget.onboarding) {
       navigator.pop(const FaceCheckOutcome.needsCheck());
+      return;
+    }
+    if (_token case final token?) {
+      navigator.pop(FaceCheckOutcome.passed(token));
       return;
     }
     final outcome = await navigator.push<FaceCheckOutcome>(
@@ -349,7 +360,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
         heading: 'Set up your Face ID',
         camera: _camera.controller,
         state: FaceCaptureState.detected,
-        line: 'Face id successfully set up',
+        line: 'Verified',
         onClose: close,
       );
     }
@@ -378,7 +389,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
         onTap: signal == FaceSignal.unavailable ? _enrol : _lookAgain,
       );
       caption = tries != null && tries > 0
-          ? '$tries out of 3 ${tries == 1 ? 'try' : 'tries'} left'
+          ? '$tries out of $_maxAttempts ${tries == 1 ? 'try' : 'tries'} left'
           : _problem;
     } else if (_camera.waived) {
       // The phone could not read a face in time, or it never turned and
@@ -392,7 +403,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
         onTap: _lookAgain,
       );
       caption = tries != null && tries > 0
-          ? '$tries out of 3 ${tries == 1 ? 'try' : 'tries'} left'
+          ? '$tries out of $_maxAttempts ${tries == 1 ? 'try' : 'tries'} left'
           : 'Keep your face inside the oval, then turn your head and blink when asked.';
     } else if (signal == FaceSignal.unavailable) {
       // This phone cannot find faces at all: the button takes the selfie.
@@ -418,7 +429,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     // Out of tries, or the service is down: the manager can be asked instead.
     if (_fallbackOpen && cameraProblem == null && !widget.onboarding) {
       state = FaceCaptureState.failed;
-      line ??= 'Face ID unavailable';
+      line = _problemTitle ?? 'Face ID unavailable';
       action = FaceCaptureButton(
         label: 'Send $punchWord to manager',
         busy: _sendingFallback,
@@ -429,7 +440,8 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
           ? FaceQuietLink(
               label: 'Try setting up again',
               onCamera: true,
-              onTap: _busy ? null : _enrol,
+              // Another look with the prompts, never a selfie straight away.
+              onTap: _busy ? null : _lookAgain,
             )
           : null;
     }

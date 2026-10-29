@@ -25,6 +25,8 @@ class SlideToPunch extends StatefulWidget {
     this.knobInset = 5,
     this.labelStyle,
     this.knobIcon = true,
+    this.labelTrailing,
+    this.borderColor,
   });
 
   /// Punching out is the filled control of nodes 2303:53902 and 2303:54154: the
@@ -40,6 +42,8 @@ class SlideToPunch extends StatefulWidget {
     this.knobInset = 5,
     this.labelStyle,
     this.knobIcon = true,
+    this.labelTrailing,
+    this.borderColor,
   }) : track = color,
        fill = Color.alphaBlend(Colors.black.withValues(alpha: .12), color),
        knob = Colors.white,
@@ -73,6 +77,12 @@ class SlideToPunch extends StatefulWidget {
   /// The arrow (and, once it counts, the tick) on the knob. The Actions card
   /// of Figma 4166:19856 draws a plain knob.
   final bool knobIcon;
+
+  /// Drawn right after the label, as the punch screen's ">>" (Figma 4245:25040).
+  final Widget? labelTrailing;
+
+  /// A hairline round the bar, where a design draws one.
+  final Color? borderColor;
 
   @override
   State<SlideToPunch> createState() => _SlideToPunchState();
@@ -116,8 +126,14 @@ class _SlideToPunchState extends State<SlideToPunch>
             onTap: widget.enabled ? widget.onComplete : null,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(999),
-              child: SizedBox(
+              child: Container(
                 height: widget.height,
+                foregroundDecoration: widget.borderColor == null
+                    ? null
+                    : BoxDecoration(
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: widget.borderColor!, width: 1.13),
+                      ),
                 child: Stack(
                   children: [
                     Positioned.fill(child: ColoredBox(color: widget.track)),
@@ -140,15 +156,21 @@ class _SlideToPunchState extends State<SlideToPunch>
                         duration: const Duration(milliseconds: 120),
                         // Fades out of the knob's way as it crosses the label.
                         opacity: 1 - (_progress * 1.6).clamp(0.0, 1.0),
-                        child: Text(
-                          widget.label,
-                          style:
-                              widget.labelStyle ??
-                              TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: widget.labelColor,
-                              ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              widget.label,
+                              style:
+                                  widget.labelStyle ??
+                                  TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: widget.labelColor,
+                                  ),
+                            ),
+                            ?widget.labelTrailing,
+                          ],
                         ),
                       ),
                     ),

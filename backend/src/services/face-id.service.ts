@@ -63,8 +63,16 @@ export const FACE_MESSAGES: Record<FaceCheckReason, string> = {
   unavailable: "Face check isn't available right now. You can send today's punch-in to your manager instead.",
 };
 
-/** How long failed checks count towards the fallback, and the hourly caps that bound the bill. */
-const ATTEMPT_WINDOW_MS = 30 * 60_000;
+/**
+ * Failed checks count towards the fallback for the rest of the day (India
+ * time): `FACE_MAX_ATTEMPTS` tries a day, then the punch can go to the manager.
+ * A pass starts the count again. The hourly caps below bound the bill.
+ */
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+export function startOfTodayIst(now = new Date()): Date {
+  const ist = new Date(now.getTime() + IST_OFFSET_MS);
+  return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - IST_OFFSET_MS);
+}
 const VERIFY_PER_HOUR = 20;
 const ENROL_PER_HOUR = 10;
 
@@ -94,7 +102,7 @@ async function enrolmentOf(userId: string): Promise<UserFaceId | undefined> {
  * punch's check.
  */
 async function recentFailures(userId: string): Promise<{ failures: number; lastReason?: FaceCheckReason }> {
-  const since = new Date(Date.now() - ATTEMPT_WINDOW_MS);
+  const since = startOfTodayIst();
   const rows = await faceVerifications()
     .find({ userId, kind: { $in: ['enrol', 'verify'] }, at: { $gte: since } }, { projection: { _id: 0, passed: 1, reason: 1 } })
     .sort({ at: -1 })

@@ -186,3 +186,53 @@ class PunchOffice {
     radiusMeters: (json['radiusMeters'] as num?)?.toDouble() ?? 200,
   );
 }
+
+/// What the server said a punch from here would be, before punching: inside
+/// an office, outside every one (with HR's reasons and what choosing one
+/// leads to), or a fix too vague to place. A shift that is not geotagged is
+/// always "inside": there is nothing to be outside of.
+class PunchLocationCheck {
+  const PunchLocationCheck({
+    required this.inside,
+    this.geofenced = true,
+    this.inaccurate = false,
+    this.officeName,
+    this.officeCity,
+    this.distanceMeters,
+    this.message,
+    this.reasons = const [],
+    this.marksPresent = false,
+  });
+
+  factory PunchLocationCheck.fromJson(Map<String, dynamic> json) {
+    final office = json['office'] as Map<String, dynamic>?;
+    final location = json['location'] as Map<String, dynamic>?;
+    final outside = json['outsideLocation'] as Map<String, dynamic>?;
+    return PunchLocationCheck(
+      inside: json['inside'] == true,
+      geofenced: json['geofenced'] != false,
+      inaccurate: json['inaccurate'] == true,
+      officeName: office?['name'] as String?,
+      officeCity: office?['city'] as String?,
+      distanceMeters: (location?['distanceMeters'] as num?)?.round(),
+      message: json['message'] as String?,
+      reasons: (outside?['reasons'] as List<dynamic>? ?? const [])
+          .map((value) => value.toString())
+          .where((value) => value.isNotEmpty)
+          .toList(),
+      marksPresent: outside?['outcome'] == 'present',
+    );
+  }
+
+  final bool inside;
+  final bool geofenced;
+
+  /// The reading was too vague to place: a retry, not an outside punch.
+  final bool inaccurate;
+  final String? officeName;
+  final String? officeCity;
+  final int? distanceMeters;
+  final String? message;
+  final List<String> reasons;
+  final bool marksPresent;
+}

@@ -1,16 +1,16 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-/// The selfie screens (Figma 4194:21786, "Selfie Punch-in"): the camera
-/// fills the page under the status bar, the heading sits on it, the oval is
-/// a thin brand-blue line, and everything the person is told — the
-/// instruction, the tick once the face is found, a failure with its Try
-/// again — is drawn on the camera itself. Drawn from the frames' own
-/// measurements: 4266:26005 (looking), 4266:26184 / 4266:26221 (detected),
-/// 4266:26076 (not detected). Shared by the punch-in check and Face ID
-/// setup, which differ only in their words.
+/// The selfie screens (Figma 4309:24713, after 4194:21786): a dark page, the
+/// live camera seen only through the oval and its thin brand-blue line, and
+/// one line of white words above it — what to do next ("Turn your head a
+/// little to one side", "Blink your eye"), or "Verified" with the green tick
+/// once the server has matched the face (4289:26644). A failed try darkens
+/// the oval and says why in red under it, with Try Again and the day's tries
+/// left (4289:26675). Shared by the punch-in check and Face ID setup.
 class FaceCaptureLayout extends StatelessWidget {
   const FaceCaptureLayout({
     super.key,
@@ -30,28 +30,30 @@ class FaceCaptureLayout extends StatelessWidget {
   /// whole page lights up so the face is lit by it.
   final ValueListenable<bool>? flash;
 
-  /// "Set up your Face ID", "Punch-in": 20/600 on the camera, 25 down.
+  /// What the screen is ("Set up your Face ID", "Punch-in"), shown above the
+  /// oval only while there is no [line] to show there instead.
   final String heading;
 
   /// The live preview, or null while the camera opens.
   final CameraController? camera;
   final FaceCaptureState state;
 
-  /// The one line near the bottom of the camera (4266:26070): the
-  /// instruction while looking, the result once detected.
+  /// The words above the oval while looking or once detected (4289:26559:
+  /// the prompt, or "Verified"), or the red reason under it once a try has
+  /// failed (4289:26709).
   final String? line;
 
-  /// The button on the camera, for a failed try (4266:26113) or a phone that
+  /// The button under the oval, for a failed try (4289:26710) or a phone that
   /// cannot detect a face; none while the selfie takes itself.
   final FaceCaptureButton? action;
 
-  /// Under the button (4266:26118): "1 out of 3 tries left".
+  /// Under the button (4289:26711): "4 out of 5 tries left".
   final String? caption;
 
   /// A quiet link under the caption, where a screen needs one.
   final Widget? below;
 
-  /// The selfie is being checked: a spinner in place of the line.
+  /// The selfie is being checked: a spinner under the oval.
   final bool busy;
   final VoidCallback? onClose;
 
@@ -62,57 +64,38 @@ class FaceCaptureLayout extends StatelessWidget {
         ? preview!.value.previewSize
         : null;
     final failed = state == FaceCaptureState.failed;
-    final page = Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        bottom: false,
-        child: Padding(
-          // Selfie camera (4266:26061): 16 in, 16 down, to the bottom.
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            child: Container(
-              color: const Color(0xFFD9DEDE),
+    final top = failed ? null : (line ?? heading);
+    final page = AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: _page,
+        body: SafeArea(
+          bottom: false,
+          child: Padding(
+            // Selfie camera (4289:26550): 16 in, 16 down, 20 round.
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // The design's photo stands for the live camera; the
-                  // preview covers the card as the photo did.
-                  if (preview != null && size != null)
-                    FittedBox(
-                      fit: BoxFit.cover,
-                      clipBehavior: Clip.hardEdge,
-                      child: SizedBox(
-                        // The preview size is the sensor's, landscape; the card is upright.
-                        width: size.height,
-                        height: size.width,
-                        child: CameraPreview(preview),
+                  // The words above the oval (4289:26558): 76 down, 20/600.
+                  if (top != null)
+                    Positioned(
+                      top: 76,
+                      left: 10,
+                      right: 10,
+                      child: Text(
+                        top,
+                        key: const ValueKey('face-heading'),
+                        textAlign: TextAlign.center,
+                        style: _sora(20, FontWeight.w600, Colors.white, height: 24 / 20, spacing: 0.4),
                       ),
                     ),
-                  // Camera scrim: 4% black, 64% once a try has failed.
-                  ColoredBox(
-                    color: Colors.black.withValues(alpha: failed ? 0.64 : 0.04),
-                  ),
-                  // Heading (4266:26018): 25 from the top of the card.
+                  // Face alignment guide (4289:26553): 287×453, 128 down; the
+                  // camera shows only inside it.
                   Positioned(
-                    top: 25,
-                    left: 0,
-                    right: 0,
-                    child: Text(
-                      heading,
-                      textAlign: TextAlign.center,
-                      style: _sora(
-                        20,
-                        FontWeight.w600,
-                        _ink,
-                        height: 24 / 20,
-                        spacing: 0.4,
-                      ),
-                    ),
-                  ),
-                  // Face alignment guide (4266:26064): 287×453, 62 down.
-                  Positioned(
-                    top: 62,
+                    top: 128,
                     left: 0,
                     right: 0,
                     child: Center(
@@ -122,17 +105,39 @@ class FaceCaptureLayout extends StatelessWidget {
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            SvgPicture.asset(
-                              '$_asset/guide_oval.svg',
-                              width: 287,
-                              height: 453,
+                            ClipOval(
+                              child: SizedBox(
+                                width: 287,
+                                height: 453,
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    const ColoredBox(color: Color(0xFF2E3336)),
+                                    if (preview != null && size != null)
+                                      FittedBox(
+                                        fit: BoxFit.cover,
+                                        clipBehavior: Clip.hardEdge,
+                                        child: SizedBox(
+                                          // The sensor's size is landscape; the oval is upright.
+                                          width: size.height,
+                                          height: size.width,
+                                          child: CameraPreview(preview),
+                                        ),
+                                      ),
+                                    // A failed try dims the face (4289:26681).
+                                    if (failed) ColoredBox(color: Colors.black.withValues(alpha: 0.5)),
+                                  ],
+                                ),
+                              ),
                             ),
-                            // Detected (4266:26216): a 291×315 green haze,
-                            // the 140 tick in its middle, over the oval.
+                            SvgPicture.asset('$_asset/guide_oval.svg', width: 287, height: 453),
+                            // Verified (4289:26670): a 291×315 green haze, the
+                            // 140 tick in its middle, 98 down the oval.
                             if (state == FaceCaptureState.detected)
                               Positioned(
-                                top: 108,
+                                top: 98,
                                 child: Container(
+                                  key: const ValueKey('face-verified'),
                                   width: 291,
                                   height: 315,
                                   alignment: Alignment.center,
@@ -140,11 +145,7 @@ class FaceCaptureLayout extends StatelessWidget {
                                     color: Color(0x1716A34A),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: SvgPicture.asset(
-                                    '$_asset/success_check.svg',
-                                    width: 140,
-                                    height: 140,
-                                  ),
+                                  child: SvgPicture.asset('$_asset/success_check.svg', width: 140, height: 140),
                                 ),
                               ),
                           ],
@@ -163,15 +164,16 @@ class FaceCaptureLayout extends StatelessWidget {
                           '$_asset/close.svg',
                           width: 20,
                           height: 20,
+                          colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
                         ),
                       ),
                     ),
-                  // Face detection status (4266:26106): bottom 29 + the
-                  // camera label's 24 + 8, 8 apart, over the 16 bottom inset.
+                  // Face detection status (4289:26705): 24 from the bottom, 8
+                  // apart; above the camera label while it shows.
                   Positioned(
                     left: 0,
                     right: 0,
-                    bottom: 29 + 24 + 8,
+                    bottom: failed ? 24 : 29 + 24 + 8,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -179,34 +181,23 @@ class FaceCaptureLayout extends StatelessWidget {
                           const SizedBox(
                             width: 24,
                             height: 24,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2.4,
-                            ),
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4),
                           )
-                        else if (line case final text?)
+                        else if (failed && line != null)
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: _StatusLine(text: text, state: state),
+                            child: _FailureLine(text: line!),
                           ),
                         if (action case final button?) ...[
                           const SizedBox(height: 8),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 0),
-                            child: button,
-                          ),
+                          button,
                         ],
                         if (caption case final text?) ...[
                           const SizedBox(height: 8),
                           Text(
                             text,
                             textAlign: TextAlign.center,
-                            style: _sora(
-                              11,
-                              FontWeight.w400,
-                              Colors.white,
-                              height: 18 / 11,
-                            ),
+                            style: _sora(11, FontWeight.w400, Colors.white, height: 18 / 11),
                           ),
                         ],
                         if (below case final link?) ...[
@@ -216,7 +207,7 @@ class FaceCaptureLayout extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Camera label (4266:26065): a 50% ink pill, 29 from the bottom.
+                  // Camera label (4289:26554): a 50% ink pill, 29 from the bottom.
                   if (!failed)
                     Positioned(
                       bottom: 29,
@@ -224,10 +215,7 @@ class FaceCaptureLayout extends StatelessWidget {
                       right: 0,
                       child: Center(
                         child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                           decoration: BoxDecoration(
                             color: const Color(0x80172126),
                             borderRadius: BorderRadius.circular(100),
@@ -235,20 +223,11 @@ class FaceCaptureLayout extends StatelessWidget {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              SvgPicture.asset(
-                                '$_asset/camera.svg',
-                                width: 12,
-                                height: 12,
-                              ),
+                              SvgPicture.asset('$_asset/camera.svg', width: 12, height: 12),
                               const SizedBox(width: 6),
                               Text(
                                 'Front camera',
-                                style: _sora(
-                                  10,
-                                  FontWeight.w400,
-                                  Colors.white,
-                                  height: 14 / 10,
-                                ),
+                                style: _sora(10, FontWeight.w400, Colors.white, height: 14 / 10),
                               ),
                             ],
                           ),
@@ -280,49 +259,32 @@ class FaceCaptureLayout extends StatelessWidget {
   }
 }
 
-/// What the camera shows besides the face: still looking (the instruction
-/// line), a face found (the tick, and a result line), or a failed try (the
-/// dark scrim, the amber line, Try again).
+/// What the camera shows besides the face: still looking (the prompt above
+/// the oval), a face matched (the tick, "Verified"), or a failed try (the
+/// dimmed oval, the red reason, Try again).
 enum FaceCaptureState { looking, detected, failed }
 
-/// The line on the camera: white 14/400 (4266:26072), or the failure in
-/// amber 16/600 with the alert mark beside it (4266:26107).
-class _StatusLine extends StatelessWidget {
-  const _StatusLine({required this.text, required this.state});
+/// The reason a try failed (4289:26706): red 16/600, the alert mark beside it.
+class _FailureLine extends StatelessWidget {
+  const _FailureLine({required this.text});
 
   final String text;
-  final FaceCaptureState state;
 
   @override
-  Widget build(BuildContext context) {
-    if (state != FaceCaptureState.failed) {
-      return Text(
-        text,
-        textAlign: TextAlign.center,
-        style: _sora(14, FontWeight.w400, Colors.white, height: 22 / 14),
-      );
-    }
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SvgPicture.asset('$_asset/circle_alert.svg', width: 20, height: 20),
-        const SizedBox(width: 8),
-        Flexible(
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: _sora(
-              16,
-              FontWeight.w600,
-              _amber,
-              height: 16.2 / 16,
-              spacing: -0.16,
-            ),
-          ),
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      SvgPicture.asset('$_asset/circle_alert_red.svg', width: 20, height: 20),
+      const SizedBox(width: 8),
+      Flexible(
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: _sora(16, FontWeight.w600, _red, height: 16.2 / 16, spacing: -0.16),
         ),
-      ],
-    );
-  }
+      ),
+    ],
+  );
 }
 
 /// The brand-blue button (4266:26113, 4200:55123): 56 high, 16 radius, or
@@ -824,3 +786,5 @@ const _surface = Color(0xFFF7F7F9);
 const _brand = Color(0xFF0571A6);
 const _locked = Color(0xFF96B7C7);
 const _amber = Color(0xFFA75B20);
+const _red = Color(0xFFFF383C);
+const _page = Color(0xFF222222);

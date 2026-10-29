@@ -48,7 +48,7 @@ void main() {
     // Turned 15°, the nose 9 px (of 100 between the eyes) off the eye line.
     r.seeFace(_face(eyes: 97, noseX: 9, yaw: 15), 1000, 100);
     expect(r.turned, isTrue);
-    expect(r.ask, 'Blink once');
+    expect(r.ask, 'Blink your eye');
     r.seeFace(_face(open: 0.1), 1000, 100);
     expect(r.blinked, isFalse);
     r.seeFace(_face(open: 0.9), 1000, 100);

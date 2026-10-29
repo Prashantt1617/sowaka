@@ -345,6 +345,19 @@ class ManagerApiService {
     );
   }
 
+  /// Where a punch from here would land, without punching (POST
+  /// /attendance/punch/check): the location step asks this, says "You're
+  /// inside the office area", and only then opens Face ID. Read-only on the
+  /// server; the punch itself is judged on its own reading.
+  Future<PunchLocationCheck> checkPunchLocation(PunchReading? reading) async {
+    final json = await _request(
+      'POST',
+      '/attendance/punch/check',
+      body: {...?reading?.toJson()},
+    );
+    return PunchLocationCheck.fromJson(json);
+  }
+
   Future<AttendanceRecord> recordPunch(
     String type, {
     PunchReading? reading,
