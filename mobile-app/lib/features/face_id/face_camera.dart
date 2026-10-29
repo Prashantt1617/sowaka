@@ -7,7 +7,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image/image.dart' as img;
+import 'package:screen_brightness/screen_brightness.dart';
 
+import 'face_sounds.dart';
 import 'face_spoof_check.dart';
 
 /// What the front camera sees, as far as the phone can tell.
@@ -55,6 +57,45 @@ class FaceCamera extends ChangeNotifier {
   /// enough to read, not lined up in the oval. Where it stands does not
   /// matter, and the selfie is framed on it before it is sent ([cropToFace]).
   static double minFaceShare = 0.18;
+
+  /// What a selfie must be before the light check and the send, read off
+  /// the last frame: the face at least [minFacePixels] across (a smaller one
+  /// matches poorly), its light between [darkBelow] and [brightAbove] (the
+  /// mean luma of the cheeks and forehead, 0..255; past the top the flash
+  /// cannot be read either), the head within [turnedBeyond] degrees of where
+  /// it started, and the face sharp: the variance of its Laplacian over a
+  /// 128 px grey crop at least [blurFloor] (motion blur reads under 20, a
+  /// still face well over 100). Each is logged with the try, for tuning.
+  static int minFacePixels = 110;
+  static double darkBelow = 40;
+  static double brightAbove = 215;
+  static double turnedBeyond = 15;
+  static double blurFloor = 25;
+
+  /// The side of each face crop sent as light-check evidence, px.
+  static int evidenceSide = 160;
+
+  /// The server's colours for this try, when it gave some: the light check
+  /// then answers a challenge the server issued and judges itself, from the
+  /// lit frames sent with the selfie ([evidence]). Null when the server could
+  /// not be asked; the phone then picks its own and the server only logs.
+  FaceChallenge? challenge;
+  Future<FaceChallenge?> Function()? challengeSource;
+  int _challengeAsks = 0;
+
+  /// The frames the light check is judged from on the server: the face just
+  /// before the first colour, and under each colour, with the face's box in
+  /// each.
+  FaceFrame? _baselineFrame;
+  Rect? _baselineBox;
+  final List<FaceFrame?> _litFrames = [null, null];
+  final List<Rect?> _litBoxes = [null, null];
+
+  /// The last face box the detector gave, in the upright picture, for the
+  /// quality checks and the evidence crops.
+  Rect? _lastBox;
+
+  String? _askSounded;
 
   CameraController? _camera;
   CameraDescription? _description;
@@ -138,9 +179,135 @@ class FaceCamera extends ChangeNotifier {
     onTryEnded?.call(summary);
   }
 
-  /// Only the light check again: the prompts stand.
+  /// Only the light check again: the prompts stand. New colours, from the
+  /// server when it answers.
   void resetFlash() {
     liveness.resetFlash();
+    _litFrames[0] = _litFrames[1] = null;
+    _litBoxes[0] = _litBoxes[1] = null;
+    _baselineFrame = null;
+    _baselineBox = null;
+    unawaited(refreshChallenge());
+  }
+
+  /// Asks the server for this try's challenge: an id and the two colours to
+  /// flash, used once. The colours go to [liveness]; without an answer the
+  /// phone's own pick stands and [challenge] is null.
+  Future<void> refreshChallenge() async {
+    final source = challengeSource;
+    challenge = null;
+    if (source == null || _disposed) return;
+    final ask = ++_challengeAsks;
+    FaceChallenge? got;
+    try {
+      got = await source();
+    } catch (_) {
+      got = null;
+    }
+    // A later ask has been made since: its answer is the one that counts.
+    if (_disposed || ask != _challengeAsks) return;
+    challenge = got;
+    if (got != null && got.colours.length == 2) liveness.useColours(got.colours);
+  }
+
+  /// A test's camera has no frames: it says what the last one was.
+  @visibleForTesting
+  void seeFrame(FaceFrame frame, Rect box) {
+    _lastFace = frame;
+    _lastBox = box;
+  }
+
+  /// The face just before the first colour: kept, with its box, as the
+  /// server's baseline.
+  void markBaseline() {
+    _baselineFrame = _lastFace;
+    _baselineBox = _lastBox;
+  }
+
+  /// What the server judges the light check from: the face before the
+  /// colours and under each, as small JPEGs, with the challenge they answer.
+  /// Null when a frame is missing (the detector lost the face under a colour)
+  /// or there was no challenge; the server then has only the phone's word.
+  Future<FaceEvidence?> evidence() async {
+    final id = challenge?.id;
+    final base = _baselineFrame;
+    final baseBox = _baselineBox;
+    if (id == null || base == null || baseBox == null) return null;
+    if (_litFrames.any((f) => f == null) || _litBoxes.any((b) => b == null)) return null;
+    try {
+      final crops = await compute(_evidenceJob, [
+        (base, baseBox),
+        (_litFrames[0]!, _litBoxes[0]!),
+        (_litFrames[1]!, _litBoxes[1]!),
+      ]);
+      if (crops == null) return null;
+      return FaceEvidence(challengeId: id, baseline: crops[0], lit: [crops[1], crops[2]]);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Whether the last frame can be sent as a selfie, read before the light
+  /// check so a poor picture is not flashed at, sent and refused: null when
+  /// it can, else the short word for the person, shown for a moment and
+  /// logged with the try. A camera with no frame (a test's) has nothing to
+  /// fault.
+  Future<String?> captureQuality() async {
+    final frame = _lastFace;
+    final box = _lastBox;
+    if (frame == null || box == null || _disposed) return null;
+    String? problem;
+    String detail;
+    final light = liveness.lightNow;
+    if (box.width < minFacePixels) {
+      problem = 'Move a little closer';
+      detail = 'small ${box.width.round()}px';
+    } else if (light.luma < darkBelow) {
+      problem = "It's too dark: face a light";
+      detail = 'dark L${light.luma.round()}';
+    } else if (light.luma > brightAbove) {
+      problem = 'Too bright here: turn away from the light';
+      detail = 'bright L${light.luma.round()}';
+    } else if (liveness.yawFromStart > turnedBeyond) {
+      problem = 'Face the camera';
+      detail = 'turned ${liveness.yawFromStart.round()}°';
+    } else {
+      double? blur;
+      try {
+        blur = await compute(_blurJob, (frame, box));
+      } catch (_) {
+        blur = null;
+      }
+      if (_disposed) return null;
+      detail = 'blur=${blur?.round() ?? '-'} L${light.luma.round()} ${box.width.round()}px';
+      if (blur != null && blur < blurFloor) problem = 'Hold the phone still';
+    }
+    if (problem == null) {
+      if (!events.any((e) => e.endsWith(detail))) note('quality ok $detail');
+      return null;
+    }
+    if (nudgeNow != problem) {
+      note('quality $detail');
+      nudge = problem;
+      _nudgeUntil = DateTime.now().add(const Duration(seconds: 2));
+      notifyListeners();
+    }
+    return problem;
+  }
+
+  /// The screen as bright as it goes for the light check, so the colours
+  /// reach the face in a bright room too; back to the person's setting after.
+  /// Best effort.
+  Future<void> brighten() async {
+    try {
+      await ScreenBrightness.instance.setApplicationScreenBrightness(1);
+    } catch (_) {}
+  }
+
+  Future<void> dimBack() async {
+    try {
+      await ScreenBrightness.instance.resetApplicationScreenBrightness();
+    } catch (_) {}
   }
 
   /// What the phone measured this try, for the server's log: the flashes,
@@ -158,12 +325,19 @@ class FaceCamera extends ChangeNotifier {
     spoofScores.clear();
     _spoofBusy = false;
     _promptsDoneAt = null;
+    _askSounded = null;
+    _litFrames[0] = _litFrames[1] = null;
+    _litBoxes[0] = _litBoxes[1] = null;
+    _baselineFrame = null;
+    _baselineBox = null;
+    unawaited(refreshChallenge());
   }
 
   /// The detector saw a screen or a print: said, and the try starts over.
   void screenSuspected() {
     if (_disposed) return;
     endTry('screen ${spoofScores.map((s) => s.toStringAsFixed(2)).join(' ')}');
+    unawaited(FaceSounds.failed());
     startOver();
     final now = DateTime.now();
     _tryStartedAt = now;
@@ -209,6 +383,7 @@ class FaceCamera extends ChangeNotifier {
       // Three times without the colours taken: the prompts again from the
       // start, and the person asked to find softer light.
       endTry('light-fail-restart');
+      unawaited(FaceSounds.failed());
       startOver();
       _tryStartedAt = now;
       nudge = 'Move out of the bright light and face the camera';
@@ -278,6 +453,7 @@ class FaceCamera extends ChangeNotifier {
     lapsed = true;
     nudge = null;
     endTry('lapse step${liveness.step} ${liveness.report}');
+    unawaited(FaceSounds.failed());
     notifyListeners();
     _lapseTimer = Timer(lapsePause, () {
       if (_disposed) return;
@@ -322,6 +498,7 @@ class FaceCamera extends ChangeNotifier {
             : ImageFormatGroup.nv21,
       );
       _camera = camera;
+      unawaited(refreshChallenge());
       _spoof ??= await FaceSpoofCheck.load();
       await camera.initialize();
       if (_disposed) {
@@ -392,11 +569,20 @@ class FaceCamera extends ChangeNotifier {
         return;
       }
       _lastFace = FaceFrame.of(image, input.metadata?.rotation.rawValue ?? 0);
+      _lastBox = near.first.boundingBox;
+      final wasAsk = liveness.ask;
+      final wasSteps = (liveness.turned, liveness.faced, liveness.blinked);
       liveness.seeFace(
         near.first,
         shortSide,
         _faceLight(image, _onSensor(near.first.boundingBox, image, input.metadata?.rotation ?? InputImageRotation.rotation0deg)),
       );
+      if (liveness.flashing && liveness.flashIndex >= 0 && liveness.flashIndex < 2) {
+        // The latest frame under this colour: the one the server judges.
+        _litFrames[liveness.flashIndex] = _lastFace;
+        _litBoxes[liveness.flashIndex] = _lastBox;
+      }
+      _soundPrompts(wasAsk, wasSteps);
       _sampleSpoof(near.first.boundingBox);
       final now = DateTime.now();
       _lastSeen = now;
@@ -421,6 +607,20 @@ class FaceCamera extends ChangeNotifier {
     } finally {
       _processing = false;
     }
+  }
+
+  /// A tone for the person's ears: a new prompt up, or a step of it seen
+  /// (the turn, the face back, the blink), so the prompts work without
+  /// reading them. A prompt's tone covers the step's when both happen at once.
+  void _soundPrompts(String? wasAsk, (bool, bool, bool) wasSteps) {
+    if (lapsed || waived) return;
+    final ask = liveness.ask;
+    if (ask != null && ask != _askSounded) {
+      _askSounded = ask;
+      unawaited(FaceSounds.prompt());
+      return;
+    }
+    if ((liveness.turned, liveness.faced, liveness.blinked) != wasSteps) unawaited(FaceSounds.step());
   }
 
   /// Once the prompts are answered: a few frames to the screen detector,
@@ -607,6 +807,7 @@ class FaceCamera extends ChangeNotifier {
     unawaited(camera?.dispose().catchError((_) {}));
     unawaited(_detector?.close().catchError((_) {}));
     _spoof?.close();
+    unawaited(dimBack());
     super.dispose();
   }
 }
@@ -704,6 +905,44 @@ enum FlashColour {
 
   const FlashColour(this.color);
   final Color color;
+
+  /// The colour the server named ("red", "green", "blue"), or null.
+  static FlashColour? parse(Object? name) {
+    final key = name is String ? name.trim().toLowerCase() : '';
+    for (final colour in values) {
+      if (colour.name == key) return colour;
+    }
+    return null;
+  }
+}
+
+/// A light check the server set: its id, used once with the selfie, and the
+/// two colours it wants flashed. The server judges the answer from the
+/// frames the phone sends ([FaceCamera.evidence]).
+class FaceChallenge {
+  const FaceChallenge({required this.id, required this.colours});
+
+  final String id;
+  final List<FlashColour> colours;
+
+  static FaceChallenge? fromJson(Map<String, dynamic> json) {
+    final id = json['id'];
+    final raw = json['colours'];
+    if (id is! String || id.isEmpty || raw is! List) return null;
+    final colours = raw.map(FlashColour.parse).whereType<FlashColour>().toList();
+    if (colours.length != 2 || colours[0] == colours[1]) return null;
+    return FaceChallenge(id: id, colours: colours);
+  }
+}
+
+/// What goes to the server with the selfie for it to judge the light check
+/// itself: the face before the colours and under each, as small JPEGs.
+class FaceEvidence {
+  const FaceEvidence({required this.challengeId, required this.baseline, required this.lit});
+
+  final String challengeId;
+  final Uint8List baseline;
+  final List<Uint8List> lit;
 }
 
 /// The phone's own checks that the face in the oval is a real one and not a
@@ -782,17 +1021,26 @@ class FaceRealness {
   bool? get lit => flashesDone ? litBy.every((answer) => answer == true) : null;
 
   /// Which prompt is being answered, 0 to 3 (3: all done), for the dots.
-  int get step => !turned ? 0 : !faced ? 1 : !blinked ? 2 : 3;
-  static const steps = 3;
+  int get step => !faced ? 0 : !blinked ? 1 : 2;
+  static const steps = 2;
 
   /// What the line on the camera should ask for, or null once done.
-  String? get ask => !turned
-      ? 'Turn your head to one side'
-      : !faced
-      ? 'Now face the camera'
+  String? get ask => !faced
+      ? 'Move your head to the left, then face the camera'
       : !blinked
       ? 'Blink now'
       : null;
+
+  /// How far the head is turned right now from where it started, degrees.
+  double yawFromStart = 0;
+
+  /// Which colour is up, 0 or 1, while [flashing]; -1 otherwise.
+  int flashIndex = -1;
+
+  /// The server's colours for this try, in place of the phone's own pick.
+  void useColours(List<FlashColour> given) {
+    if (given.length == 2 && given[0] != given[1]) colours = List.of(given);
+  }
 
   void seeFace(Face face, double shortSide, FaceLight light) {
     _light = light;
@@ -812,6 +1060,7 @@ class FaceRealness {
         final offset = (nose.x - (eyeL.x + eyeR.x) / 2) / eyes;
         _yaw0 ??= yaw;
         _offset0 ??= offset;
+        yawFromStart = (yaw - _yaw0!).abs();
         if (!turned) {
           final swung = (yaw - _yaw0!).abs();
           final shifted = (offset - _offset0!).abs();
@@ -843,6 +1092,7 @@ class FaceRealness {
   /// can hand over a late, still-lit one.
   void flashOn(int index) {
     flashing = true;
+    flashIndex = index;
     if (index == 0 || _before == null) _before = _light;
     _litLuma = _litCb = _litCr = 0;
     _litFrames = 0;
@@ -867,6 +1117,7 @@ class FaceRealness {
   /// [lit] is the light measured while the colour was up.
   void flashOff(int index, FaceLight lit) {
     flashing = false;
+    flashIndex = -1;
     final before = _before ?? FaceLight.none;
     litBy[index] = answers(colours[index], before, lit);
     final tag = colours[index].name[0];
@@ -906,10 +1157,12 @@ class FaceRealness {
 
   void reset() {
     _yaw0 = _offset0 = null;
+    yawFromStart = 0;
     turned = faced = blinked = false;
     _eyesClosed = false;
     _before = null;
     flashing = false;
+    flashIndex = -1;
     litBy[0] = litBy[1] = null;
     report = '';
     colours = _pick();
@@ -988,12 +1241,19 @@ class FaceAutoCapture {
       _hold = null;
       return;
     }
-    _hold ??= Timer(hold, () {
+    _hold ??= Timer(hold, () async {
       _hold = null;
       if (!_ready) return;
-      if (checkLiveness && camera.liveness.lit == null) {
-        _runFlash(0);
-        return;
+      if (checkLiveness) {
+        // A poor picture is not flashed at or sent: the person is told what
+        // to change, and the hold starts again on the next frame.
+        final problem = await camera.captureQuality();
+        if (_disposed || problem != null || !_ready || _flashTimer != null) return;
+        if (camera.liveness.lit == null) {
+          camera.markBaseline();
+          _runFlash(0);
+          return;
+        }
       }
       spend();
       onCapture();
@@ -1005,13 +1265,19 @@ class FaceAutoCapture {
   /// face took both, else the try starts over.
   void _runFlash(int index) {
     final liveness = camera.liveness;
-    if (index == 0) unawaited(camera.lockExposure());
+    if (index == 0) {
+      unawaited(camera.lockExposure());
+      unawaited(camera.brighten());
+    }
     liveness.flashOn(index);
     flashColour.value = liveness.colours[index].color;
     _flashTimer = Timer(flash, () {
       flashColour.value = null;
       liveness.flashOff(index, liveness.litMean(liveness.lightNow));
-      if (index + 1 >= liveness.colours.length) unawaited(camera.freeExposure());
+      if (index + 1 >= liveness.colours.length) {
+        unawaited(camera.freeExposure());
+        unawaited(camera.dimBack());
+      }
       if (_disposed) return;
       if (index + 1 < liveness.colours.length) {
         _flashTimer = Timer(flashGap, () {
@@ -1107,6 +1373,52 @@ class FaceFrame {
 }
 
 Uint8List? _cropJob((Uint8List, Rect) job) => cropToFace(job.$1, job.$2);
+
+/// The face in each frame, cut to its box (square, a little wider than the
+/// box) and shrunk to [FaceCamera.evidenceSide], as JPEGs for the server's
+/// light check. Null when any frame cannot be read.
+List<Uint8List>? _evidenceJob(List<(FaceFrame, Rect)> frames) {
+  final out = <Uint8List>[];
+  for (final (frame, box) in frames) {
+    final picture = frameToImage(frame);
+    if (picture == null) return null;
+    final crop = _faceSquare(picture, box, 1.15);
+    final small = img.copyResize(crop, width: FaceCamera.evidenceSide, height: FaceCamera.evidenceSide, interpolation: img.Interpolation.average);
+    out.add(Uint8List.fromList(img.encodeJpg(small, quality: 85)));
+  }
+  return out;
+}
+
+/// How blurred the face is: the variance of a 3×3 Laplacian over the grey
+/// face, at 128 px. Sharp faces read in the hundreds, motion blur under 20.
+double? _blurJob((FaceFrame, Rect) job) {
+  final (frame, box) = job;
+  final picture = frameToImage(frame);
+  if (picture == null) return null;
+  final face = img.copyResize(_faceSquare(picture, box, 1.0), width: 128, height: 128, interpolation: img.Interpolation.average);
+  final grey = img.grayscale(face);
+  final w = grey.width, h = grey.height;
+  final values = <double>[];
+  for (var y = 1; y < h - 1; y++) {
+    for (var x = 1; x < w - 1; x++) {
+      final c = grey.getPixel(x, y).r;
+      final lap = 4 * c - grey.getPixel(x - 1, y).r - grey.getPixel(x + 1, y).r - grey.getPixel(x, y - 1).r - grey.getPixel(x, y + 1).r;
+      values.add(lap.toDouble());
+    }
+  }
+  if (values.isEmpty) return null;
+  final mean = values.reduce((a, b) => a + b) / values.length;
+  return values.fold<double>(0, (sum, v) => sum + (v - mean) * (v - mean)) / values.length;
+}
+
+/// A square about the face box's centre, [scale] times its longer side,
+/// kept inside the picture.
+img.Image _faceSquare(img.Image picture, Rect box, double scale) {
+  final side = (max(box.width, box.height) * scale).round().clamp(8, min(picture.width, picture.height)).toInt();
+  final left = (box.center.dx - side / 2).round().clamp(0, picture.width - side).toInt();
+  final top = (box.center.dy - side / 2).round().clamp(0, picture.height - side).toInt();
+  return img.copyCrop(picture, x: left, y: top, width: side, height: side);
+}
 
 /// [jpeg] framed on [face] (a box in the picture's own upright pixels): a
 /// square about twice the face's size, centred a little below the eyes so

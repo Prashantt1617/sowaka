@@ -277,9 +277,22 @@ class FaceCaptureLayout extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           child!,
-          // The flash: the page takes the colour, the camera still reading under it.
-          if (colour != null)
+          // The flash: the page takes the colour, the camera still reading
+          // under it; a word says what it is for, so it reads as the check
+          // it is and not a fault.
+          if (colour != null) ...[
             ColoredBox(key: const ValueKey('face-flash'), color: colour),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 64,
+              child: Text(
+                'Hold still, reading the light on your face',
+                textAlign: TextAlign.center,
+                style: _sora(13, FontWeight.w600, Colors.white.withValues(alpha: 0.85), height: 20 / 13),
+              ),
+            ),
+          ],
         ],
       ),
       child: page,

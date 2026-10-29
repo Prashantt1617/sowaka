@@ -31,25 +31,25 @@ Face _face({double eyes = 100, double noseX = 0, double yaw = 0, double? open = 
 const _dim = FaceLight(90, 128, 128);
 
 void main() {
-  test('the prompts, in order: turn, face the camera, blink; then nothing', () {
+  test('the prompts, in order: turn and face the camera (one prompt), blink; then nothing', () {
     final r = FaceRealness(random: Random(1));
     r.seeFace(_face(), 1000, _dim);
-    expect(r.ask, 'Turn your head to one side');
+    expect(r.ask, 'Move your head to the left, then face the camera');
     expect(r.step, 0);
     // Turned 15°, the nose 9 px (of 100 between the eyes) off the eye line.
     r.seeFace(_face(eyes: 97, noseX: 9, yaw: 15), 1000, _dim);
     expect(r.turned, isTrue);
-    expect(r.ask, 'Now face the camera');
-    expect(r.step, 1);
+    expect(r.ask, 'Move your head to the left, then face the camera');
+    expect(r.step, 0);
     r.seeFace(_face(yaw: 2), 1000, _dim);
     expect(r.faced, isTrue);
     expect(r.ask, 'Blink now');
-    expect(r.step, 2);
+    expect(r.step, 1);
     r.seeFace(_face(open: 0.1), 1000, _dim);
     r.seeFace(_face(open: 0.9), 1000, _dim);
     expect(r.blinked, isTrue);
     expect(r.challengesDone, isTrue);
-    expect(r.step, 3);
+    expect(r.step, 2);
     expect(r.ask, isNull);
   });
 
@@ -137,7 +137,7 @@ void main() {
     expect(r.blinked, isFalse);
     expect(r.lit, isNull);
     expect(r.report, '');
-    expect(r.ask, 'Turn your head to one side');
+    expect(r.ask, 'Move your head to the left, then face the camera');
   });
 
   test('the light under a colour is the mean of its frames, and the flash alone can start over', () {

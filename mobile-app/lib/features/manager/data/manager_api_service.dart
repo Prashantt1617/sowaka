@@ -14,6 +14,7 @@ import '../../../services/api_client.dart';
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import 'manager_models.dart';
+import '../../face_id/face_camera.dart' show FaceChallenge, FaceEvidence;
 import '../../face_id/face_id_models.dart';
 
 class ManagerApiService {
@@ -804,6 +805,8 @@ class ManagerApiService {
     required String consentVersion,
     /// What the phone asked for and saw, for the server's log.
     String? challenge,
+    /// The server's light check answered: the frames it judges itself.
+    FaceEvidence? evidence,
   }) async {
     final request =
         http.MultipartRequest('POST', Uri.parse('$_baseUrl/face/enrol'))
@@ -812,17 +815,25 @@ class ManagerApiService {
           ..fields['consentVersion'] = consentVersion
           ..files.add(http.MultipartFile.fromBytes('photo', jpeg, filename: 'face.jpg'));
     if (challenge != null) request.fields['challenge'] = challenge;
+    _attachEvidence(request, evidence);
     final json = await _face(request);
     return json['token'] as String?;
   }
 
+  /// A light check the server sets for the next selfie: its id and the two
+  /// colours to flash. Null when the server did not give one.
+  Future<FaceChallenge?> startFaceChallenge() async =>
+      FaceChallenge.fromJson(await _face(_jsonRequest('POST', '/face/challenge')));
+
   /// A selfie, or a finished Face Liveness session, checked by the server.
-  /// The app's own blink-or-turn result goes along for the log only.
+  /// The app's own blink-or-turn result goes along for the log only; the
+  /// light check's frames ([evidence]) are what the server judges.
   Future<FaceCheckResult> verifyFace({
     Uint8List? jpeg,
     String? livenessSessionId,
     String? challenge,
     bool? devicePassed,
+    FaceEvidence? evidence,
   }) async {
     final request =
         http.MultipartRequest('POST', Uri.parse('$_baseUrl/face/verify'))
@@ -833,7 +844,19 @@ class ManagerApiService {
     if (livenessSessionId != null) request.fields['livenessSessionId'] = livenessSessionId;
     if (challenge != null) request.fields['challenge'] = challenge;
     if (devicePassed != null) request.fields['devicePassed'] = '$devicePassed';
+    _attachEvidence(request, evidence);
     return FaceCheckResult.fromJson(await _face(request));
+  }
+
+  /// The challenge's id and the three face crops: before the colours, and
+  /// under each, as `baseline`, `lit0` and `lit1`.
+  void _attachEvidence(http.MultipartRequest request, FaceEvidence? evidence) {
+    if (evidence == null) return;
+    request.fields['challengeId'] = evidence.challengeId;
+    request.files.add(http.MultipartFile.fromBytes('baseline', evidence.baseline, filename: 'baseline.jpg'));
+    for (var i = 0; i < evidence.lit.length && i < 2; i++) {
+      request.files.add(http.MultipartFile.fromBytes('lit$i', evidence.lit[i], filename: 'lit$i.jpg'));
+    }
   }
 
   Future<FaceLivenessSession> startFaceLiveness() async =>

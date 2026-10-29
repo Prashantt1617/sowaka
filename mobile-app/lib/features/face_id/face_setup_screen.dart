@@ -9,6 +9,7 @@ import 'face_camera.dart';
 import 'face_capture_layout.dart';
 import 'face_check_screen.dart';
 import 'face_id_models.dart';
+import 'face_sounds.dart';
 
 /// Setting up Face ID, at the first punch the company checks (Figma
 /// 4194:21786): a page that says what it is for, with the consent under its
@@ -104,6 +105,9 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     // Every try's record goes to the server, pass or fail, so the checks can
     // be tuned on what phones actually measure.
     _camera.onTryEnded = (summary) => unawaited(widget.api.logFaceTry(summary));
+    // Each try's colours come from the server, which judges the light
+    // check from the frames sent with the photo.
+    _camera.challengeSource = widget.api.startFaceChallenge;
     unawaited(_camera.start());
     unawaited(_load());
   }
@@ -183,6 +187,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
         await _camera.resume();
         return;
       }
+      final evidence = await _camera.evidence();
       // The consent's version goes with the photo: the server records when
       // they agreed, and to which line. The token it hands back is the punch's:
       // setting up is the first day's check.
@@ -190,9 +195,11 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
         jpeg: photo,
         consentVersion: consent.version,
         challenge: _camera.liveness.challengesDone ? 'turn+blink+flash ${_camera.checkReport}' : 'none',
+        evidence: evidence,
       );
       FaceCheckOutcome.enrolledThisRun = true;
       if (!mounted) return;
+      unawaited(FaceSounds.done());
       // "Verified" on the camera for a moment, then on to the punch.
       setState(() => _setUp = true);
       _onTimer = Timer(FaceSetupScreen.successPause, () {
@@ -284,6 +291,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
   /// the prompts start over on their own. No button to press.
   void _fail(String title, String message) {
     if (!mounted) return;
+    unawaited(FaceSounds.failed());
     setState(() {
       _problemTitle = title;
       _problem = message;

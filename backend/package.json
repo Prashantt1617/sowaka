@@ -13,6 +13,8 @@
     "attendance:import": "tsx src/scripts/import-attendance.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\"",
+    "face:calibrate": "tsx src/scripts/face-calibration.ts",
+    "face:flash-check": "tsx src/scripts/face-flash-check.ts",
     "relay:check": "tsx src/scripts/relay-engine-check.ts",
     "relay:runtime": "tsx src/scripts/relay-runtime-check.ts",
     "relay:sockets": "tsx src/scripts/relay-socket-check.ts",

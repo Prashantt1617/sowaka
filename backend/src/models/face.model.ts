@@ -79,13 +79,23 @@ export interface FaceVerification {
   /** Who the face matched when it was somebody else. */
   matchedUserId?: string;
   liveness?: {
-    mode: 'aws' | 'device' | 'none';
+    /**
+     * `server_flash`: the server set the colours and judged the face's
+     * answer from the frames the phone sent; `device`: the phone's own
+     * check, only logged; `aws`: a Rekognition Face Liveness session.
+     */
+    mode: 'aws' | 'device' | 'server_flash' | 'none';
     /** Rekognition's confidence, for an AWS session. */
     confidence?: number;
     sessionId?: string;
     /** What the app says its own check asked and saw. Not trusted, only logged. */
     challenge?: string;
     devicePassed?: boolean;
+    /** The server's challenge this check answered, and what it measured ("r+5.1/-2.0 b+6.2/+0.3"). */
+    challengeId?: string;
+    colours?: FlashColourName[];
+    measured?: string;
+    flashPassed?: boolean;
   };
   durationMs?: number;
   /** sha256 of the token handed back, for a passed verify or enrolment. */
@@ -95,6 +105,23 @@ export interface FaceVerification {
   /** The punch the token let through. */
   usedFor?: string;
   error?: string;
+}
+
+export type FlashColourName = 'red' | 'green' | 'blue';
+
+/**
+ * A light check the server set for one selfie: which two colours the phone
+ * must flash, for whom, until when. Claimed once by the selfie that answers
+ * it; a second selfie with the same id, or one after it expired, is refused.
+ */
+export interface FaceChallenge {
+  id: string;
+  org: string;
+  userId: string;
+  colours: FlashColourName[];
+  createdAt: Date;
+  expiresAt: Date;
+  usedAt?: Date;
 }
 
 /** A Face Liveness session the backend opened, so a result is only read by its owner, once. */

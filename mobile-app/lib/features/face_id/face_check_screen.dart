@@ -9,6 +9,7 @@ import 'face_camera.dart';
 import 'face_capture_layout.dart';
 import 'face_id_models.dart';
 import 'face_liveness.dart';
+import 'face_sounds.dart';
 
 /// How the face check before a punch ended.
 class FaceCheckOutcome {
@@ -118,6 +119,9 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
     // Every try's record goes to the server, pass or fail, so the checks can
     // be tuned on what phones actually measure.
     _camera.onTryEnded = (summary) => unawaited(widget.api.logFaceTry(summary));
+    // Each try's colours come from the server, which judges the light
+    // check from the frames sent with the selfie.
+    _camera.challengeSource = widget.api.startFaceChallenge;
     unawaited(_open());
   }
 
@@ -223,12 +227,15 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
         _resumeLater();
         return;
       }
+      final evidence = await _camera.evidence();
       final result = await widget.api.verifyFace(
         jpeg: photo,
         // What the phone asked for and saw, for the server's log: the turn
         // and the blink, and whether the flash lit the face too.
         challenge: _camera.liveness.challengesDone ? 'turn+blink+flash ${_camera.checkReport}' : 'none',
         devicePassed: _camera.liveness.passed,
+        // The frames under the server's colours: it judges the light itself.
+        evidence: evidence,
       );
       await _judge(result);
     } on ManagerApiException catch (error) {
@@ -281,6 +288,7 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
     if (!mounted) return;
     if (result.passed && result.token != null) {
       // Face id detected (4266:26221): the tick, then the punch.
+      unawaited(FaceSounds.done());
       setState(() => _matched = true);
       _onTimer = Timer(FaceCheckScreen.matchedPause, () {
         if (mounted)
@@ -288,6 +296,7 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
       });
       return;
     }
+    unawaited(FaceSounds.failed());
     setState(() => _result = result);
     await _camera.resume();
     _resumeLater();
@@ -301,6 +310,7 @@ class _FaceCheckScreenState extends State<FaceCheckScreen>
       Navigator.of(context).pop(const FaceCheckOutcome.needsSetup());
       return;
     }
+    unawaited(FaceSounds.failed());
     setState(() {
       _problem = error.offline
           ? 'No internet connection. Connect and try again.'

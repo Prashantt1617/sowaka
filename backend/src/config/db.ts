@@ -52,7 +52,7 @@ import { SupportEvent, SupportMessage, SupportTicket, SupportTopicList } from '.
 import { PolicyDocument } from '../models/policy-document.model';
 import { AppPage } from '../models/app-page.model';
 import { EmployeeActivity } from '../models/employee-activity.model';
-import { FaceLivenessSession, FaceVerification } from '../models/face.model';
+import { FaceChallenge, FaceLivenessSession, FaceVerification } from '../models/face.model';
 import { Placement, PlacementClient, PlacementCustomer } from '../models/placement.model';
 
 let client: MongoClient | null = null;
@@ -118,6 +118,11 @@ export function faceVerifications(): Collection<FaceVerification> {
 
 export function faceLivenessSessions(): Collection<FaceLivenessSession> {
   return getDb().collection<FaceLivenessSession>('face_liveness_sessions');
+}
+
+/** Light checks the server set (face-id.service issueFaceChallenge); each used once, gone when it expires. */
+export function faceChallenges(): Collection<FaceChallenge> {
+  return getDb().collection<FaceChallenge>('face_challenges');
 }
 
 export function otpChallenges(): Collection<OtpChallenge> {
@@ -415,6 +420,9 @@ async function ensureIndexes(database: Db): Promise<void> {
   // The phones' Face ID try records: read by person and time, gone after 30 days.
   await database.collection('face_phone_logs').createIndex({ org: 1, userId: 1, at: -1 });
   await database.collection('face_phone_logs').createIndex({ at: 1 }, { expireAfterSeconds: 30 * 24 * 3600 });
+  await database.collection('face_challenges').createIndex({ id: 1 }, { unique: true });
+  await database.collection('face_challenges').createIndex({ userId: 1, createdAt: -1 });
+  await database.collection('face_challenges').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
   await database
     .collection<OtpChallenge>('otp_challenges')
     .createIndex({ email: 1 }, { unique: true });
