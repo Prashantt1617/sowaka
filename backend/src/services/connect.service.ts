@@ -1045,6 +1045,9 @@ export async function performConnectAction(
     );
     const optionId = String(input.optionId ?? '');
     if (!options.includes(optionId)) throw new ConnectError(400, 'Survey option is invalid');
+    // A survey with a closing time (body.closesAt) takes no vote after it;
+    // the post stays up, pinned or not, with the votes as they stand.
+    if (challengeHasClosed(post)) throw new ConnectError(409, 'Voting has closed for this poll');
     const hadVoted = Boolean(post.pollVotes?.[viewerUserId]);
     await connectPosts().updateOne(
       { id: postId },
