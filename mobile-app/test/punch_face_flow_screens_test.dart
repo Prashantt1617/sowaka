@@ -21,6 +21,7 @@ import 'package:mobile_app/features/attendance/presentation/punch_screen.dart';
 import 'package:mobile_app/features/attendance/presentation/slide_to_punch.dart';
 import 'package:mobile_app/features/auth/data/auth_models.dart';
 import 'package:mobile_app/features/face_id/face_camera.dart';
+import 'package:mobile_app/features/face_id/face_capture_layout.dart';
 import 'package:mobile_app/features/face_id/face_check_screen.dart';
 import 'package:mobile_app/features/face_id/face_setup_screen.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
@@ -287,29 +288,48 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// A face in the oval answering the prompts: the turn, the blink, then the
-  /// flash, and the selfie takes itself. Shots of each step when [prefix].
+  /// A face in the oval answering the prompts: the turn, back to the camera,
+  /// the blink; then the two colour flashes, each taken by the face; and the
+  /// selfie takes itself. Shots of each step when [prefix].
   Future<void> answerPrompts(WidgetTester tester, {String? prefix}) async {
+    final liveness = _camera.liveness;
     _camera.sees(FaceSignal.detected);
     await tester.pump();
-    expect(find.text('Turn your head a little to one side'), findsOneWidget);
+    expect(find.text('Turn your head to one side'), findsOneWidget);
+    expect(find.byKey(const ValueKey('face-steps')), findsOneWidget);
     if (prefix != null) await shot(tester, '$prefix-turn');
-    _camera.liveness.turned = true;
+    liveness.turned = true;
     _camera.sees(FaceSignal.detected);
     await tester.pump();
-    expect(find.text('Blink your eye'), findsOneWidget);
+    expect(find.text('Now face the camera'), findsOneWidget);
+    liveness.faced = true;
+    _camera.sees(FaceSignal.detected);
+    await tester.pump();
+    expect(find.text('Blink now'), findsOneWidget);
     if (prefix != null) await shot(tester, '$prefix-blink');
-    _camera.liveness.blinked = true;
+    liveness.blinked = true;
     _camera.sees(FaceSignal.detected);
     await tester.pump();
     expect(find.text('Hold still'), findsOneWidget);
-    // Held: the page goes white for the flash, and the face lights up.
+    // Held: the page takes the first colour, the face takes it too; then the
+    // second. The selfie follows.
+    var light = const FaceLight(90, 128, 128);
+    liveness.setLight(light);
     await tester.pump(FaceAutoCapture.hold);
     await tester.pump();
-    expect(find.byKey(const ValueKey('face-flash')), findsOneWidget);
-    if (prefix != null) await shot(tester, '$prefix-flash');
-    _camera.liveness.flashOff(_camera.liveness.lumaNow + 20);
-    await tester.pump(FaceAutoCapture.flash);
+    for (var i = 0; i < 2; i++) {
+      final flash = find.byKey(const ValueKey('face-flash'));
+      expect(flash, findsOneWidget);
+      expect((tester.widget<ColoredBox>(flash)).color, liveness.colours[i].color);
+      if (prefix != null && i == 0) await shot(tester, '$prefix-flash');
+      // Each colour is judged against the light before the first, so each
+      // answer is from that same base, not stacked on the last.
+      liveness.setLight(FaceRealness.answering(liveness.colours[i], light));
+      await tester.pump(FaceAutoCapture.flash);
+      await tester.pump();
+      expect(find.byKey(const ValueKey('face-flash')), findsNothing);
+      if (i == 0) await tester.pump(FaceAutoCapture.flashGap);
+    }
     await tester.pump(const Duration(milliseconds: 400));
   }
 
@@ -402,23 +422,30 @@ void main() {
   );
 
   testWidgets(
-    'a failed check: the reason, Try Again and the day\'s tries left; once they are spent, the manager approves',
+    'a failed check: the reason and the day\'s tries left, then the prompts resume on their own; once the tries are spent, the manager approves',
     (tester) async {
       await open(tester, enrolled: true);
       await slideAndLocate(tester);
       await tester.tap(find.text('Verify face id'));
       await tester.pumpAndSettle();
 
-      // The phone sees no face it is happy with: Face not detected.
-      _camera.waived = true;
+      // A try ran out of time: Face not detected, no button, and the prompts
+      // start over once the camera does.
+      _camera.lapsed = true;
       _camera.notifyListeners();
       await tester.pump();
       expect(find.text('Face not detected'), findsOneWidget);
-      expect(find.text('Try Again'), findsOneWidget);
+      expect(find.text('Try Again'), findsNothing);
+      expect(find.byType(FaceCaptureButton), findsNothing);
       expect(_count('/face/verify'), 0);
       await shot(tester, '21-face-not-detected');
+      _camera.lapsed = false;
+      _camera.liveness.reset();
+      _camera.notifyListeners();
+      await tester.pump();
 
-      // Try Again looks again; the server refuses the match: four tries left.
+      // The server refuses the match: the reason, four tries left, and after
+      // a moment the prompts again.
       _verify = {
         'passed': false,
         'reason': 'not_a_match',
@@ -426,14 +453,16 @@ void main() {
         'attemptsLeft': 4,
         'fallbackAvailable': false,
       };
-      await tester.tap(find.text('Try Again'));
-      await tester.pump();
       await answerPrompts(tester);
       await tester.pumpAndSettle();
       expect(_count('/face/verify'), 1);
       expect(find.text('Face not matched'), findsOneWidget);
       expect(find.text('4 out of 5 tries left'), findsOneWidget);
+      expect(find.byType(FaceCaptureButton), findsNothing);
       await shot(tester, '22-face-not-matched-tries-left');
+      await tester.pump(FaceCheckScreen.failPause);
+      await tester.pump();
+      expect(find.text('Face not matched'), findsNothing);
 
       // The fifth failure of the day: the punch goes to the manager.
       _verify = {
@@ -443,12 +472,10 @@ void main() {
         'attemptsLeft': 0,
         'fallbackAvailable': true,
       };
-      await tester.tap(find.text('Try Again'));
-      await tester.pump();
       await answerPrompts(tester);
       await tester.pumpAndSettle();
       expect(find.text('Send punch-in to manager'), findsOneWidget);
-      expect(find.text('Your manager or HR approves the punch-in.'), findsOneWidget);
+      expect(find.text('0 out of 5 tries left'), findsOneWidget);
       await shot(tester, '23-out-of-tries-manager');
       await tester.tap(find.text('Send punch-in to manager'));
       await tester.pumpAndSettle();

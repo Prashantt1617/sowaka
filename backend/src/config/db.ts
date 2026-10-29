@@ -101,6 +101,17 @@ export function getDb(): Db {
 }
 
 /** Every Face ID check, pass or fail; a passed one carries its single-use punch token. */
+export interface FacePhoneLog {
+  org: string;
+  userId: string;
+  at: Date;
+  summary: string;
+}
+/** Face ID tries as the phones saw them (face-id.service logPhoneTry); expire after 30 days. */
+export function facePhoneLogs(): Collection<FacePhoneLog> {
+  return getDb().collection<FacePhoneLog>('face_phone_logs');
+}
+
 export function faceVerifications(): Collection<FaceVerification> {
   return getDb().collection<FaceVerification>('face_verifications');
 }
@@ -401,6 +412,9 @@ async function ensureIndexes(database: Db): Promise<void> {
   await database.collection('paid_days_templates').createIndex({ org: 1, code: 1 }, { unique: true });
   // The reads name people and days but not the org, which the unique key leads with.
   await database.collection('attendance_overrides').createIndex({ userId: 1, workDate: 1 });
+  // The phones' Face ID try records: read by person and time, gone after 30 days.
+  await database.collection('face_phone_logs').createIndex({ org: 1, userId: 1, at: -1 });
+  await database.collection('face_phone_logs').createIndex({ at: 1 }, { expireAfterSeconds: 30 * 24 * 3600 });
   await database
     .collection<OtpChallenge>('otp_challenges')
     .createIndex({ email: 1 }, { unique: true });

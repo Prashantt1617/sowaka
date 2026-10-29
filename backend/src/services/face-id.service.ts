@@ -1,8 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import sharp from 'sharp';
 import {
-  attendanceRecords, attendanceRegularizations, companies, faceLivenessSessions, faceVerifications, offices, users,
-} from '../config/db';
+  attendanceRecords, attendanceRegularizations, companies, faceLivenessSessions, faceVerifications, offices, users, facePhoneLogs } from '../config/db';
 import { env } from '../config/env';
 import { AttendanceRegularization, FaceCheckNote, PunchFaceCheck } from '../models/attendance.model';
 import {
@@ -234,7 +233,7 @@ function failure(reason: FaceCheckReason, extra: Record<string, unknown> = {}) {
 
 export async function enrolFace(
   userId: string,
-  input: { photo?: Buffer; consent?: unknown; consentVersion?: unknown },
+  input: { photo?: Buffer; consent?: unknown; consentVersion?: unknown; challenge?: unknown },
 ) {
   const user = await personFor(userId);
   const org = user.org!;
@@ -261,7 +260,9 @@ export async function enrolFace(
   const image = await normalise(input.photo);
   const collectionId = collectionIdFor(org);
   const engine = faceEngine();
-  const base = { org, userId, kind: 'enrol' as const, at: new Date(), liveness: { mode: 'none' as const } };
+  // What the phone asked for and measured (turn, blink, the colour flashes), kept for tuning.
+  const challenge = typeof input.challenge === 'string' ? input.challenge.slice(0, 80) : undefined;
+  const base = { org, userId, kind: 'enrol' as const, at: new Date(), liveness: { mode: 'none' as const, challenge } };
   /**
    * A failed setup, logged, with the tries left: at a punch it is that
    * punch's check, so three of them open the manager fallback as checks do.
@@ -385,7 +386,8 @@ export async function verifyFace(
 
   const started = Date.now();
   const engine = faceEngine();
-  const challenge = typeof input.challenge === 'string' ? input.challenge.slice(0, 40) : undefined;
+  // What the phone asked for and measured: the prompts, the colour flashes, the screen detector's score.
+  const challenge = typeof input.challenge === 'string' ? input.challenge.slice(0, 80) : undefined;
   let liveness: FaceVerification['liveness'] = env.face.liveness
     ? { mode: 'aws' }
     : { mode: 'device', challenge, devicePassed: input.devicePassed === true || input.devicePassed === 'true' };
@@ -644,6 +646,19 @@ export async function pruneFaceLog(options: { apply?: boolean; now?: Date } = {}
  * face would keep matching; on an employee's deletion the caller logs and
  * carries on.
  */
+/**
+ * One try as the phone saw it ("0.0 prompts done | 3.4 spoof 0.41 0.38 0.44 |
+ * 5.1 captured r+1.2/-0.3 b+2.0/+0.1 s0.41/0.38/0.44"), kept 30 days with the
+ * person and the time, so the phone's own checks can be tuned on what real
+ * phones measure. Never refused: a bad line is just dropped.
+ */
+export async function logPhoneTry(userId: string, summaryInput: unknown) {
+  const summary = typeof summaryInput === 'string' ? summaryInput.trim().slice(0, 600) : '';
+  if (!summary) return;
+  const user = await users().findOne({ userId }, { projection: { _id: 0, org: 1 } });
+  await facePhoneLogs().insertOne({ org: user?.org ?? '', userId, at: new Date(), summary });
+}
+
 export async function forgetFace(user: Pick<User, 'userId' | 'org' | 'faceId'>, by?: string) {
   const enrolment = user.faceId;
   if (!enrolment?.faceId) return { removed: false };

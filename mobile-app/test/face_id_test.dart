@@ -207,9 +207,10 @@ Future<void> _faceHeld(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-/// Try Again: it looks again, and the selfie follows once the face has held.
+/// After a refusal there is nothing to press: the reason shows for a moment,
+/// the prompts resume on their own, and the selfie follows once the face has held.
 Future<void> _tryAgain(WidgetTester tester) async {
-  await tester.tap(find.text('Try Again'));
+  await tester.pump(FaceCheckScreen.failPause + const Duration(milliseconds: 50));
   await tester.pump();
   await tester.pump(FaceAutoCapture.hold);
   await tester.pumpAndSettle();
@@ -512,10 +513,11 @@ void main() {
       expect(find.text('Face not matched'), findsOneWidget);
       expect(find.text('Send punch-out to manager'), findsOneWidget);
       expect(
-        find.text('Your manager or HR approves the punch-out.'),
+        find.text('0 out of 3 tries left'),
         findsOneWidget,
       );
-      expect(find.text('Take another selfie'), findsOneWidget);
+      // Nothing more under it (4289:26675): no second line, no link.
+      expect(find.text('Take another selfie'), findsNothing);
       _expectNoResult();
       await tester.tap(find.text('Send punch-out to manager'));
       await tester.pumpAndSettle();
@@ -593,11 +595,11 @@ void main() {
     await _faceHeld(tester);
     expect(find.text('Face not matched'), findsOneWidget);
     expect(
-      find.text('Your manager or HR approves the punch-in.'),
+      find.text('0 out of 3 tries left'),
       findsOneWidget,
     );
     expect(find.text('Try Again'), findsNothing);
-    expect(find.textContaining('tries left'), findsNothing);
+    expect(find.textContaining('tries left'), findsOneWidget);
     _expectNoResult();
     await tester.tap(find.text('Send punch-in to manager'));
     await tester.pumpAndSettle();
@@ -891,10 +893,11 @@ void main() {
       expect(_cameraButton, findsNothing);
       await _faceHeld(tester);
       expect(_count('/face/enrol'), 1);
-      // The failed try (4266:26076): the reason, Try Again, the tries left.
+      // The failed try (4289:26675): the reason and the tries left, no button;
+      // the prompts resume on their own.
       expect(find.text('Too dark'), findsOneWidget);
-      expect(find.text('Try Again'), findsOneWidget);
-      expect(_live(tester, _cameraButton), isTrue);
+      expect(find.text('Try Again'), findsNothing);
+      expect(_cameraButton, findsNothing);
       expect(find.text('2 out of 3 tries left'), findsOneWidget);
       expect(
         find.text("It's too dark. Move to a brighter spot or face a light."),
@@ -912,10 +915,10 @@ void main() {
       expect(find.text('Try Again'), findsNothing);
       expect(find.text('Send punch-out to manager'), findsOneWidget);
       expect(
-        find.text('Your manager or HR approves the punch-out.'),
+        find.text('0 out of 3 tries left'),
         findsOneWidget,
       );
-      expect(find.text('Try setting up again'), findsOneWidget);
+      expect(find.text('Try setting up again'), findsNothing);
       await tester.tap(find.text('Send punch-out to manager'));
       await tester.pumpAndSettle();
       expect(_fallbackBody, contains('"type":"out"'));
@@ -1024,37 +1027,29 @@ void main() {
   );
 
   testWidgets(
-    'no face read in time: Face not detected, the dark camera and Try Again, which looks again',
+    'a try that ran out of time: Face not detected, no button, and the prompts start over on their own',
     (tester) async {
       final opened = await _openCheck(
         tester,
         _server(verify: {'passed': true, 'token': 'tok'}),
       );
-      // The phone saw no face it was happy with: after its patience, the
-      // failure screen (4266:26076), though nothing was sent.
       _camera.sees(FaceSignal.notDetected, prompted: true);
       await tester.pump();
       expect(_cameraButton, findsNothing);
-      _camera.waived = true;
+      // The camera's 30 s ran out: the failure screen (4289:26675), nothing sent.
+      _camera.lapsed = true;
       _camera.notifyListeners();
       await tester.pump();
       expect(_count('/face/verify'), 0);
       expect(find.text('Face not detected'), findsOneWidget);
-      expect(find.text('Try Again'), findsOneWidget);
-      expect(
-        find.text(
-          'Keep your face inside the oval, then turn your head and blink when asked.',
-        ),
-        findsOneWidget,
-      );
-      expect(_live(tester, _cameraButton), isTrue);
+      expect(find.text('Try Again'), findsNothing);
+      expect(_cameraButton, findsNothing);
       expect(_tick, findsNothing);
-      expect(find.text(_detectedLine), findsNothing);
-      // Try Again never sends a selfie by itself — a photo could skip the
-      // checks that way — it looks again, and the selfie follows the face.
-      await tester.tap(find.text('Try Again'));
+      // The camera starts over by itself; the selfie follows the face.
+      _camera.lapsed = false;
+      _camera.liveness.reset();
+      _camera.notifyListeners();
       await tester.pump();
-      expect(_count('/face/verify'), 0);
       expect(find.text('Face not detected'), findsNothing);
       await _faceHeld(tester);
       expect(_count('/face/verify'), 1);
@@ -1066,7 +1061,7 @@ void main() {
   );
 
   testWidgets(
-    'after a failed check Try Again comes back, locked while the face is out, with the tries left',
+    'after a failed check the reason shows with the tries left, and the next look comes on its own once the face is back',
     (tester) async {
       await _openCheck(
         tester,
@@ -1086,9 +1081,7 @@ void main() {
       await _faceHeld(tester);
       expect(_count('/face/verify'), 1);
       expect(find.text('Face not matched'), findsOneWidget);
-      expect(_cameraButton, findsOneWidget);
-      expect(find.text('Try Again'), findsOneWidget);
-      expect(_live(tester, _cameraButton), isTrue);
+      expect(_cameraButton, findsNothing);
       expect(find.text('2 out of 3 tries left'), findsOneWidget);
       expect(
         find.text("This doesn't match the face set up for your account."),
@@ -1096,19 +1089,14 @@ void main() {
       );
       expect(find.text('Send punch-in to manager'), findsNothing);
       _expectNoResult();
-      // The face out of the oval: the button stays, locked.
+      // The face out of the oval when the prompts resume: nothing is sent.
       _camera.sees(FaceSignal.notDetected, prompted: true);
-      await tester.pump();
-      expect(_cameraButton, findsOneWidget);
-      expect(_live(tester, _cameraButton), isFalse);
-      await tester.tap(find.text('Try Again'));
-      await tester.pump();
+      await tester.pump(FaceCheckScreen.failPause + const Duration(milliseconds: 50));
+      await tester.pump(FaceAutoCapture.hold);
       expect(_count('/face/verify'), 1);
-      // Back in the oval within the flicker: no automatic try, the tap takes it.
-      _camera.sees(FaceSignal.detected, prompted: true);
-      await tester.pump();
-      expect(_live(tester, _cameraButton), isTrue);
-      await _tryAgain(tester);
+      expect(find.text('Face not matched'), findsNothing);
+      // Back in the oval and held: the next selfie, on its own.
+      await _faceHeld(tester);
       expect(_count('/face/verify'), 2);
     },
   );
@@ -1126,9 +1114,9 @@ void main() {
     expect(find.text('Face check unavailable'), findsOneWidget);
     expect(
       find.text('The camera did not take the photo. Try again.'),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(find.text('Try Again'), findsOneWidget);
+    expect(find.text('Try Again'), findsNothing);
     _expectNoResult();
     _camera.photo = Uint8List.fromList([0xff, 0xd8, 0xff, 0xe0]);
     await _tryAgain(tester);
@@ -1140,7 +1128,7 @@ void main() {
   });
 
   testWidgets(
-    'a failed check is not retried on its own until the face leaves and comes back',
+    'a failed check is not retried while its reason shows; then the next look comes on its own',
     (tester) async {
       await _openCheck(
         tester,
@@ -1148,7 +1136,7 @@ void main() {
           verify: {
             'passed': false,
             'reason': 'not_a_match',
-            'message': "This doesn't match the face set up for your account.",
+            'message': 'No match.',
             'attemptsLeft': 2,
             'fallbackAvailable': false,
           },
@@ -1159,35 +1147,21 @@ void main() {
       await tester.pumpAndSettle();
       expect(_count('/face/verify'), 1);
       expect(find.text('Face not matched'), findsOneWidget);
-      expect(find.text('Try Again'), findsOneWidget);
+      expect(find.text('Try Again'), findsNothing);
 
-      // Still in the oval, frame after frame: nothing more.
+      // Still in the oval while the reason shows: nothing more.
       for (var i = 0; i < 5; i += 1) {
         _camera.sees(FaceSignal.detected, prompted: true);
         await tester.pump(const Duration(milliseconds: 400));
       }
       expect(_count('/face/verify'), 1);
 
-      // A flicker of one frame is not leaving.
-      _camera.sees(FaceSignal.notDetected, prompted: true);
-      await tester.pump(const Duration(milliseconds: 100));
-      _camera.sees(FaceSignal.detected, prompted: true);
-      await tester.pump(const Duration(seconds: 2));
-      expect(_count('/face/verify'), 1);
-
-      // Gone, then back: the next try is automatic again.
-      _camera.sees(FaceSignal.notDetected, prompted: true);
-      await tester.pump(
-        FaceAutoCapture.away + const Duration(milliseconds: 100),
-      );
+      // The reason's moment over: the prompts again, and the selfie follows.
+      await tester.pump(const Duration(milliseconds: 300));
       _camera.sees(FaceSignal.detected, prompted: true);
       await tester.pump(FaceAutoCapture.hold);
       await tester.pumpAndSettle();
       expect(_count('/face/verify'), 2);
-
-      // A tap still takes one by hand.
-      await _tryAgain(tester);
-      expect(_count('/face/verify'), 3);
     },
   );
 
@@ -1222,7 +1196,7 @@ void main() {
     },
   );
 
-  testWidgets('a failed setup is not retried on its own while the face stays', (
+  testWidgets('a failed setup shows why for a moment, then tries again on its own', (
     tester,
   ) async {
     _enrolReply = () => http.Response(
@@ -1242,19 +1216,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(_count('/face/enrol'), 1);
     expect(find.text('Too dark'), findsOneWidget);
-    expect(find.text('Try Again'), findsOneWidget);
+    expect(find.text('Try Again'), findsNothing);
+    expect(_cameraButton, findsNothing);
     expect(find.text('2 out of 3 tries left'), findsOneWidget);
+    // While the reason shows: nothing more, however long the face stays.
     _camera.sees(FaceSignal.detected, prompted: true);
-    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(seconds: 2));
     expect(_count('/face/enrol'), 1);
-    // Out of the oval: Try Again locked, and nothing taken.
-    _camera.sees(FaceSignal.notDetected, prompted: true);
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(_live(tester, _cameraButton), isFalse);
-    await tester.tap(find.text('Try Again'));
-    await tester.pump(const Duration(seconds: 1));
-    expect(_count('/face/enrol'), 1);
-    // Gone and back: the next try is automatic again, as on the check.
+    // Its moment over: the prompts again, and the next selfie on its own.
+    await tester.pump(const Duration(milliseconds: 300));
     _camera.sees(FaceSignal.detected, prompted: true);
     await tester.pump(FaceAutoCapture.hold);
     await tester.pumpAndSettle();
@@ -1262,7 +1232,6 @@ void main() {
     expect(find.text('Too dark'), findsOneWidget);
   });
 
-  // The screens as PNGs (393x852 @2x), only when SCREENSHOTS names a folder.
   group('screenshots', () {
     setUpAll(() async {
       for (final (family, file) in [
@@ -1423,28 +1392,39 @@ void main() {
     });
 
     testWidgets(
-      'the check: the page goes white for the flash, then the selfie',
+      'the check: the page takes two colours for the light check, then the selfie',
       (tester) async {
         FaceAutoCapture.checkLiveness = true;
         addTearDown(() => FaceAutoCapture.checkLiveness = false);
         await pumpScreen(tester, () => FaceCheckScreen(api: api()));
         await settle(tester);
-        // The turn and the blink answered, the flash still owed.
-        _camera.liveness.turned = true;
-        _camera.liveness.blinked = true;
+        // The prompts answered, the light check still owed.
+        final liveness = _camera.liveness;
+        liveness.turned = true;
+        liveness.faced = true;
+        liveness.blinked = true;
         _camera.sees(FaceSignal.detected);
         await tester.pump();
         expect(find.text('Hold still'), findsOneWidget);
+        var light = const FaceLight(90, 128, 128);
+        liveness.setLight(light);
         await tester.pump(FaceAutoCapture.hold);
         await tester.pump();
-        expect(find.byKey(const ValueKey('face-flash')), findsOneWidget);
-        expect(_count('/face/verify'), 0);
-        await shoot('check-flash');
-        // Lit up under it: the selfie follows.
-        _camera.liveness.flashOff(_camera.liveness.lumaNow + 20);
-        await tester.pump(FaceAutoCapture.flash);
-        await tester.pump();
-        expect(find.byKey(const ValueKey('face-flash')), findsNothing);
+        // The first colour, which the face takes; then the second; then the selfie.
+        for (var i = 0; i < 2; i++) {
+          final flash = find.byKey(const ValueKey('face-flash'));
+          expect(flash, findsOneWidget);
+          expect(tester.widget<ColoredBox>(flash).color, liveness.colours[i].color);
+          expect(_count('/face/verify'), 0);
+          if (i == 0) await shoot('check-flash');
+          // Each colour is judged against the light before the first, so each
+          // answer is from that same base, not stacked on the last.
+          liveness.setLight(FaceRealness.answering(liveness.colours[i], light));
+          await tester.pump(FaceAutoCapture.flash);
+          await tester.pump();
+          expect(find.byKey(const ValueKey('face-flash')), findsNothing);
+          if (i == 0) await tester.pump(FaceAutoCapture.flashGap);
+        }
         await settle(tester);
         expect(_count('/face/verify'), 1);
         expect(find.text(_detectedLine), findsOneWidget);
@@ -1471,7 +1451,7 @@ void main() {
       await _faceHeld(tester);
       expect(_count('/face/verify'), 1);
       expect(find.text('Face not detected'), findsOneWidget);
-      expect(find.text('Try Again'), findsOneWidget);
+      expect(find.text('Try Again'), findsNothing);
       expect(find.text('2 out of 3 tries left'), findsOneWidget);
       expect(_tick, findsNothing);
       await settle(tester);

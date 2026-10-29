@@ -1,8 +1,10 @@
-// The phone's own checks that a face is a real one, fed made-up frames. A
-// head that turns swings its nose against the eye line; a photo turned the
-// same way keeps nose and eyes in step. Eyes that close and open again have
-// blinked; a photo's never close. Under the flash a lit face brightens; a
-// screen does not. Bright light skips the flash.
+// The phone's own checks that a face is a real one, fed made-up frames. The
+// prompts in order: a head that turns swings its nose against the eye line
+// (a photo turned the same way keeps them in step); back to the camera; a
+// blink, counted only once asked for. Then the light check: two colours
+// picked at random, each of which the face must take — its chroma moving
+// the colour's way and brightening — which a screen, making its own light,
+// does not.
 import 'dart:math';
 import 'dart:ui';
 
@@ -10,25 +12,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:mobile_app/features/face_id/face_camera.dart';
 
-/// A face of [eyes] px between the eyes, its nose base [noseX] px right of
-/// the point between them, turned [yaw] degrees as ML Kit reads it, with its
-/// eyes [open] (0 shut, 1 wide).
-Face _face({
-  double eyes = 100,
-  double noseX = 0,
-  double yaw = 0,
-  double? open = 1,
-}) => Face(
+Face _face({double eyes = 100, double noseX = 0, double yaw = 0, double? open = 1}) => Face(
   boundingBox: Rect.fromLTWH(0, 0, eyes * 3, eyes * 4),
   landmarks: {
-    FaceLandmarkType.leftEye: FaceLandmark(
-      type: FaceLandmarkType.leftEye,
-      position: const Point(100, 100),
-    ),
-    FaceLandmarkType.rightEye: FaceLandmark(
-      type: FaceLandmarkType.rightEye,
-      position: Point(100 + eyes.round(), 100),
-    ),
+    FaceLandmarkType.leftEye: FaceLandmark(type: FaceLandmarkType.leftEye, position: const Point(100, 100)),
+    FaceLandmarkType.rightEye: FaceLandmark(type: FaceLandmarkType.rightEye, position: Point(100 + eyes.round(), 100)),
     FaceLandmarkType.noseBase: FaceLandmark(
       type: FaceLandmarkType.noseBase,
       position: Point(100 + (eyes / 2 + noseX).round(), 160),
@@ -40,97 +28,140 @@ Face _face({
   rightEyeOpenProbability: open,
 );
 
+const _dim = FaceLight(90, 128, 128);
+
 void main() {
-  test('the line asks for the turn, then the blink, then nothing', () {
-    final r = FaceRealness();
-    r.seeFace(_face(), 1000, 100);
-    expect(r.ask, 'Turn your head a little to one side');
+  test('the prompts, in order: turn, face the camera, blink; then nothing', () {
+    final r = FaceRealness(random: Random(1));
+    r.seeFace(_face(), 1000, _dim);
+    expect(r.ask, 'Turn your head to one side');
+    expect(r.step, 0);
     // Turned 15°, the nose 9 px (of 100 between the eyes) off the eye line.
-    r.seeFace(_face(eyes: 97, noseX: 9, yaw: 15), 1000, 100);
+    r.seeFace(_face(eyes: 97, noseX: 9, yaw: 15), 1000, _dim);
     expect(r.turned, isTrue);
-    expect(r.ask, 'Blink your eye');
-    r.seeFace(_face(open: 0.1), 1000, 100);
-    expect(r.blinked, isFalse);
-    r.seeFace(_face(open: 0.9), 1000, 100);
+    expect(r.ask, 'Now face the camera');
+    expect(r.step, 1);
+    r.seeFace(_face(yaw: 2), 1000, _dim);
+    expect(r.faced, isTrue);
+    expect(r.ask, 'Blink now');
+    expect(r.step, 2);
+    r.seeFace(_face(open: 0.1), 1000, _dim);
+    r.seeFace(_face(open: 0.9), 1000, _dim);
     expect(r.blinked, isTrue);
     expect(r.challengesDone, isTrue);
+    expect(r.step, 3);
     expect(r.ask, isNull);
   });
 
   test('a photo turned the same way has not turned: its nose stays put', () {
-    final r = FaceRealness();
-    r.seeFace(_face(), 1000, 100);
-    // Flat: the eyes narrow with the turn and the nose narrows with them.
-    r.seeFace(_face(eyes: 97, noseX: 1, yaw: 15), 1000, 100);
-    r.seeFace(_face(eyes: 94, noseX: 2, yaw: 20), 1000, 100);
+    final r = FaceRealness(random: Random(1));
+    r.seeFace(_face(), 1000, _dim);
+    r.seeFace(_face(eyes: 97, noseX: 1, yaw: 15), 1000, _dim);
+    r.seeFace(_face(eyes: 94, noseX: 2, yaw: 20), 1000, _dim);
     expect(r.turned, isFalse);
   });
 
-  test('a nose that drifts without the head turning is not a turn', () {
-    final r = FaceRealness();
-    r.seeFace(_face(), 1000, 100);
-    r.seeFace(_face(noseX: 9, yaw: 3), 1000, 100);
-    expect(r.turned, isFalse);
-  });
-
-  test('a blink counts before the turn is asked for', () {
-    final r = FaceRealness();
-    r.seeFace(_face(open: 0.2), 1000, 100);
-    r.seeFace(_face(open: 0.8), 1000, 100);
-    expect(r.blinked, isTrue);
-    expect(r.ask, 'Turn your head a little to one side');
-    r.seeFace(_face(eyes: 97, noseX: 9, yaw: 15), 1000, 100);
-    expect(r.challengesDone, isTrue);
-  });
-
-  test('eyes half shut are neither closed nor a blink', () {
-    final r = FaceRealness();
-    r.seeFace(_face(open: 0.5), 1000, 100);
-    r.seeFace(_face(open: 0.9), 1000, 100);
+  test('a blink before it is asked for does not count', () {
+    final r = FaceRealness(random: Random(1));
+    r.seeFace(_face(open: 0.1), 1000, _dim);
+    r.seeFace(_face(open: 0.9), 1000, _dim);
     expect(r.blinked, isFalse);
+    r.seeFace(_face(eyes: 97, noseX: 9, yaw: 15), 1000, _dim);
+    r.seeFace(_face(yaw: 1), 1000, _dim);
+    expect(r.faced, isTrue);
+    expect(r.blinked, isFalse);
+    r.seeFace(_face(open: 0.1), 1000, _dim);
+    r.seeFace(_face(open: 0.9), 1000, _dim);
+    expect(r.blinked, isTrue);
   });
 
-  test('a real face brightens under the flash; a screen does not', () {
-    final lit = FaceRealness();
-    lit.seeFace(_face(), 1000, 90);
-    lit.flashOn();
-    lit.flashOff(104);
-    expect(lit.lit, isTrue);
-
-    final screen = FaceRealness();
-    screen.seeFace(_face(), 1000, 90);
-    screen.flashOn();
-    screen.flashOff(91);
-    expect(screen.lit, isFalse);
+  test('two different colours are picked for the flash, afresh each try', () {
+    final r = FaceRealness(random: Random(7));
+    expect(r.colours, hasLength(2));
+    expect(r.colours[0], isNot(r.colours[1]));
+    final seen = <String>{};
+    for (var i = 0; i < 20; i++) {
+      r.reset();
+      seen.add('${r.colours[0].name}>${r.colours[1].name}');
+    }
+    expect(seen.length, greaterThan(2));
   });
 
-  test('in bright light the flash is skipped, and the prompts alone pass', () {
-    final r = FaceRealness();
-    r.seeFace(_face(open: 0.1), 1000, 200);
-    r.seeFace(_face(eyes: 97, noseX: 9, yaw: 15, open: 0.9), 1000, 200);
-    expect(r.flashUseful, isFalse);
-    expect(r.passed, isTrue);
+  test('skin takes the colour: red raises Cr, blue raises Cb, green lowers both', () {
+    expect(FaceRealness.answers(FlashColour.red, _dim, const FaceLight(96, 127, 134)), isTrue);
+    expect(FaceRealness.answers(FlashColour.blue, _dim, const FaceLight(96, 134, 127)), isTrue);
+    expect(FaceRealness.answers(FlashColour.green, _dim, const FaceLight(96, 124, 124)), isTrue);
+    // The wrong colour, or no colour at all, is not an answer.
+    expect(FaceRealness.answers(FlashColour.red, _dim, const FaceLight(96, 134, 127)), isFalse);
+    expect(FaceRealness.answers(FlashColour.blue, _dim, const FaceLight(96, 128, 128)), isFalse);
   });
 
-  test('the prompts answered but no flash yet: not passed', () {
-    final r = FaceRealness();
-    r.seeFace(_face(open: 0.1), 1000, 90);
-    r.seeFace(_face(eyes: 97, noseX: 9, yaw: 15, open: 0.9), 1000, 90);
-    expect(r.challengesDone, isTrue);
-    expect(r.passed, isFalse);
+  test('a screen makes its own light: brighter but no colour, and it fails', () {
+    expect(FaceRealness.answers(FlashColour.red, const FaceLight(180, 128, 128), const FaceLight(185, 128.4, 128.6)), isFalse);
+    // Or nothing changes at all.
+    expect(FaceRealness.answers(FlashColour.blue, const FaceLight(180, 128, 128), const FaceLight(180, 128, 128)), isFalse);
   });
 
-  test('reset starts every check over', () {
-    final r = FaceRealness();
-    r.seeFace(_face(open: 0.1), 1000, 90);
-    r.seeFace(_face(eyes: 97, noseX: 9, yaw: 15, open: 0.9), 1000, 90);
-    r.flashOn();
-    r.flashOff(120);
-    expect(r.passed, isTrue);
+  test('both flashes answered: lit; one not: not lit; and a report of what was measured', () {
+    final r = FaceRealness(random: Random(3));
+    r.setLight(_dim);
+    r.flashOn(0);
+    r.flashOff(0, FaceRealness.answering(r.colours[0], _dim));
+    expect(r.lit, isNull);
+    // A late, still-lit frame lands between the colours: it is not the
+    // baseline for the second, the reading before the first is.
+    r.setLight(FaceRealness.answering(r.colours[0], _dim));
+    r.flashOn(1);
+    r.flashOff(1, FaceRealness.answering(r.colours[1], _dim));
+    expect(r.lit, isTrue);
+    expect(r.report, matches(RegExp(r'^[rgb][-+]?\d+\.\d/[-+]?\d+\.\d [rgb][-+]?\d+\.\d/[-+]?\d+\.\d$')));
+
+    final s = FaceRealness(random: Random(3));
+    s.setLight(_dim);
+    s.flashOn(0);
+    s.flashOff(0, FaceRealness.answering(s.colours[0], _dim));
+    s.flashOn(1);
+    s.flashOff(1, _dim);
+    expect(s.lit, isFalse);
+    expect(s.passed, isFalse);
+  });
+
+  test('reset starts every check over, with new colours', () {
+    final r = FaceRealness(random: Random(5));
+    r.seeFace(_face(eyes: 97, noseX: 9, yaw: 15), 1000, _dim);
+    r.flashOn(0);
+    r.flashOff(0, _dim);
     r.reset();
     expect(r.turned, isFalse);
+    expect(r.faced, isFalse);
     expect(r.blinked, isFalse);
     expect(r.lit, isNull);
-    expect(r.ask, 'Turn your head a little to one side');
+    expect(r.report, '');
+    expect(r.ask, 'Turn your head to one side');
+  });
+
+  test('the light under a colour is the mean of its frames, and the flash alone can start over', () {
+    final r = FaceRealness(random: Random(9));
+    r.seeFace(_face(), 1000, _dim);
+    r.seeFace(_face(eyes: 97, noseX: 9, yaw: 15), 1000, _dim);
+    r.seeFace(_face(yaw: 1), 1000, _dim);
+    r.seeFace(_face(open: 0.1), 1000, _dim);
+    r.seeFace(_face(open: 0.9), 1000, _dim);
+    expect(r.challengesDone, isTrue);
+    r.flashOn(0);
+    r.seeFace(_face(), 1000, const FaceLight(94, 128, 132));
+    r.seeFace(_face(), 1000, const FaceLight(98, 128, 136));
+    expect(r.litMean(_dim).luma, closeTo(96, 1e-9));
+    expect(r.litMean(_dim).cr, closeTo(134, 1e-9));
+    r.flashOff(0, r.litMean(_dim));
+    final first = r.colours;
+    r.resetFlash();
+    // The prompts stand; only the flashes are new.
+    expect(r.challengesDone, isTrue);
+    expect(r.lit, isNull);
+    expect(r.report, '');
+    expect(r.litBy, [null, null]);
+    expect(r.colours, hasLength(2));
+    expect(r.colours == first, isFalse);
   });
 }

@@ -1,8 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import {
   enrolFace, faceIdOverviewForAdmin, FaceIdError, faceStatusFor, listFaceChecksForAdmin, requestFaceFallback,
-  resetFaceIdForAdmin, startLivenessSession, updateFaceIdSettingsForAdmin, verifyFace,
-} from '../services/face-id.service';
+  resetFaceIdForAdmin, startLivenessSession, updateFaceIdSettingsForAdmin, verifyFace, logPhoneTry } from '../services/face-id.service';
 
 function userId(req: Request) {
   if (!req.auth?.userId) throw new FaceIdError(401, 'Authentication required');
@@ -19,9 +18,17 @@ export async function enrol(req: Request, res: Response, next: NextFunction) {
   try {
     const body = req.body ?? {};
     const result = await enrolFace(userId(req), {
-      photo: req.file?.buffer, consent: body.consent, consentVersion: body.consentVersion,
+      photo: req.file?.buffer, consent: body.consent, consentVersion: body.consentVersion, challenge: body.challenge,
     });
     res.status(201).json({ success: true, ...result });
+  } catch (error) { next(error); }
+}
+
+/** One Face ID try as the phone saw it, for tuning the phone's own checks. */
+export async function phoneLog(req: Request, res: Response, next: NextFunction) {
+  try {
+    await logPhoneTry(userId(req), req.body?.summary);
+    res.status(201).json({ success: true });
   } catch (error) { next(error); }
 }
 

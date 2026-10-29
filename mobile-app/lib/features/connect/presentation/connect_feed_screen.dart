@@ -9469,7 +9469,7 @@ class _PollOptionEntry {
 }
 
 /// Dedicated poll editor sub-screen (item 7, Step A). Authors a question and
-/// up to 4 options (text or, cosmetically only, image) and pops the result
+/// up to 10 options (text or, cosmetically only, image) and pops the result
 /// back to the main composer without submitting anything to the backend.
 class _PollEditorPage extends StatefulWidget {
   const _PollEditorPage({this.initial});
@@ -9481,7 +9481,7 @@ class _PollEditorPage extends StatefulWidget {
 }
 
 class _PollEditorPageState extends State<_PollEditorPage> {
-  static const _maxOptions = 4;
+  static const _maxOptions = 10;
 
   late final TextEditingController _question;
   late final List<TextEditingController> _optionControllers;
@@ -9669,7 +9669,7 @@ class _PollEditorPageState extends State<_PollEditorPage> {
                           border: Border.all(color: const Color(0xFFEBEBEB)),
                         ),
                         child: const Text(
-                          "You've reached the max! Only 4 options can be added.",
+                          "You've reached the max! Only $_maxOptions options can be added.",
                           style: TextStyle(
                             color: Color(0xFF717171),
                             fontSize: 14,

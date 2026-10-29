@@ -47,6 +47,9 @@ class FaceSetupScreen extends StatefulWidget {
   /// selfie check (or, in onboarding, the way out).
   static Duration successPause = const Duration(milliseconds: 1500);
 
+  /// How long a refusal's reason stays on the camera before the prompts resume.
+  static Duration failPause = const Duration(milliseconds: 2200);
+
   @override
   State<FaceSetupScreen> createState() => _FaceSetupScreenState();
 }
@@ -98,6 +101,9 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _camera.addListener(_changed);
+    // Every try's record goes to the server, pass or fail, so the checks can
+    // be tuned on what phones actually measure.
+    _camera.onTryEnded = (summary) => unawaited(widget.api.logFaceTry(summary));
     unawaited(_camera.start());
     unawaited(_load());
   }
@@ -149,6 +155,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
   @override
   void dispose() {
     _onTimer?.cancel();
+    _failTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _camera.removeListener(_changed);
     _auto.dispose();
@@ -166,6 +173,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       _dismissed = false;
     });
     try {
+      _camera.noteCapture();
       final photo = await _camera.capture();
       if (photo == null) {
         _fail(
@@ -178,7 +186,11 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       // The consent's version goes with the photo: the server records when
       // they agreed, and to which line. The token it hands back is the punch's:
       // setting up is the first day's check.
-      _token = await widget.api.enrolFace(jpeg: photo, consentVersion: consent.version);
+      _token = await widget.api.enrolFace(
+        jpeg: photo,
+        consentVersion: consent.version,
+        challenge: _camera.liveness.challengesDone ? 'turn+blink+flash ${_camera.checkReport}' : 'none',
+      );
       FaceCheckOutcome.enrolledThisRun = true;
       if (!mounted) return;
       // "Verified" on the camera for a moment, then on to the punch.
@@ -268,13 +280,22 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     if (mounted) navigator.pop(outcome);
   }
 
+  /// A refused setup: the reason is said on the camera for a moment, then
+  /// the prompts start over on their own. No button to press.
   void _fail(String title, String message) {
     if (!mounted) return;
     setState(() {
       _problemTitle = title;
       _problem = message;
+      _dismissed = false;
+    });
+    _failTimer?.cancel();
+    _failTimer = Timer(FaceSetupScreen.failPause, () {
+      if (mounted && !_fallbackOpen) _lookAgain();
     });
   }
+
+  Timer? _failTimer;
 
   /// Try Again was tapped on a failed setup: the camera looks again, and
   /// the reason is off the screen until the next answer.
@@ -384,32 +405,21 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
             : _camera.start,
       );
     } else if (_problem != null && !_dismissed) {
-      // A failed setup (4266:26076): the reason, Try again, the tries left.
+      // A refused setup: the reason, in red, for a moment; then the prompts
+      // start over on their own. The tries left under it, nothing else.
       state = FaceCaptureState.failed;
-      line = _problemTitle ?? 'Try again';
-      action = FaceCaptureButton(
-        label: 'Try Again',
-        busy: _busy,
-        enabled: detected || signal == FaceSignal.unavailable,
-        onTap: signal == FaceSignal.unavailable ? _enrol : _lookAgain,
-      );
+      line = _problemTitle ?? 'Not set up';
       caption = tries != null && tries > 0
           ? '$tries out of $_maxAttempts ${tries == 1 ? 'try' : 'tries'} left'
-          : _problem;
-    } else if (_camera.waived) {
-      // The phone could not read a face in time, or it never turned and
-      // blinked (4266:26076): the dark camera, Face not detected, and Try
-      // Again looks again.
+          : null;
+    } else if (_camera.lapsed) {
+      // A try ran out of time (4289:26675): Face not detected, said for a
+      // moment, then the prompts start over on their own.
       state = FaceCaptureState.failed;
       line = 'Face not detected';
-      action = FaceCaptureButton(
-        label: 'Try Again',
-        busy: _busy,
-        onTap: _lookAgain,
-      );
       caption = tries != null && tries > 0
           ? '$tries out of $_maxAttempts ${tries == 1 ? 'try' : 'tries'} left'
-          : 'Keep your face inside the oval, then turn your head and blink when asked.';
+          : null;
     } else if (signal == FaceSignal.unavailable) {
       // This phone cannot find faces at all: the button takes the selfie.
       state = FaceCaptureState.looking;
@@ -424,12 +434,13 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       // once the phone's own checks are done — the turn, the blink, then
       // the flash.
       state = FaceCaptureState.looking;
-      line = detected
-          ? (FaceAutoCapture.checkLiveness ? _camera.liveness.ask : null) ??
-                'Hold still'
-          : signal == FaceSignal.notDetected
-          ? 'Keep your face inside the oval'
-          : 'Position your face inside the oval';
+      line = _camera.nudgeNow ??
+          (detected
+              ? (FaceAutoCapture.checkLiveness ? _camera.liveness.ask : null) ??
+                    'Hold still'
+              : signal == FaceSignal.notDetected
+              ? 'Keep your face inside the oval'
+              : 'Position your face inside the oval');
     }
     // Out of tries, or the service is down: the manager can be asked instead.
     if (_fallbackOpen && cameraProblem == null && !widget.onboarding) {
@@ -440,15 +451,8 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
         busy: _sendingFallback,
         onTap: _sendFallback,
       );
-      caption = 'Your manager or HR approves the $punchWord.';
-      below = detected
-          ? FaceQuietLink(
-              label: 'Try setting up again',
-              onCamera: true,
-              // Another look with the prompts, never a selfie straight away.
-              onTap: _busy ? null : _lookAgain,
-            )
-          : null;
+      // The tries are spent: said in the line under the button, nothing more.
+      caption = tries == 0 ? '0 out of $_maxAttempts tries left' : null;
     }
     return FaceCaptureLayout(
       heading: 'Set up your Face ID',
@@ -459,7 +463,10 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       caption: caption,
       below: below,
       busy: _busy && action == null,
-      flash: _auto.flashOnScreen,
+      flash: _auto.flashColour,
+      progress: state == FaceCaptureState.looking && FaceAutoCapture.checkLiveness
+          ? (_camera.liveness.step, FaceRealness.steps)
+          : null,
       onClose: close,
     );
   }
