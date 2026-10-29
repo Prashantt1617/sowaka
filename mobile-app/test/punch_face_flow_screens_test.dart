@@ -295,13 +295,13 @@ void main() {
     final liveness = _camera.liveness;
     _camera.sees(FaceSignal.detected);
     await tester.pump();
-    expect(find.text('Turn your head to one side'), findsOneWidget);
+    expect(find.text('Move your head to the left, then face the camera'), findsOneWidget);
     expect(find.byKey(const ValueKey('face-steps')), findsOneWidget);
     if (prefix != null) await shot(tester, '$prefix-turn');
     liveness.turned = true;
     _camera.sees(FaceSignal.detected);
     await tester.pump();
-    expect(find.text('Now face the camera'), findsOneWidget);
+    expect(find.text('Move your head to the left, then face the camera'), findsOneWidget);
     liveness.faced = true;
     _camera.sees(FaceSignal.detected);
     await tester.pump();

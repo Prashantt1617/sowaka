@@ -1,7 +1,9 @@
 import { NextFunction, Request, Response } from 'express';
 import {
-  enrolFace, faceIdOverviewForAdmin, FaceIdError, faceStatusFor, listFaceChecksForAdmin, requestFaceFallback,
-  resetFaceIdForAdmin, startLivenessSession, updateFaceIdSettingsForAdmin, verifyFace, logPhoneTry } from '../services/face-id.service';
+  enrolFace, faceIdOverviewForAdmin, FaceIdError, faceStatusFor, issueFaceChallenge, listFaceChecksForAdmin,
+  requestFaceFallback, resetFaceIdForAdmin, startLivenessSession, updateFaceIdSettingsForAdmin, verifyFace, logPhoneTry,
+  type FlashEvidence } from '../services/face-id.service';
+import { facePhotoFiles } from '../middleware/face-photo-upload.middleware';
 
 function userId(req: Request) {
   if (!req.auth?.userId) throw new FaceIdError(401, 'Authentication required');
@@ -19,9 +21,26 @@ export async function enrol(req: Request, res: Response, next: NextFunction) {
     const body = req.body ?? {};
     const result = await enrolFace(userId(req), {
       photo: req.file?.buffer, consent: body.consent, consentVersion: body.consentVersion, challenge: body.challenge,
+      evidence: evidenceFrom(req),
     });
     res.status(201).json({ success: true, ...result });
   } catch (error) { next(error); }
+}
+
+/**
+ * A light check for the next selfie: the id the selfie must answer with and
+ * the two colours to flash, good for a few minutes, used once.
+ */
+export async function challenge(req: Request, res: Response, next: NextFunction) {
+  try { res.status(201).json({ success: true, ...(await issueFaceChallenge(userId(req))) }); } catch (error) { next(error); }
+}
+
+/** The challenge id and the three face crops the server judges the light check from, when the app sent them. */
+function evidenceFrom(req: Request): FlashEvidence | undefined {
+  const files = facePhotoFiles(req);
+  const challengeId = req.body?.challengeId;
+  if (!files.baseline && !files.lit0 && !files.lit1 && typeof challengeId !== 'string') return undefined;
+  return { challengeId, baseline: files.baseline?.buffer, lit: [files.lit0?.buffer, files.lit1?.buffer] };
 }
 
 /** One Face ID try as the phone saw it, for tuning the phone's own checks. */
@@ -47,6 +66,7 @@ export async function verify(req: Request, res: Response, next: NextFunction) {
         livenessSessionId: body.livenessSessionId,
         challenge: body.challenge,
         devicePassed: body.devicePassed,
+        evidence: evidenceFrom(req),
       })),
     });
   } catch (error) { next(error); }

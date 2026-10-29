@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { enrol, faceStatus, fallback, livenessSession, phoneLog, verify } from '../controllers/face.controller';
+import { challenge, enrol, faceStatus, fallback, livenessSession, phoneLog, verify } from '../controllers/face.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { uploadFacePhoto } from '../middleware/face-photo-upload.middleware';
 
@@ -11,6 +11,8 @@ export const faceRouter = Router();
 faceRouter.use(requireAuth);
 faceRouter.get('/status', faceStatus);
 faceRouter.post('/enrol', uploadFacePhoto, enrol);
+// The light check for the next selfie: its id and colours, used once.
+faceRouter.post('/challenge', challenge);
 faceRouter.post('/liveness-session', livenessSession);
 faceRouter.post('/verify', uploadFacePhoto, verify);
 faceRouter.post('/fallback', fallback);

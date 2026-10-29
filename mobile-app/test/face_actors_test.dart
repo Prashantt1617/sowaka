@@ -116,11 +116,13 @@ class _RealPerson extends _Actor {
       _askedAt = ms;
     }
     final doing = ms - _askedAt >= 1000;
+    // One prompt covers the turn and the face back: turned from a second
+    // after it is asked until two and a half, then straight again.
+    final turning = doing && ms - _askedAt < 2500;
     return switch (ask) {
-      'Turn your head to one side' when doing => _reading(eyes: 96 + jitter(1), noseX: 10 + jitter(1), yaw: 17 + jitter(2), open: 0.9),
-      'Turn your head to one side' => _reading(eyes: 100 + jitter(1), noseX: jitter(1), yaw: jitter(2), open: 0.9),
-      'Now face the camera' when doing => _reading(eyes: 100 + jitter(1), noseX: jitter(1), yaw: jitter(2), open: 0.9),
-      'Now face the camera' => _reading(eyes: 96 + jitter(1), noseX: 10 + jitter(1), yaw: 17 + jitter(2), open: 0.9),
+      'Move your head to the left, then face the camera' when turning =>
+        _reading(eyes: 96 + jitter(1), noseX: 10 + jitter(1), yaw: 17 + jitter(2), open: 0.9),
+      'Move your head to the left, then face the camera' => _reading(eyes: 100 + jitter(1), noseX: jitter(1), yaw: jitter(2), open: 0.9),
       'Blink now' when doing && (ms - _askedAt) % 1000 < 200 => _reading(eyes: 100, noseX: jitter(1), yaw: jitter(2), open: 0.1),
       _ => _reading(eyes: 100 + jitter(1), noseX: jitter(1), yaw: jitter(2), open: 0.9 + jitter(0.05)),
     };

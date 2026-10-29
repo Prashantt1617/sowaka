@@ -1,11 +1,13 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 import sharp from 'sharp';
 import {
-  attendanceRecords, attendanceRegularizations, companies, faceLivenessSessions, faceVerifications, offices, users, facePhoneLogs } from '../config/db';
+  attendanceRecords, attendanceRegularizations, companies, faceChallenges, faceLivenessSessions, faceVerifications, offices, users,
+  facePhoneLogs } from '../config/db';
 import { env } from '../config/env';
 import { AttendanceRegularization, FaceCheckNote, PunchFaceCheck } from '../models/attendance.model';
 import {
-  FACE_CONSENT_AGREE, FACE_CONSENT_VERSION, FaceCheckReason, faceIdSettingsOf, FaceIdSettingsView, FaceVerification, UserFaceId,
+  FACE_CONSENT_AGREE, FACE_CONSENT_VERSION, FaceChallenge, FaceCheckReason, faceIdSettingsOf, FaceIdSettingsView, FaceVerification,
+  FlashColourName, UserFaceId,
 } from '../models/face.model';
 import { User } from '../models/user.model';
 import { requestViewer } from '../middleware/request-viewer';
@@ -102,28 +104,52 @@ async function enrolmentOf(userId: string): Promise<UserFaceId | undefined> {
  * counts. A failed setup counts like a failed check, since setup is the first
  * punch's check.
  */
-async function recentFailures(userId: string): Promise<{ failures: number; lastReason?: FaceCheckReason }> {
+/** The refusals that are about who the face is, not how the picture came out. */
+const IDENTITY_FAILURES: FaceCheckReason[] = ['not_a_match', 'other_person', 'already_enrolled_elsewhere'];
+
+interface FailureState {
+  /** Checks that matched nobody, or somebody else: what counts towards the day's tries. */
+  failures: number;
+  /** Checks that could not be judged: a poor picture, the light check unanswered, the service down. */
+  inconclusive: number;
+  lastReason?: FaceCheckReason;
+}
+
+async function recentFailures(userId: string): Promise<FailureState> {
   const since = startOfTodayIst();
   const rows = await faceVerifications()
     .find({ userId, kind: { $in: ['enrol', 'verify'] }, at: { $gte: since } }, { projection: { _id: 0, passed: 1, reason: 1, at: 1 } })
     .sort({ at: -1 })
-    .limit(env.face.maxAttempts + 5)
+    .limit(env.face.maxAttempts + env.face.inconclusiveFallback + 5)
     .toArray();
   let failures = 0;
+  let inconclusive = 0;
   for (const row of rows) {
     if (row.passed) break;
-    failures += 1;
+    if (IDENTITY_FAILURES.includes(row.reason)) failures += 1;
+    else inconclusive += 1;
   }
   // The service being down is a moment, not a day: it opens the fallback
   // only while it is recent.
   const last = rows[0];
   const recent = last?.at instanceof Date && Date.now() - last.at.getTime() < UNAVAILABLE_FALLBACK_MS;
   const lastReason = last?.reason === 'unavailable' && !recent ? undefined : last?.reason;
-  return { failures, lastReason };
+  return { failures, inconclusive, lastReason };
 }
 
-function fallbackOpen(state: { failures: number; lastReason?: FaceCheckReason }) {
-  return state.failures >= env.face.maxAttempts || state.lastReason === 'unavailable';
+/**
+ * When the day's punch may go to the manager instead: the face matched
+ * nobody (or somebody else) [maxAttempts] times, the check could not be
+ * judged [inconclusiveFallback] times (a camera or a room that will not
+ * give a usable picture is not a reason to lose the day), or the service
+ * is down right now.
+ */
+function fallbackOpen(state: FailureState) {
+  return (
+    state.failures >= env.face.maxAttempts ||
+    state.inconclusive >= env.face.inconclusiveFallback ||
+    state.lastReason === 'unavailable'
+  );
 }
 
 async function underHourlyCap(userId: string, kind: 'enrol' | 'verify', cap: number) {
@@ -159,6 +185,7 @@ export async function faceStatusFor(userId: string) {
       : { mode: 'device' as const },
     maxAttempts: env.face.maxAttempts,
     failedAttempts: state.failures,
+    inconclusiveAttempts: state.inconclusive,
     fallbackAvailable: settings.checkAtPunch && fallbackOpen(state),
   };
 }
@@ -233,7 +260,7 @@ function failure(reason: FaceCheckReason, extra: Record<string, unknown> = {}) {
 
 export async function enrolFace(
   userId: string,
-  input: { photo?: Buffer; consent?: unknown; consentVersion?: unknown; challenge?: unknown },
+  input: { photo?: Buffer; consent?: unknown; consentVersion?: unknown; challenge?: unknown; evidence?: FlashEvidence },
 ) {
   const user = await personFor(userId);
   const org = user.org!;
@@ -262,7 +289,15 @@ export async function enrolFace(
   const engine = faceEngine();
   // What the phone asked for and measured (turn, blink, the colour flashes), kept for tuning.
   const challenge = typeof input.challenge === 'string' ? input.challenge.slice(0, 80) : undefined;
-  const base = { org, userId, kind: 'enrol' as const, at: new Date(), liveness: { mode: 'none' as const, challenge } };
+  // The light check, judged here from the frames under the colours this
+  // server set: setting up is the first day's check, and a photo of a
+  // colleague must not become their face.
+  const judged = await judgeFlash(userId, input.evidence);
+  if (!judged && env.face.requireChallenge) {
+    throw new FaceIdError(426, 'Update the Sowaka app to continue with Face ID', { face: { reason: 'liveness_required', updateApp: true } });
+  }
+  const liveness: FaceVerification['liveness'] = judged ? { mode: 'server_flash', challenge, ...judged } : { mode: 'none', challenge };
+  const base = { org, userId, kind: 'enrol' as const, at: new Date(), liveness };
   /**
    * A failed setup, logged, with the tries left: at a punch it is that
    * punch's check, so three of them open the manager fallback as checks do.
@@ -276,6 +311,7 @@ export async function enrolFace(
     });
   };
   try {
+    if (judged && !judged.flashPassed) throw await refuse('liveness_failed', { error: judged.error });
     await engine.ensureCollection(collectionId);
     const faces = await engine.detectFaces(image);
     const problem = enrolmentProblem(faces);
@@ -376,7 +412,7 @@ export async function startLivenessSession(userId: string) {
  */
 export async function verifyFace(
   userId: string,
-  input: { photo?: Buffer; livenessSessionId?: unknown; challenge?: unknown; devicePassed?: unknown },
+  input: { photo?: Buffer; livenessSessionId?: unknown; challenge?: unknown; devicePassed?: unknown; evidence?: FlashEvidence },
 ) {
   const user = await personFor(userId);
   const org = user.org!;
@@ -401,7 +437,7 @@ export async function verifyFace(
       ...(token ? { tokenHash: hashToken(token), expiresAt } : {}),
       ...extra,
     });
-    const state = passed ? { failures: 0 } : await recentFailures(userId);
+    const state = passed ? { failures: 0, inconclusive: 0 } : await recentFailures(userId);
     const attemptsLeft = Math.max(0, env.face.maxAttempts - state.failures);
     return {
       passed,
@@ -434,6 +470,17 @@ export async function verifyFace(
     } else {
       if (!input.photo?.length) throw new FaceIdError(400, 'Take a photo of your face', { face: { reason: 'no_face' } });
       image = await normalise(input.photo);
+      // The light check, judged here from the frames under the colours this
+      // server set, not from the phone's word. A selfie with no challenge
+      // answered is an old app's: logged as unverified, and refused once
+      // every phone has the new one (FACE_REQUIRE_CHALLENGE).
+      const judged = await judgeFlash(userId, input.evidence);
+      if (judged) {
+        liveness = { mode: 'server_flash', challenge, ...judged };
+        if (!judged.flashPassed) return outcome('liveness_failed', { error: judged.error });
+      } else if (env.face.requireChallenge) {
+        throw new FaceIdError(426, 'Update the Sowaka app to continue with Face ID', { face: { reason: 'liveness_required', updateApp: true } });
+      }
     }
 
     // Matches are asked for from a lower bar than the pass mark, so a near
@@ -555,7 +602,9 @@ export async function requestFaceFallback(
     attendanceRecords().findOne({ employeeId: user.employeeId, workDate }),
     attendanceRegularizations().findOne({ userId, workDate, status: 'pending' }),
   ]);
-  const note: FaceCheckNote = { at, punchType: type, reason: state.lastReason ?? 'not_a_match', attempts: state.failures };
+  const note: FaceCheckNote = {
+    at, punchType: type, reason: state.lastReason ?? 'not_a_match', attempts: state.failures + state.inconclusive,
+  };
   if (type === 'in') {
     if (today?.punchIn) throw new FaceIdError(409, 'Already punched in today');
     if (pending) throw new FaceIdError(409, 'A request for today is already with your manager');
@@ -646,6 +695,144 @@ export async function pruneFaceLog(options: { apply?: boolean; now?: Date } = {}
  * face would keep matching; on an employee's deletion the caller logs and
  * carries on.
  */
+// --------------------------------------------------------- light check
+
+/** How long a challenge may wait for its selfie, and how many one person may ask for in an hour. */
+const CHALLENGE_TTL_MS = 3 * 60_000;
+const CHALLENGES_PER_HOUR = 60;
+const FLASH_COLOURS: FlashColourName[] = ['red', 'green', 'blue'];
+
+/**
+ * A light check for the next selfie: two of the three colours, picked here
+ * so the phone cannot know them in advance, with an id the selfie must
+ * answer with inside [CHALLENGE_TTL_MS]. Each is claimed once.
+ */
+export async function issueFaceChallenge(userId: string) {
+  const user = await personFor(userId);
+  const since = new Date(Date.now() - 60 * 60_000);
+  if ((await faceChallenges().countDocuments({ userId, createdAt: { $gte: since } })) >= CHALLENGES_PER_HOUR) {
+    throw new FaceIdError(429, 'Too many tries in the last hour. Wait a while, or send your punch-in to your manager.', {
+      face: { reason: 'rate_limited', fallback: true },
+    });
+  }
+  const first = randomInt(FLASH_COLOURS.length);
+  const second = (first + 1 + randomInt(FLASH_COLOURS.length - 1)) % FLASH_COLOURS.length;
+  const row: FaceChallenge = {
+    id: randomBytes(18).toString('base64url'),
+    org: user.org ?? '',
+    userId,
+    colours: [FLASH_COLOURS[first], FLASH_COLOURS[second]],
+    createdAt: new Date(),
+    expiresAt: new Date(Date.now() + CHALLENGE_TTL_MS),
+  };
+  await faceChallenges().insertOne(row);
+  return { id: row.id, colours: row.colours, expiresAt: row.expiresAt.toISOString() };
+}
+
+/** What the app sends with the selfie for the light check: the challenge it answers, and the face before and under each colour. */
+export interface FlashEvidence {
+  challengeId?: unknown;
+  baseline?: Buffer;
+  lit?: (Buffer | undefined)[];
+}
+
+/** The mean light on a face crop, as YCbCr (BT.601), over its middle. */
+export interface FaceLight {
+  luma: number;
+  cb: number;
+  cr: number;
+}
+
+export async function faceLightOf(crop: Buffer): Promise<FaceLight> {
+  const side = 48;
+  const raw = await sharp(crop, { failOn: 'none' }).rotate().resize(side, side, { fit: 'fill' }).removeAlpha().raw().toBuffer();
+  // The middle three fifths: cheeks and forehead, clear of hair and background.
+  const from = Math.round(side * 0.2);
+  const to = Math.round(side * 0.8);
+  let luma = 0;
+  let cb = 0;
+  let cr = 0;
+  let n = 0;
+  for (let y = from; y < to; y++) {
+    for (let x = from; x < to; x++) {
+      const i = (y * side + x) * 3;
+      const r = raw[i];
+      const g = raw[i + 1];
+      const b = raw[i + 2];
+      luma += 0.299 * r + 0.587 * g + 0.114 * b;
+      cb += 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+      cr += 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+      n += 1;
+    }
+  }
+  return { luma: luma / n, cb: cb / n, cr: cr / n };
+}
+
+/**
+ * Whether the face took [colour]: its chroma moved that colour's way by
+ * FACE_FLASH_CHROMA, more that way than any other, and it brightened by
+ * FACE_FLASH_BRIGHTEN. The same rule the phone applies to itself.
+ */
+export function flashAnswered(colour: FlashColourName, before: FaceLight, lit: FaceLight): boolean {
+  const dCb = lit.cb - before.cb;
+  const dCr = lit.cr - before.cr;
+  if (lit.luma - before.luma < env.face.flashBrighten) return false;
+  const needed = env.face.flashChroma;
+  switch (colour) {
+    case 'red':
+      return dCr >= needed && dCr > dCb;
+    case 'blue':
+      return dCb >= needed && dCb > dCr;
+    case 'green':
+      return dCb <= -needed / 2 && dCr <= -needed / 2;
+  }
+}
+
+export interface FlashJudgement {
+  challengeId: string;
+  colours: FlashColourName[];
+  /** What was measured, as the phone writes it ("r+5.1/-2.0 b+6.2/+0.3"). */
+  measured: string;
+  flashPassed: boolean;
+  error?: string;
+}
+
+/**
+ * The server's own light check: the challenge claimed (this person's, unused,
+ * not expired: once), then the face under each of its colours measured
+ * against the face before them. Null when the app sent nothing to judge.
+ */
+export async function judgeFlash(userId: string, evidence: FlashEvidence | undefined): Promise<FlashJudgement | null> {
+  if (!evidence) return null;
+  const challengeId = typeof evidence.challengeId === 'string' ? evidence.challengeId.slice(0, 64) : '';
+  const lit = evidence.lit ?? [];
+  if (!challengeId && !evidence.baseline && !lit.some(Boolean)) return null;
+  const refused = (error: string, colours: FlashColourName[] = []): FlashJudgement => ({
+    challengeId, colours, measured: '', flashPassed: false, error,
+  });
+  if (!challengeId) return refused('no challenge id');
+  const claimed = await faceChallenges().findOneAndUpdate(
+    { id: challengeId, userId, usedAt: { $exists: false }, expiresAt: { $gt: new Date() } },
+    { $set: { usedAt: new Date() } },
+  );
+  if (!claimed) return refused('challenge unknown, used or expired');
+  const colours = claimed.colours;
+  if (!evidence.baseline || colours.some((_, i) => !lit[i])) return refused('frames missing', colours);
+  try {
+    const before = await faceLightOf(evidence.baseline);
+    const parts: string[] = [];
+    let flashPassed = true;
+    for (let i = 0; i < colours.length; i++) {
+      const under = await faceLightOf(lit[i]!);
+      if (!flashAnswered(colours[i], before, under)) flashPassed = false;
+      parts.push(`${colours[i][0]}${(under.cb - before.cb).toFixed(1)}/${(under.cr - before.cr).toFixed(1)}`);
+    }
+    return { challengeId, colours, measured: parts.join(' '), flashPassed };
+  } catch (error) {
+    return refused(`frames unreadable: ${error instanceof Error ? error.message : String(error)}`, colours);
+  }
+}
+
 /**
  * One try as the phone saw it ("0.0 prompts done | 3.4 spoof 0.41 0.38 0.44 |
  * 5.1 captured r+1.2/-0.3 b+2.0/+0.1 s0.41/0.38/0.44"), kept 30 days with the
