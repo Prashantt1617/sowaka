@@ -206,7 +206,10 @@ export const env = {
      * sends. Lenient until calibrated from `npm run face:calibrate`.
      */
     flashChroma: clamp(Number(process.env.FACE_FLASH_CHROMA) || 1.5, 0.2, 20),
-    flashBrighten: clamp(Number(process.env.FACE_FLASH_BRIGHTEN) || 1, 0, 30),
+    /** Blue raises Cb less than red raises Cr on skin; green lowers both, judged as their sum. */
+    flashChromaBlue: clamp(Number(process.env.FACE_FLASH_CHROMA_BLUE) || 1, 0.2, 20),
+    flashChromaGreen: clamp(Number(process.env.FACE_FLASH_CHROMA_GREEN) || 1, 0.2, 20),
+    flashBrighten: clamp(Number(process.env.FACE_FLASH_BRIGHTEN) || 0.3, 0, 30),
     /**
      * `on`: a selfie without a server challenge answered is refused (apps
      * from before 1.3.9 (59) send none). Off, such a selfie is logged as

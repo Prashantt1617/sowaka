@@ -114,7 +114,7 @@ void main() {
     r.flashOn(1);
     r.flashOff(1, FaceRealness.answering(r.colours[1], _dim));
     expect(r.lit, isTrue);
-    expect(r.report, matches(RegExp(r'^[rgb][-+]?\d+\.\d/[-+]?\d+\.\d [rgb][-+]?\d+\.\d/[-+]?\d+\.\d$')));
+    expect(r.report, matches(RegExp(r'^[rgb][-+]?\d+\.\d/[-+]?\d+\.\d/[-+]\d+\.\d [rgb][-+]?\d+\.\d/[-+]?\d+\.\d/[-+]\d+\.\d$')));
 
     final s = FaceRealness(random: Random(3));
     s.setLight(_dim);
