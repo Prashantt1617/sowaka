@@ -386,7 +386,7 @@ class FaceCamera extends ChangeNotifier {
       unawaited(FaceSounds.failed());
       startOver();
       _tryStartedAt = now;
-      nudge = 'Move out of the bright light and face the camera';
+      nudge = "Couldn't read the light on your face. Bring the phone a little closer, away from bright light";
     } else {
       // The prompts stand; only the flashes repeat, in new colours.
       resetFlash();
@@ -986,8 +986,22 @@ class FaceRealness {
   static double facedWithin = 7;
   static double closedBelow = 0.3;
   static double openAbove = 0.6;
+  /// How far the face's chroma must move under each colour, in YCbCr units:
+  /// red raises Cr (skin reflects red best), blue raises Cb, green lowers
+  /// both (measured as their sum, since each alone is small); and how much
+  /// the face must brighten under any of them. From real tries on 30 Oct
+  /// 2026 (sowaka, a bright office): red +1.9..+5.3, blue +1.1..+1.4, green
+  /// sum -1..-2.7; the server applies the same lines to the frames it gets.
   static double chromaNeeded = 1.5;
-  static double brightenNeeded = 1.0;
+  static double blueNeeded = 1.0;
+  static double greenNeeded = 1.0;
+  static double brightenNeeded = 0.3;
+
+  /// The last few readings with no colour up: their mean is the baseline a
+  /// flash is judged against, since one frame's reading wanders by about a
+  /// unit on its own.
+  final List<FaceLight> _recent = [];
+  static const recentFrames = 5;
 
   final Random _random;
 
@@ -1059,6 +1073,9 @@ class FaceRealness {
       _litCb += light.cb;
       _litCr += light.cr;
       _litFrames += 1;
+    } else {
+      _recent.add(light);
+      if (_recent.length > recentFrames) _recent.removeAt(0);
     }
     final yaw = face.headEulerAngleY;
     final eyeL = face.landmarks[FaceLandmarkType.leftEye]?.position;
@@ -1103,7 +1120,7 @@ class FaceRealness {
   void flashOn(int index) {
     flashing = true;
     flashIndex = index;
-    if (index == 0 || _before == null) _before = _light;
+    if (index == 0 || _before == null) _before = _recent.isEmpty ? _light : _meanOf(_recent);
     _litLuma = _litCb = _litCr = 0;
     _litFrames = 0;
   }
@@ -1133,11 +1150,14 @@ class FaceRealness {
     final tag = colours[index].name[0];
     final dCb = (lit.cb - before.cb).toStringAsFixed(1);
     final dCr = (lit.cr - before.cr).toStringAsFixed(1);
-    report = '${report.isEmpty ? '' : '$report '}$tag$dCb/$dCr';
+    final dL = lit.luma - before.luma;
+    report = '${report.isEmpty ? '' : '$report '}$tag$dCb/$dCr/${dL >= 0 ? '+' : ''}${dL.toStringAsFixed(1)}';
   }
 
-  /// Whether the face took the colour: its chroma moved the colour's way by
-  /// [chromaNeeded], more that way than any other, and it brightened.
+  /// Whether the face took the colour: its chroma moved the colour's way
+  /// (red: Cr up by [chromaNeeded]; blue: Cb up by [blueNeeded]; green: Cb
+  /// and Cr down by [greenNeeded] between them, neither rising), more that
+  /// way than any other, and it brightened by [brightenNeeded].
   static bool answers(FlashColour colour, FaceLight before, FaceLight lit) {
     final dCb = lit.cb - before.cb;
     final dCr = lit.cr - before.cr;
@@ -1145,8 +1165,8 @@ class FaceRealness {
     if (dL < brightenNeeded) return false;
     return switch (colour) {
       FlashColour.red => dCr >= chromaNeeded && dCr > dCb,
-      FlashColour.blue => dCb >= chromaNeeded && dCb > dCr,
-      FlashColour.green => dCb <= -chromaNeeded / 2 && dCr <= -chromaNeeded / 2,
+      FlashColour.blue => dCb >= blueNeeded && dCb > dCr,
+      FlashColour.green => dCb + dCr <= -greenNeeded && dCb <= 0.5 && dCr <= 0.5,
     };
   }
 
@@ -1155,7 +1175,18 @@ class FaceRealness {
 
   /// A test's camera has no frames: it says what the light is.
   @visibleForTesting
-  void setLight(FaceLight light) => _light = light;
+  void setLight(FaceLight light) {
+    _light = light;
+    _recent
+      ..clear()
+      ..add(light);
+  }
+
+  static FaceLight _meanOf(List<FaceLight> readings) => FaceLight(
+    readings.map((r) => r.luma).reduce((a, b) => a + b) / readings.length,
+    readings.map((r) => r.cb).reduce((a, b) => a + b) / readings.length,
+    readings.map((r) => r.cr).reduce((a, b) => a + b) / readings.length,
+  );
 
   /// A reading that answers [colour] after [before]: the face took it.
   @visibleForTesting
@@ -1167,6 +1198,7 @@ class FaceRealness {
 
   void reset() {
     _yaw0 = _offset0 = null;
+    _recent.clear();
     yawFromStart = 0;
     turned = faced = blinked = false;
     _eyesClosed = false;
@@ -1191,7 +1223,7 @@ class FaceAutoCapture {
 
   /// How long each colour stays on the screen, and the pause between them
   /// for the camera's exposure to settle.
-  static Duration flash = const Duration(milliseconds: 600);
+  static Duration flash = const Duration(milliseconds: 900);
   static Duration flashGap = const Duration(milliseconds: 300);
 
   /// Whether the phone's liveness checks gate the selfie. Off in tests
@@ -1313,6 +1345,8 @@ class FaceAutoCapture {
       } else if (liveness.lit == false) {
         flashFails += 1;
         camera.lightNotTaken(flashFails);
+        // After the third the prompts start over: the next try gets its own three.
+        if (flashFails >= 3) flashFails = 0;
       } else {
         camera.resetFlash();
         check();

@@ -777,14 +777,13 @@ export function flashAnswered(colour: FlashColourName, before: FaceLight, lit: F
   const dCb = lit.cb - before.cb;
   const dCr = lit.cr - before.cr;
   if (lit.luma - before.luma < env.face.flashBrighten) return false;
-  const needed = env.face.flashChroma;
   switch (colour) {
     case 'red':
-      return dCr >= needed && dCr > dCb;
+      return dCr >= env.face.flashChroma && dCr > dCb;
     case 'blue':
-      return dCb >= needed && dCb > dCr;
+      return dCb >= env.face.flashChromaBlue && dCb > dCr;
     case 'green':
-      return dCb <= -needed / 2 && dCr <= -needed / 2;
+      return dCb + dCr <= -env.face.flashChromaGreen && dCb <= 0.5 && dCr <= 0.5;
   }
 }
 
@@ -825,7 +824,8 @@ export async function judgeFlash(userId: string, evidence: FlashEvidence | undef
     for (let i = 0; i < colours.length; i++) {
       const under = await faceLightOf(lit[i]!);
       if (!flashAnswered(colours[i], before, under)) flashPassed = false;
-      parts.push(`${colours[i][0]}${(under.cb - before.cb).toFixed(1)}/${(under.cr - before.cr).toFixed(1)}`);
+      const dL = under.luma - before.luma;
+      parts.push(`${colours[i][0]}${(under.cb - before.cb).toFixed(1)}/${(under.cr - before.cr).toFixed(1)}/${dL >= 0 ? '+' : ''}${dL.toFixed(1)}`);
     }
     return { challengeId, colours, measured: parts.join(' '), flashPassed };
   } catch (error) {

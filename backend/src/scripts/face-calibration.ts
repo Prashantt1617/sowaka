@@ -42,10 +42,11 @@ function detectorScores(text: string): number[] {
 /** The chroma shift the colour asked for, per flash: "r-1.0/6.1" → 6.1 (Cr for red), "b6.7/-7.0" → 6.7 (Cb for blue), green → the mean fall of both. */
 function colourShifts(text: string): number[] {
   const out: number[] = [];
-  for (const m of text.matchAll(/\b([rgb])([-+]?\d+\.\d)\/([-+]?\d+\.\d)\b/g)) {
+  for (const m of text.matchAll(/\b([rgb])([-+]?\d+\.\d)\/([-+]?\d+\.\d)(?:\/[-+]?\d+\.\d)?\b/g)) {
     const cb = Number(m[2]);
     const cr = Number(m[3]);
-    out.push(m[1] === 'r' ? cr : m[1] === 'b' ? cb : -(cb + cr) / 2);
+    // Red is judged on Cr, blue on Cb, green on the fall of both together.
+    out.push(m[1] === 'r' ? cr : m[1] === 'b' ? cb : -(cb + cr));
   }
   return out;
 }
