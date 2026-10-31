@@ -767,6 +767,9 @@ export async function getManagerWorkspace(
   };
 }
 
+/** The shortest comment a sent review may carry on each parameter. */
+export const FEEDBACK_NOTE_MIN = 75;
+
 export async function upsertFeedback(
   managerUserId: string,
   employeeUserId: string,
@@ -820,6 +823,14 @@ export async function upsertFeedback(
       throw new ManagerError(400, 'A score is required for every parameter before sending');
     }
     if (note.length > 1000) throw new ManagerError(400, 'Feedback note is too long');
+    // A sent review explains every score in words (HR asked for it on
+    // 31 Oct 2026): a draft may still be half written.
+    if (effectiveStatus === 'sent' && note.length < FEEDBACK_NOTE_MIN) {
+      throw new ManagerError(
+        400,
+        `Write at least ${FEEDBACK_NOTE_MIN} characters in each comment before sending. "${expected.title}" has ${note.length}.`,
+      );
+    }
     // Copy is snapshotted so the review still reads correctly if HR later
     // renames or archives the parameter.
     return {

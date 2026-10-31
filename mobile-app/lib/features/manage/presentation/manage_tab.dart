@@ -1256,7 +1256,8 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
     final locked = member.status == FeedbackStatus.missed;
     final alreadySent = member.status == FeedbackStatus.sent;
     final scored = state.recordParams.where((item) => item.score > 0);
-    final complete = scored.length == state.recordParams.length;
+    final complete = scored.length == state.recordParams.length &&
+        state.recordParams.every((item) => item.note.trim().length >= feedbackNoteMin);
     // A save or a send is still travelling: both wait, the one tapped spins.
     final saving = bloc.isBusy(const SaveFeedback());
     final sending = bloc.isBusy(const SendFeedback());
