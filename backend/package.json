@@ -36,6 +36,7 @@
     "suwi-bulk:check": "tsx src/scripts/suwi-bulk-check.ts",
     "celebrations:check": "tsx src/scripts/connect-celebrations-check.ts",
     "profile-posts:check": "tsx src/scripts/profile-posts-check.ts",
+    "contest-entries:check": "tsx src/scripts/contest-entries-check.ts",
     "squad:check": "tsx src/scripts/secret-squad-check.ts",
     "face-id:check": "FACE_MAX_ATTEMPTS=3 FACE_INCONCLUSIVE_FALLBACK=3 tsx src/scripts/face-id-check.ts",
     "face-id:e2e": "tsx src/scripts/face-id-e2e.ts",

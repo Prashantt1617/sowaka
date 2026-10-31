@@ -321,7 +321,9 @@ export async function submitCaption(req: Request, res: Response, next: NextFunct
 
 export async function deleteCaption(req: Request, res: Response, next: NextFunction) {
   try {
-    const post = await removeCaptionEntry(requireUserId(req), String(req.params.postId ?? ''));
+    // Which entry, when someone has several: `?entryId=` (or in the body).
+    const entryId = typeof req.query.entryId === 'string' ? req.query.entryId : typeof req.body?.entryId === 'string' ? req.body.entryId : undefined;
+    const post = await removeCaptionEntry(requireUserId(req), String(req.params.postId ?? ''), entryId);
     res.status(200).json({ success: true, post });
   } catch (error) {
     handleConnectError(error, next);

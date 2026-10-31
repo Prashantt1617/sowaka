@@ -774,6 +774,12 @@ function challengeHasClosed(post: ConnectPost): boolean {
   return Date.now() > when.getTime();
 }
 
+/**
+ * How many entries one person may put into a photo or caption contest (HR's
+ * call, 31 Oct 2026). Most Likely stays one nomination each.
+ */
+export const MAX_ENTRIES_PER_PERSON = 5;
+
 export async function addCaptionEntry(
   viewerUserId: string,
   postId: string,
@@ -788,12 +794,14 @@ export async function addCaptionEntry(
   assertChallengeOpen(post);
   const viewer = await users().findOne({ userId: viewerUserId });
   if (!viewer) throw new ConnectError(404, 'User not found');
-  if ((post.captionEntries ?? []).some((entry) => entry.userId === viewerUserId)) {
+  const mineSoFar = (post.captionEntries ?? []).filter((entry) => entry.userId === viewerUserId).length;
+  if (post.type === 'most_likely' && mineSoFar > 0) {
+    throw new ConnectError(409, 'You have already tagged someone. Remove your tag to pick again.');
+  }
+  if (mineSoFar >= MAX_ENTRIES_PER_PERSON) {
     throw new ConnectError(
       409,
-      post.type === 'most_likely'
-        ? 'You have already tagged someone. Remove your tag to pick again.'
-        : 'You have already entered this. Delete your entry to write a new one.',
+      `You have entered ${MAX_ENTRIES_PER_PERSON} times, the most anyone can. Delete one of your entries to add another.`,
     );
   }
   // Most Likely is answered by naming someone, so there is nothing to type —
@@ -865,7 +873,17 @@ export async function addCaptionEntry(
     { id: postId },
     { $push: { captionEntries: entry }, $set: { updatedAt: new Date() } },
   );
-  const updated = await connectPosts().findOne({ id: postId });
+  let updated = await connectPosts().findOne({ id: postId });
+  // Two entries sent at the same moment can both pass the count above; the
+  // one that took it past the limit is taken back out.
+  const mineNow = (updated?.captionEntries ?? []).filter((item) => item.userId === viewerUserId).length;
+  if (mineNow > MAX_ENTRIES_PER_PERSON) {
+    await connectPosts().updateOne({ id: postId }, { $pull: { captionEntries: { id: entry.id } } });
+    throw new ConnectError(
+      409,
+      `You have entered ${MAX_ENTRIES_PER_PERSON} times, the most anyone can. Delete one of your entries to add another.`,
+    );
+  }
   announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
 }
@@ -877,7 +895,7 @@ export async function addCaptionEntry(
  * survived the caption it was earned on would let someone farm votes and then
  * delete the evidence.
  */
-export async function removeCaptionEntry(viewerUserId: string, postId: string) {
+export async function removeCaptionEntry(viewerUserId: string, postId: string, entryId?: string) {
   const post = await requireVisiblePost(viewerUserId, postId);
   if (!isChallenge(post.type)) {
     throw new ConnectError(400, 'That post does not take entries');
@@ -886,7 +904,12 @@ export async function removeCaptionEntry(viewerUserId: string, postId: string) {
   // points back off whoever the votes had already earned them for, and move a
   // leaderboard nobody can answer any more.
   assertChallengeOpen(post);
-  const mine = (post.captionEntries ?? []).find((entry) => entry.userId === viewerUserId);
+  // The entry asked for, or, from an app that does not say which (builds up
+  // to 60, from before several entries), this person's latest.
+  const own = (post.captionEntries ?? []).filter((entry) => entry.userId === viewerUserId);
+  const mine = entryId
+    ? own.find((entry) => entry.id === entryId)
+    : [...own].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
   if (!mine) throw new ConnectError(404, 'You have not captioned this yet');
 
   const votes = post.captionVotes ?? {};
@@ -1729,7 +1752,13 @@ async function viewPost(
         .sort((a, b) => b.votes - a.votes)
         .map((entry, index) => ({ ...entry, rank: index + 1 }));
     }
-    body.myEntryId = entries.find((entry) => entry.isMine)?.id ?? null;
+    // Up to MAX_ENTRIES_PER_PERSON entries each (Most Likely: one). The app
+    // offers another entry only while `myEntryId` is null, so it stays null
+    // until the limit; `myEntryIds` and `maxEntries` say the rest.
+    const mine = entries.filter((entry) => entry.isMine);
+    body.myEntryIds = mine.map((entry) => entry.id);
+    body.maxEntries = post.type === 'most_likely' ? 1 : MAX_ENTRIES_PER_PERSON;
+    body.myEntryId = post.type === 'most_likely' || mine.length >= MAX_ENTRIES_PER_PERSON ? mine[0]?.id ?? null : null;
     body.myVoteEntryId = votes[viewerUserId] ?? null;
   }
   if (post.type === 'live_game' && typeof body.cupEventId === 'string') {
