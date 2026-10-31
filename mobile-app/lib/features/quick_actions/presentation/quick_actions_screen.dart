@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+
+import '../../support/support_launcher.dart';
 import 'package:printing/printing.dart';
 
 import '../data/payslip_pdf.dart';
@@ -2908,6 +2910,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ),
           const SizedBox(height: 10),
         ],
+        // "Speak to HR": a question about the policy goes to the Support Desk.
+        RaiseTicketLink(
+          label: 'Ask HR about this policy',
+          about: 'A question about the ${policy.title} policy:',
+        ),
       ],
     );
   }
@@ -2984,8 +2991,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   String _overtimePolicyText() {
     final shift = widget.dashboard.shift;
     if (!widget.dashboard.overtimeEnabled) {
-      return 'Overtime is not enabled for your team. Speak to HR if you think '
-          'it should be.';
+      return 'Overtime is not enabled for your team. If you think it should '
+          'be, ask HR through the Support Desk below.';
     }
     return [
       'Overtime is claimed as a full day or a half day, and needs your '
