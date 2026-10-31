@@ -509,17 +509,27 @@ function sheets(){
     const inRoom=new Set(r.players.map(p=>p.userId)), asked=new Set([...(r.invited||[]).map(i=>i.userId),...(pk.sent||[])]);
     const list=(pk.list||[]).filter(p=>!inRoom.has(p.userId)&&(!q||String(p.name).toLowerCase().includes(q))).slice(0,60);
     return `<div class="sheet" data-act="pickclose"><div class="box"><h2>Invite to table ${esc(r.code||'')}</h2><input id="pickq" placeholder="Search colleagues" value="${esc(pk.q||'')}" autocomplete="off">
-      <div class="list">${pk.loading?'<div class="empty">Loading colleagues…</div>':pk.error?`<div class="empty">${esc(pk.error)}</div>`:list.length?list.map(p=>`<div class="rowi">${avatarHtml(p.name,p.photoUrl)}<div class="who"><b>${esc(p.name)}</b><span>${esc(p.designation||p.department||'')}</span></div><button class="btn small ${asked.has(p.userId)?'ghost':'primary'}" data-inv="${esc(p.userId)}" ${asked.has(p.userId)?'disabled':''}>${asked.has(p.userId)?'Invited':'Invite'}</button></div>`).join(''):'<div class="empty">Nobody to invite by that name.</div>'}</div>
+      <div class="list">${pk.loading?'<div class="empty">Loading colleagues…</div>':pk.error?`<div class="empty">${esc(pk.error)}</div>`:list.length?list.map(p=>`<div class="rowi">${avatarHtml(p.name,p.photoUrl)}<div class="who"><b>${esc(p.name)}</b><span>${esc(p.designation||p.department||'')}</span></div><button class="btn small ${asked.has(p.userId)?'ghost':'primary'}" data-inv="${esc(p.userId)}" ${asked.has(p.userId)?'disabled':''}>${asked.has(p.userId)?'Invited':'Invite'}</button></div>`).join(''):(pk.searched||'')!==(pk.q||'').trim()?'<div class="empty">Searching…</div>':'<div class="empty">Nobody to invite by that name.</div>'}</div>
+      ${!q&&!pk.loading&&(pk.list||[]).length>=50?'<div class="hint" style="font-size:12px;color:var(--muted);margin-top:6px;text-align:center">Showing the first 50. Type a name to find anyone at the company.</div>':''}
       <button class="btn ghost" style="margin-top:10px" data-act="pickclose">Done</button></div></div>`; }
   return '';
 }
 async function openPicker(){
-  state.picker={q:'',list:[],loading:true,sent:[]}; render();
-  const b=window.Sowaka;
+  state.picker={q:'',list:[],loading:true,sent:[],ask:0}; render();
+  await loadColleagues(''); }
+/* The app hands over at most 50 colleagues a time, A to Z: so the search goes
+   to the server with each name typed, rather than filtering the first 50. */
+let pickTimer=null;
+async function loadColleagues(q){
+  const pk=state.picker, b=window.Sowaka; if(!pk)return;
+  const ask=++pk.ask;
   try{ if(!b||typeof b.colleagues!=='function')throw new Error('Invites need the Sowaka app. Share the code instead.');
-    const res=await b.colleagues(''); if(!state.picker)return; state.picker.list=((res&&res.colleagues)||[]).filter(p=>p&&p.userId&&p.userId!==(state.me&&state.me.userId)); state.picker.loading=false; }
-  catch(err){ if(state.picker){ state.picker.loading=false; state.picker.error=err.message||'Could not load colleagues.'; } }
-  render(); }
+    const res=await b.colleagues(q); if(!state.picker||state.picker.ask!==ask)return;
+    pk.list=((res&&res.colleagues)||[]).filter(p=>p&&p.userId&&p.userId!==(state.me&&state.me.userId)); pk.loading=false; pk.error=null; pk.searched=q; }
+  catch(err){ if(state.picker&&state.picker.ask===ask){ pk.loading=false; pk.error=err.message||'Could not load colleagues.'; } }
+  if(state.picker&&state.picker.ask===ask)renderKeepingSearch(); }
+function renderKeepingSearch(){ const typing=document.activeElement&&document.activeElement.id==='pickq'; render();
+  const q=$('#pickq'); if(q&&typing){ q.focus(); q.setSelectionRange(q.value.length,q.value.length); } }
 function onRoom(room){
   const prev=state.room; state.room=room||null;
   if(!room){ if(state.mode==='rooms'){ state.table=null; state.view='lobby'; state.leaveAsk=false; refreshRooms(); } return render(); }
@@ -688,7 +698,8 @@ document.addEventListener('click',async e=>{
 document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target&&e.target.id==='code'){ e.preventDefault(); joinCode(e.target.value).catch(err=>toast(err.message)); } });
 document.addEventListener('input',e=>{ const t=e.target;
   if(t.id==='code'){ t.value=t.value.replace(/\D/g,'').slice(0,4); state.codeInput=t.value; }
-  if(t.id==='pickq'&&state.picker){ state.picker.q=t.value; render(); const q=$('#pickq'); if(q){ q.focus(); q.setSelectionRange(q.value.length,q.value.length); } }
+  if(t.id==='pickq'&&state.picker){ state.picker.q=t.value; render(); const q=$('#pickq'); if(q){ q.focus(); q.setSelectionRange(q.value.length,q.value.length); }
+    clearTimeout(pickTimer); pickTimer=setTimeout(()=>{ if(state.picker&&state.picker.q===t.value)loadColleagues(t.value.trim()); },250); }
   if(t.id==='raise'){ state.raiseTo=+t.value; $('#raisev').textContent=fmt(state.raiseTo); const rb=$('#raisebtn'); if(rb)rb.textContent=fmt(state.raiseTo); }
   if(t.id&&t.id.startsWith('stake-')){ const stage=t.id.slice(6); (state.pick[stage]=state.pick[stage]||{}).stake=+t.value; $('#stakev-'+stage).textContent=fmt(+t.value); } });
 async function sendAction(action){ const v=state.table; if(!v)return; state.raiseOpen=false;
@@ -797,7 +808,9 @@ function roomsDemo(mode,t,people){
   if(mode!=='rooms')state.room=room;
   state.table=null;
   if(state.room)onRoom(state.room); else render();
-  if(mode==='invite'){ window.Sowaka={colleagues:()=>Promise.resolve({colleagues:people.slice(4).map((n,i)=>({userId:'c'+i,name:n,photoUrl:demoFace(i+4),designation:['Designer','Engineer','Sales lead','HR partner'][i%4]}))})}; openPicker().then(()=>{ state.picker.sent=['c1']; render(); }); }
+  if(mode==='invite'){ /* Like the app: at most 50, A to Z, filtered by name on the server. */
+    const everyone=[...people.slice(4),...Array.from({length:76},(_,i)=>`${'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[i%26]}${['arun','ita','ohan','eena'][i%4]} ${['Shah','Rao','Iyer'][i%3]}`)].sort().map((n,i)=>({userId:'c'+i,name:n,photoUrl:demoFace(i+4),designation:['Designer','Engineer','Sales lead','HR partner'][i%4]}));
+    window.Sowaka={colleagues:(q)=>new Promise(r=>setTimeout(()=>r({colleagues:everyone.filter(p=>!q||p.name.toLowerCase().includes(String(q).toLowerCase())).slice(0,50)}),120))}; openPicker().then(()=>{ state.picker.sent=['c1']; render(); }); }
 }
 start();
 })();
