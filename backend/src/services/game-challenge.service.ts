@@ -295,25 +295,40 @@ async function loadFor(viewer: ChallengeViewer, id: string, action: Parameters<t
 const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Who the viewer can challenge: everyone still at their company, bar counsellors and themselves. */
+/**
+ * Colleagues to challenge or invite, best first, at most [rawLimit] (the app
+ * asks for 50). With a name typed: people whose first or last name starts
+ * with it, then anyone whose name contains it; a company with fifty people
+ * named A-something otherwise never showed the S's. With nothing typed: the
+ * viewer's own department first, then everyone else, each A to Z.
+ */
 export async function listColleagues(viewer: ChallengeViewer, rawQuery: unknown, rawLimit: unknown) {
   const org = orgOf(viewer);
   const query = typeof rawQuery === 'string' ? rawQuery.trim().slice(0, 60) : '';
   const requested = Number(rawLimit);
   const limit = Number.isInteger(requested) ? Math.min(Math.max(requested, 1), 500) : COLLEAGUE_LIMIT;
-  const filter: Filter<User> = {
+  const base: Filter<User> = {
     userId: { $ne: viewer.userId },
     lifecycleStatus: { $nin: INACTIVE as User['lifecycleStatus'][] },
     isCounsellor: { $ne: true },
-    $and: [
-      { $or: [{ org }, { org: { $exists: false }, email: { $regex: `@${escapeRegex(org)}$`, $options: 'i' } }] },
-      ...(query ? [{ name: { $regex: escapeRegex(query), $options: 'i' } }] : []),
-    ],
+    $or: [{ org }, { org: { $exists: false }, email: { $regex: `@${escapeRegex(org)}$`, $options: 'i' } }],
   };
-  const rows = await users()
-    .find(filter, { projection: { _id: 0, userId: 1, name: 1, designation: 1, department: 1, profilePhotoKey: 1 } })
-    .sort({ name: 1 })
-    .limit(limit)
-    .toArray();
+  const projection = { _id: 0, userId: 1, name: 1, designation: 1, department: 1, profilePhotoKey: 1 } as const;
+  const find = (extra: Filter<User>, n: number) =>
+    n <= 0 ? Promise.resolve([] as User[]) : users().find({ $and: [base, extra] }, { projection }).sort({ name: 1 }).limit(n).toArray();
+  let rows: User[];
+  if (query) {
+    const q = escapeRegex(query);
+    const starts = await find({ name: { $regex: `(^|\\s)${q}`, $options: 'i' } }, limit);
+    const rest = await find({ name: { $regex: q, $options: 'i' }, userId: { $nin: starts.map((u) => u.userId) } }, limit - starts.length);
+    rows = [...starts, ...rest];
+  } else {
+    const me = await users().findOne({ userId: viewer.userId }, { projection: { _id: 0, department: 1 } });
+    const department = me?.department?.trim();
+    const mine = department ? await find({ department }, limit) : [];
+    const rest = await find({ userId: { $nin: mine.map((u) => u.userId) } }, limit - mine.length);
+    rows = [...mine, ...rest];
+  }
   return Promise.all(
     rows.map(async (row) => ({
       userId: row.userId,
