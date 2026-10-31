@@ -44,6 +44,7 @@ import '../data/manager_api_service.dart';
 import '../data/manager_models.dart';
 import '../../shared/app_toast.dart';
 import '../../support/presentation/support_desk_screen.dart';
+import '../../support/support_launcher.dart';
 import '../../shared/network_status.dart';
 import '../../shared/offline_banner.dart';
 import '../../help/data/help_api_service.dart';
@@ -185,6 +186,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // A name tapped anywhere — a post's author, a commenter — opens their
     // profile through here.
     registerPersonProfileOpener(_openTeamMember);
+    // "Ask HR", "contact support": anywhere, a ticket at the Support Desk.
+    registerSupportTicketOpener(_raiseSupportTicket);
     // The inbox wears the shell's header, this avatar included.
     registerInboxProfileAction(_inboxProfileAction);
     // A profile's Post tab shares this feed's directory, composer and list.
@@ -195,6 +198,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
   void dispose() {
     if (identical(_profileFeed, _connectComposerController)) _profileFeed = null;
     unregisterPersonProfileOpener(_openTeamMember);
+    unregisterSupportTicketOpener(_raiseSupportTicket);
     unregisterInboxProfileAction(_inboxProfileAction);
     NetworkStatus.offline.removeListener(_onNetworkChanged);
     activeManagerBloc.value = null;
@@ -487,12 +491,18 @@ class _ManagerScreenState extends State<ManagerScreen> {
     );
   }
 
-  void _openSupportTicket(String ticketId) {
+  /// "Ask HR" anywhere in the app: the Support Desk, straight on a new ticket.
+  void _raiseSupportTicket({String? about}) => _openSupportTicket('', raise: true, about: about);
+
+  void _openSupportTicket(String ticketId, {bool raise = false, String? about}) {
     final dashboard = _bloc.state.dashboard;
+    if (!mounted) return;
     openSupportDesk(
       context,
       session: _session,
       ticketId: ticketId.isEmpty ? null : ticketId,
+      raise: raise,
+      about: about,
       onNotifications: () => _openNotifications(context),
       profileAction: _ProfileAvatarAction(
         initial: dashboard?.managerInitial ?? '',
