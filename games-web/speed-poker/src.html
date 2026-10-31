@@ -254,7 +254,10 @@ function card(c,size,cls){ if(!c)return `<div class="pc slot ${size||''}"></div>
 const back=size=>`<div class="pc back ${size||''}"></div>`;
 
 /* ---------- phase words ---------- */
+/** A practice that runs for days is the casual game: tables any time, no points, no finals. */
+const casual=sh=>Boolean(sh.event.practice)&&Date.parse(sh.event.practice.to)-Date.parse(sh.event.practice.from)>36*3600e3;
 function phaseWords(sh){ const e=sh.event, g=e.game, t=now();
+  if(casual(sh)&&e.phase==='practice')return {chip:'Just for fun',cls:'green',line:'No points. Sit down any time and play.'};
   switch(e.phase){
     case 'upcoming': return {chip:'Starts soon',cls:'',line:e.practice?`Practice day opens ${hhmm(e.practice.from)}`:`Tables open ${hhmm(g.openFrom)}`};
     case 'practice': return {chip:'Practice day',cls:'green',line:`No points today. Tables close at ${hhmm(e.practice.to)}.`};
@@ -286,15 +289,15 @@ function renderLobby(){
     hero=`<h2>${sh.event.phase==='semis'?'Semifinals':'The final'} are live</h2><p>${ph.line}</p><div class="row">${(st?st.tables:[]).filter(x=>x.tableId).map(x=>`<button class="btn primary" data-watch="${esc(x.tableId)}">Watch ${x.label==='F'?'the final':'table '+esc(x.label)}</button>`).join('')}</div>`; }
   else if(canSit(sh)){
     hero=cool>0?`<h2>Good table</h2><p>You can sit again in a moment.</p><div class="row"><button class="btn primary" disabled>Next seat in ${clockOf(cool)}</button></div>`
-      :`<h2>${sh.event.phase==='practice'?'Practice day':'Sit down and play'}</h2><p>${sh.event.phase==='practice'?'Same tables as game day, no points. A table starts the moment six people sit down.':`${sh.event.rules.minutes.open} minute tables. A table starts the moment six sit down.`}</p><div class="row"><button class="btn primary" data-act="sit">Sit me down</button><button class="btn ghost" data-act="practice" style="flex:.6">Practice</button></div>`; }
+      :`<h2>${casual(sh)?'Sit down and play':sh.event.phase==='practice'?'Practice day':'Sit down and play'}</h2><p>${casual(sh)?`Just for fun, no points. A table starts the moment ${sh.event.rules.tableSize} people sit down, or with ${sh.event.rules.minPlayers} after ${Math.round(sh.event.rules.fallbackMs/60000)} minutes.`:sh.event.phase==='practice'?'Same tables as game day, no points. A table starts the moment six people sit down.':`${sh.event.rules.minutes.open} minute tables. A table starts the moment six sit down.`}</p><div class="row"><button class="btn primary" data-act="sit">Sit me down</button><button class="btn ghost" data-act="practice" style="flex:.6">Practice</button></div>`; }
   else { hero=`<h2>${esc(ph.chip)}</h2><p>${esc(ph.line)}</p>${sh.event.phase!=='over'&&sh.event.phase!=='draft'?`<div class="row"><button class="btn ghost" data-act="practice">Practice vs the house</button></div>`:''}`; }
   const stats=sh.event.phase==='practice'||sh.event.phase==='upcoming'?'':`<div class="stats">
     <div class="stat"><b class="num">${myRow?myRow.played:0}/${sh.event.rules.countedTables}</b><span>tables</span></div>
     <div class="stat"><b class="num">${myRow?fmt(myRow.score):0}</b><span>score</span></div>
     <div class="stat"><b class="num">${myRow?'#'+myRow.rank:'—'}</b><span>rank</span></div>
     <div class="stat"><b class="num">${myRow?myRow.knockouts:0}</b><span>knockouts</span></div></div>`;
-  const tabs=[['board','Board'],['offices','Offices'],['tables','Live tables'],...(sh.semis||sh.final?[['finals','Finals']]:[]),...(sh.event.rules.picks.on&&(sh.semis||sh.final)?[['picks','Picks']]:[]),['rules','How it works']];
-  if(!tabs.some(x=>x[0]===state.tab))state.tab='board';
+  const tabs=casual(sh)?[['tables','Live tables'],['rules','How it works']]:[['board','Board'],['offices','Offices'],['tables','Live tables'],...(sh.semis||sh.final?[['finals','Finals']]:[]),...(sh.event.rules.picks.on&&(sh.semis||sh.final)?[['picks','Picks']]:[]),['rules','How it works']];
+  if(!tabs.some(x=>x[0]===state.tab))state.tab=tabs[0][0];
   app.innerHTML=`<div id="lobby">
     <div class="top"><div class="brand"><div class="mark">♠</div><div><h1>${esc(sh.event.name)}</h1><div class="sub">${esc(ph.line)}</div></div></div><div style="display:flex;align-items:center;gap:8px"><span class="chip ${ph.cls}"><span class="dot"></span>${esc(ph.chip)}</span>${state.mine?avatarHtml(state.mine.name,pic(state.mine.userId),'me-face'):''}</div></div>
     <div class="hero"><div class="suits">♠♥♦♣</div>${hero}</div>
@@ -335,6 +338,11 @@ function picksBody(sh){ const m=state.mine||{picks:[],picksLeft:{semi:0,final:0}
   return `${stageBox('final',sh.final)}${stageBox('semi',sh.semis)}<div class="card"><h3>Picks board · top ten in the gift draw</h3>${sh.picksBoard.length?sh.picksBoard.slice(0,10).map((p,i)=>`<div class="rowi ${p.userId===me()?'me':''}"><div class="rank">${i+1}</div>${avatarHtml(p.name,pic(p.userId))}<div class="who"><b>${esc(p.name)}</b><span>${fmt(p.staked)} staked</span></div><div class="pts">${fmt(p.won)}</div></div>`).join(''):'<div class="empty">No picks settled yet.</div>'}</div>
   <div class="card rules"><h3>About picks</h3><p>Pick points are handed out free before each round and only count on the picks board. Nothing can be bought, moved or cashed. Players cannot pick on their own round.</p></div>`; }
 function rulesBody(sh){ const r=sh.event.rules;
+  if(casual(sh))return `<div class="card rules"><h3>How it works</h3>
+  <p><b>The game.</b> No-limit Texas Hold'em. Two cards each, five shared, best five of seven wins.</p>
+  <p><b>Tables.</b> ${r.minutes.practice||r.minutes.open} minutes, up to ${r.tableSize} players, 1,500 chips each. Blinds double every two minutes. 15 seconds to act.</p>
+  <p><b>Seating.</b> Tap Sit me down. A table starts the moment ${r.tableSize} are waiting, or with ${r.minPlayers} after ${Math.round(r.fallbackMs/60000)} minutes. Practice plays a table against the house on your own.</p>
+  <p><b>Just for fun.</b> No points, no board, no finals. Chips are only for the table. No fees, no buying, no cash.</p></div>`;
   return `<div class="card rules"><h3>How it works</h3>
   <p><b>The game.</b> No-limit Texas Hold'em. Two cards each, five shared, best five of seven wins.</p>
   <p><b>Tables.</b> ${r.minutes.open} minutes, up to ${r.tableSize} players, 1,500 chips each. Blinds double every two minutes. 15 seconds to act.</p>
@@ -507,7 +515,7 @@ function demo(){
   const people=['Ananya Bisht','Rahul Mehta','Priya Sharma','Arjun Deshpande','Meera Iyer','Kabir Rao','Tanya Bhatia','Ishaan Kapoor','Nikhil Verma','Pooja Nair','Siddharth Pillai','Harsh Chaudhary','Raghav Sen','Divya Rao'];
   const board=people.map((n,i)=>({userId:'d'+i,name:n,office:['Gurgaon','Noida','Kolkata'][i%3],played:3+i%3,best:[4200-i*250,3100-i*150,2600-i*100],score:9900-i*500,knockouts:4-i%4,rank:i+1,reachedAt:0}));
   state.mine={userId:'d0',name:'Ananya Bisht',photoUrl:demoFace(0),picks:[],picksLeft:{semi:500,final:1000},picksOpen:{semi:true,final:false}};
-  state.shared={event:{id:'demo',name:'Convrse Speed Poker',status:'live',paused:false,phase:q.get('phase')||'open',practice:{from:iso(-1440),to:iso(-1000)},game:{openFrom:iso(-120),openTo:iso(180),powerFrom:iso(30),powerTo:iso(90),bountiesFrom:iso(120),semisAt:iso(210),finalAt:iso(255)},
+  state.shared={event:{id:'demo',name:'Convrse Speed Poker',status:'live',paused:false,phase:q.get('phase')||'open',practice:q.get('casual')?{from:iso(-60),to:iso(43200)}:{from:iso(-1440),to:iso(-1000)},game:{openFrom:iso(-120),openTo:iso(180),powerFrom:iso(30),powerTo:iso(90),bountiesFrom:iso(120),semisAt:iso(210),finalAt:iso(255)},
     rules:{tableSize:6,minPlayers:4,fallbackMs:360000,cooldownMs:120000,countedTables:6,bestOf:3,knockoutPoints:100,bountyPoints:300,powerMultiplier:2,semifinalists:12,advancePerSemi:3,picks:{on:true,leadMs:900000,semiBudget:500,finalBudget:1000,winnerOdds:5,firstOutOdds:3,fullTimeOdds:3,minStake:10},minutes:{open:12,semi:20,final:30}}},
     now:t,powerHour:false,bountiesOn:true,queue:mode==='queue'?[{userId:'d3',name:'Arjun',since:t-90000},{userId:'d0',name:'Ananya',since:t-30000},{userId:'d5',name:'Kabir',since:t-10000}]:[],seated:{},cooldownUntil:{},
     tables:[{id:'x1',round:'open',label:null,players:people.slice(1,7).map((n,i)=>({userId:'p'+i,name:n,stack:1500})),endsAt:t+430000,power:false}],
