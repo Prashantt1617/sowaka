@@ -54,7 +54,7 @@ const SHIFTS: NavItem[] = [
   { key: 'shifttypes', label: 'Templates' },
   { key: 'shiftbulk', label: 'Bulk Assign' },
   { key: 'offices', label: 'Offices' },
-  { key: 'faceid', label: 'Face ID' },
+  { key: 'faceid', label: 'Face check' },
 ];
 // Reports sits above Payroll: it is what HR reads before a pay cycle is run,
 // and the attendance behind it is what the cycle is built from.

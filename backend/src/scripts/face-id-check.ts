@@ -8,20 +8,23 @@
  * Liveness sessions, HR's switches, reset and log, and the face going with a
  * deleted employee, and the log's retention cleanup. It drops and recreates its own database, and refuses any
  * other. Run with
- * FACE_MAX_ATTEMPTS=3 MONGODB_DB=face_verify_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= npm run face-id:check
- * (it counts three tries; production's default is five a day)
+ * FACE_MAX_ATTEMPTS=3 FACE_INCONCLUSIVE_FALLBACK=3 MONGODB_DB=face_verify_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= npm run face-id:check
+ * (it counts three tries and three poor pictures; production's defaults are five and eight a day)
  */
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import sharp from 'sharp';
 import {
   attendanceRecords, attendanceRegularizations, companies, connectDb, faceVerifications, getDb, offices, shiftPolicies, users,
 } from '../config/db';
 import { env } from '../config/env';
+import { spoofDetectorReady } from '../services/face-spoof.service';
 import { decideRegularization, recordPunch } from '../services/attendance.service';
 import { deleteEmployeeForAdmin } from '../services/admin.service';
 import {
   claimFaceToken, enrolFace, FACE_MESSAGES, faceCheckNeeded, pruneFaceLog, faceIdOverviewForAdmin, faceStatusFor, listFaceChecksForAdmin,
-  requestFaceFallback, resetFaceIdForAdmin, startLivenessSession, updateFaceIdSettingsForAdmin, verifyFace,
+  issueFaceChallenge, requestFaceFallback, resetFaceIdForAdmin, startLivenessSession, updateFaceIdSettingsForAdmin, verifyFace,
 } from '../services/face-id.service';
 import { FACE_CONSENT_VERSION } from '../models/face.model';
 import { hasReceiptStorage } from '../services/s3-receipt.service';
@@ -48,7 +51,7 @@ async function refusal(run: () => Promise<unknown>) {
 // the app-side re-encode keeps: 401 is Asha, 402 Bala, 407 someone who looks
 // a lot like Asha, and the rest are photos with something wrong with them.
 const SHOWS: Record<number, string> = {
-  401: 'asha', 402: 'bala', 403: 'nobody', 404: 'dark', 405: 'two', 406: 'down', 407: 'lookalike', 408: 'chetan', 409: 'dev', 410: 'esha',
+  401: 'asha', 402: 'bala', 403: 'nobody', 404: 'dark', 405: 'two', 406: 'down', 407: 'lookalike', 408: 'chetan', 409: 'dev', 410: 'esha', 411: 'gita',
 };
 const photo = (height: number) => sharp({ create: { width: 400, height, channels: 3, background: '#a08070' } }).jpeg().toBuffer();
 async function shown(image: Buffer) {
@@ -139,7 +142,7 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
   // --- off by default
   const off = await faceStatusFor('asha');
   check('off by default: no check at punch', !off.checkAtPunch && !off.enrolled, off);
-  check('the consent line and its version come with the status', off.consent.version === FACE_CONSENT_VERSION && off.consent.agree.startsWith('I agree to Face ID keeping a template'), off.consent);
+  check('the consent line and its version come with the status', off.consent.version === FACE_CONSENT_VERSION && off.consent.agree.startsWith('Sowaka keeps a template of your face'), off.consent);
   check('without Face Liveness the app runs its own check', off.liveness.mode === 'device', off.liveness);
   const punchedOff = await recordPunch('chetan', 'in');
   check('switched off, a geotagged punch-in needs no face', typeof (punchedOff as { punchIn?: string }).punchIn === 'string', punchedOff);
@@ -202,9 +205,9 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
   const early = await refusal(() => requestFaceFallback('asha'));
   check('the fallback stays shut before the tries run out', early?.status === 409 && early.face?.attemptsLeft === 2, early);
   const blank = await verifyFace('asha', { photo: await photo(403) });
-  check('no face in the selfie: no face found', blank.reason === 'no_face' && blank.attemptsLeft === 1, blank);
+  check('no face in the selfie: no face found, and not a try', blank.reason === 'no_face' && blank.attemptsLeft === 2, blank);
   const lookalike = await verifyFace('asha', { photo: await photo(407) });
-  check('a lookalike at 90: below the 95 mark, logged with its score', lookalike.reason === 'not_a_match' && lookalike.similarity === 90.2 && lookalike.fallbackAvailable, lookalike);
+  check('a lookalike at 90: below the 95 mark, logged with its score', lookalike.reason === 'not_a_match' && lookalike.similarity === 90.2 && lookalike.attemptsLeft === 1 && !lookalike.fallbackAvailable, lookalike);
   const log = await faceVerifications().find({ userId: 'asha', kind: 'verify' }).sort({ at: 1 }).toArray();
   check('every check is logged with its outcome, score and liveness', log.length === 3 && log[0].matchedUserId === 'bala' && log[0].liveness?.mode === 'device' && log[0].liveness.challenge === 'blink' && log[2].similarity === 90.2, log);
 
@@ -239,7 +242,7 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
   check('and then the token is spent', (await refusal(() => claimFaceToken('dev', devPass.token, 'again')))?.status === 403);
 
   // --- the way out: three failures, or the service down, go to the manager
-  for (const height of [402, 403, 407]) await verifyFace('esha', { photo: await photo(height) });
+  for (const height of [402, 407, 402]) await verifyFace('esha', { photo: await photo(height) });
   const fallback = await requestFaceFallback('esha', { latitude: 28.4596, longitude: 77.0267, accuracy: 12 });
   check('after three tries the punch-in goes to the manager', fallback.title === 'Punch-in without face check' && Boolean(fallback.id), fallback);
   const row = await attendanceRegularizations().findOne({ userId: 'esha', kind: 'face_check' });
@@ -270,14 +273,14 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
   // --- a setup that fails three times at a punch opens the same fallback
   const setupFails: Awaited<ReturnType<typeof refusal>>[] = [];
   for (const height of [403, 404, 405]) setupFails.push(await refusal(async () => enrolFace('gita', { photo: await photo(height), ...consent })));
-  check('each failed setup says why, with the tries left',
-    JSON.stringify(setupFails.map((r) => [r?.face?.reason, r?.face?.attemptsLeft])) === JSON.stringify([['no_face', 2], ['too_dark', 1], ['multiple_faces', 0]]), setupFails.map((r) => r?.face));
-  check('the third opens the fallback', setupFails[2]?.face?.fallback === true, setupFails[2]?.face);
+  check('each failed setup says why; a poor picture is not one of the tries',
+    JSON.stringify(setupFails.map((r) => [r?.face?.reason, r?.face?.attemptsLeft])) === JSON.stringify([['no_face', 3], ['too_dark', 3], ['multiple_faces', 3]]), setupFails.map((r) => r?.face));
+  check('the third poor picture opens the fallback (three inconclusive here)', setupFails[2]?.face?.fallback === true, setupFails[2]?.face);
   const gitaFallback = await requestFaceFallback('gita');
   check('and the punch-in goes to the manager', gitaFallback.title === 'Punch-in without face check', gitaFallback);
   const earlyOut = await refusal(() => requestFaceFallback('chetan', undefined, 'out'));
   check('the punch-out fallback stays shut before the tries run out', earlyOut?.status === 409, earlyOut);
-  for (const height of [402, 403, 407]) await verifyFace('chetan', { photo: await photo(height) });
+  for (const height of [402, 407, 402]) await verifyFace('chetan', { photo: await photo(height) });
   const outFallback = await requestFaceFallback('chetan', undefined, 'out');
   check('after three tries the punch-out goes to the manager', outFallback.title === 'Punch-out without face check', outFallback);
   const outRow = await attendanceRegularizations().findOne({ userId: 'chetan', kind: 'face_check' });
@@ -312,10 +315,52 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
   check('a low liveness score fails, logged with it', spoofed.reason === 'liveness_failed' && spoofLog?.liveness?.confidence === 40, spoofLog?.liveness);
   env.face.liveness = false;
 
+  // --- the screen detector on the server: a one-time challenge and the burst of face crops
+  const realCrop = readFileSync(join(__dirname, 'fixtures/face-crop-real.jpg'));
+  const printCrop = readFileSync(join(__dirname, 'fixtures/face-crop-print.jpg'));
+  const burst = (crop: Buffer) => Array.from({ length: 8 }, () => crop);
+  check('the detector loads here', await spoofDetectorReady());
+  const ch = await issueFaceChallenge('dev');
+  check('a challenge is only an id and an expiry', typeof ch.id === 'string' && ch.id.length >= 20 && Object.keys(ch).sort().join() === 'expiresAt,id', ch);
+  const live2 = await verifyFace('dev', { photo: await photo(409), evidence: { challengeId: ch.id, crops: burst(realCrop), spoofPhone: 0.93, motionMean: 1.8, motionRigid: 0.6 } });
+  const liveRow = await faceVerifications().findOne({ 'liveness.challengeId': ch.id });
+  check('a real face burst passes, judged on the server', live2.passed && liveRow?.liveness?.mode === 'server_spoof' && (liveRow.liveness.spoofServer ?? 0) > 0.9, liveRow?.liveness);
+  check('with the phone\'s readings logged', liveRow?.liveness?.spoofPhone === 0.93 && liveRow.liveness.motionMean === 1.8 && liveRow.liveness.motionRigid === 0.6 && liveRow.liveness.spoofScores?.length === 8, liveRow?.liveness);
+  const replay = await verifyFace('dev', { photo: await photo(409), evidence: { challengeId: ch.id, crops: burst(realCrop) } });
+  check('a challenge answers one selfie only', !replay.passed && replay.reason === 'uncertain', replay);
+  const printed = await verifyFace('dev', { photo: await photo(409), evidence: { challengeId: (await issueFaceChallenge('dev')).id, crops: burst(printCrop) } });
+  check('a printed photo is refused as one, without a token', !printed.passed && printed.reason === 'spoof' && printed.message === FACE_MESSAGES.spoof && !('token' in printed), printed);
+  check('and it is not one of the day\'s tries', printed.attemptsLeft === env.face.maxAttempts, printed);
+  const fewCrops = await verifyFace('dev', { photo: await photo(409), evidence: { challengeId: (await issueFaceChallenge('dev')).id, crops: [realCrop] } });
+  check('too few crops: another look', fewCrops.reason === 'uncertain' && fewCrops.message === FACE_MESSAGES.uncertain, fewCrops);
+  const otherCh = await issueFaceChallenge('bala');
+  const notMine = await verifyFace('dev', { photo: await photo(409), evidence: { challengeId: otherCh.id, crops: burst(realCrop) } });
+  check("someone else's challenge is not this person's", notMine.reason === 'uncertain', notMine);
+  const legacy = await verifyFace('dev', { photo: await photo(409) });
+  check('an older app with no burst still matches while the switch is off', legacy.passed, legacy);
+  env.face.requireChallenge = true;
+  const legacyRefused = await refusal(async () => verifyFace('dev', { photo: await photo(409) }));
+  check('and is told to update once it is on', legacyRefused?.status === 426 && legacyRefused.face?.updateApp === true, legacyRefused);
+  env.face.requireChallenge = false;
+
+  // --- setup with three photos: front and two turns, all indexed as this person
+  await faceVerifications().deleteMany({ userId: 'gita' });
+  const spoofSetup = await refusal(async () => enrolFace('gita', { photo: await photo(411), morePhotos: [await photo(411), await photo(411)], ...consent, evidence: { challengeId: (await issueFaceChallenge('gita')).id, crops: burst(printCrop) } }));
+  check('a setup from a printed photo is refused', spoofSetup?.face?.reason === 'spoof', spoofSetup);
+  const three = await enrolFace('gita', { photo: await photo(411), morePhotos: [await photo(411), await photo(411)], ...consent, evidence: { challengeId: (await issueFaceChallenge('gita')).id, crops: burst(realCrop) } });
+  const gita = await users().findOne({ userId: 'gita' });
+  check('a three-photo setup indexes all three', Boolean(three.token) && gita?.faceId?.faceIds?.length === 3 && gita.faceId.faceIds[0] === gita.faceId.faceId, gita?.faceId);
+  const gitaCheck = await verifyFace('gita', { photo: await photo(411) });
+  check('and her face matches afterwards', gitaCheck.passed, gitaCheck);
+  await resetFaceIdForAdmin('hr', 'gita');
+  const mixed = await enrolFace('gita', { photo: await photo(411), morePhotos: [await photo(402), await photo(411)], ...consent, evidence: { challengeId: (await issueFaceChallenge('gita')).id, crops: burst(realCrop) } });
+  const gitaMixed = await users().findOne({ userId: 'gita' });
+  check("a turned photo of someone else is not indexed as hers", Boolean(mixed.token) && gitaMixed?.faceId?.faceIds?.length === 2, gitaMixed?.faceId);
+
   // --- HR: who has set it up, the log, reset, and deleting an employee
   const overview = await faceIdOverviewForAdmin('hr');
   const ashaRow = overview.people.find((row) => row.userId === 'asha');
-  check('HR sees who has set it up', overview.enrolledCount === 5 && overview.people.find((row) => row.userId === 'mgr')?.enrolled === false, overview.enrolledCount);
+  check('HR sees who has set it up', overview.enrolledCount === 6 && overview.people.find((row) => row.userId === 'mgr')?.enrolled === false, overview.enrolledCount);
   check("HR sees each person's failures this month", (ashaRow?.failedLast30Days ?? 0) >= 4, ashaRow);
   const checks = await listFaceChecksForAdmin('hr', {});
   check('the failed checks, named, with the colleague a face matched', checks.length > 0 && checks.every((row) => !row.passed) && checks.some((row) => row.matchedName === 'Bala'), checks.slice(0, 2));

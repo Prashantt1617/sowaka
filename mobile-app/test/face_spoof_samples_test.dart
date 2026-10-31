@@ -59,7 +59,7 @@ void main() {
     expect(scores['image_T1.jpg']!, greaterThan(0.6));
     expect(scores['image_F1.jpg']!, lessThan(scores['image_T1.jpg']! - 0.3));
     expect(scores['image_F2.jpg']!, lessThan(scores['image_T1.jpg']! - 0.3));
-    expect(scores['image_T1.jpg']!, greaterThan(FaceSpoofCheck.threshold));
+    expect(scores['image_T1.jpg']!, greaterThan(FaceSpoofCheck.accept));
     check!.close();
   }, skip: ready ? false : 'set SPOOF_SAMPLES to the folder with the Silent-Face sample pictures');
 }

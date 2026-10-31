@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomInt } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import sharp from 'sharp';
 import {
   attendanceRecords, attendanceRegularizations, companies, faceChallenges, faceLivenessSessions, faceVerifications, offices, users,
@@ -7,7 +7,7 @@ import { env } from '../config/env';
 import { AttendanceRegularization, FaceCheckNote, PunchFaceCheck } from '../models/attendance.model';
 import {
   FACE_CONSENT_AGREE, FACE_CONSENT_VERSION, FaceChallenge, FaceCheckReason, faceIdSettingsOf, FaceIdSettingsView, FaceVerification,
-  FlashColourName, UserFaceId,
+  UserFaceId,
 } from '../models/face.model';
 import { User } from '../models/user.model';
 import { requestViewer } from '../middleware/request-viewer';
@@ -17,6 +17,7 @@ import { locateForPunch } from './geofence.service';
 import { notifyCorrectionSubmitted } from './request-notifications.service';
 import { deleteFacePhoto, hasReceiptStorage, uploadFacePhoto } from './s3-receipt.service';
 import { collectionIdFor, DetectedFace, faceEngine, FaceServiceUnavailable } from './rekognition.service';
+import { scoreBurst, spoofVerdict } from './face-spoof.service';
 
 /**
  * Face ID: who may punch in as whom.
@@ -59,7 +60,9 @@ export const FACE_MESSAGES: Record<FaceCheckReason, string> = {
   // Never says whose face it was: that would tell a colleague they are enrolled.
   other_person: "This doesn't match the face set up for your account.",
   liveness_failed: "We couldn't confirm a live person in front of the camera. Try again in good light.",
-  not_enrolled: 'Set up Face ID first.',
+  spoof: 'Please use your face, not a photo or a screen',
+  uncertain: 'Move a little closer',
+  not_enrolled: 'Set up your face check first.',
   already_enrolled_elsewhere: 'This face is already set up on another account. Ask HR to help.',
   unavailable: "Face check isn't available right now. You can send today's punch-in to your manager instead.",
 };
@@ -187,7 +190,15 @@ export async function faceStatusFor(userId: string) {
     failedAttempts: state.failures,
     inconclusiveAttempts: state.inconclusive,
     fallbackAvailable: settings.checkAtPunch && fallbackOpen(state),
+    // Who a punch sent instead goes to, so the screen can say so.
+    managerName: await managerNameOf(user),
   };
+}
+
+async function managerNameOf(user: User): Promise<string | null> {
+  if (!user.managerUserId) return null;
+  const manager = await users().findOne({ userId: user.managerUserId }, { projection: { _id: 0, name: 1 } }).catch(() => null);
+  return manager?.name ?? null;
 }
 
 /**
@@ -260,16 +271,24 @@ function failure(reason: FaceCheckReason, extra: Record<string, unknown> = {}) {
 
 export async function enrolFace(
   userId: string,
-  input: { photo?: Buffer; consent?: unknown; consentVersion?: unknown; challenge?: unknown; evidence?: FlashEvidence },
+  input: {
+    photo?: Buffer;
+    /** The turned photos (left, right) the setup takes after the front one. */
+    morePhotos?: Buffer[];
+    consent?: unknown;
+    consentVersion?: unknown;
+    challenge?: unknown;
+    evidence?: LivenessEvidence;
+  },
 ) {
   const user = await personFor(userId);
   const org = user.org!;
   if (input.consent !== true && input.consent !== 'true') {
-    throw new FaceIdError(400, 'Agree to the Face ID consent to continue', { face: { reason: 'consent_required' } });
+    throw new FaceIdError(400, 'Agree to the face check consent to continue', { face: { reason: 'consent_required' } });
   }
   if (String(input.consentVersion ?? '') !== FACE_CONSENT_VERSION) {
     // The words changed since the app showed them: show the new ones first.
-    throw new FaceIdError(409, 'The Face ID consent has changed. Read it again to continue.', {
+    throw new FaceIdError(409, 'The face check consent has changed. Read it again to continue.', {
       face: { reason: 'consent_changed', consent: consentView() },
     });
   }
@@ -277,7 +296,7 @@ export async function enrolFace(
   // Set up once: a second setup would let whoever holds the phone swap in
   // their own face and punch with it. Setting up again goes through HR's reset.
   if (await enrolmentOf(userId)) {
-    throw new FaceIdError(409, 'Face ID is already set up. Ask HR to reset it if you need to set it up again.', {
+    throw new FaceIdError(409, 'Your face check is already set up. Ask HR to reset it if you need to set it up again.', {
       face: { reason: 'already_enrolled' },
     });
   }
@@ -287,16 +306,16 @@ export async function enrolFace(
   const image = await normalise(input.photo);
   const collectionId = collectionIdFor(org);
   const engine = faceEngine();
-  // What the phone asked for and measured (turn, blink, the colour flashes), kept for tuning.
-  const challenge = typeof input.challenge === 'string' ? input.challenge.slice(0, 80) : undefined;
-  // The light check, judged here from the frames under the colours this
-  // server set: setting up is the first day's check, and a photo of a
-  // colleague must not become their face.
-  const judged = await judgeFlash(userId, input.evidence);
+  // What the phone measured (its detector median, micro-motion), kept for tuning.
+  const challenge = typeof input.challenge === 'string' ? input.challenge.slice(0, 600) : undefined;
+  // The screen detector, run here on the front photo's burst against a
+  // one-time challenge: setting up is the first day's check, and a photo of
+  // a colleague must not become their face.
+  const judged = await judgeLiveness(userId, input.evidence);
   if (!judged && env.face.requireChallenge) {
-    throw new FaceIdError(426, 'Update the Sowaka app to continue with Face ID', { face: { reason: 'liveness_required', updateApp: true } });
+    throw new FaceIdError(426, 'Update the Sowaka app to continue with your face check', { face: { reason: 'liveness_required', updateApp: true } });
   }
-  const liveness: FaceVerification['liveness'] = judged ? { mode: 'server_flash', challenge, ...judged } : { mode: 'none', challenge };
+  const liveness: FaceVerification['liveness'] = judged ? livenessLog(judged, challenge, input.evidence) : { mode: 'none', challenge };
   const base = { org, userId, kind: 'enrol' as const, at: new Date(), liveness };
   /**
    * A failed setup, logged, with the tries left: at a punch it is that
@@ -311,7 +330,7 @@ export async function enrolFace(
     });
   };
   try {
-    if (judged && !judged.flashPassed) throw await refuse('liveness_failed', { error: judged.error });
+    if (judged && judged.verdict !== 'pass') throw await refuse(judged.verdict, judged.error ? { error: judged.error } : {});
     await engine.ensureCollection(collectionId);
     const faces = await engine.detectFaces(image);
     const problem = enrolmentProblem(faces);
@@ -325,13 +344,33 @@ export async function enrolFace(
     }
     const indexed = await engine.indexFace(collectionId, image, userId);
     if (!indexed) throw await refuse('no_face');
+    // The turned photos go to the same person: matching then has the face
+    // from three sides. Each must first match the front photo just indexed,
+    // so a second person's face cannot ride in on someone's setup. One that
+    // cannot be read, or is not the same face, is skipped, not refused.
+    const faceIds = [indexed.faceId];
+    for (const extra of (input.morePhotos ?? []).slice(0, 2)) {
+      try {
+        const turned = await normalise(extra);
+        const best = (await engine.searchFace(collectionId, turned, Math.min(80, env.face.matchThreshold)))?.[0];
+        if (!best || best.faceId !== indexed.faceId) {
+          logger.warn('A turned setup photo did not match the front photo; skipped', { userId, similarity: best?.similarity });
+          continue;
+        }
+        const more = await engine.indexFace(collectionId, turned, userId);
+        if (more) faceIds.push(more.faceId);
+      } catch (error) {
+        if (error instanceof FaceServiceUnavailable) throw error;
+        logger.warn('A turned setup photo was not indexed', { userId });
+      }
+    }
     let photoKey: string | undefined;
     if (hasReceiptStorage()) {
       try {
         photoKey = await uploadFacePhoto(org, userId, image);
       } catch (error) {
         // A face without its photo cannot be re-indexed later; undo it.
-        await engine.deleteFaces(collectionId, [indexed.faceId]).catch(() => undefined);
+        await engine.deleteFaces(collectionId, faceIds).catch(() => undefined);
         throw new FaceServiceUnavailable('Enrolment photo upload failed', error);
       }
     }
@@ -339,6 +378,7 @@ export async function enrolFace(
     const now = new Date();
     const enrolment: UserFaceId = {
       faceId: indexed.faceId,
+      faceIds,
       collectionId,
       ...(photoKey ? { photoKey } : {}),
       enrolledAt: now,
@@ -356,7 +396,8 @@ export async function enrolFace(
     const stale = [
       ...matches.filter((match) => match.externalImageId === userId).map((match) => match.faceId),
       ...(previous?.faceId?.faceId ? [previous.faceId.faceId] : []),
-    ].filter((faceId) => faceId !== indexed.faceId);
+      ...(previous?.faceId?.faceIds ?? []),
+    ].filter((faceId) => !faceIds.includes(faceId));
     if (stale.length) await engine.deleteFaces(collectionId, [...new Set(stale)]).catch((error) => {
       logger.error('Stale face could not be removed', { userId, collectionId, faceIds: stale }, error);
     });
@@ -412,7 +453,7 @@ export async function startLivenessSession(userId: string) {
  */
 export async function verifyFace(
   userId: string,
-  input: { photo?: Buffer; livenessSessionId?: unknown; challenge?: unknown; devicePassed?: unknown; evidence?: FlashEvidence },
+  input: { photo?: Buffer; livenessSessionId?: unknown; challenge?: unknown; devicePassed?: unknown; evidence?: LivenessEvidence },
 ) {
   const user = await personFor(userId);
   const org = user.org!;
@@ -422,8 +463,8 @@ export async function verifyFace(
 
   const started = Date.now();
   const engine = faceEngine();
-  // What the phone asked for and measured: the prompts, the colour flashes, the screen detector's score.
-  const challenge = typeof input.challenge === 'string' ? input.challenge.slice(0, 80) : undefined;
+  // What the phone measured: its detector median and the micro-motion, for the log.
+  const challenge = typeof input.challenge === 'string' ? input.challenge.slice(0, 600) : undefined;
   let liveness: FaceVerification['liveness'] = env.face.liveness
     ? { mode: 'aws' }
     : { mode: 'device', challenge, devicePassed: input.devicePassed === true || input.devicePassed === 'true' };
@@ -470,16 +511,17 @@ export async function verifyFace(
     } else {
       if (!input.photo?.length) throw new FaceIdError(400, 'Take a photo of your face', { face: { reason: 'no_face' } });
       image = await normalise(input.photo);
-      // The light check, judged here from the frames under the colours this
-      // server set, not from the phone's word. A selfie with no challenge
-      // answered is an old app's: logged as unverified, and refused once
-      // every phone has the new one (FACE_REQUIRE_CHALLENGE).
-      const judged = await judgeFlash(userId, input.evidence);
+      // The screen detector, run here on the burst the phone sent with a
+      // one-time challenge, not taken on the phone's word. A selfie with no
+      // burst is an older app's: logged as unverified, and refused once every
+      // phone has the new one (FACE_REQUIRE_CHALLENGE). Unsure or a screen is
+      // inconclusive, never a daily try.
+      const judged = await judgeLiveness(userId, input.evidence);
       if (judged) {
-        liveness = { mode: 'server_flash', challenge, ...judged };
-        if (!judged.flashPassed) return outcome('liveness_failed', { error: judged.error });
+        liveness = livenessLog(judged, challenge, input.evidence);
+        if (judged.verdict !== 'pass') return outcome(judged.verdict, judged.error ? { error: judged.error } : {});
       } else if (env.face.requireChallenge) {
-        throw new FaceIdError(426, 'Update the Sowaka app to continue with Face ID', { face: { reason: 'liveness_required', updateApp: true } });
+        throw new FaceIdError(426, 'Update the Sowaka app to continue with your face check', { face: { reason: 'liveness_required', updateApp: true } });
       }
     }
 
@@ -487,7 +529,9 @@ export async function verifyFace(
     // miss is logged with its score rather than as nothing at all.
     const matches = await engine.searchFace(enrolment.collectionId, image, Math.min(80, env.face.matchThreshold));
     const best = matches?.[0];
-    if (best && best.faceId === enrolment.faceId && best.similarity >= env.face.matchThreshold) {
+    const mine = (faceId: string, externalImageId?: string) =>
+      faceId === enrolment.faceId || (enrolment.faceIds ?? []).includes(faceId) || externalImageId === userId;
+    if (best && mine(best.faceId, best.externalImageId) && best.similarity >= env.face.matchThreshold) {
       return outcome('matched', { similarity: round(best.similarity) });
     }
     if (best && best.externalImageId !== userId && best.similarity >= env.face.matchThreshold) {
@@ -495,7 +539,7 @@ export async function verifyFace(
       logger.warn('Face check matched another employee', { userId, org, similarity: round(best.similarity) });
       return outcome('other_person', { similarity: round(best.similarity), matchedUserId: best.externalImageId });
     }
-    const own = matches?.find((match) => match.faceId === enrolment.faceId);
+    const own = matches?.find((match) => mine(match.faceId, match.externalImageId));
     // No match: say why when the photo is the reason, so the next try can be better.
     const problem = matches === null || !own ? verifyProblem(await engine.detectFaces(image)) : null;
     return outcome(problem ?? 'not_a_match', own ? { similarity: round(own.similarity) } : {});
@@ -695,17 +739,18 @@ export async function pruneFaceLog(options: { apply?: boolean; now?: Date } = {}
  * face would keep matching; on an employee's deletion the caller logs and
  * carries on.
  */
-// --------------------------------------------------------- light check
+// --------------------------------------------------------- liveness
 
 /** How long a challenge may wait for its selfie, and how many one person may ask for in an hour. */
 const CHALLENGE_TTL_MS = 3 * 60_000;
 const CHALLENGES_PER_HOUR = 60;
-const FLASH_COLOURS: FlashColourName[] = ['red', 'green', 'blue'];
+/** The front photo's burst: what the detector judges. */
+const BURST_MAX = 8;
 
 /**
- * A light check for the next selfie: two of the three colours, picked here
- * so the phone cannot know them in advance, with an id the selfie must
- * answer with inside [CHALLENGE_TTL_MS]. Each is claimed once.
+ * A one-time id for the next selfie: bound to this person, good for three
+ * minutes, claimed once by the selfie that answers it, so a burst of crops
+ * cannot be recorded once and sent again.
  */
 export async function issueFaceChallenge(userId: string) {
   const user = await personFor(userId);
@@ -715,122 +760,81 @@ export async function issueFaceChallenge(userId: string) {
       face: { reason: 'rate_limited', fallback: true },
     });
   }
-  const first = randomInt(FLASH_COLOURS.length);
-  const second = (first + 1 + randomInt(FLASH_COLOURS.length - 1)) % FLASH_COLOURS.length;
   const row: FaceChallenge = {
     id: randomBytes(18).toString('base64url'),
     org: user.org ?? '',
     userId,
-    colours: [FLASH_COLOURS[first], FLASH_COLOURS[second]],
     createdAt: new Date(),
     expiresAt: new Date(Date.now() + CHALLENGE_TTL_MS),
   };
   await faceChallenges().insertOne(row);
-  return { id: row.id, colours: row.colours, expiresAt: row.expiresAt.toISOString() };
+  return { id: row.id, expiresAt: row.expiresAt.toISOString() };
 }
 
-/** What the app sends with the selfie for the light check: the challenge it answers, and the face before and under each colour. */
-export interface FlashEvidence {
+/** What the app sends with the selfie: the challenge it answers, the burst of 160 px face crops, and its own readings. */
+export interface LivenessEvidence {
   challengeId?: unknown;
-  baseline?: Buffer;
-  lit?: (Buffer | undefined)[];
+  crops?: Buffer[];
+  spoofPhone?: unknown;
+  motionMean?: unknown;
+  motionRigid?: unknown;
 }
 
-/** The mean light on a face crop, as YCbCr (BT.601), over its middle. */
-export interface FaceLight {
-  luma: number;
-  cb: number;
-  cr: number;
-}
-
-export async function faceLightOf(crop: Buffer): Promise<FaceLight> {
-  const side = 48;
-  const raw = await sharp(crop, { failOn: 'none' }).rotate().resize(side, side, { fit: 'fill' }).removeAlpha().raw().toBuffer();
-  // The middle three fifths: cheeks and forehead, clear of hair and background.
-  const from = Math.round(side * 0.2);
-  const to = Math.round(side * 0.8);
-  let luma = 0;
-  let cb = 0;
-  let cr = 0;
-  let n = 0;
-  for (let y = from; y < to; y++) {
-    for (let x = from; x < to; x++) {
-      const i = (y * side + x) * 3;
-      const r = raw[i];
-      const g = raw[i + 1];
-      const b = raw[i + 2];
-      luma += 0.299 * r + 0.587 * g + 0.114 * b;
-      cb += 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
-      cr += 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
-      n += 1;
-    }
-  }
-  return { luma: luma / n, cb: cb / n, cr: cr / n };
-}
-
-/**
- * Whether the face took [colour]: its chroma moved that colour's way by
- * FACE_FLASH_CHROMA, more that way than any other, and it brightened by
- * FACE_FLASH_BRIGHTEN. The same rule the phone applies to itself.
- */
-export function flashAnswered(colour: FlashColourName, before: FaceLight, lit: FaceLight): boolean {
-  const dCb = lit.cb - before.cb;
-  const dCr = lit.cr - before.cr;
-  if (lit.luma - before.luma < env.face.flashBrighten) return false;
-  const needed = env.face.flashChroma;
-  switch (colour) {
-    case 'red':
-      return dCr >= needed && dCr > dCb;
-    case 'blue':
-      return dCb >= needed && dCb > dCr;
-    case 'green':
-      return dCb <= -needed / 2 && dCr <= -needed / 2;
-  }
-}
-
-export interface FlashJudgement {
+export interface LivenessJudgement {
   challengeId: string;
-  colours: FlashColourName[];
-  /** What was measured, as the phone writes it ("r+5.1/-2.0 b+6.2/+0.3"). */
-  measured: string;
-  flashPassed: boolean;
+  verdict: 'pass' | 'uncertain' | 'spoof';
+  spoofServer: number | null;
+  scores: number[];
   error?: string;
 }
 
 /**
- * The server's own light check: the challenge claimed (this person's, unused,
- * not expired: once), then the face under each of its colours measured
- * against the face before them. Null when the app sent nothing to judge.
+ * The server's own liveness check: the challenge claimed (this person's,
+ * unused, not expired: once), then the screen detector on each crop of the
+ * burst and the median against FACE_SPOOF_ACCEPT and FACE_SPOOF_UNCERTAIN_LOW.
+ * Null when the app sent nothing to judge (an older build).
  */
-export async function judgeFlash(userId: string, evidence: FlashEvidence | undefined): Promise<FlashJudgement | null> {
+export async function judgeLiveness(userId: string, evidence: LivenessEvidence | undefined): Promise<LivenessJudgement | null> {
   if (!evidence) return null;
   const challengeId = typeof evidence.challengeId === 'string' ? evidence.challengeId.slice(0, 64) : '';
-  const lit = evidence.lit ?? [];
-  if (!challengeId && !evidence.baseline && !lit.some(Boolean)) return null;
-  const refused = (error: string, colours: FlashColourName[] = []): FlashJudgement => ({
-    challengeId, colours, measured: '', flashPassed: false, error,
+  const crops = (evidence.crops ?? []).slice(0, BURST_MAX);
+  if (!challengeId && !crops.length) return null;
+  const refused = (error: string, verdict: LivenessJudgement['verdict'] = 'spoof'): LivenessJudgement => ({
+    challengeId, verdict, spoofServer: null, scores: [], error,
   });
-  if (!challengeId) return refused('no challenge id');
+  if (!challengeId) return refused('no challenge id', 'uncertain');
   const claimed = await faceChallenges().findOneAndUpdate(
     { id: challengeId, userId, usedAt: { $exists: false }, expiresAt: { $gt: new Date() } },
     { $set: { usedAt: new Date() } },
   );
-  if (!claimed) return refused('challenge unknown, used or expired');
-  const colours = claimed.colours;
-  if (!evidence.baseline || colours.some((_, i) => !lit[i])) return refused('frames missing', colours);
-  try {
-    const before = await faceLightOf(evidence.baseline);
-    const parts: string[] = [];
-    let flashPassed = true;
-    for (let i = 0; i < colours.length; i++) {
-      const under = await faceLightOf(lit[i]!);
-      if (!flashAnswered(colours[i], before, under)) flashPassed = false;
-      parts.push(`${colours[i][0]}${(under.cb - before.cb).toFixed(1)}/${(under.cr - before.cr).toFixed(1)}`);
-    }
-    return { challengeId, colours, measured: parts.join(' '), flashPassed };
-  } catch (error) {
-    return refused(`frames unreadable: ${error instanceof Error ? error.message : String(error)}`, colours);
+  if (!claimed) return refused('challenge unknown, used or expired', 'uncertain');
+  if (crops.length < 3) return refused('too few crops', 'uncertain');
+  const { scores, median } = await scoreBurst(crops);
+  if (median === null) {
+    // The detector could not run here: the match still decides, and the row says so.
+    logger.error('Face screen detector unavailable; the check goes on without it', { userId });
+    return { challengeId, verdict: 'pass', spoofServer: null, scores, error: 'detector unavailable' };
   }
+  return { challengeId, verdict: spoofVerdict(median), spoofServer: round3(median), scores: scores.map(round3) };
+}
+
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
+const numberOf = (value: unknown) => {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  return Number.isFinite(n) ? round3(n) : undefined;
+};
+
+function livenessLog(judged: LivenessJudgement, challenge: string | undefined, evidence: LivenessEvidence | undefined): FaceVerification['liveness'] {
+  return {
+    mode: 'server_spoof',
+    challenge,
+    challengeId: judged.challengeId,
+    spoofServer: judged.spoofServer ?? undefined,
+    spoofScores: judged.scores,
+    spoofPhone: numberOf(evidence?.spoofPhone),
+    motionMean: numberOf(evidence?.motionMean),
+    motionRigid: numberOf(evidence?.motionRigid),
+  };
 }
 
 /**
@@ -849,7 +853,7 @@ export async function logPhoneTry(userId: string, summaryInput: unknown) {
 export async function forgetFace(user: Pick<User, 'userId' | 'org' | 'faceId'>, by?: string) {
   const enrolment = user.faceId;
   if (!enrolment?.faceId) return { removed: false };
-  await faceEngine().deleteFaces(enrolment.collectionId, [enrolment.faceId]);
+  await faceEngine().deleteFaces(enrolment.collectionId, [...new Set([enrolment.faceId, ...(enrolment.faceIds ?? [])])]);
   if (enrolment.photoKey) await deleteFacePhoto(enrolment.photoKey);
   await users().updateOne({ userId: user.userId }, { $unset: { faceId: '' }, $set: { updatedAt: new Date() } });
   forgetAuthUser(user.userId);
@@ -907,7 +911,7 @@ export async function faceIdOverviewForAdmin(adminUserId: string) {
   });
   return {
     settings: faceIdSettingsOf(company),
-    liveness: env.face.liveness ? 'aws' : 'device',
+    liveness: env.face.liveness ? 'aws' : 'server',
     matchThreshold: env.face.matchThreshold,
     enrolledCount: rows.filter((row) => row.enrolled).length,
     people: rows,
@@ -984,6 +988,10 @@ export async function listFaceChecksForAdmin(
     matchedName: row.matchedUserId ? names.get(row.matchedUserId)?.name ?? 'Another employee' : null,
     liveness: row.liveness?.mode ?? 'none',
     livenessConfidence: row.liveness?.confidence ?? null,
+    // The screen detector's medians (real-face probability) and the burst's micro-motion.
+    spoofServer: row.liveness?.spoofServer ?? null,
+    spoofPhone: row.liveness?.spoofPhone ?? null,
+    motionMean: row.liveness?.motionMean ?? null,
     deviceCheckPassed: row.liveness?.devicePassed ?? null,
     usedForPunch: Boolean(row.usedAt),
   }));

@@ -931,6 +931,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         ),
       ),
     );
+    if (mounted) showPunchToast(context, outcome, type: type);
     if ((outcome?.punched == true || outcome?.requested == true) && mounted) {
       await widget.bloc.add(LoadAttendanceMonth(DateTime.now()));
     }

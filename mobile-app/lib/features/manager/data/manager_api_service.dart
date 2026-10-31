@@ -14,7 +14,7 @@ import '../../../services/api_client.dart';
 import '../../../services/api_config.dart';
 import '../../auth/data/auth_models.dart';
 import 'manager_models.dart';
-import '../../face_id/face_camera.dart' show FaceChallenge, FaceEvidence;
+import '../../face_id/face_camera.dart' show FaceBurst;
 import '../../face_id/face_id_models.dart';
 
 class ManagerApiService {
@@ -784,15 +784,11 @@ class ManagerApiService {
     return json['photoUrl'] as String;
   }
 
-  /// Whether Face ID is on for the company, and whether this person has set it up.
+  /// Whether the face check is on for the company, and whether this person has set it up.
   Future<FaceIdStatus> fetchFaceStatus() async =>
       FaceIdStatus.fromJson(await _face(_jsonRequest('GET', '/face/status')));
 
-  /// The consented setup photo. Answers with the punch token the setup earns
-  /// (it is that punch's face check). Throws with the server's reason (too
-  /// dark, more than one face, …), the tries left and whether the manager
-  /// fallback is open, in `details['face']`.
-  /// What the phone measured on one Face ID try, pass or fail, for the
+  /// What the phone measured on one face check try, pass or fail, for the
   /// server's log. Never throws: a log must not get in the way of a punch.
   Future<void> logFaceTry(String summary) async {
     try {
@@ -800,62 +796,75 @@ class ManagerApiService {
     } catch (_) {}
   }
 
+  /// Setup: the front photo and the two turned ones, with the consented
+  /// line's version, the challenge it answers and the front burst's face
+  /// crops (the server re-reads them). Answers with the punch token the setup
+  /// earns (it is that punch's face check). Throws with the server's reason
+  /// (too dark, more than one face, …), the tries left and whether the
+  /// manager fallback is open, in `details['face']`.
   Future<String?> enrolFace({
-    required Uint8List jpeg,
+    required FaceBurst front,
+    List<FaceBurst> turned = const [],
     required String consentVersion,
-    /// What the phone asked for and saw, for the server's log.
-    String? challenge,
-    /// The server's light check answered: the frames it judges itself.
-    FaceEvidence? evidence,
+    String? challengeId,
   }) async {
     final request =
         http.MultipartRequest('POST', Uri.parse('$_baseUrl/face/enrol'))
           ..headers['Authorization'] = 'Bearer ${session.token}'
           ..fields['consent'] = 'true'
           ..fields['consentVersion'] = consentVersion
-          ..files.add(http.MultipartFile.fromBytes('photo', jpeg, filename: 'face.jpg'));
-    if (challenge != null) request.fields['challenge'] = challenge;
-    _attachEvidence(request, evidence);
+          ..files.add(http.MultipartFile.fromBytes('photo', front.photo, filename: 'face.jpg'));
+    for (var i = 0; i < turned.length && i < 2; i++) {
+      request.files.add(http.MultipartFile.fromBytes('photo${i + 2}', turned[i].photo, filename: 'face${i + 2}.jpg'));
+    }
+    _attachBurst(request, front, challengeId, more: turned);
     final json = await _face(request);
     return json['token'] as String?;
   }
 
-  /// A light check the server sets for the next selfie: its id and the two
-  /// colours to flash. Null when the server did not give one.
-  Future<FaceChallenge?> startFaceChallenge() async =>
-      FaceChallenge.fromJson(await _face(_jsonRequest('POST', '/face/challenge')));
+  /// A one-time id for the next selfie (three minutes, used once). Null
+  /// when the server did not give one.
+  Future<String?> startFaceChallenge() async {
+    final json = await _face(_jsonRequest('POST', '/face/challenge'));
+    final id = json['id'];
+    return id is String && id.isNotEmpty ? id : null;
+  }
 
-  /// A selfie, or a finished Face Liveness session, checked by the server.
-  /// The app's own blink-or-turn result goes along for the log only; the
-  /// light check's frames ([evidence]) are what the server judges.
+  /// A selfie with its burst, or a finished Face Liveness session, checked
+  /// by the server, which re-reads the burst's crops itself.
   Future<FaceCheckResult> verifyFace({
+    FaceBurst? burst,
+    String? challengeId,
     Uint8List? jpeg,
     String? livenessSessionId,
-    String? challenge,
-    bool? devicePassed,
-    FaceEvidence? evidence,
   }) async {
     final request =
         http.MultipartRequest('POST', Uri.parse('$_baseUrl/face/verify'))
           ..headers['Authorization'] = 'Bearer ${session.token}';
-    if (jpeg != null) {
-      request.files.add(http.MultipartFile.fromBytes('photo', jpeg, filename: 'face.jpg'));
+    final photo = burst?.photo ?? jpeg;
+    if (photo != null) {
+      request.files.add(http.MultipartFile.fromBytes('photo', photo, filename: 'face.jpg'));
     }
     if (livenessSessionId != null) request.fields['livenessSessionId'] = livenessSessionId;
-    if (challenge != null) request.fields['challenge'] = challenge;
-    if (devicePassed != null) request.fields['devicePassed'] = '$devicePassed';
-    _attachEvidence(request, evidence);
+    if (burst != null) _attachBurst(request, burst, challengeId);
     return FaceCheckResult.fromJson(await _face(request));
   }
 
-  /// The challenge's id and the three face crops: before the colours, and
-  /// under each, as `baseline`, `lit0` and `lit1`.
-  void _attachEvidence(http.MultipartRequest request, FaceEvidence? evidence) {
-    if (evidence == null) return;
-    request.fields['challengeId'] = evidence.challengeId;
-    request.files.add(http.MultipartFile.fromBytes('baseline', evidence.baseline, filename: 'baseline.jpg'));
-    for (var i = 0; i < evidence.lit.length && i < 2; i++) {
-      request.files.add(http.MultipartFile.fromBytes('lit$i', evidence.lit[i], filename: 'lit$i.jpg'));
+  /// The challenge's id, the burst's face crops as `crop0`…, and the phone's
+  /// own readings, which the server logs (the crops are what it judges). At
+  /// setup the turned photos' crops follow the front's, from `crop8`.
+  void _attachBurst(http.MultipartRequest request, FaceBurst burst, String? challengeId, {List<FaceBurst> more = const []}) {
+    if (challengeId != null) request.fields['challengeId'] = challengeId;
+    request.fields['challenge'] = [burst.report, for (final b in more) b.report].join(' || ');
+    if (burst.spoofPhone != null) request.fields['spoofPhone'] = burst.spoofPhone!.toStringAsFixed(3);
+    if (burst.motionMean != null) request.fields['motionMean'] = burst.motionMean!.toStringAsFixed(2);
+    if (burst.motionRigid != null) request.fields['motionRigid'] = burst.motionRigid!.toStringAsFixed(2);
+    var at = 0;
+    for (final (index, b) in [burst, ...more].indexed) {
+      at = index * 8;
+      for (var i = 0; i < b.crops.length && i < 8; i++) {
+        request.files.add(http.MultipartFile.fromBytes('crop${at + i}', b.crops[i], filename: 'crop${at + i}.jpg'));
+      }
     }
   }
 

@@ -1,386 +1,375 @@
+import 'dart:math';
+
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
-/// The selfie screens (Figma 4309:24713, after 4194:21786): a dark page, the
-/// live camera seen only through the oval and its thin brand-blue line, and
-/// one line of white words above it — what to do next ("Turn your head a
-/// little to one side", "Blink your eye"), or "Verified" with the green tick
-/// once the server has matched the face (4289:26644). A failed try darkens
-/// the oval and says why in red under it, with Try Again and the day's tries
-/// left (4289:26675). Shared by the punch-in check and Face ID setup.
-class FaceCaptureLayout extends StatelessWidget {
-  const FaceCaptureLayout({
+/// The face check's screens, from the design canvas of the revised flow
+/// (boards D2–D6 for the daily check, S1–S5 for setup): a dark camera screen
+/// whose preview and oval never move, with one headline at the top and one
+/// optional line under it; a white intro before setup and a white done
+/// screen after it. The system font throughout.
+
+const _dark = Color(0xFF16181C);
+const _ovalFill = Color(0xFF2A2F36);
+const _ringGrey = Color(0xFF3A4049);
+const _soft = Color(0xFFB8BFC8);
+const _amber = Color(0xFFF5C451);
+const _green = Color(0xFF2E9E5B);
+const _greenTick = Color(0xFF5CC08A);
+const _blue = Color(0xFF1B6FB3);
+const _ink = Color(0xFF15181C);
+const _muted = Color(0xFF5F6B7A);
+
+/// How the headline reads: as it is, or as a correction (amber).
+enum FaceHeadlineTone { plain, fix }
+
+/// The ring round the oval: grey while looking, green once matched; at setup
+/// it fills (a fraction, 0..1) as the photos are taken.
+class FaceRing {
+  const FaceRing.grey() : green = false, fill = null;
+  const FaceRing.green() : green = true, fill = null;
+  const FaceRing.progress(double this.fill) : green = false;
+
+  final bool green;
+  final double? fill;
+}
+
+/// Which side of the oval the setup arrow sits on. Never "left" or "right"
+/// in words: the preview is a mirror, so the arrow carries the direction.
+enum FaceArrowSide { left, right }
+
+/// The one button the camera screen can carry (D6), with a line under it.
+class FaceCameraAction {
+  const FaceCameraAction({required this.label, required this.onTap, this.busy = false, this.note});
+  final String label;
+  final VoidCallback? onTap;
+  final bool busy;
+  final String? note;
+}
+
+/// The camera screen (D2–D6, S2–S4).
+class FaceCameraView extends StatelessWidget {
+  const FaceCameraView({
     super.key,
-    required this.heading,
-    required this.camera,
-    required this.state,
+    required this.headline,
     this.line,
-    this.action,
-    this.caption,
-    this.below,
-    this.busy = false,
+    this.tone = FaceHeadlineTone.plain,
+    this.camera,
+    this.ring = const FaceRing.grey(),
+    this.tick = false,
+    this.place,
+    this.counter,
     this.onClose,
-    this.flash,
-    this.progress,
+    this.action,
+    this.arrow,
+    this.arrowPulse = false,
+    this.steps,
+    this.dim = false,
   });
 
-  /// The colour on the screen during the phone's light check, else null;
-  /// the whole page takes it so the face is lit by it.
-  final ValueListenable<Color?>? flash;
-
-  /// Which prompt is being answered, of how many: the dots under the words.
-  final (int, int)? progress;
-
-  /// What the screen is ("Set up your Face ID", "Punch-in"), shown above the
-  /// oval only while there is no [line] to show there instead.
-  final String heading;
-
-  /// The live preview, or null while the camera opens.
-  final CameraController? camera;
-  final FaceCaptureState state;
-
-  /// The words above the oval while looking or once detected (4289:26559:
-  /// the prompt, or "Verified"), or the red reason under it once a try has
-  /// failed (4289:26709).
+  final String headline;
   final String? line;
+  final FaceHeadlineTone tone;
+  final CameraController? camera;
+  final FaceRing ring;
 
-  /// The button under the oval, for a failed try (4289:26710) or a phone that
-  /// cannot detect a face; none while the selfie takes itself.
-  final FaceCaptureButton? action;
+  /// The green tick in the oval (D3).
+  final bool tick;
 
-  /// Under the button (4289:26711): "4 out of 5 tries left".
-  final String? caption;
+  /// The office the phone is in, top left ("✓ Sowaka Office"); null shows nothing.
+  final String? place;
 
-  /// A quiet link under the caption, where a screen needs one.
-  final Widget? below;
+  /// Setup's "1 of 3", top left, in place of the office.
+  final String? counter;
 
-  /// The selfie is being checked: a spinner under the oval.
-  final bool busy;
+  /// The close control; null hides it (D3, while the punch goes through).
   final VoidCallback? onClose;
+  final FaceCameraAction? action;
+  final FaceArrowSide? arrow;
+  final bool arrowPulse;
+
+  /// Setup's three bars at the bottom: (taken, current).
+  final (int, int)? steps;
+
+  /// The preview dimmed behind an answer that ends the try (D6).
+  final bool dim;
 
   @override
   Widget build(BuildContext context) {
     final preview = camera;
-    final size = preview?.value.isInitialized == true
-        ? preview!.value.previewSize
-        : null;
-    final failed = state == FaceCaptureState.failed;
-    final top = failed ? null : (line ?? heading);
-    final page = AnnotatedRegion<SystemUiOverlayStyle>(
+    final size = preview?.value.isInitialized == true ? preview!.value.previewSize : null;
+    final shortScreen = MediaQuery.sizeOf(context).height < 700;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
-        backgroundColor: _page,
+        backgroundColor: _dark,
         body: SafeArea(
-          bottom: false,
           child: Padding(
-            // Selfie camera (4289:26550): 16 in, 16 down, 20 round.
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // The words above the oval (4289:26558): 76 down, 20/600.
-                  if (top != null)
-                    Positioned(
-                      top: 76,
-                      left: 10,
-                      right: 10,
-                      child: Column(
-                        children: [
-                          Text(
-                            top,
-                            key: const ValueKey('face-heading'),
-                            textAlign: TextAlign.center,
-                            style: _sora(20, FontWeight.w600, Colors.white, height: 24 / 20, spacing: 0.4),
-                          ),
-                          if (progress case (final done, final total))
-                            Padding(
-                              padding: const EdgeInsets.only(top: 10),
-                              child: Row(
-                                key: const ValueKey('face-steps'),
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  for (var i = 0; i < total; i++)
-                                    Container(
-                                      width: i < done ? 18 : 8,
-                                      height: 8,
-                                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                                      decoration: BoxDecoration(
-                                        color: i < done ? _brand : Colors.white.withValues(alpha: 0.35),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  // Face alignment guide (4289:26553): 287×453, 128 down; the
-                  // camera shows only inside it.
-                  Positioned(
-                    top: 128,
-                    left: 0,
-                    right: 0,
-                    child: Center(
-                      child: SizedBox(
-                        width: 287,
-                        height: 453,
-                        child: Stack(
-                          alignment: Alignment.center,
+            padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+            child: Column(
+              children: [
+                SizedBox(
+                  height: 44,
+                  child: Row(
+                    children: [
+                      if (place != null)
+                        Row(
+                          key: const ValueKey('face-place'),
                           children: [
-                            ClipOval(
-                              child: SizedBox(
-                                width: 287,
-                                height: 453,
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    const ColoredBox(color: Color(0xFF2E3336)),
-                                    if (preview != null && size != null)
-                                      FittedBox(
-                                        fit: BoxFit.cover,
-                                        clipBehavior: Clip.hardEdge,
-                                        child: SizedBox(
-                                          // The sensor's size is landscape; the oval is upright.
-                                          width: size.height,
-                                          height: size.width,
-                                          child: CameraPreview(preview),
+                            const Icon(Icons.check_rounded, size: 16, color: _greenTick),
+                            const SizedBox(width: 6),
+                            Text(place!, style: const TextStyle(fontSize: 13, color: _soft)),
+                          ],
+                        )
+                      else if (counter != null)
+                        Text(counter!, key: const ValueKey('face-counter'), style: const TextStyle(fontSize: 14, color: _soft)),
+                      const Spacer(),
+                      if (onClose != null)
+                        Semantics(
+                          button: true,
+                          label: 'Close',
+                          child: InkResponse(
+                            onTap: onClose,
+                            radius: 22,
+                            child: const SizedBox(
+                              width: 44,
+                              height: 44,
+                              child: Icon(Icons.close_rounded, color: Colors.white, size: 22),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: shortScreen ? 20 : 48),
+                Text(
+                  headline,
+                  key: const ValueKey('face-heading'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.3,
+                    color: tone == FaceHeadlineTone.fix ? _amber : Colors.white,
+                    height: 1.25,
+                  ),
+                ),
+                SizedBox(
+                  height: 50,
+                  child: line == null
+                      ? null
+                      : Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            line!,
+                            key: const ValueKey('face-line'),
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 15, color: _soft),
+                          ),
+                        ),
+                ),
+                SizedBox(height: shortScreen ? 12 : 36),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.topCenter,
+                      child: SizedBox(
+                        width: 280,
+                        height: 360,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Positioned(
+                              left: 10,
+                              top: 10,
+                              child: ClipOval(
+                                child: SizedBox(
+                                  width: 260,
+                                  height: 340,
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      const ColoredBox(color: _ovalFill),
+                                      if (preview != null && size != null)
+                                        FittedBox(
+                                          fit: BoxFit.cover,
+                                          clipBehavior: Clip.hardEdge,
+                                          child: SizedBox(
+                                            // The sensor's size is landscape; the oval is upright.
+                                            width: size.height,
+                                            height: size.width,
+                                            child: CameraPreview(preview),
+                                          ),
                                         ),
-                                      ),
-                                    // A failed try dims the face (4289:26681).
-                                    if (failed) ColoredBox(color: Colors.black.withValues(alpha: 0.5)),
-                                  ],
+                                      if (dim) ColoredBox(color: Colors.black.withValues(alpha: 0.45)),
+                                      if (tick)
+                                        Center(
+                                          child: Container(
+                                            key: const ValueKey('face-tick'),
+                                            width: 88,
+                                            height: 88,
+                                            decoration: const BoxDecoration(color: _green, shape: BoxShape.circle),
+                                            child: const Icon(Icons.check_rounded, color: Colors.white, size: 48),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                            SvgPicture.asset('$_asset/guide_oval.svg', width: 287, height: 453),
-                            // Verified (4289:26670): a 291×315 green haze, the
-                            // 140 tick in its middle, 98 down the oval.
-                            if (state == FaceCaptureState.detected)
+                            Positioned.fill(child: CustomPaint(painter: _RingPainter(ring))),
+                            if (arrow != null)
                               Positioned(
-                                top: 98,
-                                child: Container(
-                                  key: const ValueKey('face-verified'),
-                                  width: 291,
-                                  height: 315,
-                                  alignment: Alignment.center,
-                                  decoration: const BoxDecoration(
-                                    color: Color(0x1716A34A),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: SvgPicture.asset('$_asset/success_check.svg', width: 140, height: 140),
-                                ),
+                                left: arrow == FaceArrowSide.left ? 28 : null,
+                                right: arrow == FaceArrowSide.right ? 28 : null,
+                                top: 148,
+                                child: _Arrow(side: arrow!, pulse: arrowPulse),
                               ),
                           ],
                         ),
                       ),
                     ),
                   ),
-                  if (onClose != null)
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: _NavButton(
-                        label: 'Close',
-                        onTap: onClose,
-                        child: SvgPicture.asset(
-                          '$_asset/close.svg',
-                          width: 20,
-                          height: 20,
-                          colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
-                        ),
+                ),
+                if (action != null) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: FilledButton(
+                      key: const ValueKey('face-action'),
+                      onPressed: action!.busy ? null : action!.onTap,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _blue,
+                        disabledBackgroundColor: _blue.withValues(alpha: 0.6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                    ),
-                  // Face detection status (4289:26705): 24 from the bottom, 8
-                  // apart; above the camera label while it shows.
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: failed ? 24 : 29 + 24 + 8,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (busy)
-                          const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4),
-                          )
-                        else if (failed && line != null)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: _FailureLine(text: line!),
-                          ),
-                        if (action case final button?) ...[
-                          const SizedBox(height: 8),
-                          button,
-                        ],
-                        if (caption case final text?) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            text,
-                            textAlign: TextAlign.center,
-                            style: _sora(11, FontWeight.w400, Colors.white, height: 18 / 11),
-                          ),
-                        ],
-                        if (below case final link?) ...[
-                          const SizedBox(height: 2),
-                          link,
-                        ],
-                      ],
+                      child: action!.busy
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : Text(action!.label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
                     ),
                   ),
-                  // Camera label (4289:26554): a 50% ink pill, 29 from the bottom.
-                  if (!failed)
-                    Positioned(
-                      bottom: 29,
-                      left: 0,
-                      right: 0,
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: const Color(0x80172126),
-                            borderRadius: BorderRadius.circular(100),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SvgPicture.asset('$_asset/camera.svg', width: 12, height: 12),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Front camera',
-                                style: _sora(10, FontWeight.w400, Colors.white, height: 14 / 10),
-                              ),
-                            ],
-                          ),
-                        ),
+                  if (action!.note != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        action!.note!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 13, color: _soft, height: 1.5),
                       ),
                     ),
                 ],
-              ),
+                if (steps case (final taken, final current))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Row(
+                      key: const ValueKey('face-steps'),
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (var i = 0; i < 3; i++)
+                          Container(
+                            width: 32,
+                            height: 6,
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            decoration: BoxDecoration(
+                              color: i < taken ? _green : i == current ? _blue : _ringGrey,
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
       ),
     );
-    final flashing = flash;
-    if (flashing == null) return page;
-    return ValueListenableBuilder<Color?>(
-      valueListenable: flashing,
-      builder: (_, colour, child) => Stack(
-        fit: StackFit.expand,
-        children: [
-          child!,
-          // The flash: the page takes the colour, the camera still reading
-          // under it; a word says what it is for, so it reads as the check
-          // it is and not a fault.
-          if (colour != null) ...[
-            ColoredBox(key: const ValueKey('face-flash'), color: colour),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 64,
-              child: Text(
-                'Hold still, reading the light on your face',
-                textAlign: TextAlign.center,
-                style: _sora(13, FontWeight.w600, Colors.white.withValues(alpha: 0.85), height: 20 / 13),
-              ),
-            ),
-          ],
-        ],
-      ),
-      child: page,
-    );
   }
 }
 
-/// What the camera shows besides the face: still looking (the prompt above
-/// the oval), a face matched (the tick, "Verified"), or a failed try (the
-/// dimmed oval, the red reason, Try again).
-enum FaceCaptureState { looking, detected, failed }
-
-/// The reason a try failed (4289:26706): red 16/600, the alert mark beside it.
-class _FailureLine extends StatelessWidget {
-  const _FailureLine({required this.text});
-
-  final String text;
+class _RingPainter extends CustomPainter {
+  const _RingPainter(this.ring);
+  final FaceRing ring;
 
   @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      SvgPicture.asset('$_asset/circle_alert_red.svg', width: 20, height: 20),
-      const SizedBox(width: 8),
-      Flexible(
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: _sora(16, FontWeight.w600, _red, height: 16.2 / 16, spacing: -0.16),
-        ),
-      ),
-    ],
-  );
+  void paint(Canvas canvas, Size size) {
+    final rect = Rect.fromLTWH(4, 4, size.width - 8, size.height - 8);
+    final base = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4
+      ..color = ring.green ? _green : _ringGrey;
+    canvas.drawOval(rect, base);
+    final fill = ring.fill;
+    if (fill != null && fill > 0) {
+      final arc = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 6
+        ..strokeCap = StrokeCap.round
+        ..color = fill >= 1 ? _green : _blue;
+      canvas.drawArc(rect, -pi / 2, 2 * pi * fill.clamp(0, 1), false, arc);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RingPainter old) => old.ring.green != ring.green || old.ring.fill != ring.fill;
 }
 
-/// The brand-blue button (4266:26113, 4200:55123): 56 high, 16 radius, or
-/// the pressed blue while it cannot be used.
-class FaceCaptureButton extends StatelessWidget {
-  const FaceCaptureButton({
-    super.key,
-    required this.label,
-    required this.onTap,
-    this.enabled = true,
-    this.busy = false,
-  });
+/// The 64 px arrow inside the oval (S3, S4), pulsing when the turn is slow.
+class _Arrow extends StatefulWidget {
+  const _Arrow({required this.side, required this.pulse});
+  final FaceArrowSide side;
+  final bool pulse;
 
-  final String label;
-  final VoidCallback? onTap;
-  final bool enabled;
-  final bool busy;
+  @override
+  State<_Arrow> createState() => _ArrowState();
+}
+
+class _ArrowState extends State<_Arrow> with SingleTickerProviderStateMixin {
+  late final AnimationController _beat = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.pulse) _beat.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(_Arrow old) {
+    super.didUpdateWidget(old);
+    if (widget.pulse && !_beat.isAnimating) _beat.repeat(reverse: true);
+    if (!widget.pulse && _beat.isAnimating) {
+      _beat.stop();
+      _beat.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _beat.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final live = enabled && !busy && onTap != null;
     return Semantics(
-      button: true,
-      enabled: live,
-      label: label,
-      child: Material(
-        color: enabled ? _brand : _locked,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: live ? onTap : null,
-          child: SizedBox(
-            height: 56,
-            child: Center(
-              child: busy
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : Text(
-                      label,
-                      textAlign: TextAlign.center,
-                      style: _sora(
-                        16,
-                        FontWeight.w600,
-                        Colors.white,
-                        height: 24 / 16,
-                        spacing: -0.16,
-                      ),
-                    ),
-            ),
+      label: 'Turn your head toward this arrow',
+      child: AnimatedBuilder(
+        animation: _beat,
+        builder: (context, child) => Transform.scale(scale: 1 + 0.15 * _beat.value, child: child),
+        child: Container(
+          key: ValueKey('face-arrow-${widget.side.name}'),
+          width: 64,
+          height: 64,
+          decoration: const BoxDecoration(color: _blue, shape: BoxShape.circle),
+          child: Icon(
+            widget.side == FaceArrowSide.left ? Icons.arrow_back_rounded : Icons.arrow_forward_rounded,
+            color: Colors.white,
+            size: 32,
           ),
         ),
       ),
@@ -388,12 +377,11 @@ class FaceCaptureButton extends StatelessWidget {
   }
 }
 
-/// The page before the camera (4200:55075): what Face ID is for, the
-/// illustration, three tips, the consent, and the button that starts it.
+/// Before setup (S1): what it is, three thumbnails, the consent in normal
+/// contrast with what is stored, and the button that agrees and starts.
 class FaceSetupIntro extends StatelessWidget {
   const FaceSetupIntro({
     super.key,
-    required this.stepTitle,
     required this.consent,
     required this.onStart,
     this.onBack,
@@ -401,9 +389,7 @@ class FaceSetupIntro extends StatelessWidget {
     this.problem,
   });
 
-  final String stepTitle;
-
-  /// The consent, word for word (4200:55125); null while it loads.
+  /// The consent, word for word; null while it loads.
   final String? consent;
 
   /// Null while the consent has not loaded: the button waits for it.
@@ -416,416 +402,222 @@ class FaceSetupIntro extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            FaceStepHeader(title: stepTitle, onBack: onBack),
-            Expanded(
-              child: SingleChildScrollView(
-                // Setup guidance (4200:55100): 16 in, 16 down, 20 apart.
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Set up your Face ID',
-                      textAlign: TextAlign.center,
-                      style: _sora(
-                        20,
-                        FontWeight.w600,
-                        _ink,
-                        height: 24 / 20,
-                        spacing: 0.4,
-                      ),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Transform.translate(
+                    offset: const Offset(-10, 0),
+                    child: IconButton(
+                      onPressed: onBack,
+                      tooltip: 'Back',
+                      icon: const Icon(Icons.arrow_back_rounded, color: _ink),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Face enrollment is required before you\ncan punch in for attendance.',
-                      textAlign: TextAlign.center,
-                      style: _sora(
-                        14,
-                        FontWeight.w400,
-                        _secondary,
-                        height: 22 / 14,
-                      ),
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 32),
+                        const Text(
+                          'Set up your face check',
+                          style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, letterSpacing: -0.5, height: 1.2, color: _ink),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Three quick photos. After this, punching in is a glance at the camera.',
+                          style: TextStyle(fontSize: 16, color: _muted, height: 1.5),
+                        ),
+                        const SizedBox(height: 40),
+                        Row(
+                          children: [
+                            for (final (asset, label) in const [
+                              ('assets/images/face_check/setup_front.jpg', 'Front'),
+                              ('assets/images/face_check/setup_left.jpg', 'Left'),
+                              ('assets/images/face_check/setup_right.jpg', 'Right'),
+                            ]) ...[
+                              if (label != 'Front') const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  children: [
+                                    AspectRatio(
+                                      aspectRatio: 235 / 300,
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(999),
+                                        child: Image.asset(asset, fit: BoxFit.cover),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(label, style: const TextStyle(fontSize: 13, color: _muted)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        if (problem != null) ...[
+                          const SizedBox(height: 24),
+                          Text(problem!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, color: Color(0xFFC0392B), height: 1.4)),
+                          if (onRetry != null)
+                            TextButton(onPressed: onRetry, child: const Text('Try again')),
+                        ],
+                      ],
                     ),
-                    const SizedBox(height: 20),
-                    // Face enrollment illustration (4200:55104): 260 high.
-                    Container(
-                      height: 260,
-                      decoration: BoxDecoration(
-                        color: _surface,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Stack(
+                  ),
+                ),
+                if (consent != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16, top: 12),
+                    child: Text.rich(
+                      TextSpan(
+                        style: const TextStyle(fontSize: 13, color: _muted, height: 1.5),
                         children: [
-                          Positioned(
-                            top: 26,
-                            left: 0,
-                            right: 0,
-                            child: Center(
-                              child: Image.asset(
-                                '$_asset/setup_intro.png',
-                                width: 186,
-                                height: 169,
-                                fit: BoxFit.contain,
+                          TextSpan(text: '${consent!} '),
+                          WidgetSpan(
+                            alignment: PlaceholderAlignment.baseline,
+                            baseline: TextBaseline.alphabetic,
+                            child: GestureDetector(
+                              onTap: () => showWhatsStored(context),
+                              child: const Text(
+                                "What's stored",
+                                key: ValueKey('face-whats-stored'),
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: _blue, height: 1.5),
                               ),
                             ),
                           ),
-                          Positioned(
-                            bottom: 18,
-                            left: 0,
-                            right: 0,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                SvgPicture.asset(
-                                  '$_asset/camera_14.svg',
-                                  width: 14,
-                                  height: 14,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'One-time face setup',
-                                  style: _sora(
-                                    12,
-                                    FontWeight.w400,
-                                    _secondary,
-                                    height: 16.2 / 12,
-                                    spacing: -0.16,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    // Capture preparation (4200:55110): 8 in, 4 down, 16 apart.
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            'For a clear face capture',
-                            style: _sora(
-                              14,
-                              FontWeight.w600,
-                              _ink,
-                              height: 16.2 / 14,
-                              spacing: -0.16,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          const _Tip(
-                            icon: 'scan_face_status.svg',
-                            text: 'Keep your face inside the oval.',
-                          ),
-                          const SizedBox(height: 14),
-                          const _Tip(
-                            icon: 'sun.svg',
-                            text: 'Face a light source.',
-                          ),
-                          const SizedBox(height: 14),
-                          const _Tip(
-                            icon: 'user_round.svg',
-                            text: 'Uncover your face and hold still.',
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            // Setup action (4200:55122): 16 in, 24 above and below, 10 apart.
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (problem case final text?) ...[
-                    Text(
-                      text,
                       textAlign: TextAlign.center,
-                      style: _sora(
-                        13,
-                        FontWeight.w400,
-                        _amber,
-                        height: 18 / 13,
-                      ),
                     ),
-                    const SizedBox(height: 10),
-                  ],
-                  FaceCaptureButton(
-                    label: 'Set up Face ID',
-                    enabled: onStart != null,
-                    onTap: onStart,
                   ),
-                  const SizedBox(height: 10),
-                  if (consent case final words?)
-                    Text(
-                      words,
-                      textAlign: TextAlign.center,
-                      style: _sora(
-                        11,
-                        FontWeight.w400,
-                        _tertiary,
-                        height: 18 / 11,
-                      ),
-                    )
-                  else if (onRetry case final retry?)
-                    Center(
-                      child: FaceQuietLink(
-                        label: 'Load the consent again',
-                        onTap: retry,
-                      ),
-                    )
-                  else
-                    const Center(
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: _brand,
-                        ),
-                      ),
+                SizedBox(
+                  height: 52,
+                  child: FilledButton(
+                    key: const ValueKey('face-agree'),
+                    onPressed: onStart,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _blue,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                ],
-              ),
+                    child: const Text('Agree and start', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// A capture tip (4200:55113): a 20 icon and the words, 12 apart.
-class _Tip extends StatelessWidget {
-  const _Tip({required this.icon, required this.text});
-
-  final String icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      SvgPicture.asset('$_asset/$icon', width: 20, height: 20),
-      const SizedBox(width: 12),
-      Expanded(
-        child: Text(
-          text,
-          style: _sora(14, FontWeight.w400, _secondary, height: 22 / 14),
+/// What the face check keeps, and where: the retention table behind the
+/// consent's "What's stored".
+Future<void> showWhatsStored(BuildContext context) {
+  const rows = [
+    ('Face template', 'A set of numbers describing your face, kept by AWS Rekognition in Mumbai. Deleted when you leave or HR resets your face check.'),
+    ('One setup photo', 'The front photo from setup, encrypted in Sowaka\'s private storage, so your face can be set up again without you. Deleted with the template.'),
+    ('Daily checks', 'Nothing from them is kept: each selfie is matched and thrown away. Only the time and the result are logged.'),
+  ];
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    backgroundColor: Colors.white,
+    builder: (context) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text("What's stored", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: _ink)),
+            const SizedBox(height: 16),
+            for (final (title, body) in rows)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: _ink)),
+                    const SizedBox(height: 4),
+                    Text(body, style: const TextStyle(fontSize: 14, color: _muted, height: 1.45)),
+                  ],
+                ),
+              ),
+          ],
         ),
       ),
-    ],
+    ),
   );
 }
 
-/// The step navigation (4200:55092): 56 high, 16 in, a 40 box each side.
-/// Without [onBack] the arrow's box stays empty, for a step with nowhere to
-/// go back to.
-class FaceStepHeader extends StatelessWidget {
-  const FaceStepHeader({
-    super.key,
-    required this.title,
-    this.onBack,
-    this.onClose,
-  });
+/// After setup (S5): the tick, "You're set up", the punch it made, and Done.
+class FaceSetupDone extends StatelessWidget {
+  const FaceSetupDone({super.key, required this.line, required this.onDone});
 
-  final String title;
-  final VoidCallback? onBack;
-  final VoidCallback? onClose;
+  /// "Punched in at 4:00 PM", or what the setup led to.
+  final String? line;
+  final VoidCallback onDone;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 56,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
-          children: [
-            if (onBack == null)
-              const SizedBox(width: 40, height: 40)
-            else
-              _NavButton(
-                label: 'Back',
-                alignment: Alignment.centerLeft,
-                onTap: onBack,
-                child: SvgPicture.asset(
-                  '$_asset/arrow_left.svg',
-                  width: 24,
-                  height: 24,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Spacer(),
+                Center(
+                  child: Container(
+                    width: 80,
+                    height: 80,
+                    decoration: const BoxDecoration(color: Color(0xFFE4F5EB), shape: BoxShape.circle),
+                    child: const Icon(Icons.check_rounded, color: _green, size: 40),
+                  ),
                 ),
-              ),
-            Expanded(
-              child: Text(
-                title,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: _sora(
-                  16,
-                  FontWeight.w600,
-                  _ink,
-                  height: 16.2 / 16,
-                  spacing: -0.16,
+                const SizedBox(height: 28),
+                const Text(
+                  "You're set up",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, letterSpacing: -0.5, color: _ink),
                 ),
-              ),
+                if (line != null) ...[
+                  const SizedBox(height: 10),
+                  Text(line!, key: const ValueKey('face-done-line'), textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, color: _muted)),
+                ],
+                const Spacer(),
+                SizedBox(
+                  height: 52,
+                  child: FilledButton(
+                    key: const ValueKey('face-done'),
+                    onPressed: onDone,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _blue,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Done', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
+                  ),
+                ),
+              ],
             ),
-            if (onClose == null)
-              const SizedBox(width: 40, height: 40)
-            else
-              _NavButton(
-                label: 'Close',
-                alignment: Alignment.centerRight,
-                onTap: onClose,
-                child: SvgPicture.asset(
-                  '$_asset/close.svg',
-                  width: 20,
-                  height: 20,
-                ),
-              ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
-
-/// The bottom button and the line under it, for the pages that keep one
-/// (the setup success page): 56 high, 16 radius, brand blue.
-class FaceCaptureAction extends StatelessWidget {
-  const FaceCaptureAction({
-    super.key,
-    required this.label,
-    required this.caption,
-    required this.onTap,
-    this.enabled = true,
-    this.busy = false,
-  });
-
-  final String label;
-  final String caption;
-  final VoidCallback? onTap;
-  final bool enabled;
-  final bool busy;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      FaceCaptureButton(
-        label: label,
-        onTap: onTap,
-        enabled: enabled,
-        busy: busy,
-      ),
-      if (caption.isNotEmpty) ...[
-        const SizedBox(height: 10),
-        Text(
-          caption,
-          textAlign: TextAlign.center,
-          style: _sora(11, FontWeight.w400, _tertiary, height: 18 / 11),
-        ),
-      ],
-    ],
-  );
-}
-
-/// A quiet text link, white on the camera or the link blue on white.
-class FaceQuietLink extends StatelessWidget {
-  const FaceQuietLink({
-    super.key,
-    required this.label,
-    required this.onTap,
-    this.onCamera = false,
-  });
-
-  final String label;
-  final VoidCallback? onTap;
-  final bool onCamera;
-
-  @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(8),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      child: Text(
-        label,
-        style: _sora(
-          12,
-          FontWeight.w600,
-          onCamera ? Colors.white : const Color(0xFF0668D8),
-          height: 18 / 12,
-        ),
-      ),
-    ),
-  );
-}
-
-class _NavButton extends StatelessWidget {
-  const _NavButton({
-    required this.label,
-    required this.onTap,
-    required this.child,
-    this.alignment = Alignment.center,
-  });
-
-  final String label;
-  final Alignment alignment;
-  final VoidCallback? onTap;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    label: label,
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: SizedBox(
-        width: 40,
-        height: 40,
-        child: Align(alignment: alignment, child: child),
-      ),
-    ),
-  );
-}
-
-TextStyle _sora(
-  double size,
-  FontWeight weight,
-  Color color, {
-  double? height,
-  double? spacing,
-}) => TextStyle(
-  fontFamily: 'Sora',
-  fontSize: size,
-  fontWeight: weight,
-  color: color,
-  height: height,
-  letterSpacing: spacing,
-);
-
-const _asset = 'assets/icons/face';
-const _ink = Color(0xFF222222);
-const _secondary = Color(0xFF484848);
-const _tertiary = Color(0xFF717171);
-const _surface = Color(0xFFF7F7F9);
-const _brand = Color(0xFF0571A6);
-const _locked = Color(0xFF96B7C7);
-const _amber = Color(0xFFA75B20);
-const _red = Color(0xFFFF383C);
-const _page = Color(0xFF222222);

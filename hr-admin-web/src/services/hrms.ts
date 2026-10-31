@@ -1033,7 +1033,7 @@ export const setReportingManager = (employeeUserId: string, managerUserId: strin
 export const clearReportingManager = (employeeUserId: string) =>
   api<unknown>(`/admin/reporting/employees/${employeeUserId}/manager`, { method: 'DELETE' });
 
-// ------------------------------------------------------------------ Face ID
+// ------------------------------------------------------------------ Face check
 
 export type FaceIdSettingsDTO = { checkAtPunch: boolean };
 
@@ -1052,7 +1052,7 @@ export type FaceIdPersonDTO = {
 
 export type FaceIdOverviewDTO = {
   settings: FaceIdSettingsDTO;
-  liveness: 'aws' | 'device';
+  liveness: 'aws' | 'server' | 'device';
   matchThreshold: number;
   enrolledCount: number;
   people: FaceIdPersonDTO[];
@@ -1070,8 +1070,13 @@ export type FaceCheckDTO = {
   similarity: number | null;
   /** Set when the face matched a colleague's: someone punching in for someone else. */
   matchedName: string | null;
-  liveness: 'aws' | 'device' | 'none';
+  liveness: 'aws' | 'device' | 'server_spoof' | 'server_flash' | 'none';
   livenessConfidence: number | null;
+  /** The photo-or-screen detector's median, 0–1 real: the server's (decides) and the phone's. */
+  spoofServer?: number | null;
+  spoofPhone?: number | null;
+  /** How much the face moved over the burst, px at the 160 px crop. */
+  motionMean?: number | null;
   deviceCheckPassed: boolean | null;
   usedForPunch: boolean;
 };

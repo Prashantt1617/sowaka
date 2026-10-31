@@ -31,8 +31,10 @@ export function faceIdSettingsOf(company: { faceId?: CompanyFaceIdSettings } | n
 
 /** The face enrolled for one person, on their user record. */
 export interface UserFaceId {
-  /** Rekognition's id for the indexed face. */
+  /** Rekognition's id for the indexed face (the front photo's). */
   faceId: string;
+  /** Every face indexed for this person: front, then the turned photos. All carry their user id. */
+  faceIds?: string[];
   collectionId: string;
   /** The enrolment photo in the private bucket. */
   photoKey?: string;
@@ -58,6 +60,10 @@ export type FaceCheckReason =
   | 'not_a_match'
   | 'other_person'
   | 'liveness_failed'
+  /** The screen detector called the burst a photo or a screen. */
+  | 'spoof'
+  /** The screen detector was unsure: another look, closer. */
+  | 'uncertain'
   | 'not_enrolled'
   | 'already_enrolled_elsewhere'
   | 'unavailable';
@@ -80,19 +86,29 @@ export interface FaceVerification {
   matchedUserId?: string;
   liveness?: {
     /**
-     * `server_flash`: the server set the colours and judged the face's
-     * answer from the frames the phone sent; `device`: the phone's own
-     * check, only logged; `aws`: a Rekognition Face Liveness session.
+     * `server_spoof`: the server ran the screen detector on the burst of face
+     * crops the phone sent, against a one-time challenge; `server_flash`: the
+     * colour flash of builds 59 and 60 (old rows); `device`: the phone's own
+     * word, only logged; `aws`: a Rekognition Face Liveness session.
      */
-    mode: 'aws' | 'device' | 'server_flash' | 'none';
+    mode: 'aws' | 'device' | 'server_flash' | 'server_spoof' | 'none';
     /** Rekognition's confidence, for an AWS session. */
     confidence?: number;
     sessionId?: string;
-    /** What the app says its own check asked and saw. Not trusted, only logged. */
+    /** What the app says its own check measured. Not trusted, only logged. */
     challenge?: string;
     devicePassed?: boolean;
-    /** The server's challenge this check answered, and what it measured ("r+5.1/-2.0 b+6.2/+0.3"). */
+    /** The server's challenge this check answered. */
     challengeId?: string;
+    /** Screen detector medians, real-face probability 0–1: the phone's (logged) and the server's (decides). */
+    spoofPhone?: number;
+    spoofServer?: number;
+    /** Each crop's server score, in burst order. */
+    spoofScores?: number[];
+    /** Micro-motion over the burst, at the 160 px crop scale: mean drift, and its non-rigid part. */
+    motionMean?: number;
+    motionRigid?: number;
+    /** Old flash rows. */
     colours?: FlashColourName[];
     measured?: string;
     flashPassed?: boolean;
@@ -118,7 +134,8 @@ export interface FaceChallenge {
   id: string;
   org: string;
   userId: string;
-  colours: FlashColourName[];
+  /** Old challenges carried colours for the flash; new ones are only a one-time id. */
+  colours?: FlashColourName[];
   createdAt: Date;
   expiresAt: Date;
   usedAt?: Date;
@@ -142,6 +159,6 @@ export interface FaceLivenessSession {
 // v3 (29 Oct 2026): the line about where it is stored was taken off the
 // setup screen at Sowaka's request; v2 had "It is stored by AWS in Mumbai and
 // deleted when I leave." Whoever agreed to v2 keeps that record.
-export const FACE_CONSENT_VERSION = '2026-10-v3';
+export const FACE_CONSENT_VERSION = '2026-10-v4';
 export const FACE_CONSENT_AGREE =
-  'I agree to Face ID keeping a template of my face, made from this selfie, to confirm it\u2019s me when I punch in.';
+  'Sowaka keeps a template of your face to confirm it\u2019s you when you punch in.';

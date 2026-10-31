@@ -11,18 +11,18 @@ import 'face_check_screen.dart';
 import 'face_id_models.dart';
 import 'face_sounds.dart';
 
-/// Setting up Face ID, at the first punch the company checks (Figma
-/// 4194:21786): a page that says what it is for, with the consent under its
-/// button (4200:55075) — pressing Set up Face ID is agreeing — then the
-/// camera, where the selfie takes itself once the face is in the oval.
+/// Setting up the face check (boards S1–S5), at the first punch the company
+/// checks, after an HR reset, or in onboarding: the intro with the consent
+/// ("Agree and start" is agreeing), then three photos the camera takes on its
+/// own — front, then the head turned toward an arrow on one side of the oval,
+/// then the other — with a ring that fills and a tap of haptic for each, so
+/// nobody reads while turning. All three go to the server with the front
+/// burst's crops; the setup is that day's check, so at a punch the punch is
+/// made from here and the done screen says when.
 ///
-/// Once set up it says so on the camera ("Verified", with the tick, Figma
-/// 4289:26644) and, at a punch, pops with the token the setup earned: the
-/// first day's setup is that day's check (Figma 4309:24713, "Setup & verify
-/// face id"), so there is no second selfie. In onboarding there is no punch,
-/// so it pops after the tick. A failed setup says why, with the tries left;
-/// once the day's tries are spent, or while the face service is down, the
-/// punch can go to the manager instead. Null when closed.
+/// A refused setup says why on the camera for a moment and starts again from
+/// the front photo; once the day's tries are spent, or while the face service
+/// is down, the punch can go to the manager instead. Null when closed.
 class FaceSetupScreen extends StatefulWidget {
   const FaceSetupScreen({
     super.key,
@@ -30,6 +30,8 @@ class FaceSetupScreen extends StatefulWidget {
     this.type = 'in',
     this.readLocation,
     this.onboarding = false,
+    this.place,
+    this.punch,
   });
 
   final ManagerApiService api;
@@ -40,75 +42,57 @@ class FaceSetupScreen extends StatefulWidget {
   /// Where the phone is, for a punch sent to the manager. Optional.
   final Future<PunchReading> Function()? readLocation;
 
-  /// Set up during onboarding, with no punch to make: no punch words, and
-  /// no sending a punch to the manager, and no selfie check after it.
+  /// Set up during onboarding, with no punch to make.
   final bool onboarding;
 
-  /// How long "Face id successfully set up" stays on the camera before the
-  /// selfie check (or, in onboarding, the way out).
-  static Duration successPause = const Duration(milliseconds: 1500);
+  /// The punch screen's location check, run while the camera warms up.
+  final Future<FacePlace>? place;
 
-  /// How long a refusal's reason stays on the camera before the prompts resume.
-  static Duration failPause = const Duration(milliseconds: 2200);
+  /// The punch, made with the setup's token; null hands the token back.
+  final FacePunch? punch;
+
+  /// How long an answer stays on the camera before it looks again.
+  static Duration failPause = const Duration(seconds: 2);
 
   @override
   State<FaceSetupScreen> createState() => _FaceSetupScreenState();
 }
 
-class _FaceSetupScreenState extends State<FaceSetupScreen>
-    with WidgetsBindingObserver {
+class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingObserver {
   final FaceCamera _camera = FaceCamera.create();
+  FaceIdStatus? _status;
   FaceConsent? _consent;
   String? _loadProblem;
   bool _agreed = false;
-  bool _busy = false;
-  bool _sendingFallback = false;
-  bool _fallbackOpen = false;
-  int? _attemptsLeft;
-
-  /// The day's tries, as the server counts them (FACE_MAX_ATTEMPTS).
-  int _maxAttempts = 5;
-
-  /// The punch token the setup earned; handed to the punch after the tick.
-  String? _token;
-
-  /// The company checks liveness with AWS Face Liveness, which setup does
-  /// not run: the punch then takes the selfie check after setup, as before.
-  bool _awsLiveness = false;
-  String? _problemTitle;
-  String? _problem;
-  late final FaceAutoCapture _auto = FaceAutoCapture(
-    camera: _camera,
-    // Never before they agree: the consent is theirs to give first.
-    allowed: () =>
-        mounted &&
-        !_busy &&
-        _agreed &&
-        _consent != null &&
-        !(_fallbackOpen && !widget.onboarding) &&
-        _camera.cameraProblem == null,
-    onCapture: _enrol,
-  );
-
-  /// The consent's words changed under them: the intro says so, once.
   bool _consentChanged = false;
 
-  /// Set up: the tick is on the camera until [_onTimer] moves on.
-  bool _setUp = false;
-  Timer? _onTimer;
+  Future<String?>? _challenge;
+
+  /// The photos taken so far: the front one, then the turned ones.
+  final List<FaceBurst> _photos = [];
+
+  bool _sending = false;
+  (String, String?)? _answer;
+  bool _fallbackOpen = false;
+  String? _fallbackLine;
+  bool _sendingFallback = false;
+
+  /// Set up; with the punch time when a punch was made from here.
+  bool _done = false;
+  DateTime? _punchedAt;
+  String? _token;
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _camera.addListener(_changed);
-    // Every try's record goes to the server, pass or fail, so the checks can
-    // be tuned on what phones actually measure.
-    _camera.onTryEnded = (summary) => unawaited(widget.api.logFaceTry(summary));
-    // Each try's colours come from the server, which judges the light
-    // check from the frames sent with the photo.
-    _camera.challengeSource = widget.api.startFaceChallenge;
-    unawaited(_camera.start());
+    _camera
+      ..addListener(_changed)
+      ..onTryEnded = ((summary) => unawaited(widget.api.logFaceTry(summary)))
+      ..onNewTry = _newChallenge
+      ..onBurst = _onBurst
+      ..pose = FacePose.front;
     unawaited(_load());
   }
 
@@ -118,206 +102,180 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
       final status = await widget.api.fetchFaceStatus();
       if (!mounted) return;
       setState(() {
+        _status = status;
         _consent = status.consent;
-        _fallbackOpen = status.fallbackAvailable;
-        _maxAttempts = status.maxAttempts;
-        _awsLiveness = status.liveness.aws;
+        if (status.fallbackAvailable && !widget.onboarding) _openFallback(null);
       });
-      _auto.check();
     } on ManagerApiException catch (error) {
-      if (mounted)
-        setState(
-          () => _loadProblem = error.offline
-              ? 'No internet connection. Connect and try again.'
-              : error.message,
-        );
+      if (mounted) setState(() => _loadProblem = error.offline ? 'No internet connection. Connect and try again.' : error.message);
     } catch (_) {
-      if (mounted)
-        setState(() => _loadProblem = "Face ID couldn't be loaded. Try again.");
+      if (mounted) setState(() => _loadProblem = "The face check couldn't be loaded. Try again.");
     }
   }
 
+  void _newChallenge() {
+    _challenge = widget.api.startFaceChallenge().catchError((Object _) => null);
+  }
+
   void _changed() {
-    if (!mounted) return;
-    setState(() {});
-    _auto.check();
+    if (mounted) setState(() {});
+  }
+
+  void _agree() {
+    setState(() {
+      _agreed = true;
+      _consentChanged = false;
+    });
+    unawaited(_camera.start());
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused) {
+    if (!_agreed || _done) return;
+    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
       unawaited(_camera.pause());
-    } else if (state == AppLifecycleState.resumed &&
-        !_camera.ready &&
-        !_busy &&
-        !_setUp) {
+    } else if (state == AppLifecycleState.resumed && !_camera.ready && !_sending) {
+      // Back at the photo being taken, with the ones already taken kept.
       unawaited(_camera.start());
     }
   }
 
   @override
   void dispose() {
-    _onTimer?.cancel();
-    _failTimer?.cancel();
+    _timer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _camera.removeListener(_changed);
-    _auto.dispose();
     _camera.dispose();
     super.dispose();
   }
 
+  /// A photo taken: the ring fills a third, a tap of haptic, and the next
+  /// pose; after the third, the setup goes to the server.
+  void _onBurst(FaceBurst burst) {
+    if (!mounted || _sending) return;
+    unawaited(FaceSounds.step());
+    setState(() => _photos.add(burst));
+    switch (_photos.length) {
+      case 1:
+        _camera.nextPose(FacePose.turnA);
+      case 2:
+        _camera.nextPose(FacePose.turnB);
+      default:
+        unawaited(_enrol());
+    }
+  }
+
   Future<void> _enrol() async {
     final consent = _consent;
-    if (consent == null || !_agreed || _busy || !mounted) return;
-    _auto.spend();
-    setState(() {
-      _busy = true;
-      _problem = null;
-      _dismissed = false;
-    });
+    if (consent == null || _photos.length < 3) return;
+    setState(() => _sending = true);
     try {
-      _camera.noteCapture();
-      final photo = await _camera.capture();
-      if (photo == null) {
-        _fail(
-          'Photo not taken',
-          'The camera did not take the photo. Try again.',
-        );
-        await _camera.resume();
-        return;
-      }
-      final evidence = await _camera.evidence();
-      // The consent's version goes with the photo: the server records when
-      // they agreed, and to which line. The token it hands back is the punch's:
-      // setting up is the first day's check.
-      _token = await widget.api.enrolFace(
-        jpeg: photo,
+      final challengeId = await (_challenge ?? Future<String?>.value()).timeout(const Duration(seconds: 6), onTimeout: () => null);
+      final token = await widget.api.enrolFace(
+        front: _photos[0],
+        turned: _photos.sublist(1, 3),
         consentVersion: consent.version,
-        challenge: _camera.liveness.challengesDone ? 'turn+blink+flash ${_camera.checkReport}' : 'none',
-        evidence: evidence,
+        challengeId: challengeId,
       );
       FaceCheckOutcome.enrolledThisRun = true;
+      _token = token;
+      DateTime? at;
+      final punch = widget.punch;
+      if (punch != null && token != null && _status?.liveness.aws != true) {
+        try {
+          at = await punch(token);
+        } catch (_) {
+          at = null;
+        }
+        if (!mounted) return;
+        if (at == null) {
+          // The punch screen has taken over (outside the office, say).
+          Navigator.of(context).pop(FaceCheckOutcome.passed(token));
+          return;
+        }
+      }
       if (!mounted) return;
       unawaited(FaceSounds.done());
-      // "Verified" on the camera for a moment, then on to the punch.
-      setState(() => _setUp = true);
-      _onTimer = Timer(FaceSetupScreen.successPause, () {
-        if (!mounted) return;
-        unawaited(_camera.pause());
-        unawaited(_afterSetUp());
+      unawaited(_camera.pause());
+      setState(() {
+        _done = true;
+        _punchedAt = at;
+      });
+    } on ManagerApiException catch (error) {
+      _refused(error);
+    } catch (_) {
+      _again("The face check can't be set up right now", 'Try again in a few minutes.');
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  void _refused(ManagerApiException error) {
+    if (!mounted) return;
+    final face = error.details?['face'];
+    final reason = face is Map ? face['reason'] as String? : null;
+    if (reason == 'already_enrolled') {
+      // Set up already (on another phone, or before this profile was read):
+      // nothing to set up, so the punch takes the daily check.
+      FaceCheckOutcome.enrolledThisRun = true;
+      Navigator.of(context).pop(const FaceCheckOutcome.needsCheck());
+      return;
+    }
+    if (reason == 'consent_changed' && face is Map && face['consent'] is Map<String, dynamic>) {
+      // The line changed since it was shown: agree to the new one first.
+      unawaited(_camera.pause());
+      setState(() {
+        _consent = FaceConsent.fromJson(face['consent'] as Map<String, dynamic>);
+        _agreed = false;
+        _consentChanged = true;
+        _photos.clear();
+        _camera.pose = FacePose.front;
       });
       return;
-    } on ManagerApiException catch (error) {
-      final face = error.details?['face'];
-      final reason = face is Map ? face['reason'] as String? : null;
-      if (reason == 'already_enrolled') {
-        // Set up already (on another phone, or before this profile was
-        // read): nothing to set up, so the punch takes the selfie check.
-        FaceCheckOutcome.enrolledThisRun = true;
-        if (mounted)
-          Navigator.of(context).pop(const FaceCheckOutcome.needsCheck());
-        return;
-      }
-      if (reason == 'consent_changed' &&
-          face is Map &&
-          face['consent'] is Map<String, dynamic>) {
-        // The line changed since it was shown: agree to the new one first.
-        setState(() {
-          _consent = FaceConsent.fromJson(
-            face['consent'] as Map<String, dynamic>,
-          );
-          _agreed = false;
-        });
-        // Back on the intro, which says why; the camera starts clean.
-        _problem = null;
-        _problemTitle = null;
-        _consentChanged = true;
-      } else {
-        setState(() {
-          if (face is Map && face['attemptsLeft'] is num)
-            _attemptsLeft = (face['attemptsLeft'] as num).toInt();
-          if (face is Map && face['fallback'] == true) _fallbackOpen = true;
-        });
-        _fail(
-          FaceCheckResult(
-            passed: false,
-            reason: reason ?? 'not_a_match',
-            message: error.message,
-          ).title,
-          error.offline
-              ? 'No internet connection. Connect and try again.'
-              : error.message,
-        );
-      }
-      await _camera.resume();
-    } catch (_) {
-      _fail(
-        'Face ID unavailable',
-        "Face ID can't be set up right now. Try again in a few minutes.",
-      );
-      await _camera.resume();
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
-  }
-
-  /// After the tick: out of onboarding, or back to the punch with the
-  /// setup's token. Only a server that hands no token back (one from before
-  /// it did) still sends the person through a selfie check.
-  Future<void> _afterSetUp() async {
-    final navigator = Navigator.of(context);
-    if (widget.onboarding) {
-      navigator.pop(const FaceCheckOutcome.needsCheck());
-      return;
-    }
-    if (_token case final token? when !_awsLiveness) {
-      navigator.pop(FaceCheckOutcome.passed(token));
-      return;
-    }
-    final outcome = await navigator.push<FaceCheckOutcome>(
-      MaterialPageRoute(
-        builder: (_) => FaceCheckScreen(
-          api: widget.api,
-          type: widget.type,
-          readLocation: widget.readLocation,
-        ),
-      ),
-    );
-    if (mounted) navigator.pop(outcome);
-  }
-
-  /// A refused setup: the reason is said on the camera for a moment, then
-  /// the prompts start over on their own. No button to press.
-  void _fail(String title, String message) {
-    if (!mounted) return;
     unawaited(FaceSounds.failed());
+    if (face is Map && face['fallback'] == true && !widget.onboarding) {
+      setState(() => _openFallback(reason));
+      return;
+    }
+    if (error.offline) {
+      _again('No internet connection', 'Connect and try again.');
+      return;
+    }
+    final result = FaceCheckResult(passed: false, reason: reason ?? 'not_a_match', message: error.message);
+    if (reason == 'already_enrolled_elsewhere') {
+      _again('This face is set up on another account', 'Ask HR to check.');
+    } else if (result.inconclusive) {
+      _again(result.title, null);
+    } else {
+      final left = face is Map && face['attemptsLeft'] is num ? (face['attemptsLeft'] as num).toInt() : null;
+      _again("We couldn't confirm it's you", left == null ? null : '$left ${left == 1 ? 'try' : 'tries'} left today. Try again.');
+    }
+  }
+
+  /// An answer on the camera for a moment, then setup again from the front photo.
+  void _again(String headline, String? line) {
+    if (!mounted) return;
     setState(() {
-      _problemTitle = title;
-      _problem = message;
-      _dismissed = false;
+      _answer = (headline, line);
+      _photos.clear();
     });
-    _failTimer?.cancel();
-    _failTimer = Timer(FaceSetupScreen.failPause, () {
-      if (mounted && !_fallbackOpen) _lookAgain();
+    _camera.hold();
+    _timer?.cancel();
+    _timer = Timer(FaceSetupScreen.failPause, () {
+      if (!mounted || _fallbackOpen) return;
+      setState(() => _answer = null);
+      _camera.nextPose(FacePose.front);
     });
   }
 
-  Timer? _failTimer;
-
-  /// Try Again was tapped on a failed setup: the camera looks again, and
-  /// the reason is off the screen until the next answer.
-  bool _dismissed = false;
-
-  /// Try Again: never a selfie straight away — that would let a photo skip
-  /// the phone's checks — but another look, with the prompts asked again.
-  void _lookAgain() {
-    if (_busy || !mounted) return;
-    setState(() => _dismissed = true);
-    _camera.waitAgain();
-    _auto.rearm();
-    unawaited(_camera.resume());
-    _auto.check();
+  void _openFallback(String? reason) {
+    _camera.hold();
+    _fallbackOpen = true;
+    final max = _status?.maxAttempts ?? 5;
+    _fallbackLine = reason == 'unavailable' || reason == null && _status == null
+        ? "Face check isn't available right now."
+        : '$max of $max tries used today.';
   }
 
   Future<void> _sendFallback() async {
@@ -325,173 +283,116 @@ class _FaceSetupScreenState extends State<FaceSetupScreen>
     setState(() => _sendingFallback = true);
     PunchReading? reading;
     try {
-      reading = await widget.readLocation?.call().timeout(
-        const Duration(seconds: 12),
-      );
-    } catch (_) {
-      // The manager sees the request without a place rather than not at all.
-    }
+      reading = await widget.readLocation?.call().timeout(const Duration(seconds: 12));
+    } catch (_) {}
     try {
       await widget.api.requestFaceFallback(type: widget.type, reading: reading);
-      if (mounted)
-        Navigator.of(context).pop(const FaceCheckOutcome.fallbackSent());
+      if (mounted) Navigator.of(context).pop(const FaceCheckOutcome.fallbackSent());
     } on ManagerApiException catch (error) {
-      _fail(
-        'Request not sent',
-        error.offline
-            ? 'No internet connection. Connect and try again.'
-            : error.message,
-      );
+      if (mounted) setState(() => _fallbackLine = error.offline ? 'No internet connection. Connect and try again.' : error.message);
     } finally {
       if (mounted) setState(() => _sendingFallback = false);
     }
   }
 
+  /// Done: back to the card with the punch made, or out of onboarding. A
+  /// company on AWS Face Liveness still takes its own check for the punch.
+  void _finish() {
+    final navigator = Navigator.of(context);
+    final at = _punchedAt;
+    if (at != null) {
+      navigator.pop(FaceCheckOutcome.punched(at));
+    } else if (_token case final token? when !widget.onboarding && _status?.liveness.aws != true) {
+      navigator.pop(FaceCheckOutcome.passed(token));
+    } else {
+      navigator.pop(const FaceCheckOutcome.needsCheck());
+    }
+  }
+
+  void _close() => Navigator.of(context).pop();
+
   @override
   Widget build(BuildContext context) {
     final punchIn = widget.type != 'out';
-    final punchWord = punchIn ? 'punch-in' : 'punch-out';
-    final stepTitle = widget.onboarding
-        ? 'Face ID'
-        : punchIn
-        ? 'Punch in'
-        : 'Punch out';
-    void close() => Navigator.of(context).pop();
-    // The page before the camera (4200:55075): pressing Set up Face ID is
-    // the consent, so the camera only opens once they have agreed.
     if (!_agreed) {
       return FaceSetupIntro(
-        stepTitle: stepTitle,
         consent: _consent?.agree,
-        problem:
-            _loadProblem ??
-            (_consentChanged
-                ? 'The Face ID consent has changed. Read it and agree again.'
-                : null),
+        problem: _loadProblem ?? (_consentChanged ? 'The consent has changed. Read it and agree again.' : null),
         onRetry: _loadProblem == null ? null : _load,
-        onBack: close,
-        onStart: _consent == null
-            ? null
-            : () {
-                setState(() {
-                  _agreed = true;
-                  _consentChanged = false;
-                });
-                _auto.check();
-              },
+        onBack: _close,
+        onStart: _consent == null ? null : _agree,
       );
     }
-    final signal = _camera.signal;
-    final detected = signal == FaceSignal.detected;
-    final cameraProblem = _camera.cameraProblem;
-    final tries = _attemptsLeft;
-
-    // The camera (4266:26005 onwards): the heading, the oval, and one line.
-    // "Face ID successfully set up" is drawn on it (4266:26184), with the
-    // tick, once the server has kept the face — never before.
-    if (_setUp) {
-      return FaceCaptureLayout(
-        heading: 'Set up your Face ID',
+    if (_done) {
+      final at = _punchedAt;
+      return FaceSetupDone(
+        line: at == null ? null : '${punchIn ? 'Punched in' : 'Punched out'} at ${clockOf(at)}',
+        onDone: _finish,
+      );
+    }
+    final taken = _photos.length;
+    final ring = FaceRing.progress(taken / 3);
+    final counter = '${(taken + 1).clamp(1, 3)} of 3';
+    if (_fallbackOpen) {
+      final manager = _status?.managerName;
+      return FaceCameraView(
+        headline: "We couldn't confirm it's you",
+        line: _fallbackLine,
         camera: _camera.controller,
-        state: FaceCaptureState.detected,
-        line: 'Verified',
-        onClose: close,
+        dim: true,
+        onClose: _close,
+        action: FaceCameraAction(
+          label: 'Send ${punchIn ? 'punch-in' : 'punch-out'} to manager',
+          busy: _sendingFallback,
+          onTap: _sendFallback,
+          note: '${manager ?? 'Your manager'} will see the time, the location and that the face check didn\'t pass.',
+        ),
       );
     }
-    FaceCaptureState state;
-    String? line;
-    FaceCaptureButton? action;
-    String? caption;
-    Widget? below;
+    final cameraProblem = _camera.cameraProblem;
     if (cameraProblem != null) {
-      state = FaceCaptureState.failed;
-      line = cameraProblem;
-      action = FaceCaptureButton(
-        label: _camera.permissionDenied ? 'Open Settings' : 'Try again',
-        onTap: _camera.permissionDenied
-            ? Geolocator.openAppSettings
-            : _camera.start,
+      return FaceCameraView(
+        headline: 'Camera not available',
+        line: cameraProblem,
+        counter: counter,
+        onClose: _close,
+        action: FaceCameraAction(
+          label: _camera.permissionDenied ? 'Open Settings' : 'Try again',
+          onTap: _camera.permissionDenied ? Geolocator.openAppSettings : _camera.start,
+        ),
       );
-    } else if (_problem != null && !_dismissed) {
-      // A refused setup: the reason, in red, for a moment; then the prompts
-      // start over on their own. The tries left under it, nothing else.
-      state = FaceCaptureState.failed;
-      line = _problemTitle ?? 'Not set up';
-      caption = tries != null && tries > 0
-          ? '$tries out of $_maxAttempts ${tries == 1 ? 'try' : 'tries'} left'
-          : null;
-    } else if (_camera.lapsed) {
-      // A try ran out of time (4289:26675): Face not detected, said for a
-      // moment, then the prompts start over on their own.
-      state = FaceCaptureState.failed;
-      line = 'Face not detected';
-      caption = tries != null && tries > 0
-          ? '$tries out of $_maxAttempts ${tries == 1 ? 'try' : 'tries'} left'
-          : null;
-    } else if (signal == FaceSignal.unavailable) {
-      // This phone cannot find faces at all: the button takes the selfie.
-      state = FaceCaptureState.looking;
-      line = 'Look at the camera and tap the button.';
-      action = FaceCaptureButton(
-        label: 'Set up Face ID',
-        busy: _busy,
-        onTap: _enrol,
-      );
+    }
+    String headline;
+    String? line;
+    var tone = FaceHeadlineTone.plain;
+    final pose = _camera.pose;
+    if (_sending) {
+      headline = 'Checking…';
+    } else if (_answer case (final h, final l)) {
+      headline = h;
+      line = l;
+      tone = FaceHeadlineTone.fix;
     } else {
-      // Looking, or found: the line says which, and the selfie takes itself
-      // once the phone's own checks are done — the turn, the blink, then
-      // the flash.
-      state = FaceCaptureState.looking;
-      line = _camera.nudgeNow ??
-          (detected
-              ? (FaceAutoCapture.checkLiveness ? _camera.liveness.ask : null) ??
-                    'Hold still'
-              : signal == FaceSignal.notDetected
-              ? 'Keep your face inside the oval'
-              : 'Position your face inside the oval');
+      (headline, line, tone) = faceCopy(_camera.problem, pose: pose);
     }
-    // Out of tries, or the service is down: the manager can be asked instead.
-    if (_fallbackOpen && cameraProblem == null && !widget.onboarding) {
-      state = FaceCaptureState.failed;
-      line = _problemTitle ?? 'Face ID unavailable';
-      action = FaceCaptureButton(
-        label: 'Send $punchWord to manager',
-        busy: _sendingFallback,
-        onTap: _sendFallback,
-      );
-      // The tries are spent: said in the line under the button, nothing more.
-      caption = tries == 0 ? '0 out of $_maxAttempts tries left' : null;
-    }
-    return FaceCaptureLayout(
-      heading: 'Set up your Face ID',
-      camera: _camera.controller,
-      state: state,
+    return FaceCameraView(
+      headline: headline,
       line: line,
-      action: action,
-      caption: caption,
-      below: below,
-      busy: _busy && action == null,
-      flash: _auto.flashColour,
-      progress: state == FaceCaptureState.looking && FaceAutoCapture.checkLiveness
-          ? (_camera.liveness.step, FaceRealness.steps)
-          : null,
-      onClose: close,
+      tone: tone,
+      camera: _camera.controller,
+      ring: ring,
+      counter: counter,
+      onClose: _sending ? null : _close,
+      arrow: _sending || _answer != null
+          ? null
+          : switch (pose) {
+              FacePose.turnA => FaceArrowSide.left,
+              // The other side from the first turn, whichever that was.
+              FacePose.turnB => _camera.firstTurnSign == -1 ? FaceArrowSide.left : FaceArrowSide.right,
+              FacePose.front => null,
+            },
+      arrowPulse: _camera.turnSlow,
+      steps: (taken, taken.clamp(0, 2)),
     );
   }
 }
-
-TextStyle _sora(
-  double size,
-  FontWeight weight,
-  Color color, {
-  double? height,
-}) => TextStyle(
-  fontFamily: 'Sora',
-  fontSize: size,
-  fontWeight: weight,
-  color: color,
-  height: height,
-);
-
-const _tertiary = Color(0xFF717171);
-const _brand = Color(0xFF0571A6);

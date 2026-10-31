@@ -6,14 +6,14 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'slide_to_punch.dart';
 
 import '../data/punch_location_service.dart';
-import '../../face_id/face_check_screen.dart';
+import '../../face_id/face_check_screen.dart' show FaceCheckOutcome, FaceCheckScreen, FacePlace, FacePunch, clockOf;
 import '../../face_id/face_setup_screen.dart';
 import '../../manager/data/manager_api_service.dart';
 import '../../manager/data/manager_models.dart';
 
 /// What the punch screen is doing right now (nodes 2306:58967 onward, and the
 /// check-in flow of Figma 4309:24713).
-enum _PunchStage { ready, checking, inside, sending, done, outside, blocked, requested }
+enum _PunchStage { ready, checking, sending, done, outside, blocked, requested }
 
 /// How a punch ended, for whoever opened the screen.
 class PunchOutcome {
@@ -21,14 +21,49 @@ class PunchOutcome {
     required this.punched,
     this.officeName,
     this.requested = false,
+    this.at,
   });
 
   final bool punched;
   final String? officeName;
 
+  /// Set when the punch was made from the face check's camera, which said
+  /// "Punched in" itself: the host shows a toast ("Punched in at 4:00 PM ·
+  /// Sowaka Office") on the card instead of a confirmation page.
+  final DateTime? at;
+
   /// A correction was raised instead of a punch. The host reloads on this too,
   /// so the day knows a request is with the manager the next time it is opened.
   final bool requested;
+}
+
+/// After a punch made from the face check's camera (board D4): one line on
+/// the card for three seconds, "Punched in at 4:00 PM · Sowaka Office". The
+/// camera already said "Punched in"; there is no page to dismiss.
+void showPunchToast(BuildContext context, PunchOutcome? outcome, {String type = 'in'}) {
+  final at = outcome?.at;
+  if (at == null || !outcome!.punched) return;
+  final office = outcome.officeName;
+  final text = '${type == 'out' ? 'Punched out' : 'Punched in'} at ${clockOf(at)}${office == null || office.isEmpty ? '' : ' · $office'}';
+  ScaffoldMessenger.maybeOf(context)
+    ?..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        key: const ValueKey('punch-toast'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+        backgroundColor: const Color(0xFF15181C),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_rounded, color: Color(0xFF5CC08A), size: 20),
+            const SizedBox(width: 10),
+            Expanded(child: Text(text, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white))),
+          ],
+        ),
+      ),
+    );
 }
 
 /// Punching in or out, with the location check in front of it.
@@ -142,10 +177,6 @@ class _PunchScreenState extends State<PunchScreen> {
   /// would spend one of the day's tries.
   bool _faceOpen = false;
 
-  /// The punch being sent came from the inside screen, not the outside one:
-  /// a refusal for want of a face goes back to where it came from.
-  bool _fromInside = false;
-
   /// The server asked for a face this session knew nothing of: HR switched
   /// the check on since the profile was last read.
   bool _serverAskedForFace = false;
@@ -179,8 +210,12 @@ class _PunchScreenState extends State<PunchScreen> {
   /// punch is sent. A shift that is not geotagged has no location to check:
   /// Face ID, then the punch.
   Future<void> _punch() async {
+    if (_needsFace && _faceToken == null) {
+      // The camera opens at once; the location check runs while it warms up.
+      await _faceFirst();
+      return;
+    }
     if (!widget.geofenced) {
-      if (_needsFace && _faceToken == null && !await _checkFace()) return;
       await _send(null);
       return;
     }
@@ -207,9 +242,7 @@ class _PunchScreenState extends State<PunchScreen> {
     } on ManagerApiException catch (error) {
       if (!mounted) return;
       if (error.statusCode == 404) {
-        // A server from before the check: the punch itself says where it
-        // landed, so Face ID goes first, as it used to.
-        if (_needsFace && _faceToken == null && !await _checkFace()) return;
+        // A server from before the check: the punch itself says where it landed.
         await _send(reading);
         return;
       }
@@ -231,9 +264,7 @@ class _PunchScreenState extends State<PunchScreen> {
     }
     if (!where.geofenced) {
       // Geotagged, but the company has no office to be inside yet: nothing
-      // to say about where they are. Face ID, then the punch.
-      if (_needsFace && _faceToken == null && !await _checkFace()) return;
-      if (!mounted) return;
+      // to say about where they are.
       setState(() => _stage = _PunchStage.sending);
       await _send(reading);
       return;
@@ -253,56 +284,163 @@ class _PunchScreenState extends State<PunchScreen> {
       });
       return;
     }
-    if (!_needsFace || _faceToken != null) {
-      // Nothing to verify: inside is the punch.
-      setState(() => _stage = _PunchStage.sending);
-      await _send(reading);
+    // Inside: the punch.
+    setState(() => _stage = _PunchStage.sending);
+    await _send(reading);
+  }
+
+  /// Where the company checks faces (boards D1–D4): the camera at once, the
+  /// location check alongside it, and the punch made from the camera with
+  /// the matched face's token; the camera says "Punched in" and this screen
+  /// closes on it, back to the card with a toast. Outside the office it is
+  /// the outside screen, as before, with the token kept for the punch.
+  Future<void> _faceFirst() async {
+    setState(() => _stage = _PunchStage.checking);
+    final where = widget.geofenced ? _locate() : Future.value(const _Where.free(null));
+    final place = where.then(
+      (w) => switch (w.kind) {
+        _WhereKind.inside => FacePlace.inside(w.officeName),
+        _WhereKind.free => const FacePlace.unchecked(),
+        _ => const FacePlace.refused(),
+      },
+    );
+    final passed = await _checkFace(place: place, punch: (token) => _punchFromCamera(token, where));
+    if (!mounted) return;
+    if (_facePunchedAt != null) {
+      _close(PunchOutcome(punched: true, officeName: _officeName, at: _facePunchedAt));
       return;
     }
+    if (_placeRefused) {
+      _placeRefused = false;
+      _showWhere(await where);
+      return;
+    }
+    // Closed, or the punch screen is already showing where it went instead.
+    if (!passed && _stage == _PunchStage.checking) _close();
+  }
+
+  /// The location, read and checked: never throws.
+  Future<_Where> _locate() async {
+    PunchReading reading;
+    try {
+      reading = await _location.read();
+    } on PunchLocationException catch (error) {
+      return _Where.blocked(error.message, settings: error.problem == PunchLocationProblem.deniedForever);
+    }
+    try {
+      final where = await widget.api.checkPunchLocation(reading);
+      if (where.inaccurate) {
+        return _Where.blocked(where.message ?? 'Your location is not precise enough yet. Move near a window and try again.');
+      }
+      if (!where.geofenced) return _Where.free(reading);
+      if (!where.inside) return _Where.outside(reading, where);
+      return _Where.inside(reading, where.officeName);
+    } on ManagerApiException catch (error) {
+      // A server from before the check: the punch itself says where it landed.
+      if (error.statusCode == 404) return _Where.free(reading);
+      return _Where.blocked(error.offline ? 'No internet connection. Connect and try again.' : error.message);
+    }
+  }
+
+  /// The location check's answer on this screen, when it is not a punch.
+  void _showWhere(_Where w) {
+    _reading = w.reading ?? _reading;
     setState(() {
-      _stage = _PunchStage.inside;
-      _officeName = where.officeName;
+      switch (w.kind) {
+        case _WhereKind.outside:
+          final check = w.check!;
+          _stage = _PunchStage.outside;
+          _reasons = check.reasons;
+          _marksPresent = check.marksPresent;
+          _reasonOptional = check.marksPresent || !_punchingIn;
+          if (!_reasons.contains(_selectedReason)) _selectedReason = null;
+          _officeLabel = check.officeName == null
+              ? null
+              : [check.officeName!, if ((check.officeCity ?? '').isNotEmpty) check.officeCity!].join(' · ');
+          _distanceMeters = check.distanceMeters;
+        case _WhereKind.blocked:
+          _stage = _PunchStage.blocked;
+          _problem = w.problem ?? 'Your location could not be read. Try again.';
+          _canOpenSettings = w.settings;
+        default:
+          _stage = _PunchStage.ready;
+      }
     });
   }
 
-  /// "Setup & verify face id" / "Verify face id" on the inside screen: the
-  /// camera, then the punch with the token it hands back.
-  Future<void> _verifyAndPunch() async {
-    if (_busy || _faceOpen) return;
-    if (_faceToken == null && !await _checkFace()) return;
-    if (!mounted) return;
-    _fromInside = true;
-    setState(() => _stage = _PunchStage.sending);
-    await _send(_reading);
+  /// The punch, from the camera, with the token of the face it just matched:
+  /// the time it was recorded at, or null when it was not a punch (outside
+  /// the office, a request, a refusal), which this screen then shows.
+  Future<DateTime?> _punchFromCamera(String token, Future<_Where> where) async {
+    _faceToken = token;
+    final w = await where;
+    if (!mounted) return null;
+    if (w.kind == _WhereKind.outside || w.kind == _WhereKind.blocked) {
+      _showWhere(w);
+      return null;
+    }
+    _reading = w.reading;
+    try {
+      final record = await widget.api.recordPunch(widget.type, reading: w.reading, faceToken: token);
+      _faceToken = null;
+      if (record.request != null) {
+        _raisedRequest = true;
+        if (mounted) {
+          setState(() {
+            _stage = _PunchStage.requested;
+            _requestedAt = DateTime.now();
+          });
+        }
+        return null;
+      }
+      widget.onRecorded?.call(record);
+      _officeName = record.officeName ?? w.officeName;
+      return _facePunchedAt = (_punchingIn ? record.punchIn : record.punchOut) ?? DateTime.now();
+    } on ManagerApiException catch (error) {
+      if (!mounted) return null;
+      _faceToken = null;
+      _showRefusal(error);
+      return null;
+    }
   }
+
+  /// Set when the punch was made from the camera: this screen closes on it.
+  DateTime? _facePunchedAt;
+
+  /// The camera closed because the location check came back outside.
+  bool _placeRefused = false;
 
   /// The selfie, and Face ID setup first where it is missing. True with a
   /// token to punch with; false when closed, or when the punch went to the
   /// manager instead, which this screen then shows as the request it is.
-  Future<bool> _checkFace() async {
+  Future<bool> _checkFace({Future<FacePlace>? place, FacePunch? punch}) async {
     if (_faceOpen) return false;
     _faceOpen = true;
     try {
-      return await _openFace();
+      return await _openFace(place: place, punch: punch);
     } finally {
       _faceOpen = false;
     }
   }
 
-  Future<bool> _openFace() async {
+  Future<bool> _openFace({Future<FacePlace>? place, FacePunch? punch}) async {
     final navigator = Navigator.of(context);
     // Only a geotagged punch sends where it was tried from with a request.
     FaceCheckScreen check() => FaceCheckScreen(
       api: widget.api,
       type: widget.type,
       readLocation: widget.geofenced ? _location.read : null,
+      place: place,
+      punch: punch,
     );
-    // Someone not set up does it here, at their first checked punch: setup,
-    // "Verified", and the token the setup earned — the setup is the check.
+    // Someone not set up does it here, at their first checked punch: the
+    // three photos, and the punch the setup earned — the setup is the check.
     FaceSetupScreen setup() => FaceSetupScreen(
       api: widget.api,
       type: widget.type,
       readLocation: widget.geofenced ? _location.read : null,
+      place: place,
+      punch: punch,
     );
     final enrolled = _faceSetUp;
     FaceCheckOutcome? outcome = await navigator.push<FaceCheckOutcome>(
@@ -316,6 +454,11 @@ class _PunchScreenState extends State<PunchScreen> {
       outcome = await navigator.push<FaceCheckOutcome>(MaterialPageRoute(builder: (_) => check()));
     }
     if (!mounted || outcome == null) return false;
+    if (outcome.punchedAt != null) return true;
+    if (outcome.placeRefused) {
+      _placeRefused = true;
+      return false;
+    }
     if (outcome.fallbackSent) {
       setState(() {
         _raisedRequest = true;
@@ -337,12 +480,11 @@ class _PunchScreenState extends State<PunchScreen> {
     _faceRetries += 1;
     _faceToken = null;
     _serverAskedForFace = true;
-    final inside = _fromInside && _stage == _PunchStage.sending && _reading != null;
     setState(() {
       _busy = false;
-      _stage = inside ? _PunchStage.inside : _PunchStage.ready;
+      _stage = _PunchStage.ready;
     });
-    unawaited(inside ? _verifyAndPunch() : _punch());
+    unawaited(_punch());
     return true;
   }
 
@@ -356,8 +498,15 @@ class _PunchScreenState extends State<PunchScreen> {
     } on ManagerApiException catch (error) {
       if (!mounted) return;
       if (_refusedForFace(error)) return;
-      // 409 outside the fence is the one refusal with somewhere to go next:
-      // the employee says why, and HR's policy decides what that leads to.
+      _showRefusal(error);
+    }
+  }
+
+  /// A refused punch: outside the fence is the one refusal with somewhere to
+  /// go next (the employee says why, and HR's policy decides what that leads
+  /// to); anything else is said as it is.
+  void _showRefusal(ManagerApiException error) {
+    {
       final office = error.details?['office'] as Map<String, dynamic>?;
       final location = error.details?['location'] as Map<String, dynamic>?;
       final outside = error.details?['outsideLocation'] as Map<String, dynamic>?;
@@ -426,7 +575,6 @@ class _PunchScreenState extends State<PunchScreen> {
     if (_busy || _faceOpen) return;
     if (_needsFace && _faceToken == null && !await _checkFace()) return;
     if (!mounted) return;
-    _fromInside = false;
     setState(() {
       _busy = true;
       _stage = _PunchStage.sending;
@@ -528,7 +676,6 @@ class _PunchScreenState extends State<PunchScreen> {
                     child: switch (_stage) {
                   _PunchStage.ready => _ready(),
                   _PunchStage.checking => _checking(),
-                  _PunchStage.inside => _inside(),
                   _PunchStage.sending => _sending(),
                   _PunchStage.done => _done(),
                   _PunchStage.outside => _outside(),
@@ -667,108 +814,6 @@ class _PunchScreenState extends State<PunchScreen> {
           style: _sora(20, FontWeight.w700, _ink, height: 30 / 20),
         ),
       ],
-    );
-  }
-
-  /// Inside the office (Figma 4289:26331): the map pin, where, and Face ID —
-  /// "Setup & verify face id" the first time, when setting it up is the
-  /// check, and "Verify face id" every day after.
-  Widget _inside() {
-    final firstTime = !_faceSetUp;
-    return SizedBox(
-      height: MediaQuery.sizeOf(context).height * 0.7,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // The art is cropped from a larger square, as the design frames it.
-          SizedBox(
-            width: 161,
-            height: 165,
-            child: ClipRect(
-              child: OverflowBox(
-                maxWidth: 229,
-                maxHeight: 229,
-                alignment: const Alignment(-0.02, -0.04),
-                child: Image.asset(
-                  'assets/icons/punch/location_inside.png',
-                  width: 229,
-                  height: 229,
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 37),
-          Text(
-            "You're inside the office area",
-            textAlign: TextAlign.center,
-            style: _sora(24, FontWeight.w700, _ink, height: 32 / 24),
-          ),
-          const SizedBox(height: 1),
-          Text(
-            'Verify it is you to record your attendance.',
-            textAlign: TextAlign.center,
-            style: _sora(14, FontWeight.w400, const Color(0xFF484848), height: 21 / 14),
-          ),
-          const SizedBox(height: 24),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12.5),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFDCE3EA), width: 1.115),
-                  ),
-                  child: Row(
-                    children: [
-                      SvgPicture.asset('assets/icons/punch/office_pin.svg', width: 21, height: 21),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _officeName ?? 'Your office',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: _sora(12, FontWeight.w600, const Color(0xFF142A43), height: 18 / 12),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 32),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: const [
-                      BoxShadow(color: Color(0x400571A6), blurRadius: 4, offset: Offset(0, 2)),
-                    ],
-                  ),
-                  child: Material(
-                    color: _brand,
-                    borderRadius: BorderRadius.circular(14),
-                    child: InkWell(
-                      key: const ValueKey('punch-verify-face'),
-                      borderRadius: BorderRadius.circular(14),
-                      onTap: _busy ? null : _verifyAndPunch,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        child: Text(
-                          firstTime ? 'Setup & verify face id' : 'Verify face id',
-                          textAlign: TextAlign.center,
-                          style: _sora(15, FontWeight.w600, Colors.white, height: 22.5 / 15),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1413,4 +1458,22 @@ class _SummaryRow extends StatelessWidget {
       ],
     ),
   );
+}
+
+enum _WhereKind { inside, free, outside, blocked }
+
+/// Where the phone is, as the location check found it while the camera warmed up.
+class _Where {
+  const _Where.inside(this.reading, this.officeName) : kind = _WhereKind.inside, check = null, problem = null, settings = false;
+  const _Where.free(this.reading) : kind = _WhereKind.free, officeName = null, check = null, problem = null, settings = false;
+  const _Where.outside(PunchReading this.reading, PunchLocationCheck this.check)
+    : kind = _WhereKind.outside, officeName = null, problem = null, settings = false;
+  const _Where.blocked(String this.problem, {this.settings = false}) : kind = _WhereKind.blocked, reading = null, officeName = null, check = null;
+
+  final _WhereKind kind;
+  final PunchReading? reading;
+  final String? officeName;
+  final PunchLocationCheck? check;
+  final String? problem;
+  final bool settings;
 }

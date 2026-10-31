@@ -1900,6 +1900,7 @@ Future<void> _startProfilePunch(
       ),
     ),
   );
+  if (context.mounted) showPunchToast(context, outcome, type: type);
   if (outcome?.punched == true || outcome?.requested == true) {
     await bloc.add(LoadAttendanceMonth(DateTime.now()));
   }
