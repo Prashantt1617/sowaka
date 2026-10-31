@@ -150,7 +150,7 @@ void main() {
     expect(done, isTrue);
   });
 
-  group('Face ID', () {
+  group('Face check', () {
     test('is not a reason to onboard someone who has answered both', () {
       expect(needsOnboarding(_session(photoUrl: 'p', interests: ['Music'], faceAtPunch: true).user), isFalse);
     });
@@ -167,10 +167,10 @@ void main() {
       await tester.tap(find.text('Continue'));
       await tester.pumpAndSettle();
       expect(done, isFalse);
-      expect(find.text('Set up Face ID'), findsWidgets);
+      expect(find.text('Set up face check'), findsWidgets);
     });
 
-    testWidgets('no Face ID step where faces are not checked, or once set up', (tester) async {
+    testWidgets('no face check step where faces are not checked, or once set up', (tester) async {
       for (final session in [
         _session(photoUrl: 'https://example.test/old.png'),
         _session(photoUrl: 'https://example.test/old.png', faceAtPunch: true, faceEnrolled: true),
