@@ -38,6 +38,17 @@ const colleagueProfileTabs = [
   ProfileTab.posts,
 ];
 
+/// A colleague fetched by id ([_ColleagueProfileLoader]): the colleague tabs,
+/// plus Grow when they are in the viewer's reporting line at any depth — a
+/// skip-level manager reads the reviews their managers wrote (the server
+/// sends their history only then).
+List<ProfileTab> fetchedProfileTabs({required bool inViewerChain}) => [
+  for (final tab in colleagueProfileTabs) ...[
+    tab,
+    if (tab == ProfileTab.orgChart && inViewerChain) ProfileTab.grow,
+  ],
+];
+
 /// The tabs on someone else's profile.
 ///
 /// Someone in the viewer's own reporting line — a report, or a report's
@@ -381,7 +392,7 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
     final posts = _posts;
     final tabs = profileTabsOpeningOn([
       for (final tab in widget.publicOnly
-          ? colleagueProfileTabs
+          ? fetchedProfileTabs(inViewerChain: member.inViewerChain)
           : memberProfileTabs(
               inViewerChain: member.inViewerChain,
               viewerCanManage: widget.canManage,
@@ -480,7 +491,7 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
       // No "your manager" line here: the reader usually is the manager, and
       // the month row's due card says what to do.
       ProfileTab.grow => [
-        _ProfileGrowTab(data: data, bloc: bloc, memberId: member.id),
+        _ProfileGrowTab(data: data, bloc: bloc, memberId: member.id, person: member),
       ],
       ProfileTab.rank => [
         _RankHistory(service: _profileService, userId: member.userId),
@@ -4638,10 +4649,15 @@ class _ProfileGrowTab extends StatefulWidget {
     required this.bloc,
     this.managerName,
     this.memberId,
+    this.person,
   });
 
   final ManagerDashboard data;
   final ManagerBloc bloc;
+
+  /// The person on show, for someone fetched by id rather than one of the
+  /// loaded team (a report's report): their history comes with them.
+  final TeamMember? person;
 
   /// Who reviews the person on show; said under the month on their own tab.
   final String? managerName;
@@ -4675,8 +4691,9 @@ class _ProfileGrowTabState extends State<_ProfileGrowTab> {
         final member = widget.memberId == null
             ? null
             : data.team
-                  .where((member) => member.id == widget.memberId)
-                  .firstOrNull;
+                      .where((member) => member.userId == widget.person?.userId || (widget.person == null && member.id == widget.memberId))
+                      .firstOrNull ??
+                  widget.person;
         final history = member?.history ?? data.growthHistory;
         final period = _EmployeeGrowthPage._currentPeriod();
         final periods = _monthsBetween(

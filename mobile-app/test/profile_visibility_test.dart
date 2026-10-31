@@ -119,10 +119,34 @@ Future<ManagerBloc> boot(
           'name': 'Outsider Person',
           'department': 'Sales',
           'designation': 'Account Lead',
-          // Even someone the server places below the viewer opens as the
-          // colleague view when they are not in the viewer's own team.
+          // A report's report: the colleague view, plus Grow with the
+          // reviews their own manager wrote.
           'inViewerChain': true,
           'email': 'outsider@example.test',
+          'orgChart': <dynamic>[],
+          'history': [
+            {
+              'period': '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}',
+              'overallScore': 4.2,
+              'parameters': [
+                {'name': 'Ownership', 'score': 4.2, 'note': 'Took the launch checklist end to end.'},
+              ],
+              'sentAt': DateTime.now().toIso8601String(),
+              'managerName': 'Bala Manager',
+            },
+          ],
+        },
+      });
+    }
+    if (request.url.path.endsWith('/profile/people/stranger')) {
+      return ok({
+        'person': {
+          'userId': 'stranger',
+          'name': 'Stranger Person',
+          'department': 'Ops',
+          'designation': 'Analyst',
+          'inViewerChain': false,
+          'email': 'stranger@example.test',
           'orgChart': <dynamic>[],
         },
       });
@@ -356,6 +380,25 @@ void main() {
     expect(find.text('Rank'), findsOneWidget);
     // The tab, and the open tab's own card under the same title.
     expect(find.text('Attendance'), findsWidgets);
+    // Below the viewer at any depth: Grow, with their own manager's review.
+    // One in the profile's tab bar, one in the app's bottom bar.
+    expect(find.text('Grow'), findsNWidgets(2));
+    expect(find.text('Request'), findsNothing);
+    final growTabs = find.text('Grow').evaluate().toList()
+      ..sort((a, b) => tester.getTopLeft(find.byWidget(a.widget)).dy.compareTo(tester.getTopLeft(find.byWidget(b.widget)).dy));
+    await tester.tap(find.byWidget(growTabs.first.widget));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Took the launch checklist', findRichText: true), findsWidgets);
+    await close(tester, bloc);
+  });
+
+  testWidgets('someone outside the reporting line has no Grow', (tester) async {
+    final bloc = await boot(tester);
+    expect(openPersonProfile('stranger'), isTrue);
+    await tester.pumpAndSettle();
+    expect(find.text('Stranger Person'), findsOneWidget);
+    // Only the app's bottom bar has one.
+    expect(find.text('Grow'), findsOneWidget);
     await close(tester, bloc);
   });
 
