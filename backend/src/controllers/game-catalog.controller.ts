@@ -74,6 +74,7 @@ const SCRIBBLE_KEY = 'scribble';
 const TILE_UP_KEY = 'tile-up';
 const SQUAD_KEY = 'secret-squad';
 const CUP_KEY = 'diwali-cup';
+const POKER_KEY = 'speed-poker';
 
 /** The live games whose page carries a socket ticket: the marker it leaves, and the global it gets. */
 const TICKETED: Record<string, { marker: string; global: string; name: string }> = {
@@ -83,6 +84,8 @@ const TICKETED: Record<string, { marker: string; global: string; name: string }>
   [SQUAD_KEY]: { marker: '<!--SQUAD-TICKET-->', global: '__SQUAD', name: 'Secret Squad' },
   // The Diwali Cup's page talks to `/cup/api` with its ticket, after the same reload.
   [CUP_KEY]: { marker: '<!--CUP-TICKET-->', global: '__CUP', name: 'the tournament' },
+  // Speed Poker's tables and lobby: the same ticket, its own `/poker` namespace.
+  [POKER_KEY]: { marker: '<!--POKER-TICKET-->', global: '__POKER', name: 'Speed Poker' },
 };
 
 /** A JavaScript literal safe inside a `<script>` element (`<` can never close it). */
@@ -201,6 +204,43 @@ export async function cupLinkPageHandler(req: Request, res: Response, next: Next
         'X-Game-Version': page.version,
       })
       .send(withGlobal(CUP_KEY, page.html, { ticket: mintTicket(subject), eventId: event.id, from: 'feed' }));
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Speed Poker on an office screen, `GET /poker/tv/<event>?ticket=<poker-tv>`:
+ * the game page in its screen mode, which shows the lobby and plays the
+ * semifinals and the final as they happen, read only. The link is made by
+ * the host's script (`poker-event.ts tv-link`) and good until it expires.
+ */
+export async function pokerTvHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const verdict = verifyTicket(req.query.ticket, 'poker-tv');
+    const eventId = String(req.params.eventId ?? '');
+    if (!verdict.ok || !/^[A-Za-z0-9_-]{1,80}$/.test(eventId) || verdict.ticket.userId !== eventId) {
+      res.status(401).set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }).type('text/plain').send('This screen link has expired. Ask the host for a new one.');
+      return;
+    }
+    const page = await publicPageFor(POKER_KEY);
+    if (!page) {
+      res.status(404).type('text/plain').send('Speed Poker is not available here yet.');
+      return;
+    }
+    const host = requestHost(req);
+    const sockets = host ? ` https://${host} wss://${host} http://${host} ws://${host}` : '';
+    res
+      .status(200)
+      .set({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer',
+        'Content-Security-Policy': PAGE_CSP.replace("connect-src 'none'", `connect-src 'self'${sockets}`),
+        'X-Game-Version': page.version,
+      })
+      .send(withGlobal(POKER_KEY, page.html, { tv: req.query.ticket, eventId }));
   } catch (error) {
     next(error);
   }

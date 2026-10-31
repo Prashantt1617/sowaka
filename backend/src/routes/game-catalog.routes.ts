@@ -4,6 +4,7 @@ import {
   homeHandler,
   leaderboardHandler,
   playHandler,
+  pokerTvHandler,
   pointsLeaderboardHandler,
   scribbleHopHandler,
   squadWebHandler,
@@ -68,6 +69,10 @@ export const playRouter = Router();
 playRouter.get('/:key', scribbleHopHandler);
 playRouter.use(requireAuth);
 playRouter.get('/:key', playHandler);
+
+/** Speed Poker on an office screen: the link is the credential (see pokerTvHandler). */
+export const pokerWebRouter = Router();
+pokerWebRouter.get('/tv/:eventId', pokerTvHandler);
 
 /** Secret Squad in a phone browser: the page signs in by itself (see squadWebHandler). */
 export const squadWebRouter = Router();

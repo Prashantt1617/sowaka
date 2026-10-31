@@ -27,7 +27,11 @@ import { logger } from '../utils/logger';
  * gets their own link to the Cup page, good until the event ends, which buys
  * the page a `ticket` like a hop does. It opens nothing else.
  */
-export type ScribbleTicketKind = 'ticket' | 'hop' | 'cup-link';
+/**
+ * A fourth, `poker-tv`, is a Speed Poker screen link for an office TV: it
+ * opens the event's lobby and tables to watch, read only, as no one.
+ */
+export type ScribbleTicketKind = 'ticket' | 'hop' | 'cup-link' | 'poker-tv';
 
 export interface ScribbleTicket {
   userId: string;
