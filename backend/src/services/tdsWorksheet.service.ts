@@ -25,6 +25,7 @@ import { billCategories, billsByComponent, reimbursementTax } from './reimbursem
 import { companyOf, PayrollRunError, requireAdminOrg } from './payrollRun.service';
 import { decryptField, fieldKeyConfigured } from './fieldCrypto';
 import { payrollAccessOf } from './payrollAccess.service';
+import { splitAmountsFor, splitsByUser } from './employeePayroll.split';
 
 const RUN_RANK: Record<string, number> = { paid: 4, approved: 3, pending_approval: 2, draft: 1 };
 
@@ -92,6 +93,7 @@ export async function worksheetFor(org: string, slip: Payslip) {
     payrollRuns().find({ org, status: { $ne: 'rejected' } }, { projection: { status: 1 } }).toArray(),
   ]);
   const declaration = declarations.get(userId);
+  const splits = await splitsByUser(org, [userId]);
   const regime: TaxRegime = declaration?.regime ?? settings.tds?.defaultRegime ?? 'new';
   const config = configs.get(regime);
   if (!config) throw new PayrollRunError(409, `No income-tax rates are set up for FY ${fy}`);
@@ -118,7 +120,7 @@ export async function worksheetFor(org: string, slip: Payslip) {
     ? (p: string, employedFrom?: string) => calculateSalaryStructure({
       monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
       payHeads: resolveTemplateComponents(applyOverrides(template.components, structure.overrides, headByCode), headByCode),
-      componentValues: structure.componentValues ?? {},
+      componentValues: { ...(structure.componentValues ?? {}), ...splitAmountsFor(splits.get(userId), p) },
       balancingComponentCode: template.balancingComponentCode,
       ruleSet,
       month: Number(p.slice(5, 7)),

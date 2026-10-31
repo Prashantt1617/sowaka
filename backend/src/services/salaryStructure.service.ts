@@ -151,6 +151,14 @@ export async function previewSalaryStructure(
 // Computation — resolve the assigned template, then run the calculator.
 // ————————————————————————————————————————————————————————————————
 
+/**
+ * One person's breakup from a structure as given, for their own Payroll
+ * screens (no admin check: the caller has already decided who may see it).
+ */
+export async function computeStructureFor(org: string, userId: string, structure: SalaryStructure, employee?: User) {
+  return compute(org, userId, structure, employee);
+}
+
 async function compute(
   org: string,
   userId: string,

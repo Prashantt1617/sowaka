@@ -34,6 +34,8 @@ export interface SalaryTemplateInput {
   deductionRules?: unknown;
   monthlyPaidLeaveDays?: unknown;
   overtimePay?: unknown;
+  /** The monthly flexible pool in paise; null removes it, absent keeps it. */
+  flexiblePoolPaise?: unknown;
   active?: unknown;
 }
 
@@ -68,7 +70,8 @@ export async function createSalaryTemplate(adminUserId: string, input: SalaryTem
   // A standard component on the template becomes this org's pay head now.
   await materializeStandard(org, draft.components.map((c) => c.payHeadCode));
   const now = new Date();
-  const doc: SalaryTemplate = { ...draft, org, createdAt: now, updatedAt: now };
+  const pool = parseFlexiblePool(input.flexiblePoolPaise);
+  const doc: SalaryTemplate = { ...draft, ...(pool ? { flexiblePoolPaise: pool.value } : {}), org, createdAt: now, updatedAt: now };
   try {
     const result = await salaryTemplates().insertOne(doc);
     return toView({ ...doc, _id: result.insertedId });
@@ -96,9 +99,12 @@ export async function updateSalaryTemplate(
   const paidDaysKeys = ['paidDaysEnabled', 'deductionRules', 'monthlyPaidLeaveDays'] as const;
   const set: Record<string, unknown> = { ...draft, updatedAt: new Date() };
   for (const k of paidDaysKeys) if (set[k] === undefined) delete set[k];
+  // The flexible pool: absent keeps what is stored, null removes it.
+  const pool = input.flexiblePoolPaise === null ? null : parseFlexiblePool(input.flexiblePoolPaise);
+  if (pool) set.flexiblePoolPaise = pool.value;
   const updated = await salaryTemplates().findOneAndUpdate(
     { _id: current._id },
-    { $set: set },
+    pool === null ? { $set: set, $unset: { flexiblePoolPaise: '' } } : { $set: set },
     { returnDocument: 'after' },
   );
   if (!updated) throw new SalaryTemplateError(404, 'Salary template not found');
@@ -337,6 +343,14 @@ function normalizeCode(value: unknown, field = 'code'): string {
   return code;
 }
 
+/** A flexible pool sent on a save: whole rupees in paise. Undefined: not sent. */
+function parseFlexiblePool(value: unknown): { value: number } | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const amount = requireAmountPaise(value, 'flexiblePoolPaise');
+  if (amount % 100 !== 0) throw new SalaryTemplateError(400, 'flexiblePoolPaise must be whole rupees');
+  return { value: amount };
+}
+
 function requireAmountPaise(value: unknown, field: string): number {
   const amount = Number(value);
   if (!Number.isInteger(amount) || amount < 0 || amount > MAX_AMOUNT_PAISE) {
@@ -374,6 +388,7 @@ function toView(doc: StoredTemplate) {
     deductionRules: doc.deductionRules ?? [],
     monthlyPaidLeaveDays: doc.monthlyPaidLeaveDays ?? 0,
     overtimePay: doc.overtimePay ?? null,
+    flexiblePoolPaise: doc.flexiblePoolPaise ?? null,
     active: doc.active,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),

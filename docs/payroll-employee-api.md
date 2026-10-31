@@ -82,8 +82,8 @@ Query: `period` (optional, `YYYY-MM`, default this month).
 ```
 
 - `todo` kinds: `missing_punches` (count > 0 and not locked), `flexible_split`
-  (window open and nothing submitted for that month yet), `fbp_bills` (any
-  rejected or in-review bill for a flexible head this FY), `tax_regime`
+  (no split submitted yet for the FY the window is in), `fbp_bills` (a bill
+  for a flexible head was rejected this FY; `inReview` is for the subtitle), `tax_regime`
   (regime not chosen yet and before the deadline), `investment_proofs` (old
   regime, something not uploaded or rejected, before the deadline).
 - Errors: `401` not signed in; `409` the account has no company.
@@ -171,11 +171,11 @@ replaces any split before it from that month on.
     ],
     "current": { "effectiveFrom": "2026-04", "submittedAt": "2026-04-10T09:12:00.000Z" },  // the split in force for window.effectiveFrom; null: the template's amounts
     "window": {
-      "open": true,
+      "open": true,                    // always true today: some month is always open (kept for a future hard close)
       "effectiveFrom": "2026-11",      // the first month a change made now applies to
       "effectiveTo": "2027-03",        // the FY's last month
       "closesOn": "2026-11-15",        // last day to change it for effectiveFrom
-      "reason": null                   // when open is false: why, e.g. "This year's payroll is closed"
+      "reason": null
     },
     "billsDueOn": "2027-03-31"
   }
@@ -212,19 +212,30 @@ Codes left out keep their current amount.
 
 ### `PUT /payroll/split`
 
-Saves it. Body: `{ "amounts": { … }, "acknowledged": true }` — `acknowledged`
-is the "I'll keep bills … and upload them by 31 Mar" tick and must be `true`.
+Saves it. Body: `{ "amounts": { … }, "acknowledged": true, "effectiveFrom": "2026-11" }` —
+`acknowledged` is the "I'll keep bills … and upload them by 31 Mar" tick and
+must be `true`; `effectiveFrom` (optional, recommended) is the month the
+Review screen showed: if the window has moved since (the cutoff passed or a
+run locked that month), the save is refused with `409` and the app should
+review again.
 Response: the same `split` object as `GET /payroll/split`, now with the new
-amounts and `current.effectiveFrom` = `window.effectiveFrom`.
+amounts and `current.effectiveFrom` = `window.effectiveFrom`. Saving again
+for the same month replaces it.
+
+**How the window works.** A change made today applies from this month while
+today is on or before the cutoff day (15th) and this month's run is not
+locked; otherwise from the next month whose run is not locked. A month whose
+run is locked never changes. The payroll run pays each month the split in
+force for that month (the latest one starting on or before it, same FY), on
+top of the structure's own values; months before it keep what they had.
 
 Errors (both review and save):
 - `400` an unknown or non-flexible code; an amount that is negative, not whole
   rupees (multiple of 100 paise), or above its `limitPaise`; the total above
   `poolPaise`; `acknowledged` not true (save only).
 - `404` no salary structure assigned.
-- `409` no flexible components on the template; the window is closed (after
-  the cutoff day, or the month's run is locked, or the FY's last run is
-  locked).
+- `409` no flexible components on the template; (save) `effectiveFrom` no
+  longer matches the window.
 
 ---
 
@@ -296,7 +307,10 @@ Items and the section each counts in:
 Caps come from the FY's old-regime tax config (`tds_configs`), so a new
 Finance Act is a data change. Amounts above a cap are accepted and kept (the
 proof may still be asked for), but only the cap counts: see `countedPaise`.
-Every amount is a year's amount except `rentMonthly`.
+Every amount is a year's amount except `rentMonthly`. For 80D the section's
+`capPaise` is the self and parents limits together; each item counts up to
+its own limit. The HRA section's `countedPaise` is the year's rent; the
+exemption itself is worked out by the payroll run from Basic, HRA and rent.
 
 On the **new regime** none of these reduce tax: every section comes back with
 `applicable: false` and `note: "Not needed on the new regime"`, amounts are

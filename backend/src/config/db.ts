@@ -41,6 +41,7 @@ import { PaidDaysTemplate } from '../models/paidDaysTemplate.model';
 import { PayrollRun, Payslip } from '../models/payrollRun.model';
 import { EmployeePaymentDetails } from '../models/employeePayment.model';
 import { TaxDeclarationRow, TdsConfigRow } from '../models/tds.model';
+import { FlexibleSplit, InvestmentProof } from '../models/employeePayroll.model';
 import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
 import { LeaveYearEnd, OrgShiftPolicy, ShiftAssignment, ShiftTemplate } from '../models/shift.model';
 import { ReimbursementType } from '../models/reimbursement-type.model';
@@ -319,6 +320,16 @@ export function taxDeclarations(): Collection<TaxDeclarationRow> {
   return getDb().collection<TaxDeclarationRow>('tax_declarations');
 }
 
+/** Employees' flexible splits (app › Payroll › Change my split). */
+export function flexibleSplits(): Collection<FlexibleSplit> {
+  return getDb().collection<FlexibleSplit>('flexible_splits');
+}
+
+/** The proofs behind employees' investment declarations. */
+export function investmentProofs(): Collection<InvestmentProof> {
+  return getDb().collection<InvestmentProof>('investment_proofs');
+}
+
 export function payslips(): Collection<Payslip> {
   return getDb().collection<Payslip>('payslips');
 }
@@ -415,6 +426,10 @@ async function ensureIndexes(database: Db): Promise<void> {
   // One HR mark per person per day; the calendars read them by person and range.
   await database.collection('attendance_overrides').createIndex({ org: 1, userId: 1, workDate: 1 }, { unique: true });
   await database.collection('paid_days_templates').createIndex({ org: 1, code: 1 }, { unique: true });
+  // The app's Payroll screens: one split per person per starting month, one proof per declared item.
+  await database.collection('flexible_splits').createIndex({ org: 1, userId: 1, effectiveFrom: 1 }, { unique: true });
+  await database.collection('investment_proofs').createIndex({ org: 1, userId: 1, fy: 1, item: 1 }, { unique: true });
+  await database.collection('investment_proofs').createIndex({ org: 1, fy: 1, status: 1 });
   // The reads name people and days but not the org, which the unique key leads with.
   await database.collection('attendance_overrides').createIndex({ userId: 1, workDate: 1 });
   // The phones' Face ID try records: read by person and time, gone after 30 days.

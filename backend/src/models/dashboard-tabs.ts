@@ -50,6 +50,8 @@ const RULES: Rule[] = [
   { path: /^\/admin\/payroll\/reports/, read: ['payrolldash', 'payrollreports', 'payruns'] },
   { path: /^\/admin\/payroll\/runs/, read: ['payruns'], write: ['payruns'] },
   { path: /^\/admin\/payroll\/employees\/[^/]+\/tax-declaration/, read: ['salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
+  // Employees' investment proofs: payroll access only.
+  { path: /^\/admin\/payroll\/investment-proofs/, read: ['salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
   // Bank, PAN, UAN: anyone who can open the profile sees them masked; payroll access sees and edits them.
   { path: /^\/admin\/payroll\/employees\/[^/]+\/payment-details/, read: ['employees', 'salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
   { path: /^\/admin\/payroll/, read: ['payschedule', 'taxdetails', 'payheads', 'statutorycomponents', 'templates', 'payruns', 'salarydetails'], write: ['payruns'] },

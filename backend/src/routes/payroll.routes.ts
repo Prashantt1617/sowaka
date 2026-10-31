@@ -62,6 +62,7 @@ import {
 import { getOrgSetupHandler, updateOrgSetupHandler } from '../controllers/orgSetup.controller';
 import { getPaymentDetailsHandler, setPaymentDetailsHandler } from '../controllers/employeePayment.controller';
 import { getDeclarationHandler, setDeclarationHandler } from '../controllers/tds.controller';
+import { hrDecideProofHandler, hrListProofsHandler, hrProofFileHandler } from '../controllers/employeePayroll.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
 
@@ -146,4 +147,9 @@ payrollRouter.put('/employees/:userId/payment-details', setPaymentDetailsHandler
 // One employee's income tax regime and declarations for a FY (?fy=2026-27).
 payrollRouter.get('/employees/:userId/tax-declaration', getDeclarationHandler);
 payrollRouter.put('/employees/:userId/tax-declaration', setDeclarationHandler);
+
+// The proofs employees upload for their investment declarations: list, open, approve or reject.
+payrollRouter.get('/investment-proofs', hrListProofsHandler);
+payrollRouter.get('/investment-proofs/:proofId/file', hrProofFileHandler);
+payrollRouter.post('/investment-proofs/:proofId/decision', hrDecideProofHandler);
 
