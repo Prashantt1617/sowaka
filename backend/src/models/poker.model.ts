@@ -320,6 +320,8 @@ export interface PokerRoom {
   minutes: number;
   /** House players the host has added to fill seats (0 to 5). */
   house: number;
+  /** Practice against the house: one person and house players. Leaving it (or reopening the game) ends it. */
+  practice?: boolean;
   createdAt: number;
   updatedAt: number;
   players: PokerRoomPlayer[];

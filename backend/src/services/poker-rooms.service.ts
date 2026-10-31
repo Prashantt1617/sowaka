@@ -342,7 +342,10 @@ export async function hostRoom(seat: RoomSeat, options: { open?: unknown; house?
 /** A private table against the house, dealt at once: Speed Poker on your own. */
 export async function practiceRoom(seat: RoomSeat): Promise<PokerRoomView> {
   const view = await hostRoom(seat, { open: false, house: ROOMS.practiceHouse });
-  const changed = await change(seat.org, view.code, (r) => ({ result: true, effects: rule(() => startGame(r, deps.now(), deps.random)), write: true }), [seat.userId]);
+  const changed = await change(seat.org, view.code, (r) => {
+    r.practice = true;
+    return { result: true, effects: rule(() => startGame(r, deps.now(), deps.random)), write: true };
+  }, [seat.userId]);
   if (!changed) throw new PokerRoomError(503, 'Could not open a practice table. Try again.');
   return viewFor(changed.room, seat.userId, deps.now());
 }

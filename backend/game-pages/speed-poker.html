@@ -108,7 +108,25 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .landscape .felt{left:10%;right:10%;top:14%;bottom:16%}
 .center{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:8px;z-index:3}
 .pot{font-weight:800;font-size:14px;padding:4px 12px;border-radius:999px;background:rgba(0,0,0,.35);color:#f3e2b2}
-.board{display:flex;gap:4px}
+.board{display:flex;flex-direction:column;align-items:center;gap:7px}
+/* the flop on top, the turn and the river under it, with the deck and the burn pile either side of them */
+.board .row{display:flex;gap:6px;align-items:center}
+.board .pc,.board .flip{width:46px;height:64px}
+.board .pc{border-radius:7px}
+.board .pc .r{font-size:20px;left:5px;top:3px}.board .pc .s{font-size:25px;right:5px;bottom:2px}
+.board .side{width:30px;height:42px;position:relative;margin:0 6px;flex:none}
+.board .side .pc{position:absolute;inset:0;width:30px;height:42px;border-radius:5px}
+.board .deck .pc:nth-child(2){transform:translate(-2px,-2px)}.board .deck .pc:nth-child(3){transform:translate(-4px,-4px)}
+.board .burn .pc{transform:rotate(calc(var(--i,0) * 9deg - 9deg))}
+.board .side .lbl{position:absolute;left:50%;top:100%;transform:translateX(-50%);margin-top:3px;font-size:9px;letter-spacing:.12em;color:rgba(255,255,255,.35);font-weight:700}
+/* a card dealt to the board: off the deck face down, into its place, then turned over */
+.flip{position:relative;perspective:600px;flex:none}
+.flip .in{position:absolute;inset:0;transform-style:preserve-3d;animation:dealflip .9s cubic-bezier(.2,.7,.2,1) both;animation-delay:var(--d,0ms)}
+.flip .in>.pc{position:absolute;inset:0;width:100%;height:100%;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.flip .in>.pc.back{transform:rotateY(180deg)}
+@keyframes dealflip{0%{transform:translate(var(--fx,90px),var(--fy,40px)) rotateY(180deg) scale(.6);opacity:0}12%{opacity:1}55%{transform:translate(0,0) rotateY(180deg) scale(1)}100%{transform:translate(0,0) rotateY(0) scale(1)}}
+.board .burn .pc.new{animation:burnin .45s ease-out both;animation-delay:var(--d,0ms)}
+@keyframes burnin{from{transform:translate(170px,0) rotate(0);opacity:0}to{opacity:1}}
 .watermark{position:absolute;left:50%;top:62%;transform:translate(-50%,-50%);font-family:var(--display);font-weight:800;font-size:13px;letter-spacing:.3em;color:rgba(255,255,255,.08);white-space:nowrap}
 
 /* cards: a four-colour deck reads at a glance on a phone */
@@ -125,6 +143,7 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .pc.win{box-shadow:0 0 0 2px var(--gold),0 0 14px rgba(229,184,80,.7)}
 .pc.dim{filter:brightness(.55)}
 .pc.deal{animation:deal .28s ease-out both}
+@media (prefers-reduced-motion:reduce){.flip .in,.board .burn .pc.new{animation:none}}
 @keyframes deal{from{transform:translateY(-14px) scale(.9);opacity:0}to{transform:none;opacity:1}}
 
 .seat{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;width:92px;z-index:4;transition:opacity .2s}
@@ -148,7 +167,7 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .seat .hole .pc.mini{width:20px;height:28px}
 .seat .hole .pc.mini+.pc.mini{margin-left:-6px;transform:rotate(8deg)}
 /* a short screen (the game inside the app): a smaller board, a little higher */
-@media (max-height:720px){.board .pc{width:32px;height:46px;border-radius:5px}.board .pc .r{font-size:15px}.board .pc .s{font-size:18px}.center{top:42%}.board{gap:3px}}
+@media (max-height:720px){.board .pc,.board .flip{width:38px;height:53px}.board .pc .r{font-size:17px}.board .pc .s{font-size:20px}.center{top:48%;gap:6px}.board{gap:5px}.board .side .lbl{display:none}.pot{font-size:13px;padding:3px 10px}.board .row{gap:5px}.board .side,.board .side .pc{width:26px;height:36px}.watermark{display:none}}
 .seat .shown{display:flex;gap:2px;margin-top:3px}
 .bet{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;gap:4px;font-size:12px;font-weight:800;color:#f3e2b2;z-index:3;white-space:nowrap}
 .bet i{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#fff 0 22%,#d23c3c 23% 60%,#fff 61% 70%,#d23c3c 71%);box-shadow:0 1px 2px rgba(0,0,0,.5)}
@@ -309,6 +328,42 @@ const SUIT={s:'♠',h:'♥',d:'♦',c:'♣'};
 function card(c,size,cls){ if(!c)return `<div class="pc slot ${size||''}"></div>`; const r=c[0]==='T'?'10':c[0], s=c[1];
   return `<div class="pc ${s} ${size||''} ${cls||''}"><span class="r">${r}</span><span class="s">${SUIT[s]}</span></div>`; }
 const back=size=>`<div class="pc back ${size||''}"></div>`;
+
+/* ---------- the board, dealt as at a real table ----------
+   Each street burns a card face down onto the pile, then its cards come off
+   the deck face down and turn over one by one: the flop's three, then the
+   turn, then the river. The table is drawn again on every update, so each
+   card keeps the moment it was dealt and the animation carries on from
+   there (a negative delay) instead of starting over. Joining a hand already
+   under way shows its board as it is, without dealing it again. */
+const BOARD_ANIM_MS=900, BURN_MS=420, FLIP_GAP_MS=230;
+function boardHtml(v,winCards){
+  const key=`${v.id}:${v.handNo}`, n=(v.board||[]).filter(Boolean).length, t=Date.now();
+  let a=state.boardAnim&&state.boardAnim.key===key?state.boardAnim:null;
+  if(!a){ a=state.boardAnim={key,seen:n,at:{},burnAt:{}};
+    // The preview's ?deal=1 deals its board from the deck, street by street.
+    if(state.demoDeal){ a.seen=0; const t0=t; [[3,0],[4,1400],[5,2400]].forEach(([upTo,delay])=>{ if(n>=upTo){ a.burnAt[upTo<=3?1:upTo===4?2:3]=t0+delay; for(let i=upTo===3?0:upTo-1;i<upTo;i++)a.at[i]=t0+delay+BURN_MS+(i-(upTo===3?0:upTo-1))*FLIP_GAP_MS; } }); a.seen=n; } }
+  if(n>a.seen){
+    // A new street: the burn first, then each new card a beat apart.
+    a.burnAt[n<=3?1:n===4?2:3]=t;
+    for(let i=a.seen;i<n;i++)a.at[i]=t+BURN_MS+(i-a.seen)*FLIP_GAP_MS;
+    a.seen=n; }
+  const tone=c=>c&&winCards.size?(winCards.has(c)?'win':'dim'):'';
+  const slot=i=>{ const c=v.board[i]; if(!c)return card(null);
+    const at=a.at[i], since=at==null?Infinity:t-at;
+    if(since>=BOARD_ANIM_MS)return card(c,'',tone(c));
+    // From the deck (right of the turn and river) to this card's place.
+    const fx=i<3?(2-i)*52+40:(i===3?110:58), fy=i<3?70:0;
+    return `<div class="flip" style="--d:${-since}ms;--fx:${fx}px;--fy:${fy}px"><div class="in">${card(c,'',tone(c))}${back('')}</div></div>`; };
+  const burns=n>=5?3:n>=4?2:n>=3?1:0;
+  const burnPile=Array.from({length:burns},(_,k)=>{ const at=a.burnAt[k+1], since=at==null?Infinity:t-at;
+    return `<div class="pc back ${since<BURN_MS+100?'new':''}" style="--i:${k};--d:${since<BURN_MS+100?-since:0}ms"></div>`; }).join('');
+  const inHand=v.status!=='over'&&(n>0||v.street&&v.street!=='done'||(v.seats||[]).some(s=>s.inHand));
+  const deck=inHand&&n<5?`<div class="side deck" aria-hidden="true">${back('')}${back('')}${back('')}<span class="lbl">DECK</span></div>`:'<div class="side" aria-hidden="true"></div>';
+  const burn=`<div class="side burn" aria-hidden="true">${burnPile}${burns?'<span class="lbl">BURN</span>':''}</div>`;
+  return `<div class="board" aria-label="Board: ${(v.board||[]).filter(Boolean).map(c=>c).join(' ')||'no cards yet'}">
+    <div class="row">${slot(0)}${slot(1)}${slot(2)}</div>
+    <div class="row">${burn}${slot(3)}${slot(4)}${deck}</div></div>`; }
 
 /* ---------- phase words ---------- */
 /** A practice that runs for days is the casual game: tables any time, no points, no finals. */
@@ -529,7 +584,7 @@ function tableInner(v,landscape){
       ${shown?`<div class="shown">${s.cards.map(c=>card(c,'mini',winCards.has(c)?'win':'')).join('')}</div>`:''}</div>
       ${s.bet>0?`<div class="bet" style="left:${bx}%;top:${by}%"><i></i>${fmt(s.bet)}</div>`:''}
       ${s.button?`<div class="dealer" style="left:${dx}%;top:${dy}%">D</div>`:''}`; }).join('');
-  const board=[0,1,2,3,4].map(i=>card(v.board[i],'',v.board[i]&&winCards.size&&!winCards.has(v.board[i])?'dim':(v.board[i]&&winCards.has(v.board[i])?'win':''))).join('');
+  const board=boardHtml(v,winCards);
   const level=v.level?`Blinds ${fmt(v.level.sb)}/${fmt(v.level.bb)}${v.nextLevelAt&&v.nextLevel?` · ${fmt(v.nextLevel.sb)}/${fmt(v.nextLevel.bb)} in ${clockOf(v.nextLevelAt-t)}`:''}`:'';
   let banner='';
   if(v.result){ const p=v.result.pots[0]; if(p){ const w=p.winners.map(i=>v.seats[i]).map(s=>s.me?'You':first(s.name));
@@ -537,7 +592,7 @@ function tableInner(v,landscape){
   const left=v.endsAt-t;
   return `<div class="tbar">${landscape?'':`<button class="back" data-act="lobby" aria-label="Back to the lobby">‹</button>`}<div class="title"><b>${tableTitle(v)}${v.mySeat==null?' · watching':''}</b><span>${level}</span></div><div class="clock num ${left<60000?'low':''}">${v.status==='over'?'Over':clockOf(left)}</div></div>
     <div class="stage ${landscape?'landscape':''}"><div class="felt"></div><div class="watermark">SPEED POKER</div>
-      <div class="center">${v.pot>0?`<div class="pot num">Pot ${fmt(v.pot)}</div>`:''}<div class="board">${board}</div></div>
+      <div class="center">${v.pot>0?`<div class="pot num">Pot ${fmt(v.pot)}</div>`:''}${board}</div>
       ${seats}${banner?`<div class="banner">${esc(banner)}</div>`:''}</div>`;
 }
 function renderTable(){
@@ -615,7 +670,7 @@ document.addEventListener('click',async e=>{
       case 'code': await joinCode(($('#code')||{}).value||state.codeInput); break;
       case 'event': state.mode='event'; state.view='lobby'; state.shared=state.ev; break;
       case 'rooms': state.mode='rooms'; state.view=state.room&&state.room.table&&state.room.status!=='lobby'?'table':'lobby'; state.table=state.room&&state.room.table||null; refreshRooms(); break;
-      case 'leaveask': state.leaveAsk=true; break;
+      case 'leaveask': if(R()&&R().practice){ await leavePractice(); return; } state.leaveAsk=true; break;
       case 'leaveno': state.leaveAsk=false; break;
       case 'leave-room': state.leaveAsk=false; await P.request('room:leave'); onRoom(null); return;
       case 'invite': return openPicker();
@@ -625,7 +680,7 @@ document.addEventListener('click',async e=>{
       case 'deal': await P.request('room:start'); break;
       case 'again': await P.request('room:again'); break;
       case 'mytable': state.view='table'; if(!state.table||state.table.status==='over'){ const h=await P.request('poker:hello'); if(h.table)state.table=h.table; } break;
-      case 'lobby': if(state.mode==='rooms'){ state.leaveAsk=true; break; } if(state.watching)P.request('table:unwatch',{tableId:state.watching.id}).catch(()=>{}); state.watching=null; state.view='lobby'; if(state.table&&state.table.status==='over')state.table=null; break;
+      case 'lobby': if(state.mode==='rooms'){ if(R()&&R().practice){ await leavePractice(); return; } state.leaveAsk=true; break; } if(state.watching)P.request('table:unwatch',{tableId:state.watching.id}).catch(()=>{}); state.watching=null; state.view='lobby'; if(state.table&&state.table.status==='over')state.table=null; break;
       case 'fold': case 'call': case 'allin': await sendAction({kind:act}); break;
       case 'openraise': state.raiseOpen=true; break;
       case 'raise': await sendAction(state.raiseTo>=state.table.choices.maxRaiseTo?{kind:'allin'}:{kind:'raise',to:state.raiseTo}); break;
@@ -681,13 +736,20 @@ async function start(){
   const S0=window.Sowaka||{}, m=/^(?:room:)?([1-9]\d{3})$/.exec(String(S0.startRoomCode||S0.startChallengeId||'').trim());
   if(m&&(!state.room||state.room.code!==m[1]))joinCode(m[1]).catch(err=>toast(err.message));
 }
+/* Practice is on your own against the house: back means done, with nothing to confirm. */
+async function leavePractice(){ state.leaveAsk=false; state.boardAnim=null; try{ await P.request('room:leave'); }catch(e){} onRoom(null); }
 async function load(){ try{
     const [h,rh]=await Promise.all([P.request('poker:hello').catch(()=>({})),P.request('room:hello')]);
     state.ev=(h&&h.shared)||null; state.mine=(h&&h.mine)||state.mine; state.me=rh.me||state.me; state.rooms=rh.rooms||[]; state.invites=rh.invites||[];
     /* At an event's table: that first. Else the group game (the event, if one is on, is a card in its lobby). */
     if(h&&h.table&&h.table.status==='playing'&&!rh.room){ state.mode='event'; state.shared=state.ev; state.table=h.table; state.view='table'; }
     else if(state.mode==='event'){ state.shared=state.ev; if(h&&h.table)state.table=h.table; }
+    /* Opening the game again (not a reconnect) is not a way back into an old
+       practice table: that one is left, and the lobby shows. A table with
+       colleagues is still yours to go back to. */
+    else if(!state.opened&&rh.room&&rh.room.practice){ try{ await P.request('room:leave'); }catch(e){} onRoom(null); }
     else onRoom(rh.room||null);
+    state.opened=true;
   }catch(err){ toast(err.message); } }
 
 /* ---------- the demo (a browser preview with no server) ---------- */
@@ -696,6 +758,8 @@ function demoFace(i){ const bg=['#3d5a80','#7a4a6e','#4a7a5e','#8a5a2b','#2f5f6f
   return 'data:image/svg+xml;utf8,'+encodeURIComponent(svg); }
 function demo(){
   const q=new URLSearchParams(location.search), mode=q.get('demo')||'rooms';
+  state.demoDeal=q.get('deal')==='1';
+  if(state.demoDeal)setInterval(()=>{ if(state.view==='table')render(); },120);
   const roomMode=/^(rooms|room|room-guest|room-table|room-over|invite)$/.test(mode); state.mode=roomMode?'rooms':'event';
   const t=Date.now(); const iso=m=>new Date(t+m*60000).toISOString();
   const people=['Ananya Bisht','Rahul Mehta','Priya Sharma','Arjun Deshpande','Meera Iyer','Kabir Rao','Tanya Bhatia','Ishaan Kapoor','Nikhil Verma','Pooja Nair','Siddharth Pillai','Harsh Chaudhary','Raghav Sen','Divya Rao'];
