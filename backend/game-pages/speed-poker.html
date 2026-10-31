@@ -642,8 +642,23 @@ function renderTable(){
 function renderRoomsMode(){ const r=R(); if(!r)return renderRooms(); if(r.status==='lobby'||!r.table)return renderRoomLobby(); return renderTable(); }
 const ordinal=n=>n+(['th','st','nd','rd'][(n%100-20)%10]||['th','st','nd','rd'][n%100]||'th');
 
+/* An open sheet (the invite list, Leave the table?) is kept as it is when the
+   screen behind it is drawn again: the table updates every second or so, and
+   a button rebuilt between a finger going down and coming up never gets its
+   tap (and the search box lost the keyboard). Only a sheet that changed is
+   replaced. */
+let keptSheet={html:'',node:null};
+function keepSheet(focused){
+  const fresh=app.querySelector('.sheet');
+  if(!fresh){ keptSheet={html:'',node:null}; return; }
+  const html=fresh.outerHTML;
+  if(keptSheet.node&&keptSheet.html===html)fresh.replaceWith(keptSheet.node);
+  else keptSheet={html,node:fresh};
+  if(focused&&focused.id){ const again=document.getElementById(focused.id); if(again&&again!==document.activeElement){ again.focus(); if(again.setSelectionRange)again.setSelectionRange(again.value.length,again.value.length); } } }
 function render(){ if(state.fatal){ app.innerHTML=`<div id="lobby"><div class="empty" style="text-align:center;margin-top:30vh">${esc(state.fatal)}</div></div>`; return; }
+  const focused=document.activeElement&&document.activeElement.closest&&document.activeElement.closest('.sheet')?document.activeElement:null;
   if(state.mode==='rooms')renderRoomsMode(); else if(state.view==='table'||state.view==='watch')renderTable(); else renderLobby();
+  keepSheet(focused);
   if(state.offline&&!$('.offline'))app.insertAdjacentHTML('beforeend','<div class="offline">Reconnecting…</div>'); }
 
 /* the clocks on screen move every quarter second without waiting for the server */
@@ -770,6 +785,7 @@ function demoFace(i){ const bg=['#3d5a80','#7a4a6e','#4a7a5e','#8a5a2b','#2f5f6f
 function demo(){
   const q=new URLSearchParams(location.search), mode=q.get('demo')||'rooms';
   state.demoDeal=q.get('deal')==='1';
+  window.__speedPokerRender=render; /* previews only: lets a check redraw the screen */
   if(state.demoDeal)setInterval(()=>{ if(state.view==='table')render(); },120);
   const roomMode=/^(rooms|room|room-guest|room-table|room-over|invite)$/.test(mode); state.mode=roomMode?'rooms':'event';
   const t=Date.now(); const iso=m=>new Date(t+m*60000).toISOString();
