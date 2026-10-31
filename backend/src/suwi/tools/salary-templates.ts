@@ -3,6 +3,7 @@
 // and a template built from components, duplicated, or changed — previewed at
 // sample CTCs with the checks HR would do by hand before it is prepared.
 import { payrollRuns, salaryStructures, salaryTemplates, users } from '../../config/db';
+import { statutoryConfigForPeriod } from '../../services/payrollConfig.service';
 import { createPayHead, deletePayHead, PayHeadError } from '../../services/payHead.service';
 import { createSalaryTemplate, deleteSalaryTemplate, previewSalaryTemplate, updateSalaryTemplate } from '../../services/salaryTemplate.service';
 import { catalogWithStandard } from '../../services/standardComponents.service';
@@ -246,6 +247,7 @@ defineTools(
       if (!input.name) input.name = input.code;
       const ctcs = Array.isArray(i.sampleCtcRupees) && i.sampleCtcRupees.length ? i.sampleCtcRupees.map((r) => Math.round(num(r, 0, 0) * 100)).filter((x) => x > 0).slice(0, 5) : SAMPLE_CTCS;
       const samples = await sampleBreakups(ctx, input, ctcs);
+      const sampleCfg = await statutoryConfigForPeriod(ctx.today.slice(0, 7));
       return {
         data: {
           nothingSaved: true, basedOn: source ? `copy of ${source.name}` : existing ? `change to ${existing.name}` : 'new',
@@ -261,7 +263,7 @@ defineTools(
             basicShareOfGross: `${basicShare.toFixed(0)}%`, ...(overBudget ? { balancingNegative: true } : {}),
           })),
           // Worked out on one sample CTC only, so each line says which.
-          why: ((s) => whyLines(s.computed, ctx.today.slice(0, 7)).map((l) => `At ${rupees(s.ctc)} a year: ${l}`))(samples[Math.min(1, samples.length - 1)]),
+          why: ((s) => whyLines(s.computed, ctx.today.slice(0, 7), sampleCfg).map((l) => `At ${rupees(s.ctc)} a year: ${l}`))(samples[Math.min(1, samples.length - 1)]),
         },
         links: [{ label: 'Open salary templates', view: 'templates' }],
       };
@@ -293,12 +295,13 @@ defineTools(
       const checks = templateChecks(samples);
       const people = existing ? await peopleOn(ctx.org, existing.code) : [];
       const thisMonth = ctx.today.slice(0, 7);
+      const cfg = await statutoryConfigForPeriod(thisMonth);
       const thisRun = existing ? await payrollRuns().findOne({ org: ctx.org, period: thisMonth }, { projection: { status: 1 } }) : null;
       const whenText = !thisRun ? `${monthName(thisMonth)} has no run yet, so it is the first month on the new rules` : thisRun.status === "draft" ? `${monthName(thisMonth)}'s draft run picks it up when it is recalculated` : `${monthName(thisMonth)} is already ${thisRun.status === "paid" ? "submitted" : thisRun.status.replace("_", " ")} and stays as it is; the next month is the first on the new rules`;
       const sampleLine = (s: (typeof samples)[number]) => `${rupees(s.ctc)}: ${s.computed.earnings.filter((l) => l.monthlyPaise > 0).map((l) => `${l.payslipName} ${rupees(l.monthlyPaise)}`).join(', ')}; PF ${rupees(s.computed.statutory.epf.employeePaise)}, ESI ${s.computed.statutory.esi.applicable ? rupees(s.computed.statutory.esi.employeePaise) : 'none'}, PT ${rupees(s.computed.statutory.pt.amountPaise)}, net ${rupees(s.computed.netMonthlyPaise)}`;
       const lines: { text: string; why?: string; tone?: 'info' | 'warn' }[] = [
         { text: `${input.name} (${input.code}): ${input.components.map((c) => `${byCode.get(c.payHeadCode)?.name ?? c.payHeadCode} ${calcOf(c, c.payHeadCode === input.balancingComponentCode)}`).join('; ')}.`, why: input.balancingComponentCode ? `${byCode.get(input.balancingComponentCode)?.name ?? input.balancingComponentCode} takes whatever CTC has left after the other components and any employer PF/ESI placed inside CTC, so gross always reconciles to CTC.` : 'There is no balancing component, so gross is the sum of the components and may not equal CTC.' },
-        ...samples.map((s) => ({ text: sampleLine(s), why: whyLines(s.computed, thisMonth).join(' ') || undefined })),
+        ...samples.map((s) => ({ text: sampleLine(s), why: whyLines(s.computed, thisMonth, cfg).join(' ') || undefined })),
         ...checks.map((c) => ({ text: c.text, tone: c.tone })),
         ...(existing
           ? [

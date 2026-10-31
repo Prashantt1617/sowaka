@@ -22,10 +22,16 @@ These rows are **national**: one row per year serves every company on Sowaka.
 | | Who |
 | --- | --- |
 | Read (`GET`) | anyone with payroll access (dashboard admin, anyone never limited to some tabs, or someone given the *Payroll Runs* or *Salary details* tab) |
-| Write (`PUT`, `POST`) | a **dashboard admin** of a **platform org** (the orgs in the server's `PAYROLL_CONFIG_ORGS`, `sowaka` when unset). A customer company's HR, even its admin, gets `403` |
+| Write (`PUT`, `POST`) | a **dashboard admin** of a **platform org** (the orgs in the server's `PAYROLL_CONFIG_ORGS`, `sowaka` when unset; `*` is not accepted). A customer company's HR, even its admin, gets `403` `"These settings apply to every company on Sowaka; only a Sowaka admin can change them"` |
 
 `GET` responses carry `canEdit: boolean` so the page can show the form
-read-only.
+read-only. In People › Accesses terms the endpoints sit behind the *Payroll
+Runs* or *Salary details* tab (`statutorycomponents` alone does not open them).
+
+A company can still override a state's PT / LWF for itself on the existing
+`/admin/payroll/statutory-rules/:state` (that wins over the national row), and
+its own choices (PF restricted or actual, inside CTC, bonus on and its rate)
+stay on `/admin/payroll/statutory-settings`.
 
 ---
 
@@ -122,7 +128,8 @@ row (offer *Start from FY 2026-27*, below). `400` for a malformed `fy`.
 ### `PUT /admin/payroll/statutory-config?fy=2026-27`
 
 Body: the whole `StatutoryConfig` without `fy`, `updatedAt`, `updatedByUserId`
-(those are ignored if sent). Replaces the year's row, or creates it. Returns
+(those are ignored if sent). Replaces the year's row, or creates it. `status`
+left out saves as `"to_confirm"`; `states` comes back sorted by state. Returns
 `{ "success": true, "canEdit": true, "config": StatutoryConfig }`.
 
 Validation (`400`, message names the field, e.g. `"epf.employeeRate must be a fraction between 0 and 1"`):
@@ -206,7 +213,8 @@ A regime with no row is `null`. `404` `"Income tax settings for FY 2027-28 are n
 ### `PUT /admin/payroll/tds-config?fy=2026-27&regime=new`
 
 Body: the `TdsConfig` without `fy`, `regime`, `updatedAt`, `updatedByUserId`.
-Replaces (or creates) that regime's row. Returns the same body as the `GET`
+Replaces (or creates) that regime's row. `status` left out saves as
+`"to_confirm"`. `hra` is required when `hraExemption` is `true`. Returns the same body as the `GET`
 with `fy`.
 
 Validation (`400`): `ratePercent`, `cessPercent`, surcharge rates and `hra.*`
@@ -224,13 +232,26 @@ new year already has either regime, `404` if the source has none. Returns the
 
 ## Missing year
 
-Anything that calculates pay for a month (payroll runs, salary structure and
-template previews, the TDS work sheet, the employee app's payslip, home and
-declaration screens) reads that month's FY rows. Without them it answers
-`409` with:
+Anything that calculates pay for a month reads that month's FY rows: payroll
+runs (create / recompute), salary structure and template previews and saves,
+the TDS work sheet, *Statutory Components* (`GET/PUT /admin/payroll/statutory-settings`,
+which shows this FY's figures and checks the bonus rate against this FY's
+`bonus.minRate`–`maxRate`), the employee app's home / split / declaration
+screens, and Suwi's payroll answers. Without them it answers `409` with:
 
 - `"Statutory settings for FY 2027-28 are not set up"` (no `payroll_statutory_configs` row)
 - `"Income tax settings for FY 2027-28 are not set up"` (only where income tax is
   worked out: a run for an org with TDS on, the TDS work sheet, the declaration screen)
 
 The dashboard should link those messages to this settings page.
+
+## Changes to existing responses
+
+- `GET /admin/payroll/statutory-settings`: `ceilingPaise` is now the PF ceiling
+  in force today from this FY's row (was a fixed ₹25,000), and the body has
+  `fy`. `settings.bonus.ratePercent` is the company's rate, or this FY's
+  `bonus.minRate` (as a percent, 8.33) when the company never set one.
+- `PUT /admin/payroll/statutory-settings`: the bonus rate must be within this
+  FY's `bonus.minRate`–`maxRate` (`"Statutory Bonus rate should be between 8.33% and 20%"`).
+- Payslip deduction names follow the row: `"Employee EPF (12%)"`,
+  `"Employee ESI (0.75%)"` from `epf.employeeRate` / `esi.employeeRate`.

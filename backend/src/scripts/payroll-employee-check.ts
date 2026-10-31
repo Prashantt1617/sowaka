@@ -9,14 +9,14 @@
  */
 import {
   attendanceRecords, companies, connectDb, flexibleSplits, getDb, payHeads, payrollRuns, payslips, salaryStructures, salaryTemplates,
-  shiftPolicies, tdsConfigs, users,
+  shiftPolicies, statutoryConfigs, tdsConfigs, users,
 } from '../config/db';
 import { env } from '../config/env';
 import { PayHead } from '../models/payHead.model';
 import { createRun, myPayslip, myPayslips, submitRun } from '../services/payrollRun.service';
 import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
 import { mySplit, reviewSplit, saveSplit, splitWindow } from '../services/employeePayroll.split';
-import { TDS_SEED } from '../shared/payroll/tds';
+import { STATUTORY_SEED, TDS_SEED } from './payroll-config-seed-data';
 
 const SCRATCH = 'payroll_employee_scratch';
 const ORG = 'sowaka';
@@ -94,6 +94,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     { org: ORG, userId: 'chetan', salaryTemplateCode: 'PLAIN', annualCtcPaise: R(9_00_000), status: 'active', createdAt: now, updatedAt: now },
   ]);
   await tdsConfigs().insertMany(TDS_SEED.map((c) => ({ ...c, createdAt: now, updatedAt: now })));
+  await statutoryConfigs().insertMany(STATUTORY_SEED.map((c) => ({ ...structuredClone(c), createdAt: now, updatedAt: now, updatedByUserId: null })));
 
   // —— the split ——
   const oct10 = new Date('2026-10-10T06:00:00Z');

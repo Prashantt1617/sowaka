@@ -6,7 +6,8 @@
 import { payHeads, reimbursementClaims, salaryStructures, users } from '../../config/db';
 import { ObjectId } from 'mongodb';
 import { employeeCalendar } from '../../services/attendance-report.service';
-import { EPF_CEILING_SCHEDULE, epfCeilingForPeriod } from '../../models/statutoryRule.model';
+import { epfCeilingForPeriod } from '../../shared/payroll/statutory-config';
+import { statutoryConfigForPeriod } from '../../services/payrollConfig.service';
 import { defineTools, rupees, str, SuwiContext } from '../tools';
 import { allRuns, bestByPeriod, daysInMonth, delta, lastDayOf, monthLabel, pct, showLines, slipLines, slipsOfRun, STATUS_LABEL, StoredRun, StoredSlip, taxSource } from './payroll-common';
 import { payslips } from '../../config/db';
@@ -124,8 +125,12 @@ defineTools(
       const joined = person.joiningDate ? new Date(person.joiningDate).toISOString().slice(0, 10) : undefined;
       if (joined && joined.slice(0, 7) === cur.period && joined > `${cur.period}-01`) reasons.push(`Joined on ${joined}: paid from that day.`);
       if (before && joined && joined.slice(0, 7) === prev!.period && joined > `${prev!.period}-01`) reasons.push(`Joined on ${joined}, so ${monthLabel(prev!.period)} was a part month.`);
-      const ceilingChange = EPF_CEILING_SCHEDULE.filter((s) => s.from >= from && s.from <= to);
-      const ceilNow = epfCeilingForPeriod(cur.period), ceilBefore = prev ? epfCeilingForPeriod(prev.period) : ceilNow;
+      // The PF ceilings of the FY row(s) the two months fall in; a change is a step that differs from the one before it.
+      const cfgNow = await statutoryConfigForPeriod(cur.period);
+      const cfgBefore = prev ? await statutoryConfigForPeriod(prev.period) : cfgNow;
+      const steps = [...(cfgBefore === cfgNow ? [] : cfgBefore.epf.wageCeilings), ...cfgNow.epf.wageCeilings];
+      const ceilingChange = steps.filter((s, k) => k > 0 && s.ceilingPaise !== steps[k - 1].ceilingPaise && s.from >= from && s.from <= to);
+      const ceilNow = epfCeilingForPeriod(cfgNow, cur.period), ceilBefore = prev ? epfCeilingForPeriod(cfgBefore, prev.period) : ceilNow;
       // The ceiling only matters to someone whose PF wage reached it in either month.
       const atCeiling = cur.pfWagePaise >= ceilNow || (prev ? prev.pfWagePaise >= ceilBefore : false);
       if ((ceilingChange.length || ceilNow !== ceilBefore) && !atCeiling) reasons.push(`The PF wage ceiling changed (${prev ? `${rupees(ceilBefore)} for ${monthLabel(prev.period)}, ` : ''}${rupees(ceilNow)} for ${monthLabel(cur.period)}), but it did not affect their PF: their PF wage (${prev ? `${rupees(prev.pfWagePaise)}, then ` : ''}${rupees(cur.pfWagePaise)}) is below the ceiling${prev ? ' in both months' : ''}.`);

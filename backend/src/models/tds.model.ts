@@ -7,7 +7,7 @@
 import type { TaxDeclarations, TaxRegime, TdsConfig } from '../shared/payroll/tds';
 import type { DeclarationItems } from '../shared/payroll/declaration';
 
-export type TdsConfigRow = TdsConfig & { createdAt: Date; updatedAt: Date };
+export type TdsConfigRow = TdsConfig & { createdAt: Date; updatedAt: Date; updatedByUserId?: string | null };
 
 export interface TaxDeclarationRow {
   org: string;

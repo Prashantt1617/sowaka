@@ -45,6 +45,12 @@ export interface TdsConfig {
   ptDeductible: boolean;
   /** Old regime: HRA exemption (section 10(13A)). */
   hraExemption: boolean;
+  /**
+   * The HRA exemption rule (rule 2A): the least of HRA received, rent paid
+   * less `rentOverPercentOfBasic`% of Basic, and `metroPercentOfBasic`% (or
+   * `nonMetroPercentOfBasic`%) of Basic. Needed when `hraExemption` is on.
+   */
+  hra?: { metroPercentOfBasic: number; nonMetroPercentOfBasic: number; rentOverPercentOfBasic: number };
 }
 
 /** What the employee declared for the FY (old regime mostly), in paise per year. */
@@ -59,7 +65,7 @@ export interface TaxDeclarations {
   sec80TTA?: number;
   /** Rent actually paid in the year, for the HRA exemption. */
   rentPaidPaise?: number;
-  /** Lives in Delhi, Mumbai, Kolkata or Chennai: 50% of Basic instead of 40%. */
+  /** Lives in Delhi, Mumbai, Kolkata or Chennai: the metro share of Basic for the HRA exemption. */
   metro?: boolean;
   /** Income from elsewhere the employee asked to have taxed through salary. */
   otherIncomePaise?: number;
@@ -123,6 +129,15 @@ export interface SlabRow {
   /** The part of the income in this slab. */
   onPaise: number;
   taxPaise: number;
+}
+
+/** A FY's income tax row lacks a figure the calculation needs: HR completes it on the settings page. */
+export class TdsConfigIncompleteError extends Error {
+  readonly statusCode = 409;
+  constructor(fy: string, what: string) {
+    super(`Income tax settings for FY ${fy} are missing ${what}`);
+    this.name = 'TdsConfigIncompleteError';
+  }
 }
 
 const pct = (paise: number, rate: number) => (paise * Math.round(rate * 100)) / 10000;
@@ -215,8 +230,14 @@ export function computeTds(input: TdsInput): TdsResult {
 
   let hraExempt = 0;
   if (old && config.hraExemption && (input.hraYearPaise ?? 0) > 0 && (d.rentPaidPaise ?? 0) > 0) {
+    const rule = config.hra;
+    if (!rule) throw new TdsConfigIncompleteError(config.fy, 'the HRA exemption rule (hra)');
     const basic = input.basicYearPaise ?? 0;
-    hraExempt = Math.max(0, Math.min(input.hraYearPaise!, d.rentPaidPaise! - basic / 10, (basic * (d.metro ? 50 : 40)) / 100));
+    hraExempt = Math.max(0, Math.min(
+      input.hraYearPaise!,
+      d.rentPaidPaise! - (basic * rule.rentOverPercentOfBasic) / 100,
+      (basic * (d.metro ? rule.metroPercentOfBasic : rule.nonMetroPercentOfBasic)) / 100,
+    ));
   }
   const pt = old && config.ptDeductible ? input.ptYearPaise ?? 0 : 0;
   const standard = Math.min(config.standardDeductionPaise, gross);
@@ -284,73 +305,3 @@ export function periodsAfter(period: string): string[] {
   }
   return out;
 }
-
-const L = (rupees: number) => rupees * 100;
-
-/**
- * Seed values. FY 2026-27 is assumed to carry the Finance Act 2025 (FY
- * 2025-26) slabs unchanged: TO CONFIRM against the Finance Act 2026 before
- * use. Stored in `tds_configs` by the seed script, never read from here at
- * run time.
- */
-export const TDS_SEED: TdsConfig[] = [
-  {
-    fy: '2026-27',
-    regime: 'new',
-    status: 'confirmed',
-    source: 'New regime as set by the Finance Act 2025; Budget 2026 left slabs, the ₹75,000 standard deduction and the ₹12 lakh rebate unchanged for FY 2026-27 (checked 21 Oct 2026)',
-    standardDeductionPaise: L(75_000),
-    slabs: [
-      { upToPaise: L(4_00_000), ratePercent: 0 },
-      { upToPaise: L(8_00_000), ratePercent: 5 },
-      { upToPaise: L(12_00_000), ratePercent: 10 },
-      { upToPaise: L(16_00_000), ratePercent: 15 },
-      { upToPaise: L(20_00_000), ratePercent: 20 },
-      { upToPaise: L(24_00_000), ratePercent: 25 },
-      { upToPaise: null, ratePercent: 30 },
-    ],
-    rebate: { incomeLimitPaise: L(12_00_000), maxRebatePaise: L(60_000), marginalRelief: true },
-    surcharge: [
-      { abovePaise: L(50_00_000), ratePercent: 10 },
-      { abovePaise: L(1_00_00_000), ratePercent: 15 },
-      { abovePaise: L(2_00_00_000), ratePercent: 25 },
-    ],
-    cessPercent: 4,
-    limits: { sec80C: 0, sec80CCD1B: 0, sec80DSelf: 0, sec80DSelfSenior: 0, sec80DParents: 0, sec80DParentsSenior: 0, sec24bHomeLoan: 0, sec80TTA: 0 },
-    ptDeductible: false,
-    hraExemption: false,
-  },
-  {
-    fy: '2026-27',
-    regime: 'old',
-    status: 'confirmed',
-    source: 'Old regime (individual below 60); unchanged by Budget 2026 for FY 2026-27 (checked 21 Oct 2026)',
-    standardDeductionPaise: L(50_000),
-    slabs: [
-      { upToPaise: L(2_50_000), ratePercent: 0 },
-      { upToPaise: L(5_00_000), ratePercent: 5 },
-      { upToPaise: L(10_00_000), ratePercent: 20 },
-      { upToPaise: null, ratePercent: 30 },
-    ],
-    rebate: { incomeLimitPaise: L(5_00_000), maxRebatePaise: L(12_500), marginalRelief: false },
-    surcharge: [
-      { abovePaise: L(50_00_000), ratePercent: 10 },
-      { abovePaise: L(1_00_00_000), ratePercent: 15 },
-      { abovePaise: L(2_00_00_000), ratePercent: 25 },
-      { abovePaise: L(5_00_00_000), ratePercent: 37 },
-    ],
-    cessPercent: 4,
-    limits: {
-      sec80C: L(1_50_000),
-      sec80CCD1B: L(50_000),
-      sec80DSelf: L(25_000),
-      sec80DSelfSenior: L(50_000),
-      sec80DParents: L(25_000),
-      sec80DParentsSenior: L(50_000),
-      sec24bHomeLoan: L(2_00_000),
-      sec80TTA: L(10_000),
-    },
-    ptDeductible: true,
-    hraExemption: true,
-  },
-];

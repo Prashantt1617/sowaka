@@ -7,7 +7,8 @@
  *   npm run payroll:tds-check
  */
 import assert from 'node:assert/strict';
-import { computeTds, fyOf, TDS_SEED } from '../shared/payroll/tds';
+import { computeTds, fyOf } from '../shared/payroll/tds';
+import { TDS_SEED } from './payroll-config-seed-data';
 import { computeZohoCase, ZOHO_CASES } from './payroll-zoho-check';
 
 const NEW = TDS_SEED.find((c) => c.regime === 'new')!;
@@ -27,9 +28,20 @@ assert.equal(
   computeTds({ config: OLD, ytdTaxablePaise: 0, ytdTdsPaise: 0, currentTaxablePaise: R(87_500), futureMonthlyTaxablePaise: R(87_500), monthsAfter: 11, declarations: { sec80C: R(1_50_000) } }).annualTaxPaise,
   R(85_800),
 );
+// Old regime HRA exemption from the row's rule (rule 2A): least of HRA ₹3,00,000, rent ₹2,40,000 less 10% of
+// Basic ₹6,00,000 = ₹1,80,000, and 40% of Basic = ₹2,40,000 → ₹1,80,000.
+assert.equal(
+  computeTds({ config: OLD, ytdTaxablePaise: 0, ytdTdsPaise: 0, currentTaxablePaise: R(75_000), futureMonthlyTaxablePaise: R(75_000), monthsAfter: 11, basicYearPaise: R(6_00_000), hraYearPaise: R(3_00_000), declarations: { rentPaidPaise: R(2_40_000) } }).hraExemptPaise,
+  R(1_80_000),
+);
+// A row without the HRA rule refuses rather than guessing.
+assert.throws(
+  () => computeTds({ config: { ...OLD, hra: undefined }, ytdTaxablePaise: 0, ytdTdsPaise: 0, currentTaxablePaise: R(75_000), futureMonthlyTaxablePaise: R(75_000), monthsAfter: 11, basicYearPaise: R(6_00_000), hraYearPaise: R(3_00_000), declarations: { rentPaidPaise: R(2_40_000) } }),
+  /Income tax settings for FY 2026-27 are missing the HRA exemption rule/,
+);
 assert.deepEqual(fyOf('2026-09'), { fy: '2026-27', monthsAfter: 6, firstPeriod: '2026-04' });
 assert.deepEqual(fyOf('2027-03'), { fy: '2026-27', monthsAfter: 0, firstPeriod: '2026-04' });
-console.log('TDS textbook cases: ok (new regime rebate, marginal relief, slabs; old regime with 80C)');
+console.log('TDS textbook cases: ok (new regime rebate, marginal relief, slabs; old regime with 80C; HRA rule from the row)');
 
 // Employee A: taxable salary = gross pay less the Meal Card's tax-free ₹8,800 (reimbursements are not taxable).
 const a = ZOHO_CASES[0];

@@ -10,7 +10,7 @@
  * It drops and recreates its own database, and refuses any other. Run with
  *   npm run payroll:declaration-check
  */
-import { companies, connectDb, getDb, investmentProofs, payHeads, salaryStructures, salaryTemplates, taxDeclarations, tdsConfigs, users } from '../config/db';
+import { companies, connectDb, getDb, investmentProofs, payHeads, salaryStructures, salaryTemplates, taxDeclarations, statutoryConfigs, tdsConfigs, users } from '../config/db';
 import { env } from '../config/env';
 import { PayHead } from '../models/payHead.model';
 import { tabsForRequest } from '../models/dashboard-tabs';
@@ -18,7 +18,8 @@ import {
   decideProofForHr, listProofsForHr, myDeclaration, myProofFile, myProofs, ProofStorage, proofFileForHr, saveMyDeclaration, setProofStorageForTests, uploadMyProof,
 } from '../services/employeePayroll.declaration';
 import { myPayrollHome } from '../services/employeePayroll.home';
-import { computeTds, TDS_SEED } from '../shared/payroll/tds';
+import { computeTds } from '../shared/payroll/tds';
+import { STATUTORY_SEED, TDS_SEED } from './payroll-config-seed-data';
 
 const SCRATCH = 'payroll_declaration_scratch';
 const ORG = 'sowaka';
@@ -96,6 +97,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     components: [{ payHeadCode: 'BASIC', calculation: { mode: 'percentage', percent: 50, base: 'ctc' } }, { payHeadCode: 'FIXED_ALLOWANCE', calculation: { mode: 'flat_amount' } }] });
   await salaryStructures().insertOne({ org: ORG, userId: 'asha', salaryTemplateCode: 'PLAIN', annualCtcPaise: R(12_00_000), status: 'active', createdAt: now, updatedAt: now });
   await tdsConfigs().insertMany(TDS_SEED.map((c) => ({ ...c, createdAt: now, updatedAt: now })));
+  await statutoryConfigs().insertMany(STATUTORY_SEED.map((c) => ({ ...structuredClone(c), createdAt: now, updatedAt: now, updatedByUserId: null })));
 
   const oct = new Date('2026-10-31T06:00:00Z');
   const FY = '2026-27';

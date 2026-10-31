@@ -60,6 +60,14 @@ import {
   submitRunHandler,
 } from '../controllers/payrollRun.controller';
 import { getOrgSetupHandler, updateOrgSetupHandler } from '../controllers/orgSetup.controller';
+import {
+  copyStatutoryConfigHandler,
+  copyTdsConfigHandler,
+  getStatutoryConfigHandler,
+  getTdsConfigHandler,
+  putStatutoryConfigHandler,
+  putTdsConfigHandler,
+} from '../controllers/payrollConfig.controller';
 import { getPaymentDetailsHandler, setPaymentDetailsHandler } from '../controllers/employeePayment.controller';
 import { getDeclarationHandler, setDeclarationHandler } from '../controllers/tds.controller';
 import { hrDecideProofHandler, hrListProofsHandler, hrProofFileHandler } from '../controllers/employeePayroll.controller';
@@ -86,8 +94,19 @@ payrollRouter.get('/pay-heads/:payHeadId', getPayHeadHandler);
 payrollRouter.patch('/pay-heads/:payHeadId', updatePayHeadHandler);
 payrollRouter.delete('/pay-heads/:payHeadId', deletePayHeadHandler);
 
-// Statutory Calculation Engine — per-state rule sets (PRD §5.5, PT/LWF/Bonus).
-// EPF/ESI are national constants in the engine and need no configuration here.
+// The national figures payroll is worked out on, one set per FY (?fy=2026-27):
+// EPF, ESI, bonus, Meal Card, each state's PT / LWF, and the income tax rows.
+// Anyone with payroll access reads; only a platform admin writes (they serve
+// every company). See docs/payroll-config-api.md.
+payrollRouter.get('/statutory-config', getStatutoryConfigHandler);
+payrollRouter.put('/statutory-config', putStatutoryConfigHandler);
+payrollRouter.post('/statutory-config', copyStatutoryConfigHandler);
+payrollRouter.get('/tds-config', getTdsConfigHandler);
+payrollRouter.put('/tds-config', putTdsConfigHandler);
+payrollRouter.post('/tds-config', copyTdsConfigHandler);
+
+// Statutory Calculation Engine — the org's statutory settings and its own
+// per-state overrides (PRD §5.5, PT/LWF/Bonus) over the FY's national row.
 payrollRouter.get('/statutory-settings', getStatutorySettingsHandler);
 payrollRouter.put('/statutory-settings', updateStatutorySettingsHandler);
 payrollRouter.get('/statutory-rules', listStateRulesHandler);

@@ -69,6 +69,17 @@ function emailOrgList(raw: string | undefined): string[] {
   return orgs.length > 0 ? orgs : [...DEFAULT_EMAIL_ORGS];
 }
 
+/**
+ * The orgs whose dashboard admins may edit the national payroll rows
+ * (statutory and income tax settings, one per FY, shared by every company).
+ * Unset or empty: Sowaka's own org only. `*` is not honoured: these rows
+ * change every company's pay, so the list is always explicit.
+ */
+function payrollConfigOrgList(raw: string | undefined): string[] {
+  const orgs = String(raw ?? '').split(',').map((org) => org.trim()).filter((org) => org && org !== '*' && org.toLowerCase() !== 'all');
+  return orgs.length > 0 ? orgs : ['sowaka'];
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -159,6 +170,8 @@ export const env = {
    * `EMAIL_ORGS` to a list to change it, or to `*` to lift the restriction.
    */
   emailOrgs: emailOrgList(process.env.EMAIL_ORGS),
+  /** Orgs whose dashboard admins may edit the national payroll config rows, from `PAYROLL_CONFIG_ORGS`. */
+  payrollConfigOrgs: payrollConfigOrgList(process.env.PAYROLL_CONFIG_ORGS),
   authSessionTtlDays: Number(process.env.AUTH_SESSION_TTL_DAYS ?? 30),
   firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? '',
   notificationTestEndpointEnabled:

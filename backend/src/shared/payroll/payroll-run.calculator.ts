@@ -7,12 +7,13 @@
  * and adds approved reimbursements on top. No I/O; money in INTEGER PAISE.
  */
 
-import { epfCeilingForPeriod, epfCeilingSegments, ResolvedRuleSet } from '../../models/statutoryRule.model';
+import { ResolvedRuleSet } from '../../models/statutoryRule.model';
 import { StatutorySettings } from '../../models/statutorySettings.model';
 import { SalaryCalcResult } from './salary-calculator';
 import { applyStatutory, PersonStatutory } from './statutory-apply';
 import { roundToRupee } from './statutory-engine';
 import { defaultStatutorySettings } from './statutory-defaults';
+import { assertConfigFor, epfCeilingForPeriod, epfCeilingSegments, ratePercentLabel, StatutoryConfig } from './statutory-config';
 
 export interface PayslipInputSet {
   workingDays: number;
@@ -20,6 +21,8 @@ export interface PayslipInputSet {
   overtimePaise: number;
   reimbursementsPaise: number;
   ruleSet: ResolvedRuleSet;
+  /** The pay month's FY statutory figures (payroll_statutory_configs). Must be the FY of `period`. */
+  config: StatutoryConfig;
   month: number;
   /** Per-employee statutory applicability (EPF/ESI/LWF). Absent flag = applicable. */
   statutory?: PersonStatutory;
@@ -33,21 +36,16 @@ export interface PayslipInputSet {
   period?: string;
   /** "YYYY-MM-DD": joined during this month; PF ceilings count from this day. */
   employedFrom?: string;
-  /** Tax-free part of a Meal Card each month; defaults to MEAL_CARD_EXEMPT_MONTHLY_PAISE. */
-  mealCardExemptMonthlyPaise?: number;
 }
 
 /**
- * Meal vouchers are tax-free up to ₹200 a meal from FY 2026-27, under both
- * regimes (Income-tax Rules 2026): two meals on 22 working days is ₹8,800 a
- * month. Zoho exempts the Meal Card the same way.
+ * The taxable part of a set of earnings, with the Meal Card's tax-free part
+ * taken out: the FY's `mealCard.exemptMonthlyPaise` (FY 2026-27: ₹200 a meal,
+ * two meals on 22 working days, ₹8,800 a month, as Zoho exempts it).
  */
-export const MEAL_CARD_EXEMPT_MONTHLY_PAISE = 8_800_00;
-
-/** The taxable part of a set of earnings, with the Meal Card's tax-free part taken out. */
 export function taxableAfterMealExemption(
   lines: { taxable?: boolean; componentType?: string; amountPaise: number }[],
-  mealCardExemptMonthlyPaise = MEAL_CARD_EXEMPT_MONTHLY_PAISE,
+  mealCardExemptMonthlyPaise: number,
 ): number {
   const taxable = lines.filter((l) => l.taxable !== false).reduce((t, l) => t + l.amountPaise, 0);
   const meal = lines.filter((l) => l.taxable !== false && l.componentType === 'meal_card').reduce((t, l) => t + l.amountPaise, 0);
@@ -55,9 +53,10 @@ export function taxableAfterMealExemption(
 }
 
 /** A month's taxable salary as the structure pays it in full (one-time items left out), for TDS projections. */
-export function projectedTaxable(base: SalaryCalcResult): number {
+export function projectedTaxable(base: SalaryCalcResult, mealCardExemptMonthlyPaise: number): number {
   return taxableAfterMealExemption(
     base.earnings.filter((l) => !l.oneTime).map((l) => ({ taxable: l.taxable, componentType: l.componentType, amountPaise: l.monthlyPaise })),
+    mealCardExemptMonthlyPaise,
   );
 }
 
@@ -142,6 +141,9 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
   // Components that count only under the ceiling are tested after loss of pay
   // or as in the structure, per the org's setting.
   const settings = input.settings ?? defaultStatutorySettings('');
+  const config = input.config;
+  const period = input.period ?? new Date().toISOString().slice(0, 7);
+  assertConfigFor(config, period);
   const paidByCode = new Map(earnings.map((line) => [line.code, line.paidPaise]));
   let alwaysPaid = 0;
   let alwaysFull = 0;
@@ -155,7 +157,7 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
       alwaysFull += line.monthlyPaise;
     }
   }
-  const monthCeiling = epfCeilingForPeriod(input.period ?? new Date().toISOString().slice(0, 7));
+  const monthCeiling = epfCeilingForPeriod(config, period);
   const ceiling = settings.epf.proRateRestricted ? roundToRupee(monthCeiling * factor) : monthCeiling;
   // The ESI wage when the template names its components (overtime counts), else gross.
   const esiWagePaise = base.statutoryWages?.esiComponents
@@ -163,13 +165,14 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
     : undefined;
   // ESI applies by the wage the person is on (ESIC: "rate of wages"), so the
   // test uses the full month: a month cut short by unpaid days must not pull
-  // a ₹95,000 earner under the ₹21,000 limit. The contribution, when ESI does
+  // a ₹95,000 earner under the ESI ceiling. The contribution, when ESI does
   // apply, is still on what was actually paid.
   const esiTestPaise = base.statutoryWages?.esiComponents
     ? base.earnings.filter((line) => line.inEsiWage).reduce((sum, line) => sum + line.monthlyPaise, 0)
     : earnings.reduce((sum, line) => sum + line.fullPaise, 0);
   const st = applyStatutory({
     settings,
+    config,
     ruleSet: input.ruleSet,
     month: input.month,
     grossPaise,
@@ -180,7 +183,7 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
     pfConditionalPaise: conditionalPaid,
     pfTestPaise: settings.epf.considerLOP ? alwaysPaid : alwaysFull,
     ceilingPaise: ceiling,
-    ceilingSegments: epfCeilingSegments(input.period ?? new Date().toISOString().slice(0, 7), input.employedFrom).map((s) => ({ days: s.days, ceilingPaise: settings.epf.proRateRestricted ? roundToRupee(s.ceilingPaise * factor) : s.ceilingPaise })),
+    ceilingSegments: epfCeilingSegments(config, period, input.employedFrom).map((s) => ({ days: s.days, ceilingPaise: settings.epf.proRateRestricted ? roundToRupee(s.ceilingPaise * factor) : s.ceilingPaise })),
     person: input.statutory,
     esiCoveredEarlier: input.esiCoveredEarlier,
   });
@@ -196,9 +199,9 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
 
   const deductions: PayslipDeduction[] = [];
   if (epf.employeePaise > 0)
-    deductions.push({ key: 'epf', name: 'Employee EPF (12%)', amountPaise: epf.employeePaise });
+    deductions.push({ key: 'epf', name: `Employee EPF (${ratePercentLabel(config.epf.employeeRate)})`, amountPaise: epf.employeePaise });
   if (esi.applicable && esi.employeePaise > 0)
-    deductions.push({ key: 'esi', name: 'Employee ESI (0.75%)', amountPaise: esi.employeePaise });
+    deductions.push({ key: 'esi', name: `Employee ESI (${ratePercentLabel(config.esi.employeeRate)})`, amountPaise: esi.employeePaise });
   if (pt.amountPaise > 0)
     deductions.push({ key: 'pt', name: 'Professional Tax', amountPaise: pt.amountPaise });
   if (lwf.applicable && lwf.employeePaise > 0)
@@ -246,7 +249,7 @@ export function computePayslip(base: SalaryCalcResult, input: PayslipInputSet): 
     grossPaise,
     taxablePaise: taxableAfterMealExemption(
       base.earnings.map((line) => ({ taxable: line.taxable, componentType: line.componentType, amountPaise: paidByCode.get(line.code) ?? 0 })),
-      input.mealCardExemptMonthlyPaise,
+      config.mealCard.exemptMonthlyPaise,
     ) + input.overtimePaise,
     employeeDeductionsPaise,
     netPaise,
