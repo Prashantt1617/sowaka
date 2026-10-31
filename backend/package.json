@@ -49,6 +49,7 @@
     "payroll:tds-seed": "tsx src/scripts/payroll-tds-seed.ts",
     "payroll:employee-check": "MONGODB_DB=payroll_employee_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/payroll-employee-check.ts",
     "payroll:declaration-check": "MONGODB_DB=payroll_declaration_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/payroll-declaration-check.ts",
+    "payroll:dashboard-check": "MONGODB_DB=payroll_dashboard_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/payroll-dashboard-check.ts",
     "api:only": "tsx src/scripts/api-only.ts"
   },
   "dependencies": {

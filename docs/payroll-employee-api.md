@@ -37,7 +37,7 @@ Default deadlines (HR changes them with `PUT /admin/payroll/employee-app-setting
 | What | Default |
 | --- | --- |
 | Change the flexible split for a month | until the **15th** of that month (`splitCutoffDay`) and only while that month's run is not locked |
-| Fix missing punches of a month | the **last day** of that month, and only while that month's run is not locked |
+| Fix a missing punch / absent day | **per day**: the day + the correction window of the person's shift policy (`correction.backdateDays`, e.g. 7 days), and only while that month's run is not locked. Not a company setting: it comes from the shift policy, see §2 |
 | Choose the regime and declare investments | **30 Nov** of the FY (`declarationDue: "11-30"`) |
 | Upload investment proofs | **31 Jan** of the FY (`proofsDue: "01-31"`) |
 | Upload bills for the flexible heads | **31 Mar** of the FY (`billsDue: "03-31"`) |
@@ -78,13 +78,13 @@ Query: `period` (optional, `YYYY-MM`, default this month).
     "takeHomePaise": 10640000          // net + reimbursements
   },
   "todo": [                            // only what needs action now, in this order; empty when nothing does
-    { "kind": "missing_punches", "count": 12, "dueOn": "2026-10-31", "period": "2026-10" },
+    { "kind": "missing_punches", "count": 4, "dueOn": "2026-10-20", "period": "2026-10" },   // count: fixable days only; dueOn: the earliest fixBy among them
     { "kind": "flexible_split", "dueOn": "2026-11-15", "effectiveFrom": "2026-11", "submitted": false },
     { "kind": "fbp_bills", "rejected": 1, "inReview": 3, "dueOn": "2027-03-31" },
     { "kind": "tax_regime", "regime": "new", "chosen": false, "dueOn": "2026-11-30" },
     { "kind": "investment_proofs", "notUploaded": 3, "rejected": 1, "dueOn": "2027-01-31" }
   ],
-  "missingPunches": { "period": "2026-10", "count": 12, "fixBy": "2026-10-31", "locked": false },
+  "missingPunches": { "period": "2026-10", "count": 4, "fixBy": "2026-10-20", "locked": false },   // as GET /payroll/missing-punches: fixBy null when nothing is fixable
   "split": {                           // null when the person's template has no flexible components
     "open": true, "effectiveFrom": "2026-11", "closesOn": "2026-11-15",
     "poolPaise": 600000, "assignedPaise": 450000, "unassignedPaise": 150000,
@@ -95,7 +95,9 @@ Query: `period` (optional, `YYYY-MM`, default this month).
 }
 ```
 
-- `todo` kinds: `missing_punches` (count > 0 and not locked), `flexible_split`
+- `todo` kinds: `missing_punches` (some day can still be fixed: inside its
+  correction window, month not locked, no pending or approved correction;
+  `dueOn` is the earliest of those days' `fixBy`), `flexible_split`
   (no split submitted yet for the FY the window is in), `fbp_bills` (a bill
   for a flexible head was rejected this FY; `inReview` is for the subtitle), `tax_regime`
   (regime not chosen yet and before the deadline), `investment_proofs` (old
@@ -114,9 +116,9 @@ Query: `period` (optional, `YYYY-MM`, default this month; not in the future).
 {
   "success": true,
   "period": "2026-10",
-  "fixBy": "2026-10-31",
-  "locked": false,               // the month's run is locked: corrections no longer change this month's pay
-  "count": 12,                   // days still to fix: no pending or approved correction
+  "fixBy": "2026-10-20",         // the earliest fixBy among the days counted; null when none can be fixed
+  "locked": false,               // the month's run is locked: no day of it can be fixed any more
+  "count": 4,                    // days still to fix: canFix and no pending or approved correction
   "days": [
     {
       "date": "2026-10-01",
@@ -127,6 +129,10 @@ Query: `period` (optional, `YYYY-MM`, default this month; not in the future).
       "status": "absent",        // the graded day: "missed_punch" | "absent"
       "label": "Absent",         // how the calendar reads it
       "countsAs": null,          // for a missed punch: "Absent" | "Half Day" | ... what it counts as
+      "fixBy": "2026-10-08",     // last day this day can be fixed: date + the shift policy's correction.backdateDays; null when the policy allows no correction of it
+      "canFix": false,           // false: show it, but not as something to fix
+      "closedReason": "window_closed",   // null | "window_closed" (past fixBy) | "payroll_locked" (the month's run is locked) | "corrections_off" (the policy does not let this day be corrected)
+      "closedMessage": "The time to fix this day has passed",   // for the person; null when canFix
       "request": null            // or { "id": "…", "status": "pending" | "approved" | "declined", "requestedDayType": "full_day" | … }
     }
   ]
@@ -135,6 +141,16 @@ Query: `period` (optional, `YYYY-MM`, default this month; not in the future).
 
 Only past working days (today is not final yet) graded `missed_punch` or
 `absent`. Week-offs, holidays and leave never appear.
+
+**Fix-by is per day, from the shift policy's correction window**, the same
+rule `POST /attendance/regularizations` enforces: the policy that governed
+that day (the person's shift template on that date, else the company's shift
+policy) gives `correction.backdateDays`, and the day can be fixed until
+`date + backdateDays` (India date). A month whose run is locked closes every
+day of it at once (`payroll_locked`). A policy that allows no correction of
+that kind of day (its trigger, e.g. "Both punches missing", switched off, or
+`backdateDays` 0) makes it `corrections_off` with `fixBy: null`. Days that
+cannot be fixed are still listed, so the person sees them, but are not counted.
 
 **Fixing a day** reuses the existing correction flow, unchanged:
 `POST /attendance/regularizations` with `{ "workDate": "2026-10-01", "dayType": "full_day", "note": "…" }`

@@ -193,7 +193,8 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('missing punches: 12 Oct is a missing punch-out with the punch-in time', d12?.trigger === 'Missing punch-out' && d12.punchIn !== null && d12.punchOut === null, d12);
   check('a complete day is not listed', !d13, d13);
   check('days with no punches are listed as both missing', mp.days.some((d) => d.trigger === 'Both punches missing'), mp.days.slice(0, 3));
-  check('the month is locked by the submitted October run, and the fix-by date is its last day', mp.locked === true && mp.fixBy === '2026-10-31', mp);
+  check('the month is locked by the submitted October run: nothing left to fix, no fix-by date',
+    mp.locked === true && mp.count === 0 && mp.fixBy === null && mp.days.every((d) => !d.canFix && d.closedReason !== null), mp);
   check('a future month is refused', (await refusal(() => myMissingPunches('asha', '2026-12', oct31)))?.status === 400);
   check('today is never listed (not final yet)', !(await myMissingPunches('asha', '2026-10', new Date('2026-10-14T06:00:00Z'))).days.some((d) => d.date >= '2026-10-14'));
 

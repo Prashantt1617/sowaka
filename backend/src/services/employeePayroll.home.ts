@@ -12,6 +12,7 @@ import { Payslip } from '../models/payrollRun.model';
 import { fyOf } from '../shared/payroll/tds';
 import { employeeDayStatuses } from './attendance-report.service';
 import { correctionTriggerFor } from './attendance.service';
+import { policyForUser, withPolicyMemo } from './shift.service';
 import {
   EmployeePayrollError, dayOf, daysInMonth, lastDayOf, lockedPeriods, meOf, parsePeriodParam, payrollAppEnabled, periodOf,
 } from './employeePayroll.common';
@@ -32,13 +33,38 @@ const DEDUCTION_LABELS: Record<string, string> = {
 
 // —— Missing punches ——
 
+/** The date `n` days after a 'YYYY-MM-DD' date. */
+function addDays(date: string, n: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return dayOf(d);
+}
+
+/** Today in India, as the offices see it. */
+const istDayOf = (now: Date) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+
+export type FixClosedReason = 'window_closed' | 'payroll_locked' | 'corrections_off';
+const CLOSED_MESSAGES: Record<FixClosedReason, string> = {
+  window_closed: 'The time to fix this day has passed',
+  payroll_locked: 'Payroll for this month is locked',
+  corrections_off: 'Your shift policy does not allow fixing this day',
+};
+
+/**
+ * The month's past working days graded a missed punch or absent, each with
+ * the last day it can be fixed: the day plus the correction window of the
+ * shift policy that governed it (`correction.backdateDays`, the rule
+ * POST /attendance/regularizations enforces), and never once the month's run
+ * is locked. A day the policy does not let anyone correct (its trigger off,
+ * or no window) cannot be fixed at all.
+ */
 async function missingPunchesFor(org: string, userId: string, employeeId: string | undefined, period: string, now: Date) {
   const from = `${period}-01`;
   const yesterday = dayOf(new Date(now.getTime() - 86_400_000));
   const to = lastDayOf(period) < yesterday ? lastDayOf(period) : yesterday;
   const locked = (await lockedPeriods(org, period, period)).has(period);
-  const fixBy = lastDayOf(period);
-  if (to < from) return { period, fixBy, locked, count: 0, days: [] };
+  if (to < from) return { period, fixBy: null, locked, count: 0, days: [] };
 
   const [graded, records, requests] = await Promise.all([
     employeeDayStatuses(org, userId, from, to),
@@ -52,25 +78,45 @@ async function missingPunchesFor(org: string, userId: string, employeeId: string
   // The newest request of a day speaks for it; out-of-location and face checks are not corrections.
   for (const r of requests) if (!requestOn.has(r.workDate) && (r.kind ?? 'correction') === 'correction') requestOn.set(r.workDate, r);
 
-  const days = (graded ?? [])
-    .filter((d) => d.final && (d.status === 'missed_punch' || d.status === 'absent'))
-    .map((d) => {
-      const rec = recordOn.get(d.date);
-      const req = requestOn.get(d.date);
-      return {
-        date: d.date,
-        weekday: WEEKDAYS[new Date(`${d.date}T00:00:00Z`).getUTCDay()],
-        punchIn: rec?.punchIn ? rec.punchIn.toISOString() : null,
-        punchOut: rec?.punchOut ? rec.punchOut.toISOString() : null,
-        trigger: correctionTriggerFor(rec?.punchIn ?? null, rec?.punchOut ?? null),
-        status: d.status as 'missed_punch' | 'absent',
-        label: d.label,
-        countsAs: d.countsAs ?? null,
-        request: req ? { id: req._id.toHexString(), status: req.status, requestedDayType: req.requestedDayType ?? null } : null,
-      };
-    });
-  const count = days.filter((d) => !d.request || d.request.status === 'declined').length;
-  return { period, fixBy, locked, count, days };
+  const listed = (graded ?? []).filter((d) => d.final && (d.status === 'missed_punch' || d.status === 'absent'));
+  // As the correction itself reads it: the policy as of the day being corrected.
+  const policies = await withPolicyMemo(() => Promise.all(listed.map((d) => policyForUser(userId, d.date))));
+  const today = istDayOf(now);
+
+  const days = listed.map((d, i) => {
+    const rec = recordOn.get(d.date);
+    const req = requestOn.get(d.date);
+    const correction = policies[i].correction;
+    const backdate = Math.max(0, Math.floor(Number(correction.backdateDays) || 0));
+    // The trigger the correction is checked against (a single-punch shift reads only the punch-in).
+    const policyTrigger = correction.punchMode === 'Single punch'
+      ? (rec?.punchIn ? 'Both punches present' : 'Both punches missing')
+      : correctionTriggerFor(rec?.punchIn ?? null, rec?.punchOut ?? null);
+    const correctable = backdate > 0 && (correction.triggers ?? []).includes(policyTrigger);
+    const fixBy = correctable ? addDays(d.date, backdate) : null;
+    const closedReason: FixClosedReason | null = !correctable ? 'corrections_off'
+      : locked ? 'payroll_locked'
+        : today > fixBy! ? 'window_closed'
+          : null;
+    return {
+      date: d.date,
+      weekday: WEEKDAYS[new Date(`${d.date}T00:00:00Z`).getUTCDay()],
+      punchIn: rec?.punchIn ? rec.punchIn.toISOString() : null,
+      punchOut: rec?.punchOut ? rec.punchOut.toISOString() : null,
+      trigger: correctionTriggerFor(rec?.punchIn ?? null, rec?.punchOut ?? null),
+      status: d.status as 'missed_punch' | 'absent',
+      label: d.label,
+      countsAs: d.countsAs ?? null,
+      fixBy,
+      canFix: closedReason === null,
+      closedReason,
+      closedMessage: closedReason ? CLOSED_MESSAGES[closedReason] : null,
+      request: req ? { id: req._id.toHexString(), status: req.status, requestedDayType: req.requestedDayType ?? null } : null,
+    };
+  });
+  const toFix = days.filter((d) => d.canFix && (!d.request || d.request.status === 'declined'));
+  const fixBy = toFix.reduce<string | null>((min, d) => (min === null || d.fixBy! < min ? d.fixBy : min), null);
+  return { period, fixBy, locked, count: toFix.length, days };
 }
 
 export async function myMissingPunches(userId: string, periodRaw: unknown, now = new Date()) {
@@ -195,7 +241,8 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
     : 0;
 
   const todo: Record<string, unknown>[] = [];
-  if (punches.count > 0 && !punches.locked) todo.push({ kind: 'missing_punches', count: punches.count, dueOn: punches.fixBy, period });
+  // Only days that can still be fixed; due by the earliest of their last days.
+  if (punches.count > 0) todo.push({ kind: 'missing_punches', count: punches.count, dueOn: punches.fixBy, period });
   if (split?.available && split.window.open && splitThisYear === 0) {
     todo.push({ kind: 'flexible_split', dueOn: split.window.closesOn, effectiveFrom: split.window.effectiveFrom, submitted: false });
   }
