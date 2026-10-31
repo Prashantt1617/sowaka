@@ -5,7 +5,8 @@
  * bought, moved between people, or worth money.
  */
 
-export type PokerRound = 'practice' | 'open' | 'semi' | 'final';
+/** `casual`: a room's game (Speed Poker as a group game, no event); the others belong to an event. */
+export type PokerRound = 'practice' | 'open' | 'semi' | 'final' | 'casual';
 
 export interface PokerLevel {
   sb: number;
@@ -39,6 +40,8 @@ export interface PokerSeat {
   knockouts: string[];
   bustedAt: number | null;
   bustedBy: string | null;
+  /** A room's game only: the player left the room mid-game; their seat is dealt no more hands. */
+  left?: boolean;
 }
 
 export type PokerStreet = 'preflop' | 'flop' | 'turn' | 'river' | 'done';
@@ -109,6 +112,8 @@ export interface PokerStanding {
   knockouts: string[];
   /** 1 = most chips (or last standing). */
   place: number;
+  /** Left the room before the game ended (placed last). */
+  left?: boolean;
 }
 
 export interface PokerTable {
@@ -277,4 +282,55 @@ export interface PokerHandRecord {
   log: unknown[];
   result: unknown;
   at: Date;
+}
+
+// ------------------------------------------------------------------ rooms
+
+/**
+ * Speed Poker as a group game, built like a Scribble or Tile Up room: someone
+ * opens a table (open to the company, or private by code and invite), up to
+ * six sit at it (colleagues, and house players if the host adds them), the
+ * host deals, and a game runs to its time or until one player has every chip.
+ * People drop in between hands and leave whenever they like; chips start
+ * again at 1,500 every game. No event, no points, no board. A room lives in
+ * the fast store only (`poker-store.ts`), for a few hours at most.
+ */
+export type PokerRoomStatus = 'lobby' | 'playing' | 'over';
+
+export interface PokerRoomPlayer {
+  userId: string;
+  name: string;
+  photoUrl: string | null;
+  office: string | null;
+  /** The host role passes to the longest-present player. */
+  joinedAt: number;
+  online: boolean;
+  offlineAt: number | null;
+}
+
+export interface PokerRoom {
+  code: string;
+  org: string;
+  gameKey: 'speed-poker';
+  hostId: string;
+  status: PokerRoomStatus;
+  /** Listed for everyone at the company (and quick join); else by code and invite only. */
+  open: boolean;
+  /** Each game's length, set by the host in the lobby: 10, 20 or 30. */
+  minutes: number;
+  /** House players the host has added to fill seats (0 to 5). */
+  house: number;
+  createdAt: number;
+  updatedAt: number;
+  players: PokerRoomPlayer[];
+  invited: { userId: string; name: string; photoUrl: string | null }[];
+  /** Removed by the host: back by code after a cool-down, or at once on a fresh invite from the host. */
+  kicked: { userId: string; at: number }[];
+  invitesSent: number;
+  /** Games dealt in this room so far. */
+  gameNo: number;
+  /** The game in play, or the one just finished (its standings), else null. */
+  table: PokerTable | null;
+  finishedAt: number | null;
+  version: number;
 }

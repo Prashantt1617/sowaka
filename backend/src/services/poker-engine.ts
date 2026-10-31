@@ -53,6 +53,15 @@ export const POKER_FORMATS: Record<PokerRound, PokerTableConfig> = {
     durationMs: 20 * 60_000,
     handPauseMs: 4500,
   },
+  // A room's game: the host picks 10, 20 or 30 minutes; blinds rise a little slower.
+  casual: {
+    startStack: 1500,
+    levels: [level(10, 20), level(20, 40), level(30, 60), level(50, 100), level(75, 150), level(100, 200), level(150, 300), level(200, 400), level(300, 600), level(500, 1000)],
+    levelMs: 3 * 60_000,
+    actionMs: 20_000,
+    durationMs: 20 * 60_000,
+    handPauseMs: 3500,
+  },
   final: {
     startStack: 1500,
     levels: [level(50, 100), level(75, 150), level(100, 200), level(150, 300), level(250, 500), level(400, 800), level(600, 1200), level(1000, 2000), level(1500, 3000), level(2500, 5000)],
@@ -136,7 +145,7 @@ export function nextLevelAt(table: PokerTable, now: number): number | null {
   return table.startedAt + (idx + 1) * table.config.levelMs;
 }
 
-const live = (table: PokerTable) => table.seats.map((s, i) => (s.stack > 0 && s.bustedAt === null ? i : -1)).filter((i) => i >= 0);
+const live = (table: PokerTable) => table.seats.map((s, i) => (s.stack > 0 && s.bustedAt === null && !s.left ? i : -1)).filter((i) => i >= 0);
 
 function nextOf(seats: number[], from: number, count: number): number {
   for (let step = 1; step <= count; step++) {
@@ -437,6 +446,74 @@ export function sitIn(table: PokerTable, userId: string): boolean {
   return true;
 }
 
+/**
+ * A room's drop-in: a new player takes a seat with the starting stack and is
+ * dealt in from the next hand. A seat someone left is reused once it is out
+ * of the hand in play; else a new seat, up to six. False when the table is full.
+ */
+export function addSeat(table: PokerTable, player: Pick<PokerSeat, 'userId' | 'name' | 'photoUrl' | 'office'>, now: number): boolean {
+  if (table.status !== 'playing') return false;
+  const existingAt = table.seats.findIndex((s) => s.userId === player.userId);
+  if (existingAt >= 0 && !table.seats[existingAt].left) return true;
+  const seat: PokerSeat = {
+    userId: player.userId,
+    name: player.name,
+    photoUrl: player.photoUrl ?? null,
+    office: player.office ?? null,
+    stack: table.config.startStack,
+    sittingOut: false,
+    timeouts: 0,
+    knockouts: [],
+    bustedAt: null,
+    bustedBy: null,
+  };
+  const hand = table.hand;
+  // Back after leaving: their own old seat and the chips they left with
+  // (leaving is no way to a fresh stack), once it is out of the hand in play.
+  if (existingAt >= 0) {
+    if (hand && hand.inHand[existingAt]) return false;
+    const old = table.seats[existingAt];
+    table.seats[existingAt] = { ...seat, stack: old.stack, knockouts: old.knockouts, bustedAt: old.stack > 0 ? null : old.bustedAt ?? now, bustedBy: old.bustedBy };
+    return true;
+  }
+  const free = table.seats.findIndex((s, i) => s.left && (!hand || !hand.inHand[i]));
+  if (free >= 0) {
+    table.seats[free] = seat;
+    return true;
+  }
+  if (table.seats.length >= SEATS_MAX) return false;
+  table.seats.push(seat);
+  return true;
+}
+
+/**
+ * A room's leaver: their hand folds (at once, in or out of turn) and their
+ * seat is dealt no more hands; the chips they had stay with the seat and
+ * count for nothing. The table ends at the next deal if one player is left.
+ */
+export function leaveSeat(table: PokerTable, userId: string, now: number): boolean {
+  const seat = table.seats.findIndex((s) => s.userId === userId);
+  if (seat < 0 || table.seats[seat].left) return false;
+  const s = table.seats[seat];
+  s.left = true;
+  s.sittingOut = true;
+  const hand = table.hand;
+  if (table.status === 'playing' && hand && hand.street !== 'done' && hand.inHand[seat] && !hand.folded[seat]) {
+    const street = hand.street as Exclude<typeof hand.street, 'done'>;
+    if (hand.toAct === seat) {
+      hand.folded[seat] = true;
+      hand.log.push({ seat, kind: 'fold', amount: 0, to: hand.streetIn[seat], street });
+      hand.acted[seat] = true;
+      progress(table, now);
+    } else {
+      hand.folded[seat] = true;
+      hand.log.push({ seat, kind: 'fold', amount: 0, to: hand.streetIn[seat], street });
+      if (stillIn(hand).length === 1) settle(table, now, false);
+    }
+  }
+  return true;
+}
+
 /** Closes the table: chips decide the order, then who lasted longer, then knockouts. */
 export function finish(table: PokerTable, now: number): void {
   if (table.status === 'over') return;
@@ -450,6 +527,7 @@ export function finish(table: PokerTable, now: number): void {
     .map((s) => s)
     .sort(
       (a, b) =>
+        Number(Boolean(a.left)) - Number(Boolean(b.left)) ||
         b.stack - a.stack ||
         (b.bustedAt ?? Number.MAX_SAFE_INTEGER) - (a.bustedAt ?? Number.MAX_SAFE_INTEGER) ||
         b.knockouts.length - a.knockouts.length,
@@ -462,6 +540,7 @@ export function finish(table: PokerTable, now: number): void {
     busted: s.stack === 0,
     knockouts: [...s.knockouts],
     place: i + 1,
+    ...(s.left ? { left: true } : {}),
   }));
 }
 
@@ -518,6 +597,8 @@ export interface PokerSeatView {
   allIn: boolean;
   sittingOut: boolean;
   busted: boolean;
+  /** Left the room mid-game (a room's table only). */
+  left: boolean;
   inHand: boolean;
   button: boolean;
   sb: boolean;
@@ -553,11 +634,12 @@ export function viewFor(table: PokerTable, viewerId: string | null, now: number)
     photoUrl: s.photoUrl,
     office: s.office,
     stack: s.stack,
-    bet: hand && hand.street !== 'done' ? hand.streetIn[i] : 0,
+    bet: hand && hand.street !== 'done' ? hand.streetIn[i] ?? 0 : 0,
     folded: Boolean(hand?.folded[i]),
     allIn: Boolean(hand?.allIn[i]),
     sittingOut: s.sittingOut,
     busted: s.bustedAt !== null,
+    left: Boolean(s.left),
     inHand: Boolean(hand?.inHand[i]),
     button: hand?.button === i,
     sb: hand?.sb === i,

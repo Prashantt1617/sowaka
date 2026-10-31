@@ -142,8 +142,13 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .seat .tag.allin{background:var(--red)}
 .seat .tag.act{background:#1f2a24;color:#cfe;}
 .seat .tag.bounty{background:var(--gold);color:#2a1a02}
-.seat .hole{position:absolute;top:12px;display:flex;gap:2px;z-index:1}
-.seat .hole.r{left:78px}.seat .hole.l{right:78px}
+.seat .hole{position:absolute;top:-4px;display:flex;gap:0;z-index:1}
+/* tucked against the avatar, not out over the board */
+.seat .hole.r{left:58px}.seat .hole.l{right:58px}
+.seat .hole .pc.mini{width:20px;height:28px}
+.seat .hole .pc.mini+.pc.mini{margin-left:-6px;transform:rotate(8deg)}
+/* a short screen (the game inside the app): a smaller board, a little higher */
+@media (max-height:720px){.board .pc{width:32px;height:46px;border-radius:5px}.board .pc .r{font-size:15px}.board .pc .s{font-size:18px}.center{top:42%}.board{gap:3px}}
 .seat .shown{display:flex;gap:2px;margin-top:3px}
 .bet{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;gap:4px;font-size:12px;font-weight:800;color:#f3e2b2;z-index:3;white-space:nowrap}
 .bet i{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#fff 0 22%,#d23c3c 23% 60%,#fff 61% 70%,#d23c3c 71%);box-shadow:0 1px 2px rgba(0,0,0,.5)}
@@ -174,6 +179,50 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .over .box{background:var(--panel);border-radius:20px;padding:18px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
 .over h2{margin:0 0 4px;font-family:var(--display);font-size:24px}
 .over p{margin:0 0 12px;color:var(--muted)}
+
+/* ---------- the group game: tables to join, a table's lobby ---------- */
+.codebox{display:flex;gap:8px;margin-top:10px}
+.codebox input{flex:1;min-width:0;height:48px;border-radius:14px;border:1px solid var(--line);background:rgba(0,0,0,.28);color:var(--ink);font:inherit;font-size:18px;font-weight:800;letter-spacing:.3em;text-align:center;-webkit-user-select:text;user-select:text}
+.codebox input::placeholder{letter-spacing:.04em;font-weight:600;font-size:15px;color:var(--faint)}
+.codebox .btn{flex:none}
+.linkbtn{display:block;width:100%;text-align:center;padding:12px 0 2px;color:#cfe4d7;font-weight:700;font-size:14px}
+.status{font-size:12px;font-weight:700}
+.status.wait{color:#6fe0a3}.status.play{color:var(--gold)}.status.full{color:var(--muted)}
+.invite{display:flex;align-items:center;gap:10px;background:linear-gradient(90deg,rgba(229,184,80,.18),rgba(229,184,80,.06));border:1px solid rgba(229,184,80,.35);border-radius:14px;padding:10px 12px;margin-bottom:10px}
+.invite .who{flex:1;min-width:0;font-size:14px}
+.invite .who b{display:block}
+.invite .who span{font-size:12px;color:var(--muted)}
+.rtop{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.rtop .back,.top .back{width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font-size:18px;flex:none}
+.rtop .title{flex:1;min-width:0}
+.rtop .title b{display:block;font-family:var(--display);font-size:18px}
+.rtop .title span{font-size:12px;color:var(--muted)}
+.bigcode{font-family:var(--display);font-size:44px;font-weight:800;letter-spacing:.12em;line-height:1;margin:2px 0 6px}
+.seats6{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+.slot{position:relative;display:flex;align-items:center;gap:10px;background:var(--panel);border-radius:14px;padding:10px;min-height:60px;min-width:0}
+.slot .who{flex:1;min-width:0}
+.slot .who b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slot .who span{font-size:11px;color:var(--muted)}
+.slot.off{opacity:.55}
+.slot.emptyslot{background:transparent;border:1px dashed rgba(255,255,255,.14);justify-content:center;color:var(--faint);font-size:13px;font-weight:700}
+.slot .x{width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.07);color:var(--muted);font-size:15px;flex:none}
+.avatar.house{background:linear-gradient(160deg,#7a1f1f,#3a0f0f);color:#f3e9d0;font-size:18px}
+.seg{display:flex;background:var(--panel2);border-radius:12px;padding:3px;gap:3px}
+.seg button{flex:1;min-height:34px;border-radius:9px;font-weight:800;font-size:13px;color:var(--muted);white-space:nowrap}
+.seg button.on{background:var(--ink);color:#0b1a12}
+.setrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px}
+.setrow+.setrow{border-top:1px solid var(--line)}
+.setrow .lbl{min-width:0}.setrow .lbl b{display:block;font-size:14px}.setrow .lbl span{font-size:12px;color:var(--muted)}
+.setrow .seg{width:168px;flex:none}
+.foot{position:sticky;bottom:0;padding:10px 0 calc(6px + var(--safe-b));background:linear-gradient(180deg,rgba(8,26,18,0),var(--bg) 30%);display:flex;gap:8px}
+.foot .btn{flex:1}
+.sheet{position:fixed;inset:0;background:rgba(4,10,7,.72);z-index:40;display:flex;align-items:flex-end;justify-content:center}
+.sheet .box{background:var(--panel);width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:14px 16px calc(16px + var(--safe-b));max-height:82vh;display:flex;flex-direction:column}
+.sheet h2{margin:2px 0 10px;font-family:var(--display);font-size:20px}
+.sheet input{height:44px;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,.25);color:var(--ink);font:inherit;padding:0 12px;margin-bottom:8px;-webkit-user-select:text;user-select:text}
+.sheet .list{overflow-y:auto;flex:1;min-height:120px}
+.sheet p{color:var(--muted);margin:0 0 12px}
+.over .btns{display:flex;gap:8px;margin-top:12px}.over .btns .btn{flex:1}
 
 /* ---------- office screen ---------- */
 .tv #lobby{padding:24px 32px}
@@ -220,7 +269,7 @@ let ever=false;
 sock.on('connect',()=>{ emit('connection',{online:true,again:ever}); ever=true; });
 sock.on('disconnect',r=>{ if(r==='io server disconnect')emit('fatal',{message:'The game server closed this connection. Close and reopen Speed Poker.'}); else emit('connection',{online:false}); });
 sock.on('connect_error',err=>{ const code=String((err&&err.data&&err.data.code)||(err&&err.message)||''); if(/ticket|not_allowed/i.test(code))emit('fatal',{message:/expired/.test(code)?'This Speed Poker session has expired. Close and reopen it.':'Speed Poker could not sign you in. Close and reopen it.'}); else emit('connection',{online:false}); });
-['lobby:shared','table:state','table:seated','poker:toast','poker:fatal'].forEach(ev=>sock.on(ev,p=>emit(ev,p)));
+['lobby:shared','table:state','table:seated','poker:toast','poker:fatal','room:state','room:feed','room:invite','room:kicked'].forEach(ev=>sock.on(ev,p=>emit(ev,p)));
 window.Poker={live:true,tv:!!T.tv,on:(type,f)=>{(handlers[type]=handlers[type]||[]).push(f)},request};
 })();
 </script>
@@ -236,15 +285,15 @@ const app=$('#app');
 const S=window.Sowaka||{};
 const haptic=k=>{ try{ (window.Sowaka&&window.Sowaka.haptic)&&window.Sowaka.haptic(k||'light'); }catch(e){} };
 
-const state={shared:null,mine:null,table:null,view:'lobby',watching:null,tab:'board',raiseOpen:false,raiseTo:0,offset:0,lastHand:0,banner:null,offline:false,tv:!!P.tv,tvTables:{},pick:{}};
+const state={mode:'rooms',room:null,rooms:[],invites:[],me:null,ev:null,picker:null,leaveAsk:false,codeInput:'',shared:null,mine:null,table:null,view:'lobby',watching:null,tab:'board',raiseOpen:false,raiseTo:0,offset:0,lastHand:0,banner:null,offline:false,tv:!!P.tv,tvTables:{},pick:{}};
 const now=()=>Date.now()+state.offset;
-const me=()=>state.mine&&state.mine.userId;
+const me=()=>(state.mode==='rooms'&&state.me&&state.me.userId)||(state.mine&&state.mine.userId)||(state.me&&state.me.userId);
 const initials=n=>String(n||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
 const first=n=>String(n||'').trim().split(/\s+/)[0]||'Someone';
 const clockOf=ms=>{ ms=Math.max(0,ms); const s=Math.floor(ms/1000); const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60; return h?`${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`:`${m}:${String(x).padStart(2,'0')}`; };
 const hhmm=iso=>{ if(!iso)return ''; const d=new Date(iso); return d.toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit',timeZone:'Asia/Kolkata'}); };
 function toast(msg){ document.querySelectorAll('.toast').forEach(x=>x.remove()); const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>{t.style.opacity='0'; setTimeout(()=>t.remove(),250);},2600); }
-const pic=id=>(state.shared&&state.shared.photos&&state.shared.photos[id])||(state.mine&&state.mine.userId===id&&state.mine.photoUrl)||null;
+const pic=id=>(state.shared&&state.shared.photos&&state.shared.photos[id])||(state.mine&&state.mine.userId===id&&state.mine.photoUrl)||(state.me&&state.me.userId===id&&state.me.photoUrl)||null;
 function avatarHtml(name,photo,extra){ return `<div class="avatar ${extra||''}" ${photo?`style="background-image:url('${esc(photo)}')"`:''}>${photo?'':esc(initials(name))}</div>`; }
 
 /* ---------- cards ---------- */
@@ -275,7 +324,7 @@ const canSit=sh=>!sh.event.paused&&(sh.event.phase==='open'||sh.event.phase==='p
 /* ---------- lobby ---------- */
 function renderLobby(){
   const sh=state.shared;
-  if(!sh){ app.innerHTML=`<div id="lobby"><div class="empty" style="text-align:center;margin-top:30vh">Speed Poker is not on at your company right now.</div></div>`; return; }
+  if(!sh){ if(!state.tv){ state.mode='rooms'; return render(); } app.innerHTML=`<div id="lobby"><div class="empty" style="text-align:center;margin-top:30vh">Speed Poker is not on at your company right now.</div></div>`; return; }
   if(state.tv)return renderTv();
   const ph=phaseWords(sh), uid=me(), t=now();
   const qi=sh.queue.findIndex(q=>q.userId===uid), seatedAt=sh.seated[uid], cool=(sh.cooldownUntil[uid]||0)-t;
@@ -299,7 +348,7 @@ function renderLobby(){
   const tabs=casual(sh)?[['tables','Live tables'],['rules','How it works']]:[['board','Board'],['offices','Offices'],['tables','Live tables'],...(sh.semis||sh.final?[['finals','Finals']]:[]),...(sh.event.rules.picks.on&&(sh.semis||sh.final)?[['picks','Picks']]:[]),['rules','How it works']];
   if(!tabs.some(x=>x[0]===state.tab))state.tab=tabs[0][0];
   app.innerHTML=`<div id="lobby">
-    <div class="top"><div class="brand"><div class="mark">♠</div><div><h1>${esc(sh.event.name)}</h1><div class="sub">${esc(ph.line)}</div></div></div><div style="display:flex;align-items:center;gap:8px"><span class="chip ${ph.cls}"><span class="dot"></span>${esc(ph.chip)}</span>${state.mine?avatarHtml(state.mine.name,pic(state.mine.userId),'me-face'):''}</div></div>
+    <div class="top"><div class="brand"><button class="back" data-act="rooms" aria-label="Back to the tables">‹</button><div><h1>${esc(sh.event.name)}</h1><div class="sub">${esc(ph.line)}</div></div></div><div style="display:flex;align-items:center;gap:8px"><span class="chip ${ph.cls}"><span class="dot"></span>${esc(ph.chip)}</span>${state.mine?avatarHtml(state.mine.name,pic(state.mine.userId),'me-face'):''}</div></div>
     <div class="hero"><div class="suits">♠♥♦♣</div>${hero}</div>
     ${stats}
     <div class="tabs">${tabs.map(([k,l])=>`<button class="tab ${state.tab===k?'on':''}" data-tab="${k}">${l}</button>`).join('')}</div>
@@ -351,6 +400,89 @@ function rulesBody(sh){ const r=sh.event.rules;
   <p><b>Finals.</b> At ${hhmm(sh.event.game.openTo)} the top ${r.semifinalists} go to two semifinals (${r.minutes.semi} minutes) at ${hhmm(sh.event.game.semisAt)}. The top ${r.advancePerSemi} from each play the final (${r.minutes.final} minutes) at ${hhmm(sh.event.game.finalAt)}.</p>
   <p><b>No money.</b> Chips and points are for the boards only. No fees, no buying, no cash.</p></div>`; }
 
+/* ---------- the group game: tables to join (no event needed) ----------
+   Built like Scribble's and Tile Up's rooms: open a table (listed for the company, or private by code), quick join, a code, invites,
+   practice against the house. The server's room view comes in as room:state; its `table` is the same table view the event's tables use. */
+const R=()=>state.room;
+const isHost=()=>!!(R()&&R().hostId===R().you);
+const hostName=r=>{ const h=r&&r.players.find(p=>p.userId===r.hostId); return h?first(h.name):'the host'; };
+const houseFace=()=>`<div class="avatar house">♠</div>`;
+const tournamentOn=()=>!!(state.ev&&state.ev.event&&!casual(state.ev)&&state.ev.event.phase!=='over');
+function renderRooms(){
+  const rooms=state.rooms||[], inv=(state.invites||[]).slice(-3).reverse();
+  const roomRow=r=>{ const n=r.players.length+r.house, st=r.status==='lobby'?['wait','Waiting to deal']:r.status==='over'?['full','Between games']:r.seatFree?['play','Playing · seat free']:['full','Playing · full'];
+    return `<div class="rowi"><div class="stack" style="width:76px;flex:none">${r.players.slice(0,3).map(p=>avatarHtml(p.name,p.photoUrl||pic(p.userId),'sm')).join('')}${n>3?`<div class="avatar sm">+${n-3}</div>`:''}</div>
+      <div class="who"><b>${esc(r.host?first(r.host.name):'A')}'s table · ${n}/${r.seats}</b><span class="status ${st[0]}">${st[1]}</span><span> · ${r.minutes} min</span></div>
+      <button class="btn small ${r.seatFree&&r.status!=='over'?'primary':'ghost'}" data-join="${esc(r.code)}" ${r.seatFree?'':'disabled'}>${r.seatFree?'Sit':'Full'}</button></div>`; };
+  app.innerHTML=`<div id="lobby">
+    <div class="top"><div class="brand"><div class="mark">♠</div><div><h1>Speed Poker</h1><div class="sub">Texas Hold'em with colleagues · no money</div></div></div>${state.me?avatarHtml(state.me.name,state.me.photoUrl,'me-face'):''}</div>
+    ${inv.map(i=>`<div class="invite">${avatarHtml(i.from&&i.from.name,i.from&&i.from.photoUrl,'sm')}<div class="who"><b>${esc(first(i.from&&i.from.name))} invited you</b><span>Table ${esc(i.code)}${i.players?` · ${i.players} at the table`:''}</span></div><button class="btn small primary" data-join="${esc(i.code)}">Sit down</button></div>`).join('')}
+    <div class="hero"><div class="suits">♠♥♦♣</div><h2>Play a game</h2><p>Two to six at a table, 1,500 chips each, about ${state.minutes||20} minutes a game. Just for fun.</p>
+      <div class="row"><button class="btn primary" data-act="quick">Quick game</button><button class="btn ghost" data-act="host">New table</button></div>
+      <div class="codebox"><input id="code" inputmode="numeric" maxlength="4" placeholder="Have a code? 4 digits" value="${esc(state.codeInput||'')}" autocomplete="off"><button class="btn ghost" data-act="code">Join</button></div>
+      <button class="linkbtn" data-act="practice">Practice against the house ›</button></div>
+    ${tournamentOn()?`<div class="card" style="margin-top:12px"><div class="rowi"><div class="who"><b>🏆 ${esc(state.ev.event.name)}</b><span>${esc(phaseWords(state.ev).line)}</span></div><button class="btn small ghost" data-act="event">Open</button></div></div>`:''}
+    <div class="tabs"><button class="tab on">Open tables</button></div>
+    <div class="card">${rooms.length?rooms.map(roomRow).join(''):`<div class="empty">No open tables right now. Start one and invite colleagues, or tap Quick game.</div>`}</div>
+    <div class="card rules"><h3>How it works</h3>
+      <p><b>The game.</b> No-limit Texas Hold'em. Two cards each, five shared, best five of seven wins.</p>
+      <p><b>A table.</b> Whoever opens it is the host and deals when two or more are in; a full table of six deals itself. Blinds rise every three minutes; 20 seconds to act.</p>
+      <p><b>Coming and going.</b> Join mid-game and you are dealt in from the next hand while there is a seat. Leave whenever you like. Every game starts again at 1,500.</p>
+      <p><b>Just for fun.</b> No points, no board, no cash. Chips are only for the table.</p></div></div>`;
+}
+function renderRoomLobby(){
+  const r=R(), host=isHost(), places=r.players.length+r.house, ready=r.players.filter(p=>p.online).length+r.house;
+  const slots=[];
+  r.players.forEach(p=>slots.push(`<div class="slot ${p.online?'':'off'}">${avatarHtml(p.name,p.photoUrl||pic(p.userId),'sm')}<div class="who"><b>${esc(p.userId===r.you?'You':first(p.name))}</b><span>${p.userId===r.hostId?'Host':p.online?'Ready':'Away'}</span></div>${host&&p.userId!==r.you?`<button class="x" data-kick="${esc(p.userId)}" aria-label="Remove ${esc(p.name)}">×</button>`:''}</div>`));
+  (r.houseNames||[]).forEach((n,i)=>slots.push(`<div class="slot">${houseFace()}<div class="who"><b>${esc(String(n).replace(/^House /,''))}</b><span>House player</span></div>${host&&i===r.house-1?`<button class="x" data-act="house-" aria-label="Remove a house player">−</button>`:''}</div>`));
+  for(let i=places;i<r.max;i++)slots.push(host&&i===places?`<button class="slot emptyslot" data-act="house+">+ House player</button>`:`<div class="slot emptyslot">Open seat</div>`);
+  app.innerHTML=`<div id="lobby">
+    <div class="rtop"><button class="back" data-act="leaveask" aria-label="Leave the table">‹</button><div class="title"><b>${host?'Your table':esc(hostName(r))+"'s table"}</b><span>${r.open?'Listed in Open tables':'Private · code and invites only'}</span></div><span class="chip ${r.open?'green':''}"><span class="dot"></span>${r.open?'Open':'Private'}</span></div>
+    <div class="hero"><div class="suits">♠♥♦♣</div><p style="margin:0">Table code</p><div class="bigcode num">${esc(r.code)}</div><p>${host?'Share the code or invite colleagues, then deal.':`Waiting for ${esc(hostName(r))} to deal.`} ${places}/${r.max} seats taken.</p>
+      <div class="row"><button class="btn ghost" data-act="invite">Invite colleagues</button></div></div>
+    <div class="seats6">${slots.join('')}</div>
+    ${host?`<div class="card"><div class="setrow"><div class="lbl"><b>Game length</b><span>Blinds rise every 3 min</span></div><div class="seg">${(r.minutesOptions||[10,20,30]).map(m=>`<button class="${r.minutes===m?'on':''}" data-min="${m}">${m} min</button>`).join('')}</div></div>
+      <div class="setrow"><div class="lbl"><b>Who can join</b><span>${r.open?'Anyone at the company':'Only with the code'}</span></div><div class="seg"><button class="${r.open?'on':''}" data-open="1">Open</button><button class="${r.open?'':'on'}" data-open="0">Private</button></div></div></div>`
+      :`<div class="card"><div class="setrow"><div class="lbl"><b>${r.minutes} minute game</b><span>1,500 chips each · blinds rise every 3 min</span></div></div></div>`}
+    <div class="foot">${host?`<button class="btn primary" data-act="deal" ${ready<2?'disabled':''}>${ready<2?'Need 2 to deal':`Deal · ${ready} players`}</button>`:`<button class="btn ghost" data-act="leaveask">Leave table</button>`}</div>
+    ${sheets()}</div>`;
+}
+function sheets(){
+  if(state.leaveAsk){ const playing=R()&&R().status==='playing'&&R().table&&R().table.mySeat!=null&&!R().table.seats[R().table.mySeat].busted;
+    return `<div class="sheet" data-act="leaveno"><div class="box"><h2>Leave the table?</h2><p>${playing?'Your hand folds and your seat is dealt no more this game.':'You can come back with the code while the table is open.'}</p><div class="row" style="display:flex;gap:8px"><button class="btn ghost" style="flex:1" data-act="leaveno">Stay</button><button class="btn primary" style="flex:1" data-act="leave-room">Leave</button></div></div></div>`; }
+  if(state.picker){ const pk=state.picker, q=(pk.q||'').toLowerCase(), r=R()||{players:[],invited:[]};
+    const inRoom=new Set(r.players.map(p=>p.userId)), asked=new Set([...(r.invited||[]).map(i=>i.userId),...(pk.sent||[])]);
+    const list=(pk.list||[]).filter(p=>!inRoom.has(p.userId)&&(!q||String(p.name).toLowerCase().includes(q))).slice(0,60);
+    return `<div class="sheet" data-act="pickclose"><div class="box"><h2>Invite to table ${esc(r.code||'')}</h2><input id="pickq" placeholder="Search colleagues" value="${esc(pk.q||'')}" autocomplete="off">
+      <div class="list">${pk.loading?'<div class="empty">Loading colleagues…</div>':pk.error?`<div class="empty">${esc(pk.error)}</div>`:list.length?list.map(p=>`<div class="rowi">${avatarHtml(p.name,p.photoUrl)}<div class="who"><b>${esc(p.name)}</b><span>${esc(p.designation||p.department||'')}</span></div><button class="btn small ${asked.has(p.userId)?'ghost':'primary'}" data-inv="${esc(p.userId)}" ${asked.has(p.userId)?'disabled':''}>${asked.has(p.userId)?'Invited':'Invite'}</button></div>`).join(''):'<div class="empty">Nobody to invite by that name.</div>'}</div>
+      <button class="btn ghost" style="margin-top:10px" data-act="pickclose">Done</button></div></div>`; }
+  return '';
+}
+async function openPicker(){
+  state.picker={q:'',list:[],loading:true,sent:[]}; render();
+  const b=window.Sowaka;
+  try{ if(!b||typeof b.colleagues!=='function')throw new Error('Invites need the Sowaka app. Share the code instead.');
+    const res=await b.colleagues(''); if(!state.picker)return; state.picker.list=((res&&res.colleagues)||[]).filter(p=>p&&p.userId&&p.userId!==(state.me&&state.me.userId)); state.picker.loading=false; }
+  catch(err){ if(state.picker){ state.picker.loading=false; state.picker.error=err.message||'Could not load colleagues.'; } }
+  render(); }
+function onRoom(room){
+  const prev=state.room; state.room=room||null;
+  if(!room){ if(state.mode==='rooms'){ state.table=null; state.view='lobby'; state.leaveAsk=false; refreshRooms(); } return render(); }
+  const v=room.table; if(room.serverNow)state.offset=room.serverNow-Date.now();
+  if(v){ const was=state.table; state.table=v;
+    if(was&&was.id===v.id&&v.toAct!=null&&v.toAct===v.mySeat&&was.toAct!==v.mySeat){ haptic('medium'); chime(); }
+    if(!was||was.handNo!==v.handNo)state.raiseOpen=false; }
+  else state.table=null;
+  if(prev&&prev.status==='lobby'&&room.status==='playing'){ haptic('heavy'); chime(); }
+  state.view=room.status==='lobby'||!v?'lobby':'table';
+  if(state.mode==='rooms')render(); }
+const FEED={join:n=>`${n} sat down`,leave:n=>`${n} left the table`,host:n=>`${n} is the host now`};
+function onFeed(f){ if(!f||!FEED[f.kind]||!state.room)return; const me=state.me&&state.me.userId; if(f.userId===me&&f.kind!=='host')return; toast(f.kind==='host'&&f.userId===me?'You are the host now.':FEED[f.kind](first(f.name))); }
+async function refreshRooms(){ if(!P.live)return; try{ const d=await P.request('room:list'); state.rooms=d.rooms||[]; if(state.mode==='rooms'&&!state.room&&!busyInput())render(); }catch(e){} }
+const busyInput=()=>{ const a=document.activeElement; return a&&a.matches&&a.matches('input'); };
+async function joinCode(code){ const c=String(code||'').trim(); if(!/^[1-9]\d{3}$/.test(c)){ toast('A table code is four digits.'); return; }
+  const d=await P.request('room:join',{code:c}); state.invites=(state.invites||[]).filter(i=>i.code!==c); state.codeInput=''; onRoom(d); }
+
 /* ---------- office screen ---------- */
 function renderTv(){ const sh=state.shared, ph=phaseWords(sh);
   const st=sh.event.phase==='final'||sh.event.phase==='final-soon'||sh.event.phase==='over'?sh.final:sh.event.phase==='semis'||sh.event.phase==='semis-soon'?sh.semis:null;
@@ -367,7 +499,7 @@ function renderTv(){ const sh=state.shared, ph=phaseWords(sh);
 const POS_P={B:[50,90],LL:[8,66],LM:[8,47],LU:[10,25],T:[50,8],RU:[90,25],RM:[92,47],RL:[92,66]};
 const POS_L={B:[50,88],LL:[14,76],LM:[5,48],LU:[14,20],T:[50,9],RU:[86,20],RM:[95,48],RL:[86,76]};
 const LAYOUT={2:['B','T'],3:['B','LU','RU'],4:['B','LM','T','RM'],5:['B','LL','LU','RU','RL'],6:['B','LL','LU','T','RU','RL']};
-function tableTitle(v){ return v.round==='semi'?`Semifinal ${v.label}`:v.round==='final'?'The final':v.round==='practice'?'Practice table':'Open table'; }
+function tableTitle(v){ if(v.round==='casual')return state.room?`Table ${state.room.code}`:'Table'; return v.round==='semi'?`Semifinal ${v.label}`:v.round==='final'?'The final':v.round==='practice'?'Practice table':'Open table'; }
 function actionWord(a){ return {fold:'Fold',check:'Check',call:'Call',raise:'Raise',allin:'All in',sb:'SB',bb:'BB',timeout:'Time'}[a]||''; }
 function tableInner(v,landscape){
   if(!v||!v.seats)return `<div class="waiting" style="flex:1">Loading the table…</div>`;
@@ -377,15 +509,15 @@ function tableInner(v,landscape){
   const winners=new Set(), winCards=new Set();
   if(v.result){ v.result.pots.forEach(p=>p.winners.forEach(w=>winners.add(w))); v.result.shown.filter(s=>winners.has(s.seat)).forEach(s=>s.best.forEach(c=>winCards.add(c))); }
   const seats=v.seats.map(s=>{ const at=names[(s.seat-rot+n)%n], [x,y]=POS[at];
-    const bx=x+(50-x)*.42, by=y+(46-y)*.42, dx=x+(50-x)*.3+(x<50?7:-7), dy=y+(46-y)*.3;
+    const bx=x+(50-x)*.36, by=y+(46-y)*.22, dx=x===50?36:x+(50-x)*.3+(x<50?7:-7), dy=x===50?y+(46-y)*.12:y+(46-y)*.3;
     const showRight=x<50;
     const ring=s.toAct&&v.deadline?Math.max(0,Math.min(1,(v.deadline-t)/v.actionMs)):1;
     const shown=s.cards&&!s.me;
-    const tag=s.busted?'<span class="tag">OUT</span>':s.allIn?'<span class="tag allin">ALL IN</span>':s.sittingOut?'<span class="tag">AWAY</span>':s.lastAction&&!s.toAct&&v.street!=='done'?`<span class="tag act">${actionWord(s.lastAction)}</span>`:winners.has(s.seat)?'<span class="tag bounty">WINNER</span>':'';
+    const tag=s.left?'<span class="tag">LEFT</span>':s.busted?'<span class="tag">OUT</span>':s.allIn?'<span class="tag allin">ALL IN</span>':s.sittingOut?'<span class="tag">AWAY</span>':s.lastAction&&!s.toAct&&v.street!=='done'?`<span class="tag act">${actionWord(s.lastAction)}</span>`:winners.has(s.seat)?'<span class="tag bounty">WINNER</span>':'';
     const holeBacks=s.inHand&&!s.folded&&!s.cards&&!s.busted&&!s.me?`<div class="hole ${showRight?'r':'l'}">${back('mini')}${back('mini')}</div>`:'';
-    return `<div class="seat ${s.me?'me':''} ${s.folded?'folded':''} ${s.busted?'out':''} ${s.toAct?'toact':''} ${s.toAct&&ring<.33?'hurry':''}" style="left:${x}%;top:${y}%;--t:${ring.toFixed(3)}">
-      ${tag}<div class="ring">${avatarHtml(s.name,s.photoUrl||pic(s.userId))}</div>${holeBacks}
-      <div class="plate"><b>${esc(s.me?'You':first(s.name))}</b><span>${s.busted?'—':fmt(s.stack)}</span></div>
+    return `<div class="seat ${s.me?'me':''} ${s.folded?'folded':''} ${s.busted?'out':''} ${s.toAct?'toact':''} ${s.toAct&&ring<.33?'hurry':''}" style="left:${x}%;top:clamp(48px,${y}%,calc(100% - 52px));--t:${ring.toFixed(3)}">
+      ${tag}<div class="ring">${/^bot:/.test(s.userId)?'<div class="avatar house">♠</div>':avatarHtml(s.name,s.photoUrl||pic(s.userId))}</div>${holeBacks}
+      <div class="plate"><b>${esc(s.me?'You':/^bot:/.test(s.userId)?String(s.name).replace(/^House /,''):first(s.name))}</b><span>${s.busted?'—':fmt(s.stack)}</span></div>
       ${shown?`<div class="shown">${s.cards.map(c=>card(c,'mini',winCards.has(c)?'win':'')).join('')}</div>`:''}</div>
       ${s.bet>0?`<div class="bet" style="left:${bx}%;top:${by}%"><i></i>${fmt(s.bet)}</div>`:''}
       ${s.button?`<div class="dealer" style="left:${dx}%;top:${dy}%">D</div>`:''}`; }).join('');
@@ -402,7 +534,8 @@ function tableInner(v,landscape){
 }
 function renderTable(){
   const v=state.view==='watch'?state.watching:state.table;
-  if(!v){ state.view='lobby'; return renderLobby(); }
+  if(!v){ state.view='lobby'; return state.mode==='rooms'?renderRoomsMode():renderLobby(); }
+  const room=state.mode==='rooms'?R():null;
   const mine=v.mySeat!=null?v.seats[v.mySeat]:null;
   let hand='';
   if(mine&&mine.cards){ const shownBest=v.result&&v.result.shown.find(s=>s.seat===v.mySeat);
@@ -420,32 +553,44 @@ function renderTable(){
       <div class="slide"><input id="raise" type="range" min="${c.minRaiseTo}" max="${c.maxRaiseTo}" step="${Math.max(1,v.level?v.level.bb/2|0:1)}" value="${state.raiseTo}"><div class="val num" id="raisev">${fmt(state.raiseTo)}</div></div></div>`:''}
       <div class="abar"><button class="abtn fold" data-act="fold" ${c.canCheck?'':''}>Fold</button><button class="abtn call" data-act="call">${callTxt}</button>
       ${c.canRaise?(allInOnly?`<button class="abtn raise" data-act="allin">All in<small>${fmt(c.maxRaiseTo)}</small></button>`:state.raiseOpen?`<button class="abtn raise" data-act="raise">${state.raiseTo>=c.maxRaiseTo?'All in':raiseTxt+' to'}<small id="raisebtn">${fmt(state.raiseTo)}</small></button>`:`<button class="abtn raise" data-act="openraise">${raiseTxt}</button>`):`<button class="abtn raise" disabled>${raiseTxt}</button>`}</div>`; }
+  else if(room&&mine&&mine.busted){ actions=`<div class="waiting">You are out of this game. ${isHost()?'Deal again when it ends.':'The next game starts when this one ends.'} <button class="btn small ghost" data-act="leaveask">Leave</button></div>`; }
+  else if(room&&!mine){ actions=`<div class="waiting">The table is full: you play the next game. <button class="btn small ghost" data-act="leaveask">Leave</button></div>`; }
+  else if(room&&mine&&!mine.inHand&&v.street!=='done'){ actions=`<div class="waiting">You are dealt in from the next hand.</div>`; }
   else if(mine&&!mine.busted){ const who=v.toAct!=null?v.seats[v.toAct]:null; actions=`<div class="waiting">${v.street==='done'?'Next hand in a moment…':who?`Waiting for ${esc(first(who.name))}…`:''}</div>`; }
   else if(mine&&mine.busted){ actions=`<div class="waiting">You are out of this table. <button class="btn small ghost" data-act="lobby">Back to the lobby</button></div>`; }
   else actions=`<div class="waiting">Watching. <button class="btn small ghost" data-act="lobby">Back to the lobby</button></div>`;
   let over='';
   if(v.status==='over'&&v.standings){ const st=v.standings, myId=v.mySeat!=null?v.seats[v.mySeat].userId:me(), myS=st.find(s=>s.userId===myId);
-    over=`<div class="over"><div class="box"><h2>${myS?(myS.place===1?'You won the table':`You finished ${ordinal(myS.place)}`):'Table over'}</h2><p>${myS?(v.round==='practice'?'Practice table: no points.':v.round==='open'?'Your points are on the board.':'Standings below.'):'Final standings.'}</p>
+    over=`<div class="over"><div class="box"><h2>${myS?(myS.place===1?'You won the table':`You finished ${ordinal(myS.place)}`):'Table over'}</h2><p>${myS?(v.round==='casual'?'Just for fun: no points.':v.round==='practice'?'Practice table: no points.':v.round==='open'?'Your points are on the board.':'Standings below.'):'Final standings.'}</p>
       ${st.map(s=>`<div class="rowi ${s.userId===myId?'me':''}"><div class="rank">${s.place}</div>${avatarHtml(s.name,(v.seats.find(x=>x.userId===s.userId)||{}).photoUrl||pic(s.userId))}<div class="who"><b>${esc(s.name)}</b><span>${s.busted?'Busted':fmt(s.stack)+' chips'}${s.knockouts.length?` · ${s.knockouts.length} KO`:''}</span></div></div>`).join('')}
-      <button class="btn primary" style="width:100%;margin-top:12px" data-act="lobby">Back to the lobby</button></div></div>`; }
-  app.innerHTML=`<div id="table">${tableInner(v,false)}<div class="mine">${hand}</div><div class="actions">${actions}</div>${over}</div>`;
+      ${room?`<div class="btns">${isHost()?'<button class="btn primary" data-act="again">Deal again</button>':`<div class="waiting" style="flex:1;min-height:48px">Waiting for ${esc(hostName(room))}…</div>`}<button class="btn ghost" data-act="leaveask" style="flex:.6">Leave</button></div>`:'<button class="btn primary" style="width:100%;margin-top:12px" data-act="lobby">Back to the lobby</button>'}</div></div>`; }
+  app.innerHTML=`<div id="table">${tableInner(v,false)}<div class="mine">${hand}</div><div class="actions">${actions}</div>${over}${room?sheets():''}</div>`;
 }
+function renderRoomsMode(){ const r=R(); if(!r)return renderRooms(); if(r.status==='lobby'||!r.table)return renderRoomLobby(); return renderTable(); }
 const ordinal=n=>n+(['th','st','nd','rd'][(n%100-20)%10]||['th','st','nd','rd'][n%100]||'th');
 
 function render(){ if(state.fatal){ app.innerHTML=`<div id="lobby"><div class="empty" style="text-align:center;margin-top:30vh">${esc(state.fatal)}</div></div>`; return; }
-  if(state.view==='table'||state.view==='watch')renderTable(); else renderLobby();
+  if(state.mode==='rooms')renderRoomsMode(); else if(state.view==='table'||state.view==='watch')renderTable(); else renderLobby();
   if(state.offline&&!$('.offline'))app.insertAdjacentHTML('beforeend','<div class="offline">Reconnecting…</div>'); }
 
 /* the clocks on screen move every quarter second without waiting for the server */
 setInterval(()=>{ const v=state.view==='table'?state.table:state.view==='watch'?state.watching:null;
   if(v&&v.status!=='over'){ const ring=document.querySelector('.seat.toact'); if(ring&&v.deadline){ const r=Math.max(0,Math.min(1,(v.deadline-now())/v.actionMs)); ring.style.setProperty('--t',r.toFixed(3)); ring.classList.toggle('hurry',r<.33); }
     const clock=document.querySelector('.tbar .clock'); if(clock){ const left=v.endsAt-now(); clock.textContent=clockOf(left); clock.classList.toggle('low',left<60000); } }
-  else if(state.view==='lobby'&&!document.querySelector('input:active'))tick++; if(tick>=4){ tick=0; if(state.view==='lobby'&&!document.activeElement.matches('input'))renderLobby(); } },250);
+  else if(state.view==='lobby'&&!document.querySelector('input:active'))tick++; if(tick>=4){ tick=0; if(state.view==='lobby'&&state.mode==='event'&&!document.activeElement.matches('input'))renderLobby(); } },250);
+/* the open tables, while the list is on screen */
+setInterval(()=>{ if(state.mode==='rooms'&&!state.room&&!document.hidden)refreshRooms(); },5000);
 let tick=0;
 
 /* ---------- input ---------- */
 document.addEventListener('click',async e=>{
-  const b=e.target.closest('button'); if(!b||b.disabled)return;
+  const b=e.target.closest('button,.sheet'); if(!b||b.disabled)return;
+  if(b.classList.contains('sheet')&&e.target!==b)return;
+  if(b.dataset.join){ try{ await joinCode(b.dataset.join); }catch(err){ toast(err.message); refreshRooms(); } return; }
+  if(b.dataset.kick){ try{ await P.request('room:kick',{userId:b.dataset.kick}); }catch(err){ toast(err.message); } return; }
+  if(b.dataset.min){ try{ onRoom(await P.request('room:settings',{minutes:+b.dataset.min})); }catch(err){ toast(err.message); } return; }
+  if(b.dataset.open){ try{ onRoom(await P.request('room:settings',{open:b.dataset.open==='1'})); }catch(err){ toast(err.message); } return; }
+  if(b.dataset.inv){ const id=b.dataset.inv; try{ await P.request('room:invite',{userId:id}); if(state.picker)state.picker.sent.push(id); toast('Invite sent.'); }catch(err){ toast(err.message); } return render(); }
   if(b.dataset.tab){ state.tab=b.dataset.tab; return renderLobby(); }
   if(b.dataset.watch){ return watchTable(b.dataset.watch); }
   if(b.dataset.to){ state.raiseTo=+b.dataset.to; const r=$('#raise'); if(r)r.value=state.raiseTo; $('#raisev').textContent=fmt(state.raiseTo); const rb=$('#raisebtn'); if(rb)rb.textContent=fmt(state.raiseTo); return; }
@@ -456,13 +601,27 @@ document.addEventListener('click',async e=>{
     switch(act){
       case 'sit': await P.request('queue:join'); toast('You are in the queue.'); break;
       case 'leave': await P.request('queue:leave'); break;
-      case 'practice': { const d=await P.request('practice:start'); state.view='table'; break; }
+      case 'practice': if(state.mode==='rooms'){ onRoom(await P.request('room:practice')); break; } { const d=await P.request('practice:start'); state.view='table'; break; }
+      case 'quick': onRoom(await P.request('room:quick')); break;
+      case 'host': onRoom(await P.request('room:host',{open:true})); break;
+      case 'code': await joinCode(($('#code')||{}).value||state.codeInput); break;
+      case 'event': state.mode='event'; state.view='lobby'; state.shared=state.ev; break;
+      case 'rooms': state.mode='rooms'; state.view=state.room&&state.room.table&&state.room.status!=='lobby'?'table':'lobby'; state.table=state.room&&state.room.table||null; refreshRooms(); break;
+      case 'leaveask': state.leaveAsk=true; break;
+      case 'leaveno': state.leaveAsk=false; break;
+      case 'leave-room': state.leaveAsk=false; await P.request('room:leave'); onRoom(null); return;
+      case 'invite': return openPicker();
+      case 'pickclose': state.picker=null; break;
+      case 'house+': onRoom(await P.request('room:house',{delta:1})); break;
+      case 'house-': onRoom(await P.request('room:house',{delta:-1})); break;
+      case 'deal': await P.request('room:start'); break;
+      case 'again': await P.request('room:again'); break;
       case 'mytable': state.view='table'; if(!state.table||state.table.status==='over'){ const h=await P.request('poker:hello'); if(h.table)state.table=h.table; } break;
-      case 'lobby': if(state.watching)P.request('table:unwatch',{tableId:state.watching.id}).catch(()=>{}); state.watching=null; state.view='lobby'; if(state.table&&state.table.status==='over')state.table=null; break;
+      case 'lobby': if(state.mode==='rooms'){ state.leaveAsk=true; break; } if(state.watching)P.request('table:unwatch',{tableId:state.watching.id}).catch(()=>{}); state.watching=null; state.view='lobby'; if(state.table&&state.table.status==='over')state.table=null; break;
       case 'fold': case 'call': case 'allin': await sendAction({kind:act}); break;
       case 'openraise': state.raiseOpen=true; break;
       case 'raise': await sendAction(state.raiseTo>=state.table.choices.maxRaiseTo?{kind:'allin'}:{kind:'raise',to:state.raiseTo}); break;
-      case 'sitin': await P.request('table:sitin',{tableId:state.table.id}); break;
+      case 'sitin': if(state.mode==='rooms')await P.request('room:sitin'); else await P.request('table:sitin',{tableId:state.table.id}); break;
       case 'pick': { const stage=b.dataset.stage, sel=state.pick[stage]||{}, st=stage==='semi'?state.shared.semis:state.shared.final;
         const stake=+($('#stake-'+stage)||{}).value; const table=sel.table||st.tables[0].label;
         if(!sel.kind||!sel.choice){ toast('Choose your call and who.'); return; }
@@ -471,20 +630,24 @@ document.addEventListener('click',async e=>{
   }catch(err){ toast(err.message||'Something went wrong.'); }
   render();
 });
+document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target&&e.target.id==='code'){ e.preventDefault(); joinCode(e.target.value).catch(err=>toast(err.message)); } });
 document.addEventListener('input',e=>{ const t=e.target;
+  if(t.id==='code'){ t.value=t.value.replace(/\D/g,'').slice(0,4); state.codeInput=t.value; }
+  if(t.id==='pickq'&&state.picker){ state.picker.q=t.value; render(); const q=$('#pickq'); if(q){ q.focus(); q.setSelectionRange(q.value.length,q.value.length); } }
   if(t.id==='raise'){ state.raiseTo=+t.value; $('#raisev').textContent=fmt(state.raiseTo); const rb=$('#raisebtn'); if(rb)rb.textContent=fmt(state.raiseTo); }
   if(t.id&&t.id.startsWith('stake-')){ const stage=t.id.slice(6); (state.pick[stage]=state.pick[stage]||{}).stake=+t.value; $('#stakev-'+stage).textContent=fmt(+t.value); } });
 async function sendAction(action){ const v=state.table; if(!v)return; state.raiseOpen=false;
-  try{ await P.request('table:act',{tableId:v.id,action}); }catch(err){ toast(err.message); } }
+  try{ if(state.mode==='rooms')await P.request('room:act',{action}); else await P.request('table:act',{tableId:v.id,action}); }catch(err){ toast(err.message); } }
 async function watchTable(id){ try{ const d=await P.request('table:watch',{tableId:id}); state.watching=d.table; state.view='watch'; render(); }catch(err){ toast(err.message); } }
 
 /* ---------- from the server ---------- */
 function onTable(v){ if(!v||!v.id)return; if(v.now)state.offset=v.now-Date.now();
   if(state.tv&&state.tvTables[v.id]){ state.tvTables[v.id]=v; return render(); }
-  if(v.mySeat!=null){ const prev=state.table; state.table=v;
+  if(v.round==='casual')return;
+  if(v.mySeat!=null){ const prev=state.mode==='event'?state.table:null; state.table=v;
     if(prev&&prev.id===v.id&&v.toAct===v.mySeat&&prev.toAct!==v.mySeat){ haptic('medium'); chime(); }
     if(!prev||prev.handNo!==v.handNo)state.raiseOpen=false;
-    if(state.view==='table')renderTable(); else if(state.view==='lobby'&&v.status==='playing'&&(!prev||prev.id!==v.id)){ state.view='table'; renderTable(); } }
+    if(state.mode==='event'&&state.view==='table')renderTable(); else if(state.view==='lobby'&&v.status==='playing'&&(!prev||prev.id!==v.id)){ state.mode='event'; state.view='table'; renderTable(); } }
   else if(state.watching&&state.watching.id===v.id){ state.watching=v; if(state.view==='watch')renderTable(); } }
 let audio=null;
 function chime(){ try{ audio=audio||new (window.AudioContext||window.webkitAudioContext)(); const o=audio.createOscillator(), g=audio.createGain(); o.type='sine'; o.frequency.value=880; g.gain.setValueAtTime(.0001,audio.currentTime); g.gain.exponentialRampToValueAtTime(.15,audio.currentTime+.02); g.gain.exponentialRampToValueAtTime(.0001,audio.currentTime+.35); o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime+.4); }catch(e){} }
@@ -494,23 +657,38 @@ async function start(){
   if(P.hopping)return;
   if(!P.live)return demo();
   state.tv=!!P.tv;
-  P.on('lobby:shared',sh=>{ if(sh&&sh.now)state.offset=sh.now-Date.now(); state.shared=sh; if(state.view==='lobby')renderLobby(); else if(state.tv)render(); });
+  P.on('lobby:shared',sh=>{ if(sh&&sh.now)state.offset=sh.now-Date.now(); state.ev=sh; if(state.mode!=='event'&&!state.tv){ if(!state.room&&!busyInput())render(); return; } state.shared=sh; if(state.view==='lobby')renderLobby(); else if(state.tv)render(); });
+  P.on('room:state',p=>onRoom(p&&p.room));
+  P.on('room:feed',onFeed);
+  P.on('room:invite',i=>{ if(!i||!i.code)return; state.invites=(state.invites||[]).filter(x=>x.code!==i.code).concat(i); if(!state.room||state.room.code!==i.code){ toast(`${first(i.from&&i.from.name)} invited you to table ${i.code}.`); if(!state.room)render(); } });
+  P.on('room:kicked',()=>{ toast('The host removed you from the table.'); state.room=null; onRoom(null); });
   P.on('table:state',onTable);
-  P.on('table:seated',()=>{ haptic('heavy'); chime(); state.view='table'; toast('Your table is ready.'); });
+  P.on('table:seated',()=>{ haptic('heavy'); chime(); state.mode='event'; state.view='table'; toast('Your table is ready.'); });
   P.on('poker:toast',p=>toast(p&&p.message||''));
   P.on('fatal',p=>{ state.fatal=p.message; render(); });
   P.on('poker:fatal',p=>{ state.fatal=p&&p.message||'Speed Poker stopped. Close and reopen it.'; render(); });
   P.on('connection',async c=>{ state.offline=!c.online; if(c.online)await load(); render(); });
   await load(); render();
+  /* Opened from an invite's push: the app hands over the table as startChallengeId ("room:4821"). */
+  const S0=window.Sowaka||{}, m=/^(?:room:)?([1-9]\d{3})$/.exec(String(S0.startRoomCode||S0.startChallengeId||'').trim());
+  if(m&&(!state.room||state.room.code!==m[1]))joinCode(m[1]).catch(err=>toast(err.message));
 }
-async function load(){ try{ const h=await P.request('poker:hello'); state.shared=h.shared||null; state.mine=h.mine||state.mine; if(h.table){ state.table=h.table; if(h.table.status==='playing'&&state.view==='lobby')state.view='table'; } }catch(err){ toast(err.message); } }
+async function load(){ try{
+    const [h,rh]=await Promise.all([P.request('poker:hello').catch(()=>({})),P.request('room:hello')]);
+    state.ev=(h&&h.shared)||null; state.mine=(h&&h.mine)||state.mine; state.me=rh.me||state.me; state.rooms=rh.rooms||[]; state.invites=rh.invites||[];
+    /* At an event's table: that first. Else the group game (the event, if one is on, is a card in its lobby). */
+    if(h&&h.table&&h.table.status==='playing'&&!rh.room){ state.mode='event'; state.shared=state.ev; state.table=h.table; state.view='table'; }
+    else if(state.mode==='event'){ state.shared=state.ev; if(h&&h.table)state.table=h.table; }
+    else onRoom(rh.room||null);
+  }catch(err){ toast(err.message); } }
 
 /* ---------- the demo (a browser preview with no server) ---------- */
 function demoFace(i){ const bg=['#3d5a80','#7a4a6e','#4a7a5e','#8a5a2b','#2f5f6f','#6b4f9a','#9a4f4f','#3f6b3f'][i%8], skin=['#f1c7a3','#d9a47a','#b97a52','#8d5a3b','#e8b896'][i%5], hair=['#2b1d14','#4a2e1a','#111','#6b3e1f','#1f1f1f'][(i*3)%5];
   const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><rect width="80" height="80" fill="${bg}"/><ellipse cx="40" cy="78" rx="28" ry="20" fill="${['#e0e0e0','#2d3e50','#c9962b','#5a7d9a','#a33'][i%5]}"/><rect x="34" y="50" width="12" height="12" fill="${skin}"/><circle cx="40" cy="36" r="17" fill="${skin}"/><path d="M23 34c0-12 8-19 17-19s17 7 17 19c-3-6-9-9-17-9s-14 3-17 9z" fill="${hair}"/><circle cx="34" cy="38" r="1.8" fill="#222"/><circle cx="46" cy="38" r="1.8" fill="#222"/><path d="M35 45q5 4 10 0" stroke="#7a3b2a" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>`;
   return 'data:image/svg+xml;utf8,'+encodeURIComponent(svg); }
 function demo(){
-  const q=new URLSearchParams(location.search), mode=q.get('demo')||'table';
+  const q=new URLSearchParams(location.search), mode=q.get('demo')||'rooms';
+  const roomMode=/^(rooms|room|room-guest|room-table|room-over|invite)$/.test(mode); state.mode=roomMode?'rooms':'event';
   const t=Date.now(); const iso=m=>new Date(t+m*60000).toISOString();
   const people=['Ananya Bisht','Rahul Mehta','Priya Sharma','Arjun Deshpande','Meera Iyer','Kabir Rao','Tanya Bhatia','Ishaan Kapoor','Nikhil Verma','Pooja Nair','Siddharth Pillai','Harsh Chaudhary','Raghav Sen','Divya Rao'];
   const board=people.map((n,i)=>({userId:'d'+i,name:n,office:['Gurgaon','Noida','Kolkata'][i%3],played:3+i%3,best:[4200-i*250,3100-i*150,2600-i*100],score:9900-i*500,knockouts:4-i%4,rank:i+1,reachedAt:0}));
@@ -533,9 +711,29 @@ function demo(){
   if(mode==='watch'){ state.table.mySeat=null; state.table.choices=null; state.table.seats.forEach(s=>{s.me=false; s.cards=null;}); }
   if(mode==='tv'){ state.tv=true; state.shared.event.phase='semis'; state.shared.semis={seededAt:t,startedAt:t,endedAt:null,tables:[{label:'A',tableId:'ta',players:[]},{label:'B',tableId:'tb',players:[]}]};
     const w=JSON.parse(JSON.stringify(state.table)); w.round='semi'; w.mySeat=null; w.choices=null; w.seats.forEach(s=>{s.me=false;s.cards=null;}); state.tvTables={ta:Object.assign({},w,{id:'ta',label:'A'}),tb:Object.assign({},w,{id:'tb',label:'B'})}; P.request=()=>new Promise(()=>{}); }
-  state.view=['lobby','queue','picks','tv'].includes(mode)?'lobby':'table';
   if(!P.request)P.request=()=>Promise.reject(new Error('Demo: nothing is sent.'));
+  if(roomMode)return roomsDemo(mode,t,people);
+  state.view=['lobby','queue','picks','tv'].includes(mode)?'lobby':'table';
   render();
+}
+function roomsDemo(mode,t,people){
+  state.me={userId:'s0',name:people[0],photoUrl:demoFace(0)}; state.mine=null; state.shared=null;
+  const mini=i=>({userId:'d'+i,name:people[i],photoUrl:demoFace(i)});
+  state.rooms=[{code:'4821',host:mini(1),status:'lobby',minutes:20,house:0,players:[1,2,3].map(mini),seats:6,free:3,seatFree:true,endsAt:null},
+    {code:'7350',host:mini(4),status:'playing',minutes:30,house:1,players:[4,5,6,7].map(mini),seats:6,free:1,seatFree:true,endsAt:t+600000},
+    {code:'2196',host:mini(8),status:'playing',minutes:10,house:0,players:[8,9,10,11,12,13].map(mini),seats:6,free:0,seatFree:false,endsAt:t+300000}];
+  state.invites=[{code:'5904',from:mini(9),players:2,expiresAt:t+3600000}];
+  const pl=(i,extra)=>Object.assign({userId:'s'+i,name:people[i],photoUrl:demoFace(i),online:true,atTable:false,busted:false},extra||{});
+  const room={code:'4821',you:'s0',hostId:mode==='room-guest'?'s1':'s0',status:'lobby',open:true,minutes:20,minutesOptions:[10,20,30],house:1,houseNames:['House Ace'],min:2,max:6,serverNow:t,gameNo:0,
+    players:[pl(0),pl(1),pl(2),pl(3,{online:false})],invited:[],removed:[],waiting:false,table:null,finishedAt:null};
+  if(mode==='room-table'||mode==='room-over'){ const v=state.table; v.round='casual'; room.status=mode==='room-over'?'over':'playing'; room.house=0; room.houseNames=[]; room.gameNo=1;
+    room.players=v.seats.map(s=>pl(s.seat,{atTable:true,busted:s.busted})); v.seats[5].left=true; v.seats[5].folded=true;
+    if(mode==='room-over'){ Object.assign(v,{status:'over',standings:[{userId:'s0',name:people[0],stack:5420,busted:false,knockouts:['a','b'],place:1},{userId:'s1',name:people[1],stack:2100,busted:false,knockouts:[],place:2},{userId:'s4',name:people[4],stack:1480,busted:false,knockouts:[],place:3},{userId:'s2',name:people[2],stack:0,busted:true,knockouts:[],place:4}]}); }
+    room.table=v; }
+  if(mode!=='rooms')state.room=room;
+  state.table=null;
+  if(state.room)onRoom(state.room); else render();
+  if(mode==='invite'){ window.Sowaka={colleagues:()=>Promise.resolve({colleagues:people.slice(4).map((n,i)=>({userId:'c'+i,name:n,photoUrl:demoFace(i+4),designation:['Designer','Engineer','Sales lead','HR partner'][i%4]}))})}; openPicker().then(()=>{ state.picker.sent=['c1']; render(); }); }
 }
 start();
 })();
