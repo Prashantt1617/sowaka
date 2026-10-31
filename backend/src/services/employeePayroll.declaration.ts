@@ -10,7 +10,6 @@
  */
 import { ObjectId } from 'mongodb';
 import { investmentProofs, salaryStructures, taxDeclarations, users } from '../config/db';
-import { requestViewer } from '../middleware/request-viewer';
 import { InvestmentProof, InvestmentProofStatus } from '../models/employeePayroll.model';
 import { TaxDeclarationRow } from '../models/tds.model';
 import {
@@ -19,9 +18,8 @@ import {
 } from '../shared/payroll/declaration';
 import { TaxDeclarations, TaxRegime } from '../shared/payroll/tds';
 import {
-  EmployeePayrollError, dayOf, deadlinesOf, declarationDueOn, meOf, parseFyParam, proofsDueOn,
+  EmployeePayrollError, dayOf, deadlinesOf, declarationDueOn, meOf, parseFyParam, payrollViewerOrg, proofsDueOn,
 } from './employeePayroll.common';
-import { hasPayrollAccess } from './payrollAccess.service';
 import { deleteReimbursementReceipt, hasReceiptStorage, presignReceiptDownload, uploadInvestmentProof } from './s3-receipt.service';
 import { computeStructureFor } from './salaryStructure.service';
 import { statutorySettingsFor } from './statutorySettings.service';
@@ -301,13 +299,7 @@ async function syncProofState(org: string, userId: string, fy: string) {
 
 // —— HR ——
 
-async function payrollViewer(viewerUserId: string): Promise<string> {
-  const viewer = requestViewer(viewerUserId)
-    ?? (await users().findOne({ userId: viewerUserId }, { projection: { _id: 0, org: 1, dashboardAccess: 1, dashboardAdmin: 1, dashboardTabs: 1 } }));
-  if (!viewer?.org) throw new EmployeePayrollError(403, 'No organisation on this account');
-  if (!hasPayrollAccess(viewer)) throw new EmployeePayrollError(403, 'Only people with payroll access can review investment proofs');
-  return viewer.org;
-}
+const payrollViewer = (viewerUserId: string) => payrollViewerOrg(viewerUserId, 'review investment proofs');
 
 async function hrViews(org: string, rows: StoredProof[]) {
   const userIds = [...new Set(rows.map((r) => r.userId))];

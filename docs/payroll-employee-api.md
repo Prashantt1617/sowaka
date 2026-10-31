@@ -18,8 +18,21 @@ Conventions (same as the rest of the backend):
   is no `userId` parameter anywhere on them, so nobody can ask for someone
   else's pay.
 
-Default deadlines (a company can change them on its record, under
-`payrollEmployee`; there is no screen for that yet):
+**Payroll is off in the app until HR switches it on** for the company
+(`appEnabled`, see §8; a company that never set it is off). While it is off,
+`GET /payroll/home` answers `{ "success": true, "appEnabled": false, "period", "fy" }`
+and nothing else, and every other `/payroll/*` route answers `403`:
+
+```jsonc
+{ "success": false, "message": "Payroll is not switched on in the app for your company yet", "requestId": "…",
+  "details": { "reason": "payroll_app_off" } }
+```
+
+The sign-in / profile payload (`user` from `POST /auth/verify-otp` and `GET /auth/me`) carries
+the same switch as `features.payroll` (boolean), so the app can hide the
+Payroll entry without another call. (`/payslips/*` is unchanged and not gated.)
+
+Default deadlines (HR changes them with `PUT /admin/payroll/employee-app-settings`, §8):
 
 | What | Default |
 | --- | --- |
@@ -27,7 +40,7 @@ Default deadlines (a company can change them on its record, under
 | Fix missing punches of a month | the **last day** of that month, and only while that month's run is not locked |
 | Choose the regime and declare investments | **30 Nov** of the FY (`declarationDue: "11-30"`) |
 | Upload investment proofs | **31 Jan** of the FY (`proofsDue: "01-31"`) |
-| Upload bills for the flexible heads | **31 Mar**, the FY's last day |
+| Upload bills for the flexible heads | **31 Mar** of the FY (`billsDue: "03-31"`) |
 
 A payroll run is **locked** for a month once it is past draft: status
 `pending_approval`, `approved` or `paid`. A `draft` run is still being worked
@@ -44,6 +57,7 @@ Query: `period` (optional, `YYYY-MM`, default this month).
 ```jsonc
 {
   "success": true,
+  "appEnabled": true,                  // false: Payroll is off for the company; the body is only appEnabled, period, fy
   "period": "2026-10",
   "fy": "2026-27",
   "hasSalaryStructure": true,          // false: no structure assigned yet; salary is null
@@ -499,3 +513,101 @@ no such proof in the viewer's company; `409` the proof was replaced since
 `flexiblePoolPaise` (whole rupees in paise, ≥ 0; `null` removes it): the
 monthly pool people on this template split among the flexible components.
 `GET` returns it.
+
+### `GET /admin/payroll/employees/:userId/flexible-split`
+
+One employee's flexible split for a FY, for the dashboard. Query: `fy`
+(optional, default the current FY). Payroll access and the same company:
+`403` without payroll access, `404` for someone of another company (or no
+such person), `400` bad `fy`.
+
+```jsonc
+{
+  "success": true,
+  "split": {
+    "fy": "2026-27",
+    "employee": { "userId": "…", "name": "Asha Test", "employeeId": "E-ASHA" },
+    "hasSalaryStructure": true,          // false: no structure; baseline is empty, versions may still show
+    "available": true,                   // the template has flexible components today
+    "template": { "code": "FLEX", "name": "Flexible" },   // null without a structure
+    "poolPaise": 600000,                 // today's pool (template's flexiblePoolPaise, else the sum of limits); null without a structure
+    "asOf": "2026-10",                   // the month "in force now" means: this month; a past FY's last month; null for a future FY
+    "baseline": [                        // what applies with no split: the structure's own amounts
+      { "code": "FUEL", "name": "Fuel & vehicle", "amountPaise": 250000, "limitPaise": 300000 }
+    ],
+    "current": { … one of versions … },  // the version in force at asOf; null: none (the baseline applies)
+    "versions": [                        // every split of the FY, oldest first
+      {
+        "effectiveFrom": "2026-07",
+        "effectiveTo": "2026-10",        // the month before the next version, else the FY's last month
+        "submittedAt": "2026-07-10T09:12:00.000Z",
+        "inForce": false,
+        "poolPaise": 600000,             // the pool it was saved against
+        "poolSource": "saved",           // "saved" | "current_template" (older splits, saved before the pool was kept) | null
+        "assignedPaise": 450000,
+        "unassignedPaise": 150000,       // null when the pool is unknown
+        "components": [                  // today's flexible components, then any other code the split has
+          { "code": "FUEL", "name": "Fuel & vehicle", "amountPaise": 250000, "limitPaise": 300000 }   // limitPaise: as saved, else today's; null if unknown
+        ]
+      }
+    ],
+    "window": { "open": true, "effectiveFrom": "2026-11", "effectiveTo": "2027-03", "closesOn": "2026-11-15", "reason": null },  // when the employee's next change would apply
+    "billsDueOn": "2027-03-31"
+  }
+}
+```
+
+---
+
+## 8. The app's Payroll settings (HR)
+
+### `GET /admin/payroll/employee-app-settings`
+
+Payroll access only (`403` otherwise); the viewer's own company. Query: `fy`
+(optional, default the current FY) for the `dates` block.
+
+```jsonc
+{
+  "success": true,
+  "fy": "2026-27",
+  "settings": {                        // what applies: HR's value, else the default
+    "appEnabled": false,               // show Payroll in the app; off until HR turns it on
+    "splitCutoffDay": 15,              // day of the month until which that month's split can change
+    "declarationDue": "11-30",         // MM-DD, in the FY's first calendar year (April to December)
+    "proofsDue": "01-31",              // MM-DD, in the FY's second calendar year (January to March)
+    "billsDue": "03-31"                // MM-DD, in the FY's second calendar year (January to March)
+  },
+  "defaults": { "appEnabled": false, "splitCutoffDay": 15, "declarationDue": "11-30", "proofsDue": "01-31", "billsDue": "03-31" },
+  "customised": ["appEnabled"],        // fields HR has set; the rest are defaults
+  "dates": {                           // the deadlines as days of `fy` (and this month's split cutoff)
+    "splitClosesOn": "2026-10-15",
+    "declarationDueOn": "2026-11-30",
+    "proofsDueOn": "2027-01-31",
+    "billsDueOn": "2027-03-31"
+  },
+  "updatedAt": "2026-10-31T06:00:00.000Z",   // or null
+  "updatedBy": "…"                            // userId, or null
+}
+```
+
+### `PUT /admin/payroll/employee-app-settings`
+
+Body: any of the five fields; a field left out stays as it is, `null` puts
+it back to the default. Query: `fy` (optional; only used to check a full date).
+Response: the same body as the GET.
+
+```jsonc
+{ "appEnabled": true, "splitCutoffDay": 20, "declarationDue": "2026-12-15", "proofsDue": "02-15", "billsDue": null }
+```
+
+- `appEnabled`: `true` | `false`.
+- `splitCutoffDay`: a whole day of the month, **1 to 28**.
+- `declarationDue`, `proofsDue`, `billsDue`: `"MM-DD"`, or a full `"YYYY-MM-DD"`
+  date (only its month and day are kept: the deadline repeats every FY). They
+  must fall **within the FY**: `declarationDue` from 1 April to 31 December,
+  `proofsDue` and `billsDue` from 1 January to 31 March; a full date must be
+  in that part of `fy` (e.g. `2026-12-15` for 2026-27, `2027-02-15` for the
+  proofs). 29 February is refused (it does not come every year).
+
+Errors: `400` an unknown field, nothing sent, a value out of range or a date
+outside the FY; `403` no payroll access.

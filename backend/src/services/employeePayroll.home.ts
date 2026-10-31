@@ -13,7 +13,7 @@ import { fyOf } from '../shared/payroll/tds';
 import { employeeDayStatuses } from './attendance-report.service';
 import { correctionTriggerFor } from './attendance.service';
 import {
-  EmployeePayrollError, dayOf, daysInMonth, lastDayOf, lockedPeriods, meOf, parsePeriodParam, periodOf,
+  EmployeePayrollError, dayOf, daysInMonth, lastDayOf, lockedPeriods, meOf, parsePeriodParam, payrollAppEnabled, periodOf,
 } from './employeePayroll.common';
 import { myDeclaration, myProofs } from './employeePayroll.declaration';
 import { mySplit, splitAmountsFor } from './employeePayroll.split';
@@ -160,6 +160,8 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
   const { org, user } = await meOf(userId);
   const period = parsePeriodParam(periodRaw, now);
   const fy = fyOf(periodOf(now)).fy;
+  // Off until HR switches Payroll on for the company: the app shows nothing.
+  if (!(await payrollAppEnabled(org))) return { appEnabled: false as const, period, fy };
 
   const released = await myReleasedPayslipFor(userId, period);
   const [salary, punches, split, declaration, proofs] = await Promise.all([
@@ -206,6 +208,7 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
   }
 
   return {
+    appEnabled: true as const,
     period,
     fy,
     hasSalaryStructure: Boolean(salary),

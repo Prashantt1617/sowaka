@@ -20,6 +20,13 @@ import {
 import { myPayrollHome } from '../services/employeePayroll.home';
 import { computeTds, TDS_SEED } from '../shared/payroll/tds';
 
+/** Home with Payroll switched on (the seed turns it on for the org). */
+async function homeOn(...args: Parameters<typeof myPayrollHome>) {
+  const h = await myPayrollHome(...args);
+  if (h.appEnabled !== true) throw new Error('Payroll is off for the scratch org');
+  return h;
+}
+
 const SCRATCH = 'payroll_declaration_scratch';
 const ORG = 'sowaka';
 const R = (rupees: number) => rupees * 100;
@@ -78,7 +85,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   setProofStorageForTests(fakeStorage);
 
   const now = new Date();
-  await companies().insertMany([{ id: ORG, name: 'Sowaka (scratch)' }, { id: 'otherco', name: 'Other (scratch)' }] as never[]);
+  await companies().insertMany([{ id: ORG, name: 'Sowaka (scratch)', payrollEmployee: { appEnabled: true } }, { id: 'otherco', name: 'Other (scratch)' }] as never[]);
   await users().insertMany([
     person('hr', 'Hema HR', { dashboardAccess: true, dashboardAdmin: true }),
     person('hrpay', 'Pavan Payroll', { dashboardAccess: true, dashboardTabs: ['salarydetails'] }),
@@ -222,7 +229,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
 
   // —— deadlines and the home to-do ——
   await saveMyDeclaration('bala', FY, { regime: 'old', items: { ppf: R(10_000) } }, oct);
-  const bHome = await myPayrollHome('bala', undefined, oct);
+  const bHome = await homeOn('bala', undefined, oct);
   check('home: Bala has a proof to upload by 31 Jan', bHome.todo.some((t) => t.kind === 'investment_proofs' && t.notUploaded === 1 && t.dueOn === '2027-01-31'), bHome.todo);
   check('home: Bala chose his regime: no regime to-do', !bHome.todo.some((t) => t.kind === 'tax_regime'), bHome.todo);
   check('home: no salary structure for Bala yet, still works', bHome.hasSalaryStructure === false, bHome.hasSalaryStructure);

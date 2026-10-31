@@ -13,7 +13,7 @@
  * or before the company's cutoff day, else from next month, and never to a
  * month a run has locked.
  */
-import { flexibleSplits, reimbursementClaims, salaryStructures, salaryTemplates, taxDeclarations } from '../config/db';
+import { flexibleSplits, reimbursementClaims, salaryStructures, salaryTemplates, taxDeclarations, users } from '../config/db';
 import { FlexibleSplit } from '../models/employeePayroll.model';
 import { PayHead } from '../models/payHead.model';
 import { SalaryStructure } from '../models/salaryStructure.model';
@@ -22,7 +22,8 @@ import { fyEndPeriod, splitProblem } from '../shared/payroll/declaration';
 import { applyOverrides, resolveTemplateComponents } from '../shared/payroll/resolve';
 import { fyOf, taxOnIncome, TaxRegime } from '../shared/payroll/tds';
 import {
-  EmployeePayrollError, dayInMonth, dayOf, deadlinesOf, fyLastDay, lockedPeriods, meOf, nextPeriod, periodOf,
+  EmployeePayrollError, billsDueOn, dayInMonth, dayOf, deadlinesOf, fyLastDay, lockedPeriods, meOf, nextPeriod, parseFyParam,
+  payrollViewerOrgFor, periodOf,
 } from './employeePayroll.common';
 import { billCategories } from './reimbursementBills.service';
 import { computeStructureFor } from './salaryStructure.service';
@@ -97,10 +98,15 @@ interface Context {
   template: SalaryTemplate;
   components: FlexibleComponent[];
   poolPaise: number;
+  byCode: Map<string, PayHead>;
 }
 
 async function contextOf(userId: string): Promise<Context> {
   const { org } = await meOf(userId);
+  return contextFor(org, userId);
+}
+
+async function contextFor(org: string, userId: string): Promise<Context> {
   const structure = await salaryStructures().findOne({ org, userId }, { projection: { _id: 0 } });
   if (!structure?.salaryTemplateCode) throw new EmployeePayrollError(404, 'No salary structure has been set up for you yet');
   const [template, catalog] = await Promise.all([
@@ -112,7 +118,7 @@ async function contextOf(userId: string): Promise<Context> {
   const resolved = resolveTemplateComponents(applyOverrides(template.components, structure.overrides, byCode), byCode);
   const components = flexibleComponentsOf(resolved, structure, template.balancingComponentCode);
   const poolPaise = template.flexiblePoolPaise ?? components.reduce((sum, c) => sum + c.limitPaise, 0);
-  return { org, structure, template, components, poolPaise };
+  return { org, structure, template, components, poolPaise, byCode };
 }
 
 /** This FY's bills for each flexible head: approved (or paid), waiting, declined. */
@@ -144,9 +150,9 @@ const EMPTY_SPLIT = (window: SplitWindow, billsDueOn: string) => ({
 /** The person's split as Change my split shows it. */
 export async function mySplit(userId: string, now = new Date()) {
   const ctx = await contextOf(userId);
-  const window = await splitWindow(ctx.org, now);
-  const billsDueOn = fyLastDay(fyOf(window.effectiveFrom).fy);
-  if (ctx.components.length === 0) return EMPTY_SPLIT(window, billsDueOn);
+  const [window, deadlines] = await Promise.all([splitWindow(ctx.org, now), deadlinesOf(ctx.org)]);
+  const billsDue = billsDueOn(fyOf(window.effectiveFrom).fy, deadlines);
+  if (ctx.components.length === 0) return EMPTY_SPLIT(window, billsDue);
   const [splits, bills] = await Promise.all([
     flexibleSplits().find({ org: ctx.org, userId }, { projection: { _id: 0 } }).toArray(),
     billCounts(ctx.org, userId, fyOf(periodOf(now)).fy),
@@ -169,7 +175,7 @@ export async function mySplit(userId: string, now = new Date()) {
     })),
     current: current ? { effectiveFrom: current.effectiveFrom, submittedAt: current.submittedAt.toISOString() } : null,
     window,
-    billsDueOn,
+    billsDueOn: billsDue,
   };
 }
 
@@ -220,7 +226,7 @@ export async function reviewSplit(userId: string, body: Record<string, unknown>,
     poolPaise: ctx.poolPaise,
     unassignedPaise: Math.max(0, ctx.poolPaise - total),
     monthlyTaxSavingPaise: await taxSaving(ctx, next, window.effectiveFrom).catch(() => null),
-    billsDueOn: fyLastDay(fyOf(window.effectiveFrom).fy),
+    billsDueOn: billsDueOn(fyOf(window.effectiveFrom).fy, await deadlinesOf(ctx.org)),
   };
 }
 
@@ -240,6 +246,8 @@ export async function saveSplit(userId: string, body: Record<string, unknown>, n
     amounts: next,
     acknowledged: true,
     submittedAt: now,
+    poolPaise: ctx.poolPaise,
+    limitsPaise: Object.fromEntries(ctx.components.map((c) => [c.code, c.limitPaise])),
   };
   await flexibleSplits().updateOne({ org: ctx.org, userId, effectiveFrom: window.effectiveFrom }, { $set: row }, { upsert: true });
   return mySplit(userId, now);
@@ -273,4 +281,84 @@ async function taxSaving(ctx: Context, amounts: Record<string, number>, period: 
   const withoutBills = taxOnIncome(yearly(computed.grossMonthlyPaise + flexible), config).annualTaxPaise;
   const withBills = taxOnIncome(yearly(computed.grossMonthlyPaise), config).annualTaxPaise;
   return Math.max(0, Math.round((withoutBills - withBills) / 12 / 100) * 100);
+}
+
+// —— HR: one employee's split and its history ——
+
+function previousPeriod(period: string): string {
+  const [y, m] = period.split('-').map(Number);
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+}
+
+/**
+ * HR's read of one person's flexible split for a FY (dashboard): the version
+ * in force now (for a past FY, the last one; a future FY, none yet) and every
+ * version, oldest first. A version's pool and limits are the ones it was saved
+ * against; for splits saved before those were kept, today's (`poolSource`).
+ */
+export async function splitForHr(viewerUserId: string, userId: string, fyRaw: unknown, now = new Date()) {
+  const org = await payrollViewerOrgFor(viewerUserId, userId, 'see flexible splits');
+  const fy = parseFyParam(fyRaw, now);
+  const ctx = await contextFor(org, userId).catch((error) => {
+    if (error instanceof EmployeePayrollError && error.statusCode === 404) return null;
+    throw error;
+  });
+  const [rows, person, window, deadlines, byCode] = await Promise.all([
+    flexibleSplits().find({ org, userId, fy }, { projection: { _id: 0 } }).sort({ effectiveFrom: 1 }).toArray(),
+    users().findOne({ userId }, { projection: { _id: 0, userId: 1, name: 1, employeeId: 1 } }),
+    splitWindow(org, now),
+    deadlinesOf(org),
+    ctx ? Promise.resolve(ctx.byCode) : catalogWithStandard(org).then((c) => new Map(c.all.map((h) => [h.code, h]))),
+  ]);
+
+  const fyFirst = `${fy.slice(0, 4)}-04`;
+  const fyLast = `${Number(fy.slice(0, 4)) + 1}-03`;
+  const thisMonth = periodOf(now);
+  // The month "now" means for this FY: this month, the FY's last for a past FY, nothing for a future one.
+  const asOf = thisMonth < fyFirst ? null : thisMonth > fyLast ? fyLast : thisMonth;
+  const inForce = asOf ? splitFor(rows, asOf) : undefined;
+  const current = new Map((ctx?.components ?? []).map((c) => [c.code, c]));
+
+  const versions = rows.map((row, i) => {
+    const codes = [...current.keys(), ...Object.keys(row.amounts).filter((c) => !current.has(c))];
+    const components = codes.map((code) => {
+      const head = byCode.get(code);
+      return {
+        code,
+        name: current.get(code)?.name ?? (head?.payslipName?.trim() || head?.name || code),
+        amountPaise: row.amounts[code] ?? 0,
+        limitPaise: row.limitsPaise?.[code] ?? current.get(code)?.limitPaise ?? head?.maxClaimablePaise ?? null,
+      };
+    });
+    const assigned = components.reduce((sum, c) => sum + c.amountPaise, 0);
+    const pool = row.poolPaise ?? ctx?.poolPaise ?? null;
+    const next = rows[i + 1];
+    return {
+      effectiveFrom: row.effectiveFrom,
+      effectiveTo: next ? previousPeriod(next.effectiveFrom) : fyLast,
+      submittedAt: row.submittedAt.toISOString(),
+      inForce: row === inForce,
+      poolPaise: pool,
+      poolSource: row.poolPaise !== undefined ? 'saved' as const : pool !== null ? 'current_template' as const : null,
+      assignedPaise: assigned,
+      unassignedPaise: pool === null ? null : Math.max(0, pool - assigned),
+      components,
+    };
+  });
+
+  return {
+    fy,
+    employee: { userId, name: person?.name ?? null, employeeId: person?.employeeId ?? null },
+    hasSalaryStructure: ctx !== null,
+    available: (ctx?.components.length ?? 0) > 0,
+    template: ctx ? { code: ctx.template.code, name: ctx.template.name } : null,
+    poolPaise: ctx?.poolPaise ?? null,
+    asOf,
+    // What applies before any split (or with none): the structure's own amounts.
+    baseline: (ctx?.components ?? []).map((c) => ({ code: c.code, name: c.name, amountPaise: c.basePaise, limitPaise: c.limitPaise })),
+    current: versions.find((v) => v.inForce) ?? null,
+    versions,
+    window,
+    billsDueOn: billsDueOn(fy, deadlines),
+  };
 }

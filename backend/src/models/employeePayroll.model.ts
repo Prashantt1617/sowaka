@@ -21,6 +21,9 @@ export interface FlexibleSplit {
   /** They ticked "I'll keep bills for these heads". */
   acknowledged: true;
   submittedAt: Date;
+  /** The pool and each component's limit when it was saved, for HR's history. Absent on splits saved before they were kept. */
+  poolPaise?: number;
+  limitsPaise?: Record<string, number>;
 }
 
 export type InvestmentProofStatus = 'uploaded' | 'approved' | 'rejected';
@@ -49,8 +52,9 @@ export interface InvestmentProof {
 }
 
 /**
- * A company's deadlines for the employee payroll screens (Company.payrollEmployee).
- * Absent fields take the defaults in employeePayroll.service.
+ * A company's settings for the employee payroll screens (Company.payrollEmployee),
+ * set by HR on the dashboard (PUT /admin/payroll/employee-app-settings).
+ * Absent fields take the defaults in employeePayroll.common.
  */
 export interface EmployeePayrollSettings {
   /** Day of a month until which the flexible split for that month can change. Default 15. */
@@ -59,4 +63,10 @@ export interface EmployeePayrollSettings {
   declarationDue?: string;
   /** "MM-DD" in the FY's second calendar year: last day to upload proofs. Default "01-31". */
   proofsDue?: string;
+  /** "MM-DD" in the FY's second calendar year: last day to upload bills for the flexible heads. Default "03-31". */
+  billsDue?: string;
+  /** Whether the app shows Payroll to this company's people. Absent is off. */
+  appEnabled?: boolean;
+  updatedAt?: Date;
+  updatedBy?: string;
 }

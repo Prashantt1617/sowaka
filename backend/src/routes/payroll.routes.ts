@@ -62,7 +62,9 @@ import {
 import { getOrgSetupHandler, updateOrgSetupHandler } from '../controllers/orgSetup.controller';
 import { getPaymentDetailsHandler, setPaymentDetailsHandler } from '../controllers/employeePayment.controller';
 import { getDeclarationHandler, setDeclarationHandler } from '../controllers/tds.controller';
-import { hrDecideProofHandler, hrListProofsHandler, hrProofFileHandler } from '../controllers/employeePayroll.controller';
+import {
+  hrDecideProofHandler, hrGetAppSettingsHandler, hrListProofsHandler, hrProofFileHandler, hrSetAppSettingsHandler, hrSplitHandler,
+} from '../controllers/employeePayroll.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
 
@@ -152,4 +154,11 @@ payrollRouter.put('/employees/:userId/tax-declaration', setDeclarationHandler);
 payrollRouter.get('/investment-proofs', hrListProofsHandler);
 payrollRouter.get('/investment-proofs/:proofId/file', hrProofFileHandler);
 payrollRouter.post('/investment-proofs/:proofId/decision', hrDecideProofHandler);
+
+// One employee's flexible split for a FY (?fy=2026-27): the one in force and every version.
+payrollRouter.get('/employees/:userId/flexible-split', hrSplitHandler);
+
+// The app's Payroll for this company: on/off, and the deadlines its screens use.
+payrollRouter.get('/employee-app-settings', hrGetAppSettingsHandler);
+payrollRouter.put('/employee-app-settings', hrSetAppSettingsHandler);
 
