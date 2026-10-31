@@ -930,3 +930,68 @@ export const getEmployeeAppSettings = (fy?: string) =>
 /** A field left out stays; null puts it back to the default. */
 export const saveEmployeeAppSettings = (input: { [K in keyof EmployeeAppSettings]?: EmployeeAppSettings[K] | null }, fy?: string) =>
   api<EmployeeAppSettingsResponse>(`/admin/payroll/employee-app-settings${fy ? `?fy=${fy}` : ''}`, { method: 'PUT', body: input });
+
+// ————————————————————————————————————————————————————————————————
+// Statutory & tax settings: every statutory and income-tax figure, per FY,
+// in the database (docs/payroll-config-api.md). National rows: everyone with
+// payroll access reads them; only a platform org's admin writes them.
+// ————————————————————————————————————————————————————————————————
+
+export type ConfigStatus = 'to_confirm' | 'confirmed';
+/** A state's Professional Tax slabs and Labour Welfare Fund, as on the per-state rules (PtSlab, LwfRule above). */
+export type StateRule = { state: string; pt?: { slabs: PtSlab[] }; lwf?: LwfRule };
+export type StatutoryConfig = {
+  fy: string;
+  status: ConfigStatus;
+  source: string | null;
+  /** Rates are fractions 0–1. */
+  epf: { employeeRate: number; employerRate: number; epsRate: number; edliRate: number; adminRate: number; wageCeilings: { from: string; ceilingPaise: number }[] };
+  esi: { employeeRate: number; employerRate: number; grossCeilingPaise: number };
+  bonus: { minRate: number; maxRate: number; wageFloorPaise: number; eligibilityCeilingPaise: number };
+  mealCard: { exemptMonthlyPaise: number };
+  states: StateRule[];
+  updatedAt?: string;
+  updatedByUserId?: string | null;
+};
+export type ConfigYears<T> = { canEdit: boolean; years: T[]; currentFy: string };
+
+export const listStatutoryConfigYears = () =>
+  api<ConfigYears<{ fy: string; status: ConfigStatus; updatedAt: string }>>('/admin/payroll/statutory-config');
+export const getStatutoryConfig = (fy: string) =>
+  api<{ canEdit: boolean; config: StatutoryConfig }>(`/admin/payroll/statutory-config?fy=${fy}`);
+export const saveStatutoryConfig = (fy: string, config: Omit<StatutoryConfig, 'fy' | 'updatedAt' | 'updatedByUserId'>) =>
+  api<{ canEdit: boolean; config: StatutoryConfig }>(`/admin/payroll/statutory-config?fy=${fy}`, { method: 'PUT', body: config });
+export const copyStatutoryConfig = (fy: string, copyFrom: string) =>
+  api<{ canEdit: boolean; config: StatutoryConfig }>(`/admin/payroll/statutory-config?fy=${fy}&copyFrom=${copyFrom}`, { method: 'POST' });
+
+export type TaxRegime = 'new' | 'old';
+/** Percentages here are 0–100, as tds_configs rows store them. */
+export type TdsConfig = {
+  fy: string;
+  regime: TaxRegime;
+  status: ConfigStatus;
+  source: string | null;
+  standardDeductionPaise: number;
+  slabs: { upToPaise: number | null; ratePercent: number }[];
+  rebate: { incomeLimitPaise: number; maxRebatePaise: number; marginalRelief: boolean };
+  surcharge: { abovePaise: number; ratePercent: number }[];
+  cessPercent: number;
+  limits: {
+    sec80C: number; sec80CCD1B: number; sec80DSelf: number; sec80DSelfSenior: number;
+    sec80DParents: number; sec80DParentsSenior: number; sec24bHomeLoan: number; sec80TTA: number;
+  };
+  ptDeductible: boolean;
+  hraExemption: boolean;
+  hra: { metroPercentOfBasic: number; nonMetroPercentOfBasic: number; rentOverPercentOfBasic: number };
+  updatedAt?: string;
+  updatedByUserId?: string | null;
+};
+export type TdsConfigYear = { canEdit: boolean; fy: string; configs: Record<TaxRegime, TdsConfig | null> };
+
+export const listTdsConfigYears = () =>
+  api<ConfigYears<{ fy: string; regimes: TaxRegime[]; status: ConfigStatus }>>('/admin/payroll/tds-config');
+export const getTdsConfig = (fy: string) => api<TdsConfigYear>(`/admin/payroll/tds-config?fy=${fy}`);
+export const saveTdsConfig = (fy: string, regime: TaxRegime, config: Omit<TdsConfig, 'fy' | 'regime' | 'updatedAt' | 'updatedByUserId'>) =>
+  api<TdsConfigYear>(`/admin/payroll/tds-config?fy=${fy}&regime=${regime}`, { method: 'PUT', body: config });
+export const copyTdsConfig = (fy: string, copyFrom: string) =>
+  api<TdsConfigYear>(`/admin/payroll/tds-config?fy=${fy}&copyFrom=${copyFrom}`, { method: 'POST' });

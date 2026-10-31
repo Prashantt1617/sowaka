@@ -16,8 +16,8 @@ export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boo
   if (view === 'usersroles' || view === 'employeeimport') return user.dashboardAdmin === true;
   // Suwi is for everyone with dashboard access; what it can reach is decided per question.
   if (view === 'suwi') return true;
-  // Investment proofs go with payroll access, as the server decides it: Payroll Runs or Salary details.
-  if (view === 'investmentproofs') return canOpen(user, 'payruns') || canOpen(user, SALARY_DETAILS);
+  // Investment proofs and Statutory & tax settings go with payroll access, as the server decides it: Payroll Runs or Salary details.
+  if (view === 'investmentproofs' || view === 'payrollconfig') return canOpen(user, 'payruns') || canOpen(user, SALARY_DETAILS);
   // People › Tasks goes with Employees.
   if (view === 'peopletasks') return canOpen(user, 'employees');
   // The Diwali Cup TV (and its void) is HR's: an admin, or someone never limited to some tabs.

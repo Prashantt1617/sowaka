@@ -67,6 +67,7 @@ const PAYROLL: NavItem[] = [
   { key: 'taxdetails', label: 'Tax details' },
   { key: 'payheads', label: 'Salary Components' },
   { key: 'statutorycomponents', label: 'Statutory Components' },
+  { key: 'payrollconfig', label: 'Statutory & tax settings' },
   { key: 'templates', label: 'Salary Templates' },
   { key: 'paiddays', label: 'Paid Days Templates' },
   { key: 'payruns', label: 'Payroll Runs' },

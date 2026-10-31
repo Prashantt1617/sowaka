@@ -9,9 +9,9 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
-import { getTaxDeclaration, listInvestmentProofs, rupeesToPaise, saveTaxDeclaration } from '../../services/payroll';
-import type { InvestmentProofDTO, TaxDeclarationDTO, TaxDeclarationResponse, TaxDeclarations } from '../../services/payroll';
-import { DECLARATION_ITEMS, FALLBACK_OLD_LIMITS, declarationSections } from '../../../../backend/src/shared/payroll/declaration';
+import { getTaxDeclaration, getTdsConfig, listInvestmentProofs, rupeesToPaise, saveTaxDeclaration } from '../../services/payroll';
+import type { InvestmentProofDTO, TaxDeclarationDTO, TaxDeclarationResponse, TaxDeclarations, TdsConfig } from '../../services/payroll';
+import { DECLARATION_ITEMS, declarationSections } from '../../../../backend/src/shared/payroll/declaration';
 import { Card, LoadError, Pill, SkeletonLines } from '../ui';
 import type { Pill as PillTone } from '../theme';
 import * as Lk from './look';
@@ -44,6 +44,8 @@ export function IncomeTaxCard({ userId }: { userId: string }) {
   const [attempt, setAttempt] = useState(0);
   // The employee's proofs for the year, per item; null until they arrive (or if they cannot).
   const [proofList, setProofList] = useState<InvestmentProofDTO[] | null>(null);
+  // The FY's old-regime limits, from Statutory & tax settings: null until known, 'missing' when the year has none.
+  const [limits, setLimits] = useState<TdsConfig['limits'] | 'missing' | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -62,6 +64,7 @@ export function IncomeTaxCard({ userId }: { userId: string }) {
         setState('ready');
         if (d?.items) {
           listInvestmentProofs({ fy: r.fy, userId }).then((p) => { if (live) setProofList(p.proofs); }).catch(() => { if (live) setProofList(null); });
+          getTdsConfig(r.fy).then((c) => { if (live) setLimits(c.configs.old?.limits ?? 'missing'); }).catch(() => { if (live) setLimits('missing'); });
         }
       })
       .catch((e: unknown) => { if (live) { setData(null); setState(e instanceof ApiError && (e.status === 403 || e.status === 404) ? 'hidden' : 'error'); } });
@@ -108,7 +111,7 @@ export function IncomeTaxCard({ userId }: { userId: string }) {
         {!status && <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>No tax slabs for this year yet</span>}
       </div>
       {fromApp && data.declaration
-        ? <EmployeeDeclaration d={data.declaration} proofs={proofList} overridden={overridden} />
+        ? <EmployeeDeclaration d={data.declaration} proofs={proofList} overridden={overridden} limits={limits} fy={data.fy} />
         : <div style={{ ...Lk.note, marginTop: 16 }}>Nothing declared on the app yet. The figures below are HR's.</div>}
 
       <div style={{ ...Lk.eyebrow, marginTop: 22 }}>{fromApp ? "HR's figures · what payroll uses" : 'Declaration'}</div>
@@ -198,10 +201,12 @@ function statusOf(d: TaxDeclarationDTO, proofs: InvestmentProofDTO[] | null): { 
   return { label: 'Submitted', tone: Lk.TONES.info };
 }
 
-function EmployeeDeclaration({ d, proofs, overridden }: { d: TaxDeclarationDTO; proofs: InvestmentProofDTO[] | null; overridden: boolean }) {
+function EmployeeDeclaration({ d, proofs, overridden, limits, fy }: { d: TaxDeclarationDTO; proofs: InvestmentProofDTO[] | null; overridden: boolean; limits: TdsConfig['limits'] | 'missing' | null; fy: string }) {
   const flags = { metro: d.declarations.metro === true, selfSenior: d.declarations.selfSenior === true, parentsSenior: d.declarations.parentsSenior === true };
-  // Caps from the Income-tax Act's old-regime limits; provident fund from payroll is added to 80C by the run.
-  const sections = declarationSections({ regime: d.regime, items: d.items ?? {}, flags, limits: FALLBACK_OLD_LIMITS, epfYearPaise: 0 })
+  // Caps from the FY's old-regime row in Statutory & tax settings; provident fund from payroll is added to 80C by the run.
+  const caps = limits && limits !== 'missing' ? limits : null;
+  const noCaps: TdsConfig['limits'] = { sec80C: 0, sec80CCD1B: 0, sec80DSelf: 0, sec80DSelfSenior: 0, sec80DParents: 0, sec80DParentsSenior: 0, sec24bHomeLoan: 0, sec80TTA: 0 };
+  const sections = declarationSections({ regime: d.regime, items: d.items ?? {}, flags, limits: caps ?? noCaps, epfYearPaise: 0 })
     .map((s) => ({ ...s, items: s.items.filter((i) => i.key !== 'epf') }));
   const st = statusOf(d, proofs);
   const proofOf = (key: string): ProofState => (proofs?.find((p) => p.item === key)?.status ?? 'not_uploaded');
@@ -252,21 +257,25 @@ function EmployeeDeclaration({ d, proofs, overridden }: { d: TaxDeclarationDTO; 
           </thead>
           <tbody>
             {sections.filter((s) => s.items.some((i) => i.amountPaise > 0)).map((s) => (
-              <SectionRows key={s.key} section={s} old={old} proofOf={proofOf} proofsKnown={proofs !== null} />
+              <SectionRows key={s.key} section={s} old={old} capped={caps !== null} proofOf={proofOf} proofsKnown={proofs !== null} />
             ))}
           </tbody>
         </table>
       ) : (
         <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 12 }}>No investments declared, only the regime.</div>
       )}
-      {old && anyItem && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 8 }}>Counted: up to each section&apos;s cap. 80C&apos;s ₹1,50,000 is shared with provident fund from payroll, which the run adds. Rent is a month&apos;s rent; HRA&apos;s exemption is worked out on the run.</div>}
+      {old && anyItem && (caps
+        ? <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 8 }}>Counted: up to each section&apos;s cap for FY {fy} (Payroll › Statutory &amp; tax settings). 80C&apos;s cap is shared with provident fund from payroll, which the run adds. Rent is a month&apos;s rent; HRA&apos;s exemption is worked out on the run.</div>
+        : limits === 'missing' && <div style={{ fontSize: 11.5, color: 'var(--warn)', marginTop: 8 }}>What counts is not shown: the old regime&apos;s limits for FY {fy} are not set up in Payroll › Statutory &amp; tax settings.</div>)}
     </div>
   );
 }
 
-function SectionRows({ section, old, proofOf, proofsKnown }: {
+function SectionRows({ section, old, capped, proofOf, proofsKnown }: {
   section: ReturnType<typeof declarationSections>[number];
   old: boolean;
+  /** The year's limits are known, so what counts can be shown. */
+  capped: boolean;
   proofOf: (key: string) => ProofState;
   proofsKnown: boolean;
 }) {
@@ -278,7 +287,7 @@ function SectionRows({ section, old, proofOf, proofsKnown }: {
           <span>{section.label}</span>
           <span style={{ float: 'right', fontWeight: 400, color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
             {section.key === 'HRA' ? `${money(section.declaredPaise)} a year` : money(section.declaredPaise)}
-            {old && <> · counts {money(section.countedPaise)}{section.capPaise !== null && <span style={{ color: 'var(--ink-3)' }}> of {money(section.capPaise)}</span>}</>}
+            {old && capped && <> · counts {money(section.countedPaise)}{section.capPaise !== null && <span style={{ color: 'var(--ink-3)' }}> of {money(section.capPaise)}</span>}</>}
           </span>
         </td>
       </tr>
