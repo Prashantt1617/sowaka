@@ -85,7 +85,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   setProofStorageForTests(fakeStorage);
 
   const now = new Date();
-  await companies().insertMany([{ id: ORG, name: 'Sowaka (scratch)', payrollEmployee: { appEnabled: true } }, { id: 'otherco', name: 'Other (scratch)' }] as never[]);
+  await companies().insertMany([{ id: ORG, name: 'Sowaka (scratch)', payrollEmployee: { appEnabled: true, splitCutoffDay: 15, declarationDue: '11-30', proofsDue: '01-31', billsDue: '03-31' } }, { id: 'otherco', name: 'Other (scratch)' }] as never[]);
   await users().insertMany([
     person('hr', 'Hema HR', { dashboardAccess: true, dashboardAdmin: true }),
     person('hrpay', 'Pavan Payroll', { dashboardAccess: true, dashboardTabs: ['salarydetails'] }),

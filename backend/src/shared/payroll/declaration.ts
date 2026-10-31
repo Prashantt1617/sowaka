@@ -58,24 +58,6 @@ export interface DeclarationFlags {
   parentsSenior?: boolean;
 }
 
-const R = (rupees: number) => rupees * 100;
-
-/**
- * Old regime limits when the FY has no config row: the Income-tax Act's
- * figures for FY 2025-26 and 2026-27 (80C ₹1.5 lakh, 80CCD(1B) ₹50,000, 80D
- * ₹25,000 / ₹50,000 senior, 24(b) ₹2 lakh).
- */
-export const FALLBACK_OLD_LIMITS: TdsConfig['limits'] = {
-  sec80C: R(1_50_000),
-  sec80CCD1B: R(50_000),
-  sec80DSelf: R(25_000),
-  sec80DSelfSenior: R(50_000),
-  sec80DParents: R(25_000),
-  sec80DParentsSenior: R(50_000),
-  sec24bHomeLoan: R(2_00_000),
-  sec80TTA: R(10_000),
-};
-
 export interface DeclarationItemView {
   key: DeclarationItemKey | 'epf';
   label: string;

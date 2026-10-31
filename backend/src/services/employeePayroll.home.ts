@@ -217,12 +217,18 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
       if (error instanceof EmployeePayrollError && error.statusCode === 404) return null;
       throw error;
     }),
-    myDeclaration(userId, fy, now),
+    // A FY whose tax rules are not set up: the section says so instead of failing home.
+    myDeclaration(userId, fy, now).catch((error) => {
+      if (error instanceof EmployeePayrollError && error.details?.reason === 'tax_rules_not_set_up') return null;
+      throw error;
+    }),
     myProofs(userId, fy, now),
   ]);
 
   const splitSummary = split?.available
     ? {
+      notConfigured: split.notConfigured,
+      missing: split.missing,
       open: split.window.open,
       effectiveFrom: split.window.effectiveFrom,
       closesOn: split.window.closesOn,
@@ -235,23 +241,28 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
       ),
     }
     : null;
-  // Whether they have split their pool for the FY the window is in.
-  const splitThisYear = split?.available
-    ? await flexibleSplits().countDocuments({ org, userId, fy: fyOf(split.window.effectiveFrom).fy })
-    : 0;
+  // Whether they have split their pool for the FY the window is in (today's while the window is not set up).
+  const splitFy = split?.window.effectiveFrom ? fyOf(split.window.effectiveFrom).fy : fy;
+  const splitThisYear = split?.available ? await flexibleSplits().countDocuments({ org, userId, fy: splitFy }) : 0;
 
+  // A to-do whose deadline HR has not set says so (notConfigured, dueOn null) rather than carry a made-up date.
+  const notSet = (missing: string[]) => (missing.length > 0 ? { notConfigured: true, reason: 'payroll_not_configured', missing } : { notConfigured: false });
   const todo: Record<string, unknown>[] = [];
   // Only days that can still be fixed; due by the earliest of their last days.
-  if (punches.count > 0) todo.push({ kind: 'missing_punches', count: punches.count, dueOn: punches.fixBy, period });
-  if (split?.available && split.window.open && splitThisYear === 0) {
-    todo.push({ kind: 'flexible_split', dueOn: split.window.closesOn, effectiveFrom: split.window.effectiveFrom, submitted: false });
+  if (punches.count > 0) todo.push({ kind: 'missing_punches', count: punches.count, dueOn: punches.fixBy, period, notConfigured: false });
+  if (split?.available && splitThisYear === 0 && (split.window.open || split.notConfigured)) {
+    todo.push({ kind: 'flexible_split', dueOn: split.window.closesOn, effectiveFrom: split.window.effectiveFrom, submitted: false, ...notSet(split.missing) });
   }
   if (splitSummary && splitSummary.bills.rejected > 0) {
-    todo.push({ kind: 'fbp_bills', rejected: splitSummary.bills.rejected, inReview: splitSummary.bills.inReview, dueOn: split!.billsDueOn });
+    todo.push({ kind: 'fbp_bills', rejected: splitSummary.bills.rejected, inReview: splitSummary.bills.inReview, dueOn: split!.billsDueOn, ...notSet(split!.billsDueOn ? [] : ['billsDue']) });
   }
-  if (!declaration.chosen && !declaration.locked) todo.push({ kind: 'tax_regime', regime: declaration.regime, chosen: false, dueOn: declaration.dueOn });
+  if (!declaration) {
+    todo.push({ kind: 'tax_regime', regime: null, chosen: false, dueOn: null, notConfigured: true, reason: 'tax_rules_not_set_up', missing: [] });
+  } else if (!declaration.chosen && !declaration.locked) {
+    todo.push({ kind: 'tax_regime', regime: declaration.regime, chosen: false, dueOn: declaration.dueOn, ...notSet(declaration.missing) });
+  }
   if (proofs.required && !proofs.locked && proofs.summary.notUploaded + proofs.summary.rejected > 0) {
-    todo.push({ kind: 'investment_proofs', notUploaded: proofs.summary.notUploaded, rejected: proofs.summary.rejected, dueOn: proofs.dueOn });
+    todo.push({ kind: 'investment_proofs', notUploaded: proofs.summary.notUploaded, rejected: proofs.summary.rejected, dueOn: proofs.dueOn, ...notSet(proofs.missing) });
   }
 
   return {
@@ -263,11 +274,18 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
     todo,
     missingPunches: { period, count: punches.count, fixBy: punches.fixBy, locked: punches.locked },
     split: splitSummary,
-    declaration: { fy, regime: declaration.regime, chosen: declaration.chosen, status: declaration.status, locked: declaration.locked, dueOn: declaration.dueOn },
+    declaration: declaration
+      ? {
+        fy, regime: declaration.regime, chosen: declaration.chosen, status: declaration.status, locked: declaration.locked, dueOn: declaration.dueOn,
+        notConfigured: declaration.notConfigured, reason: declaration.notConfigured ? 'payroll_not_configured' : null, missing: declaration.missing,
+      }
+      : { fy, regime: null, chosen: false, status: null, locked: false, dueOn: null, notConfigured: true, reason: 'tax_rules_not_set_up', missing: [] },
     proofs: {
       fy,
       required: proofs.required,
       dueOn: proofs.dueOn,
+      notConfigured: proofs.notConfigured,
+      missing: proofs.missing,
       notUploaded: proofs.summary.notUploaded,
       uploaded: proofs.summary.uploaded,
       approved: proofs.summary.approved,

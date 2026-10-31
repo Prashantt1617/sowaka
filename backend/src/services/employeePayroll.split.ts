@@ -22,7 +22,7 @@ import { fyEndPeriod, splitProblem } from '../shared/payroll/declaration';
 import { applyOverrides, resolveTemplateComponents } from '../shared/payroll/resolve';
 import { fyOf, taxOnIncome, TaxRegime } from '../shared/payroll/tds';
 import {
-  EmployeePayrollError, billsDueOn, dayInMonth, dayOf, deadlinesOf, fyLastDay, lockedPeriods, meOf, nextPeriod, parseFyParam,
+  EmployeePayrollError, NOT_CONFIGURED, billsDueOn, dayInMonth, dayOf, deadlinesOf, fyLastDay, lockedPeriods, meOf, nextPeriod, parseFyParam,
   payrollViewerOrgFor, periodOf,
 } from './employeePayroll.common';
 import { billCategories } from './reimbursementBills.service';
@@ -76,15 +76,17 @@ export async function splitsByUser(org: string, userIds: string[]): Promise<Map<
 
 export interface SplitWindow {
   open: boolean;
-  effectiveFrom: string;
-  effectiveTo: string;
-  closesOn: string;
+  /** Null (and `open` false) while HR has not set the split cutoff day: `reason` "payroll_not_configured". */
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  closesOn: string | null;
   reason: string | null;
 }
 
 /** The first month a change made at `now` applies to, and until when it can still be made for it. */
 export async function splitWindow(org: string, now: Date): Promise<SplitWindow> {
   const { splitCutoffDay } = await deadlinesOf(org);
+  if (splitCutoffDay === null) return { open: false, effectiveFrom: null, effectiveTo: null, closesOn: null, reason: 'payroll_not_configured' };
   let period = periodOf(now);
   if (dayOf(now) > dayInMonth(period, splitCutoffDay)) period = nextPeriod(period);
   const locked = await lockedPeriods(org, period, `${Number(period.slice(0, 4)) + 1}-12`);
@@ -97,7 +99,8 @@ interface Context {
   structure: SalaryStructure;
   template: SalaryTemplate;
   components: FlexibleComponent[];
-  poolPaise: number;
+  /** The template's flexiblePoolPaise; null when HR has not set it (no pool is made up from the limits). */
+  poolPaise: number | null;
   byCode: Map<string, PayHead>;
 }
 
@@ -117,7 +120,7 @@ async function contextFor(org: string, userId: string): Promise<Context> {
   const byCode = new Map(catalog.map((h) => [h.code, h]));
   const resolved = resolveTemplateComponents(applyOverrides(template.components, structure.overrides, byCode), byCode);
   const components = flexibleComponentsOf(resolved, structure, template.balancingComponentCode);
-  const poolPaise = template.flexiblePoolPaise ?? components.reduce((sum, c) => sum + c.limitPaise, 0);
+  const poolPaise = typeof template.flexiblePoolPaise === 'number' ? template.flexiblePoolPaise : null;
   return { org, structure, template, components, poolPaise, byCode };
 }
 
@@ -143,28 +146,45 @@ async function billCounts(org: string, userId: string, fy: string): Promise<Map<
   return out;
 }
 
-const EMPTY_SPLIT = (window: SplitWindow, billsDueOn: string) => ({
-  available: false, poolPaise: 0, assignedPaise: 0, unassignedPaise: 0, components: [], current: null, window, billsDueOn,
+const EMPTY_SPLIT = (window: SplitWindow, billsDueOn: string | null) => ({
+  available: false, notConfigured: false, missing: [] as string[], poolPaise: 0 as number | null, assignedPaise: 0, unassignedPaise: 0 as number | null,
+  components: [], current: null, window, billsDueOn,
 });
+
+/** The FY a split change made now is for: the window's, else (window not set up) today's. */
+const splitFyOf = (window: SplitWindow, now: Date) => fyOf(window.effectiveFrom ?? periodOf(now)).fy;
+
+/** What HR has not set that the split needs: the pool, the cutoff day, the bills date. */
+function splitMissing(ctx: Context, window: SplitWindow, billsDue: string | null): string[] {
+  return [
+    ...(ctx.poolPaise === null ? ['flexiblePoolPaise'] : []),
+    ...(window.effectiveFrom === null ? ['splitCutoffDay'] : []),
+    ...(billsDue === null ? ['billsDue'] : []),
+  ];
+}
 
 /** The person's split as Change my split shows it. */
 export async function mySplit(userId: string, now = new Date()) {
   const ctx = await contextOf(userId);
   const [window, deadlines] = await Promise.all([splitWindow(ctx.org, now), deadlinesOf(ctx.org)]);
-  const billsDue = billsDueOn(fyOf(window.effectiveFrom).fy, deadlines);
+  const billsDue = billsDueOn(splitFyOf(window, now), deadlines);
   if (ctx.components.length === 0) return EMPTY_SPLIT(window, billsDue);
+  const missing = splitMissing(ctx, window, billsDue);
   const [splits, bills] = await Promise.all([
     flexibleSplits().find({ org: ctx.org, userId }, { projection: { _id: 0 } }).toArray(),
     billCounts(ctx.org, userId, fyOf(periodOf(now)).fy),
   ]);
-  const current = splitFor(splits, window.effectiveFrom);
+  const current = splitFor(splits, window.effectiveFrom ?? periodOf(now));
   const amounts = amountsOf(ctx.components, current?.amounts);
   const assigned = Object.values(amounts).reduce((a, b) => a + b, 0);
   return {
     available: true,
+    // HR has not set something the split needs: shown, but it cannot be changed (missing names what).
+    notConfigured: missing.length > 0,
+    missing,
     poolPaise: ctx.poolPaise,
     assignedPaise: assigned,
-    unassignedPaise: Math.max(0, ctx.poolPaise - assigned),
+    unassignedPaise: ctx.poolPaise === null ? null : Math.max(0, ctx.poolPaise - assigned),
     components: ctx.components.map((c) => ({
       code: c.code,
       name: c.name,
@@ -196,19 +216,30 @@ function parseAmounts(raw: unknown): Record<string, number> {
 async function proposal(userId: string, body: Record<string, unknown>, now: Date) {
   const ctx = await contextOf(userId);
   if (ctx.components.length === 0) throw new EmployeePayrollError(409, 'Your salary has no flexible components to split');
-  const window = await splitWindow(ctx.org, now);
+  const [window, deadlines] = await Promise.all([splitWindow(ctx.org, now), deadlinesOf(ctx.org)]);
+  const billsDue = billsDueOn(splitFyOf(window, now), deadlines);
+  const missing = splitMissing(ctx, window, billsDue);
+  if (missing.length > 0 || ctx.poolPaise === null || window.effectiveFrom === null || window.effectiveTo === null || window.closesOn === null || billsDue === null) {
+    throw NOT_CONFIGURED(missing, 'HR has not finished setting up the flexible split yet');
+  }
   const given = parseAmounts(body.amounts);
   const splits = await flexibleSplits().find({ org: ctx.org, userId }, { projection: { _id: 0 } }).toArray();
   const previous = amountsOf(ctx.components, splitFor(splits, window.effectiveFrom)?.amounts);
   const next = { ...previous, ...given };
   const problem = splitProblem(next, ctx.components, ctx.poolPaise);
   if (problem) throw new EmployeePayrollError(400, problem);
-  return { ctx, window, previous, next };
+  return {
+    ctx: { ...ctx, poolPaise: ctx.poolPaise },
+    window: { ...window, effectiveFrom: window.effectiveFrom, effectiveTo: window.effectiveTo, closesOn: window.closesOn },
+    previous,
+    next,
+    billsDue,
+  };
 }
 
 /** What a split would be, without saving it (Review). */
 export async function reviewSplit(userId: string, body: Record<string, unknown>, now = new Date()) {
-  const { ctx, window, previous, next } = await proposal(userId, body, now);
+  const { ctx, window, previous, next, billsDue } = await proposal(userId, body, now);
   const total = Object.values(next).reduce((a, b) => a + b, 0);
   return {
     effectiveFrom: window.effectiveFrom,
@@ -226,7 +257,7 @@ export async function reviewSplit(userId: string, body: Record<string, unknown>,
     poolPaise: ctx.poolPaise,
     unassignedPaise: Math.max(0, ctx.poolPaise - total),
     monthlyTaxSavingPaise: await taxSaving(ctx, next, window.effectiveFrom).catch(() => null),
-    billsDueOn: billsDueOn(fyOf(window.effectiveFrom).fy, await deadlinesOf(ctx.org)),
+    billsDueOn: billsDue,
   };
 }
 
@@ -352,7 +383,10 @@ export async function splitForHr(viewerUserId: string, userId: string, fyRaw: un
     hasSalaryStructure: ctx !== null,
     available: (ctx?.components.length ?? 0) > 0,
     template: ctx ? { code: ctx.template.code, name: ctx.template.name } : null,
+    // Null while the template has no flexiblePoolPaise (HR sets it on the salary template).
     poolPaise: ctx?.poolPaise ?? null,
+    notConfigured: ctx !== null && ctx.components.length > 0 && (ctx.poolPaise === null || window.effectiveFrom === null || deadlines.billsDue === null),
+    missing: ctx && ctx.components.length > 0 ? splitMissing(ctx, window, billsDueOn(fy, deadlines)) : [],
     asOf,
     // What applies before any split (or with none): the structure's own amounts.
     baseline: (ctx?.components ?? []).map((c) => ({ code: c.code, name: c.name, amountPaise: c.basePaise, limitPaise: c.limitPaise })),

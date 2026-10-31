@@ -6,7 +6,9 @@
  * person's flexible split and its history (payroll access and same company
  * only), and the per-day fix-by of missing punches from each person's shift
  * policy correction window (different windows, a day past its window,
- * corrections off, a locked month). It drops and recreates its own database,
+ * corrections off, a locked month). No payroll value has a default in code:
+ * unset deadlines, a FY without tax rules and a template without a pool each
+ * come back as not set up; the one-time seed fills the deadlines. It drops and recreates its own database,
  * and refuses any other. Test data is the `sowaka` org with invented people
  * and amounts. Run with
  *   npm run payroll:dashboard-check
@@ -14,17 +16,18 @@
 import type { NextFunction, Request, Response } from 'express';
 import {
   attendanceRecords, attendanceRegularizations, companies, connectDb, flexibleSplits, getDb, payHeads, payrollRuns, salaryStructures,
-  salaryTemplates, shiftPolicies, shiftTemplates, users,
+  salaryTemplates, shiftPolicies, shiftTemplates, taxDeclarations, tdsConfigs, users,
 } from '../config/db';
 import { env } from '../config/env';
 import { requirePayrollApp } from '../controllers/employeePayroll.controller';
 import { tabsForRequest } from '../models/dashboard-tabs';
 import { PayHead } from '../models/payHead.model';
 import { getCurrentAuthUser } from '../services/auth.service';
-import { myDeclaration } from '../services/employeePayroll.declaration';
+import { myDeclaration, myProofs, saveMyDeclaration, uploadMyProof } from '../services/employeePayroll.declaration';
 import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
-import { employeeAppSettingsForHr, setEmployeeAppSettingsForHr } from '../services/employeePayroll.settings';
-import { mySplit, saveSplit, splitForHr, splitWindow } from '../services/employeePayroll.split';
+import { employeeAppSettingsForHr, seedEmployeePayrollSettings, setEmployeeAppSettingsForHr } from '../services/employeePayroll.settings';
+import { mySplit, reviewSplit, saveSplit, splitForHr, splitWindow } from '../services/employeePayroll.split';
+import { TDS_SEED } from '../shared/payroll/tds';
 import { getOrgShiftPolicy } from '../services/shift.service';
 
 const SCRATCH = 'payroll_dashboard_scratch';
@@ -105,13 +108,13 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     org: ORG, userId: 'asha', salaryTemplateCode: 'FLEX', annualCtcPaise: R(12_00_000), componentValues: { FUEL: R(1500), INTERNET: R(500) }, status: 'active', createdAt: now, updatedAt: now,
   } as never);
 
-  // —— the app's payroll settings: off by default ——
+  // —— the app's payroll settings: off, and nothing set, until HR sets them ——
   const oct20 = new Date('2026-10-20T06:00:00Z');
   const s0 = await employeeAppSettingsForHr('hr', FY, oct20);
-  check('settings: a company that never set them has Payroll off and the default deadlines',
-    s0.settings.appEnabled === false && s0.settings.splitCutoffDay === 15 && s0.settings.declarationDue === '11-30' && s0.settings.proofsDue === '01-31'
-    && s0.settings.billsDue === '03-31' && s0.customised.length === 0, s0);
-  check('settings: the dates of FY 2026-27', s0.dates.declarationDueOn === '2026-11-30' && s0.dates.proofsDueOn === '2027-01-31' && s0.dates.billsDueOn === '2027-03-31' && s0.dates.splitClosesOn === '2026-10-15', s0.dates);
+  check('settings: a company that never set them has Payroll off and no deadlines (no defaults in code)',
+    s0.settings.appEnabled === false && s0.settings.splitCutoffDay === null && s0.settings.declarationDue === null && s0.settings.proofsDue === null
+    && s0.settings.billsDue === null && s0.missing.join() === 'splitCutoffDay,declarationDue,proofsDue,billsDue' && s0.ready === false && !('defaults' in s0), s0);
+  check('settings: no dates either', Object.values(s0.dates).every((v) => v === null), s0.dates);
   const off = await myPayrollHome('asha', undefined, oct20);
   check('home while off: appEnabled false and nothing else', off.appEnabled === false && Object.keys(off).sort().join() === 'appEnabled,fy,period', off);
   const blocked = await gate(ORG);
@@ -143,11 +146,69 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('settings: a declaration date in the wrong year of the FY (400)', await bad({ declarationDue: '2027-12-15' }));
   check('settings: a proofs date in the FY\'s first year (400)', await bad({ proofsDue: '2026-02-15' }));
   check('settings: not a date (400)', await bad({ proofsDue: 'soon' }));
+  const early = await refusal(() => setEmployeeAppSettingsForHr('hr', FY, { appEnabled: true, splitCutoffDay: 20 }, oct20));
+  check('settings: switching Payroll on before every deadline is set is refused (409), naming them',
+    early?.status === 409 && early.details?.reason === 'payroll_not_configured' && (early.details?.missing as string[]).join() === 'declarationDue,proofsDue,billsDue'
+    && /declarationDue, proofsDue, billsDue/.test(early.message ?? ''), early);
   check('settings: a refused change saves nothing', (await companies().findOne({ id: ORG }))?.payrollEmployee === undefined);
 
-  const s1 = await setEmployeeAppSettingsForHr('hr', FY, { appEnabled: true, splitCutoffDay: 20, declarationDue: '2026-12-15', proofsDue: '2027-02-15', billsDue: '03-15' }, oct20);
-  check('settings: saved, a full date kept as its month and day', s1.settings.appEnabled && s1.settings.splitCutoffDay === 20 && s1.settings.declarationDue === '12-15'
-    && s1.settings.proofsDue === '02-15' && s1.settings.billsDue === '03-15' && s1.updatedBy === 'hr' && s1.customised.length === 5, s1);
+  // —— what the app's screens say while a deadline is not set ——
+  await tdsConfigs().insertMany(TDS_SEED.map((c) => ({ ...c, createdAt: now, updatedAt: now })));
+  const dNo = await myDeclaration('asha', FY, oct20);
+  check('declaration without a due date: notConfigured, no date, not locked', dNo.notConfigured && dNo.dueOn === null && !dNo.locked && dNo.missing.join() === 'declarationDue' && dNo.proofsDueOn === null, dNo);
+  const dSave = await refusal(() => saveMyDeclaration('asha', FY, { regime: 'old', items: { ppf: R(10_000) } }, oct20));
+  check('…and cannot be saved (409 payroll_not_configured)', dSave?.status === 409 && dSave.details?.reason === 'payroll_not_configured', dSave);
+  const spNo = await mySplit('asha', oct20);
+  check('split without a cutoff day or bills date: notConfigured, the window closed with no dates',
+    spNo.notConfigured && spNo.missing.join() === 'splitCutoffDay,billsDue' && !spNo.window.open && spNo.window.effectiveFrom === null && spNo.window.reason === 'payroll_not_configured' && spNo.billsDueOn === null, spNo);
+  const rvNo = await refusal(() => reviewSplit('asha', { amounts: { FUEL: R(2000) } }, oct20));
+  check('…and cannot be reviewed (409, naming what is missing)', rvNo?.status === 409 && (rvNo.details?.missing as string[]).join() === 'splitCutoffDay,billsDue', rvNo);
+  await setEmployeeAppSettingsForHr('hr', FY, { declarationDue: '11-30' }, oct20);
+  await saveMyDeclaration('asha', FY, { regime: 'old', items: { ppf: R(10_000) } }, oct20);
+  const prNo = await myProofs('asha', FY, oct20);
+  check('proofs without a due date: notConfigured, no date', prNo.notConfigured && prNo.dueOn === null && !prNo.locked && prNo.missing.join() === 'proofsDue', prNo);
+  const upNo = await refusal(() => uploadMyProof('asha', 'ppf', FY, { amountPaise: R(10_000) }, oct20));
+  check('…and nothing can be uploaded (409 payroll_not_configured)', upNo?.status === 409 && upNo.details?.reason === 'payroll_not_configured', upNo);
+  // Switched on in the database by hand with deadlines missing: home says what is not set, no made-up dates.
+  await companies().updateOne({ id: ORG }, { $set: { 'payrollEmployee.appEnabled': true } });
+  const hNo = await myPayrollHome('asha', undefined, oct20);
+  const tNo = (kind: string) => (hNo.appEnabled ? hNo.todo.find((t) => t.kind === kind) : undefined);
+  check('home: the split to-do says not configured, with no date', tNo('flexible_split')?.notConfigured === true && tNo('flexible_split')?.dueOn === null, hNo.appEnabled && hNo.todo);
+  check('home: the proofs to-do says not configured, with no date', tNo('investment_proofs')?.notConfigured === true && tNo('investment_proofs')?.dueOn === null, hNo.appEnabled && hNo.todo);
+  check('home: the split and proofs sections say so too', hNo.appEnabled === true && hNo.split?.notConfigured === true && hNo.proofs.notConfigured === true && hNo.proofs.dueOn === null, hNo.appEnabled && [hNo.split, hNo.proofs]);
+  await companies().updateOne({ id: ORG }, { $unset: { 'payrollEmployee.appEnabled': '' } });
+
+  // The FY's tax rules come only from tds_configs.
+  await tdsConfigs().deleteMany({ fy: FY });
+  const noRules = await refusal(() => myDeclaration('asha', FY, oct20));
+  check('no tax rules for the FY: the declaration says so (409 tax_rules_not_set_up), no caps from code',
+    noRules?.status === 409 && noRules.details?.reason === 'tax_rules_not_set_up' && /FY 2026-27/.test(noRules.message ?? ''), noRules);
+  check('…and cannot be saved (409)', (await refusal(() => saveMyDeclaration('asha', FY, { regime: 'old', items: { ppf: R(20_000) } }, oct20)))?.details?.reason === 'tax_rules_not_set_up');
+  await companies().updateOne({ id: ORG }, { $set: { 'payrollEmployee.appEnabled': true } });
+  const hRules = await myPayrollHome('asha', undefined, oct20);
+  check('home: the declaration section and to-do say the tax rules are not set up',
+    hRules.appEnabled === true && hRules.declaration.notConfigured === true && hRules.declaration.reason === 'tax_rules_not_set_up'
+    && hRules.todo.some((t) => t.kind === 'tax_regime' && t.notConfigured === true && t.reason === 'tax_rules_not_set_up'), hRules.appEnabled && hRules.declaration);
+  await companies().updateOne({ id: ORG }, { $unset: { 'payrollEmployee.appEnabled': '' } });
+  await tdsConfigs().insertMany(TDS_SEED.filter((c) => c.fy === FY).map((c) => ({ ...c, createdAt: now, updatedAt: now })));
+  check('(the rules back: the declaration reads)', (await myDeclaration('asha', FY, oct20)).fy === FY);
+
+  // —— the one-time seed: today's values where HR has not set them ——
+  const dry = await seedEmployeePayrollSettings(ORG, false, oct20);
+  check('seed dry run: would write the three unset deadlines, keeps the one HR set, writes nothing',
+    !dry.applied && JSON.stringify(dry.writes) === JSON.stringify({ splitCutoffDay: 15, proofsDue: '01-31', billsDue: '03-31' }) && dry.kept.join() === 'declarationDue'
+    && (await employeeAppSettingsForHr('hr', FY, oct20)).missing.length === 3, dry);
+  await setEmployeeAppSettingsForHr('hr', FY, { declarationDue: '2026-12-15' }, oct20);
+  const applied = await seedEmployeePayrollSettings(ORG, true, oct20);
+  const afterSeed = await employeeAppSettingsForHr('hr', FY, oct20);
+  check('seed --apply: writes them, leaves HR\'s declaration date (15 Dec) and the switch alone',
+    applied.applied && afterSeed.ready && afterSeed.settings.declarationDue === '12-15' && afterSeed.settings.splitCutoffDay === 15 && afterSeed.settings.billsDue === '03-31'
+    && afterSeed.settings.appEnabled === false, afterSeed);
+  check('seed again: nothing left to write', Object.keys((await seedEmployeePayrollSettings(ORG, true, oct20)).writes).length === 0);
+
+  const s1 = await setEmployeeAppSettingsForHr('hr', FY, { appEnabled: true, splitCutoffDay: 20, proofsDue: '2027-02-15', billsDue: '03-15' }, oct20);
+  check('settings: every deadline set, Payroll switched on; a full date kept as its month and day', s1.settings.appEnabled && s1.settings.splitCutoffDay === 20 && s1.settings.declarationDue === '12-15'
+    && s1.settings.proofsDue === '02-15' && s1.settings.billsDue === '03-15' && s1.updatedBy === 'hr' && s1.ready && s1.missing.length === 0, s1);
   check('settings: stored on the company', (await companies().findOne({ id: ORG }))?.payrollEmployee?.declarationDue === '12-15');
   const on = await myPayrollHome('asha', undefined, oct20);
   check('home once on: appEnabled true with the full summary', on.appEnabled === true && 'todo' in on && 'salary' in on, Object.keys(on));
@@ -158,12 +219,25 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   const w20 = await splitWindow(ORG, oct20);
   check('the split cutoff of 20: a change on 20 Oct still applies from October, until 20 Oct', w20.effectiveFrom === '2026-10' && w20.closesOn === '2026-10-20', w20);
   check('the split shows the new bills date', (await mySplit('asha', oct20)).billsDueOn === '2027-03-15');
-  const s2 = await setEmployeeAppSettingsForHr('hr', FY, { billsDue: null, splitCutoffDay: null }, oct20);
-  check('settings: null puts a field back to its default, the rest stay', s2.settings.billsDue === '03-31' && s2.settings.splitCutoffDay === 15 && s2.settings.proofsDue === '02-15'
-    && !s2.customised.includes('billsDue'), s2);
+  const clear = await refusal(() => setEmployeeAppSettingsForHr('hr', FY, { billsDue: null }, oct20));
+  check('settings: clearing a deadline while Payroll is on is refused (409)', clear?.status === 409 && (clear.details?.missing as string[]).join() === 'billsDue', clear);
   await setEmployeeAppSettingsForHr('hr', FY, { appEnabled: false }, oct20);
   check('switched off again: home is off', (await myPayrollHome('asha', undefined, oct20)).appEnabled === false);
-  await setEmployeeAppSettingsForHr('hr', FY, { appEnabled: true }, oct20);
+  const s2 = await setEmployeeAppSettingsForHr('hr', FY, { billsDue: null }, oct20);
+  check('settings: with Payroll off, null clears a deadline (it is then missing, not defaulted)', s2.settings.billsDue === null && s2.missing.join() === 'billsDue' && s2.dates.billsDueOn === null, s2);
+  await setEmployeeAppSettingsForHr('hr', FY, { billsDue: '03-31', appEnabled: true }, oct20);
+
+  // —— the flexible pool comes from the template only ——
+  await salaryTemplates().updateOne({ code: 'FLEX' }, { $unset: { flexiblePoolPaise: '' } });
+  const noPool = await mySplit('asha', oct20);
+  check('no pool on the template: the split says not configured, no pool made up from the limits',
+    noPool.notConfigured && noPool.missing.join() === 'flexiblePoolPaise' && noPool.poolPaise === null && noPool.unassignedPaise === null, noPool);
+  const rvPool = await refusal(() => reviewSplit('asha', { amounts: { FUEL: R(2000) } }, oct20));
+  check('…and cannot be changed (409, flexiblePoolPaise missing)', rvPool?.status === 409 && (rvPool.details?.missing as string[]).join() === 'flexiblePoolPaise', rvPool);
+  const hrNoPool = await splitForHr('hr', 'asha', FY, oct20);
+  check('…and HR sees it the same way', hrNoPool.poolPaise === null && hrNoPool.notConfigured && hrNoPool.missing.join() === 'flexiblePoolPaise', hrNoPool);
+  await salaryTemplates().updateOne({ code: 'FLEX' }, { $set: { flexiblePoolPaise: R(4000) } });
+  await taxDeclarations().deleteMany({});
 
   // —— HR reads a person's flexible split and its history ——
   // A split saved before pools and limits were kept with it.

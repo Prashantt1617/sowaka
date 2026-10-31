@@ -61,7 +61,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   if (db.databaseName !== SCRATCH) throw new Error(`refusing to run against ${db.databaseName}: set MONGODB_DB=${SCRATCH}`);
   await db.dropDatabase();
 
-  await companies().insertOne({ id: ORG, name: 'Sowaka (scratch)', payrollEmployee: { appEnabled: true } } as never);
+  await companies().insertOne({ id: ORG, name: 'Sowaka (scratch)', payrollEmployee: { appEnabled: true, splitCutoffDay: 15, declarationDue: '11-30', proofsDue: '01-31', billsDue: '03-31' } } as never);
   await companies().insertOne({ id: 'otherco', name: 'Other (scratch)' } as never);
   // People punch in and out (the default policy marks everyone present).
   await shiftPolicies().insertOne({ org: ORG, correction: { punchFormat: 'Geotag (powered by Sowaka)' } } as never);

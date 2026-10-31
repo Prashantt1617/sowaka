@@ -32,15 +32,32 @@ The sign-in / profile payload (`user` from `POST /auth/verify-otp` and `GET /aut
 the same switch as `features.payroll` (boolean), so the app can hide the
 Payroll entry without another call. (`/payslips/*` is unchanged and not gated.)
 
-Default deadlines (HR changes them with `PUT /admin/payroll/employee-app-settings`, §8):
+**Every payroll value comes from the database, set on the HR dashboard.**
+There are no defaults in code. Whatever HR has not set yet is reported as
+not set up, never replaced by an invented value:
 
-| What | Default |
+- a section or to-do carries `"notConfigured": true` and `"missing": [field…]`
+  (the settings HR still has to fill: `splitCutoffDay`, `declarationDue`,
+  `proofsDue`, `billsDue`, `flexiblePoolPaise`), and its date is `null`;
+- an action that needs it answers `409` with
+  `{ "message": "…", "details": { "reason": "payroll_not_configured", "missing": ["billsDue"] } }`;
+- a FY whose income tax rules (`tds_configs`) are missing answers `409` with
+  `details: { "reason": "tax_rules_not_set_up", "fy": "2026-27" }` on the
+  declaration endpoints (home shows the declaration as not configured instead).
+
+HR cannot switch Payroll on in the app (§8) until every deadline is set, so
+the deadline cases only show if a value is removed from the database by hand.
+
+Deadlines (HR sets them with `PUT /admin/payroll/employee-app-settings`, §8;
+the values below are the ones the one-time seed writes, which HR can change):
+
+| What | Deadline |
 | --- | --- |
-| Change the flexible split for a month | until the **15th** of that month (`splitCutoffDay`) and only while that month's run is not locked |
+| Change the flexible split for a month | until the `splitCutoffDay` of that month (seed: the **15th**) and only while that month's run is not locked |
 | Fix a missing punch / absent day | **per day**: the day + the correction window of the person's shift policy (`correction.backdateDays`, e.g. 7 days), and only while that month's run is not locked. Not a company setting: it comes from the shift policy, see §2 |
-| Choose the regime and declare investments | **30 Nov** of the FY (`declarationDue: "11-30"`) |
-| Upload investment proofs | **31 Jan** of the FY (`proofsDue: "01-31"`) |
-| Upload bills for the flexible heads | **31 Mar** of the FY (`billsDue: "03-31"`) |
+| Choose the regime and declare investments | `declarationDue` of the FY (seed: **30 Nov**, `"11-30"`) |
+| Upload investment proofs | `proofsDue` of the FY (seed: **31 Jan**, `"01-31"`) |
+| Upload bills for the flexible heads | `billsDue` of the FY (seed: **31 Mar**, `"03-31"`) |
 
 A payroll run is **locked** for a month once it is past draft: status
 `pending_approval`, `approved` or `paid`. A `draft` run is still being worked
@@ -86,15 +103,24 @@ Query: `period` (optional, `YYYY-MM`, default this month).
   ],
   "missingPunches": { "period": "2026-10", "count": 4, "fixBy": "2026-10-20", "locked": false },   // as GET /payroll/missing-punches: fixBy null when nothing is fixable
   "split": {                           // null when the person's template has no flexible components
+    "notConfigured": false, "missing": [],   // true + e.g. ["flexiblePoolPaise"]: HR has not set something the split needs; dates/pool may be null
     "open": true, "effectiveFrom": "2026-11", "closesOn": "2026-11-15",
     "poolPaise": 600000, "assignedPaise": 450000, "unassignedPaise": 150000,
     "bills": { "approved": 16, "inReview": 3, "rejected": 1 }
   },
-  "declaration": { "fy": "2026-27", "regime": "new", "chosen": false, "status": "not_started", "locked": false, "dueOn": "2026-11-30" },
-  "proofs": { "fy": "2026-27", "required": false, "dueOn": "2027-01-31", "notUploaded": 0, "uploaded": 0, "approved": 0, "rejected": 0 }
+  "declaration": { "fy": "2026-27", "regime": "new", "chosen": false, "status": "not_started", "locked": false, "dueOn": "2026-11-30",
+                   "notConfigured": false, "reason": null, "missing": [] },
+  // not set up: { "fy", "regime": null, "chosen": false, "status": null, "locked": false, "dueOn": null,
+  //               "notConfigured": true, "reason": "tax_rules_not_set_up" | "payroll_not_configured", "missing": [] | ["declarationDue"] }
+  "proofs": { "fy": "2026-27", "required": false, "dueOn": "2027-01-31", "notConfigured": false, "missing": [],
+              "notUploaded": 0, "uploaded": 0, "approved": 0, "rejected": 0 }
 }
 ```
 
+- Every to-do carries `notConfigured`. When true it also has `reason`
+  (`"payroll_not_configured"`, or `"tax_rules_not_set_up"` for `tax_regime`)
+  and `missing`, and its `dueOn` is `null`: show it as "not set up yet", not
+  as something to do by a date.
 - `todo` kinds: `missing_punches` (some day can still be fixed: inside its
   correction window, month not locked, no pending or approved correction;
   `dueOn` is the earliest of those days' `fixBy`), `flexible_split`
@@ -174,7 +200,9 @@ Allowance) and taxed in full. Assigned amounts are paid every month and become
 tax-free as bills are approved.
 
 The pool is the template's `flexiblePoolPaise` (HR sets it on the salary
-template, see §7); without one, the pool is the sum of the components' limits.
+template, see §7), and only that: a template with flexible components but no
+pool reports `notConfigured: true, missing: ["flexiblePoolPaise"]`, `poolPaise`
+and `unassignedPaise` `null`, and the split cannot be reviewed or saved (409).
 
 A split takes effect from one month (`effectiveFrom`) to the end of the FY and
 replaces any split before it from that month on.
@@ -186,7 +214,9 @@ replaces any split before it from that month on.
   "success": true,
   "split": {
     "available": true,                 // false: no flexible components; everything below is empty
-    "poolPaise": 600000,
+    "notConfigured": false,            // true: HR has not set something it needs; review/save answer 409
+    "missing": [],                     // of "flexiblePoolPaise" | "splitCutoffDay" | "billsDue"
+    "poolPaise": 600000,               // null when the template has no flexiblePoolPaise
     "assignedPaise": 450000,
     "unassignedPaise": 150000,
     "components": [
@@ -200,7 +230,7 @@ replaces any split before it from that month on.
       }
     ],
     "current": { "effectiveFrom": "2026-04", "submittedAt": "2026-04-10T09:12:00.000Z" },  // the split in force for window.effectiveFrom; null: the template's amounts
-    "window": {
+    "window": {                        // without a splitCutoffDay: { "open": false, "effectiveFrom": null, "effectiveTo": null, "closesOn": null, "reason": "payroll_not_configured" }
       "open": true,                    // always true today: some month is always open (kept for a future hard close)
       "effectiveFrom": "2026-11",      // the first month a change made now applies to
       "effectiveTo": "2027-03",        // the FY's last month
@@ -265,7 +295,8 @@ Errors (both review and save):
   `poolPaise`; `acknowledged` not true (save only).
 - `404` no salary structure assigned.
 - `409` no flexible components on the template; (save) `effectiveFrom` no
-  longer matches the window.
+  longer matches the window; `payroll_not_configured` (pool, cutoff day or
+  bills date not set; `details.missing` names them).
 
 ---
 
@@ -334,8 +365,11 @@ Items and the section each counts in:
 | `rentMonthly` | Rent a month (HRA) | HRA | no cap; the exemption is worked out from Basic, HRA and rent |
 | `homeLoanInterest` | Home loan interest (a year) | 24(b) | ₹2,00,000 |
 
-Caps come from the FY's old-regime tax config (`tds_configs`), so a new
-Finance Act is a data change. Amounts above a cap are accepted and kept (the
+Caps come only from the FY's old-regime tax config (`tds_configs`), so a new
+Finance Act is a data change. There are no figures in code: a FY with no
+old-regime row answers `409` (`details.reason: "tax_rules_not_set_up"`, message
+"The income tax rules for FY 2026-27 are not set up yet. Ask HR.") on GET and
+PUT. (The table's amounts are the FY 2026-27 rows as seeded, for illustration.) Amounts above a cap are accepted and kept (the
 proof may still be asked for), but only the cap counts: see `countedPaise`.
 Every amount is a year's amount except `rentMonthly`. For 80D the section's
 `capPaise` is the self and parents limits together; each item counts up to
@@ -405,7 +439,11 @@ Response: the same `declaration` object as the GET.
 
 Errors: `400` unknown regime, unknown item, `epf` sent, an amount not a
 whole non-negative number of paise, or bad `fy`; `409` past the deadline
-(`locked`).
+(`locked`), `tax_rules_not_set_up`, or `payroll_not_configured` (no
+`declarationDue`).
+
+Without a `declarationDue` the GET has `"notConfigured": true, "missing": ["declarationDue"], "dueOn": null, "locked": false`
+(and `proofsDueOn` is `null` without a `proofsDue`).
 
 The TDS a payroll run withholds reads this declaration (the item totals per
 section) from the next run on.
@@ -470,8 +508,9 @@ with `status: "uploaded"`. A re-upload replaces the earlier file and clears
 the rejection.
 
 Errors: `400` no file, not PDF/JPEG/PNG, bad `amountPaise`, an item not
-declared (or `epf`), new regime; `409` the item is already approved, or past
-`dueOn`; `413` file over 5 MB; `503` file storage not configured.
+declared (or `epf`), new regime; `409` the item is already approved, past
+`dueOn`, or `payroll_not_configured` (no `proofsDue`; the GET then has
+`"notConfigured": true, "missing": ["proofsDue"], "dueOn": null`); `413` file over 5 MB; `503` file storage not configured.
 
 ### `GET /payroll/investment-proofs/:item/file`
 
@@ -546,7 +585,9 @@ such person), `400` bad `fy`.
     "hasSalaryStructure": true,          // false: no structure; baseline is empty, versions may still show
     "available": true,                   // the template has flexible components today
     "template": { "code": "FLEX", "name": "Flexible" },   // null without a structure
-    "poolPaise": 600000,                 // today's pool (template's flexiblePoolPaise, else the sum of limits); null without a structure
+    "poolPaise": 600000,                 // today's pool: the template's flexiblePoolPaise; null without one (or without a structure)
+    "notConfigured": false,              // true: the pool, the cutoff day or the bills date is not set
+    "missing": [],                       // of "flexiblePoolPaise" | "splitCutoffDay" | "billsDue"
     "asOf": "2026-10",                   // the month "in force now" means: this month; a past FY's last month; null for a future FY
     "baseline": [                        // what applies with no split: the structure's own amounts
       { "code": "FUEL", "name": "Fuel & vehicle", "amountPaise": 250000, "limitPaise": 300000 }
@@ -586,20 +627,20 @@ Payroll access only (`403` otherwise); the viewer's own company. Query: `fy`
 {
   "success": true,
   "fy": "2026-27",
-  "settings": {                        // what applies: HR's value, else the default
+  "settings": {                        // as stored; null = HR has not set it (there are no defaults)
     "appEnabled": false,               // show Payroll in the app; off until HR turns it on
     "splitCutoffDay": 15,              // day of the month until which that month's split can change
     "declarationDue": "11-30",         // MM-DD, in the FY's first calendar year (April to December)
     "proofsDue": "01-31",              // MM-DD, in the FY's second calendar year (January to March)
-    "billsDue": "03-31"                // MM-DD, in the FY's second calendar year (January to March)
+    "billsDue": null                   // MM-DD, in the FY's second calendar year (January to March)
   },
-  "defaults": { "appEnabled": false, "splitCutoffDay": 15, "declarationDue": "11-30", "proofsDue": "01-31", "billsDue": "03-31" },
-  "customised": ["appEnabled"],        // fields HR has set; the rest are defaults
-  "dates": {                           // the deadlines as days of `fy` (and this month's split cutoff)
+  "missing": ["billsDue"],             // deadlines still to set; Payroll can be switched on only when empty
+  "ready": false,                      // missing is empty
+  "dates": {                           // the deadlines as days of `fy` (and this month's split cutoff); null where not set
     "splitClosesOn": "2026-10-15",
     "declarationDueOn": "2026-11-30",
     "proofsDueOn": "2027-01-31",
-    "billsDueOn": "2027-03-31"
+    "billsDueOn": null
   },
   "updatedAt": "2026-10-31T06:00:00.000Z",   // or null
   "updatedBy": "…"                            // userId, or null
@@ -608,15 +649,19 @@ Payroll access only (`403` otherwise); the viewer's own company. Query: `fy`
 
 ### `PUT /admin/payroll/employee-app-settings`
 
-Body: any of the five fields; a field left out stays as it is, `null` puts
-it back to the default. Query: `fy` (optional; only used to check a full date).
+Body: any of the five fields; a field left out stays as it is, `null`
+clears it (it is then missing: there is no default to fall back to). Query: `fy` (optional; only used to check a full date).
 Response: the same body as the GET.
 
 ```jsonc
 { "appEnabled": true, "splitCutoffDay": 20, "declarationDue": "2026-12-15", "proofsDue": "02-15", "billsDue": null }
 ```
 
-- `appEnabled`: `true` | `false`.
+- `appEnabled`: `true` | `false`. Turning it on is refused with `409`
+  (`details.reason: "payroll_not_configured"`, `details.missing` naming the
+  deadlines, message e.g. "Set proofsDue, billsDue before switching Payroll on
+  in the app") until every deadline is set, counting the ones in the same
+  request. Clearing a deadline while it is on is refused the same way.
 - `splitCutoffDay`: a whole day of the month, **1 to 28**.
 - `declarationDue`, `proofsDue`, `billsDue`: `"MM-DD"`, or a full `"YYYY-MM-DD"`
   date (only its month and day are kept: the deadline repeats every FY). They
@@ -626,4 +671,13 @@ Response: the same body as the GET.
   proofs). 29 February is refused (it does not come every year).
 
 Errors: `400` an unknown field, nothing sent, a value out of range or a date
-outside the FY; `403` no payroll access.
+outside the FY; `403` no payroll access; `409` `payroll_not_configured` as above.
+
+### One-time seed
+
+`npm run payroll:employee-settings-seed -- --org <org>` (dry run: prints what
+it would write) and `-- --org <org> --apply` write the values the app used
+before HR could set them (cutoff the 15th, `11-30`, `01-31`, `03-31`) into the
+company's settings, only where HR has not set a value, so HR starts from them
+on the dashboard and changes them there. It never touches `appEnabled`. It
+writes to whatever database the environment points at.

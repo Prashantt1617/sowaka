@@ -25,28 +25,41 @@ export class EmployeePayrollError extends Error {
   }
 }
 
-export type PayrollDeadlines = Required<Pick<EmployeePayrollSettings, 'splitCutoffDay' | 'declarationDue' | 'proofsDue' | 'billsDue'>>;
+/**
+ * The company's deadlines for the app's Payroll screens, as HR set them on
+ * the dashboard. There are no defaults in code: a deadline HR has not set is
+ * null, and the screens say it is not set up (`payroll_not_configured`).
+ */
+export interface PayrollDeadlines {
+  splitCutoffDay: number | null;
+  declarationDue: string | null;
+  proofsDue: string | null;
+  billsDue: string | null;
+}
 
-export const DEFAULT_DEADLINES: PayrollDeadlines = {
-  splitCutoffDay: 15,
-  declarationDue: '11-30',
-  proofsDue: '01-31',
-  billsDue: '03-31',
-};
+export const DEADLINE_FIELDS = ['splitCutoffDay', 'declarationDue', 'proofsDue', 'billsDue'] as const;
+export type DeadlineField = (typeof DEADLINE_FIELDS)[number];
 
 const MM_DD = /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
-/** The company's deadlines, each stored one or else its default. */
-export function deadlinesFrom(s: EmployeePayrollSettings | undefined): PayrollDeadlines {
+/** The company's deadlines as stored; anything unset (or unreadable) is null. */
+export function deadlinesFrom(s: EmployeePayrollSettings | undefined | null): PayrollDeadlines {
   const day = Number(s?.splitCutoffDay);
-  const md = (v: unknown, fallback: string) => (typeof v === 'string' && MM_DD.test(v) ? v : fallback);
+  const md = (v: unknown) => (typeof v === 'string' && MM_DD.test(v) ? v : null);
   return {
-    splitCutoffDay: Number.isInteger(day) && day >= 1 && day <= 31 ? day : DEFAULT_DEADLINES.splitCutoffDay,
-    declarationDue: md(s?.declarationDue, DEFAULT_DEADLINES.declarationDue),
-    proofsDue: md(s?.proofsDue, DEFAULT_DEADLINES.proofsDue),
-    billsDue: md(s?.billsDue, DEFAULT_DEADLINES.billsDue),
+    splitCutoffDay: s?.splitCutoffDay !== undefined && s?.splitCutoffDay !== null && Number.isInteger(day) && day >= 1 && day <= 31 ? day : null,
+    declarationDue: md(s?.declarationDue),
+    proofsDue: md(s?.proofsDue),
+    billsDue: md(s?.billsDue),
   };
 }
+
+/** The deadlines HR has not set. */
+export const missingDeadlines = (d: PayrollDeadlines): DeadlineField[] => DEADLINE_FIELDS.filter((f) => d[f] === null);
+
+/** 409 for something HR has not set up yet on the dashboard. */
+export const NOT_CONFIGURED = (missing: string[], message = 'HR has not finished setting up payroll for the app yet') =>
+  new EmployeePayrollError(409, message, { reason: 'payroll_not_configured', missing });
 
 export async function deadlinesOf(org: string): Promise<PayrollDeadlines> {
   const company = await companies().findOne({ id: org }, { projection: { _id: 0, payrollEmployee: 1 } });
@@ -127,9 +140,10 @@ export function parseFyParam(raw: unknown, now: Date): string {
 }
 
 const fyStartYear = (fy: string) => Number(fy.slice(0, 4));
-export const declarationDueOn = (fy: string, d: Pick<PayrollDeadlines, 'declarationDue'>) => `${fyStartYear(fy)}-${d.declarationDue}`;
-export const proofsDueOn = (fy: string, d: Pick<PayrollDeadlines, 'proofsDue'>) => `${fyStartYear(fy) + 1}-${d.proofsDue}`;
-export const billsDueOn = (fy: string, d: Pick<PayrollDeadlines, 'billsDue'>) => `${fyStartYear(fy) + 1}-${d.billsDue}`;
+/** A deadline as a day of the FY; null when HR has not set it. */
+export const declarationDueOn = (fy: string, d: Pick<PayrollDeadlines, 'declarationDue'>) => (d.declarationDue ? `${fyStartYear(fy)}-${d.declarationDue}` : null);
+export const proofsDueOn = (fy: string, d: Pick<PayrollDeadlines, 'proofsDue'>) => (d.proofsDue ? `${fyStartYear(fy) + 1}-${d.proofsDue}` : null);
+export const billsDueOn = (fy: string, d: Pick<PayrollDeadlines, 'billsDue'>) => (d.billsDue ? `${fyStartYear(fy) + 1}-${d.billsDue}` : null);
 export const fyLastDay = (fy: string) => `${fyStartYear(fy) + 1}-03-31`;
 
 /** A run past draft locks its month: its payslips are the record. */

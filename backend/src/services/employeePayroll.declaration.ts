@@ -13,12 +13,12 @@ import { investmentProofs, salaryStructures, taxDeclarations, users } from '../c
 import { InvestmentProof, InvestmentProofStatus } from '../models/employeePayroll.model';
 import { TaxDeclarationRow } from '../models/tds.model';
 import {
-  DECLARATION_ITEM_KEYS, DECLARATION_ITEMS, DeclarationFlags, DeclarationItemKey, DeclarationItems, declarationSections, FALLBACK_OLD_LIMITS,
+  DECLARATION_ITEM_KEYS, DECLARATION_ITEMS, DeclarationFlags, DeclarationItemKey, DeclarationItems, declarationSections,
   toTaxDeclarations,
 } from '../shared/payroll/declaration';
 import { TaxDeclarations, TaxRegime } from '../shared/payroll/tds';
 import {
-  EmployeePayrollError, dayOf, deadlinesOf, declarationDueOn, meOf, parseFyParam, payrollViewerOrg, proofsDueOn,
+  EmployeePayrollError, NOT_CONFIGURED, dayOf, deadlinesOf, declarationDueOn, meOf, parseFyParam, payrollViewerOrg, proofsDueOn,
 } from './employeePayroll.common';
 import { deleteReimbursementReceipt, hasReceiptStorage, presignReceiptDownload, uploadInvestmentProof } from './s3-receipt.service';
 import { computeStructureFor } from './salaryStructure.service';
@@ -83,10 +83,24 @@ async function epfYearOf(org: string, userId: string): Promise<number> {
   }
 }
 
+/**
+ * The FY's tax rules, from `tds_configs` only: the old regime's caps are
+ * read there and nowhere else. A FY with no old-regime row has no rules set
+ * up, and the declaration says so rather than guess the figures.
+ */
+async function taxRulesFor(fy: string) {
+  const configs = await tdsConfigsFor(fy);
+  const old = configs.get('old');
+  if (!old?.limits) {
+    throw new EmployeePayrollError(409, `The income tax rules for FY ${fy} are not set up yet. Ask HR.`, { reason: 'tax_rules_not_set_up', fy });
+  }
+  return { configs, limits: old.limits };
+}
+
 async function declarationView(org: string, userId: string, fy: string, now: Date) {
-  const [row, configs, settings, deadlines, epfYear] = await Promise.all([
+  const [row, { configs, limits }, settings, deadlines, epfYear] = await Promise.all([
     taxDeclarations().findOne({ org, userId, fy }, { projection: { _id: 0 } }),
-    tdsConfigsFor(fy),
+    taxRulesFor(fy),
     statutorySettingsFor(org),
     deadlinesOf(org),
     epfYearOf(org, userId),
@@ -99,7 +113,10 @@ async function declarationView(org: string, userId: string, fy: string, now: Dat
     regime,
     chosen: Boolean(row),
     status: (row ? row.status ?? 'saved' : 'not_started') as 'not_started' | 'saved' | 'submitted',
-    locked: dayOf(now) > dueOn,
+    // HR has not set the declaration due date: shown, not open to change (dueOn null).
+    notConfigured: dueOn === null,
+    missing: dueOn === null ? ['declarationDue'] : [],
+    locked: dueOn !== null && dayOf(now) > dueOn,
     dueOn,
     proofsDueOn: proofsDueOn(fy, deadlines),
     submittedAt: row?.submittedAt ? row.submittedAt.toISOString() : null,
@@ -110,7 +127,7 @@ async function declarationView(org: string, userId: string, fy: string, now: Dat
       regime,
       items: itemsOf(row),
       flags,
-      limits: configs.get('old')?.limits ?? FALLBACK_OLD_LIMITS,
+      limits,
       epfYearPaise: epfYear,
     }),
     regimes: [...configs.values()].map((c) => ({ regime: c.regime, configStatus: c.status })),
@@ -125,8 +142,9 @@ export async function myDeclaration(userId: string, fyRaw: unknown, now = new Da
 export async function saveMyDeclaration(userId: string, fyRaw: unknown, body: Record<string, unknown>, now = new Date()) {
   const { org } = await meOf(userId);
   const fy = parseFyParam(fyRaw, now);
-  const deadlines = await deadlinesOf(org);
+  const [deadlines] = await Promise.all([deadlinesOf(org), taxRulesFor(fy)]);
   const dueOn = declarationDueOn(fy, deadlines);
+  if (dueOn === null) throw NOT_CONFIGURED(['declarationDue'], 'HR has not set the declaration due date yet');
   if (dayOf(now) > dueOn) throw new EmployeePayrollError(409, `Declarations for FY ${fy} closed on ${dueOn}. Ask HR to change it.`);
   const regime = body.regime === 'old' || body.regime === 'new' ? body.regime : undefined;
   if (!regime) throw new EmployeePayrollError(400, 'Choose the new or the old regime');
@@ -214,7 +232,10 @@ async function proofsView(org: string, userId: string, fy: string, now: Date) {
     regime,
     required: items.length > 0,
     dueOn,
-    locked: dayOf(now) > dueOn,
+    // HR has not set the proofs due date: no uploads until they do (dueOn null).
+    notConfigured: dueOn === null,
+    missing: dueOn === null ? ['proofsDue'] : [],
+    locked: dueOn !== null && dayOf(now) > dueOn,
     summary: {
       total: items.length,
       notUploaded: count('not_uploaded'),
@@ -249,6 +270,7 @@ export async function uploadMyProof(
   if (row?.regime !== 'old') throw new EmployeePayrollError(400, 'Not needed on the new regime');
   if (!provable(row).some((d) => d.key === item)) throw new EmployeePayrollError(400, `Declare an amount for ${ITEM_BY_KEY.get(item)!.label} first`);
   const dueOn = proofsDueOn(fy, await deadlinesOf(org));
+  if (dueOn === null) throw NOT_CONFIGURED(['proofsDue'], 'HR has not set the proofs due date yet');
   if (dayOf(now) > dueOn) throw new EmployeePayrollError(409, `Proofs for FY ${fy} closed on ${dueOn}`);
   const existing = (await investmentProofs().findOne({ org, userId, fy, item })) as StoredProof | null;
   if (existing?.status === 'approved') throw new EmployeePayrollError(409, 'This proof is already approved');

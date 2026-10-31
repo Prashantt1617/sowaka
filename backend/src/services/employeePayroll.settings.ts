@@ -7,12 +7,16 @@
  * month (the split cutoff) or "MM-DD" (the rest). The dashboard may send a
  * full "YYYY-MM-DD" date instead; it must then fall in the right part of the
  * FY (`?fy=`, default the current one) and only its month and day are kept.
+ *
+ * Nothing here has a default in code: a deadline HR has not set is reported
+ * missing, the app's screens say it is not set up, and Payroll cannot be
+ * switched on in the app until every deadline is set.
  */
 import { companies } from '../config/db';
 import { EmployeePayrollSettings } from '../models/employeePayroll.model';
 import {
-  DEFAULT_DEADLINES, EmployeePayrollError, billsDueOn, dayInMonth, deadlinesFrom, declarationDueOn, parseFyParam, payrollAppEnabledFrom,
-  payrollViewerOrg, periodOf, proofsDueOn,
+  DEADLINE_FIELDS, EmployeePayrollError, NOT_CONFIGURED, billsDueOn, dayInMonth, deadlinesFrom, declarationDueOn, missingDeadlines, parseFyParam,
+  payrollAppEnabledFrom, payrollViewerOrg, periodOf, proofsDueOn,
 } from './employeePayroll.common';
 
 const FIELDS = ['appEnabled', 'splitCutoffDay', 'declarationDue', 'proofsDue', 'billsDue'] as const;
@@ -51,15 +55,17 @@ function parseDate(field: keyof typeof DATE_RULES, raw: unknown, fy: string): st
 function viewOf(s: EmployeePayrollSettings | undefined, fy: string, now: Date) {
   const d = deadlinesFrom(s);
   const month = periodOf(now);
+  const missing = missingDeadlines(d);
   return {
     fy,
+    // As stored; null is a deadline HR has not set (there are no defaults).
     settings: { appEnabled: payrollAppEnabledFrom(s), ...d },
-    defaults: { appEnabled: false, ...DEFAULT_DEADLINES },
-    // Which fields HR has set; the rest are the defaults.
-    customised: FIELDS.filter((f) => s?.[f] !== undefined && s?.[f] !== null),
-    // The deadlines as dates in this FY, and this month's split cutoff.
+    // The deadlines still to set; Payroll can be switched on in the app only once this is empty.
+    missing,
+    ready: missing.length === 0,
+    // The deadlines as dates in this FY, and this month's split cutoff; null where not set.
     dates: {
-      splitClosesOn: dayInMonth(month, d.splitCutoffDay),
+      splitClosesOn: d.splitCutoffDay === null ? null : dayInMonth(month, d.splitCutoffDay),
       declarationDueOn: declarationDueOn(fy, d),
       proofsDueOn: proofsDueOn(fy, d),
       billsDueOn: billsDueOn(fy, d),
@@ -104,6 +110,18 @@ export async function setEmployeeAppSettingsForHr(viewerUserId: string, fyRaw: u
       $set[`payrollEmployee.${f}`] = parseDate(f, raw, fy);
     }
   }
+  // Payroll stays off in the app until every deadline is set: switching it on
+  // (or clearing a deadline while it is on) is refused, naming what is missing.
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, payrollEmployee: 1 } });
+  if (!company) throw new EmployeePayrollError(404, 'Company not found');
+  const after: Record<string, unknown> = { ...(company.payrollEmployee ?? {}) };
+  for (const f of given) after[f] = body[f] === null ? undefined : $set[`payrollEmployee.${f}`];
+  if (after.appEnabled === true) {
+    const missing = missingDeadlines(deadlinesFrom(after as EmployeePayrollSettings));
+    if (missing.length > 0) {
+      throw NOT_CONFIGURED(missing, `Set ${missing.join(', ')} before switching Payroll on in the app`);
+    }
+  }
   $set['payrollEmployee.updatedAt'] = now;
   $set['payrollEmployee.updatedBy'] = viewerUserId;
 
@@ -114,4 +132,33 @@ export async function setEmployeeAppSettingsForHr(viewerUserId: string, fyRaw: u
   );
   if (!result) throw new EmployeePayrollError(404, 'Company not found');
   return viewOf(result.payrollEmployee, fy, now);
+}
+
+/** The values the app's payroll used before HR set them, for the one-time seed (src/scripts/payroll-employee-settings-seed.ts). */
+export const SEED_DEADLINES = { splitCutoffDay: 15, declarationDue: '11-30', proofsDue: '01-31', billsDue: '03-31' } as const;
+
+/**
+ * Write SEED_DEADLINES into a company's settings where HR has not set them,
+ * so HR starts from them on the dashboard and can change them. Never touches
+ * a value HR set, nor the app switch. `apply` false only says what it would do.
+ */
+export async function seedEmployeePayrollSettings(org: string, apply: boolean, now = new Date()) {
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, id: 1, payrollEmployee: 1 } });
+  if (!company) throw new EmployeePayrollError(404, `No company ${org}`);
+  const current = deadlinesFrom(company.payrollEmployee);
+  const writes = Object.fromEntries(DEADLINE_FIELDS.filter((f) => current[f] === null).map((f) => [f, SEED_DEADLINES[f]]));
+  const kept = DEADLINE_FIELDS.filter((f) => current[f] !== null);
+  if (apply && Object.keys(writes).length > 0) {
+    await companies().updateOne(
+      { id: org },
+      {
+        $set: {
+          ...Object.fromEntries(Object.entries(writes).map(([f, v]) => [`payrollEmployee.${f}`, v])),
+          'payrollEmployee.updatedAt': now,
+          'payrollEmployee.updatedBy': 'seed:payroll-employee-settings',
+        },
+      },
+    );
+  }
+  return { org, applied: apply && Object.keys(writes).length > 0, writes, kept };
 }
