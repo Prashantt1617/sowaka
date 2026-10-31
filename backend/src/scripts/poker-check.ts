@@ -2,12 +2,29 @@
  * Checks Speed Poker's table with no database: hand rankings, side pots,
  * scripted hands on fixed decks, heads-up blinds, the short all-in rule,
  * timeouts and sitting out, the clock closing a table, and a few hundred
- * random tables played to the end with every chip accounted for.
+ * random tables played to the end with every chip accounted for; and the
+ * group game's rooms (drop-ins between hands, leaving mid-hand, house
+ * players, the host's choices, a room dealt and played to the end).
  *   npx tsx src/scripts/poker-check.ts
  */
 import assert from 'node:assert/strict';
 import type { PokerEvent, PokerResult, PokerTable } from '../models/poker.model';
-import { advance, applyAction, choicesFor, finish, newTable, PokerMoveError, sitIn, startHand, viewFor } from '../services/poker-engine';
+import { addSeat, advance, applyAction, choicesFor, finish, leaveSeat, newTable, PokerMoveError, sitIn, startHand, viewFor } from '../services/poker-engine';
+import {
+  addPlayer,
+  advanceRoom,
+  applySettings,
+  changeHouse,
+  newRoom,
+  parseCode,
+  removePlayer,
+  resetToLobby,
+  ROOMS,
+  startGame,
+  summaryOf,
+  viewFor as roomViewFor,
+  PokerRoomRuleError,
+} from '../services/poker-rooms-engine';
 import {
   boardOf,
   bountiesOnAt,
@@ -547,6 +564,176 @@ check('a practice table with house players plays itself to the end', () => {
     assert.equal(total(t), 6000);
   }
   assert.equal(t.status, 'over');
+});
+
+// ------------------------------------------------------------------ the group game's rooms
+
+check('a drop-in sits out the hand in play and is dealt the next one, with 1,500', () => {
+  const now = 1_000_000;
+  const t = newTable({ id: 'tc', org: 'o', eventId: '', round: 'casual', players: players(3) }, now, seeded(3));
+  assert.equal(t.config.durationMs, 20 * 60_000);
+  assert.ok(addSeat(t, { userId: 'late', name: 'Late', photoUrl: null, office: null }, now));
+  const v = viewFor(t, 'late', now);
+  assert.equal(v.seats.length, 4);
+  assert.equal(v.seats[3].inHand, false);
+  assert.equal(v.seats[3].bet, 0);
+  assert.equal(v.choices, null);
+  // Fold the hand round to its end, then the next deal includes the newcomer.
+  for (let guard = 0; guard < 10 && t.hand!.street !== 'done'; guard++) act(t, t.hand!.toAct!, 'fold', now);
+  advance(t, t.hand!.nextAt! + 1, seeded(4));
+  assert.equal(t.hand!.no, 2);
+  assert.equal(t.hand!.inHand[3], true);
+  assert.equal(total(t), 4 * 1500);
+});
+
+check('a full table takes no drop-in; a seat someone left is reused once out of the hand', () => {
+  const now = 1_000_000;
+  const t = newTable({ id: 'tf', org: 'o', eventId: '', round: 'casual', players: players(6) }, now, seeded(5));
+  assert.equal(addSeat(t, { userId: 'x', name: 'X', photoUrl: null, office: null }, now), false);
+  const leaver = t.seats.findIndex((_, i) => i !== t.hand!.toAct);
+  leaveSeat(t, t.seats[leaver].userId, now);
+  assert.equal(t.hand!.folded[leaver], true);
+  assert.equal(addSeat(t, { userId: 'x', name: 'X', photoUrl: null, office: null }, now), false, 'still in the hand in play');
+  for (let guard = 0; guard < 10 && t.hand!.street !== 'done'; guard++) act(t, t.hand!.toAct!, 'fold', now);
+  advance(t, t.hand!.nextAt! + 1, seeded(6));
+  assert.equal(t.hand!.inHand[leaver], false, 'a leaver is dealt no more');
+  assert.ok(addSeat(t, { userId: 'x', name: 'X', photoUrl: null, office: null }, now));
+  assert.equal(t.seats[leaver].userId, 'x');
+});
+
+check('leaving out of turn folds the hand; the last one left wins the pot; heads-up leave ends the table', () => {
+  const now = 1_000_000;
+  const t = newTable({ id: 'tl', org: 'o', eventId: '', round: 'casual', players: players(3) }, now, seeded(7));
+  const toAct = t.hand!.toAct!;
+  const others = [0, 1, 2].filter((i) => i !== toAct);
+  leaveSeat(t, t.seats[others[0]].userId, now);
+  assert.notEqual(t.hand!.street, 'done');
+  leaveSeat(t, t.seats[others[1]].userId, now);
+  assert.equal(t.hand!.street, 'done');
+  assert.deepEqual(t.hand!.result!.pots[0].winners, [toAct]);
+  assert.equal(total(t), 3 * 1500);
+  advance(t, t.hand!.nextAt! + 1, seeded(8));
+  assert.equal(t.status, 'over');
+  assert.equal(t.standings![0].userId, t.seats[toAct].userId);
+  assert.ok(t.standings!.slice(1).every((s) => s.left));
+});
+
+check('a leaver who comes back gets their own seat and the chips they left with', () => {
+  const now = 1_000_000;
+  const t = newTable({ id: 'tb', org: 'o', eventId: '', round: 'casual', players: players(3) }, now, seeded(9));
+  const seat = t.seats.findIndex((_, i) => i !== t.hand!.toAct);
+  const id = t.seats[seat].userId;
+  leaveSeat(t, id, now);
+  const kept = t.seats[seat].stack;
+  for (let guard = 0; guard < 10 && t.hand!.street !== 'done'; guard++) act(t, t.hand!.toAct!, 'fold', now);
+  advance(t, t.hand!.nextAt! + 1, seeded(10));
+  assert.ok(addSeat(t, players(3)[seat], now));
+  assert.equal(t.seats.filter((s) => s.userId === id).length, 1);
+  assert.equal(t.seats[seat].stack, kept);
+  assert.equal(Boolean(t.seats[seat].left), false);
+});
+
+const host = { userId: 'h', name: 'Hana Host', photoUrl: null, office: null };
+const guest = (i: number) => ({ userId: `g${i}`, name: `Guest ${i}`, photoUrl: null, office: null });
+
+check('room codes: four digits, room:4821 or 4821', () => {
+  assert.equal(parseCode('room:4821'), '4821');
+  assert.equal(parseCode(' 4821 '), '4821');
+  assert.equal(parseCode('0821'), null);
+  assert.equal(parseCode('48211'), null);
+});
+
+check('a room: one person cannot deal; a house player makes two; the host picks the length', () => {
+  const now = 1_000_000;
+  const r = newRoom('4821', 'sowaka', host, now);
+  assert.equal(r.open, true);
+  assert.throws(() => startGame(r, now, seeded(1)), PokerRoomRuleError);
+  assert.equal(applySettings(r, { minutes: 15 }), null);
+  assert.equal(applySettings(r, { minutes: 10, open: false }), true);
+  assert.ok(changeHouse(r, 1));
+  startGame(r, now, seeded(1));
+  assert.equal(r.status, 'playing');
+  assert.equal(r.table!.seats.length, 2);
+  assert.equal(r.table!.endsAt - r.table!.startedAt, 10 * 60_000);
+  assert.equal(applySettings(r, { minutes: 20 }), null, 'not mid-game');
+});
+
+check('a room: six places at most (people and house players), a full lobby deals itself', () => {
+  const now = 1_000_000;
+  const r = newRoom('4822', 'sowaka', host, now, { house: 2 });
+  for (let i = 0; i < 2; i++) addPlayer(r, guest(i), now, false);
+  assert.equal(advanceRoom(r, now, seeded(2), 1000), null, 'five: waits for the host');
+  addPlayer(r, guest(3), now, false);
+  assert.throws(() => addPlayer(r, guest(4), now, false), PokerRoomRuleError);
+  assert.equal(changeHouse(r, 1), false);
+  const effects = advanceRoom(r, now + 500, seeded(2), 1000);
+  assert.ok(effects && effects.some((e) => e.type === 'feed' && e.item.kind === 'start'));
+  assert.equal(r.table!.seats.length, 6);
+});
+
+check('a room: someone who joins mid-game is dealt in from the next hand; a leaver folds and goes', () => {
+  let now = 1_000_000;
+  const r = newRoom('4823', 'sowaka', host, now);
+  addPlayer(r, guest(1), now, false);
+  startGame(r, now, seeded(11));
+  addPlayer(r, guest(2), now, false);
+  assert.equal(r.table!.seats.length, 3);
+  assert.equal(roomViewFor(r, 'g2', now).waiting, false);
+  assert.equal(roomViewFor(r, 'g2', now).table!.seats[2].inHand, false);
+  const effects = removePlayer(r, 'h', 'leave', null, now);
+  assert.equal(r.hostId, 'g1', 'the host role passes on');
+  assert.ok(effects.some((e) => e.type === 'feed' && e.item.kind === 'host'));
+  assert.ok(r.table!.seats[0].left);
+  // On to the next deal: the newcomer plays, the leaver does not.
+  for (let guard = 0; guard < 20 && r.table!.hand!.no === 1; guard++) {
+    now += 25_000;
+    advanceRoom(r, now, seeded(12), 1000);
+  }
+  assert.equal(r.table!.hand!.inHand[2], true);
+  assert.equal(r.table!.hand!.inHand[0], false);
+  assert.equal(summaryOf(r, now).players.length, 2);
+});
+
+check('a room against the house plays itself to the end; the host deals again with chips reset', () => {
+  let now = 1_000_000;
+  const r = newRoom('4824', 'sowaka', host, now, { open: false, house: ROOMS.practiceHouse });
+  startGame(r, now, seeded(13));
+  const r13 = seeded(14);
+  for (let guard = 0; guard < 4000 && r.status === 'playing'; guard++) {
+    now += 1500;
+    const h = r.table!.hand!;
+    if (h.street !== 'done' && r.table!.seats[h.toAct!].userId === 'h') {
+      const c = choicesFor(r.table!, h.toAct!)!;
+      applyAction(r.table!, 'h', { kind: c.canCheck ? 'check' : 'call' }, now);
+    }
+    advanceRoom(r, now, r13, 1000);
+    assert.equal(total(r.table!), 4 * 1500);
+  }
+  assert.equal(r.status, 'over');
+  assert.ok(r.table!.standings!.length === 4);
+  resetToLobby(r);
+  assert.equal(r.status, 'lobby');
+  assert.equal(r.table, null);
+  startGame(r, now, seeded(15));
+  assert.equal(r.gameNo, 2);
+  assert.ok(r.table!.seats.every((s) => s.stack + (r.table!.hand!.committed[r.table!.seats.indexOf(s)] ?? 0) === 1500));
+});
+
+check('a room: a player away for ten seconds sits out so the table does not wait; nobody left closes it', () => {
+  let now = 1_000_000;
+  const r = newRoom('4825', 'sowaka', host, now);
+  addPlayer(r, guest(1), now, false);
+  startGame(r, now, seeded(16));
+  const away = r.players[1];
+  away.online = false;
+  away.offlineAt = now;
+  now += ROOMS.seatGoneMs + 1;
+  advanceRoom(r, now, seeded(17), 1000);
+  assert.ok(r.table!.seats.find((s) => s.userId === 'g1')!.sittingOut);
+  r.players[0].online = false;
+  r.players[0].offlineAt = now;
+  const gone = advanceRoom(r, now + ROOMS.playingIdleMs + 1, seeded(18), 1000);
+  assert.ok(gone && gone.some((e) => e.type === 'delete'));
 });
 
 console.log(`\n${passed} poker checks passed.`);

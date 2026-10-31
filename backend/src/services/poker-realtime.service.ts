@@ -20,6 +20,30 @@ import {
   unwatch,
   watch,
 } from './poker-room.service';
+import {
+  actInRoom,
+  againRoom,
+  forgetRoomSent,
+  hostRoom,
+  houseRoom,
+  inviteToRoom,
+  joinRoom,
+  kickFromRoom,
+  leaveRoom,
+  onRoomConnected,
+  onRoomDisconnected,
+  openInvitesFor,
+  openRooms,
+  PokerRoomError,
+  practiceRoom,
+  quickJoin,
+  roomsHello,
+  setPokerRoomEmitter,
+  settingsRoom,
+  sitInRoom,
+  startRoom,
+  tickPokerRooms,
+} from './poker-rooms.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { verifyTicket } from './scribble-ticket.service';
 import { logger } from '../utils/logger';
@@ -32,7 +56,12 @@ import { logger } from '../utils/logger';
  *
  * Rooms: `poker:user:<id>` (their own table views and toasts),
  * `poker:event:<eventId>` (the shared lobby), `poker:watch:<tableId>`
- * (a table's spectator view).
+ * (a table's spectator view), `poker:room:<org>:<code>` (a group-game
+ * table's feed).
+ *
+ * Two games share the namespace: the group game (`room:*`, rooms any company
+ * with the catalog key can open, `poker-rooms.service.ts`) and an event's day
+ * (`queue:*`, `table:*`, `picks:*`, only while the host has one on).
  */
 
 const TICK_MS = 500;
@@ -43,6 +72,7 @@ let timer: NodeJS.Timeout | undefined;
 const userRoom = (userId: string) => `poker:user:${userId}`;
 const eventRoom = (eventId: string) => `poker:event:${eventId}`;
 const watchRoom = (tableId: string) => `poker:watch:${tableId}`;
+const roomChannel = (org: string, code: string) => `poker:room:${org}:${code}`;
 
 class Bucket {
   private tokens: number;
@@ -94,6 +124,16 @@ export function initPokerRealtime(io: SocketServer): Namespace {
       const sockets = ns.in(userRoom(userId));
       if (on) sockets.socketsJoin(watchRoom(tableId));
       else sockets.socketsLeave(watchRoom(tableId));
+    },
+  });
+
+  setPokerRoomEmitter({
+    toUser: (userId, event, payload) => ns.to(userRoom(userId)).emit(event, payload),
+    toRoom: (org, code, event, payload) => ns.to(roomChannel(org, code)).emit(event, payload),
+    seat: (userId, org, code, inside) => {
+      const sockets = ns.in(userRoom(userId));
+      if (inside) sockets.socketsJoin(roomChannel(org, code));
+      else sockets.socketsLeave(roomChannel(org, code));
     },
   });
 
@@ -154,6 +194,16 @@ async function welcome(socket: Socket): Promise<PokerIdentity | null> {
     who = { userId, org, name: person.name || 'Someone', photoUrl: (await resolveProfilePhoto(person).catch(() => null)) ?? null, office: person.location ?? null };
   }
   await socket.join(userRoom(userId));
+  if (!socket.data.tv) {
+    // Back into their group-game table, and the invites that came while the page was closed.
+    forgetRoomSent(userId);
+    await onRoomConnected(who);
+    try {
+      for (const invite of await openInvitesFor(org, userId)) socket.emit('room:invite', invite);
+    } catch (error) {
+      logger.error('Poker invite replay failed', { userId, org }, error);
+    }
+  }
   const event = await eventFor(org);
   if (event) await socket.join(eventRoom(event.id));
   return who;
@@ -161,7 +211,7 @@ async function welcome(socket: Socket): Promise<PokerIdentity | null> {
 
 function listen(socket: Socket, ready: Promise<PokerIdentity | null>) {
   const tv = Boolean(socket.data.tv);
-  const buckets = { move: new Bucket(3, 8), small: new Bucket(4, 10), pick: new Bucket(1, 5) };
+  const buckets = { move: new Bucket(3, 8), small: new Bucket(4, 10), pick: new Bucket(1, 5), host: new Bucket(5 / 60, 5), join: new Bucket(10 / 60, 10), invite: new Bucket(1, 5) };
 
   const on = (event: string, bucket: Bucket, handler: (who: PokerIdentity, p: Record<string, unknown>) => Promise<unknown>, watchOnly = false) => {
     socket.on(event, async (payload: unknown, ack: unknown) => {
@@ -174,7 +224,7 @@ function listen(socket: Socket, ready: Promise<PokerIdentity | null>) {
         const data = await handler(who, payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {});
         reply({ ok: true, data: data ?? {} });
       } catch (error) {
-        if (error instanceof PokerError) return reply({ ok: false, status: error.status, message: error.message });
+        if (error instanceof PokerError || error instanceof PokerRoomError) return reply({ ok: false, status: error.status, message: error.message });
         logger.error('Poker request failed', { event, userId: socket.data.userId }, error);
         reply({ ok: false, status: 500, message: 'Something went wrong. Try again.' });
       }
@@ -206,12 +256,46 @@ function listen(socket: Socket, ready: Promise<PokerIdentity | null>) {
   on('table:unwatch', buckets.small, (who, p) => unwatch(who, p.tableId), true);
   on('picks:place', buckets.pick, (who, p) => placePick(who, p));
 
+  // The group game: rooms, no event.
+  on('room:hello', buckets.small, (who) => roomsHello(who));
+  on('room:list', buckets.small, async (who) => ({ rooms: await openRooms(who.org) }));
+  on('room:host', buckets.host, (who, p) => hostRoom(who, { open: p.open !== false }));
+  on('room:practice', buckets.host, (who) => practiceRoom(who));
+  on('room:quick', buckets.join, (who) => quickJoin(who));
+  on('room:join', buckets.join, (who, p) => joinRoom(who, p.code, { rejoin: p.rejoin === true }));
+  on('room:leave', buckets.small, async (who) => {
+    await leaveRoom(who);
+    return {};
+  });
+  on('room:invite', buckets.invite, (who, p) => inviteToRoom(who, p.userId));
+  on('room:start', buckets.small, async (who) => {
+    await startRoom(who);
+    return {};
+  });
+  on('room:settings', buckets.small, (who, p) => settingsRoom(who, { minutes: p.minutes, open: p.open }));
+  on('room:house', buckets.small, (who, p) => houseRoom(who, p.delta));
+  on('room:kick', buckets.small, async (who, p) => {
+    await kickFromRoom(who, p.userId);
+    return {};
+  });
+  on('room:again', buckets.small, async (who) => {
+    await againRoom(who);
+    return {};
+  });
+  on('room:act', buckets.move, (who, p) => actInRoom(who, p.action));
+  on('room:sitin', buckets.small, (who) => sitInRoom(who));
+
   socket.on('disconnect', async () => {
     try {
       const who = await ready;
       if (!who || tv) return;
       const remaining = await namespace?.in(userRoom(who.userId)).fetchSockets();
       if (remaining && remaining.length > 0) return;
+      forgetRoomSent(who.userId);
+      await onRoomDisconnected(who);
+      // A socket that arrived while that was written must not be left offline.
+      const arrived = await namespace?.in(userRoom(who.userId)).fetchSockets();
+      if (arrived && arrived.length > 0) await onRoomConnected(who);
       await onGone(who);
     } catch (error) {
       logger.error('Poker disconnect handling failed', { userId: socket.data.userId }, error);
@@ -223,6 +307,7 @@ function start() {
   if (timer) return;
   timer = setInterval(() => {
     void tickPoker().catch((error) => logger.error('Poker tick failed', {}, error));
+    void tickPokerRooms().catch((error) => logger.error('Poker room tick failed', {}, error));
   }, TICK_MS);
   timer.unref?.();
 }
@@ -232,5 +317,6 @@ export function closePokerRealtime(): void {
   timer = undefined;
   namespace = undefined;
   setPokerEmitter(null);
+  setPokerRoomEmitter(null);
   people.clear();
 }

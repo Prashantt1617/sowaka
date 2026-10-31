@@ -24,6 +24,7 @@
     "tileup:check": "tsx src/scripts/tileup-check.ts",
     "poker:check": "tsx src/scripts/poker-check.ts",
     "poker:room-check": "MONGODB_DB=poker_check tsx src/scripts/poker-room-check.ts",
+    "poker:rooms-check": "MONGODB_DB=poker_check tsx src/scripts/poker-rooms-check.ts",
     "notifications:check": "tsx src/scripts/notifications-check.ts",
     "auth-speed:check": "tsx src/scripts/auth-speed-check.ts",
     "hot-paths:check": "tsx src/scripts/hot-paths-check.ts",
