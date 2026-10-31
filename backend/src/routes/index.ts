@@ -25,7 +25,7 @@ import { careRouter } from './care.routes';
 import { profileRouter } from './profile.routes';
 import { supportAdminRouter, supportRouter } from './support.routes';
 import { placementsAdminRouter, placementsRouter } from './placements.routes';
-import { gamesRouter, playRouter, squadWebRouter } from './game-catalog.routes';
+import { gamesRouter, playRouter, pokerWebRouter, squadWebRouter } from './game-catalog.routes';
 import { cupRouter } from './cup.routes';
 import { cupAdminRouter } from './cup-admin.routes';
 import { policiesRouter } from './policy-document.routes';
@@ -77,6 +77,8 @@ router.use('/games', gamesRouter);
 router.use('/play', playRouter);
 // Secret Squad opened in a phone browser (signs in by email code itself).
 router.use('/squad', squadWebRouter);
+// Speed Poker on an office screen (see pokerTvHandler).
+router.use('/poker', pokerWebRouter);
 // The Diwali Cup's page and its API, signed in by ticket (see cup.service).
 router.use('/cup', cupRouter);
 // Pages the app shows inside a tab (the Games home), when on for the company.

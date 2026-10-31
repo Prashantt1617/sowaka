@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<!--POKER-TICKET-->
+<title>Speed Poker</title>
+<style>
+:root{
+  --bg:#081a12; --bg2:#0d2419; --panel:#112b20; --panel2:#163627; --line:rgba(255,255,255,.09);
+  --ink:#eef5ef; --muted:#9db3a6; --faint:#6f877a;
+  --felt1:#23744d; --felt2:#155238; --felt3:#0e3a28; --rail:#1b130c; --rail2:#3a2716;
+  --gold:#e5b850; --gold2:#b88a2a; --red:#e0564b; --blue:#3f8cff; --green:#2fbf71; --club:#1f9d55; --diamond:#2f7de1;
+  --fold:#5b2b2b; --fold2:#a8473f; --call:#1d5f8a; --call2:#2f8fd0; --raise:#8a5a12; --raise2:#e0a12f;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Roboto","Segoe UI",system-ui,sans-serif;
+  --display:"Avenir Next","SF Pro Display","Roboto Condensed",-apple-system,system-ui,sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.35;overscroll-behavior:none}
+body{-webkit-user-select:none;user-select:none}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
+button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.hidden{display:none!important}
+#app{position:fixed;inset:0;display:flex;flex-direction:column;padding-top:var(--safe-t)}
+
+/* ---------- shared bits ---------- */
+.chip{white-space:nowrap;flex:none;display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.02em;background:rgba(255,255,255,.08);color:var(--ink)}
+.chip.gold{background:rgba(229,184,80,.16);color:var(--gold)}
+.chip.red{background:rgba(224,86,75,.16);color:#ff8a7f}
+.chip.green{background:rgba(47,191,113,.16);color:#6fe0a3}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;border-radius:14px;padding:0 18px;font-weight:800;font-size:16px;letter-spacing:.01em}
+.btn.primary{background:linear-gradient(180deg,#f2c95e,#d49c25);color:#2a1a02;box-shadow:0 6px 18px rgba(212,156,37,.25)}
+.btn.ghost{background:rgba(255,255,255,.07);color:var(--ink)}
+.btn.small{min-height:36px;font-size:14px;border-radius:10px;padding:0 12px}
+.btn:disabled{opacity:.45}
+.avatar{width:38px;height:38px;border-radius:50%;background:#2a4a3a center/cover no-repeat;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#dfeee5;flex:none}
+.toast{position:fixed;left:50%;bottom:calc(90px + var(--safe-b));transform:translateX(-50%);background:rgba(10,18,14,.95);border:1px solid var(--line);padding:10px 14px;border-radius:12px;font-size:14px;max-width:88vw;z-index:50;box-shadow:0 8px 30px rgba(0,0,0,.4);transition:opacity .2s}
+
+/* ---------- lobby ---------- */
+#lobby{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px calc(24px + var(--safe-b))}
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand .mark{width:36px;height:36px;border-radius:10px;background:linear-gradient(160deg,var(--felt1),var(--felt3));display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
+.brand h1{margin:0;font-family:var(--display);font-size:20px;font-weight:800;letter-spacing:.01em}
+.brand .sub{font-size:12px;color:var(--muted)}
+.hero{background:radial-gradient(120% 140% at 50% 0%,var(--felt1),var(--felt3) 70%);border-radius:20px;padding:18px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),0 10px 30px rgba(0,0,0,.25);position:relative;overflow:hidden}
+.hero h2{margin:0 0 4px;font-family:var(--display);font-size:22px;font-weight:800}
+.hero p{margin:0 0 14px;color:#cfe4d7;font-size:14px}
+.hero .row{display:flex;gap:10px}
+.hero .row .btn{flex:1}
+.hero .count{font-family:var(--display);font-size:40px;font-weight:800;line-height:1}
+.suits{position:absolute;right:-6px;top:-10px;font-size:84px;opacity:.07;letter-spacing:-8px;pointer-events:none}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 4px}
+.stat{background:var(--panel);border-radius:12px;padding:10px 8px;text-align:center}
+.stat b{display:block;font-family:var(--display);font-size:18px;font-weight:800}
+.stat span{font-size:11px;color:var(--muted)}
+.tabs{display:flex;gap:6px;margin:16px 0 10px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{padding:8px 14px;border-radius:999px;background:var(--panel);color:var(--muted);font-weight:700;font-size:13px;white-space:nowrap}
+.tab.on{background:var(--ink);color:#0b1a12}
+.card{background:var(--panel);border-radius:16px;padding:6px 0;margin-bottom:12px}
+.card h3{margin:8px 14px 6px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.rowi{display:flex;align-items:center;gap:10px;padding:9px 14px}
+.rowi+.rowi{border-top:1px solid var(--line)}
+.rowi .rank{width:24px;text-align:right;font-weight:800;color:var(--muted);font-variant-numeric:tabular-nums}
+.rowi .who{flex:1;min-width:0}
+.rowi .who b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rowi .who span{font-size:12px;color:var(--muted)}
+.rowi .pts{font-weight:800;font-variant-numeric:tabular-nums}
+.rowi.me{background:rgba(229,184,80,.08)}
+.bar{height:8px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--gold2),var(--gold))}
+.empty{padding:16px 14px;color:var(--muted);font-size:14px}
+.rules p{margin:0 14px 10px;font-size:14px;color:#d3e3d9}
+.pickbox{padding:4px 14px 12px}
+.pickbox .q{font-size:13px;color:var(--muted);margin:10px 0 6px}
+.opts{display:flex;flex-wrap:wrap;gap:6px}
+.opt{padding:8px 10px;border-radius:10px;background:var(--panel2);font-size:13px;font-weight:700}
+.opt.on{background:var(--gold);color:#2a1a02}
+.stake{display:flex;align-items:center;gap:8px;margin-top:10px}
+.stake input{flex:1;accent-color:var(--gold)}
+
+/* ---------- table ---------- */
+#table{flex:1;display:flex;flex-direction:column;min-height:0;background:radial-gradient(140% 90% at 50% 40%,#0f2a1e,#06130d 70%)}
+.tbar{display:flex;align-items:center;gap:10px;padding:8px 12px}
+.tbar .back{width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font-size:18px}
+.tbar .title{flex:1;min-width:0}
+.tbar .title b{display:block;font-size:15px}
+.tbar .title span{font-size:12px;color:var(--muted)}
+.tbar .clock{font-family:var(--mono);font-weight:700;font-size:15px;padding:6px 10px;border-radius:10px;background:rgba(0,0,0,.3)}
+.tbar .clock.low{color:#ff8a7f}
+.stage{flex:1;position:relative;min-height:0;margin:0 8px}
+.felt{position:absolute;left:7%;right:7%;top:9%;bottom:15%;border-radius:999px;background:radial-gradient(100% 70% at 50% 45%,var(--felt1),var(--felt2) 60%,var(--felt3));box-shadow:0 0 0 10px var(--rail),0 0 0 12px var(--rail2),0 0 0 13px rgba(229,184,80,.25),0 20px 50px rgba(0,0,0,.55),inset 0 0 60px rgba(0,0,0,.35)}
+.felt::after{content:"";position:absolute;inset:14px;border-radius:999px;border:1px solid rgba(255,255,255,.07)}
+.landscape .felt{left:10%;right:10%;top:14%;bottom:16%}
+.center{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:8px;z-index:3}
+.pot{font-weight:800;font-size:14px;padding:4px 12px;border-radius:999px;background:rgba(0,0,0,.35);color:#f3e2b2}
+.board{display:flex;gap:4px}
+.watermark{position:absolute;left:50%;top:62%;transform:translate(-50%,-50%);font-family:var(--display);font-weight:800;font-size:13px;letter-spacing:.3em;color:rgba(255,255,255,.08);white-space:nowrap}
+
+/* cards: a four-colour deck reads at a glance on a phone */
+.pc{width:38px;height:54px;border-radius:6px;background:#fbfbf7;color:#111;position:relative;box-shadow:0 2px 6px rgba(0,0,0,.4);flex:none;font-family:var(--display)}
+.pc .r{position:absolute;left:4px;top:2px;font-weight:800;font-size:17px;line-height:1}
+.pc .s{position:absolute;right:4px;bottom:1px;font-size:22px;line-height:1}
+.pc.h{color:#d62d2d}.pc.d{color:#1f6fd6}.pc.c{color:#178a44}.pc.s{color:#141414}
+.pc.slot{background:rgba(255,255,255,.06);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1)}
+.pc.back{background:repeating-linear-gradient(45deg,#7a1f1f 0 4px,#8f2a2a 4px 8px);box-shadow:inset 0 0 0 2px #f3e9d0,0 2px 6px rgba(0,0,0,.4)}
+.pc.big{width:58px;height:82px;border-radius:9px}
+.pc.big .r{font-size:26px;left:6px;top:4px}.pc.big .s{font-size:34px;right:6px;bottom:2px}
+.pc.mini{width:24px;height:34px;border-radius:4px}
+.pc.mini .r{font-size:12px;left:3px;top:1px}.pc.mini .s{font-size:13px;right:2px;bottom:0}
+.pc.win{box-shadow:0 0 0 2px var(--gold),0 0 14px rgba(229,184,80,.7)}
+.pc.dim{filter:brightness(.55)}
+.pc.deal{animation:deal .28s ease-out both}
+@keyframes deal{from{transform:translateY(-14px) scale(.9);opacity:0}to{transform:none;opacity:1}}
+
+.seat{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;width:92px;z-index:4;transition:opacity .2s}
+.seat .ring{position:relative;width:56px;height:56px;border-radius:50%;padding:3px;background:rgba(0,0,0,.35)}
+.seat .ring .avatar{width:50px;height:50px;font-size:16px;box-shadow:0 0 0 2px rgba(0,0,0,.5)}
+.seat.toact .ring{background:conic-gradient(var(--gold) calc(var(--t,1)*360deg),rgba(0,0,0,.35) 0)}
+.seat.toact.hurry .ring{background:conic-gradient(var(--red) calc(var(--t,1)*360deg),rgba(0,0,0,.35) 0)}
+.seat .plate{margin-top:-8px;background:rgba(8,14,11,.92);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:3px 8px;min-width:78px;text-align:center;position:relative;z-index:2}
+.seat .plate b{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:84px}
+.seat .plate span{font-size:13px;font-weight:800;color:#f3e2b2;font-variant-numeric:tabular-nums}
+.seat.me .plate{border-color:rgba(229,184,80,.6)}
+.seat.folded{opacity:.45}
+.seat.out{opacity:.3}
+.seat .tag{position:absolute;top:-6px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;padding:1px 6px;border-radius:6px;background:#000;color:#fff;letter-spacing:.04em;z-index:3;white-space:nowrap}
+.seat .tag.allin{background:var(--red)}
+.seat .tag.act{background:#1f2a24;color:#cfe;}
+.seat .tag.bounty{background:var(--gold);color:#2a1a02}
+.seat .hole{position:absolute;top:12px;display:flex;gap:2px;z-index:1}
+.seat .hole.r{left:78px}.seat .hole.l{right:78px}
+.seat .shown{display:flex;gap:2px;margin-top:3px}
+.bet{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;gap:4px;font-size:12px;font-weight:800;color:#f3e2b2;z-index:3;white-space:nowrap}
+.bet i{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#fff 0 22%,#d23c3c 23% 60%,#fff 61% 70%,#d23c3c 71%);box-shadow:0 1px 2px rgba(0,0,0,.5)}
+.dealer{position:absolute;transform:translate(-50%,-50%);width:22px;height:22px;border-radius:50%;background:#f7f3e6;color:#111;font-weight:900;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 4px rgba(0,0,0,.5);z-index:3}
+.banner{position:absolute;left:50%;top:27%;transform:translate(-50%,-50%);background:rgba(8,14,11,.9);border:1px solid rgba(229,184,80,.5);color:#f6e7bd;padding:8px 14px;border-radius:12px;font-weight:700;font-size:14px;z-index:6;text-align:center;max-width:82%;animation:pop .25s ease-out}
+@keyframes pop{from{transform:translate(-50%,-50%) scale(.9);opacity:0}}
+.mine{display:flex;justify-content:center;gap:8px;padding:2px 0 6px;min-height:88px;align-items:flex-end}
+.mine .hand{font-size:12px;color:var(--muted);text-align:center;margin-top:2px}
+
+.actions{padding:8px 10px calc(10px + var(--safe-b));background:linear-gradient(180deg,rgba(6,19,13,0),rgba(6,19,13,.9) 30%)}
+.abar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.abtn{min-height:56px;border-radius:14px;font-weight:800;font-size:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1;box-shadow:inset 0 -3px 0 rgba(0,0,0,.25)}
+.abtn small{font-size:12px;font-weight:700;opacity:.85}
+.abtn.fold{background:linear-gradient(180deg,var(--fold2),var(--fold))}
+.abtn.call{background:linear-gradient(180deg,var(--call2),var(--call))}
+.abtn.raise{background:linear-gradient(180deg,var(--raise2),var(--raise));color:#fff}
+.abtn:disabled{opacity:.4}
+.raisepanel{background:rgba(10,20,15,.97);border:1px solid var(--line);border-radius:16px;padding:12px;margin-bottom:8px}
+.presets{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}
+.presets button{min-height:38px;border-radius:10px;background:var(--panel2);font-weight:800;font-size:13px}
+.slide{display:flex;align-items:center;gap:10px}
+.slide input[type=range]{flex:1;accent-color:var(--gold);height:32px}
+.slide .val{min-width:84px;text-align:right;font-family:var(--display);font-weight:800;font-size:20px}
+.waiting{text-align:center;color:var(--muted);font-size:14px;min-height:56px;display:flex;align-items:center;justify-content:center;gap:8px}
+.sitout{display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(224,86,75,.14);border-radius:12px;padding:10px 12px;margin-bottom:8px;font-size:14px}
+
+.over{position:absolute;inset:0;background:rgba(4,10,7,.82);z-index:20;display:flex;align-items:center;justify-content:center;padding:20px}
+.over .box{background:var(--panel);border-radius:20px;padding:18px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.over h2{margin:0 0 4px;font-family:var(--display);font-size:24px}
+.over p{margin:0 0 12px;color:var(--muted)}
+
+/* ---------- office screen ---------- */
+.tv #lobby{padding:24px 32px}
+.tv .tvgrid{display:grid;grid-template-columns:1.2fr 1fr;gap:20px}
+.tv .tables2{display:grid;grid-template-columns:1fr 1fr;gap:14px;height:calc(100vh - 140px)}
+.tv .tvt{position:relative;background:#06130d;border-radius:20px;overflow:hidden;display:flex;flex-direction:column}
+.tv .tvt .stage{margin:0}
+.tv .brand h1{font-size:30px}
+.tv .rowi .who b{font-size:18px}
+.offline{position:fixed;top:calc(var(--safe-t) + 6px);left:50%;transform:translateX(-50%);background:#5b2b2b;color:#fff;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:700;z-index:60}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app"><div id="boot" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted)">Shuffling up…</div></div>
+<!--SOCKET-IO-->
+<script>
+/* ---------- the connection: Tile Up's live bootstrap, for the /poker namespace ----------
+   The server puts a signed ticket in the page (window.__POKER = {ticket, hopTicket}); the app loads a catalog page with connect-src 'none',
+   so the page first reloads itself once at ?ticket=<hop> (the server answers with a policy that allows its own socket). An office screen's
+   page carries {tv, eventId} instead and watches only. Without either (a browser preview) the page runs its demo. */
+(function(){
+const T=window.__POKER;
+window.Poker={live:false};
+if(!T||typeof T!=='object'||typeof window.io!=='function')return;
+function blockedByPolicy(){ for(const m of document.querySelectorAll('meta[http-equiv]')){ if(String(m.httpEquiv).toLowerCase()!=='content-security-policy')continue;
+    const c=String(m.content||''), d=c.split(';').map(s=>s.trim()).find(s=>/^connect-src\s/i.test(s))||c.split(';').map(s=>s.trim()).find(s=>/^default-src\s/i.test(s));
+    if(d&&/'none'/.test(d))return true; } return false; }
+if(T.ticket&&blockedByPolicy()){
+  const here=location.protocol==='https:'||location.protocol==='http:';
+  if(/[?&]ticket=/.test(location.search)||!here){ window.Poker.fatal='Speed Poker could not reach the game server. Close and reopen it.'; return; }
+  location.replace(location.origin+location.pathname+'?ticket='+encodeURIComponent(T.hopTicket||T.ticket)); window.Poker.hopping=true; return; }
+const auth=T.tv?{tv:String(T.tv)}:{ticket:String(T.ticket)};
+const sock=window.io(location.origin+'/poker',{path:'/connect/socket',auth,transports:['websocket','polling'],tryAllTransports:true,reconnection:true,reconnectionDelay:800,reconnectionDelayMax:5000,randomizationFactor:.3,timeout:10000});
+const handlers={};
+const emit=(type,p)=>{ (handlers[type]||[]).forEach(f=>{ try{f(p)}catch(e){console.error(e)} }); };
+function request(event,payload){ return new Promise((resolve,reject)=>{
+  const go=()=>sock.timeout(8000).emit(event,payload||{},(err,res)=>{
+    if(err)return reject(new Error('No answer from the server. Try again.'));
+    if(!res||res.ok===false)return reject(Object.assign(new Error((res&&res.message)||'Something went wrong. Try again.'),{status:res&&res.status}));
+    resolve(res.data||{}); });
+  if(sock.connected)go(); else { const t=setTimeout(()=>reject(new Error('Not connected. Try again in a moment.')),8000); sock.once('connect',()=>{clearTimeout(t);go();}); } }); }
+let ever=false;
+sock.on('connect',()=>{ emit('connection',{online:true,again:ever}); ever=true; });
+sock.on('disconnect',r=>{ if(r==='io server disconnect')emit('fatal',{message:'The game server closed this connection. Close and reopen Speed Poker.'}); else emit('connection',{online:false}); });
+sock.on('connect_error',err=>{ const code=String((err&&err.data&&err.data.code)||(err&&err.message)||''); if(/ticket|not_allowed/i.test(code))emit('fatal',{message:/expired/.test(code)?'This Speed Poker session has expired. Close and reopen it.':'Speed Poker could not sign you in. Close and reopen it.'}); else emit('connection',{online:false}); });
+['lobby:shared','table:state','table:seated','poker:toast','poker:fatal'].forEach(ev=>sock.on(ev,p=>emit(ev,p)));
+window.Poker={live:true,tv:!!T.tv,on:(type,f)=>{(handlers[type]=handlers[type]||[]).push(f)},request};
+})();
+</script>
+<script>
+/* ---------- the game ---------- */
+(function(){
+'use strict';
+const $=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>Number(n||0).toLocaleString('en-IN');
+const P=window.Poker;
+const app=$('#app');
+const S=window.Sowaka||{};
+const haptic=k=>{ try{ (window.Sowaka&&window.Sowaka.haptic)&&window.Sowaka.haptic(k||'light'); }catch(e){} };
+
+const state={shared:null,mine:null,table:null,view:'lobby',watching:null,tab:'board',raiseOpen:false,raiseTo:0,offset:0,lastHand:0,banner:null,offline:false,tv:!!P.tv,tvTables:{},pick:{}};
+const now=()=>Date.now()+state.offset;
+const me=()=>state.mine&&state.mine.userId;
+const initials=n=>String(n||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
+const first=n=>String(n||'').trim().split(/\s+/)[0]||'Someone';
+const clockOf=ms=>{ ms=Math.max(0,ms); const s=Math.floor(ms/1000); const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60; return h?`${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`:`${m}:${String(x).padStart(2,'0')}`; };
+const hhmm=iso=>{ if(!iso)return ''; const d=new Date(iso); return d.toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit',timeZone:'Asia/Kolkata'}); };
+function toast(msg){ document.querySelectorAll('.toast').forEach(x=>x.remove()); const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>{t.style.opacity='0'; setTimeout(()=>t.remove(),250);},2600); }
+function avatarHtml(name,photo,extra){ return `<div class="avatar ${extra||''}" ${photo?`style="background-image:url('${esc(photo)}')"`:''}>${photo?'':esc(initials(name))}</div>`; }
+
+/* ---------- cards ---------- */
+const SUIT={s:'♠',h:'♥',d:'♦',c:'♣'};
+function card(c,size,cls){ if(!c)return `<div class="pc slot ${size||''}"></div>`; const r=c[0]==='T'?'10':c[0], s=c[1];
+  return `<div class="pc ${s} ${size||''} ${cls||''}"><span class="r">${r}</span><span class="s">${SUIT[s]}</span></div>`; }
+const back=size=>`<div class="pc back ${size||''}"></div>`;
+
+/* ---------- phase words ---------- */
+function phaseWords(sh){ const e=sh.event, g=e.game, t=now();
+  switch(e.phase){
+    case 'upcoming': return {chip:'Starts soon',cls:'',line:e.practice?`Practice day opens ${hhmm(e.practice.from)}`:`Tables open ${hhmm(g.openFrom)}`};
+    case 'practice': return {chip:'Practice day',cls:'green',line:`No points today. Tables close at ${hhmm(e.practice.to)}.`};
+    case 'between': return {chip:'Game day next',cls:'',line:`Tables open ${new Date(g.openFrom).toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short',timeZone:'Asia/Kolkata'})} at ${hhmm(g.openFrom)}`};
+    case 'open': return sh.powerHour?{chip:`Power hour ×${e.rules.powerMultiplier}`,cls:'gold',line:`Every table counts double until ${hhmm(g.powerTo)}.`}:{chip:'Open play',cls:'green',line:`Tables close at ${hhmm(g.openTo)}. Best ${e.rules.bestOf} of your tables count.`};
+    case 'semis-soon': return {chip:'Semifinals next',cls:'gold',line:`Semifinals at ${hhmm(g.semisAt)}. Picks open 15 minutes before.`};
+    case 'semis': return {chip:'Semifinals live',cls:'red',line:'Two tables, top three from each go to the final.'};
+    case 'final-soon': return {chip:'Final next',cls:'gold',line:`The final at ${hhmm(g.finalAt)}.`};
+    case 'final': return {chip:'Final live',cls:'red',line:'Six players, one champion.'};
+    case 'over': return {chip:'Finished',cls:'',line:sh.champion?`${sh.champion.name} is the champion.`:'Thanks for playing.'};
+    default: return {chip:'',cls:'',line:''};
+  } }
+const canSit=sh=>!sh.event.paused&&(sh.event.phase==='open'||sh.event.phase==='practice');
+
+/* ---------- lobby ---------- */
+function renderLobby(){
+  const sh=state.shared;
+  if(!sh){ app.innerHTML=`<div id="lobby"><div class="empty" style="text-align:center;margin-top:30vh">Speed Poker is not on at your company right now.</div></div>`; return; }
+  if(state.tv)return renderTv();
+  const ph=phaseWords(sh), uid=me(), t=now();
+  const qi=sh.queue.findIndex(q=>q.userId===uid), seatedAt=sh.seated[uid], cool=(sh.cooldownUntil[uid]||0)-t;
+  const myRow=sh.board.find(r=>r.userId===uid);
+  let hero='';
+  const stageLive=sh.event.phase==='semis'||sh.event.phase==='final';
+  if(seatedAt){ hero=`<h2>You are at a table</h2><p>Your cards are waiting.</p><div class="row"><button class="btn primary" data-act="mytable">Back to your table</button></div>`; }
+  else if(qi>=0){ const n=sh.queue.length, need=Math.max(0,sh.event.rules.tableSize-n);
+    hero=`<h2>Finding your table</h2><div class="count num">${n}</div><p>${n===1?'person':'people'} waiting · you are #${qi+1}. ${need?`A table starts when ${need} more sit down${sh.event.rules.minPlayers<=n?`, or with ${n} in ${clockOf(sh.event.rules.fallbackMs-(t-Math.min(...sh.queue.map(q=>q.since))))}`:''}.`:'Seating now…'}</p><div class="row"><button class="btn ghost" data-act="leave">Leave the queue</button></div>`; }
+  else if(stageLive){ const st=sh.event.phase==='semis'?sh.semis:sh.final;
+    hero=`<h2>${sh.event.phase==='semis'?'Semifinals':'The final'} are live</h2><p>${ph.line}</p><div class="row">${(st?st.tables:[]).filter(x=>x.tableId).map(x=>`<button class="btn primary" data-watch="${esc(x.tableId)}">Watch ${x.label==='F'?'the final':'table '+esc(x.label)}</button>`).join('')}</div>`; }
+  else if(canSit(sh)){
+    hero=cool>0?`<h2>Good table</h2><p>You can sit again in a moment.</p><div class="row"><button class="btn primary" disabled>Next seat in ${clockOf(cool)}</button></div>`
+      :`<h2>${sh.event.phase==='practice'?'Practice day':'Sit down and play'}</h2><p>${sh.event.phase==='practice'?'Same tables as game day, no points. A table starts the moment six people sit down.':`${sh.event.rules.minutes.open} minute tables. A table starts the moment six sit down.`}</p><div class="row"><button class="btn primary" data-act="sit">Sit me down</button><button class="btn ghost" data-act="practice" style="flex:.6">Practice</button></div>`; }
+  else { hero=`<h2>${esc(ph.chip)}</h2><p>${esc(ph.line)}</p>${sh.event.phase!=='over'&&sh.event.phase!=='draft'?`<div class="row"><button class="btn ghost" data-act="practice">Practice vs the house</button></div>`:''}`; }
+  const stats=sh.event.phase==='practice'||sh.event.phase==='upcoming'?'':`<div class="stats">
+    <div class="stat"><b class="num">${myRow?myRow.played:0}/${sh.event.rules.countedTables}</b><span>tables</span></div>
+    <div class="stat"><b class="num">${myRow?fmt(myRow.score):0}</b><span>score</span></div>
+    <div class="stat"><b class="num">${myRow?'#'+myRow.rank:'—'}</b><span>rank</span></div>
+    <div class="stat"><b class="num">${myRow?myRow.knockouts:0}</b><span>knockouts</span></div></div>`;
+  const tabs=[['board','Board'],['offices','Offices'],['tables','Live tables'],...(sh.semis||sh.final?[['finals','Finals']]:[]),...(sh.event.rules.picks.on&&(sh.semis||sh.final)?[['picks','Picks']]:[]),['rules','How it works']];
+  if(!tabs.some(x=>x[0]===state.tab))state.tab='board';
+  app.innerHTML=`<div id="lobby">
+    <div class="top"><div class="brand"><div class="mark">♠</div><div><h1>${esc(sh.event.name)}</h1><div class="sub">${esc(ph.line)}</div></div></div><span class="chip ${ph.cls}"><span class="dot"></span>${esc(ph.chip)}</span></div>
+    <div class="hero"><div class="suits">♠♥♦♣</div>${hero}</div>
+    ${stats}
+    <div class="tabs">${tabs.map(([k,l])=>`<button class="tab ${state.tab===k?'on':''}" data-tab="${k}">${l}</button>`).join('')}</div>
+    <div id="tabbody">${tabBody(sh)}</div></div>`;
+}
+function boardRows(sh,limit){ const uid=me();
+  if(!sh.board.length)return `<div class="empty">No scores yet. The board fills as tables finish.</div>`;
+  let rows=sh.board.slice(0,limit); const mine=sh.board.find(r=>r.userId===uid); if(mine&&!rows.includes(mine))rows=[...rows,mine];
+  return rows.map(r=>`<div class="rowi ${r.userId===uid?'me':''}"><div class="rank">${r.rank}</div>${avatarHtml(r.name)}<div class="who"><b>${esc(r.name)}${sh.bounties.includes(r.userId)?' <span class="chip gold" style="padding:1px 6px;font-size:10px">BOUNTY</span>':''}</b><span>${esc(r.office||'')}${r.office?' · ':''}${r.played} table${r.played===1?'':'s'} · best ${r.best.map(fmt).join(' / ')}</span></div><div class="pts">${fmt(r.score)}</div></div>`).join(''); }
+function tabBody(sh){
+  switch(state.tab){
+    case 'board': return `<div class="card"><h3>Today's board</h3>${boardRows(sh,30)}</div>`;
+    case 'offices': { const top=Math.max(1,...sh.league.map(o=>o.average));
+      return `<div class="card"><h3>Office league · average best ${sh.event.rules.bestOf}</h3>${sh.league.length?sh.league.map((o,i)=>`<div class="rowi"><div class="rank">${i+1}</div><div class="who"><b>${esc(o.office)}</b><span>${o.players} player${o.players===1?'':'s'}</span><div class="bar"><i style="width:${Math.round(o.average/top*100)}%"></i></div></div><div class="pts">${fmt(o.average)}</div></div>`).join(''):'<div class="empty">No offices on the board yet.</div>'}</div>`; }
+    case 'tables': return `<div class="card"><h3>Playing now</h3>${sh.tables.length?sh.tables.map(t=>`<div class="rowi"><div class="who"><b>${t.round==='semi'?'Semifinal '+esc(t.label):t.round==='final'?'The final':t.round==='practice'?'Practice table':'Table'}${t.power?' · ×2':''}</b><span>${t.players.map(p=>esc(first(p.name))).join(', ')} · ${clockOf(t.endsAt-now())} left</span></div><button class="btn small ghost" data-watch="${esc(t.id)}">Watch</button></div>`).join(''):'<div class="empty">No tables running right now.</div>'}</div>`;
+    case 'finals': return finalsBody(sh);
+    case 'picks': return picksBody(sh);
+    default: return rulesBody(sh);
+  } }
+function finalsBody(sh){ const name=id=>sh.names[id]||'Player';
+  const stage=(title,st)=>st?`<div class="card"><h3>${title}${st.startedAt?(st.endedAt?' · over':' · live'):' · '+(title==='Final'?hhmm(sh.event.game.finalAt):hhmm(sh.event.game.semisAt))}</h3>${st.tables.map(t=>`<div class="rowi"><div class="who"><b>${t.label==='F'?'Final table':'Table '+esc(t.label)}</b><span>${t.players.map(p=>esc(name(p))).join(' · ')}</span></div>${t.tableId&&!st.endedAt?`<button class="btn small ghost" data-watch="${esc(t.tableId)}">Watch</button>`:''}</div>`).join('')}</div>`:'';
+  return (sh.champion?`<div class="card"><h3>Champion</h3><div class="rowi">${avatarHtml(sh.champion.name)}<div class="who"><b>${esc(sh.champion.name)}</b><span>${esc(sh.event.name)}</span></div><div class="pts">🏆</div></div></div>`:'')+stage('Final',sh.final)+stage('Semifinals',sh.semis); }
+function picksBody(sh){ const m=state.mine||{picks:[],picksLeft:{semi:0,final:0},picksOpen:{}}; const r=sh.event.rules.picks, name=id=>sh.names[id]||'Player';
+  const stageBox=(stage,st)=>{ if(!st)return ''; const open=m.picksOpen&&m.picksOpen[stage]; const left=m.picksLeft[stage];
+    const mineHere=m.picks.filter(p=>p.stage===stage);
+    const sel=state.pick[stage]||{};
+    const kinds=[['winner',`Wins the table · pays ${r.winnerOdds}×`],['firstOut',`First one out · pays ${r.firstOutOdds}×`],...(stage==='final'?[['fullTime',`Goes the full time · pays ${r.fullTimeOdds}×`]]:[])];
+    return `<div class="card"><h3>${stage==='semi'?'Semifinal picks':'Final picks'} · ${open?`${fmt(left)} points left`:st.startedAt?'closed':'opens 15 min before'}</h3>
+      ${open?`<div class="pickbox">
+        ${st.tables.length>1?`<div class="q">Table</div><div class="opts">${st.tables.map(t=>`<button class="opt ${sel.table===t.label?'on':''}" data-pick="${stage}|table|${t.label}">Table ${t.label}</button>`).join('')}</div>`:''}
+        <div class="q">Your call</div><div class="opts">${kinds.map(([k,l])=>`<button class="opt ${sel.kind===k?'on':''}" data-pick="${stage}|kind|${k}">${l}</button>`).join('')}</div>
+        ${sel.kind?`<div class="q">${sel.kind==='fullTime'?'Will the final run its full time?':'Who'}</div><div class="opts">${sel.kind==='fullTime'?['yes','no'].map(v=>`<button class="opt ${sel.choice===v?'on':''}" data-pick="${stage}|choice|${v}">${v==='yes'?'Yes, to the clock':'No, someone wins it'}</button>`).join(''):(st.tables.find(t=>t.label===(sel.table||st.tables[0].label))||{players:[]}).players.map(p=>`<button class="opt ${sel.choice===p?'on':''}" data-pick="${stage}|choice|${p}">${esc(name(p))}</button>`).join('')}</div>`:''}
+        <div class="stake"><input id="stake-${stage}" type="range" min="${r.minStake}" max="${Math.max(r.minStake,left)}" step="10" value="${Math.min(left,sel.stake||Math.min(100,left))}"><b class="num" id="stakev-${stage}">${fmt(Math.min(left,sel.stake||Math.min(100,left)))}</b></div>
+        <button class="btn primary" style="width:100%;margin-top:10px" data-act="pick" data-stage="${stage}" ${left<r.minStake?'disabled':''}>Place pick</button></div>`:''}
+      ${mineHere.length?mineHere.map(p=>`<div class="rowi"><div class="who"><b>${p.kind==='winner'?'Wins':p.kind==='firstOut'?'First out':'Full time'}: ${esc(p.kind==='fullTime'?(p.choice==='yes'?'Yes':'No'):name(p.choice))}</b><span>${p.stage==='semi'?'Table '+esc(p.table)+' · ':''}${fmt(p.stake)} points</span></div><div class="pts">${p.payout===null?'—':p.payout>0?'+'+fmt(p.payout):'0'}</div></div>`).join(''):''}</div>`; };
+  return `${stageBox('final',sh.final)}${stageBox('semi',sh.semis)}<div class="card"><h3>Picks board · top ten in the gift draw</h3>${sh.picksBoard.length?sh.picksBoard.slice(0,10).map((p,i)=>`<div class="rowi ${p.userId===me()?'me':''}"><div class="rank">${i+1}</div><div class="who"><b>${esc(p.name)}</b><span>${fmt(p.staked)} staked</span></div><div class="pts">${fmt(p.won)}</div></div>`).join(''):'<div class="empty">No picks settled yet.</div>'}</div>
+  <div class="card rules"><h3>About picks</h3><p>Pick points are handed out free before each round and only count on the picks board. Nothing can be bought, moved or cashed. Players cannot pick on their own round.</p></div>`; }
+function rulesBody(sh){ const r=sh.event.rules;
+  return `<div class="card rules"><h3>How it works</h3>
+  <p><b>The game.</b> No-limit Texas Hold'em. Two cards each, five shared, best five of seven wins.</p>
+  <p><b>Tables.</b> ${r.minutes.open} minutes, up to ${r.tableSize} players, 1,500 chips each. Blinds double every two minutes. 15 seconds to act.</p>
+  <p><b>Seating.</b> Tap Sit me down. A table starts the moment ${r.tableSize} are waiting, or with ${r.minPlayers} after ${Math.round(r.fallbackMs/60000)} minutes. People who have played fewer tables sit first.</p>
+  <p><b>Points.</b> Your chips at the end of a table, plus ${r.knockoutPoints} for every player you knock out${sh.event.game.bountiesFrom?` (${r.bountyPoints} for a bounty from ${hhmm(sh.event.game.bountiesFrom)})`:''}. Busting scores zero for chips. Your best ${r.bestOf} of your first ${r.countedTables} tables make your score.${sh.event.game.powerFrom?` Power hour ${hhmm(sh.event.game.powerFrom)}–${hhmm(sh.event.game.powerTo)} counts double.`:''}</p>
+  <p><b>Finals.</b> At ${hhmm(sh.event.game.openTo)} the top ${r.semifinalists} go to two semifinals (${r.minutes.semi} minutes) at ${hhmm(sh.event.game.semisAt)}. The top ${r.advancePerSemi} from each play the final (${r.minutes.final} minutes) at ${hhmm(sh.event.game.finalAt)}.</p>
+  <p><b>No money.</b> Chips and points are for the boards only. No fees, no buying, no cash.</p></div>`; }
+
+/* ---------- office screen ---------- */
+function renderTv(){ const sh=state.shared, ph=phaseWords(sh);
+  const st=sh.event.phase==='final'||sh.event.phase==='final-soon'||sh.event.phase==='over'?sh.final:sh.event.phase==='semis'||sh.event.phase==='semis-soon'?sh.semis:null;
+  const live=st&&st.startedAt&&!st.endedAt?st.tables.filter(t=>t.tableId):[];
+  for(const t of live)if(!state.tvTables[t.tableId]){ state.tvTables[t.tableId]={}; P.request('table:watch',{tableId:t.tableId}).then(d=>{ if(d.table){ state.tvTables[t.tableId]=d.table; render(); } }).catch(()=>{}); }
+  app.classList.add('tv');
+  if(live.length){ app.innerHTML=`<div id="lobby"><div class="top"><div class="brand"><div class="mark">♠</div><div><h1>${esc(sh.event.name)}</h1><div class="sub">${esc(ph.line)}</div></div></div><span class="chip ${ph.cls}"><span class="dot"></span>${esc(ph.chip)}</span></div>
+    <div class="tables2" style="grid-template-columns:${live.length>1?'1fr 1fr':'1fr'}">${live.map(t=>`<div class="tvt landscape">${tableInner(state.tvTables[t.tableId],true)}</div>`).join('')}</div></div>`; return; }
+  app.innerHTML=`<div id="lobby"><div class="top"><div class="brand"><div class="mark">♠</div><div><h1>${esc(sh.event.name)}</h1><div class="sub">${esc(ph.line)}</div></div></div><span class="chip ${ph.cls}"><span class="dot"></span>${esc(ph.chip)}</span></div>
+    <div class="tvgrid"><div class="card"><h3>Board</h3>${boardRows(sh,15)}</div><div>${sh.champion?`<div class="card"><h3>Champion</h3><div class="rowi">${avatarHtml(sh.champion.name)}<div class="who"><b style="font-size:26px">${esc(sh.champion.name)}</b></div><div class="pts" style="font-size:30px">🏆</div></div></div>`:''}<div class="card"><h3>Office league</h3>${sh.league.map((o,i)=>`<div class="rowi"><div class="rank">${i+1}</div><div class="who"><b>${esc(o.office)}</b><div class="bar"><i style="width:${Math.round(o.average/Math.max(1,...sh.league.map(x=>x.average))*100)}%"></i></div></div><div class="pts">${fmt(o.average)}</div></div>`).join('')||'<div class="empty">—</div>'}</div>
+    <div class="card"><h3>Playing now · ${sh.tables.length} tables · ${sh.queue.length} waiting</h3>${sh.tables.slice(0,8).map(t=>`<div class="rowi"><div class="who"><b>${t.players.map(p=>esc(first(p.name))).join(', ')}</b><span>${clockOf(t.endsAt-now())} left${t.power?' · ×2':''}</span></div></div>`).join('')||'<div class="empty">No tables running.</div>'}</div></div></div></div>`; }
+
+/* ---------- the table ---------- */
+const POS_P={B:[50,90],LL:[8,66],LM:[8,47],LU:[10,25],T:[50,8],RU:[90,25],RM:[92,47],RL:[92,66]};
+const POS_L={B:[50,88],LL:[14,76],LM:[5,48],LU:[14,20],T:[50,9],RU:[86,20],RM:[95,48],RL:[86,76]};
+const LAYOUT={2:['B','T'],3:['B','LU','RU'],4:['B','LM','T','RM'],5:['B','LL','LU','RU','RL'],6:['B','LL','LU','T','RU','RL']};
+function tableTitle(v){ return v.round==='semi'?`Semifinal ${v.label}`:v.round==='final'?'The final':v.round==='practice'?'Practice table':'Open table'; }
+function actionWord(a){ return {fold:'Fold',check:'Check',call:'Call',raise:'Raise',allin:'All in',sb:'SB',bb:'BB',timeout:'Time'}[a]||''; }
+function tableInner(v,landscape){
+  if(!v||!v.seats)return `<div class="waiting" style="flex:1">Loading the table…</div>`;
+  const n=v.seats.length, mySeat=v.mySeat, t=now();
+  const rot=mySeat==null?0:mySeat;
+  const names=LAYOUT[n]||LAYOUT[6], POS=landscape?POS_L:POS_P;
+  const winners=new Set(), winCards=new Set();
+  if(v.result){ v.result.pots.forEach(p=>p.winners.forEach(w=>winners.add(w))); v.result.shown.filter(s=>winners.has(s.seat)).forEach(s=>s.best.forEach(c=>winCards.add(c))); }
+  const seats=v.seats.map(s=>{ const at=names[(s.seat-rot+n)%n], [x,y]=POS[at];
+    const bx=x+(50-x)*.42, by=y+(46-y)*.42, dx=x+(50-x)*.3+(x<50?7:-7), dy=y+(46-y)*.3;
+    const showRight=x<50;
+    const ring=s.toAct&&v.deadline?Math.max(0,Math.min(1,(v.deadline-t)/v.actionMs)):1;
+    const shown=s.cards&&!s.me;
+    const tag=s.busted?'<span class="tag">OUT</span>':s.allIn?'<span class="tag allin">ALL IN</span>':s.sittingOut?'<span class="tag">AWAY</span>':s.lastAction&&!s.toAct&&v.street!=='done'?`<span class="tag act">${actionWord(s.lastAction)}</span>`:winners.has(s.seat)?'<span class="tag bounty">WINNER</span>':'';
+    const holeBacks=s.inHand&&!s.folded&&!s.cards&&!s.busted&&!s.me?`<div class="hole ${showRight?'r':'l'}">${back('mini')}${back('mini')}</div>`:'';
+    return `<div class="seat ${s.me?'me':''} ${s.folded?'folded':''} ${s.busted?'out':''} ${s.toAct?'toact':''} ${s.toAct&&ring<.33?'hurry':''}" style="left:${x}%;top:${y}%;--t:${ring.toFixed(3)}">
+      ${tag}<div class="ring">${avatarHtml(s.name,s.photoUrl)}</div>${holeBacks}
+      <div class="plate"><b>${esc(s.me?'You':first(s.name))}</b><span>${s.busted?'—':fmt(s.stack)}</span></div>
+      ${shown?`<div class="shown">${s.cards.map(c=>card(c,'mini',winCards.has(c)?'win':'')).join('')}</div>`:''}</div>
+      ${s.bet>0?`<div class="bet" style="left:${bx}%;top:${by}%"><i></i>${fmt(s.bet)}</div>`:''}
+      ${s.button?`<div class="dealer" style="left:${dx}%;top:${dy}%">D</div>`:''}`; }).join('');
+  const board=[0,1,2,3,4].map(i=>card(v.board[i],'',v.board[i]&&winCards.size&&!winCards.has(v.board[i])?'dim':(v.board[i]&&winCards.has(v.board[i])?'win':''))).join('');
+  const level=v.level?`Blinds ${fmt(v.level.sb)}/${fmt(v.level.bb)}${v.nextLevelAt&&v.nextLevel?` · ${fmt(v.nextLevel.sb)}/${fmt(v.nextLevel.bb)} in ${clockOf(v.nextLevelAt-t)}`:''}`:'';
+  let banner='';
+  if(v.result){ const p=v.result.pots[0]; if(p){ const w=p.winners.map(i=>v.seats[i]).map(s=>s.me?'You':first(s.name));
+      banner=`${w.join(' & ')} ${w.length>1?'split':w[0]==='You'?'win':'wins'} ${fmt(v.result.pots.reduce((a,x)=>a+x.amount,0))}${p.hand?` with ${p.hand.toLowerCase()}`:''}`; } }
+  const left=v.endsAt-t;
+  return `<div class="tbar">${landscape?'':`<button class="back" data-act="lobby" aria-label="Back to the lobby">‹</button>`}<div class="title"><b>${tableTitle(v)}${v.mySeat==null?' · watching':''}</b><span>${level}</span></div><div class="clock num ${left<60000?'low':''}">${v.status==='over'?'Over':clockOf(left)}</div></div>
+    <div class="stage ${landscape?'landscape':''}"><div class="felt"></div><div class="watermark">SPEED POKER</div>
+      <div class="center">${v.pot>0?`<div class="pot num">Pot ${fmt(v.pot)}</div>`:''}<div class="board">${board}</div></div>
+      ${seats}${banner?`<div class="banner">${esc(banner)}</div>`:''}</div>`;
+}
+function renderTable(){
+  const v=state.view==='watch'?state.watching:state.table;
+  if(!v){ state.view='lobby'; return renderLobby(); }
+  const mine=v.mySeat!=null?v.seats[v.mySeat]:null;
+  let hand='';
+  if(mine&&mine.cards){ const shownBest=v.result&&v.result.shown.find(s=>s.seat===v.mySeat);
+    hand=`<div><div style="display:flex;gap:6px">${mine.cards.map(c=>card(c,'big',mine.folded?'dim':'')).join('')}</div><div class="hand">${mine.folded?'Folded':shownBest?esc(shownBest.hand):''}</div></div>`; }
+  let actions='';
+  if(v.status==='over'){ actions=''; }
+  else if(mine&&mine.sittingOut){ actions=`<div class="sitout"><span>You are sitting out. Your hands fold until you are back.</span><button class="btn small primary" data-act="sitin">I'm back</button></div>`; }
+  else if(v.choices&&v.toAct===v.mySeat){ const c=v.choices;
+    const callTxt=c.canCheck?'Check':`Call<small>${fmt(c.toCall)}</small>`;
+    const raiseTxt=c.currentBet>0?'Raise':'Bet';
+    const allInOnly=c.canRaise&&c.minRaiseTo>=c.maxRaiseTo;
+    if(!state.raiseTo||state.raiseTo<c.minRaiseTo||state.raiseTo>c.maxRaiseTo)state.raiseTo=c.minRaiseTo;
+    const pot=c.pot, half=Math.max(c.minRaiseTo,Math.min(c.maxRaiseTo,c.currentBet+Math.round((pot+c.toCall)/2))), full=Math.max(c.minRaiseTo,Math.min(c.maxRaiseTo,c.currentBet+pot+c.toCall));
+    actions=`${state.raiseOpen&&c.canRaise&&!allInOnly?`<div class="raisepanel"><div class="presets"><button data-to="${c.minRaiseTo}">Min</button><button data-to="${half}">½ Pot</button><button data-to="${full}">Pot</button><button data-to="${c.maxRaiseTo}">All in</button></div>
+      <div class="slide"><input id="raise" type="range" min="${c.minRaiseTo}" max="${c.maxRaiseTo}" step="${Math.max(1,v.level?v.level.bb/2|0:1)}" value="${state.raiseTo}"><div class="val num" id="raisev">${fmt(state.raiseTo)}</div></div></div>`:''}
+      <div class="abar"><button class="abtn fold" data-act="fold" ${c.canCheck?'':''}>Fold</button><button class="abtn call" data-act="call">${callTxt}</button>
+      ${c.canRaise?(allInOnly?`<button class="abtn raise" data-act="allin">All in<small>${fmt(c.maxRaiseTo)}</small></button>`:state.raiseOpen?`<button class="abtn raise" data-act="raise">${state.raiseTo>=c.maxRaiseTo?'All in':raiseTxt+' to'}<small id="raisebtn">${fmt(state.raiseTo)}</small></button>`:`<button class="abtn raise" data-act="openraise">${raiseTxt}</button>`):`<button class="abtn raise" disabled>${raiseTxt}</button>`}</div>`; }
+  else if(mine&&!mine.busted){ const who=v.toAct!=null?v.seats[v.toAct]:null; actions=`<div class="waiting">${v.street==='done'?'Next hand in a moment…':who?`Waiting for ${esc(first(who.name))}…`:''}</div>`; }
+  else if(mine&&mine.busted){ actions=`<div class="waiting">You are out of this table. <button class="btn small ghost" data-act="lobby">Back to the lobby</button></div>`; }
+  else actions=`<div class="waiting">Watching. <button class="btn small ghost" data-act="lobby">Back to the lobby</button></div>`;
+  let over='';
+  if(v.status==='over'&&v.standings){ const st=v.standings, myS=st.find(s=>s.userId===me());
+    over=`<div class="over"><div class="box"><h2>${myS?(myS.place===1?'You won the table':`You finished ${ordinal(myS.place)}`):'Table over'}</h2><p>${myS?(v.round==='practice'?'Practice table: no points.':v.round==='open'?'Your points are on the board.':'Standings below.'):'Final standings.'}</p>
+      ${st.map(s=>`<div class="rowi ${s.userId===me()?'me':''}"><div class="rank">${s.place}</div>${avatarHtml(s.name)}<div class="who"><b>${esc(s.name)}</b><span>${s.busted?'Busted':fmt(s.stack)+' chips'}${s.knockouts.length?` · ${s.knockouts.length} KO`:''}</span></div></div>`).join('')}
+      <button class="btn primary" style="width:100%;margin-top:12px" data-act="lobby">Back to the lobby</button></div></div>`; }
+  app.innerHTML=`<div id="table">${tableInner(v,false)}<div class="mine">${hand}</div><div class="actions">${actions}</div>${over}</div>`;
+}
+const ordinal=n=>n+(['th','st','nd','rd'][(n%100-20)%10]||['th','st','nd','rd'][n%100]||'th');
+
+function render(){ if(state.fatal){ app.innerHTML=`<div id="lobby"><div class="empty" style="text-align:center;margin-top:30vh">${esc(state.fatal)}</div></div>`; return; }
+  if(state.view==='table'||state.view==='watch')renderTable(); else renderLobby();
+  if(state.offline&&!$('.offline'))app.insertAdjacentHTML('beforeend','<div class="offline">Reconnecting…</div>'); }
+
+/* the clocks on screen move every quarter second without waiting for the server */
+setInterval(()=>{ const v=state.view==='table'?state.table:state.view==='watch'?state.watching:null;
+  if(v&&v.status!=='over'){ const ring=document.querySelector('.seat.toact'); if(ring&&v.deadline){ const r=Math.max(0,Math.min(1,(v.deadline-now())/v.actionMs)); ring.style.setProperty('--t',r.toFixed(3)); ring.classList.toggle('hurry',r<.33); }
+    const clock=document.querySelector('.tbar .clock'); if(clock){ const left=v.endsAt-now(); clock.textContent=clockOf(left); clock.classList.toggle('low',left<60000); } }
+  else if(state.view==='lobby'&&!document.querySelector('input:active'))tick++; if(tick>=4){ tick=0; if(state.view==='lobby'&&!document.activeElement.matches('input'))renderLobby(); } },250);
+let tick=0;
+
+/* ---------- input ---------- */
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('button'); if(!b||b.disabled)return;
+  if(b.dataset.tab){ state.tab=b.dataset.tab; return renderLobby(); }
+  if(b.dataset.watch){ return watchTable(b.dataset.watch); }
+  if(b.dataset.to){ state.raiseTo=+b.dataset.to; const r=$('#raise'); if(r)r.value=state.raiseTo; $('#raisev').textContent=fmt(state.raiseTo); const rb=$('#raisebtn'); if(rb)rb.textContent=fmt(state.raiseTo); return; }
+  if(b.dataset.pick){ const [stage,field,value]=b.dataset.pick.split('|'); const sel=state.pick[stage]=state.pick[stage]||{}; sel[field]=value; if(field!=='choice'&&field!=='stake')delete sel.choice; return renderLobby(); }
+  const act=b.dataset.act; if(!act)return;
+  haptic('light');
+  try{
+    switch(act){
+      case 'sit': await P.request('queue:join'); toast('You are in the queue.'); break;
+      case 'leave': await P.request('queue:leave'); break;
+      case 'practice': { const d=await P.request('practice:start'); state.view='table'; break; }
+      case 'mytable': state.view='table'; if(!state.table||state.table.status==='over'){ const h=await P.request('poker:hello'); if(h.table)state.table=h.table; } break;
+      case 'lobby': if(state.watching)P.request('table:unwatch',{tableId:state.watching.id}).catch(()=>{}); state.watching=null; state.view='lobby'; if(state.table&&state.table.status==='over')state.table=null; break;
+      case 'fold': case 'call': case 'allin': await sendAction({kind:act}); break;
+      case 'openraise': state.raiseOpen=true; break;
+      case 'raise': await sendAction(state.raiseTo>=state.table.choices.maxRaiseTo?{kind:'allin'}:{kind:'raise',to:state.raiseTo}); break;
+      case 'sitin': await P.request('table:sitin',{tableId:state.table.id}); break;
+      case 'pick': { const stage=b.dataset.stage, sel=state.pick[stage]||{}, st=stage==='semi'?state.shared.semis:state.shared.final;
+        const stake=+($('#stake-'+stage)||{}).value; const table=sel.table||st.tables[0].label;
+        if(!sel.kind||!sel.choice){ toast('Choose your call and who.'); return; }
+        const d=await P.request('picks:place',{stage,table,kind:sel.kind,choice:sel.choice,stake}); state.mine=d.mine; state.pick[stage]={}; toast('Pick placed.'); break; }
+    }
+  }catch(err){ toast(err.message||'Something went wrong.'); }
+  render();
+});
+document.addEventListener('input',e=>{ const t=e.target;
+  if(t.id==='raise'){ state.raiseTo=+t.value; $('#raisev').textContent=fmt(state.raiseTo); const rb=$('#raisebtn'); if(rb)rb.textContent=fmt(state.raiseTo); }
+  if(t.id&&t.id.startsWith('stake-')){ const stage=t.id.slice(6); (state.pick[stage]=state.pick[stage]||{}).stake=+t.value; $('#stakev-'+stage).textContent=fmt(+t.value); } });
+async function sendAction(action){ const v=state.table; if(!v)return; state.raiseOpen=false;
+  try{ await P.request('table:act',{tableId:v.id,action}); }catch(err){ toast(err.message); } }
+async function watchTable(id){ try{ const d=await P.request('table:watch',{tableId:id}); state.watching=d.table; state.view='watch'; render(); }catch(err){ toast(err.message); } }
+
+/* ---------- from the server ---------- */
+function onTable(v){ if(!v||!v.id)return; if(v.now)state.offset=v.now-Date.now();
+  if(state.tv&&state.tvTables[v.id]){ state.tvTables[v.id]=v; return render(); }
+  if(v.mySeat!=null){ const prev=state.table; state.table=v;
+    if(prev&&prev.id===v.id&&v.toAct===v.mySeat&&prev.toAct!==v.mySeat){ haptic('medium'); chime(); }
+    if(!prev||prev.handNo!==v.handNo)state.raiseOpen=false;
+    if(state.view==='table')renderTable(); else if(state.view==='lobby'&&v.status==='playing'&&(!prev||prev.id!==v.id)){ state.view='table'; renderTable(); } }
+  else if(state.watching&&state.watching.id===v.id){ state.watching=v; if(state.view==='watch')renderTable(); } }
+let audio=null;
+function chime(){ try{ audio=audio||new (window.AudioContext||window.webkitAudioContext)(); const o=audio.createOscillator(), g=audio.createGain(); o.type='sine'; o.frequency.value=880; g.gain.setValueAtTime(.0001,audio.currentTime); g.gain.exponentialRampToValueAtTime(.15,audio.currentTime+.02); g.gain.exponentialRampToValueAtTime(.0001,audio.currentTime+.35); o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime+.4); }catch(e){} }
+
+async function start(){
+  if(P.fatal){ state.fatal=P.fatal; return render(); }
+  if(P.hopping)return;
+  if(!P.live)return demo();
+  state.tv=!!P.tv;
+  P.on('lobby:shared',sh=>{ if(sh&&sh.now)state.offset=sh.now-Date.now(); state.shared=sh; if(state.view==='lobby')renderLobby(); else if(state.tv)render(); });
+  P.on('table:state',onTable);
+  P.on('table:seated',()=>{ haptic('heavy'); chime(); state.view='table'; toast('Your table is ready.'); });
+  P.on('poker:toast',p=>toast(p&&p.message||''));
+  P.on('fatal',p=>{ state.fatal=p.message; render(); });
+  P.on('poker:fatal',p=>{ state.fatal=p&&p.message||'Speed Poker stopped. Close and reopen it.'; render(); });
+  P.on('connection',async c=>{ state.offline=!c.online; if(c.online)await load(); render(); });
+  await load(); render();
+}
+async function load(){ try{ const h=await P.request('poker:hello'); state.shared=h.shared||null; state.mine=h.mine||state.mine; if(h.table){ state.table=h.table; if(h.table.status==='playing'&&state.view==='lobby')state.view='table'; } }catch(err){ toast(err.message); } }
+
+/* ---------- the demo (a browser preview with no server) ---------- */
+function demo(){
+  const q=new URLSearchParams(location.search), mode=q.get('demo')||'table';
+  const t=Date.now(); const iso=m=>new Date(t+m*60000).toISOString();
+  const people=['Ananya Bisht','Rahul Mehta','Priya Sharma','Arjun Deshpande','Meera Iyer','Kabir Rao','Tanya Bhatia','Ishaan Kapoor'];
+  const board=people.map((n,i)=>({userId:'d'+i,name:n,office:['Gurgaon','Noida','Kolkata'][i%3],played:3+i%3,best:[4200-i*300,3100-i*200,2600-i*150],score:9900-i*650,knockouts:4-i%4,rank:i+1,reachedAt:0}));
+  state.mine={userId:'d0',name:'Ananya Bisht',picks:[],picksLeft:{semi:500,final:1000},picksOpen:{semi:true,final:false}};
+  state.shared={event:{id:'demo',name:'Convrse Speed Poker',status:'live',paused:false,phase:q.get('phase')||'open',practice:{from:iso(-1440),to:iso(-1000)},game:{openFrom:iso(-120),openTo:iso(180),powerFrom:iso(30),powerTo:iso(90),bountiesFrom:iso(120),semisAt:iso(210),finalAt:iso(255)},
+    rules:{tableSize:6,minPlayers:4,fallbackMs:360000,cooldownMs:120000,countedTables:6,bestOf:3,knockoutPoints:100,bountyPoints:300,powerMultiplier:2,semifinalists:12,advancePerSemi:3,picks:{on:true,leadMs:900000,semiBudget:500,finalBudget:1000,winnerOdds:5,firstOutOdds:3,fullTimeOdds:3,minStake:10},minutes:{open:12,semi:20,final:30}}},
+    now:t,powerHour:false,bountiesOn:true,queue:mode==='queue'?[{userId:'d3',name:'Arjun',since:t-90000},{userId:'d0',name:'Ananya',since:t-30000},{userId:'d5',name:'Kabir',since:t-10000}]:[],seated:{},cooldownUntil:{},
+    tables:[{id:'x1',round:'open',label:null,players:people.slice(1,7).map((n,i)=>({userId:'p'+i,name:n,stack:1500})),endsAt:t+430000,power:false}],
+    board,league:[{office:'Gurgaon',players:41,average:4820},{office:'Noida',players:27,average:4410},{office:'Kolkata',players:9,average:4380}],bounties:['d1','d2'],
+    semis:mode==='picks'?{seededAt:t,startedAt:null,endedAt:null,tables:[{label:'A',tableId:null,players:['d1','d4','d5','d8','d9','d12'].map(x=>x)},{label:'B',tableId:null,players:['d2','d3','d6','d7','d10','d11']}]}:null,final:null,names:Object.fromEntries(board.map(b=>[b.userId,b.name])),picksBoard:[],champion:null};
+  if(mode==='picks'){ state.tab='picks'; }
+  const seat=(i,name,stack,extra)=>Object.assign({seat:i,userId:'s'+i,name,photoUrl:null,office:null,stack,bet:0,folded:false,allIn:false,sittingOut:false,busted:false,inHand:true,button:false,sb:false,bb:false,toAct:false,me:false,cards:null,knockouts:0,lastAction:null},extra||{});
+  state.table={id:'demo',round:'open',label:null,status:'playing',now:t,startedAt:t-280000,endsAt:t+440000,level:{sb:40,bb:80},levelIndex:2,nextLevelAt:t+52000,nextLevel:{sb:75,bb:150},actionMs:15000,handNo:14,street:'turn',board:['Ah','9c','4d','Ks'],pot:1240,toAct:0,deadline:t+11000,mySeat:0,
+    choices:{toCall:240,canCheck:false,canRaise:true,minRaiseTo:480,maxRaiseTo:2860,pot:1240,currentBet:240},
+    seats:[seat(0,'Ananya Bisht',2860,{me:true,cards:['As','Kd'],toAct:true}),seat(1,'Rahul Mehta',1180,{bet:240,lastAction:'raise'}),seat(2,'Priya Sharma',0,{busted:true,inHand:false}),seat(3,'Arjun Deshpande',3420,{folded:true,lastAction:'fold',button:true}),seat(4,'Meera Iyer',920,{lastAction:'check'}),seat(5,'Kabir Rao',1560,{folded:true,lastAction:'fold'})],
+    result:null,nextHandAt:null,standings:null};
+  if(mode==='showdown'){ Object.assign(state.table,{street:'done',toAct:null,choices:null,board:['Ah','9c','4d','Ks','2h'],pot:0,result:{showdown:true,pots:[{amount:1720,winners:[0],hand:'Two pair'}],shown:[{seat:0,cards:['As','Kd'],best:['As','Ah','Kd','Ks','9c'],hand:'Two pair'},{seat:1,cards:['Qh','Qs'],best:['Qh','Qs','Ah','Ks','9c'],hand:'Pair'}],busted:[]}}); state.table.seats[0].toAct=false; state.table.seats[1].cards=['Qh','Qs']; state.table.seats[1].bet=0; }
+  if(mode==='raise'){ state.raiseOpen=true; state.raiseTo=860; }
+  if(mode==='over'){ Object.assign(state.table,{status:'over',standings:[{userId:'d0',name:'Ananya Bisht',stack:5420,busted:false,knockouts:['a','b'],place:1},{userId:'x',name:'Rahul Mehta',stack:2100,busted:false,knockouts:[],place:2},{userId:'y',name:'Meera Iyer',stack:1480,busted:false,knockouts:[],place:3},{userId:'z',name:'Priya Sharma',stack:0,busted:true,knockouts:[],place:4}]}); }
+  if(mode==='watch'){ state.table.mySeat=null; state.table.choices=null; state.table.seats.forEach(s=>{s.me=false; s.cards=null;}); }
+  if(mode==='tv'){ state.tv=true; state.shared.event.phase='semis'; state.shared.semis={seededAt:t,startedAt:t,endedAt:null,tables:[{label:'A',tableId:'ta',players:[]},{label:'B',tableId:'tb',players:[]}]};
+    const w=JSON.parse(JSON.stringify(state.table)); w.round='semi'; w.mySeat=null; w.choices=null; w.seats.forEach(s=>{s.me=false;s.cards=null;}); state.tvTables={ta:Object.assign({},w,{id:'ta',label:'A'}),tb:Object.assign({},w,{id:'tb',label:'B'})}; P.request=()=>new Promise(()=>{}); }
+  state.view=['lobby','queue','picks','tv'].includes(mode)?'lobby':'table';
+  if(!P.request)P.request=()=>Promise.reject(new Error('Demo: nothing is sent.'));
+  render();
+}
+start();
+})();
+</script>
+</body>
+</html>

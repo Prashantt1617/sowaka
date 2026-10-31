@@ -190,6 +190,8 @@ export interface PokerEventConfig {
   formats: Partial<Record<PokerRound, Partial<PokerTableConfig>>>;
   /** Never seeded into the semifinals (hosts, testers). */
   exclude: string[];
+  /** Post the standings to the feed on the hour during open play. */
+  hourlyPosts?: boolean;
 }
 
 export interface PokerStage {
@@ -215,6 +217,8 @@ export interface PokerEvent {
   champion: { userId: string; name: string } | null;
   /** The feed card, when posted. */
   postId: string | null;
+  /** When the last standings post went out. */
+  lastStandingsAt?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -476,7 +476,7 @@ class _LiveTitle extends StatelessWidget {
 
 /// Games played in a room with colleagues (Scribble, Tile Up): the card says
 /// so, as the web Games page does, instead of calling them a solo challenge.
-const _groupGames = {'scribble', 'tile-up'};
+const _groupGames = {'scribble', 'tile-up', 'speed-poker'};
 
 /// Up to two faces, then "+N", as the waiting players show (node 3755:28558):
 /// 24pt faces in a 1.5pt ring, each over the last by 8pt.
