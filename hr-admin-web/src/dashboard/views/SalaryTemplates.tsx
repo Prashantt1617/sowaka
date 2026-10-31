@@ -25,6 +25,7 @@ import {
   listSalaryTemplates,
   previewSalaryTemplate,
   rupeesToPaise,
+  updatePayHead,
   updateSalaryTemplate,
 } from '../../services/payroll';
 import type {
@@ -33,6 +34,7 @@ import type {
   ComputedStructure,
   DeductionTrigger,
   PayHeadDTO,
+  PayHeadInput,
   PercentageBase,
   SalaryDeductionRule,
   SalaryTemplateDTO,
@@ -77,6 +79,10 @@ type Form = {
   monthlyPaidLeaveDays: number;
   overtimePay: OvertimePayRule | null;
   sampleCtc: string;
+  /** The flexible pool a month, in rupees; blank: not set (required once the template has flexible heads). */
+  flexiblePool: string;
+  /** Monthly limits edited here, in rupees, by component code; saved to the component on Save. */
+  limits: Record<string, string>;
 };
 
 function rowFromCalc(payHeadCode: string, c: CalculationBasis): Row {
@@ -121,6 +127,7 @@ function buildInput(f: Form, code: string): SalaryTemplateInput {
       ...(r.showInPayslip !== undefined ? { showInPayslip: r.showInPayslip } : {}),
     })),
     balancingComponentCode: f.balancingComponentCode || null,
+    flexiblePoolPaise: f.flexiblePool.trim() === '' ? null : rupeesToPaise(f.flexiblePool),
     statutoryWages: cleanWages(f.statutoryWages, f.rows.map((r) => r.payHeadCode)),
     overtimePay: f.overtimePay,
     active: f.active,
@@ -235,6 +242,20 @@ function calcSubtitle(c: CalculationBasis, ph: PayHeadDTO | undefined, isBalanci
   if (c.mode === 'flat_amount') return 'Fixed amount';
   return '';
 }
+
+// —— Flexible heads and the pool (the app's Payroll › Change my split) ——
+// Exactly as the server decides it (employeePayroll.split.ts): a reimbursement
+// head (or one marked FBP) that the template sets per person ("flat_amount")
+// and whose component has a monthly limit above zero, and is not the
+// balancing component. The limit lives on the component (Salary Components),
+// and only reimbursements can have one.
+function canBeFlexible(ph?: PayHeadDTO): boolean {
+  return ph?.category === 'reimbursement';
+}
+function isFlexible(code: string, mode: CalculationMode, ph: PayHeadDTO | undefined, balancing: string | undefined, limitPaise: number): boolean {
+  return !!ph && (ph.category === 'reimbursement' || ph.fbp === true) && mode === 'flat_amount' && limitPaise > 0 && code !== balancing;
+}
+type FlexHead = { code: string; name: string; limitPaise: number };
 
 /** Build a code→{monthly,annual} map plus resolvers from a computed preview. */
 function amountResolver(computed: ComputedStructure | null, payHeadsList: PayHeadDTO[], fallbackCtc: string) {
@@ -353,7 +374,7 @@ export function SalaryTemplates() {
   };
 
   const newTemplate = () => {
-    setForm({ name: '', description: '', active: true, rows: [], balancingComponentCode: '', paidDaysEnabled: true, statutoryWages: null, deductionRules: [], monthlyPaidLeaveDays: 0, overtimePay: null, sampleCtc: SAMPLE_CTC_RUPEES });
+    setForm({ name: '', description: '', active: true, rows: [], balancingComponentCode: '', paidDaysEnabled: true, statutoryWages: null, deductionRules: [], monthlyPaidLeaveDays: 0, overtimePay: null, sampleCtc: SAMPLE_CTC_RUPEES, flexiblePool: '', limits: {} });
     setComputed(null);
     setMode('edit');
   };
@@ -374,6 +395,8 @@ export function SalaryTemplates() {
       monthlyPaidLeaveDays: t.monthlyPaidLeaveDays ?? 0,
       overtimePay: t.overtimePay ?? null,
       sampleCtc: SAMPLE_CTC_RUPEES,
+      flexiblePool: t.flexiblePoolPaise != null ? String(t.flexiblePoolPaise / 100) : '',
+      limits: {},
     });
     const orphans = t.components.filter((c) => !phByCode.has(c.payHeadCode)).map((c) => c.payHeadCode);
     if (orphans.length) flash(`${orphans.join(', ')} ${orphans.length === 1 ? 'is' : 'are'} no longer a salary component and ${orphans.length === 1 ? 'was' : 'were'} left out`, 'error');
@@ -399,6 +422,8 @@ export function SalaryTemplates() {
       monthlyPaidLeaveDays: t.monthlyPaidLeaveDays ?? 0,
       overtimePay: t.overtimePay ?? null,
       sampleCtc: SAMPLE_CTC_RUPEES,
+      flexiblePool: t.flexiblePoolPaise != null ? String(t.flexiblePoolPaise / 100) : '',
+      limits: {},
     });
     setComputed(null);
     setMode('edit');
@@ -415,8 +440,22 @@ export function SalaryTemplates() {
     if (!form) return;
     if (!form.name.trim()) return flash('Enter a template name');
     if (form.rows.filter((r) => r.payHeadCode).length === 0) return flash('Add at least one component');
+    const pool = form.flexiblePool.trim();
+    if (pool !== '' && !(Number(pool) >= 0 && Number.isInteger(Number(pool)))) return flash('Flexible pool: enter whole rupees, or leave it blank', 'error');
+    // With flexible heads the pool is required: nothing in code stands in for it.
+    const flexOnForm = flexHeadsOf(form.rows.filter((r) => r.payHeadCode).map((r) => ({ code: r.payHeadCode, mode: r.calcMode })), phByCode, form.balancingComponentCode, (c) => limitOf(form, c, phByCode.get(c)));
+    if (flexOnForm.length > 0 && pool === '') return flash('Set the flexible pool: the template has flexible heads', 'error');
+    const limitChanges = changedLimits(form, phByCode);
+    if (limitChanges.some((c) => !Number.isInteger(c.paise / 100))) return flash('Monthly limits are whole rupees', 'error');
     setSaving(true);
     try {
+      // A limit belongs to the component: saved there first, for every template that uses it.
+      for (const c of limitChanges) {
+        const head: Partial<PayHeadDTO> = { ...c.head, maxClaimablePaise: c.paise };
+        delete head.id;
+        delete head.standard;
+        await updatePayHead(c.head.id, head as PayHeadInput);
+      }
       const code = form.editingCode ?? codeFromName(form.name, new Set(templates.map((t) => t.code)));
       const input = buildInput(form, code);
       if (form.editingCode) await updateSalaryTemplate(form.editingCode, input);
@@ -501,6 +540,8 @@ export function SalaryTemplates() {
     }
     const hasOneTime = (buckets.get('onetime')?.length ?? 0) > 0;
     const costMonthly = detailComputed?.employerCostMonthlyPaise ?? 0;
+    const detailFlex = flexHeadsOf(t.components.map((c) => ({ code: c.payHeadCode, mode: c.calculation.mode })), phByCode, t.balancingComponentCode, (code) => phByCode.get(code)?.maxClaimablePaise ?? 0);
+    const showPool = t.flexiblePoolPaise != null || t.components.some((c) => canBeFlexible(phByCode.get(c.payHeadCode)));
 
     return (
       <div>
@@ -536,7 +577,7 @@ export function SalaryTemplates() {
                     return (
                       <tr key={comp.payHeadCode}>
                         <td style={detTd}>
-                          <div style={{ fontWeight: 400, color: 'var(--ink)' }}>{ph?.name ?? comp.payHeadCode}</div>
+                          <div style={{ fontWeight: 400, color: 'var(--ink)' }}>{ph?.name ?? comp.payHeadCode}{detailFlex.some((h) => h.code === comp.payHeadCode) && <FlexTag />}</div>
                           <div style={L.cellSub}>{calcSubtitle(comp.calculation, ph, isBalancing, phByCode)}</div>
                           <FixedTags ph={ph} />
                         </td>
@@ -569,6 +610,11 @@ export function SalaryTemplates() {
             </tbody>
           </table>
           </div>
+          {showPool && (
+            <div style={{ padding: '18px 20px 0' }}>
+              <FlexiblePoolCard heads={detailFlex} pool={t.flexiblePoolPaise != null ? String(t.flexiblePoolPaise / 100) : ''} balancingName={t.balancingComponentCode ? phByCode.get(t.balancingComponentCode)?.name ?? t.balancingComponentCode : undefined} />
+            </div>
+          )}
           <StatutoryList overview={statutory} computed={detailComputed} />
           <WagesSummary wages={t.statutoryWages ?? null} phByCode={phByCode} />
         </Card>
@@ -602,6 +648,9 @@ export function SalaryTemplates() {
     rowBuckets.get(g)!.push(r);
   }
   const costMonthly = computed?.employerCostMonthlyPaise ?? 0;
+  const limitFor = (code: string) => limitOf(form, code, phByCode.get(code));
+  const formFlex = flexHeadsOf(form.rows.filter((r) => r.payHeadCode).map((r) => ({ code: r.payHeadCode, mode: r.calcMode })), phByCode, form.balancingComponentCode, limitFor);
+  const formShowPool = form.flexiblePool.trim() !== '' || form.rows.some((r) => canBeFlexible(phByCode.get(r.payHeadCode)));
 
   return (
     <div style={builderPage}>
@@ -663,9 +712,9 @@ export function SalaryTemplates() {
                         return (
                           <tr key={r.payHeadCode}>
                             <td style={bldTd}>
-                              <div style={{ fontWeight: 400, color: 'var(--ink)' }}>{ph?.name ?? r.payHeadCode}{isBalancing && <span title="Takes whatever is left of the monthly CTC" style={{ color: 'var(--ink-3)', marginLeft: 6, fontSize: 12.5 }}>ⓘ</span>}</div>
-                              {ph?.category === 'reimbursement' && ph.maxClaimablePaise ? (
-                                <div style={L.cellSub}>Max Limit : {rupees2(ph.maxClaimablePaise)}</div>
+                              <div style={{ fontWeight: 400, color: 'var(--ink)' }}>{ph?.name ?? r.payHeadCode}{isBalancing && <span title="Takes whatever is left of the monthly CTC" style={{ color: 'var(--ink-3)', marginLeft: 6, fontSize: 12.5 }}>ⓘ</span>}{formFlex.some((h) => h.code === r.payHeadCode) && <FlexTag />}</div>
+                              {ph?.category === 'reimbursement' && limitFor(r.payHeadCode) ? (
+                                <div style={L.cellSub}>Max Limit : {rupees2(limitFor(r.payHeadCode))}</div>
                               ) : isBalancing ? (
                                 <div style={L.cellSub}>Monthly CTC - Sum of all other components</div>
                               ) : null}
@@ -673,7 +722,17 @@ export function SalaryTemplates() {
                               <PayslipLabel r={r} ph={ph} onChange={(patch) => setByCode(r.payHeadCode, patch)} />
                             </td>
                             <td style={bldTd}>
-                              <CalcCell r={r} isBalancing={isBalancing} form={form} phByCode={phByCode} setByCode={setByCode} />
+                              {canBeFlexible(ph) && !isBalancing && r.calcMode !== 'percentage' ? (
+                                <FlexCell
+                                  r={r}
+                                  ph={ph!}
+                                  limit={form.limits[r.payHeadCode] ?? String((ph!.maxClaimablePaise ?? 0) / 100)}
+                                  onLimit={(v) => set('limits', { ...form.limits, [r.payHeadCode]: v })}
+                                  setByCode={setByCode}
+                                />
+                              ) : (
+                                <CalcCell r={r} isBalancing={isBalancing} form={form} phByCode={phByCode} setByCode={setByCode} />
+                              )}
                             </td>
                             <td style={{ ...bldTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{g === 'onetime' ? '—' : rupees(amt.monthly)}</td>
                             <td style={{ ...bldTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
@@ -701,6 +760,17 @@ export function SalaryTemplates() {
                 </tbody>
               </table>
             </div>
+
+            {formShowPool && (
+              <div style={{ margin: '18px 36px 0' }}>
+                <FlexiblePoolCard
+                  heads={formFlex}
+                  pool={form.flexiblePool}
+                  onPool={(v) => set('flexiblePool', v)}
+                  balancingName={form.balancingComponentCode ? phByCode.get(form.balancingComponentCode)?.name ?? form.balancingComponentCode : undefined}
+                />
+              </div>
+            )}
 
             <div style={{ margin: '18px 36px 0' }}>
               <StatutoryList overview={statutory} computed={computed} flat />
@@ -1068,6 +1138,152 @@ async function exportEmployeesOnTemplate(t: SalaryTemplateDTO, flash: (m: string
 }
 
 /** How approved overtime hours become pay for the people on this template. */
+// —— Flexible pool ————————————————————————————————————————————————————————
+/** A head's monthly limit as the builder has it: edited here, else the component's. */
+function limitOf(f: Form, code: string, ph?: PayHeadDTO): number {
+  const edited = f.limits[code];
+  return edited !== undefined ? rupeesToPaise(edited || '0') : ph?.maxClaimablePaise ?? 0;
+}
+/** Limits edited in the builder that differ from the component's, to save on the component. */
+function changedLimits(f: Form, phByCode: Map<string, PayHeadDTO>): { head: PayHeadDTO; paise: number }[] {
+  const onTemplate = new Set(f.rows.map((r) => r.payHeadCode));
+  return Object.entries(f.limits).flatMap(([code, v]) => {
+    const head = phByCode.get(code);
+    const paise = rupeesToPaise(v || '0');
+    return head?.id && onTemplate.has(code) && paise !== (head.maxClaimablePaise ?? 0) ? [{ head, paise }] : [];
+  });
+}
+function flexHeadsOf(rows: { code: string; mode: CalculationMode }[], phByCode: Map<string, PayHeadDTO>, balancing: string | undefined, limit: (code: string) => number): FlexHead[] {
+  return rows.flatMap(({ code, mode }) => {
+    const ph = phByCode.get(code);
+    const limitPaise = limit(code);
+    return isFlexible(code, mode, ph, balancing || undefined, limitPaise) ? [{ code, name: ph!.name, limitPaise }] : [];
+  });
+}
+function FlexTag() {
+  return <span title="The employee sets the amount on the app, within the monthly limit" style={{ ...L.tag, marginLeft: 8, color: 'var(--accent-ink)', borderColor: 'var(--accent-soft)', background: 'var(--accent-soft)' }}>Flexible</span>;
+}
+
+/** A reimbursement head on the builder: flexible (the employee's split, up to the limit) or a fixed amount every month. */
+function FlexCell({ r, ph, limit, onLimit, setByCode }: {
+  r: Row;
+  ph: PayHeadDTO;
+  limit: string;
+  onLimit: (v: string) => void;
+  setByCode: (code: string, patch: Partial<Row>) => void;
+}) {
+  const on = r.calcMode === 'flat_amount';
+  const limitPaise = rupeesToPaise(limit || '0');
+  const edited = limitPaise !== (ph.maxClaimablePaise ?? 0);
+  const toggle = (next: boolean) => setByCode(r.payHeadCode, next
+    ? { calcMode: 'flat_amount' }
+    : { calcMode: 'flat_per_month', amountRupees: Number(r.amountRupees) > 0 ? r.amountRupees : String(limitPaise / 100) });
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <label style={{ ...checkRow, color: 'var(--ink)' }}>
+        <input type="checkbox" checked={on} onChange={(e) => toggle(e.target.checked)} />
+        Flexible (FBP): each person sets it on the app
+      </label>
+      {on ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Up to</span>
+          <div style={pairBox}>
+            <span style={{ ...pairSuffix, borderLeft: 'none', borderRight: '1px solid var(--line)' }}>₹</span>
+            <input type="number" min={0} step={1} value={limit} onChange={(e) => onLimit(e.target.value)} style={pairInput} aria-label={`${ph.name} monthly limit`} />
+            <span style={pairSuffix}>/ month</span>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ color: 'var(--ink-3)' }}>₹</span>
+          <input type="number" value={r.amountRupees} onChange={(e) => setByCode(r.payHeadCode, { amountRupees: e.target.value })} style={{ ...miniInput, width: 100 }} />
+          <span style={{ color: 'var(--ink-3)' }}>/ mo, the same for everyone</span>
+        </div>
+      )}
+      {on && limitPaise <= 0 && <div style={{ fontSize: 11.5, color: 'var(--warn)' }}>Give it a monthly limit above ₹0, or it is not flexible.</div>}
+      {on && edited && limitPaise > 0 && <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>Saved on the component: every template with {ph.name} gets this limit.</div>}
+    </div>
+  );
+}
+
+/** The pool people on the template split among its flexible heads, against what the heads can take. */
+function FlexiblePoolCard({ heads, pool, onPool, balancingName }: {
+  heads: FlexHead[];
+  /** Rupees; blank: not set. */
+  pool: string;
+  onPool?: (v: string) => void;
+  balancingName?: string;
+}) {
+  const sum = heads.reduce((t, h) => t + h.limitPaise, 0);
+  const set = pool.trim() !== '';
+  const poolPaise = set ? rupeesToPaise(pool) : 0;
+  const over = set && poolPaise > sum;
+  const scale = Math.max(poolPaise, sum, 1);
+  const missing = !set && heads.length > 0;
+  const balancing = balancingName ?? 'the balancing component';
+  let status: { text: string; warn?: boolean };
+  if (heads.length === 0) status = { text: 'No flexible heads yet: tick Flexible on a reimbursement and give it a monthly limit.', warn: set };
+  else if (!set) status = { text: 'Not set. Required for a template with flexible heads: until it is set, the app tells people on this template that their split is not configured, and nobody can split.', warn: true };
+  else if (over) status = { text: `The pool is ${rupees2(poolPaise - sum)} more than the heads can take. At most ${rupees2(sum)} can be assigned; the rest is always paid as ${balancing}.`, warn: true };
+  else if (poolPaise < sum) status = { text: `People choose where ${rupees2(poolPaise)} goes; the heads could take up to ${rupees2(sum)} together.` };
+  else status = { text: 'The pool matches the limits added up.' };
+  return (
+    <Card style={{ padding: 0, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 20px' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-.01em' }}>Flexible pool</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2, maxWidth: 620 }}>
+            What each person on this template splits among the flexible heads on the app (Payroll › Change my split), each within its limit. What they leave unassigned is paid as {balancing} and taxed in full.
+          </div>
+        </div>
+        {onPool ? (
+          <div style={{ width: 230 }}>
+            <PoolInput value={pool} onChange={onPool} placeholder="Not set" missing={missing} />
+          </div>
+        ) : (
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 18, fontWeight: 500, fontVariantNumeric: 'tabular-nums', color: set ? 'var(--ink)' : missing ? 'var(--warn)' : 'var(--ink-3)' }}>{set ? rupees2(poolPaise) : 'Not set'}</div>
+            <div style={L.cellSub}>{set ? 'a month' : missing ? 'Required: edit the template to set it' : 'a month'}</div>
+          </div>
+        )}
+      </div>
+      {heads.length > 0 && (
+        <div style={{ padding: '4px 20px 6px', borderTop: '1px solid var(--line)' }}>
+          {heads.map((h) => (
+            <div key={h.code} style={{ display: 'flex', alignItems: 'center', padding: '8px 0', fontSize: 13.5 }}>
+              <span style={{ flex: 1 }}>{h.name}</span>
+              <span style={{ color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>up to {rupees2(h.limitPaise)}</span>
+            </div>
+          ))}
+          <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 110px', alignItems: 'center', gap: 12, padding: '10px 0 4px', fontSize: 12.5, color: 'var(--ink-2)' }}>
+            <span>Pool</span>
+            <div style={L.barTrack}><div style={{ width: `${(poolPaise / scale) * 100}%`, height: '100%', background: over ? 'var(--p-yellow)' : 'var(--p-blue)', borderRadius: 99 }} /></div>
+            <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: set ? undefined : 'var(--warn)' }}>{set ? rupees2(poolPaise) : 'Not set'}</span>
+            <span>Limits added up</span>
+            <div style={L.barTrack}><div style={{ width: `${(sum / scale) * 100}%`, height: '100%', background: 'var(--p-green)', borderRadius: 99 }} /></div>
+            <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{rupees2(sum)}</span>
+          </div>
+        </div>
+      )}
+      <div style={{ padding: '10px 20px 14px', borderTop: '1px solid var(--line)', fontSize: 12.5, color: status.warn ? 'var(--warn)' : 'var(--ink-3)' }}>
+        {status.text}
+        {!balancingName && heads.length > 0 && <span style={{ color: 'var(--warn)' }}> No balancing component is set: choose one above so what is left unassigned is paid.</span>}
+      </div>
+    </Card>
+  );
+}
+
+/** The pool field: whole rupees; blank is "not set". */
+function PoolInput({ value, onChange, placeholder, missing }: { value: string; onChange: (v: string) => void; placeholder: string; missing?: boolean }) {
+  return (
+    <div className="lk-field" style={{ display: 'flex', alignItems: 'center', height: 42, border: `1px solid ${missing ? 'var(--warn)' : 'var(--line-2)'}`, borderRadius: 12, overflow: 'hidden', background: 'var(--surface)' }}>
+      <span style={{ padding: '0 10px', fontSize: 12, color: 'var(--ink-3)', borderRight: '1px solid var(--line-2)', alignSelf: 'stretch', display: 'flex', alignItems: 'center', background: 'var(--surface-2)' }}>₹</span>
+      <input type="number" min="0" step="1" value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} aria-label="Flexible pool a month" style={{ border: 'none', outline: 'none', padding: '0 12px', fontSize: 13, width: '100%', color: 'var(--ink)', background: 'transparent', fontFamily: 'inherit' }} />
+      <span style={{ padding: '0 12px', fontSize: 12, color: 'var(--ink-3)', borderLeft: '1px solid var(--line-2)', alignSelf: 'stretch', display: 'flex', alignItems: 'center', background: 'var(--surface-2)', whiteSpace: 'nowrap' }}>a month</span>
+    </div>
+  );
+}
+
 function OvertimeCard({ rule, onChange }: { rule: OvertimePayRule | null; onChange: (v: OvertimePayRule | null) => void }) {
   const mode = rule?.mode ?? 'off';
   const pick = (m: 'off' | 'hourly_multiple' | 'flat_per_hour') =>

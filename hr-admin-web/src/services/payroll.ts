@@ -2,6 +2,7 @@
 // All money crosses the wire as INTEGER PAISE.
 import { api } from './http';
 import { standardNotAdded } from '../../../backend/src/shared/payroll/standard-components';
+import type { DeclarationItemKey } from '../../../backend/src/shared/payroll/declaration';
 
 // ————————————————————————————————————————————————————————————————
 // Money helpers
@@ -401,6 +402,8 @@ export type SalaryTemplateDTO = {
   code: string;
   description?: string;
   components: SalaryTemplateComponent[];
+  /** The monthly pool people on this template split among its flexible heads on the app; null: not set (required once it has flexible heads). */
+  flexiblePoolPaise?: number | null;
   balancingComponentCode?: string;
   epfApplyCeiling: boolean;
   /** Whether the run reads attendance for the people on this template. */
@@ -425,6 +428,8 @@ export type SalaryTemplateInput = {
   code: string;
   description?: string;
   components: SalaryTemplateComponent[];
+  /** Whole rupees in paise; null removes it, absent keeps it. */
+  flexiblePoolPaise?: number | null;
   balancingComponentCode?: string | null;
   epfApplyCeiling?: boolean;
   paidDaysEnabled?: boolean;
@@ -785,11 +790,143 @@ export type TaxDeclarations = {
   previousEmployerSalaryPaise?: number;
   previousEmployerTdsPaise?: number;
 };
-export type TaxDeclarationDTO = { regime: 'new' | 'old'; declarations: TaxDeclarations; proofs: 'none' | 'submitted' | 'verified'; updatedAt?: string };
+/** What the employee declared on the app, item by item (PPF, ELSS, rent a month…), in paise. */
+export type DeclarationItems = Partial<Record<DeclarationItemKey, number>>;
+export type TaxDeclarationDTO = {
+  regime: 'new' | 'old';
+  declarations: TaxDeclarations;
+  proofs: 'none' | 'submitted' | 'verified';
+  updatedAt?: string;
+  /** Who saved it last: the employee on the app, else HR. */
+  updatedByUserId?: string;
+  userId?: string;
+  /** The employee's items from the app; absent when only HR has entered totals. */
+  items?: DeclarationItems;
+  /** The employee saved it or submitted it on the app; absent: entered by HR. */
+  status?: 'saved' | 'submitted';
+  submittedAt?: string;
+};
 export type TaxDeclarationResponse = { fy: string; declaration: TaxDeclarationDTO | null; configs: { regime: 'new' | 'old'; status: string; source?: string }[] };
 
 export const getTaxDeclaration = (userId: string, fy?: string) =>
   api<TaxDeclarationResponse>(`/admin/payroll/employees/${userId}/tax-declaration${fy ? `?fy=${fy}` : ''}`);
 
-export const saveTaxDeclaration = (userId: string, input: Omit<TaxDeclarationDTO, 'updatedAt'>, fy?: string) =>
+export const saveTaxDeclaration = (userId: string, input: Pick<TaxDeclarationDTO, 'regime' | 'declarations' | 'proofs'>, fy?: string) =>
   api<TaxDeclarationResponse>(`/admin/payroll/employees/${userId}/tax-declaration${fy ? `?fy=${fy}` : ''}`, { method: 'PUT', body: input });
+
+// ————————————————————————————————————————————————————————————————
+// The employee app's payroll: investment proofs, flexible splits, settings
+// ————————————————————————————————————————————————————————————————
+
+export type { DeclarationItemKey };
+
+export type InvestmentProofStatus = 'uploaded' | 'approved' | 'rejected';
+/** One proof an employee uploaded for a declared item (PPF, rent, …). */
+export type InvestmentProofDTO = {
+  id: string;
+  userId: string;
+  employeeName: string;
+  employeeId?: string;
+  fy: string;
+  item: DeclarationItemKey;
+  label: string;
+  section: string;
+  declaredPaise: number;
+  /** The amount on the proof, as the employee typed it. */
+  amountPaise: number;
+  status: InvestmentProofStatus;
+  fileName: string;
+  contentType: string;
+  size: number;
+  uploadedAt: string;
+  decidedAt: string | null;
+  decidedByUserId: string | null;
+  reason: string | null;
+};
+
+export const listInvestmentProofs = (q: { fy?: string; status?: InvestmentProofStatus; userId?: string } = {}) => {
+  const qs = new URLSearchParams();
+  if (q.fy) qs.set('fy', q.fy);
+  if (q.status) qs.set('status', q.status);
+  if (q.userId) qs.set('userId', q.userId);
+  const tail = qs.toString();
+  return api<{ fy: string; proofs: InvestmentProofDTO[] }>(`/admin/payroll/investment-proofs${tail ? `?${tail}` : ''}`);
+};
+
+/** A short-lived link to the uploaded file. */
+export const investmentProofFileUrl = (proofId: string) =>
+  api<{ url: string }>(`/admin/payroll/investment-proofs/${proofId}/file`).then((r) => r.url);
+
+export const decideInvestmentProof = (proofId: string, decision: 'approved' | 'rejected', reason?: string) =>
+  api<{ proof: InvestmentProofDTO }>(`/admin/payroll/investment-proofs/${proofId}/decision`, {
+    method: 'POST',
+    body: { decision, ...(reason ? { reason } : {}) },
+  }).then((r) => r.proof);
+
+/** One flexible head in a split, with its monthly limit (null when not known). */
+export type SplitComponentDTO = { code: string; name: string; amountPaise: number; limitPaise: number | null };
+/** One version of a person's split: from `effectiveFrom` to `effectiveTo` of the FY. */
+export type SplitVersionDTO = {
+  effectiveFrom: string;
+  effectiveTo: string;
+  submittedAt: string;
+  inForce: boolean;
+  poolPaise: number | null;
+  /** "saved": the pool it was saved against; "current_template": an older split, read against today's pool. */
+  poolSource: 'saved' | 'current_template' | null;
+  assignedPaise: number;
+  unassignedPaise: number | null;
+  components: SplitComponentDTO[];
+};
+export type EmployeeSplitDTO = {
+  fy: string;
+  employee: { userId: string; name: string; employeeId?: string };
+  hasSalaryStructure: boolean;
+  /** The template has flexible components today. */
+  available: boolean;
+  template: { code: string; name: string } | null;
+  poolPaise: number | null;
+  /** The month "in force now" means; null for a future FY. */
+  asOf: string | null;
+  /** What applies with no split: the structure's own amounts. */
+  baseline: SplitComponentDTO[];
+  current: SplitVersionDTO | null;
+  /** Oldest first. */
+  versions: SplitVersionDTO[];
+  window: { open: boolean; effectiveFrom: string; effectiveTo: string; closesOn: string; reason: string | null };
+  billsDueOn: string;
+};
+
+/** One employee's flexible split for a FY: the one in force and every version. */
+export const getEmployeeSplit = (userId: string, fy?: string) =>
+  api<{ split: EmployeeSplitDTO }>(`/admin/payroll/employees/${userId}/flexible-split${fy ? `?fy=${fy}` : ''}`).then((r) => r.split);
+
+/** The app's Payroll for the company: the switch and the deadlines its screens use. */
+export type EmployeeAppSettings = {
+  appEnabled: boolean;
+  /** 1 to 28. */
+  splitCutoffDay: number;
+  /** "MM-DD", April to December. */
+  declarationDue: string;
+  /** "MM-DD", January to March. */
+  proofsDue: string;
+  /** "MM-DD", January to March. */
+  billsDue: string;
+};
+export type EmployeeAppSettingsResponse = {
+  fy: string;
+  settings: EmployeeAppSettings;
+  defaults: EmployeeAppSettings;
+  /** The fields HR has set; the rest are defaults. */
+  customised: (keyof EmployeeAppSettings)[];
+  dates: { splitClosesOn: string; declarationDueOn: string; proofsDueOn: string; billsDueOn: string };
+  updatedAt: string | null;
+  updatedBy: string | null;
+};
+
+export const getEmployeeAppSettings = (fy?: string) =>
+  api<EmployeeAppSettingsResponse>(`/admin/payroll/employee-app-settings${fy ? `?fy=${fy}` : ''}`);
+
+/** A field left out stays; null puts it back to the default. */
+export const saveEmployeeAppSettings = (input: { [K in keyof EmployeeAppSettings]?: EmployeeAppSettings[K] | null }, fy?: string) =>
+  api<EmployeeAppSettingsResponse>(`/admin/payroll/employee-app-settings${fy ? `?fy=${fy}` : ''}`, { method: 'PUT', body: input });

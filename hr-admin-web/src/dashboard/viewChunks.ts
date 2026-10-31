@@ -40,6 +40,7 @@ const LOADERS: Partial<Record<View, Loader>> = {
   payrollreports: () => import('./views/PayrollReports').then((m) => ({ default: m.PayrollReports })),
   statutorycomponents: () => import('./views/StatutoryComponents').then((m) => ({ default: m.StatutoryComponents })),
   payruns: () => import('./views/PayrollRuns').then((m) => ({ default: m.PayrollRuns })),
+  investmentproofs: () => import('./views/InvestmentProofs').then((m) => ({ default: m.InvestmentProofs })),
   payschedule: () => import('./views/OrgSetup').then((m) => ({ default: m.PaySchedule })),
   taxdetails: () => import('./views/OrgSetup').then((m) => ({ default: m.TaxDetails })),
   shiftbulk: () => import('./views/SuwiBulkAssign').then((m) => ({ default: m.ShiftBulkAssign })),

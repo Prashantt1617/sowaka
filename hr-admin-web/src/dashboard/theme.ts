@@ -34,6 +34,7 @@ export type View =
   | 'payrollreports'
   | 'statutorycomponents'
   | 'payruns'
+  | 'investmentproofs'
   | 'departments'
   | 'designations'
   | 'employees'
@@ -166,6 +167,7 @@ export const TITLES: Record<View, [string, string]> = {
   payrollreports: ['Payroll Reports', 'Payroll · summaries, registers and statutory reports'],
   statutorycomponents: ['Statutory Components', 'Payroll · EPF, ESI, PT, LWF & more'],
   payruns: ['Payroll Runs', 'Payroll · monthly runs and payslips'],
+  investmentproofs: ['Investment proofs', 'Payroll · the proofs employees upload for their tax declaration'],
   departments: ['Departments', 'People'],
   designations: ['Designations', 'People'],
   employees: ['Employees', 'People'],

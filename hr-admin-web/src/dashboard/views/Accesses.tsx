@@ -35,7 +35,8 @@ const titleCase = (t: string) => t.charAt(0) + t.slice(1).toLowerCase();
 // A section left with no tabs (Support: its desk is a role) is not a unit,
 // or it would read as given to everyone.
 // Placements' Clients and Candidates come with its one tab, `placements`.
-const RIDES_ALONG = new Set<AccessKey>(PLACEMENT_VIEWS.filter((v) => v !== 'placements'));
+// Investment proofs are not a tab of their own: they come with Payroll Runs or Salary details.
+const RIDES_ALONG = new Set<AccessKey>([...PLACEMENT_VIEWS.filter((v) => v !== 'placements'), 'investmentproofs']);
 const SECTION_UNITS: Unit[] = SECTIONS.flatMap((s) => {
   const items = s.items.filter((i) => i.key !== 'usersroles' && i.key !== 'support' && i.key !== 'cuptv');
   if (items.length === 0) return [];

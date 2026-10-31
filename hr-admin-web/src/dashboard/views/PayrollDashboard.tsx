@@ -1,7 +1,8 @@
 // Payroll › Dashboard — the month at a glance, as Zoho's payroll home shows
 // it: the run that needs attention, what is owed to the government for the
 // last finished month, who is on payroll and whose set-up is incomplete, what
-// is waiting on HR, and the payroll cost month by month.
+// is waiting on HR, the payroll cost month by month, and Payroll in the
+// employee app (its switch and deadlines).
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
@@ -10,6 +11,7 @@ import { Card, EmptyRow, LoadError, Skeleton, SkeletonFrame, SkeletonLines } fro
 import { useLoad } from '../useLoad';
 import { getPayrollDashboard, type CostRange, type PayrollDashboardReport } from '../../services/payroll';
 import { OPEN_REPORT_KEY } from './PayrollReports';
+import { EmployeeAppSettingsCard } from './EmployeeAppSettings';
 import * as Lk from './look';
 
 const STATUS: Record<string, { label: string; bg: string; fg: string }> = {
@@ -134,6 +136,8 @@ export function PayrollDashboard() {
           {data && <span style={{ color: 'var(--ink-3)' }}>{data.cost.label} · finished runs{includeDrafts ? ' and drafts' : ''}</span>}
         </div>
       </Card>
+
+      <EmployeeAppSettingsCard />
     </div>
   );
 }

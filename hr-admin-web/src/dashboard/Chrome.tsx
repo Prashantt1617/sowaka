@@ -70,6 +70,7 @@ const PAYROLL: NavItem[] = [
   { key: 'templates', label: 'Salary Templates' },
   { key: 'paiddays', label: 'Paid Days Templates' },
   { key: 'payruns', label: 'Payroll Runs' },
+  { key: 'investmentproofs', label: 'Investment proofs' },
   { key: 'payrollreports', label: 'Payroll Reports' },
   { key: 'payrollbulk', label: 'Bulk Assign' },
 ];
