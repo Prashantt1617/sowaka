@@ -142,8 +142,13 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .seat .tag.allin{background:var(--red)}
 .seat .tag.act{background:#1f2a24;color:#cfe;}
 .seat .tag.bounty{background:var(--gold);color:#2a1a02}
-.seat .hole{position:absolute;top:12px;display:flex;gap:2px;z-index:1}
-.seat .hole.r{left:78px}.seat .hole.l{right:78px}
+.seat .hole{position:absolute;top:-4px;display:flex;gap:0;z-index:1}
+/* tucked against the avatar, not out over the board */
+.seat .hole.r{left:58px}.seat .hole.l{right:58px}
+.seat .hole .pc.mini{width:20px;height:28px}
+.seat .hole .pc.mini+.pc.mini{margin-left:-6px;transform:rotate(8deg)}
+/* a short screen (the game inside the app): a smaller board, a little higher */
+@media (max-height:720px){.board .pc{width:32px;height:46px;border-radius:5px}.board .pc .r{font-size:15px}.board .pc .s{font-size:18px}.center{top:42%}.board{gap:3px}}
 .seat .shown{display:flex;gap:2px;margin-top:3px}
 .bet{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;gap:4px;font-size:12px;font-weight:800;color:#f3e2b2;z-index:3;white-space:nowrap}
 .bet i{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#fff 0 22%,#d23c3c 23% 60%,#fff 61% 70%,#d23c3c 71%);box-shadow:0 1px 2px rgba(0,0,0,.5)}
@@ -385,13 +390,13 @@ function tableInner(v,landscape){
   const winners=new Set(), winCards=new Set();
   if(v.result){ v.result.pots.forEach(p=>p.winners.forEach(w=>winners.add(w))); v.result.shown.filter(s=>winners.has(s.seat)).forEach(s=>s.best.forEach(c=>winCards.add(c))); }
   const seats=v.seats.map(s=>{ const at=names[(s.seat-rot+n)%n], [x,y]=POS[at];
-    const bx=x+(50-x)*.42, by=y+(46-y)*.42, dx=x+(50-x)*.3+(x<50?7:-7), dy=y+(46-y)*.3;
+    const bx=x+(50-x)*.36, by=y+(46-y)*.22, dx=x===50?36:x+(50-x)*.3+(x<50?7:-7), dy=x===50?y+(46-y)*.12:y+(46-y)*.3;
     const showRight=x<50;
     const ring=s.toAct&&v.deadline?Math.max(0,Math.min(1,(v.deadline-t)/v.actionMs)):1;
     const shown=s.cards&&!s.me;
     const tag=s.busted?'<span class="tag">OUT</span>':s.allIn?'<span class="tag allin">ALL IN</span>':s.sittingOut?'<span class="tag">AWAY</span>':s.lastAction&&!s.toAct&&v.street!=='done'?`<span class="tag act">${actionWord(s.lastAction)}</span>`:winners.has(s.seat)?'<span class="tag bounty">WINNER</span>':'';
     const holeBacks=s.inHand&&!s.folded&&!s.cards&&!s.busted&&!s.me?`<div class="hole ${showRight?'r':'l'}">${back('mini')}${back('mini')}</div>`:'';
-    return `<div class="seat ${s.me?'me':''} ${s.folded?'folded':''} ${s.busted?'out':''} ${s.toAct?'toact':''} ${s.toAct&&ring<.33?'hurry':''}" style="left:${x}%;top:${y}%;--t:${ring.toFixed(3)}">
+    return `<div class="seat ${s.me?'me':''} ${s.folded?'folded':''} ${s.busted?'out':''} ${s.toAct?'toact':''} ${s.toAct&&ring<.33?'hurry':''}" style="left:${x}%;top:clamp(48px,${y}%,calc(100% - 52px));--t:${ring.toFixed(3)}">
       ${tag}<div class="ring">${avatarHtml(s.name,s.photoUrl||pic(s.userId))}</div>${holeBacks}
       <div class="plate"><b>${esc(s.me?'You':first(s.name))}</b><span>${s.busted?'—':fmt(s.stack)}</span></div>
       ${shown?`<div class="shown">${s.cards.map(c=>card(c,'mini',winCards.has(c)?'win':'')).join('')}</div>`:''}</div>
