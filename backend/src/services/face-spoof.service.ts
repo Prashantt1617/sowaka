@@ -61,17 +61,23 @@ async function load(): Promise<{ lib: LiteRtModule; model: CompiledModel } | nul
     g.Module = { locateFile: (file: string) => wasmDir + file };
     // It also looks for a WebGPU device, which Node does not have, and says
     // so on the console; the CPU (WebAssembly) path is the one used here.
-    const consoleError = console.error;
-    console.error = (...args: unknown[]) => {
-      if (!String(args[0] ?? '').includes('WebGPU')) consoleError(...args);
+    const quiet = <T>(run: () => Promise<T>) => async () => {
+      const [error, warn] = [console.error, console.warn];
+      const keep = (log: (...a: unknown[]) => void) => (...args: unknown[]) => {
+        if (!args.some((arg) => String(arg).includes('WebGPU'))) log(...args);
+      };
+      console.error = keep(error);
+      console.warn = keep(warn);
+      try {
+        return await run();
+      } finally {
+        console.error = error;
+        console.warn = warn;
+      }
     };
-    try {
-      await lib.loadLiteRt('file://' + wasmDir);
-    } finally {
-      console.error = consoleError;
-    }
+    await quiet(() => lib.loadLiteRt('file://' + wasmDir))();
     const modelPath = resolve(__dirname, '../../models/silentface.tflite');
-    const model = await lib.loadAndCompile(new Uint8Array(readFileSync(modelPath)), { accelerator: 'wasm' });
+    const model = await quiet(() => lib.loadAndCompile(new Uint8Array(readFileSync(modelPath)), { accelerator: 'wasm' }))();
     logger.info('Face screen detector ready', { model: 'MiniFASNetV2' });
     return { lib, model };
   } catch (error) {
