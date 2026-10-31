@@ -361,6 +361,7 @@ export function viewFor(room: PokerRoom, viewerId: string, now: number) {
     hostId: room.hostId,
     status: room.status,
     open: room.open,
+    practice: room.practice === true,
     minutes: room.minutes,
     minutesOptions: ROOMS.minutesOptions,
     house: room.house,

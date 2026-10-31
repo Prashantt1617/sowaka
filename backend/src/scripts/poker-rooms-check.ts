@@ -283,6 +283,7 @@ async function main() {
     const practice = await request(I, 'room:practice');
     await wait(50);
     check('practice: a private table with three house players, dealt at once', practice.ok && practice.data.status === 'playing' && practice.data.open === false && practice.data.table?.seats.length === 4);
+    check('and marked as practice, so the page leaves it rather than asking', practice.ok && practice.data.practice === true);
     const pCode = practice.ok ? String(practice.data.code) : '';
     await run('the house table plays to the end', async () => (await peekRoom(ORG, pCode))?.status === 'over', 4000, 800);
     const pOver = await peekRoom(ORG, pCode);
