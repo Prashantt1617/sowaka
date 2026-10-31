@@ -17,6 +17,12 @@ const money = (paise: number | null | undefined) => (paise == null ? '—' : '�
 const monthLabel = (p: string) => new Date(`${p}-01T00:00:00Z`).toLocaleDateString('en-IN', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 const dayLabel = (iso: string) => new Date(iso.length === 10 ? `${iso}T00:00:00Z` : iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: iso.length === 10 ? 'UTC' : undefined });
 
+const MISSING: Record<string, string> = {
+  flexiblePoolPaise: 'The template has no flexible pool (Payroll › Salary Templates)',
+  splitCutoffDay: 'No split cutoff day (Payroll Dashboard › Payroll in the app)',
+  billsDue: 'No bills due date (Payroll Dashboard › Payroll in the app)',
+};
+
 function fyOf(d: Date): string {
   const start = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
   return `${start}-${String((start + 1) % 100).padStart(2, '0')}`;
@@ -79,12 +85,26 @@ export function FlexibleSplitCard({ userId, name }: { userId: string; name: stri
   return (
     <section className="pd-card" style={{ marginBottom: 20 }}>
       {head}
+      {split.notConfigured && (split.missing?.length ?? 0) > 0 && (
+        <div role="note" style={{ ...Lk.note, marginBottom: 16, background: 'var(--warn-bg)', borderColor: 'transparent', color: 'var(--ink)' }}>
+          <span aria-hidden style={{ fontWeight: 700, color: 'var(--warn)' }}>!</span>
+          <span>
+            <strong style={{ fontWeight: 600 }}>The split is not configured.</strong>{' '}
+            {split.missing!.map((m) => MISSING[m]).join('; ')}. Until then {name} cannot change their split on the app.
+          </span>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 36, flexWrap: 'wrap', marginBottom: 16 }}>
-        <Kv k="Pool a month" v={money(pool)} sub={split.template ? `Template ${split.template.name}` : 'No salary structure'} />
+        <Kv k="Pool a month" v={pool == null ? 'Not set' : money(pool)} warn={pool == null && split.available} sub={split.template ? `Template ${split.template.name}` : 'No salary structure'} />
         <Kv k="Assigned" v={money(assigned)} />
         <Kv k="Unassigned" v={money(unassigned)} sub="Paid as the balancing component" />
         <Kv k="In force" v={cur ? `From ${monthLabel(cur.effectiveFrom)}` : 'No split chosen'} sub={cur ? `Submitted ${dayLabel(cur.submittedAt)}` : split.asOf ? 'The structure\'s own amounts apply' : 'The year has not started'} />
-        <Kv k="A change now applies from" v={monthLabel(split.window.effectiveFrom)} sub={`Until ${dayLabel(split.window.closesOn)} · bills due ${dayLabel(split.billsDueOn)}`} />
+        <Kv
+          k="A change now applies from"
+          v={split.window.effectiveFrom ? monthLabel(split.window.effectiveFrom) : 'Not set'}
+          warn={!split.window.effectiveFrom}
+          sub={`${split.window.closesOn ? `Until ${dayLabel(split.window.closesOn)}` : 'No cutoff day set'} · ${split.billsDueOn ? `bills due ${dayLabel(split.billsDueOn)}` : 'bills date not set'}`}
+        />
       </div>
 
       {codes.size === 0 ? (
@@ -156,11 +176,11 @@ function VersionRow({ v }: { v: SplitVersionDTO }) {
   );
 }
 
-function Kv({ k, v, sub }: { k: string; v: string; sub?: string }) {
+function Kv({ k, v, sub, warn }: { k: string; v: string; sub?: string; warn?: boolean }) {
   return (
     <div>
       <div style={Lk.kvDt}>{k}</div>
-      <div style={{ ...Lk.kvDd, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{v}</div>
+      <div style={{ ...Lk.kvDd, marginTop: 2, fontVariantNumeric: 'tabular-nums', color: warn ? 'var(--warn)' : 'var(--ink)' }}>{v}</div>
       {sub && <div style={{ ...Lk.cellSub, marginTop: 2 }}>{sub}</div>}
     </div>
   );

@@ -885,7 +885,11 @@ export type EmployeeSplitDTO = {
   /** The template has flexible components today. */
   available: boolean;
   template: { code: string; name: string } | null;
+  /** The template's flexiblePoolPaise; null when it has none (or no structure). */
   poolPaise: number | null;
+  /** HR has not set something the split needs (the pool, the cutoff day, the bills date). */
+  notConfigured?: boolean;
+  missing?: ('flexiblePoolPaise' | 'splitCutoffDay' | 'billsDue')[];
   /** The month "in force now" means; null for a future FY. */
   asOf: string | null;
   /** What applies with no split: the structure's own amounts. */
@@ -893,33 +897,36 @@ export type EmployeeSplitDTO = {
   current: SplitVersionDTO | null;
   /** Oldest first. */
   versions: SplitVersionDTO[];
-  window: { open: boolean; effectiveFrom: string; effectiveTo: string; closesOn: string; reason: string | null };
-  billsDueOn: string;
+  /** Without a cutoff day: open false and the months null. */
+  window: { open: boolean; effectiveFrom: string | null; effectiveTo: string | null; closesOn: string | null; reason: string | null };
+  billsDueOn: string | null;
 };
 
 /** One employee's flexible split for a FY: the one in force and every version. */
 export const getEmployeeSplit = (userId: string, fy?: string) =>
   api<{ split: EmployeeSplitDTO }>(`/admin/payroll/employees/${userId}/flexible-split${fy ? `?fy=${fy}` : ''}`).then((r) => r.split);
 
-/** The app's Payroll for the company: the switch and the deadlines its screens use. */
+/** The app's Payroll for the company: the switch and the deadlines its screens use. As stored: null is not set (there are no defaults). */
 export type EmployeeAppSettings = {
   appEnabled: boolean;
   /** 1 to 28. */
-  splitCutoffDay: number;
+  splitCutoffDay: number | null;
   /** "MM-DD", April to December. */
-  declarationDue: string;
+  declarationDue: string | null;
   /** "MM-DD", January to March. */
-  proofsDue: string;
+  proofsDue: string | null;
   /** "MM-DD", January to March. */
-  billsDue: string;
+  billsDue: string | null;
 };
+export type EmployeeAppDeadline = Exclude<keyof EmployeeAppSettings, 'appEnabled'>;
 export type EmployeeAppSettingsResponse = {
   fy: string;
   settings: EmployeeAppSettings;
-  defaults: EmployeeAppSettings;
-  /** The fields HR has set; the rest are defaults. */
-  customised: (keyof EmployeeAppSettings)[];
-  dates: { splitClosesOn: string; declarationDueOn: string; proofsDueOn: string; billsDueOn: string };
+  /** Deadlines still to set; Payroll can be switched on only when empty. */
+  missing: EmployeeAppDeadline[];
+  ready: boolean;
+  /** The deadlines as days of `fy` (and this month's split cutoff); null where not set. */
+  dates: { splitClosesOn: string | null; declarationDueOn: string | null; proofsDueOn: string | null; billsDueOn: string | null };
   updatedAt: string | null;
   updatedBy: string | null;
 };
@@ -927,7 +934,7 @@ export type EmployeeAppSettingsResponse = {
 export const getEmployeeAppSettings = (fy?: string) =>
   api<EmployeeAppSettingsResponse>(`/admin/payroll/employee-app-settings${fy ? `?fy=${fy}` : ''}`);
 
-/** A field left out stays; null puts it back to the default. */
+/** A field left out stays; null clears it (it is then missing). Switching on is refused (409) while a deadline is missing. */
 export const saveEmployeeAppSettings = (input: { [K in keyof EmployeeAppSettings]?: EmployeeAppSettings[K] | null }, fy?: string) =>
   api<EmployeeAppSettingsResponse>(`/admin/payroll/employee-app-settings${fy ? `?fy=${fy}` : ''}`, { method: 'PUT', body: input });
 
