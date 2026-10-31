@@ -491,8 +491,8 @@ async function load(){ try{ const h=await P.request('poker:hello'); state.shared
 function demo(){
   const q=new URLSearchParams(location.search), mode=q.get('demo')||'table';
   const t=Date.now(); const iso=m=>new Date(t+m*60000).toISOString();
-  const people=['Ananya Bisht','Rahul Mehta','Priya Sharma','Arjun Deshpande','Meera Iyer','Kabir Rao','Tanya Bhatia','Ishaan Kapoor'];
-  const board=people.map((n,i)=>({userId:'d'+i,name:n,office:['Gurgaon','Noida','Kolkata'][i%3],played:3+i%3,best:[4200-i*300,3100-i*200,2600-i*150],score:9900-i*650,knockouts:4-i%4,rank:i+1,reachedAt:0}));
+  const people=['Ananya Bisht','Rahul Mehta','Priya Sharma','Arjun Deshpande','Meera Iyer','Kabir Rao','Tanya Bhatia','Ishaan Kapoor','Nikhil Verma','Pooja Nair','Siddharth Pillai','Harsh Chaudhary','Raghav Sen','Divya Rao'];
+  const board=people.map((n,i)=>({userId:'d'+i,name:n,office:['Gurgaon','Noida','Kolkata'][i%3],played:3+i%3,best:[4200-i*250,3100-i*150,2600-i*100],score:9900-i*500,knockouts:4-i%4,rank:i+1,reachedAt:0}));
   state.mine={userId:'d0',name:'Ananya Bisht',picks:[],picksLeft:{semi:500,final:1000},picksOpen:{semi:true,final:false}};
   state.shared={event:{id:'demo',name:'Convrse Speed Poker',status:'live',paused:false,phase:q.get('phase')||'open',practice:{from:iso(-1440),to:iso(-1000)},game:{openFrom:iso(-120),openTo:iso(180),powerFrom:iso(30),powerTo:iso(90),bountiesFrom:iso(120),semisAt:iso(210),finalAt:iso(255)},
     rules:{tableSize:6,minPlayers:4,fallbackMs:360000,cooldownMs:120000,countedTables:6,bestOf:3,knockoutPoints:100,bountyPoints:300,powerMultiplier:2,semifinalists:12,advancePerSemi:3,picks:{on:true,leadMs:900000,semiBudget:500,finalBudget:1000,winnerOdds:5,firstOutOdds:3,fullTimeOdds:3,minStake:10},minutes:{open:12,semi:20,final:30}}},
