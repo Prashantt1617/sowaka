@@ -2194,11 +2194,15 @@ class Payslip {
     required this.lopDays,
     required this.paidLeaveDaysApplied,
     required this.lines,
+    this.paidAt,
   });
 
   final String id;
   final String period;
   final String runStatus;
+
+  /// When the run was paid: the slip's "Credited" date. Null until then.
+  final DateTime? paidAt;
   final String employeeName;
   final String employeeId;
   final String designation;
@@ -2232,6 +2236,7 @@ class Payslip {
       id: json['id'] as String? ?? '',
       period: json['period'] as String? ?? run['period'] as String? ?? '',
       runStatus: run['status'] as String? ?? 'draft',
+      paidAt: DateTime.tryParse(run['paidAt'] as String? ?? '')?.toLocal(),
       employeeName: json['employeeName'] as String? ?? '',
       employeeId: json['employeeId'] as String? ?? '',
       designation: json['designation'] as String? ?? '',
