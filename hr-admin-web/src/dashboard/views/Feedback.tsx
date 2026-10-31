@@ -45,6 +45,17 @@ function scoreOf(emp: FbEmp, metric: string): number | null {
   return p && p.score > 0 ? p.score : null;
 }
 
+/** The written part of a review: the manager's summary and every parameter comment. */
+function writtenOf(emp: { extra: string; params: { name: string; note: string }[] }) {
+  const notes = emp.params.filter((p) => p.note.trim());
+  return { summary: emp.extra.trim(), notes };
+}
+
+const clamp2: CSSProperties = {
+  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+  fontSize: 13, lineHeight: 1.45, color: 'var(--ink-2)', whiteSpace: 'normal',
+};
+
 function barColor(score: number): string {
   if (score >= 4) return 'var(--ok)';
   if (score >= 2.5) return 'var(--accent)';
@@ -132,7 +143,9 @@ function FeedbackBody() {
       e.name.toLowerCase().includes(q) ||
       e.designation.toLowerCase().includes(q) ||
       e.team.toLowerCase().includes(q) ||
-      e.managerName.toLowerCase().includes(q),
+      e.managerName.toLowerCase().includes(q) ||
+      // What the manager wrote is searchable too ("communication", "deadline").
+      (e.status === 'sent' && (e.extra.toLowerCase().includes(q) || e.params.some((p) => p.note.toLowerCase().includes(q)))),
     )
     .slice()
     .sort((a, b) => {
@@ -311,7 +324,7 @@ function FeedbackBody() {
         <SearchInput
           value={s.fbEmpSearch}
           onChange={(v) => { s.setFbEmpSearch(v); resetPage(); }}
-          placeholder="Search name, role or manager…"
+          placeholder="Search name, manager or review text…"
           width={280}
         />
 
@@ -334,12 +347,12 @@ function FeedbackBody() {
         <table className="lk-t" style={L.table}>
           <thead>
             <tr>
-              <Th>Employee</Th>
-              <Th width="16%">Role</Th>
-              <Th width="13%">Team</Th>
-              <Th width="14%">Manager</Th>
-              <Th width={130}>Status</Th>
-              <Th width={230}>
+              <Th width="17%">Employee</Th>
+              <Th width="11%">Team</Th>
+              <Th width="12%">Manager</Th>
+              <Th width={120}>Status</Th>
+              <Th>Written review</Th>
+              <Th width={190}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
                   <select
                     value={activeMetric}
@@ -376,11 +389,33 @@ function FeedbackBody() {
                       <span style={L.cellName}>{e.name}</span>
                     </span>
                   </Td>
-                  <Td muted>{e.designation}</Td>
-                  <Td muted>{e.team}</Td>
+                  <Td muted>
+                    <span title={e.designation}>{e.team}</span>
+                  </Td>
                   <Td muted>{e.managerName}</Td>
                   <Td>
                     <Pill label={tone.label} tone={tone} />
+                  </Td>
+                  <Td>
+                    {(() => {
+                      if (e.status !== 'sent') return <span style={{ color: 'var(--ink-3)' }}>—</span>;
+                      const { summary, notes } = writtenOf(e);
+                      if (!summary && notes.length === 0) {
+                        return <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Scores only, no comments</span>;
+                      }
+                      return (
+                        <span style={{ display: 'block', minWidth: 0 }}>
+                          <span style={clamp2} title={summary || `${notes[0].name}: ${notes[0].note}`}>
+                            {summary ? `“${summary}”` : <><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>{notes[0].name}:</strong> {notes[0].note}</>}
+                          </span>
+                          {notes.length > 0 && (
+                            <span style={{ display: 'block', fontSize: 11.5, color: 'var(--accent-ink)', marginTop: 3, fontWeight: 500 }}>
+                              {notes.length} comment{notes.length === 1 ? '' : 's'} · read review →
+                            </span>
+                          )}
+                        </span>
+                      );
+                    })()}
                   </Td>
                   <Td right>
                     {score === null ? (
@@ -572,6 +607,13 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
             : `${emp.managerName} has not started this review for the current cycle.`}
         </div>
       ) : (
+        <>
+        <div style={{ ...panelCard, marginBottom: 20 }}>
+          <div style={{ ...L.eyebrow, marginBottom: 8 }}>MANAGER'S SUMMARY</div>
+          <div style={{ fontSize: 14, color: shown.extra ? 'var(--ink)' : 'var(--ink-3)', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
+            {shown.extra || 'No summary written for this review.'}
+          </div>
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20, alignItems: 'start' }}>
           <div style={panelCard}>
             <div style={panelTitle}>Overall</div>
@@ -587,19 +629,10 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
                 </div>
                 <Delta cycles={cycles} period={shown.period} />
             </>
-
-            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
-              <div style={{ ...L.eyebrow, marginBottom: 8 }}>
-                MANAGER SUMMARY
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>
-                {shown.extra || 'No summary provided.'}
-              </div>
-            </div>
           </div>
 
           <div style={panelCard}>
-            <div style={panelTitle}>Parameters</div>
+            <div style={panelTitle}>Scores and comments</div>
             {shown.params.length === 0 ? (
               <div style={{ fontSize: 13.5, color: 'var(--ink-3)' }}>No parameters were scored on this review.</div>
             ) : (
@@ -615,10 +648,12 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
                     <tr key={`${p.name}-${i}`}>
                       <Td top>
                         <div style={L.cellName}>{p.name}</div>
-                        {p.note && (
-                          <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 6, lineHeight: 1.55, borderLeft: '2px solid var(--line-2)', paddingLeft: 10 }}>
+                        {p.note.trim() ? (
+                          <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 6, lineHeight: 1.55, borderLeft: '2px solid var(--accent)', paddingLeft: 10, whiteSpace: 'pre-wrap' }}>
                             {p.note}
                           </div>
+                        ) : (
+                          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>No comment</div>
                         )}
                       </Td>
                       <Td top right>
@@ -633,6 +668,7 @@ function ReviewCard({ emp, period: viewedPeriod, livePeriod, onClose }: {
             )}
           </div>
         </div>
+        </>
       )}
     </Modal>
   );
