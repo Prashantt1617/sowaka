@@ -1,6 +1,6 @@
-/// Face ID as the server describes it: whether the company uses it, whether
-/// this person has set it up, the consent they are asked to agree to, and how
-/// the check is run.
+/// The face check as the server describes it: whether the company uses it,
+/// whether this person has set it up, the consent they are asked to agree
+/// to, how the check is run, and who their manager is (for the fallback).
 class FaceIdStatus {
   const FaceIdStatus({
     required this.checkAtPunch,
@@ -10,6 +10,7 @@ class FaceIdStatus {
     required this.maxAttempts,
     required this.failedAttempts,
     required this.fallbackAvailable,
+    this.managerName,
   });
 
   factory FaceIdStatus.fromJson(Map<String, dynamic> json) => FaceIdStatus(
@@ -24,6 +25,7 @@ class FaceIdStatus {
     maxAttempts: (json['maxAttempts'] as num?)?.toInt() ?? 3,
     failedAttempts: (json['failedAttempts'] as num?)?.toInt() ?? 0,
     fallbackAvailable: json['fallbackAvailable'] == true,
+    managerName: json['managerName'] as String?,
   );
 
   final bool checkAtPunch;
@@ -33,6 +35,9 @@ class FaceIdStatus {
   final int maxAttempts;
   final int failedAttempts;
   final bool fallbackAvailable;
+
+  /// Who a punch sent instead of the check goes to; null when nobody is set.
+  final String? managerName;
 }
 
 /// The line the person ticks, as the server has it, word for word. The
@@ -51,7 +56,8 @@ class FaceConsent {
 }
 
 /// How the live-person check runs: Rekognition Face Liveness streamed from
-/// the phone ('aws'), or the app's own blink-or-turn prompt ('device').
+/// the phone ('aws'), or the app's burst with the server's screen detector
+/// ('device').
 class FaceLivenessConfig {
   const FaceLivenessConfig({
     required this.mode,
@@ -106,20 +112,28 @@ class FaceCheckResult {
   final int attemptsLeft;
   final bool fallbackAvailable;
 
-  /// The status row's heading for a failed check.
+  /// Whether the check could not be judged (a poor picture, the detector
+  /// unsure, the service down) rather than the face not matching: not one of
+  /// the day's tries.
+  bool get inconclusive => !const {'not_a_match', 'other_person', 'already_enrolled_elsewhere', 'matched'}.contains(reason);
+
+  /// The camera's headline for a failed check: four or five words, phrased
+  /// as the fix where there is one.
   String get title => switch (reason) {
     'no_face' => 'Face not detected',
-    'multiple_faces' => 'More than one face',
-    'too_dark' => 'Too dark',
-    'too_bright' => 'Too bright',
-    'blurry' => 'Picture is blurry',
-    'face_turned' => 'Look straight ahead',
-    'eyes_closed' => 'Eyes closed',
-    'face_covered' => 'Face covered',
-    'too_small' => 'Move closer',
-    'liveness_failed' => 'Liveness check failed',
+    'multiple_faces' => 'Only one face in the frame',
+    'too_dark' => 'Too dark here',
+    'too_bright' => 'Turn away from the window',
+    'blurry' => 'Hold the phone still',
+    'face_turned' => 'Face the camera',
+    'eyes_closed' => 'Keep your eyes open',
+    'face_covered' => 'Uncover your face',
+    'too_small' => 'Move a little closer',
+    'uncertain' => 'Move a little closer',
+    'spoof' => 'Please use your face, not a photo or a screen',
+    'liveness_failed' => 'Please use your face, not a photo or a screen',
     'unavailable' => 'Face check unavailable',
-    _ => 'Face not matched',
+    _ => "We couldn't confirm it's you",
   };
 }
 

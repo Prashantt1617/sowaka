@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import {
   enrolFace, faceIdOverviewForAdmin, FaceIdError, faceStatusFor, issueFaceChallenge, listFaceChecksForAdmin,
   requestFaceFallback, resetFaceIdForAdmin, startLivenessSession, updateFaceIdSettingsForAdmin, verifyFace, logPhoneTry,
-  type FlashEvidence } from '../services/face-id.service';
+  type LivenessEvidence } from '../services/face-id.service';
 import { facePhotoFiles } from '../middleware/face-photo-upload.middleware';
 
 function userId(req: Request) {
@@ -20,27 +20,35 @@ export async function enrol(req: Request, res: Response, next: NextFunction) {
   try {
     const body = req.body ?? {};
     const result = await enrolFace(userId(req), {
-      photo: req.file?.buffer, consent: body.consent, consentVersion: body.consentVersion, challenge: body.challenge,
+      photo: req.file?.buffer, morePhotos: morePhotosFrom(req), consent: body.consent, consentVersion: body.consentVersion, challenge: body.challenge,
       evidence: evidenceFrom(req),
     });
     res.status(201).json({ success: true, ...result });
   } catch (error) { next(error); }
 }
 
-/**
- * A light check for the next selfie: the id the selfie must answer with and
- * the two colours to flash, good for a few minutes, used once.
- */
+/** A one-time id for the next selfie, good for a few minutes, used once. */
 export async function challenge(req: Request, res: Response, next: NextFunction) {
   try { res.status(201).json({ success: true, ...(await issueFaceChallenge(userId(req))) }); } catch (error) { next(error); }
 }
 
-/** The challenge id and the three face crops the server judges the light check from, when the app sent them. */
-function evidenceFrom(req: Request): FlashEvidence | undefined {
+/** The challenge id, the burst of face crops and the phone's own readings, when the app sent them. */
+function evidenceFrom(req: Request): LivenessEvidence | undefined {
   const files = facePhotoFiles(req);
-  const challengeId = req.body?.challengeId;
-  if (!files.baseline && !files.lit0 && !files.lit1 && typeof challengeId !== 'string') return undefined;
-  return { challengeId, baseline: files.baseline?.buffer, lit: [files.lit0?.buffer, files.lit1?.buffer] };
+  const crops: Buffer[] = [];
+  for (let i = 0; i < 24; i++) {
+    const file = files[`crop${i}`];
+    if (file) crops.push(file.buffer);
+  }
+  const body = req.body ?? {};
+  if (!crops.length && typeof body.challengeId !== 'string') return undefined;
+  return { challengeId: body.challengeId, crops, spoofPhone: body.spoofPhone, motionMean: body.motionMean, motionRigid: body.motionRigid };
+}
+
+/** The setup's turned photos, in order. */
+function morePhotosFrom(req: Request): Buffer[] {
+  const files = facePhotoFiles(req);
+  return [files.photo2, files.photo3].filter((f): f is Express.Multer.File => Boolean(f)).map((f) => f.buffer);
 }
 
 /** One Face ID try as the phone saw it, for tuning the phone's own checks. */

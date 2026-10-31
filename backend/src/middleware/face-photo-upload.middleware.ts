@@ -6,8 +6,14 @@ import { FaceIdError } from '../services/face-id.service';
 // sends its camera's own, which is re-encoded before Rekognition sees it.
 const MAX_FACE_BYTES = 8 * 1024 * 1024;
 
-/** The selfie, and the light check's three face crops the server judges from. */
-const FIELDS = ['photo', 'baseline', 'lit0', 'lit1'] as const;
+/**
+ * The selfie (and at setup the two turned photos), the burst of face crops
+ * the server's screen detector judges (eight from the front photo, and at
+ * setup eight from each turn, kept for the log), and the colour-flash crops
+ * builds 59 and 60 still send (ignored).
+ */
+const CROPS = Array.from({ length: 24 }, (_, i) => `crop${i}` as const);
+const FIELDS = ['photo', 'photo2', 'photo3', ...CROPS, 'baseline', 'lit0', 'lit1'] as const;
 
 const faceUpload = multer({
   storage: multer.memoryStorage(),
@@ -43,9 +49,9 @@ export function uploadFacePhoto(request: Request, response: Response, next: Next
 }
 
 /** Each uploaded face file by field name, whichever shape multer left them in. */
-export function facePhotoFiles(request: Request): Partial<Record<(typeof FIELDS)[number], Express.Multer.File>> {
+export function facePhotoFiles(request: Request): Partial<Record<string, Express.Multer.File>> {
   const raw = request.files;
-  const out: Partial<Record<(typeof FIELDS)[number], Express.Multer.File>> = {};
+  const out: Partial<Record<string, Express.Multer.File>> = {};
   if (!raw || Array.isArray(raw)) return out;
   for (const name of FIELDS) {
     const list = raw[name];
