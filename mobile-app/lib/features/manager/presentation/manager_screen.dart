@@ -294,6 +294,7 @@ class _ManagerScreenState extends State<ManagerScreen> {
         fullscreenDialog: true,
       ),
     );
+    if (mounted) showPunchToast(context, outcome);
     if ((outcome?.punched == true || outcome?.requested == true) && mounted) {
       await _bloc.add(LoadAttendanceMonth(DateTime.now()));
     }

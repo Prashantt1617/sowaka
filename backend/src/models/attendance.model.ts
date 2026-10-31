@@ -34,7 +34,7 @@ export interface FaceCheckNote {
 /** The face check a punch went through on, kept with the punch. */
 export interface PunchFaceCheck {
   similarity?: number;
-  liveness: 'aws' | 'device' | 'server_flash' | 'none';
+  liveness: 'aws' | 'device' | 'server_flash' | 'server_spoof' | 'none';
   at: Date;
 }
 

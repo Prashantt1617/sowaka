@@ -200,17 +200,20 @@ export const env = {
      */
     inconclusiveFallback: clamp(Number(process.env.FACE_INCONCLUSIVE_FALLBACK) || 8, 1, 30),
     /**
-     * The server's light check: the face under each colour it set must shift
-     * its chroma that colour's way by FACE_FLASH_CHROMA (YCbCr units) and
-     * brighten by FACE_FLASH_BRIGHTEN, judged from the frames the phone
-     * sends. Lenient until calibrated from `npm run face:calibrate`.
+     * The server's screen detector (MiniFASNet V2, run on the burst of face
+     * crops the phone sends): the burst's median real-face score must reach
+     * FACE_SPOOF_ACCEPT to go on to the match; under FACE_SPOOF_UNCERTAIN_LOW
+     * it is refused as a photo or a screen; in between the person is asked
+     * to move a little closer and the phone looks again. Neither counts as a
+     * daily try. Set from `npm run face:calibrate` after the field test.
      */
-    flashChroma: clamp(Number(process.env.FACE_FLASH_CHROMA) || 1.5, 0.2, 20),
-    flashBrighten: clamp(Number(process.env.FACE_FLASH_BRIGHTEN) || 1, 0, 30),
+    spoofAccept: clamp(Number(process.env.FACE_SPOOF_ACCEPT) || 0.7, 0.05, 0.99),
+    spoofUncertainLow: clamp(Number(process.env.FACE_SPOOF_UNCERTAIN_LOW) || 0.4, 0.01, 0.98),
     /**
-     * `on`: a selfie without a server challenge answered is refused (apps
-     * from before 1.3.9 (59) send none). Off, such a selfie is logged as
-     * unverified and still matched.
+     * `on`: a selfie without the challenge id and its burst of face crops
+     * is refused with the update prompt (apps from before the Face check
+     * build send none). Off, such a selfie is logged as unverified and still
+     * matched.
      */
     requireChallenge: (process.env.FACE_REQUIRE_CHALLENGE ?? '').trim().toLowerCase() === 'on',
     /** Each Rekognition call gives up after this long. */

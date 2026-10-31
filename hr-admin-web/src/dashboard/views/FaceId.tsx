@@ -1,4 +1,4 @@
-// Shifts › Face ID — the company's switch, who has set it up, and the checks
+// Shifts › Face check — the company's switch, who has set it up, and the checks
 // that failed.
 //
 // One switch, off by default, so it can be rolled out a company at a time.
@@ -20,7 +20,7 @@ import {
 } from '../../services/hrms';
 
 const PEOPLE_COLS = '1.8fr 1fr 1fr 1.2fr .8fr .9fr';
-const CHECK_COLS = '1.6fr 1.1fr 1.8fr .7fr 1fr 1.3fr';
+const CHECK_COLS = '1.6fr 1.1fr 1.7fr .7fr 1.1fr .7fr 1.2fr';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const weekAgoIso = () => new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
@@ -69,23 +69,23 @@ export function FaceId() {
     try {
       await updateFaceIdSettings(input);
       overview.retry();
-      flash('Face ID settings saved');
+      flash('Face check settings saved');
     } catch (error) {
-      flash(error instanceof Error ? error.message : 'Could not save Face ID settings');
+      flash(error instanceof Error ? error.message : 'Could not save face check settings');
     } finally {
       setSaving(false);
     }
   };
 
   const reset = async (person: FaceIdPersonDTO) => {
-    if (!window.confirm(`Reset ${person.name}'s Face ID? Their face is deleted, and the app asks them to set it up again.`)) return;
+    if (!window.confirm(`Reset ${person.name}'s face check? Their face is deleted, and the app asks them to set it up again.`)) return;
     setResetting(person.userId);
     try {
       await resetFaceId(person.userId);
       overview.retry();
-      flash(`${person.name}'s Face ID was reset`);
+      flash(`${person.name}'s face check was reset`);
     } catch (error) {
-      flash(error instanceof Error ? error.message : 'Could not reset Face ID');
+      flash(error instanceof Error ? error.message : 'Could not reset the face check');
     } finally {
       setResetting(null);
     }
@@ -97,20 +97,20 @@ export function FaceId() {
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 20 }}>
-        <SummaryCard label="Set up Face ID" value={<LoadingFigure state={st}>{`${data?.enrolledCount ?? 0} of ${people.length}`}</LoadingFigure>} />
+        <SummaryCard label="Set up face check" value={<LoadingFigure state={st}>{`${data?.enrolledCount ?? 0} of ${people.length}`}</LoadingFigure>} />
         <SummaryCard label="Failed checks · 30 days" value={<LoadingFigure state={st}>{failed30}</LoadingFigure>} color="var(--warn)" />
         <SummaryCard label="Match needed" value={<LoadingFigure state={st}>{`${data?.matchThreshold ?? 95}%`}</LoadingFigure>} />
-        <SummaryCard label="Live-person check" value={<LoadingFigure state={st}>{data?.liveness === 'aws' ? 'AWS Liveness' : 'In the app'}</LoadingFigure>} />
+        <SummaryCard label="Live-person check" value={<LoadingFigure state={st}>{data?.liveness === 'aws' ? 'AWS Liveness' : data?.liveness === 'server' ? 'Photo & screen check' : 'In the app'}</LoadingFigure>} />
       </div>
 
       <Card padded style={{ marginBottom: 20 }}>
-        <h3 style={cardTitle}>Face ID</h3>
+        <h3 style={cardTitle}>Face check</h3>
         <p style={{ ...cardNote, margin: '4px 0 16px' }}>
           Confirms it is really the employee punching. Force the app update for the company when you turn it on: older apps cannot punch while faces are checked.
         </p>
         <SettingRow
           title="Check faces at punch-in and punch-out"
-          note="Geotag and in-app punches, both ways; biometric devices and Auto Punch are not checked. Anyone not set up sets up Face ID at their next punch. A selfie must match before the location check; after three failed tries the punch goes to the manager as a request."
+          note="Geotag and in-app punches, both ways; biometric devices and Auto Punch are not checked. Anyone not set up sets up the face check at their next punch. A selfie must match before the location check; after five failed tries the punch goes to the manager as a request."
           on={on}
           disabled={saving || st !== 'ready'}
           onToggle={() => void save({ checkAtPunch: !on })}
@@ -178,6 +178,7 @@ export function FaceId() {
               <Th>REASON</Th>
               <Th>MATCH</Th>
               <Th>LIVE CHECK</Th>
+              <Th>MOTION</Th>
               <Th>MATCHED</Th>
             </div>
             {shownChecks.map((c, i) => (
@@ -189,16 +190,22 @@ export function FaceId() {
                 <div style={{ fontWeight: 400 }}>
                   {c.liveness === 'aws'
                     ? `AWS ${c.livenessConfidence == null ? '' : `${c.livenessConfidence.toFixed(0)}%`}`
+                    : c.liveness === 'server_spoof'
+                      ? <span title="How sure the detector is that it saw a real face, not a photo or a screen: the server's (decides) and the phone's">
+                          {c.spoofServer == null ? 'Real —' : `Real ${(c.spoofServer * 100).toFixed(0)}%`}
+                          {c.spoofPhone == null ? null : <span style={cellSub}>{` · phone ${(c.spoofPhone * 100).toFixed(0)}%`}</span>}
+                        </span>
                     : c.liveness === 'device'
                       ? c.deviceCheckPassed ? 'App prompt done' : 'App prompt not done'
                       : '—'}
                 </div>
+                <div style={{ fontWeight: 400, fontVariantNumeric: 'tabular-nums' }}>{c.motionMean == null ? '—' : `${c.motionMean.toFixed(1)} px`}</div>
                 <div>
                   {c.matchedName ? <Pill label={c.matchedName} tone={STAT.Declined} /> : <span style={cellSub}>—</span>}
                 </div>
               </div>
             ))}
-            <ListPending state={checks.state} onRetry={checks.retry} cols={6} />
+            <ListPending state={checks.state} onRetry={checks.retry} cols={7} />
             {checks.state === 'ready' && shownChecks.length === 0 && <EmptyRow text="No failed checks in this range." />}
           </>
         )}

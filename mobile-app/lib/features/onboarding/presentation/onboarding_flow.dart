@@ -293,7 +293,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                     ],
                     _Continue(
                       label: _step == _Step.faceId
-                          ? 'Set up Face ID'
+                          ? 'Set up face check'
                           : 'Continue',
                       enabled: switch (_step) {
                         _Step.photo => _photoPath != null,
@@ -421,7 +421,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       child: Column(
         children: [
           const _Introduction(
-            title: 'Set up Face ID',
+            title: 'Set up face check',
             body:
                 'Your company confirms it\u2019s you when you punch in or out, '
                 'with a quick selfie. Set it up once now; it takes a minute.',
@@ -437,20 +437,16 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             ),
             child: Center(
               child: SvgPicture.asset(
-                'assets/icons/face/scan_face.svg',
+                'assets/icons/face/face_check.svg',
                 width: 56,
                 height: 56,
-                colorFilter: const ColorFilter.mode(
-                  _brandDeep,
-                  BlendMode.srcIn,
-                ),
               ),
             ),
           ),
           if (_faceLater) ...[
             const SizedBox(height: 20),
             const Text(
-              'Face ID is not set up yet. You can set it up at your first punch instead.',
+              'The face check is not set up yet. You can set it up at your first punch instead.',
               textAlign: TextAlign.center,
               style: TextStyle(fontFamily: 'Sora', fontSize: 13, color: _muted),
             ),
