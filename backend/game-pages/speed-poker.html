@@ -37,6 +37,15 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .btn.ghost{background:rgba(255,255,255,.07);color:var(--ink)}
 .btn.small{min-height:36px;font-size:14px;border-radius:10px;padding:0 12px}
 .btn:disabled{opacity:.45}
+.avatar.xs{width:24px;height:24px;font-size:9px}
+.avatar.sm{width:30px;height:30px;font-size:11px}
+.stack{display:flex;align-items:center}
+.stack .avatar{margin-left:-7px;box-shadow:0 0 0 2px var(--panel)}
+.stack .avatar:first-child{margin-left:0}
+.pp{display:inline-flex;align-items:center;gap:6px;margin:4px 10px 4px 0;font-size:13px;color:#d3e3d9}
+.opt .avatar{display:inline-flex;vertical-align:middle;margin-right:6px}
+.opt{display:inline-flex;align-items:center}
+.me-face{width:34px;height:34px}
 .avatar{width:38px;height:38px;border-radius:50%;background:#2a4a3a center/cover no-repeat;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#dfeee5;flex:none}
 .toast{position:fixed;left:50%;bottom:calc(90px + var(--safe-b));transform:translateX(-50%);background:rgba(10,18,14,.95);border:1px solid var(--line);padding:10px 14px;border-radius:12px;font-size:14px;max-width:88vw;z-index:50;box-shadow:0 8px 30px rgba(0,0,0,.4);transition:opacity .2s}
 
@@ -243,6 +252,7 @@ const first=n=>String(n||'').trim().split(/\s+/)[0]||'Someone';
 const clockOf=ms=>{ ms=Math.max(0,ms); const s=Math.floor(ms/1000); const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60; return h?`${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`:`${m}:${String(x).padStart(2,'0')}`; };
 const hhmm=iso=>{ if(!iso)return ''; const d=new Date(iso); return d.toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit',timeZone:'Asia/Kolkata'}); };
 function toast(msg){ document.querySelectorAll('.toast').forEach(x=>x.remove()); const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>{t.style.opacity='0'; setTimeout(()=>t.remove(),250);},2600); }
+const pic=id=>(state.shared&&state.shared.photos&&state.shared.photos[id])||(state.mine&&state.mine.userId===id&&state.mine.photoUrl)||null;
 function avatarHtml(name,photo,extra){ return `<div class="avatar ${extra||''}" ${photo?`style="background-image:url('${esc(photo)}')"`:''}>${photo?'':esc(initials(name))}</div>`; }
 
 /* ---------- cards ---------- */
@@ -294,7 +304,7 @@ function renderLobby(){
   const tabs=[['board','Board'],['offices','Offices'],['tables','Live tables'],...(sh.semis||sh.final?[['finals','Finals']]:[]),...(sh.event.rules.picks.on&&(sh.semis||sh.final)?[['picks','Picks']]:[]),['rules','How it works']];
   if(!tabs.some(x=>x[0]===state.tab))state.tab='board';
   app.innerHTML=`<div id="lobby">
-    <div class="top"><div class="brand"><div class="mark">♠</div><div><h1>${esc(sh.event.name)}</h1><div class="sub">${esc(ph.line)}</div></div></div><span class="chip ${ph.cls}"><span class="dot"></span>${esc(ph.chip)}</span></div>
+    <div class="top"><div class="brand"><div class="mark">♠</div><div><h1>${esc(sh.event.name)}</h1><div class="sub">${esc(ph.line)}</div></div></div><div style="display:flex;align-items:center;gap:8px"><span class="chip ${ph.cls}"><span class="dot"></span>${esc(ph.chip)}</span>${state.mine?avatarHtml(state.mine.name,pic(state.mine.userId),'me-face'):''}</div></div>
     <div class="hero"><div class="suits">♠♥♦♣</div>${hero}</div>
     ${stats}
     <div class="tabs">${tabs.map(([k,l])=>`<button class="tab ${state.tab===k?'on':''}" data-tab="${k}">${l}</button>`).join('')}</div>
@@ -303,20 +313,20 @@ function renderLobby(){
 function boardRows(sh,limit){ const uid=me();
   if(!sh.board.length)return `<div class="empty">No scores yet. The board fills as tables finish.</div>`;
   let rows=sh.board.slice(0,limit); const mine=sh.board.find(r=>r.userId===uid); if(mine&&!rows.includes(mine))rows=[...rows,mine];
-  return rows.map(r=>`<div class="rowi ${r.userId===uid?'me':''}"><div class="rank">${r.rank}</div>${avatarHtml(r.name)}<div class="who"><b>${esc(r.name)}${sh.bounties.includes(r.userId)?' <span class="chip gold" style="padding:1px 6px;font-size:10px">BOUNTY</span>':''}</b><span>${esc(r.office||'')}${r.office?' · ':''}${r.played} table${r.played===1?'':'s'} · best ${r.best.map(fmt).join(' / ')}</span></div><div class="pts">${fmt(r.score)}</div></div>`).join(''); }
+  return rows.map(r=>`<div class="rowi ${r.userId===uid?'me':''}"><div class="rank">${r.rank}</div>${avatarHtml(r.name,pic(r.userId))}<div class="who"><b>${esc(r.name)}${sh.bounties.includes(r.userId)?' <span class="chip gold" style="padding:1px 6px;font-size:10px">BOUNTY</span>':''}</b><span>${esc(r.office||'')}${r.office?' · ':''}${r.played} table${r.played===1?'':'s'} · best ${r.best.map(fmt).join(' / ')}</span></div><div class="pts">${fmt(r.score)}</div></div>`).join(''); }
 function tabBody(sh){
   switch(state.tab){
     case 'board': return `<div class="card"><h3>Today's board</h3>${boardRows(sh,30)}</div>`;
     case 'offices': { const top=Math.max(1,...sh.league.map(o=>o.average));
       return `<div class="card"><h3>Office league · average best ${sh.event.rules.bestOf}</h3>${sh.league.length?sh.league.map((o,i)=>`<div class="rowi"><div class="rank">${i+1}</div><div class="who"><b>${esc(o.office)}</b><span>${o.players} player${o.players===1?'':'s'}</span><div class="bar"><i style="width:${Math.round(o.average/top*100)}%"></i></div></div><div class="pts">${fmt(o.average)}</div></div>`).join(''):'<div class="empty">No offices on the board yet.</div>'}</div>`; }
-    case 'tables': return `<div class="card"><h3>Playing now</h3>${sh.tables.length?sh.tables.map(t=>`<div class="rowi"><div class="who"><b>${t.round==='semi'?'Semifinal '+esc(t.label):t.round==='final'?'The final':t.round==='practice'?'Practice table':'Table'}${t.power?' · ×2':''}</b><span>${t.players.map(p=>esc(first(p.name))).join(', ')} · ${clockOf(t.endsAt-now())} left</span></div><button class="btn small ghost" data-watch="${esc(t.id)}">Watch</button></div>`).join(''):'<div class="empty">No tables running right now.</div>'}</div>`;
+    case 'tables': return `<div class="card"><h3>Playing now</h3>${sh.tables.length?sh.tables.map(t=>`<div class="rowi"><div class="who"><b>${t.round==='semi'?'Semifinal '+esc(t.label):t.round==='final'?'The final':t.round==='practice'?'Practice table':'Table'}${t.power?' · ×2':''}</b><span>${t.players.map(p=>esc(first(p.name))).join(', ')} · ${clockOf(t.endsAt-now())} left</span><div class="stack" style="margin-top:6px">${t.players.map(p=>avatarHtml(p.name,pic(p.userId),'sm')).join('')}</div></div><button class="btn small ghost" data-watch="${esc(t.id)}">Watch</button></div>`).join(''):'<div class="empty">No tables running right now.</div>'}</div>`;
     case 'finals': return finalsBody(sh);
     case 'picks': return picksBody(sh);
     default: return rulesBody(sh);
   } }
 function finalsBody(sh){ const name=id=>sh.names[id]||'Player';
-  const stage=(title,st)=>st?`<div class="card"><h3>${title}${st.startedAt?(st.endedAt?' · over':' · live'):' · '+(title==='Final'?hhmm(sh.event.game.finalAt):hhmm(sh.event.game.semisAt))}</h3>${st.tables.map(t=>`<div class="rowi"><div class="who"><b>${t.label==='F'?'Final table':'Table '+esc(t.label)}</b><span>${t.players.map(p=>esc(name(p))).join(' · ')}</span></div>${t.tableId&&!st.endedAt?`<button class="btn small ghost" data-watch="${esc(t.tableId)}">Watch</button>`:''}</div>`).join('')}</div>`:'';
-  return (sh.champion?`<div class="card"><h3>Champion</h3><div class="rowi">${avatarHtml(sh.champion.name)}<div class="who"><b>${esc(sh.champion.name)}</b><span>${esc(sh.event.name)}</span></div><div class="pts">🏆</div></div></div>`:'')+stage('Final',sh.final)+stage('Semifinals',sh.semis); }
+  const stage=(title,st)=>st?`<div class="card"><h3>${title}${st.startedAt?(st.endedAt?' · over':' · live'):' · '+(title==='Final'?hhmm(sh.event.game.finalAt):hhmm(sh.event.game.semisAt))}</h3>${st.tables.map(t=>`<div class="rowi"><div class="who"><b>${t.label==='F'?'Final table':'Table '+esc(t.label)}</b><div>${t.players.map(p=>`<span class="pp">${avatarHtml(name(p),pic(p),'xs')}${esc(name(p))}</span>`).join('')}</div></div>${t.tableId&&!st.endedAt?`<button class="btn small ghost" data-watch="${esc(t.tableId)}">Watch</button>`:''}</div>`).join('')}</div>`:'';
+  return (sh.champion?`<div class="card"><h3>Champion</h3><div class="rowi">${avatarHtml(sh.champion.name,pic(sh.champion.userId))}<div class="who"><b>${esc(sh.champion.name)}</b><span>${esc(sh.event.name)}</span></div><div class="pts">🏆</div></div></div>`:'')+stage('Final',sh.final)+stage('Semifinals',sh.semis); }
 function picksBody(sh){ const m=state.mine||{picks:[],picksLeft:{semi:0,final:0},picksOpen:{}}; const r=sh.event.rules.picks, name=id=>sh.names[id]||'Player';
   const stageBox=(stage,st)=>{ if(!st)return ''; const open=m.picksOpen&&m.picksOpen[stage]; const left=m.picksLeft[stage];
     const mineHere=m.picks.filter(p=>p.stage===stage);
@@ -326,11 +336,11 @@ function picksBody(sh){ const m=state.mine||{picks:[],picksLeft:{semi:0,final:0}
       ${open?`<div class="pickbox">
         ${st.tables.length>1?`<div class="q">Table</div><div class="opts">${st.tables.map(t=>`<button class="opt ${sel.table===t.label?'on':''}" data-pick="${stage}|table|${t.label}">Table ${t.label}</button>`).join('')}</div>`:''}
         <div class="q">Your call</div><div class="opts">${kinds.map(([k,l])=>`<button class="opt ${sel.kind===k?'on':''}" data-pick="${stage}|kind|${k}">${l}</button>`).join('')}</div>
-        ${sel.kind?`<div class="q">${sel.kind==='fullTime'?'Will the final run its full time?':'Who'}</div><div class="opts">${sel.kind==='fullTime'?['yes','no'].map(v=>`<button class="opt ${sel.choice===v?'on':''}" data-pick="${stage}|choice|${v}">${v==='yes'?'Yes, to the clock':'No, someone wins it'}</button>`).join(''):(st.tables.find(t=>t.label===(sel.table||st.tables[0].label))||{players:[]}).players.map(p=>`<button class="opt ${sel.choice===p?'on':''}" data-pick="${stage}|choice|${p}">${esc(name(p))}</button>`).join('')}</div>`:''}
+        ${sel.kind?`<div class="q">${sel.kind==='fullTime'?'Will the final run its full time?':'Who'}</div><div class="opts">${sel.kind==='fullTime'?['yes','no'].map(v=>`<button class="opt ${sel.choice===v?'on':''}" data-pick="${stage}|choice|${v}">${v==='yes'?'Yes, to the clock':'No, someone wins it'}</button>`).join(''):(st.tables.find(t=>t.label===(sel.table||st.tables[0].label))||{players:[]}).players.map(p=>`<button class="opt ${sel.choice===p?'on':''}" data-pick="${stage}|choice|${p}">${avatarHtml(name(p),pic(p),'xs')}${esc(name(p))}</button>`).join('')}</div>`:''}
         <div class="stake"><input id="stake-${stage}" type="range" min="${r.minStake}" max="${Math.max(r.minStake,left)}" step="10" value="${Math.min(left,sel.stake||Math.min(100,left))}"><b class="num" id="stakev-${stage}">${fmt(Math.min(left,sel.stake||Math.min(100,left)))}</b></div>
         <button class="btn primary" style="width:100%;margin-top:10px" data-act="pick" data-stage="${stage}" ${left<r.minStake?'disabled':''}>Place pick</button></div>`:''}
-      ${mineHere.length?mineHere.map(p=>`<div class="rowi"><div class="who"><b>${p.kind==='winner'?'Wins':p.kind==='firstOut'?'First out':'Full time'}: ${esc(p.kind==='fullTime'?(p.choice==='yes'?'Yes':'No'):name(p.choice))}</b><span>${p.stage==='semi'?'Table '+esc(p.table)+' · ':''}${fmt(p.stake)} points</span></div><div class="pts">${p.payout===null?'—':p.payout>0?'+'+fmt(p.payout):'0'}</div></div>`).join(''):''}</div>`; };
-  return `${stageBox('final',sh.final)}${stageBox('semi',sh.semis)}<div class="card"><h3>Picks board · top ten in the gift draw</h3>${sh.picksBoard.length?sh.picksBoard.slice(0,10).map((p,i)=>`<div class="rowi ${p.userId===me()?'me':''}"><div class="rank">${i+1}</div><div class="who"><b>${esc(p.name)}</b><span>${fmt(p.staked)} staked</span></div><div class="pts">${fmt(p.won)}</div></div>`).join(''):'<div class="empty">No picks settled yet.</div>'}</div>
+      ${mineHere.length?mineHere.map(p=>`<div class="rowi">${p.kind==='fullTime'?'':avatarHtml(name(p.choice),pic(p.choice),'sm')}<div class="who"><b>${p.kind==='winner'?'Wins':p.kind==='firstOut'?'First out':'Full time'}: ${esc(p.kind==='fullTime'?(p.choice==='yes'?'Yes':'No'):name(p.choice))}</b><span>${p.stage==='semi'?'Table '+esc(p.table)+' · ':''}${fmt(p.stake)} points</span></div><div class="pts">${p.payout===null?'—':p.payout>0?'+'+fmt(p.payout):'0'}</div></div>`).join(''):''}</div>`; };
+  return `${stageBox('final',sh.final)}${stageBox('semi',sh.semis)}<div class="card"><h3>Picks board · top ten in the gift draw</h3>${sh.picksBoard.length?sh.picksBoard.slice(0,10).map((p,i)=>`<div class="rowi ${p.userId===me()?'me':''}"><div class="rank">${i+1}</div>${avatarHtml(p.name,pic(p.userId))}<div class="who"><b>${esc(p.name)}</b><span>${fmt(p.staked)} staked</span></div><div class="pts">${fmt(p.won)}</div></div>`).join(''):'<div class="empty">No picks settled yet.</div>'}</div>
   <div class="card rules"><h3>About picks</h3><p>Pick points are handed out free before each round and only count on the picks board. Nothing can be bought, moved or cashed. Players cannot pick on their own round.</p></div>`; }
 function rulesBody(sh){ const r=sh.event.rules;
   return `<div class="card rules"><h3>How it works</h3>
@@ -350,8 +360,8 @@ function renderTv(){ const sh=state.shared, ph=phaseWords(sh);
   if(live.length){ app.innerHTML=`<div id="lobby"><div class="top"><div class="brand"><div class="mark">♠</div><div><h1>${esc(sh.event.name)}</h1><div class="sub">${esc(ph.line)}</div></div></div><span class="chip ${ph.cls}"><span class="dot"></span>${esc(ph.chip)}</span></div>
     <div class="tables2" style="grid-template-columns:${live.length>1?'1fr 1fr':'1fr'}">${live.map(t=>`<div class="tvt landscape">${tableInner(state.tvTables[t.tableId],true)}</div>`).join('')}</div></div>`; return; }
   app.innerHTML=`<div id="lobby"><div class="top"><div class="brand"><div class="mark">♠</div><div><h1>${esc(sh.event.name)}</h1><div class="sub">${esc(ph.line)}</div></div></div><span class="chip ${ph.cls}"><span class="dot"></span>${esc(ph.chip)}</span></div>
-    <div class="tvgrid"><div class="card"><h3>Board</h3>${boardRows(sh,15)}</div><div>${sh.champion?`<div class="card"><h3>Champion</h3><div class="rowi">${avatarHtml(sh.champion.name)}<div class="who"><b style="font-size:26px">${esc(sh.champion.name)}</b></div><div class="pts" style="font-size:30px">🏆</div></div></div>`:''}<div class="card"><h3>Office league</h3>${sh.league.map((o,i)=>`<div class="rowi"><div class="rank">${i+1}</div><div class="who"><b>${esc(o.office)}</b><div class="bar"><i style="width:${Math.round(o.average/Math.max(1,...sh.league.map(x=>x.average))*100)}%"></i></div></div><div class="pts">${fmt(o.average)}</div></div>`).join('')||'<div class="empty">—</div>'}</div>
-    <div class="card"><h3>Playing now · ${sh.tables.length} tables · ${sh.queue.length} waiting</h3>${sh.tables.slice(0,8).map(t=>`<div class="rowi"><div class="who"><b>${t.players.map(p=>esc(first(p.name))).join(', ')}</b><span>${clockOf(t.endsAt-now())} left${t.power?' · ×2':''}</span></div></div>`).join('')||'<div class="empty">No tables running.</div>'}</div></div></div></div>`; }
+    <div class="tvgrid"><div class="card"><h3>Board</h3>${boardRows(sh,15)}</div><div>${sh.champion?`<div class="card"><h3>Champion</h3><div class="rowi">${avatarHtml(sh.champion.name,pic(sh.champion.userId))}<div class="who"><b style="font-size:26px">${esc(sh.champion.name)}</b></div><div class="pts" style="font-size:30px">🏆</div></div></div>`:''}<div class="card"><h3>Office league</h3>${sh.league.map((o,i)=>`<div class="rowi"><div class="rank">${i+1}</div><div class="who"><b>${esc(o.office)}</b><div class="bar"><i style="width:${Math.round(o.average/Math.max(1,...sh.league.map(x=>x.average))*100)}%"></i></div></div><div class="pts">${fmt(o.average)}</div></div>`).join('')||'<div class="empty">—</div>'}</div>
+    <div class="card"><h3>Playing now · ${sh.tables.length} tables · ${sh.queue.length} waiting</h3>${sh.tables.slice(0,8).map(t=>`<div class="rowi"><div class="stack">${t.players.map(p=>avatarHtml(p.name,pic(p.userId),'sm')).join('')}</div><div class="who"><b>${t.players.map(p=>esc(first(p.name))).join(', ')}</b><span>${clockOf(t.endsAt-now())} left${t.power?' · ×2':''}</span></div></div>`).join('')||'<div class="empty">No tables running.</div>'}</div></div></div></div>`; }
 
 /* ---------- the table ---------- */
 const POS_P={B:[50,90],LL:[8,66],LM:[8,47],LU:[10,25],T:[50,8],RU:[90,25],RM:[92,47],RL:[92,66]};
@@ -374,7 +384,7 @@ function tableInner(v,landscape){
     const tag=s.busted?'<span class="tag">OUT</span>':s.allIn?'<span class="tag allin">ALL IN</span>':s.sittingOut?'<span class="tag">AWAY</span>':s.lastAction&&!s.toAct&&v.street!=='done'?`<span class="tag act">${actionWord(s.lastAction)}</span>`:winners.has(s.seat)?'<span class="tag bounty">WINNER</span>':'';
     const holeBacks=s.inHand&&!s.folded&&!s.cards&&!s.busted&&!s.me?`<div class="hole ${showRight?'r':'l'}">${back('mini')}${back('mini')}</div>`:'';
     return `<div class="seat ${s.me?'me':''} ${s.folded?'folded':''} ${s.busted?'out':''} ${s.toAct?'toact':''} ${s.toAct&&ring<.33?'hurry':''}" style="left:${x}%;top:${y}%;--t:${ring.toFixed(3)}">
-      ${tag}<div class="ring">${avatarHtml(s.name,s.photoUrl)}</div>${holeBacks}
+      ${tag}<div class="ring">${avatarHtml(s.name,s.photoUrl||pic(s.userId))}</div>${holeBacks}
       <div class="plate"><b>${esc(s.me?'You':first(s.name))}</b><span>${s.busted?'—':fmt(s.stack)}</span></div>
       ${shown?`<div class="shown">${s.cards.map(c=>card(c,'mini',winCards.has(c)?'win':'')).join('')}</div>`:''}</div>
       ${s.bet>0?`<div class="bet" style="left:${bx}%;top:${by}%"><i></i>${fmt(s.bet)}</div>`:''}
@@ -414,9 +424,9 @@ function renderTable(){
   else if(mine&&mine.busted){ actions=`<div class="waiting">You are out of this table. <button class="btn small ghost" data-act="lobby">Back to the lobby</button></div>`; }
   else actions=`<div class="waiting">Watching. <button class="btn small ghost" data-act="lobby">Back to the lobby</button></div>`;
   let over='';
-  if(v.status==='over'&&v.standings){ const st=v.standings, myS=st.find(s=>s.userId===me());
+  if(v.status==='over'&&v.standings){ const st=v.standings, myId=v.mySeat!=null?v.seats[v.mySeat].userId:me(), myS=st.find(s=>s.userId===myId);
     over=`<div class="over"><div class="box"><h2>${myS?(myS.place===1?'You won the table':`You finished ${ordinal(myS.place)}`):'Table over'}</h2><p>${myS?(v.round==='practice'?'Practice table: no points.':v.round==='open'?'Your points are on the board.':'Standings below.'):'Final standings.'}</p>
-      ${st.map(s=>`<div class="rowi ${s.userId===me()?'me':''}"><div class="rank">${s.place}</div>${avatarHtml(s.name)}<div class="who"><b>${esc(s.name)}</b><span>${s.busted?'Busted':fmt(s.stack)+' chips'}${s.knockouts.length?` · ${s.knockouts.length} KO`:''}</span></div></div>`).join('')}
+      ${st.map(s=>`<div class="rowi ${s.userId===myId?'me':''}"><div class="rank">${s.place}</div>${avatarHtml(s.name,(v.seats.find(x=>x.userId===s.userId)||{}).photoUrl||pic(s.userId))}<div class="who"><b>${esc(s.name)}</b><span>${s.busted?'Busted':fmt(s.stack)+' chips'}${s.knockouts.length?` · ${s.knockouts.length} KO`:''}</span></div></div>`).join('')}
       <button class="btn primary" style="width:100%;margin-top:12px" data-act="lobby">Back to the lobby</button></div></div>`; }
   app.innerHTML=`<div id="table">${tableInner(v,false)}<div class="mine">${hand}</div><div class="actions">${actions}</div>${over}</div>`;
 }
@@ -496,27 +506,30 @@ async function start(){
 async function load(){ try{ const h=await P.request('poker:hello'); state.shared=h.shared||null; state.mine=h.mine||state.mine; if(h.table){ state.table=h.table; if(h.table.status==='playing'&&state.view==='lobby')state.view='table'; } }catch(err){ toast(err.message); } }
 
 /* ---------- the demo (a browser preview with no server) ---------- */
+function demoFace(i){ const bg=['#3d5a80','#7a4a6e','#4a7a5e','#8a5a2b','#2f5f6f','#6b4f9a','#9a4f4f','#3f6b3f'][i%8], skin=['#f1c7a3','#d9a47a','#b97a52','#8d5a3b','#e8b896'][i%5], hair=['#2b1d14','#4a2e1a','#111','#6b3e1f','#1f1f1f'][(i*3)%5];
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><rect width="80" height="80" fill="${bg}"/><ellipse cx="40" cy="78" rx="28" ry="20" fill="${['#e0e0e0','#2d3e50','#c9962b','#5a7d9a','#a33'][i%5]}"/><rect x="34" y="50" width="12" height="12" fill="${skin}"/><circle cx="40" cy="36" r="17" fill="${skin}"/><path d="M23 34c0-12 8-19 17-19s17 7 17 19c-3-6-9-9-17-9s-14 3-17 9z" fill="${hair}"/><circle cx="34" cy="38" r="1.8" fill="#222"/><circle cx="46" cy="38" r="1.8" fill="#222"/><path d="M35 45q5 4 10 0" stroke="#7a3b2a" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>`;
+  return 'data:image/svg+xml;utf8,'+encodeURIComponent(svg); }
 function demo(){
   const q=new URLSearchParams(location.search), mode=q.get('demo')||'table';
   const t=Date.now(); const iso=m=>new Date(t+m*60000).toISOString();
   const people=['Ananya Bisht','Rahul Mehta','Priya Sharma','Arjun Deshpande','Meera Iyer','Kabir Rao','Tanya Bhatia','Ishaan Kapoor','Nikhil Verma','Pooja Nair','Siddharth Pillai','Harsh Chaudhary','Raghav Sen','Divya Rao'];
   const board=people.map((n,i)=>({userId:'d'+i,name:n,office:['Gurgaon','Noida','Kolkata'][i%3],played:3+i%3,best:[4200-i*250,3100-i*150,2600-i*100],score:9900-i*500,knockouts:4-i%4,rank:i+1,reachedAt:0}));
-  state.mine={userId:'d0',name:'Ananya Bisht',picks:[],picksLeft:{semi:500,final:1000},picksOpen:{semi:true,final:false}};
+  state.mine={userId:'d0',name:'Ananya Bisht',photoUrl:demoFace(0),picks:[],picksLeft:{semi:500,final:1000},picksOpen:{semi:true,final:false}};
   state.shared={event:{id:'demo',name:'Convrse Speed Poker',status:'live',paused:false,phase:q.get('phase')||'open',practice:{from:iso(-1440),to:iso(-1000)},game:{openFrom:iso(-120),openTo:iso(180),powerFrom:iso(30),powerTo:iso(90),bountiesFrom:iso(120),semisAt:iso(210),finalAt:iso(255)},
     rules:{tableSize:6,minPlayers:4,fallbackMs:360000,cooldownMs:120000,countedTables:6,bestOf:3,knockoutPoints:100,bountyPoints:300,powerMultiplier:2,semifinalists:12,advancePerSemi:3,picks:{on:true,leadMs:900000,semiBudget:500,finalBudget:1000,winnerOdds:5,firstOutOdds:3,fullTimeOdds:3,minStake:10},minutes:{open:12,semi:20,final:30}}},
     now:t,powerHour:false,bountiesOn:true,queue:mode==='queue'?[{userId:'d3',name:'Arjun',since:t-90000},{userId:'d0',name:'Ananya',since:t-30000},{userId:'d5',name:'Kabir',since:t-10000}]:[],seated:{},cooldownUntil:{},
     tables:[{id:'x1',round:'open',label:null,players:people.slice(1,7).map((n,i)=>({userId:'p'+i,name:n,stack:1500})),endsAt:t+430000,power:false}],
     board,league:[{office:'Gurgaon',players:41,average:4820},{office:'Noida',players:27,average:4410},{office:'Kolkata',players:9,average:4380}],bounties:['d1','d2'],
-    semis:mode==='picks'?{seededAt:t,startedAt:null,endedAt:null,tables:[{label:'A',tableId:null,players:['d1','d4','d5','d8','d9','d12'].map(x=>x)},{label:'B',tableId:null,players:['d2','d3','d6','d7','d10','d11']}]}:null,final:null,names:Object.fromEntries(board.map(b=>[b.userId,b.name])),picksBoard:[],champion:null};
-  if(mode==='picks'){ state.tab='picks'; }
-  const seat=(i,name,stack,extra)=>Object.assign({seat:i,userId:'s'+i,name,photoUrl:null,office:null,stack,bet:0,folded:false,allIn:false,sittingOut:false,busted:false,inHand:true,button:false,sb:false,bb:false,toAct:false,me:false,cards:null,knockouts:0,lastAction:null},extra||{});
+    photos:Object.fromEntries(board.map((b,i)=>[b.userId,demoFace(i)]).concat(people.slice(1,7).map((n,i)=>['p'+i,demoFace(i+1)]))),semis:mode==='picks'?{seededAt:t,startedAt:null,endedAt:null,tables:[{label:'A',tableId:null,players:['d1','d4','d5','d8','d9','d12'].map(x=>x)},{label:'B',tableId:null,players:['d2','d3','d6','d7','d10','d11']}]}:null,final:null,names:Object.fromEntries(board.map(b=>[b.userId,b.name])),picksBoard:[],champion:null};
+  if(mode==='picks'){ state.tab='picks'; state.pick.semi={table:'A',kind:'winner',choice:'d4'}; }
+  const seat=(i,name,stack,extra)=>Object.assign({seat:i,userId:'s'+i,name,photoUrl:demoFace(i),office:null,stack,bet:0,folded:false,allIn:false,sittingOut:false,busted:false,inHand:true,button:false,sb:false,bb:false,toAct:false,me:false,cards:null,knockouts:0,lastAction:null},extra||{});
   state.table={id:'demo',round:'open',label:null,status:'playing',now:t,startedAt:t-280000,endsAt:t+440000,level:{sb:40,bb:80},levelIndex:2,nextLevelAt:t+52000,nextLevel:{sb:75,bb:150},actionMs:15000,handNo:14,street:'turn',board:['Ah','9c','4d','Ks'],pot:1240,toAct:0,deadline:t+11000,mySeat:0,
     choices:{toCall:240,canCheck:false,canRaise:true,minRaiseTo:480,maxRaiseTo:2860,pot:1240,currentBet:240},
     seats:[seat(0,'Ananya Bisht',2860,{me:true,cards:['As','Kd'],toAct:true}),seat(1,'Rahul Mehta',1180,{bet:240,lastAction:'raise'}),seat(2,'Priya Sharma',0,{busted:true,inHand:false}),seat(3,'Arjun Deshpande',3420,{folded:true,lastAction:'fold',button:true}),seat(4,'Meera Iyer',920,{lastAction:'check'}),seat(5,'Kabir Rao',1560,{folded:true,lastAction:'fold'})],
     result:null,nextHandAt:null,standings:null};
   if(mode==='showdown'){ Object.assign(state.table,{street:'done',toAct:null,choices:null,board:['Ah','9c','4d','Ks','2h'],pot:0,result:{showdown:true,pots:[{amount:1720,winners:[0],hand:'Two pair'}],shown:[{seat:0,cards:['As','Kd'],best:['As','Ah','Kd','Ks','9c'],hand:'Two pair'},{seat:1,cards:['Qh','Qs'],best:['Qh','Qs','Ah','Ks','9c'],hand:'Pair'}],busted:[]}}); state.table.seats[0].toAct=false; state.table.seats[1].cards=['Qh','Qs']; state.table.seats[1].bet=0; }
   if(mode==='raise'){ state.raiseOpen=true; state.raiseTo=860; }
-  if(mode==='over'){ Object.assign(state.table,{status:'over',standings:[{userId:'d0',name:'Ananya Bisht',stack:5420,busted:false,knockouts:['a','b'],place:1},{userId:'x',name:'Rahul Mehta',stack:2100,busted:false,knockouts:[],place:2},{userId:'y',name:'Meera Iyer',stack:1480,busted:false,knockouts:[],place:3},{userId:'z',name:'Priya Sharma',stack:0,busted:true,knockouts:[],place:4}]}); }
+  if(mode==='over'){ Object.assign(state.table,{status:'over',standings:[{userId:'s0',name:'Ananya Bisht',stack:5420,busted:false,knockouts:['a','b'],place:1},{userId:'s1',name:'Rahul Mehta',stack:2100,busted:false,knockouts:[],place:2},{userId:'s4',name:'Meera Iyer',stack:1480,busted:false,knockouts:[],place:3},{userId:'s2',name:'Priya Sharma',stack:0,busted:true,knockouts:[],place:4}]}); }
   if(mode==='watch'){ state.table.mySeat=null; state.table.choices=null; state.table.seats.forEach(s=>{s.me=false; s.cards=null;}); }
   if(mode==='tv'){ state.tv=true; state.shared.event.phase='semis'; state.shared.semis={seededAt:t,startedAt:t,endedAt:null,tables:[{label:'A',tableId:'ta',players:[]},{label:'B',tableId:'tb',players:[]}]};
     const w=JSON.parse(JSON.stringify(state.table)); w.round='semi'; w.mySeat=null; w.choices=null; w.seats.forEach(s=>{s.me=false;s.cards=null;}); state.tvTables={ta:Object.assign({},w,{id:'ta',label:'A'}),tb:Object.assign({},w,{id:'tb',label:'B'})}; P.request=()=>new Promise(()=>{}); }

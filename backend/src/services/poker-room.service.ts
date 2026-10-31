@@ -1,6 +1,8 @@
 import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import type { PokerEvent, PokerPick, PokerTable } from '../models/poker.model';
+import { users } from '../config/db';
 import { noteLaunchScore } from './game-launch.service';
+import { resolveProfilePhoto } from './s3-connect-media.service';
 import { notifyUsers, NotificationInput } from './notification.service';
 import { postStandings } from './poker-feed';
 import { pokerEvents, pokerHands, pokerPicks, pokerResults, ensurePokerIndexes } from './poker-db';
@@ -160,6 +162,40 @@ async function playedCount(event: PokerEvent, userId: string): Promise<number> {
   return pokerResults().countDocuments({ eventId: event.id, round: 'open', userId, counted: true, voided: false });
 }
 
+// ------------------------------------------------------------------ photos
+
+/** Each person's photo link, signed for a while and remembered for less. */
+const photoCache = new Map<string, { url: string | null; at: number }>();
+const PHOTO_TTL_MS = 20 * 60_000;
+
+export async function photosOf(ids: Iterable<string>): Promise<Record<string, string>> {
+  const now = Date.now();
+  const want = [...new Set(ids)].filter((id) => !isHouse(id));
+  const missing = want.filter((id) => {
+    const held = photoCache.get(id);
+    return !held || now - held.at > PHOTO_TTL_MS;
+  });
+  if (missing.length) {
+    const rows = await users()
+      .find({ userId: { $in: missing } }, { projection: { _id: 0, userId: 1, profilePhotoKey: 1, profilePhotoUrl: 1 } })
+      .toArray()
+      .catch(() => []);
+    const found = new Map(rows.map((r) => [r.userId, r]));
+    await Promise.all(
+      missing.map(async (id) => {
+        const url = (await resolveProfilePhoto(found.get(id)).catch(() => undefined)) ?? null;
+        photoCache.set(id, { url, at: now });
+      }),
+    );
+  }
+  const out: Record<string, string> = {};
+  for (const id of want) {
+    const url = photoCache.get(id)?.url;
+    if (url) out[id] = url;
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------ the lobby
 
 export interface PokerShared {
@@ -200,6 +236,8 @@ export interface PokerShared {
   semis: PokerEvent['semis'];
   final: PokerEvent['final'];
   names: Record<string, string>;
+  /** Profile photos of everyone the lobby shows. */
+  photos: Record<string, string>;
   picksBoard: ReturnType<typeof picksBoard>;
   champion: PokerEvent['champion'];
 }
@@ -227,6 +265,16 @@ async function buildShared(event: PokerEvent, floor?: PokerFloor): Promise<Poker
   const names: Record<string, string> = {};
   for (const r of board) names[r.userId] = r.name;
   for (const t of tables) for (const s of t.seats) names[s.userId] = s.name;
+  const shownIds = [
+    ...board.map((r) => r.userId),
+    ...tables.flatMap((t) => t.seats.map((s) => s.userId)),
+    ...(event.semis?.tables.flatMap((t) => t.players) ?? []),
+    ...(event.final?.tables.flatMap((t) => t.players) ?? []),
+    ...f.queue.map((q) => q.userId),
+    ...picks.map((p) => p.userId),
+    ...(event.champion ? [event.champion.userId] : []),
+  ];
+  const photos = await photosOf(shownIds);
   const minutes = (round: 'open' | 'semi' | 'final', base: number) => Math.round((c.formats[round]?.durationMs ?? base) / 60_000);
   return {
     event: {
@@ -275,6 +323,7 @@ async function buildShared(event: PokerEvent, floor?: PokerFloor): Promise<Poker
     semis: event.semis,
     final: event.final,
     names,
+    photos,
     picksBoard: picksBoard(picks).slice(0, 20),
     champion: event.champion,
   };
@@ -311,6 +360,7 @@ export async function mineFor(event: PokerEvent, who: PokerIdentity) {
     userId: who.userId,
     name: who.name,
     office: who.office,
+    photoUrl: who.photoUrl,
     picks,
     picksLeft: { semi: left('semi'), final: left('final') },
     picksOpen: { semi: picksOpen(event, 'semi', now), final: picksOpen(event, 'final', now) },
@@ -740,7 +790,8 @@ export async function startStage(event: PokerEvent, stage: 'semi' | 'final', now
   if (!s || s.startedAt) return;
   const people = new Map<string, { name: string; office: string | null; photoUrl: string | null }>();
   const board = await boardFor(event, true);
-  for (const r of board) people.set(r.userId, { name: r.name, office: r.office, photoUrl: null });
+  const photos = await photosOf(s.tables.flatMap((t) => t.players));
+  for (const r of board) people.set(r.userId, { name: r.name, office: r.office, photoUrl: photos[r.userId] ?? null });
   const tables: { label: string; tableId: string; players: string[]; table: PokerTable }[] = [];
   for (const t of s.tables) {
     if (t.players.length < 2) continue;
@@ -752,7 +803,7 @@ export async function startStage(event: PokerEvent, stage: 'semi' | 'final', now
         eventId: event.id,
         round: stage,
         label: t.label,
-        players: t.players.map((userId) => ({ userId, name: people.get(userId)?.name ?? 'Player', photoUrl: null, office: people.get(userId)?.office ?? null })),
+        players: t.players.map((userId) => ({ userId, name: people.get(userId)?.name ?? 'Player', photoUrl: photos[userId] ?? null, office: people.get(userId)?.office ?? null })),
         config: event.config.formats[stage],
       },
       now,
