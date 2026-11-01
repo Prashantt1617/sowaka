@@ -291,14 +291,35 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 #table.big .seat.folded,#table.big .seat.out{opacity:1}
 #table.big .seat.folded>:not(.bubble){opacity:.45}#table.big .seat.out>:not(.bubble){opacity:.3}
 @keyframes bubblein{from{opacity:0;translate:0 4px}}
-/* next look: the quick-chat tray, one row above the buttons, scrolling sideways */
-#table.next .qtray{display:flex;align-items:center;gap:6px;overflow-x:auto;scrollbar-width:none;padding:6px;margin:0 0 6px;background:rgba(10,20,15,.97);border:1px solid rgba(255,255,255,.14);border-radius:999px;box-shadow:0 8px 24px rgba(0,0,0,.45)}
-#table.next .qtray::-webkit-scrollbar{display:none}
-#table.next .qtray button{flex:none;min-height:34px;border-radius:999px;padding:0 12px;background:rgba(255,255,255,.1);font-weight:700;font-size:13px;white-space:nowrap}
-#table.next .qtray button.em{font-size:19px;padding:0 6px;background:none}
-#table.next .qtray button.aa{background:rgba(229,184,80,.92);color:#2a1a02}
-#table.next .qtray button.x{background:none;color:var(--muted);font-size:18px;padding:0 6px 0 8px}
-.sheet.chat.next .box{max-height:58vh}
+/* next look: the chat opens with the keyboard up, quick chat down the side of the messages, the box above the keyboard */
+.sheet.chat.next{background:rgba(4,10,7,.28)}
+.sheet.chat.next .box{height:auto;max-height:calc(var(--vvh,100vh) - 96px);padding:8px 10px 10px;background:linear-gradient(180deg,#183327,#11261c);border:1px solid rgba(229,184,80,.22);border-bottom:0;border-radius:20px 20px 0 0}
+.sheet.chat.next .chead{margin-bottom:4px}
+.sheet.chat.next .chead h2{font-size:15px}
+.sheet.chat.next .chead .live{width:7px;height:7px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 3px rgba(74,222,128,.18);flex:none}
+.sheet.chat.next .chead .x{width:28px;height:28px;font-size:16px}
+.cbody{display:flex;gap:8px;height:min(216px,calc(var(--vvh,100vh) - 230px));min-height:112px;margin-bottom:8px}
+.cbody .msgs{padding:6px;background:rgba(0,0,0,.16);border-radius:12px}
+.cbody .msg{font-size:13px}.cbody .msg .avatar{width:22px;height:22px;font-size:9px}
+.qside{flex:none;width:104px;display:grid;grid-template-columns:1fr 1fr;align-content:start;gap:5px;overflow-y:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.qside::-webkit-scrollbar{display:none}
+.qside button{min-height:34px;border-radius:10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.08);font-size:12px;font-weight:700;line-height:1.1;padding:3px 6px}
+.qside button.em{font-size:18px;padding:0}
+.qside button.ph{grid-column:span 2}
+.qside button:active{background:rgba(229,184,80,.3);transform:scale(.96)}
+.sheet.chat.next .chatsend{align-items:center}
+.sheet.chat.next .chatsend input{min-height:44px;border-radius:999px;padding:0 16px;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.14)}
+.sheet.chat.next .chatsend input:focus{border-color:rgba(229,184,80,.7);outline:none}
+.sheet.chat.next .chatsend .btn{min-height:44px;border-radius:999px;padding:0 18px}
+/* next look: the raise button says where a raise starts; waiting names who, with their face */
+#table.next .abtn.raise small{opacity:.9}
+#table.next .waiting .wfor{display:inline-flex;align-items:center;gap:8px;padding:6px 14px 6px 6px;border-radius:999px;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.1);color:#e9f2ec;font-weight:700}
+#table.next .waiting .wfor .avatar{width:28px;height:28px;font-size:10px}
+#table.next .waiting .wfor .dots{display:inline-flex;gap:3px}
+/* the table is drawn again every second: --ph carries the dots on from where they were, not from the start */
+#table.next .waiting .wfor .dots i{width:5px;height:5px;border-radius:50%;background:var(--gold,#e5b850);animation:wdot 1.2s infinite ease-in-out;animation-delay:var(--ph,0s)}
+#table.next .waiting .wfor .dots i:nth-child(2){animation-delay:calc(var(--ph,0s) + .15s)}#table.next .waiting .wfor .dots i:nth-child(3){animation-delay:calc(var(--ph,0s) + .3s)}
+@keyframes wdot{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
 #table.big .actpop{font-weight:800;font-size:14px;padding:5px 14px;border-radius:999px;background:rgba(229,184,80,.95);color:#2a1a02;max-width:230px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 4px 14px rgba(0,0,0,.4)}
 #table.big .actpop.new{animation:fadein .2s ease-out}
 #table.big .seat{width:72px}
@@ -532,7 +553,7 @@ const haptic=k=>{ try{ (window.Sowaka&&window.Sowaka.haptic)&&window.Sowaka.hapt
 const state={mode:'rooms',room:null,rooms:[],invites:[],me:null,ev:null,picker:null,leaveAsk:false,codeInput:'',shared:null,mine:null,table:null,view:'lobby',watching:null,tab:'board',raiseOpen:false,raiseTo:0,offset:0,lastHand:0,banner:null,offline:false,tv:!!P.tv,tvTables:{},pick:{},
   /* the big tables: from room:hello (the company's table), the chat sheet, and the table being watched */
   big:false,tables:null,chatOpen:false,chatDraft:'',chatSeen:0,chatRoom:null,watchCode:null,bubbles:{},bubbleRoom:null,chatIds:null,
-  next:false,trayOpen:false,focusChat:false,resultHand:null};
+  next:false,focusChat:false,resultHand:null};
 const nextUi=()=>!!state.next;
 const now=()=>Date.now()+state.offset;
 const me=()=>(state.mode==='rooms'&&state.me&&state.me.userId)||(state.mine&&state.mine.userId)||(state.me&&state.me.userId);
@@ -764,16 +785,20 @@ const unreadOf=r=>(r&&r.chat||[]).filter(l=>l.at>state.chatSeen&&l.userId!==myId
 function chatButton(r){ const n=state.chatOpen?0:unreadOf(r);
   return `<span class="tbw"><button class="tbtn" data-act="chat" aria-label="Chat${n?`, ${n} new`:''}">💬</button>${n?`<b class="badge" aria-hidden="true">${n>9?'9+':n}</b>`:''}</span>`; }
 const QUICK=['👍','😂','🔥','GG','Nice hand'];
-/** The next look's quick chat, for while you are in a hand: one row above the buttons, one tap sends; Aa opens the full chat with the keyboard. */
-const TRAY=['👍','😂','🔥','😮','Nice hand','GG','Bluffing?','All in!','Good luck','Too rich for me'];
-function trayHtml(){ return `<div class="qtray" role="toolbar" aria-label="Quick chat"><button class="x" data-act="trayclose" aria-label="Close quick chat">×</button><button class="aa" data-act="chatfull" aria-label="Type a message">Aa</button>${TRAY.map(q=>`<button class="${/^\p{Extended_Pictographic}$/u.test(q)?'em':''}" data-say="${esc(q)}">${esc(q)}</button>`).join('')}</div>`; }
-/** In a hand right now: the chat button gives the quick tray, not the keyboard. */
+/** The next look's quick chat, down the side of the messages: one tap sends (and, in a hand, puts the chat away). */
+const SIDE=['👍','😂','🔥','😮','🙏','😎','GG','Nice hand','Bluffing?','All in!','Good luck','Too rich for me'];
+const sideHtml=()=>`<div class="qside" role="toolbar" aria-label="Quick chat">${SIDE.map(q=>`<button class="${/^\p{Extended_Pictographic}$/u.test(q)?'em':'ph'}" data-say="${esc(q)}">${esc(q)}</button>`).join('')}</div>`;
+/** In a hand right now: a quick-chat tap goes back to the game. */
 function inHandNow(){ const r=R(), v=r&&r.table, mine=v&&v.mySeat!=null?v.seats[v.mySeat]:null;
   return !!(r&&r.status==='playing'&&v&&v.status==='playing'&&mine&&mine.inHand&&!mine.folded&&!mine.busted&&!mine.allIn&&v.street!=='done'); }
 /* The full chat opens with the phone's keyboard up: the box is focused in the same tap (iOS allows it only there),
    and kept above the keyboard where the web view does not move it itself. */
-if(window.visualViewport){ const vv=window.visualViewport; const lift=()=>{ const sh=document.querySelector('.sheet.chat'); if(sh)sh.style.paddingBottom=Math.max(0,Math.round(window.innerHeight-vv.height-vv.offsetTop))+'px'; };
-  vv.addEventListener('resize',lift); vv.addEventListener('scroll',lift); }
+if(window.visualViewport){ const vv=window.visualViewport; const lift=()=>{ document.documentElement.style.setProperty('--vvh',Math.round(vv.height)+'px');
+    const sh=document.querySelector('.sheet.chat'); if(!sh)return;
+    // the keyboard's height, less what the sheet already stands off the bottom (the action buttons)
+    const kb=window.innerHeight-vv.height-vv.offsetTop, off=parseFloat(getComputedStyle(sh).bottom)||0;
+    sh.style.paddingBottom=Math.max(0,Math.round(kb-off))+'px'; };
+  vv.addEventListener('resize',lift); vv.addEventListener('scroll',lift); lift(); }
 /* The sheet is drawn with the rest of the screen, and keepSheet() keeps the
    one on screen: it lives outside #app, only its [data-live] parts are
    updated, and the box being typed in is never replaced. */
@@ -781,10 +806,11 @@ function chatSheet(r){ const lines=r.chat||[], w=(r.watchers||[]).length, uid=my
   const face=id=>{ const p=r.players.find(x=>x.userId===id)||(r.watchers||[]).find(x=>x.userId===id); return p&&p.photoUrl||null; };
   const msgs=lines.length?lines.map(l=>`<div class="msg ${l.userId===uid?'own':''}">${avatarHtml(l.name,face(l.userId))}<div class="body"><b>${esc(l.userId===uid?'You':first(l.name))}</b>${l.watching?'<span class="wtag">watching</span>':''}${esc(l.text)}</div></div>`).join('')
     :'<div class="none">No messages yet. Say hello.</div>';
-  return `<div class="sheet chat${nextUi()?' next':''}" data-act="chatclose" data-keep="chat"><div class="box" role="dialog" aria-label="Table chat">
-    <div class="chead" data-live="head"><h2>Table chat</h2><span>${w?`${w} watching`:''}</span><button class="x" data-act="chatclose" aria-label="Close the chat">×</button></div>
-    <div class="msgs" data-live="msgs">${msgs}</div>
-    <div class="quick">${QUICK.map(q=>`<button data-say="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+  const nx=nextUi();
+  return `<div class="sheet chat${nx?' next':''}" data-act="chatclose" data-keep="chat"><div class="box" role="dialog" aria-label="Table chat">
+    <div class="chead" data-live="head">${nx?'<i class="live" aria-hidden="true"></i>':''}<h2>Table chat</h2><span>${w?`${w} watching`:''}</span><button class="x" data-act="chatclose" aria-label="Close the chat">×</button></div>
+    ${nx?`<div class="cbody"><div class="msgs" data-live="msgs">${msgs}</div>${sideHtml()}</div>`:`<div class="msgs" data-live="msgs">${msgs}</div>
+    <div class="quick">${QUICK.map(q=>`<button data-say="${esc(q)}">${esc(q)}</button>`).join('')}</div>`}
     <div class="chatsend"><input id="chatin" maxlength="200" placeholder="Say something…" enterkeyhint="send" autocomplete="off" value="${esc(state.chatDraft)}"><button class="btn primary small" data-act="chatsend">Send</button></div></div></div>`; }
 async function sendChat(text,fromBox){ text=String(text||'').trim(); if(!text)return;
   if(fromBox){ state.chatDraft=''; const i=$('#chatin'); if(i)i.value=''; }
@@ -814,7 +840,6 @@ function onRoom(room){
   state.watchCode=room&&room.big&&room.watching?room.code:null;
   if(!room){ state.chatOpen=false; if(state.mode==='rooms'){ state.table=null; state.view='lobby'; state.leaveAsk=false; refreshRooms(); } return render(); }
   const v=room.table; if(room.serverNow)state.offset=room.serverNow-Date.now();
-  if(state.trayOpen&&!inHandNow())state.trayOpen=false;
   if(room.big){ const last=(room.chat||[]).reduce((a,l)=>Math.max(a,l.at||0),0);
     // A table's earlier chat is not news: only lines from now on count as unread.
     if(state.chatRoom!==room.code){ state.chatRoom=room.code; state.chatSeen=last; }
@@ -979,11 +1004,11 @@ function renderTable(){
     actions=`${state.raiseOpen&&c.canRaise&&!allInOnly?`<div class="raisepanel"><div class="presets"><button data-to="${c.minRaiseTo}">Min</button><button data-to="${half}">½ Pot</button><button data-to="${full}">Pot</button><button data-to="${c.maxRaiseTo}">All in</button></div>
       <div class="slide"><input id="raise" type="range" min="${c.minRaiseTo}" max="${c.maxRaiseTo}" step="${Math.max(1,v.level?v.level.bb/2|0:1)}" value="${state.raiseTo}"><div class="val num" id="raisev">${fmt(state.raiseTo)}</div></div></div>`:''}
       <div class="abar"><button class="abtn fold" data-act="fold" ${c.canCheck?'':''}>Fold</button><button class="abtn call" data-act="call">${callTxt}</button>
-      ${c.canRaise?(allInOnly?`<button class="abtn raise" data-act="allin">All in<small>${fmt(c.maxRaiseTo)}</small></button>`:state.raiseOpen?`<button class="abtn raise" data-act="raise">${state.raiseTo>=c.maxRaiseTo?'All in':raiseTxt+' to'}<small id="raisebtn">${fmt(state.raiseTo)}</small></button>`:`<button class="abtn raise" data-act="openraise">${raiseTxt}</button>`):`<button class="abtn raise" disabled>${raiseTxt}</button>`}</div>`; }
+      ${c.canRaise?(allInOnly?`<button class="abtn raise" data-act="allin">All in<small>${fmt(c.maxRaiseTo)}</small></button>`:state.raiseOpen?`<button class="abtn raise" data-act="raise">${state.raiseTo>=c.maxRaiseTo?'All in':raiseTxt+' to'}<small id="raisebtn">${fmt(state.raiseTo)}</small></button>`:`<button class="abtn raise" data-act="openraise">${raiseTxt}${nextUi()?`<small>${c.currentBet>0?'to ':''}${fmt(c.minRaiseTo)}</small>`:''}</button>`):`<button class="abtn raise" disabled>${raiseTxt}</button>`}</div>`; }
   else if(room&&mine&&mine.busted){ actions=`<div class="waiting">You are out of this game. ${isHost()?'Deal again when it ends.':'The next game starts when this one ends.'} <button class="btn small ghost" data-act="leaveask">Leave</button></div>`; }
   else if(room&&!mine){ actions=`<div class="waiting">The table is full: you play the next game. <button class="btn small ghost" data-act="leaveask">Leave</button></div>`; }
   else if(room&&mine&&!mine.inHand&&v.street!=='done'){ actions=`<div class="waiting">You are dealt in from the next hand.</div>`; }
-  else if(mine&&!mine.busted){ const who=v.toAct!=null?v.seats[v.toAct]:null; actions=`<div class="waiting">${v.street==='done'?'Next hand in a moment…':who?`Waiting for ${esc(first(who.name))}…`:''}</div>`; }
+  else if(mine&&!mine.busted){ const who=v.toAct!=null?v.seats[v.toAct]:null; actions=`<div class="waiting">${v.street==='done'?'Next hand in a moment…':who?(nextUi()?`<span class="wfor">${avatarHtml(who.name,who.photoUrl)}${esc(first(who.name))} is thinking<span class="dots" aria-hidden="true" style="--ph:-${Date.now()%1200}ms"><i></i><i></i><i></i></span></span>`:`Waiting for ${esc(first(who.name))}…`):''}</div>`; }
   else if(mine&&mine.busted){ actions=`<div class="waiting">You are out of this table. <button class="btn small ghost" data-act="lobby">Back to the lobby</button></div>`; }
   else actions=`<div class="waiting">Watching. <button class="btn small ghost" data-act="lobby">Back to the lobby</button></div>`;
   let over='';
@@ -996,7 +1021,7 @@ function renderTable(){
     const won=v.result&&v.status!=='over'?resultLine(v):'';
     const handKey=v.id+':'+v.handNo, fresh=!!won&&state.resultHand!==handKey; if(won)state.resultHand=handKey;
     if(won){ const line=`<div class="result${fresh?' new':''}">🏆 ${esc(won)}</div>`; actions=/Next hand in a moment/.test(actions)?line:line+actions; }
-    app.innerHTML=`<div id="table" class="big ${wide?'wide':''} ${nextUi()?'next':''}">${tableInner(v,false,{wide,room})}<div class="dock">${watching?'':`<div class="mine">${hand}</div>`}${state.trayOpen&&nextUi()&&!state.raiseOpen?trayHtml():''}<div class="actions">${actions}</div></div>${over}${sheets()}</div>`; return; }
+    app.innerHTML=`<div id="table" class="big ${wide?'wide':''} ${nextUi()?'next':''}">${tableInner(v,false,{wide,room})}<div class="dock">${watching?'':`<div class="mine">${hand}</div>`}<div class="actions">${actions}</div></div>${over}${sheets()}</div>`; return; }
   app.innerHTML=`<div id="table">${tableInner(v,false)}<div class="mine">${hand}</div><div class="actions">${actions}</div>${over}${room?sheets():''}</div>`;
 }
 function renderRoomsMode(){ const r=R(); if(!r)return renderRooms(); if(r.status==='lobby'||!r.table)return renderRoomLobby(); return renderTable(); }
@@ -1069,7 +1094,7 @@ document.addEventListener('click',async e=>{
   if(b.dataset.tab){ state.tab=b.dataset.tab; return renderLobby(); }
   if(b.dataset.watch){ return watchTable(b.dataset.watch); }
   if(b.dataset.watchroom){ return watchCode(b.dataset.watchroom); }
-  if(b.dataset.say){ haptic('light'); const fromTray=!!b.closest('.qtray'); if(fromTray){ state.trayOpen=false; render(); } return sendChat(b.dataset.say,false); }
+  if(b.dataset.say){ haptic('light'); if(b.closest('.qside')&&inHandNow()){ state.chatOpen=false; render(); } return sendChat(b.dataset.say,false); }
   if(b.dataset.to){ state.raiseTo=+b.dataset.to; const r=$('#raise'); if(r)r.value=state.raiseTo; $('#raisev').textContent=fmt(state.raiseTo); const rb=$('#raisebtn'); if(rb)rb.textContent=fmt(state.raiseTo); return; }
   if(b.dataset.pick){ const [stage,field,value]=b.dataset.pick.split('|'); const sel=state.pick[stage]=state.pick[stage]||{}; sel[field]=value; if(field!=='choice'&&field!=='stake')delete sel.choice; return renderLobby(); }
   const act=b.dataset.act; if(!act)return;
@@ -1087,10 +1112,7 @@ document.addEventListener('click',async e=>{
       case 'leaveask': if(R()&&R().practice){ await leavePractice(); return; } if(R()&&R().big&&R().watching){ await stopWatching(); return; } state.leaveAsk=true; break;
       case 'unwatch': await stopWatching(); return;
       case 'takeseat': state.chatOpen=false; await joinCode(R().code); break;
-      case 'chat': if(nextUi()&&inHandNow()){ state.trayOpen=!state.trayOpen; break; }
-        state.trayOpen=false; state.chatOpen=true; state.focusChat=nextUi(); { const r=R(); state.chatSeen=Math.max(state.chatSeen,...((r&&r.chat)||[]).map(l=>l.at||0)); } break;
-      case 'chatfull': state.trayOpen=false; state.chatOpen=true; state.focusChat=true; { const r=R(); state.chatSeen=Math.max(state.chatSeen,...((r&&r.chat)||[]).map(l=>l.at||0)); } break;
-      case 'trayclose': state.trayOpen=false; break;
+      case 'chat': state.chatOpen=true; state.focusChat=nextUi(); { const r=R(); state.chatSeen=Math.max(state.chatSeen,...((r&&r.chat)||[]).map(l=>l.at||0)); } break;
       case 'chatclose': state.chatOpen=false; break;
       case 'chatsend': { const i=$('#chatin'); await sendChat(i?i.value:state.chatDraft,true); return; }
       case 'sound': if(window.PokerSounds)window.PokerSounds.toggle(); break;
@@ -1393,6 +1415,7 @@ function hypeDemo(q,v){ const later=(ms,f)=>setTimeout(()=>{ if(!state.room)retu
     later(800,()=>settle(v.board,[{amount:980,winners:[0],hand:'Two pair'}],[{seat:0,cards:S[0].cards,best:['Qs','Qd','7c','7h','Jh'],hand:'Two pair'},{seat:1,cards:['Ac','Kc'],best:['7c','7h','Ac','Kc','Jh'],hand:'Pair'}])); }
   if(q.get('royal')==='1'){ S[0].cards=['Ah','Kh']; river(['Jh','Th','2d','Qh','9s']); S[1].bet=S[0].bet=300; Object.assign(v,{toAct:null,choices:null}); S[0].toAct=false;
     later(800,()=>settle(v.board,[{amount:1880,winners:[0],hand:'Straight flush'}],[{seat:0,cards:['Ah','Kh'],best:['Ah','Kh','Qh','Jh','Th'],hand:'Straight flush'},{seat:1,cards:['Ks','Qs'],best:['Ks','Qs','Jh','Th','9s'],hand:'Straight'}])); }
+  if(q.get('wait')==='1'){ Object.assign(v,{toAct:1,deadline:Date.now()+20000,choices:null}); S.forEach((s,i)=>{ s.toAct=i===1; }); }
   if(q.get('allin')==='1'){ Object.assign(v,{toAct:1,deadline:Date.now()+20000,choices:null,pot:140}); S.forEach((s,i)=>{ s.toAct=i===1; s.bet=0; if(i>1){ s.folded=true; s.allIn=false; s.lastAction='fold'; } else s.lastAction=null; });
     S[1].stack=2140; S[0].allIn=true; S[0].stack=0; S[0].bet=2140; S[0].lastAction='allin'; v.pot+=2140;
     later(900,()=>{ Object.assign(S[1],{allIn:true,stack:0,bet:2140,lastAction:'call',toAct:false}); v.toAct=null; v.pot+=2140; });
@@ -1537,7 +1560,6 @@ function bigDemo(mode,t,people){
     if(ev==='room:unwatch')return Promise.resolve({});
     return Promise.reject(new Error('Demo: nothing is sent.')); };
   state.table=null;
-  if(q.get('tray')==='1')state.trayOpen=true;
   if(q.get('pop')==='1')state.actionPop={text:'Ishaan raised to 1,480',until:Date.now()+3600e3};
   if(q.get('bubbles')==='1'&&room.table){ const far=Date.now()+3600e3, say=['Nice hand!','All in?? 😂','GG','I fold, too rich for me','🔥🔥']; room.table.seats.slice(0,5).forEach((x,i)=>{ state.bubbles[x.userId]={text:say[i],until:far}; }); }
   if(mode!=='rooms8'){ state.room=room; state.chatOpen=q.get('chat')==='1'; onRoom(room);
