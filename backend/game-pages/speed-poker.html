@@ -299,7 +299,7 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .sheet.chat.next .chead .live{width:7px;height:7px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 3px rgba(74,222,128,.18);flex:none}
 .sheet.chat.next .chead .x{width:28px;height:28px;font-size:16px}
 .cbody{display:flex;gap:8px;height:min(216px,calc(var(--vvh,100vh) - 230px));min-height:112px;margin-bottom:8px}
-.cbody .msgs{padding:2px 0 4px;background:rgba(0,0,0,.16);border-radius:12px;padding:6px}
+.cbody .msgs{padding:6px;background:rgba(0,0,0,.16);border-radius:12px}
 .cbody .msg{font-size:13px}.cbody .msg .avatar{width:22px;height:22px;font-size:9px}
 .qside{flex:none;width:104px;display:grid;grid-template-columns:1fr 1fr;align-content:start;gap:5px;overflow-y:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .qside::-webkit-scrollbar{display:none}
@@ -316,8 +316,9 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 #table.next .waiting .wfor{display:inline-flex;align-items:center;gap:8px;padding:6px 14px 6px 6px;border-radius:999px;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.1);color:#e9f2ec;font-weight:700}
 #table.next .waiting .wfor .avatar{width:28px;height:28px;font-size:10px}
 #table.next .waiting .wfor .dots{display:inline-flex;gap:3px}
-#table.next .waiting .wfor .dots i{width:5px;height:5px;border-radius:50%;background:var(--gold,#e5b850);animation:wdot 1.2s infinite ease-in-out}
-#table.next .waiting .wfor .dots i:nth-child(2){animation-delay:.15s}#table.next .waiting .wfor .dots i:nth-child(3){animation-delay:.3s}
+/* the table is drawn again every second: --ph carries the dots on from where they were, not from the start */
+#table.next .waiting .wfor .dots i{width:5px;height:5px;border-radius:50%;background:var(--gold,#e5b850);animation:wdot 1.2s infinite ease-in-out;animation-delay:var(--ph,0s)}
+#table.next .waiting .wfor .dots i:nth-child(2){animation-delay:calc(var(--ph,0s) + .15s)}#table.next .waiting .wfor .dots i:nth-child(3){animation-delay:calc(var(--ph,0s) + .3s)}
 @keyframes wdot{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
 #table.big .actpop{font-weight:800;font-size:14px;padding:5px 14px;border-radius:999px;background:rgba(229,184,80,.95);color:#2a1a02;max-width:230px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 4px 14px rgba(0,0,0,.4)}
 #table.big .actpop.new{animation:fadein .2s ease-out}
@@ -1011,11 +1012,11 @@ function renderTable(){
     actions=`${state.raiseOpen&&c.canRaise&&!allInOnly?`<div class="raisepanel"><div class="presets"><button data-to="${c.minRaiseTo}">Min</button><button data-to="${half}">½ Pot</button><button data-to="${full}">Pot</button><button data-to="${c.maxRaiseTo}">All in</button></div>
       <div class="slide"><input id="raise" type="range" min="${c.minRaiseTo}" max="${c.maxRaiseTo}" step="${Math.max(1,v.level?v.level.bb/2|0:1)}" value="${state.raiseTo}"><div class="val num" id="raisev">${fmt(state.raiseTo)}</div></div></div>`:''}
       <div class="abar"><button class="abtn fold" data-act="fold" ${c.canCheck?'':''}>Fold</button><button class="abtn call" data-act="call">${callTxt}</button>
-      ${c.canRaise?(allInOnly?`<button class="abtn raise" data-act="allin">All in<small>${fmt(c.maxRaiseTo)}</small></button>`:state.raiseOpen?`<button class="abtn raise" data-act="raise">${state.raiseTo>=c.maxRaiseTo?'All in':raiseTxt+' to'}<small id="raisebtn">${fmt(state.raiseTo)}</small></button>`:`<button class="abtn raise" data-act="openraise">${raiseTxt}${nextUi()?`<small>to ${fmt(c.minRaiseTo)}</small>`:''}</button>`):`<button class="abtn raise" disabled>${raiseTxt}</button>`}</div>`; }
+      ${c.canRaise?(allInOnly?`<button class="abtn raise" data-act="allin">All in<small>${fmt(c.maxRaiseTo)}</small></button>`:state.raiseOpen?`<button class="abtn raise" data-act="raise">${state.raiseTo>=c.maxRaiseTo?'All in':raiseTxt+' to'}<small id="raisebtn">${fmt(state.raiseTo)}</small></button>`:`<button class="abtn raise" data-act="openraise">${raiseTxt}${nextUi()?`<small>${c.currentBet>0?'to ':''}${fmt(c.minRaiseTo)}</small>`:''}</button>`):`<button class="abtn raise" disabled>${raiseTxt}</button>`}</div>`; }
   else if(room&&mine&&mine.busted){ actions=`<div class="waiting">You are out of this game. ${isHost()?'Deal again when it ends.':'The next game starts when this one ends.'} <button class="btn small ghost" data-act="leaveask">Leave</button></div>`; }
   else if(room&&!mine){ actions=`<div class="waiting">The table is full: you play the next game. <button class="btn small ghost" data-act="leaveask">Leave</button></div>`; }
   else if(room&&mine&&!mine.inHand&&v.street!=='done'){ actions=`<div class="waiting">You are dealt in from the next hand.</div>`; }
-  else if(mine&&!mine.busted){ const who=v.toAct!=null?v.seats[v.toAct]:null; actions=`<div class="waiting">${v.street==='done'?'Next hand in a moment…':who?(nextUi()?`<span class="wfor">${avatarHtml(who.name,who.photoUrl)}${esc(first(who.name))} is thinking<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></span>`:`Waiting for ${esc(first(who.name))}…`):''}</div>`; }
+  else if(mine&&!mine.busted){ const who=v.toAct!=null?v.seats[v.toAct]:null; actions=`<div class="waiting">${v.street==='done'?'Next hand in a moment…':who?(nextUi()?`<span class="wfor">${avatarHtml(who.name,who.photoUrl)}${esc(first(who.name))} is thinking<span class="dots" aria-hidden="true" style="--ph:-${Date.now()%1200}ms"><i></i><i></i><i></i></span></span>`:`Waiting for ${esc(first(who.name))}…`):''}</div>`; }
   else if(mine&&mine.busted){ actions=`<div class="waiting">You are out of this table. <button class="btn small ghost" data-act="lobby">Back to the lobby</button></div>`; }
   else actions=`<div class="waiting">Watching. <button class="btn small ghost" data-act="lobby">Back to the lobby</button></div>`;
   let over='';
