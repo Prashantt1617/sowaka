@@ -43,11 +43,19 @@ function leaveKeyFrom(name: string): string {
     .slice(0, 32);
 }
 
-/** A new type opens with nothing accrued and a plain window; HR fills in the rest. */
+/** 'Leave without pay', 'Unpaid leave', 'LWP', 'Loss of pay': a name that says it is unpaid. */
+const UNPAID_NAME = /\b(without pay|unpaid|lwp|loss of pay)\b/i;
+
+/**
+ * A new type opens with nothing accrued and a plain window; HR fills in the rest.
+ * One named as leave without pay starts with the switch on: left paid, it would
+ * have no days to its name and employees would never see it.
+ */
 function newLeaveType(name: string, key: string): LeaveTypeRule {
   return {
     key, name, perMonth: 0, resetOn: 'calendar_year', carryForwardDays: 0, encashment: 'none',
     encashLimitDays: 0, advanceDays: 30, allowBackdated: true, backdatedDays: 3, active: true,
+    ...(UNPAID_NAME.test(name) ? { unpaid: true } : {}),
   };
 }
 
@@ -84,6 +92,9 @@ export function AddLeaveType({ existing, onAdd }: { existing: LeaveTypeRule[]; o
       <button type="button" onClick={add} disabled={!canAdd} style={{ ...addButton, opacity: canAdd ? 1 : 0.5, cursor: canAdd ? 'pointer' : 'default' }}>
         + Add leave type
       </button>
+      {canAdd && UNPAID_NAME.test(trimmed) && (
+        <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>This will be added as leave without pay: unlimited, and unpaid in payroll.</span>
+      )}
       {clash && <span style={{ fontSize: 12.5, color: 'var(--bad)' }}>There is already a type with that name.</span>}
       {full && <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>A shift can have at most 12 leave types.</span>}
     </div>
