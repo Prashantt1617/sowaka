@@ -167,6 +167,9 @@ void main() {
     // binding fails a test that ends with one still pending.
     await tester.pumpWidget(const SizedBox.shrink());
     bloc.dispose();
+    // The notification service waits up to ten seconds for a setup the test
+    // never runs; that wait runs out here rather than outliving the test.
+    await tester.pump(const Duration(seconds: 30));
 
     expect(onScreen, contains('Haider'), reason: 'on screen: $onScreen');
     expect(onScreen, contains('Naveen'), reason: 'on screen: $onScreen');
