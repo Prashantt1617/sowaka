@@ -63,6 +63,18 @@ export const buyInOf = (room: Pick<PokerRoom, 'buyIn'>) => room.buyIn ?? TABLE_K
 const houseMaxOf = (room: Pick<PokerRoom, 'seats'>) => Math.min(ROOMS.maxHouse, seatsOf(room) - 1);
 /** Big tables chat and can be watched; a classic room is as it was. */
 export const isBigTable = (room: Pick<PokerRoom, 'seats'>) => seatsOf(room) === TABLE_KINDS.big.seats;
+/**
+ * The 1,000-chip tables' blinds: the big blind starts at 2% of a stack and the game's length sets the pace,
+ * a level every 2, 3 or 4 minutes for a 10, 20 or 30 minute game. The 1,500-chip tables keep the casual schedule.
+ */
+const BIG_BLINDS = {
+  levels: [[10, 20], [15, 30], [20, 40], [30, 60], [50, 100], [75, 150], [100, 200], [150, 300], [250, 500]].map(([sb, bb]) => ({ sb, bb })),
+  levelMinutes: { 10: 2, 20: 3, 30: 4 } as Record<number, number>,
+};
+export const levelMinutesOf = (room: Pick<PokerRoom, 'buyIn' | 'minutes'>) =>
+  buyInOf(room) === TABLE_KINDS.big.buyIn ? (BIG_BLINDS.levelMinutes[room.minutes] ?? 3) : 3;
+const blindsOf = (room: Pick<PokerRoom, 'buyIn' | 'minutes'>) =>
+  buyInOf(room) === TABLE_KINDS.big.buyIn ? { levels: BIG_BLINDS.levels, levelMs: levelMinutesOf(room) * 60_000 } : {};
 
 export const HOUSE_NAMES = ['House Ace', 'House King', 'House Queen', 'House Jack', 'House Ten', 'House Nine', 'House Eight'];
 export const houseSeat = (i: number) => ({ userId: `bot:${i + 1}`, name: HOUSE_NAMES[i] ?? `House ${i + 1}`, photoUrl: null, office: null });
@@ -169,7 +181,7 @@ export function startGame(room: PokerRoom, now: number, random: Random): PokerRo
       eventId: '',
       round: 'casual',
       players: seats,
-      config: { durationMs: room.minutes * 60_000, startStack: buyInOf(room), seats: seatsOf(room) },
+      config: { durationMs: room.minutes * 60_000, startStack: buyInOf(room), seats: seatsOf(room), ...blindsOf(room) },
     },
     now,
     random,
@@ -438,6 +450,8 @@ export function viewFor(room: PokerRoom, viewerId: string, now: number) {
     min: ROOMS.minPlayers,
     max: seatsOf(room),
     buyIn: buyInOf(room),
+    /** How often the blinds rise, in minutes. */
+    levelMinutes: levelMinutesOf(room),
     big: isBigTable(room),
     serverNow: now,
     gameNo: room.gameNo,

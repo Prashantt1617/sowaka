@@ -32,7 +32,8 @@
  *   node --env-file=.env --import tsx src/scripts/game-catalog.ts export odd-one-out /tmp/odd-one-out.html
  *
  * Upsert options: --key (required) --name --tagline --description --instructions
- * --kind web|native --accent #RRGGBB --background #RRGGBB --order N
+ * --kind web|native --accent #RRGGBB --background #RRGGBB --order N (lower comes first; a new game
+ *   without one goes on top)
  * --thumbnail <file | https URL | data: URI | assets/... | none>
  * --hosted-url <https URL | none> --scoring <label | none> --lower-is-better
  * --max-score N --active true|false
@@ -192,9 +193,10 @@ async function upsert(positional: string[], flags: Record<string, string>) {
   const onInsert: Partial<GameCatalogEntry> = { key, createdAt: now };
   if (set.kind === undefined) onInsert.kind = 'web';
   if (set.active === undefined) onInsert.active = true;
+  // The Games tab lists the newest game first: a new one goes above the rest unless --order says otherwise.
   if (set.order === undefined) {
-    const last = await gameCatalog().find({}, { projection: { order: 1 } }).sort({ order: -1 }).limit(1).next();
-    onInsert.order = (last?.order ?? 0) + 10;
+    const top = await gameCatalog().find({}, { projection: { order: 1 } }).sort({ order: 1 }).limit(1).next();
+    onInsert.order = (top?.order ?? 10) - 10;
   }
   await gameCatalog().updateOne(
     { key },

@@ -143,6 +143,8 @@ export interface CompanyFeatures {
    * a full table, sounds and the newer table. Off: six seats and 1,500, as before.
    */
   speedPokerBigTables?: boolean;
+  /** Speed Poker's next look (quick-chat tray, the keyboard for chat, the newer cards and win moments), tried at one company first. */
+  speedPokerNextUi?: boolean;
 }
 
 /** Versions by store: the App Store and Play Store builds ship separately. */

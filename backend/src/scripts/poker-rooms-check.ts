@@ -261,8 +261,8 @@ async function main() {
     await request(A, 'room:start');
     await wait(80);
     const second = await peekRoom(ORG, code);
-    const inPlay = second?.table?.hand?.committed.reduce((a, b) => a + b, 0) ?? 0;
-    check('a second game: chips reset to 1,500 each', second?.gameNo === 2 && second.table!.seats.reduce((a, s) => a + s.stack, 0) + inPlay === 1500 * second.table!.seats.length);
+    // The buy-in the new table was dealt with: counting chips mid-hand counts a pot twice the moment it settles.
+    check('a second game: chips reset to 1,500 each', second?.gameNo === 2 && second.table!.config.startStack === 1500 && second.table!.handNo <= 2);
 
     // ------------------------------------------------------------ away and back
     console.log('\naway and back');
@@ -316,6 +316,8 @@ async function main() {
     await run('a full table of eight deals itself', async () => (await peekRoom(ORG, bigCode))?.status === 'playing', 1000, 20);
     const dealt = await peekRoom(ORG, bigCode);
     check('eight are dealt in at 1,000 each', !!dealt?.table && dealt.table.seats.length === 8 && dealt.table.config.startStack === 1000 && dealt.table.config.seats === 8);
+    check('its blinds start at 10/20 and rise every 3 minutes in a 20 minute game',
+      !!dealt?.table && dealt.table.config.levels[0].bb === 20 && dealt.table.config.levels[1].bb === 30 && dealt.table.config.levelMs === 3 * 60_000);
     const W = await open(people[9]);
     const W2 = await open(people[10]);
     const stranger = await open(people[11]);
