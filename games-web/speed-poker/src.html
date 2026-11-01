@@ -277,8 +277,10 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 #table.big .board.nopiles .side{display:none}
 #table.big .banner{position:static;transform:none;max-width:210px;padding:6px 12px;font-size:13px;animation:fadein .25s ease-out}
 @keyframes fadein{from{opacity:0;transform:scale(.94)}}
-#table.big .result{text-align:center;font-weight:800;font-size:14px;color:#f6e7bd;background:rgba(8,14,11,.88);border:1px solid rgba(229,184,80,.55);border-radius:12px;padding:10px 12px;min-height:48px;display:flex;align-items:center;justify-content:center;animation:fadein .25s ease-out}
-#table.big .seat .bubble{position:absolute;left:50%;bottom:calc(100% + 16px);transform:translateX(-50%);z-index:9;width:max-content;max-width:150px;background:#fbfbf7;color:#13221a;font-size:12px;font-weight:600;line-height:1.25;padding:5px 9px;border-radius:12px;text-align:center;overflow-wrap:anywhere;box-shadow:0 4px 14px rgba(0,0,0,.45);pointer-events:none;animation:bubblein .2s ease-out}
+#table.big .result{text-align:center;font-weight:800;font-size:14px;color:#f6e7bd;background:rgba(8,14,11,.88);border:1px solid rgba(229,184,80,.55);border-radius:12px;padding:10px 12px;min-height:48px;display:flex;align-items:center;justify-content:center}
+#table.big .result.new{animation:fadein .25s ease-out}
+#table.big .seat .bubble{position:absolute;left:50%;bottom:calc(100% + 16px);transform:translateX(-50%);z-index:9;width:max-content;max-width:150px;background:#fbfbf7;color:#13221a;font-size:12px;font-weight:600;line-height:1.25;padding:5px 9px;border-radius:12px;text-align:center;overflow-wrap:anywhere;box-shadow:0 4px 14px rgba(0,0,0,.45);pointer-events:none}
+#table.big .seat .bubble.new{animation:bubblein .2s ease-out}
 #table.big .seat .bubble::after{content:"";position:absolute;left:50%;top:100%;transform:translateX(-50%);border:6px solid transparent;border-top-color:#fbfbf7}
 #table.big .seat .bubble.al{left:14px;transform:none}#table.big .seat .bubble.al::after{left:20px}
 #table.big .seat .bubble.ar{left:auto;right:14px;transform:none}#table.big .seat .bubble.ar::after{left:auto;right:14px;transform:none}
@@ -289,7 +291,16 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 #table.big .seat.folded,#table.big .seat.out{opacity:1}
 #table.big .seat.folded>:not(.bubble){opacity:.45}#table.big .seat.out>:not(.bubble){opacity:.3}
 @keyframes bubblein{from{opacity:0;translate:0 4px}}
-#table.big .actpop{font-weight:800;font-size:14px;padding:5px 14px;border-radius:999px;background:rgba(229,184,80,.95);color:#2a1a02;max-width:230px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 4px 14px rgba(0,0,0,.4);animation:fadein .2s ease-out}
+/* next look: the quick-chat tray, one row above the buttons, scrolling sideways */
+#table.next .qtray{display:flex;align-items:center;gap:6px;overflow-x:auto;scrollbar-width:none;padding:6px;margin:0 0 6px;background:rgba(10,20,15,.97);border:1px solid rgba(255,255,255,.14);border-radius:999px;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+#table.next .qtray::-webkit-scrollbar{display:none}
+#table.next .qtray button{flex:none;min-height:34px;border-radius:999px;padding:0 12px;background:rgba(255,255,255,.1);font-weight:700;font-size:13px;white-space:nowrap}
+#table.next .qtray button.em{font-size:19px;padding:0 6px;background:none}
+#table.next .qtray button.aa{background:rgba(229,184,80,.92);color:#2a1a02}
+#table.next .qtray button.x{background:none;color:var(--muted);font-size:18px;padding:0 6px 0 8px}
+.sheet.chat.next .box{max-height:58vh}
+#table.big .actpop{font-weight:800;font-size:14px;padding:5px 14px;border-radius:999px;background:rgba(229,184,80,.95);color:#2a1a02;max-width:230px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+#table.big .actpop.new{animation:fadein .2s ease-out}
 #table.big .seat{width:72px}
 #table.big .seat .ring{width:48px;height:48px;padding:2px}
 #table.big .seat .ring .avatar{width:44px;height:44px;font-size:14px}
@@ -420,7 +431,9 @@ const haptic=k=>{ try{ (window.Sowaka&&window.Sowaka.haptic)&&window.Sowaka.hapt
 
 const state={mode:'rooms',room:null,rooms:[],invites:[],me:null,ev:null,picker:null,leaveAsk:false,codeInput:'',shared:null,mine:null,table:null,view:'lobby',watching:null,tab:'board',raiseOpen:false,raiseTo:0,offset:0,lastHand:0,banner:null,offline:false,tv:!!P.tv,tvTables:{},pick:{},
   /* the big tables: from room:hello (the company's table), the chat sheet, and the table being watched */
-  big:false,tables:null,chatOpen:false,chatDraft:'',chatSeen:0,chatRoom:null,watchCode:null,bubbles:{},bubbleRoom:null,chatIds:null};
+  big:false,tables:null,chatOpen:false,chatDraft:'',chatSeen:0,chatRoom:null,watchCode:null,bubbles:{},bubbleRoom:null,chatIds:null,
+  next:false,trayOpen:false,focusChat:false,resultHand:null};
+const nextUi=()=>!!state.next;
 const now=()=>Date.now()+state.offset;
 const me=()=>(state.mode==='rooms'&&state.me&&state.me.userId)||(state.mine&&state.mine.userId)||(state.me&&state.me.userId);
 const initials=n=>String(n||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
@@ -645,6 +658,16 @@ const unreadOf=r=>(r&&r.chat||[]).filter(l=>l.at>state.chatSeen&&l.userId!==myId
 function chatButton(r){ const n=state.chatOpen?0:unreadOf(r);
   return `<span class="tbw"><button class="tbtn" data-act="chat" aria-label="Chat${n?`, ${n} new`:''}">💬</button>${n?`<b class="badge" aria-hidden="true">${n>9?'9+':n}</b>`:''}</span>`; }
 const QUICK=['👍','😂','🔥','GG','Nice hand'];
+/** The next look's quick chat, for while you are in a hand: one row above the buttons, one tap sends; Aa opens the full chat with the keyboard. */
+const TRAY=['👍','😂','🔥','😮','Nice hand','GG','Bluffing?','All in!','Good luck','Too rich for me'];
+function trayHtml(){ return `<div class="qtray" role="toolbar" aria-label="Quick chat"><button class="x" data-act="trayclose" aria-label="Close quick chat">×</button><button class="aa" data-act="chatfull" aria-label="Type a message">Aa</button>${TRAY.map(q=>`<button class="${/^\p{Extended_Pictographic}$/u.test(q)?'em':''}" data-say="${esc(q)}">${esc(q)}</button>`).join('')}</div>`; }
+/** In a hand right now: the chat button gives the quick tray, not the keyboard. */
+function inHandNow(){ const r=R(), v=r&&r.table, mine=v&&v.mySeat!=null?v.seats[v.mySeat]:null;
+  return !!(r&&r.status==='playing'&&v&&v.status==='playing'&&mine&&mine.inHand&&!mine.folded&&!mine.busted&&!mine.allIn&&v.street!=='done'); }
+/* The full chat opens with the phone's keyboard up: the box is focused in the same tap (iOS allows it only there),
+   and kept above the keyboard where the web view does not move it itself. */
+if(window.visualViewport){ const vv=window.visualViewport; const lift=()=>{ const sh=document.querySelector('.sheet.chat'); if(sh)sh.style.paddingBottom=Math.max(0,Math.round(window.innerHeight-vv.height-vv.offsetTop))+'px'; };
+  vv.addEventListener('resize',lift); vv.addEventListener('scroll',lift); }
 /* The sheet is drawn with the rest of the screen, and keepSheet() keeps the
    one on screen: it lives outside #app, only its [data-live] parts are
    updated, and the box being typed in is never replaced. */
@@ -652,7 +675,7 @@ function chatSheet(r){ const lines=r.chat||[], w=(r.watchers||[]).length, uid=my
   const face=id=>{ const p=r.players.find(x=>x.userId===id)||(r.watchers||[]).find(x=>x.userId===id); return p&&p.photoUrl||null; };
   const msgs=lines.length?lines.map(l=>`<div class="msg ${l.userId===uid?'own':''}">${avatarHtml(l.name,face(l.userId))}<div class="body"><b>${esc(l.userId===uid?'You':first(l.name))}</b>${l.watching?'<span class="wtag">watching</span>':''}${esc(l.text)}</div></div>`).join('')
     :'<div class="none">No messages yet. Say hello.</div>';
-  return `<div class="sheet chat" data-act="chatclose" data-keep="chat"><div class="box" role="dialog" aria-label="Table chat">
+  return `<div class="sheet chat${nextUi()?' next':''}" data-act="chatclose" data-keep="chat"><div class="box" role="dialog" aria-label="Table chat">
     <div class="chead" data-live="head"><h2>Table chat</h2><span>${w?`${w} watching`:''}</span><button class="x" data-act="chatclose" aria-label="Close the chat">×</button></div>
     <div class="msgs" data-live="msgs">${msgs}</div>
     <div class="quick">${QUICK.map(q=>`<button data-say="${esc(q)}">${esc(q)}</button>`).join('')}</div>
@@ -685,6 +708,7 @@ function onRoom(room){
   state.watchCode=room&&room.big&&room.watching?room.code:null;
   if(!room){ state.chatOpen=false; if(state.mode==='rooms'){ state.table=null; state.view='lobby'; state.leaveAsk=false; refreshRooms(); } return render(); }
   const v=room.table; if(room.serverNow)state.offset=room.serverNow-Date.now();
+  if(state.trayOpen&&!inHandNow())state.trayOpen=false;
   if(room.big){ const last=(room.chat||[]).reduce((a,l)=>Math.max(a,l.at||0),0);
     // A table's earlier chat is not news: only lines from now on count as unread.
     if(state.chatRoom!==room.code){ state.chatRoom=room.code; state.chatSeen=last; }
@@ -790,7 +814,8 @@ function moveWords(was,v){ let said=null;
 /** What a player said, over their avatar for three seconds (the chat keeps it all). */
 function bubbleHtml(userId,at,x){ const b=state.bubbles[userId]; if(!b||b.until<=Date.now())return '';
   const chars=Array.from(b.text), text=chars.length>60?chars.slice(0,58).join('')+'…':b.text;
-  return `<div class="bubble ${at==='T'?'side':x<30?'al':x>70?'ar':''}">${esc(text)}</div>`; }
+  const fresh=Date.now()-(b.until-3000)<350;
+  return `<div class="bubble ${at==='T'?'side':x<30?'al':x>70?'ar':''}${fresh?' new':''}">${esc(text)}</div>`; }
 /** A big table (up to eight): the same table, drawn compact. Who won is told under your cards, never over the board. */
 function bigTableInner(v,o){
   const n=v.seats.length, mySeat=v.mySeat, t=now(), wide=!!o.wide, room=o.room;
@@ -819,7 +844,7 @@ function bigTableInner(v,o){
   const left=v.endsAt-t, watching=room&&room.watching;
   return `<div class="tbar"><button class="back" data-act="lobby" aria-label="${watching?'Back to the tables':'Back to the lobby'}">‹</button><div class="title"><b>${tableTitle(v)}${v.mySeat==null?' · watching':''}</b><span>${level}</span></div>${room?chatButton(room):''}${soundButton()}<div class="clock num ${left<60000?'low':''}">${v.status==='over'?'Over':clockOf(left)}</div></div>
     <div class="stage"><div class="felt"></div>
-      <div class="center">${!v.result&&state.actionPop&&state.actionPop.until>Date.now()?`<div class="actpop">${esc(state.actionPop.text)}</div>`:!v.result&&v.pot>0?`<div class="pot num"><i></i>Pot ${fmt(v.pot)}</div>`:''}${board}</div>
+      <div class="center">${!v.result&&state.actionPop&&state.actionPop.until>Date.now()?`<div class="actpop${Date.now()-(state.actionPop.until-2500)<350?' new':''}">${esc(state.actionPop.text)}</div>`:!v.result&&v.pot>0?`<div class="pot num"><i></i>Pot ${fmt(v.pot)}</div>`:''}${board}</div>
       ${seats}</div>`;
 }
 function renderTable(){
@@ -860,8 +885,9 @@ function renderTable(){
   if(big){ const wide=isWide();
     // Who won: in the dock, where "Next hand in a moment…" was, so it never sits on cards.
     const won=v.result&&v.status!=='over'?resultLine(v):'';
-    if(won){ const line=`<div class="result">🏆 ${esc(won)}</div>`; actions=/Next hand in a moment/.test(actions)?line:line+actions; }
-    app.innerHTML=`<div id="table" class="big ${wide?'wide':''}">${tableInner(v,false,{wide,room})}<div class="dock">${watching?'':`<div class="mine">${hand}</div>`}<div class="actions">${actions}</div></div>${over}${sheets()}</div>`; return; }
+    const handKey=v.id+':'+v.handNo, fresh=!!won&&state.resultHand!==handKey; if(won)state.resultHand=handKey;
+    if(won){ const line=`<div class="result${fresh?' new':''}">🏆 ${esc(won)}</div>`; actions=/Next hand in a moment/.test(actions)?line:line+actions; }
+    app.innerHTML=`<div id="table" class="big ${wide?'wide':''} ${nextUi()?'next':''}">${tableInner(v,false,{wide,room})}<div class="dock">${watching?'':`<div class="mine">${hand}</div>`}${state.trayOpen&&nextUi()&&!state.raiseOpen?trayHtml():''}<div class="actions">${actions}</div></div>${over}${sheets()}</div>`; return; }
   app.innerHTML=`<div id="table">${tableInner(v,false)}<div class="mine">${hand}</div><div class="actions">${actions}</div>${over}${room?sheets():''}</div>`;
 }
 function renderRoomsMode(){ const r=R(); if(!r)return renderRooms(); if(r.status==='lobby'||!r.table)return renderRoomLobby(); return renderTable(); }
@@ -934,7 +960,7 @@ document.addEventListener('click',async e=>{
   if(b.dataset.tab){ state.tab=b.dataset.tab; return renderLobby(); }
   if(b.dataset.watch){ return watchTable(b.dataset.watch); }
   if(b.dataset.watchroom){ return watchCode(b.dataset.watchroom); }
-  if(b.dataset.say){ haptic('light'); return sendChat(b.dataset.say,false); }
+  if(b.dataset.say){ haptic('light'); const fromTray=!!b.closest('.qtray'); if(fromTray){ state.trayOpen=false; render(); } return sendChat(b.dataset.say,false); }
   if(b.dataset.to){ state.raiseTo=+b.dataset.to; const r=$('#raise'); if(r)r.value=state.raiseTo; $('#raisev').textContent=fmt(state.raiseTo); const rb=$('#raisebtn'); if(rb)rb.textContent=fmt(state.raiseTo); return; }
   if(b.dataset.pick){ const [stage,field,value]=b.dataset.pick.split('|'); const sel=state.pick[stage]=state.pick[stage]||{}; sel[field]=value; if(field!=='choice'&&field!=='stake')delete sel.choice; return renderLobby(); }
   const act=b.dataset.act; if(!act)return;
@@ -952,7 +978,10 @@ document.addEventListener('click',async e=>{
       case 'leaveask': if(R()&&R().practice){ await leavePractice(); return; } if(R()&&R().big&&R().watching){ await stopWatching(); return; } state.leaveAsk=true; break;
       case 'unwatch': await stopWatching(); return;
       case 'takeseat': state.chatOpen=false; await joinCode(R().code); break;
-      case 'chat': state.chatOpen=true; { const r=R(); state.chatSeen=Math.max(state.chatSeen,...((r&&r.chat)||[]).map(l=>l.at||0)); } break;
+      case 'chat': if(nextUi()&&inHandNow()){ state.trayOpen=!state.trayOpen; break; }
+        state.trayOpen=false; state.chatOpen=true; state.focusChat=nextUi(); { const r=R(); state.chatSeen=Math.max(state.chatSeen,...((r&&r.chat)||[]).map(l=>l.at||0)); } break;
+      case 'chatfull': state.trayOpen=false; state.chatOpen=true; state.focusChat=true; { const r=R(); state.chatSeen=Math.max(state.chatSeen,...((r&&r.chat)||[]).map(l=>l.at||0)); } break;
+      case 'trayclose': state.trayOpen=false; break;
       case 'chatclose': state.chatOpen=false; break;
       case 'chatsend': { const i=$('#chatin'); await sendChat(i?i.value:state.chatDraft,true); return; }
       case 'sound': if(window.PokerSounds)window.PokerSounds.toggle(); break;
@@ -977,6 +1006,8 @@ document.addEventListener('click',async e=>{
     }
   }catch(err){ toast(err.message||'Something went wrong.'); }
   render();
+  // Still inside the tap: focus the box so the phone's keyboard comes up with the chat.
+  if(state.focusChat){ state.focusChat=false; const box=document.getElementById('chatin'); if(box){ try{ box.focus({preventScroll:true}); }catch(e){ box.focus(); } } }
 });
 document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target&&e.target.id==='code'){ e.preventDefault(); joinCode(e.target.value).catch(err=>toast(err.message)); }
   if(e.key==='Enter'&&e.target&&e.target.id==='chatin'&&!e.isComposing){ e.preventDefault(); sendChat(e.target.value,true); } });
@@ -1086,7 +1117,7 @@ async function leavePractice(){ state.leaveAsk=false; state.boardAnim=null; try{
 async function load(){ try{
     const [h,rh]=await Promise.all([P.request('poker:hello').catch(()=>({})),P.request('room:hello')]);
     state.ev=(h&&h.shared)||null; state.mine=(h&&h.mine)||state.mine; state.me=rh.me||state.me; state.rooms=rh.rooms||[]; state.invites=rh.invites||[];
-    state.big=!!rh.big; state.tables=rh.tables||null;
+    state.big=!!rh.big; state.tables=rh.tables||null; state.next=!!rh.next;
     /* At an event's table: that first. Else the group game (the event, if one is on, is a card in its lobby). */
     if(h&&h.table&&h.table.status==='playing'&&!rh.room){ state.mode='event'; state.shared=state.ev; state.table=h.table; state.view='table'; }
     else if(state.mode==='event'){ state.shared=state.ev; if(h&&h.table)state.table=h.table; }
@@ -1166,7 +1197,7 @@ function roomsDemo(mode,t,people){
 function bigDemo(mode,t,people){
   const q=new URLSearchParams(location.search), watch=mode==='room-watch8';
   const n=Math.max(2,Math.min(8,+q.get('n')||(watch&&q.get('free')==='1'?7:8)));
-  state.big=true; state.tables={seats:8,buyIn:1000};
+  state.big=true; state.tables={seats:8,buyIn:1000}; state.next=new URLSearchParams(location.search).get('next')==='1';
   const mini=i=>({userId:'d'+i,name:people[i],photoUrl:demoFace(i)});
   state.rooms=[{code:'4821',host:mini(1),status:'lobby',minutes:20,house:0,players:[1,2,3].map(mini),seats:8,free:5,seatFree:true,endsAt:null,watchable:false,watchers:0},
     {code:'7350',host:mini(4),status:'playing',minutes:30,house:1,players:[4,5,6,7,3].map(mini),seats:8,free:2,seatFree:true,endsAt:t+600000,watchable:true,watchers:1},
@@ -1197,6 +1228,7 @@ function bigDemo(mode,t,people){
     if(ev==='room:unwatch')return Promise.resolve({});
     return Promise.reject(new Error('Demo: nothing is sent.')); };
   state.table=null;
+  if(q.get('tray')==='1')state.trayOpen=true;
   if(q.get('pop')==='1')state.actionPop={text:'Ishaan raised to 1,480',until:Date.now()+3600e3};
   if(q.get('bubbles')==='1'&&room.table){ const far=Date.now()+3600e3, say=['Nice hand!','All in?? 😂','GG','I fold, too rich for me','🔥🔥']; room.table.seats.slice(0,5).forEach((x,i)=>{ state.bubbles[x.userId]={text:say[i],until:far}; }); }
   if(mode!=='rooms8'){ state.room=room; state.chatOpen=q.get('chat')==='1'; onRoom(room);
