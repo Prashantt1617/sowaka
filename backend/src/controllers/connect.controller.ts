@@ -10,6 +10,7 @@ import {
   getConnectPersonPosts,
   parsePostTypeList,
   getConnectPost,
+  getCaptionEntryVoters,
   getConnectPostLikes,
   markCelebrationWishesSeen,
   performConnectAction,
@@ -78,6 +79,20 @@ export async function connectPostLikes(req: Request, res: Response, next: NextFu
   try {
     const likes = await getConnectPostLikes(requireUserId(req), String(req.params.postId ?? ''));
     res.status(200).json({ success: true, likes });
+  } catch (error) {
+    handleConnectError(error, next);
+  }
+}
+
+/** The "Voted by" list: who voted for one contest entry, A-Z. */
+export async function captionEntryVoters(req: Request, res: Response, next: NextFunction) {
+  try {
+    const voters = await getCaptionEntryVoters(
+      requireUserId(req),
+      String(req.params.postId ?? ''),
+      String(req.params.entryId ?? ''),
+    );
+    res.status(200).json({ success: true, voters });
   } catch (error) {
     handleConnectError(error, next);
   }
@@ -312,11 +327,29 @@ export async function submitCaption(req: Request, res: Response, next: NextFunct
       },
       // Most Likely answers with a colleague rather than words.
       req.body.taggedUserId ? String(req.body.taggedUserId) : undefined,
+      // Colleagues tagged with "@" in a photo or caption entry's words.
+      idList(req.body.mentionedUserIds),
     );
     res.status(201).json({ success: true, post });
   } catch (error) {
     handleConnectError(error, next);
   }
+}
+
+/**
+ * A list of ids as either body sends it: an array in JSON, or, from a
+ * multipart form (a photo entry), one JSON-encoded array or a comma list.
+ */
+function idList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (Array.isArray(parsed)) return idList(parsed);
+  } catch {
+    // Not JSON: a comma list.
+  }
+  return value.split(',').map((id) => id.trim()).filter(Boolean);
 }
 
 export async function deleteCaption(req: Request, res: Response, next: NextFunction) {

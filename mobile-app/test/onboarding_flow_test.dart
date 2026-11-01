@@ -167,7 +167,8 @@ void main() {
       await tester.tap(find.text('Continue'));
       await tester.pumpAndSettle();
       expect(done, isFalse);
-      expect(find.text('Set up Face ID'), findsWidgets);
+      // The step's title and its button (renamed from Face ID to face check).
+      expect(find.text('Set up face check'), findsNWidgets(2));
     });
 
     testWidgets('no Face ID step where faces are not checked, or once set up', (tester) async {

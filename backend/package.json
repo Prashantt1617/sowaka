@@ -38,6 +38,9 @@
     "profile-posts:check": "tsx src/scripts/profile-posts-check.ts",
     "colleague-search:check": "tsx src/scripts/colleague-search-check.ts",
     "contest-entries:check": "tsx src/scripts/contest-entries-check.ts",
+    "grow-chain:check": "tsx src/scripts/grow-chain-check.ts",
+    "feedback-note:check": "tsx src/scripts/feedback-note-check.ts",
+    "feedback-period:check": "tsx src/scripts/feedback-period-check.ts",
     "squad:check": "tsx src/scripts/secret-squad-check.ts",
     "face-id:check": "FACE_MAX_ATTEMPTS=3 FACE_INCONCLUSIVE_FALLBACK=3 tsx src/scripts/face-id-check.ts",
     "face-id:e2e": "tsx src/scripts/face-id-e2e.ts",
@@ -50,6 +53,13 @@
     "payroll:reconcile": "tsx src/scripts/payroll-org-reconcile.ts",
     "payroll:tds-check": "tsx src/scripts/payroll-tds-check.ts",
     "payroll:tds-seed": "tsx src/scripts/payroll-tds-seed.ts",
+    "payroll:statutory-seed": "tsx src/scripts/payroll-statutory-seed.ts",
+    "payroll:config-check": "MONGODB_DB=payroll_config_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= PAYROLL_CONFIG_ORGS= tsx src/scripts/payroll-config-check.ts",
+    "payroll:employee-check": "MONGODB_DB=payroll_employee_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/payroll-employee-check.ts",
+    "payroll:declaration-check": "MONGODB_DB=payroll_declaration_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/payroll-declaration-check.ts",
+    "payroll:employee-settings-seed": "tsx src/scripts/payroll-employee-settings-seed.ts",
+    "payroll:overtime-check": "MONGODB_DB=payroll_overtime_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/payroll-overtime-check.ts",
+    "payroll:dashboard-check": "MONGODB_DB=payroll_dashboard_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/payroll-dashboard-check.ts",
     "api:only": "tsx src/scripts/api-only.ts"
   },
   "dependencies": {

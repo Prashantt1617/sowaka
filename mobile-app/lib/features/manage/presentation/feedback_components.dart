@@ -28,6 +28,10 @@ class _ParamCardState extends State<_ParamCard> {
   final FocusNode _noteFocusNode = FocusNode();
   late final TextEditingController _noteController;
 
+  /// The comment goes to the form a moment after typing stops, as well as
+  /// when the box loses focus, so Send judges the words as they stand.
+  Timer? _noteDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +52,7 @@ class _ParamCardState extends State<_ParamCard> {
 
   @override
   void dispose() {
+    _noteDebounce?.cancel();
     _commitNote();
     _noteFocusNode.removeListener(_commitNoteOnBlur);
     _noteFocusNode.dispose();
@@ -59,7 +64,13 @@ class _ParamCardState extends State<_ParamCard> {
     if (!_noteFocusNode.hasFocus) _commitNote();
   }
 
+  void _noteChanged(String _) {
+    _noteDebounce?.cancel();
+    _noteDebounce = Timer(const Duration(milliseconds: 300), _commitNote);
+  }
+
   void _commitNote() {
+    if (!mounted) return;
     final text = _noteController.text;
     if (text != widget.param.note) widget.onNote(text);
   }
@@ -278,6 +289,7 @@ class _ParamCardState extends State<_ParamCard> {
                     child: TextFormField(
                       controller: _noteController,
                       focusNode: _noteFocusNode,
+                      onChanged: _noteChanged,
                       enabled: !widget.locked,
                       maxLines: 3,
                       minLines: 2,

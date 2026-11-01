@@ -1,9 +1,11 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../../support/support_launcher.dart';
 import 'package:printing/printing.dart';
 
 import '../data/payslip_pdf.dart';
@@ -15,6 +17,8 @@ import '../../manager/bloc/manager_bloc.dart';
 import '../../manager/data/manager_models.dart';
 import '../../requests/presentation/request_summary.dart';
 import '../../manager_shell/presentation/app_home_header.dart';
+import '../../payroll/data/payroll_api_service.dart';
+import '../../payroll/data/payroll_models.dart';
 import '../../placements/data/placements_api_service.dart';
 import '../../placements/data/placements_models.dart';
 import '../../policies/data/policies_api_service.dart';
@@ -24,6 +28,7 @@ import '../../shared/app_toast.dart';
 import '../../support/presentation/support_desk_screen.dart';
 
 part 'placements_screen.dart';
+part 'payroll_screen.dart';
 part '../../placements/presentation/placements_style.dart';
 part '../../placements/presentation/candidate_pages.dart';
 part '../../placements/presentation/client_pages.dart';
@@ -65,8 +70,9 @@ class QuickActionsController extends ChangeNotifier {
 
 enum _QuickPage {
   home,
-  payslips,
-  payslip,
+
+  /// Payroll, with its own pages inside it ([PayrollScreen]).
+  payroll,
   leave,
   applyLeave,
   overtime,
@@ -128,6 +134,7 @@ class AttendanceDayView {
     this.earlyOut = false,
     this.needsCorrection = false,
     this.correctionPending = false,
+    this.beforeJoining = false,
   });
 
   final DateTime date;
@@ -160,6 +167,10 @@ class AttendanceDayView {
   /// being red once the correction is approved.
   bool get unresolved => needsCorrection || correctionPending;
 
+  /// A day before this person joined: drawn blank like a day to come, but
+  /// not theirs to record, correct or take leave on.
+  final bool beforeJoining;
+
   AttendanceDayView copyWith({
     bool? needsCorrection,
     bool? correctionPending,
@@ -177,6 +188,7 @@ class AttendanceDayView {
     earlyOut: earlyOut,
     needsCorrection: needsCorrection ?? this.needsCorrection,
     correctionPending: correctionPending ?? this.correctionPending,
+    beforeJoining: beforeJoining,
   );
 }
 
@@ -192,6 +204,9 @@ List<AttendanceDayView> buildAttendanceDays({
   /// The server's settled status per day, by YYYY-MM-DD. Where it has one,
   /// that is what the day is — see [_settledByServer].
   Map<String, ServerDayStatus> serverDays = const {},
+
+  /// The day this person joined. The days before it are empty, not absent.
+  DateTime? joinedOn,
 }) {
   final recordsByDate = {
     for (final record in records)
@@ -254,6 +269,15 @@ List<AttendanceDayView> buildAttendanceDays({
     // The day on its own terms. A request awaiting a decision does not
     // change any of this — see below.
     AttendanceDayView natural() {
+      if (joinedOn != null && date.isBefore(_dateOnly(joinedOn))) {
+        return AttendanceDayView(
+          date: date,
+          kind: AttendanceKind.future,
+          title: 'Before joining',
+          cellLabel: '',
+          beforeJoining: true,
+        );
+      }
       if (holiday != null) {
         return AttendanceDayView(
           date: date,
@@ -507,6 +531,8 @@ AttendanceDayView _settledByServer(
     ),
     'week_off' => (AttendanceKind.weekoff, 'Week off', 'Weekly off'),
     'holiday' => (AttendanceKind.holiday, 'Holiday', server.label ?? 'Holiday'),
+    // Not theirs yet: an empty day, like one still to come.
+    'before_joining' => (AttendanceKind.future, '', 'Before joining'),
     'missed_punch' => switch (server.countsAs) {
       'Present' => (AttendanceKind.present, '', 'Present'),
       'Half Day' => (AttendanceKind.halfDay, 'Half day', 'Half day'),
@@ -514,6 +540,7 @@ AttendanceDayView _settledByServer(
     },
     _ => (local.kind, local.cellLabel, local.title),
   };
+  final beforeJoining = server.status == 'before_joining';
   if (server.byHr) {
     // HR's word, whatever the punches said. Nothing left to correct.
     return AttendanceDayView(
@@ -525,6 +552,7 @@ AttendanceDayView _settledByServer(
       regularization: local.regularization,
       leave: local.leave,
       holiday: local.holiday,
+      beforeJoining: beforeJoining,
     );
   }
   // Same verdict: the app's reading says more (hours, late, early out).
@@ -548,6 +576,7 @@ AttendanceDayView _settledByServer(
     late: local.late,
     earlyOut: local.earlyOut,
     needsCorrection: stillShort && local.needsCorrection,
+    beforeJoining: beforeJoining,
   );
 }
 
@@ -564,6 +593,8 @@ class QuickActionsScreen extends StatefulWidget {
     required this.onOpenComposer,
     this.policies,
     this.placements,
+    this.payroll,
+    this.pickPayrollFile,
   });
 
   final ManagerBloc bloc;
@@ -580,6 +611,14 @@ class QuickActionsScreen extends StatefulWidget {
   /// Where Placements are read and saved. Supplied by tests; the screen makes
   /// its own otherwise.
   final PlacementsApiService? placements;
+
+  /// Where Payroll is read and saved. Supplied by tests; the screen makes its
+  /// own otherwise.
+  final PayrollApiService? payroll;
+
+  /// Picks an investment proof. Supplied by tests; the system picker
+  /// otherwise.
+  final PayrollFilePicker? pickPayrollFile;
 
   @override
   State<QuickActionsScreen> createState() => _QuickActionsScreenState();
@@ -635,6 +674,18 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   /// Placements keeps its own pages; Back asks it first. A fresh key each
   /// time it opens, so one still fading out never shares it.
   var _placementsKey = GlobalKey<_PlacementsScreenState>();
+
+  late final PayrollApiService _payrollApi =
+      widget.payroll ?? PayrollApiService(session: widget.bloc.session);
+
+  /// Payroll keeps its own pages too; a fresh key each time, as Placements.
+  var _payrollKey = GlobalKey<_PayrollScreenState>();
+
+  /// Where Back from the Attendance list goes: the Actions home, or Payroll
+  /// when Payroll opened it on the missed punches; and the line under the
+  /// month that Payroll asks for ("12 days to fix by 31 Oct").
+  _QuickPage _calendarReturnPage = _QuickPage.home;
+  String? _calendarNote;
   DateTime? _policiesFetchedAt;
   bool _policiesFetching = false;
   static const _policiesStale = Duration(minutes: 2);
@@ -734,6 +785,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     if (page == _QuickPage.placements) {
       _placementsKey = GlobalKey<_PlacementsScreenState>();
     }
+    if (page == _QuickPage.payroll) {
+      _payrollKey = GlobalKey<_PayrollScreenState>();
+    }
+    if (page == _QuickPage.calendar) {
+      _calendarReturnPage = _QuickPage.home;
+      _calendarNote = null;
+    }
     setState(() => _page = page);
     widget.controller._navigationChanged();
     // Read again whenever the list is opened, so an edit shows the next time
@@ -819,6 +877,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         (_placementsKey.currentState?.back() ?? false)) {
       return;
     }
+    if (_page == _QuickPage.payroll &&
+        (_payrollKey.currentState?.back() ?? false)) {
+      return;
+    }
     // Out of a calendar paged to another month: the page underneath reads
     // today's punch from the same days, so this month comes back with it.
     final now = DateTime.now();
@@ -836,8 +898,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         _page = _QuickPage.overtime;
       } else if (_page == _QuickPage.applyReimbursement) {
         _page = _QuickPage.reimbursements;
-      } else if (_page == _QuickPage.payslip) {
-        _page = _QuickPage.payslips;
+      } else if (_page == _QuickPage.calendar &&
+          _calendarReturnPage == _QuickPage.payroll) {
+        // Back to Payroll's home, which reads the count again.
+        _payrollKey = GlobalKey<_PayrollScreenState>();
+        _page = _QuickPage.payroll;
+        _calendarReturnPage = _QuickPage.home;
+        _calendarNote = null;
       } else if (_page == _QuickPage.wizard && _step > 0) {
         _step--;
         _restoreStepInput(_stepsForCurrentFlow()[_step]);
@@ -888,8 +955,17 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         _QuickPage.overtime => _overtimeHub(),
         _QuickPage.applyOvertime => _applyOvertimeForm(),
         _QuickPage.reimbursements => _reimbursementHub(),
-        _QuickPage.payslips => _payslipHub(),
-        _QuickPage.payslip => _payslipDetail(),
+        _QuickPage.payroll => PayrollScreen(
+          key: _payrollKey,
+          api: _payrollApi,
+          onClose: _back,
+          profileAction: widget.profileAction,
+          onNotifications: widget.onNotifications,
+          onQuickCreate: _showQuickCreateComingSoon,
+          onFixMissingPunches: _openMissingPunches,
+          onRaiseTicket: _openSupportDesk,
+          pickFile: widget.pickPayrollFile,
+        ),
         _QuickPage.applyReimbursement => _applyReimbursementForm(),
         _QuickPage.policies => _policies(),
         _QuickPage.policy => _policyDetail(),
@@ -1127,27 +1203,21 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       tint: const Color(0xFFE3EEFB),
                       title: 'Support Desk',
                       subtitle: 'Raise a ticket',
-                      onTap: () => openSupportDesk(
-                        context,
-                        session: widget.bloc.session,
-                        profileAction: widget.profileAction,
-                        onNotifications: widget.onNotifications,
-                        // The shell's tabs under the desk; a pick comes back
-                        // to the shell first, once anything unsent is let go.
-                        tabs: visibleTabs(
-                          widget.bloc.session.user.enabledTabs,
-                        ),
-                        selectedTab: widget.bloc.state.tab,
-                        onSelectTab: (tab) {
-                          Navigator.of(context)
-                              .popUntil((route) => route.isFirst);
-                          widget.bloc.add(ChangeManagerTab(tab, fresh: true));
-                        },
-                      ),
+                      onTap: _openSupportDesk,
                       imageAsset: 'assets/icons/support_headset.png',
                     ),
-                    // Payslips are built and served, but the way in waits for
-                    // the next release — the card is all that is held back.
+                    // Payroll: the month's salary, what to fix before it runs,
+                    // payslips, the flexible split and the tax declaration.
+                    _HomeActionCard(
+                      key: const ValueKey('payroll-card'),
+                      icon: Icons.account_balance_wallet_rounded,
+                      color: const Color(0xFF0571A6),
+                      tint: const Color(0xFFE0F2FE),
+                      title: 'Payroll',
+                      subtitle: 'Payslips, salary & tax',
+                      onTap: () => _open(_QuickPage.payroll),
+                      imageAsset: 'assets/icons/request_reimbursement_money.png',
+                    ),
                     _HomeActionCard(
                       icon: Icons.edit_note_rounded,
                       color: const Color(0xFF8A6AA0),
@@ -1166,6 +1236,49 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         ),
       ],
     );
+  }
+
+  /// The Support desk, with the shell's tabs under it; a pick comes back to
+  /// the shell first, once anything unsent is let go.
+  void _openSupportDesk() {
+    unawaited(
+      openSupportDesk(
+        context,
+        session: widget.bloc.session,
+        profileAction: widget.profileAction,
+        onNotifications: widget.onNotifications,
+        tabs: visibleTabs(widget.bloc.session.user.enabledTabs),
+        selectedTab: widget.bloc.state.tab,
+        onSelectTab: (tab) {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+          widget.bloc.add(ChangeManagerTab(tab, fresh: true));
+        },
+      ),
+    );
+  }
+
+  /// Payroll's "Fix missing punches": the Attendance list on its Missed
+  /// punch heading, where each day is corrected through the same sheet and
+  /// request as anywhere else. Back returns to Payroll.
+  void _openMissingPunches(PayrollMissingPunches? info) {
+    final month = payrollMonth(info?.period);
+    final fixBy = info?.fixBy;
+    setState(() {
+      _attendanceFilter = AttendanceFilter.missedPunch;
+      _selectedCalendarDay = null;
+      _calendarReturnPage = _QuickPage.payroll;
+      _calendarNote = info == null || info.count == 0
+          ? null
+          : '${info.count} ${info.count == 1 ? 'day' : 'days'} to fix'
+                '${fixBy == null ? '' : ' by ${_short(fixBy)}'}';
+      _page = _QuickPage.calendar;
+    });
+    widget.controller._navigationChanged();
+    if (month != null &&
+        (month.year != _attendanceMonth.year ||
+            month.month != _attendanceMonth.month)) {
+      unawaited(widget.bloc.add(LoadAttendanceMonth(month)));
+    }
   }
 
   Widget _leaveHub() {
@@ -2151,309 +2264,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     }
   }
 
-  // ---------------------------------------------------------------- payslips
-  // What payroll produced for this person: the last three months, and for
-  // each of them why any pay was lost, in the same words HR sees.
-
-  Future<(PayslipCompany, List<Payslip>)>? _payslipsFuture;
-  PayslipCompany _payslipCompany = const PayslipCompany(name: '', address: '');
-  Payslip? _payslip;
-  bool _downloading = false;
-
-  static String _inr(int paise) =>
-      '₹${(paise / 100).round().toString().replaceAllMapped(RegExp(r'(\d)(?=(\d\d)+\d$)'), (m) => '${m[1]},')}';
-  static String _monthOf(String period) {
-    final parts = period.split('-');
-    const names = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
-    final month = int.tryParse(parts.length > 1 ? parts[1] : '') ?? 1;
-    return '${names[(month - 1).clamp(0, 11)]} ${parts.first}';
-  }
-
-  static String _days(double days) => days == days.roundToDouble()
-      ? days.round().toString()
-      : days.toStringAsFixed(1);
-  void _openPayslip(Payslip slip) {
-    setState(() {
-      _payslip = slip;
-    });
-    _open(_QuickPage.payslip);
-  }
-
-  Future<void> _downloadPayslip(Payslip slip) async {
-    if (_downloading) return;
-    setState(() => _downloading = true);
-    try {
-      final pdf = await buildPayslipPdf(slip: slip, company: _payslipCompany);
-      await Printing.sharePdf(
-        bytes: pdf,
-        filename: 'payslip-${slip.period}.pdf',
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not prepare the payslip. Try again.'),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _downloading = false);
-    }
-  }
-
-  Widget _payslipHub() {
-    return _HubScaffold(
-      key: const ValueKey('payslip-hub'),
-      title: 'Payslips',
-      onBack: _back,
-      profileAction: widget.profileAction,
-      onNotifications: widget.onNotifications,
-      onQuickCreate: _showQuickCreateComingSoon,
-      backgroundColor: const Color(0xFFF7F7F9),
-      children: [
-        FutureBuilder<(PayslipCompany, List<Payslip>)>(
-          future: _payslipsFuture,
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return _InfoCard(
-                'Could not load your payslips. Pull back and try again.',
-              );
-            }
-            if (!snapshot.hasData) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 48),
-                child: Center(
-                  child: CircularProgressIndicator(strokeWidth: 2.5),
-                ),
-              );
-            }
-            final slips = snapshot.data!.$2;
-            _payslipCompany = snapshot.data!.$1;
-            if (slips.isEmpty) {
-              return const _InfoCard(
-                'No payslips yet — they appear here once payroll has run for you.',
-              );
-            }
-            return Column(
-              children: [
-                for (final slip in slips) ...[
-                  _QuickRequestCard(
-                    title: _monthOf(slip.period),
-                    subtitle: '',
-                    status: '',
-                    statusColor: Colors.transparent,
-                    onViewDetails: () => _openPayslip(slip),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-              ],
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _payslipDetail() {
-    final slip = _payslip;
-    if (slip == null) return _payslipHub();
-    final docked = slip.lines.where((line) => line.days > 0).toList();
-    final covered = slip.paidLeaveDaysApplied;
-    return _HubScaffold(
-      key: ValueKey('payslip-${slip.id}'),
-      title: _monthOf(slip.period),
-      onBack: _back,
-      profileAction: widget.profileAction,
-      onNotifications: widget.onNotifications,
-      onQuickCreate: _showQuickCreateComingSoon,
-      backgroundColor: const Color(0xFFF7F7F9),
-      children: [
-        // The figure that matters.
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: const Color(0xFFECFDF5),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFD1FAE5)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _inr(slip.netPayablePaise),
-                style: const TextStyle(
-                  fontSize: 30,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF111827),
-                ),
-              ),
-              const Text(
-                'Total net pay',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF047857),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFEBEBEB)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'EARNINGS',
-                style: TextStyle(
-                  fontSize: 11,
-                  letterSpacing: 1,
-                  color: Color(0xFF717171),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 6),
-              for (final e in slip.earnings.where((e) => !e.hidden))
-                _payslipRow(
-                  e.name,
-                  _inr(e.fullPaise),
-                  sub: e.fullPaise != e.paidPaise ? 'Monthly rate' : null,
-                ),
-              if (slip.overtimePaise > 0)
-                _payslipRow('Overtime', _inr(slip.overtimePaise)),
-              if (slip.reimbursementsPaise > 0)
-                _payslipRow('Reimbursements', _inr(slip.reimbursementsPaise)),
-              const Divider(height: 22),
-              const Text(
-                'DEDUCTIONS',
-                style: TextStyle(
-                  fontSize: 11,
-                  letterSpacing: 1,
-                  color: Color(0xFF717171),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 6),
-              if (slip.lopDays > 0)
-                _payslipRow(
-                  'Loss of pay · ${_days(slip.lopDays)} ${slip.lopDays == 1 ? 'day' : 'days'}',
-                  '−${_inr(slip.lossOfPayPaise)}',
-                  sub: [
-                    for (final line in docked)
-                      '${line.name} ${line.count} → ${_days(line.days)}d',
-                    if (covered > 0)
-                      '${_days(covered)} ${covered == 1 ? 'day' : 'days'} covered by paid leave',
-                  ].join(' · '),
-                  strong: true,
-                ),
-              for (final d in slip.deductions.where((d) => !d.hidden))
-                _payslipRow(d.name, '−${_inr(d.fullPaise)}'),
-              if (slip.lopDays == 0 && slip.deductions.isEmpty)
-                _payslipRow('No deductions', '—'),
-              const Divider(height: 22),
-              _payslipRow(
-                'Net payable',
-                _inr(slip.netPayablePaise),
-                strong: true,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: _downloading ? null : () => _downloadPayslip(slip),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF0571A6),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            icon: _downloading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.download_rounded),
-            label: Text(_downloading ? 'Preparing…' : 'Download payslip'),
-          ),
-        ),
-        const SizedBox(height: 24),
-      ],
-    );
-  }
-
-  Widget _payslipRow(
-    String label,
-    String value, {
-    String? sub,
-    bool strong = false,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: strong ? FontWeight.w700 : FontWeight.w500,
-                    color: const Color(0xFF222222),
-                  ),
-                ),
-                if (sub != null && sub.isNotEmpty)
-                  Text(
-                    sub,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF717171),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
-              color: const Color(0xFF222222),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _reimbursementHub() {
     final claims = widget.dashboard.myReimbursements;
@@ -2908,6 +2718,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           ),
           const SizedBox(height: 10),
         ],
+        // "Speak to HR": a question about the policy goes to the Support Desk.
+        RaiseTicketLink(
+          label: 'Ask HR about this policy',
+          about: 'A question about the ${policy.title} policy:',
+        ),
       ],
     );
   }
@@ -2984,8 +2799,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   String _overtimePolicyText() {
     final shift = widget.dashboard.shift;
     if (!widget.dashboard.overtimeEnabled) {
-      return 'Overtime is not enabled for your team. Speak to HR if you think '
-          'it should be.';
+      return 'Overtime is not enabled for your team. If you think it should '
+          'be, ask HR through the Support Desk below.';
     }
     return [
       'Overtime is claimed as a full day or a half day, and needs your '
@@ -3023,7 +2838,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final days = _attendanceDays();
     return _HubScaffold(
       key: const ValueKey('calendar'),
-      title: 'Attendance',
+      title: _calendarReturnPage == _QuickPage.payroll
+          ? 'Missing punches'
+          : 'Attendance',
       onBack: _back,
       profileAction: widget.profileAction,
       onNotifications: widget.onNotifications,
@@ -3067,6 +2884,19 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             ),
           ],
         ),
+        if (_calendarNote case final note?) ...[
+          const SizedBox(height: 6),
+          Text(
+            note,
+            key: const ValueKey('calendar-note'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFFB3261E),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
         const SizedBox(height: 24),
         AttendanceFilterChips(
           selected: _attendanceFilter,
@@ -3167,6 +2997,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     holidays: widget.dashboard.holidays,
     overtime: widget.dashboard.myOvertime,
     shift: widget.dashboard.shift,
+    joinedOn: DateTime.tryParse(widget.bloc.session.user.joiningDate ?? ''),
   );
 
   /// How far ahead attendance can be paged. There is nothing recorded in the
@@ -3297,6 +3128,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   /// Whether this day is one a leave request can still be made for.
   bool _leaveApplicable(AttendanceDayView day) {
+    if (day.beforeJoining) return false;
     switch (day.kind) {
       // A day already worked is not one to take leave on.
       case AttendanceKind.present:
@@ -3334,6 +3166,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final today = _dateOnly(DateTime.now());
     final date = _dateOnly(day.date);
 
+    // Not theirs yet: nothing was due, so there is nothing to put right.
+    if (day.beforeJoining) {
+      return 'Before your joining date — there is nothing to record or '
+          'correct.';
+    }
     if (date.isAfter(today)) return 'A future day cannot be regularised.';
     if (day.correctionPending) {
       return 'A correction for this day is already with your manager.';
@@ -5465,7 +5302,11 @@ class AttendanceDayDetail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pending = pendingNotice;
-    final base = attendanceTagStyle(day.kind);
+    final kindTag = attendanceTagStyle(day.kind);
+    // Drawn like a day to come, but it is not one: it says what it is.
+    final base = day.beforeJoining
+        ? (bg: kindTag.bg, fg: kindTag.fg, label: 'Before joining')
+        : kindTag;
     // Red on any day a correction is still open against, so the list agrees
     // with the grid rather than showing a settled-looking half day.
     final tag = day.unresolved
@@ -5532,7 +5373,8 @@ class AttendanceDayDetail extends StatelessWidget {
           const SizedBox(height: 16),
           _AttendancePendingNotice(text: pending),
         ] else ...[
-          if (!autoPresent) ...[
+          // No punches were due before joining: dashes would read as missed.
+          if (!autoPresent && !day.beforeJoining) ...[
             const SizedBox(height: 16),
             Container(
               height: 71,
@@ -5618,11 +5460,6 @@ class _AttendanceDayActionButton extends StatelessWidget {
           side: const BorderSide(color: Color(0xFFEBEBEB), width: 1.4),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-          ),
-          textStyle: const TextStyle(
-            fontSize: 14,
-            height: 20 / 14,
-            fontWeight: FontWeight.w600,
           ),
         ),
         onPressed: action.onTap,
@@ -6324,6 +6161,7 @@ class _IllustrationTile extends StatelessWidget {
 
 class LeaveViewSwitch extends StatelessWidget {
   const LeaveViewSwitch({
+    super.key,
     required this.history,
     required this.onChanged,
     this.firstLabel = 'Upcoming',
@@ -6638,44 +6476,6 @@ class _HubRequestCard extends StatelessWidget {
   }
 }
 
-/// The "View details" line every history card carries.
-class _ViewDetailsLink extends StatelessWidget {
-  const _ViewDetailsLink({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Align(
-    alignment: Alignment.centerLeft,
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'View details',
-              style: TextStyle(
-                color: Color(0xFF0571A6),
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            SizedBox(width: 3),
-            Icon(
-              Icons.chevron_right_rounded,
-              size: 15,
-              color: Color(0xFF0571A6),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
 /// A policy in the list: its name, and the company's line about it when it
 /// wrote one, in the app's own palette.
 class _PolicyRow extends StatelessWidget {
@@ -6932,90 +6732,6 @@ String _claimCategoryIcon(String category) {
     return 'assets/icons/claim_internet_globe.png';
   }
   return 'assets/icons/request_reimbursement_money.png';
-}
-
-class _QuickRequestCard extends StatelessWidget {
-  const _QuickRequestCard({
-    required this.title,
-    required this.subtitle,
-    required this.status,
-    required this.statusColor,
-    this.onViewDetails,
-  });
-
-  final String title;
-  final String subtitle;
-  final String status;
-  final Color statusColor;
-
-  /// Opens everything the request was filled in with, plus the response.
-  final VoidCallback? onViewDetails;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .04),
-            blurRadius: 2,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: Color(0xFF111827),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(
-                          color: Color(0xFF6B7280),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                status,
-                style: TextStyle(
-                  color: statusColor,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          if (onViewDetails case final open?) ...[
-            const SizedBox(height: 4),
-            _ViewDetailsLink(onTap: open),
-          ],
-        ],
-      ),
-    );
-  }
 }
 
 class _FormCard extends StatelessWidget {

@@ -16,6 +16,8 @@ import { parsePeriod, payrollPeriodHolding, payrollPeriodRange } from '../servic
 import { createRun, recomputeRun } from '../services/payrollRun.service';
 import { createShift, setDefaultShift } from '../services/shift.service';
 import { ZOHO_CATALOG, ZOHO_TEMPLATES } from './payroll-zoho-check';
+import { statutoryConfigs } from '../config/db';
+import { STATUTORY_SEED } from './payroll-config-seed-data';
 
 let passed = 0;
 let failed = 0;
@@ -45,6 +47,8 @@ const setting = (period: string, extra: Record<string, unknown>) =>
   if (!/scratch/.test(db.databaseName)) throw new Error(`refusing to run against ${db.databaseName}`);
   await db.dropDatabase();
   await connectDb();
+  // A run needs the FY's statutory figures (statutory_configs): no row, no run.
+  await statutoryConfigs().insertMany(STATUTORY_SEED.map((c) => ({ ...structuredClone(c), createdAt: new Date(), updatedAt: new Date(), updatedByUserId: null })));
 
   console.log('the dates');
   const plain = await payrollPeriodRange(PLAIN, '2026-09');

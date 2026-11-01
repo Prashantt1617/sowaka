@@ -38,6 +38,17 @@ const colleagueProfileTabs = [
   ProfileTab.posts,
 ];
 
+/// A colleague fetched by id ([_ColleagueProfileLoader]): the colleague tabs,
+/// plus Grow when they are in the viewer's reporting line at any depth — a
+/// skip-level manager reads the reviews their managers wrote (the server
+/// sends their history only then).
+List<ProfileTab> fetchedProfileTabs({required bool inViewerChain}) => [
+  for (final tab in colleagueProfileTabs) ...[
+    tab,
+    if (tab == ProfileTab.orgChart && inViewerChain) ProfileTab.grow,
+  ],
+];
+
 /// The tabs on someone else's profile.
 ///
 /// Someone in the viewer's own reporting line — a report, or a report's
@@ -381,7 +392,7 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
     final posts = _posts;
     final tabs = profileTabsOpeningOn([
       for (final tab in widget.publicOnly
-          ? colleagueProfileTabs
+          ? fetchedProfileTabs(inViewerChain: member.inViewerChain)
           : memberProfileTabs(
               inViewerChain: member.inViewerChain,
               viewerCanManage: widget.canManage,
@@ -480,7 +491,7 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
       // No "your manager" line here: the reader usually is the manager, and
       // the month row's due card says what to do.
       ProfileTab.grow => [
-        _ProfileGrowTab(data: data, bloc: bloc, memberId: member.id),
+        _ProfileGrowTab(data: data, bloc: bloc, memberId: member.id, person: member),
       ],
       ProfileTab.rank => [
         _RankHistory(service: _profileService, userId: member.userId),
@@ -2980,6 +2991,7 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
         .where((item) => item.userId == widget.member.userId)
         .toList(),
     shift: _policy,
+    joinedOn: widget.member.joiningDate,
   );
 
   String? _pendingNoticeFor(AttendanceDayView day) {
@@ -3739,7 +3751,8 @@ class _PrivacyAndDataRow extends StatelessWidget {
       ),
       builder: (sheetContext) => SafeArea(
         top: false,
-        child: Padding(
+        // Scrolls on a short phone rather than running off the bottom.
+        child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(22, 14, 22, 24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -3789,8 +3802,9 @@ class _PrivacyAndDataRow extends StatelessWidget {
               const Text(
                 'Your account is created by your employer and closes when you '
                 'leave. To have it closed and your personal data deleted '
-                'sooner, email your HR team and support@getsowaka.com from '
-                'your work address. We confirm within 7 working days and '
+                'sooner, raise a ticket at the Support Desk (or email '
+                'support@getsowaka.com from your work address). We confirm '
+                'within 7 working days and '
                 'delete within 30 — except records your employer must keep by '
                 'law, such as attendance and payroll history, which are kept '
                 'for the statutory period and then removed.',
@@ -3799,6 +3813,11 @@ class _PrivacyAndDataRow extends StatelessWidget {
                   fontSize: 13.5,
                   height: 1.55,
                 ),
+              ),
+              const SizedBox(height: 8),
+              const RaiseTicketLink(
+                label: 'Ask to close my account',
+                about: 'Please close my Sowaka account and delete my personal data.',
               ),
               const SizedBox(height: 12),
               Text(
@@ -4314,16 +4333,19 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
   String? _selectedPeriod;
 
   /// Every month from the first review (or this month, if there are none) up
-  /// to this one, oldest first.
-  List<String> _periodsFor(List<GrowthRecord> history, String current) {
-    final first = history.isEmpty ? current : history.first.period;
-    return _monthsBetween(first, current);
-  }
+  /// to this one, oldest first — reaching back to the previous cycle when it
+  /// is still open for the viewer to review.
+  List<String> _periodsFor(
+    List<GrowthRecord> history,
+    String current, {
+    String? openPrevious,
+  }) => _growMonths(history, current, openPrevious: openPrevious);
 
   Future<void> _pickMonth(List<String> periods, String selected) async {
     final picked = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (_) => _MonthPickerSheet(periods: periods, selected: selected),
     );
     if (picked != null && mounted) setState(() => _selectedPeriod = picked);
@@ -4361,20 +4383,29 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
 
   Widget _build(BuildContext context, List<GrowthRecord> history) {
     final period = _EmployeeGrowthPage._currentPeriod();
-    final periods = _periodsFor(history, period);
-    final selected = periods.contains(_selectedPeriod)
-        ? _selectedPeriod!
-        : period;
     final ownPage = widget.memberId == null;
     // Only a report can be reviewed from here: not yourself, and not the
     // person you report to — feedback only flows downward.
     final canReview = _reportsToViewer;
+    final openPrevious = canReview
+        ? _openPreviousCycle(
+            (widget.bloc.state.dashboard ?? widget.data).team
+                .where((member) => member.id == widget.memberId)
+                .firstOrNull,
+            period,
+          )
+        : null;
+    final periods = _periodsFor(history, period, openPrevious: openPrevious);
+    final selected = periods.contains(_selectedPeriod)
+        ? _selectedPeriod!
+        : period;
 
-    Future<void> openForm() => Navigator.of(context).push(
+    Future<void> openForm(String? cycle) => Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => _FeedbackFormPage(
           bloc: widget.bloc,
           memberId: widget.memberId!,
+          period: cycle,
           showTeamSections: widget.showTeamSections,
         ),
       ),
@@ -4436,6 +4467,7 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
                   period: period,
                   ownPage: ownPage,
                   canReview: canReview,
+                  openPrevious: openPrevious,
                   onSelectPeriod: (picked) =>
                       setState(() => _selectedPeriod = picked),
                   onPickMonth: periods.length > 1
@@ -4472,13 +4504,24 @@ List<Widget> _growthContent({
   required bool canReview,
   required ValueChanged<String> onSelectPeriod,
   required VoidCallback? onPickMonth,
-  required VoidCallback openForm,
+
+  /// Opens the review form: for the live cycle (null), or for the previous
+  /// one by its key.
+  required void Function(String? period) openForm,
+
+  /// The previous cycle, while it is still open for the viewer to review
+  /// (only on their direct report's page); null otherwise.
+  String? openPrevious,
 
   /// On the profile (node 3106:49749) the month row also says who reviews you.
   String? managerLine,
 }) {
   final record = history.where((r) => r.period == selected).firstOrNull;
   final isCurrent = selected == period;
+  // Last month, picked from the month row, while it can still be reviewed:
+  // it reads as due, not missed, and offers the form for that month.
+  final isOpenPrevious =
+      canReview && openPrevious != null && selected == openPrevious;
   return [
     // Before the first review (node 2406:74746): who reviews
     // you and why, where someone is most likely to wonder.
@@ -4503,8 +4546,8 @@ List<Widget> _growthContent({
       label: _shortPeriod(selected),
       managerName: managerLine,
       score: record?.overallScore,
-      pending: record == null && isCurrent,
-      missed: record == null && !isCurrent,
+      pending: record == null && (isCurrent || isOpenPrevious),
+      missed: record == null && !isCurrent && !isOpenPrevious,
       onTap: onPickMonth,
     ),
     const SizedBox(height: 12),
@@ -4514,7 +4557,15 @@ List<Widget> _growthContent({
       // A review sent this cycle can still be edited by the person
       // who wrote it, until the cycle closes.
       if (isCurrent && canReview) ...[
-        _FeedbackSubmittedCard(onEdit: openForm),
+        _FeedbackSubmittedCard(onEdit: () => openForm(null)),
+        const SizedBox(height: 12),
+      ] else if (isOpenPrevious) ...[
+        _FeedbackSubmittedCard(
+          onEdit: () => openForm(selected),
+          text:
+              'You can edit the feedback for ${_shortPeriod(selected)} '
+              'till this cycle ends.',
+        ),
         const SizedBox(height: 12),
       ],
       for (final (index, param) in record.parameters.indexed)
@@ -4532,10 +4583,18 @@ List<Widget> _growthContent({
           ),
         ),
     ]
+    // Last month, not reviewed, and still open to the viewer.
+    else if (isOpenPrevious)
+      _FeedbackDuePeriodCard(
+        onGiveFeedback: () => openForm(selected),
+        text:
+            'Feedback for ${_shortPeriod(selected)} can still be given '
+            'until this cycle ends',
+      )
     // This month, not reviewed yet.
     else if (isCurrent) ...[
       if (canReview)
-        _FeedbackDuePeriodCard(onGiveFeedback: openForm)
+        _FeedbackDuePeriodCard(onGiveFeedback: () => openForm(null))
       else if (ownPage && data.myParameters.isNotEmpty) ...[
         // What the month is reviewed on (node 2412:80204): a line
         // saying so, then each KPI with HR's guidance behind it.
@@ -4601,6 +4660,29 @@ String _shortPeriod(String period) {
   return '${_growMonthsShort[month - 1]} ${parts[0]}';
 }
 
+/// The previous cycle while [member] can still be reviewed for it, when the
+/// server sends it and it falls before [current]; null otherwise.
+String? _openPreviousCycle(TeamMember? member, String current) {
+  final previous = member?.previousCycle?.period;
+  if (previous == null || previous.compareTo(current) >= 0) return null;
+  return previous;
+}
+
+/// The months a Grow page offers: from the first review (or this month,
+/// with none) to this one, reaching back to [openPrevious] when that is
+/// earlier, so last month can be picked to review.
+List<String> _growMonths(
+  List<GrowthRecord> history,
+  String current, {
+  String? openPrevious,
+}) {
+  var first = history.isEmpty ? current : history.first.period;
+  if (openPrevious != null && openPrevious.compareTo(first) < 0) {
+    first = openPrevious;
+  }
+  return _monthsBetween(first, current);
+}
+
 /// Every 'YYYY-MM' from [first] to [last] inclusive, oldest first. Empty or
 /// reversed input gives just [last].
 List<String> _monthsBetween(String first, String last) {
@@ -4638,10 +4720,15 @@ class _ProfileGrowTab extends StatefulWidget {
     required this.bloc,
     this.managerName,
     this.memberId,
+    this.person,
   });
 
   final ManagerDashboard data;
   final ManagerBloc bloc;
+
+  /// The person on show, for someone fetched by id rather than one of the
+  /// loaded team (a report's report): their history comes with them.
+  final TeamMember? person;
 
   /// Who reviews the person on show; said under the month on their own tab.
   final String? managerName;
@@ -4660,6 +4747,7 @@ class _ProfileGrowTabState extends State<_ProfileGrowTab> {
     final picked = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (_) => _MonthPickerSheet(periods: periods, selected: selected),
     );
     if (picked != null && mounted) setState(() => _selectedPeriod = picked);
@@ -4675,13 +4763,20 @@ class _ProfileGrowTabState extends State<_ProfileGrowTab> {
         final member = widget.memberId == null
             ? null
             : data.team
-                  .where((member) => member.id == widget.memberId)
-                  .firstOrNull;
+                      .where((member) => member.userId == widget.person?.userId || (widget.person == null && member.id == widget.memberId))
+                      .firstOrNull ??
+                  widget.person;
         final history = member?.history ?? data.growthHistory;
         final period = _EmployeeGrowthPage._currentPeriod();
-        final periods = _monthsBetween(
-          history.isEmpty ? period : history.first.period,
+        // Feedback only flows downward: a report, never yourself.
+        final canReview = member?.reportsToViewer ?? false;
+        final openPrevious = canReview
+            ? _openPreviousCycle(member, period)
+            : null;
+        final periods = _growMonths(
+          history,
           period,
+          openPrevious: openPrevious,
         );
         final selected = periods.contains(_selectedPeriod)
             ? _selectedPeriod!
@@ -4695,18 +4790,19 @@ class _ProfileGrowTabState extends State<_ProfileGrowTab> {
             selected: selected,
             period: period,
             ownPage: member == null,
-            // Feedback only flows downward: a report, never yourself.
-            canReview: member?.reportsToViewer ?? false,
+            canReview: canReview,
+            openPrevious: openPrevious,
             onSelectPeriod: (picked) =>
                 setState(() => _selectedPeriod = picked),
             onPickMonth: periods.length > 1
                 ? () => _pickMonth(periods, selected)
                 : null,
-            openForm: () => Navigator.of(context).push(
+            openForm: (cycle) => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => _FeedbackFormPage(
                   bloc: widget.bloc,
                   memberId: widget.memberId!,
+                  period: cycle,
                 ),
               ),
             ),
@@ -4803,17 +4899,15 @@ class _GrowNote extends StatelessWidget {
 class _EmptyScoreCard extends StatelessWidget {
   const _EmptyScoreCard({required this.current});
 
-  /// This month, 'YYYY-MM' — the axis runs from here across the next five.
+  /// This month, 'YYYY-MM'. The axis is the six months ending here, as on
+  /// the chart once there are scores: never a month still to come.
   final String current;
 
   @override
   Widget build(BuildContext context) {
-    final start = current;
-    final parts = start.split('-');
-    final year = int.tryParse(parts.first) ?? DateTime.now().year;
-    final month = int.tryParse(parts.last) ?? DateTime.now().month;
     final labels = [
-      for (var i = 0; i < 6; i++) _growMonthsShort[(month - 1 + i) % 12],
+      for (final period in _GrowthChart.windowEndingAt(current))
+        _periodLabel(period),
     ];
     return Container(
       width: double.infinity,
@@ -4863,12 +4957,32 @@ class _EmptyScoreCard extends StatelessWidget {
             child: SizedBox(
               height: 110,
               width: double.infinity,
-              child: CustomPaint(
-                painter: _EmptyChartPainter(
-                  labels: labels,
-                  // Semantic year is unused on the axis, but keeps the painter
-                  // from repainting identical months across a year change.
-                  year: year,
+              // Nothing scored yet: an empty axis and a word, with no point
+              // or score pill standing in for a review that has not happened.
+              child: Semantics(
+                container: true,
+                label: 'Overall score, ${labels.first} to ${labels.last}',
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: _EmptyChartPainter(labels: labels),
+                      ),
+                    ),
+                    const Align(
+                      alignment: Alignment(0, -0.35),
+                      child: Text(
+                        'No reviews yet',
+                        key: ValueKey('grow-empty-chart'),
+                        style: TextStyle(
+                          color: Color(0xFF717171),
+                          fontSize: 12.5,
+                          height: 18.75 / 12.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -4880,21 +4994,21 @@ class _EmptyScoreCard extends StatelessWidget {
 }
 
 class _EmptyChartPainter extends CustomPainter {
-  _EmptyChartPainter({required this.labels, required this.year});
+  _EmptyChartPainter({required this.labels});
 
+  /// The six months ending with this one, oldest first.
   final List<String> labels;
-  final int year;
 
   static const _brand = Color(0xFF0571A6);
   static const _muted = Color(0xFF717171);
 
   @override
   void paint(Canvas canvas, Size size) {
-    const inset = 20.0;
-    final baseline = size.height * 0.66;
-    final left = inset;
-    final right = size.width - inset;
+    if (labels.length < 2) return;
+    final left = size.width * _GrowthChart.edge;
+    final right = size.width - left;
     final step = (right - left) / (labels.length - 1);
+    const baseline = 76.0;
 
     // A flat line where the scores will go.
     canvas.drawLine(
@@ -4906,7 +5020,7 @@ class _EmptyChartPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round,
     );
 
-    // The last month on the axis in brand blue, the rest muted.
+    // This month, the last on the axis, in brand blue; the rest muted.
     for (var i = 0; i < labels.length; i++) {
       final painter = TextPainter(
         text: TextSpan(
@@ -4915,65 +5029,19 @@ class _EmptyChartPainter extends CustomPainter {
             fontFamily: 'Sora',
             color: i == labels.length - 1 ? _brand : _muted,
             fontSize: 9,
+            height: 11.3 / 9,
             fontWeight: FontWeight.w700,
           ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      painter.paint(
-        canvas,
-        Offset(
-          left + step * i - painter.width / 2,
-          size.height - painter.height,
-        ),
-      );
+      painter.paint(canvas, Offset(left + step * i - painter.width / 2, 97));
     }
-
-    // One point, this month, with a "-/5" marker above it: nothing scored yet.
-    final point = Offset(left, baseline);
-    canvas.drawLine(
-      Offset(point.dx, 22),
-      point,
-      Paint()
-        ..color = _brand.withValues(alpha: 0.35)
-        ..strokeWidth = 1,
-    );
-    canvas.drawCircle(point, 5, Paint()..color = _brand);
-    canvas.drawCircle(
-      point,
-      5,
-      Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-
-    final tag = TextPainter(
-      text: const TextSpan(
-        text: '-/5',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 9.5,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    final pill = RRect.fromRectAndRadius(
-      Rect.fromCenter(
-        center: Offset(point.dx, 10),
-        width: tag.width + 14,
-        height: 18,
-      ),
-      const Radius.circular(9),
-    );
-    canvas.drawRRect(pill, Paint()..color = _brand);
-    tag.paint(canvas, Offset(point.dx - tag.width / 2, 10 - tag.height / 2));
   }
 
   @override
   bool shouldRepaint(_EmptyChartPainter old) =>
-      old.year != year || old.labels.join() != labels.join();
+      old.labels.join() != labels.join();
 }
 
 /// The month on show and how it stands (node 2406:74811). Tapping it opens the
@@ -5608,17 +5676,23 @@ class _GrowthPageTopBar extends StatelessWidget {
 }
 
 class _FeedbackSubmittedCard extends StatelessWidget {
-  const _FeedbackSubmittedCard({required this.onEdit});
+  const _FeedbackSubmittedCard({
+    required this.onEdit,
+    this.text = 'You can edit the feedback till the cycle ends.',
+  });
 
   /// Reopens the review. Only the person who wrote it sees this card: the
   /// employee's own page shows the month's scores instead.
   final VoidCallback onEdit;
 
+  /// The line above the button; last month's review says whose month it is.
+  final String text;
+
   @override
   Widget build(BuildContext context) => _GrowActionCard(
     background: const Color(0xFFF4FAF1),
     border: const Color(0xFF34C759),
-    text: 'You can edit the feedback till the cycle ends.',
+    text: text,
     buttonColor: const Color(0xFF34C759),
     onTap: onEdit,
   );
@@ -5700,15 +5774,21 @@ class _GrowActionCard extends StatelessWidget {
 }
 
 class _FeedbackDuePeriodCard extends StatelessWidget {
-  const _FeedbackDuePeriodCard({required this.onGiveFeedback});
+  const _FeedbackDuePeriodCard({
+    required this.onGiveFeedback,
+    this.text = 'Feedback is due for this month',
+  });
 
   final VoidCallback onGiveFeedback;
+
+  /// The line above the button; last month's says which month it is for.
+  final String text;
 
   @override
   Widget build(BuildContext context) => _GrowActionCard(
     background: const Color(0xFFFAF8F1),
     border: const Color(0xFFFFCC00),
-    text: 'Feedback is due for this month',
+    text: text,
     buttonColor: const Color(0xFFFF8D28),
     onTap: onGiveFeedback,
   );
@@ -5721,11 +5801,15 @@ class _FeedbackFormPage extends StatefulWidget {
   const _FeedbackFormPage({
     required this.bloc,
     required this.memberId,
+    this.period,
     this.showTeamSections = false,
   });
 
   final ManagerBloc bloc;
   final int memberId;
+
+  /// The previous cycle's key, to review that month; null for the live one.
+  final String? period;
 
   /// Opened from the Team tab: the section bar stays above the form (node
   /// 3165:59470).
@@ -5738,6 +5822,7 @@ class _FeedbackFormPage extends StatefulWidget {
 class _FeedbackFormPageState extends State<_FeedbackFormPage> {
   StreamSubscription<ManagerState>? _subscription;
   bool _loaded = false;
+  bool _closing = false;
 
   @override
   void initState() {
@@ -5756,7 +5841,9 @@ class _FeedbackFormPageState extends State<_FeedbackFormPage> {
       return;
     }
     // Loads the member's parameters into bloc state for the form to edit.
-    widget.bloc.add(OpenFeedbackRecord(widget.memberId));
+    widget.bloc.add(
+      OpenFeedbackRecord(widget.memberId, period: widget.period),
+    );
     // Saving or sending clears the selected member on the bloc. That is the
     // signal the form is finished, so close the route rather than sitting on a
     // spinner waiting for a member that will never come back.
@@ -5766,7 +5853,11 @@ class _FeedbackFormPageState extends State<_FeedbackFormPage> {
         _loaded = true;
         return;
       }
-      if (_loaded && Navigator.of(context).canPop()) {
+      // Once: the bloc says the same again as the busy Send lets go, while
+      // this route is still on its way out, and a second pop closed the
+      // page underneath too (the profile, back to Home).
+      if (_loaded && !_closing && Navigator.of(context).canPop()) {
+        _closing = true;
         Navigator.of(context).pop();
       }
     });

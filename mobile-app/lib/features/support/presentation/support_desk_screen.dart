@@ -24,6 +24,8 @@ Future<void> openSupportDesk(
   ManagerTab? selectedTab,
   ValueChanged<ManagerTab>? onSelectTab,
   String? ticketId,
+  bool raise = false,
+  String? about,
 }) {
   return Navigator.of(context).push(
     MaterialPageRoute<void>(
@@ -40,6 +42,8 @@ Future<void> openSupportDesk(
             SupportDeskScreen.testRealtime ??
             () => SupportSocketService(session: session),
         initialTicketId: ticketId,
+        raiseOnOpen: raise,
+        raiseAbout: about,
       ),
     ),
   );
@@ -53,7 +57,14 @@ class SupportDeskScreen extends StatefulWidget {
     required this.shell,
     this.realtimeFactory,
     this.initialTicketId,
+    this.raiseOnOpen = false,
+    this.raiseAbout,
   });
+
+  /// Opened from a "contact HR" line: straight to a new ticket, with
+  /// [raiseAbout] started in its message. Back from it lands on the desk.
+  final bool raiseOnOpen;
+  final String? raiseAbout;
 
   /// [SupportShell.realtime] when supplied is used as is and left open;
   /// otherwise [realtimeFactory] makes one that lives as long as the desk.
@@ -96,6 +107,10 @@ class _SupportDeskScreenState extends State<SupportDeskScreen> {
     if (ticketId != null && ticketId.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _openTicket(ticketId);
+      });
+    } else if (widget.raiseOnOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_raise(about: widget.raiseAbout));
       });
     }
   }
@@ -146,9 +161,9 @@ class _SupportDeskScreenState extends State<SupportDeskScreen> {
 
   /// The form hands over to the new ticket's thread in place, and passes
   /// back when that thread closes, so the list is read again then.
-  Future<void> _raise() async {
+  Future<void> _raise({String? about}) async {
     final threadClosed = await Navigator.of(context).push<Future<void>>(
-      MaterialPageRoute(builder: (_) => SupportRequestScreen(shell: _shell)),
+      MaterialPageRoute(builder: (_) => SupportRequestScreen(shell: _shell, initialComment: about)),
     );
     if (!mounted) return;
     unawaited(_load());

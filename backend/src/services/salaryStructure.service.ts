@@ -8,6 +8,7 @@ import { assertAcyclic } from './payHead.service';
 import { calculateSalaryStructure, SalaryCalcResult } from './salary-calculator';
 import { applyOverrides, resolveTemplateComponents, validateCalculation } from './salaryTemplate.service';
 import { resolveRuleSet } from './statutory.service';
+import { statutoryConfigForPeriod } from './payrollConfig.service';
 import { statutorySettingsFor, workStateOf } from './statutorySettings.service';
 import { catalogWithStandard, materializeStandard } from './standardComponents.service';
 import { decryptField, encryptField, fieldKeyConfigured, isEncrypted, maskTail } from './fieldCrypto';
@@ -151,12 +152,22 @@ export async function previewSalaryStructure(
 // Computation — resolve the assigned template, then run the calculator.
 // ————————————————————————————————————————————————————————————————
 
+/**
+ * One person's breakup from a structure as given, for their own Payroll
+ * screens (no admin check: the caller has already decided who may see it).
+ */
+/** As the structure would pay in `period` ('YYYY-MM', default this month): that month's FY statutory row. */
+export async function computeStructureFor(org: string, userId: string, structure: SalaryStructure, employee?: User, period?: string) {
+  return compute(org, userId, structure, employee, undefined, period);
+}
+
 async function compute(
   org: string,
   userId: string,
   structure: SalaryStructure,
   employeeArg?: User,
   catalogArg?: PayHead[],
+  periodArg?: string,
 ): Promise<{ computed: SalaryCalcResult; components: ReturnType<typeof applyOverrides>; template: SalaryTemplate }> {
   const employee = employeeArg ?? (await requireOrgEmployee(org, userId));
   if (!structure.salaryTemplateCode) {
@@ -164,7 +175,9 @@ async function compute(
   }
   // The template, the catalogue, the state's rules and the org's settings do
   // not depend on one another: asked for together, then used in the old order.
-  const rules = Promise.all([resolveRuleSet(org, workStateOf(employee)), statutorySettingsFor(org)]);
+  // Worked out for this month (or the pay month asked for), on its FY's statutory row (409 when it has none).
+  const period = periodArg ?? new Date().toISOString().slice(0, 7);
+  const rules = statutoryConfigForPeriod(period).then((config) => Promise.all([resolveRuleSet(org, workStateOf(employee), config), statutorySettingsFor(org), config] as const));
   rules.catch(() => undefined); // any failure surfaces below, after the template check, as before
   const [templateR, catalogR] = await Promise.allSettled([
     salaryTemplates().findOne({ org, code: structure.salaryTemplateCode }),
@@ -179,7 +192,7 @@ async function compute(
   const components = applyOverrides(template.components, structure.overrides, catalogByCode);
   assertAcyclic(components.map((c) => ({ code: c.payHeadCode, componentType: catalogByCode.get(c.payHeadCode)!.componentType, calculation: c.calculation })));
   const resolved = resolveTemplateComponents(components, catalogByCode);
-  const [ruleSet, settings] = await rules;
+  const [ruleSet, settings, config] = await rules;
 
   const computed = calculateSalaryStructure({
     monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
@@ -187,8 +200,10 @@ async function compute(
     componentValues: structure.componentValues,
     balancingComponentCode: template.balancingComponentCode,
     ruleSet,
+    config,
     settings,
-    month: new Date().getUTCMonth() + 1,
+    month: Number(period.slice(5, 7)),
+    period,
     bonusCategory: structure.bonusCategory,
     statutory: structure.statutory,
     statutoryWages: template.statutoryWages,

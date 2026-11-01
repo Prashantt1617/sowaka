@@ -602,7 +602,7 @@ export async function claimFaceToken(userId: string, token: unknown, usedFor: st
       ? 'Your company now checks your face when you punch in or out. Update the Sowaka app from the App Store or Google Play to punch.'
       : enrolled
         ? 'Your face check has expired. Take the selfie again to punch.'
-        : 'Set up Face ID to punch.';
+        : 'Set up face check to punch.';
     throw new FaceIdError(enrolled ? 403 : 428, message, {
       face: { reason: enrolled ? (raw ? 'check_expired' : 'check_required') : 'not_enrolled', setup: !enrolled, updateApp: !raw },
     });

@@ -107,6 +107,31 @@ export async function uploadSupportAttachment(org: string, ticketId: string, fil
 }
 
 /**
+ * The proof behind an investment declaration (a PPF passbook, a premium
+ * receipt). Same bucket and encryption, its own prefix,
+ * `…/tax-proofs/<org>/<userId>/`, and a random name: the client's file name
+ * is kept on the proof row instead.
+ */
+export async function uploadInvestmentProof(org: string, userId: string, file: ReceiptFile) {
+  validateConfiguration();
+  const root = env.s3.receiptPrefix.replace(/^\/+|\/+$/g, '').split('/')[0];
+  const safe = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const extension = { 'image/jpeg': '.jpg', 'image/png': '.png', 'application/pdf': '.pdf' }[file.contentType] ?? '';
+  const objectKey = [root, 'tax-proofs', safe(org), safe(userId), `${randomUUID()}${extension}`].filter(Boolean).join('/');
+  await getClient().send(
+    new PutObjectCommand({
+      Bucket: env.s3.bucket,
+      Key: objectKey,
+      Body: file.bytes,
+      ContentType: file.contentType,
+      ContentLength: file.size,
+      ...s3EncryptionParams(),
+    }),
+  );
+  return { objectKey, contentType: file.contentType, size: file.size };
+}
+
+/**
  * The photo a Face ID was enrolled from. Same bucket and encryption, under its
  * own prefix (`faces/<org>/<userId>/`), with a random name. Never presigned
  * for anyone: it is kept to re-index a face or look into a dispute, and is

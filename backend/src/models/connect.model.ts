@@ -94,6 +94,12 @@ export interface ConnectCaptionEntry {
   taggedName?: string;
   taggedInitials?: string;
   taggedDesignation?: string;
+  /**
+   * Colleagues tagged with "@" in a photo or caption entry's words, each
+   * only while their name is still in the text. Not a Most Likely tag: no
+   * points follow them, which stay with the entry's author.
+   */
+  mentions?: { userId: string; name: string }[];
   createdAt: Date;
 }
 

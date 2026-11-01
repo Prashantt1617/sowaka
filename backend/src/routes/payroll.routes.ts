@@ -60,8 +60,19 @@ import {
   submitRunHandler,
 } from '../controllers/payrollRun.controller';
 import { getOrgSetupHandler, updateOrgSetupHandler } from '../controllers/orgSetup.controller';
+import {
+  copyStatutoryConfigHandler,
+  copyTdsConfigHandler,
+  getStatutoryConfigHandler,
+  getTdsConfigHandler,
+  putStatutoryConfigHandler,
+  putTdsConfigHandler,
+} from '../controllers/payrollConfig.controller';
 import { getPaymentDetailsHandler, setPaymentDetailsHandler } from '../controllers/employeePayment.controller';
 import { getDeclarationHandler, setDeclarationHandler } from '../controllers/tds.controller';
+import {
+  hrDecideProofHandler, hrGetAppSettingsHandler, hrListProofsHandler, hrProofFileHandler, hrSetAppSettingsHandler, hrSplitHandler,
+} from '../controllers/employeePayroll.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
 
@@ -85,8 +96,19 @@ payrollRouter.get('/pay-heads/:payHeadId', getPayHeadHandler);
 payrollRouter.patch('/pay-heads/:payHeadId', updatePayHeadHandler);
 payrollRouter.delete('/pay-heads/:payHeadId', deletePayHeadHandler);
 
-// Statutory Calculation Engine — per-state rule sets (PRD §5.5, PT/LWF/Bonus).
-// EPF/ESI are national constants in the engine and need no configuration here.
+// The national figures payroll is worked out on, one set per FY (?fy=2026-27):
+// EPF, ESI, bonus, Meal Card, each state's PT / LWF, and the income tax rows.
+// Anyone with payroll access reads; only a platform admin writes (they serve
+// every company). See docs/payroll-config-api.md.
+payrollRouter.get('/statutory-config', getStatutoryConfigHandler);
+payrollRouter.put('/statutory-config', putStatutoryConfigHandler);
+payrollRouter.post('/statutory-config', copyStatutoryConfigHandler);
+payrollRouter.get('/tds-config', getTdsConfigHandler);
+payrollRouter.put('/tds-config', putTdsConfigHandler);
+payrollRouter.post('/tds-config', copyTdsConfigHandler);
+
+// Statutory Calculation Engine — the org's statutory settings and its own
+// per-state overrides (PRD §5.5, PT/LWF/Bonus) over the FY's national row.
 payrollRouter.get('/statutory-settings', getStatutorySettingsHandler);
 payrollRouter.put('/statutory-settings', updateStatutorySettingsHandler);
 payrollRouter.get('/statutory-rules', listStateRulesHandler);
@@ -146,4 +168,16 @@ payrollRouter.put('/employees/:userId/payment-details', setPaymentDetailsHandler
 // One employee's income tax regime and declarations for a FY (?fy=2026-27).
 payrollRouter.get('/employees/:userId/tax-declaration', getDeclarationHandler);
 payrollRouter.put('/employees/:userId/tax-declaration', setDeclarationHandler);
+
+// The proofs employees upload for their investment declarations: list, open, approve or reject.
+payrollRouter.get('/investment-proofs', hrListProofsHandler);
+payrollRouter.get('/investment-proofs/:proofId/file', hrProofFileHandler);
+payrollRouter.post('/investment-proofs/:proofId/decision', hrDecideProofHandler);
+
+// One employee's flexible split for a FY (?fy=2026-27): the one in force and every version.
+payrollRouter.get('/employees/:userId/flexible-split', hrSplitHandler);
+
+// The app's Payroll for this company: on/off, and the deadlines its screens use.
+payrollRouter.get('/employee-app-settings', hrGetAppSettingsHandler);
+payrollRouter.put('/employee-app-settings', hrSetAppSettingsHandler);
 

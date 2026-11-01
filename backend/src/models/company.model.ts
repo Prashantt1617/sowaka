@@ -1,4 +1,5 @@
 import type { CompanyFaceIdSettings } from './face.model';
+import type { EmployeePayrollSettings } from './employeePayroll.model';
 
 /**
  * Pay Schedule (PRD §5.1 / ORG-3). The payroll run derives actual working days
@@ -91,6 +92,8 @@ export interface Company {
    */
   reviewCycleStartDay?: number;
   paySchedule?: PaySchedule;
+  /** Deadlines on the app's Payroll screens (split, declaration, proofs). */
+  payrollEmployee?: EmployeePayrollSettings;
   statutoryRegistration?: StatutoryRegistration;
   /**
    * Which tabs this company's people see in the app, by key: connect, team,

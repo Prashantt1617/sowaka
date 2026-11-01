@@ -1,14 +1,22 @@
 import type { NextFunction, Request, Response } from 'express';
-import { myPayslipCalendar, myPayslipHtml, myPayslips } from '../services/payrollRun.service';
+import { myPayslip, myPayslipCalendar, myPayslipHtml, myPayslips } from '../services/payrollRun.service';
 
 function callerId(req: Request): string {
   return String(req.auth?.userId ?? '');
 }
 
-/** The signed-in person's last few payslips, newest first. */
+/** The signed-in person's payslips, newest first (3 unless `limit` asks for up to 24). */
 export async function myPayslipsHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json({ success: true, ...(await myPayslips(callerId(req))) });
+    const limit = req.query.limit === undefined ? undefined : Number(req.query.limit);
+    res.json({ success: true, ...(await myPayslips(callerId(req), limit)) });
+  } catch (error) { next(error); }
+}
+
+/** One of their slips, as the list shows it. */
+export async function myPayslipHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json({ success: true, ...(await myPayslip(callerId(req), String(req.params.payslipId ?? ''))) });
   } catch (error) { next(error); }
 }
 

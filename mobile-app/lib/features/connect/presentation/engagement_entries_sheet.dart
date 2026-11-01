@@ -13,6 +13,11 @@ const _sheetPurple = Color(0xFF59378D);
 const _galleryInk = Color(0xFF24222A);
 const _galleryMuted = Color(0xFF817C89);
 
+/// The votes line under an entry open full screen, on every card lighter
+/// than the leader's violet: 5.2:1 on the palest podium violet (#C7B2EE),
+/// where the muted greys above fall near 2:1.
+const _entryFooterInk = Color(0xFF45414D);
+
 /// The podium's medals, on the board and on an entry opened full screen.
 const _entryMedals = {
   1: '$_engagementIcons/medal_1.svg',
@@ -61,6 +66,7 @@ List<ConnectCaptionEntry> _shownBoard(ConnectPost post) {
           isMine: row.isMine,
           rank: row.rank,
           createdAt: row.createdAt,
+          mentions: row.mentions,
         )
       else
         row,
@@ -239,6 +245,46 @@ class _EntriesSheetState extends State<_EntriesSheet> {
     );
   }
 
+  /// "Voted by": who voted for [entry], from its vote count. Only with a
+  /// bloc to read it through.
+  void _showVoters(ConnectPost post, ConnectCaptionEntry entry) {
+    final bloc = widget.bloc;
+    if (bloc == null) return;
+    _openEntryVoters(
+      context,
+      bloc: bloc,
+      postId: post.id,
+      entryId: entry.id,
+      onOpenPerson: widget.onOpenPerson == null ? null : _openPerson,
+    );
+  }
+
+  /// The way to [entry]'s voters, where it has any and there is a bloc.
+  VoidCallback? _votersFor(ConnectPost post, ConnectCaptionEntry entry) =>
+      widget.bloc == null || entry.votes == 0
+      ? null
+      : () => _showVoters(post, entry);
+
+  /// Takes down that one of the viewer's own entries, by its id: someone
+  /// may have up to five in a photo or caption contest.
+  Future<void> _deleteEntry(ConnectPost post, String entryId) async {
+    await widget.bloc?.deleteCaption(post.id, entryId: entryId);
+  }
+
+  /// Asks, then takes down [entry] — the viewer's own, while the contest
+  /// is live. Null for anyone else's.
+  VoidCallback? _deleteFor(ConnectPost post, ConnectCaptionEntry entry) =>
+      entry.isMine && !_contestClosed(post) && widget.bloc != null
+      ? () => _confirmDeleteEntry(
+          context,
+          entry,
+          (id) => _deleteEntry(post, id),
+          noun: post.type == ConnectPostType.photoStoryChallenge
+              ? 'photo'
+              : 'caption',
+        )
+      : null;
+
   /// Opens [entry] full screen as its whole card, the entries either side of
   /// it a swipe away in the order the page has them now.
   void _openEntry(
@@ -262,6 +308,8 @@ class _EntriesSheetState extends State<_EntriesSheet> {
           animation: animation,
           onVote: _vote,
           onOpenPerson: _openPerson,
+          onShowVoters: widget.bloc == null ? null : _showVoters,
+          onDelete: widget.bloc == null ? null : _deleteEntry,
         ),
       ),
     );
@@ -768,11 +816,9 @@ class _EntriesSheetState extends State<_EntriesSheet> {
               onOpen: () => _openEntry(post, rows, entry),
               onVote: () => _vote(post, entry.id),
               onOpenPerson: () => _openPerson(entry.userId),
-              onDelete: entry.isMine && !_contestClosed(post)
-                  ? () => _confirmDeleteEntry(context, entry, () async {
-                      await widget.bloc?.deleteCaption(post.id);
-                    }, noun: 'caption')
-                  : null,
+              onOpenTagged: _openPerson,
+              onShowVoters: _votersFor(post, entry),
+              onDelete: _deleteFor(post, entry),
             ),
           ),
         ],
@@ -838,11 +884,8 @@ class _EntriesSheetState extends State<_EntriesSheet> {
             onOpen: () => _openEntry(post, rows, entry),
             onVote: () => _vote(post, entry.id),
             onOpenPerson: () => _openPerson(entry.userId),
-            onDelete: entry.isMine && !_contestClosed(post)
-                ? () => _confirmDeleteEntry(context, entry, () async {
-                    await widget.bloc?.deleteCaption(post.id);
-                  }, noun: 'photo')
-                : null,
+            onShowVoters: _votersFor(post, entry),
+            onDelete: _deleteFor(post, entry),
           ),
         ),
     ];
@@ -1172,12 +1215,17 @@ class _EntryVoteButton extends StatelessWidget {
     required this.closed,
     required this.onVote,
     this.onDelete,
+    this.onShowVoters,
   });
 
   final ConnectCaptionEntry entry;
   final bool closed;
   final VoidCallback onVote;
   final VoidCallback? onDelete;
+
+  /// Opens "Voted by". A tap on the button votes where a vote can be cast;
+  /// on your own entry, or once the contest has closed, it shows who voted.
+  final VoidCallback? onShowVoters;
 
   @override
   Widget build(BuildContext context) {
@@ -1286,11 +1334,14 @@ class _EntryVoteButton extends StatelessWidget {
       );
     }
     final canTap = !entry.isMine && !closed;
+    final showVoters = canTap ? null : onShowVoters;
     return Semantics(
-      button: canTap,
-      label: entry.votedByViewer ? 'Voted' : 'Vote',
+      button: canTap || showVoters != null,
+      label: showVoters != null
+          ? 'See who voted'
+          : (entry.votedByViewer ? 'Voted' : 'Vote'),
       child: GestureDetector(
-        onTap: canTap ? onVote : null,
+        onTap: canTap ? onVote : showVoters,
         // Holding your own entry offers to take it down.
         onLongPress: onDelete,
         child: Container(
@@ -1336,6 +1387,8 @@ class _CaptionEntryCard extends StatelessWidget {
     required this.onOpenPerson,
     this.photo,
     this.onDelete,
+    this.onShowVoters,
+    this.onOpenTagged,
   });
 
   final ConnectCaptionEntry entry;
@@ -1345,6 +1398,10 @@ class _CaptionEntryCard extends StatelessWidget {
   final VoidCallback onVote;
   final VoidCallback onOpenPerson;
   final VoidCallback? onDelete;
+  final VoidCallback? onShowVoters;
+
+  /// Opens the profile of a colleague tagged with "@" in the caption.
+  final ValueChanged<String>? onOpenTagged;
 
   @override
   Widget build(BuildContext context) {
@@ -1476,14 +1533,16 @@ class _CaptionEntryCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (medal == null) const SizedBox(height: 16),
-                      Text(
-                        entry.text,
+                      _entryWords(
+                        entry,
                         style: TextStyle(
                           fontSize: 14,
                           height: 20 / 14,
                           fontWeight: FontWeight.w500,
                           color: ink,
                         ),
+                        linkColor: leader ? Colors.white : _sheetPurple,
+                        onOpenTagged: onOpenTagged,
                       ),
                       if (entry.votedByViewer) ...[
                         const SizedBox(height: 8),
@@ -1514,12 +1573,119 @@ class _CaptionEntryCard extends StatelessWidget {
                   closed: closed,
                   onVote: onVote,
                   onDelete: onDelete,
+                  onShowVoters: onShowVoters,
                 ),
               ],
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// An entry's words, with the colleagues tagged in them drawn as links to
+/// their profiles in [linkColor].
+Widget _entryWords(
+  ConnectCaptionEntry entry, {
+  required TextStyle style,
+  Color linkColor = _sheetPurple,
+  ValueChanged<String>? onOpenTagged,
+  String prefix = '',
+  int? maxLines,
+}) => _mentionedText(
+  entry.text,
+  entry.mentions,
+  style: style,
+  prefix: prefix,
+  linkColor: linkColor,
+  onOpenPerson: onOpenTagged,
+  plain: Text(
+    '$prefix${entry.text}',
+    style: style,
+    maxLines: maxLines,
+    overflow: maxLines == null ? null : TextOverflow.ellipsis,
+  ),
+);
+
+/// Under an entry open full screen: how many voted, which opens who they
+/// were, and — on the viewer's own entry, while the contest is live — the
+/// way to take it down.
+class _EntryFullFooter extends StatelessWidget {
+  const _EntryFullFooter({
+    required this.entry,
+    required this.ink,
+    this.onShowVoters,
+    this.onDelete,
+  });
+
+  final ConnectCaptionEntry entry;
+  final Color ink;
+  final VoidCallback? onShowVoters;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final votes = entry.votes;
+    final label = votes == 0
+        ? 'No votes yet'
+        : '$votes vote${votes == 1 ? '' : 's'} · See who voted';
+    final canShow = votes > 0 && onShowVoters != null;
+    return Row(
+      children: [
+        Expanded(
+          child: Semantics(
+            button: canShow,
+            child: GestureDetector(
+              key: ValueKey('entry-voters-${entry.id}'),
+              behavior: HitTestBehavior.opaque,
+              onTap: canShow ? onShowVoters : null,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: ink,
+                    decoration: canShow ? TextDecoration.underline : null,
+                    decorationColor: ink,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (onDelete != null)
+          Semantics(
+            button: true,
+            child: GestureDetector(
+              key: ValueKey('entry-delete-${entry.id}'),
+              behavior: HitTestBehavior.opaque,
+              onTap: onDelete,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 0, 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.delete_outline_rounded, size: 18, color: ink),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Delete',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: ink,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -2294,6 +2460,7 @@ class _GalleryEntryCard extends StatelessWidget {
     required this.onVote,
     required this.onOpenPerson,
     this.onDelete,
+    this.onShowVoters,
   });
 
   final ConnectCaptionEntry entry;
@@ -2302,6 +2469,7 @@ class _GalleryEntryCard extends StatelessWidget {
   final VoidCallback onVote;
   final VoidCallback onOpenPerson;
   final VoidCallback? onDelete;
+  final VoidCallback? onShowVoters;
 
   @override
   Widget build(BuildContext context) {
@@ -2401,6 +2569,7 @@ class _GalleryEntryCard extends StatelessWidget {
                     closed: closed,
                     onVote: onVote,
                     onDelete: onDelete,
+                    onShowVoters: onShowVoters,
                   ),
                 ],
               ),
@@ -2783,6 +2952,8 @@ class _EntryFullView extends StatefulWidget {
     required this.animation,
     required this.onVote,
     required this.onOpenPerson,
+    this.onShowVoters,
+    this.onDelete,
   });
 
   /// Null where there is no live feed behind the page; the view then shows
@@ -2802,6 +2973,13 @@ class _EntryFullView extends StatefulWidget {
   final Animation<double> animation;
   final Future<void> Function(ConnectPost post, String entryId) onVote;
   final ValueChanged<String> onOpenPerson;
+
+  /// "Voted by" for an entry; null where there is nothing to read it with.
+  final void Function(ConnectPost post, ConnectCaptionEntry entry)?
+  onShowVoters;
+
+  /// Takes down one of the viewer's own entries, once they have said so.
+  final Future<void> Function(ConnectPost post, String entryId)? onDelete;
 
   @override
   State<_EntryFullView> createState() => _EntryFullViewState();
@@ -2891,6 +3069,26 @@ class _EntryFullViewState extends State<_EntryFullView>
     if (_closing) return;
     _closing = true;
     Navigator.of(context).pop();
+  }
+
+  /// Asks, takes down the viewer's own [entry], and puts the view away:
+  /// the entry it showed is gone.
+  Future<void> _delete(ConnectPost post, ConnectCaptionEntry entry) async {
+    final delete = widget.onDelete;
+    if (delete == null) return;
+    var gone = false;
+    await _confirmDeleteEntry(
+      context,
+      entry,
+      (id) async {
+        gone = true;
+        await delete(post, id);
+      },
+      noun: post.type == ConnectPostType.photoStoryChallenge
+          ? 'photo'
+          : 'caption',
+    );
+    if (gone && mounted) _close();
   }
 
   void _dragStart(DragStartDetails details) => _settle.stop();
@@ -2991,6 +3189,22 @@ class _EntryFullViewState extends State<_EntryFullView>
                       final photo = widget.photos[entry.userId];
                       void vote() => widget.onVote(post, entry.id);
                       void openPerson() => widget.onOpenPerson(entry.userId);
+                      final showVoters = widget.onShowVoters;
+                      // White on the leader's violet card (5.1:1); a deep
+                      // grey on the lighter ones. Both clear WCAG AA.
+                      final onViolet =
+                          entry.rank == 1 && (isPhoto || !entry.isMine);
+                      final footer = _EntryFullFooter(
+                        entry: entry,
+                        ink: onViolet ? Colors.white : _entryFooterInk,
+                        onShowVoters: showVoters == null
+                            ? null
+                            : () => showVoters(post, entry),
+                        onDelete:
+                            entry.isMine && !closed && widget.onDelete != null
+                            ? () => _delete(post, entry)
+                            : null,
+                      );
                       Widget zoom(Widget child) => _EntryZoom(
                         controller: _zoomFor(entry.id),
                         zoomed: _zoomed,
@@ -3013,6 +3227,8 @@ class _EntryFullViewState extends State<_EntryFullView>
                                       photo: photo,
                                       onVote: vote,
                                       onOpenPerson: openPerson,
+                                      onOpenTagged: widget.onOpenPerson,
+                                      footer: footer,
                                       zoom: zoom,
                                     ),
                                   )
@@ -3037,6 +3253,8 @@ class _EntryFullViewState extends State<_EntryFullView>
                                             photo: photo,
                                             onVote: vote,
                                             onOpenPerson: openPerson,
+                                            onOpenTagged: widget.onOpenPerson,
+                                            footer: footer,
                                             zoom: zoom,
                                           ),
                                         ),
@@ -3167,6 +3385,8 @@ class _CaptionEntryFull extends StatelessWidget {
     required this.onVote,
     required this.onOpenPerson,
     required this.zoom,
+    this.onOpenTagged,
+    this.footer,
   });
 
   final ConnectCaptionEntry entry;
@@ -3175,6 +3395,12 @@ class _CaptionEntryFull extends StatelessWidget {
   final String? photo;
   final VoidCallback onVote;
   final VoidCallback onOpenPerson;
+
+  /// Opens the profile of a colleague tagged in the caption.
+  final ValueChanged<String>? onOpenTagged;
+
+  /// Who voted, and deleting your own, under the card.
+  final Widget? footer;
 
   /// Makes the picture and its caption zoom as one.
   final _EntryZoomWrap zoom;
@@ -3263,6 +3489,7 @@ class _CaptionEntryFull extends StatelessWidget {
                 entry: entry,
                 photo: photo,
                 onOpenPerson: onOpenPerson,
+                onOpenTagged: onOpenTagged,
               ),
             ),
           ),
@@ -3292,6 +3519,7 @@ class _CaptionEntryFull extends StatelessWidget {
               _EntryVoteButton(entry: entry, closed: closed, onVote: onVote),
             ],
           ),
+          if (footer case final footer?) ...[const SizedBox(height: 8), footer],
         ],
       ),
     );
@@ -3310,12 +3538,14 @@ class _CaptionOverPicture extends StatelessWidget {
     required this.entry,
     required this.photo,
     required this.onOpenPerson,
+    this.onOpenTagged,
   });
 
   final String mediaUrl;
   final ConnectCaptionEntry entry;
   final String? photo;
   final VoidCallback onOpenPerson;
+  final ValueChanged<String>? onOpenTagged;
 
   @override
   Widget build(BuildContext context) {
@@ -3387,7 +3617,12 @@ class _CaptionOverPicture extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 6),
-                  Expanded(child: _CaptionBubble(entry: entry)),
+                  Expanded(
+                    child: _CaptionBubble(
+                      entry: entry,
+                      onOpenTagged: onOpenTagged,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -3401,9 +3636,10 @@ class _CaptionOverPicture extends StatelessWidget {
 /// The caption in its pink speech bubble on the hard dark shadow, at any
 /// length (node 3684:41645).
 class _CaptionBubble extends StatelessWidget {
-  const _CaptionBubble({required this.entry});
+  const _CaptionBubble({required this.entry, this.onOpenTagged});
 
   final ConnectCaptionEntry entry;
+  final ValueChanged<String>? onOpenTagged;
 
   @override
   Widget build(BuildContext context) {
@@ -3446,8 +3682,9 @@ class _CaptionBubble extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                 ],
-                Text(
-                  '“${entry.text}',
+                _entryWords(
+                  entry,
+                  prefix: '“',
                   style: const TextStyle(
                     fontFamily: _soraFont,
                     fontSize: 16,
@@ -3456,6 +3693,8 @@ class _CaptionBubble extends StatelessWidget {
                     letterSpacing: -0.16,
                     color: _EngagementColors.ink,
                   ),
+                  linkColor: _EngagementColors.brand,
+                  onOpenTagged: onOpenTagged,
                 ),
               ],
             ),
@@ -3557,6 +3796,8 @@ class _PhotoEntryFull extends StatelessWidget {
     required this.onVote,
     required this.onOpenPerson,
     required this.zoom,
+    this.onOpenTagged,
+    this.footer,
   });
 
   final ConnectCaptionEntry entry;
@@ -3564,6 +3805,12 @@ class _PhotoEntryFull extends StatelessWidget {
   final String? photo;
   final VoidCallback onVote;
   final VoidCallback onOpenPerson;
+
+  /// Opens the profile of a colleague tagged in the story.
+  final ValueChanged<String>? onOpenTagged;
+
+  /// Who voted, and deleting your own, under the card.
+  final Widget? footer;
 
   /// Makes the picture zoom; its badges stay put over it.
   final _EntryZoomWrap zoom;
@@ -3677,6 +3924,28 @@ class _PhotoEntryFull extends StatelessWidget {
               ],
             ),
           ),
+          // The story under the picture, with whoever it tags.
+          if (entry.text.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 14, 10),
+              child: _entryWords(
+                entry,
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 20 / 14,
+                  fontWeight: FontWeight.w500,
+                  color: ink,
+                ),
+                linkColor: leader ? Colors.white : _sheetPurple,
+                onOpenTagged: onOpenTagged,
+                maxLines: 4,
+              ),
+            ),
+          if (footer case final footer?)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 14, 10),
+              child: footer,
+            ),
         ],
       ),
     );
@@ -3685,8 +3954,10 @@ class _PhotoEntryFull extends StatelessWidget {
 
 /// A photo entry's picture at its own shape, as large as the room allows:
 /// the box takes the picture's proportions once it has loaded (a portrait
-/// frame until then), and fits the picture inside whole, on [backdrop],
-/// where the room is not that shape.
+/// frame until then), and fits the picture inside whole. Where the room is
+/// not that shape, the bands either side are the same picture, blurred and
+/// washed in [backdrop] — a contest photo is judged whole, so it is not
+/// cropped, and the frame is never left with an empty band.
 class _EntryPhotoBox extends StatefulWidget {
   const _EntryPhotoBox({
     required this.url,
@@ -3771,6 +4042,23 @@ class _EntryPhotoBoxState extends State<_EntryPhotoBox> {
           fit: StackFit.expand,
           children: [
             ColoredBox(color: widget.backdrop),
+            if (url.isNotEmpty) ...[
+              ExcludeSemantics(
+                child: ImageFiltered(
+                  imageFilter: ImageFilter.blur(
+                    sigmaX: 28,
+                    sigmaY: 28,
+                    tileMode: TileMode.mirror,
+                  ),
+                  child: Image(
+                    image: _remoteImage(url),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+              ColoredBox(color: widget.backdrop.withValues(alpha: 0.45)),
+            ],
             widget.zoom(
               url.isEmpty
                   ? const SizedBox.expand()

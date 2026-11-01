@@ -11,9 +11,13 @@ import 'support_ui.dart';
 /// Raising a request (node 2896:32536): what it is about, what happened, and
 /// any documents. Pops with the new ticket's thread once the server has it.
 class SupportRequestScreen extends StatefulWidget {
-  const SupportRequestScreen({super.key, required this.shell});
+  const SupportRequestScreen({super.key, required this.shell, this.initialComment});
 
   final SupportShell shell;
+
+  /// The message started for them when the form was opened from a "contact
+  /// HR" line elsewhere in the app (what they were looking at); theirs to edit.
+  final String? initialComment;
 
   @override
   State<SupportRequestScreen> createState() => _SupportRequestScreenState();
@@ -29,6 +33,9 @@ class _SupportRequestScreenState extends State<SupportRequestScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialComment case final text? when text.trim().isNotEmpty) {
+      _comment.text = '${text.trim()}\n\n';
+    }
     _comment.addListener(() => setState(() {}));
     // Read ahead so the sheet opens at once; a failure is reported when the
     // field is tapped, not here.
@@ -283,13 +290,29 @@ class _TopicField extends StatelessWidget {
             border: Border.all(color: SupportStyle.line),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Text(
-            topic?.label ?? '',
-            style: const TextStyle(
-              color: SupportStyle.inkStrong,
-              fontSize: 14,
-              height: 20 / 14,
-            ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  // Until one is picked the field says what it is for.
+                  topic?.label ?? 'Choose a type',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: topic == null
+                        ? const Color(0x80111827)
+                        : SupportStyle.inkStrong,
+                    fontSize: 14,
+                    height: 20 / 14,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 20,
+                color: Color(0xFF717171),
+              ),
+            ],
           ),
         ),
       ),

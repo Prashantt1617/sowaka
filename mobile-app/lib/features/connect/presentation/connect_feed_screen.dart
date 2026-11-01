@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderShiftedBox;
@@ -714,13 +715,11 @@ class _ConnectPostCard extends StatefulWidget {
   final ValueChanged<String>? onOpenPerson;
 
   /// Challenge posts only.
-  final Future<bool> Function(
-    String text,
-    String? photoPath,
-    String? taggedUserId,
-  )?
-  onSubmitCaption;
-  final Future<void> Function()? onDeleteCaption;
+  final _SubmitEntry? onSubmitCaption;
+
+  /// Takes down one of the viewer's own entries; null (Most Likely's one
+  /// tag) takes the latest.
+  final Future<void> Function(String? entryId)? onDeleteCaption;
   final Future<void> Function(String entryId)? onVoteCaption;
 
   @override
@@ -2019,13 +2018,11 @@ class _PostBody extends StatelessWidget {
 
   /// Challenge posts only — one entry each, one vote each. `photoPath` is set
   /// on a photo-story challenge, where the entry carries a picture too.
-  final Future<bool> Function(
-    String text,
-    String? photoPath,
-    String? taggedUserId,
-  )?
-  onSubmitCaption;
-  final Future<void> Function()? onDeleteCaption;
+  final _SubmitEntry? onSubmitCaption;
+
+  /// Takes down one of the viewer's own entries; null (Most Likely's one
+  /// tag) takes the latest.
+  final Future<void> Function(String? entryId)? onDeleteCaption;
   final Future<void> Function(String entryId)? onVoteCaption;
 
   @override
@@ -7737,10 +7734,6 @@ class _DeletePostSheet extends StatelessWidget {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  textStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
                 ),
                 onPressed: () => Navigator.of(context).pop(false),
                 child: const Text('Cancel'),
@@ -8144,10 +8137,6 @@ class _BlockPersonSheet extends StatelessWidget {
                   side: const BorderSide(color: Color(0xFFE8E8EC), width: 1.5),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
-                  ),
-                  textStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 onPressed: () => Navigator.of(context).pop(false),

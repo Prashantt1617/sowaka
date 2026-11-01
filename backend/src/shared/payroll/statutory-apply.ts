@@ -6,6 +6,7 @@
  */
 import { ResolvedRuleSet } from '../../models/statutoryRule.model';
 import { StatutorySettings } from '../../models/statutorySettings.model';
+import type { StatutoryConfig } from './statutory-config';
 import {
   computeEpf,
   computeEsi,
@@ -22,9 +23,9 @@ export interface PersonStatutory {
   epf?: boolean;
   esi?: boolean;
   lwf?: boolean;
-  /** 12% of actual PF wage for this person; honoured only when the org allows overrides. */
+  /** PF on the actual PF wage for this person; honoured only when the org allows overrides. */
   pfActualWage?: boolean;
-  /** false: the employer's 12% all goes to PF, nothing to the pension scheme. */
+  /** false: the employer's contribution all goes to PF, nothing to the pension scheme. */
   contributeEps?: boolean;
   /** This person's restricted PF wage, when it differs from the ceiling (Zoho's per-employee "Restricted to ₹…"). */
   pfRestrictedWagePaise?: number;
@@ -32,6 +33,8 @@ export interface PersonStatutory {
 
 export interface StatutoryApplyInput {
   settings: StatutorySettings;
+  /** The FY's national rates and ceilings (payroll_statutory_configs). */
+  config: StatutoryConfig;
   ruleSet: ResolvedRuleSet;
   /** 1-based calendar month, for PT and LWF month rules. */
   month: number;
@@ -112,7 +115,7 @@ export function applyStatutory(input: StatutoryApplyInput): StatutoryApplied {
   const employeeRestricted = mode === 'actual' ? false : mode === 'ceiling' ? true : employeeActual ? false : settings.epf.employeeRate === 'restricted';
   const employerRestricted = mode === 'actual' ? false : mode === 'ceiling' ? true : settings.epf.employerRate === 'restricted';
   const epf = epfOn
-    ? computeEpf({
+    ? computeEpf(input.config.epf, {
         pfWagePaise,
         employeeRestricted,
         employerRestricted,
@@ -123,9 +126,9 @@ export function applyStatutory(input: StatutoryApplyInput): StatutoryApplied {
 
   const esiOn = settings.esi.enabled && person?.esi !== false;
   const esiWage = input.esiWagePaise ?? input.grossPaise;
-  const esi = computeEsi({
+  const esi = computeEsi(input.config.esi, {
     grossPaise: esiWage,
-    applicable: esiOn && isEsiApplicable({ grossPaise: input.esiTestPaise ?? esiWage, wasApplicableAtPeriodStart: input.esiCoveredEarlier }),
+    applicable: esiOn && isEsiApplicable(input.config.esi, { grossPaise: input.esiTestPaise ?? esiWage, wasApplicableAtPeriodStart: input.esiCoveredEarlier }),
   });
 
   const pt = input.ruleSet.pt ? computePt(input.ruleSet.pt, { grossPaise: input.grossPaise, month: input.month }) : { amountPaise: 0 };

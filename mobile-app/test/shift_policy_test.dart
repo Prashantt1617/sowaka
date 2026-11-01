@@ -148,7 +148,8 @@ void main() {
     });
 
     test('a day past the backdating window is refused', () {
-      expect(problem(DateTime(2026, 9, 1), DateTime(2026, 9, 1)), contains('Casual Leave'));
+      // Only the limit crossed is named: how far back Casual Leave may go.
+      expect(problem(DateTime(2026, 9, 1), DateTime(2026, 9, 1)), 'Leave can only be applied up to 3 days back.');
     });
 
     test('a day inside the backdating window is allowed', () {

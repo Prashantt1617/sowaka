@@ -8,17 +8,16 @@
  */
 
 import { PayHead } from '../../models/payHead.model';
-import { epfCeilingForPeriod, epfCeilingSegments, ResolvedRuleSet } from '../../models/statutoryRule.model';
+import { ResolvedRuleSet } from '../../models/statutoryRule.model';
 import { StatutorySettings } from '../../models/statutorySettings.model';
 import { TemplateStatutoryWages } from '../../models/salaryTemplate.model';
 import { applyStatutory, PersonStatutory } from './statutory-apply';
 import { EpfResult, roundToRupee } from './statutory-engine';
-import { defaultStatutorySettings, minimumWageFor } from './statutory-defaults';
+import { bonusRatePercent, defaultStatutorySettings, minimumWageFor } from './statutory-defaults';
+import { assertConfigFor, epfCeilingForPeriod, epfCeilingSegments, rateToPercent, StatutoryConfig } from './statutory-config';
 
 /** The synthetic earning line the org's Statutory Bonus setting adds. */
 export const STATUTORY_BONUS_CODE = 'STATUTORY_BONUS';
-/** Payment of Bonus Act: people whose Basic is above this are not covered. */
-const BONUS_ELIGIBILITY_PAISE = 21_000_00;
 
 export interface SalaryCalcInput {
   monthlyCtcPaise: number;
@@ -27,6 +26,8 @@ export interface SalaryCalcInput {
   componentValues?: Record<string, number>;
   balancingComponentCode?: string;
   ruleSet: ResolvedRuleSet;
+  /** The pay month's FY statutory figures (payroll_statutory_configs). Must be the FY of `period`. */
+  config: StatutoryConfig;
   /** 1-based calendar month, for PT/LWF month gating. */
   month: number;
   /** "YYYY-MM", for minimum wages that change over time. Defaults to this month. */
@@ -83,15 +84,14 @@ export interface ComponentLine {
   percentOfBasic?: number;
 }
 
-/** An earning paid once (Bonus), entered per run, not part of the monthly CTC split. */
 /**
  * The wage Statutory Bonus is worked out on (Bonus Act s.12, as Zoho applies
  * it): the state minimum wage for the person's employment category when one
- * is set (₹7,000 if that is lower), else Basic capped at ₹7,000.
+ * is set (the FY's bonus wage floor if that is lower), else Basic capped at
+ * that floor.
  */
-const BONUS_WAGE_FLOOR_PAISE = 7_000_00;
-function bonusWage(basicPaise: number, minimumWagePaise: number): number {
-  return minimumWagePaise > 0 ? Math.max(BONUS_WAGE_FLOOR_PAISE, minimumWagePaise) : Math.min(basicPaise, BONUS_WAGE_FLOOR_PAISE);
+function bonusWage(floorPaise: number, basicPaise: number, minimumWagePaise: number): number {
+  return minimumWagePaise > 0 ? Math.max(floorPaise, minimumWagePaise) : Math.min(basicPaise, floorPaise);
 }
 
 function isOneTime(head: PayHead): boolean {
@@ -193,7 +193,13 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
   };
 
   const settings = input.settings ?? defaultStatutorySettings('');
-  const ceiling = epfCeilingForPeriod(input.period ?? new Date().toISOString().slice(0, 7));
+  const config = input.config;
+  const calcPeriod = input.period ?? new Date().toISOString().slice(0, 7);
+  assertConfigFor(config, calcPeriod);
+  const ceiling = epfCeilingForPeriod(config, calcPeriod);
+  const bonusRate = bonusRatePercent(settings.bonus, config);
+  const bonusFloor = config.bonus.wageFloorPaise;
+  const bonusEligibility = config.bonus.eligibilityCeilingPaise;
   const balancingCode = input.balancingComponentCode;
 
   const lineFor = (head: PayHead): ComponentLine => {
@@ -221,16 +227,16 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
 
   // A Statutory Bonus component in the template follows the Payment of Bonus
   // Act: its percent of the bonus wage (see bonusWage), and nothing for
-  // people whose Basic is above ₹21,000.
-  const bonusPeriod = input.period ?? new Date().toISOString().slice(0, 7);
+  // people whose Basic is above the FY's eligibility ceiling.
+  const bonusPeriod = calcPeriod;
   for (const head of active) {
     if (head.category !== 'earning' || head.componentType !== 'statutory_bonus') continue;
     const basic = basicCode ? rawValue(basicCode) : 0;
     let amount = 0;
-    if (basic > 0 && basic <= BONUS_ELIGIBILITY_PAISE) {
+    if (basic > 0 && basic <= bonusEligibility) {
       const floor = minimumWageFor(settings.bonus, input.ruleSet.state, input.bonusCategory, bonusPeriod);
-      const pct = head.calculation.mode === 'percentage' ? head.calculation.percent ?? 8.33 : settings.bonus.ratePercent;
-      amount = roundToRupee((bonusWage(basic, floor) * Math.round(pct * 100)) / 10000);
+      const pct = head.calculation.mode === 'percentage' ? head.calculation.percent ?? rateToPercent(config.bonus.minRate) : bonusRate;
+      amount = roundToRupee((bonusWage(bonusFloor, basic, floor) * Math.round(pct * 100)) / 10000);
     }
     memo.set(head.code, amount);
   }
@@ -241,10 +247,9 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
   const basicPaise = basicCode ? evalComponent(basicCode) : 0;
   const templateHasBonus = active.some((head) => head.componentType === 'statutory_bonus');
   let bonusLine: ComponentLine | undefined;
-  if (settings.bonus.enabled && settings.bonus.frequency === 'monthly' && !templateHasBonus && basicPaise > 0 && basicPaise <= BONUS_ELIGIBILITY_PAISE) {
-    const period = input.period ?? new Date().toISOString().slice(0, 7);
-    const floor = minimumWageFor(settings.bonus, input.ruleSet.state, input.bonusCategory, period);
-    const amount = roundToRupee((bonusWage(basicPaise, floor) * settings.bonus.ratePercent) / 100);
+  if (settings.bonus.enabled && settings.bonus.frequency === 'monthly' && !templateHasBonus && basicPaise > 0 && basicPaise <= bonusEligibility) {
+    const floor = minimumWageFor(settings.bonus, input.ruleSet.state, input.bonusCategory, calcPeriod);
+    const amount = roundToRupee((bonusWage(bonusFloor, basicPaise, floor) * bonusRate) / 100);
     bonusLine = {
       code: STATUTORY_BONUS_CODE,
       name: 'Statutory Bonus',
@@ -252,7 +257,7 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
       showInPayslip: true,
       category: 'earning',
       componentType: 'statutory_bonus',
-      calcLabel: `${settings.bonus.ratePercent}% of ${floor > basicPaise ? 'minimum wage' : 'Basic'}`,
+      calcLabel: `${bonusRate}% of ${floor > basicPaise ? 'minimum wage' : 'Basic'}`,
       monthlyPaise: amount,
       annualPaise: amount * 12,
       prorate: true,
@@ -285,7 +290,7 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
   const oneTimeTotal = nonBalancing.filter(isOneTime).reduce((sum, head) => sum + rawValue(head.code), 0);
   const othersTotal = earningsOthers + reimbursementsTotal + benefitsTotal;
   const balancingHead = balancingCode ? byCode.get(balancingCode) : undefined;
-  const monthSegments = epfCeilingSegments(input.period ?? new Date().toISOString().slice(0, 7), input.employedFrom);
+  const monthSegments = epfCeilingSegments(config, calcPeriod, input.employedFrom);
   const statutoryAt = (balancePaise: number, segments = monthSegments) => {
     let always = 0;
     let conditional = 0;
@@ -306,6 +311,7 @@ export function calculateSalaryStructure(input: SalaryCalcInput): SalaryCalcResu
     }
     return applyStatutory({
       settings,
+      config,
       ruleSet: input.ruleSet,
       month: input.month,
       grossPaise: earningsOthers + oneTimeTotal + (balancingHead ? balancePaise : 0),

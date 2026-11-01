@@ -15,6 +15,7 @@ import { faceRouter } from './face.routes';
 import { mediaRouter } from './media.routes';
 import { payrollRouter } from './payroll.routes';
 import { payslipRouter } from './payslip.routes';
+import { employeePayrollRouter } from './employee-payroll.routes';
 import { kpiRouter } from './kpi.routes';
 import { relayRouter } from './relay.routes';
 import { relayPlayerRouter } from './relay-player.routes';
@@ -50,6 +51,8 @@ router.use('/admin/support', supportAdminRouter);
 router.use('/admin', adminRouter);
 router.use('/leaves', leaveRouter);
 router.use('/payslips', payslipRouter);
+// The app's Payroll screens (home, missing punches, split, declaration, proofs).
+router.use('/payroll', employeePayrollRouter);
 // Mounted before the authenticated Connect router: image requests can't carry
 // a bearer token, so media is served by unguessable key instead.
 router.use('/media', mediaRouter);

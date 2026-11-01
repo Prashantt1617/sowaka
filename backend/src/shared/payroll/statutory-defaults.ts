@@ -1,5 +1,6 @@
 /** Pure statutory-settings helpers, shared by the server and the dashboard. */
 import type { BonusSettings, StatutorySettings } from '../../models/statutorySettings.model';
+import { rateToPercent, type StatutoryConfig } from './statutory-config';
 
 /**
  * Defaults for an org that has never saved its settings. They reproduce how
@@ -21,7 +22,8 @@ export function defaultStatutorySettings(org: string): StatutorySettings {
       considerLOP: true,
     },
     esi: { enabled: true, includeEmployer: false },
-    bonus: { enabled: false, frequency: 'monthly', ratePercent: 8.33, minWages: {} },
+    // No rate: the FY's minimum bonus rate applies until the company sets one.
+    bonus: { enabled: false, frequency: 'monthly', minWages: {} },
     lwfDisabledStates: [],
     tds: { enabled: false, defaultRegime: 'new' },
   };
@@ -40,3 +42,8 @@ export function minimumWageFor(bonus: BonusSettings, state: string | undefined, 
   return match?.minWagePaise ?? 0;
 }
 
+
+/** The company's Statutory Bonus rate (percent), else the FY's minimum. */
+export function bonusRatePercent(bonus: BonusSettings, config: StatutoryConfig): number {
+  return bonus.ratePercent ?? rateToPercent(config.bonus.minRate);
+}

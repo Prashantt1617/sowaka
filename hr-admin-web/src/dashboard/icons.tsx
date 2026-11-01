@@ -300,6 +300,20 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M9 11.5l2 2 4-4" />
     </svg>
   ),
+  // A balance: the law's figures.
+  payrollconfig: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M12 4v16M7 20h10M5 7h14" />
+      <path d="M5 7l-2.5 6a2.5 2.5 0 0 0 5 0zM19 7l-2.5 6a2.5 2.5 0 0 0 5 0z" />
+    </svg>
+  ),
+  // A receipt with a tick: a proof checked.
+  investmentproofs: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
+      <path d="M9 11l2 2 4-4" />
+    </svg>
+  ),
   payruns: (
     <svg {...base(18, 'currentColor')}>
       <path d="M5 3h9l5 5v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />

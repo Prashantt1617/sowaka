@@ -6,7 +6,6 @@
  */
 import { payrollRuns, payslips, statutorySettings, users } from '../config/db';
 import { requestViewer } from '../middleware/request-viewer';
-import { EPF_CONSTANTS } from '../models/statutoryRule.model';
 import {
   BonusSettings,
   EpfSettings,
@@ -16,7 +15,9 @@ import {
   StatutorySettings,
 } from '../models/statutorySettings.model';
 import { resolveRuleSet } from './statutory.service';
-import { defaultStatutorySettings } from '../shared/payroll/statutory-defaults';
+import { bonusRatePercent, defaultStatutorySettings } from '../shared/payroll/statutory-defaults';
+import { epfCeilingOn, rateToPercent, StatutoryConfig } from '../shared/payroll/statutory-config';
+import { statutoryConfigForPeriod } from './payrollConfig.service';
 // Pure, shared with the dashboard's calculator.
 export { defaultStatutorySettings, minimumWageFor } from '../shared/payroll/statutory-defaults';
 
@@ -139,10 +140,13 @@ export async function esiCoveredThisPeriod(org: string, period: string, userIds:
 /** Everything Statutory Components shows: settings, plus PT and LWF by the org's work states. */
 export async function getStatutoryOverview(adminUserId: string) {
   const org = await requireAdminOrg(adminUserId);
-  // Work locations from the people on the roster: city → state.
-  const [settings, people] = await Promise.all([
+  // Work locations from the people on the roster: city → state. The figures
+  // shown are this FY's (409 when its statutory row is missing).
+  const today = new Date().toISOString().slice(0, 10);
+  const [settings, people, config] = await Promise.all([
     statutorySettingsFor(org),
     users().find({ org }, { projection: { _id: 0, state: 1, location: 1 } }).toArray(),
+    statutoryConfigForPeriod(today.slice(0, 7)),
   ]);
   const locations = new Map<string, string>();
   for (const person of people) {
@@ -153,12 +157,13 @@ export async function getStatutoryOverview(adminUserId: string) {
   }
   const states = [...new Set([...locations.values()])].sort();
 
-  const resolved = await Promise.all(states.map((state) => resolveRuleSet(org, state)));
+  const resolved = await Promise.all(states.map((state) => resolveRuleSet(org, state, config)));
   const rules = new Map(states.map((state, i) => [state, resolved[i]]));
 
   return {
-    settings: viewSettings(settings),
-    ceilingPaise: EPF_CONSTANTS.wageCeilingPaise,
+    settings: viewSettings(settings, config),
+    ceilingPaise: epfCeilingOn(config, today),
+    fy: config.fy,
     pt: [...locations.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([location, state]) => ({ location, state, pt: rules.get(state)?.pt ?? null })),
@@ -174,12 +179,12 @@ export async function getStatutoryOverview(adminUserId: string) {
 export async function updateStatutorySettings(adminUserId: string, input: unknown) {
   const org = await requireAdminOrg(adminUserId);
   if (!isRecord(input)) throw new StatutorySettingsError(400, 'Settings must be an object');
-  const current = await statutorySettingsFor(org);
+  const [current, config] = await Promise.all([statutorySettingsFor(org), statutoryConfigForPeriod(new Date().toISOString().slice(0, 7))]);
   const next: StatutorySettings = { ...current };
 
   if (input.epf !== undefined) next.epf = parseEpf(input.epf, current.epf);
   if (input.esi !== undefined) next.esi = parseEsi(input.esi, current.esi);
-  if (input.bonus !== undefined) next.bonus = parseBonus(input.bonus, current.bonus);
+  if (input.bonus !== undefined) next.bonus = parseBonus(input.bonus, current.bonus, config);
   if (input.tds !== undefined) {
     if (!isRecord(input.tds)) throw new StatutorySettingsError(400, 'tds must be { enabled, defaultRegime }');
     const regime = input.tds.defaultRegime ?? current.tds?.defaultRegime ?? 'new';
@@ -203,8 +208,8 @@ export async function updateStatutorySettings(adminUserId: string, input: unknow
   return getStatutoryOverview(adminUserId);
 }
 
-function viewSettings(s: StatutorySettings) {
-  return { epf: s.epf, esi: s.esi, bonus: s.bonus, lwfDisabledStates: s.lwfDisabledStates, tds: s.tds ?? { enabled: false, defaultRegime: 'new' } };
+function viewSettings(s: StatutorySettings, config: StatutoryConfig) {
+  return { epf: s.epf, esi: s.esi, bonus: { ...s.bonus, ratePercent: bonusRatePercent(s.bonus, config) }, lwfDisabledStates: s.lwfDisabledStates, tds: s.tds ?? { enabled: false, defaultRegime: 'new' } };
 }
 
 // ————————————————————————————————————————————————————————————————
@@ -246,15 +251,18 @@ function parseEsi(raw: unknown, current: EsiSettings): EsiSettings {
   };
 }
 
-function parseBonus(raw: unknown, current: BonusSettings): BonusSettings {
+function parseBonus(raw: unknown, current: BonusSettings, config: StatutoryConfig): BonusSettings {
   if (!isRecord(raw)) throw new StatutorySettingsError(400, 'bonus must be an object');
   const frequency = raw.frequency === undefined ? current.frequency : raw.frequency;
   if (frequency !== 'monthly' && frequency !== 'yearly') {
     throw new StatutorySettingsError(400, 'Bonus frequency must be monthly or yearly');
   }
-  const ratePercent = raw.ratePercent === undefined ? current.ratePercent : Number(raw.ratePercent);
-  if (!Number.isFinite(ratePercent) || ratePercent < 8.33 || ratePercent > 20) {
-    throw new StatutorySettingsError(400, 'Statutory Bonus rate should be between 8.33% and 20%');
+  // Within the Bonus Act's range for this FY (statutory config); none set: the FY's minimum applies.
+  const ratePercent = raw.ratePercent === undefined || raw.ratePercent === null ? current.ratePercent : Number(raw.ratePercent);
+  const lo = rateToPercent(config.bonus.minRate);
+  const hi = rateToPercent(config.bonus.maxRate);
+  if (ratePercent !== undefined && (!Number.isFinite(ratePercent) || ratePercent < lo || ratePercent > hi)) {
+    throw new StatutorySettingsError(400, `Statutory Bonus rate should be between ${lo}% and ${hi}%`);
   }
   let minWages = current.minWages;
   if (raw.minWages !== undefined) {
@@ -282,7 +290,7 @@ function parseBonus(raw: unknown, current: BonusSettings): BonusSettings {
   return {
     enabled: raw.enabled === undefined ? current.enabled : Boolean(raw.enabled),
     frequency,
-    ratePercent: Math.round(ratePercent * 100) / 100,
+    ...(ratePercent === undefined ? {} : { ratePercent: Math.round(ratePercent * 100) / 100 }),
     minWages,
   };
 }

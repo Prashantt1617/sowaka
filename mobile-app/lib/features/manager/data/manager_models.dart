@@ -140,6 +140,58 @@ class GrowthRecord {
   }
 }
 
+/// A direct report's review for the cycle before this one, which stays open
+/// to write or edit until this cycle closes: what the viewer saved or sent
+/// for it, on that cycle's own parameters.
+class PreviousCycleReview {
+  const PreviousCycleReview({
+    required this.period,
+    required this.status,
+    required this.score,
+    required this.params,
+    required this.extra,
+  });
+
+  /// The cycle's key, 'YYYY-MM', as the server counts cycles.
+  final String period;
+  final FeedbackStatus status;
+  final double score;
+  final List<FeedbackParam> params;
+  final String extra;
+
+  static PreviousCycleReview? fromJson(Object? value) {
+    if (value is! Map<String, dynamic>) return null;
+    final period = value['period'] as String? ?? '';
+    if (period.isEmpty) return null;
+    return PreviousCycleReview(
+      period: period,
+      status: switch (value['feedbackStatus']) {
+        'saved' => FeedbackStatus.saved,
+        'sent' => FeedbackStatus.sent,
+        _ => FeedbackStatus.pending,
+      },
+      score: (value['score'] as num?)?.toDouble() ?? 0,
+      params: (value['parameters'] as List<dynamic>? ?? const [])
+          .map((item) => FeedbackParam.fromJson(item as Map<String, dynamic>))
+          .toList(),
+      extra: value['extra'] as String? ?? '',
+    );
+  }
+
+  PreviousCycleReview copyWith({
+    FeedbackStatus? status,
+    double? score,
+    List<FeedbackParam>? params,
+    String? extra,
+  }) => PreviousCycleReview(
+    period: period,
+    status: status ?? this.status,
+    score: score ?? this.score,
+    params: params ?? this.params,
+    extra: extra ?? this.extra,
+  );
+}
+
 class OrgChartNode {
   const OrgChartNode({
     required this.userId,
@@ -226,6 +278,7 @@ class TeamMember {
     this.documents = const [],
     this.previousScore,
     this.history = const [],
+    this.previousCycle,
   });
 
   final int id;
@@ -290,6 +343,10 @@ class TeamMember {
   /// Every sent review for this member, oldest first.
   final List<GrowthRecord> history;
 
+  /// Their review for the previous cycle, still open to the viewer. Only on
+  /// the viewer's direct reports, and only from a server that sends it.
+  final PreviousCycleReview? previousCycle;
+
   factory TeamMember.fromJson(Map<String, dynamic> json, int id) {
     final name = json['name'] as String? ?? 'Employee';
     final values = json['parameters'] as List<dynamic>? ?? const [];
@@ -311,6 +368,7 @@ class TeamMember {
       history: (json['history'] as List<dynamic>? ?? const [])
           .map((value) => GrowthRecord.fromJson(value as Map<String, dynamic>))
           .toList(),
+      previousCycle: PreviousCycleReview.fromJson(json['previousCycle']),
       next:
           DateTime.tryParse(json['nextDate'] as String? ?? '') ??
           DateTime.now(),
@@ -363,6 +421,7 @@ class TeamMember {
     String? extra,
     List<GrowthRecord>? history,
     double? previousScore,
+    PreviousCycleReview? previousCycle,
   }) {
     return TeamMember(
       id: id,
@@ -405,6 +464,7 @@ class TeamMember {
       documents: documents,
       previousScore: previousScore ?? this.previousScore,
       history: history ?? this.history,
+      previousCycle: previousCycle ?? this.previousCycle,
     );
   }
 }
@@ -2194,11 +2254,15 @@ class Payslip {
     required this.lopDays,
     required this.paidLeaveDaysApplied,
     required this.lines,
+    this.paidAt,
   });
 
   final String id;
   final String period;
   final String runStatus;
+
+  /// When the run was paid: the slip's "Credited" date. Null until then.
+  final DateTime? paidAt;
   final String employeeName;
   final String employeeId;
   final String designation;
@@ -2232,6 +2296,7 @@ class Payslip {
       id: json['id'] as String? ?? '',
       period: json['period'] as String? ?? run['period'] as String? ?? '',
       runStatus: run['status'] as String? ?? 'draft',
+      paidAt: DateTime.tryParse(run['paidAt'] as String? ?? '')?.toLocal(),
       employeeName: json['employeeName'] as String? ?? '',
       employeeId: json['employeeId'] as String? ?? '',
       designation: json['designation'] as String? ?? '',

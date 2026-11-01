@@ -59,6 +59,12 @@ export interface SalaryTemplate {
   code: string;
   description?: string;
   components: SalaryTemplateComponent[];
+  /**
+   * The monthly flexible pool people on this template split among the
+   * flexible components on the app (the rest is paid as the balancing
+   * component). Absent: the components' limits added up.
+   */
+  flexiblePoolPaise?: number;
   /** Earning that absorbs the residual so gross reconciles to CTC (the "Fixed Allowance"). */
   balancingComponentCode?: string;
   /** Default EPF ceiling behaviour for employees on this template. */

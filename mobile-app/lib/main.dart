@@ -61,6 +61,19 @@ class HrmsMobileApp extends StatelessWidget {
             borderSide: const BorderSide(color: Color(0xFF0571A6), width: 1.5),
           ),
         ),
+        // OutlinedButton takes its words' style from here. Without it, a
+        // call site that set only a size and weight dropped the family and
+        // drew in the system font beside every other button.
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            textStyle: const TextStyle(
+              fontFamily: 'Plus Jakarta Sans',
+              fontSize: 14,
+              height: 20 / 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
         textSelectionTheme: const TextSelectionThemeData(
           cursorColor: Color(0xFF0571A6),
           selectionHandleColor: Color(0xFF0571A6),

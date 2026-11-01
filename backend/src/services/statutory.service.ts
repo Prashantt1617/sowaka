@@ -7,6 +7,7 @@ import {
   ResolvedRuleSet,
   StateStatutoryRule,
 } from '../models/statutoryRule.model';
+import { stateDefaultsOf, StatutoryConfig } from '../shared/payroll/statutory-config';
 
 export class StatutoryError extends Error {
   constructor(
@@ -17,62 +18,6 @@ export class StatutoryError extends Error {
     this.name = 'StatutoryError';
   }
 }
-
-/**
- * Built-in per-state defaults, seeded lazily when an org has no override for a
- * state. All amounts are editable by the admin; these only bootstrap the common
- * cases the PRD calls out (Haryana monthly LWF, Delhi half-yearly LWF).
- */
-export const DEFAULT_STATE_RULES: Record<string, Omit<ResolvedRuleSet, 'state'>> = {
-  haryana: {
-    lwf: {
-      cycle: 'monthly',
-      deductionMonths: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-      employee: { mode: 'percentage', percent: 0.2, capPaise: 35_00 },
-      employer: { mode: 'multiple_of_employee', factor: 2 },
-    },
-  },
-  delhi: {
-    lwf: {
-      cycle: 'half_yearly',
-      deductionMonths: [6, 12],
-      employee: { mode: 'flat', amountPaise: 75 }, // ₹0.75
-      employer: { mode: 'flat', amountPaise: 225 }, // ₹2.25
-    },
-  },
-  'west bengal': {
-    // Monthly gross: ₹0 up to ₹10,000, then ₹110 / ₹130 / ₹150, and ₹200 above ₹40,000.
-    pt: {
-      slabs: [
-        { upToPaise: 10_000_00, amountPaise: 0 },
-        { upToPaise: 15_000_00, amountPaise: 110_00 },
-        { upToPaise: 25_000_00, amountPaise: 130_00 },
-        { upToPaise: 40_000_00, amountPaise: 150_00 },
-        { upToPaise: null, amountPaise: 200_00 },
-      ],
-    },
-  },
-  karnataka: {
-    // ₹0 below ₹25,000 monthly gross, ₹200 at/above.
-    pt: {
-      slabs: [
-        { upToPaise: 24_999_99, amountPaise: 0 },
-        { upToPaise: null, amountPaise: 200_00 },
-      ],
-    },
-  },
-};
-
-// A neutral bonus default applied to any state lacking its own rule.
-export const DEFAULT_BONUS: BonusRule = {
-  ratePercent: 8.33,
-  minWageByCategoryPaise: {
-    unskilled: 10_000_00,
-    semi_skilled: 11_000_00,
-    skilled: 12_000_00,
-    highly_skilled: 13_000_00,
-  },
-};
 
 export interface StateRuleInput {
   state: string;
@@ -102,8 +47,8 @@ export async function upsertStateRule(adminUserId: string, input: StateRuleInput
     org,
     state,
     updatedAt: new Date(),
-    pt: input.pt === undefined ? undefined : validatePt(input.pt),
-    lwf: input.lwf === undefined ? undefined : validateLwf(input.lwf),
+    pt: input.pt === undefined ? undefined : validatePtRule(input.pt),
+    lwf: input.lwf === undefined ? undefined : validateLwfRule(input.lwf),
     bonus: input.bonus === undefined ? undefined : validateBonus(input.bonus),
   };
   // Drop undefined so an upsert doesn't wipe unspecified sub-rules.
@@ -130,24 +75,25 @@ export async function deleteStateRule(adminUserId: string, stateInput: string) {
 
 /**
  * Resolve the effective rule set for an org + state, for the payroll run to
- * consume. Stored per-state overrides win; any sub-rule the org hasn't set falls
- * back to the built-in default for that state (and bonus falls back to a neutral
- * national default). Called with org/state directly — no admin context.
+ * consume: the org's own rule for the state where it has set one, else the
+ * state's PT / LWF from the FY's statutory row. Nothing comes from code.
+ * Called with org/state directly — no admin context.
  */
 export async function resolveRuleSet(
   org: string | undefined,
   stateInput: string | undefined,
+  config: StatutoryConfig,
 ): Promise<ResolvedRuleSet> {
   // Lenient: a missing state (e.g. a stateless template preview, or an employee
   // with no work location) resolves to national-only statutory (no PT/LWF).
   const state = (stateInput ?? '').trim().toLowerCase();
-  const defaults = DEFAULT_STATE_RULES[state] ?? {};
+  const national = stateDefaultsOf(config, state);
   const stored = org && state ? await statutoryRules().findOne({ org, state }) : null;
   return {
     state,
-    pt: stored?.pt ?? defaults.pt,
-    lwf: stored?.lwf ?? defaults.lwf,
-    bonus: stored?.bonus ?? defaults.bonus ?? DEFAULT_BONUS,
+    pt: stored?.pt ?? national?.pt,
+    lwf: stored?.lwf ?? national?.lwf,
+    bonus: stored?.bonus,
   };
 }
 
@@ -155,7 +101,7 @@ export async function resolveRuleSet(
 // Validation
 // ————————————————————————————————————————————————————————————————
 
-function validatePt(raw: unknown): PtRule {
+export function validatePtRule(raw: unknown): PtRule {
   if (!isRecord(raw) || !Array.isArray(raw.slabs) || raw.slabs.length === 0) {
     throw new StatutoryError(400, 'pt.slabs must be a non-empty array');
   }
@@ -184,7 +130,7 @@ function validateMonthOverride(raw: unknown, i: number) {
   };
 }
 
-function validateLwf(raw: unknown): LwfRule {
+export function validateLwfRule(raw: unknown): LwfRule {
   if (!isRecord(raw)) throw new StatutoryError(400, 'lwf must be an object');
   const cycle = raw.cycle;
   if (cycle !== 'monthly' && cycle !== 'half_yearly') {

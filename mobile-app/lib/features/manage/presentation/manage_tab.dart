@@ -1253,9 +1253,15 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
 
     // A review that has been sent stays editable until the cycle closes —
     // sending shares it, it does not close it. Only a missed cycle is shut.
-    final locked = member.status == FeedbackStatus.missed;
-    final alreadySent = member.status == FeedbackStatus.sent;
+    // The previous cycle's review, opened from its month, stays open until
+    // this cycle closes.
+    final status = state.recordStatus ?? member.status;
+    final previousCycle = state.recordPeriod;
+    final locked = status == FeedbackStatus.missed;
+    final alreadySent = status == FeedbackStatus.sent;
     final scored = state.recordParams.where((item) => item.score > 0);
+    // Comments are checked when Send is tapped (the bloc says which one is
+    // short), not counted while typing.
     final complete = scored.length == state.recordParams.length;
     // A save or a send is still travelling: both wait, the one tapped spins.
     final saving = bloc.isBusy(const SaveFeedback());
@@ -1318,7 +1324,9 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
           _PushedTeamSectionBar(bloc: bloc, data: dashboard),
         _GrowthPageTopBar(
           name: member.name,
-          designation: _periodTitle(_EmployeeGrowthPage._currentPeriod()),
+          designation: _periodTitle(
+            previousCycle ?? _EmployeeGrowthPage._currentPeriod(),
+          ),
           onBack: widget.onClose,
         ),
         Expanded(
@@ -1328,13 +1336,13 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
             child: state.recordParams.isEmpty
                 // There is no default parameter set: HR assigns one per person
                 // per cycle, and the server refuses feedback without it.
-                ? const Center(
+                ? Center(
                     child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 40),
+                      padding: const EdgeInsets.symmetric(horizontal: 40),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
+                          const Text(
                             'No KPIs assigned',
                             textAlign: TextAlign.center,
                             style: TextStyle(
@@ -1343,8 +1351,8 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          SizedBox(height: 6),
-                          Text(
+                          const SizedBox(height: 6),
+                          const Text(
                             'HR has not assigned feedback parameters for this '
                             'person this cycle, so there is nothing to score yet.',
                             textAlign: TextAlign.center,
@@ -1352,6 +1360,12 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                               color: MColors.inkSoft,
                               fontSize: 13.5,
                             ),
+                          ),
+                          const SizedBox(height: 10),
+                          RaiseTicketLink(
+                            center: true,
+                            label: 'Ask HR to assign them',
+                            about: 'Please assign KPI parameters for ${member.name} for this review cycle, so I can send their feedback.',
                           ),
                         ],
                       ),
@@ -1377,9 +1391,12 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: const Color(0xFFBFE3CC)),
                           ),
-                          child: const Text(
-                            'Submitted — editable until the cycle ends. Updating '
-                            'replaces the review this person sees.',
+                          child: Text(
+                            previousCycle != null
+                                ? 'Submitted — editable until this cycle ends. '
+                                      'Updating replaces the review this person sees.'
+                                : 'Submitted — editable until the cycle ends. Updating '
+                                      'replaces the review this person sees.',
                             style: TextStyle(
                               color: Color(0xFF2F7A4F),
                               fontSize: 12.5,
@@ -1447,8 +1464,20 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                                   foreground: Colors.white,
                                   // Sends straight away — the extra confirmation
                                   // sheet added a step without adding safety.
+                                  //
+                                  // The comment being typed reaches the form
+                                  // when its box lets go of focus, a moment
+                                  // after this tap: Send waits for it, so the
+                                  // length check reads every word.
                                   onTap: complete && !writing
-                                      ? () => bloc.add(const SendFeedback())
+                                      ? () {
+                                          FocusManager.instance.primaryFocus
+                                              ?.unfocus();
+                                          Future<void>.delayed(
+                                            Duration.zero,
+                                            () => bloc.add(const SendFeedback()),
+                                          );
+                                        }
                                       : null,
                                   busy: sending,
                                 ),

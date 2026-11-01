@@ -471,6 +471,10 @@ class ConnectBloc {
   Future<List<ConnectAuthor>> fetchPostLikes(String postId) =>
       _api.fetchPostLikes(postId);
 
+  /// Who voted for one contest entry, A to Z. Read fresh each time.
+  Future<List<ConnectAuthor>> fetchEntryVoters(String postId, String entryId) =>
+      _api.fetchEntryVoters(postId, entryId);
+
   Future<void> toggleReaction(String postId) async {
     await _mutateOptimistically(
       postId,
@@ -635,6 +639,7 @@ class ConnectBloc {
     String text, {
     String? photoPath,
     String? taggedUserId,
+    List<String> mentionedUserIds = const [],
   }) {
     return _mutatePost(
       postId,
@@ -643,12 +648,18 @@ class ConnectBloc {
         text,
         photoPath: photoPath,
         taggedUserId: taggedUserId,
+        mentionedUserIds: mentionedUserIds,
       ),
     );
   }
 
-  Future<void> deleteCaption(String postId) async {
-    await _mutatePost(postId, () => _api.deleteCaption(postId));
+  /// Takes down one of the viewer's own entries: [entryId], or without one
+  /// the latest (Most Likely has only the one tag).
+  Future<void> deleteCaption(String postId, {String? entryId}) async {
+    await _mutatePost(
+      postId,
+      () => _api.deleteCaption(postId, entryId: entryId),
+    );
   }
 
   /// Where each contest's vote is meant to end up while votes are on their

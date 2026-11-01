@@ -66,8 +66,9 @@ class FacePlace {
 typedef FacePunch = Future<DateTime?> Function(String token);
 
 /// The words on the camera for each thing the gate asks: one headline, one
-/// optional line (the camera copy table of the requirements).
-(String, String?, FaceHeadlineTone) faceCopy(FaceProblem problem, {FacePose pose = FacePose.front}) => switch (problem) {
+/// optional line (the camera copy table of the requirements). A setup turn
+/// names the side the ring lights up ([side]; S3, S4).
+(String, String?, FaceHeadlineTone) faceCopy(FaceProblem problem, {FacePose pose = FacePose.front, FaceArrowSide? side}) => switch (problem) {
   FaceProblem.closer => ('Move a little closer', 'Your face should fill most of the oval.', FaceHeadlineTone.fix),
   FaceProblem.dark => ('Too dark here', 'Face a light or a window.', FaceHeadlineTone.fix),
   FaceProblem.bright => ('Turn away from the window', null, FaceHeadlineTone.fix),
@@ -76,7 +77,11 @@ typedef FacePunch = Future<DateTime?> Function(String token);
   FaceProblem.oneFace => ('Only one face in the frame', null, FaceHeadlineTone.fix),
   FaceProblem.spoof => ('Please use your face, not a photo or a screen', null, FaceHeadlineTone.fix),
   FaceProblem.timeout => ('Face not detected', null, FaceHeadlineTone.fix),
-  _ when pose != FacePose.front => ('Turn toward the arrow', null, FaceHeadlineTone.plain),
+  _ when pose != FacePose.front => (
+    side == FaceArrowSide.right ? 'Turn toward the right' : 'Turn toward the left',
+    null,
+    FaceHeadlineTone.plain,
+  ),
   _ => ('Look at the camera', 'Hold the phone at eye level.', FaceHeadlineTone.plain),
 };
 
