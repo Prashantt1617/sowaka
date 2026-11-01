@@ -348,12 +348,19 @@ class _ContestCardPageState extends State<_ContestCardPage> with _FlowMessages {
   }
 
   /// Sends the entry through the bloc; the page closes once it has gone.
-  Future<bool> _submitEntry(ConnectPost post, String text, String? photoPath, String? taggedUserId) async {
+  Future<bool> _submitEntry(
+    ConnectPost post,
+    String text,
+    String? photoPath,
+    String? taggedUserId,
+    List<String> mentionedUserIds,
+  ) async {
     final sent = await flow.bloc.submitCaption(
       post.id,
       text,
       photoPath: photoPath,
       taggedUserId: taggedUserId,
+      mentionedUserIds: mentionedUserIds,
     );
     if (sent && widget.compose && mounted) Navigator.of(context).pop();
     return sent;
@@ -457,9 +464,10 @@ class _ContestCardPageState extends State<_ContestCardPage> with _FlowMessages {
           canManage: canManage,
           onEdit: () => _edit(post),
           onDelete: () => _delete(post),
-          onSubmitCaption: (text, photoPath, taggedUserId) =>
-              _submitEntry(post, text, photoPath, taggedUserId),
-          onDeleteCaption: () => flow.bloc.deleteCaption(post.id),
+          onSubmitCaption: (text, photoPath, taggedUserId, mentionedUserIds) =>
+              _submitEntry(post, text, photoPath, taggedUserId, mentionedUserIds),
+          onDeleteCaption: (entryId) =>
+              flow.bloc.deleteCaption(post.id, entryId: entryId),
           onVoteCaption: (entryId) => flow.bloc.voteCaption(post.id, entryId),
         ),
       ),

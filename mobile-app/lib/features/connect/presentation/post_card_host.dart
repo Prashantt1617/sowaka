@@ -84,14 +84,16 @@ mixin _PostCardHost<T extends StatefulWidget> on State<T> {
           _bloc.addComment(post.id, text, mentions: mentions),
       onAction: ({optionId}) =>
           _bloc.performAction(post.id, optionId: optionId),
-      onSubmitCaption: (text, photoPath, taggedUserId) =>
+      onSubmitCaption: (text, photoPath, taggedUserId, mentionedUserIds) =>
           _bloc.submitCaption(
             post.id,
             text,
             photoPath: photoPath,
             taggedUserId: taggedUserId,
+            mentionedUserIds: mentionedUserIds,
           ),
-      onDeleteCaption: () => _bloc.deleteCaption(post.id),
+      onDeleteCaption: (entryId) =>
+          _bloc.deleteCaption(post.id, entryId: entryId),
       onVoteCaption: (entryId) => _bloc.voteCaption(post.id, entryId),
       onPlayGame: () => _openGame(post),
       onEdit: () => _editPost(post),

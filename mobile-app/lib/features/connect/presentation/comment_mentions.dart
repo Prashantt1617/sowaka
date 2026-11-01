@@ -4,6 +4,9 @@ part of 'connect_feed_screen.dart';
 // opens above the box, and their name goes into the comment as "@Full Name".
 // The server is told who was picked, notifies them, and sends the tags back
 // with the comment so the names can be drawn as links to their profiles.
+//
+// A photo or caption contest's entry box tags the same way, and an entry's
+// words draw their tags as a comment's do.
 
 /// The "@" being typed in one comment box, and the people picked so far.
 class _CommentMentions {
@@ -218,14 +221,32 @@ Widget _commentBody(
   required TextStyle style,
   required Widget plain,
   ValueChanged<String>? onOpenPerson,
+}) => _mentionedText(
+  comment.text,
+  comment.mentions,
+  style: style,
+  plain: plain,
+  onOpenPerson: onOpenPerson,
+);
+
+/// [text] with the [mentions] in it drawn as links to their profiles, after
+/// [prefix] (an opening quote mark) when there is one. Without mentions it
+/// is [plain], exactly as before.
+Widget _mentionedText(
+  String text,
+  List<ConnectMention> mentions, {
+  required TextStyle style,
+  required Widget plain,
+  ValueChanged<String>? onOpenPerson,
+  String prefix = '',
+  Color linkColor = _ConnectColors.blue,
 }) {
-  if (comment.mentions.isEmpty) return plain;
-  final text = comment.text;
+  if (mentions.isEmpty) return plain;
   // Each tag where it stands whole, earliest first, linked to the person the
-  // comment carries for that name. Two people of one name (an older comment)
+  // text carries for that name. Two people of one name (an older comment)
   // are told apart by order: the first such tag is the first of them.
   final byName = <String, List<ConnectMention>>{};
-  for (final mention in comment.mentions) {
+  for (final mention in mentions) {
     (byName[mention.name] ??= []).add(mention);
   }
   final tags = <(int, ConnectMention)>[
@@ -233,7 +254,7 @@ Widget _commentBody(
       for (final (index, at) in _tagsIn(text, name, byName.keys).indexed)
         (at, people[math.min(index, people.length - 1)]),
   ]..sort((a, b) => a.$1.compareTo(b.$1));
-  final spans = <InlineSpan>[];
+  final spans = <InlineSpan>[if (prefix.isNotEmpty) TextSpan(text: prefix)];
   var index = 0;
   for (final (at, tagged) in tags) {
     if (at > index) spans.add(TextSpan(text: text.substring(index, at)));
@@ -246,7 +267,7 @@ Widget _commentBody(
           child: Text(
             '@${tagged.name}',
             style: style.copyWith(
-              color: _ConnectColors.blue,
+              color: linkColor,
               fontWeight: FontWeight.w600,
             ),
           ),

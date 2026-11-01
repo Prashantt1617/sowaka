@@ -299,6 +299,7 @@ class ConnectCaptionEntry {
     this.rank,
     this.createdAt,
     this.taggedBy = const [],
+    this.mentions = const [],
   });
 
   final String id;
@@ -306,6 +307,10 @@ class ConnectCaptionEntry {
   final String name;
   final String initials;
   final String text;
+
+  /// Colleagues tagged with "@" in [text], whose names are drawn as links to
+  /// their profiles. Empty from a server that sends none.
+  final List<ConnectMention> mentions;
 
   /// The picture on a photo-story entry. Null on a caption entry.
   final String? photoUrl;
@@ -343,6 +348,10 @@ class ConnectCaptionEntry {
       taggedBy: [
         for (final value in json['taggedBy'] as List<dynamic>? ?? const [])
           if (value is Map<String, dynamic>) ConnectTagger.fromJson(value),
+      ],
+      mentions: [
+        for (final value in json['mentions'] as List<dynamic>? ?? const [])
+          if (value is Map<String, dynamic>) ConnectMention.fromJson(value),
       ],
     );
   }
@@ -552,6 +561,20 @@ class ConnectPost {
   bool get challengeClosed => body['closed'] == true;
 
   String? get myCaptionEntryId => body['myEntryId'] as String?;
+
+  /// The viewer's own entries, oldest first. A server from before several
+  /// entries each sends only [myCaptionEntryId].
+  List<String> get myCaptionEntryIds {
+    final ids = body['myEntryIds'];
+    if (ids is List) {
+      return [
+        for (final id in ids)
+          if (id is String) id,
+      ];
+    }
+    final one = myCaptionEntryId;
+    return one == null ? const [] : [one];
+  }
   String? get myCaptionVoteEntryId => body['myVoteEntryId'] as String?;
 
   factory ConnectPost.fromJson(Map<String, dynamic> json) {

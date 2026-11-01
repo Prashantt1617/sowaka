@@ -714,13 +714,11 @@ class _ConnectPostCard extends StatefulWidget {
   final ValueChanged<String>? onOpenPerson;
 
   /// Challenge posts only.
-  final Future<bool> Function(
-    String text,
-    String? photoPath,
-    String? taggedUserId,
-  )?
-  onSubmitCaption;
-  final Future<void> Function()? onDeleteCaption;
+  final _SubmitEntry? onSubmitCaption;
+
+  /// Takes down one of the viewer's own entries; null (Most Likely's one
+  /// tag) takes the latest.
+  final Future<void> Function(String? entryId)? onDeleteCaption;
   final Future<void> Function(String entryId)? onVoteCaption;
 
   @override
@@ -2019,13 +2017,11 @@ class _PostBody extends StatelessWidget {
 
   /// Challenge posts only — one entry each, one vote each. `photoPath` is set
   /// on a photo-story challenge, where the entry carries a picture too.
-  final Future<bool> Function(
-    String text,
-    String? photoPath,
-    String? taggedUserId,
-  )?
-  onSubmitCaption;
-  final Future<void> Function()? onDeleteCaption;
+  final _SubmitEntry? onSubmitCaption;
+
+  /// Takes down one of the viewer's own entries; null (Most Likely's one
+  /// tag) takes the latest.
+  final Future<void> Function(String? entryId)? onDeleteCaption;
   final Future<void> Function(String entryId)? onVoteCaption;
 
   @override
