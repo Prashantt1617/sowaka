@@ -11,9 +11,13 @@ import 'support_ui.dart';
 /// Raising a request (node 2896:32536): what it is about, what happened, and
 /// any documents. Pops with the new ticket's thread once the server has it.
 class SupportRequestScreen extends StatefulWidget {
-  const SupportRequestScreen({super.key, required this.shell});
+  const SupportRequestScreen({super.key, required this.shell, this.initialComment});
 
   final SupportShell shell;
+
+  /// The message started for them when the form was opened from a "contact
+  /// HR" line elsewhere in the app (what they were looking at); theirs to edit.
+  final String? initialComment;
 
   @override
   State<SupportRequestScreen> createState() => _SupportRequestScreenState();
@@ -29,6 +33,9 @@ class _SupportRequestScreenState extends State<SupportRequestScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialComment case final text? when text.trim().isNotEmpty) {
+      _comment.text = '${text.trim()}\n\n';
+    }
     _comment.addListener(() => setState(() {}));
     // Read ahead so the sheet opens at once; a failure is reported when the
     // field is tapped, not here.

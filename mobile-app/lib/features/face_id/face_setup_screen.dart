@@ -10,6 +10,7 @@ import 'face_capture_layout.dart';
 import 'face_check_screen.dart';
 import 'face_id_models.dart';
 import 'face_sounds.dart';
+import '../support/support_launcher.dart';
 
 /// Setting up the face check (boards S1–S5), at the first punch the company
 /// checks, after an HR reset, or in onboarding: the intro with the consent
@@ -75,6 +76,10 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
   (String, String?)? _answer;
   bool _fallbackOpen = false;
   String? _fallbackLine;
+
+  /// The face is already set up on someone else's account: nothing to retry
+  /// here; HR has to look, through a Support Desk ticket.
+  bool _elsewhere = false;
   bool _sendingFallback = false;
 
   /// Set up; with the punch time when a punch was made from here.
@@ -244,7 +249,11 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
     }
     final result = FaceCheckResult(passed: false, reason: reason ?? 'not_a_match', message: error.message);
     if (reason == 'already_enrolled_elsewhere') {
-      _again('This face is set up on another account', 'Ask HR to check.');
+      _camera.hold();
+      setState(() {
+        _elsewhere = true;
+        _photos.clear();
+      });
     } else if (result.inconclusive) {
       _again(result.title, null);
     } else {
@@ -347,6 +356,24 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
           onTap: _sendFallback,
           note: '${manager ?? 'Your manager'} will see the time, the location and that the face check didn\'t pass.',
         ),
+      );
+    }
+    if (_elsewhere) {
+      return FaceCameraView(
+        headline: 'This face is set up on another account',
+        line: 'HR can check which account has it.',
+        camera: _camera.controller,
+        dim: true,
+        onClose: _close,
+        action: canRaiseSupportTicket
+            ? FaceCameraAction(
+                label: 'Raise a ticket with HR',
+                onTap: () {
+                  _close();
+                  raiseSupportTicket(about: 'My face check says my face is already set up on another account. Please check which account has it.');
+                },
+              )
+            : null,
       );
     }
     final cameraProblem = _camera.cameraProblem;

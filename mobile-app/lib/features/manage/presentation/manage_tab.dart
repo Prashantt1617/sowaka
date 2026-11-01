@@ -1328,13 +1328,13 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
             child: state.recordParams.isEmpty
                 // There is no default parameter set: HR assigns one per person
                 // per cycle, and the server refuses feedback without it.
-                ? const Center(
+                ? Center(
                     child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 40),
+                      padding: const EdgeInsets.symmetric(horizontal: 40),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
+                          const Text(
                             'No KPIs assigned',
                             textAlign: TextAlign.center,
                             style: TextStyle(
@@ -1343,8 +1343,8 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          SizedBox(height: 6),
-                          Text(
+                          const SizedBox(height: 6),
+                          const Text(
                             'HR has not assigned feedback parameters for this '
                             'person this cycle, so there is nothing to score yet.',
                             textAlign: TextAlign.center,
@@ -1352,6 +1352,12 @@ class _RecordFeedbackState extends State<_RecordFeedback> {
                               color: MColors.inkSoft,
                               fontSize: 13.5,
                             ),
+                          ),
+                          const SizedBox(height: 10),
+                          RaiseTicketLink(
+                            center: true,
+                            label: 'Ask HR to assign them',
+                            about: 'Please assign KPI parameters for ${member.name} for this review cycle, so I can send their feedback.',
                           ),
                         ],
                       ),
