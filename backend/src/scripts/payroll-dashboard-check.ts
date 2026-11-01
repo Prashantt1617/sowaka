@@ -17,6 +17,7 @@ import type { NextFunction, Request, Response } from 'express';
 import {
   attendanceRecords, attendanceRegularizations, companies, connectDb, flexibleSplits, getDb, payHeads, payrollRuns, salaryStructures,
   salaryTemplates, shiftPolicies, shiftTemplates, taxDeclarations, tdsConfigs, users,
+  statutoryConfigs,
 } from '../config/db';
 import { env } from '../config/env';
 import { requirePayrollApp } from '../controllers/employeePayroll.controller';
@@ -27,7 +28,7 @@ import { myDeclaration, myProofs, saveMyDeclaration, uploadMyProof } from '../se
 import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
 import { employeeAppSettingsForHr, seedEmployeePayrollSettings, setEmployeeAppSettingsForHr } from '../services/employeePayroll.settings';
 import { mySplit, reviewSplit, saveSplit, splitForHr, splitWindow } from '../services/employeePayroll.split';
-import { TDS_SEED } from '../shared/payroll/tds';
+import { STATUTORY_SEED, TDS_SEED } from './payroll-config-seed-data';
 import { getOrgShiftPolicy } from '../services/shift.service';
 
 const SCRATCH = 'payroll_dashboard_scratch';
@@ -76,6 +77,8 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
 
   const now = new Date();
   await companies().insertMany([{ id: ORG, name: 'Sowaka (scratch)' }, { id: 'otherco', name: 'Other (scratch)' }] as never[]);
+  // The FY's statutory figures (statutory_configs): the salary estimate reads them.
+  await statutoryConfigs().insertMany(STATUTORY_SEED.map((c) => ({ ...structuredClone(c), createdAt: now, updatedAt: now, updatedByUserId: null })));
   // People punch in and out (the default policy marks everyone present).
   await shiftPolicies().insertOne({ org: ORG, correction: { punchFormat: 'Geotag (powered by Sowaka)' } } as never);
   await users().insertMany([
