@@ -2991,6 +2991,7 @@ class _MemberAttendanceCalendarState extends State<_MemberAttendanceCalendar> {
         .where((item) => item.userId == widget.member.userId)
         .toList(),
     shift: _policy,
+    joinedOn: widget.member.joiningDate,
   );
 
   String? _pendingNoticeFor(AttendanceDayView day) {
