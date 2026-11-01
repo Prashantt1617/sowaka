@@ -563,6 +563,8 @@ class _PayrollHomePageState extends State<_PayrollHomePage> {
         else ...[
           if (home.salary case final salary? when home.hasSalaryStructure)
             _SalaryCard(salary: salary, onUnpaidDays: _fixPunches)
+          else if (home.salaryNotSetUp case final notSetUp?)
+            _SalaryNotSetUpCard(period: home.period, notSetUp: notSetUp)
           else
             const _HubEmptyState(
               iconAsset: 'assets/icons/request_reimbursement_money.png',
@@ -761,6 +763,66 @@ class _PayrollHomePageState extends State<_PayrollHomePage> {
   }
 }
 
+/// What the loss-of-pay line says when opened: the pay period's base days,
+/// as the run divides by them ([baseDays] from the server), never the
+/// calendar month's.
+String payrollLopTip(int? baseDays) {
+  final perDay = baseDays == null
+      ? 'monthly pay ÷ the paid days in this pay period'
+      : 'monthly pay ÷ $baseDays paid days in this pay period';
+  return 'Days without pay in this pay period: absences, half days and '
+      'punches not fixed. Loss of pay = $perDay × days lost.';
+}
+
+/// What the Estimate pill opens to: the attendance it is worked out from.
+String payrollEstimateNote(PayrollSalary salary) {
+  final from = salary.periodFrom;
+  final to = salary.periodTo;
+  final days = from == null || to == null
+      ? 'in this pay period'
+      : 'in this pay period (${_short(from)} – ${_short(to)})';
+  return 'Worked out from your attendance $days till today. It can change '
+      'if leave or punches change before payroll runs.';
+}
+
+/// The salary card when the pay can't be worked out yet: what is missing and
+/// who sets it up, with no figures.
+class _SalaryNotSetUpCard extends StatelessWidget {
+  const _SalaryNotSetUpCard({required this.period, required this.notSetUp});
+
+  final String period;
+  final PayrollSalaryNotSetUp notSetUp;
+
+  @override
+  Widget build(BuildContext context) {
+    final month = payrollMonth(period);
+    return _FormCard(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${month == null ? 'This month' : _monthName(month.month)} salary'
+                    .toUpperCase(),
+                style: _PrText.label,
+              ),
+            ),
+            const _PrPill('Not set up', color: _Q.gold, tint: _Q.goldTint),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Text(
+          notSetUp.message,
+          key: const ValueKey('payroll-salary-not-set-up'),
+          style: _PrText.sub,
+        ),
+        if (mentionsHrOrSupport(notSetUp.message))
+          RaiseTicketLink(about: notSetUp.message),
+      ],
+    );
+  }
+}
+
 /// The month's salary, as a bill: the take-home on top, then each line that
 /// makes it, each opening to say what it is.
 class _SalaryCard extends StatefulWidget {
@@ -805,10 +867,7 @@ class _SalaryCardState extends State<_SalaryCard> {
                   'Loss of pay · ${_payDays(salary.lopDays)} '
                   '${salary.lopDays == 1 ? 'day' : 'days'}',
               value: '− ${_rupees(salary.lopPaise)}',
-              info:
-                  'Days without pay this month: absences, half days and '
-                  'punches not fixed. A day\'s pay is your gross divided by '
-                  'the days in the month.',
+              info: payrollLopTip(salary.baseDays),
               unpaidLink: true,
             ),
           if (salary.overtimePaise > 0)
@@ -877,11 +936,7 @@ class _SalaryCardState extends State<_SalaryCard> {
         ),
         if (_estimateOpen) ...[
           const SizedBox(height: 8),
-          const Text(
-            'Worked out from your attendance till today. It can change if '
-            'leave or punches change before payroll runs.',
-            style: _PrText.sub,
-          ),
+          Text(payrollEstimateNote(salary), style: _PrText.sub),
         ],
         const SizedBox(height: 10),
         const Divider(height: 1, thickness: 1, color: Color(0xFFEBEBEB)),

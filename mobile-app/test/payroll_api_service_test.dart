@@ -8,6 +8,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mobile_app/features/payroll/data/payroll_api_service.dart';
 import 'package:mobile_app/features/payroll/data/payroll_models.dart';
+import 'package:mobile_app/features/quick_actions/presentation/quick_actions_screen.dart'
+    show payrollLopTip;
 
 import 'payroll_test_server.dart';
 
@@ -37,6 +39,57 @@ void main() {
     expect(home.todo.first.count, 12);
     expect(home.missingPunches!.count, 12);
     expect(home.todo[1].effectiveFrom, DateTime(2026, 11));
+  });
+
+  test('reads the pay period\'s dates and base days on the salary', () async {
+    final home = await _service(FakePayrollServer().client).fetchHome();
+    final salary = home.salary!;
+    expect(salary.periodFrom, DateTime(2026, 10, 26));
+    expect(salary.periodTo, DateTime(2026, 11, 25));
+    expect(salary.baseDays, 30);
+    expect(home.salaryNotSetUp, isNull);
+
+    final older = await _service(
+      (FakePayrollServer()..baseDays = null).client,
+    ).fetchHome();
+    expect(older.salary!.baseDays, isNull);
+    expect(older.salary!.periodFrom, isNull);
+  });
+
+  test('reads a salary that is not set up: no figures, the reason', () async {
+    final home = await _service(
+      (FakePayrollServer()..statutorySetUp = false).client,
+    ).fetchHome();
+    expect(home.salary, isNull);
+    expect(home.hasSalaryStructure, isTrue);
+    expect(home.salaryNotSetUp!.reason, 'statutory_not_set_up');
+    expect(home.salaryNotSetUp!.fy, '2026-27');
+    expect(home.salaryNotSetUp!.message, endsWith('Ask HR.'));
+    expect(home.todo, isNotEmpty);
+
+    final bare = PayrollHome.fromJson({
+      'period': '2026-11',
+      'hasSalaryStructure': true,
+      'salary': null,
+      'salaryNotSetUp': {'notConfigured': true, 'reason': 'x'},
+      'todo': <dynamic>[],
+    });
+    expect(bare.salaryNotSetUp!.message, PayrollSalaryNotSetUp.fallback);
+  });
+
+  test('the loss-of-pay tip uses the base days, generic without', () {
+    expect(
+      payrollLopTip(26),
+      contains(
+        'Loss of pay = monthly pay ÷ 26 paid days in this pay period '
+        '× days lost.',
+      ),
+    );
+    expect(
+      payrollLopTip(null),
+      contains('monthly pay ÷ the paid days in this pay period × days lost'),
+    );
+    expect(payrollLopTip(31), isNot(contains('days in the month')));
   });
 
   test('sends the bearer token and a period when asked', () async {
@@ -213,5 +266,10 @@ void main() {
 
     final crash = await failWith(500, {});
     expect(payrollErrorText(crash), PayrollApiException.failed);
+
+    // A 409 with no words still tells the person who can change it.
+    final locked = await failWith(409, {'success': false});
+    expect(payrollErrorText(locked), PayrollApiException.conflict);
+    expect(PayrollApiException.conflict, endsWith('Ask HR.'));
   });
 }

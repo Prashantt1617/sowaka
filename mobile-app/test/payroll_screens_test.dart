@@ -185,6 +185,66 @@ void main() {
     expect(find.textContaining('overtime rule'), findsOneWidget);
   });
 
+  testWidgets('Payroll home: loss of pay is explained on the pay period', (
+    tester,
+  ) async {
+    await pumpPayroll(tester);
+    await tap(tester, find.text('Loss of pay · 2 days'));
+    expect(
+      find.textContaining(
+        'Loss of pay = monthly pay ÷ 30 paid days in this pay period × '
+        'days lost.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('days in the month'), findsNothing);
+
+    // The estimate says which days it is worked out from.
+    await tap(tester, find.byKey(const ValueKey('payroll-estimate')));
+    expect(
+      find.textContaining('in this pay period (26 Oct – 25 Nov) till today'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Payroll home: no base days from the server, generic words', (
+    tester,
+  ) async {
+    await pumpPayroll(tester, server: FakePayrollServer()..baseDays = null);
+    await tap(tester, find.text('Loss of pay · 2 days'));
+    expect(
+      find.textContaining(
+        'monthly pay ÷ the paid days in this pay period × days lost',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('days in the month'), findsNothing);
+  });
+
+  testWidgets(
+    'Payroll home: no statutory settings, the salary says not set up',
+    (tester) async {
+      await pumpPayroll(
+        tester,
+        server: FakePayrollServer()..statutorySetUp = false,
+      );
+      expect(find.byKey(const ValueKey('payroll-home')), findsOneWidget);
+      expect(find.text('Not set up'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('payroll-salary-not-set-up')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('FY 2026-27 are not set up'), findsOneWidget);
+      // No made-up figures, no error page; the rest of home still shows.
+      expect(find.text('Gross salary'), findsNothing);
+      expect(find.text('Estimate'), findsNothing);
+      expect(find.text('Try again'), findsNothing);
+      expect(find.text('Choose tax regime'), findsOneWidget);
+      expect(find.text('Fix 12 missing punches'), findsOneWidget);
+      await capture(tester, payroll(), 'payroll_home_not_set_up');
+    },
+  );
+
   testWidgets('home → Change my split → Review → Submit', (tester) async {
     final server = await pumpPayroll(tester);
     await tap(

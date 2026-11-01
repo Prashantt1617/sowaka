@@ -83,13 +83,26 @@ class PayrollSalary {
     required this.takeHomePaise,
     this.overtimePaise = 0,
     this.payslipId,
+    this.periodFrom,
+    this.periodTo,
+    this.baseDays,
   });
 
+  /// The pay period ("2026-11"), as the company pays it: with a 26th-to-25th
+  /// cycle, November's runs from 26 October.
   final String period;
 
   /// "estimate" | "final".
   final String status;
   final String? payslipId;
+
+  /// The pay period's first and last day, when the server sends them.
+  final DateTime? periodFrom;
+  final DateTime? periodTo;
+
+  /// The days the month's pay is spread over in this pay period (loss of pay
+  /// is the pay divided by these, times the days lost); null when not sent.
+  final int? baseDays;
   final int grossPaise;
   final double lopDays;
   final int lopPaise;
@@ -109,6 +122,12 @@ class PayrollSalary {
         ? 'estimate'
         : _string(json['status']),
     payslipId: _stringOrNull(json['payslipId']),
+    periodFrom: payrollDate(json['periodFrom']),
+    periodTo: payrollDate(json['periodTo']),
+    baseDays: switch (json['baseDays']) {
+      final num n when n > 0 => n.toInt(),
+      _ => null,
+    },
     grossPaise: _paise(json['grossPaise']),
     lopDays: _number(json['lopDays']),
     lopPaise: _paise(json['lopPaise']),
@@ -120,6 +139,32 @@ class PayrollSalary {
     reimbursementsPaise: _paise(json['reimbursementsPaise']),
     takeHomePaise: _paise(json['takeHomePaise']),
   );
+}
+
+/// Why the month's pay can't be shown yet: something HR sets up is missing
+/// (the year's statutory settings, or the pay cycle). Shown instead of
+/// figures; [message] is the server's, ending "Ask HR.".
+class PayrollSalaryNotSetUp {
+  const PayrollSalaryNotSetUp({
+    required this.reason,
+    required this.message,
+    this.fy,
+  });
+
+  /// "statutory_not_set_up" | "pay_period_not_set_up" | ….
+  final String reason;
+  final String message;
+  final String? fy;
+
+  static const fallback =
+      'Your pay can\'t be worked out yet: payroll is not fully set up. Ask HR.';
+
+  factory PayrollSalaryNotSetUp.fromJson(Map<String, dynamic> json) =>
+      PayrollSalaryNotSetUp(
+        reason: _string(json['reason']),
+        message: _stringOrNull(json['message']) ?? fallback,
+        fy: _stringOrNull(json['fy']),
+      );
 }
 
 /// Something on the Payroll home that needs doing, and by when.
@@ -233,6 +278,7 @@ class PayrollHome {
     required this.hasSalaryStructure,
     required this.todo,
     this.salary,
+    this.salaryNotSetUp,
     this.missingPunches,
     this.declaration,
   });
@@ -241,12 +287,17 @@ class PayrollHome {
   final String fy;
   final bool hasSalaryStructure;
   final PayrollSalary? salary;
+
+  /// Set (and [salary] null) when the pay can't be worked out until HR sets
+  /// something up: the card says so rather than show made-up figures.
+  final PayrollSalaryNotSetUp? salaryNotSetUp;
   final List<PayrollTodo> todo;
   final PayrollMissingPunches? missingPunches;
   final PayrollDeclarationState? declaration;
 
   factory PayrollHome.fromJson(Map<String, dynamic> json) {
     final salary = json['salary'];
+    final notSetUp = json['salaryNotSetUp'];
     final missing = json['missingPunches'];
     final declaration = json['declaration'];
     return PayrollHome(
@@ -255,6 +306,9 @@ class PayrollHome {
       hasSalaryStructure: json['hasSalaryStructure'] != false,
       salary: salary is Map<String, dynamic>
           ? PayrollSalary.fromJson(salary)
+          : null,
+      salaryNotSetUp: notSetUp is Map<String, dynamic>
+          ? PayrollSalaryNotSetUp.fromJson(notSetUp)
           : null,
       todo: _list(json['todo']).map(PayrollTodo.fromJson).toList(),
       missingPunches: missing is Map<String, dynamic>
