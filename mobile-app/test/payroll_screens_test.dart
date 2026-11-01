@@ -19,6 +19,7 @@ import 'package:mobile_app/features/manager/bloc/manager_bloc.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
 import 'package:mobile_app/features/payroll/data/payroll_api_service.dart';
 import 'package:mobile_app/features/quick_actions/presentation/quick_actions_screen.dart';
+import 'package:mobile_app/features/support/support_launcher.dart';
 
 import 'payroll_test_server.dart';
 
@@ -148,6 +149,7 @@ void main() {
     expect(find.text('Gross salary'), findsOneWidget);
     expect(find.text('Loss of pay · 2 days'), findsOneWidget);
     expect(find.text('− ₹6,000'), findsOneWidget);
+    expect(find.text('Overtime'), findsNothing);
     expect(find.text('Income tax (TDS)'), findsOneWidget);
     expect(find.text('Fix 12 missing punches'), findsOneWidget);
     expect(find.text('Choose tax regime'), findsOneWidget);
@@ -170,6 +172,17 @@ void main() {
     expect(find.text('Payslips'), findsOneWidget);
     expect(find.text('FBP'), findsOneWidget);
     await capture(tester, payroll(), 'payroll_home_scrolled');
+  });
+
+  testWidgets('Payroll home: approved overtime is a line of its own', (
+    tester,
+  ) async {
+    final server = FakePayrollServer()..overtimePaise = 125000;
+    await pumpPayroll(tester, server: server);
+    expect(find.text('Overtime'), findsOneWidget);
+    expect(find.text('+ ₹1,250'), findsOneWidget);
+    await tap(tester, find.text('Overtime'));
+    expect(find.textContaining('overtime rule'), findsOneWidget);
   });
 
   testWidgets('home → Change my split → Review → Submit', (tester) async {
@@ -297,6 +310,40 @@ void main() {
       ),
     );
     expect(plus.onTap, isNull);
+  });
+
+  group('contact HR goes to a Support Desk ticket', () {
+    final opened = <String?>[];
+    void opener({String? about}) => opened.add(about);
+    setUp(() {
+      opened.clear();
+      registerSupportTicketOpener(opener);
+    });
+    tearDown(() => unregisterSupportTicketOpener(opener));
+
+    testWidgets('"Can\'t find a payslip?" raises a ticket about it', (
+      tester,
+    ) async {
+      await pumpPayroll(tester);
+      await tap(tester, find.byKey(const ValueKey('payroll-payslips')));
+      await tap(tester, find.byKey(const ValueKey('payslips-raise-ticket')));
+      expect(opened, ['I can\'t find a payslip:']);
+    });
+
+    testWidgets('a page that says "Ask HR" carries the ticket link', (
+      tester,
+    ) async {
+      await pumpPayroll(
+        tester,
+        server: FakePayrollServer()..taxRulesSetUp = false,
+      );
+      await tap(tester, find.byKey(const ValueKey('payroll-tax')));
+      expect(find.textContaining('Ask HR.'), findsOneWidget);
+      await tap(tester, find.byKey(const ValueKey('raise-ticket-link')));
+      expect(opened, [
+        'The income tax rules for FY 2026-27 are not set up yet. Ask HR.',
+      ]);
+    });
   });
 
   testWidgets('declaration: caps, the regime switch, submit', (tester) async {
@@ -472,6 +519,17 @@ void main() {
     await capture(tester, payroll(), 'payslip_scrolled');
   });
 
+  testWidgets('a payslip with overtime shows it as an earning', (tester) async {
+    await pumpPayroll(
+      tester,
+      server: FakePayrollServer()..overtimePaise = 125000,
+    );
+    await tap(tester, find.byKey(const ValueKey('payroll-payslips')));
+    await tap(tester, find.text('August 2026'));
+    expect(find.text('Overtime'), findsOneWidget);
+    expect(find.text('₹1,250'), findsOneWidget);
+  });
+
   testWidgets('Actions › Payroll, and its missing punches in Attendance', (
     tester,
   ) async {
@@ -529,8 +587,12 @@ void main() {
     // The Attendance list, on its Missed punch heading, under Payroll's name.
     expect(find.byKey(const ValueKey('calendar')), findsOneWidget);
     expect(find.text('Missing punches'), findsOneWidget);
-    expect(find.byKey(const ValueKey('calendar-note')), findsOneWidget);
     final missing = _missedDays().length;
+    // Early in a month there are no past days to miss: no note then.
+    expect(
+      find.byKey(const ValueKey('calendar-note')),
+      missing > 0 ? findsOneWidget : findsNothing,
+    );
     if (missing > 0) {
       expect(
         find.textContaining(

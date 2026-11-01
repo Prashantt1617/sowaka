@@ -64,4 +64,34 @@ void main() {
     );
     expect(slip.lines.map((l) => l.name), ['Absent days', 'Half days']);
   });
+
+  test('overtime on a payslip is read and rendered', () async {
+    final slip = Payslip.fromJson(
+      {'period': '2026-09', 'status': 'paid'},
+      {
+        'id': 'y',
+        'period': '2026-09',
+        'employeeName': 'Asha Test',
+        'employeeId': 'E1',
+        'earnings': [
+          {'name': 'Basic', 'fullPaise': 2500000, 'paidPaise': 2500000},
+        ],
+        'deductions': [],
+        'netPayablePaise': 2560484,
+        'reimbursementsPaise': 0,
+        'inputs': {
+          'workingDays': 31,
+          'lopDays': 0,
+          'payableDays': 31,
+          'overtimePaise': 60484,
+        },
+      },
+    );
+    expect(slip.overtimePaise, 60484);
+    final bytes = await buildPayslipPdf(
+      slip: slip,
+      company: const PayslipCompany(name: 'Sowaka', address: ''),
+    );
+    expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
+  });
 }

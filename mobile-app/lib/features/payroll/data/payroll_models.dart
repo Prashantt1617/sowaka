@@ -81,6 +81,7 @@ class PayrollSalary {
     required this.netPaise,
     required this.reimbursementsPaise,
     required this.takeHomePaise,
+    this.overtimePaise = 0,
     this.payslipId,
   });
 
@@ -92,6 +93,9 @@ class PayrollSalary {
   final int grossPaise;
   final double lopDays;
   final int lopPaise;
+
+  /// Approved overtime paid on the released payslip (0 on an estimate).
+  final int overtimePaise;
   final List<PayrollDeduction> deductions;
   final int netPaise;
   final int reimbursementsPaise;
@@ -108,6 +112,7 @@ class PayrollSalary {
     grossPaise: _paise(json['grossPaise']),
     lopDays: _number(json['lopDays']),
     lopPaise: _paise(json['lopPaise']),
+    overtimePaise: _paise(json['overtimePaise']),
     deductions: _list(
       json['deductions'],
     ).map(PayrollDeduction.fromJson).toList(),

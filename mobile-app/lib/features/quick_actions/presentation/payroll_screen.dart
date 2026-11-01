@@ -36,7 +36,8 @@ class PayrollScreen extends StatefulWidget {
   final VoidCallback onQuickCreate;
   final ValueChanged<PayrollMissingPunches?> onFixMissingPunches;
 
-  /// "Can't find a payslip?" — the Support desk.
+  /// "Can't find a payslip?" when no signed-in shell can raise a Support
+  /// Desk ticket itself ([raiseSupportTicket]): the desk.
   final VoidCallback? onRaiseTicket;
   final PayrollFilePicker? pickFile;
 
@@ -456,11 +457,19 @@ class _PrError extends StatelessWidget {
   final VoidCallback onRetry;
 
   @override
-  Widget build(BuildContext context) => _HubEmptyState(
-    iconAsset: 'assets/icons/request_reimbursement_money.png',
-    text: message,
-    buttonLabel: 'Try again',
-    onTap: onRetry,
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _HubEmptyState(
+        iconAsset: 'assets/icons/request_reimbursement_money.png',
+        text: message,
+        buttonLabel: 'Try again',
+        onTap: onRetry,
+      ),
+      // "… not set up yet. Ask HR.": the way to HR, as a Support Desk ticket.
+      if (mentionsHrOrSupport(message))
+        RaiseTicketLink(about: message, center: true),
+    ],
   );
 }
 
@@ -802,6 +811,15 @@ class _SalaryCardState extends State<_SalaryCard> {
                   'the days in the month.',
               unpaidLink: true,
             ),
+          if (salary.overtimePaise > 0)
+            (
+              label: 'Overtime',
+              value: '+ ${_rupees(salary.overtimePaise)}',
+              info:
+                  'Your approved overtime this month, paid by your salary '
+                  'template\'s overtime rule.',
+              unpaidLink: false,
+            ),
           for (final d in salary.deductions)
             (
               label: d.label,
@@ -1070,11 +1088,17 @@ class _PayslipsPageState extends State<_PayslipsPage> {
             );
           },
         ),
-        if (raiseTicket != null) ...[
+        if (raiseTicket != null || canRaiseSupportTicket) ...[
           const SizedBox(height: 16),
           Center(
             child: InkWell(
-              onTap: raiseTicket,
+              key: const ValueKey('payslips-raise-ticket'),
+              // Straight to a new Support Desk ticket (PR #101), else the desk.
+              onTap: () {
+                if (!raiseSupportTicket(about: 'I can\'t find a payslip:')) {
+                  raiseTicket?.call();
+                }
+              },
               borderRadius: BorderRadius.circular(8),
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),

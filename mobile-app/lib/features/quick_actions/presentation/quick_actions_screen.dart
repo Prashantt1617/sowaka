@@ -6446,44 +6446,6 @@ class _HubRequestCard extends StatelessWidget {
   }
 }
 
-/// The "View details" line every history card carries.
-class _ViewDetailsLink extends StatelessWidget {
-  const _ViewDetailsLink({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Align(
-    alignment: Alignment.centerLeft,
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'View details',
-              style: TextStyle(
-                color: Color(0xFF0571A6),
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            SizedBox(width: 3),
-            Icon(
-              Icons.chevron_right_rounded,
-              size: 15,
-              color: Color(0xFF0571A6),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
 /// A policy in the list: its name, and the company's line about it when it
 /// wrote one, in the app's own palette.
 class _PolicyRow extends StatelessWidget {

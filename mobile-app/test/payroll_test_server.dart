@@ -74,6 +74,12 @@ class FakePayrollServer {
   static const pool = 600000;
   bool splitOpen = true;
 
+  /// Overtime on the payslips and on Home's salary; 0 leaves it off Home.
+  int overtimePaise = 0;
+
+  /// False: the declaration answers 409 tax_rules_not_set_up ("… Ask HR.").
+  bool taxRulesSetUp = true;
+
   /// The first month a change made now applies to; moving it between Review
   /// and Submit makes the save a 409.
   String windowMonth = '2026-11';
@@ -173,6 +179,14 @@ class FakePayrollServer {
       return payrollJson({'success': true, 'split': _split()});
     }
     if (path == '/payroll/tax-declaration' && request.method == 'GET') {
+      if (!taxRulesSetUp) {
+        return payrollJson({
+          'success': false,
+          'message':
+              'The income tax rules for FY 2026-27 are not set up yet. Ask HR.',
+          'details': {'reason': 'tax_rules_not_set_up', 'fy': '2026-27'},
+        }, 409);
+      }
       return payrollJson({'success': true, 'declaration': _declaration()});
     }
     if (path == '/payroll/tax-declaration' && request.method == 'PUT') {
@@ -235,6 +249,7 @@ class FakePayrollServer {
       'grossPaise': 9000000,
       'lopDays': 2,
       'lopPaise': 600000,
+      if (overtimePaise > 0) 'overtimePaise': overtimePaise,
       'deductions': [
         {'key': 'epf', 'label': 'Provident fund', 'amountPaise': 180000},
         {
@@ -507,6 +522,7 @@ class FakePayrollServer {
           'workingDays': 31,
           'payableDays': 31 - lopDays,
           'lopDays': lopDays,
+          'overtimePaise': overtimePaise,
           'attendanceDeductions': lopDays > 0
               ? [
                   {
