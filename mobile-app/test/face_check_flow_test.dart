@@ -463,7 +463,9 @@ void main() {
   testWidgets('setup: the intro, three photos with the ring\'s side, all three sent, then you\'re set up', (tester) async {
     final host = await slide(tester, enrolled: false);
     await settle(tester);
-    expect(find.text('Set up your Face ID'), findsOneWidget);
+    expect(find.text('Set up your face check'), findsOneWidget);
+    // "Face ID" is Apple's name for its own feature; ours is the face check.
+    expect(find.textContaining('Face ID'), findsNothing);
     expect(find.text('One time setup. After this, punching in is a glance at the camera.'), findsOneWidget);
     for (final step in ['Step 1', 'Step 2', 'Step 3']) {
       expect(find.text(step), findsOneWidget);
@@ -480,7 +482,7 @@ void main() {
     await tester.tapAt(const Offset(20, 40));
     await settle(tester);
 
-    await tester.tap(find.text('Set up Face ID'));
+    await tester.tap(find.text('Set up face check'));
     await settle(tester);
     expect(_headline(tester), 'Look at the camera');
     expect(_line(tester), isNull);
@@ -531,7 +533,7 @@ void main() {
   testWidgets('setup: the ring\'s side pulses once the turn is slow, with no new words', (tester) async {
     await slide(tester, enrolled: false);
     await settle(tester);
-    await tester.tap(find.text('Set up Face ID'));
+    await tester.tap(find.text('Set up face check'));
     await settle(tester);
     _camera.bursts();
     await tester.pump();

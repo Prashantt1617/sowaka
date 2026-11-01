@@ -479,7 +479,7 @@ class FaceSetupIntro extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        'Set up your Face ID',
+                        'Set up your face check',
                         textAlign: TextAlign.center,
                         style: _sora(20, FontWeight.w600, _text, height: 24 / 20, spacing: 0.4),
                       ),
@@ -546,7 +546,7 @@ class FaceSetupIntro extends StatelessWidget {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                         ),
                         child: Text(
-                          'Set up Face ID',
+                          'Set up face check',
                           style: _sora(16, FontWeight.w600, Colors.white, height: 24 / 16, spacing: -0.16),
                         ),
                       ),
