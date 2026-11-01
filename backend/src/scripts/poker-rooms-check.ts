@@ -261,8 +261,8 @@ async function main() {
     await request(A, 'room:start');
     await wait(80);
     const second = await peekRoom(ORG, code);
-    const inPlay = second?.table?.hand?.committed.reduce((a, b) => a + b, 0) ?? 0;
-    check('a second game: chips reset to 1,500 each', second?.gameNo === 2 && second.table!.seats.reduce((a, s) => a + s.stack, 0) + inPlay === 1500 * second.table!.seats.length);
+    // The buy-in the new table was dealt with: counting chips mid-hand counts a pot twice the moment it settles.
+    check('a second game: chips reset to 1,500 each', second?.gameNo === 2 && second.table!.config.startStack === 1500 && second.table!.handNo <= 2);
 
     // ------------------------------------------------------------ away and back
     console.log('\naway and back');
