@@ -115,6 +115,8 @@ export async function meOf(userId: string): Promise<{ user: Omit<User, 'profileP
 
 export const dayOf = (d: Date) => d.toISOString().slice(0, 10);
 export const periodOf = (d: Date) => d.toISOString().slice(0, 7);
+/** The month it is in India right now (the app's own month), not UTC's: they differ for the first 5½ hours of each month. */
+export const istPeriodOf = (d: Date) => new Date(d.getTime() + 5.5 * 3_600_000).toISOString().slice(0, 7);
 
 export function daysInMonth(period: string): number {
   const [y, m] = period.split('-').map(Number);
@@ -134,15 +136,15 @@ export function dayInMonth(period: string, day: number): string {
 }
 
 export function parsePeriodParam(raw: unknown, now: Date): string {
-  if (raw === undefined || raw === null || raw === '') return periodOf(now);
+  if (raw === undefined || raw === null || raw === '') return istPeriodOf(now);
   const p = String(raw);
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(p)) throw new EmployeePayrollError(400, 'period is like 2026-10');
-  if (p > periodOf(now)) throw new EmployeePayrollError(400, 'That month has not started yet');
+  if (p > istPeriodOf(now)) throw new EmployeePayrollError(400, 'That month has not started yet');
   return p;
 }
 
 export function parseFyParam(raw: unknown, now: Date): string {
-  if (raw === undefined || raw === null || raw === '') return fyOf(periodOf(now)).fy;
+  if (raw === undefined || raw === null || raw === '') return fyOf(istPeriodOf(now)).fy;
   const fy = String(raw);
   const m = /^(\d{4})-(\d{2})$/.exec(fy);
   if (!m || (Number(m[1]) + 1) % 100 !== Number(m[2])) throw new EmployeePayrollError(400, 'fy is like 2026-27');

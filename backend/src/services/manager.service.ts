@@ -874,8 +874,11 @@ export async function upsertFeedback(
     }
     if (note.length > 1000) throw new ManagerError(400, 'Feedback note is too long');
     // A sent review explains every score in words (HR asked for it on
-    // 31 Oct 2026): a draft may still be half written.
-    if (effectiveStatus === 'sent' && note.length < FEEDBACK_NOTE_MIN) {
+    // 31 Oct 2026): a draft may still be half written. A review sent before
+    // the rule keeps its shorter comments until one of them is rewritten.
+    const previousNote = (previous?.parameters ?? []).find((p) => p.parameterId === expected.id)?.note ?? '';
+    const sendingNow = status === 'sent' && previous?.status !== 'sent';
+    if (effectiveStatus === 'sent' && note.length < FEEDBACK_NOTE_MIN && (sendingNow || note !== previousNote)) {
       throw new ManagerError(
         400,
         `Write at least ${FEEDBACK_NOTE_MIN} characters in each comment before sending. "${expected.title}" has ${note.length}.`,

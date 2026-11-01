@@ -128,7 +128,8 @@ defineTools(
       // The PF ceilings of the FY row(s) the two months fall in; a change is a step that differs from the one before it.
       const cfgNow = await statutoryConfigForPeriod(cur.period);
       const cfgBefore = prev ? await statutoryConfigForPeriod(prev.period) : cfgNow;
-      const steps = [...(cfgBefore === cfgNow ? [] : cfgBefore.epf.wageCeilings), ...cfgNow.epf.wageCeilings];
+      const sameConfig = JSON.stringify(cfgBefore.epf.wageCeilings) === JSON.stringify(cfgNow.epf.wageCeilings);
+      const steps = [...(sameConfig ? [] : cfgBefore.epf.wageCeilings), ...cfgNow.epf.wageCeilings];
       const ceilingChange = steps.filter((s, k) => k > 0 && s.ceilingPaise !== steps[k - 1].ceilingPaise && s.from >= from && s.from <= to);
       const ceilNow = epfCeilingForPeriod(cfgNow, cur.period), ceilBefore = prev ? epfCeilingForPeriod(cfgBefore, prev.period) : ceilNow;
       // The ceiling only matters to someone whose PF wage reached it in either month.

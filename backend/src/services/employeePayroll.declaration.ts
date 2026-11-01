@@ -187,6 +187,8 @@ export async function saveMyDeclaration(userId: string, fyRaw: unknown, body: Re
     },
     { upsert: true },
   );
+  // New items (or a new regime) may have no proof yet: the proof state follows the items, not the last upload.
+  await syncProofState(org, userId, fy);
   return declarationView(org, userId, fy, now);
 }
 
@@ -288,14 +290,18 @@ export async function uploadMyProof(
 
   const stored = await storage.upload(org, userId, { originalName: file.originalname, contentType: file.mimetype, size: file.size, bytes: file.buffer });
   const fileName = (file.originalname || 'proof').normalize('NFC').slice(-120);
-  await investmentProofs().updateOne(
-    { org, userId, fy, item },
-    {
-      $set: { org, userId, fy, item, status: 'uploaded', amountPaise: amount, objectKey: stored.objectKey, fileName, contentType: file.mimetype, size: file.size, uploadedAt: now },
-      $unset: { decidedAt: '', decidedByUserId: '', reason: '' },
-    },
-    { upsert: true },
-  );
+  const write = {
+    $set: { org, userId, fy, item, status: 'uploaded' as const, amountPaise: amount, objectKey: stored.objectKey, fileName, contentType: file.mimetype, size: file.size, uploadedAt: now },
+    $unset: { decidedAt: '', decidedByUserId: '', reason: '' } as const,
+  };
+  // HR may have approved it since it was read: an approved proof is never written over.
+  const replaced = existing
+    ? await investmentProofs().updateOne({ _id: existing._id, status: { $ne: 'approved' } }, write)
+    : await investmentProofs().updateOne({ org, userId, fy, item }, write, { upsert: true });
+  if (existing && replaced.matchedCount === 0) {
+    await storage.remove(stored.objectKey).catch(() => undefined);
+    throw new EmployeePayrollError(409, 'This proof was approved just now, so it can\'t be replaced. If it needs to change, ask HR.', { reason: 'proof_approved' });
+  }
   // The file it replaces is no longer anyone's: best effort, a failure leaves an orphan, not an error.
   if (existing?.objectKey && existing.objectKey !== stored.objectKey) await storage.remove(existing.objectKey).catch(() => undefined);
   await syncProofState(org, userId, fy);
