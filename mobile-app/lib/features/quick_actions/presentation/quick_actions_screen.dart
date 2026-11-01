@@ -134,6 +134,7 @@ class AttendanceDayView {
     this.earlyOut = false,
     this.needsCorrection = false,
     this.correctionPending = false,
+    this.beforeJoining = false,
   });
 
   final DateTime date;
@@ -166,6 +167,10 @@ class AttendanceDayView {
   /// being red once the correction is approved.
   bool get unresolved => needsCorrection || correctionPending;
 
+  /// A day before this person joined: drawn blank like a day to come, but
+  /// not theirs to record, correct or take leave on.
+  final bool beforeJoining;
+
   AttendanceDayView copyWith({
     bool? needsCorrection,
     bool? correctionPending,
@@ -183,6 +188,7 @@ class AttendanceDayView {
     earlyOut: earlyOut,
     needsCorrection: needsCorrection ?? this.needsCorrection,
     correctionPending: correctionPending ?? this.correctionPending,
+    beforeJoining: beforeJoining,
   );
 }
 
@@ -269,6 +275,7 @@ List<AttendanceDayView> buildAttendanceDays({
           kind: AttendanceKind.future,
           title: 'Before joining',
           cellLabel: '',
+          beforeJoining: true,
         );
       }
       if (holiday != null) {
@@ -533,6 +540,7 @@ AttendanceDayView _settledByServer(
     },
     _ => (local.kind, local.cellLabel, local.title),
   };
+  final beforeJoining = server.status == 'before_joining';
   if (server.byHr) {
     // HR's word, whatever the punches said. Nothing left to correct.
     return AttendanceDayView(
@@ -544,6 +552,7 @@ AttendanceDayView _settledByServer(
       regularization: local.regularization,
       leave: local.leave,
       holiday: local.holiday,
+      beforeJoining: beforeJoining,
     );
   }
   // Same verdict: the app's reading says more (hours, late, early out).
@@ -567,6 +576,7 @@ AttendanceDayView _settledByServer(
     late: local.late,
     earlyOut: local.earlyOut,
     needsCorrection: stillShort && local.needsCorrection,
+    beforeJoining: beforeJoining,
   );
 }
 
@@ -3118,6 +3128,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   /// Whether this day is one a leave request can still be made for.
   bool _leaveApplicable(AttendanceDayView day) {
+    if (day.beforeJoining) return false;
     switch (day.kind) {
       // A day already worked is not one to take leave on.
       case AttendanceKind.present:
@@ -3155,6 +3166,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final today = _dateOnly(DateTime.now());
     final date = _dateOnly(day.date);
 
+    // Not theirs yet: nothing was due, so there is nothing to put right.
+    if (day.beforeJoining) {
+      return 'Before your joining date — there is nothing to record or '
+          'correct.';
+    }
     if (date.isAfter(today)) return 'A future day cannot be regularised.';
     if (day.correctionPending) {
       return 'A correction for this day is already with your manager.';
@@ -5286,7 +5302,11 @@ class AttendanceDayDetail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pending = pendingNotice;
-    final base = attendanceTagStyle(day.kind);
+    final kindTag = attendanceTagStyle(day.kind);
+    // Drawn like a day to come, but it is not one: it says what it is.
+    final base = day.beforeJoining
+        ? (bg: kindTag.bg, fg: kindTag.fg, label: 'Before joining')
+        : kindTag;
     // Red on any day a correction is still open against, so the list agrees
     // with the grid rather than showing a settled-looking half day.
     final tag = day.unresolved
@@ -5353,7 +5373,8 @@ class AttendanceDayDetail extends StatelessWidget {
           const SizedBox(height: 16),
           _AttendancePendingNotice(text: pending),
         ] else ...[
-          if (!autoPresent) ...[
+          // No punches were due before joining: dashes would read as missed.
+          if (!autoPresent && !day.beforeJoining) ...[
             const SizedBox(height: 16),
             Container(
               height: 71,
