@@ -18,6 +18,13 @@ import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.hom
 import { mySplit, reviewSplit, saveSplit, splitWindow } from '../services/employeePayroll.split';
 import { STATUTORY_SEED, TDS_SEED } from './payroll-config-seed-data';
 
+/** Home with Payroll switched on (the seed turns it on for the org). */
+async function homeOn(...args: Parameters<typeof myPayrollHome>) {
+  const h = await myPayrollHome(...args);
+  if (h.appEnabled !== true) throw new Error('Payroll is off for the scratch org');
+  return h;
+}
+
 const SCRATCH = 'payroll_employee_scratch';
 const ORG = 'sowaka';
 const R = (rupees: number) => rupees * 100;
@@ -54,7 +61,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   if (db.databaseName !== SCRATCH) throw new Error(`refusing to run against ${db.databaseName}: set MONGODB_DB=${SCRATCH}`);
   await db.dropDatabase();
 
-  await companies().insertOne({ id: ORG, name: 'Sowaka (scratch)' } as never);
+  await companies().insertOne({ id: ORG, name: 'Sowaka (scratch)', payrollEmployee: { appEnabled: true, splitCutoffDay: 15, declarationDue: '11-30', proofsDue: '01-31', billsDue: '03-31' } } as never);
   await companies().insertOne({ id: 'otherco', name: 'Other (scratch)' } as never);
   // People punch in and out (the default policy marks everyone present).
   await shiftPolicies().insertOne({ org: ORG, correction: { punchFormat: 'Geotag (powered by Sowaka)' } } as never);
@@ -187,25 +194,26 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('missing punches: 12 Oct is a missing punch-out with the punch-in time', d12?.trigger === 'Missing punch-out' && d12.punchIn !== null && d12.punchOut === null, d12);
   check('a complete day is not listed', !d13, d13);
   check('days with no punches are listed as both missing', mp.days.some((d) => d.trigger === 'Both punches missing'), mp.days.slice(0, 3));
-  check('the month is locked by the submitted October run, and the fix-by date is its last day', mp.locked === true && mp.fixBy === '2026-10-31', mp);
+  check('the month is locked by the submitted October run: nothing left to fix, no fix-by date',
+    mp.locked === true && mp.count === 0 && mp.fixBy === null && mp.days.every((d) => !d.canFix && d.closedReason !== null), mp);
   check('a future month is refused', (await refusal(() => myMissingPunches('asha', '2026-12', oct31)))?.status === 400);
   check('today is never listed (not final yet)', !(await myMissingPunches('asha', '2026-10', new Date('2026-10-14T06:00:00Z'))).days.some((d) => d.date >= '2026-10-14'));
 
   // —— home ——
-  const home = await myPayrollHome('asha', '2026-10', oct31);
+  const home = await homeOn('asha', '2026-10', oct31);
   check('home: October is final from the released payslip', home.salary?.status === 'final' && home.salary.payslipId === one.payslip.id, home.salary);
   check('home: take-home = net + reimbursements', home.salary!.takeHomePaise === home.salary!.netPaise + home.salary!.reimbursementsPaise, home.salary);
   check('home: no missing-punches to-do for a locked month', !home.todo.some((t) => t.kind === 'missing_punches'), home.todo);
   check('home: the regime is not chosen yet: a to-do by 30 Nov', home.todo.some((t) => t.kind === 'tax_regime' && t.dueOn === '2026-11-30'), home.todo);
   check('home: Asha has split this FY, so no split to-do', !home.todo.some((t) => t.kind === 'flexible_split'), home.todo);
-  const bHome = await myPayrollHome('bala', undefined, new Date('2026-12-02T06:00:00Z'));
+  const bHome = await homeOn('bala', undefined, new Date('2026-12-02T06:00:00Z'));
   check('home: December for Bala is an estimate', bHome.salary?.status === 'estimate' && bHome.salary.grossPaise > 0, bHome.salary);
   check('home: Bala has not split: a split to-do', bHome.todo.some((t) => t.kind === 'flexible_split'), bHome.todo);
   check('home: Bala\'s split summary is his own pool and amounts', bHome.split?.poolPaise === R(6000) && bHome.split.assignedPaise === R(6000), bHome.split);
-  const cHome = await myPayrollHome('chetan', '2026-10', oct31);
+  const cHome = await homeOn('chetan', '2026-10', oct31);
   check('home: no flexible components, no split section', cHome.split === null, cHome.split);
   await users().insertOne(person('dev', 'Dev New') as never);
-  const dHome = await myPayrollHome('dev', '2026-10', oct31);
+  const dHome = await homeOn('dev', '2026-10', oct31);
   check('home: no salary structure yet: hasSalaryStructure false, salary null', dHome.hasSalaryStructure === false && dHome.salary === null, dHome);
 
   await db.dropDatabase();

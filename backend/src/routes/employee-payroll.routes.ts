@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
   getDeclarationHandler, getProofsHandler, getSplitHandler, missingPunchesHandler, payrollHomeHandler, proofFileHandler,
-  reviewSplitHandler, saveDeclarationHandler, saveSplitHandler, uploadProofHandler,
+  requirePayrollApp, reviewSplitHandler, saveDeclarationHandler, saveSplitHandler, uploadProofHandler,
 } from '../controllers/employeePayroll.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { uploadInvestmentProofFile } from '../middleware/investment-proof-upload.middleware';
@@ -11,7 +11,10 @@ import { uploadInvestmentProofFile } from '../middleware/investment-proof-upload
 // docs/payroll-employee-api.md.
 export const employeePayrollRouter = Router();
 employeePayrollRouter.use(requireAuth);
+// Home always answers, with `appEnabled`; the rest only while HR has Payroll
+// switched on for the company (403, details.reason "payroll_app_off", otherwise).
 employeePayrollRouter.get('/home', payrollHomeHandler);
+employeePayrollRouter.use(requirePayrollApp);
 employeePayrollRouter.get('/missing-punches', missingPunchesHandler);
 employeePayrollRouter.get('/split', getSplitHandler);
 employeePayrollRouter.post('/split/review', reviewSplitHandler);

@@ -11,33 +11,87 @@ import { EmployeePayrollSettings } from '../models/employeePayroll.model';
 import { PayrollRunStatus } from '../models/payrollRun.model';
 import { User } from '../models/user.model';
 import { fyOf } from '../shared/payroll/tds';
+import { hasPayrollAccess } from './payrollAccess.service';
 
 export class EmployeePayrollError extends Error {
   constructor(
     public readonly statusCode: number,
     message: string,
+    /** Sent back as `details` (see the error middleware), e.g. `{ reason: 'payroll_app_off' }`. */
+    public readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'EmployeePayrollError';
   }
 }
 
-export const DEFAULT_DEADLINES: Required<EmployeePayrollSettings> = {
-  splitCutoffDay: 15,
-  declarationDue: '11-30',
-  proofsDue: '01-31',
-};
+/**
+ * The company's deadlines for the app's Payroll screens, as HR set them on
+ * the dashboard. There are no defaults in code: a deadline HR has not set is
+ * null, and the screens say it is not set up (`payroll_not_configured`).
+ */
+export interface PayrollDeadlines {
+  splitCutoffDay: number | null;
+  declarationDue: string | null;
+  proofsDue: string | null;
+  billsDue: string | null;
+}
 
-export async function deadlinesOf(org: string): Promise<Required<EmployeePayrollSettings>> {
-  const company = await companies().findOne({ id: org }, { projection: { _id: 0, payrollEmployee: 1 } });
-  const s = company?.payrollEmployee ?? {};
-  const day = Number(s.splitCutoffDay);
-  const md = (v: unknown, fallback: string) => (typeof v === 'string' && /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v) ? v : fallback);
+export const DEADLINE_FIELDS = ['splitCutoffDay', 'declarationDue', 'proofsDue', 'billsDue'] as const;
+export type DeadlineField = (typeof DEADLINE_FIELDS)[number];
+
+const MM_DD = /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+
+/** The company's deadlines as stored; anything unset (or unreadable) is null. */
+export function deadlinesFrom(s: EmployeePayrollSettings | undefined | null): PayrollDeadlines {
+  const day = Number(s?.splitCutoffDay);
+  const md = (v: unknown) => (typeof v === 'string' && MM_DD.test(v) ? v : null);
   return {
-    splitCutoffDay: Number.isInteger(day) && day >= 1 && day <= 31 ? day : DEFAULT_DEADLINES.splitCutoffDay,
-    declarationDue: md(s.declarationDue, DEFAULT_DEADLINES.declarationDue),
-    proofsDue: md(s.proofsDue, DEFAULT_DEADLINES.proofsDue),
+    splitCutoffDay: s?.splitCutoffDay !== undefined && s?.splitCutoffDay !== null && Number.isInteger(day) && day >= 1 && day <= 31 ? day : null,
+    declarationDue: md(s?.declarationDue),
+    proofsDue: md(s?.proofsDue),
+    billsDue: md(s?.billsDue),
   };
+}
+
+/** The deadlines HR has not set. */
+export const missingDeadlines = (d: PayrollDeadlines): DeadlineField[] => DEADLINE_FIELDS.filter((f) => d[f] === null);
+
+/** 409 for something HR has not set up yet on the dashboard. */
+export const NOT_CONFIGURED = (missing: string[], message = 'HR has not finished setting up payroll for the app yet') =>
+  new EmployeePayrollError(409, message, { reason: 'payroll_not_configured', missing });
+
+export async function deadlinesOf(org: string): Promise<PayrollDeadlines> {
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, payrollEmployee: 1 } });
+  return deadlinesFrom(company?.payrollEmployee);
+}
+
+/** Whether the app shows Payroll to this company's people: only once HR has switched it on. */
+export const payrollAppEnabledFrom = (s: EmployeePayrollSettings | undefined | null) => s?.appEnabled === true;
+
+export async function payrollAppEnabled(org: string): Promise<boolean> {
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, payrollEmployee: 1 } });
+  return payrollAppEnabledFrom(company?.payrollEmployee);
+}
+
+export const PAYROLL_APP_OFF = () =>
+  new EmployeePayrollError(403, 'Payroll is not switched on in the app for your company yet', { reason: 'payroll_app_off' });
+
+/** The signed-in HR viewer's company, when they have payroll access. */
+export async function payrollViewerOrg(viewerUserId: string, what = 'see payroll details'): Promise<string> {
+  const viewer = requestViewer(viewerUserId)
+    ?? (await users().findOne({ userId: viewerUserId }, { projection: { _id: 0, org: 1, dashboardAccess: 1, dashboardAdmin: 1, dashboardTabs: 1 } }));
+  if (!viewer?.org) throw new EmployeePayrollError(403, 'No organisation on this account');
+  if (!hasPayrollAccess(viewer)) throw new EmployeePayrollError(403, `Only people with payroll access can ${what}`);
+  return viewer.org;
+}
+
+/** As payrollViewerOrg, for one employee of the viewer's own company (404 for anyone else's). */
+export async function payrollViewerOrgFor(viewerUserId: string, userId: string, what?: string): Promise<string> {
+  const org = await payrollViewerOrg(viewerUserId, what);
+  const employee = userId ? await users().findOne({ userId }, { projection: { _id: 0, org: 1 } }) : null;
+  if (!employee || employee.org !== org) throw new EmployeePayrollError(404, 'Employee not found');
+  return org;
 }
 
 /** The signed-in person and their company. */
@@ -86,8 +140,10 @@ export function parseFyParam(raw: unknown, now: Date): string {
 }
 
 const fyStartYear = (fy: string) => Number(fy.slice(0, 4));
-export const declarationDueOn = (fy: string, d: Required<EmployeePayrollSettings>) => `${fyStartYear(fy)}-${d.declarationDue}`;
-export const proofsDueOn = (fy: string, d: Required<EmployeePayrollSettings>) => `${fyStartYear(fy) + 1}-${d.proofsDue}`;
+/** A deadline as a day of the FY; null when HR has not set it. */
+export const declarationDueOn = (fy: string, d: Pick<PayrollDeadlines, 'declarationDue'>) => (d.declarationDue ? `${fyStartYear(fy)}-${d.declarationDue}` : null);
+export const proofsDueOn = (fy: string, d: Pick<PayrollDeadlines, 'proofsDue'>) => (d.proofsDue ? `${fyStartYear(fy) + 1}-${d.proofsDue}` : null);
+export const billsDueOn = (fy: string, d: Pick<PayrollDeadlines, 'billsDue'>) => (d.billsDue ? `${fyStartYear(fy) + 1}-${d.billsDue}` : null);
 export const fyLastDay = (fy: string) => `${fyStartYear(fy) + 1}-03-31`;
 
 /** A run past draft locks its month: its payslips are the record. */
