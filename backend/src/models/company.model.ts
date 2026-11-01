@@ -135,6 +135,11 @@ export interface Company {
 export interface CompanyFeatures {
   /** Placements: clients, candidates and placements, for an HR placement agency. */
   placements?: boolean;
+  /**
+   * Speed Poker's big tables: eight seats, a 1,000 buy-in, table chat, watching
+   * a full table, sounds and the newer table. Off: six seats and 1,500, as before.
+   */
+  speedPokerBigTables?: boolean;
 }
 
 /** Versions by store: the App Store and Play Store builds ship separately. */
