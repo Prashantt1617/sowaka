@@ -3,6 +3,7 @@
 //   Salary Details  — Annual and Monthly CTC, Revise
 //   Salary Structure — the assigned template plus this person's own changes,
 //                      grouped, with Monthly / Annual amounts and Cost to Company
+//   Flexible split   — what the person chose on the app for the flexible heads
 //   Other Deductions — PF, ESI and LWF for this person, with on/off switches
 //   Salary Revision History
 // "Revise" opens a standalone Salary Revision page: pick the template, revise
@@ -43,6 +44,7 @@ import { Card, LoadError, Skeleton, SkeletonCards, SkeletonRows } from '../ui';
 import { IconClose } from '../icons';
 import './people.css';
 import { paidDaysSummary } from './PaidDaysTemplates';
+import { FlexibleSplitCard } from './FlexibleSplitCard';
 
 // —— Grouping, as on Salary Templates ——
 type Group = 'earning' | 'reimbursement' | 'fbp' | 'benefit' | 'deduction' | 'onetime';
@@ -283,6 +285,8 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
           </tbody>
         </table>
       </section>
+
+      <FlexibleSplitCard userId={userId} name={name} />
 
       <section className="pd-card" style={{ marginBottom: 20 }}>
         <h3 style={secTitle}>Other Deductions</h3>
