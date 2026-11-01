@@ -53,7 +53,7 @@ export const POKER_FORMATS: Record<PokerRound, PokerTableConfig> = {
     durationMs: 20 * 60_000,
     handPauseMs: 4500,
   },
-  // A room's game: the host picks 10, 20 or 30 minutes; blinds rise a little slower.
+  // A room's game: the host picks 10, 20 or 30 minutes; blinds rise a little slower. The room sets the buy-in.
   casual: {
     startStack: 1500,
     levels: [level(10, 20), level(20, 40), level(30, 60), level(50, 100), level(75, 150), level(100, 200), level(150, 300), level(200, 400), level(300, 600), level(500, 1000)],
@@ -72,7 +72,9 @@ export const POKER_FORMATS: Record<PokerRound, PokerTableConfig> = {
   },
 };
 
+/** The most a table seats unless its config says more; no table seats more than SEATS_CAP (a big room's eight). */
 export const SEATS_MAX = 6;
+export const SEATS_CAP = 8;
 /** Timeouts in a row before a player is sat out. */
 export const TIMEOUTS_TO_SIT_OUT = 2;
 
@@ -94,8 +96,9 @@ export interface NewTableInput {
 }
 
 export function newTable(input: NewTableInput, now: number, random: Random, deck?: number[]): PokerTable {
-  if (input.players.length < 2 || input.players.length > SEATS_MAX) throw new Error('A table seats 2 to 6');
   const config = { ...POKER_FORMATS[input.round], ...(input.config ?? {}) };
+  const most = Math.min(config.seats ?? SEATS_MAX, SEATS_CAP);
+  if (input.players.length < 2 || input.players.length > most) throw new Error(`A table seats 2 to ${most}`);
   const table: PokerTable = {
     id: input.id,
     org: input.org,
@@ -481,7 +484,7 @@ export function addSeat(table: PokerTable, player: Pick<PokerSeat, 'userId' | 'n
     table.seats[free] = seat;
     return true;
   }
-  if (table.seats.length >= SEATS_MAX) return false;
+  if (table.seats.length >= Math.min(table.config.seats ?? SEATS_MAX, SEATS_CAP)) return false;
   table.seats.push(seat);
   return true;
 }

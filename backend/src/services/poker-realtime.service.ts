@@ -30,8 +30,11 @@ import {
   joinRoom,
   kickFromRoom,
   leaveRoom,
+  chatInRoom,
   onRoomConnected,
   onRoomDisconnected,
+  unwatchRoom,
+  watchRoom as watchPokerRoom,
   openInvitesFor,
   openRooms,
   PokerRoomError,
@@ -211,7 +214,7 @@ async function welcome(socket: Socket): Promise<PokerIdentity | null> {
 
 function listen(socket: Socket, ready: Promise<PokerIdentity | null>) {
   const tv = Boolean(socket.data.tv);
-  const buckets = { move: new Bucket(3, 8), small: new Bucket(4, 10), pick: new Bucket(1, 5), host: new Bucket(5 / 60, 5), join: new Bucket(10 / 60, 10), invite: new Bucket(1, 5) };
+  const buckets = { move: new Bucket(3, 8), small: new Bucket(4, 10), pick: new Bucket(1, 5), host: new Bucket(5 / 60, 5), join: new Bucket(10 / 60, 10), invite: new Bucket(1, 5), chat: new Bucket(1, 5) };
 
   const on = (event: string, bucket: Bucket, handler: (who: PokerIdentity, p: Record<string, unknown>) => Promise<unknown>, watchOnly = false) => {
     socket.on(event, async (payload: unknown, ack: unknown) => {
@@ -284,6 +287,12 @@ function listen(socket: Socket, ready: Promise<PokerIdentity | null>) {
   });
   on('room:act', buckets.move, (who, p) => actInRoom(who, p.action));
   on('room:sitin', buckets.small, (who) => sitInRoom(who));
+  on('room:watch', buckets.join, (who, p) => watchPokerRoom(who, p.code));
+  on('room:unwatch', buckets.small, async (who) => {
+    await unwatchRoom(who);
+    return {};
+  });
+  on('room:chat', buckets.chat, (who, p) => chatInRoom(who, p.text));
 
   socket.on('disconnect', async () => {
     try {

@@ -1,13 +1,15 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import type { Filter } from 'mongodb';
-import { users } from '../config/db';
+import { companies, users } from '../config/db';
 import type { PokerRoom } from '../models/poker.model';
 import type { User } from '../models/user.model';
 import { notifyUsers, NotificationInput } from './notification.service';
 import { parseAction, PokerMoveError, sitIn } from './poker-engine';
 import {
   actAtTable,
+  addChat,
   addPlayer,
+  addWatcher,
   advanceRoom,
   applySettings,
   changeHouse,
@@ -23,9 +25,12 @@ import {
   PokerRoomSummary,
   PokerRoomView,
   removePlayer,
+  removeWatcher,
   resetToLobby,
+  seatsOf,
   ROOMS,
   seatIfFree,
+  TABLE_KINDS,
   startGame,
   stillKicked,
   summaryOf,
@@ -126,7 +131,8 @@ function pushRoom(room: PokerRoom, force: string[] = []): void {
   if (!emitter) return;
   const now = deps.now();
   const forced = new Set(force);
-  for (const p of room.players) {
+  // Watchers are sent the same room, seen from no seat.
+  for (const p of [...room.players, ...(room.watchers ?? [])]) {
     const view = viewFor(room, p.userId, now);
     const print = viewFingerprint(view);
     const sent = lastSent.get(p.userId);
@@ -170,6 +176,11 @@ async function applyEffects(room: PokerRoom, effects: PokerRoomEffect[]): Promis
       case 'delete': {
         deleted = true;
         await deleteRoom(room.org, room.code);
+        for (const w of room.watchers ?? []) {
+          watching.delete(watchKey(room.org, w.userId));
+          lastSent.delete(w.userId);
+          emitter?.toUser(w.userId, 'room:state', { room: null });
+        }
         for (const userId of effect.players) {
           await clearRoomSeatIf(room.org, userId, room.code);
           emitter?.seat(userId, room.org, room.code, false);
@@ -297,7 +308,7 @@ export async function openInvitesFor(org: string, userId: string): Promise<OpenR
   const out: OpenRoomInvite[] = [];
   for (const invite of await roomInvitesOf(org, userId, now)) {
     const room = await readRoom(org, invite.code);
-    if (!room || playerOf(room, userId) || placesTaken(room) >= ROOMS.maxSeats) {
+    if (!room || playerOf(room, userId) || placesTaken(room) >= seatsOf(room)) {
       await clearRoomInvite(org, userId, invite.code);
       continue;
     }
@@ -309,13 +320,27 @@ export async function openInvitesFor(org: string, userId: string): Promise<OpenR
 /** Everything the page needs for the group game on opening: their room if they sit in one, the open tables, their invites. */
 export async function roomsHello(seat: RoomSeat) {
   const room = await roomOf(seat);
-  const [rooms, invites] = await Promise.all([openRooms(seat.org), openInvitesFor(seat.org, seat.userId)]);
+  const [rooms, invites, big] = await Promise.all([openRooms(seat.org), openInvitesFor(seat.org, seat.userId), hasBigTables(seat.org)]);
   return {
     me: { userId: seat.userId, name: seat.name, photoUrl: seat.photoUrl },
+    /** The company's table: the big one (8 seats, 1,000, chat, watching, sounds, the newer look) or the classic six. */
+    tables: big ? TABLE_KINDS.big : TABLE_KINDS.classic,
+    big,
     room: room ? viewFor(room, seat.userId, deps.now()) : null,
     rooms,
     invites,
   };
+}
+
+/** Whether the company has Speed Poker's big tables (companies.features.speedPokerBigTables), held a minute. */
+const bigTablesCache = new Map<string, { on: boolean; at: number }>();
+async function hasBigTables(org: string): Promise<boolean> {
+  const held = bigTablesCache.get(org);
+  if (held && deps.now() - held.at < 60_000) return held.on;
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, features: 1 } });
+  const on = company?.features?.speedPokerBigTables === true;
+  bigTablesCache.set(org, { on, at: deps.now() });
+  return on;
 }
 
 // ---------------------------------------------------------------- operations
@@ -328,7 +353,7 @@ export async function hostRoom(seat: RoomSeat, options: { open?: unknown; house?
   const now = deps.now();
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const code = makeCode(deps.random);
-    const room = newRoom(code, seat.org, asPlayer(seat), now, { open: options.open !== false, house: options.house ?? 0 });
+    const room = newRoom(code, seat.org, asPlayer(seat), now, { open: options.open !== false, house: options.house ?? 0, kind: (await hasBigTables(seat.org)) ? 'big' : 'classic' });
     if (!(await createRoom(room))) continue;
     await setRoomSeat(seat.org, seat.userId, code);
     emitter?.seat(seat.userId, seat.org, code, true);
@@ -366,10 +391,12 @@ export async function joinRoom(seat: RoomSeat, rawCode: unknown, options: { rejo
   const already = playerOf(existing, seat.userId);
   if (!already && rejoin) throw refuseRejoin(existing, seat.userId);
   if (!already && stillKicked(existing, seat.userId, deps.now())) throw new PokerRoomError(403, KICKED_MESSAGE);
-  if (!already && placesTaken(existing) >= ROOMS.maxSeats) throw new PokerRoomError(409, `That table is full (${ROOMS.maxSeats} of ${ROOMS.maxSeats}).`);
+  if (!already && placesTaken(existing) >= seatsOf(existing)) throw new PokerRoomError(409, `That table is full (${seatsOf(existing)} of ${seatsOf(existing)}).`);
   const current = await roomSeatOf(seat.org, seat.userId);
   if (current && current !== code) await leaveRoom(seat);
 
+  // Watching it, or another table: a seat ends that.
+  await unwatchRoom(seat);
   const changed = await change(
     seat.org,
     code,
@@ -421,6 +448,8 @@ export async function quickJoin(seat: RoomSeat): Promise<PokerRoomView> {
 }
 
 export async function leaveRoom(seat: RoomSeat): Promise<void> {
+  // Leaving is also how a watcher goes back to the tables.
+  await unwatchRoom(seat);
   const room = await roomOf(seat);
   if (!room) return;
   emitter?.seat(seat.userId, seat.org, room.code, false);
@@ -451,7 +480,7 @@ export async function inviteToRoom(seat: RoomSeat, rawUserId: unknown): Promise<
   const userId = String(rawUserId ?? '').trim();
   if (!userId || userId === seat.userId) throw new PokerRoomError(400, 'Choose a colleague to invite.');
   if (playerOf(room, userId)) return { invited: true };
-  if (placesTaken(room) >= ROOMS.maxSeats) throw new PokerRoomError(409, 'The table is full.');
+  if (placesTaken(room) >= seatsOf(room)) throw new PokerRoomError(409, 'The table is full.');
   if (room.invitesSent >= ROOMS.invitesPerGame) throw new PokerRoomError(429, 'That is enough invites for one game.');
   if (room.hostId !== seat.userId && stillKicked(room, userId, deps.now())) throw new PokerRoomError(403, 'Only the host can invite someone they removed.');
   const colleague = await findColleague(seat.org, userId);
@@ -563,6 +592,59 @@ export async function sitInRoom(seat: RoomSeat): Promise<Record<string, never>> 
   return {};
 }
 
+// ---------------------------------------------------------------- watching and chat
+
+/** Who is watching which table, on this server (rooms live in one process; a restart drops them from their rooms in time). */
+const watching = new Map<string, { org: string; code: string }>();
+const watchKey = (org: string, userId: string) => `${org}:${userId}`;
+
+/** Watch a game at a table you have no seat at: a full one, say. Leaves your own table first. */
+export async function watchRoom(seat: RoomSeat, rawCode: unknown): Promise<PokerRoomView> {
+  const code = parseCode(rawCode);
+  if (!code) throw new PokerRoomError(404, NO_ROOM);
+  const existing = await readRoom(seat.org, code);
+  if (!existing) throw new PokerRoomError(404, NO_ROOM);
+  if (playerOf(existing, seat.userId)) return viewFor(existing, seat.userId, deps.now());
+  if (stillKicked(existing, seat.userId, deps.now())) throw new PokerRoomError(403, KICKED_MESSAGE);
+  if (!existing.open && !existing.invited.some((i) => i.userId === seat.userId)) throw new PokerRoomError(403, 'That table is private.');
+  await leaveRoom(seat);
+  const changed = await change(
+    seat.org,
+    code,
+    (room) => {
+      rule(() => addWatcher(room, { userId: seat.userId, name: seat.name, photoUrl: seat.photoUrl }, deps.now()));
+      return { result: true, effects: [], write: true };
+    },
+    [seat.userId],
+  );
+  if (!changed) throw new PokerRoomError(404, NO_ROOM);
+  watching.set(watchKey(seat.org, seat.userId), { org: seat.org, code });
+  listCache.delete(seat.org);
+  return viewFor(changed.room, seat.userId, deps.now());
+}
+
+/** Stop watching (back to the tables, a seat taken, the app closed). */
+export async function unwatchRoom(seat: RoomSeat): Promise<void> {
+  const held = watching.get(watchKey(seat.org, seat.userId));
+  if (!held) return;
+  watching.delete(watchKey(seat.org, seat.userId));
+  lastSent.delete(seat.userId);
+  await change(seat.org, held.code, (room) => (removeWatcher(room, seat.userId) ? { result: true, effects: [], write: true } : null));
+  listCache.delete(seat.org);
+}
+
+/** A line of chat at your table, or the one you are watching. */
+export async function chatInRoom(seat: RoomSeat, rawText: unknown): Promise<Record<string, never>> {
+  const code = (await roomOf(seat))?.code ?? watching.get(watchKey(seat.org, seat.userId))?.code;
+  if (!code) throw new PokerRoomError(404, 'You are not at a table.');
+  const changed = await change(seat.org, code, (room) => {
+    rule(() => addChat(room, { userId: seat.userId, name: seat.name }, rawText, deps.now(), deps.random));
+    return { result: true, effects: [], write: true };
+  });
+  if (!changed) throw new PokerRoomError(404, 'That table has closed.');
+  return {};
+}
+
 // ---------------------------------------------------------------- presence
 
 /** A fresh socket: back into their room, marked online, a seat if one is free, and sent what is true now. */
@@ -593,6 +675,8 @@ export async function onRoomConnected(seat: RoomSeat): Promise<string | null> {
 
 /** Their last socket closed: the chip dims; after a few seconds away their hands check or fold on their own. */
 export async function onRoomDisconnected(seat: RoomSeat): Promise<void> {
+  // Watching needs an open page: gone with it.
+  await unwatchRoom(seat);
   const room = await roomOf(seat);
   if (!room) return;
   lastSent.delete(seat.userId);
