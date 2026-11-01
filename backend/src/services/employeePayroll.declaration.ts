@@ -14,7 +14,7 @@ import { requestViewer } from '../middleware/request-viewer';
 import { InvestmentProof, InvestmentProofStatus } from '../models/employeePayroll.model';
 import { TaxDeclarationRow } from '../models/tds.model';
 import {
-  DECLARATION_ITEM_KEYS, DECLARATION_ITEMS, DeclarationFlags, DeclarationItemKey, DeclarationItems, declarationSections, FALLBACK_OLD_LIMITS,
+  DECLARATION_ITEM_KEYS, DECLARATION_ITEMS, DeclarationFlags, DeclarationItemKey, DeclarationItems, declarationSections,
   toTaxDeclarations,
 } from '../shared/payroll/declaration';
 import { TaxDeclarations, TaxRegime } from '../shared/payroll/tds';
@@ -25,7 +25,7 @@ import { hasPayrollAccess } from './payrollAccess.service';
 import { deleteReimbursementReceipt, hasReceiptStorage, presignReceiptDownload, uploadInvestmentProof } from './s3-receipt.service';
 import { computeStructureFor } from './salaryStructure.service';
 import { statutorySettingsFor } from './statutorySettings.service';
-import { tdsConfigsFor } from './tds.service';
+import { requireTdsConfigs } from './payrollConfig.service';
 
 const MAX_AMOUNT_PAISE = 100_000_000_00; // ₹10 crore: past anything a declaration holds
 const ITEM_BY_KEY = new Map(DECLARATION_ITEMS.map((d) => [d.key, d]));
@@ -88,7 +88,7 @@ async function epfYearOf(org: string, userId: string): Promise<number> {
 async function declarationView(org: string, userId: string, fy: string, now: Date) {
   const [row, configs, settings, deadlines, epfYear] = await Promise.all([
     taxDeclarations().findOne({ org, userId, fy }, { projection: { _id: 0 } }),
-    tdsConfigsFor(fy),
+    requireTdsConfigs(fy),
     statutorySettingsFor(org),
     deadlinesOf(org),
     epfYearOf(org, userId),
@@ -112,7 +112,7 @@ async function declarationView(org: string, userId: string, fy: string, now: Dat
       regime,
       items: itemsOf(row),
       flags,
-      limits: configs.get('old')?.limits ?? FALLBACK_OLD_LIMITS,
+      limits: configs.get('old')!.limits,
       epfYearPaise: epfYear,
     }),
     regimes: [...configs.values()].map((c) => ({ regime: c.regime, configStatus: c.status })),

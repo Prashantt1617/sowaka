@@ -1,7 +1,8 @@
 /**
  * Pure statutory calculation engine (PRD §5.5). No I/O, no DB — every function
  * takes explicit inputs and rule config and returns amounts in INTEGER PAISE, so
- * the rules can be exercised in isolation. Rule resolution (which state, which
+ * the rules can be exercised in isolation. Rates and ceilings come from the
+ * FY's statutory config row, passed in by the caller. Rule resolution (which state, which
  * flags apply) lives in statutory.service.ts and the payroll run; this file only
  * does the arithmetic.
  *
@@ -9,14 +10,8 @@
  * rounds UP to the next rupee for each contribution.
  */
 
-import {
-  BonusRule,
-  ContributionPeriod,
-  EPF_CONSTANTS,
-  ESI_CONSTANTS,
-  LwfRule,
-  PtRule,
-} from '../../models/statutoryRule.model';
+import { BonusRule, ContributionPeriod, LwfRule, PtRule } from '../../models/statutoryRule.model';
+import type { StatutoryConfig } from './statutory-config';
 
 /** Round to the nearest whole rupee (EPF convention). */
 export function roundToRupee(paise: number): number {
@@ -33,52 +28,49 @@ export function ceilToRupee(paise: number): number {
 // ————————————————————————————————————————————————————————————————
 
 export interface EpfResult {
-  /** The wage the employee 12% was actually applied to. */
+  /** The wage the employee rate was actually applied to. */
   contributionWagePaise: number;
   employeePaise: number;
   employerTotalPaise: number;
   employerEpsPaise: number;
   employerEpfPaise: number;
-  /** Employer EDLI, 0.50% of the PF wage up to the ceiling. Employer cost only. */
+  /** Employer EDLI on the PF wage up to the ceiling. Employer cost only. */
   edliPaise?: number;
-  /** EPF admin charges, 0.50% of the employer's contribution wage. Employer cost only. */
+  /** EPF admin charges on the employer's contribution wage. Employer cost only. */
   adminPaise?: number;
 }
 
-const EDLI_RATE = 0.005;
-const ADMIN_RATE = 0.005;
-
 /**
- * EPF split. Each side contributes 12% of the PF wage, capped at the ceiling
- * (₹25,000) when that side is "restricted", or on the full PF wage when it is
- * "actual". The employer 12% is split into EPS (8.33%, ALWAYS capped at the
- * ceiling) and the EPF residual. `ceilingPaise` lets a caller pro-rate the
- * ceiling for loss-of-pay days.
+ * EPF split. Each side contributes its rate of the PF wage, capped at the
+ * ceiling when that side is "restricted", or on the full PF wage when it is
+ * "actual". The employer's contribution is split into EPS (ALWAYS on the
+ * capped wage) and the EPF residual. `ceilingPaise` is the month's ceiling
+ * (a caller may pro-rate it for loss-of-pay days).
  *
- * Worked example: PF wage ₹30,000, both restricted → employee ₹3,000,
- * employer EPS ₹2,083 + EPF ₹917.
+ * Worked example at 12% / 8.33%: PF wage ₹30,000, ceiling ₹25,000, both
+ * restricted → employee ₹3,000, employer EPS ₹2,083 + EPF ₹917.
  */
-export function computeEpf(input: {
+export function computeEpf(rates: StatutoryConfig['epf'], input: {
   pfWagePaise: number;
   /** Shorthand for both sides restricted (true, the default) or actual (false). */
   applyCeiling?: boolean;
   employeeRestricted?: boolean;
   employerRestricted?: boolean;
-  ceilingPaise?: number;
-  /** false: no pension-scheme split; the employer's whole 12% is PF. */
+  ceilingPaise: number;
+  /** false: no pension-scheme split; the employer's whole contribution is PF. */
   eps?: boolean;
 }): EpfResult {
   const restrictedDefault = input.applyCeiling ?? true;
   const employeeRestricted = input.employeeRestricted ?? restrictedDefault;
   const employerRestricted = input.employerRestricted ?? restrictedDefault;
-  const ceiling = input.ceilingPaise ?? EPF_CONSTANTS.wageCeilingPaise;
+  const ceiling = input.ceilingPaise;
   const capped = Math.min(input.pfWagePaise, ceiling);
   const employeeWage = employeeRestricted ? capped : input.pfWagePaise;
   const employerWage = employerRestricted ? capped : input.pfWagePaise;
 
-  const employeePaise = roundToRupee(employeeWage * EPF_CONSTANTS.employeeRate);
-  const employerTotalPaise = roundToRupee(employerWage * EPF_CONSTANTS.employerRate);
-  const employerEpsPaise = input.eps === false ? 0 : roundToRupee(capped * EPF_CONSTANTS.epsRate); // EPS ceiling is statutory, always applied
+  const employeePaise = roundToRupee(employeeWage * rates.employeeRate);
+  const employerTotalPaise = roundToRupee(employerWage * rates.employerRate);
+  const employerEpsPaise = input.eps === false ? 0 : roundToRupee(capped * rates.epsRate); // EPS ceiling is statutory, always applied
   const employerEpfPaise = employerTotalPaise - employerEpsPaise;
 
   return {
@@ -87,9 +79,9 @@ export function computeEpf(input: {
     employerTotalPaise,
     employerEpsPaise,
     employerEpfPaise,
-    edliPaise: roundToRupee(capped * EDLI_RATE),
+    edliPaise: roundToRupee(capped * rates.edliRate),
     // EPFO bills admin charges to the paisa (Zoho: ₹98.34 on ₹19,666.67).
-    adminPaise: Math.ceil(employerWage * ADMIN_RATE),
+    adminPaise: Math.ceil(employerWage * rates.adminRate),
   };
 }
 
@@ -114,9 +106,9 @@ export function pfWageWithConditional(input: {
   alwaysPaise: number;
   conditionalPaise: number;
   testPaise: number;
-  ceilingPaise?: number;
+  ceilingPaise: number;
 }): number {
-  const ceiling = input.ceilingPaise ?? EPF_CONSTANTS.wageCeilingPaise;
+  const ceiling = input.ceilingPaise;
   if (input.conditionalPaise <= 0 || input.testPaise >= ceiling) return input.alwaysPaise;
   return input.alwaysPaise + Math.min(input.conditionalPaise, Math.max(0, ceiling - input.alwaysPaise));
 }
@@ -131,16 +123,16 @@ export function contributionPeriodOf(month: number): ContributionPeriod {
 }
 
 /**
- * ESI eligibility. Applies while monthly gross ≤ ₹21,000. The date-window rule:
+ * ESI eligibility. Applies while monthly gross ≤ the ceiling. The date-window rule:
  * once an employee is under ESI at the start of a contribution period, they stay
  * covered until that period ends even if their gross later crosses the ceiling.
  * The caller passes `wasApplicableAtPeriodStart` scoped to the SAME period.
  */
-export function isEsiApplicable(input: {
+export function isEsiApplicable(esi: StatutoryConfig['esi'], input: {
   grossPaise: number;
   wasApplicableAtPeriodStart?: boolean;
 }): boolean {
-  if (input.grossPaise <= ESI_CONSTANTS.grossCeilingPaise) return true;
+  if (input.grossPaise <= esi.grossCeilingPaise) return true;
   return input.wasApplicableAtPeriodStart === true;
 }
 
@@ -151,12 +143,12 @@ export interface EsiResult {
 }
 
 /** ESI contribution on actual gross. Amounts round up to the next rupee. */
-export function computeEsi(input: { grossPaise: number; applicable: boolean }): EsiResult {
+export function computeEsi(esi: StatutoryConfig['esi'], input: { grossPaise: number; applicable: boolean }): EsiResult {
   if (!input.applicable) return { applicable: false, employeePaise: 0, employerPaise: 0 };
   return {
     applicable: true,
-    employeePaise: ceilToRupee(input.grossPaise * ESI_CONSTANTS.employeeRate),
-    employerPaise: ceilToRupee(input.grossPaise * ESI_CONSTANTS.employerRate),
+    employeePaise: ceilToRupee(input.grossPaise * esi.employeeRate),
+    employerPaise: ceilToRupee(input.grossPaise * esi.employerRate),
   };
 }
 

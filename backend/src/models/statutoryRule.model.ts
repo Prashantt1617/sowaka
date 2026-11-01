@@ -1,79 +1,10 @@
 /**
- * Statutory calculation rules (PRD §5.5). EPF and ESI are national and modelled
- * as constants; Professional Tax, Labour Welfare Fund, and the Statutory Bonus
- * minimum-wage floor all vary by state and are stored per-state in the
- * `statutory_rules` collection. All money is INTEGER PAISE.
+ * Statutory calculation rule shapes (PRD §5.5). The national figures (EPF,
+ * ESI, bonus, the PF ceiling over time, and each state's default PT / LWF)
+ * live in `payroll_statutory_configs`, one row per financial year (see
+ * shared/payroll/statutory-config.ts). A company may override a state's PT,
+ * LWF or bonus rule for itself in `statutory_rules`. All money is INTEGER PAISE.
  */
-
-// ————————————————————————————————————————————————————————————————
-// National constants (EPF / ESI)
-// ————————————————————————————————————————————————————————————————
-
-/** Employees' Provident Fund. Employer 12% is split into EPS + EPF residual. */
-export const EPF_CONSTANTS = {
-  employeeRate: 0.12,
-  employerRate: 0.12,
-  /** Employees' Pension Scheme share of the employer 12%. */
-  epsRate: 0.0833,
-  /** Wage ceiling for the contribution base — ₹25,000. EPS is always capped here. */
-  wageCeilingPaise: 25_000_00,
-} as const;
-
-/**
- * The PF wage ceiling over time, by the date each value starts. A month that
- * straddles a change uses the day-weighted average: September 2026 had 16
- * days at ₹15,000 and 14 at ₹25,000, so ₹19,666.67, which is what Zoho
- * applied to every Convrse employee that month.
- */
-export const EPF_CEILING_SCHEDULE: { from: string; ceilingPaise: number }[] = [
-  { from: '0000-01-01', ceilingPaise: 15_000_00 },
-  { from: '2026-09-17', ceilingPaise: 25_000_00 },
-];
-
-/**
- * The PF ceilings in force across a pay month and for how many days each, in
- * order: one entry normally, two in a month the ceiling changes (Sep 2026:
- * ₹15,000 for 16 days, ₹25,000 for 14).
- */
-export function epfCeilingSegments(period: string, employedFrom?: string): { ceilingPaise: number; days: number }[] {
-  const [year, month] = period.split('-').map(Number);
-  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const out: { ceilingPaise: number; days: number }[] = [];
-  for (let d = 1; d <= days; d++) {
-    const day = `${period}-${String(d).padStart(2, '0')}`;
-    // Days before someone joined don't count: a September joiner after the
-    // 17th is on the ₹25,000 ceiling only (as Zoho books it).
-    if (employedFrom && day < employedFrom) continue;
-    let ceiling = EPF_CEILING_SCHEDULE[0].ceilingPaise;
-    for (const step of EPF_CEILING_SCHEDULE) if (step.from <= day) ceiling = step.ceilingPaise;
-    const last = out[out.length - 1];
-    if (last && last.ceilingPaise === ceiling) last.days++;
-    else out.push({ ceilingPaise: ceiling, days: 1 });
-  }
-  return out;
-}
-
-/** The PF wage ceiling for a pay month ("YYYY-MM"), day-weighted across any change in it. */
-export function epfCeilingForPeriod(period: string): number {
-  const [year, month] = period.split('-').map(Number);
-  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  let total = 0;
-  for (let d = 1; d <= days; d++) {
-    const day = `${period}-${String(d).padStart(2, '0')}`;
-    let ceiling = EPF_CEILING_SCHEDULE[0].ceilingPaise;
-    for (const step of EPF_CEILING_SCHEDULE) if (step.from <= day) ceiling = step.ceilingPaise;
-    total += ceiling;
-  }
-  return Math.round(total / days);
-}
-
-/** Employees' State Insurance. Applies while monthly gross ≤ the ceiling. */
-export const ESI_CONSTANTS = {
-  employeeRate: 0.0075,
-  employerRate: 0.0325,
-  /** Gross ceiling for eligibility — ₹21,000. */
-  grossCeilingPaise: 21_000_00,
-} as const;
 
 /** The two ESI contribution periods; eligibility, once set, holds till a period ends. */
 export type ContributionPeriod = 'apr_sep' | 'oct_mar';

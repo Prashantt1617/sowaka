@@ -47,6 +47,8 @@
     "payroll:reconcile": "tsx src/scripts/payroll-org-reconcile.ts",
     "payroll:tds-check": "tsx src/scripts/payroll-tds-check.ts",
     "payroll:tds-seed": "tsx src/scripts/payroll-tds-seed.ts",
+    "payroll:statutory-seed": "tsx src/scripts/payroll-statutory-seed.ts",
+    "payroll:config-check": "MONGODB_DB=payroll_config_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= PAYROLL_CONFIG_ORGS= tsx src/scripts/payroll-config-check.ts",
     "payroll:employee-check": "MONGODB_DB=payroll_employee_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/payroll-employee-check.ts",
     "payroll:declaration-check": "MONGODB_DB=payroll_declaration_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/payroll-declaration-check.ts",
     "api:only": "tsx src/scripts/api-only.ts"

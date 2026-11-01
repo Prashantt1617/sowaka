@@ -36,6 +36,9 @@ const RULES: Rule[] = [
   // Payroll
   { path: /^\/admin\/payroll\/org-setup/, read: ['payschedule', 'taxdetails', 'payruns'], write: ['payschedule', 'taxdetails'] },
   { path: /^\/admin\/payroll\/pay-heads/, read: ['payheads', 'templates', 'salarydetails', 'payruns', 'statutorycomponents'], write: ['payheads'] },
+  // The national statutory / income tax rows: read by anyone with payroll access (the services
+  // check that too); written only by a platform admin, which the service enforces.
+  { path: /^\/admin\/payroll\/(statutory-config|tds-config)/, read: ['payruns', 'salarydetails'], write: ['payruns', 'salarydetails'] },
   { path: /^\/admin\/payroll\/statutory-/, read: ['statutorycomponents', 'templates', 'salarydetails', 'payruns'], write: ['statutorycomponents'] },
   { path: /^\/admin\/payroll\/salary-templates\/preview/, read: ['templates', 'salarydetails'], write: ['templates', 'salarydetails'] },
   { path: /^\/admin\/payroll\/salary-templates/, read: ['templates', 'salarydetails', 'payruns'], write: ['templates'] },

@@ -35,7 +35,9 @@ import { attendanceCountsForPeriod, payrollDeductions, unpaidLeaveDeduction } fr
 import { payslipHtml } from './payslip-html';
 import { employeeCalendar } from './attendance-report.service';
 import { companies } from '../config/db';
-import { declarationsFor, runTds, tdsConfigsFor, ytdFor } from './tds.service';
+import { declarationsFor, runTds, ytdFor } from './tds.service';
+import { requireTdsConfigs, statutoryConfigForPeriod } from './payrollConfig.service';
+import type { StatutoryConfig } from '../shared/payroll/statutory-config';
 import { fyOf, periodsAfter } from '../shared/payroll/tds';
 import { paidDaysResolver } from './paidDaysTemplate.service';
 import { addInto, billCategories, billsByComponent, ReimbursementTax, reimbursementTax, reimbursementsPaidBefore } from './reimbursementBills.service';
@@ -194,6 +196,8 @@ async function buildRunPayslips(
   // One set of statutory settings for everyone, and who ESI already covers
   // this contribution period.
   const settings = await statutorySettingsFor(org);
+  // The FY's national figures: no row, no run (409).
+  const config = await statutoryConfigForPeriod(period);
   const esiCovered = await esiCoveredThisPeriod(org, period, structures.map((s) => s.userId));
   // The month's calendar, whenever a template pays by it — the report is the
   // slow part of a run.
@@ -210,9 +214,9 @@ async function buildRunPayslips(
   const employees = await users()
     .find({ userId: { $in: structures.map((s) => s.userId) } })
     .toArray();
-  // The TDS engine, when the org has switched it on and the FY has config rows.
+  // The TDS engine, when the org has switched it on: the FY's income tax rows, else 409.
   const { fy } = fyOf(period);
-  const tdsConfigs = settings.tds?.enabled ? await tdsConfigsFor(fy) : new Map();
+  const tdsConfigs = settings.tds?.enabled ? await requireTdsConfigs(fy) : new Map();
   const tdsOn = tdsConfigs.size > 0;
   const userIds = structures.map((s) => s.userId);
   const [ytd, declarations] = tdsOn ? await Promise.all([ytdFor(org, period, userIds), declarationsFor(org, fy, userIds)]) : [new Map(), new Map()];
@@ -259,7 +263,7 @@ async function buildRunPayslips(
       else resolvedComponents.push(runHead);
     }
 
-    const ruleSet = await resolveRuleSetCached(ruleSetCache, org, workStateOf(employee));
+    const ruleSet = await resolveRuleSetCached(ruleSetCache, org, workStateOf(employee), config);
     // Joined during this month: paid from the joining day, PF ceilings counted from it.
     const joined = employee.joiningDate ? new Date(employee.joiningDate).toISOString().slice(0, 10) : undefined;
     // Not employed yet in this month (a run made for an earlier month): no payslip.
@@ -272,6 +276,7 @@ async function buildRunPayslips(
       componentValues: { ...(structure.componentValues ?? {}), ...splitAmountsFor(splits.get(structure.userId), p), ...amounts },
       balancingComponentCode: template.balancingComponentCode,
       ruleSet,
+      config,
       month: Number(p.slice(5, 7)),
       period: p,
       bonusCategory: structure.bonusCategory,
@@ -316,6 +321,7 @@ async function buildRunPayslips(
       overtimePaise,
       reimbursementsPaise: periodInputs.reimbursementsPaise,
       ruleSet,
+      config,
       month: range.month,
       statutory: structure.statutory,
       settings,
@@ -332,6 +338,7 @@ async function buildRunPayslips(
       const declaration = declarations.get(structure.userId);
       const futureTaxable = taxableAfterMealExemption(
         base.earnings.filter((l) => !l.oneTime).map((l) => ({ taxable: l.taxable, componentType: l.componentType, amountPaise: l.monthlyPaise })),
+        config.mealCard.exemptMonthlyPaise,
       );
       // The months still to come on each month's own structure (a PF ceiling change moves the balance), as Zoho projects;
       // their salary reimbursements count as taxable (no bills for them yet).
@@ -339,7 +346,7 @@ async function buildRunPayslips(
         lines.filter((l) => catalogByCode.get(l.code)?.taxable !== false).reduce((t, l) => t + l.monthlyPaise, 0);
       const futureTaxablePaise = periodsAfter(period).reduce((t, p) => {
         const later = salaryFor(p);
-        return t + projectedTaxable(later) + taxableReimb(later.reimbursements ?? []);
+        return t + projectedTaxable(later, config.mealCard.exemptMonthlyPaise) + taxableReimb(later.reimbursements ?? []);
       }, 0);
       // This year's reimbursements so far less the bills approved so far: a late bill lowers the tax from now on.
       reimbTax = reimbursementTax(addInto(new Map(reimbPaidBefore.get(structure.userId) ?? []), slip.reimbursementLines), bills.get(structure.userId), catalogByCode);
@@ -774,11 +781,12 @@ async function resolveRuleSetCached(
   cache: Map<string, ResolvedRuleSet>,
   org: string,
   state: string | undefined,
+  config: StatutoryConfig,
 ): Promise<ResolvedRuleSet> {
   const key = (state ?? '').trim().toLowerCase();
   const hit = cache.get(key);
   if (hit) return hit;
-  const resolved = await resolveRuleSet(org, state);
+  const resolved = await resolveRuleSet(org, state, config);
   cache.set(key, resolved);
   return resolved;
 }

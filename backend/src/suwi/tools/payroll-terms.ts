@@ -3,10 +3,10 @@
 // from its statutory settings, salary components and templates, paid-days
 // templates and claim types. Every rate Suwi quotes comes from here.
 import { payHeads } from '../../config/db';
-import { EPF_CONSTANTS, ESI_CONSTANTS, epfCeilingForPeriod } from '../../models/statutoryRule.model';
+import { epfCeilingForPeriod } from '../../shared/payroll/statutory-config';
+import { statutoryConfigForPeriod } from '../../services/payrollConfig.service';
 import { CalculationBasis } from '../../models/payHead.model';
 import { DEDUCTION_TRIGGER_LABELS } from '../../models/deduction.model';
-import { MEAL_CARD_EXEMPT_MONTHLY_PAISE } from '../../shared/payroll/payroll-run.calculator';
 import { getStatutoryOverview, statutorySettingsFor } from '../../services/statutorySettings.service';
 import { listSalaryTemplates } from '../../services/salaryTemplate.service';
 import { listPaidDaysTemplates } from '../../services/paidDaysTemplate.service';
@@ -72,33 +72,37 @@ async function companySetting(ctx: SuwiContext, key: string): Promise<Setting> {
     case 'basic': case 'hra': case 'gratuity': case 'meal_card': {
       const type = key === 'meal_card' ? 'meal_card' : key;
       const extra = key === 'hra' ? { defaultTaxRegime: s.tds?.defaultRegime ?? 'new', note: 'The HRA exemption applies only under the old regime, from the rent on the person\'s tax declaration.' }
-        : key === 'meal_card' ? { taxFreeUpToPerMonth: rupees(MEAL_CARD_EXEMPT_MONTHLY_PAISE) } : {};
+        : key === 'meal_card' ? { taxFreeUpToPerMonth: rupees((await statutoryConfigForPeriod(period)).mealCard.exemptMonthlyPaise) } : {};
       return { setting: { components: await componentSetting(ctx, (h) => h.componentType === type), ...extra }, links: [{ label: 'Open Salary Components', view: 'payheads' }, { label: 'Open Salary Templates', view: 'templates' }] };
     }
     case 'fbp':
       return { setting: { fbpComponents: await componentSetting(ctx, (h) => h.fbp === true), note: 'Components count in the flexible benefit pool when marked FBP on the salary component.' }, links: [{ label: 'Open Salary Components', view: 'payheads' }] };
-    case 'pf':
+    case 'pf': {
+      const cfg = await statutoryConfigForPeriod(period);
       return {
         setting: {
           enabled: s.epf.enabled,
-          employeeContribution: `${pctOf(EPF_CONSTANTS.employeeRate)} of ${s.epf.employeeRate === 'restricted' ? 'the PF wage up to the ceiling' : 'the actual PF wage'}`,
-          employerContribution: `${pctOf(EPF_CONSTANTS.employerRate)} of ${s.epf.employerRate === 'restricted' ? 'the PF wage up to the ceiling' : 'the actual PF wage'}, of which ${pctOf(EPF_CONSTANTS.epsRate)} to pension (EPS, always capped at the ceiling)`,
-          ceilingNow: `${rupees(epfCeilingForPeriod(period))} for ${monthLabel(period)}`,
+          employeeContribution: `${pctOf(cfg.epf.employeeRate)} of ${s.epf.employeeRate === 'restricted' ? 'the PF wage up to the ceiling' : 'the actual PF wage'}`,
+          employerContribution: `${pctOf(cfg.epf.employerRate)} of ${s.epf.employerRate === 'restricted' ? 'the PF wage up to the ceiling' : 'the actual PF wage'}, of which ${pctOf(cfg.epf.epsRate)} to pension (EPS, always capped at the ceiling)`,
+          ceilingNow: `${rupees(epfCeilingForPeriod(cfg, period))} for ${monthLabel(period)}`,
           employerShareInsideCtc: s.epf.includeEmployer, edliInsideCtc: s.epf.includeEDLI, adminChargesInsideCtc: s.epf.includeAdmin,
           personMayChooseActualWage: s.epf.overrideAtEmployee, ceilingProRatedForLop: s.epf.proRateRestricted,
           epfNumberRecorded: Boolean(s.epf.epfNumber),
         },
         links: [statLink()],
       };
-    case 'esi':
+    }
+    case 'esi': {
+      const cfg = await statutoryConfigForPeriod(period);
       return {
         setting: {
-          enabled: s.esi.enabled, employee: pctOf(ESI_CONSTANTS.employeeRate), employer: pctOf(ESI_CONSTANTS.employerRate),
-          wageCeiling: `${rupees(ESI_CONSTANTS.grossCeilingPaise)} a month`, employerShareInsideCtc: s.esi.includeEmployer, esiNumberRecorded: Boolean(s.esi.esiNumber),
+          enabled: s.esi.enabled, employee: pctOf(cfg.esi.employeeRate), employer: pctOf(cfg.esi.employerRate),
+          wageCeiling: `${rupees(cfg.esi.grossCeilingPaise)} a month`, employerShareInsideCtc: s.esi.includeEmployer, esiNumberRecorded: Boolean(s.esi.esiNumber),
           contributionPeriods: 'April–September and October–March',
         },
         links: [statLink()],
       };
+    }
     case 'pt': case 'lwf': {
       const o = await getStatutoryOverview(ctx.userId);
       if (key === 'pt') {

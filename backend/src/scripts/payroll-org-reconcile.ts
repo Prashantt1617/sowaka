@@ -20,7 +20,9 @@ import { StatutorySettings } from '../models/statutorySettings.model';
 import { computePayslip } from '../services/payroll-run.calculator';
 import { calculateSalaryStructure } from '../services/salary-calculator';
 import { applyOverrides, resolveTemplateComponents } from '../services/salaryTemplate.service';
-import { DEFAULT_BONUS, DEFAULT_STATE_RULES } from '../services/statutory.service';
+import { StatutoryConfigRow } from '../models/statutoryConfig.model';
+import { stateDefaultsOf } from '../shared/payroll/statutory-config';
+import { fyOf } from '../shared/payroll/tds';
 import { defaultStatutorySettings, workStateOf } from '../services/statutorySettings.service';
 
 async function main() {
@@ -31,13 +33,16 @@ async function main() {
   await client.connect();
   try {
     const db = client.db(process.env.MONGODB_DB);
-    const [structures, catalog, templates, storedSettings, rules] = await Promise.all([
+    const fy = fyOf(period).fy;
+    const [structures, catalog, templates, storedSettings, rules, config] = await Promise.all([
       db.collection<SalaryStructure>('salary_structures').find({ org }).toArray(),
       db.collection<PayHead>('pay_heads').find({ org }).toArray(),
       db.collection<SalaryTemplate>('salary_templates').find({ org }).toArray(),
       db.collection<StatutorySettings>('statutory_settings').findOne({ org }),
       db.collection<StateStatutoryRule>('statutory_rules').find({ org }).toArray(),
+      db.collection<StatutoryConfigRow>('payroll_statutory_configs').findOne({ fy }, { projection: { _id: 0 } }),
     ]);
+    if (!config) throw new Error(`Statutory settings for FY ${fy} are not set up`);
     const users = await db
       .collection<{ userId: string; state?: string; location?: string }>('users')
       .find({ userId: { $in: structures.map((s) => s.userId) } }, { projection: { _id: 0, userId: 1, state: 1, location: 1 } })
@@ -49,8 +54,8 @@ async function main() {
     const ruleSetFor = (stateRaw: string | undefined): ResolvedRuleSet => {
       const state = (stateRaw ?? '').trim().toLowerCase();
       const stored = rules.find((r) => r.state === state);
-      const d = DEFAULT_STATE_RULES[state] ?? {};
-      return { state, pt: stored?.pt ?? d.pt, lwf: stored?.lwf ?? d.lwf, bonus: stored?.bonus ?? d.bonus ?? DEFAULT_BONUS };
+      const d = stateDefaultsOf(config, state);
+      return { state, pt: stored?.pt ?? d?.pt, lwf: stored?.lwf ?? d?.lwf, bonus: stored?.bonus };
     };
 
     const result = { org, period, structures: structures.length, active: 0, ok: 0, mismatched: 0, noBalancing: 0, overBudget: 0, errored: 0, reasons: {} as Record<string, number> };
@@ -68,9 +73,9 @@ async function main() {
         const monthly = Math.round(s.annualCtcPaise / 12);
         const base = calculateSalaryStructure({
           monthlyCtcPaise: monthly, payHeads: heads, componentValues: s.componentValues, balancingComponentCode: t.balancingComponentCode,
-          ruleSet, month, period, bonusCategory: s.bonusCategory, statutory: s.statutory, settings, statutoryWages: t.statutoryWages,
+          ruleSet, config, month, period, bonusCategory: s.bonusCategory, statutory: s.statutory, settings, statutoryWages: t.statutoryWages,
         });
-        const slip = computePayslip(base, { workingDays: 30, lopDays: 0, overtimePaise: 0, reimbursementsPaise: 0, ruleSet, month, statutory: s.statutory, settings, period });
+        const slip = computePayslip(base, { workingDays: 30, lopDays: 0, overtimePaise: 0, reimbursementsPaise: 0, ruleSet, config, month, statutory: s.statutory, settings, period });
         const reimb = base.reimbursements.reduce((a, l) => a + l.monthlyPaise, 0);
         const ctcFromParts = base.grossMonthlyPaise + reimb + base.benefitsMonthlyPaise + base.includedInCtcPaise;
         const slipConsistent = slip.grossPaise === base.grossMonthlyPaise && slip.netPayablePaise === slip.grossPaise - slip.employeeDeductionsPaise + slip.reimbursementsPaise;

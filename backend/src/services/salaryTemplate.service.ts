@@ -8,6 +8,7 @@ import { assertAcyclic } from './payHead.service';
 import { calculateSalaryStructure, SalaryCalcResult } from './salary-calculator';
 import { resolveTemplateComponents } from '../shared/payroll/resolve';
 import { resolveRuleSet } from './statutory.service';
+import { statutoryConfigForPeriod } from './payrollConfig.service';
 import { statutorySettingsFor } from './statutorySettings.service';
 import { catalogWithStandard, materializeStandard } from './standardComponents.service';
 import { ensurePaidDaysTemplates } from './paidDaysTemplate.service';
@@ -136,14 +137,19 @@ export async function previewSalaryTemplate(
   const catalog = await orgCatalog(org);
   const draft = await normalizeInput(input, catalog);
   const resolved = resolveTemplateComponents(draft.components, new Map(catalog.map((h) => [h.code, h])));
-  const [ruleSet, settings] = await Promise.all([resolveRuleSet(org, undefined), statutorySettingsFor(org)]);
+  // This month, on this FY's statutory row (409 when it has none).
+  const period = new Date().toISOString().slice(0, 7);
+  const config = await statutoryConfigForPeriod(period);
+  const [ruleSet, settings] = await Promise.all([resolveRuleSet(org, undefined, config), statutorySettingsFor(org)]);
   return calculateSalaryStructure({
     monthlyCtcPaise: Math.round((Number(sampleAnnualCtcPaise) || 0) / 12),
     payHeads: resolved,
     balancingComponentCode: draft.balancingComponentCode,
     ruleSet,
+    config,
     settings,
-    month: new Date().getUTCMonth() + 1,
+    month: Number(period.slice(5, 7)),
+    period,
     statutoryWages: draft.statutoryWages,
   });
 }

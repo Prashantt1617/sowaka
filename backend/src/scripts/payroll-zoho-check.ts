@@ -17,6 +17,10 @@ import { calculateSalaryStructure } from '../services/salary-calculator';
 import { computePayslip, PayslipComputation } from '../services/payroll-run.calculator';
 import { SalaryCalcResult } from '../services/salary-calculator';
 import { applyOverrides, resolveTemplateComponents } from '../services/salaryTemplate.service';
+import { STATUTORY_SEED } from './payroll-config-seed-data';
+
+/** FY 2026-27 as seeded into payroll_statutory_configs. */
+export const ZOHO_STATUTORY = STATUTORY_SEED.find((c) => c.fy === '2026-27')!;
 
 const now = new Date('2026-09-01T00:00:00Z');
 const head = (h: Partial<PayHead> & Pick<PayHead, 'code' | 'name' | 'category' | 'componentType' | 'calculation'>): PayHead => ({
@@ -156,6 +160,7 @@ export function computeZohoCase(c: ZohoCase, opts: { incomeTaxPaise?: number } =
     payHeads: heads,
     balancingComponentCode: template.balancingComponentCode,
     ruleSet: HARYANA,
+    config: ZOHO_STATUTORY,
     month: 9,
     period: '2026-09',
     settings: ZOHO_SETTINGS,
@@ -167,6 +172,7 @@ export function computeZohoCase(c: ZohoCase, opts: { incomeTaxPaise?: number } =
     overtimePaise: 0,
     reimbursementsPaise: 0,
     ruleSet: HARYANA,
+    config: ZOHO_STATUTORY,
     month: 9,
     period: '2026-09',
     settings: ZOHO_SETTINGS,

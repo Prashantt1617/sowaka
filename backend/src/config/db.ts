@@ -34,6 +34,7 @@ import { AppNotification, DeviceToken } from '../models/notification.model';
 import { AttendanceOverride, AttendanceRecord, AttendanceRegularization } from '../models/attendance.model';
 import { PayHead } from '../models/payHead.model';
 import { StateStatutoryRule } from '../models/statutoryRule.model';
+import { StatutoryConfigRow } from '../models/statutoryConfig.model';
 import { StatutorySettings } from '../models/statutorySettings.model';
 import { SalaryStructure } from '../models/salaryStructure.model';
 import { SalaryTemplate } from '../models/salaryTemplate.model';
@@ -312,6 +313,11 @@ export function employeePaymentDetails(): Collection<EmployeePaymentDetails> {
   return getDb().collection<EmployeePaymentDetails>('employee_payment_details');
 }
 
+/** The national statutory figures, one row per FY (payroll_statutory_configs). */
+export function statutoryConfigs(): Collection<StatutoryConfigRow> {
+  return getDb().collection<StatutoryConfigRow>('payroll_statutory_configs');
+}
+
 export function tdsConfigs(): Collection<TdsConfigRow> {
   return getDb().collection<TdsConfigRow>('tds_configs');
 }
@@ -426,6 +432,8 @@ async function ensureIndexes(database: Db): Promise<void> {
   // One HR mark per person per day; the calendars read them by person and range.
   await database.collection('attendance_overrides').createIndex({ org: 1, userId: 1, workDate: 1 }, { unique: true });
   await database.collection('paid_days_templates').createIndex({ org: 1, code: 1 }, { unique: true });
+  // One national statutory row per financial year.
+  await database.collection('payroll_statutory_configs').createIndex({ fy: 1 }, { unique: true });
   // The app's Payroll screens: one split per person per starting month, one proof per declared item.
   await database.collection('flexible_splits').createIndex({ org: 1, userId: 1, effectiveFrom: 1 }, { unique: true });
   await database.collection('investment_proofs').createIndex({ org: 1, userId: 1, fy: 1, item: 1 }, { unique: true });

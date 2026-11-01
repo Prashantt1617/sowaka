@@ -5,7 +5,7 @@
  * Per-state amounts (PT slabs, LWF amounts) stay in `statutory_rules`.
  */
 
-/** "restricted": 12% of PF wage up to the ceiling; "actual": 12% of the full PF wage. */
+/** "restricted": PF on the PF wage up to the ceiling; "actual": on the full PF wage. */
 export type PfRateMode = 'restricted' | 'actual';
 
 export interface EpfSettings {
@@ -15,13 +15,13 @@ export interface EpfSettings {
   employerRate: PfRateMode;
   /** Employer PF is part of CTC (taken out of the balancing component). */
   includeEmployer: boolean;
-  /** Employer EDLI (0.50%) is part of CTC. Only when includeEmployer. */
+  /** Employer EDLI is part of CTC. Only when includeEmployer. */
   includeEDLI: boolean;
-  /** EPF admin charges (0.50%) are part of CTC. Only when includeEmployer. */
+  /** EPF admin charges are part of CTC. Only when includeEmployer. */
   includeAdmin: boolean;
-  /** A person's salary structure may switch them to 12% of actual PF wage. */
+  /** A person's salary structure may switch them to PF on the actual PF wage. */
   overrideAtEmployee: boolean;
-  /** The ceiling shrinks with loss-of-pay days (₹25,000 × payable ÷ working days). */
+  /** The ceiling shrinks with loss-of-pay days (ceiling × payable ÷ working days). */
   proRateRestricted: boolean;
   /**
    * Components marked "only when PF wage is below the ceiling" are tested
@@ -33,7 +33,7 @@ export interface EpfSettings {
 export interface EsiSettings {
   enabled: boolean;
   esiNumber?: string;
-  /** Employer ESI (3.25%) is part of CTC (taken out of the balancing component). */
+  /** Employer ESI is part of CTC (taken out of the balancing component). */
   includeEmployer: boolean;
 }
 
@@ -47,7 +47,8 @@ export interface MinWageRow {
 export interface BonusSettings {
   enabled: boolean;
   frequency: 'monthly' | 'yearly';
-  ratePercent: number;
+  /** The company's bonus rate (percent). Absent: the FY's minimum rate (statutory config `bonus.minRate`). */
+  ratePercent?: number;
   /** Minimum wages by employment category, keyed by lower-case state. */
   minWages: Record<string, MinWageRow[]>;
 }

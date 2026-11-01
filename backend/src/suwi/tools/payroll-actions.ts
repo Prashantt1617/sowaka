@@ -9,9 +9,10 @@ import { createRun, recomputeRun, submitRun } from '../../services/payrollRun.se
 import { SalaryCalcResult } from '../../services/salary-calculator';
 import { projectedTaxable } from '../../services/payroll-run.calculator';
 import { declarationsFor, runTds, tdsConfigsFor, ytdFor } from '../../services/tds.service';
+import { statutoryConfigForPeriod } from '../../services/payrollConfig.service';
 import { fyOf } from '../../shared/payroll/tds';
 import { statutorySettingsFor } from '../../services/statutorySettings.service';
-import { epfCeilingForPeriod, ESI_CONSTANTS } from '../../models/statutoryRule.model';
+import { epfCeilingForPeriod, ratePercentLabel, StatutoryConfig } from '../../shared/payroll/statutory-config';
 import { SalaryStructure } from '../../models/salaryStructure.model';
 import { defineTools, monthOf, num, rupees, str, SuwiContext } from '../tools';
 import { defineExecutor, propose } from '../proposals';
@@ -57,9 +58,9 @@ export async function tdsProjection(org: string, userId: string, period: string,
   const { fy } = fyOf(period);
   const configs = await tdsConfigsFor(fy);
   if (configs.size === 0) return null;
-  const [ytd, decl] = await Promise.all([ytdFor(org, period, [userId]), declarationsFor(org, fy, [userId])]);
+  const [ytd, decl, statutory] = await Promise.all([ytdFor(org, period, [userId]), declarationsFor(org, fy, [userId]), statutoryConfigForPeriod(period)]);
   const d = decl.get(userId);
-  const taxable = projectedTaxable(c);
+  const taxable = projectedTaxable(c, statutory.mealCard.exemptMonthlyPaise);
   const byType = (t: string) => c.earnings.filter((l) => l.componentType === t).reduce((s, l) => s + l.monthlyPaise, 0);
   const r = runTds({
     configs, regime: d?.regime ?? settings.tds.defaultRegime, period, ytd: ytd.get(userId),
@@ -71,9 +72,9 @@ export async function tdsProjection(org: string, userId: string, period: string,
 }
 
 /** Plain-words reasons for the surprises in a breakup, for teaching mode. */
-export function whyLines(c: SalaryCalcResult, period: string, before?: SalaryCalcResult): string[] {
+export function whyLines(c: SalaryCalcResult, period: string, config: StatutoryConfig, before?: SalaryCalcResult): string[] {
   const out: string[] = [];
-  const ceiling = epfCeilingForPeriod(period);
+  const ceiling = epfCeilingForPeriod(config, period);
   const basic = c.earnings.filter((l) => l.componentType === 'basic').reduce((s, l) => s + l.monthlyPaise, 0);
   const epf = c.statutory.epf;
   if (epf.employeePaise > 0 && epf.contributionWagePaise < c.pfWagePaise) {
@@ -82,9 +83,9 @@ export function whyLines(c: SalaryCalcResult, period: string, before?: SalaryCal
     out.push(`PF did not change although Basic did: both are at or above the ${rupees(ceiling)} ceiling, so the contribution is the same either way.`);
   }
   if (epf.employeePaise === 0) out.push('No PF: either PF is off for this person, or the company has it off in Statutory Components.');
-  const esiCeiling = ESI_CONSTANTS.grossCeilingPaise;
+  const esiCeiling = config.esi.grossCeilingPaise;
   if (c.statutory.esi.applicable) {
-    out.push(`ESI applies because the ESI wage is at or under ${rupees(esiCeiling)} a month: 0.75% from the employee, 3.25% from the employer.`);
+    out.push(`ESI applies because the ESI wage is at or under ${rupees(esiCeiling)} a month: ${ratePercentLabel(config.esi.employeeRate)} from the employee, ${ratePercentLabel(config.esi.employerRate)} from the employer.`);
   } else if (before?.statutory.esi.applicable) {
     out.push(`ESI shows as stopping here, but in a real run it continues until ${niceDate(esiPeriodEnd(period))}, the end of the current contribution period (April–September or October–March): the law keeps a person covered for the half-year they crossed ${rupees(esiCeiling)} in.`);
   } else if (c.grossMonthlyPaise > esiCeiling && c.grossMonthlyPaise <= esiCeiling * 1.1) {
@@ -93,7 +94,7 @@ export function whyLines(c: SalaryCalcResult, period: string, before?: SalaryCal
   if (c.statutory.pt.amountPaise > 0) out.push(`Professional tax of ${rupees(c.statutory.pt.amountPaise)} follows the slab of the person's work state; it changes only when gross crosses a slab edge.`);
   if (c.overBudget) out.push('The CTC is too small for the fixed components: the balancing component would go negative, so it is shown as zero and gross exceeds CTC.');
   const bonus = c.earnings.find((l) => l.componentType === 'statutory_bonus');
-  if (bonus && bonus.monthlyPaise === 0) out.push(`Statutory Bonus is zero because Basic is above ${rupees(21_000_00)} a month, the Bonus Act's limit.`);
+  if (bonus && bonus.monthlyPaise === 0) out.push(`Statutory Bonus is zero because Basic is above ${rupees(config.bonus.eligibilityCeilingPaise)} a month, the Bonus Act's limit.`);
   if (c.includedInCtcPaise > 0) out.push(`${rupees(c.includedInCtcPaise)} of employer PF/ESI sits inside the CTC, so the balancing component is smaller by that much.`);
   return out;
 }
@@ -169,7 +170,7 @@ defineTools(
           before: before ? { ...describeComputed(before), tds: tdsBefore ? { monthly: rupees(tdsBefore.monthlyPaise), regime: tdsBefore.regime } : 'not projected', netAfterTax: rupees(net(before, tdsBefore)) } : 'no structure yet',
           after: { ...describeComputed(after), tds: tdsAfter ? { monthly: rupees(tdsAfter.monthlyPaise), regime: tdsAfter.regime } : 'not projected', netAfterTax: rupees(net(after, tdsAfter)) },
           netChange: before ? signed(net(after, tdsAfter) - net(before, tdsBefore)) : undefined,
-          why: whyLines(after, period, before ?? undefined),
+          why: whyLines(after, period, await statutoryConfigForPeriod(period), before ?? undefined),
           note: 'A simulation for a full month at today\'s statutory rules; a real run also applies loss of pay, overtime, claims and the ESI contribution period.',
         },
         links: [{ label: `Open ${who.name.split(' ')[0]}'s salary`, view: 'salarydetails', userId }],
@@ -228,8 +229,8 @@ defineTools(
         : 'TDS is not projected (the company has the TDS engine off or no tax config for this year).';
       const lines: { text: string; why?: string; tone?: 'info' | 'warn' }[] = [
         { text: `Monthly CTC ${rupees(after.monthlyCtcPaise)}: ${split}.`, why: `Each component follows ${tpl.name}'s rule (${after.earnings.map((l) => `${l.payslipName}: ${l.calcLabel}`).join('; ')}).` },
-        { text: `Deductions: PF ${rupees(after.statutory.epf.employeePaise)}, ESI ${after.statutory.esi.applicable ? rupees(after.statutory.esi.employeePaise) : esiContinues ? `continues until ${niceDate(esiEnd)}` : 'none'}, PT ${rupees(after.statutory.pt.amountPaise)}${lwf}.`, why: whyLines(after, period, before ?? undefined).join(' ') || undefined },
-        ...(esiContinues ? [{ text: `ESI is still deducted until ${niceDate(esiEnd)}: ${who.name.split(' ')[0]} is covered now, and coverage lasts to the end of the contribution period even though the new gross is over ${rupees(ESI_CONSTANTS.grossCeilingPaise)}. The net below leaves it out, so take-home is lower by the ESI until then.`, tone: 'warn' as const }] : []),
+        { text: `Deductions: PF ${rupees(after.statutory.epf.employeePaise)}, ESI ${after.statutory.esi.applicable ? rupees(after.statutory.esi.employeePaise) : esiContinues ? `continues until ${niceDate(esiEnd)}` : 'none'}, PT ${rupees(after.statutory.pt.amountPaise)}${lwf}.`, why: whyLines(after, period, await statutoryConfigForPeriod(period), before ?? undefined).join(' ') || undefined },
+        ...(esiContinues ? [{ text: `ESI is still deducted until ${niceDate(esiEnd)}: ${who.name.split(' ')[0]} is covered now, and coverage lasts to the end of the contribution period even though the new gross is over ${rupees((await statutoryConfigForPeriod(period)).esi.grossCeilingPaise)}. The net below leaves it out, so take-home is lower by the ESI until then.`, tone: 'warn' as const }] : []),
         { text: `Net before tax ${before ? `${rupees(before.netMonthlyPaise)} → ` : ''}${rupees(after.netMonthlyPaise)} a month for a full month.` },
         { text: tdsLine, why: 'The engine spreads the year\'s projected tax over the months left in the financial year, so a mid-year change moves every remaining month.' },
         period === thisMonth

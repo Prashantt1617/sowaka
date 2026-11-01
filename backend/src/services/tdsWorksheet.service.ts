@@ -14,13 +14,14 @@ import { ObjectId } from 'mongodb';
 import { employeePaymentDetails, payHeads, payrollRuns, payslips, salaryStructures, salaryTemplates, users } from '../config/db';
 import { Payslip } from '../models/payrollRun.model';
 import { calculateSalaryStructure } from './salary-calculator';
-import { computePayslip, MEAL_CARD_EXEMPT_MONTHLY_PAISE } from './payroll-run.calculator';
+import { computePayslip } from './payroll-run.calculator';
 import { applyOverrides, resolveTemplateComponents } from './salaryTemplate.service';
 import { statutorySettingsFor, workStateOf } from './statutorySettings.service';
 import { resolveRuleSet } from './statutory.service';
 import { computeWorkingDays, parsePeriod } from './payroll-inputs.service';
-import { declarationsFor, tdsConfigsFor } from './tds.service';
-import { fyOf, periodsAfter, roundToTenRupees, taxOnIncome, TaxRegime } from '../shared/payroll/tds';
+import { declarationsFor } from './tds.service';
+import { requireTdsConfigs, statutoryConfigForPeriod } from './payrollConfig.service';
+import { fyOf, periodsAfter, roundToTenRupees, taxOnIncome, TaxRegime, TdsConfigIncompleteError } from '../shared/payroll/tds';
 import { billCategories, billsByComponent, reimbursementTax } from './reimbursementBills.service';
 import { companyOf, PayrollRunError, requireAdminOrg } from './payrollRun.service';
 import { decryptField, fieldKeyConfigured } from './fieldCrypto';
@@ -75,17 +76,21 @@ export async function worksheetFor(org: string, slip: Payslip) {
   // bill categories are fetched in case reimbursements need them. This FY's
   // earlier payslips and the org's live runs come in the same trip.
   const employeeP = users().findOne({ userId });
-  const ruleSetP = employeeP.then((e) => (e ? resolveRuleSet(org, workStateOf(e)) : undefined));
+  // The FY's statutory row (409 when it has none): every month below is in this FY.
+  const statutoryP = statutoryConfigForPeriod(period);
+  const ruleSetP = Promise.all([employeeP, statutoryP]).then(([e, cfg]) => (e ? resolveRuleSet(org, workStateOf(e), cfg) : undefined));
+  statutoryP.catch(() => undefined);
   const billCategoriesP = billCategories(org);
   ruleSetP.catch(() => undefined);
   billCategoriesP.catch(() => undefined);
-  const [employee, structure, catalog, templates, settings, configs, declarations, payment, company, earlier, liveRuns] = await Promise.all([
+  const [statutory, employee, structure, catalog, templates, settings, configs, declarations, payment, company, earlier, liveRuns] = await Promise.all([
+    statutoryP,
     employeeP,
     salaryStructures().findOne({ org, userId, status: 'active' }),
     payHeads().find({ org }).toArray(),
     salaryTemplates().find({ org }).toArray(),
     statutorySettingsFor(org),
-    tdsConfigsFor(fy),
+    requireTdsConfigs(fy),
     declarationsFor(org, fy, [userId]),
     employeePaymentDetails().findOne({ org, userId } as never) as Promise<{ pan?: string; panLast4?: string } | null>,
     companyOf(org),
@@ -95,8 +100,7 @@ export async function worksheetFor(org: string, slip: Payslip) {
   const declaration = declarations.get(userId);
   const splits = await splitsByUser(org, [userId]);
   const regime: TaxRegime = declaration?.regime ?? settings.tds?.defaultRegime ?? 'new';
-  const config = configs.get(regime);
-  if (!config) throw new PayrollRunError(409, `No income-tax rates are set up for FY ${fy}`);
+  const config = configs.get(regime)!;
   const d = declaration?.declarations ?? {};
   const old = regime === 'old';
   const headByCode = new Map(catalog.map((h) => [h.code, h]));
@@ -123,6 +127,7 @@ export async function worksheetFor(org: string, slip: Payslip) {
       componentValues: { ...(structure.componentValues ?? {}), ...splitAmountsFor(splits.get(userId), p) },
       balancingComponentCode: template.balancingComponentCode,
       ruleSet,
+      config: statutory,
       month: Number(p.slice(5, 7)),
       period: p,
       bonusCategory: structure.bonusCategory,
@@ -161,6 +166,7 @@ export async function worksheetFor(org: string, slip: Payslip) {
       overtimePaise: 0,
       reimbursementsPaise: 0,
       ruleSet,
+      config: statutory,
       month: range.month,
       statutory: structure!.statutory,
       settings,
@@ -213,7 +219,7 @@ export async function worksheetFor(org: string, slip: Payslip) {
       }
       if (meal > 0) {
         const name = nameOf(m.lines.find((l) => headByCode.get(l.code)?.componentType === 'meal_card')!.code);
-        exempt.set(name, (exempt.get(name) ?? 0) + Math.min(meal, MEAL_CARD_EXEMPT_MONTHLY_PAISE));
+        exempt.set(name, (exempt.get(name) ?? 0) + Math.min(meal, statutory.mealCard.exemptMonthlyPaise));
       }
       if (m.overtimePaise > 0) {
         const row = rows.get('__overtime') ?? { name: 'Overtime', actualPaise: 0, projectionPaise: 0 };
@@ -232,7 +238,9 @@ export async function worksheetFor(org: string, slip: Payslip) {
     const sumType = (type: string) => earnings.filter((_, i) => headByCode.get([...rows.keys()][i])?.componentType === type).reduce((t, r) => t + r.totalPaise, 0);
     const basic = sumType('basic');
     const hra = sumType('hra');
-    const hraExempt = Math.max(0, Math.min(hra, d.rentPaidPaise! - basic / 10, (basic * (d.metro ? 50 : 40)) / 100));
+    const rule = config.hra;
+    if (!rule) throw new TdsConfigIncompleteError(fy, 'the HRA exemption rule (hra)');
+    const hraExempt = Math.max(0, Math.min(hra, d.rentPaidPaise! - (basic * rule.rentOverPercentOfBasic) / 100, (basic * (d.metro ? rule.metroPercentOfBasic : rule.nonMetroPercentOfBasic)) / 100));
     if (hraExempt > 0) exempt.set('House Rent Allowance', (exempt.get('House Rent Allowance') ?? 0) + Math.round(hraExempt / 100) * 100);
   }
   // Salary reimbursements (Fuel, Internet…) paid so far: tax-free only as far as approved bills cover them.
