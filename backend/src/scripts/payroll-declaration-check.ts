@@ -158,7 +158,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('submitting marks it submitted with a time', submitted.status === 'submitted' && submitted.submittedAt !== null, submitted);
   const dec1 = new Date('2026-12-01T06:00:00Z');
   const late = await refusal(() => saveMyDeclaration('asha', FY, { regime: 'new' }, dec1));
-  check('after 30 Nov the declaration is locked (409)', late?.status === 409, late);
+  check('after 30 Nov the declaration is locked (409), saying when it closed and to ask HR', late?.status === 409 && /closed on 30 Nov 2026/.test(late.message ?? '') && /ask HR\.$/.test(late.message ?? ''), late);
   check('…and reads back locked', (await myDeclaration('asha', FY, dec1)).locked === true);
 
   // —— the new regime ——
@@ -217,7 +217,8 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     && (await listProofsForHr('hr', { fy: FY, status: 'rejected' }, oct)).proofs.length === 0);
   const ok = await decideProofForHr('hrpay', proofId, { decision: 'approved' }, oct);
   check('approved by someone with Salary details', ok.status === 'approved' && ok.reason === null, ok);
-  check('an approved proof cannot be replaced (409)', (await refusal(() => uploadMyProof('asha', 'ppf', FY, { amountPaise: R(50_000), file: pdf('again') }, oct)))?.status === 409);
+  const approvedAgain = await refusal(() => uploadMyProof('asha', 'ppf', FY, { amountPaise: R(50_000), file: pdf('again') }, oct));
+  check('an approved proof cannot be replaced (409), saying to ask HR', approvedAgain?.status === 409 && /ask HR\.$/.test(approvedAgain.message ?? ''), approvedAgain);
 
   const others = ['elss', 'lifeInsurance', 'nps', 'healthSelf', 'rentMonthly', 'homeLoanInterest'] as const;
   for (const item of others) await uploadMyProof('asha', item, FY, { amountPaise: R(1_000), file: pdf(`asha-${item}`) }, oct);
@@ -237,7 +238,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('home: no salary structure for Bala yet, still works', bHome.hasSalaryStructure === false, bHome.hasSalaryStructure);
   const feb = new Date('2027-02-01T06:00:00Z');
   const lateProof = await refusal(() => uploadMyProof('bala', 'ppf', FY, { amountPaise: R(10_000), file: pdf('late') }, feb));
-  check('after 31 Jan proofs are closed (409)', lateProof?.status === 409, lateProof);
+  check('after 31 Jan proofs are closed (409), saying to ask HR', lateProof?.status === 409 && /closed on 31 Jan 2027/.test(lateProof.message ?? '') && /ask HR\.$/.test(lateProof.message ?? ''), lateProof);
   check('a company can move the deadlines', await (async () => {
     await companies().updateOne({ id: ORG }, { $set: { payrollEmployee: { declarationDue: '12-15', proofsDue: '02-15' } } });
     const d = await myDeclaration('bala', FY, dec1);

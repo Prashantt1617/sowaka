@@ -80,6 +80,14 @@ class FakePayrollServer {
   /// False: the declaration answers 409 tax_rules_not_set_up ("… Ask HR.").
   bool taxRulesSetUp = true;
 
+  /// False: the FY's statutory settings are missing, so Home has no salary
+  /// and says it is not set up (salaryNotSetUp), the rest as usual.
+  bool statutorySetUp = true;
+
+  /// The pay period's base days on Home's salary; null leaves them (and the
+  /// period's dates) out, as an older server does.
+  int? baseDays = 30;
+
   /// The first month a change made now applies to; moving it between Review
   /// and Submit makes the save a 409.
   String windowMonth = '2026-11';
@@ -242,27 +250,43 @@ class FakePayrollServer {
     'period': period,
     'fy': '2026-27',
     'hasSalaryStructure': true,
-    'salary': {
-      'period': period,
-      'status': 'estimate',
-      'payslipId': null,
-      'grossPaise': 9000000,
-      'lopDays': 2,
-      'lopPaise': 600000,
-      if (overtimePaise > 0) 'overtimePaise': overtimePaise,
-      'deductions': [
-        {'key': 'epf', 'label': 'Provident fund', 'amountPaise': 180000},
-        {
-          'key': 'income_tax',
-          'label': 'Income tax (TDS)',
-          'amountPaise': 420000,
+    if (!statutorySetUp) 'salary': null,
+    if (!statutorySetUp)
+      'salaryNotSetUp': {
+        'notConfigured': true,
+        'reason': 'statutory_not_set_up',
+        'fy': '2026-27',
+        'message':
+            'Your pay can\'t be worked out yet: the statutory settings (PF, '
+            'ESI, professional tax) for FY 2026-27 are not set up. Ask HR.',
+      },
+    if (statutorySetUp)
+      'salary': {
+        'period': period,
+        'status': 'estimate',
+        'payslipId': null,
+        if (baseDays != null) ...{
+          'periodFrom': '2026-10-26',
+          'periodTo': '2026-11-25',
+          'baseDays': baseDays,
         },
-        {'key': 'pt', 'label': 'Professional tax', 'amountPaise': 20000},
-      ],
-      'netPaise': 7780000,
-      'reimbursementsPaise': 0,
-      'takeHomePaise': 7780000,
-    },
+        'grossPaise': 9000000,
+        'lopDays': 2,
+        'lopPaise': 600000,
+        if (overtimePaise > 0) 'overtimePaise': overtimePaise,
+        'deductions': [
+          {'key': 'epf', 'label': 'Provident fund', 'amountPaise': 180000},
+          {
+            'key': 'income_tax',
+            'label': 'Income tax (TDS)',
+            'amountPaise': 420000,
+          },
+          {'key': 'pt', 'label': 'Professional tax', 'amountPaise': 20000},
+        ],
+        'netPaise': 7780000,
+        'reimbursementsPaise': 0,
+        'takeHomePaise': 7780000,
+      },
     'todo': [
       {
         'kind': 'missing_punches',

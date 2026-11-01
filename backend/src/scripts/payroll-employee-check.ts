@@ -2,13 +2,15 @@
  * Scratch-database check of the app's Payroll screens: the home summary, the
  * missing punches of a month, the flexible split (limits, pool, the window
  * and the run's lock, the payroll run paying the split from its month on),
- * and payslips (only released ones, only one's own). It drops and recreates
+ * payslips (only released ones, only one's own), the home estimate on the
+ * company's pay period (payroll_periods) and its "not set up" states, and the
+ * 409s telling the person to ask HR. It drops and recreates
  * its own database, and refuses any other. Test data is the `sowaka` org with
  * invented people and amounts. Run with
  *   npm run payroll:employee-check
  */
 import {
-  attendanceRecords, companies, connectDb, flexibleSplits, getDb, payHeads, payrollRuns, payslips, salaryStructures, salaryTemplates,
+  attendanceRecords, companies, connectDb, flexibleSplits, getDb, payHeads, payrollPeriods, payrollRuns, payslips, salaryStructures, salaryTemplates,
   shiftPolicies, statutoryConfigs, tdsConfigs, users,
 } from '../config/db';
 import { env } from '../config/env';
@@ -117,7 +119,8 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('on 10 Oct it applies from October', (await splitWindow(ORG, oct10)).effectiveFrom === '2026-10');
   const plain = await mySplit('chetan', oct31);
   check('a template without flexible components: not available', plain.available === false && plain.components.length === 0, plain);
-  check('reviewing a split on such a template is refused (409)', (await refusal(() => reviewSplit('chetan', { amounts: {} }, oct31)))?.status === 409);
+  const noSplit = await refusal(() => reviewSplit('chetan', { amounts: {} }, oct31));
+  check('reviewing a split on such a template is refused (409), saying to ask HR', noSplit?.status === 409 && /ask HR\.$/.test(noSplit.message ?? ''), noSplit);
 
   const over = await refusal(() => reviewSplit('asha', { amounts: { FUEL: R(3500) } }, oct31));
   check('an amount above its limit is refused (400)', over?.status === 400 && /Fuel & vehicle can be at most ₹3,000/.test(over.message ?? ''), over);
@@ -215,6 +218,52 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   await users().insertOne(person('dev', 'Dev New') as never);
   const dHome = await homeOn('dev', '2026-10', oct31);
   check('home: no salary structure yet: hasSalaryStructure false, salary null', dHome.hasSalaryStructure === false && dHome.salary === null, dHome);
+  check('home: no salary structure: nothing to set up either', dHome.salaryNotSetUp === null, dHome.salaryNotSetUp);
+  check('home: a company with no pay cycle is paid by the calendar month', bHome.payPeriod?.from === '2026-12-01' && bHome.payPeriod.to === '2026-12-31' && bHome.salary?.baseDays === 31, bHome.payPeriod);
+
+  // —— home on the company's pay period (26th to 25th, November's base days set to 26) ——
+  await payrollPeriods().insertMany([
+    { org: ORG, period: 'default', startDay: 26, updatedAt: now },
+    { org: ORG, period: '2026-11', baseDays: 26, updatedAt: now },
+  ]);
+  const oct28 = new Date('2026-10-28T06:00:00Z'); // 28 Oct: November's pay period (26 Oct – 25 Nov)
+  const pHome = await homeOn('bala', undefined, oct28);
+  const pSal = pHome.salary;
+  check('pay period: on 28 Oct the estimate is November\'s', pHome.period === '2026-11' && pSal?.period === '2026-11' && pSal.status === 'estimate', [pHome.period, pSal?.period]);
+  check('pay period: its dates and base days come from payroll_periods',
+    pSal?.periodFrom === '2026-10-26' && pSal.periodTo === '2026-11-25' && pSal.baseDays === 26
+      && pHome.payPeriod?.from === '2026-10-26' && pHome.payPeriod.baseDays === 26, [pSal, pHome.payPeriod]);
+  check('pay period: 26 and 27 Oct without punches are loss of pay (not 1–27 Oct)', pSal?.lopDays === 2, pSal?.lopDays);
+  check('pay period: loss of pay is gross ÷ 26 base days × days lost', pSal !== null && pSal !== undefined && pSal.lopPaise === Math.round((pSal.grossPaise * 2) / 26 / 100) * 100 && pSal.lopPaise > 0, pSal);
+  check('pay period: missing punches stay on the calendar month', pHome.missingPunches.period === '2026-10', pHome.missingPunches);
+  check('pay period: asking for November on 28 Oct is fine (it has started)', (await homeOn('bala', '2026-11', oct28)).salary?.period === '2026-11');
+  check('pay period: December has not started', (await refusal(() => homeOn('bala', '2026-12', oct28)))?.status === 400);
+  const oct25 = await homeOn('bala', undefined, new Date('2026-10-25T06:00:00Z'));
+  check('pay period: on 25 Oct it is October\'s, final from the released payslip, on that run\'s own 31 base days',
+    oct25.period === '2026-10' && oct25.salary?.status === 'final' && oct25.salary.baseDays === 31, oct25.salary);
+
+  // —— the FY's statutory row is missing: the pay says not set up, the rest of home still shows ——
+  const fyRow = await statutoryConfigs().findOne({ fy: '2026-27' });
+  await statutoryConfigs().deleteOne({ fy: '2026-27' });
+  const sh = await homeOn('bala', undefined, oct28).catch((error) => {
+    check('no statutory row: home still answers', false, (error as Error).message);
+    throw error;
+  });
+  check('no statutory row: home still answers', sh.appEnabled === true);
+  check('no statutory row: no made-up salary, a not-set-up state that says to ask HR',
+    sh.salary === null && sh.hasSalaryStructure === true && sh.salaryNotSetUp?.reason === 'statutory_not_set_up' && sh.salaryNotSetUp.fy === '2026-27'
+      && /FY 2026-27/.test(sh.salaryNotSetUp.message) && /Ask HR\.$/.test(sh.salaryNotSetUp.message), sh.salaryNotSetUp);
+  check('no statutory row: the to-dos and sections still show', sh.todo.some((t) => t.kind === 'flexible_split') && sh.split !== null && sh.proofs.fy === '2026-27', sh.todo);
+  check('no statutory row: a released payslip still shows as final', (await homeOn('asha', '2026-10', oct31)).salary?.status === 'final');
+  await statutoryConfigs().insertOne(fyRow!);
+
+  // —— a pay cycle HR set up wrong: said, not guessed around ——
+  await payrollPeriods().updateOne({ org: ORG, period: 'default' }, { $set: { startDay: 30 } });
+  const bad = await homeOn('bala', undefined, new Date('2026-12-02T06:00:00Z')); // December: no payslip yet
+  check('a broken pay cycle: no salary, pay_period_not_set_up, ask HR',
+    bad.salary === null && bad.payPeriod === null && bad.salaryNotSetUp?.reason === 'pay_period_not_set_up' && /1 to 28/.test(bad.salaryNotSetUp.message) && /Ask HR\.$/.test(bad.salaryNotSetUp.message), bad.salaryNotSetUp);
+  check('a broken pay cycle: the rest of home still shows', bad.todo.some((t) => t.kind === 'flexible_split'), bad.todo);
+  await payrollPeriods().deleteMany({});
 
   await db.dropDatabase();
   console.log(failed === 0 ? `\nall ${passed} payroll employee checks passed` : `\n${failed} check(s) failed, ${passed} passed`);

@@ -18,7 +18,7 @@ import {
 } from '../shared/payroll/declaration';
 import { TaxDeclarations, TaxRegime } from '../shared/payroll/tds';
 import {
-  EmployeePayrollError, NOT_CONFIGURED, dayOf, deadlinesOf, declarationDueOn, meOf, parseFyParam, payrollViewerOrg, proofsDueOn,
+  EmployeePayrollError, NOT_CONFIGURED, askHr, dayLabel, dayOf, deadlinesOf, declarationDueOn, meOf, parseFyParam, payrollViewerOrg, proofsDueOn,
 } from './employeePayroll.common';
 import { deleteReimbursementReceipt, hasReceiptStorage, presignReceiptDownload, uploadInvestmentProof } from './s3-receipt.service';
 import { computeStructureFor } from './salaryStructure.service';
@@ -144,8 +144,10 @@ export async function saveMyDeclaration(userId: string, fyRaw: unknown, body: Re
   const fy = parseFyParam(fyRaw, now);
   const [deadlines] = await Promise.all([deadlinesOf(org), taxRulesFor(fy)]);
   const dueOn = declarationDueOn(fy, deadlines);
-  if (dueOn === null) throw NOT_CONFIGURED(['declarationDue'], 'HR has not set the declaration due date yet');
-  if (dayOf(now) > dueOn) throw new EmployeePayrollError(409, `Declarations for FY ${fy} closed on ${dueOn}. Ask HR to change it.`);
+  if (dueOn === null) throw NOT_CONFIGURED(['declarationDue'], askHr('HR has not set the declaration due date yet, so declarations can\'t be saved'));
+  if (dayOf(now) > dueOn) {
+    throw new EmployeePayrollError(409, `Declarations for FY ${fy} closed on ${dayLabel(dueOn)}, so your declaration can't be changed now. To change it, ask HR.`, { reason: 'declaration_closed', dueOn });
+  }
   const regime = body.regime === 'old' || body.regime === 'new' ? body.regime : undefined;
   if (!regime) throw new EmployeePayrollError(400, 'Choose the new or the old regime');
 
@@ -270,10 +272,14 @@ export async function uploadMyProof(
   if (row?.regime !== 'old') throw new EmployeePayrollError(400, 'Not needed on the new regime');
   if (!provable(row).some((d) => d.key === item)) throw new EmployeePayrollError(400, `Declare an amount for ${ITEM_BY_KEY.get(item)!.label} first`);
   const dueOn = proofsDueOn(fy, await deadlinesOf(org));
-  if (dueOn === null) throw NOT_CONFIGURED(['proofsDue'], 'HR has not set the proofs due date yet');
-  if (dayOf(now) > dueOn) throw new EmployeePayrollError(409, `Proofs for FY ${fy} closed on ${dueOn}`);
+  if (dueOn === null) throw NOT_CONFIGURED(['proofsDue'], askHr('HR has not set the proofs due date yet, so proofs can\'t be uploaded'));
+  if (dayOf(now) > dueOn) {
+    throw new EmployeePayrollError(409, `Investment proofs for FY ${fy} closed on ${dayLabel(dueOn)}, so proofs can't be uploaded now. To send one late, ask HR.`, { reason: 'proofs_closed', dueOn });
+  }
   const existing = (await investmentProofs().findOne({ org, userId, fy, item })) as StoredProof | null;
-  if (existing?.status === 'approved') throw new EmployeePayrollError(409, 'This proof is already approved');
+  if (existing?.status === 'approved') {
+    throw new EmployeePayrollError(409, 'This proof is already approved, so it can\'t be replaced. If it needs to change, ask HR.', { reason: 'proof_approved' });
+  }
   const amount = Number(input.amountPaise);
   if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_AMOUNT_PAISE) throw new EmployeePayrollError(400, 'Enter the amount on the proof, in paise');
   const file = input.file;

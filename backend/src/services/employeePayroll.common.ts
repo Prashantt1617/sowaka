@@ -57,9 +57,19 @@ export function deadlinesFrom(s: EmployeePayrollSettings | undefined | null): Pa
 /** The deadlines HR has not set. */
 export const missingDeadlines = (d: PayrollDeadlines): DeadlineField[] => DEADLINE_FIELDS.filter((f) => d[f] === null);
 
-/** 409 for something HR has not set up yet on the dashboard. */
-export const NOT_CONFIGURED = (missing: string[], message = 'HR has not finished setting up payroll for the app yet') =>
+/**
+ * A 409 the employee cannot fix themselves: what is wrong, then "Ask HR." (the
+ * app turns that into a Support Desk link). Web and app show it as written.
+ */
+export const askHr = (message: string) => (/\bask hr\b/i.test(message) ? message : `${message.replace(/[.\s]+$/, '')}. Ask HR.`);
+
+/** 409 for something HR has not set up yet on the dashboard (an employee's message says to ask HR: see askHr). */
+export const NOT_CONFIGURED = (missing: string[], message = askHr('HR has not finished setting up payroll for the app yet')) =>
   new EmployeePayrollError(409, message, { reason: 'payroll_not_configured', missing });
+
+/** "2026-11-30" as "30 Nov 2026", for messages. */
+export const dayLabel = (day: string) =>
+  new Date(`${day}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 export async function deadlinesOf(org: string): Promise<PayrollDeadlines> {
   const company = await companies().findOne({ id: org }, { projection: { _id: 0, payrollEmployee: 1 } });
@@ -99,7 +109,7 @@ export async function meOf(userId: string): Promise<{ user: Omit<User, 'profileP
   if (!userId) throw new EmployeePayrollError(401, 'Authentication required');
   const user = requestViewer(userId) ?? (await users().findOne({ userId }));
   if (!user) throw new EmployeePayrollError(404, 'User not found');
-  if (!user.org) throw new EmployeePayrollError(409, 'Your account is not attached to a company');
+  if (!user.org) throw new EmployeePayrollError(409, askHr('Your account is not attached to a company yet'));
   return { user, org: user.org };
 }
 

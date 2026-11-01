@@ -34,6 +34,11 @@ class PayrollApiException implements Exception {
   /// A server without the Payroll routes yet.
   static const unavailable = 'Payroll isn\'t available yet. Try again later.';
 
+  /// A 409 the server sent no words for: something is closed or locked that
+  /// the person can't change themselves. The server's own message (which
+  /// says what to do) is shown whenever there is one.
+  static const conflict = 'This can\'t be changed right now. Ask HR.';
+
   @override
   String toString() => message;
 }
@@ -323,6 +328,7 @@ class PayrollApiService {
         404 when said.isEmpty || said.startsWith('Route not found') =>
           PayrollApiException.unavailable,
         413 => 'Choose a file smaller than 5 MB.',
+        409 when said.isEmpty => PayrollApiException.conflict,
         >= 500 when said.isEmpty => PayrollApiException.failed,
         _ when said.isEmpty => PayrollApiException.failed,
         _ => said,
