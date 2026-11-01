@@ -1099,7 +1099,7 @@ svg{overflow:visible}
   function rankBadge(rank) {
     return '<div class="badge"><div class="r">' + (rank == null ? '–' : '#' + rank) + '</div><div class="y">YOUR RANK</div></div>';
   }
-  /** ALL GAMES, an app-store style list: the games you have played first (with your rank), the team game, then the rest. */
+  /** ALL GAMES, an app-store style list in the catalog's order (the newest game first); a game you have played carries your rank, and the team game comes last. */
   /** What kind of game a row is: played together, or on your own (with challenges for a web game). */
   var GROUP_GAMES = { scribble: true, 'tile-up': true, 'speed-poker': true };
   function kindLabel(g) { return GROUP_GAMES[g.key] ? 'Group game' : g.kind === 'web' ? 'Solo challenge' : 'Solo game'; }
@@ -1108,24 +1108,29 @@ svg{overflow:visible}
     var rows = [];
     var playedKeys = {};
     var play = function (key) { return '<button type="button" class="get" data-act="play" data-key="' + esc(key) + '">Play</button>'; };
-    played.forEach(function (p) {
-      playedKeys[p.game.key] = true;
+    var playedRow = function (p) {
       var bits = ['Best ' + count(p.played.best)];
       if (p.played.rank == null && p.played.players > 0) bits.push(plural(p.played.players, 'player', 'players'));
-      rows.push(listRow({ game: p.game, label: kindLabel(p.game), sub: bits.join(' · '),
-        rank: p.played.rank, total: p.played.players, btn: play(p.game.key) }));
+      return listRow({ game: p.game, label: kindLabel(p.game), sub: bits.join(' · '),
+        rank: p.played.rank, total: p.played.players, btn: play(p.game.key) });
+    };
+    played.forEach(function (p) { playedKeys[p.game.key] = p; });
+    var listed = {};
+    home.games.filter(opens).forEach(function (g) {
+      // A game played only while it is on (Secret Squad) shows under Live then, never here.
+      if (g.liveOnly && !playedKeys[g.key]) return;
+      listed[g.key] = true;
+      rows.push(playedKeys[g.key] ? playedRow(playedKeys[g.key])
+        : listRow({ game: g, label: kindLabel(g), sub: g.tagline || g.description || 'New to you', btn: play(g.key) }));
     });
+    // A game with your score that the list above does not open: still yours to see, after the rest.
+    played.forEach(function (p) { if (!listed[p.game.key]) rows.push(playedRow(p)); });
     var ev = home.liveRelay;
     if (ev) {
       rows.push(listRow({ icon: tile('var(--blueArt)', fitted(composed(tilesSpec('HINT'), { viewBox: '15.805 22.893 141 63' }), 4)),
         label: 'Team game', name: ev.title, sub: 'Crack the clues with your team',
         btn: '<button type="button" class="get" data-act="post" data-id="' + esc(ev.postId || '') + '"' + (ev.postId ? '' : ' disabled') + '>' + (ev.phase === 'upcoming' ? 'View' : 'Join') + '</button>' }));
     }
-    home.games.filter(opens).forEach(function (g) {
-      // A game played only while it is on (Secret Squad) shows under Live then, never here.
-      if (playedKeys[g.key] || g.liveOnly) return;
-      rows.push(listRow({ game: g, label: kindLabel(g), sub: g.tagline || g.description || 'New to you', btn: play(g.key) }));
-    });
     var pn = home.playingNow;
     var playing = pn.count > 0 ? playingNow(pn) : '<div style="height:20px"></div>';
     return '<div class="gl-wrap"><div class="gl-h"><div class="t">ALL GAMES</div></div><div class="gl">' +
