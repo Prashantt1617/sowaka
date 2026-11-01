@@ -5461,11 +5461,6 @@ class _AttendanceDayActionButton extends StatelessWidget {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          textStyle: const TextStyle(
-            fontSize: 14,
-            height: 20 / 14,
-            fontWeight: FontWeight.w600,
-          ),
         ),
         onPressed: action.onTap,
         child: Text(action.label),

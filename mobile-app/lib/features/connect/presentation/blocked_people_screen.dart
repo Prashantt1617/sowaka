@@ -207,10 +207,6 @@ class _BlockedRow extends StatelessWidget {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
-                textStyle: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
               ),
               onPressed: busy ? null : onUnblock,
               child: busy
@@ -219,7 +215,8 @@ class _BlockedRow extends StatelessWidget {
                       height: 14,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Unblock'),
+                  // The family and weight come from the theme.
+                  : const Text('Unblock', style: TextStyle(fontSize: 13)),
             ),
           ),
         ],

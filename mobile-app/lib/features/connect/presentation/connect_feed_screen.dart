@@ -7734,10 +7734,6 @@ class _DeletePostSheet extends StatelessWidget {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  textStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
                 ),
                 onPressed: () => Navigator.of(context).pop(false),
                 child: const Text('Cancel'),
@@ -8141,10 +8137,6 @@ class _BlockPersonSheet extends StatelessWidget {
                   side: const BorderSide(color: Color(0xFFE8E8EC), width: 1.5),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
-                  ),
-                  textStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 onPressed: () => Navigator.of(context).pop(false),
