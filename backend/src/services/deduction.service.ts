@@ -32,15 +32,18 @@ export interface AttendanceDeductionLine {
 
 const emptyCounts = (): DeductionCounts => ({ late: 0, early: 0, absent: 0, half_day: 0, leave: 0, missed_punch: 0, unpaid_leave: 0, missedPunchLopCount: 0, missedPunchLop: 0, unpaidLeaveLop: 0 });
 
-/** Everyone's counts for a YYYY-MM period, keyed by userId. A future month counts nothing. */
-export async function attendanceCountsForPeriod(adminUserId: string, period: string): Promise<Map<string, DeductionCounts>> {
+/**
+ * Everyone's counts for a YYYY-MM period, keyed by userId: the calendar month,
+ * or the pay dates given (a company paying 26th to 25th). A future period counts nothing.
+ */
+export async function attendanceCountsForPeriod(adminUserId: string, period: string, dates?: { from: string; to: string }): Promise<Map<string, DeductionCounts>> {
   const [year, month] = period.split('-').map(Number);
-  const from = `${period}-01`;
+  const from = dates?.from ?? `${period}-01`;
   const today = todayIso();
   const counts = new Map<string, DeductionCounts>();
   if (from > today) return counts;
-  const monthEnd = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
-  const to = monthEnd < today ? monthEnd : today;
+  const periodEnd = dates?.to ?? new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+  const to = periodEnd < today ? periodEnd : today;
   const report = await attendanceReport(adminUserId, { from, to });
   const missedPunchMarks = await missedPunchMarksFor(adminUserId, report.days, from, to);
   const halfDayLeave = new Set(report.halfDayLeave);

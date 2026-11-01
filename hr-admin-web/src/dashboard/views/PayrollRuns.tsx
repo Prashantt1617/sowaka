@@ -177,7 +177,7 @@ export function PayrollRuns() {
             <tbody>
               {runs.map((r) => (
                 <tr key={r.id} className="lk-click" onClick={() => setOpenId(r.id)} style={{ cursor: 'pointer' }}>
-                  <Td><strong style={L.cellName}>{r.period}</strong></Td>
+                  <Td><strong style={L.cellName}>{r.period}</strong>{payDates(r) && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>{payDates(r)}</div>}</Td>
                   <Td><StatusPill status={r.status} /></Td>
                   <Td right mono>{r.employeeCount}</Td>
                   <Td right mono>{inr(r.totals.netPaise + r.totals.reimbursementsPaise)}</Td>
@@ -309,6 +309,7 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
         <StatusPill status={run.status} />
         <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>{run.employeeCount} employee{run.employeeCount === 1 ? '' : 's'}</span>
       </div>
+      {payDates(run) && <p style={{ color: 'var(--ink-3)', fontSize: 13, margin: '0 0 12px' }}>Pays {payDates(run)}</p>}
       {run.note && <p style={{ color: 'var(--bad)', fontSize: 13, margin: '0 0 12px' }}>Note: {run.note}</p>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, margin: '16px 0 20px' }}>
@@ -439,6 +440,16 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
  * the days that cost pay ringed, and any day can be marked from here (while the
  * run is open). The run recalculates from the calendar when this closes.
  */
+/** "26 Sep – 25 Oct 2026 · 31 base days" for a run whose dates are not its calendar month; else nothing. */
+function payDates(run: PayrollRunDTO): string | undefined {
+  if (!run.periodFrom || !run.periodTo) return undefined;
+  const day = (iso: string, year: boolean) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', ...(year ? { year: 'numeric' } : {}), timeZone: 'UTC' });
+  const days = Math.round((Date.parse(run.periodTo) - Date.parse(run.periodFrom)) / 86_400_000) + 1;
+  const calendar = run.periodFrom === `${run.period}-01` && run.periodTo.slice(0, 7) === run.period && days === new Date(Date.UTC(Number(run.period.slice(0, 4)), Number(run.period.slice(5, 7)), 0)).getUTCDate();
+  if (calendar && run.baseDays === days) return undefined;
+  return `${day(run.periodFrom, false)} – ${day(run.periodTo, true)}${run.baseDays && run.baseDays !== days ? ` · ${run.baseDays} base days` : ''}`;
+}
+
 function LopCalendar({ slip, period, editable, onMarked, onExplain, onClose }: {
   slip: PayslipDTO; period: string; editable: boolean; onMarked: () => void; onExplain: () => void; onClose: () => void;
 }) {

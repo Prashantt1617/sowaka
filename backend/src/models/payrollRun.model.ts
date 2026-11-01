@@ -26,6 +26,10 @@ export interface PayrollRunTotals {
 export interface PayrollRun {
   org: string; // -> Company.id
   period: string; // 'YYYY-MM'
+  /** The days the run pays for and the base days its salaries are spread over (see payroll_periods). */
+  periodFrom?: string;
+  periodTo?: string;
+  baseDays?: number;
   runType: PayrollRunType;
   status: PayrollRunStatus;
   employeeCount: number;

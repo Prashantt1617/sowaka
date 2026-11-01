@@ -39,6 +39,7 @@ import { SalaryStructure } from '../models/salaryStructure.model';
 import { SalaryTemplate } from '../models/salaryTemplate.model';
 import { PaidDaysTemplate } from '../models/paidDaysTemplate.model';
 import { PayrollRun, Payslip } from '../models/payrollRun.model';
+import { PayrollPeriodSetting } from '../models/payrollPeriod.model';
 import { EmployeePaymentDetails } from '../models/employeePayment.model';
 import { TaxDeclarationRow, TdsConfigRow } from '../models/tds.model';
 import { KpiAssignment, KpiParameter, KpiTemplate } from '../models/kpi.model';
@@ -305,6 +306,10 @@ export function paidDaysTemplates(): Collection<PaidDaysTemplate> {
 
 export function payrollRuns(): Collection<PayrollRun> {
   return getDb().collection<PayrollRun>('payroll_runs');
+}
+
+export function payrollPeriods(): Collection<PayrollPeriodSetting> {
+  return getDb().collection<PayrollPeriodSetting>('payroll_periods');
 }
 
 export function employeePaymentDetails(): Collection<EmployeePaymentDetails> {
@@ -621,6 +626,7 @@ async function ensureIndexes(database: Db): Promise<void> {
   // One run per org per period (a rejected run is replaced on recreate).
   await payrollRunsCollection.createIndex({ org: 1, period: 1 }, { unique: true });
   await payrollRunsCollection.createIndex({ org: 1, status: 1, period: -1 });
+  await database.collection<PayrollPeriodSetting>('payroll_periods').createIndex({ org: 1, period: 1 }, { unique: true });
 
   const kpiParametersCollection = database.collection<KpiParameter>('kpi_parameters');
   await kpiParametersCollection.createIndex({ org: 1, archived: 1, title: 1 });
