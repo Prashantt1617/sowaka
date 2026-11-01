@@ -295,8 +295,9 @@ async function buildRunPayslips(
     // The template's paid-leave allowance covers the first days docked — not
     // leave without pay, which it would otherwise turn back into paid leave.
     const allowance = paidDaysOn ? paidDays?.monthlyPaidLeaveDays ?? 0 : 0;
-    // Days before joining are not loss of pay but not paid either (attendance has no punches for them).
-    const attendanceLopDays = Math.min(Math.max(Math.max(0, docked.days - allowance) + unpaidLeave.days, notYetEmployedDays), workingDays);
+    // Days before joining are not paid either: attendance leaves them out, so
+    // they come on top of what it docks from the joining day on.
+    const attendanceLopDays = Math.min(Math.max(0, docked.days - allowance) + unpaidLeave.days + notYetEmployedDays, workingDays);
     const lopEnteredByHr = lopOverrides[structure.userId] !== undefined;
     const lopDays = lopEnteredByHr ? clampLop(lopOverrides[structure.userId], workingDays) : attendanceLopDays;
     // Overtime: what HR typed on the run, else the template's rule applied to

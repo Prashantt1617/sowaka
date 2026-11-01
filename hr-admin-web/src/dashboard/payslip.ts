@@ -54,7 +54,6 @@ const dmy = (iso?: string) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${i
 /** Zoho's names for the statutory lines. */
 const DEDUCTION_NAMES: Record<string, string> = { epf: 'EPF Contribution', esi: 'Employee State Insurance', pt: 'Professional Tax', lwf: 'Labour Welfare Fund', income_tax: 'Income Tax', food_coupon: 'Food Coupon Deduction' };
 
-/** The payslip, laid out as Zoho Payroll's: summary, net pay box, earnings and deductions with YTD. */
 /** The run's own pay dates, when its company is not paid by the calendar month. */
 type PayDates = { periodFrom?: string; periodTo?: string };
 
@@ -64,6 +63,7 @@ const payPeriod = (period: string, dates?: PayDates) =>
     ? `${dmy(dates.periodFrom)} – ${dmy(dates.periodTo)}`
     : monthLabel(period);
 
+/** The payslip, laid out as Zoho Payroll's: summary, net pay box, earnings and deductions with YTD. */
 export function payslipHtml(slip: PayslipDTO, company: PayslipCompany, dates?: PayDates): string {
   const ytd = slip.ytd;
   const logo = brandOf(company.org)?.icon;
@@ -153,11 +153,11 @@ export function payslipHtml(slip: PayslipDTO, company: PayslipCompany, dates?: P
 }
 
 /** Opens the slip in a new tab ready to print or save as PDF. */
-export function printPayslip(slip: PayslipDTO, company: PayslipCompany, dates?: PayDates): void {
+export function printPayslip(slip: PayslipDTO, company: PayslipCompany): void {
   const win = window.open('', '_blank');
   if (!win) return;
   win.document.open();
-  win.document.write(payslipHtml(slip, company, dates));
+  win.document.write(payslipHtml(slip, company));
   win.document.close();
   win.focus();
   setTimeout(() => win.print(), 300);

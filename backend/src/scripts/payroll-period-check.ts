@@ -11,6 +11,7 @@ import { attendanceRecords, connectDb, getDb, paidDaysTemplates, payHeads, payro
 import type { User } from '../models/user.model';
 import { AttendanceRecord } from '../models/attendance.model';
 import { AttendanceOverrideError, setAttendanceOverride } from '../services/attendance-override.service';
+import { attendanceReport, employeeCalendar } from '../services/attendance-report.service';
 import { parsePeriod, payrollPeriodHolding, payrollPeriodRange } from '../services/payroll-inputs.service';
 import { createRun, recomputeRun } from '../services/payrollRun.service';
 import { createShift, setDefaultShift } from '../services/shift.service';
@@ -98,7 +99,7 @@ const setting = (period: string, extra: Record<string, unknown>) =>
       const date = new Date(t).toISOString().slice(0, 10);
       if (new Date(t).getUTCDay() === 0) continue;
       if (userId === 'gap' && (date === '2026-08-28' || date === '2026-09-28')) continue;
-      if (userId === 'joiner' && date < '2026-09-03') continue;
+      if (userId === 'joiner' && (date < '2026-09-03' || date === '2026-09-10')) continue;
       records.push({
         userId, employeeId, workDate: date,
         punchIn: new Date(`${date}T09:00:00+05:30`), punchOut: new Date(`${date}T18:05:00+05:30`),
@@ -120,7 +121,14 @@ const setting = (period: string, extra: Record<string, unknown>) =>
   const joiner = await slip('joiner');
   ok('31 base days, nothing lost when every day was worked', full.inputs.workingDays === 31 && full.inputs.lopDays === 0 && full.inputs.payableDays === 31, full.inputs);
   ok('the absence on 28 Aug costs a day; 28 Sep is not this run\'s', gap.inputs.lopDays === 1 && gap.inputs.payableDays === 30, gap.inputs);
-  ok('a joiner on 3 Sep is not paid 26 Aug – 2 Sep (8 days)', joiner.inputs.lopDays === 8 && joiner.inputs.payableDays === 23, joiner.inputs);
+  ok('a joiner on 3 Sep: 26 Aug – 2 Sep unpaid (8 days), and the absence on 10 Sep on top', joiner.inputs.lopDays === 9 && joiner.inputs.payableDays === 22, joiner.inputs);
+  const joinerCal = await employeeCalendar('hr', 'joiner', '2026-09');
+  const calDay = (date: string) => joinerCal.days.find((d) => d.date === date);
+  ok('the calendar leaves the days before joining empty', calDay('2026-09-01')?.status === 'before_joining' && calDay('2026-09-02')?.status === 'before_joining'
+    && calDay('2026-09-03')?.status === 'present' && calDay('2026-09-10')?.status === 'absent' && joinerCal.totals.absent === 1, joinerCal.totals);
+  const report = await attendanceReport('hr', { from: '2026-08-26', to: '2026-09-25' });
+  const joinerDays = report.days.filter((d) => d[0] === 'joiner');
+  ok('the report grades nothing before joining', joinerDays.length > 0 && joinerDays.every((d) => d[1] >= '2026-09-03'), joinerDays.slice(0, 2));
   ok('paid by the days: a day short is a 31st less', Math.abs(full.grossPaise - gap.grossPaise - Math.round(full.grossPaise / 31)) <= 100, { full: full.grossPaise, gap: gap.grossPaise });
   ok('a joiner after the period is not on it', !(await payslips().findOne({ org: ORG, period: '2026-09', userId: 'late' })));
   await recomputeRun('hr', created.run.id, { lopDays: { late: 26 } });

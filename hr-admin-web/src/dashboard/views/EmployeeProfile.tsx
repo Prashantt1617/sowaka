@@ -512,7 +512,11 @@ const CAL_TONE: Record<CalendarDayStatus, { bg: string; fg: string; label: strin
   week_off: { bg: 'var(--surface-2)', fg: 'var(--ink-4)', label: 'Week off' },
   holiday: { bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)', label: 'Holiday' },
   upcoming: { bg: 'var(--surface)', fg: 'var(--ink-4)', label: 'Upcoming' },
+  // Not theirs yet: an empty day, like one still to come.
+  before_joining: { bg: 'var(--surface)', fg: 'var(--ink-4)', label: 'Before joining' },
 };
+/** A day drawn empty: still to come, or before the person joined. */
+const blankDay = (status: CalendarDayStatus) => status === 'upcoming' || status === 'before_joining';
 const LEAVE_NAMES: Record<string, string> = { sick: 'Sick leave', casual: 'Casual leave', earned: 'Earned leave', comp_off: 'Comp off' };
 // The current month by Indian time: the month HR can still correct.
 const thisMonth = () => new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 7);
@@ -722,17 +726,17 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
             const detail = day.status === 'on_leave' ? leaveName
               : day.status === 'unpaid_leave' ? (day.halfDay ? 'Half day' : '')
               : day.status === 'holiday' || day.status === 'week_off' ? day.label
-                : day.status === 'upcoming' ? ''
+                : blankDay(day.status) ? ''
                   : day.label ?? (day.punchIn ? `${clockOf(day.punchIn)} – ${clockOf(day.punchOut)}` : '');
             const prev = day.hr ? CAL_TONE[day.hr.previousStatus] : null;
             const ring = highlight?.(day) ?? null;
             return (
               <div
                 key={day.date}
-                title={`${day.date}${detail ? ` · ${detail}` : ''}${day.hr ? ` · marked by ${day.hr.setByName ?? 'HR'}, was ${prev?.label}` : ''}${editable ? ' · click to mark' : ''}`}
-                onClick={editable ? () => setEditing(day) : undefined}
-                className={day.status === 'upcoming' ? 'pd-cd future' : 'pd-cd'}
-                style={{ background: day.status === 'upcoming' ? undefined : tone.bg, color: day.status === 'upcoming' ? undefined : tone.fg, borderColor: day.status === 'week_off' ? 'var(--line)' : undefined, cursor: editable ? 'pointer' : 'default', boxShadow: ring ? 'inset 0 0 0 2px var(--bad)' : day.hr ? 'inset 0 0 0 2px var(--accent)' : undefined }}
+                title={`${day.date}${day.status === 'before_joining' ? ' · before joining' : ''}${detail ? ` · ${detail}` : ''}${day.hr ? ` · marked by ${day.hr.setByName ?? 'HR'}, was ${prev?.label}` : ''}${editable ? ' · click to mark' : ''}`}
+                onClick={editable && day.status !== 'before_joining' ? () => setEditing(day) : undefined}
+                className={blankDay(day.status) ? 'pd-cd future' : 'pd-cd'}
+                style={{ background: blankDay(day.status) ? undefined : tone.bg, color: blankDay(day.status) ? undefined : tone.fg, borderColor: day.status === 'week_off' ? 'var(--line)' : undefined, cursor: editable && day.status !== 'before_joining' ? 'pointer' : 'default', boxShadow: ring ? 'inset 0 0 0 2px var(--bad)' : day.hr ? 'inset 0 0 0 2px var(--accent)' : undefined }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 4 }}>
                   <b>{Number(day.date.slice(8))}</b>
@@ -743,7 +747,7 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
                 {day.hr && prev && (
                   <div style={{ fontSize: 11, fontWeight: 400, color: prev.fg, textDecoration: 'line-through', opacity: .75 }}>{prev.label}</div>
                 )}
-                {day.status !== 'upcoming' && <div style={{ fontSize: 11, fontWeight: 400 }}>{day.hr ? '→ ' : ''}{tone.label}</div>}
+                {!blankDay(day.status) && <div style={{ fontSize: 11, fontWeight: 400 }}>{day.hr ? '→ ' : ''}{tone.label}</div>}
                 {detail && !(day.hr && detail === tone.label) && <div style={{ fontSize: 11, opacity: .85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail}</div>}
               </div>
             );

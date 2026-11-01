@@ -49,8 +49,13 @@ const MAX_AMOUNT_PAISE = 100_000_000_000;
 
 export async function listSalaryTemplates(adminUserId: string) {
   const org = await requireAdminOrg(adminUserId);
-  const docs = await salaryTemplates().find({ org }).sort({ name: 1 }).toArray();
-  return docs.map(toView);
+  const [docs, counts] = await Promise.all([
+    salaryTemplates().find({ org }).sort({ name: 1 }).toArray(),
+    // How many people each template pays: the same people its export lists.
+    salaryStructures().aggregate<{ _id: string; n: number }>([{ $match: { org } }, { $group: { _id: '$salaryTemplateCode', n: { $sum: 1 } } }]).toArray(),
+  ]);
+  const countOf = new Map(counts.map((c) => [c._id, c.n]));
+  return docs.map((doc) => ({ ...toView(doc), employeeCount: countOf.get(doc.code) ?? 0 }));
 }
 
 export async function getSalaryTemplate(adminUserId: string, code: string) {

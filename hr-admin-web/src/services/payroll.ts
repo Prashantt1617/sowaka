@@ -399,6 +399,8 @@ export type SalaryTemplateDTO = {
   id: string;
   name: string;
   code: string;
+  /** People on it, in the list only. */
+  employeeCount?: number;
   description?: string;
   components: SalaryTemplateComponent[];
   balancingComponentCode?: string;
