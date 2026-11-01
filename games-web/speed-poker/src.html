@@ -252,6 +252,107 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .tv .brand h1{font-size:30px}
 .tv .rowi .who b{font-size:18px}
 .offline{position:fixed;top:calc(var(--safe-t) + 6px);left:50%;transform:translateX(-50%);background:#5b2b2b;color:#fff;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:700;z-index:60}
+
+/* ---------- the big tables (eight seats, chat, watching): only where the company has them ---------- */
+.tbtn{position:relative;width:34px;height:34px;border-radius:10px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font-size:16px;flex:none}
+.tbw{position:relative;display:flex;flex:none}
+.tbw .badge{pointer-events:none;position:absolute;top:-5px;right:-5px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--red);color:#fff;font-size:10px;font-weight:800;line-height:17px;text-align:center;box-shadow:0 0 0 2px #0b1f16}
+#table.big .tbar{gap:6px;padding:8px 10px 6px;background:linear-gradient(180deg,rgba(0,0,0,.28),rgba(0,0,0,0));border-bottom:1px solid rgba(255,255,255,.05)}
+#table.big .tbar .back{width:34px;height:34px}
+#table.big .tbar .title b,#table.big .tbar .title span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#table.big .tbar .title span{display:block}
+#table.big .tbar .clock{font-size:14px;padding:6px 8px}
+#table.big .felt{left:6%;right:6%;top:8%;bottom:11%}
+#table.big .watermark{display:none}
+#table.big .center{top:46%;gap:6px}
+#table.big .pot{display:flex;align-items:center;gap:6px;font-size:13px;padding:3px 11px 3px 5px;background:linear-gradient(180deg,rgba(0,0,0,.5),rgba(0,0,0,.32));box-shadow:inset 0 0 0 1px rgba(229,184,80,.35)}
+#table.big .pot i{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#fff 0 22%,#d4a63a 23% 60%,#fff 61% 70%,#d4a63a 71%);box-shadow:0 1px 2px rgba(0,0,0,.5)}
+#table.big .board{gap:5px}
+#table.big .board .row{gap:5px}
+#table.big .board .pc,#table.big .board .flip{width:38px;height:53px}
+#table.big .board .pc .r{font-size:17px;left:4px;top:3px}#table.big .board .pc .s{font-size:20px;right:4px;bottom:2px}
+#table.big .board .side,#table.big .board .side .pc{width:22px;height:31px}
+#table.big .board .side{margin:0 3px}
+#table.big .board .side .lbl{display:none}
+#table.big .board.nopiles .side{display:none}
+#table.big .banner{position:static;transform:none;max-width:210px;padding:6px 12px;font-size:13px;animation:fadein .25s ease-out}
+@keyframes fadein{from{opacity:0;transform:scale(.94)}}
+#table.big .seat{width:72px}
+#table.big .seat .ring{width:48px;height:48px;padding:2px}
+#table.big .seat .ring .avatar{width:44px;height:44px;font-size:14px}
+#table.big .seat .plate{margin-top:-6px;min-width:0;width:64px;padding:2px 4px 3px;border-radius:9px;background:linear-gradient(180deg,rgba(22,34,28,.97),rgba(7,13,10,.97));border-color:rgba(255,255,255,.13);box-shadow:0 3px 8px rgba(0,0,0,.45)}
+#table.big .seat .plate b{font-size:11px;max-width:56px;margin:0 auto;color:#e6f0ea}
+#table.big .seat .plate span{font-size:12px;letter-spacing:.01em}
+#table.big .seat.me .plate{border-color:rgba(229,184,80,.7);background:linear-gradient(180deg,rgba(52,40,14,.97),rgba(12,10,5,.97))}
+#table.big .seat.toact .plate{border-color:rgba(229,184,80,.85)}
+#table.big .seat .tag{top:-8px;font-size:9px;padding:1px 5px}
+#table.big .seat .hole{top:-2px}
+#table.big .seat .hole.r{left:46px}#table.big .seat .hole.l{right:46px}
+#table.big .seat .hole .pc.mini{width:18px;height:25px}
+/* turned over at a showdown: in the hole cards' place, so the seat keeps its size and spot */
+#table.big .seat .shown{position:absolute;top:-4px;margin:0;gap:2px;z-index:1}
+#table.big .seat .shown.r{left:46px}#table.big .seat .shown.l{right:46px}
+#table.big .seat .shown .pc.mini{width:21px;height:30px}
+#table.big .seat .shown .pc.mini .r{font-size:11px;left:2px}#table.big .seat .shown .pc.mini .s{font-size:12px;right:2px}
+#table.big .seat .bet.al{transform:translate(0,-50%)}#table.big .seat .bet.ar{transform:translate(-100%,-50%)}
+#table.big .seat .bet{font-size:11px;padding:1px 6px 1px 2px;border-radius:999px;background:rgba(0,0,0,.38)}
+#table.big .seat .dealer{width:18px;height:18px;font-size:10px;z-index:5}
+#table.big .mine{min-height:84px;padding:2px 0 4px}
+.dock{display:flex;flex-direction:column;min-height:0}
+/* a short phone (an SE, or the game inside the app): a smaller hand and tighter buttons leave the eight seats their room */
+@media (max-height:720px){
+#table.big:not(.wide) .mine{min-height:68px;padding:0 0 2px}
+#table.big:not(.wide) .mine .pc.big{width:46px;height:65px;border-radius:8px}
+#table.big:not(.wide) .mine .pc.big .r{font-size:21px;left:5px;top:3px}#table.big:not(.wide) .mine .pc.big .s{font-size:27px;right:5px}
+#table.big:not(.wide) .mine .hand{font-size:11px;margin-top:0}
+#table.big .actions{padding-top:4px}
+#table.big .abtn{min-height:50px}
+#table.big .raisepanel{padding:8px 10px;margin-bottom:6px}
+#table.big .presets{margin-bottom:4px}#table.big .presets button{min-height:32px}
+#table.big .slide input[type=range]{height:26px}#table.big .slide .val{font-size:18px}
+#table.big .tbar{padding:6px 10px 4px}
+#table.big:not(.wide) .center{top:48%}
+}
+/* a phone on its side: the table on the left, your cards and the buttons on the right */
+#table.big.wide{display:grid;grid-template-columns:minmax(0,1fr) calc(300px + env(safe-area-inset-right,0px));grid-template-rows:auto minmax(0,1fr)}
+#table.big.wide .tbar{grid-column:1/3;grid-row:1}
+#table.big.wide .stage{grid-column:1;grid-row:2;margin-left:max(8px,env(safe-area-inset-left,0px))}
+#table.big.wide .dock{grid-column:2;grid-row:2;justify-content:flex-end;padding-right:env(safe-area-inset-right,0px)}
+#table.big.wide .felt{left:9%;right:9%;top:12%;bottom:12%}
+#table.big.wide .center{top:50%}
+#table.big.wide .banner{max-width:340px}
+#table.big.wide .actions{padding-top:4px}
+.watchbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;min-height:56px}
+.watchbar .who{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:#cfe4d7}
+.watchbar .who .dot{color:var(--red);animation:blink 1.6s ease-in-out infinite}
+@keyframes blink{50%{opacity:.35}}
+.watchbar .row{display:flex;gap:6px;margin-left:auto}
+.rbtns{display:flex;flex-direction:column;align-items:stretch;gap:3px;flex:none}
+.linkw{font-size:12px;font-weight:700;color:#cfe4d7;padding:3px 0;text-align:center}
+.seats6.eight{grid-template-columns:1fr 1fr}
+.seats6.eight .slot{min-height:52px;padding:8px}
+/* the chat: a sheet that sits above the action buttons, so a turn is never under it */
+.sheet.chat{inset:0 var(--chat-r,0px) var(--chat-b,0px) 0;background:rgba(4,10,7,.5)}
+.sheet.chat .box{height:min(440px,calc(100% - 16px));max-height:none;padding:10px 12px 12px;border-radius:18px 18px 0 0;box-shadow:0 -10px 30px rgba(0,0,0,.4)}
+.chead{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.chead h2{margin:0;font-family:var(--display);font-size:17px;flex:1}
+.chead span{font-size:12px;color:var(--muted)}
+.chead .x{width:30px;height:30px;border-radius:9px;background:rgba(255,255,255,.07);color:var(--muted);font-size:17px;flex:none}
+.msgs{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;gap:6px;padding:4px 2px 8px;-webkit-user-select:text;user-select:text}
+.msg{display:flex;gap:8px;align-items:flex-start;font-size:14px;line-height:1.3}
+.msg .avatar{width:26px;height:26px;font-size:10px;margin-top:1px}
+.msg .body{min-width:0;background:rgba(255,255,255,.06);border-radius:4px 12px 12px 12px;padding:5px 9px;max-width:84%;overflow-wrap:anywhere}
+.msg .body b{font-size:12px;color:#f3e2b2;margin-right:4px}
+.msg.own{flex-direction:row-reverse}
+.msg.own .body{background:rgba(229,184,80,.16);border-radius:12px 4px 12px 12px}
+.msg .wtag{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:rgba(255,255,255,.08);border-radius:5px;padding:1px 5px;margin-right:4px;vertical-align:1px}
+.msgs .none{color:var(--muted);font-size:13px;text-align:center;margin:auto 0}
+.quick{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 0 8px}
+.quick::-webkit-scrollbar{display:none}
+.quick button{flex:none;min-height:32px;padding:0 12px;border-radius:999px;background:var(--panel2);font-size:14px;font-weight:700}
+.chatsend{display:flex;gap:8px}
+.sheet.chat .chatsend input{flex:1;min-width:0;margin:0}
+.chatsend .btn{min-height:44px;border-radius:12px;flex:none}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -304,7 +405,9 @@ const app=$('#app');
 const S=window.Sowaka||{};
 const haptic=k=>{ try{ (window.Sowaka&&window.Sowaka.haptic)&&window.Sowaka.haptic(k||'light'); }catch(e){} };
 
-const state={mode:'rooms',room:null,rooms:[],invites:[],me:null,ev:null,picker:null,leaveAsk:false,codeInput:'',shared:null,mine:null,table:null,view:'lobby',watching:null,tab:'board',raiseOpen:false,raiseTo:0,offset:0,lastHand:0,banner:null,offline:false,tv:!!P.tv,tvTables:{},pick:{}};
+const state={mode:'rooms',room:null,rooms:[],invites:[],me:null,ev:null,picker:null,leaveAsk:false,codeInput:'',shared:null,mine:null,table:null,view:'lobby',watching:null,tab:'board',raiseOpen:false,raiseTo:0,offset:0,lastHand:0,banner:null,offline:false,tv:!!P.tv,tvTables:{},pick:{},
+  /* the big tables: from room:hello (the company's table), the chat sheet, and the table being watched */
+  big:false,tables:null,chatOpen:false,chatDraft:'',chatSeen:0,chatRoom:null,watchCode:null};
 const now=()=>Date.now()+state.offset;
 const me=()=>(state.mode==='rooms'&&state.me&&state.me.userId)||(state.mine&&state.mine.userId)||(state.me&&state.me.userId);
 const initials=n=>String(n||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
@@ -465,14 +568,17 @@ const houseFace=()=>`<div class="avatar house">♠</div>`;
 const tournamentOn=()=>!!(state.ev&&state.ev.event&&!casual(state.ev)&&state.ev.event.phase!=='over');
 function renderRooms(){
   const rooms=state.rooms||[], inv=(state.invites||[]).slice(-3).reverse();
-  const roomRow=r=>{ const n=r.players.length+r.house, st=r.status==='lobby'?['wait','Waiting to deal']:r.status==='over'?['full','Between games']:r.seatFree?['play','Playing · seat free']:['full','Playing · full'];
-    return `<div class="rowi"><div class="stack" style="width:76px;flex:none">${r.players.slice(0,3).map(p=>avatarHtml(p.name,p.photoUrl||pic(p.userId),'sm')).join('')}${n>3?`<div class="avatar sm">+${n-3}</div>`:''}</div>
-      <div class="who"><b>${esc(r.host?first(r.host.name):'A')}'s table · ${n}/${r.seats}</b><span class="status ${st[0]}">${st[1]}</span><span> · ${r.minutes} min</span></div>
-      <button class="btn small ${r.seatFree&&r.status!=='over'?'primary':'ghost'}" data-join="${esc(r.code)}" ${r.seatFree?'':'disabled'}>${r.seatFree?'Sit':'Full'}</button></div>`; };
+  const roomRow=r=>{ const face=state.big&&r.players.length+r.house>3?2:3, n=r.players.length+r.house, st=r.status==='lobby'?['wait','Waiting to deal']:r.status==='over'?['full','Between games']:r.seatFree?['play','Playing · seat free']:['full','Playing · full'];
+    return `<div class="rowi"><div class="stack" style="width:76px;flex:none">${r.players.slice(0,face).map(p=>avatarHtml(p.name,p.photoUrl||pic(p.userId),'sm')).join('')}${n>face?`<div class="avatar sm">+${n-face}</div>`:''}</div>
+      <div class="who"><b>${esc(r.host?first(r.host.name):'A')}'s table · ${n}/${r.seats}</b><span class="status ${st[0]}">${st[1]}</span><span> · ${r.minutes} min${r.watchable&&r.watchers?` · ${r.watchers} watching`:''}</span></div>
+      ${r.watchable&&!r.seatFree?`<button class="btn small ghost" data-watchroom="${esc(r.code)}">Watch</button>`
+        :r.watchable&&r.status==='playing'?`<div class="rbtns"><button class="btn small primary" data-join="${esc(r.code)}">Sit</button><button class="linkw" data-watchroom="${esc(r.code)}">Watch</button></div>`
+        :`<button class="btn small ${r.seatFree&&r.status!=='over'?'primary':'ghost'}" data-join="${esc(r.code)}" ${r.seatFree?'':'disabled'}>${r.seatFree?'Sit':'Full'}</button>`}</div>`; };
+  const big=state.big, chips=big&&state.tables?fmt(state.tables.buyIn):'1,500';
   app.innerHTML=`<div id="lobby">
     <div class="top"><div class="brand"><div class="mark">♠</div><div><h1>Speed Poker</h1><div class="sub">Texas Hold'em with colleagues · no money</div></div></div>${state.me?avatarHtml(state.me.name,state.me.photoUrl,'me-face'):''}</div>
     ${inv.map(i=>`<div class="invite">${avatarHtml(i.from&&i.from.name,i.from&&i.from.photoUrl,'sm')}<div class="who"><b>${esc(first(i.from&&i.from.name))} invited you</b><span>Table ${esc(i.code)}${i.players?` · ${i.players} at the table`:''}</span></div><button class="btn small primary" data-join="${esc(i.code)}">Sit down</button></div>`).join('')}
-    <div class="hero"><div class="suits">♠♥♦♣</div><h2>Play a game</h2><p>Two to six at a table, 1,500 chips each, about ${state.minutes||20} minutes a game. Just for fun.</p>
+    <div class="hero"><div class="suits">♠♥♦♣</div><h2>Play a game</h2><p>${big?'Two to eight':'Two to six'} at a table, ${chips} chips each, about ${state.minutes||20} minutes a game. Just for fun.</p>
       <div class="row"><button class="btn primary" data-act="quick">Quick game</button><button class="btn ghost" data-act="host">New table</button></div>
       <div class="codebox"><input id="code" inputmode="numeric" maxlength="4" placeholder="Have a code? 4 digits" value="${esc(state.codeInput||'')}" autocomplete="off"><button class="btn ghost" data-act="code">Join</button></div>
       <button class="linkbtn" data-act="practice">Practice against the house ›</button></div>
@@ -481,8 +587,9 @@ function renderRooms(){
     <div class="card">${rooms.length?rooms.map(roomRow).join(''):`<div class="empty">No open tables right now. Start one and invite colleagues, or tap Quick game.</div>`}</div>
     <div class="card rules"><h3>How it works</h3>
       <p><b>The game.</b> No-limit Texas Hold'em. Two cards each, five shared, best five of seven wins.</p>
-      <p><b>A table.</b> Whoever opens it is the host and deals when two or more are in; a full table of six deals itself. Blinds rise every three minutes; 20 seconds to act.</p>
-      <p><b>Coming and going.</b> Join mid-game and you are dealt in from the next hand while there is a seat. Leave whenever you like. Every game starts again at 1,500.</p>
+      <p><b>A table.</b> Whoever opens it is the host and deals when two or more are in; a full table of ${big?'eight':'six'} deals itself. Blinds rise every three minutes; 20 seconds to act.</p>
+      <p><b>Coming and going.</b> Join mid-game and you are dealt in from the next hand while there is a seat. Leave whenever you like. Every game starts again at ${chips}.</p>
+      ${big?`<p><b>Watching and chat.</b> A full table can still be watched: tap Watch, and take a seat when one frees. Everyone at a table, and everyone watching it, can chat.</p>`:''}
       <p><b>Just for fun.</b> No points, no board, no cash. Chips are only for the table.</p></div></div>`;
 }
 function renderRoomLobby(){
@@ -491,15 +598,16 @@ function renderRoomLobby(){
   r.players.forEach(p=>slots.push(`<div class="slot ${p.online?'':'off'}">${avatarHtml(p.name,p.photoUrl||pic(p.userId),'sm')}<div class="who"><b>${esc(p.userId===r.you?'You':first(p.name))}</b><span>${p.userId===r.hostId?'Host':p.online?'Ready':'Away'}</span></div>${host&&p.userId!==r.you?`<button class="x" data-kick="${esc(p.userId)}" aria-label="Remove ${esc(p.name)}">×</button>`:''}</div>`));
   (r.houseNames||[]).forEach((n,i)=>slots.push(`<div class="slot">${houseFace()}<div class="who"><b>${esc(String(n).replace(/^House /,''))}</b><span>House player</span></div>${host&&i===r.house-1?`<button class="x" data-act="house-" aria-label="Remove a house player">−</button>`:''}</div>`));
   for(let i=places;i<r.max;i++)slots.push(host&&i===places?`<button class="slot emptyslot" data-act="house+">+ House player</button>`:`<div class="slot emptyslot">Open seat</div>`);
+  const watching=!!(r.big&&r.watching);
   app.innerHTML=`<div id="lobby">
-    <div class="rtop"><button class="back" data-act="leaveask" aria-label="Leave the table">‹</button><div class="title"><b>${host?'Your table':esc(hostName(r))+"'s table"}</b><span>${r.open?'Listed in Open tables':'Private · code and invites only'}</span></div><span class="chip ${r.open?'green':''}"><span class="dot"></span>${r.open?'Open':'Private'}</span></div>
+    <div class="rtop"><button class="back" data-act="leaveask" aria-label="Leave the table">‹</button><div class="title"><b>${host?'Your table':esc(hostName(r))+"'s table"}${watching?' · watching':''}</b><span>${r.open?'Listed in Open tables':'Private · code and invites only'}</span></div>${r.big?chatButton(r)+soundButton():''}<span class="chip ${r.open?'green':''}"><span class="dot"></span>${r.open?'Open':'Private'}</span></div>
     <div class="hero"><div class="suits">♠♥♦♣</div><p style="margin:0">Table code</p><div class="bigcode num">${esc(r.code)}</div><p>${host?'Share the code or invite colleagues, then deal.':`Waiting for ${esc(hostName(r))} to deal.`} ${places}/${r.max} seats taken.</p>
-      <div class="row"><button class="btn ghost" data-act="invite">Invite colleagues</button></div></div>
-    <div class="seats6">${slots.join('')}</div>
+      ${watching?'':`<div class="row"><button class="btn ghost" data-act="invite">Invite colleagues</button></div>`}</div>
+    <div class="seats6 ${r.max>6?'eight':''}">${slots.join('')}</div>
     ${host?`<div class="card"><div class="setrow"><div class="lbl"><b>Game length</b><span>Blinds rise every 3 min</span></div><div class="seg">${(r.minutesOptions||[10,20,30]).map(m=>`<button class="${r.minutes===m?'on':''}" data-min="${m}">${m} min</button>`).join('')}</div></div>
       <div class="setrow"><div class="lbl"><b>Who can join</b><span>${r.open?'Anyone at the company':'Only with the code'}</span></div><div class="seg"><button class="${r.open?'on':''}" data-open="1">Open</button><button class="${r.open?'':'on'}" data-open="0">Private</button></div></div></div>`
-      :`<div class="card"><div class="setrow"><div class="lbl"><b>${r.minutes} minute game</b><span>1,500 chips each · blinds rise every 3 min</span></div></div></div>`}
-    <div class="foot">${host?`<button class="btn primary" data-act="deal" ${ready<2?'disabled':''}>${ready<2?'Need 2 to deal':`Deal · ${ready} players`}</button>`:`<button class="btn ghost" data-act="leaveask">Leave table</button>`}</div>
+      :`<div class="card"><div class="setrow"><div class="lbl"><b>${r.minutes} minute game</b><span>${r.big?fmt(r.buyIn):'1,500'} chips each · blinds rise every 3 min</span></div></div></div>`}
+    <div class="foot">${watching?`${seatFree(r)?'<button class="btn primary" data-act="takeseat">Take a seat</button>':''}<button class="btn ghost" data-act="unwatch">Back to tables</button>`:host?`<button class="btn primary" data-act="deal" ${ready<2?'disabled':''}>${ready<2?'Need 2 to deal':`Deal · ${ready} players`}</button>`:`<button class="btn ghost" data-act="leaveask">Leave table</button>`}</div>
     ${sheets()}</div>`;
 }
 function sheets(){
@@ -512,8 +620,36 @@ function sheets(){
       <div class="list">${pk.loading?'<div class="empty">Loading colleagues…</div>':pk.error?`<div class="empty">${esc(pk.error)}</div>`:list.length?list.map(p=>`<div class="rowi">${avatarHtml(p.name,p.photoUrl)}<div class="who"><b>${esc(p.name)}</b><span>${esc(p.designation||p.department||'')}</span></div><button class="btn small ${asked.has(p.userId)?'ghost':'primary'}" data-inv="${esc(p.userId)}" ${asked.has(p.userId)?'disabled':''}>${asked.has(p.userId)?'Invited':'Invite'}</button></div>`).join(''):(pk.searched||'')!==(pk.q||'').trim()?'<div class="empty">Searching…</div>':'<div class="empty">Nobody to invite by that name.</div>'}</div>
       ${!q&&!pk.loading&&(pk.list||[]).length>=50?'<div class="hint" style="font-size:12px;color:var(--muted);margin-top:6px;text-align:center">Showing the first 50. Type a name to find anyone at the company.</div>':''}
       <button class="btn ghost" style="margin-top:10px" data-act="pickclose">Done</button></div></div>`; }
+  if(state.chatOpen&&R()&&R().big)return chatSheet(R());
   return '';
 }
+/* ---------- the big tables: chat, watching ---------- */
+const myId=()=>state.me&&state.me.userId;
+/** A seat to take: room for one more, and (mid-game) a chair at the table for them. */
+function seatFree(r){ if(!r||r.players.length+r.house>=r.max)return false;
+  return r.status!=='playing'||!r.table||r.table.seats.length<r.max||r.table.seats.some(s=>s.left); }
+const unreadOf=r=>(r&&r.chat||[]).filter(l=>l.at>state.chatSeen&&l.userId!==myId()).length;
+function chatButton(r){ const n=state.chatOpen?0:unreadOf(r);
+  return `<span class="tbw"><button class="tbtn" data-act="chat" aria-label="Chat${n?`, ${n} new`:''}">💬</button>${n?`<b class="badge" aria-hidden="true">${n>9?'9+':n}</b>`:''}</span>`; }
+const QUICK=['👍','😂','🔥','GG','Nice hand'];
+/* The sheet is drawn with the rest of the screen, and keepSheet() keeps the
+   one on screen: it lives outside #app, only its [data-live] parts are
+   updated, and the box being typed in is never replaced. */
+function chatSheet(r){ const lines=r.chat||[], w=(r.watchers||[]).length, uid=myId();
+  const face=id=>{ const p=r.players.find(x=>x.userId===id)||(r.watchers||[]).find(x=>x.userId===id); return p&&p.photoUrl||null; };
+  const msgs=lines.length?lines.map(l=>`<div class="msg ${l.userId===uid?'own':''}">${avatarHtml(l.name,face(l.userId))}<div class="body"><b>${esc(l.userId===uid?'You':first(l.name))}</b>${l.watching?'<span class="wtag">watching</span>':''}${esc(l.text)}</div></div>`).join('')
+    :'<div class="none">No messages yet. Say hello.</div>';
+  return `<div class="sheet chat" data-act="chatclose" data-keep="chat"><div class="box" role="dialog" aria-label="Table chat">
+    <div class="chead" data-live="head"><h2>Table chat</h2><span>${w?`${w} watching`:''}</span><button class="x" data-act="chatclose" aria-label="Close the chat">×</button></div>
+    <div class="msgs" data-live="msgs">${msgs}</div>
+    <div class="quick">${QUICK.map(q=>`<button data-say="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+    <div class="chatsend"><input id="chatin" maxlength="200" placeholder="Say something…" enterkeyhint="send" autocomplete="off" value="${esc(state.chatDraft)}"><button class="btn primary small" data-act="chatsend">Send</button></div></div></div>`; }
+async function sendChat(text,fromBox){ text=String(text||'').trim(); if(!text)return;
+  if(fromBox){ state.chatDraft=''; const i=$('#chatin'); if(i)i.value=''; }
+  try{ await P.request('room:chat',{text}); }
+  catch(err){ toast(err.message); if(fromBox&&!state.chatDraft){ state.chatDraft=text; const i=$('#chatin'); if(i&&!i.value)i.value=text; } } }
+async function watchCode(code){ try{ const d=await P.request('room:watch',{code}); state.boardAnim=null; onRoom(d); }catch(err){ toast(err.message); refreshRooms(); } }
+async function stopWatching(){ state.chatOpen=false; try{ await P.request('room:unwatch'); }catch(e){} state.watchCode=null; state.boardAnim=null; onRoom(null); }
 async function openPicker(){
   state.picker={q:'',list:[],loading:true,sent:[],ask:0}; render();
   await loadColleagues(''); }
@@ -532,10 +668,17 @@ function renderKeepingSearch(){ const typing=document.activeElement&&document.ac
   const q=$('#pickq'); if(q&&typing){ q.focus(); q.setSelectionRange(q.value.length,q.value.length); } }
 function onRoom(room){
   const prev=state.room; state.room=room||null;
-  if(!room){ if(state.mode==='rooms'){ state.table=null; state.view='lobby'; state.leaveAsk=false; refreshRooms(); } return render(); }
+  if(window.PokerSounds)window.PokerSounds.update(prev||null,state.room,state.me&&state.me.userId);
+  state.watchCode=room&&room.big&&room.watching?room.code:null;
+  if(!room){ state.chatOpen=false; if(state.mode==='rooms'){ state.table=null; state.view='lobby'; state.leaveAsk=false; refreshRooms(); } return render(); }
   const v=room.table; if(room.serverNow)state.offset=room.serverNow-Date.now();
+  if(room.big){ const last=(room.chat||[]).reduce((a,l)=>Math.max(a,l.at||0),0);
+    // A table's earlier chat is not news: only lines from now on count as unread.
+    if(state.chatRoom!==room.code){ state.chatRoom=room.code; state.chatSeen=last; }
+    if(state.chatOpen)state.chatSeen=Math.max(state.chatSeen,last);
+  }
   if(v){ const was=state.table; state.table=v;
-    if(was&&was.id===v.id&&v.toAct!=null&&v.toAct===v.mySeat&&was.toAct!==v.mySeat){ haptic('medium'); chime(); }
+    if(was&&was.id===v.id&&v.toAct!=null&&v.toAct===v.mySeat&&was.toAct!==v.mySeat){ haptic('medium'); chime(); if(room.big)state.chatOpen=false; }
     if(!was||was.handNo!==v.handNo)state.raiseOpen=false; }
   else state.table=null;
   if(prev&&prev.status==='lobby'&&room.status==='playing'){ haptic('heavy'); chime(); }
@@ -563,11 +706,22 @@ function renderTv(){ const sh=state.shared, ph=phaseWords(sh);
 /* ---------- the table ---------- */
 const POS_P={B:[50,90],LL:[8,66],LM:[8,47],LU:[10,25],T:[50,8],RU:[90,25],RM:[92,47],RL:[92,66]};
 const POS_L={B:[50,88],LL:[14,76],LM:[5,48],LU:[14,20],T:[50,9],RU:[86,20],RM:[95,48],RL:[86,76]};
-const LAYOUT={2:['B','T'],3:['B','LU','RU'],4:['B','LM','T','RM'],5:['B','LL','LU','RU','RL'],6:['B','LL','LU','T','RU','RL']};
+const LAYOUT={2:['B','T'],3:['B','LU','RU'],4:['B','LM','T','RM'],5:['B','LL','LU','RU','RL'],6:['B','LL','LU','T','RU','RL'],7:['B','LL','LM','LU','RU','RM','RL'],8:['B','LL','LM','LU','T','RU','RM','RL']};
+/* The big tables: smaller seats on their own spots (a phone upright, and on its side), each seat carrying its bet and the
+   dealer chip at fixed offsets (px, from the seat's top left; the seat is 72 wide, its avatar's middle at 36,24), so
+   nothing reaches the board. The left side is drawn here; the right side mirrors it. */
+const POS_P8={B:[50,92],LL:[11,73],LM:[9,48],LU:[13,22],T:[50,8],RU:[87,22],RM:[91,48],RL:[89,73]};
+const POS_W8={B:[50,90],LL:[17,80],LM:[7,50],LU:[17,20],T:[50,10],RU:[83,20],RM:[93,50],RL:[83,80]};
+const BET8={B:[36,-20,''],T:[36,96,''],LU:[74,58,'al'],LM:[74,60,'al'],LL:[76,-12,'al']}, BET8W={B:[78,30,'al'],T:[78,40,'al']};
+const DEAL8={B:[0,26],T:[72,26],LU:[68,34],LM:[68,34],LL:[68,34]};
+const mirror=(at,o)=>at[0]==='R'?[72-o[0],o[1],o[2]==='al'?'ar':o[2]||'']:o;
+const spot8=(map,at)=>mirror(at,map['L'+at.slice(1)]||map[at]);
+const isWide=()=>innerWidth>innerHeight*1.3&&innerHeight<560;
 function tableTitle(v){ if(v.round==='casual')return state.room?`Table ${state.room.code}`:'Table'; return v.round==='semi'?`Semifinal ${v.label}`:v.round==='final'?'The final':v.round==='practice'?'Practice table':'Open table'; }
 function actionWord(a){ return {fold:'Fold',check:'Check',call:'Call',raise:'Raise',allin:'All in',sb:'SB',bb:'BB',timeout:'Time'}[a]||''; }
-function tableInner(v,landscape){
+function tableInner(v,landscape,big){
   if(!v||!v.seats)return `<div class="waiting" style="flex:1">Loading the table…</div>`;
+  if(big)return bigTableInner(v,big);
   const n=v.seats.length, mySeat=v.mySeat, t=now();
   const rot=mySeat==null?0:mySeat;
   const names=LAYOUT[n]||LAYOUT[6], POS=landscape?POS_L:POS_P;
@@ -597,6 +751,38 @@ function tableInner(v,landscape){
       <div class="center">${v.pot>0?`<div class="pot num">Pot ${fmt(v.pot)}</div>`:''}${board}</div>
       ${seats}${banner?`<div class="banner">${esc(banner)}</div>`:''}</div>`;
 }
+/** A big table (up to eight): the same table, drawn compact; the banner takes the pot's place over the board. */
+function bigTableInner(v,o){
+  const n=v.seats.length, mySeat=v.mySeat, t=now(), wide=!!o.wide, room=o.room;
+  const rot=mySeat==null?0:mySeat;
+  const names=LAYOUT[n]||LAYOUT[8], POS=wide?POS_W8:POS_P8;
+  const winners=new Set(), winCards=new Set();
+  if(v.result){ v.result.pots.forEach(p=>p.winners.forEach(w=>winners.add(w))); v.result.shown.filter(s=>winners.has(s.seat)).forEach(s=>s.best.forEach(c=>winCards.add(c))); }
+  const seats=v.seats.map(s=>{ const at=names[(s.seat-rot+n)%n], [x,y]=POS[at];
+    const showRight=x<50;
+    const ring=s.toAct&&v.deadline?Math.max(0,Math.min(1,(v.deadline-t)/v.actionMs)):1;
+    const shown=s.cards&&!s.me;
+    const tag=s.left?'<span class="tag">LEFT</span>':s.busted?'<span class="tag">OUT</span>':s.allIn?'<span class="tag allin">ALL IN</span>':s.sittingOut?'<span class="tag">AWAY</span>':s.lastAction&&!s.toAct&&v.street!=='done'?`<span class="tag act">${actionWord(s.lastAction)}</span>`:winners.has(s.seat)?'<span class="tag bounty">WINNER</span>':'';
+    const holeBacks=s.inHand&&!s.folded&&!s.cards&&!s.busted&&!s.me?`<div class="hole ${showRight?'r':'l'}">${back('mini')}${back('mini')}</div>`:'';
+    const [bx,by,anchor]=spot8(wide&&BET8W[at]?BET8W:BET8,at), [dx,dy]=spot8(DEAL8,at);
+    return `<div class="seat p-${at} ${s.me?'me':''} ${s.folded?'folded':''} ${s.busted?'out':''} ${s.toAct?'toact':''} ${s.toAct&&ring<.33?'hurry':''}" style="left:${x}%;top:clamp(50px,${y}%,calc(100% - 44px));--t:${ring.toFixed(3)}">
+      ${tag}<div class="ring">${/^bot:/.test(s.userId)?'<div class="avatar house">♠</div>':avatarHtml(s.name,s.photoUrl||pic(s.userId))}</div>${holeBacks}
+      <div class="plate"><b>${esc(s.me?'You':/^bot:/.test(s.userId)?String(s.name).replace(/^House /,''):first(s.name))}</b><span>${s.busted?'—':fmt(s.stack)}</span></div>
+      ${shown?`<div class="shown ${showRight?'r':'l'}">${s.cards.map(c=>card(c,'mini',winCards.has(c)?'win':'')).join('')}</div>`:''}
+      ${s.bet>0?`<div class="bet ${anchor}" style="left:${bx}px;top:${by}px"><i></i>${fmt(s.bet)}</div>`:''}
+      ${s.button?`<div class="dealer" style="left:${dx}px;top:${dy}px">D</div>`:''}</div>`; }).join('');
+  // Next to the middle seats the deck and the burn pile would crowd the board: there it is the cards alone.
+  const board=boardHtml(v,winCards).replace('<div class="board"',`<div class="board${names.includes('LM')?' nopiles':''}"`);
+  const level=v.level?`Blinds ${fmt(v.level.sb)}/${fmt(v.level.bb)}${v.nextLevelAt&&v.nextLevel?` · ${fmt(v.nextLevel.sb)}/${fmt(v.nextLevel.bb)} in ${clockOf(v.nextLevelAt-t)}`:''}`:'';
+  let banner='';
+  if(v.result){ const p=v.result.pots[0]; if(p){ const w=p.winners.map(i=>v.seats[i]).map(s=>s.me?'You':first(s.name));
+      banner=`${w.join(' & ')} ${w.length>1?'split':w[0]==='You'?'win':'wins'} ${fmt(v.result.pots.reduce((a,x)=>a+x.amount,0))}${p.hand?` with ${p.hand.toLowerCase()}`:''}`; } }
+  const left=v.endsAt-t, watching=room&&room.watching;
+  return `<div class="tbar"><button class="back" data-act="lobby" aria-label="${watching?'Back to the tables':'Back to the lobby'}">‹</button><div class="title"><b>${tableTitle(v)}${v.mySeat==null?' · watching':''}</b><span>${level}</span></div>${room?chatButton(room):''}${soundButton()}<div class="clock num ${left<60000?'low':''}">${v.status==='over'?'Over':clockOf(left)}</div></div>
+    <div class="stage"><div class="felt"></div>
+      <div class="center">${banner?`<div class="banner">${esc(banner)}</div>`:v.pot>0?`<div class="pot num"><i></i>Pot ${fmt(v.pot)}</div>`:''}${board}</div>
+      ${seats}</div>`;
+}
 function renderTable(){
   const v=state.view==='watch'?state.watching:state.table;
   if(!v){ state.view='lobby'; return state.mode==='rooms'?renderRoomsMode():renderLobby(); }
@@ -606,7 +792,10 @@ function renderTable(){
   if(mine&&mine.cards){ const shownBest=v.result&&v.result.shown.find(s=>s.seat===v.mySeat);
     hand=`<div><div style="display:flex;gap:6px">${mine.cards.map(c=>card(c,'big',mine.folded?'dim':'')).join('')}</div><div class="hand">${mine.folded?'Folded':shownBest?esc(shownBest.hand):''}</div></div>`; }
   let actions='';
+  const big=!!(room&&room.big), watching=big&&room.watching;
   if(v.status==='over'){ actions=''; }
+  else if(watching){ const w=(room.watchers||[]).length;
+    actions=`<div class="watchbar"><span class="who"><span class="dot"></span>Watching · ${w} watching</span><div class="row">${seatFree(room)?'<button class="btn small primary" data-act="takeseat">Take a seat</button>':''}<button class="btn small ghost" data-act="unwatch">Back to tables</button></div></div>`; }
   else if(mine&&mine.sittingOut){ actions=`<div class="sitout"><span>You are sitting out. Your hands fold until you are back.</span><button class="btn small primary" data-act="sitin">I'm back</button></div>`; }
   else if(v.choices&&v.toAct===v.mySeat){ const c=v.choices;
     const callTxt=c.canCheck?'Check':`Call<small>${fmt(c.toCall)}</small>`;
@@ -628,7 +817,9 @@ function renderTable(){
   if(v.status==='over'&&v.standings){ const st=v.standings, myId=v.mySeat!=null?v.seats[v.mySeat].userId:me(), myS=st.find(s=>s.userId===myId);
     over=`<div class="over"><div class="box"><h2>${myS?(myS.place===1?'You won the table':`You finished ${ordinal(myS.place)}`):'Table over'}</h2><p>${myS?(v.round==='casual'?'Just for fun: no points.':v.round==='practice'?'Practice table: no points.':v.round==='open'?'Your points are on the board.':'Standings below.'):'Final standings.'}</p>
       ${st.map(s=>`<div class="rowi ${s.userId===myId?'me':''}"><div class="rank">${s.place}</div>${avatarHtml(s.name,(v.seats.find(x=>x.userId===s.userId)||{}).photoUrl||pic(s.userId))}<div class="who"><b>${esc(s.name)}</b><span>${s.busted?'Busted':fmt(s.stack)+' chips'}${s.knockouts.length?` · ${s.knockouts.length} KO`:''}</span></div></div>`).join('')}
-      ${room?`<div class="btns">${isHost()?'<button class="btn primary" data-act="again">Deal again</button>':`<div class="waiting" style="flex:1;min-height:48px">Waiting for ${esc(hostName(room))}…</div>`}<button class="btn ghost" data-act="leaveask" style="flex:.6">Leave</button></div>`:'<button class="btn primary" style="width:100%;margin-top:12px" data-act="lobby">Back to the lobby</button>'}</div></div>`; }
+      ${watching?`<div class="btns">${seatFree(room)?'<button class="btn primary" data-act="takeseat">Take a seat</button>':''}<button class="btn ghost" data-act="unwatch">Back to tables</button></div>`:room?`<div class="btns">${isHost()?'<button class="btn primary" data-act="again">Deal again</button>':`<div class="waiting" style="flex:1;min-height:48px">Waiting for ${esc(hostName(room))}…</div>`}<button class="btn ghost" data-act="leaveask" style="flex:.6">Leave</button></div>`:'<button class="btn primary" style="width:100%;margin-top:12px" data-act="lobby">Back to the lobby</button>'}</div></div>`; }
+  if(big){ const wide=isWide();
+    app.innerHTML=`<div id="table" class="big ${wide?'wide':''}">${tableInner(v,false,{wide,room})}<div class="dock">${watching?'':`<div class="mine">${hand}</div>`}<div class="actions">${actions}</div></div>${over}${sheets()}</div>`; return; }
   app.innerHTML=`<div id="table">${tableInner(v,false)}<div class="mine">${hand}</div><div class="actions">${actions}</div>${over}${room?sheets():''}</div>`;
 }
 function renderRoomsMode(){ const r=R(); if(!r)return renderRooms(); if(r.status==='lobby'||!r.table)return renderRoomLobby(); return renderTable(); }
@@ -640,18 +831,45 @@ const ordinal=n=>n+(['th','st','nd','rd'][(n%100-20)%10]||['th','st','nd','rd'][
    tap (and the search box lost the keyboard). Only a sheet that changed is
    replaced. */
 let keptSheet={html:'',node:null};
+/* The chat sheet (a big table) goes one step further: it is held outside #app,
+   so the table drawn again under it never takes away the box being typed in
+   (or the phone's keyboard). Only its [data-live] parts are brought up to date,
+   the message list keeping its place unless it was at the newest line. */
+function keepChat(fresh){
+  const held=keptSheet.node&&keptSheet.node.dataset.keep==='chat'&&keptSheet.node.isConnected?keptSheet.node:null;
+  const html=fresh.outerHTML;
+  if(held){
+    if(keptSheet.html!==html){ held.querySelectorAll('[data-live]').forEach(el=>{ const nu=fresh.querySelector(`[data-live="${el.dataset.live}"]`); if(!nu||nu.innerHTML===el.innerHTML)return;
+        const atEnd=el.scrollHeight-el.scrollTop-el.clientHeight<48; el.innerHTML=nu.innerHTML; if(atEnd)el.scrollTop=el.scrollHeight; });
+      keptSheet.html=html; }
+    fresh.remove(); return; }
+  let layer=document.getElementById('layer'); if(!layer){ layer=document.createElement('div'); layer.id='layer'; document.body.appendChild(layer); }
+  layer.textContent=''; layer.appendChild(fresh); keptSheet={html,node:fresh};
+  const m=fresh.querySelector('.msgs'); if(m)m.scrollTop=m.scrollHeight; }
 function keepSheet(focused){
   const fresh=app.querySelector('.sheet');
+  if(fresh&&fresh.dataset.keep==='chat')return keepChat(fresh);
+  if(keptSheet.node&&keptSheet.node.dataset.keep==='chat'){ keptSheet.node.remove(); keptSheet={html:'',node:null}; }
   if(!fresh){ keptSheet={html:'',node:null}; return; }
   const html=fresh.outerHTML;
   if(keptSheet.node&&keptSheet.html===html)fresh.replaceWith(keptSheet.node);
   else keptSheet={html,node:fresh};
   if(focused&&focused.id){ const again=document.getElementById(focused.id); if(again&&again!==document.activeElement){ again.focus(); if(again.setSelectionRange)again.setSelectionRange(again.value.length,again.value.length); } } }
-function render(){ if(state.fatal){ app.innerHTML=`<div id="lobby"><div class="empty" style="text-align:center;margin-top:30vh">${esc(state.fatal)}</div></div>`; return; }
+function render(){ if(state.fatal){ app.innerHTML=`<div id="lobby"><div class="empty" style="text-align:center;margin-top:30vh">${esc(state.fatal)}</div></div>`; keepSheet(null); return; }
   const focused=document.activeElement&&document.activeElement.closest&&document.activeElement.closest('.sheet')?document.activeElement:null;
   if(state.mode==='rooms')renderRoomsMode(); else if(state.view==='table'||state.view==='watch')renderTable(); else renderLobby();
-  keepSheet(focused);
+  keepSheet(focused); placeChat();
   if(state.offline&&!$('.offline'))app.insertAdjacentHTML('beforeend','<div class="offline">Reconnecting…</div>'); }
+
+/* The chat sheet stops at the action buttons (under the table upright, beside it on its side): a turn is never behind it. */
+function placeChat(){ const st=document.documentElement.style, a=document.querySelector('#table.big .actions');
+  let b=0, r=0;
+  if(a){ const dock=a.closest('.dock').getBoundingClientRect();
+    if(a.closest('.wide'))r=Math.max(0,innerWidth-dock.left); else b=Math.max(0,innerHeight-a.getBoundingClientRect().top); }
+  st.setProperty('--chat-b',b+'px'); st.setProperty('--chat-r',r+'px'); }
+/* the big table's layout follows the phone turning */
+let resizeTimer=null;
+addEventListener('resize',()=>{ if(!document.querySelector('#table.big'))return; clearTimeout(resizeTimer); resizeTimer=setTimeout(()=>{ const was=document.querySelector('#table.big.wide')!=null; if(was!==isWide())render(); else placeChat(); },120); });
 
 /* the clocks on screen move every quarter second without waiting for the server */
 setInterval(()=>{ const v=state.view==='table'?state.table:state.view==='watch'?state.watching:null;
@@ -673,6 +891,8 @@ document.addEventListener('click',async e=>{
   if(b.dataset.inv){ const id=b.dataset.inv; try{ await P.request('room:invite',{userId:id}); if(state.picker)state.picker.sent.push(id); toast('Invite sent.'); }catch(err){ toast(err.message); } return render(); }
   if(b.dataset.tab){ state.tab=b.dataset.tab; return renderLobby(); }
   if(b.dataset.watch){ return watchTable(b.dataset.watch); }
+  if(b.dataset.watchroom){ return watchCode(b.dataset.watchroom); }
+  if(b.dataset.say){ haptic('light'); return sendChat(b.dataset.say,false); }
   if(b.dataset.to){ state.raiseTo=+b.dataset.to; const r=$('#raise'); if(r)r.value=state.raiseTo; $('#raisev').textContent=fmt(state.raiseTo); const rb=$('#raisebtn'); if(rb)rb.textContent=fmt(state.raiseTo); return; }
   if(b.dataset.pick){ const [stage,field,value]=b.dataset.pick.split('|'); const sel=state.pick[stage]=state.pick[stage]||{}; sel[field]=value; if(field!=='choice'&&field!=='stake')delete sel.choice; return renderLobby(); }
   const act=b.dataset.act; if(!act)return;
@@ -687,7 +907,13 @@ document.addEventListener('click',async e=>{
       case 'code': await joinCode(($('#code')||{}).value||state.codeInput); break;
       case 'event': state.mode='event'; state.view='lobby'; state.shared=state.ev; break;
       case 'rooms': state.mode='rooms'; state.view=state.room&&state.room.table&&state.room.status!=='lobby'?'table':'lobby'; state.table=state.room&&state.room.table||null; refreshRooms(); break;
-      case 'leaveask': if(R()&&R().practice){ await leavePractice(); return; } state.leaveAsk=true; break;
+      case 'leaveask': if(R()&&R().practice){ await leavePractice(); return; } if(R()&&R().big&&R().watching){ await stopWatching(); return; } state.leaveAsk=true; break;
+      case 'unwatch': await stopWatching(); return;
+      case 'takeseat': state.chatOpen=false; await joinCode(R().code); break;
+      case 'chat': state.chatOpen=true; { const r=R(); state.chatSeen=Math.max(state.chatSeen,...((r&&r.chat)||[]).map(l=>l.at||0)); } break;
+      case 'chatclose': state.chatOpen=false; break;
+      case 'chatsend': { const i=$('#chatin'); await sendChat(i?i.value:state.chatDraft,true); return; }
+      case 'sound': if(window.PokerSounds)window.PokerSounds.toggle(); break;
       case 'leaveno': state.leaveAsk=false; break;
       case 'leave-room': state.leaveAsk=false; await P.request('room:leave'); onRoom(null); return;
       case 'invite': return openPicker();
@@ -697,7 +923,7 @@ document.addEventListener('click',async e=>{
       case 'deal': await P.request('room:start'); break;
       case 'again': await P.request('room:again'); break;
       case 'mytable': state.view='table'; if(!state.table||state.table.status==='over'){ const h=await P.request('poker:hello'); if(h.table)state.table=h.table; } break;
-      case 'lobby': if(state.mode==='rooms'){ if(R()&&R().practice){ await leavePractice(); return; } state.leaveAsk=true; break; } if(state.watching)P.request('table:unwatch',{tableId:state.watching.id}).catch(()=>{}); state.watching=null; state.view='lobby'; if(state.table&&state.table.status==='over')state.table=null; break;
+      case 'lobby': if(state.mode==='rooms'){ if(R()&&R().practice){ await leavePractice(); return; } if(R()&&R().big&&R().watching){ await stopWatching(); return; } state.leaveAsk=true; break; } if(state.watching)P.request('table:unwatch',{tableId:state.watching.id}).catch(()=>{}); state.watching=null; state.view='lobby'; if(state.table&&state.table.status==='over')state.table=null; break;
       case 'fold': case 'call': case 'allin': await sendAction({kind:act}); break;
       case 'openraise': state.raiseOpen=true; break;
       case 'raise': await sendAction(state.raiseTo>=state.table.choices.maxRaiseTo?{kind:'allin'}:{kind:'raise',to:state.raiseTo}); break;
@@ -710,8 +936,12 @@ document.addEventListener('click',async e=>{
   }catch(err){ toast(err.message||'Something went wrong.'); }
   render();
 });
-document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target&&e.target.id==='code'){ e.preventDefault(); joinCode(e.target.value).catch(err=>toast(err.message)); } });
+document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target&&e.target.id==='code'){ e.preventDefault(); joinCode(e.target.value).catch(err=>toast(err.message)); }
+  if(e.key==='Enter'&&e.target&&e.target.id==='chatin'&&!e.isComposing){ e.preventDefault(); sendChat(e.target.value,true); } });
+/* Send keeps the keyboard up: the tap does not take the focus from the box. */
+document.addEventListener('mousedown',e=>{ if(e.target.closest&&e.target.closest('.sheet.chat button')&&document.activeElement&&document.activeElement.id==='chatin')e.preventDefault(); });
 document.addEventListener('input',e=>{ const t=e.target;
+  if(t.id==='chatin')state.chatDraft=t.value;
   if(t.id==='code'){ t.value=t.value.replace(/\D/g,'').slice(0,4); state.codeInput=t.value; }
   if(t.id==='pickq'&&state.picker){ state.picker.q=t.value; render(); const q=$('#pickq'); if(q){ q.focus(); q.setSelectionRange(q.value.length,q.value.length); }
     clearTimeout(pickTimer); pickTimer=setTimeout(()=>{ if(state.picker&&state.picker.q===t.value)loadColleagues(t.value.trim()); },250); }
@@ -731,7 +961,60 @@ function onTable(v){ if(!v||!v.id)return; if(v.now)state.offset=v.now-Date.now()
     if(state.mode==='event'&&state.view==='table')renderTable(); else if(state.view==='lobby'&&v.status==='playing'&&(!prev||prev.id!==v.id)){ state.mode='event'; state.view='table'; renderTable(); } }
   else if(state.watching&&state.watching.id===v.id){ state.watching=v; if(state.view==='watch')renderTable(); } }
 let audio=null;
-function chime(){ try{ audio=audio||new (window.AudioContext||window.webkitAudioContext)(); const o=audio.createOscillator(), g=audio.createGain(); o.type='sine'; o.frequency.value=880; g.gain.setValueAtTime(.0001,audio.currentTime); g.gain.exponentialRampToValueAtTime(.15,audio.currentTime+.02); g.gain.exponentialRampToValueAtTime(.0001,audio.currentTime+.35); o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime+.4); }catch(e){} }
+/* ---------- sounds at a big table: made here with WebAudio, no files ----------
+   Quiet by default (a low master level), muted with the top bar's 🔊, which is
+   remembered. Phones start audio only from a tap, so the first tap anywhere
+   makes (or wakes) the audio context. A classic table is as it was. */
+const SOUND_KEY='speedPoker.sound';
+let soundOn=(()=>{ try{ return localStorage.getItem(SOUND_KEY)!=='off'; }catch(e){ return true; } })();
+let master=null, noiseBuf=null;
+function ctx(){ try{ audio=audio||new (window.AudioContext||window.webkitAudioContext)(); if(audio.state==='suspended')audio.resume().catch(()=>{}); return audio; }catch(e){ return null; } }
+const bigOn=()=>state.big||!!(state.room&&state.room.big);
+function unlockAudio(){ if(!bigOn()||!soundOn||(audio&&audio.state==='running'))return; const a=ctx(); if(!a)return;
+  try{ const s=a.createBufferSource(); s.buffer=a.createBuffer(1,1,22050); s.connect(a.destination); s.start(0); }catch(e){} }
+['pointerdown','touchend','keydown'].forEach(ev=>document.addEventListener(ev,()=>{ if(window.PokerSounds)window.PokerSounds.unlock(); },{capture:true,passive:true}));
+function bus(){ const a=ctx(); if(!a)return null; if(!master){ master=a.createGain(); master.gain.value=.45; master.connect(a.destination); } return a; }
+function tone(freq,dur,o){ o=o||{}; const a=bus(); if(!a)return; const t=a.currentTime+(o.at||0), osc=a.createOscillator(), g=a.createGain();
+  osc.type=o.type||'sine'; osc.frequency.setValueAtTime(freq,t); if(o.to)osc.frequency.exponentialRampToValueAtTime(o.to,t+dur);
+  g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(o.gain||.1,t+(o.attack||.005)); g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  osc.connect(g).connect(master); osc.start(t); osc.stop(t+dur+.03); }
+function hiss(dur,o){ o=o||{}; const a=bus(); if(!a)return;
+  if(!noiseBuf){ noiseBuf=a.createBuffer(1,Math.floor(a.sampleRate*.5),a.sampleRate); const d=noiseBuf.getChannelData(0); for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1; }
+  const t=a.currentTime+(o.at||0), s=a.createBufferSource(), f=a.createBiquadFilter(), g=a.createGain();
+  s.buffer=noiseBuf; f.type='bandpass'; f.Q.value=o.q||1; f.frequency.setValueAtTime(o.freq||2000,t); if(o.to)f.frequency.exponentialRampToValueAtTime(o.to,t+dur);
+  g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(o.gain||.1,t+(o.attack||.006)); g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  s.connect(f).connect(g).connect(master); s.start(t); s.stop(t+dur+.03); }
+const SFX={
+  card:at=>{ hiss(.07,{at,gain:.16,freq:3400,to:1600,q:.9}); tone(1100,.03,{at,gain:.025,type:'triangle'}); },
+  chips:()=>[0,.05,.11].forEach(d=>{ tone(2500+Math.random()*1100,.055,{type:'triangle',gain:.06,at:d}); hiss(.035,{at:d,gain:.05,freq:5200,q:2.5}); }),
+  knock:()=>[0,.12].forEach(d=>{ tone(160,.1,{gain:.24,at:d,to:85}); hiss(.03,{at:d,gain:.05,freq:900,q:1.4}); }),
+  fold:()=>hiss(.3,{gain:.07,freq:1500,to:320,q:.6,attack:.05}),
+  win:()=>[523.25,659.25,783.99,1046.5].forEach((f,i)=>tone(f,.34,{type:'triangle',gain:.08,at:.15+i*.09})),
+  pop:()=>tone(430,.09,{gain:.09,to:900}),
+};
+function sfx(name,at){ if(!bigOn()||!soundOn)return; try{ SFX[name](at||0); }catch(e){} }
+/** What changed at the table since the last view, as sounds: the deal, the board, a bet, a check, a fold, a pot won, a chat line. */
+function roomSounds(prev,room,uid){ if(!soundOn||!prev)return;
+  const known=new Set((prev.chat||[]).map(l=>l.id));
+  if((room.chat||[]).some(l=>!known.has(l.id)&&l.userId!==uid))sfx('pop');
+  const was=prev.table, v=room.table; if(!was||!v||was.id!==v.id)return;
+  if(was.handNo!==v.handNo){ if(v.handNo){ sfx('card',0); sfx('card',.13); } return; }
+  const nb=(v.board||[]).filter(Boolean).length, ob=(was.board||[]).filter(Boolean).length;
+  for(let i=ob;i<nb;i++)sfx('card',(BURN_MS+(i-ob)*FLIP_GAP_MS)/1000);
+  if(v.result&&!was.result){ if(v.mySeat!=null&&v.result.pots.some(p=>p.winners.includes(v.mySeat)))sfx('win'); return; }
+  if((v.pot||0)>(was.pot||0))return sfx('chips');
+  if(v.seats.some(s=>s.folded&&was.seats[s.seat]&&!was.seats[s.seat].folded))return sfx('fold');
+  if(v.seats.some(s=>(s.lastAction==='check'||s.lastAction==='timeout')&&!s.folded&&was.seats[s.seat]&&was.seats[s.seat].lastAction!==s.lastAction))sfx('knock'); }
+/* The sounds' face to the page: update(prevRoom, room, myUserId) after each room view, toggle(), muted(), unlock() on a tap.
+   A module pasted at POKER-SOUNDS below may take this name over; the page only ever calls window.PokerSounds. */
+window.PokerSounds={
+  update(prev,room,uid){ if(!room||!room.big)return; roomSounds(prev&&prev.code===room.code?prev:null,room,uid); },
+  toggle(){ soundOn=!soundOn; try{ localStorage.setItem(SOUND_KEY,soundOn?'on':'off'); }catch(e){} if(soundOn){ unlockAudio(); sfx('pop'); } },
+  muted(){ return !soundOn; },
+  unlock(){ unlockAudio(); },
+};
+const soundButton=()=>{ const off=!!(window.PokerSounds&&window.PokerSounds.muted()); return `<button class="tbtn snd" data-act="sound" aria-label="${off?'Muted: tap for sound':'Sound on: tap to mute'}">${off?'🔇':'🔊'}</button>`; };
+function chime(){ if(bigOn()&&window.PokerSounds&&window.PokerSounds.muted())return; try{ audio=audio||new (window.AudioContext||window.webkitAudioContext)(); const o=audio.createOscillator(), g=audio.createGain(); o.type='sine'; o.frequency.value=880; g.gain.setValueAtTime(.0001,audio.currentTime); g.gain.exponentialRampToValueAtTime(.15,audio.currentTime+.02); g.gain.exponentialRampToValueAtTime(.0001,audio.currentTime+.35); o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime+.4); }catch(e){} }
 
 async function start(){
   if(P.fatal){ state.fatal=P.fatal; return render(); }
@@ -759,6 +1042,7 @@ async function leavePractice(){ state.leaveAsk=false; state.boardAnim=null; try{
 async function load(){ try{
     const [h,rh]=await Promise.all([P.request('poker:hello').catch(()=>({})),P.request('room:hello')]);
     state.ev=(h&&h.shared)||null; state.mine=(h&&h.mine)||state.mine; state.me=rh.me||state.me; state.rooms=rh.rooms||[]; state.invites=rh.invites||[];
+    state.big=!!rh.big; state.tables=rh.tables||null;
     /* At an event's table: that first. Else the group game (the event, if one is on, is a card in its lobby). */
     if(h&&h.table&&h.table.status==='playing'&&!rh.room){ state.mode='event'; state.shared=state.ev; state.table=h.table; state.view='table'; }
     else if(state.mode==='event'){ state.shared=state.ev; if(h&&h.table)state.table=h.table; }
@@ -766,6 +1050,9 @@ async function load(){ try{
        practice table: that one is left, and the lobby shows. A table with
        colleagues is still yours to go back to. */
     else if(!state.opened&&rh.room&&rh.room.practice){ try{ await P.request('room:leave'); }catch(e){} onRoom(null); }
+    /* Watching ends with the connection (the server lets go of a watcher whose page went): back, watch it again. */
+    else if(!rh.room&&state.watchCode){ const code=state.watchCode;
+      try{ onRoom(await P.request('room:watch',{code})); }catch(err){ state.watchCode=null; onRoom(null); toast(err.message); } }
     else onRoom(rh.room||null);
     state.opened=true;
   }catch(err){ toast(err.message); } }
@@ -779,7 +1066,7 @@ function demo(){
   state.demoDeal=q.get('deal')==='1';
   window.__speedPokerRender=render; /* previews only: lets a check redraw the screen */
   if(state.demoDeal)setInterval(()=>{ if(state.view==='table')render(); },120);
-  const roomMode=/^(rooms|room|room-guest|room-table|room-over|invite)$/.test(mode); state.mode=roomMode?'rooms':'event';
+  const roomMode=/^(rooms|room|room-guest|room-table|room-over|invite|rooms8|room-lobby8|room-table8|room-watch8)$/.test(mode); state.mode=roomMode?'rooms':'event';
   const t=Date.now(); const iso=m=>new Date(t+m*60000).toISOString();
   const people=['Ananya Bisht','Rahul Mehta','Priya Sharma','Arjun Deshpande','Meera Iyer','Kabir Rao','Tanya Bhatia','Ishaan Kapoor','Nikhil Verma','Pooja Nair','Siddharth Pillai','Harsh Chaudhary','Raghav Sen','Divya Rao'];
   const board=people.map((n,i)=>({userId:'d'+i,name:n,office:['Gurgaon','Noida','Kolkata'][i%3],played:3+i%3,best:[4200-i*250,3100-i*150,2600-i*100],score:9900-i*500,knockouts:4-i%4,rank:i+1,reachedAt:0}));
@@ -809,6 +1096,7 @@ function demo(){
 }
 function roomsDemo(mode,t,people){
   state.me={userId:'s0',name:people[0],photoUrl:demoFace(0)}; state.mine=null; state.shared=null;
+  if(/8$/.test(mode))return bigDemo(mode,t,people);
   const mini=i=>({userId:'d'+i,name:people[i],photoUrl:demoFace(i)});
   state.rooms=[{code:'4821',host:mini(1),status:'lobby',minutes:20,house:0,players:[1,2,3].map(mini),seats:6,free:3,seatFree:true,endsAt:null},
     {code:'7350',host:mini(4),status:'playing',minutes:30,house:1,players:[4,5,6,7].map(mini),seats:6,free:1,seatFree:true,endsAt:t+600000},
@@ -828,6 +1116,51 @@ function roomsDemo(mode,t,people){
     const everyone=[...people.slice(4),...Array.from({length:76},(_,i)=>`${'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[i%26]}${['arun','ita','ohan','eena'][i%4]} ${['Shah','Rao','Iyer'][i%3]}`)].sort().map((n,i)=>({userId:'c'+i,name:n,photoUrl:demoFace(i+4),designation:['Designer','Engineer','Sales lead','HR partner'][i%4]}));
     window.Sowaka={colleagues:(q)=>new Promise(r=>setTimeout(()=>r({colleagues:everyone.filter(p=>!q||p.name.toLowerCase().includes(String(q).toLowerCase())).slice(0,50)}),120))}; openPicker().then(()=>{ state.picker.sent=['c1']; render(); }); }
 }
+/* The big tables' previews: ?demo=rooms8 (the list, a full table to watch), room-lobby8, room-table8 (&raise=1, &chat=1,
+   &showdown=1, &n=2..8 seats), room-watch8 (&free=1 a seat to take, &over=1 the game over). Chat lines typed here are
+   kept on the page, and the table is drawn again every second, as the server's updates would. */
+function bigDemo(mode,t,people){
+  const q=new URLSearchParams(location.search), watch=mode==='room-watch8';
+  const n=Math.max(2,Math.min(8,+q.get('n')||(watch&&q.get('free')==='1'?7:8)));
+  state.big=true; state.tables={seats:8,buyIn:1000};
+  const mini=i=>({userId:'d'+i,name:people[i],photoUrl:demoFace(i)});
+  state.rooms=[{code:'4821',host:mini(1),status:'lobby',minutes:20,house:0,players:[1,2,3].map(mini),seats:8,free:5,seatFree:true,endsAt:null,watchable:false,watchers:0},
+    {code:'7350',host:mini(4),status:'playing',minutes:30,house:1,players:[4,5,6,7,3].map(mini),seats:8,free:2,seatFree:true,endsAt:t+600000,watchable:true,watchers:1},
+    {code:'6170',host:mini(8),status:'playing',minutes:20,house:1,players:[8,9,10,11,12,13,1].map(mini),seats:8,free:0,seatFree:false,endsAt:t+540000,watchable:true,watchers:3}];
+  state.invites=[];
+  const said=[['s4','Meera Iyer','Who raised from the cutoff 😅'],['s1','Rahul Mehta','Me. Fold if you are scared'],['w9','Pooja Nair','This table is wild',1],['s6','Tanya Bhatia','😂😂'],['s3','Arjun Deshpande','All in with a draw, as you do'],['s2','Priya Sharma','GG'],
+    ['w10','Siddharth Pillai','Watching from the pantry ☕',1],['s4','Meera Iyer','Nice hand'],['s0',people[0],'Blinds go up in a minute'],['s1','Rahul Mehta','🔥'],['w9','Pooja Nair','Save me a seat after this one',1],['s7','Ishaan Kapoor','👍']];
+  const chat=said.map(([userId,name,text,w],i)=>Object.assign({id:'c'+i,userId,name,text,at:t-(said.length-i)*40000},w?{watching:true}:{}));
+  const S=(i,userId,name,stack,extra)=>Object.assign({seat:i,userId,name,photoUrl:/^bot:/.test(userId)?null:demoFace(i),office:null,stack,bet:0,folded:false,allIn:false,sittingOut:false,busted:false,left:false,inHand:true,button:false,sb:false,bb:false,toAct:false,me:false,cards:null,knockouts:0,lastAction:null},extra||{});
+  const id=i=>(watch?'w':'s')+i, nm=i=>people[watch?i+1:i];
+  let seats=[S(0,id(0),nm(0),2140,watch?{bet:160,lastAction:'call'}:{me:true,cards:['Qs','Qd'],toAct:true}),S(1,id(1),nm(1),860,watch?{toAct:true}:{bet:160,lastAction:'raise'}),S(2,id(2),nm(2),1320,{folded:true,lastAction:'fold'}),
+    S(3,id(3),nm(3),0,{allIn:true}),S(4,id(4),nm(4),1045,{bet:160,lastAction:'call'}),S(5,'bot:1','House Ace',990,{folded:true,lastAction:'fold',button:true}),S(6,id(6),nm(6),1210,{lastAction:'check'}),S(7,id(7),nm(7),700)].slice(0,n);
+  if(watch)seats[2].bet=0;
+  const v={id:'demo8',round:'casual',label:null,status:'playing',now:t,startedAt:t-420000,endsAt:t+780000,level:{sb:20,bb:40},levelIndex:2,nextLevelAt:t+64000,nextLevel:{sb:30,bb:60},actionMs:20000,handNo:9,street:'flop',board:['Jh','7c','2d'],pot:1280,
+    toAct:watch?1:0,deadline:t+14000,mySeat:watch?null:0,choices:watch?null:{toCall:160,canCheck:false,canRaise:true,minRaiseTo:320,maxRaiseTo:2140,pot:1280,currentBet:160},seats,result:null,nextHandAt:null,standings:null};
+  if(q.get('showdown')==='1'){ Object.assign(v,{street:'done',toAct:null,choices:null,board:['Jh','7c','2d','Qc','9s'],pot:0,result:{showdown:true,pots:[{amount:1840,winners:[0],hand:'Three of a kind'}],shown:[{seat:0,cards:watch?['Ad','Kd']:['Qs','Qd'],best:['Qs','Qd','Qc','Jh','9s'],hand:'Three of a kind'},{seat:1,cards:['Jc','Js'],best:['Jc','Js','Jh','Qc','9s'],hand:'Three of a kind'}],busted:[]}});
+    seats.forEach(s=>{ s.bet=0; s.toAct=false; }); seats[1].cards=['Jc','Js']; if(watch)seats[0].cards=['Ad','Kd']; }
+  if(q.get('over')==='1'){ Object.assign(v,{status:'over',toAct:null,choices:null,standings:seats.filter(s=>!s.allIn).slice(0,5).map((s,i)=>({userId:s.userId,name:s.name,stack:[3420,2100,1480,700,0][i],busted:i===4,knockouts:i?[]:['a'],place:i+1}))}); }
+  const pl=s=>({userId:s.userId,name:s.name,photoUrl:s.photoUrl,online:true,atTable:true,busted:s.busted});
+  const house=seats.filter(s=>/^bot:/.test(s.userId)).length;
+  const room={code:watch?'6170':'7350',you:'s0',hostId:watch?'w1':'s0',status:v.status==='over'?'over':'playing',open:true,minutes:20,minutesOptions:[10,20,30],house,houseNames:['House Ace'].slice(0,house),min:2,max:8,buyIn:1000,big:true,serverNow:t,gameNo:2,
+    players:seats.filter(s=>!/^bot:/.test(s.userId)).map(pl),invited:[],removed:[],waiting:false,table:v,finishedAt:null,watching:watch,
+    watchers:watch?[mini(0),mini(9),mini(10)].map(w=>Object.assign(w,{userId:w.userId==='d0'?'s0':w.userId})):[mini(9)],chat};
+  if(mode==='room-lobby8')Object.assign(room,{code:'4821',status:'lobby',table:null,house:1,houseNames:['House Ace'],gameNo:0,watching:false,watchers:[],chat:chat.slice(-4),
+    players:[0,1,2,3].map(i=>({userId:'s'+i,name:people[i],photoUrl:demoFace(i),online:i!==3,atTable:false,busted:false}))});
+  P.request=(ev,p)=>{ const r=state.room;
+    if(ev==='room:chat'&&r){ r.chat=[...(r.chat||[]),Object.assign({id:'c'+Date.now(),userId:'s0',name:people[0],text:String(p.text).slice(0,200),at:Date.now()},r.watching?{watching:true}:{})].slice(-40); setTimeout(()=>onRoom(Object.assign({},r)),80); return Promise.resolve({}); }
+    if(ev==='room:unwatch')return Promise.resolve({});
+    return Promise.reject(new Error('Demo: nothing is sent.')); };
+  state.table=null;
+  if(mode!=='rooms8'){ state.room=room; state.chatOpen=q.get('chat')==='1'; onRoom(room);
+    if(q.get('raise')==='1'&&!watch){ state.raiseOpen=true; state.raiseTo=480; render(); }
+    // Someone says something: the unread count (or, with the chat open, a new line).
+    setTimeout(()=>{ const r=state.room; if(!r)return; r.chat=[...r.chat,{id:'in1',userId:'s4',name:'Meera Iyer',text:'Your turn, take your time',at:Date.now()}]; onRoom(Object.assign({},r)); },state.chatOpen?2500:700);
+    setInterval(()=>{ if(state.room)onRoom(Object.assign({},state.room)); },1000); }
+  else render();
+}
+/*POKER-SOUNDS*/
 start();
 })();
 </script>
