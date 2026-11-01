@@ -163,6 +163,22 @@ const _long75 = 'Took the launch checklist end to end and kept every stakeholder
 void main() {
   setUp(() => _sentBody = null);
 
+  testWidgets('no reviews yet: a clean empty chart, ending at this month', (tester) async {
+    final bloc = await _boot(tester);
+    expect(openPersonProfile('haider'), isTrue);
+    await tester.pumpAndSettle();
+    await _openGrowTab(tester);
+
+    expect(find.byKey(const ValueKey('grow-empty-chart')), findsOneWidget);
+    expect(find.text('No reviews yet'), findsOneWidget);
+    // The axis is the six months up to this one: none still to come.
+    final now = DateTime.now();
+    final first = _monthsShort[DateTime(now.year, now.month - 5).month - 1];
+    final last = _monthsShort[now.month - 1];
+    expect(find.bySemanticsLabel(RegExp('^Overall score, $first to $last' r'(\n|$)')), findsOneWidget);
+    await _close(tester, bloc);
+  });
+
   testWidgets('no live count; Send refuses a short comment with a clear message', (tester) async {
     final bloc = await _boot(tester);
     expect(openPersonProfile('haider'), isTrue);

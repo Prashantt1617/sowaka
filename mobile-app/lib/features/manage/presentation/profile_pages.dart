@@ -4899,17 +4899,15 @@ class _GrowNote extends StatelessWidget {
 class _EmptyScoreCard extends StatelessWidget {
   const _EmptyScoreCard({required this.current});
 
-  /// This month, 'YYYY-MM' — the axis runs from here across the next five.
+  /// This month, 'YYYY-MM'. The axis is the six months ending here, as on
+  /// the chart once there are scores: never a month still to come.
   final String current;
 
   @override
   Widget build(BuildContext context) {
-    final start = current;
-    final parts = start.split('-');
-    final year = int.tryParse(parts.first) ?? DateTime.now().year;
-    final month = int.tryParse(parts.last) ?? DateTime.now().month;
     final labels = [
-      for (var i = 0; i < 6; i++) _growMonthsShort[(month - 1 + i) % 12],
+      for (final period in _GrowthChart.windowEndingAt(current))
+        _periodLabel(period),
     ];
     return Container(
       width: double.infinity,
@@ -4959,12 +4957,32 @@ class _EmptyScoreCard extends StatelessWidget {
             child: SizedBox(
               height: 110,
               width: double.infinity,
-              child: CustomPaint(
-                painter: _EmptyChartPainter(
-                  labels: labels,
-                  // Semantic year is unused on the axis, but keeps the painter
-                  // from repainting identical months across a year change.
-                  year: year,
+              // Nothing scored yet: an empty axis and a word, with no point
+              // or score pill standing in for a review that has not happened.
+              child: Semantics(
+                container: true,
+                label: 'Overall score, ${labels.first} to ${labels.last}',
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: _EmptyChartPainter(labels: labels),
+                      ),
+                    ),
+                    const Align(
+                      alignment: Alignment(0, -0.35),
+                      child: Text(
+                        'No reviews yet',
+                        key: ValueKey('grow-empty-chart'),
+                        style: TextStyle(
+                          color: Color(0xFF717171),
+                          fontSize: 12.5,
+                          height: 18.75 / 12.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -4976,21 +4994,21 @@ class _EmptyScoreCard extends StatelessWidget {
 }
 
 class _EmptyChartPainter extends CustomPainter {
-  _EmptyChartPainter({required this.labels, required this.year});
+  _EmptyChartPainter({required this.labels});
 
+  /// The six months ending with this one, oldest first.
   final List<String> labels;
-  final int year;
 
   static const _brand = Color(0xFF0571A6);
   static const _muted = Color(0xFF717171);
 
   @override
   void paint(Canvas canvas, Size size) {
-    const inset = 20.0;
-    final baseline = size.height * 0.66;
-    final left = inset;
-    final right = size.width - inset;
+    if (labels.length < 2) return;
+    final left = size.width * _GrowthChart.edge;
+    final right = size.width - left;
     final step = (right - left) / (labels.length - 1);
+    const baseline = 76.0;
 
     // A flat line where the scores will go.
     canvas.drawLine(
@@ -5002,7 +5020,7 @@ class _EmptyChartPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round,
     );
 
-    // The last month on the axis in brand blue, the rest muted.
+    // This month, the last on the axis, in brand blue; the rest muted.
     for (var i = 0; i < labels.length; i++) {
       final painter = TextPainter(
         text: TextSpan(
@@ -5011,65 +5029,19 @@ class _EmptyChartPainter extends CustomPainter {
             fontFamily: 'Sora',
             color: i == labels.length - 1 ? _brand : _muted,
             fontSize: 9,
+            height: 11.3 / 9,
             fontWeight: FontWeight.w700,
           ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      painter.paint(
-        canvas,
-        Offset(
-          left + step * i - painter.width / 2,
-          size.height - painter.height,
-        ),
-      );
+      painter.paint(canvas, Offset(left + step * i - painter.width / 2, 97));
     }
-
-    // One point, this month, with a "-/5" marker above it: nothing scored yet.
-    final point = Offset(left, baseline);
-    canvas.drawLine(
-      Offset(point.dx, 22),
-      point,
-      Paint()
-        ..color = _brand.withValues(alpha: 0.35)
-        ..strokeWidth = 1,
-    );
-    canvas.drawCircle(point, 5, Paint()..color = _brand);
-    canvas.drawCircle(
-      point,
-      5,
-      Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-
-    final tag = TextPainter(
-      text: const TextSpan(
-        text: '-/5',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 9.5,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    final pill = RRect.fromRectAndRadius(
-      Rect.fromCenter(
-        center: Offset(point.dx, 10),
-        width: tag.width + 14,
-        height: 18,
-      ),
-      const Radius.circular(9),
-    );
-    canvas.drawRRect(pill, Paint()..color = _brand);
-    tag.paint(canvas, Offset(point.dx - tag.width / 2, 10 - tag.height / 2));
   }
 
   @override
   bool shouldRepaint(_EmptyChartPainter old) =>
-      old.year != year || old.labels.join() != labels.join();
+      old.labels.join() != labels.join();
 }
 
 /// The month on show and how it stands (node 2406:74811). Tapping it opens the
