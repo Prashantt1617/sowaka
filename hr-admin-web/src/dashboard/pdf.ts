@@ -5,7 +5,11 @@ export async function downloadHtmlAsPdf(html: string, filename: string): Promise
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const styles = [...doc.querySelectorAll('style')].map((s) => s.outerHTML).join('');
   // html2pdf (with jsPDF and html2canvas) is large; it is fetched the first time someone saves a PDF.
-  const { default: html2pdf } = await import('html2pdf.js');
+  // A page opened before a deploy asks for the old build's copy, which is gone:
+  // say so rather than show the browser's error.
+  const { default: html2pdf } = await import('html2pdf.js').catch(() => {
+    throw new Error('The dashboard was updated. Refresh the page and try again.');
+  });
   // html2pdf lays the string out in its own overlay at A4 width; an element we
   // placed off screen ourselves comes out blank.
   await html2pdf()

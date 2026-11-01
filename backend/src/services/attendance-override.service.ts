@@ -7,7 +7,7 @@
  */
 import { attendanceOverrides, payrollRuns, users } from '../config/db';
 import { AttendanceOverride, HR_DAY_STATUSES, HrDayStatus } from '../models/attendance.model';
-import { invalidateAttendanceReport } from './attendance-report.service';
+import { invalidateAttendanceReport, joinedOn } from './attendance-report.service';
 import { payrollPeriodHolding } from './payroll-inputs.service';
 import { todayIso } from './shift.service';
 
@@ -40,12 +40,12 @@ async function adminAndEmployee(adminUserId: string, userId: string) {
   }
   const [admin, employee] = await Promise.all([
     users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1, name: 1 } }),
-    users().findOne({ userId }, { projection: { _id: 0, org: 1, userId: 1 } }),
+    users().findOne({ userId }, { projection: { _id: 0, org: 1, userId: 1, joiningDate: 1 } }),
   ]);
   if (!admin?.org) throw new AttendanceOverrideError(403, 'No organisation on this account');
   if (!employee) throw new AttendanceOverrideError(404, 'Employee not found');
   if (employee.org !== admin.org) throw new AttendanceOverrideError(403, 'This employee belongs to another organisation');
-  return { org: admin.org, adminName: admin.name };
+  return { org: admin.org, adminName: admin.name, joined: joinedOn(employee) };
 }
 
 /**
@@ -82,8 +82,10 @@ export async function setAttendanceOverride(
     throw new AttendanceOverrideError(400, `Mark the day as one of: ${HR_DAY_STATUSES.join(', ')}`);
   }
   const note = typeof input.note === 'string' ? input.note.trim().slice(0, 200) : '';
-  const { org, adminName } = await adminAndEmployee(adminUserId, userId);
+  const { org, adminName, joined } = await adminAndEmployee(adminUserId, userId);
   await checkDate(workDate, org);
+  // Not theirs to mark: payroll counts the days before joining on its own.
+  if (joined && workDate < joined) throw new AttendanceOverrideError(400, `They joined on ${joined}: days before that cannot be marked`);
   const doc: AttendanceOverride = {
     org, userId, workDate, status,
     ...(note ? { note } : {}),

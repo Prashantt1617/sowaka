@@ -394,7 +394,7 @@ function RunDetail({ detail, busy, onBack, onAct, onExplain, explain, onReload }
                     <Td right>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         <button type="button" onClick={() => setOpen(expanded ? null : p.userId)} className="lk-btn" style={slipBtn}>{expanded ? 'Hide' : 'Details'}</button>
-                        <button type="button" onClick={() => void downloadPayslipPdf(p, detail.company)} className="lk-btn" style={slipBtn}>Payslip</button>
+                        <button type="button" onClick={() => void downloadPayslipPdf(p, detail.company, detail.run).catch((e) => alert(e instanceof Error ? e.message : String(e)))} className="lk-btn" style={slipBtn}>Payslip</button>
                         {p.id && <button type="button" onClick={() => void downloadTdsSheetPdf(p.id!).catch((e) => alert(e instanceof Error ? e.message : String(e)))} className="lk-btn" style={slipBtn}>TDS sheet</button>}
                       </div>
                     </Td>

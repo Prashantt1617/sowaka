@@ -18,6 +18,7 @@
  */
 import { ObjectId } from 'mongodb';
 import { employeePaymentDetails, getDb, kpiAssignments, kpiTemplates, paidDaysTemplates, salaryStructures, salaryTemplates, shiftTemplates, users } from '../config/db';
+import { invalidateAttendanceSetup } from './attendance-report.service';
 import { User } from '../models/user.model';
 import { AdminError, accountLimitForAdmin, createEmployeeForAdmin } from './admin.service';
 import { decryptField, encryptField, fieldKeyConfigured } from './fieldCrypto';
@@ -661,6 +662,8 @@ async function applyImportNow(adminUserId: string, importId: string, choices: { 
     }
   }
   const result = { created, updated, failed };
+  // New people and joining dates: the calendar grades from them at once.
+  invalidateAttendanceSetup(admin.org);
   await imports().updateOne({ _id: imp._id }, { $set: { status: 'applied', appliedAt: new Date(), result } });
   return result;
 }

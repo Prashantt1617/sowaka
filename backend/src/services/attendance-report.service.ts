@@ -125,7 +125,14 @@ function lateBy(punchIn: Date, startTime: string, graceMinutes: number): number 
   return over > 0 ? over : 0;
 }
 
-type Person = Pick<User, 'userId' | 'name' | 'employeeId' | 'department' | 'location' | 'branch' | 'state' | 'managerUserId'>;
+type Person = Pick<User, 'userId' | 'name' | 'employeeId' | 'department' | 'location' | 'branch' | 'state' | 'managerUserId' | 'joiningDate'>;
+
+/**
+ * The day someone joined, 'YYYY-MM-DD': days before it are not theirs to
+ * grade, and payroll counts them as before joining. One rule for both.
+ */
+export const joinedOn = (user: { joiningDate?: Date | string | null }): string | undefined =>
+  user.joiningDate ? new Date(user.joiningDate).toISOString().slice(0, 10) : undefined;
 
 /**
  * The roster, templates and org policy change rarely and cost the most to
@@ -171,6 +178,12 @@ export function invalidateAttendanceReport(org: string): void {
   for (const key of reportCache.keys()) if (key.startsWith(`${org}|`)) reportCache.delete(key);
 }
 
+/** The report and the roster behind it, after a change to who someone is (a joining date). */
+export function invalidateAttendanceSetup(org: string): void {
+  setupCache.delete(org);
+  invalidateAttendanceReport(org);
+}
+
 /** HR's marks for these people over a range, keyed `userId|YYYY-MM-DD`. */
 async function hrMarks(userIds: string[], from: string, to: string): Promise<Map<string, AttendanceOverride>> {
   if (userIds.length === 0) return new Map();
@@ -192,7 +205,7 @@ async function orgSetup(org: string): Promise<OrgSetup> {
     users()
       .find(
         { org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } },
-        { projection: { _id: 0, userId: 1, name: 1, employeeId: 1, department: 1, location: 1, branch: 1, state: 1, managerUserId: 1 } },
+        { projection: { _id: 0, userId: 1, name: 1, employeeId: 1, department: 1, location: 1, branch: 1, state: 1, managerUserId: 1, joiningDate: 1 } },
       )
       // One batch, not a round trip per hundred rows: on a slow link the trips
       // were the whole wait, and the whole roster is a few hundred kilobytes.
@@ -402,9 +415,13 @@ export async function attendanceReport(
       lateGraceMinutes: policy.lateMarkingEnabled === false ? null : policy.lateGraceMinutes,
     };
 
+    const joined = joinedOn(user);
     for (let t = first; t <= last; t += DAY_MS) {
       const day = new Date(t);
       const key = keyOf(day);
+      // Before someone joined there is nothing to grade: not an absence, and
+      // not loss of pay (payroll counts those days on its own).
+      if (joined && key < joined) continue;
       // The shift that covered this day, which is not always today's.
       const onDay = policyOn(user, key);
       // HR's mark on the day outranks everything below it.
@@ -527,7 +544,7 @@ async function adminOrg(adminUserId: string): Promise<string> {
 
 // ------------------------------------------------------------- one person's month
 
-export type CalendarDayStatus = DayStatus | 'week_off' | 'holiday' | 'upcoming';
+export type CalendarDayStatus = DayStatus | 'week_off' | 'holiday' | 'upcoming' | 'before_joining';
 
 export interface CalendarDay {
   date: string;
@@ -611,9 +628,15 @@ async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, fro
     });
   };
 
+  const joined = joinedOn(user);
   for (let t = dayOf(from).getTime(); t <= dayOf(to).getTime(); t += DAY_MS) {
     const day = new Date(t);
     const key = keyOf(day);
+    // Before they joined: an empty day, not an absence.
+    if (joined && key < joined) {
+      days.push({ date: key, status: 'before_joining', label: 'Before joining', punchIn: null, punchOut: null, lateByMinutes: 0, earlyByMinutes: 0 });
+      continue;
+    }
     const onDay = policyOn(user, key);
     const holiday = holidayByDate.get(key);
     if (holiday) { add(key, 'holiday', holiday); continue; }
@@ -671,7 +694,7 @@ export async function employeeCalendar(
 
   const days = await gradeEmployeeDays(org, setup, user, from, to);
   const totals: Record<CalendarDayStatus, number> = {
-    present: 0, half_day: 0, missed_punch: 0, absent: 0, on_leave: 0, unpaid_leave: 0, week_off: 0, holiday: 0, upcoming: 0,
+    present: 0, half_day: 0, missed_punch: 0, absent: 0, on_leave: 0, unpaid_leave: 0, week_off: 0, holiday: 0, upcoming: 0, before_joining: 0,
   };
   for (const day of days) totals[day.status] += 1;
   const current = dayPolicyResolver(setup)(user, keyOf(new Date()));

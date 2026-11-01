@@ -469,13 +469,17 @@ export function SalaryTemplates() {
           ) : (
             <table className="lk-t" style={tableStyle}>
               <thead>
-                <tr><Th>Template Name</Th><Th>Description</Th><Th>Status</Th></tr>
+                <tr><Th>Template Name</Th><Th>Description</Th><Th>Employees</Th><Th>Status</Th></tr>
               </thead>
               <tbody>
                 {templates.map((t) => (
                   <tr key={t.code} className="lk-click" onClick={() => openDetail(t.code)} style={{ cursor: 'pointer' }}>
                     <Td><strong style={L.cellName}>{t.name}</strong>{opening === t.code && <span style={{ marginLeft: 10 }}><Spinner /></span>}</Td>
                     <Td muted>{t.description || '—'}</Td>
+                    <Td>
+                      <span style={{ fontWeight: 500, fontSize: 14, fontVariantNumeric: 'tabular-nums', color: t.employeeCount ? 'var(--ink)' : 'var(--ink-3)' }}>{t.employeeCount ?? 0}</span>
+                      <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>{t.employeeCount === 1 ? ' employee' : ' employees'}</span>
+                    </Td>
                     <Td><StatusText on={t.active} /></Td>
                   </tr>
                 ))}
