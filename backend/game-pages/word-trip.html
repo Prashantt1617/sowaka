@@ -371,13 +371,32 @@ html.app .howto{padding-top:20px}
   .hero .art svg{animation:sway 3.2s ease-in-out infinite} .sheet:not([hidden]) .card{animation:up .22s cubic-bezier(.2,1.2,.4,1)} .howto:not([hidden]) .hin{animation:up .3s cubic-bezier(.2,1.2,.4,1)}
 }
 @media (prefers-reduced-motion:reduce){.toast{opacity:1} .btn,.combo,.goal .fill,.target{transition:none}}
+/* sowaka GAMES, as the Games tab draws it (app-pages/games-home.html .brand, the same picture). --swg-h is its height; in a .swg-slot
+   it takes the room the bar leaves (16-24px) and steps aside if there is none. 'Swg Lilita': Lilita One (OFL), just G A M E S. */
+@font-face{font-family:'Swg Lilita';font-style:normal;font-weight:400;font-display:block;src:url(data:font/woff2;base64,d09GMgABAAAAAAN4AA4AAAAABkQAAAMlAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGhYbEBwaBmAAVBEICoNwgyYBNgIkAxgLDgAEIAWDJAcgG/cEKB4D7gqE9DqPkzrnqXUKUZEwgmqN7Nm9B0IL5AA1u4AiGx1NKlweSYXV+yCp6JQn/Ok966X11NhZQE7unJ7pb/ALyn9ggPu/yRkceeKJ3cvmpADjj03wQCP9wG1sg3SIkWjmLUn3i4mZbdbKpJUEqgFJCCVCoFK1WqAv00qL2FPd1wE8ACm2xwJs0maigaPsZXw06Q8JicNHbWzLyYUo0XLzqv/2IJ/0BgHxK11APwYSMpoxBZqxLALVyiWFJfESpcv9LxLNzjrjuEMRKAxh4VQHSkE1p50BngOK3yCu31gYBrFrO60vQHkrEH2fqKTmQvm+Jw1VBajRAuQ5hKDqSM9K8gkS0sGmqkSWfQjB7i3UdYH/PSi69ATR7wnqg8Dyznkp+eQMve0Wot+STy3tNFFStIRWr9kntMMxQyVlTFXFpasnnjELLzsZgrpxa9c9/aUtoY6E8cNR3qOBnFq69eRJ54ew723e4WfPqOdcorAVk+uNoxUlXq+YBy7x5OV7LnNLuVZdzW73OLD3siJBNUs4WXdCVmrjKogVFzhYTdVrGlQHVSfrYfNLYmbtiqaafAkzaG5In7Hw4Oljq/deXJXQpU/guvVkFco8uvQRaZk7Mgoa4YttzcoFw0tDSf34KtG82mTkvesHoT6kHbFrRJWdIdWhsyn7BiQ2nhCk82H5s0eZb761ZOD/94QnQzenDLUkDZu1TKbtUMv07/V26qjetzVPl0fntPbPHCHCdigSg3NMWQAQCAdnun0+VtaFfS3nM9/DkxH+LfhUo5oCyf8fuYRxFeUSCPLJ/3YgHyFRn0uBQP1LPSCdIIkvJlM7mLOFT1IwIVBqKC+n8cpsxxQFH9gEAoRmZyCp9RKyRe+ahRNKdIb5CaUaI0isTl2G9WjWqEkfzEktZ5gPL968YSn6VeuApevUoU+nHvWK0hnTWnxKlLpdu05tqtVqUs1DjWYjnLnBBjXr0wTLUa9XvR4D6tXBEm6EWAYc7S4Ws5GmWVtYqO6SqUO9hslJo/4Kek/5fLSHwDnNkPeVgopJr+YUKubNgxcvPnEZDhNJ/T+aDwAA) format('woff2')}
+.swg-slot{flex:1 1 0;min-width:0;align-self:stretch;display:flex;align-items:center;justify-content:flex-end;padding:0 2px;overflow:hidden;container-type:inline-size}
+.swg{--swg-h:22px;--u:calc(var(--swg-h) / 28.577);display:flex;align-items:center;flex:none;pointer-events:none;-webkit-user-select:none;user-select:none}
+@supports (width:1cqw){.swg-slot .swg{--swg-h:clamp(16px,calc(100cqw / 5),24px)}}
+@container (max-width:79px){.swg{display:none}}
+.swg-logo{height:calc(28*var(--u));padding:0 calc(12*var(--u)) 0 calc(4*var(--u));border-radius:calc(8*var(--u));background:#B23500;display:flex;align-items:center;overflow:hidden;flex:none}
+.swg-logo i{display:block;height:100%;width:calc(64.296*var(--u));background:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHwAAAA2CAMAAAAyAw2GAAAAwFBMVEWyNQD+/f2tKQDw2M4AAAC5SBjoxLXz4drWk3f36+bRiGndpY6oGwDgrpnGaUPkuqjKdlO+VCjDZDvBXDKwMwCqVQDhsZzZnILszsGzNAC7TiCyNQDAOQCwNAC1NQD/AAB/PwDPgF7OfmAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADD8oHKAAAAQHRSTlP+////AP///////////////////zMD////jv/L/22xAQT//wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANbz2XQAABABJREFUeNrdmXuTmyAQwHFR8JFE1DQmuetd2+//IQvsLvjATO+fY6ZkJlHE/e3CPtCI0rYfZXl9vIlvam+Pq0eWpfDs64f41vZx9XTh2D/Ft7efji7KX+Xj/fvh7w8LFtbuDGxLt7aLz6vI1K6fovzIBf8oRTbDrenikQ/+EG/54BnR/2GDsdH2c4Ms8EvhmsoDHz28/yocAOhr0RHOAfAQVge7GwmugAZCWvQWLS6dklJ1F6YJc7tL2RvhOqrOtUqI2v3Otoc7BN54P/uBAQ7GD2hd37PtnaT6eUCHQRXUlJcIk6Rz7dSp/OEE+FtUMOCvvRJulBMsLMfba9tV8wB3lmQXsUnPXnQ4updleNyEEC3oArUBApwGVgLaxYAuSV+K8ArqxXljRXj72hPKLszJoJor0e6c4Kc6eH1TbOxI+2ghg4zfq44a4OYVR6bTokWnRqUKTQPHEGrY0QJ1FPfiKAxI/x4MTx/KrJHhtJn9ADq3WnQ0i5p8gGAnZPXVZtajpD18JgMrNkCTEhXNO8qQp5kMOPVoGF7XAs7EQPitDRHX4TqRE+kEvGa1ZOPaSAs1RO/2QjXOvh2JU2OgklpLrbbwXhHSirbXtY2Y8RBuOMp4SXZwVFxQXDXooVNYQVyGAJc86xHxPIJTGFuhBg7geDBwVDz1QjhAZeQKvvEum9um8yE8JoLOJ7Q9HD3LMPzSePspFfYcTmu44eQ6zCFjJbNMH2LVT/0WTpmgDpTgutAuUsIajukUhj526XR+7cL1ChJw1M59SUkHPoWQp91UAt5CzCF6fgEX8GeZXvdwr5zrVooOXJhTGM+ncwKu4gpq8XwFX5QSG+97eMijXbdMwxKdn2IweHvDq0X3cWLW6Vruym0IpITlJkxmu3AorB/3LZzi3M47OdP4Ism0vW3qQlm1mBLwUOZMUGPkzL2DxwxHJesVvKdbqRCahLdXARnUePJ87C3fhOhLeMezhEPbBDyUxiFkJHEIj1Xt63ADCTi7YyViVBBc7uBUgdS/wGmJxMiLeScfNXFvE71RhkjijUAl5MbykYuzpFisD+G0jA3vXDjd3uPuh7OQDGqcIWy/Gl1s4IILfL/aliRDbbWNmoFSAjdXvVgfBVxX/XZQrwZGOOkqT6t9Vho+bTeQ7VqZWHbt1qmOdSNUpHV67SEsCLunag52Mu4xJ5jQL90gbnhZWge8wcPNIHnHvJ12io6ZTNcTe0zyocH00j00jPzQ8KyV66gH6qjOvlnkgEdUze2wewuGLuI1l9paPLJ2WcF2sD+dDx+XxPZxad0BsHtmomGweDraDAKUA5ubcresr0WyvhDK+ios60vArK8/s774zfrKO+/L/rx/c+T7g+cvC7MyEhvuyuYAAAAASUVORK5CYII=) center/100% 100% no-repeat}
+.swg-box{width:calc(70.214*var(--u));height:calc(28.577*var(--u));margin-left:calc(-8*var(--u));display:flex;align-items:center;justify-content:center;flex:none}
+.swg-games{height:calc(25*var(--u));padding:0 calc(10*var(--u));border-radius:calc(7*var(--u));background:#FFCC2E;box-shadow:0 calc(2*var(--u)) 0 #160D2C;transform:rotate(-3deg);
+  display:flex;align-items:center;font:400 calc(15*var(--u))/1.143 'Swg Lilita','Lilita One',system-ui,sans-serif;letter-spacing:0;text-transform:none;color:#160D2C;white-space:nowrap}
+/* Sound as a speaker, as the other games have it, to leave the logo room in the bar. */
+.pill.snd{width:34px;padding:0;display:grid;place-items:center;color:var(--gold)}
+.pill.snd svg{width:18px;height:18px;display:block}
+.pill.snd.off{color:var(--muted)}
+/* On the narrowest phones the title steps down a little, so the logo still fits beside it. */
+@media (max-width:374px){header h1{font-size:2rem}}
 </style>
 </head>
 <body>
 <main class="app">
   <header>
     <h1>Word Trip</h1>
-    <div class="hright"><button class="pill" id="snd" type="button" aria-pressed="true">Sound on</button><button class="pill q" id="help" type="button" aria-label="How to play">?</button></div>
+    <div class="swg-slot"><span class="swg" role="img" aria-label="Sowaka Games"><span class="swg-logo"><i></i></span><span class="swg-box"><span class="swg-games">GAMES</span></span></span></div>
+    <div class="hright"><button class="pill snd" id="snd" type="button" aria-pressed="true" aria-label="Sound on"></button><button class="pill q" id="help" type="button" aria-label="How to play">?</button></div>
   </header>
   <div class="hud" id="hud">
     <div class="clock" id="clock" role="timer" aria-label="Time left"><span id="secs">1:00</span></div>
@@ -603,7 +622,10 @@ const tagPool={};
 function tagTone(f,d,o){ const go=()=>{ try{ const k=Math.round(f)+'|'+Math.max(0.08,d)+'|'+(o.to||0); let au=tagPool[k]; if(!au){ au=new Audio(wav(f,Math.max(0.08,d),o.to)); au.preload='auto'; tagPool[k]=au; }
     au.volume=Math.min(1,(o.vol||0.16)*4); try{au.currentTime=0;}catch(e){} const p=au.play(); if(p&&p.catch)p.catch(()=>{ if(!tagBlocked){tagBlocked=true;sndLabel();} }); }catch(e){} }; if(o.at)setTimeout(go,o.at*1000); else go(); }
 function tone(f,d,o){ o=o||{}; if(!save.sound)return; if(audioMode==='tag')return tagTone(f,d,o); const a=ac(); if(!a)return tagTone(f,d,o); webTone(a,f,d,o); }
-function sndLabel(){ const b=$('snd'); b.textContent=!save.sound?'Sound off':(tagBlocked?'Sound blocked':'Sound on'); b.setAttribute('aria-pressed',save.sound?'true':'false'); }
+const SPK='<path d="M3 7.5h3L10.5 4v12L6 12.5H3z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>';
+function sndLabel(){ const b=$('snd'), on=save.sound&&!tagBlocked, label=!save.sound?'Sound off':(tagBlocked?'Sound blocked':'Sound on');
+  b.innerHTML='<svg viewBox="0 0 20 20" fill="none" aria-hidden="true">'+SPK+(on?'<path d="M13.5 7.2a4 4 0 0 1 0 5.6M15.8 5a7 7 0 0 1 0 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>':'<path d="M13.5 7.5l5 5M18.5 7.5l-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')+'</svg>';
+  b.classList.toggle('off',!on); b.setAttribute('aria-label',label); b.title=label; b.setAttribute('aria-pressed',save.sound?'true':'false'); }
 function unlockAudio(){ if(!save.sound||audioChecked)return; const a=ac();
   setTimeout(()=>{ if(audioChecked)return; audioChecked=true; if(!a||a.state!=='running'){ audioMode='tag'; tagTone(660,0.08,{vol:.12}); } },450); }
 ['pointerup','touchend','click','keydown'].forEach(ev=>document.addEventListener(ev,unlockAudio,true));
