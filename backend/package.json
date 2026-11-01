@@ -46,6 +46,7 @@
     "most-likely:check": "tsx src/scripts/most-likely-taggers-check.ts",
     "payroll:zoho-check": "tsx src/scripts/payroll-zoho-check.ts",
     "payroll:payslip-check": "tsx src/scripts/payroll-payslip-check.ts",
+    "payroll:period-check": "tsx src/scripts/payroll-period-check.ts",
     "payroll:reconcile": "tsx src/scripts/payroll-org-reconcile.ts",
     "payroll:tds-check": "tsx src/scripts/payroll-tds-check.ts",
     "payroll:tds-seed": "tsx src/scripts/payroll-tds-seed.ts",

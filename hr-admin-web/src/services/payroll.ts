@@ -518,6 +518,10 @@ export type RunTotals = {
 export type PayrollRunDTO = {
   id: string;
   period: string;
+  /** The days the run pays for, when the company's pay cycle is not the calendar month, and the base days salaries are spread over. */
+  periodFrom?: string;
+  periodTo?: string;
+  baseDays?: number;
   runType: string;
   status: RunStatus;
   employeeCount: number;

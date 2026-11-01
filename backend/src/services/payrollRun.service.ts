@@ -27,7 +27,7 @@ import {
   anyApprovedLeave,
   computeWorkingDays,
   getEmployeePeriodInputs,
-  parsePeriod,
+  payrollPeriodRange,
 } from './payroll-inputs.service';
 import type { PeriodRange } from './payroll-inputs.service';
 import { resolveRuleSet } from './statutory.service';
@@ -72,7 +72,7 @@ type Amounts = Record<string, Record<string, number>>;
  */
 export async function createRun(adminUserId: string, input: CreateRunInput) {
   const org = await requireAdminOrg(adminUserId);
-  const range = parsePeriod(input.period);
+  const range = await payrollPeriodRange(org, input.period);
 
   const existing = await payrollRuns().findOne({ org, period: input.period });
   if (existing && existing.status !== 'rejected') {
@@ -97,6 +97,7 @@ export async function createRun(adminUserId: string, input: CreateRunInput) {
     status: 'draft',
     employeeCount: slips.length,
     totals,
+    ...periodDates(range),
     createdByUserId: adminUserId,
     createdAt: now,
     updatedAt: now,
@@ -132,7 +133,7 @@ export async function recomputeRun(
   if (run.status !== 'draft') {
     throw new PayrollRunError(409, 'Only draft runs can be recomputed');
   }
-  const range = parsePeriod(run.period);
+  const range = await payrollPeriodRange(org, run.period);
   const runIdHex = run._id.toHexString();
   // What HR typed earlier on this run stays unless this call changes it
   // (a null clears it back to attendance / none).
@@ -160,7 +161,7 @@ export async function recomputeRun(
   });
   await payslips().deleteMany({ org, runId: runIdHex });
   await payslips().insertMany(slips);
-  return runView(await patchRun(run._id, { employeeCount: slips.length, totals: sumTotals(slips) }));
+  return runView(await patchRun(run._id, { employeeCount: slips.length, totals: sumTotals(slips), ...periodDates(range) }));
 }
 
 /**
@@ -203,7 +204,7 @@ async function buildRunPayslips(
   // any approved leave in it reads the calendar too; whether a leave is unpaid
   // is the calendar's to say, from the shift that covered the day.
   const attendance = docksForAttendance || (await anyApprovedLeave(structures.map((s) => s.userId), range))
-    ? await attendanceCountsForPeriod(adminUserId, period)
+    ? await attendanceCountsForPeriod(adminUserId, period, range)
     : new Map();
 
   const employees = await users()
@@ -259,10 +260,10 @@ async function buildRunPayslips(
     const ruleSet = await resolveRuleSetCached(ruleSetCache, org, workStateOf(employee));
     // Joined during this month: paid from the joining day, PF ceilings counted from it.
     const joined = employee.joiningDate ? new Date(employee.joiningDate).toISOString().slice(0, 10) : undefined;
-    // Not employed yet in this month (a run made for an earlier month): no payslip.
-    if (joined && joined > `${period}-${String(range.daysInMonth).padStart(2, '0')}`) continue;
-    const employedFrom = joined && joined.slice(0, 7) === period && joined > `${period}-01` ? joined : undefined;
-    const notYetEmployedDays = employedFrom ? Number(employedFrom.slice(8, 10)) - 1 : 0;
+    // Not employed yet in this period (a run made for an earlier one): no payslip.
+    if (joined && joined > range.to) continue;
+    const employedFrom = joined && joined > range.from ? joined : undefined;
+    const notYetEmployedDays = employedFrom ? Math.round((Date.parse(employedFrom) - Date.parse(range.from)) / 86_400_000) : 0;
     const salaryFor = (p: string, from?: string) => calculateSalaryStructure({
       monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
       payHeads: resolvedComponents,
@@ -829,10 +830,16 @@ export async function requireAdminOrg(adminUserId: string): Promise<string> {
   return admin.org;
 }
 
+/** The pay dates a run was made for, kept on it so the dashboard can show them. */
+function periodDates(range: PeriodRange) {
+  return { periodFrom: range.from, periodTo: range.to, baseDays: range.baseDays };
+}
+
 function runView(run: StoredRun) {
   return {
     id: run._id.toHexString(),
     period: run.period,
+    ...(run.periodFrom ? { periodFrom: run.periodFrom, periodTo: run.periodTo, baseDays: run.baseDays } : {}),
     runType: run.runType,
     status: run.status,
     employeeCount: run.employeeCount,
