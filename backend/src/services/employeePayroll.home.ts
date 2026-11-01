@@ -128,13 +128,16 @@ export async function myMissingPunches(userId: string, periodRaw: unknown, now =
 
 function fromPayslip(slip: Payslip & { _id?: { toHexString(): string } }) {
   const full = slip.earnings.reduce((sum, e) => sum + e.fullPaise, 0);
+  const paid = slip.earnings.reduce((sum, e) => sum + e.paidPaise, 0);
   return {
     period: slip.period,
     status: 'final' as const,
     payslipId: slip._id ? slip._id.toHexString() : null,
     grossPaise: full,
     lopDays: slip.inputs?.lopDays ?? 0,
-    lopPaise: Math.max(0, full - slip.grossPaise),
+    // From the earnings alone: the slip's gross has overtime in it, which would hide loss of pay.
+    lopPaise: Math.max(0, full - paid),
+    overtimePaise: slip.inputs?.overtimePaise ?? 0,
     deductions: slip.deductions.filter((d) => !d.hidden && d.amountPaise > 0).map((d) => ({ key: d.key, label: DEDUCTION_LABELS[d.key] ?? d.name, amountPaise: d.amountPaise })),
     netPaise: slip.netPaise,
     reimbursementsPaise: slip.reimbursementsPaise,
@@ -193,6 +196,8 @@ async function estimateFor(org: string, userId: string, period: string, now: Dat
     grossPaise: gross,
     lopDays,
     lopPaise,
+    // Approved overtime is paid on the run, by the template's rule: not estimated.
+    overtimePaise: 0,
     deductions: shown,
     netPaise: net,
     reimbursementsPaise: reimbursements,

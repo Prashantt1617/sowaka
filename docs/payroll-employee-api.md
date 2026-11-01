@@ -84,13 +84,14 @@ Query: `period` (optional, `YYYY-MM`, default this month).
     "payslipId": null,                 // string when status is "final"
     "grossPaise": 12400000,            // gross before loss of pay
     "lopDays": 2,                      // may be a half: 1.5
-    "lopPaise": 800000,
+    "lopPaise": 800000,                // from the earnings alone: overtime never offsets it
+    "overtimePaise": 0,                // approved overtime paid on the released payslip (the template's rule, or HR's amount); 0 on an estimate
     "deductions": [                    // employee deductions, in payslip order; keys: "epf" | "esi" | "pt" | "lwf" | "income_tax" | a pay head code
       { "key": "epf", "label": "Provident fund", "amountPaise": 180000 },
       { "key": "income_tax", "label": "Income tax (TDS)", "amountPaise": 760000 },
       { "key": "pt", "label": "Professional tax", "amountPaise": 20000 }
     ],
-    "netPaise": 10640000,              // gross − LOP − deductions
+    "netPaise": 10640000,              // gross − LOP + overtime − deductions
     "reimbursementsPaise": 0,          // flexible heads and other reimbursements paid with salary
     "takeHomePaise": 10640000          // net + reimbursements
   },
