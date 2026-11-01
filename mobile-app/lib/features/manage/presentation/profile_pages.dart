@@ -4345,6 +4345,7 @@ class _EmployeeGrowthPageState extends State<_EmployeeGrowthPage> {
     final picked = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (_) => _MonthPickerSheet(periods: periods, selected: selected),
     );
     if (picked != null && mounted) setState(() => _selectedPeriod = picked);
@@ -4746,6 +4747,7 @@ class _ProfileGrowTabState extends State<_ProfileGrowTab> {
     final picked = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (_) => _MonthPickerSheet(periods: periods, selected: selected),
     );
     if (picked != null && mounted) setState(() => _selectedPeriod = picked);
