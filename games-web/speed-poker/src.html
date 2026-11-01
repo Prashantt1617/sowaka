@@ -366,6 +366,106 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .chatsend{display:flex;gap:8px}
 .sheet.chat .chatsend input{flex:1;min-width:0;margin:0}
 .chatsend .btn{min-height:44px;border-radius:12px;flex:none}
+
+/* next look: a designed deck, chips that move, the big moments. Only on #table.next (a company with `next` on, see
+   nextUi()); the effects that fly over the table live in #hype, a layer of their own outside #app (hypeSync). */
+/* the deck: a paper face, a bigger corner index (the rank, its suit under it), a pip in the middle */
+#table.next .pc{background:radial-gradient(130% 95% at 28% 12%,#fffef8,#f6f2e6 62%,#ebe5d2);box-shadow:inset 0 0 0 1px rgba(60,40,10,.12),inset 0 1px 0 #fff,0 3px 7px rgba(0,0,0,.45),0 1px 1px rgba(0,0,0,.3)}
+#table.next .pc.win{box-shadow:0 0 0 2px var(--gold),0 0 16px rgba(229,184,80,.75),0 3px 7px rgba(0,0,0,.45)}
+#table.next .pc.slot{background:rgba(255,255,255,.05);box-shadow:inset 0 0 0 1px rgba(229,184,80,.16)}
+#table.next .pc.h{color:#d4252f}#table.next .pc.d{color:#1d68d0}#table.next .pc.c{color:#12804a}#table.next .pc.s{color:#16181a}
+#table.next .pc:not(.mini):not(.back):not(.slot) .r{font-weight:900;letter-spacing:-.04em}
+#table.next .pc:not(.mini):not(.back):not(.slot) .s{right:auto;bottom:auto}
+#table.next .pc:not(.mini):not(.back):not(.slot)::before{position:absolute;left:58%;top:62%;transform:translate(-50%,-50%);line-height:1;opacity:.95}
+#table.next .pc.h:not(.mini)::before{content:"♥"}#table.next .pc.d:not(.mini)::before{content:"♦"}#table.next .pc.c:not(.mini)::before{content:"♣"}#table.next .pc.s:not(.mini)::before{content:"♠"}
+/* sizes: the board (and a card being dealt to it), your hand, your hand on a short phone */
+#table.next .board .pc .r{font-size:16px;left:4px;top:3px}
+#table.next .board .pc .s{font-size:10px;left:5px;top:20px}
+#table.next .board .pc::before{font-size:24px}
+#table.next .mine .pc.big .r{font-size:25px;left:6px;top:5px}
+#table.next .mine .pc.big .s{font-size:15px;left:7px;top:31px}
+#table.next .mine .pc.big::before{font-size:40px}
+/* the back: Sowaka green, a gold lattice, a gold rule and a spade in the middle */
+#table.next .pc.back{background:radial-gradient(circle,rgba(242,201,94,.85) 0 .8px,transparent 1.3px) 0 0/5px 5px,repeating-linear-gradient(45deg,rgba(229,184,80,.16) 0 1px,transparent 1px 5px),repeating-linear-gradient(-45deg,rgba(229,184,80,.16) 0 1px,transparent 1px 5px),linear-gradient(155deg,#1f7a50,#0d3f2a);
+  box-shadow:inset 0 0 0 1.5px #f3e3b4,inset 0 0 0 3px #0f4a31,inset 0 0 0 3.6px rgba(229,184,80,.75),0 2px 6px rgba(0,0,0,.45)}
+#table.next .pc.back.mini{background-size:4px 4px,auto,auto,auto;box-shadow:inset 0 0 0 1px #f3e3b4,inset 0 0 0 2px #0f4a31,0 1px 3px rgba(0,0,0,.5)}
+#table.next .board .pc.back::before,#table.next .mine .pc.back::before{content:"♠";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:58%;aspect-ratio:1;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;color:#2a1a02;background:radial-gradient(circle at 35% 30%,#f7da8a,#c9962b);box-shadow:0 0 0 1px rgba(0,0,0,.25)}
+#table.next .board .side .pc.back::before{display:none}
+/* the felt: a gold line inside the rail */
+#table.next .felt::after{border-color:rgba(229,184,80,.16)}
+/* your hand in words, coloured by how good it is */
+/* a tab over the foot of the cards: it adds no height to the dock, so the table keeps every pixel it had */
+#table.next .mine>div{position:relative}
+#table.next .mine .hand.hs{position:absolute;z-index:1;left:50%;bottom:-5px;transform:translateX(-50%);margin:0;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.01em;line-height:16px;white-space:nowrap;background:#1d3529;color:#cfe4d7;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12),0 2px 6px rgba(0,0,0,.45)}
+#table.next .mine .hand.hs.t1{background:#2b4a3a;color:#f2f7f3}
+#table.next .mine .hand.hs.t2{background:#3b2e0f;color:#f6d98a;box-shadow:inset 0 0 0 1px rgba(229,184,80,.55),0 2px 6px rgba(0,0,0,.45)}
+#table.next .mine .hand.hs.t3{background:linear-gradient(180deg,#f2c95e,#d49c25);color:#2a1a02;box-shadow:0 0 14px rgba(229,184,80,.45),0 2px 6px rgba(0,0,0,.45)}
+@media (max-height:720px){
+#table.next:not(.wide) .mine .pc.big .r{font-size:20px;left:5px;top:4px}
+#table.next:not(.wide) .mine .pc.big .s{font-size:12px;left:6px;top:25px}
+#table.next:not(.wide) .mine .pc.big::before{font-size:28px;top:57%}
+#table.next:not(.wide) .mine .hand.hs{bottom:-4px;padding:1px 9px;font-size:11px;line-height:12px}
+}
+/* the all-in run-out: the river turns over slowly, after a beat face down */
+#table.next .flip.slow .in{animation:dealslow 1.9s cubic-bezier(.25,.7,.25,1) both;animation-delay:var(--d,0ms)}
+@keyframes dealslow{0%{transform:translate(var(--fx,90px),var(--fy,40px)) rotateY(180deg) scale(.6);opacity:0}8%{opacity:1}30%{transform:translate(0,0) rotateY(180deg) scale(1.08)}62%{transform:translate(0,0) rotateY(160deg) scale(1.1)}100%{transform:translate(0,0) rotateY(0) scale(1)}}
+/* held while the board runs out: who won waits for the river */
+#table.next.hhold .seat .tag.bounty,#table.next.hhold .dock .result{visibility:hidden}
+#table.next.hhold .board .pc.win{box-shadow:inset 0 0 0 1px rgba(60,40,10,.12),0 3px 7px rgba(0,0,0,.45)}
+#table.next.hhold .board .pc.dim{filter:none}
+/* the deal: your cards fly in face down and turn over; everyone's face-down cards fly from the middle */
+#table.next .mine>div>div:first-child{justify-content:center}
+#table.next .mine .pc.big.hdeal{z-index:6;animation:hdeal .75s cubic-bezier(.2,.75,.25,1) both;animation-delay:var(--hd,0ms)}
+#table.next .mine .pc.big.hdeal::after{content:"";position:absolute;inset:0;border-radius:inherit;background:radial-gradient(circle,rgba(242,201,94,.85) 0 .8px,transparent 1.3px) 0 0/5px 5px,linear-gradient(155deg,#1f7a50,#0d3f2a);box-shadow:inset 0 0 0 1.5px #f3e3b4;animation:hdealback .75s steps(1,end) both;animation-delay:var(--hd,0ms)}
+@keyframes hdeal{0%{transform:translate(var(--fx,0),var(--fy,-160px)) scale(.45);opacity:0}15%{opacity:1}62%{transform:translate(0,0) scale(1)}81%{transform:scaleX(0)}100%{transform:none}}
+@keyframes hdealback{0%{opacity:1}81%{opacity:0}100%{opacity:0}}
+#table.next .seat .hole.hdeal{animation:hdealm .5s cubic-bezier(.2,.75,.25,1) both;animation-delay:var(--hd,0ms)}
+@keyframes hdealm{from{transform:translate(var(--fx,0),var(--fy,0)) scale(.6) rotate(-30deg);opacity:0}20%{opacity:1}}
+/* your turn: a gold sweep round the action buttons; your ring pulses in its last third */
+#table.next .abar.hturn{position:relative}
+#table.next .abar.hturn::before{content:"";position:absolute;inset:0;border-radius:15px;pointer-events:none;box-shadow:0 0 0 3px rgba(6,19,13,.9),0 0 0 5px rgba(242,201,94,.95),0 0 28px 4px rgba(229,184,80,.6);animation:hturn 1.5s ease-out both;animation-delay:var(--hd,0ms)}
+#table.next .abar.hturn .abtn{position:relative;overflow:hidden}
+#table.next .abar.hturn .abtn::after{content:"";position:absolute;top:0;bottom:0;left:-60%;width:45%;pointer-events:none;background:linear-gradient(100deg,transparent,rgba(255,255,255,.38),transparent);transform:skewX(-18deg);animation:hsheen 1.1s ease-in-out both;animation-delay:var(--hd,0ms)}
+@keyframes hturn{0%{opacity:0;transform:scale(.97)}18%{opacity:1;transform:scale(1)}70%{opacity:.85}100%{opacity:0}}
+@keyframes hsheen{0%{left:-60%}100%{left:130%}}
+#table.next .seat.me.toact.hurry .ring{animation:hhurry .7s ease-in-out infinite alternate;animation-delay:var(--hp,0ms)}
+@keyframes hhurry{from{box-shadow:0 0 0 0 rgba(224,86,75,0)}to{box-shadow:0 0 0 4px rgba(224,86,75,.45),0 0 18px rgba(224,86,75,.55)}}
+/* someone goes all in: two red rings burst from the avatar */
+#table.next .seat.hallin .ring::before,#table.next .seat.hallin .ring::after{content:"";position:absolute;inset:-3px;border-radius:50%;pointer-events:none;box-shadow:0 0 0 3px var(--red),0 0 14px rgba(224,86,75,.8);animation:hallin 1.1s ease-out both;animation-delay:var(--hd,0ms)}
+#table.next .seat.hallin .ring::after{animation-delay:calc(var(--hd,0ms) + .3s)}
+@keyframes hallin{from{transform:scale(1);opacity:1}to{transform:scale(1.9);opacity:0}}
+/* a winner's seat: a gold glow that pulses, then stays */
+#table.next .seat.hwin .ring{box-shadow:0 0 0 2px var(--gold),0 0 18px rgba(229,184,80,.7);animation:hwin .9s ease-in-out 3 alternate both;animation-delay:var(--hd,0ms)}
+#table.next .seat.hwin .plate{border-color:rgba(229,184,80,.9)}
+@keyframes hwin{from{box-shadow:0 0 0 2px var(--gold),0 0 10px rgba(229,184,80,.5)}to{box-shadow:0 0 0 3px #f7da8a,0 0 30px 6px rgba(229,184,80,.85)}}
+
+/* the layer over the table: chips in flight, "+1,840", the banner, confetti, the run-out's dimming */
+#hype{position:fixed;inset:0;pointer-events:none;z-index:30;overflow:hidden}
+#hype.off{visibility:hidden}
+#hype>*{position:absolute}
+.hchip{width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:radial-gradient(circle,#fff 0 22%,var(--cc,#d23c3c) 23% 60%,#fff 61% 70%,var(--cc,#d23c3c) 71%);box-shadow:0 1px 3px rgba(0,0,0,.6);animation:hchip var(--ms,500ms) cubic-bezier(.45,.05,.4,1) both;animation-delay:var(--dl,0ms)}
+@keyframes hchip{0%{transform:translate(0,0) scale(.9);opacity:0}12%{opacity:1}88%{opacity:1}100%{transform:translate(var(--x),var(--y)) scale(1);opacity:0}}
+.hplus{transform:translate(-50%,-50%);font-family:var(--display);font-weight:900;font-size:17px;color:#f7da8a;text-shadow:0 2px 6px rgba(0,0,0,.8),0 0 10px rgba(229,184,80,.6);white-space:nowrap;animation:hplus 1.8s ease-out both;animation-delay:var(--dl,0ms)}
+.hplus.me{font-size:21px}
+@keyframes hplus{0%{opacity:0;transform:translate(-50%,-30%) scale(.7)}15%{opacity:1;transform:translate(-50%,-60%) scale(1.08)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,-170%) scale(1)}}
+.hplus.hold{animation:hplusin .4s ease-out both}
+@keyframes hplusin{from{opacity:0;transform:translate(-50%,-30%) scale(.7)}to{opacity:1;transform:translate(-50%,-125%)}}
+.hconf{width:7px;height:11px;margin:-5px 0 0 -3px;border-radius:2px;background:var(--c);animation:hconf 1.7s cubic-bezier(.15,.6,.35,1) both;animation-delay:var(--dl,0ms)}
+.hconf:nth-child(3n){width:9px;height:9px;border-radius:50%}
+@keyframes hconf{0%{transform:translate(0,0) rotate(0) scale(.4);opacity:1}45%{transform:translate(var(--x),var(--y)) rotate(calc(var(--r) * .6)) scale(1);opacity:1}100%{transform:translate(calc(var(--x) * 1.15),calc(var(--y) + 150px)) rotate(var(--r)) scale(.9);opacity:0}}
+.hbanner{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border-radius:16px;overflow:hidden;text-align:center;background:linear-gradient(180deg,rgba(28,22,8,.94),rgba(8,12,9,.94));box-shadow:inset 0 0 0 1.5px rgba(242,201,94,.9),0 10px 30px rgba(0,0,0,.6),0 0 40px rgba(229,184,80,.35);animation:hbanner var(--ms,2600ms) cubic-bezier(.2,.8,.2,1) both}
+.hbanner.hold{animation:hbannerin .45s cubic-bezier(.2,.8,.2,1.2) both}
+.hbanner::before{content:"";position:absolute;left:50%;top:50%;width:520px;height:520px;margin:-260px 0 0 -260px;background:repeating-conic-gradient(from 0deg,rgba(242,201,94,.13) 0 10deg,transparent 10deg 20deg);animation:hrays 6s linear infinite;z-index:-1}
+.hbanner b{position:relative;font-family:var(--display);font-weight:900;font-size:26px;line-height:1.05;letter-spacing:.06em;color:#f7da8a;background:linear-gradient(180deg,#fff4cf,#f2c95e 45%,#c9962b);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 2px 2px rgba(0,0,0,.55));white-space:nowrap}
+.hbanner span{position:relative;font-size:13px;font-weight:800;color:#f6e7bd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:94%}
+.hbanner b{font-size:var(--hf,26px)}.hbanner.me b{font-size:var(--hf,31px)}
+.hbanner.me{box-shadow:inset 0 0 0 2px #f7da8a,0 10px 30px rgba(0,0,0,.6),0 0 60px rgba(229,184,80,.55)}
+@keyframes hbanner{0%{opacity:0;transform:scale(.6)}12%{opacity:1;transform:scale(1.06)}20%{transform:scale(1)}85%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(.96)}}
+@keyframes hbannerin{0%{opacity:0;transform:scale(.6)}70%{opacity:1;transform:scale(1.06)}100%{transform:scale(1)}}
+@keyframes hrays{to{transform:rotate(360deg)}}
+.hdim{-webkit-mask-image:linear-gradient(#000 86%,transparent);mask-image:linear-gradient(#000 86%,transparent);animation:hdim var(--ms,3000ms) ease-in-out both}
+@keyframes hdim{0%{opacity:0}12%{opacity:1}88%{opacity:1}100%{opacity:0}}
+.hlabel{transform:translate(-50%,-50%);font-weight:900;font-size:12px;letter-spacing:.14em;color:#fff;background:var(--red);padding:3px 10px;border-radius:999px;box-shadow:0 0 18px rgba(224,86,75,.7);animation:hdim var(--ms,3000ms) ease-in-out both}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -445,24 +545,30 @@ const back=size=>`<div class="pc back ${size||''}"></div>`;
    there (a negative delay) instead of starting over. Joining a hand already
    under way shows its board as it is, without dealing it again. */
 const BOARD_ANIM_MS=900, BURN_MS=420, FLIP_GAP_MS=230;
+/* next look: when everyone is all in the board runs out slowly: a beat, each card a second apart, the river turning over last */
+const RUN_LEAD_MS=700, RUN_GAP_MS=1100, RIVER_MS=1900;
+const boardDelay=(slow,k)=>slow?RUN_LEAD_MS+k*RUN_GAP_MS:BURN_MS+k*FLIP_GAP_MS;
 function boardHtml(v,winCards){
   const key=`${v.id}:${v.handNo}`, n=(v.board||[]).filter(Boolean).length, t=Date.now();
   let a=state.boardAnim&&state.boardAnim.key===key?state.boardAnim:null;
-  if(!a){ a=state.boardAnim={key,seen:n,at:{},burnAt:{}};
+  if(!a){ a=state.boardAnim={key,seen:n,at:{},burnAt:{},dur:{}};
     // The preview's ?deal=1 deals its board from the deck, street by street.
     if(state.demoDeal){ a.seen=0; const t0=t; [[3,0],[4,1400],[5,2400]].forEach(([upTo,delay])=>{ if(n>=upTo){ a.burnAt[upTo<=3?1:upTo===4?2:3]=t0+delay; for(let i=upTo===3?0:upTo-1;i<upTo;i++)a.at[i]=t0+delay+BURN_MS+(i-(upTo===3?0:upTo-1))*FLIP_GAP_MS; } }); a.seen=n; } }
   if(n>a.seen){
     // A new street: the burn first, then each new card a beat apart.
     a.burnAt[n<=3?1:n===4?2:3]=t;
-    for(let i=a.seen;i<n;i++)a.at[i]=t+BURN_MS+(i-a.seen)*FLIP_GAP_MS;
+    const slow=hypeOn()&&runout(v);
+    for(let i=a.seen;i<n;i++){ a.at[i]=t+boardDelay(slow,i-a.seen); if(slow&&i===4)a.dur[i]=RIVER_MS; }
+    if(slow)a.slow=true;
     a.seen=n; }
   const tone=c=>c&&winCards.size?(winCards.has(c)?'win':'dim'):'';
   const slot=i=>{ const c=v.board[i]; if(!c)return card(null);
-    const at=a.at[i], since=at==null?Infinity:t-at;
-    if(since>=BOARD_ANIM_MS)return card(c,'',tone(c));
+    const at=a.at[i], since=at==null?Infinity:t-at, dur=a.dur[i]||BOARD_ANIM_MS;
+    if(since>=dur)return card(c,'',tone(c));
+    if(since<0&&a.slow&&calm())return card(null);   // reduced motion: no flip to hide a run-out card that is not due yet
     // From the deck (right of the turn and river) to this card's place.
     const fx=i<3?(2-i)*52+40:(i===3?110:58), fy=i<3?70:0;
-    return `<div class="flip" style="--d:${-since}ms;--fx:${fx}px;--fy:${fy}px"><div class="in">${card(c,'',tone(c))}${back('')}</div></div>`; };
+    return `<div class="flip${dur>BOARD_ANIM_MS?' slow':''}" style="--d:${-since}ms;--fx:${fx}px;--fy:${fy}px"><div class="in">${card(c,'',tone(c))}${back('')}</div></div>`; };
   const burns=n>=5?3:n>=4?2:n>=3?1:0;
   const burnPile=Array.from({length:burns},(_,k)=>{ const at=a.burnAt[k+1], since=at==null?Infinity:t-at;
     return `<div class="pc back ${since<BURN_MS+100?'new':''}" style="--i:${k};--d:${since<BURN_MS+100?-since:0}ms"></div>`; }).join('');
@@ -829,7 +935,10 @@ function renderTable(){
   const mine=v.mySeat!=null?v.seats[v.mySeat]:null;
   let hand='';
   if(mine&&mine.cards){ const shownBest=v.result&&v.result.shown.find(s=>s.seat===v.mySeat);
-    hand=`<div><div style="display:flex;gap:6px">${mine.cards.map(c=>card(c,'big',mine.folded?'dim':'')).join('')}</div><div class="hand">${mine.folded?'Folded':shownBest?esc(shownBest.hand):''}</div></div>`; }
+    // next look: your hand in words as it plays ("Pair of Queens · flush draw"), from the board cards already turned over; your winning cards lit once the board is out
+    const nx=!!(room&&room.big)&&hypeOn()&&!mine.folded, seen=nx?shownBoard(v):null, out=!!seen&&seen.length===(v.board||[]).filter(Boolean).length;
+    const lit=out&&shownBest&&v.result.pots.some(p=>p.winners.includes(v.mySeat))?new Set(shownBest.best):null;
+    hand=`<div><div style="display:flex;gap:6px">${mine.cards.map(c=>card(c,'big',mine.folded?'dim':lit&&lit.has(c)?'win':'')).join('')}</div>${nx?handPill(mine.cards,seen):`<div class="hand">${mine.folded?'Folded':shownBest?esc(shownBest.hand):''}</div>`}</div>`; }
   let actions='';
   const big=!!(room&&room.big), watching=big&&room.watching;
   if(v.status==='over'){ actions=''; }
@@ -1044,8 +1153,10 @@ function roomSounds(prev,room,uid){ if(!soundOn||!prev)return;
   const was=prev.table, v=room.table; if(!was||!v||was.id!==v.id)return;
   if(was.handNo!==v.handNo){ if(v.handNo){ sfx('card',0); sfx('card',.13); } return; }
   const nb=(v.board||[]).filter(Boolean).length, ob=(was.board||[]).filter(Boolean).length;
-  for(let i=ob;i<nb;i++)sfx('card',(BURN_MS+(i-ob)*FLIP_GAP_MS)/1000);
-  if(v.result&&!was.result){ if(v.mySeat!=null&&v.result.pots.some(p=>p.winners.includes(v.mySeat)))sfx('win'); return; }
+  const slow=hypeOn()&&runout(v);
+  for(let i=ob;i<nb;i++)sfx('card',boardDelay(slow,i-ob)/1000);
+  // next look: the win sound comes with the celebration, once the board is out (hypeSync)
+  if(v.result&&!was.result){ if(!hypeOn()&&v.mySeat!=null&&v.result.pots.some(p=>p.winners.includes(v.mySeat)))sfx('win'); return; }
   if((v.pot||0)>(was.pot||0))return sfx('chips');
   if(v.seats.some(s=>s.folded&&was.seats[s.seat]&&!was.seats[s.seat].folded))return sfx('fold');
   if(v.seats.some(s=>(s.lastAction==='check'||s.lastAction==='timeout')&&!s.folded&&was.seats[s.seat]&&was.seats[s.seat].lastAction!==s.lastAction))sfx('knock'); }
@@ -1059,6 +1170,203 @@ window.PokerSounds={
 };
 const soundButton=()=>{ const off=!!(window.PokerSounds&&window.PokerSounds.muted()); return `<button class="tbtn snd" data-act="sound" aria-label="${off?'Muted: tap for sound':'Sound on: tap to mute'}">${off?'🔇':'🔊'}</button>`; };
 function chime(){ if(bigOn()&&window.PokerSounds&&window.PokerSounds.muted())return; try{ audio=audio||new (window.AudioContext||window.webkitAudioContext)(); const o=audio.createOscillator(), g=audio.createGain(); o.type='sine'; o.frequency.value=880; g.gain.setValueAtTime(.0001,audio.currentTime); g.gain.exponentialRampToValueAtTime(.15,audio.currentTime+.02); g.gain.exponentialRampToValueAtTime(.0001,audio.currentTime+.35); o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime+.4); }catch(e){} }
+
+/* ---------- next look: a designed deck, chips that move, the big moments ----------
+   Only for a company with `next` on (nextUi(), from room:hello) and only at a big table (#table.next). The
+   effects that fly over the table (chips, "+1,840", the banner, confetti, the run-out's dimming) are drawn in
+   #hype, a layer of their own outside #app: the table is drawn again every second or so and the layer is not,
+   so each one plays once, start to end. What happened is found by comparing each view of the table with the
+   one before, after every draw (a MutationObserver on #app); a table just opened has no news. What lives in
+   the table itself (a seat's glow, the deal, your turn) is keyed by when it began and carries on from there
+   with a negative animation delay, as the board's cards do. */
+/** On for this company and this table. (nextUi is the gate; it may be missing in an older page, so typeof.) */
+const hypeOn=()=>typeof nextUi==='function'&&!!nextUi()&&state.mode==='rooms'&&!!(state.room&&state.room.big);
+/** No more betting: two or more still in, all of them (or all but one) all in, nobody to act. The board then runs out. */
+function runout(v){ if(!v||!v.seats)return false; const live=v.seats.filter(s=>s.inHand&&!s.folded&&!s.left);
+  return live.length>=2&&live.filter(s=>!s.allIn).length<=1&&v.toAct==null; }
+/** When the board's last card has turned over (0 when nothing is being dealt). */
+function boardDoneAt(v){ const a=state.boardAnim; if(!a||a.key!==`${v.id}:${v.handNo}`)return 0; let m=0;
+  for(const i in a.at)m=Math.max(m,a.at[i]+(a.dur[i]||BOARD_ANIM_MS)); return m; }
+/** The board cards already face up (a card still on its way, or about to be dealt, is not). */
+function shownBoard(v){ const b=(v.board||[]).filter(Boolean), a=state.boardAnim, t=Date.now();
+  if(!a||a.key!==`${v.id}:${v.handNo}`)return b;
+  return b.filter((c,i)=>i<a.seen&&(a.at[i]==null||t>=a.at[i]+(a.dur[i]||BOARD_ANIM_MS)*.8)); }
+
+/* Your hand in words, worked out here from your two cards and the board: "Pair of Queens", "Two pair, Kings and Nines". */
+const RANKS='23456789TJQKA', RNAME=['Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Jack','Queen','King','Ace'];
+const many=r=>r===4?'Sixes':RNAME[r]+'s';
+/** The best five of these cards: {cat: 0 high card .. 9 royal flush, text}. */
+function bestHand(cards){ const cs=cards.map(c=>({r:RANKS.indexOf(c[0]),s:c[1]})).filter(c=>c.r>=0);
+  const cnt=Array(13).fill(0), suits={}; cs.forEach(c=>{ cnt[c.r]++; (suits[c.s]=suits[c.s]||[]).push(c.r); });
+  const high=rs=>{ const has=new Set(rs); for(let h=12;h>=3;h--){ let ok=true; for(let k=0;k<5;k++){ const r=h-k; if(!has.has(r<0?12:r)){ ok=false; break; } } if(ok)return h; } return -1; };
+  const fs=Object.keys(suits).find(s=>suits[s].length>=5);
+  if(fs){ const h=high(suits[fs]); if(h===12)return {cat:9,text:'Royal flush'}; if(h>=0)return {cat:8,text:`Straight flush, ${RNAME[h].toLowerCase()} high`}; }
+  const quads=[], trips=[], pairs=[]; for(let r=12;r>=0;r--){ if(cnt[r]===4)quads.push(r); else if(cnt[r]===3)trips.push(r); else if(cnt[r]===2)pairs.push(r); }
+  if(quads.length)return {cat:7,text:`Four ${many(quads[0])}`};
+  if(trips.length&&(trips.length>1||pairs.length)){ const p=Math.max(trips[1]==null?-1:trips[1],pairs[0]==null?-1:pairs[0]); return {cat:6,text:`Full house, ${many(trips[0])} full of ${many(p)}`}; }
+  if(fs)return {cat:5,text:`Flush, ${RNAME[Math.max(...suits[fs])].toLowerCase()} high`};
+  const st=high(cs.map(c=>c.r)); if(st>=0)return {cat:4,text:`Straight, ${RNAME[st].toLowerCase()} high`};
+  if(trips.length)return {cat:3,text:`Three ${many(trips[0])}`};
+  if(pairs.length>=2)return {cat:2,text:`Two pair, ${many(pairs[0])} and ${many(pairs[1])}`};
+  if(pairs.length)return {cat:1,text:`Pair of ${many(pairs[0])}`};
+  return {cat:0,text:`${RNAME[Math.max(...cs.map(c=>c.r))]} high`}; }
+/** Your hand in words with what it might become: {text, tier 0..3}. Before the flop: "Pair of Queens", or "Ace King suited". */
+function handWords(hole,board){ hole=(hole||[]).filter(Boolean); board=(board||[]).filter(Boolean); if(hole.length<2)return null;
+  if(!board.length){ const [a,b]=hole.map(c=>RANKS.indexOf(c[0])).sort((x,y)=>y-x);
+    if(a===b)return {text:`Pair of ${many(a)}`,tier:a>=8?2:1};
+    return {text:`${RNAME[a]} ${RNAME[b]}${hole[0][1]===hole[1][1]?' suited':''}`,tier:0}; }
+  const h=bestHand([...hole,...board]), tier=h.cat>=4?3:h.cat>=2?2:h.cat===1?1:0;
+  let draw='';
+  if(board.length<5&&h.cat<4){ const all=[...hole,...board];
+    const fl=Object.entries(all.reduce((m,c)=>(m[c[1]]=(m[c[1]]||0)+1,m),{})).find(([s,n])=>n===4&&hole.some(c=>c[1]===s));
+    const rs=new Set(all.map(c=>RANKS.indexOf(c[0]))), mineR=hole.map(c=>RANKS.indexOf(c[0]));
+    let sd=false; for(let h2=12;h2>=3&&!sd;h2--){ const win=[0,1,2,3,4].map(k=>h2-k<0?12:h2-k); if(win.filter(r=>rs.has(r)).length===4&&win.some(r=>mineR.includes(r)))sd=true; }
+    draw=fl?' · flush draw':sd?' · straight draw':''; }
+  return {text:h.text+draw,tier}; }
+function handPill(hole,board){ const h=handWords(hole,board); return h?`<div class="hand hs t${h.tier}">${esc(h.text)}</div>`:'<div class="hand"></div>'; }
+
+const HYPE={prev:null,potRect:null,betRects:[],seen:new Set(),deal:{hand:'',at:0},turn:{key:'',at:0},allin:{},win:null,hold:false,holdKey:'',dimKey:''};
+const calm=()=>{ try{ return matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; } };
+function hypeLayer(){ let l=document.getElementById('hype'); if(!l){ l=document.createElement('div'); l.id='hype'; l.setAttribute('aria-hidden','true'); document.body.appendChild(l); } return l; }
+/** One effect in the layer, at (x, y) on screen, gone after ms. */
+function fx(cls,x,y,vars,ms,html){ const d=document.createElement('div'); d.className=cls; d.style.left=x+'px'; d.style.top=y+'px';
+  for(const k in vars||{})d.style.setProperty(k,vars[k]); if(html)d.innerHTML=html; hypeLayer().appendChild(d); setTimeout(()=>d.remove(),ms); return d; }
+const midOf=r=>({x:r.left+r.width/2,y:r.top+r.height/2});
+const rectOf=el=>{ const r=el&&el.getBoundingClientRect(); return r&&r.width?{left:r.left,top:r.top,width:r.width,height:r.height,right:r.right,bottom:r.bottom}:null; };
+/** A few chips sliding from one box to another. */
+function chips(from,to,n,color,delay,ms){ if(!from||!to||calm())return; const a=midOf(from), b=midOf(to);
+  for(let k=0;k<n;k++)fx('hchip',a.x+(k%2?3:-3),a.y-k*2,{'--x':(b.x-a.x)+'px','--y':(b.y-a.y+k*2)+'px','--cc':color||'#d23c3c','--dl':(delay+k*55)+'ms','--ms':(ms||480)+'ms'},delay+k*55+(ms||480)+60); }
+function confetti(x,y,n,spread){ if(calm())return; const cols=['#f2c95e','#f7da8a','#2fbf71','#e0564b','#3f8cff','#ffffff'];
+  for(let i=0;i<n;i++){ const ang=i/n*Math.PI*2+Math.random()*.5, r=spread*(.45+Math.random()*.55);
+    fx('hconf',x,y,{'--x':Math.round(Math.cos(ang)*r)+'px','--y':Math.round(Math.sin(ang)*r*.7-spread*.3)+'px','--r':Math.round(Math.random()*720-360)+'deg','--c':cols[i%cols.length],'--dl':Math.round(Math.random()*140)+'ms'},2000); } }
+/** Where an h-high banner fits: on the felt (the widest that fits, nearest under the board), else on its side in the
+    empty top of the dock beside the table. First clear of everything; failing that (a short phone) it may cover other
+    players' faces, never a card, a bet, the pot or a winner's seat (`keep`). Null when nowhere. */
+function bannerSpot(tb,h,keep){ const st=rectOf(tb.querySelector('.stage')); if(!st)return null;
+  const boxes=sel=>[...tb.querySelectorAll(sel)].map(rectOf).filter(Boolean);
+  const cards=boxes('.stage .seat .hole,.stage .seat .shown,.stage .seat .bet,.stage .seat .dealer,.board .row>*,.center .pot,.center .actpop');
+  const all=cards.concat(boxes('.stage .seat .ring,.stage .seat .plate,.stage .seat .tag,.stage .seat .bubble'));
+  const mustSee=cards.concat((keep||[]).flatMap(el=>[...el.querySelectorAll('.ring,.plate,.tag')].map(rectOf).filter(Boolean)));
+  const board=rectOf(tb.querySelector('.board'))||st, areas=[{r:st,want:board.bottom+10}];
+  const dock=tb.classList.contains('wide')&&rectOf(tb.querySelector('.dock')), first=dock&&rectOf(tb.querySelector('.dock>*'));
+  if(dock&&first&&first.top-dock.top>h+12)areas.push({r:{left:dock.left,right:dock.right,width:dock.width,top:dock.top,bottom:first.top},want:dock.top+(first.top-dock.top-h)/2});
+  for(const busy of [all,mustSee])for(const {r,want} of areas)for(const w of [r.width-12,320,280,240,200]){ if(w>r.width-12||w<180)continue; const x=r.left+(r.width-w)/2; let best=null;
+    for(let y=r.top+6;y+h<=r.bottom-4;y+=3){ if(busy.some(b=>b.left-4<x+w&&b.right+4>x&&b.top-4<y+h&&b.bottom+4>y))continue;
+      const d=Math.abs(y-want); if(!best||d<best.d)best={x,y,w,d}; }
+    if(best)return best; }
+  return null; }
+
+SFX.fanfare=()=>{ [523.25,659.25,783.99].forEach((f,i)=>tone(f,.16,{type:'square',gain:.03,at:i*.09})); [523.25,659.25,783.99,1046.5].forEach(f=>tone(f,.95,{type:'triangle',gain:.045,at:.3})); hiss(.6,{at:.3,gain:.03,freq:7000,q:.8}); };
+SFX.allin=()=>{ tone(110,.5,{type:'sawtooth',gain:.045,to:55}); hiss(.45,{gain:.06,freq:500,to:120,q:.7}); };
+SFX.slide=()=>[0,.06,.12,.18].forEach(d=>{ tone(2200+Math.random()*900,.05,{type:'triangle',gain:.045,at:d}); hiss(.04,{at:d,gain:.04,freq:5000,q:2}); });
+
+/** Who won, by how much and how big a moment it is; played once the board is out. */
+function celebrate(v,hand){ const res=v.result, tb=app.querySelector('#table.big.next'), cur=state.table;
+  if(!tb||!res||!res.pots.length||!cur||`${cur.id}:${cur.handNo}`!==hand)return;
+  celebrated(v,hand,tb,res); hypeSync(); }
+function celebrated(v,hand,tb,res){
+  const seatEls=[...tb.querySelectorAll('.stage .seat')], winners=[...new Set(res.pots.flatMap(p=>p.winners))];
+  const won={}; res.pots.forEach(p=>p.winners.forEach(w=>{ won[w]=(won[w]||0)+Math.floor(p.amount/p.winners.length); }));
+  const total=res.pots.reduce((a,p)=>a+p.amount,0), inPlay=Math.max(total,v.seats.reduce((a,s)=>a+(s.stack||0),0));
+  const top=res.shown.find(s=>s.seat===res.pots[0].winners[0]), named=top&&top.best&&top.best.length===5?bestHand(top.best):null;
+  const strong=!!named&&named.cat>=4, big=strong||total>=.4*inPlay, mine=v.mySeat!=null&&winners.includes(v.mySeat), hold=HYPE.hold;
+  HYPE.win={hand,at:Date.now(),winners};
+  const pot=HYPE.potRect||rectOf(tb.querySelector('.board')), H=mine?76:66, spot=big?bannerSpot(tb,H,winners.map(w=>seatEls[w]).filter(Boolean)):null;
+  winners.forEach((w,i)=>{ const ring=rectOf(seatEls[w]&&seatEls[w].querySelector('.ring')); if(!ring)return;
+    chips(pot,ring,6,'#d4a63a',i*120,620);
+    if(spot)return;   // the banner says how much
+    const m=midOf(ring); if(big)setTimeout(()=>confetti(m.x,m.y,26,90),520);
+    fx('hplus'+(v.seats[w]&&v.seats[w].me?' me':'')+(hold?' hold':''),m.x,ring.top-6,{'--dl':(calm()?0:560+i*120)+'ms'},hold?3600e3:2600,`+${esc(fmt(won[w]))}`); });
+  sfx('slide');
+  if(mine){ sfx('win'); haptic('heavy'); const me=rectOf(seatEls[v.mySeat]&&seatEls[v.mySeat].querySelector('.ring')); if(me&&!big){ const m=midOf(me); setTimeout(()=>confetti(m.x,m.y,18,70),520); } }
+  if(!big)return;
+  sfx('fanfare');
+  const names=winners.map(w=>v.seats[w]).map(s=>s.me?'You':/^bot:/.test(s.userId)?String(s.name).replace(/^House /,''):first(s.name));
+  if(!spot)return;   // nowhere clear of the cards: the seat's confetti and "+amount" instead
+  const head=strong?named.text.split(',')[0].toUpperCase():'BIG WIN';
+  const line=`${names.join(' & ')} ${names.length>1?'split':names[0]==='You'?'win':'wins'} ${fmt(total)}${strong&&named.cat===6&&spot.w>=300?' · '+named.text.split(', ')[1]:''}`;
+  const ms=hold?3600e3:mine?3000:2600, hf=Math.min(mine?31:26,Math.floor((spot.w-28)/(head.length*.8)));
+  fx('hbanner'+(mine?' me':'')+(hold?' hold':''),spot.x,spot.y,{width:spot.w+'px',height:H+'px','--ms':ms+'ms','--hf':hf+'px'},ms,`<b>${esc(head)}</b><span>${esc(line)}</span>`);
+  setTimeout(()=>confetti(spot.x+spot.w/2,spot.y+H/2,mine?44:30,mine?170:130),120); }
+
+/** After every draw: what changed at the table since the last one, and the effects that go with it. */
+function hypeSync(){
+  const tb=app.querySelector('#table.big.next'), v=tb&&hypeOn()?(state.view==='watch'?state.watching:state.table):null;
+  if(!v||!v.seats){ if(HYPE.prev){ hypeLayer().textContent=''; HYPE.prev=null; } return; }
+  const t=Date.now(), p=HYPE.prev, hand=`${v.id}:${v.handNo}`, fresh=!p||p.id!==v.id, same=!fresh&&p.hand===hand;
+  const seatEls=[...tb.querySelectorAll('.stage .seat')], quiet=calm();
+  // a game-over box or a sheet in front of the table: nothing flies over it
+  hypeLayer().classList.toggle('off',!!app.querySelector('.over,.sheet'));
+  const potNow=rectOf(tb.querySelector('.center .pot'));
+  const potAt=potNow||HYPE.potRect||rectOf(tb.querySelector('.board .row'));
+  // chips: a bet made slides from the seat to its spot; at the end of a street the bets slide into the pot
+  let swept=false;
+  if(same)v.seats.forEach((s,i)=>{ const was=p.bets[i]||0, now=s.bet||0, el=seatEls[i]; if(!el)return;
+    if(now>was&&now>0)chips(rectOf(el.querySelector('.ring')),rectOf(el.querySelector('.bet')),2,'#d23c3c',0,380);
+    else if(was>0&&!now&&HYPE.betRects[i]){ chips(HYPE.betRects[i],potAt,3,'#d23c3c',i*30,460); swept=true; } });
+  // someone just went all in
+  if(same)v.seats.forEach((s,i)=>{ if(s.allIn&&!p.allIn[i]){ HYPE.allin[i]={hand,at:t}; sfx('allin'); } });
+  // a new hand: the cards are dealt
+  if(!fresh&&p.hand!==hand){ HYPE.deal={hand,at:t}; HYPE.allin={}; HYPE.win=null; }
+  // the board runs out with everyone all in: the table dims round the board until the river is over
+  const done=boardDoneAt(v);
+  if(done>t&&runout(v)&&HYPE.dimKey!==hand){ HYPE.dimKey=hand; const st=rectOf(tb.querySelector('.stage')), bd=rectOf(tb.querySelector('.board'));
+    if(st&&bd){ const ms=done-t+500, c=midOf(bd), cx=c.x-st.left, cy=c.y-st.top;
+      fx('hdim',st.left-8,st.top,{width:(st.width+16)+'px',height:st.height+'px','--ms':ms+'ms',background:`radial-gradient(${Math.round(bd.width*.8)}px ${Math.round(bd.height*.85)}px at ${Math.round(cx+8)}px ${Math.round(cy)}px,rgba(0,0,0,0) 70%,rgba(2,8,5,.62) 100%)`},ms);
+      if(!potNow&&HYPE.potRect){ const m=midOf(HYPE.potRect); fx('hlabel',m.x,m.y,{'--ms':ms+'ms'},ms,'ALL IN'); } } }
+  // who won waits for the river; then the chips go over, the seat glows, and a big pot gets its banner
+  if(v.result&&!HYPE.seen.has(hand)){ HYPE.seen.add(hand);
+    if(same)HYPE.before={hand,stacks:p.stacks,busted:p.busted};
+    if(!fresh){ const at=Math.max(t+(swept?420:0),done+150); setTimeout(()=>celebrate(v,hand),at-t); } }
+  if(v.result&&done>t){ tb.classList.add('hhold'); if(HYPE.holdKey!==hand){ HYPE.holdKey=hand; setTimeout(()=>{ if(app.querySelector('#table.next'))render(); },done-t+40); }
+    // the chips and who is out are as they were before the result, until the river is over
+    const b=HYPE.before&&HYPE.before.hand===hand?HYPE.before:null;
+    if(b)seatEls.forEach((el,i)=>{ if(b.busted[i]||!v.seats[i])return; const sp=el.querySelector('.plate span'); if(sp)sp.textContent=fmt(b.stacks[i]);
+      if(v.seats[i].busted){ el.classList.remove('out'); const tag=el.querySelector('.tag'); if(tag){ tag.className='tag allin'; tag.textContent='ALL IN'; } } }); }
+  // in the table: the deal, your turn, an all-in, the winners' glow, the last seconds on your clock
+  const keep=(el,cls,at,len)=>{ const since=t-at; if(!el||since>=len||quiet)return false; el.classList.add(cls); el.style.setProperty('--hd',(-since)+'ms'); return true; };
+  if(HYPE.deal.hand===hand){ const c=midOf(rectOf(tb.querySelector('.board'))||rectOf(tb.querySelector('.stage'))||{left:0,top:0,width:0,height:0});
+    const n=v.seats.length, btn=Math.max(0,v.seats.findIndex(s=>s.button)), order=i=>(i-btn-1+n)%n;
+    seatEls.forEach((el,i)=>{ const h=el.querySelector('.hole'); if(!h)return; const r=rectOf(h); if(!r)return; const m=midOf(r);
+      if(keep(h,'hdeal',HYPE.deal.at+order(i)*70,560)){ h.style.setProperty('--fx',Math.round(c.x-m.x)+'px'); h.style.setProperty('--fy',Math.round(c.y-m.y)+'px'); } });
+    tb.querySelectorAll('.mine .pc.big').forEach((el,k)=>{ const r=rectOf(el); if(!r)return; const m=midOf(r);
+      if(keep(el,'hdeal',HYPE.deal.at+(order(v.mySeat||0)+k*n)*70,800)){ el.style.setProperty('--fx',Math.round(c.x-m.x)+'px'); el.style.setProperty('--fy',Math.round(c.y-m.y)+'px'); } }); }
+  if(v.choices&&v.toAct!=null&&v.toAct===v.mySeat){ const key=`${hand}:${v.street}:${v.deadline}`; if(HYPE.turn.key!==key)HYPE.turn={key,at:t};
+    keep(tb.querySelector('.abar'),'hturn',HYPE.turn.at,1600); }
+  for(const i in HYPE.allin){ const a=HYPE.allin[i]; if(a.hand===hand)keep(seatEls[i],'hallin',a.at,1500); }
+  if(HYPE.win&&HYPE.win.hand===hand&&v.result)HYPE.win.winners.forEach(w=>{ const el=seatEls[w]; if(!el)return; el.classList.add('hwin'); el.style.setProperty('--hd',(quiet?0:-(t-HYPE.win.at))+'ms'); });
+  const myRing=tb.querySelector('.seat.me.toact .ring'); if(myRing)myRing.style.setProperty('--hp',(-(t%1400))+'ms');
+  // for next time: where each bet and the pot are, and who had bet what
+  HYPE.betRects=seatEls.map(el=>rectOf(el.querySelector('.bet')));
+  if(potNow)HYPE.potRect=potNow;
+  HYPE.prev={id:v.id,hand,bets:v.seats.map(s=>s.bet||0),allIn:v.seats.map(s=>!!s.allIn),stacks:v.seats.map(s=>s.stack||0),busted:v.seats.map(s=>!!s.busted)}; }
+new MutationObserver(()=>{ try{ hypeSync(); }catch(e){ console.error(e); } }).observe(app,{childList:true});
+addEventListener('resize',()=>{ const l=document.getElementById('hype'); if(l)l.textContent=''; });
+/* The next look's previews, on a big table with &next=1 (each plays a moment a beat after the table opens; banners and
+   "+amount" stay on screen in a preview, &hold=0 lets them go):
+   &street=1 the bets slide into the pot and the turn comes · &newhand=1 a new hand is dealt · &bigwin=1 Rahul's full house
+   &mywin=1 you win a small pot · &royal=1 your royal flush · &allin=1 you and Rahul all in, the board runs out slowly */
+function hypeDemo(q,v){ const later=(ms,f)=>setTimeout(()=>{ if(!state.room)return; f(); onRoom(Object.assign({},state.room)); },ms);
+  HYPE.hold=q.get('hold')!=='0';
+  const S=v.seats, settle=(board,pots,shown)=>{ Object.assign(v,{street:'done',toAct:null,choices:null,board,pot:0,result:{showdown:true,pots,shown,busted:[]}});
+    S.forEach(s=>{ s.bet=0; s.toAct=false; }); shown.forEach(x=>{ if(!S[x.seat].me)S[x.seat].cards=x.cards; }); };
+  const river=board=>{ Object.assign(v,{street:'river',board}); S.forEach(s=>{ if(!s.folded&&!s.allIn&&!s.busted)s.lastAction=null; }); };
+  if(q.get('street')==='1')later(900,()=>{ v.pot+=S.reduce((a,s)=>a+s.bet,0); S.forEach(s=>{ s.bet=0; if(!s.folded)s.lastAction=null; });
+    Object.assign(v,{street:'turn',board:[...v.board,'Qc'],toAct:0,deadline:Date.now()+20000,choices:{toCall:0,canCheck:true,canRaise:true,minRaiseTo:40,maxRaiseTo:2140,pot:v.pot,currentBet:0}}); S[0].toAct=true; });
+  if(q.get('newhand')==='1')later(900,()=>{ Object.assign(v,{handNo:v.handNo+1,street:'preflop',board:[],pot:60,toAct:0,deadline:Date.now()+20000,choices:{toCall:40,canCheck:false,canRaise:true,minRaiseTo:80,maxRaiseTo:2140,pot:60,currentBet:40}});
+    S.forEach((s,i)=>Object.assign(s,{bet:0,folded:false,allIn:false,lastAction:null,toAct:i===0,button:i===S.length-3,cards:s.me?['Ah','Kd']:null,inHand:!s.busted}));
+    S[S.length-2].bet=20; S[S.length-1].bet=40; });
+  if(q.get('bigwin')==='1'){ river(['Jh','7c','2d','7h','9s']); [0,1,4].forEach(i=>{ if(S[i])S[i].bet=620; }); Object.assign(v,{pot:1240,toAct:null,choices:null}); S[0].toAct=false;
+    later(800,()=>settle(v.board,[{amount:3100,winners:[1],hand:'Full house'}],[{seat:1,cards:['Jc','Js'],best:['Jc','Js','Jh','7c','7h'],hand:'Full house'},{seat:0,cards:S[0].cards,best:['Qs','Qd','7c','7h','Jh'],hand:'Two pair'}])); }
+  if(q.get('mywin')==='1'){ river(['Jh','7c','2d','7h','9s']); S[1].bet=S[0].bet=160; Object.assign(v,{toAct:null,choices:null}); S[0].toAct=false;
+    later(800,()=>settle(v.board,[{amount:980,winners:[0],hand:'Two pair'}],[{seat:0,cards:S[0].cards,best:['Qs','Qd','7c','7h','Jh'],hand:'Two pair'},{seat:1,cards:['Ac','Kc'],best:['7c','7h','Ac','Kc','Jh'],hand:'Pair'}])); }
+  if(q.get('royal')==='1'){ S[0].cards=['Ah','Kh']; river(['Jh','Th','2d','Qh','9s']); S[1].bet=S[0].bet=300; Object.assign(v,{toAct:null,choices:null}); S[0].toAct=false;
+    later(800,()=>settle(v.board,[{amount:1880,winners:[0],hand:'Straight flush'}],[{seat:0,cards:['Ah','Kh'],best:['Ah','Kh','Qh','Jh','Th'],hand:'Straight flush'},{seat:1,cards:['Ks','Qs'],best:['Ks','Qs','Jh','Th','9s'],hand:'Straight'}])); }
+  if(q.get('allin')==='1'){ Object.assign(v,{toAct:1,deadline:Date.now()+20000,choices:null,pot:140}); S.forEach((s,i)=>{ s.toAct=i===1; s.bet=0; if(i>1){ s.folded=true; s.allIn=false; s.lastAction='fold'; } else s.lastAction=null; });
+    S[1].stack=2140; S[0].allIn=true; S[0].stack=0; S[0].bet=2140; S[0].lastAction='allin'; v.pot+=2140;
+    later(900,()=>{ Object.assign(S[1],{allIn:true,stack:0,bet:2140,lastAction:'call',toAct:false}); v.toAct=null; v.pot+=2140; });
+    later(2300,()=>{ settle(['Jh','7c','2d','4h','Qc'],[{amount:4420,winners:[0],hand:'Three of a kind'}],[{seat:0,cards:['Qs','Qd'],best:['Qs','Qd','Qc','Jh','7c'],hand:'Three of a kind'},{seat:1,cards:['Jc','Js'],best:['Jc','Js','Jh','Qc','7c'],hand:'Three of a kind'}]);
+      S[0].stack=4420; S[1].busted=true; }); } }
 
 async function start(){
   if(P.fatal){ state.fatal=P.fatal; return render(); }
@@ -1185,6 +1493,7 @@ function bigDemo(mode,t,people){
   if(q.get('showdown')==='1'){ Object.assign(v,{street:'done',toAct:null,choices:null,board:['Jh','7c','2d','Qc','9s'],pot:0,result:{showdown:true,pots:[{amount:1840,winners:[0],hand:'Three of a kind'}],shown:[{seat:0,cards:watch?['Ad','Kd']:['Qs','Qd'],best:['Qs','Qd','Qc','Jh','9s'],hand:'Three of a kind'},{seat:1,cards:['Jc','Js'],best:['Jc','Js','Jh','Qc','9s'],hand:'Three of a kind'}],busted:[]}});
     seats.forEach(s=>{ s.bet=0; s.toAct=false; }); seats[1].cards=['Jc','Js']; if(watch)seats[0].cards=['Ad','Kd']; }
   if(q.get('over')==='1'){ Object.assign(v,{status:'over',toAct:null,choices:null,standings:seats.filter(s=>!s.allIn).slice(0,5).map((s,i)=>({userId:s.userId,name:s.name,stack:[3420,2100,1480,700,0][i],busted:i===4,knockouts:i?[]:['a'],place:i+1}))}); }
+  if(!watch&&mode==='room-table8')hypeDemo(q,v);
   const pl=s=>({userId:s.userId,name:s.name,photoUrl:s.photoUrl,online:true,atTable:true,busted:s.busted});
   const house=seats.filter(s=>/^bot:/.test(s.userId)).length;
   const room={code:watch?'6170':'7350',you:'s0',hostId:watch?'w1':'s0',status:v.status==='over'?'over':'playing',open:true,minutes:20,minutesOptions:[10,20,30],house,houseNames:['House Ace'].slice(0,house),min:2,max:8,buyIn:1000,big:true,serverNow:t,gameNo:2,
