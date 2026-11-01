@@ -94,7 +94,7 @@ async function rejects(work: Promise<unknown>, status: number) {
   const asB = await verifyLoginOtp('b@sowaka.test', '333333');
   check('someone nobody reports to signs in as an employee', asB.user.role === 'employee', asB.user.role);
   check('their manager is named', asB.user.managerName === 'Manav Manager', asB.user.managerName);
-  check('their photo is its media path', asB.user.profilePhotoUrl === '/media/connect%2Fb.jpg', asB.user.profilePhotoUrl);
+  check('their photo is its 256 px media copy', asB.user.profilePhotoUrl === '/media/connect%2Fb.jpg?w=256', asB.user.profilePhotoUrl);
 
   // --- the tag picker: the whole company
   const company = await getTeammates('mgr', 500, 'company');
@@ -102,7 +102,8 @@ async function rejects(work: Promise<unknown>, status: number) {
   check('the company is everyone but the viewer, counsellors, leavers and other orgs', JSON.stringify(names) === JSON.stringify(['a', 'b', 'c', 'd', 'old']), names);
   check('an account with no org is found by its address', names.includes('old'));
   check('an inline photo is left behind', company.teammates.find((t) => t.userId === 'a')?.photoUrl === undefined);
-  check('a stored photo is its media path', company.teammates.find((t) => t.userId === 'b')?.photoUrl === '/media/connect%2Fb.jpg');
+  const storedPhoto = company.teammates.find((t) => t.userId === 'b')?.photoUrl;
+  check('a stored photo is its 256 px media copy', storedPhoto === '/media/connect%2Fb.jpg?w=256', storedPhoto);
   const limited = await getTeammates('mgr', 2, 'company');
   check('a page size cuts the list, not the total', limited.teammates.length === 2 && limited.total === 5, limited);
   const viewer = await users().findOne({ userId: 'mgr' });
