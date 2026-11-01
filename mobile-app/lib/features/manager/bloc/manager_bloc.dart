@@ -10,6 +10,11 @@ enum ManagerLoadStatus { initial, loading, ready, failure }
 
 enum FeedbackFilter { all, pending, done }
 
+/// The shortest comment each parameter of a sent review may carry; the
+/// server refuses a send below it (FEEDBACK_NOTE_MIN). Checked when Send is
+/// tapped, not counted while typing.
+const feedbackNoteMin = 75;
+
 class ManagerState {
   const ManagerState({
     required this.status,
@@ -22,6 +27,7 @@ class ManagerState {
     this.selectedMemberId,
     this.recordParams = const <FeedbackParam>[],
     this.recordExtra = '',
+    this.recordPeriod,
     this.feedbackFilter = FeedbackFilter.all,
     this.searchQuery = '',
     this.showGiven = false,
@@ -60,6 +66,21 @@ class ManagerState {
   final int? selectedMemberId;
   final List<FeedbackParam> recordParams;
   final String recordExtra;
+
+  /// The cycle the open form is for, when it is the previous one (still open
+  /// to review); null for the live cycle.
+  final String? recordPeriod;
+
+  /// The open form's review as it stands on the server: the previous cycle's
+  /// when [recordPeriod] is set, else the live one's.
+  FeedbackStatus? get recordStatus {
+    final member = selectedMember;
+    if (member == null) return null;
+    final previous = member.previousCycle;
+    return recordPeriod != null && previous?.period == recordPeriod
+        ? previous!.status
+        : member.status;
+  }
   final FeedbackFilter feedbackFilter;
   final String searchQuery;
   final bool showGiven;
@@ -98,6 +119,8 @@ class ManagerState {
     bool clearSelectedMember = false,
     List<FeedbackParam>? recordParams,
     String? recordExtra,
+    String? recordPeriod,
+    bool clearRecordPeriod = false,
     FeedbackFilter? feedbackFilter,
     String? searchQuery,
     bool? showGiven,
@@ -123,6 +146,9 @@ class ManagerState {
           : selectedMemberId ?? this.selectedMemberId,
       recordParams: recordParams ?? this.recordParams,
       recordExtra: recordExtra ?? this.recordExtra,
+      recordPeriod: clearRecordPeriod || clearSelectedMember
+          ? null
+          : recordPeriod ?? this.recordPeriod,
       feedbackFilter: feedbackFilter ?? this.feedbackFilter,
       searchQuery: searchQuery ?? this.searchQuery,
       showGiven: showGiven ?? this.showGiven,
@@ -171,8 +197,11 @@ class ShowTeamSection extends ManagerEvent {
 }
 
 class OpenFeedbackRecord extends ManagerEvent {
-  const OpenFeedbackRecord(this.memberId);
+  const OpenFeedbackRecord(this.memberId, {this.period});
   final int memberId;
+
+  /// The previous cycle's key, to review that one; null for the live cycle.
+  final String? period;
 }
 
 class CloseFeedbackRecord extends ManagerEvent {
@@ -696,18 +725,25 @@ class ManagerBloc {
           );
         case ShowTeamSection(:final section):
           _emit(_state.copyWith(view: ManagerView.home, teamSection: section));
-        case OpenFeedbackRecord(:final memberId):
+        case OpenFeedbackRecord(:final memberId, :final period):
           final member = _state.dashboard?.team
               .where((item) => item.id == memberId)
               .firstOrNull;
           if (member == null) return false;
+          // The previous cycle, when asked for and still open: its own
+          // parameters and whatever was already written for it.
+          final previous = period != null && member.previousCycle?.period == period
+              ? member.previousCycle
+              : null;
           _emit(
             _state.copyWith(
               selectedMemberId: member.id,
-              recordParams: member.params
+              recordParams: (previous?.params ?? member.params)
                   .map((param) => param.copyWith())
                   .toList(),
-              recordExtra: member.extra,
+              recordExtra: previous?.extra ?? member.extra,
+              recordPeriod: previous?.period,
+              clearRecordPeriod: previous == null,
             ),
           );
         case CloseFeedbackRecord():
@@ -745,6 +781,23 @@ class ManagerBloc {
           );
         case SendFeedback():
           final member = _state.selectedMember;
+          // Every comment explains its score in words before the review goes
+          // out; the server holds the same line. Said once, on Send, rather
+          // than counted while typing.
+          final short = _state.recordParams
+              .where((param) => param.note.trim().length < feedbackNoteMin)
+              .firstOrNull;
+          if (short != null) {
+            _emit(
+              _state.copyWith(
+                message:
+                    'Write at least $feedbackNoteMin characters in each comment '
+                    'before sending. "${short.name}" has '
+                    '${short.note.trim().length}.',
+              ),
+            );
+            return false;
+          }
           await _persistFeedback(
             FeedbackStatus.sent,
             member == null ? 'Sent' : 'Sent to ${member.name.split(' ').first}',
@@ -946,17 +999,53 @@ class ManagerBloc {
         ? selected.score
         : params.fold<double>(0, (sum, item) => sum + item.score) /
               params.length;
+    final previousCycle = _state.recordPeriod != null &&
+            selected.previousCycle?.period == _state.recordPeriod
+        ? selected.previousCycle
+        : null;
     await _service.saveFeedback(
       member: selected,
       status: status,
       params: params,
       extra: _state.recordExtra,
+      period: previousCycle?.period,
     );
     // A sent review must also land in the member's history, otherwise the
     // growth timeline keeps showing the period as still due.
-    final period = _currentPeriodKey();
+    final period = previousCycle?.period ?? _currentPeriodKey();
     final team = data.team.map((member) {
       if (member.id != selected.id) return member;
+      if (previousCycle != null) {
+        // The previous cycle's review: its own record and its place in the
+        // history; the live cycle's form is left as it was. A review once
+        // sent stays sent, as the server keeps it.
+        final sent =
+            status == FeedbackStatus.sent ||
+            previousCycle.status == FeedbackStatus.sent;
+        final history = sent
+            ? (<GrowthRecord>[
+                ...member.history.where((record) => record.period != period),
+                GrowthRecord(
+                  period: period,
+                  overallScore: overall,
+                  parameters: params,
+                  sentAt: DateTime.now(),
+                  managerName: data.managerName,
+                ),
+              ]..sort((a, b) => a.period.compareTo(b.period)))
+            : member.history;
+        return member.copyWith(
+          previousCycle: previousCycle.copyWith(
+            status: sent ? FeedbackStatus.sent : status,
+            score: overall,
+            params: params,
+            extra: _state.recordExtra,
+          ),
+          history: history,
+          // The latest review before this cycle is now this one.
+          previousScore: sent ? overall : null,
+        );
+      }
       final history = status == FeedbackStatus.sent
           ? <GrowthRecord>[
               ...member.history.where((record) => record.period != period),

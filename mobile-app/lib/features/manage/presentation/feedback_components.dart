@@ -1,9 +1,5 @@
 part of '../../manager/presentation/manager_screen.dart';
 
-/// The shortest comment each parameter of a sent review may carry; the
-/// server refuses a send below it (FEEDBACK_NOTE_MIN).
-const feedbackNoteMin = 75;
-
 class _ParamCard extends StatefulWidget {
   const _ParamCard({
     super.key,
@@ -33,7 +29,7 @@ class _ParamCardState extends State<_ParamCard> {
   late final TextEditingController _noteController;
 
   /// The comment goes to the form a moment after typing stops, as well as
-  /// when the box loses focus, so the character count and Send keep up.
+  /// when the box loses focus, so Send judges the words as they stand.
   Timer? _noteDebounce;
 
   @override
@@ -350,28 +346,6 @@ class _ParamCardState extends State<_ParamCard> {
               ],
             ),
           ),
-          // Every comment needs [feedbackNoteMin] characters before the
-          // review can be sent (the server holds the same line).
-          if (!widget.locked)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: ValueListenableBuilder<TextEditingValue>(
-                valueListenable: _noteController,
-                builder: (context, value, _) {
-                  final n = value.text.trim().length;
-                  final enough = n >= feedbackNoteMin;
-                  return Text(
-                    enough ? '$n characters' : '$n / $feedbackNoteMin characters, needed to send',
-                    key: ValueKey('feedback-note-count-${widget.param.name}'),
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w500,
-                      color: enough ? const Color(0xFF2F7A4F) : const Color(0xFFB54708),
-                    ),
-                  );
-                },
-              ),
-            ),
           // HR's guidance for this parameter, and only that: a parameter
           // without any shows no hint rather than a stock line.
           if (widget.param.description?.trim() case final guidance?

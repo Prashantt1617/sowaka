@@ -1,16 +1,14 @@
-// Who sees what on whose profile. Anyone in the company sees a colleague's
-// Attendance, Work detail, Org chart and Rank and nothing else; the viewer's own reports
-// keep everything their profile has always shown; and a name tapped anywhere
-// opens the right one through `openPersonProfile`. The tab a profile opens
-// on — Post from the feed, Org chart from the Team tab or an org chart, Work
-// detail otherwise — is the first in its bar, and the one shown.
+// The review form's rules, from a report's profile Grow tab:
 //
-// Screenshots of the opening tabs, when asked for:
-// `flutter test --update-goldens --dart-define=SCREENSHOTS=<dir> test/profile_visibility_test.dart`
+// - Every parameter's comment needs 75 characters before the review can be
+//   sent. Nothing counts while typing; Send says which comment is short and
+//   sends nothing. A draft may be short.
+// - Last month stays open: it can be picked from the month row, reads as
+//   due rather than missed, and opens a form on that month's parameters that
+//   is sent for that month.
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -18,20 +16,13 @@ import 'package:mobile_app/features/auth/data/auth_models.dart';
 import 'package:mobile_app/features/connect/data/connect_api_service.dart';
 import 'package:mobile_app/features/manager/bloc/manager_bloc.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
-import 'package:mobile_app/features/manager/data/manager_models.dart';
 import 'package:mobile_app/features/manager/presentation/manager_screen.dart';
 import 'package:mobile_app/features/profile/profile.dart';
-import 'package:mobile_app/features/shared/photo_viewer.dart';
-
-/// A 1x1 PNG, as a `data:` photo: no network in a test.
-const photo =
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
 Map<String, dynamic> member(
   String name, {
   bool reportsToViewer = false,
   bool isSelf = false,
-  String? photoUrl,
 }) => {
   'userId': name.toLowerCase(),
   'name': name,
@@ -43,7 +34,6 @@ Map<String, dynamic> member(
   'email': '${name.toLowerCase()}@example.test',
   'parameters': <dynamic>[],
   'history': <dynamic>[],
-  'photoUrl': ?photoUrl,
 };
 
 http.Response ok(Map<String, dynamic> body) => http.Response(
@@ -52,11 +42,21 @@ http.Response ok(Map<String, dynamic> body) => http.Response(
   headers: {'content-type': 'application/json; charset=utf-8'},
 );
 
+/// 'YYYY-MM' for this month, and for the one before it.
+String _key(DateTime date) =>
+    '${date.year}-${date.month.toString().padLeft(2, '0')}';
+final _thisMonth = _key(DateTime.now());
+final _lastMonth = _key(DateTime(DateTime.now().year, DateTime.now().month - 1));
+const _monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+String _short(String period) => '${_monthsShort[int.parse(period.substring(5)) - 1]} ${period.substring(0, 4)}';
 
 /// The PUT a review goes out as, the last one sent.
 Map<String, dynamic>? _sentBody;
 
-Future<ManagerBloc> _boot(WidgetTester tester) async {
+Future<ManagerBloc> _boot(
+  WidgetTester tester, {
+  Map<String, dynamic>? previousCycle,
+}) async {
   tester.view.physicalSize = const Size(1179, 2556);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
@@ -67,6 +67,7 @@ Future<ManagerBloc> _boot(WidgetTester tester) async {
       {'parameterId': 'p1', 'name': 'Ownership', 'score': 0, 'note': ''},
       {'parameterId': 'p2', 'name': 'Quality', 'score': 0, 'note': ''},
     ],
+    'previousCycle': ?previousCycle,
   };
   final workspace = {
     'team': [member('Pankaj', isSelf: true), haider],
@@ -144,45 +145,57 @@ Finder _note(String name) => find.descendant(
   matching: find.byType(TextFormField),
 );
 
-String _count(WidgetTester tester, String name) =>
-    tester.widget<Text>(find.byKey(ValueKey('feedback-note-count-$name'))).data!;
+Future<void> _rate(WidgetTester tester, List<String> names) async {
+  for (final name in names) {
+    await _tap(tester, find.byWidgetPredicate((w) => w is Semantics && w.properties.label == 'Rate $name 4 out of 5'));
+    await tester.pump();
+  }
+}
+
+/// Lets a toast from the last tap go, so the next one is the only one shown.
+Future<void> _dismissToasts(WidgetTester tester) async {
+  await tester.pump(const Duration(seconds: 10));
+  await tester.pumpAndSettle();
+}
+
+const _long75 = 'Took the launch checklist end to end and kept every stakeholder informed through the week.';
 
 void main() {
   setUp(() => _sentBody = null);
 
-  testWidgets('every comment needs 75 characters before the review can be sent', (tester) async {
+  testWidgets('no live count; Send refuses a short comment with a clear message', (tester) async {
     final bloc = await _boot(tester);
     expect(openPersonProfile('haider'), isTrue);
     await tester.pumpAndSettle();
     await _openGrowTab(tester);
     await _tap(tester, find.text('Give Feedback'));
-    await tester.pumpAndSettle();
 
-    // Scored, but no comments yet: Send waits, and each card says what is needed.
-    for (final name in ['Ownership', 'Quality']) {
-      await _tap(tester, find.byWidgetPredicate((w) => w is Semantics && w.properties.label == 'Rate $name 4 out of 5'));
-      await tester.pump();
-    }
-    expect(_count(tester, 'Ownership'), '0 / 75 characters, needed to send');
+    // Nothing counts characters under the comments.
+    expect(find.textContaining('characters'), findsNothing);
+    expect(find.byWidgetPredicate((w) => w.key is ValueKey<String> && (w.key! as ValueKey<String>).value.startsWith('feedback-note-count-')), findsNothing);
+
+    await _rate(tester, ['Ownership', 'Quality']);
     await _tap(tester, find.text('Send'));
-    await tester.pumpAndSettle();
-    expect(_sentBody, isNull, reason: 'Send is held while a comment is short');
+    expect(_sentBody, isNull, reason: 'empty comments are not sent');
+    expect(find.text('Write at least 75 characters in each comment before sending. "Ownership" has 0.'), findsOneWidget);
+    await _dismissToasts(tester);
 
-    const long = 'Took the launch checklist end to end and kept every stakeholder informed through the week.';
-    await tester.enterText(_note('Ownership'), long);
-    await tester.enterText(_note('Quality'), 'Good month.');
+    // One long comment, one short, typed and Send tapped straight away: the
+    // text still in the box is what is judged.
+    await tester.enterText(_note('Ownership'), _long75);
     await tester.pump(const Duration(milliseconds: 400));
-    await tester.pumpAndSettle();
-    expect(_count(tester, 'Ownership'), '${long.length} characters');
-    expect(_count(tester, 'Quality'), '11 / 75 characters, needed to send');
+    await tester.enterText(_note('Quality'), 'Good month.');
+    await tester.pump();
+    expect(find.textContaining('characters'), findsNothing, reason: 'still no count while typing');
     await _tap(tester, find.text('Send'));
-    await tester.pumpAndSettle();
     expect(_sentBody, isNull, reason: 'one short comment still holds it');
+    expect(find.text('Write at least 75 characters in each comment before sending. "Quality" has 11.'), findsOneWidget);
+    await _dismissToasts(tester);
 
     // A draft can be saved with short comments.
     await _tap(tester, find.text('Save'));
-    await tester.pumpAndSettle();
     expect(_sentBody?['status'], 'saved');
+    expect(_sentBody!.containsKey('period'), isFalse, reason: 'the live cycle needs no period');
     await _close(tester, bloc);
   });
 
@@ -192,22 +205,86 @@ void main() {
     await tester.pumpAndSettle();
     await _openGrowTab(tester);
     await _tap(tester, find.text('Give Feedback'));
-    for (final name in ['Ownership', 'Quality']) {
-      await _tap(tester, find.byWidgetPredicate((w) => w is Semantics && w.properties.label == 'Rate $name 4 out of 5'));
-    }
-    const long = 'Took the launch checklist end to end and kept every stakeholder informed through the week.';
-    await tester.enterText(_note('Ownership'), long);
+    await _rate(tester, ['Ownership', 'Quality']);
+    await tester.enterText(_note('Ownership'), _long75);
     await tester.pump(const Duration(milliseconds: 400));
     final exactly75 = 'x' * 75;
+    // Send tapped with the box still focused, before the pause that commits it.
     await tester.enterText(_note('Quality'), exactly75);
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pumpAndSettle();
-    expect(_count(tester, 'Quality'), '75 characters');
+    await tester.pump();
     await _tap(tester, find.text('Send'));
-    await tester.pumpAndSettle();
     expect(_sentBody?['status'], 'sent');
     final notes = (_sentBody!['parameters'] as List).map((p) => (p as Map)['note']).toList();
-    expect(notes, [long, exactly75]);
+    expect(notes, [_long75, exactly75]);
+    await _close(tester, bloc);
+  });
+
+  testWidgets('last month can be picked and reviewed, on its own parameters', (tester) async {
+    final bloc = await _boot(
+      tester,
+      previousCycle: {
+        'period': _lastMonth,
+        'feedbackStatus': 'pending',
+        'score': 0,
+        'parameters': [
+          {'parameterId': 'p1', 'name': 'Ownership', 'score': 0, 'note': ''},
+          {'parameterId': 'p3', 'name': 'Delivery', 'score': 0, 'note': ''},
+        ],
+        'extra': '',
+      },
+    );
+    expect(openPersonProfile('haider'), isTrue);
+    await tester.pumpAndSettle();
+    await _openGrowTab(tester);
+
+    // The month row offers the picker, with last month in it.
+    await _tap(tester, find.text(_short(_thisMonth)));
+    expect(find.text('Select Month'), findsOneWidget);
+    await tester.drag(find.byType(ListWheelScrollView), const Offset(0, 52));
+    await tester.pumpAndSettle();
+    await _tap(tester, find.text('Select'));
+
+    // Due, not missed.
+    expect(find.text(_short(_lastMonth)), findsOneWidget);
+    expect(find.text('Feedback missed'), findsNothing);
+    expect(find.text('Pending'), findsOneWidget);
+    expect(find.text('Feedback for ${_short(_lastMonth)} can still be given until this cycle ends'), findsOneWidget);
+
+    await _tap(tester, find.text('Give Feedback'));
+    // That month's form: its title and its parameters.
+    expect(find.text(_short(_lastMonth)), findsOneWidget);
+    expect(_note('Delivery'), findsOneWidget);
+    expect(_note('Quality'), findsNothing);
+
+    await _rate(tester, ['Ownership', 'Delivery']);
+    await tester.enterText(_note('Ownership'), _long75);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.enterText(_note('Delivery'), _long75);
+    await tester.pump(const Duration(milliseconds: 400));
+    await _tap(tester, find.text('Send'));
+    expect(_sentBody?['status'], 'sent');
+    expect(_sentBody?['period'], _lastMonth);
+    expect((_sentBody!['parameters'] as List).map((p) => (p as Map)['parameterId']).toList(), ['p1', 'p3']);
+
+    // Back on Grow, last month now reads as reviewed and can still be edited;
+    // this month is untouched and still due.
+    final haider = bloc.state.dashboard!.team.firstWhere((m) => m.userId == 'haider');
+    expect(haider.previousCycle?.status.name, 'sent');
+    expect(haider.status.name, 'pending');
+    expect(haider.history.map((r) => r.period), [_lastMonth]);
+    await tester.pumpAndSettle();
+    expect(find.text('You can edit the feedback for ${_short(_lastMonth)} till this cycle ends.'), findsOneWidget);
+    await _close(tester, bloc);
+  });
+
+  testWidgets('without a previous cycle from the server, last month is not offered', (tester) async {
+    final bloc = await _boot(tester);
+    expect(openPersonProfile('haider'), isTrue);
+    await tester.pumpAndSettle();
+    await _openGrowTab(tester);
+    // One month only: the row is not a picker.
+    await _tap(tester, find.text(_short(_thisMonth)));
+    expect(find.text('Select Month'), findsNothing);
     await _close(tester, bloc);
   });
 }
