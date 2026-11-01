@@ -191,6 +191,10 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .slide{display:flex;align-items:center;gap:10px}
 .slide input[type=range]{flex:1;accent-color:var(--gold);height:32px}
 .slide .val{min-width:84px;text-align:right;font-family:var(--display);font-weight:800;font-size:20px}
+.slide .stepb{flex:none;width:36px;height:36px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);font-size:22px;font-weight:800;line-height:1;display:flex;align-items:center;justify-content:center}
+.slide .stepb:active{background:rgba(229,184,80,.35);transform:scale(.94)}
+/* the big tables: the row fits a 360px-wide phone */
+#table.big .slide{gap:6px}#table.big .slide input[type=range]{min-width:0}#table.big .slide .val{min-width:60px}#table.big .slide .stepb{width:32px;height:32px;font-size:20px}
 .waiting{text-align:center;color:var(--muted);font-size:14px;min-height:56px;display:flex;align-items:center;justify-content:center;gap:8px}
 .sitout{display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(224,86,75,.14);border-radius:12px;padding:10px 12px;margin-bottom:8px;font-size:14px}
 
@@ -308,7 +312,7 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .qside button.ph{grid-column:span 2}
 .qside button:active{background:rgba(229,184,80,.3);transform:scale(.96)}
 .sheet.chat.next .chatsend{align-items:center}
-.sheet.chat.next .chatsend input{min-height:44px;border-radius:999px;padding:0 16px;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.14)}
+.sheet.chat.next .chatsend input{font-size:16px;color:#fff;min-height:44px;border-radius:999px;padding:0 16px;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.14)}
 .sheet.chat.next .chatsend input:focus{border-color:rgba(229,184,80,.7);outline:none}
 .sheet.chat.next .chatsend .btn{min-height:44px;border-radius:999px;padding:0 18px}
 /* next look: the raise button says where a raise starts; waiting names who, with their face */
@@ -395,7 +399,7 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .quick{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 0 8px}
 .quick::-webkit-scrollbar{display:none}
 .quick button{flex:none;min-height:32px;padding:0 12px;border-radius:999px;background:var(--panel2);font-size:14px;font-weight:700}
-.chatsend{display:flex;gap:8px}
+.chatsend{display:flex;gap:8px;margin:0}
 .sheet.chat .chatsend input{flex:1;min-width:0;margin:0}
 .chatsend .btn{min-height:44px;border-radius:12px;flex:none}
 
@@ -765,9 +769,9 @@ function renderRoomLobby(){
     <div class="hero"><div class="suits">♠♥♦♣</div><p style="margin:0">Table code</p><div class="bigcode num">${esc(r.code)}</div><p>${host?'Share the code or invite colleagues, then deal.':`Waiting for ${esc(hostName(r))} to deal.`} ${places}/${r.max} seats taken.</p>
       ${watching?'':`<div class="row"><button class="btn ghost" data-act="invite">Invite colleagues</button></div>`}</div>
     <div class="seats6 ${r.max>6?'eight':''}">${slots.join('')}</div>
-    ${host?`<div class="card"><div class="setrow"><div class="lbl"><b>Game length</b><span>Blinds rise every 3 min</span></div><div class="seg">${(r.minutesOptions||[10,20,30]).map(m=>`<button class="${r.minutes===m?'on':''}" data-min="${m}">${m} min</button>`).join('')}</div></div>
+    ${host?`<div class="card"><div class="setrow"><div class="lbl"><b>Game length</b><span>Blinds rise every ${r.levelMinutes||3} min</span></div><div class="seg">${(r.minutesOptions||[10,20,30]).map(m=>`<button class="${r.minutes===m?'on':''}" data-min="${m}">${m} min</button>`).join('')}</div></div>
       <div class="setrow"><div class="lbl"><b>Who can join</b><span>${r.open?'Anyone at the company':'Only with the code'}</span></div><div class="seg"><button class="${r.open?'on':''}" data-open="1">Open</button><button class="${r.open?'':'on'}" data-open="0">Private</button></div></div></div>`
-      :`<div class="card"><div class="setrow"><div class="lbl"><b>${r.minutes} minute game</b><span>${r.big?fmt(r.buyIn):'1,500'} chips each · blinds rise every 3 min</span></div></div></div>`}
+      :`<div class="card"><div class="setrow"><div class="lbl"><b>${r.minutes} minute game</b><span>${r.big?fmt(r.buyIn):'1,500'} chips each · blinds rise every ${r.levelMinutes||3} min</span></div></div></div>`}
     <div class="foot">${watching?`${seatFree(r)?'<button class="btn primary" data-act="takeseat">Take a seat</button>':''}<button class="btn ghost" data-act="unwatch">Back to tables</button>`:host?`<button class="btn primary" data-act="deal" ${ready<2?'disabled':''}>${ready<2?'Need 2 to deal':`Deal · ${ready} players`}</button>`:`<button class="btn ghost" data-act="leaveask">Leave table</button>`}</div>
     ${sheets()}</div>`;
 }
@@ -803,9 +807,13 @@ function inHandNow(){ const r=R(), v=r&&r.table, mine=v&&v.mySeat!=null?v.seats[
    and kept above the keyboard where the web view does not move it itself. */
 if(window.visualViewport){ const vv=window.visualViewport; const lift=()=>{ document.documentElement.style.setProperty('--vvh',Math.round(vv.height)+'px');
     const sh=document.querySelector('.sheet.chat'); if(!sh)return;
-    // the keyboard's height, less what the sheet already stands off the bottom (the action buttons)
-    const kb=window.innerHeight-vv.height-vv.offsetTop, off=parseFloat(getComputedStyle(sh).bottom)||0;
-    sh.style.paddingBottom=Math.max(0,Math.round(kb-off))+'px'; };
+    // With the keyboard up the sheet takes exactly the part of the screen still showing, so the box sits on the
+    // keyboard wherever the web view has panned or shrunk to; without it, the sheet stops at the action buttons.
+    const up=window.innerHeight-vv.height>80;
+    sh.style.top=up?Math.round(vv.offsetTop)+'px':''; sh.style.height=up?Math.round(vv.height)+'px':''; sh.style.bottom=up?'auto':''; sh.style.paddingBottom=''; };
+  // the keyboard slides up over a moment: place the box as it goes, and keep the newest line in sight
+  document.addEventListener('focusin',e=>{ if(e.target&&e.target.id==='chatin')[0,120,300,600].forEach(t=>setTimeout(()=>{ lift(); const m=document.querySelector('.sheet.chat .msgs'); if(m)m.scrollTop=m.scrollHeight; },t)); });
+  document.addEventListener('focusout',e=>{ if(e.target&&e.target.id==='chatin')setTimeout(lift,300); });
   vv.addEventListener('resize',lift); vv.addEventListener('scroll',lift); lift(); }
 /* The sheet is drawn with the rest of the screen, and keepSheet() keeps the
    one on screen: it lives outside #app, only its [data-live] parts are
@@ -819,7 +827,7 @@ function chatSheet(r){ const lines=r.chat||[], w=(r.watchers||[]).length, uid=my
     <div class="chead" data-live="head">${nx?'<i class="live" aria-hidden="true"></i>':''}<h2>Table chat</h2><span>${w?`${w} watching`:''}</span><button class="x" data-act="chatclose" aria-label="Close the chat">×</button></div>
     ${nx?`<div class="cbody"><div class="msgs" data-live="msgs">${msgs}</div>${sideHtml()}</div>`:`<div class="msgs" data-live="msgs">${msgs}</div>
     <div class="quick">${QUICK.map(q=>`<button data-say="${esc(q)}">${esc(q)}</button>`).join('')}</div>`}
-    <div class="chatsend"><input id="chatin" maxlength="200" placeholder="Say something…" enterkeyhint="send" autocomplete="off" value="${esc(state.chatDraft)}"><button class="btn primary small" data-act="chatsend">Send</button></div></div></div>`; }
+    <form class="chatsend" data-form="chat" action="#"><input id="chatin" maxlength="200" placeholder="Say something…" enterkeyhint="send" autocomplete="off" value="${esc(state.chatDraft)}"><button type="button" class="btn primary small" data-act="chatsend">Send</button></form></div></div>`; }
 async function sendChat(text,fromBox){ text=String(text||'').trim(); if(!text)return;
   if(fromBox){ state.chatDraft=''; const i=$('#chatin'); if(i)i.value=''; }
   try{ await P.request('room:chat',{text}); }
@@ -1010,7 +1018,7 @@ function renderTable(){
     if(!state.raiseTo||state.raiseTo<c.minRaiseTo||state.raiseTo>c.maxRaiseTo)state.raiseTo=c.minRaiseTo;
     const pot=c.pot, half=Math.max(c.minRaiseTo,Math.min(c.maxRaiseTo,c.currentBet+Math.round((pot+c.toCall)/2))), full=Math.max(c.minRaiseTo,Math.min(c.maxRaiseTo,c.currentBet+pot+c.toCall));
     actions=`${state.raiseOpen&&c.canRaise&&!allInOnly?`<div class="raisepanel"><div class="presets"><button data-to="${c.minRaiseTo}">Min</button><button data-to="${half}">½ Pot</button><button data-to="${full}">Pot</button><button data-to="${c.maxRaiseTo}">All in</button></div>
-      <div class="slide"><input id="raise" type="range" min="${c.minRaiseTo}" max="${c.maxRaiseTo}" step="${Math.max(1,v.level?v.level.bb/2|0:1)}" value="${state.raiseTo}"><div class="val num" id="raisev">${fmt(state.raiseTo)}</div></div></div>`:''}
+      <div class="slide"><button class="stepb" data-step="-1" aria-label="One big blind less">−</button><input id="raise" type="range" min="${c.minRaiseTo}" max="${c.maxRaiseTo}" step="${Math.max(1,v.level?v.level.bb/2|0:1)}" value="${state.raiseTo}"><button class="stepb" data-step="1" aria-label="One big blind more">+</button><div class="val num" id="raisev">${fmt(state.raiseTo)}</div></div></div>`:''}
       <div class="abar"><button class="abtn fold" data-act="fold" ${c.canCheck?'':''}>Fold</button><button class="abtn call" data-act="call">${callTxt}</button>
       ${c.canRaise?(allInOnly?`<button class="abtn raise" data-act="allin">All in<small>${fmt(c.maxRaiseTo)}</small></button>`:state.raiseOpen?`<button class="abtn raise" data-act="raise">${state.raiseTo>=c.maxRaiseTo?'All in':raiseTxt+' to'}<small id="raisebtn">${fmt(state.raiseTo)}</small></button>`:`<button class="abtn raise" data-act="openraise">${raiseTxt}${nextUi()?`<small>${c.currentBet>0?'to ':''}${fmt(c.minRaiseTo)}</small>`:''}</button>`):`<button class="abtn raise" disabled>${raiseTxt}</button>`}</div>`; }
   else if(room&&mine&&mine.busted){ actions=`<div class="waiting">You are out of this game. ${isHost()?'Deal again when it ends.':'The next game starts when this one ends.'} <button class="btn small ghost" data-act="leaveask">Leave</button></div>`; }
@@ -1103,7 +1111,9 @@ document.addEventListener('click',async e=>{
   if(b.dataset.watch){ return watchTable(b.dataset.watch); }
   if(b.dataset.watchroom){ return watchCode(b.dataset.watchroom); }
   if(b.dataset.say){ haptic('light'); if(b.closest('.qside')&&inHandNow()){ state.chatOpen=false; render(); } return sendChat(b.dataset.say,false); }
-  if(b.dataset.to){ state.raiseTo=+b.dataset.to; const r=$('#raise'); if(r)r.value=state.raiseTo; $('#raisev').textContent=fmt(state.raiseTo); const rb=$('#raisebtn'); if(rb)rb.textContent=fmt(state.raiseTo); return; }
+  if(b.dataset.step&&state.table&&state.table.choices){ const c=state.table.choices, bb=Math.max(1,state.table.level?state.table.level.bb:1);
+    b.dataset.to=String(Math.max(c.minRaiseTo,Math.min(c.maxRaiseTo,(state.raiseTo||c.minRaiseTo)+(+b.dataset.step)*bb))); haptic('light'); }
+  if(b.dataset.to){ state.raiseTo=+b.dataset.to; if(b.dataset.step)delete b.dataset.to; const r=$('#raise'); if(r)r.value=state.raiseTo; $('#raisev').textContent=fmt(state.raiseTo); const rb=$('#raisebtn'); if(rb)rb.textContent=fmt(state.raiseTo); return; }
   if(b.dataset.pick){ const [stage,field,value]=b.dataset.pick.split('|'); const sel=state.pick[stage]=state.pick[stage]||{}; sel[field]=value; if(field!=='choice'&&field!=='stake')delete sel.choice; return renderLobby(); }
   const act=b.dataset.act; if(!act)return;
   haptic('light');
@@ -1150,6 +1160,10 @@ document.addEventListener('click',async e=>{
 });
 document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target&&e.target.id==='code'){ e.preventDefault(); joinCode(e.target.value).catch(err=>toast(err.message)); }
   if(e.key==='Enter'&&e.target&&e.target.id==='chatin'&&!e.isComposing){ e.preventDefault(); sendChat(e.target.value,true); } });
+/* The keyboard's send key submits the box: one tap sends. (Enter on a hardware keyboard is caught above, so this does not send twice.) */
+document.addEventListener('submit',e=>{ if(e.target&&e.target.dataset&&e.target.dataset.form==='chat'){ e.preventDefault(); const i=$('#chatin'); sendChat(i?i.value:state.chatDraft,true); } });
+/* The phone keyboard's send key submits the box: one tap sends. (A hardware Enter is caught above, so nothing sends twice.) */
+document.addEventListener('submit',e=>{ if(e.target&&e.target.dataset&&e.target.dataset.form==='chat'){ e.preventDefault(); const i=$('#chatin'); sendChat(i?i.value:state.chatDraft,true); } });
 /* Send keeps the keyboard up: the tap does not take the focus from the box. */
 document.addEventListener('mousedown',e=>{ if(e.target.closest&&e.target.closest('.sheet.chat button')&&document.activeElement&&document.activeElement.id==='chatin')e.preventDefault(); });
 document.addEventListener('input',e=>{ const t=e.target;
