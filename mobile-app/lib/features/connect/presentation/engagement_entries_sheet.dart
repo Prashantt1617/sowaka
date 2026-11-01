@@ -13,6 +13,11 @@ const _sheetPurple = Color(0xFF59378D);
 const _galleryInk = Color(0xFF24222A);
 const _galleryMuted = Color(0xFF817C89);
 
+/// The votes line under an entry open full screen, on every card lighter
+/// than the leader's violet: 5.2:1 on the palest podium violet (#C7B2EE),
+/// where the muted greys above fall near 2:1.
+const _entryFooterInk = Color(0xFF45414D);
+
 /// The podium's medals, on the board and on an entry opened full screen.
 const _entryMedals = {
   1: '$_engagementIcons/medal_1.svg',
@@ -3185,9 +3190,13 @@ class _EntryFullViewState extends State<_EntryFullView>
                       void vote() => widget.onVote(post, entry.id);
                       void openPerson() => widget.onOpenPerson(entry.userId);
                       final showVoters = widget.onShowVoters;
+                      // White on the leader's violet card (5.1:1); a deep
+                      // grey on the lighter ones. Both clear WCAG AA.
+                      final onViolet =
+                          entry.rank == 1 && (isPhoto || !entry.isMine);
                       final footer = _EntryFullFooter(
                         entry: entry,
-                        ink: isPhoto ? _galleryMuted : _sheetMuted,
+                        ink: onViolet ? Colors.white : _entryFooterInk,
                         onShowVoters: showVoters == null
                             ? null
                             : () => showVoters(post, entry),
@@ -3945,8 +3954,10 @@ class _PhotoEntryFull extends StatelessWidget {
 
 /// A photo entry's picture at its own shape, as large as the room allows:
 /// the box takes the picture's proportions once it has loaded (a portrait
-/// frame until then), and fits the picture inside whole, on [backdrop],
-/// where the room is not that shape.
+/// frame until then), and fits the picture inside whole. Where the room is
+/// not that shape, the bands either side are the same picture, blurred and
+/// washed in [backdrop] — a contest photo is judged whole, so it is not
+/// cropped, and the frame is never left with an empty band.
 class _EntryPhotoBox extends StatefulWidget {
   const _EntryPhotoBox({
     required this.url,
@@ -4031,6 +4042,23 @@ class _EntryPhotoBoxState extends State<_EntryPhotoBox> {
           fit: StackFit.expand,
           children: [
             ColoredBox(color: widget.backdrop),
+            if (url.isNotEmpty) ...[
+              ExcludeSemantics(
+                child: ImageFiltered(
+                  imageFilter: ImageFilter.blur(
+                    sigmaX: 28,
+                    sigmaY: 28,
+                    tileMode: TileMode.mirror,
+                  ),
+                  child: Image(
+                    image: _remoteImage(url),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+              ColoredBox(color: widget.backdrop.withValues(alpha: 0.45)),
+            ],
             widget.zoom(
               url.isEmpty
                   ? const SizedBox.expand()
