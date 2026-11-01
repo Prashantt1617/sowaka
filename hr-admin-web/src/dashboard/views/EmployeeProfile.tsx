@@ -591,7 +591,7 @@ function SalarySlips({ userId }: { userId: string }) {
                 <td style={{ ...slipTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}><strong>{inrPaise(payslip.netPayablePaise)}</strong></td>
                 <td style={{ ...slipTd, textAlign: 'right' }}>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    <button type="button" onClick={() => void downloadPayslipPdf(payslip, company)} className="pd-btn primary sm">Download slip</button>
+                    <button type="button" onClick={() => void downloadPayslipPdf(payslip, company, run).catch((e) => alert(e instanceof Error ? e.message : String(e)))} className="pd-btn primary sm">Download slip</button>
                     {payslip.id && <button type="button" onClick={() => void downloadTdsSheetPdf(payslip.id!).catch((e) => alert(e instanceof Error ? e.message : String(e)))} className="pd-btn sm">TDS sheet</button>}
                   </div>
                 </td>

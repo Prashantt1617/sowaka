@@ -55,7 +55,16 @@ const dmy = (iso?: string) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${i
 const DEDUCTION_NAMES: Record<string, string> = { epf: 'EPF Contribution', esi: 'Employee State Insurance', pt: 'Professional Tax', lwf: 'Labour Welfare Fund', income_tax: 'Income Tax', food_coupon: 'Food Coupon Deduction' };
 
 /** The payslip, laid out as Zoho Payroll's: summary, net pay box, earnings and deductions with YTD. */
-export function payslipHtml(slip: PayslipDTO, company: PayslipCompany): string {
+/** The run's own pay dates, when its company is not paid by the calendar month. */
+type PayDates = { periodFrom?: string; periodTo?: string };
+
+/** "26/09/2026 – 25/10/2026" for a run on its own dates, else "October 2026". */
+const payPeriod = (period: string, dates?: PayDates) =>
+  dates?.periodFrom && dates.periodTo && !(dates.periodFrom === `${period}-01` && dates.periodTo === lastDayOf(period))
+    ? `${dmy(dates.periodFrom)} – ${dmy(dates.periodTo)}`
+    : monthLabel(period);
+
+export function payslipHtml(slip: PayslipDTO, company: PayslipCompany, dates?: PayDates): string {
   const ytd = slip.ytd;
   const logo = brandOf(company.org)?.icon;
   const logoSrc = logo ? new URL(logo, window.location.origin).href : '';
@@ -118,7 +127,7 @@ export function payslipHtml(slip: PayslipDTO, company: PayslipCompany): string {
       <div class="kv"><span>Designation</span><span>:</span><span>${esc(slip.designation ?? '—')}</span></div>
       <div class="kv"><span>Employee ID</span><span>:</span><span>${esc(slip.employeeId ?? '—')}</span></div>
       <div class="kv"><span>Date of Joining</span><span>:</span><span>${esc(dmy(slip.joiningDate))}</span></div>
-      <div class="kv"><span>Pay Period</span><span>:</span><span>${esc(monthLabel(slip.period))}</span></div>
+      <div class="kv"><span>Pay Period</span><span>:</span><span>${esc(payPeriod(slip.period, dates))}</span></div>
       <div class="kv"><span>Pay Date</span><span>:</span><span>${esc(dmy(lastDayOf(slip.period)))}</span></div>
     </div>
     <div class="netbox">
@@ -144,19 +153,19 @@ export function payslipHtml(slip: PayslipDTO, company: PayslipCompany): string {
 }
 
 /** Opens the slip in a new tab ready to print or save as PDF. */
-export function printPayslip(slip: PayslipDTO, company: PayslipCompany): void {
+export function printPayslip(slip: PayslipDTO, company: PayslipCompany, dates?: PayDates): void {
   const win = window.open('', '_blank');
   if (!win) return;
   win.document.open();
-  win.document.write(payslipHtml(slip, company));
+  win.document.write(payslipHtml(slip, company, dates));
   win.document.close();
   win.focus();
   setTimeout(() => win.print(), 300);
 }
 
 /** Payslip_CS4_Sep_2026.pdf, as Zoho names it. */
-export function downloadPayslipPdf(slip: PayslipDTO, company: PayslipCompany): Promise<void> {
+export function downloadPayslipPdf(slip: PayslipDTO, company: PayslipCompany, dates?: PayDates): Promise<void> {
   const [y, m] = slip.period.split('-').map(Number);
   const mon = new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
-  return downloadHtmlAsPdf(payslipHtml(slip, company), `Payslip_${slip.employeeId ?? slip.employeeName.replace(/\s+/g, '_')}_${mon}_${y}.pdf`);
+  return downloadHtmlAsPdf(payslipHtml(slip, company, dates), `Payslip_${slip.employeeId ?? slip.employeeName.replace(/\s+/g, '_')}_${mon}_${y}.pdf`);
 }

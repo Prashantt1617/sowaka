@@ -87,6 +87,7 @@ const setting = (period: string, extra: Record<string, unknown>) =>
     person('full', { employeeId: 'E1' }),
     person('gap', { employeeId: 'E2' }),
     person('joiner', { employeeId: 'E3', joiningDate: new Date('2026-09-03T00:00:00Z') }),
+    person('late', { employeeId: 'E4', joiningDate: new Date('2026-09-28T00:00:00Z') }),
   ]);
   const shift = await createShift('hr', { name: 'General', punchFormat: 'In-app punch in' });
   await setDefaultShift('hr', shift.id);
@@ -109,7 +110,7 @@ const setting = (period: string, extra: Record<string, unknown>) =>
   await payHeads().insertMany(ZOHO_CATALOG.map((h) => ({ ...h, org: ORG })));
   await salaryTemplates().insertOne({ ...ZOHO_TEMPLATES.BELOW_TAXABLE, org: ORG });
   await paidDaysTemplates().insertOne({ org: ORG, code: 'DEFAULT', name: 'Calendar', allDaysPaid: false, deductionRules: [], monthlyPaidLeaveDays: 0, isDefault: true, createdAt: now, updatedAt: now });
-  await salaryStructures().insertMany(['full', 'gap', 'joiner'].map((userId) => ({
+  await salaryStructures().insertMany(['full', 'gap', 'joiner', 'late'].map((userId) => ({
     org: ORG, userId, salaryTemplateCode: 'BELOW_TAXABLE', annualCtcPaise: 3_72_000_00, status: 'active' as const, createdAt: now, updatedAt: now,
   })));
   const created = await createRun('hr', { period: '2026-09' });
@@ -121,6 +122,10 @@ const setting = (period: string, extra: Record<string, unknown>) =>
   ok('the absence on 28 Aug costs a day; 28 Sep is not this run\'s', gap.inputs.lopDays === 1 && gap.inputs.payableDays === 30, gap.inputs);
   ok('a joiner on 3 Sep is not paid 26 Aug – 2 Sep (8 days)', joiner.inputs.lopDays === 8 && joiner.inputs.payableDays === 23, joiner.inputs);
   ok('paid by the days: a day short is a 31st less', Math.abs(full.grossPaise - gap.grossPaise - Math.round(full.grossPaise / 31)) <= 100, { full: full.grossPaise, gap: gap.grossPaise });
+  ok('a joiner after the period is not on it', !(await payslips().findOne({ org: ORG, period: '2026-09', userId: 'late' })));
+  await recomputeRun('hr', created.run.id, { lopDays: { late: 26 } });
+  const late = await slip('late');
+  ok('unless HR types their loss of pay: 5 of 31 days paid', late?.inputs.lopEnteredByHr === true && late.inputs.payableDays === 5, late?.inputs);
 
   await setting('2026-09', { baseDays: 30 });
   const again = await recomputeRun('hr', created.run.id, {});

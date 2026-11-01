@@ -260,8 +260,11 @@ async function buildRunPayslips(
     const ruleSet = await resolveRuleSetCached(ruleSetCache, org, workStateOf(employee));
     // Joined during this month: paid from the joining day, PF ceilings counted from it.
     const joined = employee.joiningDate ? new Date(employee.joiningDate).toISOString().slice(0, 10) : undefined;
-    // Not employed yet in this period (a run made for an earlier one): no payslip.
-    if (joined && joined > range.to) continue;
+    // Not employed yet in this period (a run made for an earlier one): no
+    // payslip, unless HR typed their loss of pay. A company whose files pay a
+    // joiner by the calendar month (joined the 27th, paid 27th to 31st in a
+    // 26th-to-25th cycle) puts them on the run that way.
+    if (joined && joined > range.to && lopOverrides[structure.userId] === undefined) continue;
     const employedFrom = joined && joined > range.from ? joined : undefined;
     const notYetEmployedDays = employedFrom ? Math.round((Date.parse(employedFrom) - Date.parse(range.from)) / 86_400_000) : 0;
     const salaryFor = (p: string, from?: string) => calculateSalaryStructure({
