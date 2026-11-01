@@ -36,6 +36,9 @@ const RULES: Rule[] = [
   // Payroll
   { path: /^\/admin\/payroll\/org-setup/, read: ['payschedule', 'taxdetails', 'payruns'], write: ['payschedule', 'taxdetails'] },
   { path: /^\/admin\/payroll\/pay-heads/, read: ['payheads', 'templates', 'salarydetails', 'payruns', 'statutorycomponents'], write: ['payheads'] },
+  // The national statutory / income tax rows: read by anyone with payroll access (the services
+  // check that too); written only by a platform admin, which the service enforces.
+  { path: /^\/admin\/payroll\/(statutory-config|tds-config)/, read: ['payruns', 'salarydetails'], write: ['payruns', 'salarydetails'] },
   { path: /^\/admin\/payroll\/statutory-/, read: ['statutorycomponents', 'templates', 'salarydetails', 'payruns'], write: ['statutorycomponents'] },
   { path: /^\/admin\/payroll\/salary-templates\/preview/, read: ['templates', 'salarydetails'], write: ['templates', 'salarydetails'] },
   { path: /^\/admin\/payroll\/salary-templates/, read: ['templates', 'salarydetails', 'payruns'], write: ['templates'] },
@@ -50,6 +53,11 @@ const RULES: Rule[] = [
   { path: /^\/admin\/payroll\/reports/, read: ['payrolldash', 'payrollreports', 'payruns'] },
   { path: /^\/admin\/payroll\/runs/, read: ['payruns'], write: ['payruns'] },
   { path: /^\/admin\/payroll\/employees\/[^/]+\/tax-declaration/, read: ['salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
+  // Employees' investment proofs: payroll access only.
+  { path: /^\/admin\/payroll\/investment-proofs/, read: ['salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
+  // One person's flexible split, and the app's payroll switch and deadlines: payroll access only.
+  { path: /^\/admin\/payroll\/employees\/[^/]+\/flexible-split/, read: ['salarydetails', 'payruns'] },
+  { path: /^\/admin\/payroll\/employee-app-settings/, read: ['salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
   // Bank, PAN, UAN: anyone who can open the profile sees them masked; payroll access sees and edits them.
   { path: /^\/admin\/payroll\/employees\/[^/]+\/payment-details/, read: ['employees', 'salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
   { path: /^\/admin\/payroll/, read: ['payschedule', 'taxdetails', 'payheads', 'statutorycomponents', 'templates', 'payruns', 'salarydetails'], write: ['payruns'] },

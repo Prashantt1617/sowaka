@@ -14,6 +14,7 @@ import { faceIdSettingsOf } from '../models/face.model';
 import { supportRoleOf } from '../models/support.model';
 import { enabledGamesOf } from './game-catalog.service';
 import { placementsFeatureOf } from './placements.service';
+import { payrollAppEnabledFrom } from './employeePayroll.common';
 
 const defaultCompany = 'Sowaka';
 
@@ -423,6 +424,8 @@ async function toAuthUser(
     // their screens only there; the server refuses their routes elsewhere.
     features: {
       placements: placementsFeatureOf(company),
+      // Payroll in the app, once HR switches it on (PUT /admin/payroll/employee-app-settings).
+      payroll: payrollAppEnabledFrom(company?.payrollEmployee),
     },
   };
 }

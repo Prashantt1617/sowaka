@@ -3739,7 +3739,8 @@ class _PrivacyAndDataRow extends StatelessWidget {
       ),
       builder: (sheetContext) => SafeArea(
         top: false,
-        child: Padding(
+        // Scrolls on a short phone rather than running off the bottom.
+        child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(22, 14, 22, 24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -3789,8 +3790,9 @@ class _PrivacyAndDataRow extends StatelessWidget {
               const Text(
                 'Your account is created by your employer and closes when you '
                 'leave. To have it closed and your personal data deleted '
-                'sooner, email your HR team and support@getsowaka.com from '
-                'your work address. We confirm within 7 working days and '
+                'sooner, raise a ticket at the Support Desk (or email '
+                'support@getsowaka.com from your work address). We confirm '
+                'within 7 working days and '
                 'delete within 30 — except records your employer must keep by '
                 'law, such as attendance and payroll history, which are kept '
                 'for the statutory period and then removed.',
@@ -3799,6 +3801,11 @@ class _PrivacyAndDataRow extends StatelessWidget {
                   fontSize: 13.5,
                   height: 1.55,
                 ),
+              ),
+              const SizedBox(height: 8),
+              const RaiseTicketLink(
+                label: 'Ask to close my account',
+                about: 'Please close my Sowaka account and delete my personal data.',
               ),
               const SizedBox(height: 12),
               Text(

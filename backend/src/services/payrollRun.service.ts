@@ -35,11 +35,14 @@ import { attendanceCountsForPeriod, payrollDeductions, unpaidLeaveDeduction } fr
 import { payslipHtml } from './payslip-html';
 import { employeeCalendar, invalidateAttendanceSetup, joinedOn } from './attendance-report.service';
 import { companies } from '../config/db';
-import { declarationsFor, runTds, tdsConfigsFor, ytdFor } from './tds.service';
+import { declarationsFor, runTds, ytdFor } from './tds.service';
+import { requireTdsConfigs, statutoryConfigForPeriod } from './payrollConfig.service';
+import type { StatutoryConfig } from '../shared/payroll/statutory-config';
 import { fyOf, periodsAfter } from '../shared/payroll/tds';
 import { paidDaysResolver } from './paidDaysTemplate.service';
 import { addInto, billCategories, billsByComponent, ReimbursementTax, reimbursementTax, reimbursementsPaidBefore } from './reimbursementBills.service';
 import { decryptField, fieldKeyConfigured } from './fieldCrypto';
+import { splitAmountsFor, splitsByUser } from './employeePayroll.split';
 
 export class PayrollRunError extends Error {
   constructor(
@@ -194,6 +197,8 @@ async function buildRunPayslips(
   // One set of statutory settings for everyone, and who ESI already covers
   // this contribution period.
   const settings = await statutorySettingsFor(org);
+  // The FY's national figures: no row, no run (409).
+  const config = await statutoryConfigForPeriod(period);
   const esiCovered = await esiCoveredThisPeriod(org, period, structures.map((s) => s.userId));
   // The month's calendar, whenever a template pays by it — the report is the
   // slow part of a run.
@@ -214,9 +219,9 @@ async function buildRunPayslips(
   const employees = await users()
     .find({ userId: { $in: structures.map((s) => s.userId) } })
     .toArray();
-  // The TDS engine, when the org has switched it on and the FY has config rows.
+  // The TDS engine, when the org has switched it on: the FY's income tax rows, else 409.
   const { fy } = fyOf(period);
-  const tdsConfigs = settings.tds?.enabled ? await tdsConfigsFor(fy) : new Map();
+  const tdsConfigs = settings.tds?.enabled ? await requireTdsConfigs(fy) : new Map();
   const tdsOn = tdsConfigs.size > 0;
   const userIds = structures.map((s) => s.userId);
   const [ytd, declarations] = tdsOn ? await Promise.all([ytdFor(org, period, userIds), declarationsFor(org, fy, userIds)]) : [new Map(), new Map()];
@@ -234,6 +239,8 @@ async function buildRunPayslips(
     ? await Promise.all([reimbursementsPaidBefore(org, userIds, period), billsByComponent(billCats, userIds, period, range.end)])
     : [new Map<string, Map<string, number>>(), new Map<string, Map<string, number>>()];
   const employeeById = new Map(employees.map((e) => [e.userId, e]));
+  // Each person's flexible split (app › Payroll), month by month, over their structure's own values.
+  const splits = await splitsByUser(org, userIds);
 
   const now = new Date();
   const slips: Payslip[] = [];
@@ -261,7 +268,7 @@ async function buildRunPayslips(
       else resolvedComponents.push(runHead);
     }
 
-    const ruleSet = await resolveRuleSetCached(ruleSetCache, org, workStateOf(employee));
+    const ruleSet = await resolveRuleSetCached(ruleSetCache, org, workStateOf(employee), config);
     // Joined during this month: paid from the joining day, PF ceilings counted from it.
     const joined = joinedOn(employee);
     // Not employed yet in this period (a run made for an earlier one): no
@@ -275,9 +282,10 @@ async function buildRunPayslips(
     const salaryFor = (p: string, from?: string) => calculateSalaryStructure({
       monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
       payHeads: resolvedComponents,
-      componentValues: { ...(structure.componentValues ?? {}), ...amounts },
+      componentValues: { ...(structure.componentValues ?? {}), ...splitAmountsFor(splits.get(structure.userId), p), ...amounts },
       balancingComponentCode: template.balancingComponentCode,
       ruleSet,
+      config,
       month: Number(p.slice(5, 7)),
       period: p,
       bonusCategory: structure.bonusCategory,
@@ -323,6 +331,7 @@ async function buildRunPayslips(
       overtimePaise,
       reimbursementsPaise: periodInputs.reimbursementsPaise,
       ruleSet,
+      config,
       month: range.month,
       statutory: structure.statutory,
       settings,
@@ -339,6 +348,7 @@ async function buildRunPayslips(
       const declaration = declarations.get(structure.userId);
       const futureTaxable = taxableAfterMealExemption(
         base.earnings.filter((l) => !l.oneTime).map((l) => ({ taxable: l.taxable, componentType: l.componentType, amountPaise: l.monthlyPaise })),
+        config.mealCard.exemptMonthlyPaise,
       );
       // The months still to come on each month's own structure (a PF ceiling change moves the balance), as Zoho projects;
       // their salary reimbursements count as taxable (no bills for them yet).
@@ -346,7 +356,7 @@ async function buildRunPayslips(
         lines.filter((l) => catalogByCode.get(l.code)?.taxable !== false).reduce((t, l) => t + l.monthlyPaise, 0);
       const futureTaxablePaise = periodsAfter(period).reduce((t, p) => {
         const later = salaryFor(p);
-        return t + projectedTaxable(later) + taxableReimb(later.reimbursements ?? []);
+        return t + projectedTaxable(later, config.mealCard.exemptMonthlyPaise) + taxableReimb(later.reimbursements ?? []);
       }, 0);
       // This year's reimbursements so far less the bills approved so far: a late bill lowers the tax from now on.
       reimbTax = reimbursementTax(addInto(new Map(reimbPaidBefore.get(structure.userId) ?? []), slip.reimbursementLines), bills.get(structure.userId), catalogByCode);
@@ -580,18 +590,51 @@ async function slipsForDisplay(org: string, slips: (Payslip & { _id?: ObjectId }
  * each came from. Only approved or paid runs: a draft or a run awaiting
  * approval is still being worked on and is never shown to the employee.
  */
-export async function myPayslips(userId: string) {
+export async function myPayslips(userId: string, limit = MY_PAYSLIPS) {
   const all = await payslips().find({ userId }).sort({ period: -1, createdAt: -1 }).limit(60).toArray();
   const runIds = [...new Set(all.map((s) => s.runId))].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
   const runs = runIds.length ? await payrollRuns().find({ _id: { $in: runIds }, status: { $in: RELEASED } }).toArray() : [];
   const runById = new Map(runs.map((run) => [run._id.toHexString(), run as StoredRun]));
-  const slips = all.filter((s) => runById.has(s.runId)).slice(0, MY_PAYSLIPS);
+  const slips = all.filter((s) => runById.has(s.runId)).slice(0, Math.min(Math.max(1, Math.floor(limit) || MY_PAYSLIPS), 24));
   if (slips.length === 0) return { company: null, payslips: [] };
   const [shown, company] = await Promise.all([slipsForDisplay(slips[0].org, slips, true), companyOf(slips[0].org)]);
   return {
     company,
     payslips: slips.map((s, i) => ({ run: runView(runById.get(s.runId)!), payslip: shown[i] })),
   };
+}
+
+/** One of the signed-in person's released payslips, as the list shows it. */
+export async function myPayslip(userId: string, payslipId: string) {
+  const slip = await ownedPayslip(userId, payslipId);
+  const [run, shown, company] = await Promise.all([
+    payrollRuns().findOne({ _id: new ObjectId(slip.runId) }),
+    slipsForDisplay(slip.org, [slip], true),
+    companyOf(slip.org),
+  ]);
+  return { company, run: runView(run as StoredRun), payslip: shown[0] };
+}
+
+/** The person's released payslip for a month, if there is one (the newest run's). */
+export async function myReleasedPayslipFor(userId: string, period: string) {
+  const slips = await payslips().find({ userId, period }).sort({ createdAt: -1 }).toArray();
+  for (const slip of slips) {
+    if (!ObjectId.isValid(slip.runId)) continue;
+    const run = await payrollRuns().findOne({ _id: new ObjectId(slip.runId), status: { $in: RELEASED } }, { projection: { _id: 1 } });
+    if (run) return slip;
+  }
+  return null;
+}
+
+/** The person's latest released payslip before a month, for an estimate's income tax. */
+export async function myLatestReleasedPayslipBefore(userId: string, period: string) {
+  const slips = await payslips().find({ userId, period: { $lt: period } }).sort({ period: -1, createdAt: -1 }).limit(6).toArray();
+  for (const slip of slips) {
+    if (!ObjectId.isValid(slip.runId)) continue;
+    const run = await payrollRuns().findOne({ _id: new ObjectId(slip.runId), status: { $in: RELEASED } }, { projection: { _id: 1 } });
+    if (run) return slip;
+  }
+  return null;
 }
 
 export async function myPayslipHtml(userId: string, payslipId: string): Promise<string> {
@@ -749,11 +792,12 @@ async function resolveRuleSetCached(
   cache: Map<string, ResolvedRuleSet>,
   org: string,
   state: string | undefined,
+  config: StatutoryConfig,
 ): Promise<ResolvedRuleSet> {
   const key = (state ?? '').trim().toLowerCase();
   const hit = cache.get(key);
   if (hit) return hit;
-  const resolved = await resolveRuleSet(org, state);
+  const resolved = await resolveRuleSet(org, state, config);
   cache.set(key, resolved);
   return resolved;
 }

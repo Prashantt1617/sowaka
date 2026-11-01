@@ -1,17 +1,17 @@
-// Rule-change proposals: the company's statutory settings against the rule set
-// Sowaka ships (per-state PT and LWF defaults, the minimum-wage floor, the EPF
-// ceiling). Each difference is a prepared action that applies the shipped rule
+// Rule-change proposals: the company's statutory settings against this FY's
+// national statutory row (per-state PT and LWF, the EPF ceiling), which HR
+// maintains under Payroll › Statutory & tax settings. Each difference is a prepared action that applies the shipped rule
 // through the statutory services; Undo puts the old value back. Payroll only.
 import { statutoryRules } from '../../config/db';
-import { DEFAULT_BONUS, DEFAULT_STATE_RULES, upsertStateRule } from '../../services/statutory.service';
+import { upsertStateRule } from '../../services/statutory.service';
+import { statutoryConfigForPeriod } from '../../services/payrollConfig.service';
+import { stateDefaultsOf } from '../../shared/payroll/statutory-config';
 import { getStatutoryOverview, statutorySettingsFor, updateStatutorySettings } from '../../services/statutorySettings.service';
-import { EPF_CEILING_SCHEDULE, LwfRule, PtRule } from '../../models/statutoryRule.model';
+import { LwfRule, PtRule } from '../../models/statutoryRule.model';
 import { MinWageRow } from '../../models/statutorySettings.model';
 import { defineTools, rupees, str, SuwiContext } from '../tools';
 import { defineExecutor, propose } from '../proposals';
 
-/** When the shipped rule set was last reviewed; the monthly cloud check updates the rules themselves. */
-export const RULE_SET_DATE = '2026-10-01';
 
 const title = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -38,34 +38,35 @@ interface Diff {
     | { kind: 'min_wages'; state: string; rows: MinWageRow[]; before: Record<string, MinWageRow[]> };
 }
 
-/** Everything that differs between this company's settings and the shipped rule set. */
-export async function statutoryDiffs(ctx: SuwiContext): Promise<{ diffs: Diff[]; notes: string[]; states: string[] }> {
+/** Everything that differs between this company's settings and this FY's statutory row. */
+export async function statutoryDiffs(ctx: SuwiContext): Promise<{ diffs: Diff[]; notes: string[]; states: string[]; fy: string }> {
   const overview = await getStatutoryOverview(ctx.userId);
   const settings = await statutorySettingsFor(ctx.org);
+  const cfg = await statutoryConfigForPeriod(ctx.today.slice(0, 7));
+  const source = `the FY ${cfg.fy} statutory settings`;
   const diffs: Diff[] = [];
   const notes: string[] = [];
   for (const state of overview.states) {
     const key = state.toLowerCase();
-    const shipped = DEFAULT_STATE_RULES[key];
+    const shipped = stateDefaultsOf(cfg, key);
     const stored = await statutoryRules().findOne({ org: ctx.org, state: key });
-    if (!shipped) { notes.push(`${title(state)}: Sowaka ships no PT or LWF rule for this state, so whatever is set is used as is.`); continue; }
+    if (settings.bonus.enabled && !(settings.bonus.minWages[key]?.length)) {
+      notes.push(`${title(state)}: Statutory Bonus is on but no minimum wages are set for this state, so it is worked out on Basic alone. Enter the state's notified minimum wages in Statutory Components.`);
+    }
+    if (!shipped) { notes.push(`${title(state)}: ${source} have no PT or LWF rule for this state, so whatever is set is used as is.`); continue; }
     if (stored?.pt && !same(stored.pt, shipped.pt)) {
-      diffs.push({ key: `pt:${key}`, title: `${title(state)} PT: ${shipped.pt ? `Sowaka's slabs from ${RULE_SET_DATE}` : 'no professional tax in the shipped rules'}`, yours: ptSummary(stored.pt), shipped: ptSummary(shipped.pt), why: 'The slabs your run uses were edited by hand and no longer match the rule set Sowaka maintains for this state.', apply: { kind: 'state_rule', state: key, field: 'pt', value: shipped.pt as PtRule, before: stored.pt } });
+      diffs.push({ key: `pt:${key}`, title: `${title(state)} PT: ${shipped.pt ? `the slabs in ${source}` : `no professional tax in ${source}`}`, yours: ptSummary(stored.pt), shipped: ptSummary(shipped.pt), why: `The slabs your run uses were edited by hand and no longer match ${source} for this state.`, apply: { kind: 'state_rule', state: key, field: 'pt', value: shipped.pt as PtRule, before: stored.pt } });
     }
     if (stored?.lwf && !same(stored.lwf, shipped.lwf)) {
-      diffs.push({ key: `lwf:${key}`, title: `${title(state)} LWF: ${shipped.lwf ? `Sowaka's rule from ${RULE_SET_DATE}` : 'no LWF in the shipped rules'}`, yours: lwfSummary(stored.lwf), shipped: lwfSummary(shipped.lwf), why: 'The LWF amounts or months your run deducts were edited by hand and differ from the rule set Sowaka maintains.', apply: { kind: 'state_rule', state: key, field: 'lwf', value: shipped.lwf as LwfRule, before: stored.lwf } });
+      diffs.push({ key: `lwf:${key}`, title: `${title(state)} LWF: ${shipped.lwf ? `the rule in ${source}` : `no LWF in ${source}`}`, yours: lwfSummary(stored.lwf), shipped: lwfSummary(shipped.lwf), why: `The LWF amounts or months your run deducts were edited by hand and differ from ${source}.`, apply: { kind: 'state_rule', state: key, field: 'lwf', value: shipped.lwf as LwfRule, before: stored.lwf } });
     }
     if (shipped.lwf && settings.lwfDisabledStates.includes(key)) {
       diffs.push({ key: `lwfon:${key}`, title: `${title(state)} LWF is switched off`, yours: 'LWF not deducted', shipped: lwfSummary(shipped.lwf), why: `${title(state)} levies Labour Welfare Fund; it is turned off in Statutory Components, so no one there contributes.`, apply: { kind: 'lwf_enable', state: key } });
     }
-    if (settings.bonus.enabled && !(settings.bonus.minWages[key]?.length)) {
-      const rows: MinWageRow[] = Object.entries(DEFAULT_BONUS.minWageByCategoryPaise).map(([category, minWagePaise]) => ({ category, minWagePaise, effectiveFrom: ctx.today.slice(0, 7) }));
-      diffs.push({ key: `minwage:${key}`, title: `${title(state)}: no minimum wages for the statutory bonus`, yours: 'none set', shipped: rows.map((r) => `${r.category.replace('_', '-')} ${rupees(r.minWagePaise)}`).join(', '), why: 'Statutory bonus is on, but with no minimum wage for this state it is worked out on Basic alone; the floor Sowaka ships keeps it at least at a minimum wage. That floor is Sowaka\'s neutral default, not the state\'s notified rates: check the state\'s current minimum wage notification before applying it.', apply: { kind: 'min_wages', state: key, rows, before: settings.bonus.minWages } });
-    }
   }
-  const ceiling = EPF_CEILING_SCHEDULE[EPF_CEILING_SCHEDULE.length - 1];
-  notes.push(`EPF wage ceiling: ${rupees(ceiling.ceilingPaise)} from ${ceiling.from}, applied automatically to every run; nothing to set.`);
-  return { diffs, notes, states: overview.states };
+  const ceiling = cfg.epf.wageCeilings[cfg.epf.wageCeilings.length - 1];
+  notes.push(`EPF wage ceiling: ${rupees(ceiling.ceilingPaise)} from ${ceiling.from}, from ${source}, applied to every run; nothing to set per company.`);
+  return { diffs, notes, states: overview.states, fy: cfg.fy };
 }
 
 defineTools(
@@ -73,14 +74,14 @@ defineTools(
     name: 'statutory_rule_check',
     area: 'payroll',
     payroll: true,
-    label: () => 'Statutory settings against the shipped rule set',
-    description: `Compare this company's statutory settings (PT slabs, LWF, minimum wages for bonus, EPF ceiling) with the rule set Sowaka ships (reviewed ${RULE_SET_DATE}) and list each difference as a proposal with a key. Use prepare_statutory_change with the key to prepare applying one.`,
+    label: () => 'Statutory settings against this year\'s national settings',
+    description: `Compare this company's statutory settings (PT slabs, LWF, minimum wages for bonus, EPF ceiling) with this FY's national statutory settings (Payroll › Statutory & tax settings) and list each difference as a proposal with a key. Use prepare_statutory_change with the key to prepare applying one.`,
     input_schema: { type: 'object', properties: {} },
     api: { method: 'GET', path: '/admin/payroll/statutory-settings' },
     async run(ctx) {
-      const { diffs, notes, states } = await statutoryDiffs(ctx);
+      const { diffs, notes, states, fy } = await statutoryDiffs(ctx);
       return {
-        data: { ruleSetDate: RULE_SET_DATE, workStates: states, proposals: diffs.map(({ key, title: t, yours, shipped, why }) => ({ key, title: t, yours, shipped, why })), notes, upToDate: diffs.length === 0 },
+        data: { fy, workStates: states, proposals: diffs.map(({ key, title: t, yours, shipped, why }) => ({ key, title: t, yours, shipped, why })), notes, upToDate: diffs.length === 0 },
         links: [{ label: 'Open Statutory Components', view: 'statutorycomponents' }],
       };
     },

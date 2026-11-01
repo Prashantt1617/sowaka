@@ -28,6 +28,9 @@ import { SalaryTemplateError } from '../services/salaryTemplate.service';
 import { PayrollRunError } from '../services/payrollRun.service';
 import { EmployeePaymentError } from '../services/employeePayment.service';
 import { TdsError } from '../services/tds.service';
+import { PayrollConfigError } from '../services/payrollConfig.service';
+import { TdsConfigIncompleteError } from '../shared/payroll/tds';
+import { EmployeePayrollError } from '../services/employeePayroll.common';
 import { PaidDaysTemplateError } from '../services/paidDaysTemplate.service';
 import { PayrollInputsError } from '../services/payroll-inputs.service';
 import { OrgSetupError } from '../services/orgSetup.service';
@@ -122,6 +125,9 @@ function getStatusCode(error: unknown): number {
     || error instanceof PayrollRunError
     || error instanceof EmployeePaymentError
     || error instanceof TdsError
+    || error instanceof PayrollConfigError
+    || error instanceof TdsConfigIncompleteError
+    || error instanceof EmployeePayrollError
     || error instanceof PaidDaysTemplateError
     || error instanceof PayrollInputsError
     || error instanceof OrgSetupError
