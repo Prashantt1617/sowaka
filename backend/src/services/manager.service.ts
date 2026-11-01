@@ -17,7 +17,7 @@ import { RecognitionNomination } from '../models/recognition.model';
 import { notifyUsers } from './notification.service';
 import { optional } from '../utils/optional';
 import { assignedParametersFor, assignedParametersForMany } from './kpi.service';
-import { currentPeriodFor, cycleInfoFor } from './cycle';
+import { currentPeriodFor, cycleInfoFor, previousPeriod } from './cycle';
 import { policiesForPeople, policyForUser, shiftPolicyViewOf } from './shift.service';
 import { sortLikeMongo } from './admin-scope';
 import { markForDay, minutesAfterShiftStart, DEFAULT_AWAY_REASON } from './attendance.service';
@@ -121,6 +121,18 @@ export interface ManagerTeamMemberView {
   managerName: string | null;
   orgChart: OrgChartNode[];
   documents: TeamMemberDocumentView[];
+  /**
+   * The cycle before this one, which is still open to review: whatever the
+   * viewer saved or sent for it, on that cycle's own parameters. Only on the
+   * viewer's direct reports, the only people they review; null elsewhere.
+   */
+  previousCycle: {
+    period: string;
+    feedbackStatus: 'pending' | 'saved' | 'sent';
+    score: number;
+    parameters: FeedbackParameter[];
+    extra: string;
+  } | null;
   /** Every sent review for this report, oldest first, for the growth timeline. */
   history: {
     period: string;
@@ -377,7 +389,9 @@ export async function getManagerWorkspace(
   // peer/manager fallback above.
   const recognitionCandidates = directReports;
   const period = cycle.period;
+  const lastPeriod = previousPeriod(period);
   const reportIds = reports.map((report) => report.userId);
+  const directReportIds = directReports.map((report) => report.userId);
   const reportEmployeeIds = reports
     .map((report) => report.employeeId)
     .filter((value): value is string => Boolean(value));
@@ -439,6 +453,8 @@ export async function getManagerWorkspace(
     policyByUser,
     onLeaveRows,
     myAssigned,
+    previousFeedback,
+    previousAssignedByUser,
   ] = await Promise.all([
       feedbackRecords().find({ managerUserId, employeeUserId: { $in: reportIds }, period }).toArray(),
       feedbackRecords()
@@ -503,6 +519,13 @@ export async function getManagerWorkspace(
         [] as Awaited<ReturnType<typeof assignedParametersFor>>,
         { userId: managerUserId },
       ),
+      // The cycle before this one stays open to review (HR, 1 Nov 2026), so
+      // a manager who missed it can still write it: what they saved or sent
+      // for it, and the parameters HR assigned for that cycle.
+      directReportIds.length
+        ? feedbackRecords().find({ managerUserId, employeeUserId: { $in: directReportIds }, period: lastPeriod }).toArray()
+        : Promise.resolve([]),
+      assignedParametersForMany(manager.org ?? '', directReportIds, lastPeriod),
     ]);
   // A report's punch record may be keyed by userId (self-service app punches)
   // or employeeId (SQL-imported punches) — check both, preferring employeeId
@@ -548,6 +571,9 @@ export async function getManagerWorkspace(
 
   const currentByEmployee = new Map(
     currentFeedback.map((record) => [record.employeeUserId, record]),
+  );
+  const previousCycleByEmployee = new Map(
+    previousFeedback.map((record) => [record.employeeUserId, record]),
   );
   const latestByEmployee = new Map(
     latestSent.map((value) => {
@@ -633,6 +659,21 @@ export async function getManagerWorkspace(
         current?.parameters,
       ),
       extra: current?.extra ?? '',
+      previousCycle: report.managerUserId === manager.userId && report.userId !== manager.userId
+        ? (() => {
+            const record = previousCycleByEmployee.get(report.userId);
+            return {
+              period: lastPeriod,
+              feedbackStatus: record?.status ?? 'pending',
+              score: Number((record?.overallScore ?? 0).toFixed(1)),
+              parameters: reconcileParameters(
+                previousAssignedByUser.get(report.userId) ?? [],
+                record?.parameters,
+              ),
+              extra: record?.extra ?? '',
+            };
+          })()
+        : null,
       todayStatus: todaysRecord?.punchIn ? 'present' : 'not_punched_in',
       birthday: report.birthday ? report.birthday.toISOString().slice(0, 10) : null,
       photoUrl: (await resolveProfilePhoto(report)) ?? null,
@@ -767,10 +808,22 @@ export async function getManagerWorkspace(
   };
 }
 
+/** The shortest comment a sent review may carry on each parameter. */
+export const FEEDBACK_NOTE_MIN = 75;
+
 export async function upsertFeedback(
   managerUserId: string,
   employeeUserId: string,
-  input: { status: string; parameters: unknown; extra?: string },
+  input: {
+    status: string;
+    parameters: unknown;
+    extra?: string;
+    /**
+     * The cycle the review is for: this one (the default) or the one before
+     * it, which stays open until this one closes. Nothing older.
+     */
+    period?: string;
+  },
 ) {
   const employee = await requireDirectReport(managerUserId, employeeUserId);
   const status = input.status.trim().toLowerCase() as FeedbackRecordStatus;
@@ -783,7 +836,7 @@ export async function upsertFeedback(
   // scoring someone against parameters nobody chose for them is worse than
   // blocking until HR decides.
   const org = employee.org ?? '';
-  const period = await currentPeriodFor(org);
+  const period = await reviewablePeriod(org, input.period);
   // A review already sent this cycle stays sent: editing it until the cycle
   // closes is allowed, but a later Save must not quietly pull it back to a
   // draft the employee can no longer see.
@@ -820,6 +873,14 @@ export async function upsertFeedback(
       throw new ManagerError(400, 'A score is required for every parameter before sending');
     }
     if (note.length > 1000) throw new ManagerError(400, 'Feedback note is too long');
+    // A sent review explains every score in words (HR asked for it on
+    // 31 Oct 2026): a draft may still be half written.
+    if (effectiveStatus === 'sent' && note.length < FEEDBACK_NOTE_MIN) {
+      throw new ManagerError(
+        400,
+        `Write at least ${FEEDBACK_NOTE_MIN} characters in each comment before sending. "${expected.title}" has ${note.length}.`,
+      );
+    }
     // Copy is snapshotted so the review still reads correctly if HR later
     // renames or archives the parameter.
     return {
@@ -901,6 +962,23 @@ export async function nominateForRecognition(
   // No notification: nominations are outside the notification spec until
   // recognition ships (Rules sheet, "Recognition").
   return { period, category, employeeUserId, reason };
+}
+
+/**
+ * The cycle a review may be written for: the live one, or the one before it
+ * (HR asked on 1 Nov 2026 that a month missed can still be reviewed in the
+ * next). Asked for nothing, the live one. Anything older, or in the future,
+ * is refused rather than quietly moved.
+ */
+export async function reviewablePeriod(org: string, asked?: string, now = new Date()): Promise<string> {
+  const current = await currentPeriodFor(org, now);
+  const wanted = String(asked ?? '').trim();
+  if (!wanted || wanted === current) return current;
+  if (wanted === previousPeriod(current)) return wanted;
+  throw new ManagerError(
+    400,
+    'Feedback can be given for this cycle or the previous one only.',
+  );
 }
 
 async function requireDirectReport(managerUserId: string, employeeUserId: string) {

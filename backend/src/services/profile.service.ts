@@ -1,4 +1,4 @@
-import { attendanceRecords, users } from '../config/db';
+import { attendanceRecords, feedbackRecords, users } from '../config/db';
 import type { User, UserLifecycleStatus } from '../models/user.model';
 import {
   groupActivity,
@@ -187,8 +187,10 @@ export async function getPointsActivity(
  * A colleague's profile as anyone in the company may see it: who they are,
  * their work details, where they sit and whether they are in today — the
  * month itself comes from `/attendance/team/:userId`, open to the whole
- * company. Nothing about their requests, reviews or documents — those come
- * with the viewer's own team, for the people who report to them.
+ * company. Nothing about their requests or documents — those come with the
+ * viewer's own team, for the people who report to them. Their sent reviews
+ * (Grow) come only when they are in the viewer's reporting line, at any
+ * depth: a skip-level manager reads the reviews their managers wrote.
  */
 export async function getPersonProfile(viewerUserId: string, personUserId: string) {
   const viewer = await requireViewer(viewerUserId);
@@ -218,7 +220,8 @@ export async function getPersonProfile(viewerUserId: string, personUserId: strin
   // Today's punches, matched as the team view matches them: by userId for app
   // punches, by employeeId for SQL-imported ones.
   const today = new Date().toISOString().slice(0, 10);
-  const [photo, todaysRecord] = await Promise.all([
+  const inChain = reportsUpTo(person, viewer.userId, byId);
+  const [photo, todaysRecord, sentReviews] = await Promise.all([
     users()
       .findOne(
         { userId: person.userId },
@@ -235,7 +238,16 @@ export async function getPersonProfile(viewerUserId: string, personUserId: strin
       },
       { projection: { _id: 0, punchIn: 1, punchOut: 1 } },
     ),
+    inChain
+      ? feedbackRecords()
+          .find({ employeeUserId: person.userId, status: 'sent' }, { projection: { _id: 0, period: 1, overallScore: 1, parameters: 1, sentAt: 1, updatedAt: 1, managerUserId: 1 } })
+          .sort({ period: 1, sentAt: 1 })
+          .toArray()
+      : Promise.resolve([]),
   ]);
+  // One review per cycle, whoever wrote it (a manager change mid-cycle can
+  // leave two): the latest sent.
+  const byPeriod = new Map(sentReviews.map((record) => [record.period, record]));
 
   return {
     userId: person.userId,
@@ -258,6 +270,18 @@ export async function getPersonProfile(viewerUserId: string, personUserId: strin
     punchOut: todaysRecord?.punchOut ? todaysRecord.punchOut.toISOString() : null,
     // Walked over the whole org, as the workspace draws the team's charts.
     orgChart: buildOrgChart(person, byId),
+    ...(inChain
+      ? {
+          history: [...byPeriod.values()].map((record) => ({
+            period: record.period,
+            overallScore: Number((record.overallScore ?? 0).toFixed(1)),
+            parameters: record.parameters,
+            sentAt: record.sentAt ?? record.updatedAt,
+            // Who wrote it: their manager, not the viewer, two levels up.
+            managerName: byId.get(record.managerUserId)?.name ?? null,
+          })),
+        }
+      : {}),
   };
 }
 

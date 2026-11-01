@@ -516,12 +516,16 @@ class ManagerApiService {
     required FeedbackStatus status,
     required List<FeedbackParam> params,
     required String extra,
+    /// The cycle the review is for, when it is not the live one: the server
+    /// accepts the previous cycle too.
+    String? period,
   }) async {
     await _request(
       'PUT',
       '/manager/feedback/${member.userId}',
       body: {
         'status': status.name,
+        'period': ?period,
         'parameters': params
             .map(
               (param) => {

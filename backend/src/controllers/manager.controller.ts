@@ -71,6 +71,8 @@ export async function saveManagerFeedback(req: Request, res: Response, next: Nex
         status: String(req.body.status ?? ''),
         parameters: req.body.parameters,
         extra: req.body.extra == null ? undefined : String(req.body.extra),
+        // Absent from an app that predates it: the live cycle, as before.
+        period: req.body.period == null ? undefined : String(req.body.period),
       },
     );
     res.status(200).json({ success: true, feedback });
