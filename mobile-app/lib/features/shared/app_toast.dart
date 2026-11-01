@@ -34,6 +34,11 @@ void showAppToast(BuildContext context, String message) {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         duration: Duration(seconds: toDesk ? 6 : 3),
+        // Material drops an action wider than a quarter of the toast onto a
+        // row of its own and keeps 40% of the width empty beside the words,
+        // which on a 360-wide phone turned "Raise ticket" into a tall slab.
+        // Up to 40% it stays beside the message, on one line.
+        actionOverflowThreshold: 0.4,
         action: toDesk
             ? SnackBarAction(
                 label: 'Raise ticket',

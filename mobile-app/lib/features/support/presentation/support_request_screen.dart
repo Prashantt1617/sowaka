@@ -290,13 +290,29 @@ class _TopicField extends StatelessWidget {
             border: Border.all(color: SupportStyle.line),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Text(
-            topic?.label ?? '',
-            style: const TextStyle(
-              color: SupportStyle.inkStrong,
-              fontSize: 14,
-              height: 20 / 14,
-            ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  // Until one is picked the field says what it is for.
+                  topic?.label ?? 'Choose a type',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: topic == null
+                        ? const Color(0x80111827)
+                        : SupportStyle.inkStrong,
+                    fontSize: 14,
+                    height: 20 / 14,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 20,
+                color: Color(0xFF717171),
+              ),
+            ],
           ),
         ),
       ),
