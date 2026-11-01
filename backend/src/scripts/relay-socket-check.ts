@@ -156,7 +156,10 @@ async function main() {
     updatedAt: now,
   };
   await relayTeams().insertOne(team);
-  await relayItems().insertMany([1, 2, 3, 4].map(seedItem));
+  // A round is questionsPerRound items (five by default): fewer and it will not start.
+  await relayItems().insertMany(
+    Array.from({ length: RELAY_DEFAULT_CONFIG.questionsPerRound }, (_, i) => seedItem(i + 1)),
+  );
 
   const http = createServer();
   const io = new SocketServer(http, { transports: ['websocket'] });
@@ -177,8 +180,10 @@ async function main() {
 
   await startEvent(eventId);
   clients.forEach((socket) => socket.emit('relay:heartbeat'));
-  // long enough for every clue in the staggered item to have fired
-  await wait(14_000);
+  // long enough for every clue in the staggered item to have fired: the last
+  // one fires (hints - 1) intervals in, plus a few seconds' slack
+  const { hintsPerQuestion, hintIntervalSeconds } = RELAY_DEFAULT_CONFIG;
+  await wait(((hintsPerQuestion - 1) * hintIntervalSeconds + 4) * 1000);
 
   console.log('\nwhat arrived on each socket');
   const leader = latest('u0');
