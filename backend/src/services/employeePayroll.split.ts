@@ -22,7 +22,7 @@ import { fyEndPeriod, splitProblem } from '../shared/payroll/declaration';
 import { applyOverrides, resolveTemplateComponents } from '../shared/payroll/resolve';
 import { fyOf, taxOnIncome, TaxRegime } from '../shared/payroll/tds';
 import {
-  EmployeePayrollError, NOT_CONFIGURED, billsDueOn, dayInMonth, dayOf, deadlinesOf, fyLastDay, lockedPeriods, meOf, nextPeriod, parseFyParam,
+  EmployeePayrollError, NOT_CONFIGURED, askHr, billsDueOn, dayInMonth, dayOf, deadlinesOf, fyLastDay, lockedPeriods, meOf, nextPeriod, parseFyParam,
   payrollViewerOrgFor, periodOf,
 } from './employeePayroll.common';
 import { billCategories } from './reimbursementBills.service';
@@ -215,12 +215,14 @@ function parseAmounts(raw: unknown): Record<string, number> {
 
 async function proposal(userId: string, body: Record<string, unknown>, now: Date) {
   const ctx = await contextOf(userId);
-  if (ctx.components.length === 0) throw new EmployeePayrollError(409, 'Your salary has no flexible components to split');
+  if (ctx.components.length === 0) {
+    throw new EmployeePayrollError(409, 'Your salary has no flexible components, so there is nothing to split. If that looks wrong, ask HR.');
+  }
   const [window, deadlines] = await Promise.all([splitWindow(ctx.org, now), deadlinesOf(ctx.org)]);
   const billsDue = billsDueOn(splitFyOf(window, now), deadlines);
   const missing = splitMissing(ctx, window, billsDue);
   if (missing.length > 0 || ctx.poolPaise === null || window.effectiveFrom === null || window.effectiveTo === null || window.closesOn === null || billsDue === null) {
-    throw NOT_CONFIGURED(missing, 'HR has not finished setting up the flexible split yet');
+    throw NOT_CONFIGURED(missing, askHr('HR has not finished setting up the flexible split yet, so it can\'t be changed now'));
   }
   const given = parseAmounts(body.amounts);
   const splits = await flexibleSplits().find({ org: ctx.org, userId }, { projection: { _id: 0 } }).toArray();

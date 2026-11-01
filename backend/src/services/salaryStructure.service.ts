@@ -156,8 +156,9 @@ export async function previewSalaryStructure(
  * One person's breakup from a structure as given, for their own Payroll
  * screens (no admin check: the caller has already decided who may see it).
  */
-export async function computeStructureFor(org: string, userId: string, structure: SalaryStructure, employee?: User) {
-  return compute(org, userId, structure, employee);
+/** As the structure would pay in `period` ('YYYY-MM', default this month): that month's FY statutory row. */
+export async function computeStructureFor(org: string, userId: string, structure: SalaryStructure, employee?: User, period?: string) {
+  return compute(org, userId, structure, employee, undefined, period);
 }
 
 async function compute(
@@ -166,6 +167,7 @@ async function compute(
   structure: SalaryStructure,
   employeeArg?: User,
   catalogArg?: PayHead[],
+  periodArg?: string,
 ): Promise<{ computed: SalaryCalcResult; components: ReturnType<typeof applyOverrides>; template: SalaryTemplate }> {
   const employee = employeeArg ?? (await requireOrgEmployee(org, userId));
   if (!structure.salaryTemplateCode) {
@@ -173,8 +175,8 @@ async function compute(
   }
   // The template, the catalogue, the state's rules and the org's settings do
   // not depend on one another: asked for together, then used in the old order.
-  // Worked out for this month, on this FY's statutory row (409 when it has none).
-  const period = new Date().toISOString().slice(0, 7);
+  // Worked out for this month (or the pay month asked for), on its FY's statutory row (409 when it has none).
+  const period = periodArg ?? new Date().toISOString().slice(0, 7);
   const rules = statutoryConfigForPeriod(period).then((config) => Promise.all([resolveRuleSet(org, workStateOf(employee), config), statutorySettingsFor(org), config] as const));
   rules.catch(() => undefined); // any failure surfaces below, after the template check, as before
   const [templateR, catalogR] = await Promise.allSettled([

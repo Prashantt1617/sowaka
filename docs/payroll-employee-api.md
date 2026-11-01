@@ -69,19 +69,27 @@ on and does not lock anything.
 
 ### `GET /payroll/home`
 
-Query: `period` (optional, `YYYY-MM`, default this month).
+Query: `period` (optional, `YYYY-MM`, default the pay period holding today, by
+the company's `payroll_periods`: paying 26th to 25th, 28 Oct is in `"2026-11"`;
+a pay period that has not started is refused, 400).
 
 ```jsonc
 {
   "success": true,
   "appEnabled": true,                  // false: Payroll is off for the company; the body is only appEnabled, period, fy
-  "period": "2026-10",
+  "period": "2026-10",                 // the pay period the salary is for
   "fy": "2026-27",
-  "hasSalaryStructure": true,          // false: no structure assigned yet; salary is null
+  "payPeriod": { "period": "2026-10", "from": "2026-09-26", "to": "2026-10-25", "baseDays": 30 },   // null when HR's pay cycle is not usable
+  "hasSalaryStructure": true,          // false: no structure assigned yet; salary and salaryNotSetUp are null
+  "salaryNotSetUp": null,              // or { "notConfigured": true, "reason": "statutory_not_set_up" | "pay_period_not_set_up", "fy": "2026-27" | null,
+                                       //      "message": "… Ask HR." }: the pay cannot be worked out until HR sets this up; salary is null (no made-up figures)
   "salary": {
     "period": "2026-10",
-    "status": "estimate",              // "estimate" (worked out from the salary structure and attendance so far) | "final" (from the released payslip)
+    "status": "estimate",              // "estimate" (worked out from the salary structure and the pay period's attendance so far) | "final" (from the released payslip)
     "payslipId": null,                 // string when status is "final"
+    "periodFrom": "2026-09-26",        // the pay period's days (null on "final": they are on the run)
+    "periodTo": "2026-10-25",
+    "baseDays": 30,                    // loss of pay = gross ÷ baseDays × lopDays; on "final" the run's own; null if unknown
     "grossPaise": 12400000,            // gross before loss of pay
     "lopDays": 2,                      // may be a half: 1.5
     "lopPaise": 800000,                // from the earnings alone: overtime never offsets it
@@ -129,7 +137,16 @@ Query: `period` (optional, `YYYY-MM`, default this month).
   for a flexible head was rejected this FY; `inReview` is for the subtitle), `tax_regime`
   (regime not chosen yet and before the deadline), `investment_proofs` (old
   regime, something not uploaded or rejected, before the deadline).
+- `missingPunches` (and the `missing_punches` to-do) stay on the calendar
+  month, as the attendance calendar shows them, whatever the pay period.
+- A FY with no statutory row (`payroll_statutory_configs`) or a pay cycle that
+  does not make sense never fails home: `salaryNotSetUp` says so and the rest
+  of home is as usual. A released payslip is shown either way.
 - Errors: `401` not signed in; `409` the account has no company.
+- Every `409` from these routes says what to do; one the employee cannot fix
+  ends with "Ask HR." (or "…, ask HR."), which the app turns into a Support
+  Desk link. Setup errors from payroll itself (statutory or tax rows, pay
+  cycle) come back with `details.reason: "payroll_not_configured"`.
 
 ---
 

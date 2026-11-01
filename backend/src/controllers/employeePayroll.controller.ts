@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
 import { mySplit, reviewSplit, saveSplit, splitForHr } from '../services/employeePayroll.split';
 import { employeeAppSettingsForHr, setEmployeeAppSettingsForHr } from '../services/employeePayroll.settings';
-import { PAYROLL_APP_OFF, payrollAppEnabled } from '../services/employeePayroll.common';
+import { EmployeePayrollError, PAYROLL_APP_OFF, askHr, payrollAppEnabled } from '../services/employeePayroll.common';
 import {
   decideProofForHr, listProofsForHr, myDeclaration, myProofFile, myProofs, proofFileForHr, saveMyDeclaration, uploadMyProof,
 } from '../services/employeePayroll.declaration';
@@ -19,19 +19,35 @@ const handle = (fn: Handler) => async (req: Request, res: Response, next: NextFu
   }
 };
 
+/**
+ * As handle, for the employee's own routes. A 409 from payroll's setup (the
+ * FY's statutory or tax rows, the pay cycle, a salary template HR removed) is
+ * nothing the employee can fix: it says so and to ask HR, as the app's and the
+ * web's error lines show it.
+ */
+const mine = (fn: Handler) => handle(async (req) => {
+  try {
+    return await fn(req);
+  } catch (error) {
+    const e = error as { statusCode?: unknown; message?: unknown; details?: Record<string, unknown> };
+    if (error instanceof EmployeePayrollError || e?.statusCode !== 409 || typeof e.message !== 'string') throw error;
+    throw new EmployeePayrollError(409, askHr(e.message), { reason: 'payroll_not_configured', ...(e.details ?? {}) });
+  }
+});
+
 // —— the signed-in employee's own payroll ——
-export const payrollHomeHandler = handle(async (req) => myPayrollHome(callerId(req), req.query.period));
-export const missingPunchesHandler = handle(async (req) => myMissingPunches(callerId(req), req.query.period));
-export const getSplitHandler = handle(async (req) => ({ split: await mySplit(callerId(req)) }));
-export const reviewSplitHandler = handle(async (req) => ({ review: await reviewSplit(callerId(req), body(req)) }));
-export const saveSplitHandler = handle(async (req) => ({ split: await saveSplit(callerId(req), body(req)) }));
-export const getDeclarationHandler = handle(async (req) => ({ declaration: await myDeclaration(callerId(req), req.query.fy) }));
-export const saveDeclarationHandler = handle(async (req) => ({ declaration: await saveMyDeclaration(callerId(req), req.query.fy, body(req)) }));
-export const getProofsHandler = handle(async (req) => ({ proofs: await myProofs(callerId(req), req.query.fy) }));
-export const uploadProofHandler = handle(async (req) => ({
+export const payrollHomeHandler = mine(async (req) => myPayrollHome(callerId(req), req.query.period));
+export const missingPunchesHandler = mine(async (req) => myMissingPunches(callerId(req), req.query.period));
+export const getSplitHandler = mine(async (req) => ({ split: await mySplit(callerId(req)) }));
+export const reviewSplitHandler = mine(async (req) => ({ review: await reviewSplit(callerId(req), body(req)) }));
+export const saveSplitHandler = mine(async (req) => ({ split: await saveSplit(callerId(req), body(req)) }));
+export const getDeclarationHandler = mine(async (req) => ({ declaration: await myDeclaration(callerId(req), req.query.fy) }));
+export const saveDeclarationHandler = mine(async (req) => ({ declaration: await saveMyDeclaration(callerId(req), req.query.fy, body(req)) }));
+export const getProofsHandler = mine(async (req) => ({ proofs: await myProofs(callerId(req), req.query.fy) }));
+export const uploadProofHandler = mine(async (req) => ({
   item: await uploadMyProof(callerId(req), String(req.params.item ?? ''), req.query.fy, { amountPaise: body(req).amountPaise, file: req.file }),
 }));
-export const proofFileHandler = handle(async (req) => ({ url: await myProofFile(callerId(req), String(req.params.item ?? ''), req.query.fy) }));
+export const proofFileHandler = mine(async (req) => ({ url: await myProofFile(callerId(req), String(req.params.item ?? ''), req.query.fy) }));
 
 // —— HR ——
 export const hrListProofsHandler = handle(async (req) =>
