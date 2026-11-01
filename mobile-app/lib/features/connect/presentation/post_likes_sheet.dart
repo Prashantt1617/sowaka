@@ -5,6 +5,10 @@ part of 'connect_feed_screen.dart';
 // department for each person, latest like first. A row opens that person's
 // profile. It reads the list fresh each time it opens, and again whenever the
 // post's likes change while it is up.
+//
+// The same sheet is a contest entry's "Voted by" list: who voted for that
+// entry, A to Z, opened from its vote count and read again as its votes
+// change.
 
 /// Opens the likes list for [post] from wherever its like count is drawn.
 /// Needs the feed around it, for the bloc and the way to a profile.
@@ -24,15 +28,43 @@ Future<void> _openPostLikes(BuildContext context, ConnectPost post) async {
   );
 }
 
+/// Opens the "Voted by" list for one entry of contest [postId]. [bloc] and
+/// [onOpenPerson] are handed in: the entries page is a route of its own,
+/// not always under the feed.
+Future<void> _openEntryVoters(
+  BuildContext context, {
+  required ConnectBloc bloc,
+  required String postId,
+  required String entryId,
+  ValueChanged<String>? onOpenPerson,
+}) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    useSafeArea: true,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _PostLikesSheet(
+      bloc: bloc,
+      postId: postId,
+      entryId: entryId,
+      onOpenPerson: onOpenPerson,
+    ),
+  );
+}
+
 class _PostLikesSheet extends StatefulWidget {
   const _PostLikesSheet({
     required this.bloc,
     required this.postId,
+    this.entryId,
     this.onOpenPerson,
   });
 
   final ConnectBloc bloc;
   final String postId;
+
+  /// Set for a contest entry's "Voted by" list; null for the post's likes.
+  final String? entryId;
 
   /// Opens a profile. The sheet is its own route, outside the feed, so it is
   /// handed in rather than looked up. Null where the host cannot navigate.
@@ -92,9 +124,20 @@ class _PostLikesSheetState extends State<_PostLikesSheet> {
   ConnectPost? _postIn(ConnectState state) =>
       state.posts.where((item) => item.id == widget.postId).firstOrNull;
 
+  bool get _votes => widget.entryId != null;
+
+  /// The post's likes, or for "Voted by" the entry's votes and whether the
+  /// viewer's is among them.
   ({int count, bool liked})? _likeStateIn(ConnectState state) {
     final post = _postIn(state);
-    return post == null ? null : (count: post.likeCount, liked: post.liked);
+    if (post == null) return null;
+    if (!_votes) return (count: post.likeCount, liked: post.liked);
+    final entry = post.captionEntries
+        .where((item) => item.id == widget.entryId)
+        .firstOrNull;
+    return entry == null
+        ? null
+        : (count: entry.votes, liked: entry.votedByViewer);
   }
 
   Future<void> _load() async {
@@ -103,7 +146,10 @@ class _PostLikesSheetState extends State<_PostLikesSheet> {
     // retry shows the placeholder rows.
     if (_failed) setState(() => _failed = false);
     try {
-      final likes = await widget.bloc.fetchPostLikes(widget.postId);
+      final entryId = widget.entryId;
+      final likes = entryId == null
+          ? await widget.bloc.fetchPostLikes(widget.postId)
+          : await widget.bloc.fetchEntryVoters(widget.postId, entryId);
       if (!mounted || request != _request) return;
       setState(() => _likes = likes);
     } catch (_) {
@@ -160,10 +206,10 @@ class _PostLikesSheetState extends State<_PostLikesSheet> {
                   decoration: const BoxDecoration(
                     border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
                   ),
-                  child: const Text(
-                    'Likes',
+                  child: Text(
+                    _votes ? 'Voted by' : 'Likes',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Color(0xFF222222),
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -185,13 +231,21 @@ class _PostLikesSheetState extends State<_PostLikesSheet> {
     if (_failed && likes == null) {
       return _LikesMessage(
         controller: scrollController,
-        text: "Couldn't load likes.",
+        text: _votes ? "Couldn't load votes." : "Couldn't load likes.",
         action: TextButton(onPressed: _load, child: const Text('Retry')),
       );
     }
-    if (likes == null) return _LikesSkeleton(controller: scrollController);
+    if (likes == null) {
+      return _LikesSkeleton(
+        controller: scrollController,
+        label: _votes ? 'Loading votes' : 'Loading likes',
+      );
+    }
     if (likes.isEmpty) {
-      return _LikesMessage(controller: scrollController, text: 'No likes yet');
+      return _LikesMessage(
+        controller: scrollController,
+        text: _votes ? 'No votes yet' : 'No likes yet',
+      );
     }
     return ListView.builder(
       controller: scrollController,
@@ -294,9 +348,10 @@ class _LikesMessage extends StatelessWidget {
 
 /// Grey rows that pulse where the people will be, while the list loads.
 class _LikesSkeleton extends StatefulWidget {
-  const _LikesSkeleton({required this.controller});
+  const _LikesSkeleton({required this.controller, this.label = 'Loading likes'});
 
   final ScrollController controller;
+  final String label;
 
   @override
   State<_LikesSkeleton> createState() => _LikesSkeletonState();
@@ -317,7 +372,7 @@ class _LikesSkeletonState extends State<_LikesSkeleton> with SingleTickerProvide
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'Loading likes',
+      label: widget.label,
       child: AnimatedBuilder(
         animation: _pulse,
         builder: (context, _) {

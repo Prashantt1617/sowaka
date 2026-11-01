@@ -1436,12 +1436,23 @@ class _SmallEngagementButton extends StatelessWidget {
   }
 }
 
+/// Sends a contest entry: its words, the picture on a photo entry, the
+/// colleague named on a Most Likely one, and the colleagues tagged with "@"
+/// in the words. False when it did not go.
+typedef _SubmitEntry = Future<bool> Function(
+  String text,
+  String? photoPath,
+  String? taggedUserId,
+  List<String> mentionedUserIds,
+);
+
 /// Asks before an entry comes down: it may already hold votes, and deleting
-/// gives those up with the points they earned.
+/// gives those up with the points they earned. [onDelete] is given the
+/// entry's id, so the one asked about is the one that goes.
 Future<void> _confirmDeleteEntry(
   BuildContext context,
   ConnectCaptionEntry entry,
-  Future<void> Function()? onDelete, {
+  Future<void> Function(String entryId)? onDelete, {
   String noun = 'entry',
 }) async {
   if (onDelete == null) return;
@@ -1467,7 +1478,42 @@ Future<void> _confirmDeleteEntry(
       ],
     ),
   );
-  if (confirmed == true) await onDelete();
+  if (confirmed == true) await onDelete(entry.id);
+}
+
+/// An entry's vote count on the feed's card, which opens its "Voted by"
+/// list once it has votes. Needs the feed around it for the bloc.
+class _VoteCountTap extends StatelessWidget {
+  const _VoteCountTap({
+    required this.post,
+    required this.entry,
+    required this.child,
+  });
+
+  final ConnectPost post;
+  final ConnectCaptionEntry entry;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = _FeedScope.of(context);
+    if (scope == null || entry.votes == 0) return child;
+    return Semantics(
+      button: true,
+      label: 'See who voted',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _openEntryVoters(
+          context,
+          bloc: scope.bloc,
+          postId: post.id,
+          entryId: entry.id,
+          onOpenPerson: scope.onOpenPerson,
+        ),
+        child: Align(alignment: AlignmentDirectional.centerStart, child: child),
+      ),
+    );
+  }
 }
 
 /// The colour a tag bar takes: the podium's yellow, blue and mint, the muted
@@ -1508,13 +1554,11 @@ class _EngagementBody extends StatefulWidget {
   final VoidCallback onDelete;
 
   /// Sends the entry; false when it did not go.
-  final Future<bool> Function(
-    String text,
-    String? photoPath,
-    String? taggedUserId,
-  )?
-  onSubmitCaption;
-  final Future<void> Function()? onDeleteCaption;
+  final _SubmitEntry? onSubmitCaption;
+
+  /// Takes down one of the viewer's own entries; null (Most Likely's one
+  /// tag) takes the latest.
+  final Future<void> Function(String? entryId)? onDeleteCaption;
   final Future<void> Function(String entryId)? onVoteCaption;
 
   @override
@@ -1572,6 +1616,10 @@ class _EngagementBodyState extends State<_EngagementBody>
   /// Most Likely: the colleague picked from the suggestions.
   ConnectTeammate? _picked;
 
+  /// A photo or caption entry: the colleagues tagged with "@" in its words,
+  /// as a comment tags them.
+  late final _mentions = _CommentMentions(_answer);
+
   /// The suggestions live in the app's overlay rather than in the card, so
   /// they can hang over the content above the box. Painting them out of the
   /// card's bounds would look right but take no taps.
@@ -1602,7 +1650,12 @@ class _EngagementBodyState extends State<_EngagementBody>
   void initState() {
     super.initState();
     _answer.addListener(() {
-      if (!_isTag) return;
+      if (!_isTag) {
+        // An "@" opens the colleagues to tag; a space after a name, or
+        // moving off it, closes them.
+        if (_answering && mounted) setState(_syncPortal);
+        return;
+      }
       // Typing past a chosen name means they are looking for someone else.
       if (_picked != null && _query != _picked!.name.toLowerCase()) {
         _picked = null;
@@ -1610,7 +1663,7 @@ class _EngagementBodyState extends State<_EngagementBody>
       setState(_syncPortal);
     });
     _answerFocus.addListener(() {
-      if (_isTag) setState(_syncPortal);
+      if (mounted) setState(_syncPortal);
     });
     if (_isPhoto || _isTag) {
       _loop = AnimationController(
@@ -1790,7 +1843,10 @@ class _EngagementBodyState extends State<_EngagementBody>
       _answer.text.trim().replaceFirst(RegExp(r'^@+'), '').toLowerCase();
 
   void _syncPortal() {
-    final wanted = _answering && _answerFocus.hasFocus && _picked == null;
+    final wanted =
+        _answering &&
+        _answerFocus.hasFocus &&
+        (_isTag ? _picked == null : _mentions.query != null);
     if (wanted && !_portal.isShowing) {
       _portal.show();
     } else if (!wanted && _portal.isShowing) {
@@ -1814,6 +1870,46 @@ class _EngagementBodyState extends State<_EngagementBody>
         )
         .take(24)
         .toList();
+  }
+
+  /// The colleagues matching the "@" being typed in a photo or caption
+  /// entry, as the comment box offers them.
+  List<ConnectTeammate> get _mentionMatches {
+    final scope = _FeedScope.of(context);
+    if (scope == null) return const [];
+    return _mentions.matches(scope.people, viewerUserId: scope.viewerUserId);
+  }
+
+  /// A photo or caption entry's answer box, with the colleagues matching an
+  /// "@" floating above it, as Most Likely's box has them.
+  Widget _taggingField(Widget field) {
+    // Resolved here, under the feed: the overlay builds outside this
+    // subtree and cannot reach the directory itself.
+    final matches = _mentionMatches;
+    return OverlayPortal(
+      controller: _portal,
+      overlayChildBuilder: (_) {
+        if (matches.isEmpty) return const SizedBox.shrink();
+        return Positioned(
+          width: 227,
+          child: CompositedTransformFollower(
+            link: _link,
+            targetAnchor: Alignment.topLeft,
+            followerAnchor: Alignment.bottomLeft,
+            offset: const Offset(0, -6),
+            child: _ColleagueSuggestions(
+              people: matches,
+              onPick: (person) {
+                // The name goes in; the listener on the box closes the list.
+                _mentions.pick(person);
+                setState(_syncPortal);
+              },
+            ),
+          ),
+        );
+      },
+      child: CompositedTransformTarget(link: _link, child: field),
+    );
   }
 
   int get _pageCount {
@@ -1877,17 +1973,23 @@ class _EngagementBodyState extends State<_EngagementBody>
     } else if (text.isEmpty) {
       return;
     }
+    // The colleagues tagged with "@" whose names are still in the words.
+    final mentioned = _isTag
+        ? const <String>[]
+        : [for (final person in _mentions.mentionsIn(text)) person.userId];
     setState(() => _busy = true);
     try {
       final sent = await submit(
         _isTag ? '' : text,
         _isPhoto ? _photoPath : null,
         taggedUserId,
+        mentioned,
       );
       // An entry that did not go keeps what was written and the photo, for
       // another try; the feed has said why.
       if (!sent || !mounted) return;
       _answer.clear();
+      _mentions.clear();
       _answerFocus.unfocus();
       setState(() {
         _photoPath = null;
@@ -1905,7 +2007,7 @@ class _EngagementBodyState extends State<_EngagementBody>
     if (remove == null || _busy) return;
     setState(() => _busy = true);
     try {
-      await remove();
+      await remove(null);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -2191,14 +2293,16 @@ class _EngagementBodyState extends State<_EngagementBody>
         if (_answering)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: _AnswerField(
-              controller: _answer,
-              focusNode: _answerFocus,
-              hint: 'Type your answer...',
-              maxLength: 140,
-              busy: _busy,
-              enabled: widget.onSubmitCaption != null,
-              onSend: _submit,
+            child: _taggingField(
+              _AnswerField(
+                controller: _answer,
+                focusNode: _answerFocus,
+                hint: 'Type your answer... @ to tag',
+                maxLength: 140,
+                busy: _busy,
+                enabled: widget.onSubmitCaption != null,
+                onSend: _submit,
+              ),
             ),
           )
         else
@@ -2431,14 +2535,16 @@ class _EngagementBodyState extends State<_EngagementBody>
           ),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: _AnswerField(
-              controller: _answer,
-              focusNode: _answerFocus,
-              hint: 'Your story (optional)...',
-              maxLength: 200,
-              busy: _busy,
-              enabled: widget.onSubmitCaption != null,
-              onSend: _submit,
+            child: _taggingField(
+              _AnswerField(
+                controller: _answer,
+                focusNode: _answerFocus,
+                hint: 'Your story (optional), @ to tag...',
+                maxLength: 200,
+                busy: _busy,
+                enabled: widget.onSubmitCaption != null,
+                onSend: _submit,
+              ),
             ),
           ),
         ] else
@@ -2497,17 +2603,22 @@ class _EngagementBodyState extends State<_EngagementBody>
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                '${entry.votes} vote${entry.votes == 1 ? '' : 's'}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: _soraFont,
-                  fontSize: 14,
-                  height: 16.2 / 14,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -0.16,
-                  color: _EngagementColors.inkTertiary,
+              // The count opens who voted, as a like count opens the likes.
+              child: _VoteCountTap(
+                post: _post,
+                entry: entry,
+                child: Text(
+                  '${entry.votes} vote${entry.votes == 1 ? '' : 's'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: _soraFont,
+                    fontSize: 14,
+                    height: 16.2 / 14,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.16,
+                    color: _EngagementColors.inkTertiary,
+                  ),
                 ),
               ),
             ),

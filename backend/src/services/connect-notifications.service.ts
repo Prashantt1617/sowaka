@@ -357,6 +357,34 @@ export async function notifyMostLikelyTag(post: ConnectPost, taggedUserId: strin
   );
 }
 
+/**
+ * A colleague tagged with "@" in a photo or caption contest entry. Pushed at
+ * once, as a mention in a comment is, and only to someone who can see the
+ * contest.
+ */
+export async function notifyContestEntryMention(
+  post: ConnectPost,
+  entryId: string,
+  actor: User,
+  mentionedUserIds: string[],
+): Promise<number> {
+  const ids = mentionedUserIds.filter((id) => id && id !== actor.userId);
+  if (ids.length === 0) return 0;
+  const people = await users().find({ org: post.org, userId: { $in: ids } }).toArray();
+  const contest = String(post.body.title || post.body.task || 'the contest').trim();
+  return send(
+    people
+      .filter((person) => audienceAllows(post.audience, person))
+      .map((person) => ({
+        user: person,
+        copy: { title: `${actor.name} tagged you in their entry`, body: `See it in “${contest}”` },
+      })),
+    'contest_entry_mention',
+    { destination: 'connect_post', postId: post.id, postType: post.type, entryId },
+    actor.userId,
+  );
+}
+
 // ------------------------------------------------------------ interactions
 
 /** Distinct people who have commented, excluding one id. */

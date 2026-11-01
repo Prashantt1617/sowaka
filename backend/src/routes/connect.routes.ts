@@ -8,6 +8,7 @@ import {
   connectPersonPosts,
   connectPost,
   connectPostLikes,
+  captionEntryVoters,
   createPost,
   deletePost,
   listBlockedPeople,
@@ -60,6 +61,8 @@ connectRouter.post('/posts/:postId/report', reportPost);
 connectRouter.post('/posts/:postId/captions', uploadConnectPostMedia, submitCaption);
 connectRouter.delete('/posts/:postId/captions', deleteCaption);
 connectRouter.post('/posts/:postId/captions/vote', voteCaption);
+// The "Voted by" list on one entry: who voted for it, A-Z.
+connectRouter.get('/posts/:postId/captions/:entryId/voters', captionEntryVoters);
 connectRouter.get('/blocks', listBlockedPeople);
 connectRouter.post('/blocks', blockPerson);
 connectRouter.delete('/blocks/:userId', unblockPerson);

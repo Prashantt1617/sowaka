@@ -154,6 +154,22 @@ class ConnectApiService {
         .toList();
   }
 
+  /// Who voted for one contest entry, A to Z, for the "Voted by" list.
+  /// People the viewer has blocked are left out by the server.
+  Future<List<ConnectAuthor>> fetchEntryVoters(
+    String postId,
+    String entryId,
+  ) async {
+    final json = await _request(
+      'GET',
+      '/connect/posts/$postId/captions/${Uri.encodeComponent(entryId)}/voters',
+    );
+    return (json['voters'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(ConnectAuthor.fromJson)
+        .toList();
+  }
+
   /// The viewer's own custom audience lists, A to Z.
   Future<List<AudienceListSummary>> fetchAudienceLists() async {
     final json = await _request('GET', '/connect/audience-lists');
@@ -286,11 +302,13 @@ class ConnectApiService {
   /// A caption challenge sends plain JSON; a photo-story challenge sends
   /// multipart, because the entry carries a picture as well as the words.
   /// Most Likely sends no words at all — the entry is the colleague tagged.
+  /// [mentionedUserIds] are the colleagues tagged with "@" in [text].
   Future<ConnectPost> submitCaption(
     String postId,
     String text, {
     String? photoPath,
     String? taggedUserId,
+    List<String> mentionedUserIds = const [],
   }) async {
     if (photoPath == null) {
       final json = await _request(
@@ -299,6 +317,7 @@ class ConnectApiService {
         body: {
           'text': text,
           if (taggedUserId != null) 'taggedUserId': taggedUserId,
+          if (mentionedUserIds.isNotEmpty) 'mentionedUserIds': mentionedUserIds,
         },
       );
       return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
@@ -310,6 +329,10 @@ class ConnectApiService {
     request.headers['Authorization'] = 'Bearer ${session.token}';
     request.fields['text'] = text;
     if (taggedUserId != null) request.fields['taggedUserId'] = taggedUserId;
+    // A form field holds one string: the ids go as a JSON array.
+    if (mentionedUserIds.isNotEmpty) {
+      request.fields['mentionedUserIds'] = jsonEncode(mentionedUserIds);
+    }
     request.files.add(
       await http.MultipartFile.fromPath('entryPhoto', photoPath),
     );
@@ -332,9 +355,16 @@ class ConnectApiService {
     );
   }
 
-  /// Removes this viewer's own caption, and the votes it held with it.
-  Future<ConnectPost> deleteCaption(String postId) async {
-    final json = await _request('DELETE', '/connect/posts/$postId/captions');
+  /// Removes one of this viewer's own entries, and the votes it held with
+  /// it: [entryId], or without one (Most Likely's single tag) the latest.
+  Future<ConnectPost> deleteCaption(String postId, {String? entryId}) async {
+    final query = entryId == null
+        ? ''
+        : '?entryId=${Uri.encodeQueryComponent(entryId)}';
+    final json = await _request(
+      'DELETE',
+      '/connect/posts/$postId/captions$query',
+    );
     return ConnectPost.fromJson(json['post'] as Map<String, dynamic>);
   }
 

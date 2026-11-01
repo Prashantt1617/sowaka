@@ -8,7 +8,7 @@ import { User } from '../models/user.model';
 import { notifyUsers, removePostNotifications } from './notification.service';
 import { challengePointSource, recordPointChanges } from './points-ledger.service';
 import {
-  notifyContestVote, notifyMostLikelyTag, notifyPollVoted, notifyPostCommented, notifyPostLiked,
+  notifyContestEntryMention, notifyContestVote, notifyMostLikelyTag, notifyPollVoted, notifyPostCommented, notifyPostLiked,
   notifyPostPublished,
 } from './connect-notifications.service';
 import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
@@ -507,6 +507,38 @@ export const LIKERS_MAX = 500;
 export async function getConnectPostLikes(viewerUserId: string, postId: string) {
   const post = await requireVisiblePost(viewerUserId, postId);
   const ids = likersLatestFirst(post.likedBy, await blockedUserIdsFor(viewerUserId));
+  return listedPeople(ids, post);
+}
+
+/**
+ * Who voted for one entry of a contest, for the "Voted by" list. Shown to
+ * everyone who can see the contest, as a post's likes are; read as the entry
+ * is, so an entry by someone the viewer has blocked is not found, and anyone
+ * the viewer has blocked is left out of the list. A-Z by name: votes carry
+ * no time, and a moved vote keeps its old place in the map.
+ */
+export async function getCaptionEntryVoters(viewerUserId: string, postId: string, entryId: string) {
+  const post = await requireVisiblePost(viewerUserId, postId);
+  if (!isChallenge(post.type)) {
+    throw new ConnectError(400, 'That post does not take entries');
+  }
+  const blocked = new Set(await blockedUserIdsFor(viewerUserId));
+  const entry = (post.captionEntries ?? []).find((item) => item.id === entryId);
+  if (!entry || blocked.has(entry.userId)) throw new ConnectError(404, 'Entry not found');
+  const ids = Object.entries(post.captionVotes ?? {})
+    .filter(([voterId, votedFor]) => votedFor === entryId && voterId && !blocked.has(voterId))
+    .map(([voterId]) => voterId)
+    .slice(0, LIKERS_MAX);
+  const voters = await listedPeople(ids, post);
+  return voters.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * [ids] as rows for a list of people (likes, voters), in the order given:
+ * names and photos read live, and someone since removed keeps a name only
+ * where the post still carries one, else is left out.
+ */
+async function listedPeople(ids: string[], post: ConnectPost) {
   if (ids.length === 0) return [];
   const people = await users()
     .find({ userId: { $in: ids } })
@@ -786,6 +818,8 @@ export async function addCaptionEntry(
   textInput: string,
   photo?: ConnectMediaFile,
   taggedUserId?: string,
+  /** Colleagues tagged with "@" in the words of a photo or caption entry. */
+  mentionedUserIdsInput: string[] = [],
 ) {
   const post = await requireVisiblePost(viewerUserId, postId);
   if (!isChallenge(post.type)) {
@@ -859,6 +893,7 @@ export async function addCaptionEntry(
     throw new ConnectError(400, 'Entries must be a photo');
   }
 
+  const mentions = await entryMentions(post, viewerUserId, text, mentionedUserIdsInput);
   const uploaded = photo ? await storeConnectMediaMany(viewerUserId, [photo]) : [];
   const entry = {
     id: randomUUID(),
@@ -867,6 +902,7 @@ export async function addCaptionEntry(
     initials: initialsFor(viewer.name),
     text,
     ...(uploaded.length ? { photoObjectKey: uploaded[0].objectKey } : {}),
+    ...(mentions.length ? { mentions } : {}),
     createdAt: new Date(),
   };
   await connectPosts().updateOne(
@@ -885,7 +921,41 @@ export async function addCaptionEntry(
     );
   }
   announceChange(post, 'updated', viewerUserId);
+  if (mentions.length) {
+    inBackground('contest entry mention notification', () =>
+      notifyContestEntryMention(post, entry.id, viewer, mentions.map((person) => person.userId)),
+    );
+  }
   return viewPost(updated ?? post, viewerUserId);
+}
+
+/**
+ * The colleagues tagged with "@" in an entry's words, as a comment's are: in
+ * the contest's company, able to see it, still on the roster, never the
+ * writer, and only while "@Their Name" is still in the text - a tag deleted
+ * while typing is not a tag. At most ten.
+ */
+async function entryMentions(
+  post: ConnectPost,
+  writerUserId: string,
+  text: string,
+  mentionedUserIdsInput: string[],
+): Promise<{ userId: string; name: string }[]> {
+  if (!text) return [];
+  const ids = taggableWithin(
+    post.audience,
+    [...new Set(mentionedUserIdsInput.filter((id) => typeof id === 'string' && id && id !== writerUserId))],
+  ).slice(0, 10);
+  if (ids.length === 0) return [];
+  const people = await users()
+    .find(
+      { userId: { $in: ids }, org: post.org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } },
+      { projection: { _id: 0, userId: 1, name: 1 } },
+    )
+    .toArray();
+  return people
+    .filter((person) => person.name && text.includes(`@${person.name}`))
+    .map((person) => ({ userId: person.userId, name: person.name }));
 }
 
 /**
@@ -960,6 +1030,12 @@ export async function removeCaptionEntry(viewerUserId: string, postId: string, e
       userId: pointsRecipient(mine), org: post.org, delta: -refund,
       source: challengePointSource(post.type), reason: 'entry_removed', refId: post.id,
     }]);
+  }
+  if (mine.mentions?.length) {
+    // The people it tagged are not sent to an entry that is gone.
+    inBackground('contest entry mention cleanup', () =>
+      notifications().deleteMany({ 'data.postId': postId, 'data.entryId': mine.id }),
+    );
   }
   announceChange(post, 'updated', viewerUserId);
   return viewPost(updated ?? post, viewerUserId);
@@ -1653,6 +1729,9 @@ async function viewPost(
             points: votesFor * pointsPerVote,
             votedByViewer: votes[viewerUserId] === entry.id,
             isMine: entry.userId === viewerUserId,
+            // Who the words tag with "@", so the app can link their names.
+            // Absent when nobody is tagged, as on a comment.
+            ...(entry.mentions?.length ? { mentions: entry.mentions } : {}),
           };
         }),
     );
