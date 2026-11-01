@@ -7,7 +7,9 @@
  */
 import { attendanceOverrides, payrollRuns, users } from '../config/db';
 import { AttendanceOverride, HR_DAY_STATUSES, HrDayStatus } from '../models/attendance.model';
-import { invalidateAttendanceReport } from './attendance-report.service';
+import { invalidateAttendanceReport, joinedOn } from './attendance-report.service';
+import { payrollPeriodHolding } from './payroll-inputs.service';
+import { todayIso } from './shift.service';
 
 export class AttendanceOverrideError extends Error {
   constructor(public readonly statusCode: number, message: string) {
@@ -38,29 +40,35 @@ async function adminAndEmployee(adminUserId: string, userId: string) {
   }
   const [admin, employee] = await Promise.all([
     users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1, name: 1 } }),
-    users().findOne({ userId }, { projection: { _id: 0, org: 1, userId: 1 } }),
+    users().findOne({ userId }, { projection: { _id: 0, org: 1, userId: 1, joiningDate: 1 } }),
   ]);
   if (!admin?.org) throw new AttendanceOverrideError(403, 'No organisation on this account');
   if (!employee) throw new AttendanceOverrideError(404, 'Employee not found');
   if (employee.org !== admin.org) throw new AttendanceOverrideError(403, 'This employee belongs to another organisation');
-  return { org: admin.org, adminName: admin.name };
+  return { org: admin.org, adminName: admin.name, joined: joinedOn(employee) };
 }
 
 /**
- * The current month, or an earlier month whose payroll run is still open (a
- * draft, or one submitted before runs were final), so HR can settle the days a
- * run pays from. Once that month's run is submitted, its days stay as paid.
+ * The current month or pay period, or an earlier one whose payroll run is
+ * still open (a draft, or one submitted before runs were final), so HR can
+ * settle the days a run pays from. Once that run is submitted, its days stay
+ * as paid. A run pays the dates kept on it (a company paying 26th to 25th);
+ * a run made before runs kept them paid its calendar month.
  */
 async function checkDate(workDate: string, org: string) {
   if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(workDate)) {
     throw new AttendanceOverrideError(400, 'The day must be YYYY-MM-DD');
   }
   const month = workDate.slice(0, 7);
-  const finished = await payrollRuns().findOne({ org, period: month, status: { $in: ['approved', 'paid'] } }, { projection: { _id: 1 } });
-  if (finished) throw new AttendanceOverrideError(409, `Payroll for ${month} is submitted: its days can no longer be changed`);
+  const paying = { org, $or: [{ periodFrom: { $lte: workDate }, periodTo: { $gte: workDate } }, { periodFrom: { $exists: false }, period: month }] };
+  const finished = await payrollRuns().findOne({ ...paying, status: { $in: ['approved', 'paid'] } }, { projection: { _id: 1, period: 1 } });
+  if (finished) throw new AttendanceOverrideError(409, `Payroll for ${finished.period} is submitted: its days can no longer be changed`);
   if (month === currentMonthIst()) return;
-  const open = month < currentMonthIst() && await payrollRuns().findOne({ org, period: month, status: { $in: ['draft', 'pending_approval'] } }, { projection: { _id: 1 } });
-  if (!open) throw new AttendanceOverrideError(400, 'Only the current month, or a month whose payroll run is still open, can be corrected');
+  const today = todayIso();
+  const current = await payrollPeriodHolding(org, today);
+  if (current && current.from <= workDate && workDate <= current.to) return;
+  const open = workDate < today && await payrollRuns().findOne({ ...paying, status: { $in: ['draft', 'pending_approval'] } }, { projection: { _id: 1 } });
+  if (!open) throw new AttendanceOverrideError(400, 'Only the current month or pay period, or one whose payroll run is still open, can be corrected');
 }
 
 export async function setAttendanceOverride(
@@ -74,8 +82,10 @@ export async function setAttendanceOverride(
     throw new AttendanceOverrideError(400, `Mark the day as one of: ${HR_DAY_STATUSES.join(', ')}`);
   }
   const note = typeof input.note === 'string' ? input.note.trim().slice(0, 200) : '';
-  const { org, adminName } = await adminAndEmployee(adminUserId, userId);
+  const { org, adminName, joined } = await adminAndEmployee(adminUserId, userId);
   await checkDate(workDate, org);
+  // Not theirs to mark: payroll counts the days before joining on its own.
+  if (joined && workDate < joined) throw new AttendanceOverrideError(400, `They joined on ${joined}: days before that cannot be marked`);
   const doc: AttendanceOverride = {
     org, userId, workDate, status,
     ...(note ? { note } : {}),

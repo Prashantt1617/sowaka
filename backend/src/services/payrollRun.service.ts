@@ -27,13 +27,13 @@ import {
   anyApprovedLeave,
   computeWorkingDays,
   getEmployeePeriodInputs,
-  parsePeriod,
+  payrollPeriodRange,
 } from './payroll-inputs.service';
 import type { PeriodRange } from './payroll-inputs.service';
 import { resolveRuleSet } from './statutory.service';
 import { attendanceCountsForPeriod, payrollDeductions, unpaidLeaveDeduction } from './deduction.service';
 import { payslipHtml } from './payslip-html';
-import { employeeCalendar } from './attendance-report.service';
+import { employeeCalendar, invalidateAttendanceSetup, joinedOn } from './attendance-report.service';
 import { companies } from '../config/db';
 import { declarationsFor, runTds, ytdFor } from './tds.service';
 import { requireTdsConfigs, statutoryConfigForPeriod } from './payrollConfig.service';
@@ -75,7 +75,7 @@ type Amounts = Record<string, Record<string, number>>;
  */
 export async function createRun(adminUserId: string, input: CreateRunInput) {
   const org = await requireAdminOrg(adminUserId);
-  const range = parsePeriod(input.period);
+  const range = await payrollPeriodRange(org, input.period);
 
   const existing = await payrollRuns().findOne({ org, period: input.period });
   if (existing && existing.status !== 'rejected') {
@@ -100,6 +100,7 @@ export async function createRun(adminUserId: string, input: CreateRunInput) {
     status: 'draft',
     employeeCount: slips.length,
     totals,
+    ...periodDates(range),
     createdByUserId: adminUserId,
     createdAt: now,
     updatedAt: now,
@@ -135,7 +136,7 @@ export async function recomputeRun(
   if (run.status !== 'draft') {
     throw new PayrollRunError(409, 'Only draft runs can be recomputed');
   }
-  const range = parsePeriod(run.period);
+  const range = await payrollPeriodRange(org, run.period);
   const runIdHex = run._id.toHexString();
   // What HR typed earlier on this run stays unless this call changes it
   // (a null clears it back to attendance / none).
@@ -163,7 +164,7 @@ export async function recomputeRun(
   });
   await payslips().deleteMany({ org, runId: runIdHex });
   await payslips().insertMany(slips);
-  return runView(await patchRun(run._id, { employeeCount: slips.length, totals: sumTotals(slips) }));
+  return runView(await patchRun(run._id, { employeeCount: slips.length, totals: sumTotals(slips), ...periodDates(range) }));
 }
 
 /**
@@ -207,8 +208,12 @@ async function buildRunPayslips(
   // Leave without pay is docked even where every day is paid, so a month with
   // any approved leave in it reads the calendar too; whether a leave is unpaid
   // is the calendar's to say, from the shift that covered the day.
-  const attendance = docksForAttendance || (await anyApprovedLeave(structures.map((s) => s.userId), range))
-    ? await attendanceCountsForPeriod(adminUserId, period)
+  const readsAttendance = docksForAttendance || (await anyApprovedLeave(structures.map((s) => s.userId), range));
+  // Graded on the roster as it is now: a joining date just changed moves which
+  // days are before joining, and payroll counts those itself below.
+  if (readsAttendance) invalidateAttendanceSetup(org);
+  const attendance = readsAttendance
+    ? await attendanceCountsForPeriod(adminUserId, period, range)
     : new Map();
 
   const employees = await users()
@@ -265,11 +270,15 @@ async function buildRunPayslips(
 
     const ruleSet = await resolveRuleSetCached(ruleSetCache, org, workStateOf(employee), config);
     // Joined during this month: paid from the joining day, PF ceilings counted from it.
-    const joined = employee.joiningDate ? new Date(employee.joiningDate).toISOString().slice(0, 10) : undefined;
-    // Not employed yet in this month (a run made for an earlier month): no payslip.
-    if (joined && joined > `${period}-${String(range.daysInMonth).padStart(2, '0')}`) continue;
-    const employedFrom = joined && joined.slice(0, 7) === period && joined > `${period}-01` ? joined : undefined;
-    const notYetEmployedDays = employedFrom ? Number(employedFrom.slice(8, 10)) - 1 : 0;
+    const joined = joinedOn(employee);
+    // Not employed yet in this period (a run made for an earlier one): no
+    // payslip, unless HR typed their loss of pay and they joined within the
+    // period's calendar month: a company whose files pay a joiner by the
+    // calendar month (joined the 27th, paid 27th to 31st in a 26th-to-25th
+    // cycle) puts them on the run that way.
+    if (joined && joined > range.to && (lopOverrides[structure.userId] === undefined || joined > calendarEnd(period))) continue;
+    const employedFrom = joined && joined > range.from ? joined : undefined;
+    const notYetEmployedDays = employedFrom ? Math.round((Date.parse(employedFrom) - Date.parse(range.from)) / 86_400_000) : 0;
     const salaryFor = (p: string, from?: string) => calculateSalaryStructure({
       monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
       payHeads: resolvedComponents,
@@ -299,8 +308,9 @@ async function buildRunPayslips(
     // The template's paid-leave allowance covers the first days docked — not
     // leave without pay, which it would otherwise turn back into paid leave.
     const allowance = paidDaysOn ? paidDays?.monthlyPaidLeaveDays ?? 0 : 0;
-    // Days before joining are not loss of pay but not paid either (attendance has no punches for them).
-    const attendanceLopDays = Math.min(Math.max(Math.max(0, docked.days - allowance) + unpaidLeave.days, notYetEmployedDays), workingDays);
+    // Days before joining are not paid either: attendance leaves them out, so
+    // they come on top of what it docks from the joining day on.
+    const attendanceLopDays = Math.min(Math.max(0, docked.days - allowance) + unpaidLeave.days + notYetEmployedDays, workingDays);
     const lopEnteredByHr = lopOverrides[structure.userId] !== undefined;
     const lopDays = lopEnteredByHr ? clampLop(lopOverrides[structure.userId], workingDays) : attendanceLopDays;
     // Overtime: what HR typed on the run, else the template's rule applied to
@@ -416,7 +426,8 @@ async function buildRunPayslips(
         ...(Object.keys(amounts).length ? { componentAmounts: amounts } : {}),
         ...(tds ? { tds } : {}),
         ...(reimbTax && reimbTax.paidPaise > 0 ? { reimbursementTax: { paidPaise: reimbTax.paidPaise, exemptPaise: reimbTax.exemptPaise, taxablePaise: reimbTax.taxablePaise } } : {}),
-        attendanceDeductions: [...docked.lines, ...unpaidLeave.lines],
+        // The days before joining as a line of their own, so the lines add up to the loss of pay.
+        attendanceDeductions: [...docked.lines, ...unpaidLeave.lines, ...(notYetEmployedDays > 0 ? [{ label: 'Before joining', count: notYetEmployedDays, days: notYetEmployedDays, trigger: 'absent' as const, every: 1, deductDays: 1 }] : [])],
         paidLeaveDaysApplied: Math.min(allowance, docked.days),
         payableDays: slip.payableDays,
         approvedLeaveDays: periodInputs.approvedLeaveDays,
@@ -873,10 +884,19 @@ export async function requireAdminOrg(adminUserId: string): Promise<string> {
   return admin.org;
 }
 
+/** The last day of a period's calendar month: a joiner after it is never on that run. */
+const calendarEnd = (period: string) => new Date(Date.UTC(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0)).toISOString().slice(0, 10);
+
+/** The pay dates a run was made for, kept on it so the dashboard can show them. */
+function periodDates(range: PeriodRange) {
+  return { periodFrom: range.from, periodTo: range.to, baseDays: range.baseDays };
+}
+
 function runView(run: StoredRun) {
   return {
     id: run._id.toHexString(),
     period: run.period,
+    ...(run.periodFrom ? { periodFrom: run.periodFrom, periodTo: run.periodTo, baseDays: run.baseDays } : {}),
     runType: run.runType,
     status: run.status,
     employeeCount: run.employeeCount,

@@ -136,7 +136,7 @@ async function main() {
     const notify = async (userIds: string[], input: { title: string; data?: Record<string, unknown> }) => void pushes.push({ userIds, title: input.title, data: input.data ?? {} });
     configurePoker({ now: () => clock.now, random: die, notify, houseDelayMs: 1000 });
     configurePokerRooms({ now: () => clock.now, random: die, notify, houseDelayMs: 1000 });
-    const people = Array.from({ length: 9 }, (_, i) => seedUser(i + 1));
+    const people = Array.from({ length: 12 }, (_, i) => seedUser(i + 1));
     await users().insertMany(people);
     await companies().insertOne({ id: ORG, name: 'Sowaka', enabledTabs: ['games'], enabledGames: ['speed-poker'] } as never);
     const now = new Date();
@@ -297,6 +297,67 @@ async function main() {
     check('and deals against them', start2.ok);
     await request(I, 'room:leave');
     check('the only person leaving closes the table', (await peekRoom(ORG, hostCode)) === null);
+
+    // ------------------------------------------------------------ big tables
+    console.log('big tables: eight seats, 1,000 chips, chat, watching');
+    for (const c of clients) await request(c, 'room:leave');
+    const classic = await request(clients[0], 'room:hello');
+    check('without the switch: six seats at 1,500', classic.ok && classic.data.big === false && classic.data.tables.seats === 6 && classic.data.tables.buyIn === 1500);
+    await companies().updateOne({ id: ORG }, { $set: { 'features.speedPokerBigTables': true } });
+    clock.now += 61_000; // the switch is read once a minute
+    // G's first socket closed in the reconnect check; G2 is the same person, back.
+    const seats8 = [clients[0], ...clients.slice(1, 6), G2, H];
+    const bigHello = await request(seats8[0], 'room:hello');
+    check('with it: eight seats at 1,000', bigHello.ok && bigHello.data.big === true && bigHello.data.tables.seats === 8 && bigHello.data.tables.buyIn === 1000);
+    const big = await request(seats8[0], 'room:host', {});
+    const bigCode = big.ok ? String(big.data.code) : '';
+    check('a new table is a big one', big.ok && big.data.max === 8 && big.data.buyIn === 1000 && big.data.big === true);
+    for (const c of seats8.slice(1)) await request(c, 'room:join', { code: bigCode });
+    await run('a full table of eight deals itself', async () => (await peekRoom(ORG, bigCode))?.status === 'playing', 1000, 20);
+    const dealt = await peekRoom(ORG, bigCode);
+    check('eight are dealt in at 1,000 each', !!dealt?.table && dealt.table.seats.length === 8 && dealt.table.config.startStack === 1000 && dealt.table.config.seats === 8);
+    const W = await open(people[9]);
+    const W2 = await open(people[10]);
+    const stranger = await open(people[11]);
+    clients.push(W, W2, stranger);
+    W.autoplay = false;
+    const ninth = await request(W, 'room:join', { code: bigCode });
+    check('a ninth cannot sit: the table is full', !ninth.ok && ninth.status === 409);
+    const listed = await request(W, 'room:list');
+    const row = listed.ok ? listed.data.rooms.find((r: { code: string }) => r.code === bigCode) : null;
+    check('the list says it can be watched', !!row && row.watchable === true && row.seatFree === false && row.seats === 8);
+    const watched = await request(W, 'room:watch', { code: bigCode });
+    check('they watch instead: the table, no seat', watched.ok && watched.data.watching === true && watched.data.table?.mySeat === null && watched.data.watchers.length === 1);
+    check('a watcher sees nobody\'s cards', watched.ok && (watched.data.table.street === 'done' || watched.data.table.seats.every((x: { cards: unknown }) => x.cards === null)));
+    await until(() => (W.room?.table?.handNo ?? 0) > 0);
+    check('and is sent the table as it moves', W.states > 0 && W.room?.watching === true);
+    const said = await request(W, 'room:chat', { text: '  good   luck\u0007 all  ' });
+    await until(() => (seats8[0].room?.chat ?? []).some((l) => l.userId === W.user.userId));
+    const line = seats8[0].room?.chat?.find((l) => l.userId === W.user.userId);
+    check('a watcher chats: the players see it, cleaned and marked', said.ok && line?.text === 'good luck all' && line.watching === true);
+    const reply = await request(seats8[1], 'room:chat', { text: 'x'.repeat(300) });
+    await until(() => (W.room?.chat ?? []).some((l) => l.userId === seats8[1].user.userId));
+    check('a player chats: 200 characters at most, and the watcher sees it', reply.ok && W.room?.chat?.find((l) => l.userId === seats8[1].user.userId)?.text.length === 200);
+    const empty = await request(seats8[0], 'room:chat', { text: '   ' });
+    check('an empty line is refused', !empty.ok && empty.status === 400);
+    const nobody = await request(stranger, 'room:chat', { text: 'hello?' });
+    check('someone at no table cannot chat', !nobody.ok && nobody.status === 404);
+    await request(W2, 'room:watch', { code: bigCode });
+    await request(W2, 'room:unwatch');
+    check('stopping watching takes them off the table', ((await peekRoom(ORG, bigCode))?.watchers ?? []).every((w) => w.userId !== W2.user.userId));
+    await request(seats8[7], 'room:leave');
+    await run('a seat frees when a player leaves and their hand is over', async () => {
+      const r = await peekRoom(ORG, bigCode);
+      return !!r?.table && r.table.seats.some((x) => x.left) && r.table.hand?.street !== undefined;
+    }, 1000, 10);
+    const sat = await request(W, 'room:join', { code: bigCode });
+    const afterSit = await peekRoom(ORG, bigCode);
+    check('the watcher takes the seat and stops watching', sat.ok && sat.data.watching === false && !!afterSit && afterSit.players.some((p) => p.userId === W.user.userId) && !(afterSit.watchers ?? []).some((w) => w.userId === W.user.userId));
+    await request(W2, 'room:watch', { code: bigCode });
+    W2.socket.close();
+    await until(async () => !((await peekRoom(ORG, bigCode))?.watchers ?? []).some((w) => w.userId === W2.user.userId));
+    check('a watcher whose app closes is dropped', !((await peekRoom(ORG, bigCode))?.watchers ?? []).some((w) => w.userId === W2.user.userId));
+    for (const c of [...seats8, W]) await request(c, 'room:leave');
   } finally {
     for (const c of clients) c.socket.close();
     closePokerRealtime();

@@ -52,8 +52,19 @@ const MAX_AMOUNT_PAISE = 100_000_000_000;
 
 export async function listSalaryTemplates(adminUserId: string) {
   const org = await requireAdminOrg(adminUserId);
-  const docs = await salaryTemplates().find({ org }).sort({ name: 1 }).toArray();
-  return docs.map(toView);
+  const [docs, structures, gone] = await Promise.all([
+    salaryTemplates().find({ org }).sort({ name: 1 }).toArray(),
+    // How many people each template pays: active salaries of people still here, as a run pays.
+    salaryStructures().find({ org, status: 'active' }, { projection: { _id: 0, userId: 1, salaryTemplateCode: 1 } }).toArray(),
+    users().distinct('userId', { org, lifecycleStatus: { $in: ['offboarded', 'terminated'] } }),
+  ]);
+  const left = new Set(gone);
+  const countOf = new Map<string, number>();
+  for (const s of structures) {
+    if (!s.salaryTemplateCode || left.has(s.userId)) continue;
+    countOf.set(s.salaryTemplateCode, (countOf.get(s.salaryTemplateCode) ?? 0) + 1);
+  }
+  return docs.map((doc) => ({ ...toView(doc), employeeCount: countOf.get(doc.code) ?? 0 }));
 }
 
 export async function getSalaryTemplate(adminUserId: string, code: string) {

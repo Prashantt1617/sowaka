@@ -24,6 +24,8 @@ export interface PokerTableConfig {
   durationMs: number;
   /** The pause after a hand, so everyone sees who won before the next deal. */
   handPauseMs: number;
+  /** The most it seats, drop-ins included: six unless the table says (a big room's eight). */
+  seats?: number;
 }
 
 export interface PokerSeat {
@@ -318,8 +320,11 @@ export interface PokerRoom {
   open: boolean;
   /** Each game's length, set by the host in the lobby: 10, 20 or 30. */
   minutes: number;
-  /** House players the host has added to fill seats (0 to 5). */
+  /** House players the host has added to fill seats (up to one fewer than the seats). */
   house: number;
+  /** Seats at the table and each game's chips: 8 and 1,000 where the company has Speed Poker's big tables, else 6 and 1,500 (rooms made before had neither). */
+  seats?: number;
+  buyIn?: number;
   /** Practice against the house: one person and house players. Leaving it (or reopening the game) ends it. */
   practice?: boolean;
   createdAt: number;
@@ -334,5 +339,27 @@ export interface PokerRoom {
   /** The game in play, or the one just finished (its standings), else null. */
   table: PokerTable | null;
   finishedAt: number | null;
+  /** The table's chat, newest last: what players and watchers said (the last few dozen lines). */
+  chat?: PokerChatLine[];
+  /** Colleagues watching the game without a seat; they can chat, and sit down when a seat frees. */
+  watchers?: PokerRoomWatcher[];
   version: number;
+}
+
+export interface PokerChatLine {
+  id: string;
+  userId: string;
+  name: string;
+  text: string;
+  at: number;
+  /** Said by someone watching, not playing. */
+  watching?: true;
+}
+
+export interface PokerRoomWatcher {
+  userId: string;
+  name: string;
+  photoUrl: string | null;
+  /** When they started watching (or came back): watchers gone this long are dropped. */
+  at: number;
 }

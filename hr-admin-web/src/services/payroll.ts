@@ -400,6 +400,8 @@ export type SalaryTemplateDTO = {
   id: string;
   name: string;
   code: string;
+  /** People on it, in the list only. */
+  employeeCount?: number;
   description?: string;
   components: SalaryTemplateComponent[];
   /** The monthly pool people on this template split among its flexible heads on the app; null: not set (required once it has flexible heads). */
@@ -523,6 +525,10 @@ export type RunTotals = {
 export type PayrollRunDTO = {
   id: string;
   period: string;
+  /** The days the run pays for, when the company's pay cycle is not the calendar month, and the base days salaries are spread over. */
+  periodFrom?: string;
+  periodTo?: string;
+  baseDays?: number;
   runType: string;
   status: RunStatus;
   employeeCount: number;

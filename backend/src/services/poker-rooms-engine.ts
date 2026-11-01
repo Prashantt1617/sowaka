@@ -1,5 +1,5 @@
-import type { PokerRoom, PokerRoomPlayer, PokerSeat } from '../models/poker.model';
-import { addSeat, advance as advanceTable, applyAction, leaveSeat, newTable, SEATS_MAX, viewFor as tableViewFor } from './poker-engine';
+import type { PokerChatLine, PokerRoom, PokerRoomPlayer, PokerRoomWatcher, PokerSeat } from '../models/poker.model';
+import { addSeat, advance as advanceTable, applyAction, leaveSeat, newTable, SEATS_CAP, viewFor as tableViewFor } from './poker-engine';
 import { houseMove, isHouse } from './poker-floor';
 import type { Random } from './poker-rules';
 
@@ -10,21 +10,24 @@ import type { Random } from './poker-rules';
  * what should be true now; the room service applies it under the store's
  * compare-and-set and sends each player their own view.
  *
- * A room seats two to six. The host deals a game when at least two are in
- * (house players count; a full room deals itself). A game is one table: 1,500
+ * A room seats two to six, at 1,500 chips each (a company with the big tables:
+ * up to eight, at 1,000). The host deals a game when at least two are in
+ * (house players count; a full room deals itself). A game is one table: its
  * chips each, blinds rising on a clock, to its time or until one player has
  * every chip. Someone who joins mid-game is dealt in from the next hand while
  * a seat is free; someone who leaves folds and is gone. After a game the host
  * can deal again (back to the lobby, chips reset). No event, no points.
+ * At a big table, colleagues can watch a game they have no seat at (a full
+ * table), everyone there can chat, and a watcher sits down when a seat frees.
  */
 
 export const ROOMS = {
   minPlayers: 2,
-  maxSeats: SEATS_MAX,
+  maxSeats: SEATS_CAP,
   /** Each game's length, in minutes: the host picks one in the lobby. */
   minutesOptions: [10, 20, 30] as readonly number[],
   minutes: 20,
-  maxHouse: 5,
+  maxHouse: 7,
   kickCooldownMs: 60_000,
   /** A host offline this long hands the role to the longest-present online player. */
   hostGoneMs: 30_000,
@@ -43,9 +46,25 @@ export const ROOMS = {
   hostWindowMs: 10 * 60_000,
   /** A practice room: you and this many house players, dealt at once. */
   practiceHouse: 3,
+  /** Chat lines kept on a room, and the longest one. */
+  chatKeep: 40,
+  chatMaxChars: 200,
+  watchersMax: 30,
+  /** A watcher not seen this long (their app closed without saying so) is dropped. */
+  watcherStaleMs: 2 * 60 * 60_000,
 } as const;
 
-export const HOUSE_NAMES = ['House Ace', 'House King', 'House Queen', 'House Jack', 'House Ten'];
+/** A table's size and chips: the big tables where the company has them, else the classic six. */
+export const TABLE_KINDS = { classic: { seats: 6, buyIn: 1500 }, big: { seats: 8, buyIn: 1000 } } as const;
+export type TableKind = keyof typeof TABLE_KINDS;
+export const seatsOf = (room: Pick<PokerRoom, 'seats'>) => room.seats ?? TABLE_KINDS.classic.seats;
+export const buyInOf = (room: Pick<PokerRoom, 'buyIn'>) => room.buyIn ?? TABLE_KINDS.classic.buyIn;
+/** House players fill every seat but the host's. */
+const houseMaxOf = (room: Pick<PokerRoom, 'seats'>) => Math.min(ROOMS.maxHouse, seatsOf(room) - 1);
+/** Big tables chat and can be watched; a classic room is as it was. */
+export const isBigTable = (room: Pick<PokerRoom, 'seats'>) => seatsOf(room) === TABLE_KINDS.big.seats;
+
+export const HOUSE_NAMES = ['House Ace', 'House King', 'House Queen', 'House Jack', 'House Ten', 'House Nine', 'House Eight'];
 export const houseSeat = (i: number) => ({ userId: `bot:${i + 1}`, name: HOUSE_NAMES[i] ?? `House ${i + 1}`, photoUrl: null, office: null });
 
 export class PokerRoomRuleError extends Error {
@@ -106,8 +125,9 @@ export function newRoom(
   org: string,
   host: Pick<PokerRoomPlayer, 'userId' | 'name' | 'photoUrl' | 'office'>,
   now: number,
-  options: { open?: boolean; house?: number } = {},
+  options: { open?: boolean; house?: number; kind?: TableKind } = {},
 ): PokerRoom {
+  const kind = TABLE_KINDS[options.kind ?? 'classic'];
   return {
     code,
     org,
@@ -116,7 +136,9 @@ export function newRoom(
     status: 'lobby',
     open: options.open !== false,
     minutes: ROOMS.minutes,
-    house: Math.max(0, Math.min(ROOMS.maxHouse, options.house ?? 0)),
+    house: Math.max(0, Math.min(kind.seats - 1, ROOMS.maxHouse, options.house ?? 0)),
+    seats: kind.seats,
+    buyIn: kind.buyIn,
     createdAt: now,
     updatedAt: now,
     players: [{ ...host, joinedAt: now, online: true, offlineAt: null }],
@@ -132,12 +154,12 @@ export function newRoom(
 
 const online = (room: PokerRoom) => room.players.filter((p) => p.online);
 
-/** Deals a game: everyone online in the room plus the house players, 1,500 chips each. */
+/** Deals a game: everyone online in the room plus the house players, the room's buy-in each. */
 export function startGame(room: PokerRoom, now: number, random: Random): PokerRoomEffect[] {
   if (room.status === 'playing') throw new PokerRoomRuleError(409, 'The game has already started.');
   const people = online(room).map((p) => ({ userId: p.userId, name: p.name, photoUrl: p.photoUrl, office: p.office }));
   const house = Array.from({ length: room.house }, (_, i) => houseSeat(i));
-  const seats = [...people, ...house].slice(0, ROOMS.maxSeats);
+  const seats = [...people, ...house].slice(0, seatsOf(room));
   if (seats.length < ROOMS.minPlayers) throw new PokerRoomRuleError(409, 'Need two players to deal. Invite someone or add a house player.');
   room.gameNo += 1;
   const table = newTable(
@@ -147,7 +169,7 @@ export function startGame(room: PokerRoom, now: number, random: Random): PokerRo
       eventId: '',
       round: 'casual',
       players: seats,
-      config: { durationMs: room.minutes * 60_000 },
+      config: { durationMs: room.minutes * 60_000, startStack: buyInOf(room), seats: seatsOf(room) },
     },
     now,
     random,
@@ -168,7 +190,7 @@ function finishGame(room: PokerRoom, now: number): PokerRoomEffect[] {
 
 /** Someone new in the room: in the lobby they wait for the deal; mid-game they take a free seat from the next hand. */
 export function addPlayer(room: PokerRoom, player: Pick<PokerRoomPlayer, 'userId' | 'name' | 'photoUrl' | 'office'>, now: number, invited: boolean): PokerRoomEffect[] {
-  if (placesTaken(room) >= ROOMS.maxSeats) throw new PokerRoomRuleError(409, `That table is full (${ROOMS.maxSeats} of ${ROOMS.maxSeats}).`);
+  if (placesTaken(room) >= seatsOf(room)) throw new PokerRoomRuleError(409, `That table is full (${seatsOf(room)} of ${seatsOf(room)}).`);
   room.players.push({ ...player, joinedAt: now, online: true, offlineAt: null });
   room.invited = room.invited.filter((i) => i.userId !== player.userId);
   const effects: PokerRoomEffect[] = [{ type: 'feed', item: { kind: 'join', userId: player.userId, name: player.name, ...(invited ? { invited: true } : {}) } }];
@@ -226,7 +248,7 @@ export function resetToLobby(room: PokerRoom): void {
   room.finishedAt = null;
   room.invitesSent = 0;
   // House players never outnumber the seats left.
-  room.house = Math.min(room.house, Math.max(0, ROOMS.maxSeats - room.players.length));
+  room.house = Math.min(room.house, Math.max(0, seatsOf(room) - room.players.length));
 }
 
 /** The host's lobby choices: the game's length and whether the table is listed. False when nothing changed, null when refused. */
@@ -255,7 +277,7 @@ export function applySettings(room: PokerRoom, input: { minutes?: unknown; open?
 export function changeHouse(room: PokerRoom, delta: number): boolean {
   if (room.status !== 'lobby') return false;
   const next = room.house + (delta > 0 ? 1 : -1);
-  if (next < 0 || next > ROOMS.maxHouse || room.players.length + next > ROOMS.maxSeats) return false;
+  if (next < 0 || next > houseMaxOf(room) || room.players.length + next > seatsOf(room)) return false;
   room.house = next;
   return true;
 }
@@ -293,12 +315,18 @@ export function advanceRoom(room: PokerRoom, now: number, random: Random, houseD
     }
   }
   const lastSeen = () => Math.max(room.updatedAt, ...room.players.map((p) => p.offlineAt ?? 0));
+  // Watchers whose app went without saying so.
+  const watchersBefore = room.watchers?.length ?? 0;
+  if (watchersBefore) {
+    room.watchers = room.watchers!.filter((w) => now - w.at < ROOMS.watcherStaleMs);
+    if (room.watchers.length !== watchersBefore) changed = true;
+  }
 
   switch (room.status) {
     case 'lobby': {
       if (here.length === 0 && now - lastSeen() >= ROOMS.lobbyIdleMs) return [{ type: 'delete', players: everyone() }];
       // A full room deals itself.
-      if (placesTaken(room) >= ROOMS.maxSeats && here.length === room.players.length) {
+      if (placesTaken(room) >= seatsOf(room) && here.length === room.players.length) {
         effects.push(...startGame(room, now, random));
         changed = true;
       }
@@ -349,6 +377,47 @@ export function advanceRoom(room: PokerRoom, now: number, random: Random, houseD
   return changed ? effects : null;
 }
 
+// ---------------------------------------------------------------- chat and watchers
+
+/** One line of chat, cleaned: no control characters, one line, at most chatMaxChars. Null when there is nothing left to say. */
+export function cleanChat(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  // eslint-disable-next-line no-control-regex
+  const text = raw.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim();
+  return text ? Array.from(text).slice(0, ROOMS.chatMaxChars).join('') : null;
+}
+
+/** Someone at the table, or watching it, says something. The room keeps the last chatKeep lines. */
+export function addChat(room: PokerRoom, who: { userId: string; name: string }, raw: unknown, now: number, random: Random): PokerChatLine {
+  const text = cleanChat(raw);
+  if (!text) throw new PokerRoomRuleError(400, 'Type a message first.');
+  const player = playerOf(room, who.userId);
+  const watching = !player && (room.watchers ?? []).some((w) => w.userId === who.userId);
+  if (!isBigTable(room)) throw new PokerRoomRuleError(403, 'This table has no chat.');
+  if (!player && !watching) throw new PokerRoomRuleError(403, 'Sit down or watch this table to chat.');
+  const line: PokerChatLine = { id: Math.floor(random() * 2 ** 32).toString(36) + now.toString(36), userId: who.userId, name: player?.name ?? who.name, text, at: now, ...(watching ? { watching: true as const } : {}) };
+  room.chat = [...(room.chat ?? []), line].slice(-ROOMS.chatKeep);
+  return line;
+}
+
+/** Starts (or refreshes) someone watching. Only a game in play, or one just finished, can be watched. */
+export function addWatcher(room: PokerRoom, who: Omit<PokerRoomWatcher, 'at'>, now: number): void {
+  if (!isBigTable(room)) throw new PokerRoomRuleError(403, 'This table cannot be watched.');
+  if (playerOf(room, who.userId)) throw new PokerRoomRuleError(409, 'You are at this table already.');
+  if (room.status === 'lobby' || !room.table) throw new PokerRoomRuleError(409, 'That table has not dealt yet: sit down instead.');
+  const others = (room.watchers ?? []).filter((w) => w.userId !== who.userId);
+  if (others.length >= ROOMS.watchersMax) throw new PokerRoomRuleError(409, 'That table has as many watching as it can take.');
+  room.watchers = [...others, { ...who, at: now }];
+}
+
+export function removeWatcher(room: PokerRoom, userId: string): boolean {
+  const before = room.watchers?.length ?? 0;
+  room.watchers = (room.watchers ?? []).filter((w) => w.userId !== userId);
+  return room.watchers.length !== before;
+}
+
+export const isWatching = (room: PokerRoom, userId: string) => (room.watchers ?? []).some((w) => w.userId === userId);
+
 // ---------------------------------------------------------------- views
 
 export function viewFor(room: PokerRoom, viewerId: string, now: number) {
@@ -367,7 +436,9 @@ export function viewFor(room: PokerRoom, viewerId: string, now: number) {
     house: room.house,
     houseNames: HOUSE_NAMES.slice(0, room.house),
     min: ROOMS.minPlayers,
-    max: ROOMS.maxSeats,
+    max: seatsOf(room),
+    buyIn: buyInOf(room),
+    big: isBigTable(room),
     serverNow: now,
     gameNo: room.gameNo,
     players: room.players.map((p) => {
@@ -380,6 +451,10 @@ export function viewFor(room: PokerRoom, viewerId: string, now: number) {
     waiting: room.status === 'playing' && !mine,
     table: table ? tableViewFor(table, viewerId, now) : null,
     finishedAt: room.finishedAt,
+    /** Watching, not playing: no seat and no cards, but the table, the chat and a seat when one frees. */
+    watching: !playerOf(room, viewerId) && isWatching(room, viewerId),
+    watchers: (room.watchers ?? []).map((w) => ({ userId: w.userId, name: w.name, photoUrl: w.photoUrl })),
+    chat: room.chat ?? [],
   };
 }
 
@@ -393,8 +468,8 @@ export function viewFingerprint(view: PokerRoomView): string {
 /** A room as the lobby lists it: who is in, and whether there is a seat. */
 export function summaryOf(room: PokerRoom, now: number) {
   const host = playerOf(room, room.hostId);
-  const free = ROOMS.maxSeats - placesTaken(room);
-  const seatFree = room.status !== 'playing' || !room.table ? free > 0 : free > 0 && (room.table.seats.length < ROOMS.maxSeats || room.table.seats.some((s) => s.left));
+  const free = seatsOf(room) - placesTaken(room);
+  const seatFree = room.status !== 'playing' || !room.table ? free > 0 : free > 0 && (room.table.seats.length < seatsOf(room) || room.table.seats.some((s) => s.left));
   return {
     code: room.code,
     host: host ? { userId: host.userId, name: host.name } : null,
@@ -402,10 +477,13 @@ export function summaryOf(room: PokerRoom, now: number) {
     minutes: room.minutes,
     house: room.house,
     players: room.players.map((p) => ({ userId: p.userId, name: p.name, photoUrl: p.photoUrl })),
-    seats: ROOMS.maxSeats,
+    seats: seatsOf(room),
     free,
     seatFree,
     endsAt: room.status === 'playing' && room.table ? room.table.endsAt : null,
+    /** A game in play (or just over) can be watched, full or not. */
+    watchable: isBigTable(room) && room.status !== 'lobby' && Boolean(room.table),
+    watchers: room.watchers?.length ?? 0,
     serverNow: now,
   };
 }

@@ -269,7 +269,7 @@ export type CreateEmployeeInput = {
 };
 
 /** One employee's month, every day named — including the ones nobody worked. */
-export type CalendarDayStatus = ReportStatus | 'week_off' | 'holiday' | 'upcoming';
+export type CalendarDayStatus = ReportStatus | 'week_off' | 'holiday' | 'upcoming' | 'before_joining';
 export type CalendarDayDTO = {
   date: string;
   status: CalendarDayStatus;

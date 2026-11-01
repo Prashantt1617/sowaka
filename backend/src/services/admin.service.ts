@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { forgetAuthUser } from './auth-cache';
 import { authSessions, companies, deviceTokens, employeePaymentDetails, feedbackRecords, salaryStructures, users } from '../config/db';
+import { invalidateAttendanceSetup } from './attendance-report.service';
 import { EmployeeDocument, User } from '../models/user.model';
 import { orgUsers, orgUsersWithRows, sortLikeMongo } from './admin-scope';
 import { resolveProfilePhoto } from './s3-connect-media.service';
@@ -310,6 +311,8 @@ export async function updateEmployeeDetailsForAdmin(editorUserId: string, employ
     { returnDocument: 'after' },
   );
   if (!updated) throw new AdminError(404, 'Employee not found');
+  // Days before a joining date are not graded: the calendar follows a new one at once.
+  if (set.joiningDate && employee.org) invalidateAttendanceSetup(employee.org);
   const changes = detailChanges(employee, set, unset);
   void logActivity({ org: employee.org ?? '', userId: employee.userId, byUserId: editorUserId, kind: 'details', title: detailsTitle(changes), changes });
   return { userId: updated.userId, changed: [...Object.keys(set), ...Object.keys(unset)] };
