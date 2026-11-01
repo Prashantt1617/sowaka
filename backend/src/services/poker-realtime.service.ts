@@ -263,7 +263,7 @@ function listen(socket: Socket, ready: Promise<PokerIdentity | null>) {
   on('room:hello', buckets.small, (who) => roomsHello(who));
   on('room:list', buckets.small, async (who) => ({ rooms: await openRooms(who.org) }));
   on('room:host', buckets.host, (who, p) => hostRoom(who, { open: p.open !== false }));
-  on('room:practice', buckets.host, (who) => practiceRoom(who));
+  on('room:practice', buckets.join, (who) => practiceRoom(who));  // a practice table is private and short-lived: the join bucket, not the host's five a minute
   on('room:quick', buckets.join, (who) => quickJoin(who));
   on('room:join', buckets.join, (who, p) => joinRoom(who, p.code, { rejoin: p.rejoin === true }));
   on('room:leave', buckets.small, async (who) => {

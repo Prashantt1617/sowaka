@@ -284,6 +284,11 @@ async function main() {
     await wait(50);
     check('practice: a private table with three house players, dealt at once', practice.ok && practice.data.status === 'playing' && practice.data.open === false && practice.data.table?.seats.length === 4);
     check('and marked as practice, so the page leaves it rather than asking', practice.ok && practice.data.practice === true);
+    // Practice tables do not count towards the five tables one person may open in ten minutes (someone else, so I's table stays).
+    { const z = seedUser(13); await users().insertOne(z); const Z = await open(z); let reopened = 0, why = '';
+      for (let i = 0; i < 7; i++) { const again = await request(Z, 'room:practice'); if (again.ok) reopened += 1; else why = `${again.status} ${again.message}`; await request(Z, 'room:leave'); }
+      check('practice can be opened again and again (seven times, past the hosting limit)', reopened === 7, why);
+      Z.socket.close(); }
     const pCode = practice.ok ? String(practice.data.code) : '';
     await run('the house table plays to the end', async () => (await peekRoom(ORG, pCode))?.status === 'over', 4000, 800);
     const pOver = await peekRoom(ORG, pCode);
