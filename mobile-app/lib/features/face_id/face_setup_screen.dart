@@ -88,6 +88,9 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
   String? _token;
   Timer? _timer;
 
+  /// The office the punch screen's location check found, for the done card.
+  String? _office;
+
   @override
   void initState() {
     super.initState();
@@ -99,6 +102,10 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
       ..onBurst = _onBurst
       ..pose = FacePose.front;
     unawaited(_load());
+    // Only read for the done card's office line; the punch screen acts on it.
+    widget.place?.then((where) {
+      if (mounted && where.office != null) setState(() => _office = where.office);
+    }, onError: (Object _) {});
   }
 
   Future<void> _load() async {
@@ -333,14 +340,9 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
       );
     }
     if (_done) {
-      final at = _punchedAt;
-      return FaceSetupDone(
-        line: at == null ? null : '${punchIn ? 'Punched in' : 'Punched out'} at ${clockOf(at)}',
-        onDone: _finish,
-      );
+      return FaceSetupDone(punchedAt: _punchedAt, punchIn: punchIn, office: _office, onDone: _finish);
     }
     final taken = _photos.length;
-    final ring = FaceRing.progress(taken / 3);
     final counter = '${(taken + 1).clamp(1, 3)} of 3';
     if (_fallbackOpen) {
       final manager = _status?.managerName;
@@ -383,6 +385,7 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
         line: cameraProblem,
         counter: counter,
         onClose: _close,
+        setup: true,
         action: FaceCameraAction(
           label: _camera.permissionDenied ? 'Open Settings' : 'Try again',
           onTap: _camera.permissionDenied ? Geolocator.openAppSettings : _camera.start,
@@ -393,6 +396,13 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
     String? line;
     var tone = FaceHeadlineTone.plain;
     final pose = _camera.pose;
+    // The side to turn toward: the ring's green half and the headline's word.
+    final side = switch (pose) {
+      FacePose.turnA => FaceArrowSide.left,
+      // The other side from the first turn, whichever that was.
+      FacePose.turnB => _camera.firstTurnSign == -1 ? FaceArrowSide.left : FaceArrowSide.right,
+      FacePose.front => null,
+    };
     if (_sending) {
       headline = 'Checking…';
     } else if (_answer case (final h, final l)) {
@@ -400,26 +410,26 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
       line = l;
       tone = FaceHeadlineTone.fix;
     } else {
-      (headline, line, tone) = faceCopy(_camera.problem, pose: pose);
+      (headline, line, tone) = faceCopy(_camera.problem, pose: pose, side: side);
+      // S2 shows the headline alone; the daily check keeps its line.
+      if (tone == FaceHeadlineTone.plain && pose == FacePose.front) line = null;
     }
+    final showSide = _sending || _answer != null ? null : side;
     return FaceCameraView(
       headline: headline,
       line: line,
       tone: tone,
       camera: _camera.controller,
-      ring: ring,
+      ring: taken >= 3
+          ? const FaceRing.green()
+          : showSide != null
+          ? FaceRing.turn(showSide)
+          : const FaceRing.grey(),
       counter: counter,
       onClose: _sending ? null : _close,
-      arrow: _sending || _answer != null
-          ? null
-          : switch (pose) {
-              FacePose.turnA => FaceArrowSide.left,
-              // The other side from the first turn, whichever that was.
-              FacePose.turnB => _camera.firstTurnSign == -1 ? FaceArrowSide.left : FaceArrowSide.right,
-              FacePose.front => null,
-            },
       arrowPulse: _camera.turnSlow,
       steps: (taken, taken.clamp(0, 2)),
+      setup: true,
     );
   }
 }

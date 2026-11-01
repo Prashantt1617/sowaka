@@ -240,6 +240,14 @@ void main() {
 
   Future<void> shot(WidgetTester tester, String name) async {
     if (_screenshots.isEmpty) return;
+    // Asset images decode outside the fake clock: wait for them, so the
+    // setup thumbnails and the done tick are in the picture.
+    await tester.runAsync(() async {
+      for (final element in find.byType(Image).evaluate()) {
+        await precacheImage((element.widget as Image).image, element);
+      }
+    });
+    await tester.pump();
     await expectLater(find.byType(MaterialApp), matchesGoldenFile(Uri.file('$_screenshots/$name.png')));
   }
 
@@ -248,6 +256,8 @@ void main() {
   Future<_Host> slide(WidgetTester tester, {required bool enrolled}) async {
     tester.view.physicalSize = const Size(390 * 2, 844 * 2);
     tester.view.devicePixelRatio = 2;
+    // A phone's status bar and home bar, so the boards line up with Figma's.
+    if (_screenshots.isNotEmpty) tester.view.padding = const FakeViewPadding(top: 47 * 2, bottom: 34 * 2);
     addTearDown(tester.view.reset);
     final api = ManagerApiService(
       session: AuthSession(token: 't', user: _user(enrolled: enrolled)),
@@ -450,11 +460,14 @@ void main() {
     expect(_count('/face/verify'), 0);
   });
 
-  testWidgets('setup: the intro, three photos with the arrow, all three sent, then you\'re set up', (tester) async {
+  testWidgets('setup: the intro, three photos with the ring\'s side, all three sent, then you\'re set up', (tester) async {
     final host = await slide(tester, enrolled: false);
     await settle(tester);
-    expect(find.text('Set up your face check'), findsOneWidget);
-    expect(find.text('Three quick photos. After this, punching in is a glance at the camera.'), findsOneWidget);
+    expect(find.text('Set up your Face ID'), findsOneWidget);
+    expect(find.text('One time setup. After this, punching in is a glance at the camera.'), findsOneWidget);
+    for (final step in ['Step 1', 'Step 2', 'Step 3']) {
+      expect(find.text(step), findsOneWidget);
+    }
     expect(find.text('Front'), findsOneWidget);
     expect(find.text('Left'), findsOneWidget);
     expect(find.text('Right'), findsOneWidget);
@@ -467,22 +480,24 @@ void main() {
     await tester.tapAt(const Offset(20, 40));
     await settle(tester);
 
-    await tester.tap(find.text('Agree and start'));
+    await tester.tap(find.text('Set up Face ID'));
     await settle(tester);
     expect(_headline(tester), 'Look at the camera');
+    expect(_line(tester), isNull);
     expect(find.text('1 of 3'), findsOneWidget);
     await shot(tester, 'S2-front');
 
     _camera.bursts();
     await tester.pump();
     expect(find.text('2 of 3'), findsOneWidget);
-    expect(_headline(tester), 'Turn toward the arrow');
+    expect(_headline(tester), 'Turn toward the left');
     expect(find.byKey(const ValueKey('face-arrow-left')), findsOneWidget);
     await shot(tester, 'S3-arrow-left');
 
     _camera.bursts(yaw: 14);
     await tester.pump();
     expect(find.text('3 of 3'), findsOneWidget);
+    expect(_headline(tester), 'Turn toward the right');
     expect(find.byKey(const ValueKey('face-arrow-right')), findsOneWidget);
     await shot(tester, 'S4-arrow-right');
 
@@ -495,12 +510,17 @@ void main() {
       expect(_hasFile(body, name), isTrue, reason: name);
     }
     expect(_punchBody?['faceToken'], 'enrol-tok');
-    expect(find.text("You're set up"), findsOneWidget);
+    expect(find.text("You're set up!"), findsOneWidget);
+    expect(find.text('Your attendance has been recorded.'), findsOneWidget);
     final at = DateTime.parse('2026-10-30T10:30:00.000Z');
-    expect(find.text('Punched in at ${clockOf(at)}'), findsOneWidget);
+    final local = at.toLocal();
+    final card = find.byKey(const ValueKey('face-done-card'));
+    expect(find.descendant(of: card, matching: find.text('Punched in')), findsOneWidget);
+    expect(find.textContaining('${local.day} October ${local.year}'), findsOneWidget);
+    expect(find.descendant(of: card, matching: find.text('Sowaka Office')), findsOneWidget);
     await shot(tester, 'S5-done');
 
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text('Continue to Connect'));
     await settle(tester);
     await settle(tester);
     expect(host.outcome?.at?.isAtSameMomentAs(at), isTrue);
@@ -508,10 +528,10 @@ void main() {
     await tester.pump(const Duration(seconds: 4));
   });
 
-  testWidgets('setup: the arrow pulses once the turn is slow, with no new words', (tester) async {
+  testWidgets('setup: the ring\'s side pulses once the turn is slow, with no new words', (tester) async {
     await slide(tester, enrolled: false);
     await settle(tester);
-    await tester.tap(find.text('Agree and start'));
+    await tester.tap(find.text('Set up Face ID'));
     await settle(tester);
     _camera.bursts();
     await tester.pump();
@@ -519,7 +539,7 @@ void main() {
     await tester.pump(FaceCamera.turnNudgeAfter);
     await tester.pump(const Duration(milliseconds: 600));
     expect(_camera.turnSlow, isTrue);
-    expect(_headline(tester), 'Turn toward the arrow');
+    expect(_headline(tester), 'Turn toward the left');
     expect(find.byKey(const ValueKey('face-arrow-left')), findsOneWidget);
   });
 

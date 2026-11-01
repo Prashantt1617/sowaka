@@ -3,12 +3,15 @@ import 'dart:math';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 /// The face check's screens, from the design canvas of the revised flow
-/// (boards D2–D6 for the daily check, S1–S5 for setup): a dark camera screen
-/// whose preview and oval never move, with one headline at the top and one
-/// optional line under it; a white intro before setup and a white done
-/// screen after it. The system font throughout.
+/// (boards D2–D6 for the daily check, S1–S5 for setup; Figma section
+/// 2300:27810 — setup is frames 4200:55075, 4423:35824/35910/35996 and
+/// 3357:29653): a dark camera screen whose preview and oval never move, with
+/// one headline at the top and one optional line under it, inside a ring of
+/// ticks; a white intro before setup and a white done screen after it. Setup
+/// is set in Sora as its frames are; the daily check keeps the system font.
 
 const _dark = Color(0xFF16181C);
 const _ovalFill = Color(0xFF2A2F36);
@@ -21,22 +24,42 @@ const _blue = Color(0xFF1B6FB3);
 const _ink = Color(0xFF15181C);
 const _muted = Color(0xFF5F6B7A);
 
+// The white setup pages (4200:55075, 3357:29653).
+const _brand = Color(0xFF0571A6);
+const _text = Color(0xFF222222);
+const _textSecondary = Color(0xFF484848);
+const _textTertiary = Color(0xFF717171);
+const _navy = Color(0xFF142A43);
+const _cardMuted = Color(0xFF586B7D);
+const _cardTop = Color(0xFFF4F7FB);
+const _hairline = Color(0xFFDCE3EA);
+
+TextStyle _sora(double size, FontWeight weight, Color color, {double? height, double? spacing}) => TextStyle(
+  fontFamily: 'Sora',
+  fontSize: size,
+  fontWeight: weight,
+  color: color,
+  height: height,
+  letterSpacing: spacing,
+);
+
 /// How the headline reads: as it is, or as a correction (amber).
 enum FaceHeadlineTone { plain, fix }
 
-/// The ring round the oval: grey while looking, green once matched; at setup
-/// it fills (a fraction, 0..1) as the photos are taken.
+/// The ring of ticks round the oval: grey while looking, green once matched
+/// (or once setup's three photos are taken); during a setup turn the half on
+/// the side to turn toward is green (S3, S4).
 class FaceRing {
-  const FaceRing.grey() : green = false, fill = null;
-  const FaceRing.green() : green = true, fill = null;
-  const FaceRing.progress(double this.fill) : green = false;
+  const FaceRing.grey() : green = false, side = null;
+  const FaceRing.green() : green = true, side = null;
+  const FaceRing.turn(FaceArrowSide this.side) : green = false;
 
   final bool green;
-  final double? fill;
+  final FaceArrowSide? side;
 }
 
-/// Which side of the oval the setup arrow sits on. Never "left" or "right"
-/// in words: the preview is a mirror, so the arrow carries the direction.
+/// Which side of the oval setup asks the head to turn toward: the screen's
+/// side, which in the mirrored preview is the person's own side too.
 enum FaceArrowSide { left, right }
 
 /// The one button the camera screen can carry (D6), with a line under it.
@@ -62,10 +85,10 @@ class FaceCameraView extends StatelessWidget {
     this.counter,
     this.onClose,
     this.action,
-    this.arrow,
     this.arrowPulse = false,
     this.steps,
     this.dim = false,
+    this.setup = false,
   });
 
   final String headline;
@@ -86,7 +109,8 @@ class FaceCameraView extends StatelessWidget {
   /// The close control; null hides it (D3, while the punch goes through).
   final VoidCallback? onClose;
   final FaceCameraAction? action;
-  final FaceArrowSide? arrow;
+
+  /// The turn is slow: the green half of the ring pulses.
   final bool arrowPulse;
 
   /// Setup's three bars at the bottom: (taken, current).
@@ -95,18 +119,31 @@ class FaceCameraView extends StatelessWidget {
   /// The preview dimmed behind an answer that ends the try (D6).
   final bool dim;
 
+  /// Setup's camera (S2–S4): its headline, close icon and spacing, in Sora.
+  final bool setup;
+
   @override
   Widget build(BuildContext context) {
     final preview = camera;
     final size = preview?.value.isInitialized == true ? preview!.value.previewSize : null;
     final shortScreen = MediaQuery.sizeOf(context).height < 700;
+    final fix = tone == FaceHeadlineTone.fix;
+    final headlineStyle = setup
+        ? _sora(26, FontWeight.w600, fix ? _amber : Colors.white, spacing: -0.4, height: 1.26)
+        : TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.3,
+            color: fix ? _amber : Colors.white,
+            height: 1.25,
+          );
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
         backgroundColor: _dark,
         body: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+            padding: EdgeInsets.fromLTRB(24, 4, 24, setup ? 16 : 24),
             child: Column(
               children: [
                 SizedBox(
@@ -132,29 +169,22 @@ class FaceCameraView extends StatelessWidget {
                           child: InkResponse(
                             onTap: onClose,
                             radius: 22,
-                            child: const SizedBox(
+                            child: SizedBox(
                               width: 44,
                               height: 44,
-                              child: Icon(Icons.close_rounded, color: Colors.white, size: 22),
+                              child: setup
+                                  ? Center(child: SvgPicture.asset('assets/icons/face/close_white.svg', width: 20, height: 20))
+                                  : const Icon(Icons.close_rounded, color: Colors.white, size: 22),
                             ),
                           ),
                         ),
                     ],
                   ),
                 ),
-                SizedBox(height: shortScreen ? 20 : 48),
-                Text(
-                  headline,
-                  key: const ValueKey('face-heading'),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.3,
-                    color: tone == FaceHeadlineTone.fix ? _amber : Colors.white,
-                    height: 1.25,
-                  ),
-                ),
+                SizedBox(height: shortScreen ? 20 : (setup ? 64 : 48)),
+                Text(headline, key: const ValueKey('face-heading'), textAlign: TextAlign.center, style: headlineStyle),
+                // The line's room is kept when there is none, so the oval
+                // never moves when one comes and goes.
                 SizedBox(
                   height: 50,
                   child: line == null
@@ -171,7 +201,10 @@ class FaceCameraView extends StatelessWidget {
                           ),
                         ),
                 ),
-                SizedBox(height: shortScreen ? 12 : 36),
+                // The ticks' box is 30 px wider than the oval on every side:
+                // setup's oval sits 56 px under the headline's room (S2–S4),
+                // the daily check's where it was inside the old solid ring.
+                SizedBox(height: shortScreen ? 0 : (setup ? 6 : 16)),
                 Expanded(
                   child: Align(
                     alignment: Alignment.topCenter,
@@ -179,14 +212,14 @@ class FaceCameraView extends StatelessWidget {
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.topCenter,
                       child: SizedBox(
-                        width: 280,
-                        height: 360,
+                        width: 320,
+                        height: 400,
                         child: Stack(
                           clipBehavior: Clip.none,
                           children: [
                             Positioned(
-                              left: 10,
-                              top: 10,
+                              left: 30,
+                              top: 30,
                               child: ClipOval(
                                 child: SizedBox(
                                   width: 260,
@@ -222,14 +255,7 @@ class FaceCameraView extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            Positioned.fill(child: CustomPaint(painter: _RingPainter(ring))),
-                            if (arrow != null)
-                              Positioned(
-                                left: arrow == FaceArrowSide.left ? 28 : null,
-                                right: arrow == FaceArrowSide.right ? 28 : null,
-                                top: 148,
-                                child: _Arrow(side: arrow!, pulse: arrowPulse),
-                              ),
+                            Positioned.fill(child: _TickRing(ring: ring, amber: fix, pulse: arrowPulse)),
                           ],
                         ),
                       ),
@@ -292,57 +318,35 @@ class FaceCameraView extends StatelessWidget {
   }
 }
 
-class _RingPainter extends CustomPainter {
-  const _RingPainter(this.ring);
+/// The 64 ticks round the oval (the "Tick ring" of 4423:35926), in a 320 ×
+/// 400 box: grey, all green once matched, all amber behind a correction, or
+/// green on the half to turn toward — pulsing when the turn is slow.
+class _TickRing extends StatefulWidget {
+  const _TickRing({required this.ring, required this.amber, required this.pulse});
   final FaceRing ring;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Rect.fromLTWH(4, 4, size.width - 8, size.height - 8);
-    final base = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4
-      ..color = ring.green ? _green : _ringGrey;
-    canvas.drawOval(rect, base);
-    final fill = ring.fill;
-    if (fill != null && fill > 0) {
-      final arc = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 6
-        ..strokeCap = StrokeCap.round
-        ..color = fill >= 1 ? _green : _blue;
-      canvas.drawArc(rect, -pi / 2, 2 * pi * fill.clamp(0, 1), false, arc);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_RingPainter old) => old.ring.green != ring.green || old.ring.fill != ring.fill;
-}
-
-/// The 64 px arrow inside the oval (S3, S4), pulsing when the turn is slow.
-class _Arrow extends StatefulWidget {
-  const _Arrow({required this.side, required this.pulse});
-  final FaceArrowSide side;
+  final bool amber;
   final bool pulse;
 
   @override
-  State<_Arrow> createState() => _ArrowState();
+  State<_TickRing> createState() => _TickRingState();
 }
 
-class _ArrowState extends State<_Arrow> with SingleTickerProviderStateMixin {
+class _TickRingState extends State<_TickRing> with SingleTickerProviderStateMixin {
   late final AnimationController _beat = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+
+  bool get _pulsing => widget.pulse && widget.ring.side != null;
 
   @override
   void initState() {
     super.initState();
-    if (widget.pulse) _beat.repeat(reverse: true);
+    if (_pulsing) _beat.repeat(reverse: true);
   }
 
   @override
-  void didUpdateWidget(_Arrow old) {
+  void didUpdateWidget(_TickRing old) {
     super.didUpdateWidget(old);
-    if (widget.pulse && !_beat.isAnimating) _beat.repeat(reverse: true);
-    if (!widget.pulse && _beat.isAnimating) {
+    if (_pulsing && !_beat.isAnimating) _beat.repeat(reverse: true);
+    if (!_pulsing && _beat.isAnimating) {
       _beat.stop();
       _beat.value = 0;
     }
@@ -356,29 +360,69 @@ class _ArrowState extends State<_Arrow> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      label: 'Turn your head toward this arrow',
-      child: AnimatedBuilder(
-        animation: _beat,
-        builder: (context, child) => Transform.scale(scale: 1 + 0.15 * _beat.value, child: child),
-        child: Container(
-          key: ValueKey('face-arrow-${widget.side.name}'),
-          width: 64,
-          height: 64,
-          decoration: const BoxDecoration(color: _blue, shape: BoxShape.circle),
-          child: Icon(
-            widget.side == FaceArrowSide.left ? Icons.arrow_back_rounded : Icons.arrow_forward_rounded,
-            color: Colors.white,
-            size: 32,
-          ),
-        ),
+    final side = widget.ring.side;
+    final ring = AnimatedBuilder(
+      animation: _beat,
+      builder: (context, _) => CustomPaint(
+        painter: _TickPainter(ring: widget.ring, amber: widget.amber, glow: 1 - 0.55 * _beat.value),
       ),
+    );
+    if (side == null) return ring;
+    return Semantics(
+      key: ValueKey('face-arrow-${side.name}'),
+      label: 'Turn your head toward the ${side.name}',
+      child: ring,
     );
   }
 }
 
-/// Before setup (S1): what it is, three thumbnails, the consent in normal
-/// contrast with what is stored, and the button that agrees and starts.
+class _TickPainter extends CustomPainter {
+  const _TickPainter({required this.ring, required this.amber, required this.glow});
+  final FaceRing ring;
+  final bool amber;
+
+  /// The green half's opacity, 0..1, while it pulses.
+  final double glow;
+
+  static const _count = 64;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Measured from the design's ticks: 3 px, round ends, their inner ends on
+    // an ellipse of 136.5 × 178.5 round the box's centre and their outer ends
+    // 10.5 % further out along the same line.
+    final sx = size.width / 320;
+    final sy = size.height / 400;
+    final centre = Offset(size.width / 2, size.height / 2);
+    final side = ring.side;
+    final base = ring.green ? _green : (amber && side == null ? _amber : _ringGrey);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    for (var k = 0; k < _count; k++) {
+      final t = 2 * pi * k / _count;
+      final inner = Offset(136.5 * sin(t) * sx, -178.5 * cos(t) * sy);
+      // The turn's half: every tick on that side but the two nearest the top
+      // and the bottom (k 2..30 on the right, 34..62 on the left).
+      final lit = switch (side) {
+        FaceArrowSide.right => k >= 2 && k <= 30,
+        FaceArrowSide.left => k >= 34 && k <= 62,
+        null => false,
+      };
+      paint.color = lit ? _green.withValues(alpha: glow) : base;
+      canvas.drawLine(centre + inner, centre + inner * 1.1048, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_TickPainter old) =>
+      old.ring.green != ring.green || old.ring.side != ring.side || old.amber != amber || old.glow != glow;
+}
+
+/// Before setup (S1, 4200:55075): what it is, the three steps with their
+/// photos, the button that agrees and starts, and the consent under it, word
+/// for word as the server sends it, with what is stored.
 class FaceSetupIntro extends StatelessWidget {
   const FaceSetupIntro({
     super.key,
@@ -406,56 +450,67 @@ class FaceSetupIntro extends StatelessWidget {
       value: SystemUiOverlayStyle.dark,
       child: Scaffold(
         backgroundColor: Colors.white,
+        // The frame runs the consent to 26 px above the bottom edge, over
+        // the home bar's strip.
         body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Align(
+          bottom: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Not drawn in the frame; kept so the page can be left as before.
+              SizedBox(
+                height: 48,
+                child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Transform.translate(
-                    offset: const Offset(-10, 0),
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 4),
                     child: IconButton(
                       onPressed: onBack,
                       tooltip: 'Back',
-                      icon: const Icon(Icons.arrow_back_rounded, color: _ink),
+                      icon: const Icon(Icons.arrow_back_rounded, color: _text),
                     ),
                   ),
                 ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const SizedBox(height: 32),
-                        const Text(
-                          'Set up your face check',
-                          style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, letterSpacing: -0.5, height: 1.2, color: _ink),
-                        ),
-                        const SizedBox(height: 10),
-                        const Text(
-                          'Three quick photos. After this, punching in is a glance at the camera.',
-                          style: TextStyle(fontSize: 16, color: _muted, height: 1.5),
-                        ),
-                        const SizedBox(height: 40),
-                        Row(
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Set up your Face ID',
+                        textAlign: TextAlign.center,
+                        style: _sora(20, FontWeight.w600, _text, height: 24 / 20, spacing: 0.4),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'One time setup. After this, punching in is a glance at the camera.',
+                        textAlign: TextAlign.center,
+                        style: _sora(14, FontWeight.w400, _textSecondary, height: 22 / 14),
+                      ),
+                      const SizedBox(height: 44),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            for (final (asset, label) in const [
-                              ('assets/images/face_check/setup_front.jpg', 'Front'),
-                              ('assets/images/face_check/setup_left.jpg', 'Left'),
-                              ('assets/images/face_check/setup_right.jpg', 'Right'),
+                            for (final (step, asset, label) in const [
+                              (1, 'assets/images/face_check/setup_front.jpg', 'Front'),
+                              (2, 'assets/images/face_check/setup_left.jpg', 'Left'),
+                              (3, 'assets/images/face_check/setup_right.jpg', 'Right'),
                             ]) ...[
-                              if (label != 'Front') const SizedBox(width: 16),
+                              if (step > 1) const SizedBox(width: 16),
                               Expanded(
                                 child: Column(
                                   children: [
-                                    AspectRatio(
-                                      aspectRatio: 235 / 300,
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(999),
-                                        child: Image.asset(asset, fit: BoxFit.cover),
-                                      ),
+                                    Text(
+                                      'Step $step',
+                                      style: _sora(14, FontWeight.w600, _muted, height: 16.2 / 14, spacing: -0.16),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    ClipOval(
+                                      child: Image.asset(asset, width: 88, height: 112, fit: BoxFit.cover),
                                     ),
                                     const SizedBox(height: 12),
                                     Text(label, style: const TextStyle(fontSize: 13, color: _muted)),
@@ -465,55 +520,66 @@ class FaceSetupIntro extends StatelessWidget {
                             ],
                           ],
                         ),
-                        if (problem != null) ...[
-                          const SizedBox(height: 24),
-                          Text(problem!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, color: Color(0xFFC0392B), height: 1.4)),
-                          if (onRetry != null)
-                            TextButton(onPressed: onRetry, child: const Text('Try again')),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-                if (consent != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16, top: 12),
-                    child: Text.rich(
-                      TextSpan(
-                        style: const TextStyle(fontSize: 13, color: _muted, height: 1.5),
-                        children: [
-                          TextSpan(text: '${consent!} '),
-                          WidgetSpan(
-                            alignment: PlaceholderAlignment.baseline,
-                            baseline: TextBaseline.alphabetic,
-                            child: GestureDetector(
-                              onTap: () => showWhatsStored(context),
-                              child: const Text(
-                                "What's stored",
-                                key: ValueKey('face-whats-stored'),
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: _blue, height: 1.5),
-                              ),
-                            ),
-                          ),
-                        ],
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                SizedBox(
-                  height: 52,
-                  child: FilledButton(
-                    key: const ValueKey('face-agree'),
-                    onPressed: onStart,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _blue,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text('Agree and start', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
+                      if (problem != null) ...[
+                        const SizedBox(height: 24),
+                        Text(problem!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, color: Color(0xFFC0392B), height: 1.4)),
+                        if (onRetry != null) TextButton(onPressed: onRetry, child: const Text('Try again')),
+                      ],
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      height: 56,
+                      child: FilledButton(
+                        key: const ValueKey('face-agree'),
+                        onPressed: onStart,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _brand,
+                          disabledBackgroundColor: _brand.withValues(alpha: 0.5),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        child: Text(
+                          'Set up Face ID',
+                          style: _sora(16, FontWeight.w600, Colors.white, height: 24 / 16, spacing: -0.16),
+                        ),
+                      ),
+                    ),
+                    if (consent != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Text.rich(
+                          TextSpan(
+                            style: _sora(11, FontWeight.w400, _textTertiary, height: 18 / 11),
+                            children: [
+                              TextSpan(text: '${consent!} '),
+                              WidgetSpan(
+                                alignment: PlaceholderAlignment.baseline,
+                                baseline: TextBaseline.alphabetic,
+                                child: GestureDetector(
+                                  onTap: () => showWhatsStored(context),
+                                  child: Text(
+                                    "What's stored",
+                                    key: const ValueKey('face-whats-stored'),
+                                    style: _sora(11, FontWeight.w600, _brand, height: 18 / 11),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -561,62 +627,176 @@ Future<void> showWhatsStored(BuildContext context) {
   );
 }
 
-/// After setup (S5): the tick, "You're set up", the punch it made, and Done.
+/// After setup (S5, 3357:29653): the tick, "You're set up!", and — when the
+/// setup made the punch — the card with its time, day and office, then the
+/// button back to Connect.
 class FaceSetupDone extends StatelessWidget {
-  const FaceSetupDone({super.key, required this.line, required this.onDone});
+  const FaceSetupDone({super.key, required this.onDone, this.punchedAt, this.punchIn = true, this.office});
 
-  /// "Punched in at 4:00 PM", or what the setup led to.
-  final String? line;
+  /// When the punch made from the setup was recorded; null when none was
+  /// (onboarding, or a punch the punch screen still makes).
+  final DateTime? punchedAt;
+
+  /// 'Punched in' or 'Punched out' on the card.
+  final bool punchIn;
+
+  /// The office the punch screen's location check found, if it did.
+  final String? office;
   final VoidCallback onDone;
 
   @override
   Widget build(BuildContext context) {
+    final at = punchedAt?.toLocal();
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: Scaffold(
         backgroundColor: Colors.white,
         body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Spacer(),
-                Center(
-                  child: Container(
-                    width: 80,
-                    height: 80,
-                    decoration: const BoxDecoration(color: Color(0xFFE4F5EB), shape: BoxShape.circle),
-                    child: const Icon(Icons.check_rounded, color: _green, size: 40),
+          bottom: false,
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset('assets/icons/punch/punched_in.png', width: 80, height: 80),
+                  const SizedBox(height: 24),
+                  Text(
+                    "You're set up!",
+                    textAlign: TextAlign.center,
+                    style: _sora(24, FontWeight.w700, _text, height: 32 / 24),
                   ),
-                ),
-                const SizedBox(height: 28),
-                const Text(
-                  "You're set up",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, letterSpacing: -0.5, color: _ink),
-                ),
-                if (line != null) ...[
-                  const SizedBox(height: 10),
-                  Text(line!, key: const ValueKey('face-done-line'), textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, color: _muted)),
-                ],
-                const Spacer(),
-                SizedBox(
-                  height: 52,
-                  child: FilledButton(
-                    key: const ValueKey('face-done'),
-                    onPressed: onDone,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _blue,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  if (at != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Your attendance has been recorded.',
+                      key: const ValueKey('face-done-line'),
+                      textAlign: TextAlign.center,
+                      style: _sora(14, FontWeight.w400, _textSecondary, height: 21 / 14),
                     ),
-                    child: const Text('Done', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
+                    const SizedBox(height: 24),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 336),
+                      child: _PunchCard(heading: punchIn ? 'Punched in' : 'Punched out', at: at, office: office),
+                    ),
+                  ],
+                  SizedBox(height: at != null ? 64 : 32),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 336),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: const [BoxShadow(color: Color(0x400571A6), offset: Offset(0, 2), blurRadius: 4)],
+                      ),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 50.5,
+                        child: FilledButton(
+                          key: const ValueKey('face-done'),
+                          onPressed: onDone,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _brand,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          child: Text(
+                            at != null ? 'Continue to Connect' : 'Continue',
+                            style: _sora(15, FontWeight.w600, Colors.white, height: 22.5 / 15),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The punch the setup made: "Punched in", the time, the day, and the office.
+class _PunchCard extends StatelessWidget {
+  const _PunchCard({required this.heading, required this.at, this.office});
+  final String heading;
+  final DateTime at;
+  final String? office;
+
+  static const _days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  static const _months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final hour = at.hour % 12 == 0 ? 12 : at.hour % 12;
+    final time = '$hour:${at.minute.toString().padLeft(2, '0')}';
+    final meridiem = at.hour >= 12 ? 'PM' : 'AM';
+    final where = office;
+    return Container(
+      key: const ValueKey('face-done-card'),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _hairline, width: 1.115),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            color: _cardTop,
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 15),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(heading, style: _sora(11.5, FontWeight.w400, _cardMuted, height: 17.25 / 11.5)),
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 53,
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(text: '$time ', style: _sora(35, FontWeight.w700, _navy, height: 52.5 / 35, spacing: -1.4)),
+                        TextSpan(text: meridiem, style: _sora(17, FontWeight.w400, _navy, height: 25.5 / 17, spacing: -1.4)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  '${_days[at.weekday - 1]}, ${at.day} ${_months[at.month - 1]} ${at.year}',
+                  style: _sora(11.5, FontWeight.w400, _cardMuted, height: 17.25 / 11.5),
                 ),
               ],
             ),
           ),
-        ),
+          if (where != null && where.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+              decoration: const BoxDecoration(border: Border(top: BorderSide(color: _hairline, width: 1.115))),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 21,
+                    height: 21,
+                    child: Center(child: SvgPicture.asset('assets/icons/punch/ool_row_pin.svg', width: 15.6, height: 18.2)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      where,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: _sora(12, FontWeight.w600, _navy, height: 18 / 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
