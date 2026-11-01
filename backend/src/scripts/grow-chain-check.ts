@@ -4,8 +4,8 @@
  *
  *   MONGODB_DB=grow_chain_scratch npm run grow-chain:check
  *
- * Asha heads Bala, who heads Chetan; Dev reports to Asha too, beside Bala;
- * Esha is in another branch. Bala reviews Chetan in two cycles (one twice,
+ * Om heads Asha, who heads Bala, who heads Chetan; Dev reports to Asha too,
+ * beside Bala; Esha is in another branch. Bala reviews Chetan in two cycles (one twice,
  * after a change), plus a draft. Drops and recreates its own database and
  * refuses any other.
  */
@@ -35,7 +35,8 @@ const review = (managerUserId: string, period: string, overallScore: number, sta
   await db.dropDatabase();
   await connectDb();
   await users().insertMany([
-    person('asha', 'Asha'),
+    person('om', 'Om'),
+    person('asha', 'Asha', 'om'),
     person('bala', 'Bala', 'asha'),
     person('chetan', 'Chetan', 'bala'),
     person('dev', 'Dev', 'asha'),
@@ -54,10 +55,16 @@ const review = (managerUserId: string, period: string, overallScore: number, sta
   check('one per cycle, the latest sent; drafts left out', JSON.stringify(two.history?.map((h) => [h.period, h.overallScore])) === JSON.stringify([['2026-09', 3.6], ['2026-10', 4.2]]), two.history);
   check('with the comments', two.history?.[1]?.parameters[0]?.note === '2026-10 note', two.history?.[1]);
   check('named for who wrote it', (two.history?.[1] as { managerName?: string } | undefined)?.managerName === 'Bala', two.history?.[1]);
+  const three = (await getPersonProfile('om', 'chetan')) as Profile;
+  check('three levels up: in the line, with the same reviews', three.inViewerChain && !three.reportsToViewer && JSON.stringify(three.history?.map((h) => h.period)) === JSON.stringify(['2026-09', '2026-10']), three.history);
+  const twoOfBala = (await getPersonProfile('om', 'bala')) as Profile;
+  check('two levels up, someone with no reviews yet: in the line, history empty', twoOfBala.inViewerChain && Array.isArray(twoOfBala.history) && twoOfBala.history.length === 0, twoOfBala.history);
   const direct = (await getPersonProfile('bala', 'chetan')) as Profile;
   check('the direct manager too', direct.reportsToViewer && direct.history?.length === 2, direct.history);
   const peerOfManager = (await getPersonProfile('dev', 'chetan')) as Profile;
   check("a colleague beside their manager: no reviews", !peerOfManager.inViewerChain && peerOfManager.history === undefined, peerOfManager.history);
+  const peer = (await getPersonProfile('dev', 'bala')) as Profile;
+  check('a peer (same manager): no reviews', !peer.inViewerChain && peer.history === undefined, peer.history);
   const elsewhere = (await getPersonProfile('esha', 'chetan')) as Profile;
   check('someone in another branch: no reviews', elsewhere.history === undefined, elsewhere.history);
   const upward = (await getPersonProfile('chetan', 'asha')) as Profile;
