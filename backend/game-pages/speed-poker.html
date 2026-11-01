@@ -503,6 +503,21 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 @keyframes hdim{0%{opacity:0}12%{opacity:1}88%{opacity:1}100%{opacity:0}}
 .hlabel{transform:translate(-50%,-50%);font-weight:900;font-size:12px;letter-spacing:.14em;color:#fff;background:var(--red);padding:3px 10px;border-radius:999px;box-shadow:0 0 18px rgba(224,86,75,.7);animation:hdim var(--ms,3000ms) ease-in-out both}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* sowaka GAMES, as the Games tab draws it (app-pages/games-home.html .brand, the same picture). --swg-h is its height; in a .swg-slot
+   it takes the room the bar leaves (16-24px) and steps aside if there is none. 'Swg Lilita': Lilita One (OFL), just G A M E S. */
+@font-face{font-family:'Swg Lilita';font-style:normal;font-weight:400;font-display:block;src:url(data:font/woff2;base64,d09GMgABAAAAAAN4AA4AAAAABkQAAAMlAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGhYbEBwaBmAAVBEICoNwgyYBNgIkAxgLDgAEIAWDJAcgG/cEKB4D7gqE9DqPkzrnqXUKUZEwgmqN7Nm9B0IL5AA1u4AiGx1NKlweSYXV+yCp6JQn/Ok966X11NhZQE7unJ7pb/ALyn9ggPu/yRkceeKJ3cvmpADjj03wQCP9wG1sg3SIkWjmLUn3i4mZbdbKpJUEqgFJCCVCoFK1WqAv00qL2FPd1wE8ACm2xwJs0maigaPsZXw06Q8JicNHbWzLyYUo0XLzqv/2IJ/0BgHxK11APwYSMpoxBZqxLALVyiWFJfESpcv9LxLNzjrjuEMRKAxh4VQHSkE1p50BngOK3yCu31gYBrFrO60vQHkrEH2fqKTmQvm+Jw1VBajRAuQ5hKDqSM9K8gkS0sGmqkSWfQjB7i3UdYH/PSi69ATR7wnqg8Dyznkp+eQMve0Wot+STy3tNFFStIRWr9kntMMxQyVlTFXFpasnnjELLzsZgrpxa9c9/aUtoY6E8cNR3qOBnFq69eRJ54ew723e4WfPqOdcorAVk+uNoxUlXq+YBy7x5OV7LnNLuVZdzW73OLD3siJBNUs4WXdCVmrjKogVFzhYTdVrGlQHVSfrYfNLYmbtiqaafAkzaG5In7Hw4Oljq/deXJXQpU/guvVkFco8uvQRaZk7Mgoa4YttzcoFw0tDSf34KtG82mTkvesHoT6kHbFrRJWdIdWhsyn7BiQ2nhCk82H5s0eZb761ZOD/94QnQzenDLUkDZu1TKbtUMv07/V26qjetzVPl0fntPbPHCHCdigSg3NMWQAQCAdnun0+VtaFfS3nM9/DkxH+LfhUo5oCyf8fuYRxFeUSCPLJ/3YgHyFRn0uBQP1LPSCdIIkvJlM7mLOFT1IwIVBqKC+n8cpsxxQFH9gEAoRmZyCp9RKyRe+ahRNKdIb5CaUaI0isTl2G9WjWqEkfzEktZ5gPL968YSn6VeuApevUoU+nHvWK0hnTWnxKlLpdu05tqtVqUs1DjWYjnLnBBjXr0wTLUa9XvR4D6tXBEm6EWAYc7S4Ws5GmWVtYqO6SqUO9hslJo/4Kek/5fLSHwDnNkPeVgopJr+YUKubNgxcvPnEZDhNJ/T+aDwAA) format('woff2')}
+.swg-slot{flex:1 1 0;min-width:0;align-self:stretch;display:flex;align-items:center;justify-content:flex-end;padding:0 2px;overflow:hidden;container-type:inline-size}
+.swg{--swg-h:22px;--u:calc(var(--swg-h) / 28.577);display:flex;align-items:center;flex:none;pointer-events:none;-webkit-user-select:none;user-select:none}
+@supports (width:1cqw){.swg-slot .swg{--swg-h:clamp(16px,calc(100cqw / 5),24px)}}
+@container (max-width:79px){.swg{display:none}}
+.swg-logo{height:calc(28*var(--u));padding:0 calc(12*var(--u)) 0 calc(4*var(--u));border-radius:calc(8*var(--u));background:#B23500;display:flex;align-items:center;overflow:hidden;flex:none}
+.swg-logo i{display:block;height:100%;width:calc(64.296*var(--u));background:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHwAAAA2CAMAAAAyAw2GAAAAwFBMVEWyNQD+/f2tKQDw2M4AAAC5SBjoxLXz4drWk3f36+bRiGndpY6oGwDgrpnGaUPkuqjKdlO+VCjDZDvBXDKwMwCqVQDhsZzZnILszsGzNAC7TiCyNQDAOQCwNAC1NQD/AAB/PwDPgF7OfmAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADD8oHKAAAAQHRSTlP+////AP///////////////////zMD////jv/L/22xAQT//wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANbz2XQAABABJREFUeNrdmXuTmyAQwHFR8JFE1DQmuetd2+//IQvsLvjATO+fY6ZkJlHE/e3CPtCI0rYfZXl9vIlvam+Pq0eWpfDs64f41vZx9XTh2D/Ft7efji7KX+Xj/fvh7w8LFtbuDGxLt7aLz6vI1K6fovzIBf8oRTbDrenikQ/+EG/54BnR/2GDsdH2c4Ms8EvhmsoDHz28/yocAOhr0RHOAfAQVge7GwmugAZCWvQWLS6dklJ1F6YJc7tL2RvhOqrOtUqI2v3Otoc7BN54P/uBAQ7GD2hd37PtnaT6eUCHQRXUlJcIk6Rz7dSp/OEE+FtUMOCvvRJulBMsLMfba9tV8wB3lmQXsUnPXnQ4updleNyEEC3oArUBApwGVgLaxYAuSV+K8ArqxXljRXj72hPKLszJoJor0e6c4Kc6eH1TbOxI+2ghg4zfq44a4OYVR6bTokWnRqUKTQPHEGrY0QJ1FPfiKAxI/x4MTx/KrJHhtJn9ADq3WnQ0i5p8gGAnZPXVZtajpD18JgMrNkCTEhXNO8qQp5kMOPVoGF7XAs7EQPitDRHX4TqRE+kEvGa1ZOPaSAs1RO/2QjXOvh2JU2OgklpLrbbwXhHSirbXtY2Y8RBuOMp4SXZwVFxQXDXooVNYQVyGAJc86xHxPIJTGFuhBg7geDBwVDz1QjhAZeQKvvEum9um8yE8JoLOJ7Q9HD3LMPzSePspFfYcTmu44eQ6zCFjJbNMH2LVT/0WTpmgDpTgutAuUsIajukUhj526XR+7cL1ChJw1M59SUkHPoWQp91UAt5CzCF6fgEX8GeZXvdwr5zrVooOXJhTGM+ncwKu4gpq8XwFX5QSG+97eMijXbdMwxKdn2IweHvDq0X3cWLW6Vruym0IpITlJkxmu3AorB/3LZzi3M47OdP4Ism0vW3qQlm1mBLwUOZMUGPkzL2DxwxHJesVvKdbqRCahLdXARnUePJ87C3fhOhLeMezhEPbBDyUxiFkJHEIj1Xt63ADCTi7YyViVBBc7uBUgdS/wGmJxMiLeScfNXFvE71RhkjijUAl5MbykYuzpFisD+G0jA3vXDjd3uPuh7OQDGqcIWy/Gl1s4IILfL/aliRDbbWNmoFSAjdXvVgfBVxX/XZQrwZGOOkqT6t9Vho+bTeQ7VqZWHbt1qmOdSNUpHV67SEsCLunag52Mu4xJ5jQL90gbnhZWge8wcPNIHnHvJ12io6ZTNcTe0zyocH00j00jPzQ8KyV66gH6qjOvlnkgEdUze2wewuGLuI1l9paPLJ2WcF2sD+dDx+XxPZxad0BsHtmomGweDraDAKUA5ubcresr0WyvhDK+ios60vArK8/s774zfrKO+/L/rx/c+T7g+cvC7MyEhvuyuYAAAAASUVORK5CYII=) center/100% 100% no-repeat}
+.swg-box{width:calc(70.214*var(--u));height:calc(28.577*var(--u));margin-left:calc(-8*var(--u));display:flex;align-items:center;justify-content:center;flex:none}
+.swg-games{height:calc(25*var(--u));padding:0 calc(10*var(--u));border-radius:calc(7*var(--u));background:#FFCC2E;box-shadow:0 calc(2*var(--u)) 0 #160D2C;transform:rotate(-3deg);
+  display:flex;align-items:center;font:400 calc(15*var(--u))/1.143 'Swg Lilita','Lilita One',system-ui,sans-serif;letter-spacing:0;text-transform:none;color:#160D2C;white-space:nowrap}
+/* Speed Poker: the logo on the home bar, before your face; the name and its line give it room. */
+.top>.brand{min-width:0}
+.top>.swg-slot{flex:0 0 104px}
 </style>
 </head>
 <body>
@@ -741,7 +756,7 @@ function renderRooms(){
         :`<button class="btn small ${r.seatFree&&r.status!=='over'?'primary':'ghost'}" data-join="${esc(r.code)}" ${r.seatFree?'':'disabled'}>${r.seatFree?'Sit':'Full'}</button>`}</div>`; };
   const big=state.big, chips=big&&state.tables?fmt(state.tables.buyIn):'1,500';
   app.innerHTML=`<div id="lobby">
-    <div class="top"><div class="brand"><div class="mark">♠</div><div><h1>Speed Poker</h1><div class="sub">Texas Hold'em with colleagues · no money</div></div></div>${state.me?avatarHtml(state.me.name,state.me.photoUrl,'me-face'):''}</div>
+    <div class="top"><div class="brand"><div class="mark">♠</div><div><h1>Speed Poker</h1><div class="sub">Texas Hold'em with colleagues · no money</div></div></div><div class="swg-slot"><span class="swg" role="img" aria-label="Sowaka Games"><span class="swg-logo"><i></i></span><span class="swg-box"><span class="swg-games">GAMES</span></span></span></div>${state.me?avatarHtml(state.me.name,state.me.photoUrl,'me-face'):''}</div>
     ${inv.map(i=>`<div class="invite">${avatarHtml(i.from&&i.from.name,i.from&&i.from.photoUrl,'sm')}<div class="who"><b>${esc(first(i.from&&i.from.name))} invited you</b><span>Table ${esc(i.code)}${i.players?` · ${i.players} at the table`:''}</span></div><button class="btn small primary" data-join="${esc(i.code)}">Sit down</button></div>`).join('')}
     <div class="hero"><div class="suits">♠♥♦♣</div><h2>Play a game</h2><p>${big?'Two to eight':'Two to six'} at a table, ${chips} chips each, about ${state.minutes||20} minutes a game. Just for fun.</p>
       <div class="row"><button class="btn primary" data-act="quick">Quick game</button><button class="btn ghost" data-act="host">New table</button></div>
@@ -827,7 +842,7 @@ function chatSheet(r){ const lines=r.chat||[], w=(r.watchers||[]).length, uid=my
     <div class="chead" data-live="head">${nx?'<i class="live" aria-hidden="true"></i>':''}<h2>Table chat</h2><span>${w?`${w} watching`:''}</span><button class="x" data-act="chatclose" aria-label="Close the chat">×</button></div>
     ${nx?`<div class="cbody"><div class="msgs" data-live="msgs">${msgs}</div>${sideHtml()}</div>`:`<div class="msgs" data-live="msgs">${msgs}</div>
     <div class="quick">${QUICK.map(q=>`<button data-say="${esc(q)}">${esc(q)}</button>`).join('')}</div>`}
-    <form class="chatsend" data-form="chat" action="#"><input id="chatin" maxlength="200" placeholder="Say something…" enterkeyhint="send" autocomplete="off" value="${esc(state.chatDraft)}"><button type="button" class="btn primary small" data-act="chatsend">Send</button></form></div></div>`; }
+    <div class="chatsend"><input id="chatin" maxlength="200" placeholder="Say something…" autocomplete="off" value="${esc(state.chatDraft)}"><button type="button" class="btn primary small" data-act="chatsend">Send</button></div></div></div>`; }
 async function sendChat(text,fromBox){ text=String(text||'').trim(); if(!text)return;
   if(fromBox){ state.chatDraft=''; const i=$('#chatin'); if(i)i.value=''; }
   try{ await P.request('room:chat',{text}); }
@@ -1162,8 +1177,6 @@ document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target&&e.target.
   if(e.key==='Enter'&&e.target&&e.target.id==='chatin'&&!e.isComposing){ e.preventDefault(); sendChat(e.target.value,true); } });
 /* The keyboard's send key submits the box: one tap sends. (Enter on a hardware keyboard is caught above, so this does not send twice.) */
 document.addEventListener('submit',e=>{ if(e.target&&e.target.dataset&&e.target.dataset.form==='chat'){ e.preventDefault(); const i=$('#chatin'); sendChat(i?i.value:state.chatDraft,true); } });
-/* The phone keyboard's send key submits the box: one tap sends. (A hardware Enter is caught above, so nothing sends twice.) */
-document.addEventListener('submit',e=>{ if(e.target&&e.target.dataset&&e.target.dataset.form==='chat'){ e.preventDefault(); const i=$('#chatin'); sendChat(i?i.value:state.chatDraft,true); } });
 /* Send keeps the keyboard up: the tap does not take the focus from the box. */
 document.addEventListener('mousedown',e=>{ if(e.target.closest&&e.target.closest('.sheet.chat button')&&document.activeElement&&document.activeElement.id==='chatin')e.preventDefault(); });
 document.addEventListener('input',e=>{ const t=e.target;
@@ -1211,8 +1224,12 @@ function hiss(dur,o){ o=o||{}; const a=bus(); if(!a)return;
   g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(o.gain||.1,t+(o.attack||.006)); g.gain.exponentialRampToValueAtTime(.0001,t+dur);
   s.connect(f).connect(g).connect(master); s.start(t); s.stop(t+dur+.03); }
 const SFX={
-  card:at=>{ hiss(.07,{at,gain:.16,freq:3400,to:1600,q:.9}); tone(1100,.03,{at,gain:.025,type:'triangle'}); },
-  chips:()=>[0,.05,.11].forEach(d=>{ tone(2500+Math.random()*1100,.055,{type:'triangle',gain:.06,at:d}); hiss(.035,{at:d,gain:.05,freq:5200,q:2.5}); }),
+  // a card turning over: the lift (a soft swish), then the snap as it lands
+  card:at=>{ at=at||0; hiss(.055,{at,gain:.14,freq:2600,to:1100,q:.8}); hiss(.018,{at:at+.05,gain:.3,freq:5200,q:.5,attack:.002}); tone(190,.03,{at:at+.05,gain:.16,to:120}); tone(1400,.02,{at:at+.05,gain:.04,type:'triangle'}); },
+  // chips landing on the felt: a few clinks (three metallic partials each), the stack's thud under them
+  chips:at=>{ at=at||0; tone(140,.07,{at,gain:.12,to:90}); for(let i=0;i<5;i++)clink(at+i*.045+Math.random()*.02,.06+Math.random()*.03); },
+  // the pot going to the winner: a cascade of chips, a bigger pile
+  coins:at=>{ at=at||0; tone(120,.12,{at,gain:.16,to:70}); for(let i=0;i<11;i++)clink(at+i*.055+Math.random()*.03,.05+Math.random()*.04); },
   knock:()=>[0,.12].forEach(d=>{ tone(160,.1,{gain:.24,at:d,to:85}); hiss(.03,{at:d,gain:.05,freq:900,q:1.4}); }),
   fold:()=>hiss(.3,{gain:.07,freq:1500,to:320,q:.6,attack:.05}),
   win:()=>[523.25,659.25,783.99,1046.5].forEach((f,i)=>tone(f,.34,{type:'triangle',gain:.08,at:.15+i*.09})),
@@ -1220,6 +1237,8 @@ const SFX={
   // your turn: two short low buzzes, like a phone
   buzz:()=>[0,.17].forEach(d=>{ tone(150,.12,{type:'square',gain:.07,at:d}); tone(300,.12,{type:'square',gain:.025,at:d}); }),
 };
+/** One chip against another: three high partials that do not line up, gone in a flash. */
+function clink(at,gain){ const f=2300+Math.random()*900; [1,1.52,2.07].forEach((m,i)=>tone(f*m,.09-i*.015,{at,gain:gain*(i?.45:1),type:i?'sine':'triangle',attack:.002})); hiss(.02,{at,gain:gain*.6,freq:6500,q:1.2,attack:.002}); }
 function sfx(name,at){ if(!bigOn()||!soundOn)return; try{ SFX[name](at||0); }catch(e){} }
 /** What changed at the table since the last view, as sounds: the deal, the board, a bet, a check, a fold, a pot won, a chat line. */
 function roomSounds(prev,room,uid){ if(!soundOn||!prev)return;
@@ -1231,8 +1250,13 @@ function roomSounds(prev,room,uid){ if(!soundOn||!prev)return;
   const slow=hypeOn()&&runout(v);
   for(let i=ob;i<nb;i++)sfx('card',boardDelay(slow,i-ob)/1000);
   // next look: the win sound comes with the celebration, once the board is out (hypeSync)
-  if(v.result&&!was.result){ if(!hypeOn()&&v.mySeat!=null&&v.result.pots.some(p=>p.winners.includes(v.mySeat)))sfx('win'); return; }
-  if((v.pot||0)>(was.pot||0))return sfx('chips');
+  if(v.result&&!was.result){ const after=hypeOn()?Math.max(0,boardDoneAt(v)-Date.now())/1000:0;
+    // cards shown at the showdown turn over, then the pot slides to the winner
+    const shown=(v.result.shown||[]).length||v.seats.filter(s=>s.cards&&!s.me&&!s.folded).length; for(let i=0;i<Math.min(shown,4);i++)sfx('card',after+i*.12);
+    sfx('coins',after+Math.min(shown,4)*.12+.25);
+    if(!hypeOn()&&v.mySeat!=null&&v.result.pots.some(p=>p.winners.includes(v.mySeat)))sfx('win'); return; }
+  // chips on the felt: a bet or a raise (a seat's bet grows), or bets gathered into the pot
+  if(v.seats.some(s=>(s.bet||0)>((was.seats[s.seat]||{}).bet||0))||(v.pot||0)>(was.pot||0))return sfx('chips');
   if(v.seats.some(s=>s.folded&&was.seats[s.seat]&&!was.seats[s.seat].folded))return sfx('fold');
   if(v.seats.some(s=>(s.lastAction==='check'||s.lastAction==='timeout')&&!s.folded&&was.seats[s.seat]&&was.seats[s.seat].lastAction!==s.lastAction))sfx('knock'); }
 /* The sounds' face to the page: update(prevRoom, room, myUserId) after each room view, toggle(), muted(), unlock() on a tap.
