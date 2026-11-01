@@ -320,28 +320,33 @@ export async function openInvitesFor(org: string, userId: string): Promise<OpenR
 /** Everything the page needs for the group game on opening: their room if they sit in one, the open tables, their invites. */
 export async function roomsHello(seat: RoomSeat) {
   const room = await roomOf(seat);
-  const [rooms, invites, big] = await Promise.all([openRooms(seat.org), openInvitesFor(seat.org, seat.userId), hasBigTables(seat.org)]);
+  const [rooms, invites, features] = await Promise.all([openRooms(seat.org), openInvitesFor(seat.org, seat.userId), pokerFeatures(seat.org)]);
+  const big = features.big;
   return {
     me: { userId: seat.userId, name: seat.name, photoUrl: seat.photoUrl },
     /** The company's table: the big one (8 seats, 1,000, chat, watching, sounds, the newer look) or the classic six. */
     tables: big ? TABLE_KINDS.big : TABLE_KINDS.classic,
     big,
+    /** The game's next look, at the companies trying it (companies.features.speedPokerNextUi). */
+    next: big && features.next,
     room: room ? viewFor(room, seat.userId, deps.now()) : null,
     rooms,
     invites,
   };
 }
 
-/** Whether the company has Speed Poker's big tables (companies.features.speedPokerBigTables), held a minute. */
-const bigTablesCache = new Map<string, { on: boolean; at: number }>();
-async function hasBigTables(org: string): Promise<boolean> {
-  const held = bigTablesCache.get(org);
-  if (held && deps.now() - held.at < 60_000) return held.on;
+/** The company's Speed Poker switches (companies.features), held a minute. */
+const pokerFeaturesCache = new Map<string, { big: boolean; next: boolean; at: number }>();
+async function pokerFeatures(org: string): Promise<{ big: boolean; next: boolean }> {
+  const held = pokerFeaturesCache.get(org);
+  if (held && deps.now() - held.at < 60_000) return held;
   const company = await companies().findOne({ id: org }, { projection: { _id: 0, features: 1 } });
-  const on = company?.features?.speedPokerBigTables === true;
-  bigTablesCache.set(org, { on, at: deps.now() });
-  return on;
+  const value = { big: company?.features?.speedPokerBigTables === true, next: company?.features?.speedPokerNextUi === true, at: deps.now() };
+  pokerFeaturesCache.set(org, value);
+  return value;
 }
+/** Whether the company has Speed Poker's big tables (companies.features.speedPokerBigTables). */
+const hasBigTables = async (org: string) => (await pokerFeatures(org)).big;
 
 // ---------------------------------------------------------------- operations
 
