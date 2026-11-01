@@ -192,6 +192,9 @@ List<AttendanceDayView> buildAttendanceDays({
   /// The server's settled status per day, by YYYY-MM-DD. Where it has one,
   /// that is what the day is — see [_settledByServer].
   Map<String, ServerDayStatus> serverDays = const {},
+
+  /// The day this person joined. The days before it are empty, not absent.
+  DateTime? joinedOn,
 }) {
   final recordsByDate = {
     for (final record in records)
@@ -254,6 +257,14 @@ List<AttendanceDayView> buildAttendanceDays({
     // The day on its own terms. A request awaiting a decision does not
     // change any of this — see below.
     AttendanceDayView natural() {
+      if (joinedOn != null && date.isBefore(_dateOnly(joinedOn))) {
+        return AttendanceDayView(
+          date: date,
+          kind: AttendanceKind.future,
+          title: 'Before joining',
+          cellLabel: '',
+        );
+      }
       if (holiday != null) {
         return AttendanceDayView(
           date: date,
@@ -507,6 +518,8 @@ AttendanceDayView _settledByServer(
     ),
     'week_off' => (AttendanceKind.weekoff, 'Week off', 'Weekly off'),
     'holiday' => (AttendanceKind.holiday, 'Holiday', server.label ?? 'Holiday'),
+    // Not theirs yet: an empty day, like one still to come.
+    'before_joining' => (AttendanceKind.future, '', 'Before joining'),
     'missed_punch' => switch (server.countsAs) {
       'Present' => (AttendanceKind.present, '', 'Present'),
       'Half Day' => (AttendanceKind.halfDay, 'Half day', 'Half day'),
@@ -3167,6 +3180,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     holidays: widget.dashboard.holidays,
     overtime: widget.dashboard.myOvertime,
     shift: widget.dashboard.shift,
+    joinedOn: DateTime.tryParse(widget.bloc.session.user.joiningDate ?? ''),
   );
 
   /// How far ahead attendance can be paged. There is nothing recorded in the
