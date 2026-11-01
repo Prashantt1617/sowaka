@@ -827,7 +827,7 @@ function chatSheet(r){ const lines=r.chat||[], w=(r.watchers||[]).length, uid=my
     <div class="chead" data-live="head">${nx?'<i class="live" aria-hidden="true"></i>':''}<h2>Table chat</h2><span>${w?`${w} watching`:''}</span><button class="x" data-act="chatclose" aria-label="Close the chat">×</button></div>
     ${nx?`<div class="cbody"><div class="msgs" data-live="msgs">${msgs}</div>${sideHtml()}</div>`:`<div class="msgs" data-live="msgs">${msgs}</div>
     <div class="quick">${QUICK.map(q=>`<button data-say="${esc(q)}">${esc(q)}</button>`).join('')}</div>`}
-    <form class="chatsend" data-form="chat" action="#"><input id="chatin" maxlength="200" placeholder="Say something…" enterkeyhint="send" autocomplete="off" value="${esc(state.chatDraft)}"><button type="button" class="btn primary small" data-act="chatsend">Send</button></form></div></div>`; }
+    <div class="chatsend"><input id="chatin" maxlength="200" placeholder="Say something…" autocomplete="off" value="${esc(state.chatDraft)}"><button type="button" class="btn primary small" data-act="chatsend">Send</button></div></div></div>`; }
 async function sendChat(text,fromBox){ text=String(text||'').trim(); if(!text)return;
   if(fromBox){ state.chatDraft=''; const i=$('#chatin'); if(i)i.value=''; }
   try{ await P.request('room:chat',{text}); }
@@ -1161,8 +1161,6 @@ document.addEventListener('click',async e=>{
 document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target&&e.target.id==='code'){ e.preventDefault(); joinCode(e.target.value).catch(err=>toast(err.message)); }
   if(e.key==='Enter'&&e.target&&e.target.id==='chatin'&&!e.isComposing){ e.preventDefault(); sendChat(e.target.value,true); } });
 /* The keyboard's send key submits the box: one tap sends. (Enter on a hardware keyboard is caught above, so this does not send twice.) */
-document.addEventListener('submit',e=>{ if(e.target&&e.target.dataset&&e.target.dataset.form==='chat'){ e.preventDefault(); const i=$('#chatin'); sendChat(i?i.value:state.chatDraft,true); } });
-/* The phone keyboard's send key submits the box: one tap sends. (A hardware Enter is caught above, so nothing sends twice.) */
 document.addEventListener('submit',e=>{ if(e.target&&e.target.dataset&&e.target.dataset.form==='chat'){ e.preventDefault(); const i=$('#chatin'); sendChat(i?i.value:state.chatDraft,true); } });
 /* Send keeps the keyboard up: the tap does not take the focus from the box. */
 document.addEventListener('mousedown',e=>{ if(e.target.closest&&e.target.closest('.sheet.chat button')&&document.activeElement&&document.activeElement.id==='chatin')e.preventDefault(); });
