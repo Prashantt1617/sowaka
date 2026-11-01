@@ -12,7 +12,7 @@ import type { Pill as PillT } from '../theme';
 import type { FbCycle, FbEmp, Feedback as FeedbackRow } from '../seed';
 import { downloadCsv } from '../export';
 import { adaptFeedbackList } from '../adapters';
-import { periodLabel, periodShort } from '../period';
+import { periodLabel, periodShort, previousPeriod } from '../period';
 import { Card, Loadable, Pill, SearchInput, SelectBox, SkeletonPage, SummaryCard } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { IconDownload } from '../icons';
@@ -109,11 +109,13 @@ function FeedbackBody() {
     [s.fbRaw, s.empRaw, period],
   );
 
-  // Cycles that actually have reviews, plus the live one so it is always
-  // selectable even before anybody has been reviewed in it.
+  // Cycles that actually have reviews, plus the live one and the one before
+  // it (managers may still write that one), so both are always selectable
+  // even before anybody has been reviewed in them.
+  const openPrevious = previousPeriod(s.cycle.period);
   const periods = useMemo(
-    () => [...new Set([s.cycle.period, ...s.fbRaw.map((r) => r.period)])].sort().reverse(),
-    [s.fbRaw, s.cycle.period],
+    () => [...new Set([s.cycle.period, openPrevious, ...s.fbRaw.map((r) => r.period)])].sort().reverse(),
+    [s.fbRaw, s.cycle.period, openPrevious],
   );
 
   const mgrs = view.fbMgrs;
@@ -201,7 +203,7 @@ function FeedbackBody() {
         >
           {periods.map((p) => (
             <option key={p} value={p}>
-              {periodLabel(p)}{p === s.cycle.period ? ' — current' : ''}
+              {periodLabel(p)}{p === s.cycle.period ? ' — current' : p === openPrevious ? ' — still open' : ''}
             </option>
           ))}
         </select>

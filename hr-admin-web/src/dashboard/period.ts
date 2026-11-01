@@ -26,6 +26,13 @@ export function periodShort(period: string): string {
   return parts ? `${MONTHS[parts[1] - 1].slice(0, 3)} ${parts[0]}` : period;
 }
 
+/** `2026-09` -> `2026-08`: the cycle before, which managers may still review. */
+export function previousPeriod(period: string): string {
+  const parts = parsePeriod(period);
+  if (!parts) return period;
+  return new Date(Date.UTC(parts[0], parts[1] - 2, 1)).toISOString().slice(0, 7);
+}
+
 /** `2026-09-10` -> `10 Sep 2026`. */
 export function dateLabel(iso: string): string {
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
