@@ -103,6 +103,9 @@ Future<void> _tearDown(WidgetTester tester, ManagerBloc bloc) async {
   AppNotificationService.instance.pendingDestination = null;
   await tester.pumpWidget(const SizedBox.shrink());
   bloc.dispose();
+  // The notification service waits up to ten seconds for a setup the test
+  // never runs; that wait runs out here rather than outliving the test.
+  await tester.pump(const Duration(seconds: 30));
 }
 
 void main() {

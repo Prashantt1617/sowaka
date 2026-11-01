@@ -1,6 +1,6 @@
 // Help, against a fake server: the first open asks its four questions and
 // saves them; Help home shows the match, the next session and the topics;
-// and booking with someone else reaches Review and confirms.
+// and talking to someone else reaches Review and confirms.
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -137,12 +137,13 @@ void main() {
     expect(find.text('Support when\nyou need it'), findsOneWidget);
     expect(find.text('Ananya Rao'), findsOneWidget);
     expect(find.text('YOUR COUNSELLOR'), findsOneWidget);
-    // The card: the person, the profile link, Talk now, and one way out.
-    expect(find.text('Talk now'), findsOneWidget);
+    // The card shows only who the counsellor is (the whole card opens their
+    // profile, where booking is), with one way out beneath it.
+    expect(find.text('Talk now'), findsNothing);
     expect(find.text('Work & career'), findsNothing);
     expect(find.text('Matched for you'), findsNothing);
     expect(find.text('Edit answers'), findsNothing);
-    expect(find.text('Choose someone else'), findsOneWidget);
+    expect(find.text('Talk to someone else'), findsOneWidget);
     expect(find.text('Explore what’s on your mind'), findsOneWidget);
     expect(find.text('Grief & loss'), findsOneWidget);
   });
@@ -178,7 +179,8 @@ void main() {
     expect(find.text('Nobody fits every preference you set.'), findsOneWidget);
     expect(find.text('Not met: Counsellor’s gender: Man'), findsOneWidget);
     expect(find.text('Show me who is available anyway'), findsOneWidget);
-    expect(find.text('Your sessions'), findsOneWidget);
+    // Past sessions live on My Profile, not on Help.
+    expect(find.text('Your sessions'), findsNothing);
   });
 
   testWidgets('choosing someone else, a counsellor first, reaches Review and confirms the booking', (tester) async {
@@ -215,7 +217,7 @@ void main() {
     await tester.pumpWidget(_app(HelpApiService(session: _session, baseUrl: 'https://example.test', client: client), CareApiService(session: _session, baseUrl: 'https://example.test', client: client)));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Choose someone else'));
+    await tester.tap(find.text('Talk to someone else'));
     await tester.pumpAndSettle();
     expect(find.text('How would you\nlike to choose?'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('route-counsellor')));

@@ -484,7 +484,7 @@ void main() {
           switch (status) {
             case 'scheduled':
               expect(find.text('Game start in '), findsOneWidget);
-              expect(find.textContaining(RegExp(r'^22:(49|50):\d\d$')), findsOneWidget);
+              expect(find.textContaining(RegExp(r'^22h (49|50)m \d\ds$')), findsOneWidget);
               expect(find.text('SURPRISE REWARDS'), findsOneWidget);
               expect(find.text('Let’s Play'), findsOneWidget);
             case 'live':

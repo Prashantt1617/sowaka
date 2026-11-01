@@ -76,14 +76,21 @@ void main() {
     expect(find.text('Step 1 of 5 · swipe to move on'), findsOneWidget);
     expect(find.text('Moving on in 6'), findsOneWidget);
 
-    // Then it moves on by itself to the hold: three breaths, fifteen seconds.
+    // Then it moves on by itself to the hold: three breaths, in and out,
+    // fifteen seconds in all (Neck's holds are breathed, not counted down).
     await tester.pump(const Duration(seconds: 7));
     await tester.pump(const Duration(milliseconds: 1000));
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('Step 2 of 5 · swipe to move on'), findsOneWidget);
-    expect(find.text('0:15'), findsOneWidget);
+    expect(find.text('BREATHE'), findsOneWidget);
+    expect(find.text('In'), findsOneWidget);
+    // It holds there for the breaths, then moves on to step three.
+    await tester.pump(const Duration(seconds: 13));
+    expect(find.text('Step 2 of 5 · swipe to move on'), findsOneWidget);
     await tester.pump(const Duration(seconds: 2));
-    expect(find.text('0:13'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1000));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Step 3 of 5 · swipe to move on'), findsOneWidget);
   });
 
   testWidgets('Breathe opens the moods and Anxious runs the box, round by round', (tester) async {
@@ -102,14 +109,19 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Feet Press + Box Breathing'), findsOneWidget);
     expect(find.text('Round 1 of 4'), findsOneWidget);
-    expect(find.text('Breathe around the box'), findsOneWidget);
+    // The pose photo sits in the box, with a phase on each side of it.
+    expect(find.text('Breathe\nin'), findsOneWidget);
+    expect(find.text('Hold'), findsNWidgets(2));
+    expect(find.text('Breathe\nout'), findsOneWidget);
 
-    // The breath starts after a short beat: four seconds in, then hold.
+    // The breath starts after a short beat: four seconds in, up the left
+    // side, then the hold along the top.
     await tester.pump(const Duration(milliseconds: 700));
-    expect(find.text('BREATHE IN'), findsOneWidget);
     expect(find.text('4'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^Hold · \ds$')), findsNothing);
     await tester.pump(const Duration(seconds: 4));
-    expect(find.text('HOLD'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^Hold · \ds$')), findsOneWidget);
+    expect(find.text('Hold'), findsOneWidget);
   });
 
   testWidgets('Write saves an entry, lists the week and says when it is mailed', (tester) async {
