@@ -33,7 +33,7 @@ import type { PeriodRange } from './payroll-inputs.service';
 import { resolveRuleSet } from './statutory.service';
 import { attendanceCountsForPeriod, payrollDeductions, unpaidLeaveDeduction } from './deduction.service';
 import { payslipHtml } from './payslip-html';
-import { employeeCalendar } from './attendance-report.service';
+import { employeeCalendar, invalidateAttendanceSetup, joinedOn } from './attendance-report.service';
 import { companies } from '../config/db';
 import { declarationsFor, runTds, tdsConfigsFor, ytdFor } from './tds.service';
 import { fyOf, periodsAfter } from '../shared/payroll/tds';
@@ -203,7 +203,11 @@ async function buildRunPayslips(
   // Leave without pay is docked even where every day is paid, so a month with
   // any approved leave in it reads the calendar too; whether a leave is unpaid
   // is the calendar's to say, from the shift that covered the day.
-  const attendance = docksForAttendance || (await anyApprovedLeave(structures.map((s) => s.userId), range))
+  const readsAttendance = docksForAttendance || (await anyApprovedLeave(structures.map((s) => s.userId), range));
+  // Graded on the roster as it is now: a joining date just changed moves which
+  // days are before joining, and payroll counts those itself below.
+  if (readsAttendance) invalidateAttendanceSetup(org);
+  const attendance = readsAttendance
     ? await attendanceCountsForPeriod(adminUserId, period, range)
     : new Map();
 
@@ -259,12 +263,13 @@ async function buildRunPayslips(
 
     const ruleSet = await resolveRuleSetCached(ruleSetCache, org, workStateOf(employee));
     // Joined during this month: paid from the joining day, PF ceilings counted from it.
-    const joined = employee.joiningDate ? new Date(employee.joiningDate).toISOString().slice(0, 10) : undefined;
+    const joined = joinedOn(employee);
     // Not employed yet in this period (a run made for an earlier one): no
-    // payslip, unless HR typed their loss of pay. A company whose files pay a
-    // joiner by the calendar month (joined the 27th, paid 27th to 31st in a
-    // 26th-to-25th cycle) puts them on the run that way.
-    if (joined && joined > range.to && lopOverrides[structure.userId] === undefined) continue;
+    // payslip, unless HR typed their loss of pay and they joined within the
+    // period's calendar month: a company whose files pay a joiner by the
+    // calendar month (joined the 27th, paid 27th to 31st in a 26th-to-25th
+    // cycle) puts them on the run that way.
+    if (joined && joined > range.to && (lopOverrides[structure.userId] === undefined || joined > calendarEnd(period))) continue;
     const employedFrom = joined && joined > range.from ? joined : undefined;
     const notYetEmployedDays = employedFrom ? Math.round((Date.parse(employedFrom) - Date.parse(range.from)) / 86_400_000) : 0;
     const salaryFor = (p: string, from?: string) => calculateSalaryStructure({
@@ -411,7 +416,8 @@ async function buildRunPayslips(
         ...(Object.keys(amounts).length ? { componentAmounts: amounts } : {}),
         ...(tds ? { tds } : {}),
         ...(reimbTax && reimbTax.paidPaise > 0 ? { reimbursementTax: { paidPaise: reimbTax.paidPaise, exemptPaise: reimbTax.exemptPaise, taxablePaise: reimbTax.taxablePaise } } : {}),
-        attendanceDeductions: [...docked.lines, ...unpaidLeave.lines],
+        // The days before joining as a line of their own, so the lines add up to the loss of pay.
+        attendanceDeductions: [...docked.lines, ...unpaidLeave.lines, ...(notYetEmployedDays > 0 ? [{ label: 'Before joining', count: notYetEmployedDays, days: notYetEmployedDays, trigger: 'absent' as const, every: 1, deductDays: 1 }] : [])],
         paidLeaveDaysApplied: Math.min(allowance, docked.days),
         payableDays: slip.payableDays,
         approvedLeaveDays: periodInputs.approvedLeaveDays,
@@ -833,6 +839,9 @@ export async function requireAdminOrg(adminUserId: string): Promise<string> {
   if (!admin.org) throw new PayrollRunError(409, 'User is not attached to a company');
   return admin.org;
 }
+
+/** The last day of a period's calendar month: a joiner after it is never on that run. */
+const calendarEnd = (period: string) => new Date(Date.UTC(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 0)).toISOString().slice(0, 10);
 
 /** The pay dates a run was made for, kept on it so the dashboard can show them. */
 function periodDates(range: PeriodRange) {

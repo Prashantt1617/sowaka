@@ -127,8 +127,12 @@ function lateBy(punchIn: Date, startTime: string, graceMinutes: number): number 
 
 type Person = Pick<User, 'userId' | 'name' | 'employeeId' | 'department' | 'location' | 'branch' | 'state' | 'managerUserId' | 'joiningDate'>;
 
-/** The day someone joined, 'YYYY-MM-DD'; days before it are not theirs to grade. */
-const joinedOn = (user: Person): string | undefined => (user.joiningDate ? keyOf(new Date(user.joiningDate)) : undefined);
+/**
+ * The day someone joined, 'YYYY-MM-DD': days before it are not theirs to
+ * grade, and payroll counts them as before joining. One rule for both.
+ */
+export const joinedOn = (user: { joiningDate?: Date | string | null }): string | undefined =>
+  user.joiningDate ? new Date(user.joiningDate).toISOString().slice(0, 10) : undefined;
 
 /**
  * The roster, templates and org policy change rarely and cost the most to
@@ -172,6 +176,12 @@ onShiftSetupChanged((org) => {
 /** Drop an org's finished reports, so the next read reflects a change at once. */
 export function invalidateAttendanceReport(org: string): void {
   for (const key of reportCache.keys()) if (key.startsWith(`${org}|`)) reportCache.delete(key);
+}
+
+/** The report and the roster behind it, after a change to who someone is (a joining date). */
+export function invalidateAttendanceSetup(org: string): void {
+  setupCache.delete(org);
+  invalidateAttendanceReport(org);
 }
 
 /** HR's marks for these people over a range, keyed `userId|YYYY-MM-DD`. */

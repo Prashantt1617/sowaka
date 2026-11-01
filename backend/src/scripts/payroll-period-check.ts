@@ -122,6 +122,9 @@ const setting = (period: string, extra: Record<string, unknown>) =>
   ok('31 base days, nothing lost when every day was worked', full.inputs.workingDays === 31 && full.inputs.lopDays === 0 && full.inputs.payableDays === 31, full.inputs);
   ok('the absence on 28 Aug costs a day; 28 Sep is not this run\'s', gap.inputs.lopDays === 1 && gap.inputs.payableDays === 30, gap.inputs);
   ok('a joiner on 3 Sep: 26 Aug – 2 Sep unpaid (8 days), and the absence on 10 Sep on top', joiner.inputs.lopDays === 9 && joiner.inputs.payableDays === 22, joiner.inputs);
+  const lines = joiner.inputs.attendanceDeductions ?? [];
+  ok('the payslip explains it: 8 days before joining and 1 absent, adding up', lines.reduce((t, l) => t + l.days, 0) === 9
+    && lines.find((l) => l.label === 'Before joining')?.days === 8, lines);
   const joinerCal = await employeeCalendar('hr', 'joiner', '2026-09');
   const calDay = (date: string) => joinerCal.days.find((d) => d.date === date);
   ok('the calendar leaves the days before joining empty', calDay('2026-09-01')?.status === 'before_joining' && calDay('2026-09-02')?.status === 'before_joining'
@@ -152,6 +155,8 @@ const setting = (period: string, extra: Record<string, unknown>) =>
   ok('a day in August the open September run pays can be marked', (await mark('2026-08-28')).message === '');
   const early = await mark('2026-08-20');
   ok('a day before it cannot', early.status === 400 && /pay period/.test(early.message), early);
+  const beforeJoining = await refusal(() => setAttendanceOverride('hr', 'joiner', '2026-09-01', { status: 'present' }));
+  ok('a day before someone joined cannot be marked', beforeJoining.status === 400 && /joined on 2026-09-03/.test(beforeJoining.message), beforeJoining);
   const october = await mark('2026-09-28');
   ok('28 Sep is October\'s, which has no run', october.status === 400, october);
   await payrollRuns().updateOne({ org: ORG, period: '2026-09' }, { $set: { status: 'paid' } });
