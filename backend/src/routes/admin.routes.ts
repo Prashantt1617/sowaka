@@ -15,6 +15,7 @@ import {
   listOutOfLocation,
   saveOfficeHandler,
   employeeCalendarHandler,
+  employeeLeaveBalanceHandler,
   setCalendarDayHandler,
   clearCalendarDayHandler,
   listAccessesHandler,
@@ -112,6 +113,8 @@ adminRouter.delete('/employees/:userId', deleteEmployee);
 adminRouter.get('/employees/:userId/activity', employeeActivityHandler);
 // One person's month, graded the way the report grades it.
 adminRouter.get('/employees/:userId/calendar', employeeCalendarHandler);
+// One employee's leave balance, as their app shows it (read only).
+adminRouter.get('/employees/:userId/leave-balance', employeeLeaveBalanceHandler);
 // HR marks a day of the current month; it outranks punches, leave and holidays everywhere.
 adminRouter.put('/employees/:userId/calendar/:date', setCalendarDayHandler);
 adminRouter.delete('/employees/:userId/calendar/:date', clearCalendarDayHandler);

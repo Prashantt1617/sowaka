@@ -36,7 +36,8 @@ import { IncomeTaxCard } from './IncomeTaxCard';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
 import { downloadPayslipPdf } from '../payslip';
 import { downloadTdsSheetPdf } from '../tdsSheet';
-import type { CalendarDayDTO, CalendarDayStatus, EmployeeCalendarDTO, HrDayStatus } from '../../services/hrms';
+import type { CalendarDayDTO, CalendarDayStatus, EmployeeCalendarDTO, HrDayStatus, LeaveBalanceItemDTO } from '../../services/hrms';
+import { getEmployeeLeaveBalance } from '../../services/hrms';
 
 // —— Deterministic per-person derivations ————————————————————————————————
 const GENDERS = ['Male', 'Female'];
@@ -94,14 +95,56 @@ function derive(emp: Emp) {
   };
 }
 
-// Leave balance — annual entitlement per type, minus a seeded "taken".
-type LeaveBal = { key: LeaveType; name: string; entitled: number; taken: number };
-function leaveBalance(seed: number): LeaveBal[] {
-  return [
-    { key: 'Sick', name: 'Sick Leave', entitled: 12, taken: seed % 6 },
-    { key: 'Casual', name: 'Casual Leave', entitled: 12, taken: (seed * 3) % 9 },
-    { key: 'Earned', name: 'Earned Leave', entitled: 18, taken: (seed * 2) % 13 },
-  ];
+// A leave type's colour: the three originals keep theirs, anything HR added takes the accent.
+const TYPE_BY_KEY: Record<string, LeaveType> = { sick: 'Sick', casual: 'Casual', earned: 'Earned' };
+const leaveColour = (key: string) => (TYPE_BY_KEY[key] ? TYPE[TYPE_BY_KEY[key]] : 'var(--accent)');
+const days = (n: number) => String(Math.round(n * 10) / 10);
+
+/** The employee's real leave balance, as their app shows it: every type on their template. */
+function LeaveBalanceSection({ userId }: { userId: string }) {
+  const [state, setState] = useState<{ types: LeaveBalanceItemDTO[] } | 'loading' | 'error'>('loading');
+  useEffect(() => {
+    let live = true;
+    setState('loading');
+    getEmployeeLeaveBalance(userId).then((b) => live && setState({ types: b.types }), () => live && setState('error'));
+    return () => { live = false; };
+  }, [userId]);
+  return (
+    <Section title="Leave balance" icon={<PdCalendar />}>
+      {state === 'loading' ? <SkeletonLines lines={2} />
+        : state === 'error' ? <div className="pd-subnote" style={{ paddingTop: 8 }}>Couldn't load the leave balance.</div>
+        : state.types.length === 0 ? <div className="pd-subnote" style={{ paddingTop: 8 }}>No leave types on this person's shift template.</div>
+        : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, paddingTop: 8 }}>
+            {state.types.map((b) => {
+              const pct = b.total > 0 ? Math.min(100, Math.round((b.used / b.total) * 100)) : 0;
+              return (
+                <div key={b.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: leaveColour(b.key), flexShrink: 0 }} />
+                    <span style={{ fontSize: 12.5, fontWeight: 400, color: 'var(--ink-2)' }}>{b.name}</span>
+                  </div>
+                  {b.unpaid ? (
+                    <>
+                      <span style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6 }}>Unpaid</span>
+                      <div className="pd-subnote" style={{ marginTop: 6 }}>No balance · {days(b.used)} taken this year</div>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>{days(b.remaining)}<span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 500 }}> / {days(b.total)}</span></span>
+                      <div className="pd-bar" style={{ marginTop: 6 }}>
+                        <i style={{ width: `${pct}%`, background: leaveColour(b.key) }} />
+                      </div>
+                      <div className="pd-subnote">{days(b.used)} taken · {days(b.remaining)} available</div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+    </Section>
+  );
 }
 
 function ratingWord(score: number): string {
@@ -138,7 +181,6 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
 }) {
   const s = useStore();
   const d = derive(emp);
-  const bal = leaveBalance(d.seed);
   const [tab, setTab] = useState<ProfileTab>(initialTab ?? 'profile');
   // The section to bring into view once it has loaded (some load their own data).
   useEffect(() => {
@@ -405,27 +447,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
       {tab === 'requests' && (
         <div className="pd-psecs">
           <div className="pd-psecs">
-            <Section title="Leave balance" icon={<PdCalendar />}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, paddingTop: 8 }}>
-              {bal.map((b) => {
-                const available = b.entitled - b.taken;
-                const pct = Math.round((b.taken / b.entitled) * 100);
-                return (
-                  <div key={b.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ width: 10, height: 10, borderRadius: 3, background: TYPE[b.key], flexShrink: 0 }} />
-                      <span style={{ fontSize: 12.5, fontWeight: 400, color: 'var(--ink-2)' }}>{b.name}</span>
-                    </div>
-                    <span style={{ fontSize: 24, fontWeight: 400, letterSpacing: '-.02em', lineHeight: 1.05, marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>{available}<span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 500 }}> / {b.entitled}</span></span>
-                    <div className="pd-bar" style={{ marginTop: 6 }}>
-                      <i style={{ width: `${pct}%`, background: TYPE[b.key] }} />
-                    </div>
-                    <div className="pd-subnote">{b.taken} taken · {available} available</div>
-                  </div>
-                );
-              })}
-            </div>
-          </Section>
+            <LeaveBalanceSection userId={emp.id} />
           </div>
           <RequestsForEmployee emp={emp} />
         </div>
