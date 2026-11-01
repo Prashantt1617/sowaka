@@ -110,7 +110,10 @@ function av(p,cls){ p=p||{}; const mine=!!meId()&&p.userId===meId();
 const T=at=>'<span class="num" data-tick data-cd="'+(+at||0)+'"></span>';
 const ptsPill=(v,cls)=>'<span class="pill pts num'+(cls?' '+cls:'')+'" aria-label="'+esc(n0(v))+' points">'+IC.bolt()+'<span>'+esc(n0(v))+'</span> pts</span>';
 const clockPill=at=>'<span class="pill clk num" data-lowat="'+(+at||0)+'" role="timer" aria-label="Round clock">'+IC.clock()+T(at)+'</span>';
-const top=(l,c,r)=>'<div class="top">'+(l||'<span class="sp"></span>')+(c!=null?'<span class="ttl">'+c+'</span>':'')+(r||'<span class="sp"></span>')+'</div>';
+/* The sowaka GAMES logo, as the Games tab has it (src.html .swg): at the right end of the top bar, before whatever the bar has there. */
+const SWG='<div class="swg-slot"><span class="swg" role="img" aria-label="Sowaka Games"><span class="swg-logo"><i></i></span><span class="swg-box"><span class="swg-games">GAMES</span></span></span></div>';
+const swgEnd=r=>'<span class="swg-end">'+SWG+(r&&r.indexOf('class="sp"')<0?r:'')+'</span>';
+const top=(l,c,r)=>'<div class="top swgt">'+(l||'<span class="sp"></span>')+(c!=null?'<span class="ttl">'+c+'</span>':'')+swgEnd(r)+'</div>';
 const btn=(label,act,cls,extra)=>'<button type="button" class="cta'+(cls?' '+cls:'')+'" data-act="'+act+'"'+(extra||'')+'>'+label+'</button>';
 const howBtn=()=>btn('How to play','how','ghost',' aria-haspopup="dialog"');
 const signOutPill=()=>WEB?'<button type="button" class="pill out" data-act="signout">Sign out</button>':'<span class="sp"></span>';
@@ -239,7 +242,7 @@ function vLanding(){
     info='<div class="info one"><div class="l"><span class="k">No game scheduled</span><span class="s">'+(o?'Nothing is on the calendar for '+esc(o)+' yet. ':'')+'A post on the feed will say when the next Secret Squad is.</span></div></div>';
   }
   return {key:'landing:'+mode,tc:'#5B4BD6',html:'<div class="scr">'+
-    '<header class="bar1"><span class="sp"></span><span class="ttl">'+esc(o||'Games')+'</span>'+signOutPill()+'</header>'+
+    '<header class="bar1"><span class="sp"></span><span class="ttl">'+esc(o||'Games')+'</span>'+swgEnd(signOutPill())+'</header>'+
     '<section class="hero fill" aria-label="Secret Squad" style="padding:0 20px 46px;justify-content:center;gap:6px">'+squadArt()+
       '<h1 class="land-h" tabindex="-1">Secret Squad</h1><p class="land-s">Same category is same squad – find your squad mates!</p></section>'+
     '<section class="panel" aria-label="Join the game">'+info+
