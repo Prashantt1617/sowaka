@@ -1224,8 +1224,12 @@ function hiss(dur,o){ o=o||{}; const a=bus(); if(!a)return;
   g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(o.gain||.1,t+(o.attack||.006)); g.gain.exponentialRampToValueAtTime(.0001,t+dur);
   s.connect(f).connect(g).connect(master); s.start(t); s.stop(t+dur+.03); }
 const SFX={
-  card:at=>{ hiss(.07,{at,gain:.16,freq:3400,to:1600,q:.9}); tone(1100,.03,{at,gain:.025,type:'triangle'}); },
-  chips:()=>[0,.05,.11].forEach(d=>{ tone(2500+Math.random()*1100,.055,{type:'triangle',gain:.06,at:d}); hiss(.035,{at:d,gain:.05,freq:5200,q:2.5}); }),
+  // a card turning over: the lift (a soft swish), then the snap as it lands
+  card:at=>{ at=at||0; hiss(.055,{at,gain:.14,freq:2600,to:1100,q:.8}); hiss(.018,{at:at+.05,gain:.3,freq:5200,q:.5,attack:.002}); tone(190,.03,{at:at+.05,gain:.16,to:120}); tone(1400,.02,{at:at+.05,gain:.04,type:'triangle'}); },
+  // chips landing on the felt: a few clinks (three metallic partials each), the stack's thud under them
+  chips:at=>{ at=at||0; tone(140,.07,{at,gain:.12,to:90}); for(let i=0;i<5;i++)clink(at+i*.045+Math.random()*.02,.06+Math.random()*.03); },
+  // the pot going to the winner: a cascade of chips, a bigger pile
+  coins:at=>{ at=at||0; tone(120,.12,{at,gain:.16,to:70}); for(let i=0;i<11;i++)clink(at+i*.055+Math.random()*.03,.05+Math.random()*.04); },
   knock:()=>[0,.12].forEach(d=>{ tone(160,.1,{gain:.24,at:d,to:85}); hiss(.03,{at:d,gain:.05,freq:900,q:1.4}); }),
   fold:()=>hiss(.3,{gain:.07,freq:1500,to:320,q:.6,attack:.05}),
   win:()=>[523.25,659.25,783.99,1046.5].forEach((f,i)=>tone(f,.34,{type:'triangle',gain:.08,at:.15+i*.09})),
@@ -1233,6 +1237,8 @@ const SFX={
   // your turn: two short low buzzes, like a phone
   buzz:()=>[0,.17].forEach(d=>{ tone(150,.12,{type:'square',gain:.07,at:d}); tone(300,.12,{type:'square',gain:.025,at:d}); }),
 };
+/** One chip against another: three high partials that do not line up, gone in a flash. */
+function clink(at,gain){ const f=2300+Math.random()*900; [1,1.52,2.07].forEach((m,i)=>tone(f*m,.09-i*.015,{at,gain:gain*(i?.45:1),type:i?'sine':'triangle',attack:.002})); hiss(.02,{at,gain:gain*.6,freq:6500,q:1.2,attack:.002}); }
 function sfx(name,at){ if(!bigOn()||!soundOn)return; try{ SFX[name](at||0); }catch(e){} }
 /** What changed at the table since the last view, as sounds: the deal, the board, a bet, a check, a fold, a pot won, a chat line. */
 function roomSounds(prev,room,uid){ if(!soundOn||!prev)return;
@@ -1244,8 +1250,13 @@ function roomSounds(prev,room,uid){ if(!soundOn||!prev)return;
   const slow=hypeOn()&&runout(v);
   for(let i=ob;i<nb;i++)sfx('card',boardDelay(slow,i-ob)/1000);
   // next look: the win sound comes with the celebration, once the board is out (hypeSync)
-  if(v.result&&!was.result){ if(!hypeOn()&&v.mySeat!=null&&v.result.pots.some(p=>p.winners.includes(v.mySeat)))sfx('win'); return; }
-  if((v.pot||0)>(was.pot||0))return sfx('chips');
+  if(v.result&&!was.result){ const after=hypeOn()?Math.max(0,boardDoneAt(v)-Date.now())/1000:0;
+    // cards shown at the showdown turn over, then the pot slides to the winner
+    const shown=(v.result.shown||[]).length||v.seats.filter(s=>s.cards&&!s.me&&!s.folded).length; for(let i=0;i<Math.min(shown,4);i++)sfx('card',after+i*.12);
+    sfx('coins',after+Math.min(shown,4)*.12+.25);
+    if(!hypeOn()&&v.mySeat!=null&&v.result.pots.some(p=>p.winners.includes(v.mySeat)))sfx('win'); return; }
+  // chips on the felt: a bet or a raise (a seat's bet grows), or bets gathered into the pot
+  if(v.seats.some(s=>(s.bet||0)>((was.seats[s.seat]||{}).bet||0))||(v.pot||0)>(was.pot||0))return sfx('chips');
   if(v.seats.some(s=>s.folded&&was.seats[s.seat]&&!was.seats[s.seat].folded))return sfx('fold');
   if(v.seats.some(s=>(s.lastAction==='check'||s.lastAction==='timeout')&&!s.folded&&was.seats[s.seat]&&was.seats[s.seat].lastAction!==s.lastAction))sfx('knock'); }
 /* The sounds' face to the page: update(prevRoom, room, myUserId) after each room view, toggle(), muted(), unlock() on a tap.

@@ -350,8 +350,9 @@ const hasBigTables = async (org: string) => (await pokerFeatures(org)).big;
 
 // ---------------------------------------------------------------- operations
 
-export async function hostRoom(seat: RoomSeat, options: { open?: unknown; house?: number } = {}): Promise<PokerRoomView> {
-  if (!(await claimWithin(`host:${seat.org}:${seat.userId}`, ROOMS.hostsPerWindow, ROOMS.hostWindowMs))) {
+export async function hostRoom(seat: RoomSeat, options: { open?: unknown; house?: number; practice?: boolean } = {}): Promise<PokerRoomView> {
+  // A practice table is private and ends when they leave it, so it does not count towards the tables one person may open.
+  if (!options.practice && !(await claimWithin(`host:${seat.org}:${seat.userId}`, ROOMS.hostsPerWindow, ROOMS.hostWindowMs))) {
     throw new PokerRoomError(429, 'That is enough new tables for now. Try again in a few minutes.');
   }
   await leaveRoom(seat);
@@ -371,7 +372,7 @@ export async function hostRoom(seat: RoomSeat, options: { open?: unknown; house?
 
 /** A private table against the house, dealt at once: Speed Poker on your own. */
 export async function practiceRoom(seat: RoomSeat): Promise<PokerRoomView> {
-  const view = await hostRoom(seat, { open: false, house: ROOMS.practiceHouse });
+  const view = await hostRoom(seat, { open: false, house: ROOMS.practiceHouse, practice: true });
   const changed = await change(seat.org, view.code, (r) => {
     r.practice = true;
     return { result: true, effects: rule(() => startGame(r, deps.now(), deps.random)), write: true };
