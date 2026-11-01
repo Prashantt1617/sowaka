@@ -60,7 +60,8 @@ export const POKER_FORMATS: Record<PokerRound, PokerTableConfig> = {
     levelMs: 3 * 60_000,
     actionMs: 20_000,
     durationMs: 20 * 60_000,
-    handPauseMs: 3500,
+    // Long enough to read who won and how before the next deal.
+    handPauseMs: 5000,
   },
   final: {
     startStack: 1500,

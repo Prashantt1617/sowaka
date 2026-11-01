@@ -277,6 +277,19 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 #table.big .board.nopiles .side{display:none}
 #table.big .banner{position:static;transform:none;max-width:210px;padding:6px 12px;font-size:13px;animation:fadein .25s ease-out}
 @keyframes fadein{from{opacity:0;transform:scale(.94)}}
+#table.big .result{text-align:center;font-weight:800;font-size:14px;color:#f6e7bd;background:rgba(8,14,11,.88);border:1px solid rgba(229,184,80,.55);border-radius:12px;padding:10px 12px;min-height:48px;display:flex;align-items:center;justify-content:center;animation:fadein .25s ease-out}
+#table.big .seat .bubble{position:absolute;left:50%;bottom:calc(100% + 16px);transform:translateX(-50%);z-index:9;width:max-content;max-width:150px;background:#fbfbf7;color:#13221a;font-size:12px;font-weight:600;line-height:1.25;padding:5px 9px;border-radius:12px;text-align:center;overflow-wrap:anywhere;box-shadow:0 4px 14px rgba(0,0,0,.45);pointer-events:none;animation:bubblein .2s ease-out}
+#table.big .seat .bubble::after{content:"";position:absolute;left:50%;top:100%;transform:translateX(-50%);border:6px solid transparent;border-top-color:#fbfbf7}
+#table.big .seat .bubble.al{left:14px;transform:none}#table.big .seat .bubble.al::after{left:20px}
+#table.big .seat .bubble.ar{left:auto;right:14px;transform:none}#table.big .seat .bubble.ar::after{left:auto;right:14px;transform:none}
+/* the top seat: beside it, not over the bar above or its bet below */
+#table.big .seat .bubble.side{left:calc(100% - 6px);bottom:auto;top:6px;transform:none;max-width:124px;text-align:left}
+#table.big .seat .bubble.side::after{left:auto;right:100%;top:12px;transform:none;border-top-color:transparent;border-right-color:#fbfbf7}
+/* a folded or busted seat fades, its bubble does not */
+#table.big .seat.folded,#table.big .seat.out{opacity:1}
+#table.big .seat.folded>:not(.bubble){opacity:.45}#table.big .seat.out>:not(.bubble){opacity:.3}
+@keyframes bubblein{from{opacity:0;translate:0 4px}}
+#table.big .actpop{font-weight:800;font-size:14px;padding:5px 14px;border-radius:999px;background:rgba(229,184,80,.95);color:#2a1a02;max-width:230px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 4px 14px rgba(0,0,0,.4);animation:fadein .2s ease-out}
 #table.big .seat{width:72px}
 #table.big .seat .ring{width:48px;height:48px;padding:2px}
 #table.big .seat .ring .avatar{width:44px;height:44px;font-size:14px}
@@ -286,12 +299,12 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 #table.big .seat.me .plate{border-color:rgba(229,184,80,.7);background:linear-gradient(180deg,rgba(52,40,14,.97),rgba(12,10,5,.97))}
 #table.big .seat.toact .plate{border-color:rgba(229,184,80,.85)}
 #table.big .seat .tag{top:-8px;font-size:9px;padding:1px 5px}
-#table.big .seat .hole{top:-2px}
-#table.big .seat .hole.r{left:46px}#table.big .seat .hole.l{right:46px}
+#table.big .seat .hole{top:10px}
+#table.big .seat .hole.r{left:50px}#table.big .seat .hole.l{right:50px}
 #table.big .seat .hole .pc.mini{width:18px;height:25px}
 /* turned over at a showdown: in the hole cards' place, so the seat keeps its size and spot */
-#table.big .seat .shown{position:absolute;top:-4px;margin:0;gap:2px;z-index:1}
-#table.big .seat .shown.r{left:46px}#table.big .seat .shown.l{right:46px}
+#table.big .seat .shown{position:absolute;top:8px;margin:0;gap:2px;z-index:1}
+#table.big .seat .shown.r{left:50px}#table.big .seat .shown.l{right:50px}
 #table.big .seat .shown .pc.mini{width:21px;height:30px}
 #table.big .seat .shown .pc.mini .r{font-size:11px;left:2px}#table.big .seat .shown .pc.mini .s{font-size:12px;right:2px}
 #table.big .seat .bet.al{transform:translate(0,-50%)}#table.big .seat .bet.ar{transform:translate(-100%,-50%)}
@@ -415,7 +428,7 @@ const haptic=k=>{ try{ (window.Sowaka&&window.Sowaka.haptic)&&window.Sowaka.hapt
 
 const state={mode:'rooms',room:null,rooms:[],invites:[],me:null,ev:null,picker:null,leaveAsk:false,codeInput:'',shared:null,mine:null,table:null,view:'lobby',watching:null,tab:'board',raiseOpen:false,raiseTo:0,offset:0,lastHand:0,banner:null,offline:false,tv:!!P.tv,tvTables:{},pick:{},
   /* the big tables: from room:hello (the company's table), the chat sheet, and the table being watched */
-  big:false,tables:null,chatOpen:false,chatDraft:'',chatSeen:0,chatRoom:null,watchCode:null};
+  big:false,tables:null,chatOpen:false,chatDraft:'',chatSeen:0,chatRoom:null,watchCode:null,bubbles:{},bubbleRoom:null,chatIds:null};
 const now=()=>Date.now()+state.offset;
 const me=()=>(state.mode==='rooms'&&state.me&&state.me.userId)||(state.mine&&state.mine.userId)||(state.me&&state.me.userId);
 const initials=n=>String(n||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
@@ -684,9 +697,18 @@ function onRoom(room){
     // A table's earlier chat is not news: only lines from now on count as unread.
     if(state.chatRoom!==room.code){ state.chatRoom=room.code; state.chatSeen=last; }
     if(state.chatOpen)state.chatSeen=Math.max(state.chatSeen,last);
+    // A new line from someone at the table pops up over their avatar for three seconds; a table's earlier lines do not.
+    const lines=room.chat||[];
+    if(state.bubbleRoom!==room.code){ state.bubbleRoom=room.code; state.chatIds=new Set(lines.map(l=>l.id)); }
+    else for(const l of lines){ if(state.chatIds.has(l.id))continue; state.chatIds.add(l.id);
+      if(!l.watching){ state.bubbles[l.userId]={text:l.text,until:Date.now()+3000}; setTimeout(()=>{ if(state.mode==='rooms'&&state.room)render(); },3050); } }
   }
   if(v){ const was=state.table; state.table=v;
-    if(was&&was.id===v.id&&v.toAct!=null&&v.toAct===v.mySeat&&was.toAct!==v.mySeat){ haptic('medium'); chime(); if(room.big)state.chatOpen=false; }
+    if(was&&was.id===v.id&&v.toAct!=null&&v.toAct===v.mySeat&&was.toAct!==v.mySeat){
+      if(room.big){ haptic('heavy'); sfx('buzz'); try{ if(navigator.vibrate)navigator.vibrate([120,60,120]); }catch(e){} state.chatOpen=false; }
+      else{ haptic('medium'); chime(); } }
+    // Someone else's move, said on the table for a moment: "Rahul raised to 480".
+    if(room.big&&was&&was.id===v.id&&was.handNo===v.handNo&&v.street!=='done'){ const said=moveWords(was,v); if(said){ state.actionPop={text:said,until:Date.now()+2500}; setTimeout(()=>{ if(state.mode==='rooms'&&state.room)render(); },2550); } }
     if(!was||was.handNo!==v.handNo)state.raiseOpen=false; }
   else state.table=null;
   if(prev&&prev.status==='lobby'&&room.status==='playing'){ haptic('heavy'); chime(); }
@@ -759,7 +781,25 @@ function tableInner(v,landscape,big){
       <div class="center">${v.pot>0?`<div class="pot num">Pot ${fmt(v.pot)}</div>`:''}${board}</div>
       ${seats}${banner?`<div class="banner">${esc(banner)}</div>`:''}</div>`;
 }
-/** A big table (up to eight): the same table, drawn compact; the banner takes the pot's place over the board. */
+/** Who won the hand, in words: "You win 1,840 with three of a kind". */
+function resultLine(v){ const p=v.result&&v.result.pots[0]; if(!p)return '';
+  const w=p.winners.map(i=>v.seats[i]).map(s=>s.me?'You':/^bot:/.test(s.userId)?String(s.name).replace(/^House /,''):first(s.name));
+  // No showdown: everyone else folded, so say that rather than leave it a mystery.
+  const how=p.hand?` with ${p.hand.toLowerCase()}`:' · everyone else folded';
+  return `${w.join(' & ')} ${w.length>1?'split':w[0]==='You'?'win':'wins'} ${fmt(v.result.pots.reduce((a,x)=>a+x.amount,0))}${how}`; }
+/** The latest move by someone else since the last view, in words; null when nothing new. */
+function moveWords(was,v){ let said=null;
+  for(const s of v.seats){ if(s.me)continue; const o=was.seats[s.seat]; if(!o)continue;
+    const before=was.street===v.street?o.lastAction:null, betBefore=was.street===v.street?o.bet:0;
+    if(!s.lastAction||s.lastAction==='sb'||s.lastAction==='bb'||(s.lastAction===before&&s.bet===betBefore))continue;
+    const n=/^bot:/.test(s.userId)?String(s.name).replace(/^House /,''):first(s.name);
+    said={fold:`${n} folded`,check:`${n} checked`,call:`${n} called ${fmt(s.bet)}`,raise:`${n} raised to ${fmt(s.bet)}`,allin:`${n} is all in · ${fmt(s.bet)}`,timeout:s.folded?`${n} ran out of time · folded`:`${n} ran out of time · checked`}[s.lastAction]||said; }
+  return said; }
+/** What a player said, over their avatar for three seconds (the chat keeps it all). */
+function bubbleHtml(userId,at,x){ const b=state.bubbles[userId]; if(!b||b.until<=Date.now())return '';
+  const chars=Array.from(b.text), text=chars.length>60?chars.slice(0,58).join('')+'…':b.text;
+  return `<div class="bubble ${at==='T'?'side':x<30?'al':x>70?'ar':''}">${esc(text)}</div>`; }
+/** A big table (up to eight): the same table, drawn compact. Who won is told under your cards, never over the board. */
 function bigTableInner(v,o){
   const n=v.seats.length, mySeat=v.mySeat, t=now(), wide=!!o.wide, room=o.room;
   const rot=mySeat==null?0:mySeat;
@@ -770,25 +810,24 @@ function bigTableInner(v,o){
     const showRight=x<50;
     const ring=s.toAct&&v.deadline?Math.max(0,Math.min(1,(v.deadline-t)/v.actionMs)):1;
     const shown=s.cards&&!s.me;
-    const tag=s.left?'<span class="tag">LEFT</span>':s.busted?'<span class="tag">OUT</span>':s.allIn?'<span class="tag allin">ALL IN</span>':s.sittingOut?'<span class="tag">AWAY</span>':s.lastAction&&!s.toAct&&v.street!=='done'?`<span class="tag act">${actionWord(s.lastAction)}</span>`:winners.has(s.seat)?'<span class="tag bounty">WINNER</span>':'';
+    const amount=(s.lastAction==='raise'||s.lastAction==='call')&&s.bet>0?` ${fmt(s.bet)}`:'';
+    const tag=s.left?'<span class="tag">LEFT</span>':s.busted?'<span class="tag">OUT</span>':s.allIn?'<span class="tag allin">ALL IN</span>':s.sittingOut?'<span class="tag">AWAY</span>':s.lastAction&&!s.toAct&&v.street!=='done'?`<span class="tag act">${actionWord(s.lastAction)}${amount}</span>`:winners.has(s.seat)?'<span class="tag bounty">WINNER</span>':'';
     const holeBacks=s.inHand&&!s.folded&&!s.cards&&!s.busted&&!s.me?`<div class="hole ${showRight?'r':'l'}">${back('mini')}${back('mini')}</div>`:'';
     const [bx,by,anchor]=spot8(wide&&BET8W[at]?BET8W:BET8,at), [dx,dy]=spot8(DEAL8,at);
     return `<div class="seat p-${at} ${s.me?'me':''} ${s.folded?'folded':''} ${s.busted?'out':''} ${s.toAct?'toact':''} ${s.toAct&&ring<.33?'hurry':''}" style="left:${x}%;top:clamp(50px,${y}%,calc(100% - 44px));--t:${ring.toFixed(3)}">
       ${tag}<div class="ring">${/^bot:/.test(s.userId)?'<div class="avatar house">♠</div>':avatarHtml(s.name,s.photoUrl||pic(s.userId))}</div>${holeBacks}
       <div class="plate"><b>${esc(s.me?'You':/^bot:/.test(s.userId)?String(s.name).replace(/^House /,''):first(s.name))}</b><span>${s.busted?'—':fmt(s.stack)}</span></div>
+      ${bubbleHtml(s.userId,at,x)}
       ${shown?`<div class="shown ${showRight?'r':'l'}">${s.cards.map(c=>card(c,'mini',winCards.has(c)?'win':'')).join('')}</div>`:''}
       ${s.bet>0?`<div class="bet ${anchor}" style="left:${bx}px;top:${by}px"><i></i>${fmt(s.bet)}</div>`:''}
       ${s.button?`<div class="dealer" style="left:${dx}px;top:${dy}px">D</div>`:''}</div>`; }).join('');
   // Next to the middle seats the deck and the burn pile would crowd the board: there it is the cards alone.
   const board=boardHtml(v,winCards).replace('<div class="board"',`<div class="board${names.includes('LM')?' nopiles':''}"`);
   const level=v.level?`Blinds ${fmt(v.level.sb)}/${fmt(v.level.bb)}${v.nextLevelAt&&v.nextLevel?` · ${fmt(v.nextLevel.sb)}/${fmt(v.nextLevel.bb)} in ${clockOf(v.nextLevelAt-t)}`:''}`:'';
-  let banner='';
-  if(v.result){ const p=v.result.pots[0]; if(p){ const w=p.winners.map(i=>v.seats[i]).map(s=>s.me?'You':first(s.name));
-      banner=`${w.join(' & ')} ${w.length>1?'split':w[0]==='You'?'win':'wins'} ${fmt(v.result.pots.reduce((a,x)=>a+x.amount,0))}${p.hand?` with ${p.hand.toLowerCase()}`:''}`; } }
   const left=v.endsAt-t, watching=room&&room.watching;
   return `<div class="tbar"><button class="back" data-act="lobby" aria-label="${watching?'Back to the tables':'Back to the lobby'}">‹</button><div class="title"><b>${tableTitle(v)}${v.mySeat==null?' · watching':''}</b><span>${level}</span></div>${room?chatButton(room):''}${soundButton()}<div class="clock num ${left<60000?'low':''}">${v.status==='over'?'Over':clockOf(left)}</div></div>
     <div class="stage"><div class="felt"></div>
-      <div class="center">${banner?`<div class="banner">${esc(banner)}</div>`:v.pot>0?`<div class="pot num"><i></i>Pot ${fmt(v.pot)}</div>`:''}${board}</div>
+      <div class="center">${!v.result&&state.actionPop&&state.actionPop.until>Date.now()?`<div class="actpop">${esc(state.actionPop.text)}</div>`:!v.result&&v.pot>0?`<div class="pot num"><i></i>Pot ${fmt(v.pot)}</div>`:''}${board}</div>
       ${seats}</div>`;
 }
 function renderTable(){
@@ -827,6 +866,9 @@ function renderTable(){
       ${st.map(s=>`<div class="rowi ${s.userId===myId?'me':''}"><div class="rank">${s.place}</div>${avatarHtml(s.name,(v.seats.find(x=>x.userId===s.userId)||{}).photoUrl||pic(s.userId))}<div class="who"><b>${esc(s.name)}</b><span>${s.busted?'Busted':fmt(s.stack)+' chips'}${s.knockouts.length?` · ${s.knockouts.length} KO`:''}</span></div></div>`).join('')}
       ${watching?`<div class="btns">${seatFree(room)?'<button class="btn primary" data-act="takeseat">Take a seat</button>':''}<button class="btn ghost" data-act="unwatch">Back to tables</button></div>`:room?`<div class="btns">${isHost()?'<button class="btn primary" data-act="again">Deal again</button>':`<div class="waiting" style="flex:1;min-height:48px">Waiting for ${esc(hostName(room))}…</div>`}<button class="btn ghost" data-act="leaveask" style="flex:.6">Leave</button></div>`:'<button class="btn primary" style="width:100%;margin-top:12px" data-act="lobby">Back to the lobby</button>'}</div></div>`; }
   if(big){ const wide=isWide();
+    // Who won: in the dock, where "Next hand in a moment…" was, so it never sits on cards.
+    const won=v.result&&v.status!=='over'?resultLine(v):'';
+    if(won){ const line=`<div class="result">🏆 ${esc(won)}</div>`; actions=/Next hand in a moment/.test(actions)?line:line+actions; }
     app.innerHTML=`<div id="table" class="big ${wide?'wide':''}">${tableInner(v,false,{wide,room})}<div class="dock">${watching?'':`<div class="mine">${hand}</div>`}<div class="actions">${actions}</div></div>${over}${sheets()}</div>`; return; }
   app.innerHTML=`<div id="table">${tableInner(v,false)}<div class="mine">${hand}</div><div class="actions">${actions}</div>${over}${room?sheets():''}</div>`;
 }
@@ -999,6 +1041,8 @@ const SFX={
   fold:()=>hiss(.3,{gain:.07,freq:1500,to:320,q:.6,attack:.05}),
   win:()=>[523.25,659.25,783.99,1046.5].forEach((f,i)=>tone(f,.34,{type:'triangle',gain:.08,at:.15+i*.09})),
   pop:()=>tone(430,.09,{gain:.09,to:900}),
+  // your turn: two short low buzzes, like a phone
+  buzz:()=>[0,.17].forEach(d=>{ tone(150,.12,{type:'square',gain:.07,at:d}); tone(300,.12,{type:'square',gain:.025,at:d}); }),
 };
 function sfx(name,at){ if(!bigOn()||!soundOn)return; try{ SFX[name](at||0); }catch(e){} }
 /** What changed at the table since the last view, as sounds: the deal, the board, a bet, a check, a fold, a pot won, a chat line. */
@@ -1161,6 +1205,8 @@ function bigDemo(mode,t,people){
     if(ev==='room:unwatch')return Promise.resolve({});
     return Promise.reject(new Error('Demo: nothing is sent.')); };
   state.table=null;
+  if(q.get('pop')==='1')state.actionPop={text:'Ishaan raised to 1,480',until:Date.now()+3600e3};
+  if(q.get('bubbles')==='1'&&room.table){ const far=Date.now()+3600e3, say=['Nice hand!','All in?? 😂','GG','I fold, too rich for me','🔥🔥']; room.table.seats.slice(0,5).forEach((x,i)=>{ state.bubbles[x.userId]={text:say[i],until:far}; }); }
   if(mode!=='rooms8'){ state.room=room; state.chatOpen=q.get('chat')==='1'; onRoom(room);
     if(q.get('raise')==='1'&&!watch){ state.raiseOpen=true; state.raiseTo=480; render(); }
     // Someone says something: the unread count (or, with the chat open, a new line).
