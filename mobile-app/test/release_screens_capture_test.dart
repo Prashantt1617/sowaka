@@ -136,6 +136,11 @@ ThemeData _theme() => ThemeData(
       borderSide: const BorderSide(color: Color(0xFF0571A6), width: 1.5),
     ),
   ),
+  outlinedButtonTheme: OutlinedButtonThemeData(
+    style: OutlinedButton.styleFrom(
+      textStyle: const TextStyle(fontFamily: 'Plus Jakarta Sans', fontSize: 14, height: 20 / 14, fontWeight: FontWeight.w600),
+    ),
+  ),
   textSelectionTheme: const TextSelectionThemeData(
     cursorColor: Color(0xFF0571A6),
     selectionHandleColor: Color(0xFF0571A6),
@@ -185,6 +190,7 @@ const _order = [
   'attendance-lwp-apply-form',
   'support-contact-hr-toast',
   'support-new-ticket-prefilled',
+  'attendance-request-correction',
 ];
 
 final _results = <Map<String, Object?>>[];
@@ -1066,35 +1072,35 @@ void main() {
     File('$_out/results.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert(_results));
   });
 
-  // 1. Face ID setup ------------------------------------------------------
-  _scenario('Face ID setup', (tester, shot, phone) async {
+  // 1. Face check setup ---------------------------------------------------
+  _scenario('Face check setup', (tester, shot, phone) async {
     await _slideToPunch(tester, enrolled: false);
     await _faceSettle(tester);
-    await shot('faceid-intro', 'Face ID setup: intro with the three steps and consent');
-    await tester.tap(find.text('Set up Face ID'));
+    await shot('faceid-intro', 'Face check setup: intro with the three steps and consent');
+    await tester.tap(find.text('Set up face check'));
     await _faceSettle(tester);
-    await shot('faceid-front-1of3', 'Face ID setup: front photo, "1 of 3"');
+    await shot('faceid-front-1of3', 'Face check setup: front photo, "1 of 3"');
     _camera.bursts();
     await tester.pump();
-    await shot('faceid-left-2of3', 'Face ID setup: turn left, "2 of 3"');
+    await shot('faceid-left-2of3', 'Face check setup: turn left, "2 of 3"');
     _camera.bursts(yaw: 14);
     await tester.pump();
-    await shot('faceid-right-3of3', 'Face ID setup: turn right, "3 of 3"');
+    await shot('faceid-right-3of3', 'Face check setup: turn right, "3 of 3"');
     _camera.bursts(yaw: -13);
     await _faceSettle(tester);
     await _faceSettle(tester);
-    await shot('faceid-done', 'Face ID setup: done, "You\'re set up!" with the punch card');
+    await shot('faceid-done', 'Face check setup: done, "You\'re set up!" with the punch card');
     await tester.tap(find.text('Continue to Connect'));
     await _faceSettle(tester);
     await tester.pump(const Duration(seconds: 4));
   });
 
-  _scenario('Face ID setup done, onboarding', (tester, shot, phone) async {
+  _scenario('Face check setup done, onboarding', (tester, shot, phone) async {
     await tester.pumpWidget(
       MaterialApp(debugShowCheckedModeBanner: false, theme: _theme(), home: FaceSetupDone(onDone: () {})),
     );
     await _settle(tester);
-    await shot('faceid-done-onboarding', 'Face ID setup done, onboarding: no punch card, just Continue');
+    await shot('faceid-done-onboarding', 'Face check setup done, onboarding: no punch card, just Continue');
   });
 
   // 2. Daily face check ---------------------------------------------------
@@ -1338,6 +1344,15 @@ void main() {
       await _settle(tester);
     }
     await shot('attendance-before-joining-day', 'Attendance: a day before joining tapped');
+    // The 23rd is missing its punch-out: the correction is offered, in the
+    // outlined button the theme now gives the app's font.
+    final missed = find.descendant(of: find.byType(AttendanceMonthGrid), matching: find.text('23'));
+    if (missed.evaluate().isNotEmpty) {
+      await _tapVisible(tester, missed.first);
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -400));
+      await _settle(tester);
+    }
+    await shot('attendance-request-correction', 'Attendance: a day missing its punch-out, with Request Correction');
   });
 
   _scenario('Leave without pay', (tester, shot, phone) async {
