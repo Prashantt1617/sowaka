@@ -1,4 +1,6 @@
 import { peopleTasks } from '../services/peopleTasks.service';
+import { getMyLeaveBalance } from '../services/leave.service';
+import { users } from '../config/db';
 import { NextFunction, Request, Response } from 'express';
 import { applyImport, cancelImport, importTemplate, previewImport } from '../services/employeeImport.service';
 import { attendanceReport, employeeCalendar } from '../services/attendance-report.service';
@@ -233,6 +235,26 @@ export async function employeeCalendarHandler(req: Request, res: Response, next:
       String(req.query.month ?? ''),
     );
     res.status(200).json({ success: true, calendar });
+  } catch (error) { next(error); }
+}
+
+/**
+ * One employee's leave balance, as their app shows it: every type on their
+ * template, entitled, used and left (read only: working it out writes nothing).
+ * Someone in another company is not found.
+ */
+export async function employeeLeaveBalanceHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const [admin, employee] = await Promise.all([
+      users().findOne({ userId: adminUserId(req) }, { projection: { _id: 0, org: 1 } }),
+      users().findOne({ userId: String(req.params.userId ?? '') }, { projection: { _id: 0, userId: 1, org: 1 } }),
+    ]);
+    if (!admin?.org || !employee || employee.org !== admin.org) {
+      res.status(404).json({ success: false, message: 'Employee not found' });
+      return;
+    }
+    const year = req.query.year ? Number(req.query.year) : new Date().getUTCFullYear();
+    res.status(200).json({ success: true, balance: await getMyLeaveBalance(employee.userId, year) });
   } catch (error) { next(error); }
 }
 
