@@ -1604,6 +1604,17 @@ svg{overflow:visible}
     return '<button type="button" class="ev-btn" data-act="mf-enter">' + label + '</button>';
   }
   function mfTimerCard(e, now, view) {
+    // Secret Squad: while the office's game is on (its lobby open, or being played), its page joins it.
+    var q = e.key === 'secret-squad' && S.home && S.home.liveSquad && gameFor('secret-squad') ? S.home.liveSquad : null;
+    if (q) {
+      var join = '<button type="button" class="ev-btn" data-act="squad">Join Secret Squad ⚡</button>';
+      if (q.phase === 'lobby') {
+        return '<div class="ev-card"><div class="ev-lbl"><span class="mf-pill lobby"><i></i>LOBBY OPEN</span> &nbsp;Starts in</div><div data-mf-units data-to="' + q.startsAt + '">' + units(q.startsAt - now) + '</div>' +
+          join + '<div class="ev-note">' + (q.office ? esc(q.office) + ' office · ' : '') + (q.players ? plural(q.players, 'player', 'players') + ' in' : 'Be the first in') + '</div></div>';
+      }
+      return '<div class="ev-card"><div class="ev-lbl"><span class="mf-pill live"><i></i>LIVE</span> &nbsp;' + (q.rounds > 1 ? 'Round ' + q.round + ' of ' + q.rounds : 'Find your squad!') + '</div>' +
+        join + '<div class="ev-note">' + (q.office ? esc(q.office) + ' office · ' : '') + 'Jump in now.</div></div>';
+    }
     // The tournament's own state decides once it is set up: its lobby, its matches, its results.
     var cv = e.cup ? (e.cupPhase === 'lobby' ? 'lobby' : e.cupPhase === 'running' ? 'live' : e.cupPhase === 'done' ? 'over' : null) : null;
     if (cv) {
@@ -1662,7 +1673,7 @@ svg{overflow:visible}
     var e = MF.open, ev = $('ev');
     if (!e) return;
     var now = Date.now(), view = mfState(e, now), list = mfEvents();
-    MF.phase = view;
+    MF.phase = mfKey(e, view);
     ev.innerHTML = '<div class="ev-band"><button type="button" class="ev-back" data-act="mf-close" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="#FFE7A8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>' +
       '<div><div class="t">Diwali Mehfil</div><div class="d">' + esc(mfDay()) + ' · ' + hhmm(e) + ' ' + ampm(e) + '</div></div>' + garland() + '</div>' +
       '<div class="ev-body"><div class="ev-hero"><div class="ev-ic">' + mfIcon(e) + '</div>' +
@@ -1670,15 +1681,21 @@ svg{overflow:visible}
       '<div class="ev-when">Today’s line-up, game ' + (list.indexOf(e) + 1) + ' of ' + list.length + '</div></div>' +
       '<div data-mf-timer>' + mfTimerCard(e, now, view) + '</div>' + (e.format === 'cup' ? cupRules(e) : '') + mfHow(e) + mfPractice(e, view) + '</div>';
   }
+  /* What the event page shows: the row's own time, and the live game it opens (Secret Squad's, a tournament's) when there is one. */
+  function mfKey(e, view) {
+    var q = e.key === 'secret-squad' && S.home && S.home.liveSquad ? S.home.liveSquad.phase + S.home.liveSquad.round : '';
+    return view + '|' + q + '|' + (e.cupPhase || '');
+  }
   function mfTick() {
     var e = MF.open;
     if (e) {
       var now = Date.now(), view = mfState(e, now);
-      if (view !== MF.phase) mfRender();
+      if (mfKey(e, view) !== MF.phase) mfRender();
       else {
         var u = $('ev').querySelector('[data-mf-units]');
         if (u) {
-          var t = Math.max(0, Math.floor(((view === 'live' ? e.end : e.start) - now) / 1000));
+          var to = +u.getAttribute('data-to');
+          var t = Math.max(0, Math.floor(((to || (view === 'live' ? e.end : e.start)) - now) / 1000));
           var set = function (k, v) { var el = u.querySelector('[data-u="' + k + '"]'); if (el && el.textContent !== v) el.textContent = v; };
           set('h', two(Math.floor(t / 3600))); set('m', two(Math.floor(t % 3600 / 60))); set('s', two(t % 60));
         }
