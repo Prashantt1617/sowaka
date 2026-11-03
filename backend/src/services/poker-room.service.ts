@@ -1130,6 +1130,9 @@ export async function startStage(event: PokerEvent, stage: 'semi' | 'final', now
 export async function onGone(who: PokerIdentity): Promise<void> {
   const event = await eventFor(who.org);
   if (!event) return;
+  // A Shootout's lobby is joined once and left only by Leave: a phone locked or a network blip
+  // for a few seconds must not take someone out of it (they would never be seated).
+  if (event.config.shootout) return;
   const changed = await mutateFloor(event.id, (floor) => {
     const before = floor.queue.length;
     floor.queue = floor.queue.filter((q) => q.userId !== who.userId);
