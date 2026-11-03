@@ -1305,10 +1305,11 @@ svg{overflow:visible}
       var id = str(r.id), key = str(r.gameKey), at = str(r.at);
       if (!id || !key || !/^\d\d:\d\d$/.test(at) || isNaN(start) || isNaN(end)) return null;
       return { id: id, key: key, name: str(r.name), kind: str(r.kind), at: at,
-        theme: MF_THEMES[r.theme] ? r.theme : 'odd', format: r.format === 'cup' || r.format === 'relay' ? r.format : null,
+        theme: MF_THEMES[r.theme] ? r.theme : 'odd', format: r.format === 'cup' || r.format === 'relay' || r.format === 'shootout' ? r.format : null,
         win: str(r.win), practice: r.practice === true, start: start, end: end, lobby: start - 5 * 60e3,
         cup: /^[A-Za-z0-9_-]{1,80}$/.test(str(r.cupEventId)) ? str(r.cupEventId) : '',
-        cupPhase: ['scheduled', 'lobby', 'running', 'done'].indexOf(r.cupPhase) >= 0 ? r.cupPhase : '' };
+        cupPhase: ['scheduled', 'lobby', 'running', 'done'].indexOf(r.cupPhase) >= 0 ? r.cupPhase : '',
+        pokerPhase: ['upcoming', 'lobby', 'shootout', 'over'].indexOf(r.pokerPhase) >= 0 ? r.pokerPhase : '' };
     }).filter(Boolean);
     return events.length ? { date: str(raw.date), events: events } : null;
   }
@@ -1633,6 +1634,20 @@ svg{overflow:visible}
       return '<div class="ev-card"><div class="ev-lbl"><span class="mf-pill live"><i></i>LIVE</span> &nbsp;' + esc(rl.title) + '</div>' +
         go('Join your team ⚡') + '<div class="ev-note">' + team + how + '</div></div>';
     }
+    // The Poker Shootout: once the company's Shootout is on, its own state; Speed Poker opens on it.
+    var pk = e.pokerPhase && gameFor('speed-poker') ? e.pokerPhase : '';
+    if (pk === 'lobby' || pk === 'shootout' || pk === 'over') {
+      var enter = function (label) { return '<button type="button" class="ev-btn" data-act="mf-poker">' + label + '</button>'; };
+      if (pk === 'lobby') {
+        return '<div class="ev-card"><div class="ev-lbl"><span class="mf-pill lobby"><i></i>LOBBY OPEN</span></div>' +
+          enter('Join the Shootout ⚡') + '<div class="ev-note">Join the lobby inside Speed Poker. Only people in the lobby when it closes get a seat.</div></div>';
+      }
+      if (pk === 'shootout') {
+        return '<div class="ev-card"><div class="ev-lbl"><span class="mf-pill live"><i></i>LIVE</span> &nbsp;' + esc(e.name) + '</div>' +
+          enter('Open the Shootout ⚡') + '<div class="ev-note">Your table, the other tables and the standings are all inside.</div></div>';
+      }
+      return '<div class="ev-card"><div class="ev-lbl">That’s a wrap</div><div class="ev-in">' + esc(e.name) + ' is over</div>' + enter('See the standings') + '</div>';
+    }
     // The tournament's own state decides once it is set up: its lobby, its matches, its results.
     var cv = e.cup ? (e.cupPhase === 'lobby' ? 'lobby' : e.cupPhase === 'running' ? 'live' : e.cupPhase === 'done' ? 'over' : null) : null;
     if (cv) {
@@ -1703,7 +1718,7 @@ svg{overflow:visible}
   function mfKey(e, view) {
     var q = e.key === 'secret-squad' && S.home && S.home.liveSquad ? S.home.liveSquad.phase + S.home.liveSquad.round : '';
     var rl = e.key === 'hint-relay' && S.home && S.home.liveRelay ? S.home.liveRelay.phase : '';
-    return view + '|' + q + '|' + rl + '|' + (e.cupPhase || '');
+    return view + '|' + q + '|' + rl + '|' + (e.cupPhase || '') + '|' + (e.pokerPhase || '');
   }
   function mfTick() {
     var e = MF.open;
@@ -1923,6 +1938,7 @@ svg{overflow:visible}
       case 'mf-step': MF.step = +v; MF.stepAt = Date.now(); mfSwapStep(MF.open); break;
       case 'mf-practice': openGame(MF.open.key); break;
       case 'mf-enter': if (MF.open && MF.open.cup) openGame('diwali-cup', MF.open.cup); break;
+      case 'mf-poker': openGame('speed-poker'); break;
       case 'period':
         if (S.period !== v) { S.period = v; renderBoard(); renderHeader(); loadBoard(v); }
         break;
@@ -2175,7 +2191,7 @@ svg{overflow:visible}
             ['mf-trails', 'trails', 'Trails Tournament', '1v1 knockout', 3 * M, 45, 'trails', 'cup', 'Faster one wins.', true],
             ['mf-relay', 'hint-relay', 'Hint Relay', 'Team game · 5 rounds', 70 * M, 25, 'relay', 'relay'],
             ['mf-odd', 'odd-one-out', 'Odd One Out Tournament', '1v1 knockout', 2 * H + 10 * M, 45, 'odd', 'cup', 'Higher score wins.', true],
-            ['mf-poker', 'speed-poker', 'Poker', 'Card tournament', 3 * H + 10 * M, 45, 'poker', null, '', true]];
+            ['mf-poker', 'speed-poker', 'Poker Shootout', 'Card tournament', 3 * H + 10 * M, 45, 'poker', null, '', true]];
           var ist = function (t) { var d = new Date(t + 330 * M); return two(d.getUTCHours()) + ':' + two(d.getUTCMinutes()); };
           return { date: new Date(now + 330 * M).toISOString().slice(0, 10), events: rows.map(function (r) {
             var start = Math.floor((now + r[4]) / M) * M;

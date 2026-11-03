@@ -50,6 +50,8 @@ import { presignConnectMedia, resolveProfilePhoto } from './s3-connect-media.ser
 import { openInvitesFor } from './scribble-room.service';
 import { liveSquadFor } from './secret-squad.service';
 import { cupEvents } from './cup.service';
+import { eventFor as pokerEventFor } from './poker-room.service';
+import { phaseOf as pokerPhaseOf } from './poker-floor';
 import { optional } from '../utils/optional';
 import { requestViewer } from '../middleware/request-viewer';
 
@@ -729,7 +731,10 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
 async function withTournaments(mehfil: Mehfil | null, org: string | undefined): Promise<Mehfil | null> {
   if (!mehfil || !org) return mehfil;
   const games = mehfil.events.filter((event) => event.format === 'cup').map((event) => event.gameKey);
-  if (!games.length) return mehfil;
+  // The company's Speed Poker Shootout, when it has one on: the row follows it.
+  const poker = mehfil.events.some((event) => event.format === 'shootout') ? await pokerEventFor(org) : null;
+  const pokerPhase = poker && poker.config.shootout && poker.status !== 'draft' ? pokerPhaseOf(poker, Date.now()) : null;
+  if (!games.length && !pokerPhase) return mehfil;
   const found = await cupEvents()
     .find({ org, active: true, gameKey: { $in: games } }, { projection: { _id: 0, id: 1, gameKey: 1, phase: 1, startAt: 1 } })
     .toArray();
@@ -741,6 +746,7 @@ async function withTournaments(mehfil: Mehfil | null, org: string | undefined): 
   return {
     ...mehfil,
     events: mehfil.events.map((event) => {
+      if (event.format === 'shootout') return pokerPhase ? { ...event, pokerPhase } : event;
       const cup = event.format === 'cup' ? pick(event.gameKey) : undefined;
       return cup ? { ...event, cupEventId: cup.id, cupPhase: cup.phase } : event;
     }),

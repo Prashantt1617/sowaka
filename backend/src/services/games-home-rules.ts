@@ -168,8 +168,8 @@ export interface MehfilEvent {
   minutes: number;
   /** The page's colours for its event page. */
   theme: 'squad' | 'trails' | 'relay' | 'odd' | 'poker';
-  /** 'cup' adds the knockout's rules to its page; 'relay' is the team game. */
-  format?: 'cup' | 'relay';
+  /** 'cup' adds the knockout's rules to its page; 'relay' is the team game; 'shootout' is Speed Poker's. */
+  format?: 'cup' | 'relay' | 'shootout';
   /** How a match is won, in a sentence, for a knockout's rules. */
   win?: string;
   /** Whether its page offers a practice game of `gameKey` first. */
@@ -180,7 +180,8 @@ export interface Mehfil {
   /** The evening, India's date. */
   date: string;
   /** `cupEventId`: a knockout row's tournament, once one is set up and switched on (see games-home.service). */
-  events: Array<MehfilEvent & { startsAt: string; endsAt: string; cupEventId?: string; cupPhase?: string }>;
+  /** `pokerPhase`: a Shootout row's Speed Poker Shootout, once one is set up and on (its phase: upcoming, lobby, shootout, over). */
+  events: Array<MehfilEvent & { startsAt: string; endsAt: string; cupEventId?: string; cupPhase?: string; pokerPhase?: string }>;
 }
 
 /**
@@ -201,7 +202,7 @@ export const DIWALI_MEHFIL: { date: string; events: MehfilEvent[] } = {
       id: 'mf-odd', gameKey: 'odd-one-out', name: 'Odd One Out Tournament', kind: '1v1 knockout', at: '18:00', minutes: 45, theme: 'odd',
       format: 'cup', win: 'Higher score wins.', practice: true,
     },
-    { id: 'mf-poker', gameKey: 'speed-poker', name: 'Poker', kind: 'Card tournament', at: '19:00', minutes: 45, theme: 'poker', practice: true },
+    { id: 'mf-poker', gameKey: 'speed-poker', name: 'Poker Shootout', kind: 'Card tournament', at: '19:00', minutes: 45, theme: 'poker', format: 'shootout', practice: true },
   ],
 };
 

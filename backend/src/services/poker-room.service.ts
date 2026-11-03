@@ -1,10 +1,23 @@
 import { randomBytes, randomInt, randomUUID } from 'node:crypto';
-import type { PokerEvent, PokerPick, PokerTable } from '../models/poker.model';
+import type { PokerEvent, PokerPick, PokerTable, ShootoutRoundRec, ShootoutState } from '../models/poker.model';
 import { users } from '../config/db';
 import { noteLaunchScore } from './game-launch.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { notifyUsers, NotificationInput } from './notification.service';
 import { postStandings } from './poker-feed';
+import {
+  finalStandings,
+  finishingOrder,
+  planRounds,
+  rankQualifier,
+  resultOf,
+  seatPlayers,
+  settleTable,
+  SHOOTOUT,
+  startingStacks,
+  throughSoFar,
+  type ShootoutTableResult,
+} from './poker-shootout-rules';
 import { pokerEvents, pokerHands, pokerPicks, pokerResults, ensurePokerIndexes } from './poker-db';
 import {
   advance,
@@ -240,6 +253,8 @@ export interface PokerShared {
   photos: Record<string, string>;
   picksBoard: ReturnType<typeof picksBoard>;
   champion: PokerEvent['champion'];
+  /** A Speed Poker Shootout: its lobby, rounds and standings (null for a game day). */
+  shootout: ShootoutView | null;
 }
 
 const sharedCache = new Map<string, { shared: PokerShared; at: number; fingerprint: string }>();
@@ -265,12 +280,14 @@ async function buildShared(event: PokerEvent, floor?: PokerFloor): Promise<Poker
   const names: Record<string, string> = {};
   for (const r of board) names[r.userId] = r.name;
   for (const t of tables) for (const s of t.seats) names[s.userId] = s.name;
+  for (const p of event.shootout?.joined ?? []) names[p.userId] = p.name;
   const shownIds = [
     ...board.map((r) => r.userId),
     ...tables.flatMap((t) => t.seats.map((s) => s.userId)),
     ...(event.semis?.tables.flatMap((t) => t.players) ?? []),
     ...(event.final?.tables.flatMap((t) => t.players) ?? []),
     ...f.queue.map((q) => q.userId),
+    ...(event.shootout?.joined.map((p) => p.userId) ?? []),
     ...picks.map((p) => p.userId),
     ...(event.champion ? [event.champion.userId] : []),
   ];
@@ -326,6 +343,7 @@ async function buildShared(event: PokerEvent, floor?: PokerFloor): Promise<Poker
     photos,
     picksBoard: picksBoard(picks).slice(0, 20),
     champion: event.champion,
+    shootout: await shootoutView(event, f.queue, now),
   };
 }
 
@@ -339,7 +357,7 @@ export async function sharedFor(event: PokerEvent): Promise<PokerShared> {
 }
 
 const fingerprintOf = (s: PokerShared) =>
-  JSON.stringify([s.event.phase, s.event.paused, s.event.status, s.powerHour, s.bountiesOn, s.queue, s.seated, s.cooldownUntil, s.tables.map((t) => [t.id, t.players.map((p) => p.stack)]), s.board.map((b) => [b.userId, b.score]), s.semis, s.final, s.picksBoard, s.champion]);
+  JSON.stringify([s.event.phase, s.event.paused, s.event.status, s.powerHour, s.bountiesOn, s.queue, s.seated, s.cooldownUntil, s.tables.map((t) => [t.id, t.players.map((p) => p.stack)]), s.board.map((b) => [b.userId, b.score]), s.semis, s.final, s.picksBoard, s.champion, s.shootout && [s.shootout.status, s.shootout.lobby.length, s.shootout.rounds.map((r) => [r.startedAt, r.endedAt, r.tables.map((t) => t.live && [t.live.status, t.live.left, t.live.through, t.live.stacks])])]]);
 
 /** Sends the shared lobby to everyone at the event when it has changed. */
 async function pushShared(event: PokerEvent, force = false): Promise<void> {
@@ -388,6 +406,7 @@ export async function hello(who: PokerIdentity) {
 export async function joinQueue(who: PokerIdentity) {
   const event = await requireEvent(who);
   const now = deps.now();
+  if (event.config.shootout) return joinShootoutLobby(event, who, now);
   const mode = playMode(event, now);
   if (!mode) throw new PokerError(409, event.paused ? 'Play is paused for a moment. Try again shortly.' : 'Tables are not open right now.');
   const played = mode === 'scored' ? await playedCount(event, who.userId) : 0;
@@ -576,6 +595,17 @@ async function closeTable(table: PokerTable): Promise<void> {
     const event = await pokerEvents().findOne({ id: table.eventId }, { projection: { _id: 0 } });
     if (!event) return;
     const now = deps.now();
+    if (table.round === 'shootout') {
+      // A Shootout table: off the table, back to the Shootout's screens; the runner settles the round.
+      const seated = table.seats.filter((s) => !isHouse(s.userId)).map((s) => s.userId);
+      await mutateFloor(event.id, (floor) => {
+        for (const userId of seated) if (floor.seats[userId] === table.id) delete floor.seats[userId];
+        return true;
+      });
+      await forgetLive(table.id);
+      await pushShared(event, true);
+      return;
+    }
     const at = new Date(table.overAt ?? now);
     for (const r of scoreTable(table, event.config)) {
       await pokerResults().updateOne({ eventId: r.eventId, tableId: r.tableId, userId: r.userId }, { $setOnInsert: { ...r, at } }, { upsert: true });
@@ -627,6 +657,259 @@ async function closeStageTable(event: PokerEvent, table: PokerTable): Promise<vo
       final: seedFinal(semiTables as PokerTable[], event.config, deps.now()),
     });
   }
+}
+
+// ------------------------------------------------------------------ the Shootout
+
+/** Into a Shootout's lobby: only while it is open; whoever is in it when it closes is seated. */
+async function joinShootoutLobby(event: PokerEvent, who: PokerIdentity, now: number) {
+  if (phaseOf(event, now) !== 'lobby') throw new PokerError(409, event.shootout ? 'The lobby has closed.' : 'The lobby is not open yet.');
+  if (event.config.exclude.includes(who.userId)) throw new PokerError(403, 'You are hosting this one.');
+  const changed = await mutateFloor(event.id, (floor) => {
+    if (floor.queue.some((q) => q.userId === who.userId)) return false;
+    floor.queue.push({ userId: who.userId, name: who.name, photoUrl: who.photoUrl, office: who.office, since: now, played: 0 });
+    return true;
+  });
+  if (changed?.result) await pushShared(event);
+  return { queued: true };
+}
+
+const BREAK_MS = 30_000;
+
+/**
+ * A Shootout's clock, once a second: the lobby closes at `startAt` and the
+ * first round is seated; each round's tables deal at its `startsAt`; once
+ * every table of a round is over it is settled, and the next round seated.
+ */
+async function runShootout(event: PokerEvent, now: number): Promise<void> {
+  const so = event.config.shootout!;
+  const state = event.shootout;
+  if (!state) {
+    if (now < Date.parse(so.startAt)) return;
+    await closeShootoutLobby(event, now);
+    return;
+  }
+  if (state.status !== 'live') return;
+  const round = state.rounds[state.rounds.length - 1];
+  if (!round) return;
+  if (!round.startedAt) {
+    if (now >= round.startsAt) await dealShootoutRound(event, state, round, now);
+    return;
+  }
+  if (round.endedAt) return;
+  const tables = await Promise.all(round.tables.map((t) => (t.tableId ? readTable(t.tableId) : Promise.resolve(null))));
+  if (tables.some((t) => t && t.status !== 'over')) return;
+  await settleShootoutRound(event, state, round, tables, now);
+}
+
+async function closeShootoutLobby(event: PokerEvent, now: number): Promise<void> {
+  const taken = await mutateFloor(event.id, (floor) => {
+    const lobby = floor.queue.filter((q) => !event.config.exclude.includes(q.userId));
+    floor.queue = [];
+    return lobby;
+  });
+  const lobby = taken?.result ?? [];
+  const joined = lobby.map((q) => ({ userId: q.userId, name: q.name, office: q.office ?? null }));
+  if (joined.length < SHOOTOUT.MIN_PLAYERS) {
+    await saveEvent(event, { shootout: { status: 'cancelled', joined, plan: [], rounds: [], standings: null } });
+    for (const p of joined) emitter?.toUser(p.userId, 'poker:toast', { message: `Not enough players this time: the Shootout needs at least ${SHOOTOUT.MIN_PLAYERS}.` });
+    logger.info('Poker Shootout called off', { eventId: event.id, joined: joined.length });
+    return;
+  }
+  const plan = planRounds(joined.length);
+  const state: ShootoutState = { status: 'live', joined, plan, rounds: [], standings: null };
+  state.rounds.push(seatShootoutRound(event, state, 0, joined.map((p) => p.userId), [], now));
+  await saveEvent(event, { shootout: state });
+  logger.info('Poker Shootout seated', { eventId: event.id, joined: joined.length, rounds: plan.map((r) => r.name) });
+}
+
+/** Seats round `index` at random (its tables deal after the break), with each player's starting stack. */
+function seatShootoutRound(event: PokerEvent, state: ShootoutState, index: number, players: string[], winners: string[], now: number): ShootoutRoundRec {
+  const planned = state.plan[index];
+  const seating = seatPlayers(players, planned.tables, deps.random);
+  const stacks = startingStacks(players, winners);
+  const label = (i: number) =>
+    planned.kind === 'final' ? 'Final table' : planned.kind === 'qualifier' ? `Qualifier · Table ${i + 1}` : `${planned.name.replace(/s$/, '')} ${i + 1}`;
+  return {
+    kind: planned.kind,
+    name: planned.name,
+    advance: planned.advance,
+    players,
+    seatedAt: now,
+    startsAt: now + (event.config.shootout?.breakMs ?? BREAK_MS),
+    startedAt: null,
+    endedAt: null,
+    tables: seating.map((ids, i) => ({
+      label: label(i),
+      tableId: null,
+      players: ids,
+      stacks: Object.fromEntries(ids.map((id) => [id, stacks[id]])),
+      draw: Object.fromEntries(ids.map((id) => [id, deps.random()])),
+      result: null,
+      final: null,
+    })),
+    next: null,
+    winners: [],
+  };
+}
+
+async function dealShootoutRound(event: PokerEvent, state: ShootoutState, round: ShootoutRoundRec, now: number): Promise<void> {
+  const people = new Map(state.joined.map((p) => [p.userId, p]));
+  const photos = await photosOf(round.players);
+  const made: PokerTable[] = [];
+  for (const t of round.tables) {
+    if (t.players.length < 2) continue;
+    const id = `pso-${randomUUID()}`;
+    const table = newTable(
+      {
+        id,
+        org: event.org,
+        eventId: event.id,
+        round: 'shootout',
+        label: t.label,
+        players: t.players.map((userId) => ({
+          userId,
+          name: people.get(userId)?.name ?? 'Player',
+          photoUrl: photos[userId] ?? null,
+          office: people.get(userId)?.office ?? null,
+          stack: t.stacks[userId],
+        })),
+        config: event.config.formats.shootout,
+      },
+      now,
+      deps.random,
+    );
+    table.meta = { power: false, bounties: [], counted: {}, bots: [] };
+    t.tableId = id;
+    made.push(table);
+  }
+  round.startedAt = now;
+  await mutateFloor(event.id, (floor) => {
+    for (const t of round.tables) for (const userId of t.players) if (t.tableId) floor.seats[userId] = t.tableId;
+    return true;
+  });
+  await saveEvent(event, { shootout: state });
+  for (const table of made) {
+    await createTable(table);
+    pushTable(table);
+    for (const s of table.seats) emitter?.toUser(s.userId, 'table:seated', { tableId: table.id });
+  }
+  void deps
+    .notify(round.players, {
+      scenario: 'poker_table',
+      title: `Speed Poker Shootout: the ${round.kind === 'final' ? 'final table' : round.name.toLowerCase()} is starting`,
+      body: 'Your seat is ready. Tap to play.',
+      data: { destination: 'game_challenge', gameKey: event.catalogKey },
+    })
+    .catch((error) => logger.error('Poker Shootout seat push failed', { eventId: event.id }, error));
+}
+
+/** Every table of the round is over: who goes on, then the next round, or the standings. */
+async function settleShootoutRound(event: PokerEvent, state: ShootoutState, round: ShootoutRoundRec, tables: (PokerTable | null)[], now: number): Promise<void> {
+  const results: ShootoutTableResult[] = round.tables.map((t, i) => {
+    const table = tables[i];
+    if (table) return resultOf(table, t.draw);
+    // A table that never dealt (one player) or has gone: everyone still holds their stack.
+    return { players: t.players, busts: [], survivors: { ...t.stacks }, draw: t.draw };
+  });
+  round.tables.forEach((t, i) => {
+    t.final = { busts: results[i].busts, survivors: results[i].survivors };
+    if (round.kind !== 'qualifier') t.result = settleTable(results[i], round.advance);
+  });
+  if (round.kind === 'qualifier') {
+    round.ranking = rankQualifier(results);
+    round.next = round.ranking.slice(0, round.advance);
+    round.winners = [];
+  } else {
+    round.next = round.tables.flatMap((t) => t.result!.through);
+    round.winners = round.tables.map((t) => t.result!.winner);
+  }
+  round.endedAt = now;
+  const index = state.rounds.length - 1;
+  if (round.kind === 'final' || index + 1 >= state.plan.length) {
+    state.status = 'done';
+    state.standings = finalStandings(
+      state.rounds.map((r) => ({
+        kind: r.kind,
+        tables: r.tables.map((t) => ({ players: t.players, busts: t.final?.busts ?? [], survivors: t.final?.survivors ?? {}, draw: t.draw })),
+      })),
+    );
+    const champion = round.winners[0] ?? round.next[0];
+    const who = state.joined.find((p) => p.userId === champion);
+    await saveEvent(event, { shootout: state, champion: who ? { userId: who.userId, name: who.name } : null });
+    logger.info('Poker Shootout over', { eventId: event.id, champion });
+    return;
+  }
+  state.rounds.push(seatShootoutRound(event, state, index + 1, round.next, round.winners, now));
+  await saveEvent(event, { shootout: state });
+  logger.info('Poker Shootout round over', { eventId: event.id, round: round.name, next: round.next.length });
+}
+
+/** What every Shootout page draws: the lobby, the plan, each round's tables as they stand, the standings. */
+export interface ShootoutView {
+  lobbyFrom: string;
+  startAt: string;
+  lobby: { userId: string; name: string }[];
+  status: 'lobby' | 'upcoming' | ShootoutState['status'];
+  plan: ShootoutState['plan'];
+  rounds: (Omit<ShootoutRoundRec, 'tables'> & {
+    tables: (ShootoutRoundRec['tables'][number] & {
+      /** The table as it stands: chips, how many are left, who is already through, everyone in order. */
+      live: { status: 'playing' | 'over'; endsAt: number; stacks: Record<string, number>; left: number; through: string[]; order: string[] } | null;
+    })[];
+  })[];
+  /** During the qualifier: everyone in order across the tables, as it stands. */
+  liveRanking: string[] | null;
+  standings: string[] | null;
+  joined: number;
+}
+
+async function shootoutView(event: PokerEvent, queue: { userId: string; name: string }[], now: number): Promise<ShootoutView | null> {
+  const so = event.config.shootout;
+  if (!so) return null;
+  const state = event.shootout;
+  const phase = phaseOf(event, now);
+  const rounds: ShootoutView['rounds'] = [];
+  let liveRanking: string[] | null = null;
+  for (const r of state?.rounds ?? []) {
+    const current = !r.endedAt && r.startedAt;
+    const results: ShootoutTableResult[] = [];
+    const tables = await Promise.all(
+      r.tables.map(async (t, i) => {
+        const table = current && t.tableId ? await readTable(t.tableId) : null;
+        if (!table) {
+          results[i] = { players: t.players, busts: [], survivors: { ...t.stacks }, draw: t.draw };
+          return { ...t, live: null };
+        }
+        const res = resultOf(table, t.draw);
+        results[i] = res;
+        return {
+          ...t,
+          live: {
+            status: table.status,
+            endsAt: table.endsAt,
+            stacks: Object.fromEntries(table.seats.map((seat) => [seat.userId, seat.stack])),
+            left: Object.keys(res.survivors).length,
+            through: r.kind === 'knockout' ? throughSoFar(res, r.advance) : [],
+            order: finishingOrder(res),
+          },
+        };
+      }),
+    );
+    if (current && r.kind === 'qualifier') liveRanking = rankQualifier(results);
+    rounds.push({ ...r, tables });
+  }
+  return {
+    lobbyFrom: so.lobbyFrom,
+    startAt: so.startAt,
+    lobby: phase === 'lobby' ? queue.map((q) => ({ userId: q.userId, name: q.name })) : [],
+    status: state ? state.status : phase === 'lobby' ? 'lobby' : 'upcoming',
+    plan: state?.plan ?? [],
+    rounds,
+    liveRanking,
+    standings: state?.standings ?? null,
+    joined: state?.joined.length ?? queue.length,
+  };
 }
 
 // ------------------------------------------------------------------ the clock
@@ -698,6 +981,11 @@ async function moveTable(table: PokerTable, now: number): Promise<void> {
 }
 
 async function runEvent(event: PokerEvent, now: number): Promise<void> {
+  if (event.config.shootout) {
+    if (event.status === 'live' && !event.paused) await runShootout(event, now);
+    await pushShared(event);
+    return;
+  }
   const phase = phaseOf(event, now);
   const mode = playMode(event, now);
   if (mode) {

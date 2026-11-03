@@ -29,6 +29,11 @@
  *       (--hourly-posts on|off on create/update posts them on the hour during open play)
  *   node dist/scripts/poker-event.js reset --id <event>           results, picks, hands, seeding: all gone (for a test event)
  *
+ *   A Speed Poker Shootout (a lobby, then a qualifier, knockout tables keeping the last 4, a final table):
+ *   node dist/scripts/poker-event.js create-shootout --org convrse --name "Speed Poker Shootout" \
+ *     --lobby 2026-11-04T18:55+05:30 --start 2026-11-04T19:00+05:30 [--break-seconds 30] [--table-minutes 13] [--exclude id,id]
+ *       Times: ISO with the zone, or +Nm from now. Created as a draft: on --id <event> to run it.
+ *
  * The script only changes the event in the database; the server's clock acts
  * on it within a second (seats the queue, starts the semifinals and the
  * final). The feed card is posted with game-launch-post.js --game speed-poker.
@@ -325,6 +330,48 @@ async function main() {
       console.log(id ? `Posted the standings to ${event.org}'s feed (${id}).` : 'No scores yet: nothing posted.');
       break;
     }
+    case 'create-shootout': {
+      if (!flags.org) fail('--org is required');
+      const when = (name: string) => {
+        const v = (flags[name] ?? '').trim();
+        const rel = /^\+(\d+)m$/.exec(v);
+        const at = rel ? new Date(Date.now() + Number(rel[1]) * 60_000) : new Date(v);
+        if (!v || Number.isNaN(at.getTime()) || (!rel && !/[+-]\d\d:?\d\d$|Z$/.test(v))) fail(`--${name} must be a time with its zone (2026-11-04T19:00+05:30) or +Nm`);
+        return at.toISOString();
+      };
+      const lobbyFrom = when('lobby');
+      const startAt = when('start');
+      if (Date.parse(startAt) <= Date.parse(lobbyFrom)) fail('--start must come after --lobby');
+      const config: PokerEventConfig = {
+        ...structuredClone(DEFAULT_CONFIG),
+        practice: null,
+        // Not used by a Shootout (its own clock runs it), kept for the shape.
+        game: { openFrom: startAt, openTo: startAt, powerFrom: null, powerTo: null, bountiesFrom: null, semisAt: startAt, finalAt: startAt },
+        picks: { ...structuredClone(DEFAULT_CONFIG.picks), on: false },
+        shootout: { lobbyFrom, startAt, ...(flags['break-seconds'] ? { breakMs: Number(flags['break-seconds']) * 1000 } : {}) },
+        formats: flags['table-minutes'] ? { shootout: { durationMs: Number(flags['table-minutes']) * 60_000 } } : {},
+        exclude: flags.exclude ? flags.exclude.split(',').map((id) => id.trim()).filter(Boolean) : [],
+      };
+      const event: PokerEvent = {
+        id: `shootout-${randomUUID().slice(0, 8)}`,
+        org: flags.org,
+        name: flags.name ?? 'Speed Poker Shootout',
+        catalogKey: 'speed-poker',
+        status: 'draft',
+        paused: false,
+        config,
+        semis: null,
+        final: null,
+        champion: null,
+        shootout: null,
+        postId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      await pokerEvents().insertOne({ ...event });
+      console.log(`Created ${event.id} for ${event.org}: "${event.name}" (draft; on --id ${event.id} to run it). Lobby ${lobbyFrom}, seats drawn ${startAt}.`);
+      break;
+    }
     case 'reset': {
       const event = await load(flags.id);
       const [r, p, h] = await Promise.all([
@@ -332,12 +379,12 @@ async function main() {
         pokerPicks().deleteMany({ eventId: event.id }),
         pokerHands().deleteMany({ eventId: event.id }),
       ]);
-      await set(event, { semis: null, final: null, champion: null });
+      await set(event, { semis: null, final: null, champion: null, shootout: null });
       console.log(`Reset ${event.id}: ${r.deletedCount} results, ${p.deletedCount} picks, ${h.deletedCount} hands removed; seeding cleared.`);
       break;
     }
     default:
-      fail('Commands: create, update, on, off, pause, resume, end, list, status, close-open, reseed, start-semis, start-final, void, tv-link, post-standings, reset');
+      fail('Commands: create, create-shootout, update, on, off, pause, resume, end, list, status, close-open, reseed, start-semis, start-final, void, tv-link, post-standings, reset');
   }
   await closeDb();
 }
