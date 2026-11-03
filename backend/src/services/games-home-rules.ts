@@ -152,3 +152,79 @@ export function initialsOf(name: string): string {
 }
 
 export const firstNameOf = (name: string) => name.trim().split(/\s+/)[0] || name.trim();
+
+// ---------------------------------------------------------------- Diwali Mehfil
+
+/** One game of the Mehfil's line-up, as the Games tab shows it. */
+export interface MehfilEvent {
+  id: string;
+  /** The catalog game it is played as, for its icon, how-to-play and Practice. */
+  gameKey: string;
+  name: string;
+  /** What kind of game it is: "Office game", "1v1 knockout". */
+  kind: string;
+  /** India time, "15:00". */
+  at: string;
+  minutes: number;
+  /** The page's colours for its event page. */
+  theme: 'squad' | 'trails' | 'relay' | 'odd' | 'poker';
+  /** 'cup' adds the knockout's rules to its page; 'relay' is the team game. */
+  format?: 'cup' | 'relay';
+  /** How a match is won, in a sentence, for a knockout's rules. */
+  win?: string;
+  /** Whether its page offers a practice game of `gameKey` first. */
+  practice?: boolean;
+}
+
+export interface Mehfil {
+  /** The evening, India's date. */
+  date: string;
+  events: Array<MehfilEvent & { startsAt: string; endsAt: string }>;
+}
+
+/**
+ * The evening's line-up, 4 Nov 2026. Only the countdown for now: the games
+ * themselves are joined as they always are, until the tournaments are wired
+ * to these rows in a later release.
+ */
+export const DIWALI_MEHFIL: { date: string; events: MehfilEvent[] } = {
+  date: '2026-11-04',
+  events: [
+    { id: 'mf-squad', gameKey: 'secret-squad', name: 'Secret Squad', kind: 'Office game', at: '15:00', minutes: 17, theme: 'squad' },
+    {
+      id: 'mf-trails', gameKey: 'trails', name: 'Trails Tournament', kind: '1v1 knockout', at: '16:00', minutes: 45, theme: 'trails',
+      format: 'cup', win: 'Faster one wins.', practice: true,
+    },
+    { id: 'mf-relay', gameKey: 'hint-relay', name: 'Hint Relay', kind: 'Team game · 5 rounds', at: '17:00', minutes: 25, theme: 'relay', format: 'relay' },
+    {
+      id: 'mf-odd', gameKey: 'odd-one-out', name: 'Odd One Out Tournament', kind: '1v1 knockout', at: '18:00', minutes: 45, theme: 'odd',
+      format: 'cup', win: 'Higher score wins.', practice: true,
+    },
+    { id: 'mf-poker', gameKey: 'speed-poker', name: 'Poker', kind: 'Card tournament', at: '19:00', minutes: 45, theme: 'poker', practice: true },
+  ],
+};
+
+/**
+ * The Mehfil for the Games home: at a company that has it, from now until the
+ * evening's India day is over, with each game's start and end as instants.
+ */
+export function mehfilFor(
+  enabled: boolean,
+  now: Date,
+  schedule: { date: string; events: MehfilEvent[] } = DIWALI_MEHFIL,
+): Mehfil | null {
+  if (!enabled) return null;
+  const dayEnds = new Date(`${schedule.date}T00:00:00.000+05:30`).getTime() + DAY_MS;
+  if (Number.isNaN(dayEnds) || now.getTime() >= dayEnds) return null;
+  return {
+    date: schedule.date,
+    events: schedule.events.map((event) => {
+      const start = new Date(`${schedule.date}T${event.at}:00.000+05:30`);
+      return {
+        ...event,
+        startsAt: start.toISOString(),
+        endsAt: new Date(start.getTime() + event.minutes * 60_000).toISOString(),
+      };
+    }),
+  };
+}

@@ -10,6 +10,7 @@ import {
   contestIsLive,
   initialsOf,
   istWeekStart,
+  mehfilFor,
   movementSince,
   nextUpFor,
   orderLiveContests,
@@ -104,6 +105,16 @@ check('once the invitee is in the room: not', !inviteOpen(invite, { ...lobby, pl
 check('a game under way or over: not', !inviteOpen(invite, { ...lobby, status: 'drawing' }, 'me', tick) && !inviteOpen(invite, { ...lobby, status: 'over' }, 'me', tick));
 check('a room that has gone: not', !inviteOpen(invite, null, 'me', tick));
 check('run out: not', !inviteOpen({ expiresAt: tick }, lobby, 'me', tick) && inviteOpen({ expiresAt: tick + 1 }, lobby, 'me', tick));
+
+console.log('Diwali Mehfil');
+const eve = new Date('2026-11-03T12:00:00.000Z');
+check('off at a company without it', mehfilFor(false, eve) === null);
+const mf = mehfilFor(true, eve);
+check('on: the five games of the evening', mf?.events.length === 5, String(mf?.events.length));
+check('3 PM India is 09:30 UTC', mf?.events[0].startsAt === '2026-11-04T09:30:00.000Z', mf?.events[0].startsAt);
+check('ends after its minutes', mf?.events[0].endsAt === '2026-11-04T09:47:00.000Z', mf?.events[0].endsAt);
+check('still shown late on the evening', mehfilFor(true, new Date('2026-11-04T18:29:00.000Z')) !== null);
+check('gone once the India day is over', mehfilFor(true, new Date('2026-11-04T18:30:00.000Z')) === null);
 
 if (failures > 0) {
   console.log(`\n${failures} failed`);
