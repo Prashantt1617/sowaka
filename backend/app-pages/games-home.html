@@ -1615,6 +1615,24 @@ svg{overflow:visible}
       return '<div class="ev-card"><div class="ev-lbl"><span class="mf-pill live"><i></i>LIVE</span> &nbsp;' + (q.rounds > 1 ? 'Round ' + q.round + ' of ' + q.rounds : 'Find your squad!') + '</div>' +
         join + '<div class="ev-note">' + (q.office ? esc(q.office) + ' office · ' : '') + 'Jump in now.</div></div>';
     }
+    // Hint Relay: while the company's relay is set up, its own clock and state; it is played in the app's own screen,
+    // which opens from its feed post, so the button takes them to the post.
+    var rl = e.key === 'hint-relay' && S.home && S.home.liveRelay ? S.home.liveRelay : null;
+    if (rl) {
+      var team = rl.teamName ? 'You’re on ' + esc(rl.teamName) + '. ' : '';
+      var go = function (label) { return rl.postId ? '<button type="button" class="ev-btn" data-act="post" data-id="' + esc(rl.postId) + '">' + label + '</button>' : ''; };
+      var how = rl.postId ? 'It opens the Hint Relay post in Connect: tap its button there to go in.' : '';
+      if (rl.phase === 'upcoming') {
+        return '<div class="ev-card"><div class="ev-lbl">Starts in</div><div data-mf-units data-to="' + rl.startsAt + '">' + units(rl.startsAt - now) + '</div>' +
+          go('See Hint Relay') + '<div class="ev-note">' + team + 'The lobby opens a few minutes before the start.</div></div>';
+      }
+      if (rl.phase === 'lobby') {
+        return '<div class="ev-card"><div class="ev-lbl"><span class="mf-pill lobby"><i></i>LOBBY OPEN</span> &nbsp;Starts in</div><div data-mf-units data-to="' + rl.startsAt + '">' + units(rl.startsAt - now) + '</div>' +
+          go('Join Hint Relay ⚡') + '<div class="ev-note">' + team + (rl.teams ? plural(rl.teams, 'team', 'teams') + ' · ' : '') + how + '</div></div>';
+      }
+      return '<div class="ev-card"><div class="ev-lbl"><span class="mf-pill live"><i></i>LIVE</span> &nbsp;' + esc(rl.title) + '</div>' +
+        go('Join your team ⚡') + '<div class="ev-note">' + team + how + '</div></div>';
+    }
     // The tournament's own state decides once it is set up: its lobby, its matches, its results.
     var cv = e.cup ? (e.cupPhase === 'lobby' ? 'lobby' : e.cupPhase === 'running' ? 'live' : e.cupPhase === 'done' ? 'over' : null) : null;
     if (cv) {
@@ -1684,7 +1702,8 @@ svg{overflow:visible}
   /* What the event page shows: the row's own time, and the live game it opens (Secret Squad's, a tournament's) when there is one. */
   function mfKey(e, view) {
     var q = e.key === 'secret-squad' && S.home && S.home.liveSquad ? S.home.liveSquad.phase + S.home.liveSquad.round : '';
-    return view + '|' + q + '|' + (e.cupPhase || '');
+    var rl = e.key === 'hint-relay' && S.home && S.home.liveRelay ? S.home.liveRelay.phase : '';
+    return view + '|' + q + '|' + rl + '|' + (e.cupPhase || '');
   }
   function mfTick() {
     var e = MF.open;
