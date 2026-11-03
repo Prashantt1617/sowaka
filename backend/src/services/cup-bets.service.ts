@@ -194,6 +194,21 @@ async function stageMatch(eventId: string, matchId?: string | null): Promise<Cup
 }
 
 /** After a write here: what this server keeps of it is read again. */
+/**
+ * A bet just placed by this server: added to the event's kept bets rather than
+ * dropping them all, so a busy betting lobby (hundreds of bets a minute) does
+ * not send every page's next poll back to the database for the whole list.
+ * Settling, voids and anything else still forget the lot.
+ */
+function noteBet(eventId: string, bet: CupBetRow): void {
+  betsGeneration.set(eventId, (betsGeneration.get(eventId) ?? 0) + 1);
+  const kept = eventBetsCache.get(eventId);
+  if (kept && 'rows' in kept && !kept.rows.some((row) => row._id === bet._id)) kept.rows = [...kept.rows, bet];
+  else eventBetsCache.delete(eventId);
+  for (const key of stageCache.keys()) if (key.startsWith(`${eventId}|`)) stageCache.delete(key);
+  balanceCache.delete(bet.userId);
+}
+
 function forgetBets(eventId: string, userIds: Iterable<string>): void {
   betsGeneration.set(eventId, (betsGeneration.get(eventId) ?? 0) + 1);
   if (betsGeneration.size > 200) betsGeneration.clear();
@@ -319,7 +334,7 @@ export async function placeBetOn(
     if (isDuplicateKey(error)) throw new CupError(409, 'You have already bet on this match');
     throw error;
   }
-  forgetBets(event.id, [viewer.userId]);
+  noteBet(event.id, bet);
   return { bet, balance: await balanceFor(viewer.userId, event, stores, true) };
 }
 

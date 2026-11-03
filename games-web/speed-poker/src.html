@@ -954,8 +954,8 @@ function soHome(c,scr,ri){ const {so,sh,uid}=c, t=now();
 
 function soHow(){ return `<section class="so-card"><div class="so-k m">HOW IT WORKS</div>
   <div class="so-step"><i>1</i><div>Join the lobby. Only people in it get a seat.</div></div>
-  <div class="so-step"><i>2</i><div>When the numbers need one, round 1 is a qualifier. The players with the most chips across tables go through, until there are exactly enough for full tables of 8.</div></div>
-  <div class="so-step"><i>3</i><div>From round 2, be one of the last 4 at your table to go through. The table winner starts the next round with 1,500 chips.</div></div></section>`; }
+  <div class="so-step"><i>2</i><div>If the number of players is a multiple of 8, everyone is through to round 1. Otherwise round 1 is a 10-minute qualifier: the players with the most chips across tables go through, until there are exactly enough for full tables of 8.</div></div>
+  <div class="so-step"><i>3</i><div>After that, every table runs 20 minutes: be one of the last 4 at your table to go through. The table winner starts the next round with 1,500 chips.</div></div></section>`; }
 
 /* Screens 3, 8 and 12: your seat in the round about to deal (or dealt: back to it). */
 function soSeat(c,ri){ const r=c.rounds[ri], tb=c.tableOf(r), t=now(), uid=c.uid, seated=!!c.sh.seated[uid], next=c.planNext(ri);

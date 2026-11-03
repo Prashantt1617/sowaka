@@ -20,8 +20,9 @@ export const SHOOTOUT = {
   START_STACK: 1000,
   /** Last round's table winners. */
   WINNER_STACK: 1500,
-  /** What a qualifier cuts the field to. */
-  TARGETS: [8, 16, 32, 64, 128],
+  /** Table clocks: a qualifier table, and every table after it. */
+  QUALIFIER_MS: 10 * 60_000,
+  ROUND_MS: 20 * 60_000,
   /** Fewer in the lobby: the tournament is called off. */
   MIN_PLAYERS: 3,
 } as const;
@@ -55,10 +56,12 @@ export function roundName(players: number): string {
 }
 
 /**
- * The rounds for n players, decided when the lobby closes: a qualifier only
- * when n is not already a field the knockouts can take (8 or fewer, 12–16,
- * 32, 64, 128), knockouts of full tables keeping the last 4 of each, then
- * the final table.
+ * The rounds for n players, decided when the lobby closes. A headcount that
+ * is a multiple of 8 needs no qualifier: everyone is through to round 1. Any
+ * other (9 or more) plays a qualifier that cuts the field to the multiple of
+ * 8 just below it, so every knockout table opens full; 12–16 is the one
+ * exception, two short semi-final tables. Then knockouts at tables of up to
+ * 8 keeping the last 4 of each, round after round, and the final table.
  */
 export function planRounds(n: number): ShootoutPlannedRound[] {
   const S = SHOOTOUT;
@@ -66,18 +69,16 @@ export function planRounds(n: number): ShootoutPlannedRound[] {
   const rounds: ShootoutPlannedRound[] = [];
   if (n <= S.TABLE_SIZE) return [{ kind: 'final', name: 'Final table', players: n, tables: [n], advance: 1 }];
   let cur: number;
-  if (n >= 12 && n <= 16) {
-    // Two short tables, no qualifier.
+  if ((n >= 12 && n <= 16) || n % S.TABLE_SIZE === 0) {
+    // Two short tables, or every table full already: no qualifier.
     cur = n;
   } else {
-    const target = S.TARGETS.filter((t) => t <= n).pop()!;
-    if (target < n) {
-      rounds.push({ kind: 'qualifier', name: 'Qualifier', players: n, tables: splitSizes(n, Math.ceil(n / S.TABLE_SIZE)), advance: target });
-    }
+    const target = Math.floor(n / S.TABLE_SIZE) * S.TABLE_SIZE;
+    rounds.push({ kind: 'qualifier', name: 'Qualifier', players: n, tables: splitSizes(n, Math.ceil(n / S.TABLE_SIZE)), advance: target });
     cur = target;
   }
   while (cur > S.TABLE_SIZE) {
-    const t = cur <= 16 ? 2 : cur / S.TABLE_SIZE;
+    const t = cur <= 16 ? 2 : Math.ceil(cur / S.TABLE_SIZE);
     rounds.push({ kind: 'knockout', name: roundName(cur), players: cur, tables: splitSizes(cur, t), advance: S.ADVANCE });
     cur = t * S.ADVANCE;
   }

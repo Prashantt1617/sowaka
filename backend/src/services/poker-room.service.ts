@@ -774,7 +774,11 @@ async function dealShootoutRound(event: PokerEvent, state: ShootoutState, round:
           office: people.get(userId)?.office ?? null,
           stack: t.stacks[userId],
         })),
-        config: event.config.formats.shootout,
+        // The qualifier's tables run 10 minutes, every later table 20 (the host can set either).
+        config: {
+          ...(event.config.formats.shootout ?? {}),
+          durationMs: round.kind === 'qualifier' ? event.config.shootout?.qualifierMs ?? SHOOTOUT.QUALIFIER_MS : event.config.shootout?.roundMs ?? SHOOTOUT.ROUND_MS,
+        },
       },
       now,
       deps.random,
@@ -1130,6 +1134,9 @@ export async function startStage(event: PokerEvent, stage: 'semi' | 'final', now
 export async function onGone(who: PokerIdentity): Promise<void> {
   const event = await eventFor(who.org);
   if (!event) return;
+  // A Shootout's lobby is joined once and left only by Leave: a phone locked or a network blip
+  // for a few seconds must not take someone out of it (they would never be seated).
+  if (event.config.shootout) return;
   const changed = await mutateFloor(event.id, (floor) => {
     const before = floor.queue.length;
     floor.queue = floor.queue.filter((q) => q.userId !== who.userId);
