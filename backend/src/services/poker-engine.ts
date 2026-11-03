@@ -63,6 +63,16 @@ export const POKER_FORMATS: Record<PokerRound, PokerTableConfig> = {
     // Long enough to read who won and how before the next deal.
     handPauseMs: 5000,
   },
+  // A Speed Poker Shootout table, every round: eight seats, 1,000 (a table winner's 1,500 comes per player), the 13-minute clock.
+  shootout: {
+    startStack: 1000,
+    levels: [level(20, 40), level(30, 60), level(50, 100), level(75, 150), level(100, 200), level(150, 300), level(250, 500), level(400, 800)],
+    levelMs: 2 * 60_000,
+    actionMs: 15_000,
+    durationMs: 13 * 60_000,
+    handPauseMs: 4000,
+    seats: 8,
+  },
   final: {
     startStack: 1500,
     levels: [level(50, 100), level(75, 150), level(100, 200), level(150, 300), level(250, 500), level(400, 800), level(600, 1200), level(1000, 2000), level(1500, 3000), level(2500, 5000)],
@@ -91,7 +101,8 @@ export interface NewTableInput {
   eventId: string;
   round: PokerRound;
   label?: string | null;
-  players: Pick<PokerSeat, 'userId' | 'name' | 'photoUrl' | 'office'>[];
+  /** `stack`: this player's own starting stack (a Shootout table winner's 1,500), else the format's. */
+  players: (Pick<PokerSeat, 'userId' | 'name' | 'photoUrl' | 'office'> & { stack?: number })[];
   /** A format other than the round's own (the host's settings). */
   config?: Partial<PokerTableConfig>;
 }
@@ -112,7 +123,7 @@ export function newTable(input: NewTableInput, now: number, random: Random, deck
       name: p.name,
       photoUrl: p.photoUrl ?? null,
       office: p.office ?? null,
-      stack: config.startStack,
+      stack: p.stack ?? config.startStack,
       sittingOut: false,
       timeouts: 0,
       knockouts: [],
@@ -332,6 +343,9 @@ function settle(table: PokerTable, now: number, showdown: boolean): void {
     const by = potIdx !== undefined ? result.pots[potIdx].winners.find((w) => w !== seat) ?? null : null;
     s.bustedAt = now;
     s.bustedBy = by !== null ? table.seats[by].userId : null;
+    // All of their stack was in this hand: what they had going into it.
+    s.bustHand = hand.no;
+    s.bustStack = hand.committed[seat];
     if (by !== null) table.seats[by].knockouts.push(s.userId);
     result.busted.push({ seat, by });
   }

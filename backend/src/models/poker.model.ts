@@ -5,8 +5,8 @@
  * bought, moved between people, or worth money.
  */
 
-/** `casual`: a room's game (Speed Poker as a group game, no event); the others belong to an event. */
-export type PokerRound = 'practice' | 'open' | 'semi' | 'final' | 'casual';
+/** `casual`: a room's game (Speed Poker as a group game, no event); `shootout`: a Shootout's table (any of its rounds); the others belong to an event. */
+export type PokerRound = 'practice' | 'open' | 'semi' | 'final' | 'casual' | 'shootout';
 
 export interface PokerLevel {
   sb: number;
@@ -42,6 +42,9 @@ export interface PokerSeat {
   knockouts: string[];
   bustedAt: number | null;
   bustedBy: string | null;
+  /** The hand the player busted on, and their stack going into it: what a Shootout ranks busted players by. */
+  bustHand?: number;
+  bustStack?: number;
   /** A room's game only: the player left the room mid-game; their seat is dealt no more hands. */
   left?: boolean;
 }
@@ -151,7 +154,8 @@ export interface PokerTableMeta {
   bots: string[];
 }
 
-export type PokerPhase = 'draft' | 'upcoming' | 'practice' | 'between' | 'open' | 'semis-soon' | 'semis' | 'final-soon' | 'final' | 'over';
+/** `lobby` and `shootout`: a Speed Poker Shootout's lobby, then its rounds (`PokerEvent.shootout`). */
+export type PokerPhase = 'draft' | 'upcoming' | 'practice' | 'between' | 'open' | 'semis-soon' | 'semis' | 'final-soon' | 'final' | 'over' | 'lobby' | 'shootout';
 
 export interface PokerEventConfig {
   /** Day 1: open play without points (ISO times). Null for no practice day. */
@@ -199,6 +203,56 @@ export interface PokerEventConfig {
   exclude: string[];
   /** Post the standings to the feed on the hour during open play. */
   hourlyPosts?: boolean;
+  /**
+   * A Speed Poker Shootout instead of a game day: the lobby opens at
+   * `lobbyFrom` and closes at `startAt`, when everyone in it is seated at
+   * random and the rounds run on their own (services/poker-shootout-rules.ts).
+   * `breakMs`: the countdown before each round's tables deal.
+   */
+  shootout?: { lobbyFrom: string; startAt: string; breakMs?: number };
+}
+
+/** One table of a Shootout round. */
+export interface ShootoutTableRec {
+  label: string;
+  tableId: string | null;
+  players: string[];
+  /** Each player's starting stack: 1,500 for last round's table winners, else 1,000. */
+  stacks: Record<string, number>;
+  /** A random number each, drawn at seating, for exact ties. */
+  draw: Record<string, number>;
+  /** Once the table is over: everyone in order, who went through, its winner. */
+  result?: { order: string[]; through: string[]; winner: string } | null;
+  /** The table as it ended, for the qualifier ranking and the standings. */
+  final?: { busts: { id: string; hand: number; stackBefore: number }[]; survivors: Record<string, number> } | null;
+}
+
+export interface ShootoutRoundRec {
+  kind: 'qualifier' | 'knockout' | 'final';
+  name: string;
+  /** A qualifier: how many go through in all; a knockout: per table; the final: 1. */
+  advance: number;
+  players: string[];
+  /** Seats are drawn at `seatedAt`; the tables deal at `startsAt`. */
+  seatedAt: number;
+  startsAt: number;
+  startedAt: number | null;
+  endedAt: number | null;
+  tables: ShootoutTableRec[];
+  /** Once the round is over: who goes on, and the qualifier's whole ranking. */
+  next: string[] | null;
+  winners: string[];
+  ranking?: string[] | null;
+}
+
+export interface ShootoutState {
+  status: 'live' | 'done' | 'cancelled';
+  /** Everyone who was in the lobby when it closed, with their names and offices. */
+  joined: { userId: string; name: string; office: string | null }[];
+  plan: { kind: 'qualifier' | 'knockout' | 'final'; name: string; players: number; tables: number[]; advance: number }[];
+  rounds: ShootoutRoundRec[];
+  /** Everyone, champion first, once the final is over. */
+  standings: string[] | null;
 }
 
 export interface PokerStage {
@@ -222,6 +276,8 @@ export interface PokerEvent {
   semis: PokerStage | null;
   final: PokerStage | null;
   champion: { userId: string; name: string } | null;
+  /** A Shootout's draw and rounds, from the moment its lobby closes. */
+  shootout?: ShootoutState | null;
   /** The feed card, when posted. */
   postId: string | null;
   /** When the last standings post went out. */

@@ -51,6 +51,14 @@ const at = (iso: string | null | undefined) => (iso ? Date.parse(iso) : NaN);
 /** Where the day stands now. */
 export function phaseOf(event: PokerEvent, now: number): PokerPhase {
   if (event.status === 'draft') return 'draft';
+  const so = event.config.shootout;
+  if (so) {
+    // A Shootout: its lobby, then its rounds; nobody queues for open play.
+    if (event.status === 'over' || event.shootout?.status === 'done' || event.shootout?.status === 'cancelled') return 'over';
+    if (event.shootout) return 'shootout';
+    if (now >= at(so.lobbyFrom)) return 'lobby';
+    return 'upcoming';
+  }
   if (event.status === 'over' || event.final?.endedAt) return 'over';
   const c = event.config;
   if (event.final?.startedAt) return 'final';
