@@ -1304,7 +1304,7 @@ svg{overflow:visible}
       var start = Date.parse(str(r.startsAt)), end = Date.parse(str(r.endsAt));
       var id = str(r.id), key = str(r.gameKey), at = str(r.at);
       if (!id || !key || !/^\d\d:\d\d$/.test(at) || isNaN(start) || isNaN(end)) return null;
-      return { id: id, key: key, name: str(r.name), kind: str(r.kind), at: at, mins: Math.round((end - start) / 60e3),
+      return { id: id, key: key, name: str(r.name), kind: str(r.kind), at: at,
         theme: MF_THEMES[r.theme] ? r.theme : 'odd', format: r.format === 'cup' || r.format === 'relay' ? r.format : null,
         win: str(r.win), practice: r.practice === true, start: start, end: end, lobby: start - 5 * 60e3 };
     }).filter(Boolean);
@@ -1431,7 +1431,7 @@ svg{overflow:visible}
     var st = mfState(e, now);
     if (st === 'soon') {
       var left = e.start - now, h = Math.floor(left / 3600e3), m = Math.floor(left % 3600e3 / 60e3);
-      return { st: st, html: mfNext(now) === e ? 'Starts in ' + (h ? h + 'h ' : '') + m + 'm' : esc(e.kind) + ' · ' + e.mins + ' min' };
+      return { st: st, html: mfNext(now) === e ? 'Starts in ' + (h ? h + 'h ' : '') + m + 'm' : esc(e.kind) };
     }
     if (st === 'lobby') return { st: st, html: '<span class="mf-pill lobby"><i></i>LOBBY OPEN</span> &nbsp;Starts in ' + clockFmt(e.start - now).slice(3) };
     if (st === 'live') return { st: st, html: '<span class="mf-pill live"><i></i>LIVE</span> &nbsp;On now' };
@@ -1644,7 +1644,7 @@ svg{overflow:visible}
     ev.innerHTML = '<div class="ev-band"><button type="button" class="ev-back" data-act="mf-close" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="#FFE7A8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>' +
       '<div><div class="t">Diwali Mehfil</div><div class="d">' + esc(mfDay()) + ' · ' + hhmm(e) + ' ' + ampm(e) + '</div></div>' + garland() + '</div>' +
       '<div class="ev-body"><div class="ev-hero"><div class="ev-ic">' + mfIcon(e) + '</div>' +
-      '<span class="ev-kind">' + esc(e.kind) + ' · ' + e.mins + ' min</span><div class="ev-name">' + esc(e.name.toUpperCase()) + '</div>' +
+      '<span class="ev-kind">' + esc(e.kind) + '</span><div class="ev-name">' + esc(e.name.toUpperCase()) + '</div>' +
       '<div class="ev-when">Today’s line-up, game ' + (list.indexOf(e) + 1) + ' of ' + list.length + '</div></div>' +
       '<div data-mf-timer>' + mfTimerCard(e, now, view) + '</div>' + (e.format === 'cup' ? cupRules(e) : '') + mfHow(e) + mfPractice(e, view) + '</div>';
   }
