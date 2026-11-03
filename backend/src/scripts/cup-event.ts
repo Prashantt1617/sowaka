@@ -32,6 +32,9 @@
  * --exclude id,id --include id,id (a test: only these) --seeding leaderboard|lucky
  * --top-n N --start-window S --solo-start S --betting S --countdown S --round S
  * --grace S --min-play S --max-score N --max-replays N --max-stake N --push-at-lobby true|false
+ * --game odd-one-out|trails (the game in each match) --lobby-draw true|false (only the people who join
+ * the lobby, paired at random when it closes) --wallet N (everyone bets from N points of their own for
+ * this tournament, not their points; 0: their points)
  * Times: ISO with an offset (2026-10-23T17:25+05:30), or +Ns / +Nm / +Nh from now.
  */
 import { randomUUID } from 'node:crypto';
@@ -89,7 +92,11 @@ const NUMBER_FLAGS: Record<string, [keyof CupEventConfig, number, number]> = {
   'max-score': ['maxScore', 100, 1_000_000],
   'max-replays': ['maxReplays', 0, 10],
   'max-stake': ['maxStake', 0, 1_000_000],
+  wallet: ['walletStart', 0, 1_000_000],
 };
+
+/** The games a tournament can be played in: each has its round in the tournament page. */
+const CUP_GAMES = ['odd-one-out', 'trails'];
 
 /** The fields the flags set. */
 function fieldsFrom(flags: Flags): Partial<CupEvent> {
@@ -110,6 +117,11 @@ function fieldsFrom(flags: Flags): Partial<CupEvent> {
     set.seeding = flags.seeding as CupSeeding;
   }
   if (flags['push-at-lobby']) set.pushAtLobby = flags['push-at-lobby'] === 'true';
+  if (flags['lobby-draw']) set.lobbyDraw = flags['lobby-draw'] === 'true';
+  if (flags.game) {
+    if (!CUP_GAMES.includes(flags.game)) throw new Error(`--game is one of ${CUP_GAMES.join(', ')}`);
+    set.gameKey = flags.game;
+  }
   for (const [flag, [field, min, max]] of Object.entries(NUMBER_FLAGS)) {
     if (flags[flag] !== undefined) (set as Record<string, unknown>)[field] = int(flags[flag], flag, min, max);
   }
@@ -249,7 +261,7 @@ async function main() {
     case 'update': {
       const event = await requireEvent(flags.id);
       const fields = fieldsFrom(flags);
-      const structural = ['excludeUserIds', 'includeUserIds', 'seeding', 'topN', 'lobbyAt'] as const;
+      const structural = ['excludeUserIds', 'includeUserIds', 'seeding', 'topN', 'lobbyAt', 'lobbyDraw', 'gameKey', 'walletStart'] as const;
       if (event.phase !== 'scheduled' && structural.some((f) => f in fields)) {
         throw new Error(`The draw is made: ${structural.join(', ')} can no longer change (reset first, in a test)`);
       }
@@ -364,7 +376,7 @@ async function main() {
       } else {
         await cupEvents().updateOne(
           { id: event.id },
-          { $set: { phase: 'scheduled', round: 0, entrants: [], rounds: [], updatedAt: now }, $unset: { drawnAt: '', championId: '', finishedAt: '', pausedAt: '' }, $inc: { version: 1 } },
+          { $set: { phase: 'scheduled', round: 0, entrants: [], rounds: [], lobbyJoined: [], updatedAt: now }, $unset: { drawnAt: '', championId: '', finishedAt: '', pausedAt: '' }, $inc: { version: 1 } },
         );
         console.log(`Reset ${event.id} to before the draw (times unchanged: update them); ${reverted}`);
       }

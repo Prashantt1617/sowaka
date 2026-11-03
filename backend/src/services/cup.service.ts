@@ -36,6 +36,7 @@ import { hasAllDashboardTabs } from '../middleware/admin.middleware';
 import { logger } from '../utils/logger';
 import {
   buildDraw,
+  buildPyramidDraw,
   cryptoRng,
   matchLabel,
   mayJoin,
@@ -100,7 +101,8 @@ export const cupHooks: {
   onMatchReplayed?: (match: CupMatch, event: CupEvent) => Promise<void>;
   onMatchVoided?: (match: CupMatch, event: CupEvent, byUserId: string) => Promise<void>;
   state?: (viewer: CupViewer, event: CupEvent, current: { matchId: string; kind: 'betting' | 'live' } | null) => Promise<Record<string, unknown>>;
-  balance?: (viewer: CupViewer) => Promise<number>;
+  /** What the viewer has to bet with: in the event's own wallet when it has one (`walletStart`), else their points. */
+  balance?: (viewer: CupViewer, event?: CupEvent) => Promise<number>;
   /** Settles whatever a lost hook call left behind; the runner calls it every so often while bets are taken. */
   reconcile?: (eventId: string) => Promise<number>;
 } = {};
@@ -294,11 +296,12 @@ async function runtimeFor(viewer: CupViewer, askedId?: unknown): Promise<Runtime
     const kept = orgEventCache.get(viewer.org);
     if (kept && Date.now() - kept.at < 5000) id = kept.id;
     else {
-      const row = await cupEvents()
-        .find({ org: viewer.org, active: true }, { projection: { _id: 0, id: 1 } })
-        .sort({ lobbyAt: -1 })
-        .limit(1)
-        .next();
+      // The one still to finish, soonest first (two can be on in a day: Trails at 4, Odd One Out at 6); else the latest.
+      const rows = await cupEvents()
+        .find({ org: viewer.org, active: true }, { projection: { _id: 0, id: 1, phase: 1, startAt: 1, lobbyAt: 1 } })
+        .toArray();
+      const open = rows.filter((row) => row.phase !== 'done').sort((x, y) => x.startAt.getTime() - y.startAt.getTime());
+      const row = open[0] ?? rows.sort((x, y) => y.lobbyAt.getTime() - x.lobbyAt.getTime())[0];
       id = row?.id ?? null;
       orgEventCache.set(viewer.org, { id, at: Date.now() });
     }
@@ -506,6 +509,93 @@ async function makeDraw(rt: Runtime, now: Date): Promise<void> {
   if (event.pushAtLobby) void pushLobby(rt).catch((error) => logger.error('Cup lobby push failed', { eventId: event.id }, error));
 }
 
+/**
+ * With `lobbyDraw`, the lobby opens with no draw: people join it until
+ * `startAt`, and only they are drawn (`makeLobbyDraw`).
+ */
+async function openLobby(rt: Runtime, now: Date): Promise<void> {
+  const event = rt.event;
+  const claimed = await cupEvents().findOneAndUpdate(
+    { id: event.id, phase: 'scheduled', active: true },
+    { $set: { phase: 'lobby', entrants: [], rounds: [], lobbyJoined: [], round: 0, updatedAt: now }, $inc: { version: 1 } },
+    { returnDocument: 'after', projection: { _id: 0 } },
+  );
+  if (!claimed) return;
+  rt.event = claimed;
+  rt.rev += 1;
+  logger.info('Cup lobby open', { eventId: event.id });
+  if (event.pushAtLobby) void pushLobbyOpen(rt).catch((error) => logger.error('Cup lobby push failed', { eventId: event.id }, error));
+}
+
+/**
+ * The lobby has closed: everyone in it, in a random order, paired off round
+ * by round (`buildPyramidDraw`). Someone who has left the company since they
+ * joined is not drawn. Fewer than two: the tournament is over with no match.
+ */
+async function makeLobbyDraw(rt: Runtime, now: Date): Promise<void> {
+  const event = rt.event;
+  const roster = await rosterOf(event);
+  const joined = new Set(event.lobbyJoined ?? []);
+  const ordered = seedOrderOf(roster.filter((p) => joined.has(p.userId)), 'lucky', cryptoRng);
+  const entrants: CupEntrant[] = ordered.map((p, i) => ({ userId: p.userId, name: p.name, seed: i + 1, best: p.best, boardRank: null }));
+  const rounds = buildPyramidDraw(entrants.length, event.topN, cryptoRng);
+  const none = entrants.length < 2;
+  const claimed = await cupEvents().findOneAndUpdate(
+    { id: event.id, phase: 'lobby', active: true, drawnAt: { $exists: false } },
+    {
+      $set: {
+        ...(none ? { phase: 'done' as const, finishedAt: now, ...(entrants[0] ? { championId: entrants[0].userId } : {}) } : {}),
+        entrants,
+        rounds,
+        drawnAt: now,
+        round: 0,
+        updatedAt: now,
+      },
+      $inc: { version: 1 },
+    },
+    { returnDocument: 'after', projection: { _id: 0 } },
+  );
+  if (!claimed) return;
+  rt.event = claimed;
+  rt.rev += 1;
+  rosterCache.delete(event.id);
+  logger.info('Cup lobby draw made', { eventId: event.id, entrants: entrants.length, rounds: rounds.length });
+  if (none) return;
+  await createRoundMatches(rt, 1, now, 'scheduled');
+}
+
+/**
+ * Says the viewer is in the lobby. Only while it is open and before the draw,
+ * and only someone the tournament would enter (active at the company, not
+ * left out). Saying it twice is harmless.
+ */
+export async function joinLobby(viewer: CupViewer, askedId?: unknown) {
+  const rt = await runtimeFor(viewer, askedId);
+  if (!rt) throw new CupError(404, 'The tournament is not on');
+  const event = rt.event;
+  if (!event.lobbyDraw) throw new CupError(409, 'This tournament has no lobby to join');
+  if (event.phase === 'scheduled') throw new CupError(409, 'The lobby is not open yet');
+  if (event.phase !== 'lobby' || event.drawnAt) throw new CupError(409, 'The lobby has closed');
+  const roster = await rosterPreview(event);
+  if (!roster.some((row) => row.userId === viewer.userId)) throw new CupError(403, "You're not in this tournament");
+  const now = new Date();
+  if (!(event.lobbyJoined ?? []).includes(viewer.userId)) {
+    const after = await cupEvents().findOneAndUpdate(
+      { id: event.id, phase: 'lobby', active: true, drawnAt: { $exists: false }, lobbyJoined: { $ne: viewer.userId } },
+      { $push: { lobbyJoined: viewer.userId }, $set: { updatedAt: now }, $inc: { version: 1 } },
+      { returnDocument: 'after', projection: { _id: 0 } },
+    );
+    if (after) {
+      rt.event = after;
+      rt.rev += 1;
+    } else {
+      const again = await refresh(event.id);
+      if (!again || !(again.event.lobbyJoined ?? []).includes(viewer.userId)) throw new CupError(409, 'The lobby has closed');
+    }
+  }
+  return { serverNow: new Date(), inLobby: true, lobbyCount: (rt.event.lobbyJoined ?? []).length };
+}
+
 /** The player a place in the draw holds, once known: an entrant, or the winner of an earlier place. */
 function holderOf(rt: Runtime, ref: string): string | null {
   const parsed = parseRef(ref);
@@ -613,6 +703,16 @@ async function pushLobby(rt: Runtime) {
   }
 }
 
+/** With `lobbyDraw`: everyone the tournament would enter, as its lobby opens. */
+async function pushLobbyOpen(rt: Runtime) {
+  const event = rt.event;
+  const roster = await rosterPreview(event);
+  const body = `The lobby is open. Join it before ${hhmm(event.startAt)} to get a match.`;
+  for (let i = 0; i < roster.length; i += 50) {
+    await pushCup(event, roster.slice(i, i + 50).map((row) => row.userId), 'cup_lobby', `${event.name}: the lobby is open`, body);
+  }
+}
+
 /** The two players, as their match opens. */
 async function pushOpen(event: CupEvent, match: CupMatch) {
   const window = event.startWindowSec >= 60 ? `${Math.round(event.startWindowSec / 60)} minutes` : `${event.startWindowSec} seconds`;
@@ -702,11 +802,14 @@ async function tickEvent(id: string): Promise<void> {
   let now = new Date();
   const event = rt.event;
   if (event.phase === 'scheduled') {
-    if (now >= event.lobbyAt) await makeDraw(rt, now);
+    if (now >= event.lobbyAt) await (event.lobbyDraw ? openLobby(rt, now) : makeDraw(rt, now));
     return;
   }
   if (event.phase === 'lobby') {
-    if (now >= event.startAt) await openRound(rt, 1, now);
+    if (now < event.startAt) return;
+    // The lobby closes: the draw, of the people in it, before round 1 can open.
+    if (event.lobbyDraw && !event.drawnAt) await makeLobbyDraw(rt, now);
+    if (rt.event.phase === 'lobby' && rt.event.drawnAt) await openRound(rt, 1, new Date());
     return;
   }
   if (event.phase !== 'running') return;
@@ -1305,8 +1408,12 @@ function shared(rt: Runtime, rosterCount: number) {
     startAt: event.startAt,
     topN: event.topN,
     orgName: rt.orgName || undefined,
-    // Before the draw, everyone who would be in now.
-    entrantCount: event.phase === 'scheduled' ? rosterCount : event.entrants.length,
+    // Before the draw, everyone who would be in now; in a lobby still open, everyone in it so far.
+    entrantCount: event.phase === 'scheduled' ? rosterCount : event.lobbyDraw && !event.drawnAt ? (event.lobbyJoined ?? []).length : event.entrants.length,
+    lobbyDraw: event.lobbyDraw === true || undefined,
+    lobbyOpen: (event.lobbyDraw && event.phase === 'lobby' && !event.drawnAt) || undefined,
+    gameKey: event.gameKey,
+    wallet: event.walletStart && event.walletStart > 0 ? event.walletStart : undefined,
     seeding: event.seeding,
     startWindowSec: event.startWindowSec,
     soloStartSec: event.soloStartSec,
@@ -1427,8 +1534,9 @@ function freePassOf(rt: Runtime, userId: string) {
 
 const balanceCache = new Map<string, { value: number; at: number }>();
 
-async function balanceOf(viewer: CupViewer): Promise<number> {
-  if (cupHooks.balance) return cupHooks.balance(viewer);
+async function balanceOf(viewer: CupViewer, event?: CupEvent): Promise<number> {
+  if (cupHooks.balance) return cupHooks.balance(viewer, event);
+  if (event?.walletStart && event.walletStart > 0) return event.walletStart;
   const kept = balanceCache.get(viewer.userId);
   if (kept && Date.now() - kept.at < 3000) return kept.value;
   const row = await users().findOne({ userId: viewer.userId }, { projection: { _id: 0, points: 1 } });
@@ -1446,10 +1554,16 @@ async function meOf(rt: Runtime, viewer: CupViewer) {
   if (event.phase === 'scheduled') {
     const roster = await rosterPreview(event);
     const mine = roster.find((row) => row.userId === viewer.userId);
-    return { ...base, entered: !!mine, alive: !!mine, best: mine?.best ?? null, balance: await balanceOf(viewer) };
+    return { ...base, entered: !!mine, alive: !!mine, best: mine?.best ?? null, balance: await balanceOf(viewer, event) };
+  }
+  if (event.lobbyDraw && event.phase === 'lobby' && !event.drawnAt) {
+    const roster = await rosterPreview(event);
+    const mine = roster.find((row) => row.userId === viewer.userId);
+    const inLobby = (event.lobbyJoined ?? []).includes(viewer.userId);
+    return { ...base, entered: !!mine, alive: !!mine, inLobby, best: mine?.best ?? null, balance: await balanceOf(viewer, event) };
   }
   const entrant = event.entrants.find((e) => e.userId === viewer.userId);
-  if (!entrant) return { ...base, entered: false, alive: false, balance: await balanceOf(viewer) };
+  if (!entrant) return { ...base, entered: false, alive: false, balance: await balanceOf(viewer, event) };
   const outIn = eliminations(rt).get(viewer.userId);
   const mine = [...rt.matches.values()]
     .filter((m) => m.players.includes(viewer.userId))
@@ -1468,7 +1582,7 @@ async function meOf(rt: Runtime, viewer: CupViewer) {
     freePass: outIn ? undefined : freePassOf(rt, viewer.userId) ?? undefined,
     match: showing ? myMatchView(rt, showing, viewer.userId) : undefined,
   };
-  return { ...me, balance: await balanceOf(viewer) };
+  return { ...me, balance: await balanceOf(viewer, event) };
 }
 
 /**

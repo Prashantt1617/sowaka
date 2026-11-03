@@ -3,6 +3,7 @@ import {
   CupError,
   entrantsFor,
   inlinePhoto,
+  joinLobby,
   joinMatch,
   reportFinal,
   reportLive,
@@ -60,6 +61,8 @@ const idOf = (req: Request) => String(req.params.id ?? '');
 
 export const entrantsHandler = cupHandler((viewer, req) => entrantsFor(viewer, eventOf(req)));
 export const joinHandler = cupHandler((viewer, req) => joinMatch(viewer, idOf(req)));
+/** Into the lobby of a tournament drawn from it (`lobbyDraw`). */
+export const lobbyHandler = cupHandler((viewer, req) => joinLobby(viewer, eventOf(req)));
 export const soloHandler = cupHandler((viewer, req) => startSolo(viewer, idOf(req)));
 export const liveHandler = cupHandler(async (viewer, req) => {
   await reportLive(viewer, idOf(req), req.body?.score, req.body);

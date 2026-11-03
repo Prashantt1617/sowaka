@@ -32,6 +32,7 @@ import {
   initialsOf,
   istWeekStart,
   mehfilFor,
+  type Mehfil,
   movementSince,
   nextUpFor,
   orderLiveContests,
@@ -48,6 +49,7 @@ import { rosterFor } from './profile.service';
 import { presignConnectMedia, resolveProfilePhoto } from './s3-connect-media.service';
 import { openInvitesFor } from './scribble-room.service';
 import { liveSquadFor } from './secret-squad.service';
+import { cupEvents } from './cup.service';
 import { optional } from '../utils/optional';
 import { requestViewer } from '../middleware/request-viewer';
 
@@ -666,7 +668,7 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
       : null,
   );
   // The Diwali Mehfil's line-up, at a company that has it.
-  const mehfilP = optional('Games home Mehfil', () => mehfilOn(viewer.org).then((on) => mehfilFor(on, now)), null, context);
+  const mehfilP = optional('Games home Mehfil', () => mehfilOn(viewer.org).then((on) => mehfilFor(on, now)).then((m) => withTournaments(m, viewer.org)), null, context);
   const [roster, games, banner, liveContests, liveRelay, challenges, invites, yourGames, playingNow, liveSquad, mehfil] = await Promise.all([
     rosterP,
     gamesP,
@@ -712,9 +714,36 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
     yourGames,
     // Secret Squad is played only when an office's game is on: it shows under
     // Live then (liveSquad), never in the list of games to play any time.
-    games: games.map((game) => (game.key === LIVE_ONLY_GAME ? { ...game, liveOnly: true } : game)),
+    games: games.map((game) => (game.key === LIVE_ONLY_GAME || game.key === TOURNAMENT_GAME ? { ...game, liveOnly: true } : game)),
     playingNow,
     mehfil,
+  };
+}
+
+/**
+ * Each knockout row of the Mehfil, with the tournament it is played in and
+ * where that has got to: the company's switched-on tournament of that game
+ * still to finish (the soonest), else the last one that finished. A row with
+ * none stays a countdown.
+ */
+async function withTournaments(mehfil: Mehfil | null, org: string | undefined): Promise<Mehfil | null> {
+  if (!mehfil || !org) return mehfil;
+  const games = mehfil.events.filter((event) => event.format === 'cup').map((event) => event.gameKey);
+  if (!games.length) return mehfil;
+  const found = await cupEvents()
+    .find({ org, active: true, gameKey: { $in: games } }, { projection: { _id: 0, id: 1, gameKey: 1, phase: 1, startAt: 1 } })
+    .toArray();
+  const pick = (gameKey: string) => {
+    const mine = found.filter((row) => row.gameKey === gameKey);
+    const open = mine.filter((row) => row.phase !== 'done').sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+    return open[0] ?? mine.sort((a, b) => b.startAt.getTime() - a.startAt.getTime())[0];
+  };
+  return {
+    ...mehfil,
+    events: mehfil.events.map((event) => {
+      const cup = event.format === 'cup' ? pick(event.gameKey) : undefined;
+      return cup ? { ...event, cupEventId: cup.id, cupPhase: cup.phase } : event;
+    }),
   };
 }
 
@@ -732,6 +761,8 @@ async function mehfilOn(org: string | undefined, at = Date.now()): Promise<boole
 
 /** The game the tab lists only while it is live. */
 const LIVE_ONLY_GAME = 'secret-squad';
+/** The knockout tournament's page: never a game of its own in the list, only opened from a Mehfil row (or the feed). */
+const TOURNAMENT_GAME = 'diwali-cup';
 
 /**
  * How long the home keeps a company's catalog. It changes when Sowaka edits a

@@ -58,6 +58,7 @@ import {
   type BetContext,
   type BetMove,
   type CupBetRow,
+  walletBalance,
 } from './cup-bets-rules';
 import { pointEvents } from './points-ledger.service';
 
@@ -142,6 +143,26 @@ async function balanceOf(userId: string, stores: BetStores = liveBetStores(), fr
   balanceCache.set(userId, { points, at: Date.now() });
   if (balanceCache.size > 5000) balanceCache.clear();
   return points;
+}
+
+/** Whether the event's bets come from a tournament wallet rather than the person's own points. */
+const hasWallet = (event: Pick<CupEvent, 'walletStart'> | null | undefined): boolean => !!event?.walletStart && event.walletStart > 0;
+
+/**
+ * What the viewer has to bet with in this event: their tournament wallet
+ * when it has one (worked out from their bets in it), else their own points.
+ */
+async function balanceFor(
+  userId: string,
+  event: Pick<CupEvent, 'id' | 'walletStart'> | null | undefined,
+  stores: BetStores = liveBetStores(),
+  fresh = false,
+): Promise<number> {
+  if (!event || !hasWallet(event)) return balanceOf(userId, stores, fresh);
+  const bets = fresh
+    ? await stores.bets.find({ eventId: event.id, userId }).toArray()
+    : (await eventBets(event.id, stores)).filter((bet) => bet.userId === userId);
+  return walletBalance(event.walletStart ?? 0, bets);
 }
 
 /**
@@ -248,14 +269,15 @@ export async function placeBet(viewer: CupViewer, input: PlaceBetInput, now = ne
 /** The write itself, given the match as read. Exported for the check script. */
 export async function placeBetOn(
   viewer: Pick<CupViewer, 'userId' | 'name' | 'org'>,
-  event: Pick<CupEvent, 'id' | 'maxStake' | 'entrants'>,
+  event: Pick<CupEvent, 'id' | 'maxStake' | 'entrants' | 'walletStart'>,
   match: CupMatch,
   pick: unknown,
   stake: unknown,
   stores: BetStores,
   now = new Date(),
 ) {
-  const balance = await balanceOf(viewer.userId, stores, true);
+  const wallet = hasWallet(event);
+  const balance = await balanceFor(viewer.userId, event, stores, true);
   const verdict = betVerdict(match, viewer.userId, pick, stake, balance, event.maxStake, now);
   if (!verdict.ok) throw new CupError(verdict.status, verdict.message);
   const amount = stake as number;
@@ -277,6 +299,13 @@ export async function placeBetOn(
   const row = ledgerRowFor(bet, 'placed', -amount, contextFor(match, namesOf(event), bet.pick), now);
   try {
     await inTransaction(stores.db, async (session) => {
+      if (wallet) {
+        // The wallet is the person's bets in this event: read in the transaction, so two bets at once cannot overspend it.
+        const mine = await stores.bets.find({ eventId: event.id, userId: viewer.userId }, { session }).toArray();
+        if (walletBalance(event.walletStart ?? 0, mine) < amount) throw new CupError(400, "You don't have that many points to bet");
+        await stores.bets.insertOne(bet, { session });
+        return;
+      }
       await stores.bets.insertOne(bet, { session });
       const debit = await stores.users.updateOne(
         { userId: viewer.userId, org: viewer.org, points: { $gte: amount } },
@@ -291,7 +320,7 @@ export async function placeBetOn(
     throw error;
   }
   forgetBets(event.id, [viewer.userId]);
-  return { bet, balance: await balanceOf(viewer.userId, stores, true) };
+  return { bet, balance: await balanceFor(viewer.userId, event, stores, true) };
 }
 
 /**
@@ -321,6 +350,8 @@ export async function settleMatchBets(
   stores: BetStores,
   nameOf: (userId: string) => string,
   now = new Date(),
+  /** The event bets from a tournament wallet: the bets are the whole record, and nobody's own points move. */
+  wallet = false,
 ): Promise<BetMove[]> {
   for (let attempt = 0; ; attempt += 1) {
     try {
@@ -338,6 +369,7 @@ export async function settleMatchBets(
           { session, ordered: true },
         );
         if (claimed.modifiedCount !== moves.length) throw new BetsMoved();
+        if (wallet) return moves;
         const deltas = deltasByUser(moves);
         if (deltas.size) {
           await stores.users.bulkWrite(
@@ -367,7 +399,7 @@ async function reconcileMatch(given: CupMatch, known?: CupEvent): Promise<BetMov
   if (given.kind !== 'sequential' && bookOf(given) === 0) return [];
   const match = (await cupMatches().findOne({ id: given.id }, { projection: { _id: 0 } })) ?? given;
   const event = known ?? (await loadEvent(match.eventId));
-  const moves = await settleMatchBets(match, liveBetStores(), namesOf(event));
+  const moves = await settleMatchBets(match, liveBetStores(), namesOf(event), new Date(), hasWallet(event));
   if (moves.length) {
     forgetBets(match.eventId, moves.map((move) => move.bet.userId));
     await bumpVersion(match.eventId);
@@ -410,7 +442,7 @@ cupHooks.onMatchReplayed = async (match, event) => {
 cupHooks.onMatchVoided = async (match, event) => {
   await reconcileMatch(match, event);
 };
-cupHooks.balance = (viewer) => balanceOf(viewer.userId);
+cupHooks.balance = (viewer, event) => balanceFor(viewer.userId, event);
 cupHooks.reconcile = (eventId) => reconcileCupBets(eventId);
 cupHooks.state = async (viewer, event, current) => {
   const parts = await betsStateFor(viewer, event, await stageMatch(event.id, current?.matchId));
@@ -465,10 +497,10 @@ const MATCH_ID = /^[A-Za-z0-9_-]{1,80}-r\d{1,2}-m\d{1,4}$/;
  * their bets, the split on the match on stage, and the top tipsters. Pass the
  * match on stage when the caller has it (else it is looked up).
  */
-export async function betsStateFor(viewer: Pick<CupViewer, 'userId'>, event: Pick<CupEvent, 'id'>, onStage?: CupMatch | null) {
+export async function betsStateFor(viewer: Pick<CupViewer, 'userId'>, event: Pick<CupEvent, 'id' | 'walletStart'>, onStage?: CupMatch | null) {
   const [bets, balance, stage] = await Promise.all([
     eventBets(event.id),
-    balanceOf(viewer.userId),
+    balanceFor(viewer.userId, event),
     onStage === undefined ? stageMatch(event.id) : Promise.resolve(onStage),
   ]);
   return {
@@ -499,7 +531,7 @@ async function viewersEvent(viewer: CupViewer, askedId?: unknown): Promise<CupEv
 export async function myBets(viewer: CupViewer, askedId?: unknown) {
   const event = await viewersEvent(viewer, askedId);
   if (!event) throw new CupError(404, 'The tournament is not on');
-  const [bets, balance] = await Promise.all([eventBets(event.id), balanceOf(viewer.userId)]);
+  const [bets, balance] = await Promise.all([eventBets(event.id), balanceFor(viewer.userId, event)]);
   return { bets: mineOf(bets, viewer.userId), balance };
 }
 

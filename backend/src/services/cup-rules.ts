@@ -164,6 +164,39 @@ export function buildDraw(entrants: number, topN: number): CupRound[] {
   });
 }
 
+/**
+ * The draw from the lobby: the entrants, already in a random order (seed 1..N
+ * is just that order), paired off round by round. Each round pairs the places
+ * left two by two; with an odd number, one of them, picked at random, has the
+ * round's one free pass. So a free pass only ever happens in a round with an
+ * odd number of players, and the pairs are random all the way to the final.
+ */
+export function buildPyramidDraw(entrants: number, topN: number, rng: Rng = cryptoRng): CupRound[] {
+  if (entrants < 2) return [];
+  const raw: CupNode[][] = [];
+  let places: CupRef[] = Array.from({ length: entrants }, (_, i) => entrantRef(i + 1));
+  while (places.length > 1) {
+    const round = raw.length + 1;
+    const pass = places.length % 2 === 1 ? rng(places.length) : -1;
+    const rest = pass < 0 ? places : places.filter((_, i) => i !== pass);
+    const nodes: CupNode[] = [];
+    for (let i = 0; i < rest.length; i += 2) nodes.push({ slot: nodes.length + 1, feeders: [rest[i], rest[i + 1]] });
+    // The free pass sits at a random place in the round too, so the next pairing is not always the last two.
+    if (pass >= 0) nodes.splice(rng(nodes.length + 1), 0, { slot: 0, feeders: [places[pass]] });
+    nodes.forEach((node, i) => {
+      node.slot = i + 1;
+    });
+    raw.push(nodes);
+    places = nodes.map((node) => nodeRef(round, node.slot));
+  }
+  const total = raw.length;
+  return raw.map((nodes, index) => {
+    const n = index + 1;
+    const { label, short } = roundName(n, total, nodes.length);
+    return { n, label, short, kind: playersIn(nodes) <= topN ? 'sequential' : 'parallel', nodes };
+  });
+}
+
 export function roundName(n: number, total: number, nodes: number): { label: string; short: string } {
   if (n === total && nodes === 1) return { label: 'Final', short: 'F' };
   if (n === total - 1 && nodes === 2) return { label: 'Semi-finals', short: 'SF' };

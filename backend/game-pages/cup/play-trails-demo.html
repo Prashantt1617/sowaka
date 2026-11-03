@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cup Trails demo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<style>
+html,body{margin:0;height:100%;background:#15122B;color:#F4F1FF;font-family:system-ui,sans-serif}
+#stage{position:fixed;inset:0}
+#after[hidden]{display:none}
+#after{position:fixed;left:0;right:0;bottom:max(16px,env(safe-area-inset-bottom));display:flex;justify-content:center;z-index:20}
+#after button{font-size:1.3rem;padding:10px 26px;border-radius:16px;border:0;background:#F5B82E;color:#15122B;box-shadow:0 5px 0 #B9861A}
+#log{position:fixed;left:8px;bottom:8px;max-width:60vw;font:11px/1.3 ui-monospace,monospace;color:#B9B2D9;z-index:21;pointer-events:none;white-space:pre}
+#view{position:fixed;right:8px;bottom:8px;z-index:21}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="after" hidden><button id="again" type="button">Play again</button></div>
+<div id="log" hidden></div>
+<div id="view"></div>
+<pre id="result" hidden></pre>
+<script src="play-trails.js"></script>
+<script>
+/* A Cup Trails match on its own: a fixed seed, a start a few seconds out on a pretend server clock, and an opponent whose score climbs.
+   Query: ?seed=4242 &delay=2000 (ms to the start) &round=30 &opp=Priya (empty: no opponent) &skew=0 (ms the server is ahead) &log=1 &sound=0
+   &auto=1: a robot draws each trail's solution with real touch events (odd trails) and mouse pointer events (even ones), for a headless check.
+   Everything onLive / onFinal sends is logged to the console and kept in window.__events; #result holds a JSON summary at the end. */
+const P = new URLSearchParams(location.search);
+const num = (k, d) => { const v = Number(P.get(k)); return P.has(k) && isFinite(v) ? v : d; };
+const log = P.get('log') === '1', $log = document.getElementById('log'); $log.hidden = !log;
+window.__events = []; window.__errors = [];
+addEventListener('error', e => { __errors.push(String(e.message)); console.log('ERROR ' + e.message); });
+function note(kind, v) { const e = { kind, v, at: Math.round(performance.now()) }; __events.push(e); console.log('[cup-trails] ' + kind + ' ' + JSON.stringify(v ?? null)); if (log) $log.textContent = __events.slice(-8).map(x => x.kind + ' ' + JSON.stringify(x.v ?? '')).join('\n'); }
+let h = null, oppScore = null, oppTimer = 0, seed = num('seed', 4242), board = 0;
+function run() {
+  document.getElementById('after').hidden = true;
+  const skew = num('skew', 0), delay = num('delay', 2000), round = num('round', 30);
+  const serverNow = Date.now() + skew;
+  const oppName = P.has('opp') ? P.get('opp') : 'Priya Raman';
+  oppScore = null; clearInterval(oppTimer); board = 0;
+  const startAt = serverNow + delay; window.__startAt = startAt;
+  oppTimer = setInterval(() => {
+    const t = Date.now() + skew; if (t < startAt) return; if (t > startAt + round * 1000) { clearInterval(oppTimer); return; }
+    if (Math.random() < .2) oppScore = (oppScore || 0) + 100 + Math.round(Math.random() * 60);
+  }, 1000);
+  h = CupTrails.start({
+    mount: document.getElementById('stage'), boardSeed: seed, startAt, serverNow, roundSec: round,
+    me: { name: 'Tanvi Shah' }, opponent: oppName ? { name: oppName } : null,
+    getOpponentLive: () => oppScore, sound: P.get('sound') !== '0',
+    onStart: () => note('start'),
+    onLive: (s, p) => { board = p.board; note('live', { score: s, progress: p }); CupTrails.drawBoard('#view', seed, p.board, { size: 90, color: '#F5B82E', key: p.board }); },
+    onProgress: p => note('progress', p),
+    onFinal: s => {
+      note('final', s); clearInterval(oppTimer);
+      const finals = __events.filter(e => e.kind === 'final').length;
+      const r = document.getElementById('result');
+      r.textContent = JSON.stringify({ finals, score: s, state: h.state(), lives: __events.filter(e => e.kind === 'live').length, board, errors: __errors });
+      setTimeout(() => { document.getElementById('after').hidden = false; }, 600);
+    },
+  });
+}
+document.getElementById('again').onclick = () => { CupTrails.unlockAudio(); h && h.stop(); seed++; run(); };
+run();
+
+/* The robot: when a fresh trail is on the board, draw its solution, one cell every 40 ms. */
+if (P.get('auto') === '1') {
+  let busy = false, done = -1;
+  setInterval(() => {
+    if (busy || !h || h.state() !== 'play') return;
+    const svg = document.querySelector('.ct-svg'), wrap = document.querySelector('.ct-wrap');
+    if (!svg || wrap.classList.contains('won') || board === done) return;
+    const t = CupTrails.boardAt(seed, board); if (svg.querySelectorAll('.ct-c').length !== t.n * t.n) return;
+    busy = true; done = board; const useTouch = board % 2 === 1, r = svg.getBoundingClientRect(), cw = r.width / t.n;
+    const at = c => ({ x: r.left + (c[1] + .5) * cw, y: r.top + (c[0] + .5) * cw });
+    const touch = (type, p) => { const tc = new Touch({ identifier: 7, target: svg, clientX: p.x, clientY: p.y });
+      svg.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [tc], changedTouches: [tc] })); };
+    const mouse = (type, p) => svg.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', button: 0, clientX: p.x, clientY: p.y }));
+    let k = 0;
+    const iv = setInterval(() => {
+      const p = at(t.path[Math.min(k, t.path.length - 1)]);
+      if (k === 0) useTouch ? touch('touchstart', p) : mouse('pointerdown', p);
+      else if (k < t.path.length) useTouch ? touch('touchmove', p) : mouse('pointermove', p);
+      else { useTouch ? touch('touchend', p) : mouse('pointerup', p); clearInterval(iv); busy = false; }
+      k++;
+    }, 40);
+  }, 200);
+}
+</script>
+</body>
+</html>

@@ -179,7 +179,8 @@ export interface MehfilEvent {
 export interface Mehfil {
   /** The evening, India's date. */
   date: string;
-  events: Array<MehfilEvent & { startsAt: string; endsAt: string }>;
+  /** `cupEventId`: a knockout row's tournament, once one is set up and switched on (see games-home.service). */
+  events: Array<MehfilEvent & { startsAt: string; endsAt: string; cupEventId?: string; cupPhase?: string }>;
 }
 
 /**

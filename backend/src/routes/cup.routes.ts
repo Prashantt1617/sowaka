@@ -5,6 +5,7 @@ import {
   finalHandler,
   joinHandler,
   liveHandler,
+  lobbyHandler,
   photoHandler,
   soloHandler,
   stateHandler,
@@ -21,6 +22,7 @@ export const cupRouter = Router();
 cupRouter.get('/api/state', stateHandler);
 cupRouter.get('/api/entrants', entrantsHandler);
 cupRouter.get('/api/photo/:eventId/:userId', photoHandler);
+cupRouter.post('/api/lobby', lobbyHandler);
 cupRouter.post('/api/matches/:id/join', joinHandler);
 cupRouter.post('/api/matches/:id/solo', soloHandler);
 cupRouter.post('/api/matches/:id/live', liveHandler);
