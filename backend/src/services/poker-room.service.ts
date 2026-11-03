@@ -774,7 +774,11 @@ async function dealShootoutRound(event: PokerEvent, state: ShootoutState, round:
           office: people.get(userId)?.office ?? null,
           stack: t.stacks[userId],
         })),
-        config: event.config.formats.shootout,
+        // The qualifier's tables run 10 minutes, every later table 20 (the host can set either).
+        config: {
+          ...(event.config.formats.shootout ?? {}),
+          durationMs: round.kind === 'qualifier' ? event.config.shootout?.qualifierMs ?? SHOOTOUT.QUALIFIER_MS : event.config.shootout?.roundMs ?? SHOOTOUT.ROUND_MS,
+        },
       },
       now,
       deps.random,

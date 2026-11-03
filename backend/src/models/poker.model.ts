@@ -207,9 +207,10 @@ export interface PokerEventConfig {
    * A Speed Poker Shootout instead of a game day: the lobby opens at
    * `lobbyFrom` and closes at `startAt`, when everyone in it is seated at
    * random and the rounds run on their own (services/poker-shootout-rules.ts).
-   * `breakMs`: the countdown before each round's tables deal.
+   * `breakMs`: the countdown before each round's tables deal; `qualifierMs`
+   * and `roundMs`: the table clocks (10 and 20 minutes unless set).
    */
-  shootout?: { lobbyFrom: string; startAt: string; breakMs?: number };
+  shootout?: { lobbyFrom: string; startAt: string; breakMs?: number; qualifierMs?: number; roundMs?: number };
 }
 
 /** One table of a Shootout round. */

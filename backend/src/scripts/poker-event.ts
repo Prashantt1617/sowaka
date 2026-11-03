@@ -31,7 +31,8 @@
  *
  *   A Speed Poker Shootout (a lobby, then a qualifier, knockout tables keeping the last 4, a final table):
  *   node dist/scripts/poker-event.js create-shootout --org convrse --name "Speed Poker Shootout" \
- *     --lobby 2026-11-04T18:55+05:30 --start 2026-11-04T19:00+05:30 [--break-seconds 30] [--table-minutes 13] [--exclude id,id]
+ *     --lobby 2026-11-04T18:55+05:30 --start 2026-11-04T19:00+05:30 [--break-seconds 30] [--exclude id,id]
+ *     [--qualifier-minutes 10] [--round-minutes 20]   the table clocks (qualifier, every later round)
  *       Times: ISO with the zone, or +Nm from now. Created as a draft: on --id <event> to run it.
  *
  * The script only changes the event in the database; the server's clock acts
@@ -348,8 +349,14 @@ async function main() {
         // Not used by a Shootout (its own clock runs it), kept for the shape.
         game: { openFrom: startAt, openTo: startAt, powerFrom: null, powerTo: null, bountiesFrom: null, semisAt: startAt, finalAt: startAt },
         picks: { ...structuredClone(DEFAULT_CONFIG.picks), on: false },
-        shootout: { lobbyFrom, startAt, ...(flags['break-seconds'] ? { breakMs: Number(flags['break-seconds']) * 1000 } : {}) },
-        formats: flags['table-minutes'] ? { shootout: { durationMs: Number(flags['table-minutes']) * 60_000 } } : {},
+        shootout: {
+          lobbyFrom,
+          startAt,
+          ...(flags['break-seconds'] ? { breakMs: Number(flags['break-seconds']) * 1000 } : {}),
+          ...(flags['qualifier-minutes'] ? { qualifierMs: Number(flags['qualifier-minutes']) * 60_000 } : {}),
+          ...(flags['round-minutes'] ? { roundMs: Number(flags['round-minutes']) * 60_000 } : {}),
+        },
+        formats: {},
         exclude: flags.exclude ? flags.exclude.split(',').map((id) => id.trim()).filter(Boolean) : [],
       };
       const event: PokerEvent = {

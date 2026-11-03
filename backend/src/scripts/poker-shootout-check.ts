@@ -34,7 +34,9 @@ function mulberry32(seed: number) {
 const describe = (n: number) => planRounds(n).map((r) => `${r.name}[${r.tables.join('/')}]${r.kind === 'qualifier' ? `→${r.advance}` : ''}`).join(' → ');
 
 console.log('the handoff test cases');
-check('1. 24 join: qualifier at 3 tables of 8, top 16, semis 8/8, final of 8', describe(24) === 'Qualifier[8/8/8]→16 → Semi-finals[8/8] → Final table[8]', describe(24));
+check('1. 24 join (a multiple of 8): no qualifier, 3 tables of 8, 12 through, semis 6/6, final of 8', describe(24) === 'Quarter-finals[8/8/8] → Semi-finals[6/6] → Final table[8]', describe(24));
+check('1b. 27 join: qualifier cuts to 24, the multiple of 8 below', describe(27).startsWith('Qualifier[7/7/7/6]→24'), describe(27));
+check('1c. 20 join: qualifier cuts to 16', describe(20).startsWith('Qualifier[7/7/6]→16'), describe(20));
 check('2. 13 join: no qualifier, semis 7/6, final of 8', describe(13) === 'Semi-finals[7/6] → Final table[8]', describe(13));
 const t3: ShootoutTableResult = { players: ['A', 'B'], busts: [{ id: 'B', hand: 9, stackBefore: 1400 }], survivors: { A: 220 }, draw: {} };
 check('3. qualifier: A still in with 220 ranks above B busted with 1,400', rankQualifier([t3]).join() === 'A,B');
@@ -59,14 +61,13 @@ const standings = finalStandings([
 ]);
 check('8. out in a semi-final ranks above cut first in the qualifier', standings.indexOf('S6') < standings.indexOf('Q1'), standings);
 
-console.log('big fields');
-check('128 join: no qualifier, round of 128', describe(128).startsWith('Round of 128['), describe(128));
-check('129 join: no qualifier, everyone plays round 1', !describe(129).includes('Qualifier') && describe(129).startsWith('Round of 129['), describe(129));
-check('700 join: no qualifier, 88 tables in round 1, down to one final table', (() => {
-  const p = planRounds(700);
-  return p[0].kind === 'knockout' && p[0].tables.length === 88 && p.every((r) => r.tables.every((t) => t >= 4 && t <= 8)) && p[p.length - 1].kind === 'final';
-})(), describe(700));
-check('100 join: still a qualifier to 64', describe(100).startsWith('Qualifier[') && describe(100).includes('→64'), describe(100));
+console.log('multiples of 8');
+check('any multiple of 8 has no qualifier', [16, 24, 40, 48, 64, 96, 128, 696].every((n) => planRounds(n)[0].kind !== 'qualifier'));
+check('any other headcount over 16 cuts to the multiple of 8 below', [17, 25, 41, 100, 700].every((n) => planRounds(n)[0].kind === 'qualifier' && planRounds(n)[0].advance === Math.floor(n / 8) * 8));
+check('every table 4 to 8 seats, ends in one final table', [9, 17, 24, 33, 100, 700].every((n) => {
+  const p = planRounds(n);
+  return p.every((r) => r.tables.every((t) => t >= 4 && t <= 8)) && p[p.length - 1].kind === 'final';
+}));
 
 console.log('through at a knockout table');
 check('nobody is through with 5 left', throughSoFar({ players: [], busts: [], survivors: { a: 1, b: 2, c: 3, d: 4, e: 5 }, draw: {} }, 4).length === 0);
