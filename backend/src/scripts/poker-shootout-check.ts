@@ -59,6 +59,15 @@ const standings = finalStandings([
 ]);
 check('8. out in a semi-final ranks above cut first in the qualifier', standings.indexOf('S6') < standings.indexOf('Q1'), standings);
 
+console.log('big fields');
+check('128 join: no qualifier, round of 128', describe(128).startsWith('Round of 128['), describe(128));
+check('129 join: no qualifier, everyone plays round 1', !describe(129).includes('Qualifier') && describe(129).startsWith('Round of 129['), describe(129));
+check('700 join: no qualifier, 88 tables in round 1, down to one final table', (() => {
+  const p = planRounds(700);
+  return p[0].kind === 'knockout' && p[0].tables.length === 88 && p.every((r) => r.tables.every((t) => t >= 4 && t <= 8)) && p[p.length - 1].kind === 'final';
+})(), describe(700));
+check('100 join: still a qualifier to 64', describe(100).startsWith('Qualifier[') && describe(100).includes('→64'), describe(100));
+
 console.log('through at a knockout table');
 check('nobody is through with 5 left', throughSoFar({ players: [], busts: [], survivors: { a: 1, b: 2, c: 3, d: 4, e: 5 }, draw: {} }, 4).length === 0);
 check('the last 4 are through with 4 left', throughSoFar({ players: [], busts: [], survivors: { a: 1, b: 2, c: 3, d: 4 }, draw: {} }, 4).length === 4);

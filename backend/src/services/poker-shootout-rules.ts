@@ -58,7 +58,8 @@ export function roundName(players: number): string {
  * The rounds for n players, decided when the lobby closes: a qualifier only
  * when n is not already a field the knockouts can take (8 or fewer, 12–16,
  * 32, 64, 128), knockouts of full tables keeping the last 4 of each, then
- * the final table.
+ * the final table. More than 128: no qualifier at all; everyone plays from
+ * round 1, at tables of up to 8 keeping their last 4, round after round.
  */
 export function planRounds(n: number): ShootoutPlannedRound[] {
   const S = SHOOTOUT;
@@ -69,6 +70,9 @@ export function planRounds(n: number): ShootoutPlannedRound[] {
   if (n >= 12 && n <= 16) {
     // Two short tables, no qualifier.
     cur = n;
+  } else if (n > S.TARGETS[S.TARGETS.length - 1]) {
+    // A big field: everyone is through to round 1, no qualifier cut.
+    cur = n;
   } else {
     const target = S.TARGETS.filter((t) => t <= n).pop()!;
     if (target < n) {
@@ -77,7 +81,8 @@ export function planRounds(n: number): ShootoutPlannedRound[] {
     cur = target;
   }
   while (cur > S.TABLE_SIZE) {
-    const t = cur <= 16 ? 2 : cur / S.TABLE_SIZE;
+    // Full tables (after a qualifier the field is a multiple of 8); a big field's first rounds split as evenly as they go.
+    const t = cur <= 16 ? 2 : Math.ceil(cur / S.TABLE_SIZE);
     rounds.push({ kind: 'knockout', name: roundName(cur), players: cur, tables: splitSizes(cur, t), advance: S.ADVANCE });
     cur = t * S.ADVANCE;
   }
