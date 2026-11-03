@@ -10,6 +10,7 @@
  */
 import type { Filter } from 'mongodb';
 import {
+  companies,
   connectPosts,
   gameChallenges,
   gameScores,
@@ -30,6 +31,7 @@ import {
   firstNameOf,
   initialsOf,
   istWeekStart,
+  mehfilFor,
   movementSince,
   nextUpFor,
   orderLiveContests,
@@ -663,7 +665,9 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
       ? optional('Games home Secret Squad', () => liveSquadFor(viewer), null, context)
       : null,
   );
-  const [roster, games, banner, liveContests, liveRelay, challenges, invites, yourGames, playingNow, liveSquad] = await Promise.all([
+  // The Diwali Mehfil's line-up, at a company that has it.
+  const mehfilP = optional('Games home Mehfil', () => mehfilOn(viewer.org).then((on) => mehfilFor(on, now)), null, context);
+  const [roster, games, banner, liveContests, liveRelay, challenges, invites, yourGames, playingNow, liveSquad, mehfil] = await Promise.all([
     rosterP,
     gamesP,
     optional(
@@ -690,6 +694,7 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
       context,
     ),
     squadP,
+    mehfilP,
   ]);
   const ranked = rankByPoints(roster);
   const own = ranked.find((entry) => entry.userId === viewer.userId);
@@ -709,7 +714,20 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
     // Live then (liveSquad), never in the list of games to play any time.
     games: games.map((game) => (game.key === LIVE_ONLY_GAME ? { ...game, liveOnly: true } : game)),
     playingNow,
+    mehfil,
   };
+}
+
+/** Whether the company has the Diwali Mehfil (companies.features.diwaliMehfil), held a minute. */
+const mehfilCache = new Map<string, { on: boolean; at: number }>();
+async function mehfilOn(org: string | undefined, at = Date.now()): Promise<boolean> {
+  if (!org) return false;
+  const held = mehfilCache.get(org);
+  if (held && at - held.at < HOME_CATALOG_MS) return held.on;
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, features: 1 } });
+  const on = company?.features?.diwaliMehfil === true;
+  mehfilCache.set(org, { on, at });
+  return on;
 }
 
 /** The game the tab lists only while it is live. */

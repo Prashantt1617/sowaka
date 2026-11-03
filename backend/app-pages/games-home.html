@@ -293,6 +293,140 @@ svg{overflow:visible}
 #toast{position:fixed;left:50%;bottom:24px;max-width:calc(100% - 48px);transform:translate(-50%,12px);padding:10px 16px;border-radius:14px;background:var(--text);color:var(--cream);
   font:600 13px/18px var(--sora);text-align:center;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:9}
 #toast.on{opacity:1;transform:translate(-50%,0)}
+/* ================================================================ Diwali Mehfil (4 Nov 2026)
+   Festive block above All Games, in the promo video's look: night plum, warm gold light, marigold garland, diyas. */
+.mf{margin:14px 16px 4px;position:relative;border-radius:22px;overflow:hidden;color:#FFF3DF;
+  background:radial-gradient(120% 70% at 85% 0%,rgba(255,176,59,.32),transparent 60%),radial-gradient(90% 60% at 0% 100%,rgba(178,53,0,.45),transparent 65%),linear-gradient(160deg,#2A1236,#170B24 70%);
+  box-shadow:0 3px 0 #EADCBE;border:1.5px solid #3A1D47}
+.mf-g{display:block;width:100%;height:26px;overflow:hidden!important}
+.mf-in{padding:4px 14px 12px}
+.mf-h{display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
+.mf-k{font:700 10.5px/14px var(--sora);letter-spacing:.14em;text-transform:uppercase;color:#FFB547}
+.mf-t{font:28px/32px var(--lil);color:#FFE7A8;text-shadow:0 2px 0 #B23500,0 0 18px rgba(255,190,80,.45)}
+.mf-t i{font-style:normal;color:#fff}
+.mf-diya{width:46px;height:40px;flex:none}
+.mf-s{margin-top:2px;font:500 12px/16px var(--sora);color:#E9CFA8}
+.mf-date{margin-top:8px;display:inline-flex;align-items:center;gap:6px;padding:5px 12px 5px 10px;border-radius:999px;background:#FFCC2E;color:#2A1236;
+  font:800 14px/18px var(--sora);box-shadow:0 2px 0 #B23500,0 0 16px rgba(255,204,46,.35)}
+.mf-date svg{width:15px;height:15px;flex:none}
+.mf-next{margin-top:10px;display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:12px;background:rgba(255,231,168,.1);border:1px solid rgba(255,231,168,.18);
+  font:600 12px/16px var(--sora);color:#FFE7A8}
+.mf-next b{font-weight:800;color:#fff}
+.mf-next .tab{margin-left:auto;font:800 13px/16px var(--sora);color:#FFCC2E;white-space:nowrap}
+.mf-list{margin-top:8px;display:flex;flex-direction:column}
+.mf-r{display:flex;align-items:center;gap:10px;padding:9px 2px;position:relative;text-align:left;width:100%}
+.mf-r+.mf-r{border-top:1px solid rgba(255,231,168,.12)}
+.mf-tm{width:48px;flex:none;text-align:center}
+.mf-tm b{display:block;font:22px/22px var(--lil);color:#FFE7A8}
+.mf-tm span{display:block;font:700 9.5px/12px var(--sora);letter-spacing:.1em;color:#E9CFA8}
+.mf-ic{width:46px;height:46px;flex:none;border-radius:13px;overflow:hidden;border:2px solid #0D0614;box-shadow:0 2px 0 #0D0614;position:relative}
+.mf-ic .tile-fit{inset:3px}
+.mf-m{flex:1;min-width:0}
+.mf-n{font:16px/20px var(--lil);color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mf-st{margin-top:1px;font:600 11.5px/15px var(--sora);color:#E9CFA8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mf-st.lobby{color:#FFCC2E}.mf-st.live{color:#4BE39A}.mf-st.over{color:#B9A6C8}
+.mf-chev{width:18px;height:18px;flex:none;color:#E9CFA8}
+.mf-r.next{background:rgba(255,231,168,.07);border-radius:14px;padding-left:8px;padding-right:8px;margin:0 -6px}
+.mf-r.next+.mf-r{border-top-color:transparent}
+.mf-r.over .mf-ic,.mf-r.over .mf-n,.mf-r.over .mf-tm{opacity:.55}
+.mf-pill{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;flex:none;padding:1px 7px;border-radius:999px;font:800 10px/15px var(--sora);letter-spacing:.08em}
+.mf-pill.live{background:#16C172;color:#fff}.mf-pill.lobby{background:#FFCC2E;color:#160D2C}
+.mf-pill i{width:6px;height:6px;border-radius:50%;background:currentColor;animation:mfblink 1.2s ease-in-out infinite}
+@keyframes mfblink{50%{opacity:.25}}
+.mf-spark{position:absolute;width:4px;height:4px;border-radius:50%;background:#FFE7A8;box-shadow:0 0 8px 2px rgba(255,214,120,.7);animation:mftw 2.6s ease-in-out infinite;pointer-events:none}
+@keyframes mftw{0%,100%{opacity:.15;transform:scale(.6)}50%{opacity:1;transform:scale(1)}}
+#app.still .mf-spark,#app.still .mf-pill i{animation:none}
+
+/* ---------------------------------------------------------------- event page */
+.ev{position:absolute;inset:0;z-index:8;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;background:var(--evbg);color:var(--evink);
+  animation:evin .28s var(--eoc)}
+@keyframes evin{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+.ev-band{position:relative;padding:10px 16px 8px;background:linear-gradient(180deg,#2A1236,#1E0E2B);color:#FFE7A8;display:flex;align-items:center;gap:10px}
+.ev-band .mf-g{position:absolute;left:0;right:0;bottom:-14px;height:20px;z-index:1}
+.ev-back{width:36px;height:36px;border-radius:50%;background:rgba(255,231,168,.14);display:flex;align-items:center;justify-content:center;flex:none}
+.ev-back svg{width:18px;height:18px}
+.ev-band .t{font:18px/22px var(--lil);color:#FFE7A8}
+.ev-band .d{font:600 11px/14px var(--sora);color:#E9CFA8}
+.ev-body{position:relative;padding:28px 16px 28px;max-width:520px;margin:0 auto}
+.ev-hero{display:flex;flex-direction:column;align-items:center;text-align:center}
+.ev-ic{width:112px;height:112px;border-radius:30px;border:2.5px solid var(--ink);box-shadow:0 5px 0 var(--ink);overflow:hidden;position:relative;background:var(--evtile);transform:rotate(-4deg)}
+.ev-ic .tile-fit{inset:8px}
+.ev-kind{margin-top:16px;display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;background:var(--evchip);font:700 11px/16px var(--sora);color:var(--evink)}
+.ev-name{margin-top:6px;font:32px/36px var(--lil);color:var(--evink)}
+.ev-when{margin-top:2px;font:600 13px/18px var(--sora);color:var(--evsub)}
+.ev-card{margin-top:20px;border-radius:22px;background:var(--evcard);border:1.5px solid var(--evline);box-shadow:0 3px 0 var(--evline);padding:18px 16px;text-align:center}
+.ev-lbl{font:700 11px/14px var(--sora);letter-spacing:.14em;text-transform:uppercase;color:var(--evsub)}
+.ev-clock{margin-top:8px;display:flex;justify-content:center;gap:8px}
+.ev-u{min-width:64px;padding:8px 4px 6px;border-radius:14px;background:var(--evunit)}
+.ev-u b{display:block;font:34px/38px var(--lil);color:var(--evink);font-variant-numeric:tabular-nums}
+.ev-u span{display:block;font:700 9.5px/12px var(--sora);letter-spacing:.12em;color:var(--evsub)}
+.ev-note{margin-top:12px;font:500 12.5px/17px var(--sora);color:var(--evsub)}
+.ev-btn{margin-top:14px;width:100%;height:52px;border-radius:16px;background:var(--evacc);color:var(--evaccink);font:800 16px/52px var(--sora);box-shadow:0 4px 0 var(--evaccdeep);
+  display:flex;align-items:center;justify-content:center;gap:8px}
+.ev-btn:active:not(:disabled){transform:translateY(2px);box-shadow:0 2px 0 var(--evaccdeep)}
+.ev-btn:disabled{background:var(--evunit);color:var(--evsub);box-shadow:none}
+.ev-btn svg{width:18px;height:18px}
+.ev-btn.ghost{background:transparent;box-shadow:none;color:var(--evsub);height:40px;line-height:40px;margin-top:6px;font-weight:700;font-size:14px}
+/* lobby */
+.ev-in{margin-top:10px;font:22px/26px var(--lil);color:var(--evink)}
+/* how to play */
+.ev-how{margin-top:22px}
+.ev-how .h{font:19px/24px var(--lil);color:var(--evink);text-align:left}
+.ev-stage{margin-top:10px;border-radius:22px;background:var(--evcard);border:1.5px solid var(--evline);overflow:hidden}
+.ev-scene{height:190px;position:relative;background:var(--evscene)}
+.ev-scene svg{position:absolute;inset:0;width:100%;height:100%}
+.ev-cap{display:flex;align-items:center;gap:10px;padding:12px 14px}
+.ev-cap .n{width:28px;height:28px;border-radius:50%;flex:none;background:var(--evacc);color:var(--evaccink);font:800 13px/28px var(--sora);text-align:center}
+.ev-cap .x{flex:1;text-align:left;font:700 14.5px/19px var(--sora);color:var(--evink)}
+.ev-dots{display:flex;gap:6px;justify-content:center;padding:0 0 12px}
+.ev-dots button{width:8px;height:8px;border-radius:4px;background:var(--evline);transition:width .2s}
+.ev-dots button.on{width:22px;background:var(--evacc)}
+/* 3-2-1 and play */
+/* preview controls */
+/* scene animation */
+.a-rise{animation:arise 3s var(--eoc) infinite}
+@keyframes arise{0%,10%{transform:translateY(26px);opacity:0}35%,85%{transform:none;opacity:1}100%{opacity:0}}
+.a-join1{animation:ajoin1 3s var(--eoc) infinite}.a-join2{animation:ajoin2 3s var(--eoc) infinite}.a-join3{animation:ajoin3 3s var(--eoc) infinite}
+@keyframes ajoin1{0%,15%{transform:translate(-70px,-30px)}50%,100%{transform:none}}
+@keyframes ajoin2{0%,15%{transform:translate(70px,-34px)}50%,100%{transform:none}}
+@keyframes ajoin3{0%,15%{transform:translate(0,46px)}50%,100%{transform:none}}
+.a-away{animation:aaway 3s ease-in infinite}
+@keyframes aaway{0%,40%{transform:none;opacity:1}80%,100%{transform:translate(60px,30px) rotate(20deg);opacity:.15}}
+.a-scan{animation:ascan 1.6s ease-in-out infinite}
+@keyframes ascan{0%,100%{transform:translateY(0)}50%{transform:translateY(64px)}}
+.a-pop{animation:apop 3s var(--eoc) infinite;transform-box:fill-box;transform-origin:center}
+@keyframes apop{0%,45%{transform:scale(0);opacity:0}60%{transform:scale(1.2);opacity:1}70%,90%{transform:scale(1);opacity:1}100%{opacity:0}}
+.a-draw{stroke-dasharray:400;animation:adraw 3s ease-in-out infinite}
+@keyframes adraw{0%,8%{stroke-dashoffset:400}70%,100%{stroke-dashoffset:0}}
+.a-flip{animation:aflip 3s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes aflip{0%,20%{transform:scaleX(1)}30%{transform:scaleX(0)}40%,100%{transform:scaleX(1)}}
+.a-pulse{animation:apulse 1.2s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes apulse{50%{transform:scale(1.12)}}
+.a-tap{animation:atap 3s ease-in-out infinite}
+@keyframes atap{0%,20%{transform:translate(40px,50px);opacity:0}45%{transform:none;opacity:1}55%{transform:scale(.9)}65%,85%{transform:none;opacity:1}100%{opacity:0}}
+.a-fill{animation:afill 3s ease-in-out infinite;transform-box:fill-box;transform-origin:left center}
+@keyframes afill{0%,10%{transform:scaleX(0)}70%,100%{transform:scaleX(1)}}
+.a-d1{animation-delay:.2s}.a-d2{animation-delay:.45s}.a-d3{animation-delay:.7s}.a-d4{animation-delay:.95s}
+#app.still .ev *,#app.still .ev{animation:none!important}
+.cp-rules{margin-top:22px}
+.cp-rules .h{font:19px/24px var(--lil);color:var(--evink);text-align:left}
+.cp-rl{margin-top:10px;border-radius:22px;background:var(--evcard);border:1.5px solid var(--evline);padding:6px 14px}
+.cp-r{display:flex;gap:12px;align-items:center;padding:10px 0;text-align:left}
+.cp-r+.cp-r{border-top:1px solid var(--evline)}
+.cp-r i{width:36px;height:36px;border-radius:12px;flex:none;background:var(--evunit);display:flex;align-items:center;justify-content:center;font-style:normal;font-size:18px}
+.cp-r b{display:block;font:700 13.5px/18px var(--sora);color:var(--evink)}
+.cp-r span{display:block;font:500 12px/16px var(--sora);color:var(--evsub)}
+.cp-r.bet i{background:#FFF1CC}
+.ev-prac{margin-top:22px;width:100%;display:flex;align-items:center;gap:12px;padding:14px 14px 14px 12px;border-radius:20px;background:var(--evacc);color:var(--evaccink);text-align:left;
+  box-shadow:0 4px 0 var(--evaccdeep),0 0 0 4px color-mix(in srgb,var(--evacc) 22%,transparent);animation:pracglow 2.4s ease-in-out infinite}
+.ev-prac:active{transform:translateY(2px);box-shadow:0 2px 0 var(--evaccdeep)}
+@keyframes pracglow{50%{box-shadow:0 4px 0 var(--evaccdeep),0 0 0 9px color-mix(in srgb,var(--evacc) 10%,transparent)}}
+.ev-prac .ic{width:48px;height:48px;flex:none;border-radius:14px;background:var(--evtile);border:2px solid var(--ink);box-shadow:0 2px 0 var(--ink);position:relative;overflow:hidden;transform:rotate(-4deg)}
+.ev-prac .ic .tile-fit{inset:2px}
+.ev-prac .tx{flex:1;min-width:0}
+.ev-prac b{display:block;font:19px/23px var(--lil);color:var(--evaccink)}
+.ev-prac .tx span{display:block;font:600 12.5px/16px var(--sora);color:var(--evaccink);opacity:.85}
+.ev-prac .go{flex:none;padding:7px 12px;border-radius:999px;background:var(--evaccink);color:var(--evacc);font:800 13px/16px var(--sora);white-space:nowrap}
 </style>
 </head>
 <body>
@@ -313,6 +447,7 @@ svg{overflow:visible}
     <div class="pane" id="pane-board" hidden><div class="ptr" id="ptr-board"><i></i></div><div class="lb" id="board"></div></div>
     <div class="sticky" id="sticky" hidden></div>
   </div>
+  <div class="ev" id="ev" hidden></div>
   <div id="toast" role="status" aria-live="polite"></div>
 </div>
 <script>
@@ -501,6 +636,7 @@ svg{overflow:visible}
         phase: json.liveSquad.phase === 'live' ? 'live' : 'lobby', startsAt: time(json.liveSquad.startsAt),
         players: int(json.liveSquad.players), round: int(json.liveSquad.round), rounds: int(json.liveSquad.rounds)
       } : null,
+      mehfil: parseMehfil(json.mehfil),
       playingNow: {
         count: int(playing.count),
         people: Array.isArray(playing.people) ? playing.people.map(function (p) {
@@ -977,8 +1113,10 @@ svg{overflow:visible}
       if (challenges.length || invites.length) h += '<div class="chs">' + challenges.map(challengeCard).concat(invites.map(inviteCard)).join('') + '</div>';
       h += '<div style="height:14px"></div>';
     }
+    h += mehfilBlock();
     h += gameList(home, played);
     root.innerHTML = h;
+    mfTicker();
     mountCyclers();
     collectClocks();
     fitTitles(root);
@@ -1155,6 +1293,389 @@ svg{overflow:visible}
     return '<div class="pn"><div class="pn-in">' + pile + '<span class="pn-t ell">' + esc(text) + '</span></div></div>';
   }
 
+  // ------------------------------------------------------------------ Diwali Mehfil (4 Nov 2026)
+  // The evening's line-up, from home.mehfil: the server sends it only to a company that has it, so
+  // without it there is no block at all. A countdown for now; the games are joined as they always are.
+  var MF = { open: null, tick: null, step: 0, stepAt: 0, phase: null };
+  function parseMehfil(raw) {
+    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.events)) return null;
+    var events = raw.events.map(function (r) {
+      if (!r || typeof r !== 'object') return null;
+      var start = Date.parse(str(r.startsAt)), end = Date.parse(str(r.endsAt));
+      var id = str(r.id), key = str(r.gameKey), at = str(r.at);
+      if (!id || !key || !/^\d\d:\d\d$/.test(at) || isNaN(start) || isNaN(end)) return null;
+      return { id: id, key: key, name: str(r.name), kind: str(r.kind), at: at, mins: Math.round((end - start) / 60e3),
+        theme: MF_THEMES[r.theme] ? r.theme : 'odd', format: r.format === 'cup' || r.format === 'relay' ? r.format : null,
+        win: str(r.win), practice: r.practice === true, start: start, end: end, lobby: start - 5 * 60e3 };
+    }).filter(Boolean);
+    return events.length ? { date: str(raw.date), events: events } : null;
+  }
+  function mfEvents() { return S.home && S.home.mehfil ? S.home.mehfil.events : []; }
+  function mfState(e, now) {
+    now = now == null ? Date.now() : now;
+    return now < e.lobby ? 'soon' : now < e.start ? 'lobby' : now < e.end ? 'live' : 'over';
+  }
+  function hhmm(e) { var h = +e.at.slice(0, 2), m = e.at.slice(3); return (h % 12 || 12) + (m === '00' ? '' : ':' + m); }
+  function ampm(e) { return +e.at.slice(0, 2) >= 12 ? 'PM' : 'AM'; }
+  function clockFmt(t) {
+    if (t <= 0) return '00:00:00';
+    var s = Math.floor(t / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+    return two(h) + ':' + two(m) + ':' + two(s % 60);
+  }
+  function lobbyAt(e) {
+    var d = new Date(e.lobby);
+    var hh = d.getUTCHours() * 60 + d.getUTCMinutes() + 330; hh = ((hh % 1440) + 1440) % 1440;
+    var h = Math.floor(hh / 60), m = hh % 60;
+    return (h % 12 || 12) + ':' + two(m) + ' ' + (h >= 12 ? 'PM' : 'AM');
+  }
+  /** "Wed, 4 Nov" from the evening's date. */
+  function mfDay() {
+    var d = new Date((S.home.mehfil.date || '') + 'T12:00:00+05:30');
+    if (isNaN(d.getTime())) return '';
+    return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()] + ', ' + d.getUTCDate() + ' ' +
+      ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()];
+  }
+  var MF_THEMES = {
+    squad: { bg: '#1E1438', card: '#2D1D55', line: '#4A3A8C', unit: '#3A2A6A', ink: '#FFF8E3', sub: '#C7BDDE', chip: '#3A2A6A', acc: '#FFCC2E', accink: '#160D2C', accdeep: '#B88A00', tile: '#FFE9A8', scene: '#261A48' },
+    trails: { bg: '#EEFBF5', card: '#FFFFFF', line: '#BFE9D6', unit: '#E1F6EC', ink: '#10392B', sub: '#4F7A69', chip: '#D4F5E8', acc: '#2BA87A', accink: '#FFFFFF', accdeep: '#1B7553', tile: '#D4F5E8', scene: '#F3FCF8' },
+    relay: { bg: '#EEF8FF', card: '#FFFFFF', line: '#C5E4FA', unit: '#E2F2FF', ink: '#12294A', sub: '#4E6A8C', chip: '#D5EBFF', acc: '#3C7DD9', accink: '#FFFFFF', accdeep: '#24569E', tile: '#BCEDFF', scene: '#F4FAFF' },
+    odd: { bg: '#FFFAEC', card: '#FFFFFF', line: '#F3E2B6', unit: '#FFF1CC', ink: '#2A1A2E', sub: '#7A6670', chip: '#FFE9F1', acc: '#FFCC2E', accink: '#2A1A2E', accdeep: '#D9A400', tile: '#FFF8E3', scene: '#FFFDF6' },
+    poker: { bg: '#0F3B2A', card: '#15503A', line: '#23704F', unit: '#1C6146', ink: '#F4FFF8', sub: '#A9D8BF', chip: '#1C6146', acc: '#FFCC2E', accink: '#1A1206', accdeep: '#B88A00', tile: '#CFEFD9', scene: '#124632' }
+  };
+  function mfIcon(e) {
+    if (e.key === 'odd-one-out') return fitted(oddIcon(), 4);
+    if (e.key === 'hint-relay') return fitted(composed(tilesSpec('HINT'), { viewBox: '15.805 22.893 141 63' }), 6);
+    if (e.key === 'secret-squad') return fitted(SQUAD_ICON, 4);
+    var a = MF_GAME_ICONS[e.key];
+    return a ? fitted(a[1], 3) : ICONS[e.key] ? fitted(ICONS[e.key](), 3) : '';
+  }
+  // The line-up's game icons, as the Mehfil was designed with them.
+  var MF_GAME_ICONS = (function () {
+    var INK = '#160D2C';
+    var svg = function (body) { return '<svg viewBox="0 0 84 84" xmlns="http://www.w3.org/2000/svg">' + body + '</svg>'; };
+    var o = 'stroke="' + INK + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"';
+    var card = function (x, y, rot, fill, inner) {
+      return '<g transform="rotate(' + rot + ' ' + (x + 14) + ' ' + (y + 19) + ')"><rect x="' + x + '" y="' + (y + 3) + '" width="28" height="38" rx="5" fill="' + INK + '"/>' +
+        '<rect x="' + x + '" y="' + y + '" width="28" height="38" rx="5" fill="' + fill + '" ' + o + '/>' + inner + '</g>';
+    };
+    var tl = function (x, y, ch, pts) {
+      return '<rect x="' + x + '" y="' + (y + 3) + '" width="22" height="22" rx="5" fill="' + INK + '"/><rect x="' + x + '" y="' + y + '" width="22" height="22" rx="5" fill="#FFF1D6" ' + o + '/>' +
+        '<text x="' + (x + 10) + '" y="' + (y + 16) + '" font-family="Lilita One, sans-serif" font-size="14" text-anchor="middle" fill="' + INK + '">' + ch + '</text>' +
+        '<text x="' + (x + 18) + '" y="' + (y + 19.5) + '" font-family="Sora, sans-serif" font-weight="800" font-size="5.5" text-anchor="middle" fill="' + INK + '">' + pts + '</text>';
+    };
+    var blk = function (x, y, fill) { return '<rect x="' + x + '" y="' + y + '" width="13" height="13" rx="3" fill="' + fill + '" ' + o + '/>'; };
+    return {
+      'speed-poker': ['#CFEFD9', svg(
+        card(14, 18, -14, '#FFFFFF', '<text x="21" y="33" font-family="Lilita One, sans-serif" font-size="12" fill="#E5484D">A</text><path d="M28 44c0-4 6-6 6-10a3 3 0 0 0-6-1 3 3 0 0 0-6 1c0 4 6 6 6 10z" fill="#E5484D"/>') +
+        card(38, 16, 10, '#FFFFFF', '<text x="45" y="31" font-family="Lilita One, sans-serif" font-size="12" fill="' + INK + '">K</text><path d="M52 34l5 6-5 6-5-6z" fill="' + INK + '"/>') +
+        '<ellipse cx="62" cy="66" rx="11" ry="4.5" fill="' + INK + '"/><ellipse cx="62" cy="62" rx="11" ry="4.5" fill="#FFCC2E" ' + o + '/>' +
+        '<ellipse cx="62" cy="57" rx="11" ry="4.5" fill="#FF5094" ' + o + '/>'), 4],
+      'tile-up': ['#F3D9B1', svg(
+        '<rect x="8" y="10" width="68" height="64" rx="10" fill="#E8C48E" ' + o + '/>' +
+        '<path d="M8 32H76M8 52H76M30 10V74M54 10V74" stroke="#C99A5B" stroke-width="1.5"/>' +
+        tl(10, 34, 'T', 1) + tl(32, 34, 'I', 1) + tl(54, 34, 'L', 1) + tl(32, 12, 'U', 1) + tl(32, 54, 'P', 3)), 4],
+      'tetris': ['#E4DCFF', svg(
+        blk(12, 54, '#5CC8FF') + blk(25, 54, '#5CC8FF') + blk(38, 54, '#5CC8FF') + blk(51, 54, '#5CC8FF') +
+        blk(12, 41, '#FFCC2E') + blk(25, 41, '#FFCC2E') + blk(64, 41, '#73E7BF') + blk(64, 54, '#73E7BF') +
+        blk(38, 12, '#FF5094') + blk(38, 25, '#FF5094') + blk(51, 25, '#FF5094') + blk(38, 38, '#FF5094') +
+        '<path d="M44 6v-2M58 18v-3" stroke="' + INK + '" stroke-width="2.5" stroke-linecap="round" opacity=".35"/>'), 4],
+      'sky-hop': ['#FFD9B8', svg(
+        '<circle cx="62" cy="20" r="9" fill="#FFE28A"/>' +
+        '<rect x="56" y="-4" width="16" height="26" rx="3" fill="#7ED69B" ' + o + '/><rect x="54" y="18" width="20" height="7" rx="2.5" fill="#7ED69B" ' + o + '/>' +
+        '<rect x="56" y="60" width="16" height="30" rx="3" fill="#7ED69B" ' + o + '/><rect x="54" y="56" width="20" height="7" rx="2.5" fill="#7ED69B" ' + o + '/>' +
+        '<ellipse cx="30" cy="45" rx="15" ry="12.5" fill="#2EC4B6" ' + o + '/>' +
+        '<path d="M22 46c-6-1-9 4-6 8 4 0 8-3 9-6z" fill="#21A396" ' + o + '/>' +
+        '<path d="M26 33c1-5 6-6 8-3-3 0-5 2-6 4z" fill="#FF6F61" ' + o + '/>' +
+        '<circle cx="36" cy="41" r="3.6" fill="#fff" ' + o + '/><circle cx="37" cy="41" r="1.4" fill="' + INK + '"/>' +
+        '<path d="M43 45l8 2.5-8 2.5z" fill="#FFB547" ' + o + '/>'), 4],
+      'scribble': ['#D5EBFF', svg(
+        '<rect x="10" y="12" width="58" height="58" rx="8" fill="#FFFFFF" ' + o + '/>' +
+        '<path d="M20 52c6-14 12-22 16-14s4 12 10 2 8-12 12-6" fill="none" stroke="#5B4FE9" stroke-width="3.5" stroke-linecap="round"/>' +
+        '<circle cx="24" cy="25" r="4" fill="#FFCC2E" ' + o + '/>' +
+        '<g transform="rotate(40 62 46)"><rect x="57" y="20" width="10" height="36" rx="2" fill="#FFCC2E" ' + o + '/><rect x="57" y="20" width="10" height="7" rx="2" fill="#FF5094" ' + o + '/>' +
+        '<path d="M57 56l5 9 5-9z" fill="#FFF1D6" ' + o + '/><path d="M60.6 62.4l1.4 2.6 1.4-2.6z" fill="' + INK + '"/></g>'), 4],
+      'trails': ['#D4F5E8', svg(
+        '<path d="M18 66V42H42V18H66" fill="none" stroke="#2BA87A" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="M18 66V42H42V18H66" fill="none" stroke="' + INK + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 0" opacity="0"/>' +
+        [[18, 18], [42, 42], [66, 42], [66, 66], [42, 66]].map(function (d) { return '<circle cx="' + d[0] + '" cy="' + d[1] + '" r="3.5" fill="' + INK + '" opacity=".25"/>'; }).join('') +
+        '<circle cx="18" cy="66" r="8" fill="#FFCC2E" ' + o + '/><text x="18" y="70" font-family="Lilita One, sans-serif" font-size="11" text-anchor="middle" fill="' + INK + '">1</text>' +
+        '<circle cx="42" cy="42" r="8" fill="#FFFFFF" ' + o + '/><text x="42" y="46" font-family="Lilita One, sans-serif" font-size="11" text-anchor="middle" fill="' + INK + '">2</text>' +
+        '<circle cx="66" cy="18" r="8" fill="#FF5094" ' + o + '/><text x="66" y="22" font-family="Lilita One, sans-serif" font-size="11" text-anchor="middle" fill="#fff">3</text>'), 4],
+      'word-trip': ['#FFEBB0', svg(
+        '<path d="M6 74C24 64 22 50 40 46s24-12 38-26" fill="none" stroke="#B9A27A" stroke-width="12" stroke-linecap="round"/>' +
+        '<path d="M6 74C24 64 22 50 40 46s24-12 38-26" fill="none" stroke="#FFF8E3" stroke-width="2" stroke-dasharray="4 5" stroke-linecap="round"/>' +
+        '<rect x="34" y="40" width="3.5" height="26" rx="1" fill="' + INK + '"/>' +
+        '<rect x="18" y="12" width="44" height="22" rx="6" fill="' + INK + '"/><rect x="18" y="9" width="44" height="22" rx="6" fill="#FFCC2E" ' + o + '/>' +
+        '<text x="40" y="25" font-family="Lilita One, sans-serif" font-size="12" letter-spacing="1.5" text-anchor="middle" fill="' + INK + '">WORD</text>' +
+        '<circle cx="70" cy="22" r="5" fill="#FF5094" ' + o + '/>'), 4]
+    };
+  })();
+  var SQUAD_ICON = '<svg viewBox="0 0 84 84" xmlns="http://www.w3.org/2000/svg">' +
+    '<rect x="14" y="30" width="56" height="40" rx="6" fill="#160D2C"/><rect x="14" y="27" width="56" height="40" rx="6" fill="#FFCC2E" stroke="#160D2C" stroke-width="2.5"/>' +
+    '<rect x="22" y="10" width="40" height="30" rx="5" fill="#FFF8E3" stroke="#160D2C" stroke-width="2.5"/>' +
+    '<text x="42" y="31" font-family="Lilita One, sans-serif" font-size="13" text-anchor="middle" fill="#160D2C">DOG</text>' +
+    '<path d="M14 33l28 20 28-20" fill="#FFD95C" stroke="#160D2C" stroke-width="2.5" stroke-linejoin="round"/>' +
+    '<circle cx="64" cy="62" r="9" fill="#FF5094" stroke="#160D2C" stroke-width="2.5"/><text x="64" y="66.5" font-family="Lilita One, sans-serif" font-size="12" text-anchor="middle" fill="#fff">?</text></svg>';
+  function garland(id) {
+    var g = '<svg class="mf-g" viewBox="0 0 400 26" preserveAspectRatio="none" aria-hidden="true"><path d="M0 4 Q100 22 200 6 T400 4" fill="none" stroke="#7A3B12" stroke-width="1.5"/>';
+    for (var i = 0; i <= 20; i++) {
+      var x = i * 20, y = 4 + Math.sin(i / 20 * Math.PI * 2 + 0.2) * -2 + (i % 10 < 5 ? (i % 5) * 2.6 : (5 - i % 5) * 2.6) * (i < 10 ? 1 : .9);
+      g += '<circle cx="' + x + '" cy="' + (y + 3) + '" r="5.4" fill="' + (i % 2 ? '#FFB020' : '#FF7A1A') + '"/><circle cx="' + x + '" cy="' + (y + 3) + '" r="2" fill="' + (i % 2 ? '#FFD96A' : '#FFB347') + '"/>';
+    }
+    return g + '</svg>';
+  }
+  var DIYA = '<svg class="mf-diya" viewBox="0 0 46 40" aria-hidden="true"><defs><radialGradient id="dg" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#FFE7A8" stop-opacity=".9"/><stop offset="1" stop-color="#FFB547" stop-opacity="0"/></radialGradient></defs>' +
+    '<circle cx="23" cy="13" r="13" fill="url(#dg)"/><path d="M23 4c4 5 4 9 0 12-4-3-4-7 0-12z" fill="#FFCC2E"/><path d="M23 8c2 3 2 5 0 7-2-2-2-4 0-7z" fill="#fff"/>' +
+    '<path d="M4 22h38c-2 9-9 14-19 14S6 31 4 22z" fill="#B23500"/><path d="M8 25h30" stroke="#FFB547" stroke-width="2" stroke-dasharray="2 3"/></svg>';
+  function mfStatus(e, now) {
+    var st = mfState(e, now);
+    if (st === 'soon') {
+      var left = e.start - now, h = Math.floor(left / 3600e3), m = Math.floor(left % 3600e3 / 60e3);
+      return { st: st, html: mfNext(now) === e ? 'Starts in ' + (h ? h + 'h ' : '') + m + 'm' : esc(e.kind) + ' · ' + e.mins + ' min' };
+    }
+    if (st === 'lobby') return { st: st, html: '<span class="mf-pill lobby"><i></i>LOBBY OPEN</span> &nbsp;Starts in ' + clockFmt(e.start - now).slice(3) };
+    if (st === 'live') return { st: st, html: '<span class="mf-pill live"><i></i>LIVE</span> &nbsp;On now' };
+    return { st: st, html: 'Played ✓' };
+  }
+  function mfNext(now) { var list = mfEvents(); for (var i = 0; i < list.length; i++) if (mfState(list[i], now) !== 'over') return list[i]; return null; }
+  function mfNextLine(now) {
+    var n = mfNext(now);
+    if (!n) return '<div class="mf-next">That’s a wrap! Thanks for playing 🪔</div>';
+    if (mfState(n, now) === 'live') return '<div class="mf-next">Now playing <b>' + esc(n.name) + '</b><span class="tab">LIVE</span></div>';
+    return '<div class="mf-next">Next up <b>' + esc(n.name) + '</b><span class="tab" data-mf-next>' + clockFmt(n.start - now) + '</span></div>';
+  }
+  function mfRows(now) {
+    var next = mfNext(now);
+    return mfEvents().map(function (e) {
+      var t = MF_THEMES[e.theme], s = mfStatus(e, now);
+      return '<button type="button" class="mf-r ' + s.st + (next === e ? ' next' : '') + '" data-act="mf" data-v="' + esc(e.id) + '">' +
+        '<div class="mf-tm"><b>' + hhmm(e) + '</b><span>' + ampm(e) + '</span></div>' +
+        '<div class="mf-ic" style="background:' + t.tile + '">' + mfIcon(e) + '</div>' +
+        '<div class="mf-m"><div class="mf-n">' + esc(e.name) + '</div><div class="mf-st ' + s.st + '" data-mf-st="' + esc(e.id) + '">' + s.html + '</div></div>' +
+        '<svg class="mf-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button>';
+    }).join('');
+  }
+  function mfBlockInner(now) { return mfNextLine(now) + '<div class="mf-list">' + mfRows(now) + '</div>'; }
+  function mehfilBlock() {
+    if (!mfEvents().length) return '';
+    var now = Date.now();
+    var sparks = [[12, 30], [78, 18], [90, 46], [40, 12], [64, 34]].map(function (p, i) {
+      return '<i class="mf-spark" style="left:' + p[0] + '%;top:' + p[1] + 'px;animation-delay:' + (i * .5) + 's"></i>';
+    }).join('');
+    return '<div class="mf" id="mf">' + garland() + sparks + '<div class="mf-in">' +
+      '<div class="mf-h"><div><div class="mf-k">Sowaka Games presents</div><div class="mf-t">Diwali <i>Mehfil</i></div>' +
+      '<div class="mf-date"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>' + esc(mfDay()) + '</div></div>' + DIYA + '</div>' +
+      '<div id="mf-live">' + mfBlockInner(now) + '</div></div></div>';
+  }
+  function mfRefreshBlock() {
+    var box = $('mf-live');
+    if (!box || S.pane !== 'games') return;
+    var now = Date.now(), list = mfEvents();
+    var key = list.map(function (e) { return mfState(e, now); }).join();
+    if (box.getAttribute('data-k') !== key) { box.setAttribute('data-k', key); box.innerHTML = mfBlockInner(now); return; }
+    var nx = box.querySelector('[data-mf-next]'), n = mfNext(now);
+    if (nx && n) nx.textContent = clockFmt(n.start - now);
+    list.forEach(function (e) {
+      var st = mfState(e, now);
+      if (st !== 'lobby' && !(st === 'soon' && n === e)) return;
+      var el = box.querySelector('[data-mf-st="' + e.id + '"]');
+      if (el) el.innerHTML = mfStatus(e, now).html;
+    });
+  }
+
+  var I = '#160D2C';
+  function sv(body) { return '<svg viewBox="0 0 320 190" xmlns="http://www.w3.org/2000/svg">' + body + '</svg>'; }
+  function word(x, y, w, txt, fill, cls) {
+    return '<g class="' + (cls || '') + '"><rect x="' + x + '" y="' + (y + 4) + '" width="' + w + '" height="36" rx="9" fill="' + I + '"/><rect x="' + x + '" y="' + y + '" width="' + w + '" height="36" rx="9" fill="' + fill + '" stroke="' + I + '" stroke-width="2.5"/>' +
+      '<text x="' + (x + w / 2) + '" y="' + (y + 25) + '" font-family="Lilita One, sans-serif" font-size="18" text-anchor="middle" fill="' + I + '">' + txt + '</text></g>';
+  }
+  function dotFace(cx, cy, c, ch) { return '<circle cx="' + cx + '" cy="' + cy + '" r="15" fill="' + c + '" stroke="' + I + '" stroke-width="2.5"/><text x="' + cx + '" y="' + (cy + 5) + '" font-family="Sora, sans-serif" font-weight="800" font-size="12" text-anchor="middle" fill="' + I + '">' + ch + '</text>'; }
+  function tick(cx, cy, cls) { return '<g class="' + (cls || 'a-pop') + '"><circle cx="' + cx + '" cy="' + cy + '" r="16" fill="#16C172" stroke="' + I + '" stroke-width="2.5"/><path d="M' + (cx - 7) + ' ' + cy + 'l5 5 9-10" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></g>'; }
+  function grid3(x, y, size, gap, odd, fillA, fillB) {
+    var out = '';
+    for (var r = 0; r < 3; r++) for (var c = 0; c < 3; c++) {
+      var i = r * 3 + c, xx = x + c * (size + gap), yy = y + r * (size + gap), isOdd = i === odd;
+      out += '<g' + (isOdd ? ' class="a-pulse"' : '') + '><rect x="' + xx + '" y="' + (yy + 3) + '" width="' + size + '" height="' + size + '" rx="9" fill="' + I + '"/>' +
+        '<rect x="' + xx + '" y="' + yy + '" width="' + size + '" height="' + size + '" rx="9" fill="' + (isOdd ? fillB : '#FFF8E3') + '" stroke="' + I + '" stroke-width="2.5"/>' +
+        (isOdd ? '<path d="M' + (xx + size / 2) + ' ' + (yy + 9) + 'l' + (size / 2 - 9) + ' ' + (size - 18) + 'h-' + (size - 18) + 'z" fill="' + fillA + '" stroke="' + I + '" stroke-width="2.2" stroke-linejoin="round"/>'
+          : '<circle cx="' + (xx + size / 2) + '" cy="' + (yy + size / 2) + '" r="' + (size / 2 - 9) + '" fill="' + fillA + '" stroke="' + I + '" stroke-width="2.2"/>') + '</g>';
+    }
+    return out;
+  }
+  function seat(cx, cy, c, n, cls) { return '<g class="' + (cls || '') + '">' + dotFace(cx, cy, c, n) + '</g>'; }
+  var PH = function (x, y, label, mgr) { return '<g transform="translate(' + x + ' ' + y + ')"><rect width="64" height="104" rx="12" fill="' + I + '"/><rect x="4" y="4" width="56" height="96" rx="9" fill="#F4FAFF"/>' + (mgr ? '<path d="M24 -10l4 6 4-8 4 8 4-6v10H24z" fill="#FFCC2E" stroke="' + I + '" stroke-width="2"/>' : '') + '<text x="32" y="122" font-family="Sora, sans-serif" font-weight="800" font-size="10" text-anchor="middle" fill="' + I + '">' + label + '</text></g>'; };
+  var HOW = {
+    'secret-squad': [
+      ['You get a secret word', sv('<rect x="105" y="92" width="110" height="72" rx="10" fill="' + I + '"/><rect x="105" y="88" width="110" height="72" rx="10" fill="#FFCC2E" stroke="' + I + '" stroke-width="2.5"/>' +
+        '<g class="a-rise">' + word(122, 46, 76, 'DOG', '#FFF8E3') + '</g><path d="M105 94l55 38 55-38" fill="#FFD95C" stroke="' + I + '" stroke-width="2.5" stroke-linejoin="round"/>')],
+      ['Find people with the same kind of word', sv('<g class="a-join1">' + word(60, 70, 70, 'DOG', '#FFF8E3') + '</g><g class="a-join2">' + word(190, 70, 70, 'CAT', '#FFF8E3') + '</g><g class="a-join3">' + word(125, 120, 70, 'LION', '#FFF8E3') + '</g>' +
+        '<g class="a-away">' + word(238, 16, 66, 'MARS', '#FFD6E6') + '</g><g class="a-pop"><rect x="112" y="24" width="96" height="28" rx="14" fill="#16C172" stroke="' + I + '" stroke-width="2.5"/><text x="160" y="43" font-family="Sora, sans-serif" font-weight="800" font-size="12" text-anchor="middle" fill="#fff">✓ ANIMALS</text></g>')],
+      ['Scan their QR · right +100, wrong −25', sv('<rect x="110" y="30" width="100" height="100" rx="12" fill="#fff" stroke="' + I + '" stroke-width="2.5"/>' +
+        [[122, 42], [176, 42], [122, 96]].map(function (p) { return '<rect x="' + p[0] + '" y="' + p[1] + '" width="22" height="22" rx="4" fill="none" stroke="' + I + '" stroke-width="5"/>'; }).join('') +
+        '<path d="M156 46h8v8h-8zM150 70h10v10h-10zM170 66h8v18h-8zM186 92h10v10h-10zM158 100h18v8h-18z" fill="' + I + '"/>' +
+        '<rect class="a-scan" x="104" y="34" width="112" height="4" rx="2" fill="#16C172"/>' + tick(212, 128) +
+        '<g class="a-pop"><text x="250" y="96" font-family="Lilita One, sans-serif" font-size="26" fill="#FFCC2E" stroke="' + I + '" stroke-width="1">+100</text></g>')]
+    ],
+    'trails': [
+      ['Join the dots in order', sv('<path class="a-draw" d="M80 140V80H160V40H240" fill="none" stroke="#2BA87A" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>' +
+        dotFace(80, 140, '#FFCC2E', '1') + dotFace(160, 80, '#fff', '2') + dotFace(240, 40, '#FF5094', '3'))],
+      ['Fill every square on the board', sv((function () { var o = ''; for (var r = 0; r < 3; r++) for (var c = 0; c < 4; c++) o += '<rect x="' + (88 + c * 38) + '" y="' + (40 + r * 38) + '" width="34" height="34" rx="7" fill="#E1F6EC" stroke="#BFE9D6" stroke-width="2"/>'; return o; })() +
+        '<path class="a-draw" d="M105 57H219V95H105V133H219" fill="none" stroke="#2BA87A" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>' + tick(250, 40))],
+      ['1v1: same puzzle, fastest wins', sv('<rect x="70" y="100" width="56" height="50" rx="8" fill="#BFE9D6" stroke="' + I + '" stroke-width="2.5"/><rect x="132" y="70" width="56" height="80" rx="8" fill="#FFCC2E" stroke="' + I + '" stroke-width="2.5"/><rect x="194" y="116" width="56" height="34" rx="8" fill="#D4F5E8" stroke="' + I + '" stroke-width="2.5"/>' +
+        '<g class="a-pop">' + dotFace(160, 48, '#FF5094', 'T') + '</g>' + dotFace(98, 78, '#A08CFF', 'A') + dotFace(222, 94, '#5CC8FF', 'R') +
+        '<text x="160" y="118" font-family="Lilita One, sans-serif" font-size="26" text-anchor="middle" fill="' + I + '">1</text>')],
+      ['Top 8: bet your points on who wins', sv('<g transform="translate(0 6)">' + dotFace(104, 74, '#FF8A7A', 'R') + dotFace(216, 74, '#6FD3F2', 'K') +
+        '<text x="160" y="80" font-family="Lilita One, sans-serif" font-size="18" text-anchor="middle" fill="#FF6B57">VS</text>' +
+        '<g class="a-pop"><rect x="70" y="40" width="68" height="68" rx="16" fill="none" stroke="#F5B82E" stroke-width="4"/></g>' +
+        [0, 1, 2].map(function (k) { return '<g class="a-rise a-d' + (k + 1) + '"><circle cx="' + (140 + k * 20) + '" cy="' + (134 - k * 4) + '" r="12" fill="#F5B82E" stroke="#C98A12" stroke-width="2.5"/></g>'; }).join('') +
+        '<g class="a-pop"><text x="160" y="176" font-family="Lilita One, sans-serif" font-size="22" text-anchor="middle" fill="#16A34A">×2 if right</text></g></g>')]
+    ],
+    'hint-relay': [
+      ['Your team has one captain', sv(dotFace(100, 100, '#FF5094', 'K') + dotFace(160, 100, '#A08CFF', 'T') + dotFace(220, 100, '#5CC8FF', 'M') +
+        '<g class="a-pop"><path d="M144 66l6 8 10-12 10 12 6-8v14h-32z" fill="#FFCC2E" stroke="' + I + '" stroke-width="2.5" stroke-linejoin="round"/></g>' +
+        '<g class="a-pop a-d3"><rect x="112" y="136" width="96" height="26" rx="13" fill="#3C7DD9" stroke="' + I + '" stroke-width="2.5"/><text x="160" y="153" font-family="Sora, sans-serif" font-weight="800" font-size="11" text-anchor="middle" fill="#fff">CAPTAIN</text></g>')],
+      ['Hints float onto teammates’ phones', sv('<g>' + PH(56, 30, 'Kabir') + PH(228, 30, 'Meera') + '</g>' +
+        '<g class="a-float"><rect x="64" y="70" width="48" height="20" rx="6" fill="#FFCC2E" stroke="' + I + '" stroke-width="2"/><text x="88" y="84" font-family="Sora, sans-serif" font-weight="800" font-size="9" text-anchor="middle" fill="' + I + '">MUMBAI</text></g>' +
+        '<g class="a-float a-d4"><rect x="236" y="70" width="48" height="20" rx="6" fill="#FF8FC0" stroke="' + I + '" stroke-width="2"/><text x="260" y="84" font-family="Sora, sans-serif" font-weight="800" font-size="9" text-anchor="middle" fill="' + I + '">BLUE</text></g>' +
+        '')],
+      ['Put the hints together. The captain types the answer', sv(PH(128, 26, 'Captain', true) +
+        '<rect x="136" y="70" width="48" height="18" rx="5" fill="#fff" stroke="' + I + '" stroke-width="2"/><rect class="a-type" x="140" y="75" width="38" height="8" rx="2" fill="#3C7DD9"/>' +
+        '<g class="a-rise"><path d="M60 64h52l-8 12H60z" fill="#FFF8E3" stroke="' + I + '" stroke-width="2"/><text x="84" y="73" font-family="Sora, sans-serif" font-weight="800" font-size="8" text-anchor="middle" fill="' + I + '">MUMBAI!</text></g>' +
+        '<g class="a-rise a-d3"><path d="M208 96h52v12h-60z" fill="#FFF8E3" stroke="' + I + '" stroke-width="2"/><text x="232" y="105" font-family="Sora, sans-serif" font-weight="800" font-size="8" text-anchor="middle" fill="' + I + '">BLUE!</text></g>' + tick(212, 46))],
+      ['Play 5 rounds together', sv(['1', '2', '3', '4', '5'].map(function (em, k) {
+        var x = 52 + k * 54; return '<g class="a-pop a-d' + (k % 4 + 1) + '"><rect x="' + (x - 22) + '" y="64" width="44" height="52" rx="12" fill="#fff" stroke="' + I + '" stroke-width="2.5"/><text x="' + x + '" y="100" font-family="Lilita One, sans-serif" font-size="26" text-anchor="middle" fill="#3C7DD9">' + em + '</text><text x="' + x + '" y="136" font-family="Sora, sans-serif" font-weight="800" font-size="10" text-anchor="middle" fill="' + I + '">ROUND</text></g>';
+      }).join(''))]
+    ],
+    'odd-one-out': [
+      ['Tap the tile that’s different', sv(grid3(104, 22, 38, 7, 5, '#FFCC2E', '#FFD6E6') + '<g class="a-tap"><circle cx="210" cy="112" r="11" fill="#fff" stroke="' + I + '" stroke-width="2.5" opacity=".9"/></g>')],
+      ['Faster taps, more points', sv(grid3(70, 34, 30, 6, 2, '#FFCC2E', '#FFD6E6') + '<g class="a-pop"><text x="232" y="92" font-family="Lilita One, sans-serif" font-size="34" text-anchor="middle" fill="#FF5094" stroke="' + I + '" stroke-width="1">+50</text></g>' +
+        '<rect x="196" y="112" width="74" height="10" rx="5" fill="#FFF1CC" stroke="' + I + '" stroke-width="2"/><rect class="a-fill" x="196" y="112" width="74" height="10" rx="5" fill="#FFCC2E" stroke="' + I + '" stroke-width="2"/>')],
+      ['1v1: same boards, higher score wins', sv('<path d="M128 46h64v22a32 32 0 0 1-64 0z" fill="#FFCC2E" stroke="' + I + '" stroke-width="2.5"/><path d="M128 54h-14a14 14 0 0 0 16 20M192 54h14a14 14 0 0 1-16 20" fill="none" stroke="' + I + '" stroke-width="2.5"/>' +
+        '<rect x="150" y="98" width="20" height="18" fill="#FFCC2E" stroke="' + I + '" stroke-width="2.5"/><rect x="132" y="116" width="56" height="16" rx="4" fill="#FF5094" stroke="' + I + '" stroke-width="2.5"/><g class="a-pop"><text x="160" y="76" font-family="Lilita One, sans-serif" font-size="22" text-anchor="middle" fill="' + I + '">1</text></g>')],
+      ['Top 8: bet your points on who wins', sv('<g transform="translate(0 6)">' + dotFace(104, 74, '#FF8A7A', 'R') + dotFace(216, 74, '#6FD3F2', 'K') +
+        '<text x="160" y="80" font-family="Lilita One, sans-serif" font-size="18" text-anchor="middle" fill="#FF6B57">VS</text>' +
+        '<g class="a-pop"><rect x="70" y="40" width="68" height="68" rx="16" fill="none" stroke="#F5B82E" stroke-width="4"/></g>' +
+        [0, 1, 2].map(function (k) { return '<g class="a-rise a-d' + (k + 1) + '"><circle cx="' + (140 + k * 20) + '" cy="' + (134 - k * 4) + '" r="12" fill="#F5B82E" stroke="#C98A12" stroke-width="2.5"/></g>'; }).join('') +
+        '<g class="a-pop"><text x="160" y="176" font-family="Lilita One, sans-serif" font-size="22" text-anchor="middle" fill="#16A34A">×2 if right</text></g></g>')]
+    ],
+    'speed-poker': [
+      ['Everyone is seated at tables of 8', sv('<ellipse cx="160" cy="96" rx="88" ry="48" fill="#1C7A52" stroke="' + I + '" stroke-width="2.5"/><ellipse cx="160" cy="96" rx="74" ry="36" fill="none" stroke="#FFCC2E" stroke-width="1.5" opacity=".6"/>' +
+        [[160, 40], [226, 54], [252, 96], [226, 138], [160, 152], [94, 138], [68, 96], [94, 54]].map(function (p, i) { return seat(p[0], p[1], ['#FFCC2E', '#FF5094', '#A08CFF', '#5CC8FF', '#73E7BF', '#FF8A3D', '#FFF8E3', '#FFB547'][i], String(i + 1), 'a-pop a-d' + (i % 4 + 1)); }).join(''))],
+      ['Top 4 at every table move on', sv('<ellipse cx="160" cy="96" rx="88" ry="48" fill="#1C7A52" stroke="' + I + '" stroke-width="2.5"/>' +
+        [[160, 40], [226, 54], [252, 96], [226, 138]].map(function (p, i) { return seat(p[0], p[1], '#FFCC2E', String(i + 1)); }).join('') +
+        [[160, 152], [94, 138], [68, 96], [94, 54]].map(function (p) { return '<g class="a-away">' + seat(p[0], p[1], '#5E7F70', '·') + '</g>'; }).join('') +
+        '<g class="a-pop"><rect x="122" y="82" width="76" height="28" rx="14" fill="#FFCC2E" stroke="' + I + '" stroke-width="2.5"/><text x="160" y="101" font-family="Sora, sans-serif" font-weight="800" font-size="12" text-anchor="middle" fill="' + I + '">TOP 4 →</text></g>')],
+      ['The final table plays for the crown', sv('<ellipse cx="160" cy="110" rx="80" ry="40" fill="#1C7A52" stroke="' + I + '" stroke-width="2.5"/>' +
+        '<g class="a-pop"><path d="M128 56l12 14 20-24 20 24 12-14v30h-64z" fill="#FFCC2E" stroke="' + I + '" stroke-width="2.5" stroke-linejoin="round"/></g>' +
+        '<g transform="rotate(-10 140 112)"><rect x="122" y="92" width="34" height="46" rx="5" fill="#fff" stroke="' + I + '" stroke-width="2.5"/><text x="139" y="122" font-family="Lilita One, sans-serif" font-size="18" text-anchor="middle" fill="#E5484D">A♥</text></g>' +
+        '<g transform="rotate(10 180 112)"><rect x="164" y="92" width="34" height="46" rx="5" fill="#fff" stroke="' + I + '" stroke-width="2.5"/><text x="181" y="122" font-family="Lilita One, sans-serif" font-size="18" text-anchor="middle" fill="' + I + '">A♠</text></g>')]
+    ]
+  };
+
+  // ---------------- the event page: its countdown, how to play, and a practice game
+  function mfOpen(id) {
+    var e = mfEvents().filter(function (x) { return x.id === id; })[0];
+    if (!e) return;
+    MF.open = e; MF.step = 0; MF.stepAt = Date.now(); MF.phase = null;
+    var t = MF_THEMES[e.theme], ev = $('ev');
+    ev.style.cssText = '--evbg:' + t.bg + ';--evcard:' + t.card + ';--evline:' + t.line + ';--evunit:' + t.unit + ';--evink:' + t.ink + ';--evsub:' + t.sub +
+      ';--evchip:' + t.chip + ';--evacc:' + t.acc + ';--evaccink:' + t.accink + ';--evaccdeep:' + t.accdeep + ';--evtile:' + t.tile + ';--evscene:' + t.scene;
+    ev.hidden = false; ev.scrollTop = 0;
+    mfRender();
+    mfTicker();
+    haptic('light');
+  }
+  function mfClose() {
+    MF.open = null;
+    var ev = $('ev'); ev.hidden = true; ev.innerHTML = '';
+    mfTicker();
+    mfRefreshBlock();
+  }
+  function units(t) {
+    var s = Math.max(0, Math.floor(t / 1000)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+    return '<div class="ev-clock"><div class="ev-u"><b data-u="h">' + two(h) + '</b><span>HRS</span></div><div class="ev-u"><b data-u="m">' + two(m) + '</b><span>MIN</span></div><div class="ev-u"><b data-u="s">' + two(s % 60) + '</b><span>SEC</span></div></div>';
+  }
+  var LOCK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+  function mfTimerCard(e, now, view) {
+    if (view === 'soon') {
+      return '<div class="ev-card"><div class="ev-lbl">Starts in</div><div data-mf-units>' + units(e.start - now) + '</div>' +
+        '<button type="button" class="ev-btn" disabled>' + LOCK_ICON + 'Lobby opens at ' + lobbyAt(e) + '</button>' +
+        '<div class="ev-note">We’ll let you in 5 minutes before the game starts.</div></div>';
+    }
+    if (view === 'lobby') {
+      return '<div class="ev-card"><div class="ev-lbl"><span class="mf-pill lobby"><i></i>LOBBY OPEN</span> &nbsp;Starts in</div><div data-mf-units>' + units(e.start - now) + '</div>' +
+        '<div class="ev-note">Get ready: ' + esc(e.name) + ' starts at ' + hhmm(e) + ' ' + ampm(e) + '.</div></div>';
+    }
+    if (view === 'live') {
+      return '<div class="ev-card"><div class="ev-lbl"><span class="mf-pill live"><i></i>LIVE</span> &nbsp;Ends in</div><div data-mf-units>' + units(e.end - now) + '</div>' +
+        '<div class="ev-note">' + esc(e.name) + ' is on now.</div></div>';
+    }
+    return '<div class="ev-card"><div class="ev-lbl">That’s a wrap</div><div class="ev-in">' + esc(e.name) + ' is over</div>' +
+      '<div class="ev-note">Points are on the leaderboard. See where you landed.</div>' +
+      '<button type="button" class="ev-btn" data-act="mf-board">See leaderboard</button></div>';
+  }
+  function cupRules(e) {
+    var r = function (ic, b, t, cls) { return '<div class="cp-r' + (cls ? ' ' + cls : '') + '"><i>' + ic + '</i><div><b>' + b + '</b><span>' + t + '</span></div></div>'; };
+    return '<div class="cp-rules"><div class="h">How the tournament works</div><div class="cp-rl">' +
+      r('⏰', 'Join the game at the correct time', 'Open this page when the lobby opens.') +
+      r('⚔️', 'Play one person at a time', esc(e.win || '') + ' Win and you move up. Lose and you’re out.') +
+      r('🏆', 'Last one left wins', 'Keep winning to reach the final.') +
+      r('🪙', 'Bet on the top 8', 'Pick who you think will win. Guess right and your points double.', 'bet') +
+      '</div></div>';
+  }
+  function mfHow(e) {
+    var steps = HOW[e.key] || [], i = MF.step % Math.max(1, steps.length), st = steps[i];
+    if (!st) return '';
+    return '<div class="ev-how"><div class="h">How to play</div><div class="ev-stage"><div class="ev-scene" data-mf-scene>' + st[1] + '</div>' +
+      '<div class="ev-cap"><span class="n">' + (i + 1) + '</span><span class="x">' + esc(st[0]) + '</span></div>' +
+      '<div class="ev-dots">' + steps.map(function (_, k) { return '<button type="button" class="' + (k === i ? 'on' : '') + '" data-act="mf-step" data-v="' + k + '" aria-label="Step ' + (k + 1) + '"></button>'; }).join('') + '</div></div></div>';
+  }
+  function mfPractice(e, view) {
+    if (!e.practice || view === 'over' || !gameFor(e.key)) return '';
+    return '<button type="button" class="ev-prac" data-act="mf-practice">' +
+      '<span class="ic">' + mfIcon(e) + '</span><span class="tx"><b>Practice first</b><span>Warm up with a game of ' + esc(gameFor(e.key).name) + '. It doesn’t count.</span></span>' +
+      '<span class="go">Play ▸</span></button>';
+  }
+  function mfRender() {
+    var e = MF.open, ev = $('ev');
+    if (!e) return;
+    var now = Date.now(), view = mfState(e, now), list = mfEvents();
+    MF.phase = view;
+    ev.innerHTML = '<div class="ev-band"><button type="button" class="ev-back" data-act="mf-close" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="#FFE7A8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>' +
+      '<div><div class="t">Diwali Mehfil</div><div class="d">' + esc(mfDay()) + ' · ' + hhmm(e) + ' ' + ampm(e) + '</div></div>' + garland() + '</div>' +
+      '<div class="ev-body"><div class="ev-hero"><div class="ev-ic">' + mfIcon(e) + '</div>' +
+      '<span class="ev-kind">' + esc(e.kind) + ' · ' + e.mins + ' min</span><div class="ev-name">' + esc(e.name.toUpperCase()) + '</div>' +
+      '<div class="ev-when">Today’s line-up, game ' + (list.indexOf(e) + 1) + ' of ' + list.length + '</div></div>' +
+      '<div data-mf-timer>' + mfTimerCard(e, now, view) + '</div>' + (e.format === 'cup' ? cupRules(e) : '') + mfHow(e) + mfPractice(e, view) + '</div>';
+  }
+  function mfTick() {
+    var e = MF.open;
+    if (e) {
+      var now = Date.now(), view = mfState(e, now);
+      if (view !== MF.phase) mfRender();
+      else {
+        var u = $('ev').querySelector('[data-mf-units]');
+        if (u) {
+          var t = Math.max(0, Math.floor(((view === 'live' ? e.end : e.start) - now) / 1000));
+          var set = function (k, v) { var el = u.querySelector('[data-u="' + k + '"]'); if (el && el.textContent !== v) el.textContent = v; };
+          set('h', two(Math.floor(t / 3600))); set('m', two(Math.floor(t % 3600 / 60))); set('s', two(t % 60));
+        }
+      }
+      var steps = HOW[e.key] || [];
+      if (steps.length && Date.now() - MF.stepAt > 3200) { MF.step = (MF.step + 1) % steps.length; MF.stepAt = Date.now(); mfSwapStep(e); }
+    }
+    mfRefreshBlock();
+  }
+  function mfSwapStep(e) {
+    var how = $('ev').querySelector('.ev-how');
+    if (how) how.outerHTML = mfHow(e);
+  }
+  function mfTicker() {
+    var want = !!MF.open || (S.pane === 'games' && !!$('mf-live'));
+    if (want && !MF.tick) MF.tick = setInterval(mfTick, 250);
+    else if (!want && MF.tick) { clearInterval(MF.tick); MF.tick = null; }
+  }
+
   // ------------------------------------------------------------------ the leaderboard pane
   function renderBoard() {
     var root = $('board');
@@ -1288,6 +1809,7 @@ svg{overflow:visible}
     S.pane = pane;
     $('pane-games').hidden = pane !== 'games';
     $('pane-board').hidden = pane !== 'board';
+    mfTicker();
     renderHeader();
     if (pane === 'board') { renderBoard(); loadBoard(S.period); }
     else { $('sticky').hidden = true; fitTitles($('games')); }
@@ -1337,6 +1859,11 @@ svg{overflow:visible}
     if (el.classList.contains('cta')) haptic('light');
     switch (act) {
       case 'pane': choosePane(v); break;
+      case 'mf': mfOpen(v); break;
+      case 'mf-close': mfClose(); break;
+      case 'mf-board': mfClose(); choosePane('board'); break;
+      case 'mf-step': MF.step = +v; MF.stepAt = Date.now(); mfSwapStep(MF.open); break;
+      case 'mf-practice': openGame(MF.open.key); break;
       case 'period':
         if (S.period !== v) { S.period = v; renderBoard(); renderHeader(); loadBoard(v); }
         break;
@@ -1583,6 +2110,20 @@ svg{overflow:visible}
           { key: 'scribble', name: 'Scribble', tagline: 'Draw it. Guess it.', description: 'Draw for your colleagues and guess their doodles, live.',
             instructions: '', kind: 'web', accentColor: '#FF6F7D', backgroundColor: '#0F1530', order: 4,
             scoring: { higherIsBetter: true, label: 'points' }, hasPage: true, version: 'v1' }],
+        // The Diwali Mehfil, moved to now so every state shows: one live, one in its lobby, the rest later.
+        mehfil: (function () {
+          var rows = [['mf-squad', 'secret-squad', 'Secret Squad', 'Office game', -2 * M, 17, 'squad'],
+            ['mf-trails', 'trails', 'Trails Tournament', '1v1 knockout', 3 * M, 45, 'trails', 'cup', 'Faster one wins.', true],
+            ['mf-relay', 'hint-relay', 'Hint Relay', 'Team game · 5 rounds', 70 * M, 25, 'relay', 'relay'],
+            ['mf-odd', 'odd-one-out', 'Odd One Out Tournament', '1v1 knockout', 2 * H + 10 * M, 45, 'odd', 'cup', 'Higher score wins.', true],
+            ['mf-poker', 'speed-poker', 'Poker', 'Card tournament', 3 * H + 10 * M, 45, 'poker', null, '', true]];
+          var ist = function (t) { var d = new Date(t + 330 * M); return two(d.getUTCHours()) + ':' + two(d.getUTCMinutes()); };
+          return { date: new Date(now + 330 * M).toISOString().slice(0, 10), events: rows.map(function (r) {
+            var start = Math.floor((now + r[4]) / M) * M;
+            return { id: r[0], gameKey: r[1], name: r[2], kind: r[3], at: ist(start), startsAt: new Date(start).toISOString(),
+              endsAt: new Date(start + r[5] * M).toISOString(), theme: r[6], format: r[7] || undefined, win: r[8] || undefined, practice: r[9] === true };
+          }) };
+        })(),
         playingNow: { count: 3, people: [{ userId: 'u-aarav', name: 'Aarav Mehta', initials: 'AM' }, { userId: 'u-meera', name: 'Meera Iyer', initials: 'MI' }, { userId: 'u-raghav', name: 'Raghav Rao', initials: 'RR' }] }
       };
     }

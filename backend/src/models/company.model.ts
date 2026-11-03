@@ -145,6 +145,12 @@ export interface CompanyFeatures {
   speedPokerBigTables?: boolean;
   /** Speed Poker's next look (quick-chat tray, the keyboard for chat, the newer cards and win moments), tried at one company first. */
   speedPokerNextUi?: boolean;
+  /**
+   * The Diwali Mehfil on the Games tab: the evening's line-up of games with a
+   * countdown to each (DIWALI_MEHFIL in services/games-home-rules.ts). Off:
+   * the Games tab as before.
+   */
+  diwaliMehfil?: boolean;
 }
 
 /** Versions by store: the App Store and Play Store builds ship separately. */
