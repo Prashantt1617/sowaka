@@ -95,6 +95,17 @@ export function movesFor(bets: CupBetRow[], match: Pick<CupMatch, 'id' | 'status
   return moves;
 }
 
+/**
+ * A tournament wallet's balance (`walletStart`): the points everyone started
+ * with, less every stake, plus every payout. A held or lost bet costs its
+ * stake, a won one pays twice it back, a refunded one returns it.
+ */
+export function walletBalance(start: number, bets: Pick<CupBetRow, 'stake' | 'payout' | 'status'>[]): number {
+  let balance = start;
+  for (const bet of bets) balance += (bet.payout || 0) - bet.stake;
+  return Math.max(0, Math.floor(balance));
+}
+
 /** Each person's net change from a set of moves (one `$inc` each). */
 export function deltasByUser(moves: BetMove[]): Map<string, { org: string; delta: number }> {
   const out = new Map<string, { org: string; delta: number }>();

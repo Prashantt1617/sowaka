@@ -276,6 +276,14 @@ button.bm{min-height:44px}
 (function () {
   'use strict';
   var C = window.__CUP && typeof window.__CUP === 'object' ? window.__CUP : null;
+  /* The tournament a Games tab row asked for: the app hands it in as the game's start id (Sowaka.startChallengeId),
+     and the policy hop below carries it on as ?event=. Without one, the company's current tournament. */
+  function askedEvent() {
+    try { var q = new URLSearchParams(location.search).get('event'); if (q && /^[A-Za-z0-9_-]{1,80}$/.test(q)) return q; } catch (e) {}
+    var b = window.Sowaka && window.Sowaka.startChallengeId;
+    return typeof b === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(b) ? b : '';
+  }
+  var ASKED = (C && C.eventId ? String(C.eventId) : '') || askedEvent();
 
   /* ---------- the policy hop (as Scribble): the copy the app loads as a string can't reach the server, so it
      reloads itself once at its own address with the short hop ticket; the server sends a copy that can. */
@@ -295,7 +303,9 @@ button.bm{min-height:44px}
     if (/[?&]ticket=/.test(location.search) || !here || !(C.hopTicket || C.hop)) HOP_FAILED = true;
     else {
       document.getElementById('app').innerHTML = '<div class="full"><div class="skel" style="width:100%"></div></div>';
-      location.replace(typeof C.hop === 'string' && /^https?:\/\//.test(C.hop) ? C.hop : location.origin + location.pathname + '?ticket=' + encodeURIComponent(C.hopTicket));
+      var to = typeof C.hop === 'string' && /^https?:\/\//.test(C.hop) ? C.hop : location.origin + location.pathname + '?ticket=' + encodeURIComponent(C.hopTicket);
+      if (ASKED && !/[?&]event=/.test(to)) to += (to.indexOf('?') >= 0 ? '&' : '?') + 'event=' + encodeURIComponent(ASKED);
+      location.replace(to);
       return;
     }
   }
@@ -377,7 +387,7 @@ button.bm{min-height:44px}
   }
 
   /* ---------- state ---------- */
-  var S = null, version = null, eventId = C && C.eventId ? String(C.eventId) : '';
+  var S = null, version = null, eventId = ASKED;
   var fatal = HOP_FAILED ? 'This page could not reach its server. Close it and open it again from Sowaka.' : (!C || !C.ticket ? 'nocup' : null);
   var netFail = 0, pollT = 0, inflight = false;
   var seen = store('cup-seen-bets') || [];
@@ -473,7 +483,13 @@ button.bm{min-height:44px}
   function showBalance() { var e = ev(); return !!(e && S.me && S.me.balance != null && (isTopN() || (S.bets && S.bets.mine && S.bets.mine.length) || e.phase === 'done')); }
 
   /* ---------- pieces ---------- */
-  function seedLbl(p) { return p && p.seed ? 'Seed ' + p.seed : ''; }
+  /* A tournament drawn from the lobby has no seeds: the pairs are random, so no seed number shows anywhere. */
+  function seeded() { var e = ev(); return !(e && e.lobbyDraw); }
+  function seedLbl(p) { return seeded() && p && p.seed ? 'Seed ' + p.seed : ''; }
+  /* The game played in each match, as the rules and the round name it. */
+  function isTrails() { var e = ev(); return !!(e && e.gameKey === 'trails'); }
+  function gameName() { return isTrails() ? 'Trails' : 'Odd One Out'; }
+  function roundPlay() { return isTrails() ? window.CupTrails : window.CupPlay; }
   function youOr(p) { return p && p.userId === meId() ? 'You' : (p ? esc(p.name) : 'To be decided'); }
   function vsBlock(me, opp, oppText) {
     return '<div class="vs">' +
@@ -496,7 +512,7 @@ button.bm{min-height:44px}
   }
   /* Both boards, as each player has them now (board N of the match's seed, from cup/play.js), when the server sends where they are. */
   function hasBoards(m) {
-    return !!(m && isLive(m) && m.boardSeed != null && m.liveBoard && Object.keys(m.liveBoard).length && window.CupPlay && typeof window.CupPlay.boardHtml === 'function');
+    return !!(m && isLive(m) && m.boardSeed != null && m.liveBoard && Object.keys(m.liveBoard).length && roundPlay() && typeof roundPlay().boardHtml === 'function');
   }
   function boardSize(inDuel) {
     var w = Math.min(window.innerWidth || 360, 560) - (inDuel ? 40 : 72);
@@ -509,7 +525,7 @@ button.bm{min-height:44px}
     function side(p, s, other, col) {
       var lb = p && m.liveBoard[p.userId], tag = opts.pick && p && opts.pick === p.userId ? '<span class="pk">PICK</span>' : '';
       var head = '<div class="bh">' + av(p, 'xxs', '', col) + '<span class="nm">' + (p ? (p.userId === meId() ? 'You' : esc(first(p.name))) : '') + '</span>' + tag + '</div><span class="bsc" style="color:' + col + '">' + num(s) + '</span>';
-      var board = lb ? window.CupPlay.boardHtml(m.boardSeed, lb.board, { size: size, tap: lb.tap, ok: lb.ok, color: col, key: 'bd' + p.userId + ':' + lb.board + ':' + (lb.tap == null ? '' : lb.tap) + ':' + lb.ok })
+      var board = lb ? roundPlay().boardHtml(m.boardSeed, lb.board, { size: size, tap: lb.tap, ok: lb.ok, color: col, key: 'bd' + p.userId + ':' + lb.board + ':' + (lb.tap == null ? '' : lb.tap) + ':' + lb.ok })
         : '<div class="bwait" data-k="bw' + esc(p ? p.userId : '') + '" style="width:' + Math.round(size * 1.07) + 'px;height:' + Math.round(size * 1.07) + 'px">' + (m.status === 'solo' && !(m.joined || []).some(function (j) { return p && j === p.userId; }) ? 'No-show' : 'Board shows when they tap') + '</div>';
       return '<div class="bside' + (s > other ? ' ahead' : '') + '">' + head + board + '</div>';
     }
@@ -568,11 +584,25 @@ button.bm{min-height:44px}
     var n = e.entrantCount || S.entrants || 0;
     return '<div class="count"><small>Lobby opens in</small><b>' + cd(ms(e.lobbyAt)) + '</b><span>Round 1 at ' + clock(e.startAt) + ' · ' + plural(n, 'player') + '</span></div>' +
       '<section class="card" aria-label="How it works"><p class="lbl">How it works</p><ol class="rules">' +
-      '<li><b class="n">1</b><span>Everyone is paired to compete 1 on 1 in Odd One Out matches. The winner moves to the next round till there are only 8 left.</span></li>' +
-      '<li><b class="n">2</b><span>Each match: you and one colleague on the same board for 45 seconds. Higher score goes through.</span></li>' +
-      '<li><b class="n">3</b><span>A tie replays at once. Not there within 3 minutes? The one who plays wins with their score.</span></li>' +
-      '<li><b class="n">4</b><span>The top 8 play one at a time on stage, and everyone can bet points on them.</span></li>' +
+      rulesList() +
       '</ol></section>';
+  }
+
+  /* The rules, as this tournament runs: drawn from the lobby or seeded, and the game in each match. */
+  function rulesList() {
+    var e = ev(), top = e.topN || 8, secs = e.roundSec || 45, w = e.startWindowSec || 180;
+    var wait = w >= 60 ? Math.round(w / 60) + ' minute' + (Math.round(w / 60) === 1 ? '' : 's') : w + ' seconds';
+    var li = function (n, t) { return '<li><b class="n">' + n + '</b><span>' + t + '</span></li>'; };
+    var first = e.lobbyDraw
+      ? 'Join the lobby when it opens at ' + clock(e.lobbyAt) + '. When it closes at ' + clock(e.startAt) + ', everyone in it is paired at random, 1 on 1. Each winner is paired again, round by round, till the final.'
+      : 'Everyone is paired to compete 1 on 1 in ' + gameName() + ' matches. The winner moves to the next round till there are only ' + top + ' left.';
+    var match = isTrails()
+      ? 'Each match: you and one colleague get the same trails for ' + secs + ' seconds. The faster one scores more and goes through.'
+      : 'Each match: you and one colleague on the same board for ' + secs + ' seconds. Higher score goes through.';
+    var bet = e.wallet
+      ? 'The top ' + top + ' play one at a time on stage. Everyone gets ' + num(e.wallet) + ' points to bet on them, the same for all, for this tournament only.'
+      : 'The top ' + top + ' play one at a time on stage, and everyone can bet points on them.';
+    return li(1, first) + li(2, match) + li(3, 'A tie replays at once. Not there within ' + wait + '? The one who plays wins with their score.') + li(4, bet);
   }
 
   function pathSteps() {
@@ -586,17 +616,32 @@ button.bm{min-height:44px}
     return '<section class="card" aria-label="Your path to the final"><p class="lbl">Your path to the final</p><div class="steps">' + steps + '</div></section>';
   }
 
+  /* A lobby still open (lobbyDraw): join it to be drawn; the pairs are made when it closes. */
+  function viewLobbyOpen() {
+    var e = ev(), me = S.me, n = e.entrantCount || 0;
+    var err = ui.err ? '<p class="why" role="alert">' + esc(ui.err) + '</p>' : '';
+    var card = !me.entered
+      ? '<section class="card edge"><p class="lbl">You\'re watching</p><p style="font-weight:700">You\'re not in this tournament, but you can follow every match once it starts.</p></section>'
+      : me.inLobby
+        ? '<section class="card gold" aria-label="In the lobby"><p class="lbl">You\'re in the lobby</p><p style="font-weight:700">Your opponent is drawn at random when the lobby closes at ' + clock(e.startAt) + '. Stay on this screen.</p></section>'
+        : '<section class="card gold" aria-label="Join the lobby"><p class="lbl">The lobby is open</p><p style="font-weight:700">Only people in the lobby get a match.</p>' +
+          '<button type="button" class="btn" data-act="lobby"' + (ui.busy === 'lobby' ? ' disabled' : '') + '>' + (ui.busy === 'lobby' ? 'JOINING…' : 'JOIN THE LOBBY') + '</button>' + err + '</section>';
+    return '<div class="count"><small>Lobby closes in</small><b>' + cd(ms(e.startAt)) + '</b><span>' + plural(n, 'player') + ' in the lobby</span></div>' + card +
+      '<section class="card" aria-label="How it works"><p class="lbl">How it works</p><ol class="rules">' + rulesList() + '</ol></section>';
+  }
+
   function viewLobby() {
     var e = ev(), me = S.me, m = me.match;
+    if (e.lobbyOpen) return viewLobbyOpen();
     var n = e.entrantCount || S.entrants || 0;
     var r1 = roundOf(1);
     var meP = { userId: me.userId, name: me.name, seed: me.seed, best: me.best, photoUrl: me.photoUrl };
     var card = m
       ? '<section class="card gold" aria-label="Your first match"><div class="row"><p class="lbl sp">Your first match<br>' + esc(m.label || 'Round 1') + '</p><span class="tagg">SAME BOARD</span></div>' + vsBlock(meP, m.opponent) +
         '<button type="button" class="btn" disabled>PLAY OPENS AT ' + clock(e.startAt) + '</button></section>'
-      : me.freePass ? '<section class="ticket" aria-label="Free pass"><small>FREE PASS · ROUND ' + me.freePass.round + '</small><b>YOU SKIP ROUND ' + me.freePass.round + '</b><span>You were #' + (me.freePass.boardRank || me.seed) + ' on ' + orgPossessive() + ' Odd One Out leaderboard.</span></section>' : '';
+      : me.freePass ? '<section class="ticket" aria-label="Free pass"><small>FREE PASS · ROUND ' + me.freePass.round + '</small><b>YOU SKIP ROUND ' + me.freePass.round + '</b><span>' + (seeded() ? 'You were #' + (me.freePass.boardRank || me.seed) + ' on ' + orgPossessive() + ' ' + gameName() + ' leaderboard.' : 'An odd number of players, so one of you skips the round, picked at random.') + '</span></section>' : '';
     return '<div class="count"><small>Round 1 starts in</small><b>' + cd(ms(e.startAt)) + '</b></div>' + card +
-      '<div class="facts"><div class="f"><b>' + num(n) + '</b><span>players in the draw</span></div><div class="f"><b>' + num(r1 ? r1.matches.length : Math.floor(n / 2)) + '</b><span>matches in round 1, all at once</span></div><div class="f"><b>' + num(passesFor(n)) + '</b><span>free passes in round 2</span></div></div>' +
+      '<div class="facts"><div class="f"><b>' + num(n) + '</b><span>players in the draw</span></div><div class="f"><b>' + num(r1 ? r1.matches.length : Math.floor(n / 2)) + '</b><span>matches in round 1, all at once</span></div>' + (seeded() ? '<div class="f"><b>' + num(passesFor(n)) + '</b><span>free passes in round 2</span></div>' : '<div class="f"><b>' + (n % 2) + '</b><span>free pass in round 1</span></div>') + '</div>' +
       pathSteps();
   }
 
@@ -641,7 +686,7 @@ button.bm{min-height:44px}
       } else if (ui.playing === key) {
         body = '<p class="note" style="text-align:center">Your round is on.</p><button type="button" class="btn" data-act="reopen">BACK TO MY ROUND</button>';
       } else {
-        body = '<p class="note" style="text-align:center">Your round is starting…</p>' + (window.CupPlay ? '' : '<p class="why">The game didn\'t load. Close this screen and open it again.</p>');
+        body = '<p class="note" style="text-align:center">Your round is starting…</p>' + (roundPlay() ? '' : '<p class="why">The game didn\'t load. Close this screen and open it again.</p>');
       }
     }
     return '<section class="card gold" aria-label="Your match">' + head + vsBlock(meP, opp) + replay + body + err + foot + '</section>' + (m.status === 'open' || m.status === 'scheduled' ? pathSteps() : '');
@@ -654,13 +699,13 @@ button.bm{min-height:44px}
     var mine = scoreOf(m, u) || 0, theirs = scoreOf(m, opp && opp.userId) || 0;
     var won = m.winnerId === u;
     var how = m.decidedBy === 'solo' ? (won ? esc(first(opp.name)) + ' didn\'t show, so your score stood against 0.' : 'You didn\'t make it to the start, so ' + esc(first(opp.name)) + '\'s score stood.') :
-      m.decidedBy === 'absent' ? 'Neither of you started, so the better seed went through.' :
-      mine === theirs ? 'Level after the replays, so the better seed went through.' : '';
+      m.decidedBy === 'absent' ? (seeded() ? 'Neither of you started, so the better seed went through.' : 'Neither of you started, so one of you went through by the draw.') :
+      mine === theirs ? (seeded() ? 'Level after the replays, so the better seed went through.' : 'Level after the replays, so one of you went through by the draw.') : '';
     return '<section class="card ' + (big ? 'edge' : '') + '" aria-label="Your last result"><div class="res' + (won ? '' : ' lost') + '">' +
       '<p class="lbl">' + esc(r.label) + ' · ' + (won ? 'You won' : 'Knocked out') + '</p>' +
       (big ? '<h1>' + (won ? 'YOU WON!' : 'KNOCKED OUT') + '</h1>' : '') +
       '<span class="sc">' + num(mine) + ' <span class="mut" style="font-size:20px">to</span> ' + num(theirs) + '</span>' +
-      '<p class="note vso">' + av(opp, 'xxs') + '<span>v ' + esc(opp ? opp.name : '') + (opp && opp.seed ? ' (seed ' + opp.seed + ')' : '') + '</span></p>' + (how ? '<p class="note">' + how + '</p>' : '') +
+      '<p class="note vso">' + av(opp, 'xxs') + '<span>v ' + esc(opp ? opp.name : '') + (seeded() && opp && opp.seed ? ' (seed ' + opp.seed + ')' : '') + '</span></p>' + (how ? '<p class="note">' + how + '</p>' : '') +
       '</div></section>';
   }
 
@@ -694,8 +739,9 @@ button.bm{min-height:44px}
     var prev = roundOf(fp.round - 1);
     var nm = me.match && me.match.round > fp.round ? me.match : null;
     return '<section class="ticket" aria-label="Free pass"><small>FREE PASS · ROUND ' + fp.round + '</small><b>YOU SKIP ROUND ' + fp.round + '</b>' +
-      '<span>' + (prev ? 'You won ' + esc(prev.label.toLowerCase()) + ', and as' : 'As') + ' a top seed you go straight to round ' + (fp.round + 1) + '.</span></section>' +
-      '<section class="card"><div class="seed"><span class="rank"><small>RANK</small><b>#' + (fp.boardRank || fp.seed || me.seed) + '</b></span><p>You were <b>#' + (fp.boardRank || fp.seed || me.seed) + ' on ' + orgPossessive() + ' Odd One Out leaderboard</b>' + (me.best != null ? ' (best ' + num(me.best) + ')' : '') + '. The ' + plural(((roundOf(fp.round) || {}).byes || []).length || passesFor(e.entrantCount || 0), 'highest seed') + ' skip round ' + fp.round + '.</p></div></section>' +
+      (seeded() ? '<span>' + (prev ? 'You won ' + esc(prev.label.toLowerCase()) + ', and as' : 'As') + ' a top seed you go straight to round ' + (fp.round + 1) + '.</span></section>' :
+        '<span>' + (prev ? 'You won ' + esc(prev.label.toLowerCase()) + '. ' : '') + 'This round has an odd number of players, so one skips it, picked at random: you. You go straight to round ' + (fp.round + 1) + '.</span></section>') +
+      (!seeded() ? '' : '<section class="card"><div class="seed"><span class="rank"><small>RANK</small><b>#' + (fp.boardRank || fp.seed || me.seed) + '</b></span><p>You were <b>#' + (fp.boardRank || fp.seed || me.seed) + ' on ' + orgPossessive() + ' ' + gameName() + ' leaderboard</b>' + (me.best != null ? ' (best ' + num(me.best) + ')' : '') + '. The ' + plural(((roundOf(fp.round) || {}).byes || []).length || passesFor(e.entrantCount || 0), 'highest seed') + ' skip round ' + fp.round + '.</p></div></section>') +
       nextMatchCard(nm || upcoming(fp.round + 1)) +
       '<button type="button" class="btn2" data-act="tab" data-v="watch">Watch round ' + fp.round + ' live</button>';
   }
@@ -722,7 +768,7 @@ button.bm{min-height:44px}
     var wins = allMatches().filter(function (m) { return m.status === 'done' && m.winnerId === me.userId; }).length;
     var firstR = (e.rounds || []).find(function (r) { return r.kind === 'sequential'; });
     return resultCard(last, !!(last && last.r.n === e.round)) +
-      '<section class="card" aria-label="Your run"><p class="lbl">Your run</p><p style="font-weight:700">You reached <b>' + esc(reached) + '</b>' + (me.seed ? ' as seed ' + me.seed : '') + (wins ? ' and won ' + plural(wins, 'match', 'matches') : '') + '.</p>' +
+      '<section class="card" aria-label="Your run"><p class="lbl">Your run</p><p style="font-weight:700">You reached <b>' + esc(reached) + '</b>' + (seeded() && me.seed ? ' as seed ' + me.seed : '') + (wins ? ' and won ' + plural(wins, 'match', 'matches') : '') + '.</p>' +
       (stage ? '' : '<p class="note">' + (firstR ? 'When it gets to the top ' + (e.topN || 8) + ', they play one at a time on stage and you can bet points on every match.' : '') + '</p>') + '</section>' +
       (stage ? '' : liveNowMini(3) || '<button type="button" class="btn2" data-act="tab" data-v="watch">Watch the matches</button>');
   }
@@ -894,7 +940,7 @@ button.bm{min-height:44px}
   /* ---------- Watch ---------- */
   function liveRow(m) {
     var sa = scoreOf(m, m.a && m.a.userId) || 0, sb = scoreOf(m, m.b && m.b.userId) || 0, sc = Math.max(2000, sa, sb) * 1.15;
-    function ln(p, s, col) { return '<div class="ln"><span class="sd">' + (p ? p.seed : '') + '</span>' + av(p, 'xxs', '', col) + '<span>' + youOr(p) + '</span><b style="color:' + col + '">' + num(s) + '</b></div><div class="tb"><i style="width:' + ((s / sc) * 100).toFixed(1) + '%;background:' + col + '"></i></div>'; }
+    function ln(p, s, col) { return '<div class="ln"><span class="sd">' + (p && seeded() ? p.seed : '') + '</span>' + av(p, 'xxs', '', col) + '<span>' + youOr(p) + '</span><b style="color:' + col + '">' + num(s) + '</b></div><div class="tb"><i style="width:' + ((s / sc) * 100).toFixed(1) + '%;background:' + col + '"></i></div>'; }
     return '<button type="button" class="lm' + (isMine(m) ? ' me' : '') + '" data-k="w' + esc(m.id) + '" data-act="duel" data-v="' + esc(m.id) + '" aria-label="Watch ' + esc(m.label) + ': ' + esc(m.a ? m.a.name : '') + ' ' + num(sa) + ', ' + esc(m.b ? m.b.name : '') + ' ' + num(sb) + '">' +
       '<div class="ln" style="font-size:11px;color:var(--mu);font-weight:800;letter-spacing:.6px;text-transform:uppercase"><span>' + esc(m.label) + (m.status === 'solo' ? ' · solo' : '') + '</span></div>' + ln(m.a, sa, '#FF8A7A') + ln(m.b, sb, '#6FD3F2') + '</button>';
   }
@@ -974,7 +1020,7 @@ button.bm{min-height:44px}
     var q = ui.q.trim().toLowerCase();
     if (q) list = st.filter(function (x) { return x.name.toLowerCase().indexOf(q) >= 0; });
     return '<section class="count" aria-label="Champion" style="gap:6px"><small>Champion</small><span class="crown" aria-hidden="true">' + esc(initials(champ.name)) + (photoOf(champ) ? '<img src="' + esc(photoOf(champ)) + '" alt="" decoding="async" referrerpolicy="no-referrer">' : '') + '</span><b style="font-size:30px;color:var(--tx)">' + (champ.userId === u ? 'You!' : esc(champ.name)) + '</b>' +
-      (fm ? '<span>Beat ' + esc(ru.name) + ' ' + num(scoreOf(fm, champ.userId)) + ' to ' + num(scoreOf(fm, ru.userId)) + ' in the final · seed ' + champ.seed + '</span>' : '') + '</section>' +
+      (fm ? '<span>Beat ' + esc(ru.name) + ' ' + num(scoreOf(fm, champ.userId)) + ' to ' + num(scoreOf(fm, ru.userId)) + ' in the final' + (seeded() ? ' · seed ' + champ.seed : '') + '</span>' : '') + '</section>' +
       '<div class="pod" style="grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch">' +
       '<div class="pp"><em style="color:#B79CFF">2nd</em>' + av(ru, 'xs', '', '#B79CFF') + '<b>' + youOr(ru) + '</b><span>Runner-up</span></div>' +
       semis.map(function (s) { return '<div class="pp"><em style="color:#6FD3F2">3rd</em>' + av(s, 'xs', '', '#6FD3F2') + '<b>' + youOr(s) + '</b><span>Semi-finalist</span></div>'; }).join('') + '</div>' +
@@ -982,7 +1028,7 @@ button.bm{min-height:44px}
       (tip ? '<div class="card" style="flex-direction:row;align-items:center"><div class="sp"><p class="lbl" style="color:var(--cy)">Top tipster</p><b>' + (tip.userId === u ? 'You' : esc(tip.name)) + ' · ' + tip.right + ' of ' + tip.of + ' right</b></div><b class="hd" style="color:var(--gr);font-size:20px">' + signed(tip.won) + '</b></div>' : '') +
       '<div class="row"><p class="lbl sp">Final standings</p><p class="lbl">' + plural(st.length, 'player') + '</p></div>' +
       '<label class="sr" for="sq">Find a player</label><input id="sq" class="search" type="search" placeholder="Find a player" autocomplete="off" data-in="q" value="' + esc(ui.q) + '">' +
-      '<div class="list">' + list.map(function (x) { return '<div class="lr' + (x.userId === u ? ' me' : '') + '" data-k="s' + esc(x.userId) + '"><span class="n">' + x.place + '</span>' + av(x, 'xs') + '<div class="tx"><b>' + youOr(x) + '</b><span>Seed ' + x.seed + '</span></div><span class="mut t12" style="font-weight:700">' + esc(x.reached) + '</span></div>'; }).join('') + '</div>' +
+      '<div class="list">' + list.map(function (x) { return '<div class="lr' + (x.userId === u ? ' me' : '') + '" data-k="s' + esc(x.userId) + '"><span class="n">' + x.place + '</span>' + av(x, 'xs') + '<div class="tx"><b>' + youOr(x) + '</b>' + (seeded() ? '<span>Seed ' + x.seed + '</span>' : '') + '</div><span class="mut t12" style="font-weight:700">' + esc(x.reached) + '</span></div>'; }).join('') + '</div>' +
       (!q && !ui.standAll && st.length > 24 ? '<button type="button" class="btn2" data-act="standall">Show all ' + num(st.length) + '</button>' : '');
   }
 
@@ -1086,7 +1132,8 @@ button.bm{min-height:44px}
     }
     if (ui.playing && !want && finals[ui.playing] == null) stopPlay();
     if (!want || ui.playing === key) return;
-    if (!window.CupPlay || typeof window.CupPlay.start !== 'function') return;
+    var P = roundPlay();
+    if (!P || typeof P.start !== 'function') return;
     if (ui.playing) stopPlay();
     ui.playing = key;
     $play.hidden = false;
@@ -1106,7 +1153,7 @@ button.bm{min-height:44px}
       api('/matches/' + encodeURIComponent(matchId) + '/live', { method: 'POST', body: body }).catch(function () {});
     }
     try {
-      ui.handle = window.CupPlay.start({
+      ui.handle = P.start({
         mount: mount,
         boardSeed: m.boardSeed || seeds[key],
         startAt: start,
@@ -1184,7 +1231,7 @@ button.bm{min-height:44px}
     }).catch(function (e) { ui.busy = ''; ui.err = e.message; render(); });
   }
   /* Inside the tap, so iOS lets the round's countdown beep. */
-  function unlock() { try { if (window.CupPlay && window.CupPlay.unlockAudio) window.CupPlay.unlockAudio(); } catch (e) {} }
+  function unlock() { try { var P = roundPlay(); if (P && P.unlockAudio) P.unlockAudio(); } catch (e) {} }
   var ACT = {
     tab: function (v) {
       if (ui.tab === v) { window.scrollTo(0, 0); return; }
@@ -1201,6 +1248,16 @@ button.bm{min-height:44px}
     'duel-close': function () { ui.duel = null; render(); },
     retry: function () { netFail = 0; render(); poll(); },
     join: function () { unlock(); matchAction('join'); },
+    lobby: function () {
+      if (ui.busy) return;
+      unlock(); ui.busy = 'lobby'; ui.err = ''; render();
+      api('/lobby' + (eventId ? '?event=' + encodeURIComponent(eventId) : ''), { method: 'POST', body: {} }).then(function (j) {
+        ui.busy = '';
+        if (S && S.me) S.me.inLobby = true;
+        if (S && S.event && j.lobbyCount != null) S.event.entrantCount = j.lobbyCount;
+        render(); poll();
+      }).catch(function (e) { ui.busy = ''; ui.err = e.message; render(); });
+    },
     solo: function () { unlock(); matchAction('solo'); },
     reopen: function () { $play.hidden = false; },
     pick: function (v) { ui.pick = v; ui.betErr = ''; render(); },

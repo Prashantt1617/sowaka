@@ -2,14 +2,17 @@
 /**
  * Builds the Diwali Cup's one uploadable file:
  *
- *   cup/page.html  +  cup/play.js  →  game-pages/diwali-cup.html
+ *   cup/page.html  +  cup/play.js  +  cup/play-trails.js  →  game-pages/diwali-cup.html
  *
- *   node backend/game-pages/cup/build.mjs [--play <path to play.js>]
+ *   node backend/game-pages/cup/build.mjs [--play <path to play.js>] [--trails <path to play-trails.js>]
  *
  * play.js (the match itself, window.CupPlay) goes where page.html says
  * `/*@CUP_PLAY@*\/`. Until play.js exists a stub stands in: a tap-to-score
  * placeholder with the same start() contract, so the page can be tried end to
- * end. The build refuses a file over 250 KB.
+ * end. play-trails.js (a Trails round, window.CupTrails, the same contract)
+ * goes where page.html says `/*@CUP_TRAILS@*\/`, or, when page.html has no
+ * such mark, right after the CupPlay inline (in the same script). The build
+ * refuses a file over 250 KB.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -18,6 +21,8 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const arg = process.argv.indexOf('--play');
 const playPath = arg > 0 ? resolve(process.argv[arg + 1]) : join(here, 'play.js');
+const targ = process.argv.indexOf('--trails');
+const trailsPath = targ > 0 ? resolve(process.argv[targ + 1]) : join(here, 'play-trails.js');
 const out = join(here, '..', 'diwali-cup.html');
 const LIMIT = 250 * 1024;
 
@@ -54,8 +59,12 @@ if (!page.includes(MARK)) throw new Error(`page.html has no ${MARK}`);
 const hasPlay = existsSync(playPath);
 // A script body can't hold "</script": split it so the HTML parser never sees one.
 const play = (hasPlay ? readFileSync(playPath, 'utf8') : STUB).replace(/<\/(script)/gi, '<\\/$1');
-const html = page.replace(MARK, () => play);
+const TMARK = '/*@CUP_TRAILS@*/';
+const trails = readFileSync(trailsPath, 'utf8').replace(/<\/(script)/gi, '<\\/$1');
+const html = page.includes(TMARK)
+  ? page.replace(MARK, () => play).replace(TMARK, () => trails)
+  : page.replace(MARK, () => play + '\n' + trails);
 const bytes = Buffer.byteLength(html);
 if (bytes > LIMIT) throw new Error(`diwali-cup.html is ${(bytes / 1024).toFixed(1)} KB, over the 250 KB limit`);
 writeFileSync(out, html);
-console.log(`${out}: ${(bytes / 1024).toFixed(1)} KB, play.js ${hasPlay ? `from ${playPath}` : 'STUB (cup/play.js not found)'}`);
+console.log(`${out}: ${(bytes / 1024).toFixed(1)} KB, play.js ${hasPlay ? `from ${playPath}` : 'STUB (cup/play.js not found)'}, play-trails.js from ${trailsPath} (${page.includes(TMARK) ? TMARK : 'after CupPlay'})`);

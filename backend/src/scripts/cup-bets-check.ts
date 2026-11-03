@@ -18,6 +18,7 @@ import {
   betVerdict,
   bookOf,
   deltasByUser,
+  walletBalance,
   ledgerRowFor,
   mineOf,
   movesFor,
@@ -134,6 +135,16 @@ console.log('Settling');
   check('a bet on another match is left alone', movesFor([{ ...betOf('u1', 'pa', 3), matchId: 'other' }], decided).length === 0);
   const d = deltasByUser([...moves, ...movesFor([betOf('u1', 'pa', 1, { _id: 'x', matchId: 'm-qf1' })], decided)]);
   check('one balance change per person', d.get('u1')?.delta === 22 && !d.has('u2') && d.get('u3')?.delta === 10, [...d]);
+}
+
+console.log('A tournament wallet');
+{
+  const bet = (stake: number, status: 'held' | 'won' | 'lost' | 'refunded', payout = 0) => ({ stake, status, payout });
+  check('everyone starts with the same', walletBalance(1000, []) === 1000);
+  check('a held or lost stake is spent', walletBalance(1000, [bet(300, 'held'), bet(200, 'lost')]) === 500);
+  check('a win pays twice the stake back', walletBalance(1000, [bet(300, 'won', 600)]) === 1300);
+  check('a refund gives the stake back', walletBalance(1000, [bet(300, 'refunded', 300)]) === 1000);
+  check('never below nothing', walletBalance(100, [bet(300, 'lost')]) === 0);
 }
 
 console.log('What pages show');

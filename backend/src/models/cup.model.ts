@@ -82,6 +82,20 @@ export interface CupEventConfig {
   maxStake: number;
   /** Push everyone their first match when the lobby opens. */
   pushAtLobby: boolean;
+  /**
+   * The draw from the lobby (3 Nov 2026): only the people who join the lobby
+   * are in, paired at random when it closes at `startAt`, and each round's
+   * winners paired again, a free pass only when a round has an odd number
+   * (`buildPyramidDraw`). Absent or false: the seeded draw of everyone at the
+   * company when the lobby opens, as the first tournaments ran.
+   */
+  lobbyDraw?: boolean;
+  /**
+   * Points everyone starts the top-N betting with, the same for all, kept for
+   * this tournament only: bets never touch the person's own points or the
+   * leaderboard. Absent or 0: bets are staked from their own points.
+   */
+  walletStart?: number;
 }
 
 export interface CupEvent extends CupEventConfig {
@@ -91,9 +105,9 @@ export interface CupEvent extends CupEventConfig {
   name: string;
   /** The switch: nothing happens, and the page shows nothing of it, while this is false. */
   active: boolean;
-  /** The draw is made and the lobby opens. */
+  /** The lobby opens; without `lobbyDraw` the draw is made then too. */
   lobbyAt: Date;
-  /** Round 1 opens. */
+  /** Round 1 opens; with `lobbyDraw` the lobby closes and the draw is made then. */
   startAt: Date;
   /** Feed links (the post's per-viewer URL) are good until then. */
   linkUntil: Date;
@@ -106,6 +120,8 @@ export interface CupEvent extends CupEventConfig {
   entrants: CupEntrant[];
   rounds: CupRound[];
   drawnAt?: Date;
+  /** With `lobbyDraw`: who has joined the lobby, in the order they joined. */
+  lobbyJoined?: string[];
   championId?: string;
   finishedAt?: Date;
   /** Switched off mid-tournament at this time (`cup-event.ts off`); switching back on moves every match's clock on by the pause. */

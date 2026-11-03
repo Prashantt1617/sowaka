@@ -8,6 +8,7 @@ import {
   DEFAULT_CUP_CONFIG,
   bracketOrder,
   buildDraw,
+  buildPyramidDraw,
   mayBet,
   mayJoin,
   mayScore,
@@ -331,6 +332,37 @@ check('live board: integers in range kept, junk ignored, a tap only with ok', ()
   for (const junk of [undefined, null, 'x', 5, { score: 100 }, { board: -1 }, { board: 1.5 }, { board: '3' }, { board: 10_001 }, { board: Number.NaN }, { board: Infinity }]) {
     assert.equal(parseLiveBoard(junk), null);
   }
+});
+
+// ---------------------------------------------------------------- the draw from the lobby
+check('lobby draw: every round pairs who is left, a free pass only with an odd number', () => {
+  for (let n = 2; n <= 300; n += 1) {
+    const rounds = buildPyramidDraw(n, 8);
+    let left = n;
+    for (const round of rounds) {
+      const passes = round.nodes.filter((node) => node.feeders.length === 1).length;
+      assert.equal(passes, left % 2, `n=${n} round ${round.n}: ${passes} free passes for ${left} players`);
+      assert.equal(round.nodes.length, Math.ceil(left / 2));
+      round.nodes.forEach((node, i) => assert.equal(node.slot, i + 1));
+      left = round.nodes.length;
+    }
+    assert.equal(left, 1, `n=${n} ends with one`);
+    assert.equal(rounds[rounds.length - 1].short, 'F');
+    // Every entrant is in round 1 exactly once.
+    const firsts = rounds[0].nodes.flatMap((node) => node.feeders).sort();
+    assert.deepEqual(firsts, Array.from({ length: n }, (_, i) => `e:${i + 1}`).sort());
+  }
+});
+check('lobby draw: the last eight are one at a time, and the free pass falls anywhere', () => {
+  const rounds = buildPyramidDraw(227, 8);
+  for (const round of rounds) {
+    const players = round.nodes.reduce((sum, node) => sum + node.feeders.length, 0);
+    assert.equal(round.kind, players <= 8 ? 'sequential' : 'parallel');
+  }
+  const at = new Set<number>();
+  for (let i = 0; i < 200; i += 1) at.add(buildPyramidDraw(9, 8)[0].nodes.findIndex((node) => node.feeders.length === 1));
+  assert.ok(at.size > 3, `free pass slots seen: ${[...at].join(',')}`);
+  assert.deepEqual(buildPyramidDraw(1, 8), []);
 });
 
 console.log(`\n${checks} checks passed`);

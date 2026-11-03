@@ -1306,7 +1306,9 @@ svg{overflow:visible}
       if (!id || !key || !/^\d\d:\d\d$/.test(at) || isNaN(start) || isNaN(end)) return null;
       return { id: id, key: key, name: str(r.name), kind: str(r.kind), at: at,
         theme: MF_THEMES[r.theme] ? r.theme : 'odd', format: r.format === 'cup' || r.format === 'relay' ? r.format : null,
-        win: str(r.win), practice: r.practice === true, start: start, end: end, lobby: start - 5 * 60e3 };
+        win: str(r.win), practice: r.practice === true, start: start, end: end, lobby: start - 5 * 60e3,
+        cup: /^[A-Za-z0-9_-]{1,80}$/.test(str(r.cupEventId)) ? str(r.cupEventId) : '',
+        cupPhase: ['scheduled', 'lobby', 'running', 'done'].indexOf(r.cupPhase) >= 0 ? r.cupPhase : '' };
     }).filter(Boolean);
     return events.length ? { date: str(raw.date), events: events } : null;
   }
@@ -1596,7 +1598,38 @@ svg{overflow:visible}
     return '<div class="ev-clock"><div class="ev-u"><b data-u="h">' + two(h) + '</b><span>HRS</span></div><div class="ev-u"><b data-u="m">' + two(m) + '</b><span>MIN</span></div><div class="ev-u"><b data-u="s">' + two(s % 60) + '</b><span>SEC</span></div></div>';
   }
   var LOCK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+  /* A knockout row with its tournament set up: the button that opens it, on this row's tournament. */
+  function mfEnter(e, label) {
+    if (!e.cup || !gameFor('diwali-cup')) return '';
+    return '<button type="button" class="ev-btn" data-act="mf-enter">' + label + '</button>';
+  }
   function mfTimerCard(e, now, view) {
+    // Secret Squad: while the office's game is on (its lobby open, or being played), its page joins it.
+    var q = e.key === 'secret-squad' && S.home && S.home.liveSquad && gameFor('secret-squad') ? S.home.liveSquad : null;
+    if (q) {
+      var join = '<button type="button" class="ev-btn" data-act="squad">Join Secret Squad ⚡</button>';
+      if (q.phase === 'lobby') {
+        return '<div class="ev-card"><div class="ev-lbl"><span class="mf-pill lobby"><i></i>LOBBY OPEN</span> &nbsp;Starts in</div><div data-mf-units data-to="' + q.startsAt + '">' + units(q.startsAt - now) + '</div>' +
+          join + '<div class="ev-note">' + (q.office ? esc(q.office) + ' office · ' : '') + (q.players ? plural(q.players, 'player', 'players') + ' in' : 'Be the first in') + '</div></div>';
+      }
+      return '<div class="ev-card"><div class="ev-lbl"><span class="mf-pill live"><i></i>LIVE</span> &nbsp;' + (q.rounds > 1 ? 'Round ' + q.round + ' of ' + q.rounds : 'Find your squad!') + '</div>' +
+        join + '<div class="ev-note">' + (q.office ? esc(q.office) + ' office · ' : '') + 'Jump in now.</div></div>';
+    }
+    // The tournament's own state decides once it is set up: its lobby, its matches, its results.
+    var cv = e.cup ? (e.cupPhase === 'lobby' ? 'lobby' : e.cupPhase === 'running' ? 'live' : e.cupPhase === 'done' ? 'over' : null) : null;
+    if (cv) {
+      view = cv;
+      if (view === 'lobby') {
+        return '<div class="ev-card"><div class="ev-lbl"><span class="mf-pill lobby"><i></i>LOBBY OPEN</span></div>' +
+          mfEnter(e, 'Enter the tournament ⚡') + '<div class="ev-note">Join the lobby inside the tournament. Only people in the lobby when it closes get a match.</div></div>';
+      }
+      if (view === 'live') {
+        return '<div class="ev-card"><div class="ev-lbl"><span class="mf-pill live"><i></i>LIVE</span> &nbsp;' + esc(e.name) + '</div>' +
+          mfEnter(e, 'Open the tournament ⚡') + '<div class="ev-note">Your matches, the bracket, and betting on the top 8 are all inside.</div></div>';
+      }
+      return '<div class="ev-card"><div class="ev-lbl">That’s a wrap</div><div class="ev-in">' + esc(e.name) + ' is over</div>' +
+        mfEnter(e, 'See the results') + '</div>';
+    }
     if (view === 'soon') {
       return '<div class="ev-card"><div class="ev-lbl">Starts in</div><div data-mf-units>' + units(e.start - now) + '</div>' +
         '<button type="button" class="ev-btn" disabled>' + LOCK_ICON + 'Lobby opens at ' + lobbyAt(e) + '</button>' +
@@ -1617,10 +1650,10 @@ svg{overflow:visible}
   function cupRules(e) {
     var r = function (ic, b, t, cls) { return '<div class="cp-r' + (cls ? ' ' + cls : '') + '"><i>' + ic + '</i><div><b>' + b + '</b><span>' + t + '</span></div></div>'; };
     return '<div class="cp-rules"><div class="h">How the tournament works</div><div class="cp-rl">' +
-      r('⏰', 'Join the game at the correct time', 'Open this page when the lobby opens.') +
-      r('⚔️', 'Play one person at a time', esc(e.win || '') + ' Win and you move up. Lose and you’re out.') +
-      r('🏆', 'Last one left wins', 'Keep winning to reach the final.') +
-      r('🪙', 'Bet on the top 8', 'Pick who you think will win. Guess right and your points double.', 'bet') +
+      r('⏰', 'Join the lobby', 'It opens at ' + lobbyAt(e) + '. Only people in the lobby get a match.') +
+      r('🎲', 'Get paired up', 'When the lobby closes, everyone in it is paired with someone at random.') +
+      r('⚔️', 'Winner moves up', esc(e.win || '') + ' Win and you go to the next round. Lose and you’re out.') +
+      r('🪙', 'Bet on the top 8', 'Everyone gets 1,000 points to bet with. Guess right and your stake doubles.', 'bet') +
       '</div></div>';
   }
   function mfHow(e) {
@@ -1640,7 +1673,7 @@ svg{overflow:visible}
     var e = MF.open, ev = $('ev');
     if (!e) return;
     var now = Date.now(), view = mfState(e, now), list = mfEvents();
-    MF.phase = view;
+    MF.phase = mfKey(e, view);
     ev.innerHTML = '<div class="ev-band"><button type="button" class="ev-back" data-act="mf-close" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="#FFE7A8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>' +
       '<div><div class="t">Diwali Mehfil</div><div class="d">' + esc(mfDay()) + ' · ' + hhmm(e) + ' ' + ampm(e) + '</div></div>' + garland() + '</div>' +
       '<div class="ev-body"><div class="ev-hero"><div class="ev-ic">' + mfIcon(e) + '</div>' +
@@ -1648,15 +1681,21 @@ svg{overflow:visible}
       '<div class="ev-when">Today’s line-up, game ' + (list.indexOf(e) + 1) + ' of ' + list.length + '</div></div>' +
       '<div data-mf-timer>' + mfTimerCard(e, now, view) + '</div>' + (e.format === 'cup' ? cupRules(e) : '') + mfHow(e) + mfPractice(e, view) + '</div>';
   }
+  /* What the event page shows: the row's own time, and the live game it opens (Secret Squad's, a tournament's) when there is one. */
+  function mfKey(e, view) {
+    var q = e.key === 'secret-squad' && S.home && S.home.liveSquad ? S.home.liveSquad.phase + S.home.liveSquad.round : '';
+    return view + '|' + q + '|' + (e.cupPhase || '');
+  }
   function mfTick() {
     var e = MF.open;
     if (e) {
       var now = Date.now(), view = mfState(e, now);
-      if (view !== MF.phase) mfRender();
+      if (mfKey(e, view) !== MF.phase) mfRender();
       else {
         var u = $('ev').querySelector('[data-mf-units]');
         if (u) {
-          var t = Math.max(0, Math.floor(((view === 'live' ? e.end : e.start) - now) / 1000));
+          var to = +u.getAttribute('data-to');
+          var t = Math.max(0, Math.floor(((to || (view === 'live' ? e.end : e.start)) - now) / 1000));
           var set = function (k, v) { var el = u.querySelector('[data-u="' + k + '"]'); if (el && el.textContent !== v) el.textContent = v; };
           set('h', two(Math.floor(t / 3600))); set('m', two(Math.floor(t % 3600 / 60))); set('s', two(t % 60));
         }
@@ -1864,6 +1903,7 @@ svg{overflow:visible}
       case 'mf-board': mfClose(); choosePane('board'); break;
       case 'mf-step': MF.step = +v; MF.stepAt = Date.now(); mfSwapStep(MF.open); break;
       case 'mf-practice': openGame(MF.open.key); break;
+      case 'mf-enter': if (MF.open && MF.open.cup) openGame('diwali-cup', MF.open.cup); break;
       case 'period':
         if (S.period !== v) { S.period = v; renderBoard(); renderHeader(); loadBoard(v); }
         break;
