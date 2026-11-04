@@ -216,6 +216,9 @@ async function refresh(eventId: string): Promise<Runtime | null> {
   if (kept?.refreshing && Date.now() - (refreshStarted.get(eventId) ?? 0) < STUCK_MS) return kept.refreshing;
   refreshStarted.set(eventId, Date.now());
   const load = (async () => {
+    // When this read began: a match written while it runs is newer than what it reads, so the next
+    // refresh looks back from here, not from when this one ended (a slow read must not skip it).
+    const began = Date.now();
     const event = await cupEvents().findOne({ id: eventId }, { projection: { _id: 0 } });
     if (!event) {
       runtimes.delete(eventId);
@@ -244,11 +247,13 @@ async function refresh(eventId: string): Promise<Runtime | null> {
     rt.event = event;
     for (const row of rows) {
       const had = rt.matches.get(row.id);
+      // Never back to an older copy: this process may have written the match (decided it, say) while the read ran.
+      if (had && had.updatedAt.getTime() > row.updatedAt.getTime()) continue;
       if (!had || had.updatedAt.getTime() !== row.updatedAt.getTime()) rt.rev += 1;
       rt.matches.set(row.id, row);
     }
     await refreshPhotos(rt).catch((error) => logger.error('Cup photos failed', { eventId }, error));
-    rt.refreshedAt = Date.now();
+    rt.refreshedAt = began;
     return rt;
   })();
   if (kept) kept.refreshing = load;
