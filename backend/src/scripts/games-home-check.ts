@@ -113,7 +113,7 @@ console.log('Diwali Mehfil');
 const eve = new Date('2026-11-03T12:00:00.000Z');
 check('off at a company without it', mehfilFor(false, eve) === null);
 const mf = mehfilFor(true, eve);
-check('on: the five games of the evening', mf?.events.length === 5, String(mf?.events.length));
+check('on: the four games of the evening', mf?.events.length === 4, String(mf?.events.length));
 check('3 PM India is 09:30 UTC', mf?.events[0].startsAt === '2026-11-04T09:30:00.000Z', mf?.events[0].startsAt);
 check('Hint Relay opens the evening, Secret Squad third', mf?.events[0].gameKey === 'hint-relay' && mf?.events[2].gameKey === 'secret-squad', String(mf?.events.map((e) => e.gameKey)));
 check('ends after its minutes', mf?.events[0].endsAt === '2026-11-04T09:55:00.000Z', mf?.events[0].endsAt);
