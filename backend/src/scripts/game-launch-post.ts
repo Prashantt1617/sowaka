@@ -15,7 +15,9 @@
  * A tournament or a timed game: --starts 2026-10-29T18:00+05:30 puts a timer on
  * top of the card ("<game> starts in 01h 12m 05s"), then "Live now"; --ends
  * closes it ("This game has ended", the button off); --timer-label words it;
- * --lock-until-start keeps the button off until it starts. --enable-game
+ * --lock-until-start keeps the button off until it starts. --tournament <cup event
+ * or Shootout id> ties the card to a tournament: when it finishes, the timer
+ * ends and the card's leaderboard is the tournament's final standings. --enable-game
  * switches the game on for the company first (a tournament page is usually
  * off between events).
  *
@@ -120,6 +122,8 @@ function bodyFrom(flags: Record<string, string>): Record<string, unknown> {
   const endsAt = timeFrom(flags, 'ends');
   if (endsAt !== undefined) body.endsAt = endsAt;
   if (flags['lock-until-start'] !== undefined) body.lockUntilStart = flags['lock-until-start'] !== 'false';
+  // A tournament's card (a cup event's or a Speed Poker Shootout's id): when it finishes, its standings become the card's board.
+  if (flags.tournament !== undefined) body.tournamentId = flags.tournament === 'none' ? '' : flags.tournament.trim();
   return body;
 }
 

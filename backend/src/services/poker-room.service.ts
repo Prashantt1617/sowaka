@@ -1,7 +1,7 @@
 import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import type { PokerEvent, PokerPick, PokerTable, ShootoutRoundRec, ShootoutState } from '../models/poker.model';
 import { users } from '../config/db';
-import { noteLaunchScore } from './game-launch.service';
+import { closeTournamentLaunch, noteLaunchScore } from './game-launch.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { notifyUsers, NotificationInput } from './notification.service';
 import { postStandings } from './poker-feed';
@@ -859,6 +859,14 @@ async function settleShootoutRound(event: PokerEvent, state: ShootoutState, roun
     const who = state.joined.find((p) => p.userId === champion);
     await saveEvent(event, { shootout: state, champion: who ? { userId: who.userId, name: who.name } : null });
     logger.info('Poker Shootout over', { eventId: event.id, champion });
+    // Its launch card on the feed: the timer ends and the board is the standings, rounds played beside each name.
+    const names = new Map(state.joined.map((p) => [p.userId, p.name]));
+    const played = (userId: string) => state.rounds.filter((r) => r.players.includes(userId)).length;
+    void closeTournamentLaunch(
+      event.org,
+      event.id,
+      (state.standings ?? []).map((userId, i) => ({ userId, name: names.get(userId) ?? 'Player', place: i + 1, points: played(userId) })),
+    );
     return;
   }
   state.rounds.push(seatShootoutRound(event, state, index + 1, round.next, round.winners, now));

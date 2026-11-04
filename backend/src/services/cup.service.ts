@@ -52,6 +52,7 @@ import {
 } from './cup-rules';
 import { newSeed } from './game-challenge-rules';
 import { notifyUsers } from './notification.service';
+import { closeTournamentLaunch } from './game-launch.service';
 import { mintTicket, verifyTicket } from './scribble-ticket.service';
 
 export class CupError extends Error {
@@ -1067,6 +1068,14 @@ async function finish(rt: Runtime, now: Date): Promise<void> {
     await cupHooks.reconcile?.(event.id);
   });
   logger.info('Cup finished', { eventId: event.id, championId: champion });
+  // Its launch card on the feed: the timer ends and the board is the standings, matches won beside each name.
+  const wins = new Map<string, number>();
+  for (const match of rt.matches.values()) if (match.status === 'done' && match.winnerId && match.decidedBy !== 'absent') wins.set(match.winnerId, (wins.get(match.winnerId) ?? 0) + 1);
+  void closeTournamentLaunch(
+    claimed.org,
+    claimed.id,
+    standingsOf(rt).map((row) => ({ userId: row.userId, name: row.name, place: row.place, points: wins.get(row.userId) ?? 0 })),
+  );
   if (champion) void pushCup(claimed, claimed.entrants.map((e) => e.userId), 'cup_champion', `${nameOf(claimed, champion)} wins the ${claimed.name}!`, 'See the final standings and the top tipsters.');
 }
 

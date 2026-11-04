@@ -132,6 +132,59 @@ export async function gameLaunchResults(post: ConnectPost) {
   return results;
 }
 
+/**
+ * A tournament's launch card, once the tournament is over: the card's timer
+ * ends now and its board is the tournament's final standings (place 1 the
+ * champion), so the card shows View leaderboard. `points` is what the card
+ * prints beside each name (matches won, or rounds played). The card is the
+ * game launch posted with `--tournament <id>`.
+ */
+export async function closeTournamentLaunch(
+  org: string,
+  tournamentId: string,
+  standings: { userId: string; name: string; place: number; points: number }[],
+): Promise<void> {
+  try {
+    const posts = await connectPosts()
+      .find({ org, type: 'game_launch', 'body.tournamentId': tournamentId }, { projection: { _id: 0, id: 1, body: 1 } })
+      .toArray();
+    if (!posts.length) return;
+    const top = standings.slice().sort((a, b) => a.place - b.place).slice(0, 50);
+    const people = new Map(
+      (
+        await users()
+          .find({ userId: { $in: top.map((row) => row.userId) } }, { projection: { _id: 0, userId: 1, name: 1, profilePhotoKey: 1, profilePhotoUrl: 1 } })
+          .toArray()
+      ).map((person) => [person.userId, person]),
+    );
+    const results = await Promise.all(
+      top.map(async (row) => {
+        const person = people.get(row.userId);
+        const name = person?.name || row.name || 'Player';
+        return {
+          userId: row.userId,
+          name,
+          initials: initialsOf(name),
+          points: Math.max(0, Math.round(row.points)),
+          rank: row.place,
+          photoUrl: person ? ((await resolveProfilePhoto(person).catch(() => undefined)) ?? null) : null,
+        };
+      }),
+    );
+    const endsAt = new Date().toISOString();
+    for (const post of posts) {
+      const body = post.body as Record<string, unknown>;
+      const startsAt = typeof body.startsAt === 'string' ? body.startsAt : '';
+      await connectPosts().updateOne(
+        { id: post.id },
+        { $set: { 'body.endsAt': endsAt, 'body.results': results, 'body.resultsWindow': `${startsAt}|${endsAt}` } },
+      );
+    }
+  } catch (error) {
+    console.error('Tournament launch card could not be closed', tournamentId, error);
+  }
+}
+
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '?';
