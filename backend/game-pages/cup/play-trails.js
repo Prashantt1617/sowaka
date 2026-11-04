@@ -544,23 +544,16 @@ function boardAt(sd,g){
       lastCell = c; if (moveTo(c)) after();
     }
     const up = () => { drawing = false; };
-    const touchEvents = 'ontouchstart' in window;
-    let touchId = null;
-    function onTouchStart(e) {
-      if (e.cancelable) e.preventDefault(); unlockAudio();
-      if (touchId != null && drawing) return;
-      const f = e.changedTouches[0]; if (!f) return; touchId = f.identifier; down(f.clientX, f.clientY, stampOf(e));
-    }
-    function onTouchMove(e) {
-      if (e.cancelable) e.preventDefault();
-      for (let k = 0; k < e.changedTouches.length; k++) { const f = e.changedTouches[k]; if (f.identifier === touchId) move(f.clientX, f.clientY, stampOf(e)); }
-    }
-    function onTouchEnd(e) { for (let k = 0; k < e.changedTouches.length; k++) if (e.changedTouches[k].identifier === touchId) { touchId = null; up(); } }
+    /* As trails.html draws: pointer events for finger, mouse and pen alike, the pointer captured by the board.
+       (Touch events left a phone's drag dead: some WebViews send pointermove for a finger but no touchmove.) */
+    let pointerId = null;
     function onPointerDown(e) {
-      if ((touchEvents && e.pointerType !== 'mouse') || e.button > 0) return;
-      e.preventDefault(); unlockAudio(); if (down(e.clientX, e.clientY, stampOf(e))) { try { $svg.setPointerCapture(e.pointerId); } catch (x) {} }
+      if (e.button > 0) return;
+      if (pointerId != null && drawing) return;
+      e.preventDefault(); unlockAudio();
+      if (down(e.clientX, e.clientY, stampOf(e))) { pointerId = e.pointerId; try { $svg.setPointerCapture(e.pointerId); } catch (x) {} }
     }
-    function onPointerMove(e) { if (touchEvents && e.pointerType !== 'mouse') return; move(e.clientX, e.clientY, stampOf(e)); }
+    function onPointerMove(e) { if (pointerId != null && e.pointerId !== pointerId) return; move(e.clientX, e.clientY, stampOf(e)); }
     function onKey(e) {
       const dirs = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
       if (e.key === 'Backspace') { e.preventDefault(); undo(); return; }
@@ -568,13 +561,9 @@ function boardAt(sd,g){
       if (!path.length) { tryStep(cur.dots[0].slice()); after(); return; }
       const hd = path[path.length - 1]; tryStep([hd[0] + d[0], hd[1] + d[1]]); after();
     }
-    $svg.addEventListener('touchstart', onTouchStart, { passive: false });
-    $svg.addEventListener('touchmove', onTouchMove, { passive: false });
-    $svg.addEventListener('touchend', onTouchEnd);
-    $svg.addEventListener('touchcancel', onTouchEnd);
     $svg.addEventListener('pointerdown', onPointerDown);
     $svg.addEventListener('pointermove', onPointerMove);
-    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => $svg.addEventListener(ev, e => { if (!touchEvents || e.pointerType === 'mouse') up(); }));
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => $svg.addEventListener(ev, e => { if (pointerId == null || e.pointerId === pointerId) { pointerId = null; up(); } }));
     $svg.addEventListener('keydown', onKey);
     $undo.addEventListener('click', () => { unlockAudio(); undo(); });
     $clear.addEventListener('click', () => { unlockAudio(); clearTrail(); });
