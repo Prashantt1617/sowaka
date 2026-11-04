@@ -235,11 +235,7 @@ export const DIWALI_MEHFIL: { date: string; events: MehfilEvent[] } = {
       id: 'mf-trails', gameKey: 'trails', name: 'Trails Tournament', kind: '1v1 knockout', at: '16:00', minutes: 45, theme: 'trails',
       format: 'cup', win: 'Faster one wins.', practice: true,
     },
-    { id: 'mf-squad', gameKey: 'secret-squad', name: 'Secret Squad', kind: 'Office game', at: '17:00', minutes: 17, theme: 'squad' },
-    {
-      id: 'mf-odd', gameKey: 'odd-one-out', name: 'Odd One Out Tournament', kind: '1v1 knockout', at: '18:00', minutes: 45, theme: 'odd',
-      format: 'cup', win: 'Higher score wins.', practice: true,
-    },
+    { id: 'mf-squad', gameKey: 'secret-squad', name: 'Secret Squad', kind: 'Office game', at: '18:00', minutes: 17, theme: 'squad' },
     { id: 'mf-poker', gameKey: 'speed-poker', name: 'Poker Shootout', kind: 'Card tournament', at: '19:00', minutes: 45, theme: 'poker', format: 'shootout', practice: true },
   ],
 };
