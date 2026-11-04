@@ -165,7 +165,7 @@ round,kind,prompt,answer,piece1,piece2,piece3,piece4,piece5
 4,odd,Which word does not belong?,Neighbour,Mother,Neighbour,Uncle,Sister,Grandfather
 4,odd,Which word does not belong?,Torch,Poha,Upma,Idli,Torch,Paratha
 5,guess who,Guess who,Mahatma Gandhi|Bapu|Gandhi|Gandhiji|MK Gandhi,Born in Porbandar,Salt March,Gandhigiri,Bapu,On every rupee note
-5,guess who,Guess who,Narendra Modi|Modi|Modiji|PM Modi,"""Meri taraf ungli na kare""","""Achhe din aane wale hain""",Mann Ki Baat,"""Mitron!""",Gujarat's famous chai wala
+5,guess who,Guess who,Narendra Modi|Modi|Modiji|PM Modi,Started International Yoga Day,"""Achhe din aane wale hain""",Mann Ki Baat,"""Mitron!""",Gujarat's famous chai wala
 5,guess who,Guess who,Aamir Khan|Aamir|Amir Khan,Has two ex-wives,Mr Perfectionist,"""All izz well""","""Mhari chhoriyan chhoron se kam hai ke?""",Rancho
 5,guess who,Guess who,Alia Bhatt|Alia|Aliya Bhatt,Mahesh Bhatt's daughter,Student of the Year,Raazi,Bullied for her general knowledge,Gangubai
 5,guess who,Guess who,Katrina Kaif|Katrina,Born in Hong Kong,Her Hindi got trolled,Kay Beauty,Sheila Ki Jawani,Her favourite co-star is Akshay Kumar
@@ -178,14 +178,11 @@ round,kind,prompt,answer,piece1,piece2,piece3,piece4,piece5
 5,guess who,Guess who,Kapil Dev|Kapil,Haryana Hurricane,175 vs Zimbabwe,"""Palmolive da jawab nahi""",Ranveer Singh played him in 83,1983 World Cup captain
 5,guess who,Guess who,Sourav Ganguly|Dada|Ganguly|Saurav Ganguly,BCCI president,Dadagiri,Shirt off at Lord's,Prince of Kolkata,Dada
 5,guess who,Guess who,Hardik Pandya|Hardik,Krunal's brother,Won Gujarat Titans their first IPL,Bowled the last over of the 2024 T20 final,India's star all-rounder,Kung Fu Pandya
-5,guess who,Guess who,Harmanpreet Kaur|Harman|Harmanpreet,"From Moga, Punjab",DSP in Punjab Police,171* vs Australia,Mumbai Indians captain in the WPL,Won the 2025 Women's World Cup as captain
 5,guess who,Guess who,Iron Man|Ironman|Tony Stark,"""Genius, billionaire, playboy, philanthropist""",Built his first suit in a cave,JARVIS is his assistant,"""I love you 3000""",Tony Stark
 5,guess who,Guess who,Thanos,Purple giant,Collects six stones,"""I am inevitable""",Snapped away half the universe,The Avengers' biggest villain
 5,guess who,Guess who,Mukesh Ambani|Ambani|Mukesh,Dhirubhai's son,Antilia,Mumbai Indians owner,Hosted the wedding of the year in 2024,Jio
 5,guess who,Guess who,Batman|Bat Man|Bruce Wayne,Parents killed when he was a kid,Billionaire with no superpowers,Lives in Gotham,Fights the Joker,Bruce Wayne
 5,guess who,Guess who,Jethalal|Jetha|Jethalal Champaklal Gada|Jethalal Gada,Lives in Gokuldham Society,Owns Gada Electronics,Scared of Bapuji,Has a crush on Babita ji,"""Hey Maa, Mataji!"""
-5,guess who,Guess who,Cristiano Ronaldo|CR7|Ronaldo,From Madeira,Al Nassr,Most followed on Instagram,CR7,"""Siuuu!"""
-5,guess who,Guess who,Lionel Messi|Leo Messi|Messi,Joined Barcelona at 13,Inter Miami,Number 10,The GOAT debate,Won the 2022 World Cup
 5,guess who,Guess who,Elon Musk|Elon|Musk,Born in South Africa,SpaceX,Bought Twitter,Wants to live on Mars,Tesla
 5,guess who,Guess who,Mr. Bean|Mister Bean|Mr Bean|Rowan Atkinson,Johnny English,Hardly speaks,Green Mini,Teddy bear,Rowan Atkinson
 5,guess who,Guess who,Shaktimaan|Gangadhar|Shakti Maan|Shaktiman,Spins round and round to change,Pandit Gangadhar is his disguise,Fights Tamraj Kilvish,"""Andhera kaayam rahe!"" is his villain's line",India's first desi superhero
