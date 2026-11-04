@@ -110,7 +110,10 @@ async function fitAt(file: ConnectMediaFile, edges: readonly number[]): Promise<
     const meta = await image.metadata();
     // A moving picture would be cut to its first frame.
     if ((meta.pages ?? 1) > 1) return [];
-    const opaque = !meta.hasAlpha;
+    // A photo from the app's picker often arrives as a PNG with an alpha channel it never uses (or uses only at a
+    // faint edge). Kept as PNG, its feed copies came out at 1-3 MB each and the top of the feed would not load on a
+    // phone's data. Only a picture that is really see-through (some pixel under half opaque) keeps PNG copies.
+    const opaque = !meta.hasAlpha || (await image.clone().extractChannel('alpha').stats()).channels[0].min >= 128;
     const upright = image.rotate();
     // Never enlarged, so every edge past the picture's own would be the same
     // file again: only the first of them is made, and `/media` finds it for
@@ -126,7 +129,7 @@ async function fitAt(file: ConnectMediaFile, edges: readonly number[]): Promise<
         .clone()
         .resize({ width: edge, height: edge, fit: 'inside', withoutEnlargement: true });
       const bytes = await (opaque
-        ? fitted.jpeg({ quality: 82, mozjpeg: true })
+        ? fitted.flatten({ background: '#ffffff' }).jpeg({ quality: 82, mozjpeg: true })
         : fitted.png({ compressionLevel: 9 })
       ).toBuffer();
       if (bytes.length >= file.size) continue;
