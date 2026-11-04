@@ -10,7 +10,10 @@ import {
   contestIsLive,
   initialsOf,
   istWeekStart,
+  istDay,
   mehfilFor,
+  pickGame,
+  withLive,
   movementSince,
   nextUpFor,
   orderLiveContests,
@@ -112,7 +115,16 @@ check('off at a company without it', mehfilFor(false, eve) === null);
 const mf = mehfilFor(true, eve);
 check('on: the five games of the evening', mf?.events.length === 5, String(mf?.events.length));
 check('3 PM India is 09:30 UTC', mf?.events[0].startsAt === '2026-11-04T09:30:00.000Z', mf?.events[0].startsAt);
-check('ends after its minutes', mf?.events[0].endsAt === '2026-11-04T09:47:00.000Z', mf?.events[0].endsAt);
+check('Hint Relay opens the evening, Secret Squad third', mf?.events[0].gameKey === 'hint-relay' && mf?.events[2].gameKey === 'secret-squad', String(mf?.events.map((e) => e.gameKey)));
+check('ends after its minutes', mf?.events[0].endsAt === '2026-11-04T09:55:00.000Z', mf?.events[0].endsAt);
+const row = mf!.events[1];
+const followed = withLive(row, { state: 'lobby', startsAt: '2026-11-04T06:35:00.000Z', lobbyAt: '2026-11-04T06:30:00.000Z', open: 'cup' });
+check('a row with its game set up takes the game\'s time', followed.at === '12:05' && followed.startsAt === '2026-11-04T06:35:00.000Z' && followed.live?.state === 'lobby', JSON.stringify(followed));
+check('a row with none keeps the line-up\'s', withLive(row, null) === row);
+const t = (iso: string) => new Date(iso);
+check('the game still to finish, soonest first', pickGame([{ id: 'a', startsAt: t('2026-11-04T10:00Z'), closed: false }, { id: 'b', startsAt: t('2026-11-04T09:00Z'), closed: false }, { id: 'c', startsAt: t('2026-11-04T11:00Z'), closed: true }])?.id === 'b');
+check('else the last to finish', pickGame([{ id: 'a', startsAt: t('2026-11-04T08:00Z'), closed: true }, { id: 'c', startsAt: t('2026-11-04T11:00Z'), closed: true }])?.id === 'c');
+check('the India day', istDay('2026-11-04').from.toISOString() === '2026-11-03T18:30:00.000Z');
 check('still shown late on the evening', mehfilFor(true, new Date('2026-11-04T18:29:00.000Z')) !== null);
 check('gone once the India day is over', mehfilFor(true, new Date('2026-11-04T18:30:00.000Z')) === null);
 

@@ -676,7 +676,7 @@ const state={mode:'rooms',room:null,rooms:[],invites:[],me:null,ev:null,picker:n
   big:false,tables:null,chatOpen:false,chatDraft:'',chatSeen:0,chatRoom:null,watchCode:null,bubbles:{},bubbleRoom:null,chatIds:null,
   next:false,focusChat:false,resultHand:null,
   /* the Shootout: Home or Watch, the "you're through" screens already seen (by round), the whole standings list */
-  soTab:'home',soAck:{},soAll:false,soHtml:''};
+  soTab:'home',soAck:{},soAll:true,soHtml:''};
 const nextUi=()=>!!state.next;
 const now=()=>Date.now()+state.offset;
 const me=()=>(state.mode==='rooms'&&state.me&&state.me.userId)||(state.mine&&state.mine.userId)||(state.me&&state.me.userId);
@@ -1110,7 +1110,7 @@ function soStandings(c){ const st=c.so.standings||[], uid=c.uid, rounds=c.rounds
     ${pod?`<section class="so-stats two">${pod}</section>`:''}
     ${mine?`<section class="so-myrun"><div class="so-k">YOUR RUN</div><div class="r"><div>${esc(run.join(' · '))}</div><div class="lil">${ordinal(mine)}</div></div></section>`:''}
     <section class="so-card list"><div class="hd"><div class="so-k m">FINAL STANDINGS</div><div class="c">${st.length} players</div></div>${rows}
-      ${st.length>12?`<button class="so-out" data-act="soall">${state.soAll?'Show the top 12':`Show all ${st.length}`}</button>`:''}</section>`; }
+      ${st.length>12&&!state.soAll?`<button class="so-out" data-act="soall">${state.soAll?'Show the top 12':`Show all ${st.length}`}</button>`:''}</section>`; }
 
 /* Screen 11: every table of the round now playing; a tap watches it as the event's tables are watched. */
 function soWatch(c){ const r=c.cur, t=now();

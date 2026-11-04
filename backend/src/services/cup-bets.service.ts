@@ -170,11 +170,21 @@ async function balanceFor(
  * game, else the last one decided. Kept a second, however many pages ask.
  */
 const stageCache = new Map<string, { match: CupMatch | null; at: number }>();
+/** Reads under way: pages asking at the same moment share one, not one database read each. */
+const stagePending = new Map<string, Promise<CupMatch | null>>();
 
 async function stageMatch(eventId: string, matchId?: string | null): Promise<CupMatch | null> {
   const key = `${eventId}|${matchId ?? ''}`;
   const kept = stageCache.get(key);
   if (kept && Date.now() - kept.at < 1000) return kept.match;
+  const pending = stagePending.get(key);
+  if (pending) return pending;
+  const read = readStageMatch(eventId, matchId, key).finally(() => stagePending.delete(key));
+  stagePending.set(key, read);
+  return read;
+}
+
+async function readStageMatch(eventId: string, matchId: string | null | undefined, key: string): Promise<CupMatch | null> {
   const named = matchId ? await cupMatches().findOne({ id: matchId }, { projection: { _id: 0 } }) : null;
   const on = named ?? await cupMatches()
     .find({ eventId, kind: 'sequential', status: { $in: ['betting', 'open', 'live', 'solo'] } }, { projection: { _id: 0 } })

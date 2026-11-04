@@ -1,7 +1,7 @@
 import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import type { PokerEvent, PokerPick, PokerTable, ShootoutRoundRec, ShootoutState } from '../models/poker.model';
 import { users } from '../config/db';
-import { noteLaunchScore } from './game-launch.service';
+import { closeTournamentLaunch, noteLaunchScore } from './game-launch.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { notifyUsers, NotificationInput } from './notification.service';
 import { postStandings } from './poker-feed';
@@ -670,8 +670,25 @@ async function joinShootoutLobby(event: PokerEvent, who: PokerIdentity, now: num
     floor.queue.push({ userId: who.userId, name: who.name, photoUrl: who.photoUrl, office: who.office, since: now, played: 0 });
     return true;
   });
-  if (changed?.result) await pushShared(event);
+  if (changed?.result) pushLobbySoon(event);
   return { queued: true };
+}
+
+/**
+ * A lobby filling fast (hundreds joining in the last minute) sends everyone
+ * the lobby once a second at most, not once per join: each send goes to every
+ * page and carries the whole list.
+ */
+const lobbyPushes = new Map<string, ReturnType<typeof setTimeout>>();
+function pushLobbySoon(event: PokerEvent): void {
+  if (lobbyPushes.has(event.id)) return;
+  lobbyPushes.set(
+    event.id,
+    setTimeout(() => {
+      lobbyPushes.delete(event.id);
+      void pushShared(event).catch((error) => logger.error('Poker lobby push failed', { eventId: event.id }, error));
+    }, 1000),
+  );
 }
 
 const BREAK_MS = 30_000;
@@ -842,6 +859,14 @@ async function settleShootoutRound(event: PokerEvent, state: ShootoutState, roun
     const who = state.joined.find((p) => p.userId === champion);
     await saveEvent(event, { shootout: state, champion: who ? { userId: who.userId, name: who.name } : null });
     logger.info('Poker Shootout over', { eventId: event.id, champion });
+    // Its launch card on the feed: the timer ends and the board is the standings, rounds played beside each name.
+    const names = new Map(state.joined.map((p) => [p.userId, p.name]));
+    const played = (userId: string) => state.rounds.filter((r) => r.players.includes(userId)).length;
+    void closeTournamentLaunch(
+      event.org,
+      event.id,
+      (state.standings ?? []).map((userId, i) => ({ userId, name: names.get(userId) ?? 'Player', place: i + 1, points: played(userId) })),
+    );
     return;
   }
   state.rounds.push(seatShootoutRound(event, state, index + 1, round.next, round.winners, now));

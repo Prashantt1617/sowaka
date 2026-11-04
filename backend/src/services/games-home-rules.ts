@@ -181,23 +181,61 @@ export interface Mehfil {
   date: string;
   /** `cupEventId`: a knockout row's tournament, once one is set up and switched on (see games-home.service). */
   /** `pokerPhase`: a Shootout row's Speed Poker Shootout, once one is set up and on (its phase: upcoming, lobby, shootout, over). */
-  events: Array<MehfilEvent & { startsAt: string; endsAt: string; cupEventId?: string; cupPhase?: string; pokerPhase?: string }>;
+  /** `live`: the row's actual game, once one is set up for the evening (see games-home.service). */
+  events: Array<MehfilEvent & { startsAt: string; endsAt: string; cupEventId?: string; cupPhase?: string; pokerPhase?: string; live?: MehfilLive }>;
 }
 
 /**
- * The evening's line-up, 4 Nov 2026. Only the countdown for now: the games
- * themselves are joined as they always are, until the tournaments are wired
- * to these rows in a later release.
+ * A row's actual game: where it has got to, its own start (and lobby) times,
+ * which then replace the line-up's, and what opens its standings once it is
+ * closed. `postId` is Hint Relay's post, the way into its app screen.
+ */
+export interface MehfilLive {
+  state: 'scheduled' | 'lobby' | 'live' | 'closed';
+  startsAt: string;
+  lobbyAt: string;
+  open: 'cup' | 'poker' | 'squad' | 'relay';
+  /** Secret Squad's session, for its full leaderboard. */
+  id?: string;
+  postId?: string;
+}
+
+/** A row with its actual game: the game's times replace the line-up's (the row's "at" too, in India time). */
+export function withLive<E extends { at: string; minutes: number; startsAt: string; endsAt: string }>(event: E, live: MehfilLive | null): E & { live?: MehfilLive } {
+  if (!live) return event;
+  const start = new Date(live.startsAt);
+  if (Number.isNaN(start.getTime())) return event;
+  const ist = new Date(start.getTime() + 330 * 60_000);
+  const at = `${String(ist.getUTCHours()).padStart(2, '0')}:${String(ist.getUTCMinutes()).padStart(2, '0')}`;
+  return { ...event, at, startsAt: start.toISOString(), endsAt: new Date(start.getTime() + event.minutes * 60_000).toISOString(), live };
+}
+
+/** Of a day's games of one kind: the one still to finish, soonest first; else the last to finish. */
+export function pickGame<T extends { startsAt: Date; closed: boolean }>(rows: T[]): T | null {
+  const open = rows.filter((row) => !row.closed).sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  return open[0] ?? rows.slice().sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime())[0] ?? null;
+}
+
+/** The instants an India day runs between, for "2026-11-04". */
+export function istDay(date: string): { from: Date; to: Date } {
+  const from = new Date(`${date}T00:00:00.000+05:30`);
+  return { from, to: new Date(from.getTime() + DAY_MS) };
+}
+
+/**
+ * The evening's line-up, 4 Nov 2026: Hint Relay opens it. These times are the
+ * plan; a row whose game is set up for the evening follows that game's own
+ * times instead (MehfilLive).
  */
 export const DIWALI_MEHFIL: { date: string; events: MehfilEvent[] } = {
   date: '2026-11-04',
   events: [
-    { id: 'mf-squad', gameKey: 'secret-squad', name: 'Secret Squad', kind: 'Office game', at: '15:00', minutes: 17, theme: 'squad' },
+    { id: 'mf-relay', gameKey: 'hint-relay', name: 'Hint Relay', kind: 'Team game · 5 rounds', at: '15:00', minutes: 25, theme: 'relay', format: 'relay' },
     {
       id: 'mf-trails', gameKey: 'trails', name: 'Trails Tournament', kind: '1v1 knockout', at: '16:00', minutes: 45, theme: 'trails',
       format: 'cup', win: 'Faster one wins.', practice: true,
     },
-    { id: 'mf-relay', gameKey: 'hint-relay', name: 'Hint Relay', kind: 'Team game · 5 rounds', at: '17:00', minutes: 25, theme: 'relay', format: 'relay' },
+    { id: 'mf-squad', gameKey: 'secret-squad', name: 'Secret Squad', kind: 'Office game', at: '17:00', minutes: 17, theme: 'squad' },
     {
       id: 'mf-odd', gameKey: 'odd-one-out', name: 'Odd One Out Tournament', kind: '1v1 knockout', at: '18:00', minutes: 45, theme: 'odd',
       format: 'cup', win: 'Higher score wins.', practice: true,

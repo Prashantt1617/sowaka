@@ -52,6 +52,7 @@ import {
 } from './cup-rules';
 import { newSeed } from './game-challenge-rules';
 import { notifyUsers } from './notification.service';
+import { closeTournamentLaunch } from './game-launch.service';
 import { mintTicket, verifyTicket } from './scribble-ticket.service';
 
 export class CupError extends Error {
@@ -216,6 +217,9 @@ async function refresh(eventId: string): Promise<Runtime | null> {
   if (kept?.refreshing && Date.now() - (refreshStarted.get(eventId) ?? 0) < STUCK_MS) return kept.refreshing;
   refreshStarted.set(eventId, Date.now());
   const load = (async () => {
+    // When this read began: a match written while it runs is newer than what it reads, so the next
+    // refresh looks back from here, not from when this one ended (a slow read must not skip it).
+    const began = Date.now();
     const event = await cupEvents().findOne({ id: eventId }, { projection: { _id: 0 } });
     if (!event) {
       runtimes.delete(eventId);
@@ -244,11 +248,13 @@ async function refresh(eventId: string): Promise<Runtime | null> {
     rt.event = event;
     for (const row of rows) {
       const had = rt.matches.get(row.id);
+      // Never back to an older copy: this process may have written the match (decided it, say) while the read ran.
+      if (had && had.updatedAt.getTime() > row.updatedAt.getTime()) continue;
       if (!had || had.updatedAt.getTime() !== row.updatedAt.getTime()) rt.rev += 1;
       rt.matches.set(row.id, row);
     }
     await refreshPhotos(rt).catch((error) => logger.error('Cup photos failed', { eventId }, error));
-    rt.refreshedAt = Date.now();
+    rt.refreshedAt = began;
     return rt;
   })();
   if (kept) kept.refreshing = load;
@@ -1062,6 +1068,14 @@ async function finish(rt: Runtime, now: Date): Promise<void> {
     await cupHooks.reconcile?.(event.id);
   });
   logger.info('Cup finished', { eventId: event.id, championId: champion });
+  // Its launch card on the feed: the timer ends and the board is the standings, matches won beside each name.
+  const wins = new Map<string, number>();
+  for (const match of rt.matches.values()) if (match.status === 'done' && match.winnerId && match.decidedBy !== 'absent') wins.set(match.winnerId, (wins.get(match.winnerId) ?? 0) + 1);
+  void closeTournamentLaunch(
+    claimed.org,
+    claimed.id,
+    standingsOf(rt).map((row) => ({ userId: row.userId, name: row.name, place: row.place, points: wins.get(row.userId) ?? 0 })),
+  );
   if (champion) void pushCup(claimed, claimed.entrants.map((e) => e.userId), 'cup_champion', `${nameOf(claimed, champion)} wins the ${claimed.name}!`, 'See the final standings and the top tipsters.');
 }
 
