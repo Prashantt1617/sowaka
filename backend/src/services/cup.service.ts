@@ -1657,7 +1657,7 @@ export async function cupBoardFor(org: string, gameId: string) {
     ? event.entrants.slice(0, 20).map((e) => ({ rank: e.seed, userId: e.userId, playerName: e.name, score: `Seed ${e.seed}` }))
     : standingsOf(rt).slice(0, 20).map((s) => ({ rank: s.place, userId: s.userId, playerName: s.name, score: s.reached }));
   return {
-    game: { id: event.id, name: event.name, description: 'Odd One Out knockout', hostedUrl: '', active: event.active },
+    game: { id: event.id, name: event.name, description: event.gameKey === 'trails' ? 'Trails knockout' : 'Odd One Out knockout', hostedUrl: '', active: event.active },
     leaderboard: rows,
   };
 }

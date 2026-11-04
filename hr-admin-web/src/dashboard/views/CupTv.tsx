@@ -7,11 +7,15 @@
 // It polls the same state a Cup page does (`GET /admin/cup/state`), every
 // 1.5 s while the tab is visible. Dark arcade, as the Cup itself, inside the
 // dashboard's frame; "Full screen" fills the TV with it.
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { ApiError, BASE_URL, api, getToken } from '../../services/http';
 import { useStore } from '../store';
 import { boardAt } from './cupBoards';
+import { trailAt } from './cupTrailsBoards';
+
+/** Which game the tournament's matches are played in: the TV draws that game's boards. */
+const GameCtx = createContext<'odd' | 'trails'>('odd');
 
 // —— the state (the Cup page's, as much as the TV draws) ————————————————————
 
@@ -55,6 +59,8 @@ interface CupState {
   event: {
     id: string;
     name: string;
+    /** 'trails' for a Trails tournament; Odd One Out otherwise. */
+    gameKey?: string;
     phase: 'scheduled' | 'lobby' | 'running' | 'done';
     round: number;
     lobbyAt: string;
@@ -248,6 +254,10 @@ const CSS = `
 .ctv-bside .ctv-sc{font-size:46px}
 .ctv-bside.lead .ctv-board{box-shadow:0 5px 0 #0C0A1C,0 0 26px -4px var(--pc)}
 .ctv-board{--w:300px;--n:2;position:relative;width:var(--w);height:var(--w);padding:calc(var(--w)*.035);border-radius:calc(var(--w)*.09);background:${C.bg};border:3px solid var(--pc);box-shadow:0 5px 0 #0C0A1C;box-sizing:content-box!important;flex:none}
+.ctv-board.tr svg{display:block}
+.ctv-board.tr .tc{fill:#2A2450}
+.ctv-board.tr .tw{stroke:#FFD23F;stroke-width:12;stroke-linecap:round}
+.ctv-board.tr .td{font:800 34px Sora,system-ui,sans-serif;fill:#0C0A1C}
 .ctv-board .g{display:grid;grid-template-columns:repeat(var(--n),1fr);grid-auto-rows:1fr;gap:calc(var(--w)/var(--n)*.08);width:100%;height:100%}
 .ctv-board .c{display:grid;place-items:center;border-radius:calc(var(--w)/var(--n)*.2);background:${C.panel};box-shadow:0 calc(var(--w)/var(--n)*.05) 0 #0C0A1C;font-size:calc(var(--w)/var(--n)*.56);line-height:1;overflow:hidden;min-width:0;min-height:0}
 .ctv-board .c i{font-style:normal;display:block}
@@ -424,12 +434,13 @@ export function CupTv() {
   );
 
   return (
+    <GameCtx.Provider value={event?.gameKey === 'trails' ? 'trails' : 'odd'}>
     <div ref={root} className={`ctv${stream ? ' stream' : ''}`} data-testid="cup-tv">
       <style>{CSS}</style>
       <header className="ctv-top">
-        <span className="ctv-wm">{(event?.name || 'O-O-O Tournament').toUpperCase()}</span>
+        <span className="ctv-wm">{(event?.name || 'Tournament').toUpperCase()}</span>
         <span className="ctv-sub">
-          {event ? subtitle(event, entrants, serverNow) : 'Odd One Out, company-wide'}
+          {event ? subtitle(event, entrants, serverNow) : 'Company-wide knockout'}
         </span>
         {error && <span className="ctv-err" role="status">{error}</span>}
         {stream ? (
@@ -512,6 +523,7 @@ export function CupTv() {
       })()}
       {confirming && <VoidDialog match={confirming} onCancel={() => setConfirming(null)} onConfirm={() => doVoid(confirming)} />}
     </div>
+    </GameCtx.Provider>
   );
 }
 
@@ -570,6 +582,35 @@ const CupBoard = memo(function CupBoard({ seed, at, size, colour }: { seed: numb
   );
 });
 
+/** Trail `at.board` of a seed, read-only: the grid, its walls and numbered dots, as that player has it (the solution is never drawn). */
+const TrailsBoard = memo(function TrailsBoard({ seed, at, size, colour }: { seed: number; at: LiveBoard; size: number; colour: string }) {
+  const b = trailAt(seed, at.board);
+  const style = { '--w': `${size}px`, '--n': b.n, '--pc': colour } as CSSProperties;
+  const S = 100, W = b.n * S;
+  return (
+    <div className="ctv-board tr" style={style} role="img" aria-label={`Trail ${at.board + 1}, ${b.n} by ${b.n}, ${b.dots.length} dots`}>
+      <svg viewBox={`0 0 ${W} ${W}`} width="100%" height="100%">
+        {Array.from({ length: b.n * b.n }, (_, i) => (
+          <rect key={i} x={(i % b.n) * S + 4} y={Math.floor(i / b.n) * S + 4} width={S - 8} height={S - 8} rx={14} className="tc" />
+        ))}
+        {b.walls.map(([a, c], i) => {
+          const vertical = a[0] === c[0];
+          const x = vertical ? Math.max(a[1], c[1]) * S : Math.min(a[1], c[1]) * S;
+          const y = vertical ? Math.min(a[0], c[0]) * S : Math.max(a[0], c[0]) * S;
+          return vertical ? <line key={i} x1={x} y1={y + 6} x2={x} y2={y + S - 6} className="tw" /> : <line key={i} x1={x + 6} y1={y} x2={x + S - 6} y2={y} className="tw" />;
+        })}
+        {b.dots.map(([r, c], i) => (
+          <g key={i}>
+            <circle cx={c * S + S / 2} cy={r * S + S / 2} r={S * 0.3} fill={i === 0 ? colour : '#FFF6DE'} stroke="#0C0A1C" strokeWidth={5} />
+            <text x={c * S + S / 2} y={r * S + S / 2 + 12} textAnchor="middle" className="td">{i + 1}</text>
+          </g>
+        ))}
+      </svg>
+      <span className="num" aria-hidden="true">#{at.board + 1}</span>
+    </div>
+  );
+});
+
 /** A key that changes with every move, so the board is drawn afresh and its flash plays again. */
 const moveKey = (at: LiveBoard) => `${at.board}:${at.tap ?? ''}:${at.ok ?? ''}`;
 
@@ -577,9 +618,14 @@ const hasBoards = (m: Match) => (m.status === 'live' || m.status === 'solo') && 
 
 function BoardOrWait({ match, p, size, colour }: { match: Match; p: Player | null; size: number; colour: string }) {
   const at = p ? match.liveBoard?.[p.userId] : undefined;
-  if (at && typeof match.boardSeed === 'number') return <CupBoard key={moveKey(at)} seed={match.boardSeed} at={at} size={size} colour={colour} />;
+  const game = useContext(GameCtx);
+  if (at && typeof match.boardSeed === 'number') {
+    return game === 'trails'
+      ? <TrailsBoard key={moveKey(at)} seed={match.boardSeed} at={at} size={size} colour={colour} />
+      : <CupBoard key={moveKey(at)} seed={match.boardSeed} at={at} size={size} colour={colour} />;
+  }
   const box = Math.round(size * 1.07 + 6);
-  return <div className="ctv-bwait" style={{ width: box, height: box }}>{match.status === 'solo' ? 'Not playing' : 'Board shows when they tap'}</div>;
+  return <div className="ctv-bwait" style={{ width: box, height: box }}>{match.status === 'solo' ? 'Not playing' : game === 'trails' ? 'Board shows when they start' : 'Board shows when they tap'}</div>;
 }
 
 /** Both players' boards, big, with name, seed and score above each. */
@@ -1070,6 +1116,7 @@ function StreamDuel({ match, round, split, serverNow, roundSec, kicker }: {
   kicker?: string;
 }) {
   const size = useStreamBoardSize();
+  const trails = useContext(GameCtx) === 'trails';
   const pill = STATUS_PILL[match.status];
   const timer = matchClock(match, split, serverNow, roundSec);
   const lead = leadLine(match, round);
@@ -1093,7 +1140,7 @@ function StreamDuel({ match, round, split, serverNow, roundSec, kicker }: {
           <span className="cs-sc" style={{ color: colour }}>{p ? fmt(s) : ''}</span>
         </div>
         {boards ? <BoardOrWait match={match} p={p} size={size} colour={colour} /> : <div className="cs-noboard" style={{ width: size * 1.07 + 6, height: size * 1.07 + 6 }}>{fmt(s)}</div>}
-        {at && <span className="cs-bl">BOARD <b>{at.board + 1}</b> · {at.board} FOUND</span>}
+        {at && (trails ? <span className="cs-bl">TRAIL <b>{at.board + 1}</b> · {at.board} DRAWN</span> : <span className="cs-bl">BOARD <b>{at.board + 1}</b> · {at.board} FOUND</span>)}
       </div>
     );
   };
