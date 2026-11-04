@@ -195,6 +195,8 @@ export interface MehfilLive {
   startsAt: string;
   lobbyAt: string;
   open: 'cup' | 'poker' | 'squad' | 'relay';
+  /** Secret Squad's session, for its full leaderboard. */
+  id?: string;
   postId?: string;
 }
 

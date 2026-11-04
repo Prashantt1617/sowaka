@@ -838,12 +838,12 @@ async function squadLive(viewer: User, day: { from: Date; to: Date }, now: numbe
           : now >= lobbyAt
             ? 'lobby'
             : 'scheduled';
-      return { startsAt: row.startsAt, lobbyAt, state, closed: state === 'closed' };
+      return { id: row.id, startsAt: row.startsAt, lobbyAt, state, closed: state === 'closed' };
     }),
   );
   const pick = pickGame(rows);
   if (!pick) return null;
-  return { state: pick.state, startsAt: pick.startsAt.toISOString(), lobbyAt: new Date(pick.lobbyAt).toISOString(), open: 'squad' };
+  return { state: pick.state, startsAt: pick.startsAt.toISOString(), lobbyAt: new Date(pick.lobbyAt).toISOString(), open: 'squad', id: pick.id };
 }
 
 /** Whether the company has the Diwali Mehfil (companies.features.diwaliMehfil), held a minute. */

@@ -1312,7 +1312,7 @@ svg{overflow:visible}
       var lv = r.live && typeof r.live === 'object' ? r.live : null, live = null;
       if (lv && ['scheduled', 'lobby', 'live', 'closed'].indexOf(lv.state) >= 0 && ['cup', 'poker', 'squad', 'relay'].indexOf(lv.open) >= 0) {
         var la = Date.parse(str(lv.lobbyAt));
-        live = { state: lv.state, open: lv.open, postId: str(lv.postId), lobby: isNaN(la) ? start - 5 * 60e3 : Math.min(la, start) };
+        live = { state: lv.state, open: lv.open, postId: str(lv.postId), id: /^[A-Za-z0-9_-]{1,80}$/.test(str(lv.id)) ? str(lv.id) : '', lobby: isNaN(la) ? start - 5 * 60e3 : Math.min(la, start) };
       }
       return { live: live, id: id, key: key, name: str(r.name), kind: str(r.kind), at: at,
         theme: MF_THEMES[r.theme] ? r.theme : 'odd', format: r.format === 'cup' || r.format === 'relay' || r.format === 'shootout' ? r.format : null,
@@ -1357,7 +1357,8 @@ svg{overflow:visible}
     if (!mfHasBoard(e)) { mfClose(); choosePane('board'); return; }
     if (e.live.open === 'cup') openGame('diwali-cup', e.cup);
     else if (e.live.open === 'poker') openGame('speed-poker');
-    else if (e.live.open === 'squad') openGame('secret-squad', 'squad');
+    // Secret Squad opens straight on its full leaderboard (board:<session>).
+    else if (e.live.open === 'squad') openGame('secret-squad', e.live.id ? 'board:' + e.live.id : 'squad');
     else openPost(e.live.postId);
   }
   function hhmm(e) { var h = +e.at.slice(0, 2), m = e.at.slice(3); return (h % 12 || 12) + (m === '00' ? '' : ':' + m); }

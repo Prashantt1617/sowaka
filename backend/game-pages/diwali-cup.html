@@ -1590,7 +1590,7 @@ function boardAt(sd,g){
   var fatal = HOP_FAILED ? 'This page could not reach its server. Close it and open it again from Sowaka.' : (!C || !C.ticket ? 'nocup' : null);
   var netFail = 0, pollT = 0, inflight = false;
   var seen = store('cup-seen-bets') || [];
-  var ui = { tab: 'me', round: null, q: '', all: false, watchAll: false, standAll: false, duel: null, pick: null, pickFor: null, stake: 0, betBusy: false, betErr: '', busy: '', err: '', toast: null, playing: null, handle: null, scroll: {} };
+  var ui = { tab: 'me', round: null, q: '', all: false, watchAll: false, standAll: true, duel: null, pick: null, pickFor: null, stake: 0, betBusy: false, betErr: '', busy: '', err: '', toast: null, playing: null, handle: null, scroll: {} };
   var finals = store('cup-finals') || {};
   /* The round in progress, kept on this phone after every find, so a reload mid-round carries on from it and resends it. */
   var progress = store('cup-live') || {};
