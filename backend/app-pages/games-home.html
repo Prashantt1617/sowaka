@@ -319,6 +319,10 @@ svg{overflow:visible}
 .mf-tm{width:48px;flex:none;text-align:center}
 .mf-tm b{display:block;font:22px/22px var(--lil);color:#FFE7A8}
 .mf-tm span{display:block;font:700 9.5px/12px var(--sora);letter-spacing:.1em;color:#E9CFA8}
+.mf-tm b.ct{font-size:17px;font-variant-numeric:tabular-nums;color:#FFCC2E}
+.mf-tm b.lv{font-size:16px;color:#FF6B57}
+.mf-tm b.cl{font-size:14px;color:#E9CFA8}
+.mf-tm span{white-space:nowrap}
 .mf-ic{width:46px;height:46px;flex:none;border-radius:13px;overflow:hidden;border:2px solid #0D0614;box-shadow:0 2px 0 #0D0614;position:relative}
 .mf-ic .tile-fit{inset:3px}
 .mf-m{flex:1;min-width:0}
@@ -328,7 +332,7 @@ svg{overflow:visible}
 .mf-chev{width:18px;height:18px;flex:none;color:#E9CFA8}
 .mf-r.next{background:rgba(255,231,168,.07);border-radius:14px;padding-left:8px;padding-right:8px;margin:0 -6px}
 .mf-r.next+.mf-r{border-top-color:transparent}
-.mf-r.over .mf-ic,.mf-r.over .mf-n,.mf-r.over .mf-tm{opacity:.55}
+.mf-r.over .mf-ic,.mf-r.over .mf-n{opacity:.55}
 .mf-pill{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;flex:none;padding:1px 7px;border-radius:999px;font:800 10px/15px var(--sora);letter-spacing:.08em}
 .mf-pill.live{background:#16C172;color:#fff}.mf-pill.lobby{background:#FFCC2E;color:#160D2C}
 .mf-pill i{width:6px;height:6px;border-radius:50%;background:currentColor;animation:mfblink 1.2s ease-in-out infinite}
@@ -1304,9 +1308,15 @@ svg{overflow:visible}
       var start = Date.parse(str(r.startsAt)), end = Date.parse(str(r.endsAt));
       var id = str(r.id), key = str(r.gameKey), at = str(r.at);
       if (!id || !key || !/^\d\d:\d\d$/.test(at) || isNaN(start) || isNaN(end)) return null;
-      return { id: id, key: key, name: str(r.name), kind: str(r.kind), at: at,
+      // The row's actual game, once one is set up: its state, and what opens its standings (start and "at" are already its own).
+      var lv = r.live && typeof r.live === 'object' ? r.live : null, live = null;
+      if (lv && ['scheduled', 'lobby', 'live', 'closed'].indexOf(lv.state) >= 0 && ['cup', 'poker', 'squad', 'relay'].indexOf(lv.open) >= 0) {
+        var la = Date.parse(str(lv.lobbyAt));
+        live = { state: lv.state, open: lv.open, postId: str(lv.postId), lobby: isNaN(la) ? start - 5 * 60e3 : Math.min(la, start) };
+      }
+      return { live: live, id: id, key: key, name: str(r.name), kind: str(r.kind), at: at,
         theme: MF_THEMES[r.theme] ? r.theme : 'odd', format: r.format === 'cup' || r.format === 'relay' || r.format === 'shootout' ? r.format : null,
-        win: str(r.win), practice: r.practice === true, start: start, end: end, lobby: start - 5 * 60e3,
+        win: str(r.win), practice: r.practice === true, start: start, end: end, lobby: live ? live.lobby : start - 5 * 60e3,
         cup: /^[A-Za-z0-9_-]{1,80}$/.test(str(r.cupEventId)) ? str(r.cupEventId) : '',
         cupPhase: ['scheduled', 'lobby', 'running', 'done'].indexOf(r.cupPhase) >= 0 ? r.cupPhase : '',
         pokerPhase: ['upcoming', 'lobby', 'shootout', 'over'].indexOf(r.pokerPhase) >= 0 ? r.pokerPhase : '' };
@@ -1316,7 +1326,39 @@ svg{overflow:visible}
   function mfEvents() { return S.home && S.home.mehfil ? S.home.mehfil.events : []; }
   function mfState(e, now) {
     now = now == null ? Date.now() : now;
+    // A row following its actual game takes that game's state; until it opens, its own lobby time.
+    if (e.live) return e.live.state === 'closed' ? 'over' : e.live.state === 'live' ? 'live' : e.live.state === 'lobby' || now >= e.lobby ? 'lobby' : 'soon';
     return now < e.lobby ? 'soon' : now < e.start ? 'lobby' : now < e.end ? 'live' : 'over';
+  }
+  /** The row's time column: its time, a countdown from 10 minutes before the start, LIVE while it is on, Closed after. */
+  var MF_COUNT_MS = 10 * 60e3;
+  function mfTmMode(e, now) {
+    var st = mfState(e, now);
+    if (st === 'live') return 'live';
+    if (st === 'over') return 'closed';
+    return e.start - now <= MF_COUNT_MS ? 'count' : 'time';
+  }
+  function mfTm(e, now) {
+    var mode = mfTmMode(e, now);
+    if (mode === 'live') return '<b class="lv">LIVE</b><span>' + hhmm(e) + ' ' + ampm(e) + '</span>';
+    if (mode === 'closed') return '<b class="cl">Closed</b><span>' + (mfHasBoard(e) ? 'RESULTS ›' : hhmm(e) + ' ' + ampm(e)) + '</span>';
+    if (mode === 'count') return '<b class="ct">' + clockFmt(e.start - now).slice(3) + '</b><span>STARTS IN</span>';
+    return '<b>' + hhmm(e) + '</b><span>' + ampm(e) + '</span>';
+  }
+  /** A closed row's standings: the tournament's or the Shootout's results, Secret Squad's, Hint Relay's post. */
+  function mfHasBoard(e) {
+    if (!e.live) return false;
+    if (e.live.open === 'cup') return !!e.cup && !!gameFor('diwali-cup');
+    if (e.live.open === 'poker') return !!gameFor('speed-poker');
+    if (e.live.open === 'squad') return !!gameFor('secret-squad');
+    return !!e.live.postId;
+  }
+  function mfBoard(e) {
+    if (!mfHasBoard(e)) { mfClose(); choosePane('board'); return; }
+    if (e.live.open === 'cup') openGame('diwali-cup', e.cup);
+    else if (e.live.open === 'poker') openGame('speed-poker');
+    else if (e.live.open === 'squad') openGame('secret-squad', 'squad');
+    else openPost(e.live.postId);
   }
   function hhmm(e) { var h = +e.at.slice(0, 2), m = e.at.slice(3); return (h % 12 || 12) + (m === '00' ? '' : ':' + m); }
   function ampm(e) { return +e.at.slice(0, 2) >= 12 ? 'PM' : 'AM'; }
@@ -1436,11 +1478,16 @@ svg{overflow:visible}
       var left = e.start - now, h = Math.floor(left / 3600e3), m = Math.floor(left % 3600e3 / 60e3);
       return { st: st, html: mfNext(now) === e ? 'Starts in ' + (h ? h + 'h ' : '') + m + 'm' : esc(e.kind) };
     }
-    if (st === 'lobby') return { st: st, html: '<span class="mf-pill lobby"><i></i>LOBBY OPEN</span> &nbsp;Starts in ' + clockFmt(e.start - now).slice(3) };
-    if (st === 'live') return { st: st, html: '<span class="mf-pill live"><i></i>LIVE</span> &nbsp;On now' };
-    return { st: st, html: 'Played ✓' };
+    // The countdown is in the time column, so the line says what to do.
+    if (st === 'lobby') return { st: st, html: '<span class="mf-pill lobby"><i></i>LOBBY OPEN</span> &nbsp;Join now' };
+    if (st === 'live') return { st: st, html: '<span class="mf-pill live"><i></i>LIVE</span> &nbsp;Tap to join' };
+    return { st: st, html: mfHasBoard(e) ? 'Closed · see the leaderboard' : 'Closed' };
   }
-  function mfNext(now) { var list = mfEvents(); for (var i = 0; i < list.length; i++) if (mfState(list[i], now) !== 'over') return list[i]; return null; }
+  function mfNext(now) {
+    var list = mfEvents().filter(function (e) { return mfState(e, now) !== 'over'; });
+    var live = list.filter(function (e) { return mfState(e, now) === 'live'; });
+    return (live.length ? live : list).slice().sort(function (a, b) { return a.start - b.start; })[0] || null;
+  }
   function mfNextLine(now) {
     var n = mfNext(now);
     if (!n) return '<div class="mf-next">That’s a wrap! Thanks for playing 🪔</div>';
@@ -1452,7 +1499,7 @@ svg{overflow:visible}
     return mfEvents().map(function (e) {
       var t = MF_THEMES[e.theme], s = mfStatus(e, now);
       return '<button type="button" class="mf-r ' + s.st + (next === e ? ' next' : '') + '" data-act="mf" data-v="' + esc(e.id) + '">' +
-        '<div class="mf-tm"><b>' + hhmm(e) + '</b><span>' + ampm(e) + '</span></div>' +
+        '<div class="mf-tm" data-mf-tm="' + esc(e.id) + '">' + mfTm(e, now) + '</div>' +
         '<div class="mf-ic" style="background:' + t.tile + '">' + mfIcon(e) + '</div>' +
         '<div class="mf-m"><div class="mf-n">' + esc(e.name) + '</div><div class="mf-st ' + s.st + '" data-mf-st="' + esc(e.id) + '">' + s.html + '</div></div>' +
         '<svg class="mf-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button>';
@@ -1474,12 +1521,13 @@ svg{overflow:visible}
     var box = $('mf-live');
     if (!box || S.pane !== 'games') return;
     var now = Date.now(), list = mfEvents();
-    var key = list.map(function (e) { return mfState(e, now); }).join();
+    var key = list.map(function (e) { return mfState(e, now) + mfTmMode(e, now); }).join();
     if (box.getAttribute('data-k') !== key) { box.setAttribute('data-k', key); box.innerHTML = mfBlockInner(now); return; }
     var nx = box.querySelector('[data-mf-next]'), n = mfNext(now);
     if (nx && n) nx.textContent = clockFmt(n.start - now);
     list.forEach(function (e) {
       var st = mfState(e, now);
+      if (mfTmMode(e, now) === 'count') { var tm = box.querySelector('[data-mf-tm="' + e.id + '"]'); if (tm) tm.innerHTML = mfTm(e, now); }
       if (st !== 'lobby' && !(st === 'soon' && n === e)) return;
       var el = box.querySelector('[data-mf-st="' + e.id + '"]');
       if (el) el.innerHTML = mfStatus(e, now).html;
@@ -1718,7 +1766,7 @@ svg{overflow:visible}
   function mfKey(e, view) {
     var q = e.key === 'secret-squad' && S.home && S.home.liveSquad ? S.home.liveSquad.phase + S.home.liveSquad.round : '';
     var rl = e.key === 'hint-relay' && S.home && S.home.liveRelay ? S.home.liveRelay.phase : '';
-    return view + '|' + q + '|' + rl + '|' + (e.cupPhase || '') + '|' + (e.pokerPhase || '');
+    return view + '|' + q + '|' + rl + '|' + (e.cupPhase || '') + '|' + (e.pokerPhase || '') + '|' + (e.live ? e.live.state : '');
   }
   function mfTick() {
     var e = MF.open;
@@ -1932,9 +1980,9 @@ svg{overflow:visible}
     if (el.classList.contains('cta')) haptic('light');
     switch (act) {
       case 'pane': choosePane(v); break;
-      case 'mf': mfOpen(v); break;
+      case 'mf': (function () { var e = mfEvents().filter(function (x) { return x.id === v; })[0]; if (e && mfState(e) === 'over' && mfHasBoard(e)) mfBoard(e); else mfOpen(v); })(); break;
       case 'mf-close': mfClose(); break;
-      case 'mf-board': mfClose(); choosePane('board'); break;
+      case 'mf-board': if (MF.open) mfBoard(MF.open); else choosePane('board'); break;
       case 'mf-step': MF.step = +v; MF.stepAt = Date.now(); mfSwapStep(MF.open); break;
       case 'mf-practice': openGame(MF.open.key); break;
       case 'mf-enter': if (MF.open && MF.open.cup) openGame('diwali-cup', MF.open.cup); break;
@@ -2187,9 +2235,9 @@ svg{overflow:visible}
             scoring: { higherIsBetter: true, label: 'points' }, hasPage: true, version: 'v1' }],
         // The Diwali Mehfil, moved to now so every state shows: one live, one in its lobby, the rest later.
         mehfil: (function () {
-          var rows = [['mf-squad', 'secret-squad', 'Secret Squad', 'Office game', -2 * M, 17, 'squad'],
+          var rows = [['mf-relay', 'hint-relay', 'Hint Relay', 'Team game · 5 rounds', -2 * M, 25, 'relay', 'relay'],
             ['mf-trails', 'trails', 'Trails Tournament', '1v1 knockout', 3 * M, 45, 'trails', 'cup', 'Faster one wins.', true],
-            ['mf-relay', 'hint-relay', 'Hint Relay', 'Team game · 5 rounds', 70 * M, 25, 'relay', 'relay'],
+            ['mf-squad', 'secret-squad', 'Secret Squad', 'Office game', 70 * M, 17, 'squad'],
             ['mf-odd', 'odd-one-out', 'Odd One Out Tournament', '1v1 knockout', 2 * H + 10 * M, 45, 'odd', 'cup', 'Higher score wins.', true],
             ['mf-poker', 'speed-poker', 'Poker Shootout', 'Card tournament', 3 * H + 10 * M, 45, 'poker', null, '', true]];
           var ist = function (t) { var d = new Date(t + 330 * M); return two(d.getUTCHours()) + ':' + two(d.getUTCMinutes()); };

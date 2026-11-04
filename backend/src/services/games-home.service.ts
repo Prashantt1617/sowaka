@@ -31,8 +31,12 @@ import {
   firstNameOf,
   initialsOf,
   istWeekStart,
+  istDay,
   mehfilFor,
+  pickGame,
+  withLive,
   type Mehfil,
+  type MehfilLive,
   movementSince,
   nextUpFor,
   orderLiveContests,
@@ -48,7 +52,8 @@ import { pointEvents } from './points-ledger.service';
 import { rosterFor } from './profile.service';
 import { presignConnectMedia, resolveProfilePhoto } from './s3-connect-media.service';
 import { openInvitesFor } from './scribble-room.service';
-import { liveSquadFor } from './secret-squad.service';
+import { liveSquadFor, officeKey, officeOf, squadSchedules } from './secret-squad.service';
+import { readSession } from './secret-squad-store';
 import { cupEvents } from './cup.service';
 import { eventFor as pokerEventFor } from './poker-room.service';
 import { phaseOf as pokerPhaseOf } from './poker-floor';
@@ -670,7 +675,7 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
       : null,
   );
   // The Diwali Mehfil's line-up, at a company that has it.
-  const mehfilP = optional('Games home Mehfil', () => mehfilOn(viewer.org).then((on) => mehfilFor(on, now)).then((m) => withTournaments(m, viewer.org)), null, context);
+  const mehfilP = optional('Games home Mehfil', () => mehfilOn(viewer.org).then((on) => mehfilFor(on, now)).then((m) => withLiveGames(m, viewer)), null, context);
   const [roster, games, banner, liveContests, liveRelay, challenges, invites, yourGames, playingNow, liveSquad, mehfil] = await Promise.all([
     rosterP,
     gamesP,
@@ -723,34 +728,122 @@ export async function gamesHomeFor(viewerUserId: string, now = new Date()) {
 }
 
 /**
- * Each knockout row of the Mehfil, with the tournament it is played in and
- * where that has got to: the company's switched-on tournament of that game
- * still to finish (the soonest), else the last one that finished. A row with
- * none stays a countdown.
+ * Each Mehfil row with its actual game, when one is set up for the evening
+ * (its India day): the tournaments, the Shootout, the office's Secret Squad,
+ * the company's Hint Relay. The row then follows that game: its times, its
+ * state, and its standings once it is closed. A row with none keeps the
+ * line-up's time and counts down to it.
  */
-async function withTournaments(mehfil: Mehfil | null, org: string | undefined): Promise<Mehfil | null> {
-  if (!mehfil || !org) return mehfil;
-  const games = mehfil.events.filter((event) => event.format === 'cup').map((event) => event.gameKey);
-  // The company's Speed Poker Shootout, when it has one on: the row follows it.
-  const poker = mehfil.events.some((event) => event.format === 'shootout') ? await pokerEventFor(org) : null;
-  const pokerPhase = poker && poker.config.shootout && poker.status !== 'draft' ? pokerPhaseOf(poker, Date.now()) : null;
-  if (!games.length && !pokerPhase) return mehfil;
-  const found = await cupEvents()
-    .find({ org, active: true, gameKey: { $in: games } }, { projection: { _id: 0, id: 1, gameKey: 1, phase: 1, startAt: 1 } })
-    .toArray();
-  const pick = (gameKey: string) => {
-    const mine = found.filter((row) => row.gameKey === gameKey);
-    const open = mine.filter((row) => row.phase !== 'done').sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
-    return open[0] ?? mine.sort((a, b) => b.startAt.getTime() - a.startAt.getTime())[0];
-  };
+async function withLiveGames(mehfil: Mehfil | null, viewer: User): Promise<Mehfil | null> {
+  if (!mehfil || !viewer.org) return mehfil;
+  const org = viewer.org;
+  const day = istDay(mehfil.date);
+  const inDay = (at: Date) => at.getTime() >= day.from.getTime() && at.getTime() < day.to.getTime();
+  const now = Date.now();
+  const has = (format: string) => mehfil.events.some((event) => event.format === format);
+  const cupGames = mehfil.events.filter((event) => event.format === 'cup').map((event) => event.gameKey);
+  const [cups, poker, relay, squad] = await Promise.all([
+    cupGames.length
+      ? cupEvents()
+          .find({ org, active: true, gameKey: { $in: cupGames } }, { projection: { _id: 0, id: 1, gameKey: 1, phase: 1, startAt: 1, lobbyAt: 1 } })
+          .toArray()
+      : Promise.resolve([]),
+    has('shootout') ? pokerEventFor(org).catch(() => null) : Promise.resolve(null),
+    has('relay') ? relayLive(viewer, inDay, now).catch(() => null) : Promise.resolve(null),
+    mehfil.events.some((event) => event.gameKey === 'secret-squad') ? squadLive(viewer, day, now).catch(() => null) : Promise.resolve(null),
+  ]);
+  const cupFor = (gameKey: string) =>
+    pickGame(cups.filter((row) => row.gameKey === gameKey && inDay(row.startAt)).map((row) => ({ ...row, startsAt: row.startAt, closed: row.phase === 'done' })));
+  let pokerLive: MehfilLive | null = null;
+  let pokerPhase: string | null = null;
+  const so = poker?.config.shootout;
+  if (poker && so && poker.status !== 'draft' && inDay(new Date(so.startAt))) {
+    pokerPhase = pokerPhaseOf(poker, now);
+    pokerLive = {
+      state: pokerPhase === 'over' ? 'closed' : pokerPhase === 'shootout' ? 'live' : pokerPhase === 'lobby' ? 'lobby' : 'scheduled',
+      startsAt: new Date(so.startAt).toISOString(),
+      lobbyAt: new Date(so.lobbyFrom).toISOString(),
+      open: 'poker',
+    };
+  }
   return {
     ...mehfil,
     events: mehfil.events.map((event) => {
-      if (event.format === 'shootout') return pokerPhase ? { ...event, pokerPhase } : event;
-      const cup = event.format === 'cup' ? pick(event.gameKey) : undefined;
-      return cup ? { ...event, cupEventId: cup.id, cupPhase: cup.phase } : event;
+      if (event.format === 'shootout') return pokerLive && pokerPhase ? withLive({ ...event, pokerPhase }, pokerLive) : event;
+      if (event.format === 'relay') return withLive(event, relay);
+      if (event.gameKey === 'secret-squad') return withLive(event, squad);
+      const cup = event.format === 'cup' ? cupFor(event.gameKey) : null;
+      if (!cup) return event;
+      const live: MehfilLive = {
+        state: cup.phase === 'done' ? 'closed' : cup.phase === 'running' ? 'live' : cup.phase === 'lobby' ? 'lobby' : 'scheduled',
+        startsAt: cup.startAt.toISOString(),
+        lobbyAt: cup.lobbyAt.toISOString(),
+        open: 'cup',
+      };
+      return withLive({ ...event, cupEventId: cup.id, cupPhase: cup.phase }, live);
     }),
   };
+}
+
+/** The company's Hint Relay of the evening: the one on or still to come, else the last to finish; with its post. */
+async function relayLive(viewer: User, inDay: (at: Date) => boolean, now: number): Promise<MehfilLive | null> {
+  const org = feedOrgOf(viewer);
+  const rows = (
+    await relayEvents()
+      .find<RelayEventRow>(
+        { org, status: { $in: ['scheduled', 'live', 'finished'] } },
+        { sort: { updatedAt: -1 }, limit: 20, projection: { _id: 0, id: 1, status: 1, startsAt: 1, lobbyOpensAt: 1 } },
+      )
+      .toArray()
+  ).filter((row) => row.startsAt && inDay(row.startsAt));
+  const event = pickGame(rows.map((row) => ({ ...row, startsAt: row.startsAt as Date, closed: row.status === 'finished' })));
+  if (!event) return null;
+  const post = await connectPosts().findOne(
+    { org, type: 'relay_game', 'body.eventId': event.id },
+    { sort: { publishedAt: -1 }, projection: { _id: 0, id: 1 } },
+  );
+  const lobbyAt = event.lobbyOpensAt ?? event.startsAt;
+  return {
+    state:
+      event.status === 'finished' ? 'closed' : event.status === 'live' ? 'live' : lobbyAt.getTime() <= now ? 'lobby' : 'scheduled',
+    startsAt: event.startsAt.toISOString(),
+    lobbyAt: lobbyAt.toISOString(),
+    open: 'relay',
+    ...(post ? { postId: post.id } : {}),
+  };
+}
+
+/** The viewer's office's Secret Squad of the evening, as the row follows it. */
+async function squadLive(viewer: User, day: { from: Date; to: Date }, now: number): Promise<MehfilLive | null> {
+  const org = viewer.org as string;
+  const [office, schedules] = await Promise.all([
+    officeOf(viewer),
+    squadSchedules()
+      .find({ org, status: { $in: ['scheduled', 'opened'] }, startsAt: { $gte: day.from, $lt: day.to } }, { projection: { _id: 0 } })
+      .toArray(),
+  ]);
+  const mine = office ? schedules.filter((row) => officeKey(row.office) === officeKey(office)) : [];
+  const rows = await Promise.all(
+    (mine.length ? mine : schedules).map(async (row) => {
+      const session = await readSession(org, row.id).catch(() => null);
+      const lobbyAt = row.startsAt.getTime() - row.lobbyMs;
+      const state: MehfilLive['state'] = session
+        ? session.status === 'over' || session.status === 'cancelled'
+          ? 'closed'
+          : session.status === 'lobby'
+            ? 'lobby'
+            : 'live'
+        : row.status === 'opened'
+          ? 'closed'
+          : now >= lobbyAt
+            ? 'lobby'
+            : 'scheduled';
+      return { startsAt: row.startsAt, lobbyAt, state, closed: state === 'closed' };
+    }),
+  );
+  const pick = pickGame(rows);
+  if (!pick) return null;
+  return { state: pick.state, startsAt: pick.startsAt.toISOString(), lobbyAt: new Date(pick.lobbyAt).toISOString(), open: 'squad' };
 }
 
 /** Whether the company has the Diwali Mehfil (companies.features.diwaliMehfil), held a minute. */
