@@ -34,6 +34,7 @@ import type {
   PayHeadDTO,
   PercentageBase,
   SalaryStructureDTO,
+  SalaryStructureInput,
   SalaryTemplateDTO,
   StatutoryOverview,
   StructureComponent,
@@ -198,7 +199,7 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
   }
 
   if (data === null) {
-    return <AssignCard templates={templates} phByCode={phByCode} saving={saving} onSave={(code, ctc, values) => void patch({ salaryTemplateCode: code, annualCtcPaise: ctc, componentValues: values, status: 'active', effectiveFrom: today() }, 'Salary assigned')} />;
+    return <AssignCard templates={templates} phByCode={phByCode} saving={saving} onSave={(input, done) => void patch(input, done)} />;
   }
 
   const { structure, computed, components } = data;
@@ -217,12 +218,12 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
   }
   // Employer statutory shares the org keeps inside CTC show as Benefits.
   const employerRows: { name: string; sub: string; monthly: number }[] = [];
-  if (settings?.epf.enabled && settings.epf.includeEmployer && person.epf !== false) {
+  if (computed && settings?.epf.enabled && settings.epf.includeEmployer && person.epf !== false) {
     employerRows.push({ name: 'EPF - Employer Contribution', sub: `(12.00% of ${settings.epf.employerRate === 'restricted' ? 'Restricted PF Wages' : 'Actual PF Wages'})`, monthly: computed.statutory.epf.employerTotalPaise });
     if (settings.epf.includeEDLI) employerRows.push({ name: 'EDLI - Employer Contribution', sub: '(0.50% of Restricted PF Wages)', monthly: computed.statutory.epf.edliPaise ?? 0 });
     if (settings.epf.includeAdmin) employerRows.push({ name: 'EPF Admin Charges', sub: '(0.50% of PF Wages)', monthly: computed.statutory.epf.adminPaise ?? 0 });
   }
-  if (settings?.esi.enabled && settings.esi.includeEmployer && person.esi !== false && computed.statutory.esi.applicable) {
+  if (computed && settings?.esi.enabled && settings.esi.includeEmployer && person.esi !== false && computed.statutory.esi.applicable) {
     employerRows.push({ name: 'ESI - Employer Contribution', sub: '(3.25% of Gross)', monthly: computed.statutory.esi.employerPaise });
   }
   const revisions = [...structure.revisions].reverse();
@@ -230,6 +231,9 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
 
   return (
     <div>
+      {!computed ? (
+        <AssignCard templates={templates} phByCode={phByCode} saving={saving} initialCtcPaise={structure.annualCtcPaise} onSave={(input, done) => void patch(input, done)} />
+      ) : (
       <section className="pd-card" style={{ marginBottom: 20 }}>
         <h3 style={secTitle}>Salary Details</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 44, flexWrap: 'wrap' }}>
@@ -239,6 +243,7 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
           <button onClick={() => setRevising(true)} className="pd-btn primary" style={{ marginLeft: 'auto' }}>Revise</button>
         </div>
       </section>
+      )}
 
       <PaidDaysCard
         userId={userId}
@@ -246,6 +251,7 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
         onChanged={(code) => setData((d) => (d ? { ...d, structure: { ...d.structure, paidDaysTemplateCode: code ?? undefined } } : d))}
       />
 
+      {computed && (
       <section className="pd-card" style={{ marginBottom: 20 }}>
         <h3 style={secTitle}>Salary Structure</h3>
         <table style={table}>
@@ -285,8 +291,9 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
           </tbody>
         </table>
       </section>
+      )}
 
-      <FlexibleSplitCard userId={userId} name={name} />
+      {computed && <FlexibleSplitCard userId={userId} name={name} />}
 
       <section className="pd-card" style={{ marginBottom: 20 }}>
         <h3 style={secTitle}>Other Deductions</h3>
@@ -341,12 +348,12 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
               )}
               <tr>
                 <td style={td}><div style={{ fontWeight: 400 }}>ESI Contribution</div></td>
-                <td style={td}>{settings?.esi.enabled === false ? 'Off for the company' : person.esi === false ? 'Disabled for this person' : computed.statutory.esi.applicable ? '0.75% of gross (gross is ₹21,000 or less)' : 'Not applicable: gross is above ₹21,000'}</td>
+                <td style={td}>{settings?.esi.enabled === false ? 'Off for the company' : person.esi === false ? 'Disabled for this person' : computed?.statutory.esi.applicable ? '0.75% of gross (gross is ₹21,000 or less)' : 'Not applicable: gross is above ₹21,000'}</td>
                 <td style={{ ...td, textAlign: 'right' }}>{settings?.esi.enabled !== false && <Switch on={person.esi !== false} disabled={saving} onToggle={() => void patch({ statutory: { ...person, esi: person.esi === false } }, person.esi === false ? 'ESI enabled' : 'ESI disabled')} />}</td>
               </tr>
               <tr>
                 <td style={td}><div style={{ fontWeight: 400 }}>Labour Welfare Fund</div></td>
-                <td style={td}>{person.lwf === false ? 'Disabled for this person' : computed.statutory.lwf.applicable ? `₹${rupees(computed.statutory.lwf.employeePaise)} this month` : 'Not applicable in the work state this month'}</td>
+                <td style={td}>{person.lwf === false ? 'Disabled for this person' : computed?.statutory.lwf.applicable ? `₹${rupees(computed.statutory.lwf.employeePaise)} this month` : 'Not applicable in the work state this month'}</td>
                 <td style={{ ...td, textAlign: 'right' }}><Switch on={person.lwf !== false} disabled={saving} onToggle={() => void patch({ statutory: { ...person, lwf: person.lwf === false } }, person.lwf === false ? 'LWF enabled' : 'LWF disabled')} /></td>
               </tr>
               {settings?.bonus.enabled && (
@@ -465,16 +472,26 @@ function cleanValues(values: Record<string, string>): Record<string, number> {
   return out;
 }
 
-function AssignCard({ templates, phByCode, saving, onSave }: { templates: SalaryTemplateDTO[]; phByCode: Map<string, PayHeadDTO>; saving: boolean; onSave: (code: string, ctcPaise: number, values: Record<string, number>) => void }) {
+/** The template and the annual CTC, each saved on its own; the salary goes live once it has both. Shown until a template is picked. */
+function AssignCard({ templates, phByCode, saving, onSave, initialCtcPaise }: { templates: SalaryTemplateDTO[]; phByCode: Map<string, PayHeadDTO>; saving: boolean; onSave: (input: SalaryStructureInput, done: string) => void; initialCtcPaise?: number }) {
   const [code, setCode] = useState('');
-  const [ctc, setCtc] = useState('');
+  const [ctc, setCtc] = useState(initialCtcPaise ? String(initialCtcPaise / 100) : '');
+  const ctcPaise = Number(ctc) > 0 ? rupeesToPaise(ctc) : 0;
+  const ctcChanged = ctcPaise > 0 && ctcPaise !== (initialCtcPaise ?? 0);
+  const canSave = !!code || ctcChanged;
+  const save = () => onSave({
+    ...(code ? { salaryTemplateCode: code, componentValues: cleanValues(values) } : {}),
+    ...(ctcChanged || (code && ctcPaise > 0) ? { annualCtcPaise: ctcPaise } : {}),
+    status: code && ctcPaise > 0 ? 'active' : 'draft',
+    effectiveFrom: today(),
+  }, code && ctcPaise > 0 ? 'Salary assigned' : code ? 'Template saved; add the CTC to make the salary live' : 'CTC saved; pick a template to make the salary live');
   const [values, setValues] = useState<Record<string, string>>({});
   const tpl = templates.find((t) => t.code === code);
   const perPerson = tpl ? perPersonCodes(tpl.components, tpl.balancingComponentCode, phByCode) : [];
   return (
     <section className="pd-card">
-      <h3 style={{ ...secTitle, margin: 0 }}>No salary yet</h3>
-      <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2, marginBottom: 16 }}>Pick a salary template and the annual CTC. You can change any component for this person after that.</div>
+      <h3 style={{ ...secTitle, margin: 0 }}>{initialCtcPaise ? 'Salary not live yet' : 'No salary yet'}</h3>
+      <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2, marginBottom: 16 }}>Pick a salary template, enter the annual CTC, or both: each saves on its own, and the statutory details below save on their own too. The salary goes live once it has a template and a CTC; you can change any component for this person after that.</div>
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div><div style={fieldLabel}>Salary Template</div>
           <select value={code} onChange={(e) => setCode(e.target.value)} style={{ ...input, width: 280 }}>
@@ -483,7 +500,7 @@ function AssignCard({ templates, phByCode, saving, onSave }: { templates: Salary
           </select>
         </div>
         <div><div style={fieldLabel}>Annual CTC</div><CtcInput value={ctc} onChange={setCtc} /></div>
-        <button disabled={saving || !code || !(Number(ctc) > 0)} onClick={() => onSave(code, rupeesToPaise(ctc), cleanValues(values))} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
+        <button disabled={saving || !canSave} onClick={save} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
       </div>
       {perPerson.length > 0 && (
         <div style={{ marginTop: 18 }}>

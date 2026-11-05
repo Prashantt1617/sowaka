@@ -343,7 +343,7 @@ defineExecutor('assign_salary_template', {
     const run = await payrollRuns().findOne({ org: p.org, period: effectiveFrom.slice(0, 7) }, { projection: { status: 1 } });
     if (run?.status === 'paid') throw new Error(`${monthName(effectiveFrom.slice(0, 7))}'s payroll was submitted since this was prepared; ask Suwi again with a later month.`);
     const r = await upsertSalaryStructure(byUserId, userId, { salaryTemplateCode: templateCode, annualCtcPaise, effectiveFrom, status: 'active' });
-    return { message: `${name} is on ${templateName} at ${rupees(annualCtcPaise)} a year from ${effectiveFrom}; net before tax ${rupees(r.computed.netMonthlyPaise)} a month.` };
+    return { message: `${name} is on ${templateName} at ${rupees(annualCtcPaise)} a year from ${effectiveFrom}; net before tax ${rupees(r.computed?.netMonthlyPaise ?? 0)} a month.` };
   },
   async undo(p) {
     const { userId, name, byUserId, previous } = p.payload as { userId: string; name: string; byUserId: string; previous: (SalaryStructure & { _id?: unknown }) | null };
