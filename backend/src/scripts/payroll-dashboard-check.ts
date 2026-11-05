@@ -357,7 +357,12 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('with both, the salary goes live and computes', whole.structure.status === 'active' && whole.computed !== null && whole.computed.monthlyCtcPaise === R(50_000), whole.structure);
   const kept = await upsertSalaryStructure('hr', 'devi', { statutory: { lwf: false } });
   check('a statutory change on a live salary keeps it live', kept.structure.status === 'active' && kept.structure.statutory.lwf === false, kept.structure);
-  await salaryStructures().deleteMany({ org: ORG, userId: { $in: ['devi', 'chetan'] } });
+  const zeroed = await upsertSalaryStructure('hr', 'devi', { annualCtcPaise: 0 });
+  check('a live salary whose CTC is set to 0 becomes a draft, never a zero payslip', zeroed.structure.status === 'draft', zeroed.structure);
+  const withValues = await upsertSalaryStructure('hr', 'bala', { salaryTemplateCode: 'FLEX', componentValues: { FUEL: R(1500) }, status: 'active' });
+  const thenCtc = await upsertSalaryStructure('hr', 'bala', { annualCtcPaise: R(8_00_000), status: 'active' });
+  check('per-person amounts saved with the template survive the CTC coming later, and the salary goes live', withValues.structure.status === 'draft' && thenCtc.structure.status === 'active' && thenCtc.structure.componentValues.FUEL === R(1500), thenCtc.structure);
+  await salaryStructures().deleteMany({ org: ORG, userId: { $in: ['devi', 'chetan', 'bala'] } });
 
   await db.dropDatabase();
   console.log(failed === 0 ? `\nall ${passed} payroll dashboard checks passed` : `\n${failed} check(s) failed, ${passed} passed`);
