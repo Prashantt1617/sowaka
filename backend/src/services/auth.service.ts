@@ -291,7 +291,7 @@ async function toTeammates(rows: TeammateRow[]) {
  * anyone who has left.
  */
 async function companyForTagging(viewerUserId: string, org: string, limit: number) {
-  const rows = await teammateRows({ ...inOrgFilter(viewerUserId, org), isCounsellor: { $ne: true } });
+  const rows = await teammateRows({ ...inOrgFilter(viewerUserId, org), isCounsellor: { $ne: true }, hiddenFromDirectory: { $ne: true } });
   return { teammates: await toTeammates(rows.slice(0, limit)), total: rows.length };
 }
 

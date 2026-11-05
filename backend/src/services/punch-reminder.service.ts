@@ -128,7 +128,7 @@ export async function sendLatePunchInReminders(
   const people = await users()
     .find({
       lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
-      isCounsellor: { $ne: true },
+      isCounsellor: { $ne: true }, hiddenFromDirectory: { $ne: true },
       org: env.notifyOrgs.length ? { $in: env.notifyOrgs } : { $exists: true },
     })
     .project<Person>({ _id: 0, userId: 1, employeeId: 1, org: 1, state: 1, location: 1, branch: 1 })

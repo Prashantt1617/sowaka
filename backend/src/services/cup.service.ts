@@ -424,7 +424,7 @@ export async function rosterOf(event: Pick<CupEvent, 'org' | 'gameKey' | 'exclud
       {
         org: event.org,
         lifecycleStatus: { $nin: INACTIVE },
-        isCounsellor: { $ne: true },
+        isCounsellor: { $ne: true }, hiddenFromDirectory: { $ne: true },
         userId: event.includeUserIds.length ? { $in: event.includeUserIds, $nin: event.excludeUserIds } : { $nin: event.excludeUserIds },
       },
       { projection: { _id: 0, userId: 1, name: 1 } },

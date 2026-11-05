@@ -24,13 +24,14 @@ export async function orgUsers(
 }
 
 /** The filter `orgUsers` scopes by; null when the caller has no user record. */
-async function orgFilterFor(adminUserId: string): Promise<{ org?: string } | null> {
+async function orgFilterFor(adminUserId: string): Promise<{ org?: string; hiddenFromDirectory?: { $ne: true } } | null> {
   // The signed-in caller's org is already known from this request's auth
   // check; reading their record again would add a round trip to every list.
   const caller = requestUserFor(adminUserId);
   const admin = caller ?? (await users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1 } }));
   if (!admin) return null;
-  return admin.org ? { org: admin.org } : {};
+  // A service account (hiddenFromDirectory) is nobody's colleague: not on any list the roster feeds.
+  return admin.org ? { org: admin.org, hiddenFromDirectory: { $ne: true } } : { hiddenFromDirectory: { $ne: true } };
 }
 
 /**

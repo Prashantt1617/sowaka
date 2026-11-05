@@ -123,6 +123,7 @@ export interface ChallengeCandidate {
   email?: string;
   lifecycleStatus?: string;
   isCounsellor?: boolean;
+  hiddenFromDirectory?: boolean;
 }
 
 /** A person's company: their org, or for an old record the domain of their email. */
@@ -138,7 +139,7 @@ export function mayChallenge(viewer: ChallengeCandidate, opponent: ChallengeCand
   if (!opponent || orgOf(opponent) !== orgOf(viewer)) return no(404, 'That colleague could not be found');
   if (opponent.userId === viewer.userId) return no(400, "You can't challenge yourself");
   if (INACTIVE.has(opponent.lifecycleStatus ?? '')) return no(404, 'That colleague could not be found');
-  if (opponent.isCounsellor === true) return no(404, 'That colleague could not be found');
+  if (opponent.isCounsellor === true || opponent.hiddenFromDirectory === true) return no(404, 'That colleague could not be found');
   return ok;
 }
 
