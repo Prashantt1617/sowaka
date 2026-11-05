@@ -64,8 +64,8 @@ export async function getSalaryStructure(adminUserId: string, userId: string) {
   ]);
   const doc = settled(docR);
   if (!doc) throw new SalaryStructureError(404, 'No salary structure for this employee');
-  // Saved piece by piece: a structure without a template yet has nothing to compute.
-  if (!doc.salaryTemplateCode) return { structure: viewOf(doc, undefined, await payrollAccessOf(adminUserId)), computed: null, components: [] };
+  // Saved piece by piece: a structure without a template yet has nothing to compute (the person is still checked).
+  if (!doc.salaryTemplateCode) { settled(employeeR); settled(catalogR); return { structure: viewOf(doc, undefined, await payrollAccessOf(adminUserId)), computed: null, components: [] }; }
   const { computed, components, template } = await compute(org, userId, doc, settled(employeeR), settled(catalogR));
   return { structure: viewOf(doc, template.name, await payrollAccessOf(adminUserId)), computed, components };
 }
@@ -108,16 +108,17 @@ export async function upsertSalaryStructure(
     revisions,
     statutory: draft.statutory ? sealIds(draft.statutory, existing?.statutory) : existing?.statutory,
     bonusCategory: draft.bonusCategory ?? existing?.bonusCategory,
-    status: draft.status ?? existing?.status ?? 'draft',
+    status: existing?.status ?? 'draft',
     effectiveFrom: existing?.effectiveFrom,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
 
-  // Each part saves on its own (the template, the CTC, the statutory details); the salary goes live only whole.
-  if (merged.status === 'active' && (!merged.salaryTemplateCode || !(merged.annualCtcPaise > 0))) {
-    throw new SalaryStructureError(400, 'Pick a salary template and enter the annual CTC before the salary goes live');
-  }
+  // Each part saves on its own (the template, the CTC, the statutory details). Asked to go live, the salary does so
+  // only whole: with a template and a CTC; otherwise what was given is kept as a draft. A save that says nothing
+  // about status leaves it as it was.
+  if (draft.status === 'active') merged.status = merged.salaryTemplateCode && merged.annualCtcPaise > 0 ? 'active' : 'draft';
+  else if (draft.status === 'draft') merged.status = 'draft';
   if (!merged.salaryTemplateCode) {
     await salaryStructures().updateOne({ org, userId }, { $set: merged }, { upsert: true });
     return { structure: viewOf(merged, undefined, await payrollAccessOf(adminUserId)), computed: null, components: [] };

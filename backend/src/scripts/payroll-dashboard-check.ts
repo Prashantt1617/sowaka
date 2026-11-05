@@ -345,14 +345,18 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('and reads back the same way', (await getSalaryStructure('hr', 'devi')).computed === null);
   const idsOnly = await upsertSalaryStructure('hr', 'devi', { statutory: { epf: false } });
   check('the statutory details save on their own, the CTC kept', idsOnly.structure.statutory.epf === false && idsOnly.structure.annualCtcPaise === R(6_00_000), idsOnly.structure);
-  const noTpl = await refusal(() => upsertSalaryStructure('hr', 'devi', { status: 'active' }));
-  check('going live without a template is refused', noTpl?.status === 400 && /template/.test(noTpl.message ?? ''), noTpl);
+  const noTpl = await upsertSalaryStructure('hr', 'devi', { status: 'active' });
+  check('asked to go live without a template, it stays a draft', noTpl.structure.status === 'draft' && noTpl.computed === null, noTpl.structure);
   const tplOnly = await upsertSalaryStructure('hr', 'chetan', { salaryTemplateCode: 'FLEX' });
   check('the template saves without a CTC: a draft, the breakup on zero', tplOnly.structure.status === 'draft' && tplOnly.computed !== null && tplOnly.structure.annualCtcPaise === 0, tplOnly.structure);
-  const noCtc = await refusal(() => upsertSalaryStructure('hr', 'chetan', { status: 'active' }));
-  check('going live without a CTC is refused', noCtc?.status === 400 && /CTC/.test(noCtc.message ?? ''), noCtc);
+  const noCtc = await upsertSalaryStructure('hr', 'chetan', { status: 'active' });
+  check('asked to go live without a CTC, it stays a draft', noCtc.structure.status === 'draft', noCtc.structure);
+  const toggled = await upsertSalaryStructure('hr', 'chetan', { statutory: { esi: false } });
+  check('a statutory change on a draft keeps it a draft and keeps the template', toggled.structure.status === 'draft' && toggled.structure.salaryTemplateCode === 'FLEX' && toggled.structure.statutory.esi === false, toggled.structure);
   const whole = await upsertSalaryStructure('hr', 'devi', { salaryTemplateCode: 'FLEX', status: 'active' });
   check('with both, the salary goes live and computes', whole.structure.status === 'active' && whole.computed !== null && whole.computed.monthlyCtcPaise === R(50_000), whole.structure);
+  const kept = await upsertSalaryStructure('hr', 'devi', { statutory: { lwf: false } });
+  check('a statutory change on a live salary keeps it live', kept.structure.status === 'active' && kept.structure.statutory.lwf === false, kept.structure);
   await salaryStructures().deleteMany({ org: ORG, userId: { $in: ['devi', 'chetan'] } });
 
   await db.dropDatabase();

@@ -18,6 +18,12 @@ import { defineTools, monthOf, num, rupees, str, SuwiContext } from '../tools';
 import { defineExecutor, propose } from '../proposals';
 import { niceDate } from './team';
 
+/** A salary saved live always computes; anything else is a bug, not ₹0. */
+function netOf(r: { computed: { netMonthlyPaise: number } | null }): number {
+  if (!r.computed) throw new Error('The salary was saved but not computed');
+  return r.computed.netMonthlyPaise;
+}
+
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 export const monthName = (period: string) => `${MONTHS[Number(period.slice(5, 7)) - 1]} ${period.slice(0, 4)}`;
 export const nextPeriod = (period: string) => {
@@ -343,7 +349,7 @@ defineExecutor('assign_salary_template', {
     const run = await payrollRuns().findOne({ org: p.org, period: effectiveFrom.slice(0, 7) }, { projection: { status: 1 } });
     if (run?.status === 'paid') throw new Error(`${monthName(effectiveFrom.slice(0, 7))}'s payroll was submitted since this was prepared; ask Suwi again with a later month.`);
     const r = await upsertSalaryStructure(byUserId, userId, { salaryTemplateCode: templateCode, annualCtcPaise, effectiveFrom, status: 'active' });
-    return { message: `${name} is on ${templateName} at ${rupees(annualCtcPaise)} a year from ${effectiveFrom}; net before tax ${rupees(r.computed?.netMonthlyPaise ?? 0)} a month.` };
+    return { message: `${name} is on ${templateName} at ${rupees(annualCtcPaise)} a year from ${effectiveFrom}; net before tax ${rupees(netOf(r))} a month.` };
   },
   async undo(p) {
     const { userId, name, byUserId, previous } = p.payload as { userId: string; name: string; byUserId: string; previous: (SalaryStructure & { _id?: unknown }) | null };

@@ -231,11 +231,11 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
 
   return (
     <div>
-      {!computed ? (
-        <AssignCard templates={templates} phByCode={phByCode} saving={saving} initialCtcPaise={structure.annualCtcPaise} onSave={(input, done) => void patch(input, done)} />
+      {!computed || !(structure.annualCtcPaise > 0) ? (
+        <AssignCard templates={templates} phByCode={phByCode} saving={saving} initialCtcPaise={structure.annualCtcPaise} initialCode={structure.salaryTemplateCode} onSave={(input, done) => void patch(input, done)} />
       ) : (
       <section className="pd-card" style={{ marginBottom: 20 }}>
-        <h3 style={secTitle}>Salary Details</h3>
+        <h3 style={secTitle}>Salary Details{structure.status === 'draft' && <span style={{ ...tag, marginLeft: 10 }}>Draft: not in payroll runs</span>}</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 44, flexWrap: 'wrap' }}>
           <div><div style={labelSm}>Annual CTC</div><div style={valueLg}>₹{rupees(structure.annualCtcPaise)} <span style={unit}>per year</span></div></div>
           <div><div style={labelSm}>Monthly CTC</div><div style={valueLg}>₹{rupees(monthlyCtc)} <span style={unit}>per month</span></div></div>
@@ -348,12 +348,12 @@ export function EmployeeSalary({ userId, name }: { userId: string; name: string 
               )}
               <tr>
                 <td style={td}><div style={{ fontWeight: 400 }}>ESI Contribution</div></td>
-                <td style={td}>{settings?.esi.enabled === false ? 'Off for the company' : person.esi === false ? 'Disabled for this person' : computed?.statutory.esi.applicable ? '0.75% of gross (gross is ₹21,000 or less)' : 'Not applicable: gross is above ₹21,000'}</td>
+                <td style={td}>{settings?.esi.enabled === false ? 'Off for the company' : person.esi === false ? 'Disabled for this person' : !computed ? 'Worked out once the salary has a template' : computed.statutory.esi.applicable ? '0.75% of gross (gross is ₹21,000 or less)' : 'Not applicable: gross is above ₹21,000'}</td>
                 <td style={{ ...td, textAlign: 'right' }}>{settings?.esi.enabled !== false && <Switch on={person.esi !== false} disabled={saving} onToggle={() => void patch({ statutory: { ...person, esi: person.esi === false } }, person.esi === false ? 'ESI enabled' : 'ESI disabled')} />}</td>
               </tr>
               <tr>
                 <td style={td}><div style={{ fontWeight: 400 }}>Labour Welfare Fund</div></td>
-                <td style={td}>{person.lwf === false ? 'Disabled for this person' : computed?.statutory.lwf.applicable ? `₹${rupees(computed.statutory.lwf.employeePaise)} this month` : 'Not applicable in the work state this month'}</td>
+                <td style={td}>{person.lwf === false ? 'Disabled for this person' : !computed ? 'Worked out once the salary has a template' : computed.statutory.lwf.applicable ? `₹${rupees(computed.statutory.lwf.employeePaise)} this month` : 'Not applicable in the work state this month'}</td>
                 <td style={{ ...td, textAlign: 'right' }}><Switch on={person.lwf !== false} disabled={saving} onToggle={() => void patch({ statutory: { ...person, lwf: person.lwf === false } }, person.lwf === false ? 'LWF enabled' : 'LWF disabled')} /></td>
               </tr>
               {settings?.bonus.enabled && (
@@ -473,19 +473,19 @@ function cleanValues(values: Record<string, string>): Record<string, number> {
 }
 
 /** The template and the annual CTC, each saved on its own; the salary goes live once it has both. Shown until a template is picked. */
-function AssignCard({ templates, phByCode, saving, onSave, initialCtcPaise }: { templates: SalaryTemplateDTO[]; phByCode: Map<string, PayHeadDTO>; saving: boolean; onSave: (input: SalaryStructureInput, done: string) => void; initialCtcPaise?: number }) {
-  const [code, setCode] = useState('');
+function AssignCard({ templates, phByCode, saving, onSave, initialCtcPaise, initialCode }: { templates: SalaryTemplateDTO[]; phByCode: Map<string, PayHeadDTO>; saving: boolean; onSave: (input: SalaryStructureInput, done: string) => void; initialCtcPaise?: number; initialCode?: string }) {
+  const [code, setCode] = useState(initialCode ?? '');
   const [ctc, setCtc] = useState(initialCtcPaise ? String(initialCtcPaise / 100) : '');
+  const [values, setValues] = useState<Record<string, string>>({});
   const ctcPaise = Number(ctc) > 0 ? rupeesToPaise(ctc) : 0;
-  const ctcChanged = ctcPaise > 0 && ctcPaise !== (initialCtcPaise ?? 0);
-  const canSave = !!code || ctcChanged;
+  const changed = (code && code !== (initialCode ?? '')) || (ctcPaise > 0 && ctcPaise !== (initialCtcPaise ?? 0));
+  // Whatever is filled is saved; the server makes the salary live once it has both a template and a CTC, else keeps a draft.
   const save = () => onSave({
     ...(code ? { salaryTemplateCode: code, componentValues: cleanValues(values) } : {}),
-    ...(ctcChanged || (code && ctcPaise > 0) ? { annualCtcPaise: ctcPaise } : {}),
-    status: code && ctcPaise > 0 ? 'active' : 'draft',
+    ...(ctcPaise > 0 ? { annualCtcPaise: ctcPaise } : {}),
+    status: 'active',
     effectiveFrom: today(),
   }, code && ctcPaise > 0 ? 'Salary assigned' : code ? 'Template saved; add the CTC to make the salary live' : 'CTC saved; pick a template to make the salary live');
-  const [values, setValues] = useState<Record<string, string>>({});
   const tpl = templates.find((t) => t.code === code);
   const perPerson = tpl ? perPersonCodes(tpl.components, tpl.balancingComponentCode, phByCode) : [];
   return (
@@ -500,7 +500,7 @@ function AssignCard({ templates, phByCode, saving, onSave, initialCtcPaise }: { 
           </select>
         </div>
         <div><div style={fieldLabel}>Annual CTC</div><CtcInput value={ctc} onChange={setCtc} /></div>
-        <button disabled={saving || !canSave} onClick={save} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
+        <button disabled={saving || !changed} onClick={save} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
       </div>
       {perPerson.length > 0 && (
         <div style={{ marginTop: 18 }}>
