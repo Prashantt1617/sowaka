@@ -464,7 +464,8 @@ export const previewSalaryTemplate = (input: SalaryTemplateInput & { sampleAnnua
 export const listSalaryStructures = () =>
   api<{ structures: StructureListRow[] }>('/admin/payroll/salary-structures').then((r) => r.structures);
 
-export type StructureResponse = { structure: SalaryStructureDTO; computed: ComputedStructure; components: StructureComponent[] };
+/** `computed` is null while the structure has no salary template yet (it was saved piece by piece). */
+export type StructureResponse = { structure: SalaryStructureDTO; computed: ComputedStructure | null; components: StructureComponent[] };
 
 /** How attendance becomes paid days, per person; one Default per company. */
 export type PaidDaysTemplateDTO = {

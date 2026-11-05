@@ -64,6 +64,8 @@ export async function getSalaryStructure(adminUserId: string, userId: string) {
   ]);
   const doc = settled(docR);
   if (!doc) throw new SalaryStructureError(404, 'No salary structure for this employee');
+  // Saved piece by piece: a structure without a template yet has nothing to compute.
+  if (!doc.salaryTemplateCode) return { structure: viewOf(doc, undefined, await payrollAccessOf(adminUserId)), computed: null, components: [] };
   const { computed, components, template } = await compute(org, userId, doc, settled(employeeR), settled(catalogR));
   return { structure: viewOf(doc, template.name, await payrollAccessOf(adminUserId)), computed, components };
 }
@@ -112,6 +114,14 @@ export async function upsertSalaryStructure(
     updatedAt: now,
   };
 
+  // Each part saves on its own (the template, the CTC, the statutory details); the salary goes live only whole.
+  if (merged.status === 'active' && (!merged.salaryTemplateCode || !(merged.annualCtcPaise > 0))) {
+    throw new SalaryStructureError(400, 'Pick a salary template and enter the annual CTC before the salary goes live');
+  }
+  if (!merged.salaryTemplateCode) {
+    await salaryStructures().updateOne({ org, userId }, { $set: merged }, { upsert: true });
+    return { structure: viewOf(merged, undefined, await payrollAccessOf(adminUserId)), computed: null, components: [] };
+  }
   // Compute first: a template or override that doesn't resolve must not be saved.
   const { computed, components, template } = await compute(org, userId, merged, employee, catalog);
   // A standard component added for this person becomes this org's pay head.

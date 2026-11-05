@@ -20,6 +20,7 @@ import {
   statutoryConfigs,
 } from '../config/db';
 import { env } from '../config/env';
+import { getSalaryStructure, upsertSalaryStructure } from '../services/salaryStructure.service';
 import { requirePayrollApp } from '../controllers/employeePayroll.controller';
 import { tabsForRequest } from '../models/dashboard-tabs';
 import { PayHead } from '../models/payHead.model';
@@ -337,6 +338,22 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('home: no missing-punches to-do for a locked month', lHome.appEnabled === true && !lHome.todo.some((t) => t.kind === 'missing_punches'), lHome.appEnabled && lHome.todo);
   await payrollRuns().updateOne({ period: '2026-10' }, { $set: { status: 'draft' } });
   check('a draft run does not lock it', (await myMissingPunches('asha', '2026-10', oct20)).count === a.count);
+
+  // —— a salary saved piece by piece: the CTC, the template and the statutory details each on their own ——
+  const ctcOnly = await upsertSalaryStructure('hr', 'devi', { annualCtcPaise: R(6_00_000) });
+  check('the CTC saves without a template: a draft with nothing computed', ctcOnly.structure.status === 'draft' && ctcOnly.computed === null && ctcOnly.structure.annualCtcPaise === R(6_00_000), ctcOnly.structure);
+  check('and reads back the same way', (await getSalaryStructure('hr', 'devi')).computed === null);
+  const idsOnly = await upsertSalaryStructure('hr', 'devi', { statutory: { epf: false } });
+  check('the statutory details save on their own, the CTC kept', idsOnly.structure.statutory.epf === false && idsOnly.structure.annualCtcPaise === R(6_00_000), idsOnly.structure);
+  const noTpl = await refusal(() => upsertSalaryStructure('hr', 'devi', { status: 'active' }));
+  check('going live without a template is refused', noTpl?.status === 400 && /template/.test(noTpl.message ?? ''), noTpl);
+  const tplOnly = await upsertSalaryStructure('hr', 'chetan', { salaryTemplateCode: 'FLEX' });
+  check('the template saves without a CTC: a draft, the breakup on zero', tplOnly.structure.status === 'draft' && tplOnly.computed !== null && tplOnly.structure.annualCtcPaise === 0, tplOnly.structure);
+  const noCtc = await refusal(() => upsertSalaryStructure('hr', 'chetan', { status: 'active' }));
+  check('going live without a CTC is refused', noCtc?.status === 400 && /CTC/.test(noCtc.message ?? ''), noCtc);
+  const whole = await upsertSalaryStructure('hr', 'devi', { salaryTemplateCode: 'FLEX', status: 'active' });
+  check('with both, the salary goes live and computes', whole.structure.status === 'active' && whole.computed !== null && whole.computed.monthlyCtcPaise === R(50_000), whole.structure);
+  await salaryStructures().deleteMany({ org: ORG, userId: { $in: ['devi', 'chetan'] } });
 
   await db.dropDatabase();
   console.log(failed === 0 ? `\nall ${passed} payroll dashboard checks passed` : `\n${failed} check(s) failed, ${passed} passed`);
