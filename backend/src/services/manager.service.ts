@@ -231,6 +231,7 @@ export async function getFeedbackSnapshot(
           managerUserId,
           org: viewer.org ?? '',
           lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
+          hiddenFromDirectory: { $ne: true },
         },
         { projection: { _id: 0, userId: 1 } },
       )
@@ -352,6 +353,7 @@ export async function getManagerWorkspace(
     orgRoster.filter(
       (user) =>
         user.managerUserId === managerUserId &&
+        !user.hiddenFromDirectory &&
         !['offboarded', 'terminated'].includes(user.lifecycleStatus ?? ''),
     ),
     [['name', 1], ['userId', 1]],
@@ -363,7 +365,7 @@ export async function getManagerWorkspace(
   // manager's reports can span several of them, and a designer has no reason
   // to see the whole of engineering under the same head.
   const active = (user: User) =>
-    !['offboarded', 'terminated'].includes(user.lifecycleStatus ?? '');
+    !user.hiddenFromDirectory && !['offboarded', 'terminated'].includes(user.lifecycleStatus ?? '');
   const sameDepartment = (user: User) =>
     (user.department ?? '') === (manager.department ?? '');
 
@@ -642,6 +644,7 @@ export async function getManagerWorkspace(
         (user) =>
           user.managerUserId === report.userId &&
           user.userId !== report.userId &&
+          !user.hiddenFromDirectory &&
           !['offboarded', 'terminated'].includes(user.lifecycleStatus ?? ''),
       ).length,
       designation: report.designation ?? '',
@@ -757,6 +760,7 @@ export async function getManagerWorkspace(
         (user) =>
           user.managerUserId === report.userId &&
           user.userId !== report.userId &&
+          !user.hiddenFromDirectory &&
           !['offboarded', 'terminated'].includes(user.lifecycleStatus ?? ''),
       ),
     )

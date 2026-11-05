@@ -310,7 +310,7 @@ export async function listColleagues(viewer: ChallengeViewer, rawQuery: unknown,
   const base: Filter<User> = {
     userId: { $ne: viewer.userId },
     lifecycleStatus: { $nin: INACTIVE as User['lifecycleStatus'][] },
-    isCounsellor: { $ne: true },
+    isCounsellor: { $ne: true }, hiddenFromDirectory: { $ne: true },
     $or: [{ org }, { org: { $exists: false }, email: { $regex: `@${escapeRegex(org)}$`, $options: 'i' } }],
   };
   const projection = { _id: 0, userId: 1, name: 1, designation: 1, department: 1, profilePhotoKey: 1 } as const;
@@ -350,7 +350,7 @@ export async function createChallenge(viewer: ChallengeViewer, body: { gameKey?:
     requireChallengeGame(viewer, gameKey),
     users().findOne(
       { userId: opponentUserId },
-      { projection: { _id: 0, userId: 1, name: 1, org: 1, email: 1, lifecycleStatus: 1, isCounsellor: 1 } },
+      { projection: { _id: 0, userId: 1, name: 1, org: 1, email: 1, lifecycleStatus: 1, isCounsellor: 1, hiddenFromDirectory: 1 } },
     ),
   ]);
   const allowed = mayChallenge(viewer, opponent);

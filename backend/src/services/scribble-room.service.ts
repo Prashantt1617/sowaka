@@ -459,7 +459,7 @@ async function findColleague(org: string, userId: string): Promise<Pick<User, 'u
   const filter: Filter<User> = {
     userId,
     lifecycleStatus: { $nin: INACTIVE },
-    isCounsellor: { $ne: true },
+    isCounsellor: { $ne: true }, hiddenFromDirectory: { $ne: true },
     $or: [{ org }, { org: { $exists: false }, email: { $regex: `@${escaped}$`, $options: 'i' } }],
   };
   return users().findOne(filter, { projection: { _id: 0, userId: 1, name: 1, profilePhotoKey: 1, profilePhotoUrl: 1 } });

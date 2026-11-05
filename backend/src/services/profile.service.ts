@@ -28,7 +28,7 @@ export async function rosterFor(viewer: User, extraFields: Partial<Record<keyof 
   if (!viewer.org) return [viewer];
   return users()
     .find(
-      { org: viewer.org, lifecycleStatus: { $nin: inactive }, isCounsellor: { $ne: true } },
+      { org: viewer.org, lifecycleStatus: { $nin: inactive }, isCounsellor: { $ne: true }, hiddenFromDirectory: { $ne: true } },
       { projection: { _id: 0, userId: 1, name: 1, points: 1, org: 1, ...extraFields } },
     )
     .toArray();
@@ -214,7 +214,7 @@ export async function getPersonProfile(viewerUserId: string, personUserId: strin
     .toArray();
   const byId = new Map(roster.map((user) => [user.userId, user]));
   const person = byId.get(personUserId);
-  if (!person || inactive.includes(person.lifecycleStatus) || person.isCounsellor) {
+  if (!person || inactive.includes(person.lifecycleStatus) || person.isCounsellor || person.hiddenFromDirectory) {
     throw notFound;
   }
   // Today's punches, matched as the team view matches them: by userId for app
@@ -359,7 +359,7 @@ export async function getPersonTeam(
 
   const roster = await users()
     .find(
-      { org: viewer.org, lifecycleStatus: { $nin: inactive }, isCounsellor: { $ne: true } },
+      { org: viewer.org, lifecycleStatus: { $nin: inactive }, isCounsellor: { $ne: true }, hiddenFromDirectory: { $ne: true } },
       {
         projection: {
           _id: 0,

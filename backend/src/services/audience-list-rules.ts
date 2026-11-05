@@ -213,7 +213,7 @@ export function checkMemberIds(value: unknown, ownerUserId: string): Checked<str
 export function colleagueFilter(org: string): Record<string, unknown> {
   return {
     lifecycleStatus: { $nin: ['offboarded', 'terminated'] },
-    isCounsellor: { $ne: true },
+    isCounsellor: { $ne: true }, hiddenFromDirectory: { $ne: true },
     $or: [{ org }, { org: { $exists: false }, email: { $regex: `@${escapeRegex(org)}$` } }],
   };
 }

@@ -142,6 +142,13 @@ export interface User {
    * script until then.
    */
   isCounsellor?: boolean;
+  /**
+   * A service account (a support or admin login), not a colleague: left out of
+   * the Employees list, the org chart and every colleague list in the app, in
+   * the dashboard's attendance and payroll rosters too. Still on Accesses, so
+   * its dashboard access can be managed.
+   */
+  hiddenFromDirectory?: boolean;
   counsellor?: CounsellorProfile;
   /**
    * Help: the four answers given on the first open, and the counsellor they
