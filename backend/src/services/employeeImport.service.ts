@@ -531,7 +531,9 @@ async function applyExtras(adminUserId: string, userId: string, set: Partial<Rec
   const failed: string[] = [];
   if (set.salaryTemplate || set.annualCtc) {
     try {
-      await upsertSalaryStructure(adminUserId, userId, { ...(set.salaryTemplate ? { salaryTemplateCode: set.salaryTemplate } : {}), ...(set.annualCtc ? { annualCtcPaise: Number(set.annualCtc) } : {}), status: 'active', effectiveFrom: new Date().toISOString().slice(0, 10) });
+      const saved = await upsertSalaryStructure(adminUserId, userId, { ...(set.salaryTemplate ? { salaryTemplateCode: set.salaryTemplate } : {}), ...(set.annualCtc ? { annualCtcPaise: Number(set.annualCtc) } : {}), status: 'active', effectiveFrom: new Date().toISOString().slice(0, 10) });
+      // Saved whole it goes live; with only a template or only a CTC it is kept as a draft, which the sheet's owner must hear about.
+      if (saved.structure.status !== 'active') failed.push('Salary: saved as a draft, not in payroll runs yet: it needs both a salary template and an annual CTC');
     } catch (e) { failed.push(`Salary: ${(e as Error).message}`); }
   }
   if (set.paidDaysTemplate) {
