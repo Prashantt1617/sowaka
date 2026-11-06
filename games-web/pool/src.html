@@ -675,7 +675,7 @@ function onRoomState(room){
   LIVE.own=null; LIVE.seq=seq; applyRoom(room); }
 function applyRoom(room){ const prev=LIVE.room; LIVE.room=room; if(room.serverNow)LIVE.offset=room.serverNow-Date.now();
   LIVE.invites=LIVE.invites.filter(i=>i.code!==room.code);
-  if(room.status==='lobby'){ LIVE.againSent=false; LIVE.resultKey=''; if(G.online||G.mode!=='menu'){ G.online=false; G.motion=null; G.shooting=false; G.replaying=false; G.mode='menu'; G.result=null; G.balls=rack(); $('#sheetHost').innerHTML=''; $('#leaveBtn').hidden=true; renderHud(); } renderWaiting(); return; }
+  if(room.status==='lobby'){ LIVE.againSent=false; LIVE.resultKey=''; const lk=`lobby:${room.gameNo}:${room.message||''}`; if(room.message&&lk!==LIVE.msgKey){ LIVE.msgKey=lk; show(room.message,/abandon|away|left/i.test(room.message)); } if(G.online||G.mode!=='menu'){ G.online=false; G.motion=null; G.shooting=false; G.replaying=false; G.mode='menu'; G.result=null; G.balls=rack(); $('#sheetHost').innerHTML=''; $('#leaveBtn').hidden=true; renderHud(); } renderWaiting(); return; }
   const fresh=!G.online||screen!=='play'||!prev||prev.code!==room.code||prev.gameNo!==room.gameNo||prev.status==='lobby';
   if(fresh)enterOnline(room); else syncTable(room); }
 function enterOnline(room){ Object.assign(G,{online:true,hotseat:false,practice:false,mode:'play',result:null,fouls:[0,0],started:Date.now(),shotAnim:null,motion:null,shooting:false,replaying:false,aim:0,power:0,spin:{top:0,side:0},calledPocket:null,lastFoul:null});
@@ -753,7 +753,7 @@ function renderWaiting(){ const r=LIVE.room; if(!r)return; screen='waiting'; G.m
   const me=r.you, host=r.hostId===me, hostP=r.players.find(p=>p.userId===r.hostId)||r.players[0]||{name:'A colleague'}, ready=r.players.filter(p=>p.online!==false).length;
   const seat=p=>p?`<div class="seat">${face(p,'lg'+(p.online===false?' off':''))}<b>${p.userId===me?'You':esc(first(p.name))}</b><span>${p.userId===r.hostId?'Host':p.online===false?'Away':'Ready'}</span></div>`
     :`<div class="seat empty"><div class="face lg">?</div><b>Open seat</b><span>${(r.invited||[]).length?`${esc(first(r.invited[0].name))} invited`:host?'Invite a colleague or share the code':'Waiting for someone'}</span></div>`;
-  const wins=r.wins&&(r.wins[0]||r.wins[1])?` Games so far ${r.wins[0]|0} – ${r.wins[1]|0}.`:'';
+  const wins=r.wins&&(r.wins[0]||r.wins[1])?` Games so far ${r.wins[0]|0} – ${r.wins[1]|0}${r.players.length<2?' · your colleague left':''}.`:'';
   pane(`<div class="ptop"><button class="chip" data-act="leave" aria-label="Leave the table">‹</button><div class="ttl"><b>${host?'Your table':esc(first(hostP.name))+"'s table"}</b><span>${r.open?'Listed in open tables':'Private · code and invites only'}</span></div>${offlinePill()}<span class="pill ${r.open?'on':''}">${r.open?'Open':'Private'}</span></div>
     <div class="card2" style="text-align:center"><p style="margin:0">Table code</p><div class="bigcode">${esc(r.code)}</div><p>${host?'Share the code or invite a colleague, then start.':`Waiting for ${esc(first(hostP.name))} to start.`}${wins}</p>
       <div class="seats">${seat(r.players[0])}${seat(r.players[1])}</div>
