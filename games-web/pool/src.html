@@ -1,0 +1,944 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sowaka Pool</title>
+<!--POOL-TICKET-->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="icon" href="data:,">
+<script>if(window.SowakaShare||window.Sowaka)document.documentElement.classList.add('app')</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Figtree:wght@400;600;700&display=swap">
+<style>
+/* Sowaka Pool: a dark, felt-and-brass table. Layout: the table fills the screen between a slim header, the two player cards
+   and a control strip; the power bar rides the right edge, the spin control the left. One look only (an arcade screen).
+   The live rooms (play a colleague) add a pane over the table for the lobby and the waiting room, in the same look. */
+:root{color-scheme:dark;
+  --bg:#0b1612;--panel:#132a20;--panel2:#1a3528;--line:rgba(255,255,255,.1);
+  --felt:#1f7a52;--felt2:#145c3c;--rail:#4a2714;--rail2:#2d170b;--brass:#e5b850;--brass2:#b8893a;
+  --ink:#f3efe4;--muted:#a8b9ae;--red:#d64b3b;--blue:#3f8bff;--ok:#5bd18a;
+  --display:'Sora',system-ui,sans-serif;--body:'Figtree',system-ui,sans-serif;
+  --padt:max(12px,env(safe-area-inset-top,0px));--padb:env(safe-area-inset-bottom,0px)}
+html.app{--padt:10px}
+html.hop body{visibility:hidden}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:15px/1.35 var(--body);overflow:hidden;overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+button:disabled{opacity:.5;cursor:default}
+input{-webkit-user-select:text;user-select:text}
+#app{height:100%;display:flex;flex-direction:column;padding:var(--padt) max(10px,env(safe-area-inset-right,0px)) calc(8px + var(--padb)) max(10px,env(safe-area-inset-left,0px))}
+.top{display:flex;align-items:center;gap:8px;height:40px;flex:none}
+.top h1{margin:0;font:800 15px/1 var(--display);letter-spacing:.04em;background:var(--brass);color:#2a1a02;padding:7px 10px;border-radius:9px;transform:rotate(-2deg)}
+.chip{width:34px;height:34px;border-radius:50%;background:var(--panel);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;flex:none}
+.spacer{flex:1}
+/* the GAMES logo as on the Games tab */
+.swg-slot{flex:1 1 0;min-width:0;align-self:stretch;display:flex;align-items:center;justify-content:flex-end;padding:0 2px;overflow:hidden;container-type:inline-size}
+.swg{--swg-h:22px;--u:calc(var(--swg-h) / 28.577);display:flex;align-items:center;flex:none;pointer-events:none}
+@supports (width:1cqw){.swg-slot .swg{--swg-h:clamp(16px,calc(100cqw / 5),24px)}}
+@container (max-width:79px){.swg{display:none}}
+.swg-logo{height:calc(28*var(--u));padding:0 calc(10*var(--u)) 0 calc(6*var(--u));border-radius:calc(8*var(--u));background:#B23500;display:flex;align-items:center;color:#fff;font:800 calc(13*var(--u))/1 var(--display);letter-spacing:.02em}
+.swg-box{width:calc(70.214*var(--u));height:calc(28.577*var(--u));margin-left:calc(-8*var(--u));display:flex;align-items:center;justify-content:center;flex:none}
+.swg-games{height:calc(25*var(--u));padding:0 calc(10*var(--u));border-radius:calc(7*var(--u));background:#FFCC2E;box-shadow:0 calc(2*var(--u)) 0 #160D2C;transform:rotate(-3deg);display:flex;align-items:center;font:800 calc(13*var(--u))/1 var(--display);color:#160D2C;white-space:nowrap}
+/* play area */
+#stage{position:relative;flex:1;min-height:0;margin-top:6px}
+canvas#table{position:absolute;inset:0;width:100%;height:100%;display:block}
+.hud{position:absolute;left:0;right:0;top:0;display:flex;gap:8px;padding:0 2px;pointer-events:none}
+.pcard{flex:1;min-width:0;background:rgba(10,22,16,.86);border:1px solid var(--line);border-radius:14px;padding:7px 9px;display:flex;align-items:center;gap:8px;transition:box-shadow .3s}
+@media (orientation:landscape){.pcard{padding:4px 9px}.pcard .av{width:30px;height:30px}.pcard .av svg{inset:-3px;width:36px;height:36px}}
+.pcard.on{box-shadow:0 0 0 2px var(--brass),0 6px 18px rgba(0,0,0,.4)}
+.pcard .av{width:34px;height:34px;border-radius:50%;background:var(--panel2) center/cover no-repeat;display:flex;align-items:center;justify-content:center;font:800 13px var(--display);position:relative;flex:none}
+.pcard .av svg{position:absolute;inset:-4px;width:42px;height:42px;transform:rotate(-90deg)}
+.pcard.away .av{opacity:.5}
+.pcard .who{min-width:0;flex:1}
+.pcard .nm{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pcard .grp{display:flex;gap:3px;margin-top:4px;min-height:12px;flex-wrap:wrap}
+.pcard .grp i{width:11px;height:11px;border-radius:50%;display:block;border:1px solid rgba(0,0,0,.4)}
+.pcard .grp i.s{background:linear-gradient(#fff 0 25%,var(--c) 25% 75%,#fff 75%)}
+.pcard .grp i.done{opacity:.2}
+.pcard .lbl{font-size:10.5px;color:var(--muted);margin-top:3px}
+.msg{position:absolute;left:50%;top:84px;transform:translateX(-50%);background:rgba(229,184,80,.96);color:#2a1a02;font-weight:800;font-size:13px;padding:7px 14px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.4);pointer-events:none;max-width:84%;text-align:center;opacity:0;transition:opacity .2s;z-index:5}
+.msg.show{opacity:1}
+.msg.bad{background:#f0d7d2;color:#5a1409}
+/* feed lines from a live table ("Priya potted the 3") */
+.toasts{position:absolute;left:50%;bottom:calc(70px + var(--padb));transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none;z-index:28;width:max-content;max-width:72%}
+.toast{background:rgba(10,18,14,.95);border:1px solid var(--line);padding:8px 13px;border-radius:12px;font-size:13px;box-shadow:0 8px 30px rgba(0,0,0,.4);transition:opacity .25s;max-width:100%;text-align:center}
+/* power bar, right edge */
+.power{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:40px;height:min(58%,340px);border-radius:999px;background:rgba(10,22,16,.86);border:1px solid var(--line);padding:5px;touch-action:none}
+.power .track{position:relative;height:100%;border-radius:999px;background:linear-gradient(180deg,#fff 0%,#f1cf5c 40%,#e86a43 72%,#c62f2b 100%);opacity:.22}
+.power .fill{position:absolute;left:5px;right:5px;top:5px;border-radius:999px;background:linear-gradient(180deg,#fff 0%,#f1cf5c 40%,#e86a43 72%,#c62f2b 100%);height:0;transition:none}
+.power .knob{position:absolute;left:3px;right:3px;height:30px;border-radius:999px;background:var(--brass);box-shadow:0 2px 8px rgba(0,0,0,.5);top:5px;display:flex;align-items:center;justify-content:center;font:800 10px var(--display);color:#2a1a02;letter-spacing:.06em}
+.power.armed .knob{background:#fff}
+.power .hint{position:absolute;left:50%;bottom:-20px;transform:translateX(-50%);font-size:10px;color:var(--muted);white-space:nowrap}
+/* spin control, left edge */
+.spin{position:absolute;left:4px;bottom:12px;width:58px;height:58px;border-radius:50%;background:radial-gradient(circle at 38% 34%,#fff 0 55%,#cfcfcf 56% 100%);box-shadow:inset 0 -4px 10px rgba(0,0,0,.25),0 6px 16px rgba(0,0,0,.45);border:2px solid rgba(229,184,80,.7);touch-action:none}
+.spin .dot{position:absolute;width:12px;height:12px;border-radius:50%;background:var(--red);border:2px solid #fff;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none}
+.spin .cap{position:absolute;left:50%;bottom:-18px;transform:translateX(-50%);font-size:10px;color:var(--muted);white-space:nowrap}
+.fine{position:absolute;left:70px;bottom:18px;display:flex;gap:6px}
+.fine button{width:38px;height:38px;border-radius:50%;background:rgba(10,22,16,.86);border:1px solid var(--line);font-size:16px;font-weight:800}
+.clock{position:absolute;right:52px;bottom:16px;font:800 13px var(--display);color:var(--muted);background:rgba(10,22,16,.86);border:1px solid var(--line);border-radius:999px;padding:6px 10px}
+.clock.low{color:#ffb4a8}
+.wait{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);font-size:12px;color:var(--muted);background:rgba(10,22,16,.86);border:1px solid var(--line);border-radius:999px;padding:6px 12px;white-space:nowrap;max-width:60%;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+/* sheets and menu */
+.sheet{position:absolute;inset:0;background:rgba(5,12,9,.78);display:flex;align-items:flex-end;justify-content:center;z-index:30}
+.sheet .box{width:100%;max-width:520px;background:var(--panel);border:1px solid var(--line);border-radius:22px 22px 0 0;padding:16px 16px calc(16px + var(--padb));max-height:88%;overflow:auto;touch-action:pan-y}
+.sheet h2{margin:0 0 6px;font:800 20px/1.1 var(--display)}
+.sheet p{margin:6px 0 12px;color:var(--muted);font-size:13.5px}
+.sheet input.q{width:100%;min-height:44px;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,.25);color:var(--ink);font:600 15px var(--body);padding:0 12px;outline:none;margin-bottom:8px}
+.sheet input.q:focus{border-color:var(--brass)}
+.sheet .list{max-height:42vh;overflow:auto;touch-action:pan-y}
+.btn{display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:14px;font-weight:800;font-size:15px;background:var(--panel2);border:1px solid var(--line);width:100%}
+.btn.primary{background:var(--brass);color:#2a1a02;border-color:transparent}
+.btn+.btn{margin-top:8px}
+.seg{display:flex;gap:4px;background:rgba(0,0,0,.25);padding:4px;border-radius:12px;margin:8px 0 12px}
+.seg button{flex:1;min-height:38px;border-radius:9px;font-weight:800;font-size:13px;color:var(--muted)}
+.seg button.on{background:var(--ink);color:#0b1612}
+.menu{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-end;padding:14px;background:linear-gradient(180deg,rgba(11,22,18,0) 0%,rgba(11,22,18,.92) 42%);z-index:20;overflow:auto;touch-action:pan-y}
+.menu .card{background:rgba(19,42,32,.96);border:1px solid var(--line);border-radius:20px;padding:16px;width:100%;max-width:520px;margin:0 auto;flex:none}
+.menu .best{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.menu .best b{font:800 26px/1 var(--display)}
+.menu .best span{display:block;font-size:12px;color:var(--muted)}
+.menu .title{font:800 30px/1 var(--display);letter-spacing:-.01em;margin:0 0 4px}
+.menu .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
+@media (max-height:460px){.menu{padding:8px}.menu .card{padding:10px 12px}.menu .title{font-size:22px}.menu .sub{margin-bottom:8px}.menu .best{margin-bottom:6px}.menu .best b{font-size:20px}.btn{min-height:40px;font-size:14px}.btn+.btn{margin-top:6px}.seg{margin:6px 0 8px}.seg button{min-height:32px}}
+.result .score{font:800 44px/1 var(--display);margin:4px 0}
+.stars{font-size:22px;letter-spacing:4px;margin-bottom:6px}
+.board{list-style:none;margin:0;padding:0}
+.board li{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.board li.me{color:var(--brass)}
+.board li b{width:28px;color:var(--muted);font-weight:700}
+.board li span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.howto ol{padding-left:18px;margin:0 0 12px;color:var(--ink);font-size:14px}
+.howto li{margin:6px 0}
+/* the live rooms: a pane over the table for the lobby and the waiting room */
+.pane{position:absolute;inset:0;z-index:25;background:rgba(11,22,18,.97);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 2px calc(14px + var(--padb));touch-action:pan-y}
+.pane .inner{max-width:560px;margin:0 auto}
+.ptop{display:flex;align-items:center;gap:10px;margin:4px 0 12px}
+.ptop .ttl{flex:1;min-width:0}
+.ptop .ttl b{display:block;font:800 18px/1.1 var(--display);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ptop .ttl span{display:block;font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{font-size:11px;font-weight:800;padding:5px 9px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);white-space:nowrap;flex:none}
+.pill.on{background:rgba(91,209,138,.18);color:var(--ok);border-color:rgba(91,209,138,.4)}
+.pill.off{background:rgba(214,75,59,.18);color:#ffb4a8;border-color:rgba(214,75,59,.4)}
+.card2{background:rgba(19,42,32,.96);border:1px solid var(--line);border-radius:20px;padding:14px;margin-bottom:12px}
+.card2 h3{margin:0 0 8px;font:800 15px var(--display)}
+.card2 p{margin:4px 0 10px;color:var(--muted);font-size:13px}
+.card2 p:last-child{margin-bottom:0}
+.row2{display:flex;gap:8px}
+.row2 .btn{flex:1;margin:0;min-width:0}
+.codebox{display:flex;gap:8px;margin-top:10px}
+.codebox input{flex:1;min-width:0;min-height:46px;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,.25);color:var(--ink);font:700 16px var(--body);padding:0 12px;letter-spacing:.08em;outline:none}
+.codebox input:focus{border-color:var(--brass)}
+.codebox .btn{width:auto;padding:0 18px;margin:0;flex:none}
+.rowi{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.rowi:last-child{border-bottom:0}
+.rowi .who{flex:1;min-width:0}
+.rowi .who b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rowi .who span{display:block;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rowi .btn{width:auto;min-height:38px;padding:0 14px;font-size:13px;margin:0;flex:none}
+.face{width:38px;height:38px;border-radius:50%;background:var(--panel2) center/cover no-repeat;display:flex;align-items:center;justify-content:center;font:800 13px var(--display);color:#dfeee5;flex:none;border:1px solid var(--line)}
+.face.lg{width:64px;height:64px;font-size:20px}
+.face.off{opacity:.45}
+.stack{display:flex;flex:none}
+.stack .face{margin-left:-8px;box-shadow:0 0 0 2px var(--panel)}
+.stack .face:first-child{margin-left:0}
+.bigcode{font:800 46px/1 var(--display);letter-spacing:.12em;text-align:center;margin:6px 0 4px;color:var(--brass)}
+.seats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.seat{background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:16px;padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;min-height:132px;justify-content:center;min-width:0}
+.seat b{font-size:14px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seat span{font-size:12px;color:var(--muted)}
+.seat.empty{border-style:dashed}
+.invite{display:flex;align-items:center;gap:10px;background:rgba(229,184,80,.12);border:1px solid rgba(229,184,80,.4);border-radius:16px;padding:10px 12px;margin-bottom:10px}
+.invite .who{flex:1;min-width:0}
+.invite .who b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.invite .who span{display:block;font-size:12px;color:var(--muted)}
+.invite .btn{width:auto;min-height:38px;padding:0 14px;font-size:13px;margin:0;flex:none}
+.empty{color:var(--muted);font-size:13px;text-align:center;padding:12px 0}
+.linkbtn{display:block;margin:10px auto 0;color:var(--brass);font-weight:700;font-size:13px}
+.hint{font-size:12px;color:var(--muted);text-align:center;margin-top:6px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<main id="app">
+  <header class="top">
+    <button class="chip" id="leaveBtn" aria-label="Leave the table" hidden>‹</button>
+    <h1>SOWAKA POOL</h1>
+    <div class="swg-slot"><span class="swg" role="img" aria-label="Sowaka Games"><span class="swg-logo">sowaka</span><span class="swg-box"><span class="swg-games">GAMES</span></span></span></div>
+    <button class="chip" id="howtoBtn" aria-label="How to play">?</button>
+    <button class="chip" id="soundBtn" aria-label="Sound">🔊</button>
+  </header>
+  <section id="stage">
+    <canvas id="table"></canvas>
+    <div class="hud" id="hud"></div>
+    <div class="msg" id="msg"></div>
+    <div class="power" id="power" hidden><div class="track"></div><div class="fill" id="pfill"></div><div class="knob" id="pknob">PULL</div><div class="hint">pull · release</div></div>
+    <div class="spin" id="spin" hidden><div class="dot" id="spindot"></div><div class="cap">spin</div></div>
+    <div class="fine" id="fine" hidden><button id="fineL" aria-label="Aim a little left">‹</button><button id="fineR" aria-label="Aim a little right">›</button></div>
+    <div class="clock" id="clock" hidden>30</div>
+    <div class="wait" id="wait" hidden></div>
+    <div class="toasts" id="toasts"></div>
+    <div class="menu" id="menu"></div>
+    <div class="pane" id="pane" hidden></div>
+    <div id="sheetHost"></div>
+  </section>
+</main>
+<!--SOCKET-IO-->
+<!--POOL-ENGINE-->
+<script>
+/* LIVE: Sowaka Pool against the real server, Tile Up's live bootstrap for the /pool namespace.
+   The server puts a signed ticket in the page it sends (window.__POOL = {ticket, hopTicket}: a socket ticket and a short token for the
+   reload below; the reloaded copy carries ticket alone). This script opens a socket.io connection with it on the /pool namespace and gives
+   the game the room API (window.Sowaka.room.* out, window.onSowakaRoom(evt) in). Without a ticket (a plain browser, the artifact) it does
+   nothing: the single-player modes work as they are, and "Play a colleague" says it needs the Sowaka app.
+   The app loads a catalog page with connect-src 'none', so a page that finds that policy first reloads itself once, in the same WebView,
+   at the same address plus ?ticket=<hopTicket>; the server serves that copy with a policy that allows its own socket. */
+(function(){
+const T=window.__POOL;
+window.__poolLive={state:'none'};
+const L=window.__poolLive;
+if(!T||typeof T!=='object'||!T.ticket||typeof window.io!=='function')return;
+L.state='starting';
+const deliver=evt=>{ try{ if(window.onSowakaRoom)window.onSowakaRoom(evt); }catch(e){ console.error('Sowaka Pool event failed',e); } };
+const errOf=(status,message,code)=>Object.assign(new Error(message||'Something went wrong. Try again.'),{status:status|0,code:code||null});
+const CLOSE_AND_REOPEN='Close and reopen Sowaka Pool to keep playing.';
+let fatal=null, sock=null;
+const waiters=[];
+function die(message,code){ if(fatal)return; fatal={message:String(message||CLOSE_AND_REOPEN),code:code||'fatal'}; L.state='dead'; L.fatal=fatal;
+  try{ if(sock){ sock.io.reconnection(false); sock.disconnect(); } }catch(e){}
+  waiters.splice(0).forEach(w=>w.reject(errOf(0,fatal.message,fatal.code)));
+  deliver({type:'fatal',message:fatal.message,code:fatal.code}); }
+
+/* ---------- the policy hop ---------- */
+function blockedByPolicy(){ for(const m of document.querySelectorAll('meta[http-equiv]')){ if(String(m.httpEquiv).toLowerCase()!=='content-security-policy')continue;
+    const c=String(m.content||''), d=c.split(';').map(s=>s.trim()).find(s=>/^connect-src\s/i.test(s))||c.split(';').map(s=>s.trim()).find(s=>/^default-src\s/i.test(s));
+    if(d&&/'none'/.test(d))return true; } return false; }
+if(blockedByPolicy()){
+  const here=location.protocol==='https:'||location.protocol==='http:';
+  if(/[?&]ticket=/.test(location.search)||!here){ L.state='dead'; fatal={message:'Sowaka Pool could not reach the game server. '+CLOSE_AND_REOPEN,code:'blocked'}; L.fatal=fatal; return; }
+  L.state='hopping'; L.hopping=true; document.documentElement.classList.add('hop');
+  /* The URL carries the short hop token, never the socket ticket. */
+  location.replace(location.origin+location.pathname+'?ticket='+encodeURIComponent(T.hopTicket||T.ticket)); return; }
+
+/* ---------- the socket ---------- */
+const origin=String(T.origin||location.origin).replace(/\/+$/,'');
+sock=window.io(origin+'/pool',{path:T.path||'/connect/socket',auth:{ticket:String(T.ticket)},transports:['websocket','polling'],tryAllTransports:true,
+  reconnection:true,reconnectionDelay:800,reconnectionDelayMax:5000,randomizationFactor:.3,timeout:10000});
+L.socket=sock;
+let room=null, everConnected=false, offline=false;
+/* A call made while the socket is still connecting waits for it (up to 8 s) rather than failing at once. */
+function ready(){ if(fatal)return Promise.reject(errOf(0,fatal.message,fatal.code)); if(sock.connected)return Promise.resolve();
+  return new Promise((resolve,reject)=>{ const w={resolve,reject}; waiters.push(w);
+    setTimeout(()=>{ const i=waiters.indexOf(w); if(i>=0){ waiters.splice(i,1); reject(errOf(0,'Not connected. Try again in a moment.')); } },8000); }); }
+/* A request: an ack of {ok:true, data} or {ok:false, status, message}. */
+function request(event,payload){ return ready().then(()=>new Promise((resolve,reject)=>{
+  sock.timeout(8000).emit(event,payload||{},(err,res)=>{
+    if(err)return reject(errOf(0,'No answer from the server. Try again.'));
+    if(!res||typeof res!=='object')return reject(errOf(0,'Something went wrong. Try again.'));
+    if(res.ok===false)return reject(errOf(res.status,res.message,res.code));
+    resolve(res.data===undefined?{}:res.data); }); })); }
+/* A server view: {room} from a push, or the view itself from a call. */
+const viewOf=p=>p&&typeof p==='object'?('room' in p?(p.room||null):(p.code?p:null)):null;
+
+sock.on('connect',()=>{ L.state='online'; waiters.splice(0).forEach(w=>w.resolve());
+  const again=everConnected; everConnected=true;
+  if(offline){ offline=false; deliver({type:'connection',online:true}); }
+  /* Back after a drop: ask for the room again, in case the server's own push on connect is lost or late. */
+  if(again&&room&&room.code){ const code=room.code;
+    request('room:join',{code,rejoin:true}).then(d=>{ const r=viewOf(d); if(r){ room=r; deliver({type:'state',room:r}); } })
+      .catch(e=>{ if(e.status===403){ room=null; deliver({type:'kicked',by:null}); } else if(e.status===404){ room=null; deliver({type:'state',room:null}); } }); } });
+sock.on('disconnect',reason=>{ if(fatal)return; L.state='offline';
+  if(reason==='io server disconnect'||reason==='io client disconnect'){ if(reason==='io server disconnect')die('The game server closed this connection. '+CLOSE_AND_REOPEN,'closed'); return; }
+  if(!offline){ offline=true; deliver({type:'connection',online:false}); } });
+sock.on('connect_error',err=>{ const code=String((err&&err.data&&err.data.code)||(err&&err.message)||'');
+  if(/ticket|auth|forbidden|unauthori[sz]ed|not_allowed|offboard/i.test(code)){
+    const expired=/expired/i.test(code);
+    die((expired?'This Sowaka Pool session has expired. ':'Sowaka Pool could not sign you in. ')+CLOSE_AND_REOPEN,expired?'ticket_expired':'ticket_invalid'); return; }
+  if(!offline){ offline=true; deliver({type:'connection',online:false}); } });
+sock.on('room:state',p=>{ room=viewOf(p); deliver({type:'state',room}); });
+sock.on('room:feed',p=>{ const item=p&&p.item&&typeof p.item==='object'?p.item:p; if(item&&typeof item==='object')deliver({type:'feed',item}); });
+sock.on('room:kicked',p=>{ room=null; deliver({type:'kicked',by:(p&&p.by)||null}); });
+/* A live invite, and the invites still waiting when the socket connects (one, a list, or {invites}). */
+const invited=p=>{ const list=Array.isArray(p)?p:p&&Array.isArray(p.invites)?p.invites:[p];
+  list.forEach(x=>{ if(x&&typeof x==='object'&&x.code)deliver({type:'invite',from:x.from||{},code:String(x.code),expiresAt:+x.expiresAt||null}); }); };
+sock.on('room:invite',invited); sock.on('room:invited',invited);
+sock.on('room:ticket',p=>{ if(p&&typeof p.ticket==='string'&&p.ticket)sock.auth.ticket=p.ticket; });
+sock.on('room:fatal',p=>die((p&&p.message)||CLOSE_AND_REOPEN,(p&&p.code)||'fatal'));
+
+/* ---------- the room API the page calls ---------- */
+const keep=d=>{ const r=viewOf(d); if(r)room=r; return r; };
+const num=v=>{ const n=Number(v); return Number.isFinite(n)?n:0; };
+const api={
+  hello:()=>request('room:hello',{}).then(d=>{ if(d&&d.room)room=viewOf(d.room)||room; return d||{}; }),
+  host:open=>request('room:host',{open:open!==false}).then(keep),
+  join:code=>request('room:join',{code:String(code||'').trim()}).then(keep),
+  quick:()=>request('room:quick',{}).then(keep),
+  leave:()=>{ const was=room; room=null; return request('room:leave',{}).catch(e=>{ if(!was)return {}; throw e; }); },
+  invite:userId=>request('room:invite',{userId:String(userId)}),
+  start:()=>request('room:start',{}),
+  again:()=>request('room:again',{}),
+  place:(x,y)=>request('pool:place',{x:num(x),y:num(y)}),
+  call:pocket=>request('pool:call',{pocket:pocket|0}),
+  shot:s=>request('pool:shot',{aim:num(s&&s.aim),power:num(s&&s.power),spin:{top:num(s&&s.spin&&s.spin.top),side:num(s&&s.spin&&s.spin.side)}}),
+};
+const S=window.Sowaka=window.Sowaka||{};
+S.room=api; S.live=true;
+const code=v=>{ const m=/^(?:room:)?([1-9]\d{3})$/i.exec(String(v||'').trim()); return m?m[1]:null; };
+L.code=code;
+/* The room an invite opened the game on: the app hands it over as startChallengeId ("room:4821"), whenever its bridge arrives. */
+let startOwn=T.room&&code(T.room)?code(T.room):null;
+try{ Object.defineProperty(S,'startRoomCode',{configurable:true,enumerable:true,get(){ return startOwn||code(S.startChallengeId); },set(v){ startOwn=code(v); }}); }
+catch(e){ S.startRoomCode=startOwn; }
+})();
+</script>
+<script>
+(()=>{
+'use strict';
+/* ============================== basics ============================== */
+const E=window.PoolEngine;
+if(!E||typeof E.simulateShot!=='function')throw new Error('Sowaka Pool: the shared engine is missing. Build the page with games-web/pool/build.py');
+const $=s=>document.querySelector(s);
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const bridge=()=>(window.Sowaka&&window.Sowaka.native)?window.Sowaka:null;
+const uid=()=>(bridge()&&bridge().userId)||'local';
+const LS=k=>`pool.v1.${k}.${uid()}`;
+const load=(k,d)=>{ try{ const v=localStorage.getItem(LS(k)); return v==null?d:JSON.parse(v); }catch(e){ return d; } };
+const save=(k,v)=>{ try{ localStorage.setItem(LS(k),JSON.stringify(v)); }catch(e){} };
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const first=n=>String(n||'You').trim().split(/\s+/)[0];
+const initials=n=>String(n||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
+let touched=false; document.addEventListener('pointerdown',()=>{ touched=true; },{capture:true,passive:true});
+const buzz=k=>{ const b=bridge(); if(b&&b.haptic)b.haptic(k); else if(navigator.vibrate&&touched)try{ navigator.vibrate(k==='heavy'?40:k==='medium'?20:8); }catch(e){} };
+/* ============================== sound ============================== */
+let audio=null, master=null, soundOn=load('sound',true);
+function ctx(){ try{ audio=audio||new (window.AudioContext||window.webkitAudioContext)(); if(audio.state==='suspended')audio.resume().catch(()=>{}); if(!master){ master=audio.createGain(); master.gain.value=.5; master.connect(audio.destination); } return audio; }catch(e){ return null; } }
+let noiseBuf=null;
+function tone(f,d,o={}){ if(!soundOn)return; const a=ctx(); if(!a)return; const t=a.currentTime+(o.at||0), osc=a.createOscillator(), g=a.createGain(); osc.type=o.type||'sine'; osc.frequency.setValueAtTime(f,t); if(o.to)osc.frequency.exponentialRampToValueAtTime(o.to,t+d); g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(o.gain||.1,t+(o.attack||.004)); g.gain.exponentialRampToValueAtTime(.0001,t+d); osc.connect(g).connect(master); osc.start(t); osc.stop(t+d+.02); }
+function hiss(d,o={}){ if(!soundOn)return; const a=ctx(); if(!a)return; if(!noiseBuf){ noiseBuf=a.createBuffer(1,a.sampleRate*.4|0,a.sampleRate); const x=noiseBuf.getChannelData(0); for(let i=0;i<x.length;i++)x[i]=Math.random()*2-1; }
+  const t=a.currentTime+(o.at||0), s=a.createBufferSource(), f=a.createBiquadFilter(), g=a.createGain(); s.buffer=noiseBuf; f.type='bandpass'; f.Q.value=o.q||1; f.frequency.setValueAtTime(o.freq||2000,t); if(o.to)f.frequency.exponentialRampToValueAtTime(o.to,t+d); g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(o.gain||.1,t+(o.attack||.003)); g.gain.exponentialRampToValueAtTime(.0001,t+d); s.connect(f).connect(g).connect(master); s.start(t); s.stop(t+d+.02); }
+const SFX={
+  strike:p=>{ hiss(.04,{gain:.25*p+.05,freq:1800,to:600,q:.7}); tone(140,.08,{gain:.18*p+.04,to:70}); },
+  click:v=>{ const g=clamp(v*.25,.03,.3); tone(2600+Math.random()*600,.03,{gain:g,type:'triangle'}); hiss(.015,{gain:g*.6,freq:5000,q:1.5,attack:.001}); },
+  cushion:v=>{ tone(120,.07,{gain:clamp(v*.12,.02,.14),to:60}); hiss(.03,{gain:.05,freq:700,q:1}); },
+  pocket:()=>{ tone(520,.12,{gain:.12,to:180,type:'triangle'}); hiss(.16,{gain:.09,freq:900,to:300,q:.8,at:.03}); tone(90,.18,{gain:.12,at:.06,to:50}); },
+  win:()=>[523,659,784,1047,1319].forEach((f,i)=>tone(f,.4,{type:'triangle',gain:.09,at:.12+i*.09})),
+  lose:()=>[392,330,262].forEach((f,i)=>tone(f,.4,{type:'triangle',gain:.07,at:i*.18})),
+  foul:()=>{ tone(220,.2,{type:'square',gain:.05}); tone(180,.25,{type:'square',gain:.05,at:.18}); },
+  tick:()=>tone(1200,.04,{gain:.05,type:'triangle'}),
+  pop:()=>tone(440,.08,{gain:.08,to:880}),
+};
+['pointerdown','touchend','keydown'].forEach(ev=>document.addEventListener(ev,()=>{ if(soundOn)ctx(); },{capture:true,passive:true}));
+/* ============================== table model (the shared engine's) ============================== */
+const L=E.L, Wd=E.W, R=E.R, CORNER=E.CORNER, SIDE=E.SIDE, MOUTH=E.MOUTH, POCKETS=E.POCKETS, FOOT=E.FOOT, HEAD_X=E.HEAD_X, VMAX=E.VMAX, DT=E.DT, MAX_STEPS=E.MAX_STEPS;
+const isStripe=E.isStripe, groupOf=E.groupOf;
+const SKINS={ felt:{green:{a:'#2a8d5f',b:'#15593a',name:'Classic green',need:0},blue:{a:'#2f6fb5',b:'#163d6b',name:'Tournament blue',need:1},red:{a:'#b63a3a',b:'#6b1b1b',name:'Club red',need:3},plum:{a:'#7a3fa8',b:'#3f1f5c',name:'Night plum',need:5},gold:{a:'#b58d2a',b:'#5e4410',name:'Sowaka gold',need:8}},
+  cue:{classic:{tip:'#e9d3a7',shaft:'#c89a5b',butt:'#3a2414',name:'Maple',need:0},ebony:{tip:'#e9d3a7',shaft:'#2a2a2a',butt:'#0d0d0d',name:'Ebony',need:2},crimson:{tip:'#f1dbb0',shaft:'#d14b3b',butt:'#4a1410',name:'Crimson',need:4},neon:{tip:'#ffffff',shaft:'#3f8bff',butt:'#101a3a',name:'Neon',need:6},gold:{tip:'#fff4d6',shaft:'#e5b850',butt:'#5e4410',name:'Gold',need:10}} };
+const COLORS={1:'#f6c530',2:'#2a63d6',3:'#d6392f',4:'#7a3fb8',5:'#f07a1f',6:'#1f8f5a',7:'#8d2f22',8:'#141414',9:'#f6c530',10:'#2a63d6',11:'#d6392f',12:'#7a3fb8',13:'#f07a1f',14:'#1f8f5a',15:'#8d2f22'};
+/* The page's balls are the engine's (n, x, y, vx, vy, on) plus what the drawing needs: the roll (rx, ry, ra) and the drop into a pocket (sink, px, py). */
+function dress(balls){ return balls.map(b=>({n:b.n,x:+b.x,y:+b.y,vx:0,vy:0,on:b.on!==false,sink:0,px:0,py:0,rx:Math.random()*6.28,ry:(Math.random()-.5)*1.2,ra:0})); }
+function rack(){ return dress(E.rack()); }
+/* The engine's table into the page's, ball by ball; a ball that comes back (a respotted 8, the cue ball after a scratch) lands without a drop. */
+function adopt(balls){ for(const s of balls){ const b=G.balls.find(x=>x.n===s.n); if(!b){ G.balls.push(dress([s])[0]); continue; } const on=s.on!==false; if(on&&!b.on){ b.sink=0; } if(!on&&b.on){ b.sink=0; } b.on=on; b.x=+s.x; b.y=+s.y; b.vx=0; b.vy=0; } }
+const plain=balls=>balls.map(b=>({n:b.n,x:b.x,y:b.y,vx:0,vy:0,on:b.on!==false}));
+function moving(balls){ return balls.some(b=>b.on&&(b.vx!==0||b.vy!==0)); }
+const remainingOf=(balls,group)=>balls.filter(b=>b.on&&groupOf(b.n)===group).length;
+/* the guideline: where the cue ball first meets a ball or a cushion along a direction */
+function trace(balls,cue,dx,dy){ let best=null; for(const b of balls){ if(!b.on||b.n===0)continue; const ox=b.x-cue.x, oy=b.y-cue.y; const t=ox*dx+oy*dy; if(t<=0)continue; const px=cue.x+dx*t, py=cue.y+dy*t; const dist=Math.hypot(b.x-px,b.y-py); if(dist>=2*R)continue; const back=Math.sqrt(4*R*R-dist*dist); const tt=t-back; if(tt>0&&(!best||tt<best.t))best={t:tt,ball:b}; }
+  const ts=[]; if(dx<0)ts.push((R-cue.x)/dx); if(dx>0)ts.push((L-R-cue.x)/dx); if(dy<0)ts.push((R-cue.y)/dy); if(dy>0)ts.push((Wd-R-cue.y)/dy);
+  const tc=Math.min(...ts.filter(t=>t>0));
+  if(best&&best.t<tc){ const gx=cue.x+dx*best.t, gy=cue.y+dy*best.t; const nx=(best.ball.x-gx)/(2*R), ny=(best.ball.y-gy)/(2*R); return {t:best.t,x:gx,y:gy,ball:best.ball,nx,ny}; }
+  return {t:tc,x:cue.x+dx*tc,y:cue.y+dy*tc,ball:null};
+}
+function pathClear(balls,ax,ay,bx,by,ignore,margin){ const dx=bx-ax, dy=by-ay, len=Math.hypot(dx,dy); if(len===0)return true; const ux=dx/len, uy=dy/len; const need=2*R+(margin||-0.002); for(const b of balls){ if(!b.on||ignore.includes(b.n))continue; const t=clamp((b.x-ax)*ux+(b.y-ay)*uy,0,len); const px=ax+ux*t, py=ay+uy*t; if(Math.hypot(b.x-px,b.y-py)<need)return false; } return true; }
+/* ============================== game state ============================== */
+const G={ mode:'menu', balls:[], players:[], turn:0, open:true, inHand:false, kitchen:false, breakShot:true, shooting:false, spin:{top:0,side:0}, aim:Math.PI, power:0, calledPocket:null,
+  motion:null, clock:30, clockAt:0, clockEnds:null, fouls:[0,0], potted:[0,0], score:0, started:0, result:null, diff:'medium', practice:false, hotseat:false, online:false, me:0, replaying:false,
+  shotAnim:null, hint:true, skin:{felt:'green',cue:'classic'}, wins:0, lastFoul:null, aiTarget:null, lastFirstHit:null, lastSettle:0 };
+let screen='menu'; // menu | lobby | waiting | play
+function ownGroup(i){ return G.players[i].group; }
+function remaining(group){ return remainingOf(G.balls,group); }
+function onEight(i){ const g=ownGroup(i); return !!g&&remaining(g)===0; }
+/* Whose shot it is on this phone: the house and a colleague on another phone are not ours to play. */
+function localTurn(){ return G.mode==='play'&&(G.online?G.turn===G.me:!G.players[G.turn].house); }
+function canAct(){ return localTurn()&&!G.shooting&&!G.replaying&&!G.motion; }
+function newGame(opts){ Object.assign(G,{balls:rack(),turn:0,open:true,inHand:false,kitchen:false,breakShot:true,shooting:false,motion:null,spin:{top:0,side:0},calledPocket:null,fouls:[0,0],potted:[0,0],score:0,started:Date.now(),result:null,shotAnim:null,practice:!!opts.practice,diff:opts.diff||G.diff,online:false,me:0,replaying:false,clockEnds:null,lastFoul:null,aiTarget:null});
+  G.hotseat=!!opts.hotseat;
+  const me={name:first(bridge()?bridge().playerName():'You'),group:null,house:false,photo:null,online:true};
+  const other=opts.hotseat?{name:'Player 2',group:null,house:false,photo:null,online:true}:{name:opts.practice?'Practice':({easy:'Rookie',medium:'Sharp',pro:'Hustler'}[G.diff]),group:null,house:!opts.practice,photo:null,online:true};
+  G.players=[me,other]; G.mode='play'; screen='play'; G.aim=0; G.power=0; spinDot(); pane(null); $('#leaveBtn').hidden=true; startClock(); layout(); renderHud(); show(opts.practice?'Practice: clear the table':opts.hotseat?`${me.name} breaks. Pass the phone after each turn`:'You break. Pull the power bar and let go'); }
+function startClock(){ G.clock=30; G.clockAt=performance.now(); }
+/* ============================== the shot: the engine moves the balls ==============================
+   A shot is simulated whole by the shared engine (the same code the server runs), then shown by stepping the same engine with the same
+   fixed step, one frame's worth at a time; at rest the table is set to the simulation's own end positions (or, for a colleague's shot,
+   to the positions the server sent), so the page never drifts from the referee. */
+let acc=0;
+function launch(shot,opts){
+  opts=opts||{};
+  const cue=G.balls.find(b=>b.n===0); if(!cue||!cue.on)return null;
+  for(const b of G.balls){ b.vx=0; b.vy=0; }
+  const res=opts.result||E.simulateShot(plain(G.balls),shot);
+  const power=clamp(Number(shot.power)||0,0,1), dx=Math.cos(shot.aim), dy=Math.sin(shot.aim), v=VMAX*(0.18+0.82*power);
+  cue.vx=dx*v; cue.vy=dy*v;
+  G.motion={spin:{top:clamp(Number(shot.spin&&shot.spin.top)||0,-1,1),side:clamp(Number(shot.spin&&shot.spin.side)||0,-1,1),dirx:dx,diry:dy,used:false},res,snap:opts.snap||res.balls,steps:0,onDone:opts.onDone||null,firstHit:null,who:opts.who||null};
+  G.shooting=true; G.inHand=false; acc=0;
+  G.shotAnim={at:performance.now(),power,x:cue.x,y:cue.y,aim:shot.aim}; SFX.strike(power); buzz('medium');
+  renderHud();
+  return res; }
+/* One frame of motion: the engine's fixed steps, the sounds for what happened, the roll and the drops for the drawing. */
+function advance(dt){ const m=G.motion; if(!m)return;
+  acc+=dt; const ev=[]; let done=false;
+  while(acc>=DT){ acc-=DT; m.steps++; done=E.step(G.balls,m.spin,ev,DT); if(done||m.steps>=MAX_STEPS){ acc=0; done=true; break; } }
+  for(const b of G.balls){ if(!b.on)continue; const sp=Math.hypot(b.vx,b.vy); if(sp>0){ b.rx+=sp*dt/R; b.ra=Math.atan2(b.vy,b.vx); } }
+  for(const e of ev){
+    if(e.t==='hit'){ if(m.firstHit==null&&(e.a===0||e.b===0))m.firstHit=e.a===0?e.b:e.a; SFX.click(e.v); if(e.v>1.2)buzz('light'); }
+    else if(e.t==='cushion')SFX.cushion(e.v);
+    else if(e.t==='pocket'||e.t==='scratch'){ const b=G.balls.find(x=>x.n===(e.t==='scratch'?0:e.n)); const p=POCKETS[e.p]; if(b&&p){ b.sink=1; b.px=p.x; b.py=p.y; } SFX.pocket(); if(e.t==='pocket'){ buzz('medium'); if(m.who)toast(`${m.who} potted the ${e.n}`); } } }
+  if(done)settle(); }
+function settle(){ const m=G.motion; if(!m)return; let diff=0;
+  for(const s of m.snap){ const b=G.balls.find(x=>x.n===s.n); if(!b)continue; const on=s.on!==false;
+    if(b.on&&on)diff=Math.max(diff,Math.hypot(b.x-s.x,b.y-s.y)); else if(b.on!==on)diff=Math.max(diff,1);
+    if(b.on&&!on){ b.on=false; b.sink=0; } else if(!b.on&&on){ b.on=true; b.sink=0; }
+    b.x=+s.x; b.y=+s.y; b.vx=0; b.vy=0; }
+  G.lastSettle=diff; G.lastFirstHit=m.firstHit; G.motion=null; G.shooting=false; renderHud(); if(m.onDone)m.onDone(m.res); }
+function beginShot(power){ // the shooter on this phone: a local game simulates here, a live table sends the shot and shows what the server answers
+  const cue=G.balls.find(b=>b.n===0); if(!cue||!cue.on||G.shooting||G.motion)return;
+  const shot={aim:G.aim,power:clamp(power,0,1),spin:{top:G.spin.top,side:G.spin.side}};
+  G.spin={top:0,side:0}; spinDot(); $('#power').classList.remove('armed'); setPower(0);
+  if(G.online){ sendShot(shot); return; }
+  const shooter=G.turn, called=G.calledPocket;
+  launch(shot,{onDone:res=>resolveLocal(res,shooter,called)}); }
+/* ============================== rules (the engine's) for the games on this phone ============================== */
+function resolveLocal(res,shooter,called){
+  const i=shooter, opp=1-i, me=G.players[i], wasBreak=G.breakShot;
+  const st={balls:plain(G.balls),turn:i,groups:[G.players[0].group,G.players[1].group],open:G.open,inHand:false,kitchen:false,breakShot:wasBreak,calledPocket:called};
+  const out=E.resolve(st,res.balls,res.events);
+  let foul=out.foul, win=out.winner, keep=out.keepTurn;
+  const eightIn=!wasBreak&&res.events.some(e=>e.t==='pocket'&&e.n===8);
+  if(G.practice){ // practice: nobody to play against, no groups; the 8 waits for the rest of the table; a weak break is only a break
+    if(foul&&/^(Weak break|The 8 went in)/.test(foul))foul=null;
+    win=null;
+    if(eightIn){ const rest=out.next.balls.filter(b=>b.on&&b.n!==0&&b.n!==8).length; if(rest>0){ E.respot(out.next.balls,8); show('Clear the others before the 8'); } else if(!foul)win=0; else E.respot(out.next.balls,8); }
+    out.next.groups=[null,null]; out.next.open=true; keep=true; }
+  if(wasBreak&&res.events.some(e=>e.t==='pocket'&&e.n===8))show('The 8 went in on the break: it is back on its spot');
+  if(!G.practice&&G.open&&!out.next.open){ me.group=out.next.groups[i]; G.players[opp].group=out.next.groups[opp]; G.open=false; show(`${me.name} ${me.house?'takes':'take'} ${me.group==='solid'?'solids':'stripes'}`); }
+  G.potted[i]+=out.potted.filter(n=>G.practice||me.group==null||groupOf(n)===me.group).length;
+  G.lastFoul=foul;
+  if(foul){ G.fouls[i]++; SFX.foul(); buzz('heavy'); if(win==null)show(foul+(G.practice?'':`. ${G.players[opp].house?'The house has':G.hotseat?G.players[opp].name+' has':'You have'} ball in hand`),true); }
+  else if(out.potted.length)SFX.pop();
+  adopt(out.next.balls);
+  G.breakShot=false;
+  if(win!=null){ endGame(win); return; }
+  if(G.practice){ G.turn=0; G.inHand=!!foul; G.kitchen=false; }
+  else { G.turn=foul||!keep?opp:i; G.inHand=!!foul; G.kitchen=!!foul&&wasBreak; if(G.turn!==i&&!foul)show(`${G.players[G.turn].house||G.hotseat?G.players[G.turn].name+"'s":'Your'} turn`); }
+  G.calledPocket=null; startClock(); renderHud();
+  if(G.players[G.turn].house)setTimeout(houseTurn,900); }
+function endGame(winner){ const me=winner===0; G.result={win:me,winner}; G.mode='over'; const secs=(Date.now()-G.started)/1000; if(me&&!G.practice&&!G.hotseat){ G.wins=(load('wins',0)||0)+1; save('wins',G.wins); }
+  G.score=Math.max(0,G.potted[0]*100+(me?(G.practice?800:1000):0)-G.fouls[0]*50+(me?Math.max(0,Math.round((600-secs)/2)):0));
+  if(me||G.hotseat)SFX.win(); else SFX.lose(); buzz(me?'heavy':'medium'); renderHud(); setTimeout(()=>showResult(),900); if(!G.hotseat)Board.submit(G.score); }
+/* ============================== house player ============================== */
+const DIFF={easy:{err:0.016,blunder:.14,powErr:.2,think:1},medium:{err:0.005,blunder:.04,powErr:.1,think:2},pro:{err:0.0015,blunder:.01,powErr:.05,think:3}};
+/* The house's choice of shot (not in the engine): ctx is {balls, turn, groups, open, breakShot, kitchen, inHand, diff}.
+   Answers {place:{x,y}|null (ball in hand), aim, power, called (a pocket for the 8), target (the ball aimed at)}. */
+function planShot(ctx){
+  const d=DIFF[ctx.diff]||DIFF.medium, balls=plain(ctx.balls), cue=balls.find(b=>b.n===0), i=ctx.turn, mine=ctx.groups[i];
+  const eight=!!mine&&remainingOf(balls,mine)===0;
+  const legal=b=>b.on&&b.n!==0&&(ctx.open?b.n!==8:(eight?b.n===8:groupOf(b.n)===mine));
+  let place=null;
+  if(ctx.inHand){ place=placeForHouse(balls,legal,ctx.kitchen); cue.x=place.x; cue.y=place.y; cue.on=true; }
+  const targets=balls.filter(legal);
+  let best=null;
+  for(const b of targets)for(const p of POCKETS){ const px=p.x+(p.side?0:(p.x?-1:1)*0.012), py=p.y+(p.side?(p.y>0.5?-1:1)*0.012:(p.y?-1:1)*0.012);
+    const tx=px-b.x, ty=py-b.y, td=Math.hypot(tx,ty); if(td<0.05)continue; const ux=tx/td, uy=ty/td;
+    const gx=b.x-ux*2*R, gy=b.y-uy*2*R; const ax=gx-cue.x, ay=gy-cue.y, ad=Math.hypot(ax,ay); if(ad<0.001)continue;
+    const cut=(ax/ad)*ux+(ay/ad)*uy; if(cut<(p.side?0.5:(d.think>=3?0.22:0.35)))continue;
+    if(!pathClear(balls,cue.x,cue.y,gx,gy,[0,b.n],0.012))continue; if(!pathClear(balls,b.x,b.y,px,py,[0,b.n],0.006))continue;
+    // how the cue ball leaves: along the tangent; a line into a pocket is a scratch risk, a line to open cloth is good position
+    const sgn=Math.sign((ax/ad)*(-uy)+(ay/ad)*ux)||1; const lx=-uy*sgn, ly=ux*sgn;
+    let scratch=0; for(const q of POCKETS){ const qx=q.x-gx, qy=q.y-gy, qd=Math.hypot(qx,qy); if(qd<0.01)continue; const along=(qx*lx+qy*ly)/qd; if(along>0.96&&qd<0.9)scratch=1; }
+    const margin=p.side?0.5:1; const q=Math.pow(cut,1.6)*margin/(1+ad*0.9+td*1.4)*(scratch?0.25:1)*(d.think>=2?1:(0.7+Math.random()*0.6)); if(!best||q>best.q)best={q,ax,ay,ad,td,b,p,cut,scratch}; }
+  let angle,power;
+  if(ctx.breakShot){ const head=balls.filter(b=>b.on&&b.n!==0).sort((a,b)=>a.x-b.x)[0]; angle=Math.atan2(head.y-cue.y,head.x-cue.x)+(Math.random()-0.5)*0.01; power=1; }
+  else if(best){ angle=Math.atan2(best.ay,best.ax); power=clamp(0.2+best.ad*0.16+best.td*0.2+(1-best.cut)*0.18+(best.scratch?-0.08:0),0.18,0.8);
+    const e=(Math.random()<d.blunder?3:1)*d.err*(Math.random()*2-1); angle+=e; power=clamp(power*(1+d.powErr*(Math.random()*2-1)),0.15,1); }
+  else { // safety: a soft hit on the nearest legal ball
+    const t=targets.slice().sort((a,b)=>Math.hypot(a.x-cue.x,a.y-cue.y)-Math.hypot(b.x-cue.x,b.y-cue.y))[0]||balls.find(b=>b.on&&b.n!==0);
+    angle=Math.atan2(t.y-cue.y,t.x-cue.x)+d.err*(Math.random()*2-1); power=0.32; }
+  return {place,aim:angle,power,called:eight&&best&&best.b.n===8?best.p.i:null,target:best?best.b.n:null}; }
+function placeForHouse(balls,legal,kitchen){ // ball in hand: a spot with a straight pot if one exists, else the centre of the kitchen
+  const targets=balls.filter(legal);
+  let best=null;
+  for(const b of targets)for(const p of POCKETS){ const ux=(p.x-b.x), uy=(p.y-b.y), d=Math.hypot(ux,uy); if(d<0.05)continue; for(const back of [0.25,0.4,0.6]){ const x=b.x-ux/d*back, y=b.y-uy/d*back; if(x<R||x>L-R||y<R||y>Wd-R)continue; if(kitchen&&x>HEAD_X-R)continue; if(balls.some(o=>o.on&&o.n!==0&&Math.hypot(o.x-x,o.y-y)<2.2*R))continue; if(!pathClear(balls,x,y,b.x-ux/d*2*R,b.y-uy/d*2*R,[0,b.n]))continue; if(!pathClear(balls,b.x,b.y,p.x,p.y,[0,b.n]))continue; const q=1/(1+back+d); if(!best||q>best.q)best={q,x,y}; } }
+  if(best)return {x:best.x,y:best.y};
+  let x=kitchen?0.3:1, y=.5; for(let k=0;k<40&&balls.some(o=>o.on&&o.n!==0&&Math.hypot(o.x-x,o.y-y)<2.2*R);k++)y=y>0.5?y-0.05:y+0.06; return {x,y:clamp(y,R,Wd-R)}; }
+function houseTurn(){ if(G.mode!=='play'||G.online||!G.players[G.turn].house||G.shooting||G.motion)return;
+  const plan=planShot({balls:G.balls,turn:G.turn,groups:[G.players[0].group,G.players[1].group],open:G.open,breakShot:G.breakShot,kitchen:G.kitchen,inHand:G.inHand,diff:G.diff});
+  if(plan.place){ const cue=G.balls.find(b=>b.n===0); cue.x=plan.place.x; cue.y=plan.place.y; cue.on=true; cue.sink=0; G.inHand=false; renderHud(); }
+  G.calledPocket=plan.called; G.aiTarget=plan.target;
+  swingTo(plan.aim,()=>{ if(G.mode==='play'&&!G.online)beginShot(plan.power); }); }
+/* The cue turns to a shot over a moment, then strikes: the house's shots and a colleague's replayed ones. */
+function swingTo(to,then){ const from=G.aim, t0=performance.now(); const da=((to-from+Math.PI*3)%(Math.PI*2))-Math.PI;
+  const anim=()=>{ const k=Math.min(1,(performance.now()-t0)/700); G.aim=from+da*(1-Math.pow(1-k,3)); if(k<1)requestAnimationFrame(anim); else { G.aim=to; setTimeout(then,350); } };
+  anim(); }
+/* ============================== view ============================== */
+const cv=$('#table'), g2=cv.getContext('2d');
+let VW=0,VH=0,DPR=1,vert=true,scale=1,ox=0,oy=0,RAIL=0;
+function layout(){ const st=$('#stage').getBoundingClientRect(); VW=st.width; VH=st.height; DPR=Math.min(2,window.devicePixelRatio||1); cv.width=VW*DPR|0; cv.height=VH*DPR|0;
+  const land=VW>VH; const hud=land?60:72, bottom=land?62:80, left=land?54:8, right=46;
+  vert=VH-hud-bottom>VW-left-right;
+  const availW=VW-left-right, availH=VH-hud-bottom;
+  const tw=vert?Wd:L, th=vert?L:Wd; // table outer in world units incl. rails
+  RAIL=0.06; const s=Math.min(availW/(tw+2*RAIL),availH/(th+2*RAIL)); scale=s;
+  ox=left+(availW-(tw+2*RAIL)*s)/2+RAIL*s; oy=hud+(availH-(th+2*RAIL)*s)/2+RAIL*s; }
+function w2s(x,y){ return vert?{x:ox+y*scale,y:oy+(L-x)*scale}:{x:ox+x*scale,y:oy+y*scale}; }
+function s2w(sx,sy){ return vert?{x:L-(sy-oy)/scale,y:(sx-ox)/scale}:{x:(sx-ox)/scale,y:(sy-oy)/scale}; }
+function wdir2s(dx,dy){ return vert?{x:dy,y:-dx}:{x:dx,y:dy}; }
+function draw(now){ const c=g2; c.setTransform(DPR,0,0,DPR,0,0); c.clearRect(0,0,VW,VH);
+  if(G.mode==='menu'&&!G.balls.length)G.balls=rack();
+  // rails
+  const p0=w2s(0,0), p1=w2s(L,Wd); const x0=Math.min(p0.x,p1.x), y0=Math.min(p0.y,p1.y), x1=Math.max(p0.x,p1.x), y1=Math.max(p0.y,p1.y); const rl=RAIL*scale;
+  c.save(); c.shadowColor='rgba(0,0,0,.6)'; c.shadowBlur=24; c.shadowOffsetY=10; rr(c,x0-rl,y0-rl,x1-x0+2*rl,y1-y0+2*rl,rl*0.9); const wood=c.createLinearGradient(x0,y0-rl,x1,y1+rl); wood.addColorStop(0,'#5a3118'); wood.addColorStop(.5,'#3b1e0c'); wood.addColorStop(1,'#56301a'); c.fillStyle=wood; c.fill(); c.restore();
+  c.save(); rr(c,x0-rl*0.55,y0-rl*0.55,x1-x0+1.1*rl,y1-y0+1.1*rl,rl*0.5); c.strokeStyle='rgba(229,184,80,.55)'; c.lineWidth=1.5; c.stroke(); c.restore();
+  // diamonds
+  c.fillStyle='rgba(245,236,214,.85)'; for(let i=1;i<8;i++){ const t=i/8; const a=w2s(L*t,-RAIL*0.5), b=w2s(L*t,Wd+RAIL*0.5); if(i!==4){ dia(c,a.x,a.y,3.2); dia(c,b.x,b.y,3.2); } } for(let i=1;i<4;i++){ const t=i/4; const a=w2s(-RAIL*0.5,Wd*t), b=w2s(L+RAIL*0.5,Wd*t); dia(c,a.x,a.y,3.2); dia(c,b.x,b.y,3.2); }
+  // felt with a cloth texture and a vignette, then the cushions with their jaws
+  const fk=SKINS.felt[G.skin.felt]||SKINS.felt.green; const felt=c.createRadialGradient((x0+x1)/2,(y0+y1)/2,10,(x0+x1)/2,(y0+y1)/2,Math.max(x1-x0,y1-y0)*0.78); felt.addColorStop(0,fk.a); felt.addColorStop(1,fk.b); c.fillStyle=felt; c.fillRect(x0,y0,x1-x0,y1-y0);
+  if(cloth){ c.save(); c.globalAlpha=0.18; c.fillStyle=cloth; c.fillRect(x0,y0,x1-x0,y1-y0); c.restore(); }
+  drawCushions(c,fk,x0,y0,x1,y1,rl);
+  // head string and spots
+  c.strokeStyle='rgba(255,255,255,.14)'; c.lineWidth=1; const h0=w2s(HEAD_X,0), h1=w2s(HEAD_X,Wd); c.beginPath(); c.moveTo(h0.x,h0.y); c.lineTo(h1.x,h1.y); c.stroke();
+  const fs=w2s(FOOT.x,FOOT.y); c.fillStyle='rgba(255,255,255,.25)'; c.beginPath(); c.arc(fs.x,fs.y,2.5,0,7); c.fill();
+  // kitchen highlight when placing behind the line
+  if(G.inHand&&G.kitchen&&canAct()){ const k0=w2s(0,0), k1=w2s(HEAD_X,Wd); c.fillStyle='rgba(229,184,80,.08)'; c.fillRect(Math.min(k0.x,k1.x),Math.min(k0.y,k1.y),Math.abs(k1.x-k0.x),Math.abs(k1.y-k0.y)); }
+  // pockets: a leather ring on the rail, a dark hole
+  for(const p of POCKETS){ const s=w2s(p.x,p.y); const pr=(p.side?SIDE:CORNER)*scale*1.05; c.beginPath(); c.arc(s.x,s.y,pr*1.18,0,7); c.fillStyle='#1a0e07'; c.fill(); c.beginPath(); c.arc(s.x,s.y,pr*1.18,0,7); c.strokeStyle='rgba(229,184,80,.35)'; c.lineWidth=2; c.stroke(); const grad=c.createRadialGradient(s.x,s.y,pr*0.2,s.x,s.y,pr); grad.addColorStop(0,'#000'); grad.addColorStop(.75,'#0a0806'); grad.addColorStop(1,'rgba(20,10,4,0)'); c.fillStyle=grad; c.beginPath(); c.arc(s.x,s.y,pr,0,7); c.fill();
+    if(G.calledPocket===p.i&&G.mode==='play'){ c.strokeStyle='rgba(229,184,80,.95)'; c.lineWidth=3; c.beginPath(); c.arc(s.x,s.y,pr*0.8+2*Math.sin(now/180),0,7); c.stroke(); } }
+  // guideline + cue
+  const cue=G.balls.find(b=>b.n===0);
+  const aiming=G.mode==='play'&&cue&&cue.on&&!G.shooting&&!G.motion&&(G.online?G.turn===G.me&&!G.replaying:!G.inHand);
+  if(aiming){ const dx=Math.cos(G.aim), dy=Math.sin(G.aim); const tr=trace(G.balls,cue,dx,dy); const a=w2s(cue.x,cue.y), b=w2s(tr.x,tr.y);
+    c.save(); c.setLineDash([6,6]); c.strokeStyle='rgba(255,255,255,.8)'; c.lineWidth=1.5; c.beginPath(); c.moveTo(a.x,a.y); c.lineTo(b.x,b.y); c.stroke(); c.setLineDash([]);
+    c.strokeStyle='rgba(255,255,255,.85)'; c.lineWidth=1.5; c.beginPath(); c.arc(b.x,b.y,R*scale,0,7); c.stroke();
+    if(tr.ball){ const bl=w2s(tr.ball.x,tr.ball.y); const d=wdir2s(tr.nx,tr.ny); const len=R*scale*5.5; c.strokeStyle='rgba(255,255,255,.9)'; c.lineWidth=2.5; c.beginPath(); c.moveTo(bl.x,bl.y); c.lineTo(bl.x+d.x*len,bl.y+d.y*len); c.stroke();
+      // the cue ball's own deflection, short
+      const tx=-tr.ny, ty=tr.nx; const dot=dx*tx+dy*ty; const sgn=dot<0?-1:1; const cd=wdir2s(tx*sgn,ty*sgn); c.strokeStyle='rgba(255,255,255,.45)'; c.lineWidth=1.5; c.beginPath(); c.moveTo(b.x,b.y); c.lineTo(b.x+cd.x*len*0.5,b.y+cd.y*len*0.5); c.stroke(); }
+    c.restore(); }
+  // balls
+  for(const b of G.balls){ if(!b.on&&b.sink<=0)continue; let s=w2s(b.x,b.y), r=R*scale; if(!b.on){ b.sink=Math.max(0,b.sink-0.08); const ps=w2s(b.px,b.py); s={x:ps.x+(s.x-ps.x)*b.sink,y:ps.y+(s.y-ps.y)*b.sink}; r*=0.2+0.8*b.sink; if(b.sink<=0)continue; }
+    ball(c,s.x,s.y,r,b.n,b); }
+  // the cue stick: behind the cue ball while aiming (ours, the house's or a colleague's); at the strike it stays where it struck and fades, it never follows the ball
+  const cueShown=G.mode==='play'&&cue&&(G.online?!(G.inHand&&G.turn===G.me&&drag&&drag.kind==='place'):!G.inHand);
+  if(cueShown){ let ax=cue.x, ay=cue.y, aim=G.aim, pull=R*1.3+G.power*R*7, alpha=1, visible=cue.on&&!G.shooting&&!G.motion;
+    if(G.shotAnim){ const k=(now-G.shotAnim.at)/1000; ax=G.shotAnim.x; ay=G.shotAnim.y; aim=G.shotAnim.aim; if(k<0.08)pull=R*1.3+G.shotAnim.power*R*7*(1-k/0.08); else pull=R*1.3; alpha=k<0.25?1:Math.max(0,1-(k-0.25)/0.35); visible=alpha>0; if(k>0.7)G.shotAnim=null; }
+    if(visible)drawCue(c,ax,ay,aim,pull,alpha,now); }
+  // ball in hand hint
+  if(G.mode==='play'&&G.inHand&&cue&&cue.on&&canAct()){ const s=w2s(cue.x,cue.y); c.strokeStyle='rgba(229,184,80,.9)'; c.lineWidth=2; c.setLineDash([4,4]); c.beginPath(); c.arc(s.x,s.y,R*scale*1.8+2*Math.sin(now/160),0,7); c.stroke(); c.setLineDash([]); }
+}
+let cloth=null; (function(){ try{ const o=document.createElement('canvas'); o.width=o.height=96; const oc=o.getContext('2d'); const id=oc.createImageData(96,96); for(let i=0;i<id.data.length;i+=4){ const v=128+(Math.random()*2-1)*40; id.data[i]=id.data[i+1]=id.data[i+2]=v; id.data[i+3]=255; } oc.putImageData(id,0,0); cloth=g2.createPattern(o,'repeat'); }catch(e){} })();
+/* the cushions: a lighter band along each rail, cut away at the pockets with angled jaws, as on a real table */
+function drawCushions(c,fk,x0,y0,x1,y1,rl){ const t=rl*0.42; const m=MOUTH*scale*0.95, mj=t*1.1; const light='rgba(255,255,255,.14)', dark='rgba(0,0,0,.28)';
+  const W=x1-x0, H=y1-y0; const midx=(x0+x1)/2, midy=(y0+y1)/2; const vertical=H>W;
+  const strip=(ax,ay,bx,by,nx,ny)=>{ // a cushion between two pocket mouths with jaws: a trapezoid, lighter on the felt side
+    c.beginPath(); c.moveTo(ax,ay); c.lineTo(bx,by); c.lineTo(bx-nx*t-( (bx-ax)?Math.sign(bx-ax)*mj:0),by-ny*t-((by-ay)?Math.sign(by-ay)*mj:0)); c.lineTo(ax-nx*t+((bx-ax)?Math.sign(bx-ax)*mj:0),ay-ny*t+((by-ay)?Math.sign(by-ay)*mj:0)); c.closePath();
+    const g=c.createLinearGradient(ax,ay,ax-nx*t,ay-ny*t); g.addColorStop(0,dark); g.addColorStop(.5,fk.a); g.addColorStop(1,light); c.fillStyle=fk.a; c.fill(); c.fillStyle=g; c.fill(); };
+  // long rails are split at the side pocket; short rails are one piece. nx,ny point from the rail into the felt (negated: towards the rail)
+  if(vertical){ strip(x0,y0+m,x0,midy-m*0.8,-1,0); strip(x0,midy+m*0.8,x0,y1-m,-1,0); strip(x1,y0+m,x1,midy-m*0.8,1,0); strip(x1,midy+m*0.8,x1,y1-m,1,0); strip(x0+m,y0,x1-m,y0,0,-1); strip(x0+m,y1,x1-m,y1,0,1); }
+  else { strip(x0+m,y0,midx-m*0.8,y0,0,-1); strip(midx+m*0.8,y0,x1-m,y0,0,-1); strip(x0+m,y1,midx-m*0.8,y1,0,1); strip(midx+m*0.8,y1,x1-m,y1,0,1); strip(x0,y0+m,x0,y1-m,-1,0); strip(x1,y0+m,x1,y1-m,1,0); } }
+function drawCue(c,wx,wy,aim,pullW,alpha,now){ const a=w2s(wx,wy); const d=wdir2s(Math.cos(aim),Math.sin(aim)); const pull=pullW*scale; const len=Math.min(VW,VH)*0.7; const wdt=Math.max(6,R*scale*0.46);
+  const ck=SKINS.cue[G.skin.cue]||SKINS.cue.classic; const tipx=a.x-d.x*pull, tipy=a.y-d.y*pull; const px=-d.y, py=d.x; // across the cue
+  const seg=(t0,t1,w0,w1,fill)=>{ const x0=tipx-d.x*len*t0, y0=tipy-d.y*len*t0, x1=tipx-d.x*len*t1, y1=tipy-d.y*len*t1; c.beginPath(); c.moveTo(x0+px*w0/2,y0+py*w0/2); c.lineTo(x1+px*w1/2,y1+py*w1/2); c.lineTo(x1-px*w1/2,y1-py*w1/2); c.lineTo(x0-px*w0/2,y0-py*w0/2); c.closePath(); c.fillStyle=fill; c.fill(); };
+  c.save(); c.globalAlpha=alpha; c.shadowColor='rgba(0,0,0,.55)'; c.shadowBlur=10; c.shadowOffsetX=3; c.shadowOffsetY=5;
+  seg(0.02,0.62,wdt*0.62,wdt*0.9,ck.shaft); c.shadowColor='transparent';
+  const sh=c.createLinearGradient(tipx+px*wdt,tipy+py*wdt,tipx-px*wdt,tipy-py*wdt); sh.addColorStop(0,'rgba(255,255,255,.45)'); sh.addColorStop(.45,'rgba(255,255,255,0)'); sh.addColorStop(1,'rgba(0,0,0,.35)');
+  seg(0.02,0.62,wdt*0.62,wdt*0.9,sh);
+  seg(0,0.02,wdt*0.6,wdt*0.62,'#f4ecdc'); seg(-0.012,0,wdt*0.56,wdt*0.6,'#3f8bff'); // ferrule and tip
+  seg(0.62,0.64,wdt*0.92,wdt*0.95,'#e5b850'); seg(0.64,0.8,wdt*0.95,wdt,ck.butt); seg(0.8,0.81,wdt,wdt,'#e5b850'); seg(0.81,1,wdt,wdt*1.04,'#1a1109'); seg(0.99,1,wdt*1.04,wdt*1.04,'#e5b850');
+  seg(0.64,0.8,wdt*0.95,wdt,sh); seg(0.81,1,wdt,wdt*1.04,sh);
+  c.restore(); }
+function rr(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
+function dia(c,x,y,r){ c.beginPath(); c.moveTo(x,y-r); c.lineTo(x+r,y); c.lineTo(x,y+r); c.lineTo(x-r,y); c.closePath(); c.fill(); }
+function ball(c,x,y,r,n,b){ const col=n===0?'#f4f0e4':COLORS[n]; const base=isStripe(n)?'#f4f0e4':col;
+  // shadow on the cloth
+  c.save(); c.beginPath(); c.ellipse(x+r*0.22,y+r*0.42,r*1.05,r*0.8,0,0,7); c.fillStyle='rgba(0,0,0,.33)'; c.filter='blur(2px)'; c.fill(); c.restore();
+  c.save(); c.beginPath(); c.arc(x,y,r,0,7); c.clip();
+  c.fillStyle=base; c.fillRect(x-r,y-r,2*r,2*r);
+  // the roll: a point on the sphere turns through rx along the direction of travel ra; the stripe is a band around that axis, the number sits on it
+  const rx=b?b.rx:0, ra=b?b.ra:0, ry=b?b.ry:0;
+  const sd=wdir2s(Math.cos(ra),Math.sin(ra)); // screen direction of travel
+  const ang=rx%(Math.PI*2);
+  if(isStripe(n)){ // a band perpendicular to the roll axis: its visible width breathes with the angle
+    const w=r*0.95*Math.abs(Math.cos(ang*0.5+ry)); c.save(); c.translate(x,y); c.rotate(Math.atan2(sd.y,sd.x)); c.fillStyle=col; c.beginPath(); c.ellipse(0,0,r*1.02,Math.max(r*0.12,w),0,0,7); c.fill(); c.restore(); }
+  if(n>0){ // the number badge orbits with the roll; on the far side it is hidden
+    const t=ang+ry*0.7; const vis=Math.cos(t); if(vis>0.08){ const ox=sd.x*Math.sin(t)*r*0.55, oy=sd.y*Math.sin(t)*r*0.55; const br=r*0.42*Math.max(0.35,vis);
+      c.save(); c.translate(x+ox,y+oy); c.rotate(Math.atan2(sd.y,sd.x)); c.scale(Math.max(0.35,vis),1); c.rotate(-Math.atan2(sd.y,sd.x));
+      c.beginPath(); c.arc(0,0,r*0.42,0,7); c.fillStyle='#faf6ec'; c.fill(); c.fillStyle='#17130f'; c.font=`800 ${Math.max(7,r*0.6)}px Figtree, system-ui`; c.textAlign='center'; c.textBaseline='middle'; c.fillText(String(n),0,r*0.03); c.restore(); } }
+  // shading: a soft terminator and a crisp highlight
+  const sh=c.createRadialGradient(x-r*0.3,y-r*0.35,r*0.1,x,y,r*1.05); sh.addColorStop(0,'rgba(255,255,255,.55)'); sh.addColorStop(.35,'rgba(255,255,255,.06)'); sh.addColorStop(.8,'rgba(0,0,0,.18)'); sh.addColorStop(1,'rgba(0,0,0,.55)'); c.fillStyle=sh; c.fillRect(x-r,y-r,2*r,2*r);
+  c.beginPath(); c.ellipse(x-r*0.38,y-r*0.42,r*0.22,r*0.14,-0.6,0,7); c.fillStyle='rgba(255,255,255,.85)'; c.fill();
+  c.restore(); }
+/* ============================== HUD ============================== */
+function faceStyle(p){ return p&&p.photo?` style="background-image:url('${esc(p.photo)}')"`:''; }
+function renderHud(){ const h=$('#hud'); if(G.mode==='menu'){ h.innerHTML=''; $('#power').hidden=true; $('#spin').hidden=true; $('#fine').hidden=true; $('#clock').hidden=true; $('#wait').hidden=true; return; }
+  const playing=G.mode==='play';
+  h.innerHTML=G.players.map((p,i)=>{ const g=p.group; const dots=g?[1,2,3,4,5,6,7].map(k=>{ const n=g==='solid'?k:k+8; const on=G.balls.find(b=>b.n===n)?.on; return `<i class="${g==='stripe'?'s':''} ${on?'':'done'}" style="--c:${COLORS[n]};background:${g==='stripe'?'':COLORS[n]}"></i>`; }).join('')+(onEight(i)?`<i style="background:#141414"></i>`:''):'';
+    const clockOn=G.turn===i&&playing&&!(G.practice)&&(G.online?!!G.clockEnds:true);
+    const ring=clockOn?`<svg viewBox="0 0 42 42"><circle cx="21" cy="21" r="19" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="3"/><circle id="ring${i}" cx="21" cy="21" r="19" fill="none" stroke="${G.clock<8?'#ff8b7a':'#e5b850'}" stroke-width="3" stroke-dasharray="119.4" stroke-dashoffset="${119.4*(1-clamp(G.clock,0,30)/30)}"/></svg>`:'';
+    const tag=p.house&&!G.practice?' · house':G.online&&i===G.me?' · you':'';
+    const lbl=G.practice&&i===1?'solo':G.online&&p.online===false?'away':g?(onEight(i)?'on the 8':`${remaining(g)} left`):'open table';
+    return `<div class="pcard ${G.turn===i&&playing?'on':''} ${G.online&&p.online===false?'away':''}"><div class="av ${p.photo?'photo':''}"${faceStyle(p)}>${ring}${p.photo?'':esc(initials(p.name))}</div><div class="who"><div class="nm">${esc(p.name)}${tag}</div><div class="grp">${dots}</div><div class="lbl">${lbl}</div></div></div>`; }).join('');
+  const mine=playing&&localTurn()&&!G.shooting&&!G.motion&&!G.replaying;
+  const controls=mine&&(G.online||!G.inHand); // on a live table the cue ball may be moved and shot from where it lies; at home a ball in hand is placed first
+  $('#power').hidden=!controls; $('#spin').hidden=!controls; $('#fine').hidden=!controls;
+  $('#clock').hidden=!playing||G.practice||(G.online&&(!G.clockEnds||G.replaying||G.motion));
+  const w=$('#wait'); if(G.online&&playing&&!localTurn()&&!G.motion&&!G.replaying){ w.hidden=false; w.textContent=`${G.players[G.turn].name}${G.players[G.turn].online===false?' is away':' is lining up'}…`; } else w.hidden=true; }
+let msgT=null; function show(t,bad){ const m=$('#msg'); m.textContent=t; m.className='msg show'+(bad?' bad':''); clearTimeout(msgT); msgT=setTimeout(()=>m.classList.remove('show'),2600); }
+function toast(text){ const host=$('#toasts'); const t=document.createElement('div'); t.className='toast'; t.textContent=text; host.appendChild(t); while(host.children.length>3)host.firstChild.remove(); setTimeout(()=>{ t.style.opacity='0'; setTimeout(()=>t.remove(),260); },2800); }
+/* ============================== input ============================== */
+let drag=null;
+cv.addEventListener('pointerdown',e=>{ if(!canAct())return; const w=s2w(e.clientX-cv.getBoundingClientRect().left,e.clientY-cv.getBoundingClientRect().top); const cue=G.balls.find(b=>b.n===0);
+  if(G.inHand&&Math.hypot(w.x-cue.x,w.y-cue.y)<R*4){ drag={kind:'place',moved:false}; cv.setPointerCapture(e.pointerId); return; }
+  if(onEight(G.turn)){ for(const p of POCKETS)if(Math.hypot(w.x-p.x,w.y-p.y)<0.12){ callPocket(p.i); return; } }
+  drag={kind:'aim',a0:Math.atan2(w.y-cue.y,w.x-cue.x),aim0:G.aim,moved:0,lx:e.clientX,ly:e.clientY}; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove',e=>{ if(!drag)return; const rct=cv.getBoundingClientRect(); const w=s2w(e.clientX-rct.left,e.clientY-rct.top); const cue=G.balls.find(b=>b.n===0);
+  if(drag.kind==='place'){ const x=clamp(w.x,R,G.kitchen?HEAD_X-R:L-R), y=clamp(w.y,R,Wd-R); if(E.placementOk(plain(G.balls),x,y,G.kitchen)){ cue.x=x; cue.y=y; drag.moved=true; } return; }
+  const a1=Math.atan2(w.y-cue.y,w.x-cue.x); let da=a1-drag.a0; while(da>Math.PI)da-=2*Math.PI; while(da<-Math.PI)da+=2*Math.PI; const dist=Math.hypot(w.x-cue.x,w.y-cue.y); const fine=clamp(0.35/Math.max(dist,0.08),0.12,1); // far from the ball: finer
+  G.aim=drag.aim0+da*fine; drag.moved+=Math.hypot(e.clientX-drag.lx,e.clientY-drag.ly); drag.lx=e.clientX; drag.ly=e.clientY; });
+cv.addEventListener('pointerup',e=>{ if(!drag)return; const d=drag; drag=null;
+  if(d.kind==='place'){ SFX.tick(); if(G.online){ if(d.moved)placeOnline(); return; } show('Cue ball placed. Aim and pull the power bar'); G.inHand=false; renderHud(); } });
+cv.addEventListener('pointercancel',()=>{ drag=null; });
+function callPocket(i){ if(G.online){ const was=G.calledPocket; G.calledPocket=i; show('Pocket called'); SFX.tick(); buzz('light');
+    LIVE.api.call(i).then(r=>{ const v=roomOf(r); if(v)onRoomState(v); }).catch(err=>{ G.calledPocket=was; show(err.message||'The pocket was not accepted',true); }); return; }
+  G.calledPocket=i; show('Pocket called'); SFX.tick(); buzz('light'); }
+$('#fineL').addEventListener('click',()=>{ if(!canAct())return; G.aim-=0.004; SFX.tick(); }); $('#fineR').addEventListener('click',()=>{ if(!canAct())return; G.aim+=0.004; SFX.tick(); });
+// power bar
+const pw=$('#power'); let pdrag=null;
+function setPower(p){ G.power=p; const h=pw.clientHeight-10; $('#pfill').style.height=(h*p)+'px'; $('#pknob').style.top=(5+h*p-15*p)+'px'; $('#pknob').textContent=p>0.05?Math.round(p*100)+'%':'PULL'; }
+pw.addEventListener('pointerdown',e=>{ if(!canAct())return; if(!G.online&&G.inHand)return; pdrag={y0:e.clientY,p0:0}; pw.classList.add('armed'); pw.setPointerCapture(e.pointerId); buzz('light'); });
+pw.addEventListener('pointermove',e=>{ if(!pdrag)return; const h=pw.clientHeight-10; const p=clamp((e.clientY-pdrag.y0)/h,0,1); setPower(p); });
+pw.addEventListener('pointerup',e=>{ if(!pdrag)return; pdrag=null; pw.classList.remove('armed'); if(G.power>0.06&&canAct())beginShot(G.power); else setPower(0); });
+pw.addEventListener('pointercancel',()=>{ pdrag=null; pw.classList.remove('armed'); setPower(0); });
+// spin
+const sp=$('#spin'); let sdrag=false;
+function spinDot(){ const r=sp.clientWidth/2||29; $('#spindot').style.left=(r+G.spin.side*r*0.72)+'px'; $('#spindot').style.top=(r-G.spin.top*r*0.72)+'px'; }
+function setSpin(e){ const rct=sp.getBoundingClientRect(); const r=rct.width/2; let x=(e.clientX-rct.left-r)/(r*0.72), y=-(e.clientY-rct.top-r)/(r*0.72); const d=Math.hypot(x,y); if(d>1){ x/=d; y/=d; } G.spin={side:Math.round(x*20)/20,top:Math.round(y*20)/20}; spinDot(); }
+sp.addEventListener('pointerdown',e=>{ sdrag=true; sp.setPointerCapture(e.pointerId); setSpin(e); SFX.tick(); });
+sp.addEventListener('pointermove',e=>{ if(sdrag)setSpin(e); });
+let lastSpinTap=0; sp.addEventListener('pointerup',e=>{ sdrag=false; const now=performance.now(); if(now-lastSpinTap<320){ G.spin={top:0,side:0}; spinDot(); SFX.tick(); } lastSpinTap=now; });
+window.addEventListener('resize',()=>{ layout(); spinDot(); });
+document.addEventListener('gesturestart',e=>e.preventDefault());
+/* ============================== loop ============================== */
+let last=performance.now();
+function setClock(left){ const prev=G.clock; G.clock=left; const el=$('#clock'); el.textContent=Math.ceil(left); el.classList.toggle('low',left<8); const ring=$('#ring'+G.turn); if(ring)ring.setAttribute('stroke-dashoffset',String(119.4*(1-clamp(left,0,30)/30))); if(localTurn()&&Math.ceil(left)!==Math.ceil(prev)&&left<6&&left>0)SFX.tick(); }
+function loop(now){ const dt=Math.min(0.05,(now-last)/1000); last=now;
+  if(G.motion)advance(dt);
+  else if(G.mode==='play'){
+    if(G.online){ if(G.clockEnds&&!G.replaying)setClock(clamp((G.clockEnds-serverNow())/1000,0,30)); }
+    else if(!G.players[G.turn].house&&!G.practice){ const left=Math.max(0,30-(now-G.clockAt)/1000); setClock(left);
+      if(left<=0){ G.fouls[G.turn]++; const o=1-G.turn; show(`Time is up: ${G.players[o].house?'the house has':G.players[o].name+' has'} ball in hand`,true); SFX.foul(); G.turn=o; G.inHand=true; G.kitchen=false; G.breakShot=false; G.calledPocket=null; startClock(); renderHud(); if(G.players[o].house)setTimeout(houseTurn,900); } } }
+  draw(now); requestAnimationFrame(loop); }
+/* ============================== leaderboard / bridge ============================== */
+const Board={ async submit(score){ const b=bridge(); if(b&&b.submitScore){ try{ const r=await b.submitScore(score); save('board',r); return r; }catch(e){ return null; } } const list=load('local',[]); list.push({score,at:Date.now()}); list.sort((a,b)=>b.score-a.score); save('local',list.slice(0,10)); return null; },
+  best(){ const b=load('board',null); if(b&&b.me)return b.me.score; const l=load('local',[]); return l.length?l[0].score:null; } };
+/* ============================== live rooms: play a colleague ==============================
+   The live script above (with a ticket) or the demo below (?demo=) gives window.Sowaka.room and calls window.onSowakaRoom(evt); without
+   either, "Play a colleague" only says it needs the Sowaka app. The server is the referee: the page sends aim/power/spin, placements and
+   the called pocket, and shows the room view it gets back. A new lastShot is replayed with the engine from the table as it was, then the
+   table snaps to the positions the server sent. */
+const LIVE={api:null,on:false,offline:false,fatal:null,rooms:[],invites:[],room:null,seq:null,pending:null,own:null,feedQ:[],picker:null,hostOpen:true,codeInput:'',offset:0,msgKey:'',resultKey:'',againSent:false,helloT:null,busy:false,leaveAsk:false};
+const roomApi=()=>{ const S=window.Sowaka; return S&&S.live&&S.room?S.room:null; };
+const roomOf=d=>d&&typeof d==='object'?('room' in d&&!d.code?(d.room||null):(d.code?d:null)):null;
+const serverNow=()=>Date.now()+LIVE.offset;
+const myIndex=r=>Math.max(0,r.players.findIndex(p=>p.userId===r.you));
+const face=(p,cls)=>`<div class="face ${cls||''}"${p&&p.photoUrl?` style="background-image:url('${esc(p.photoUrl)}')"`:''}>${p&&p.photoUrl?'':esc(initials(p&&p.name))}</div>`;
+function pane(html){ const p=$('#pane'); if(html==null){ p.hidden=true; p.innerHTML=''; return; } p.hidden=false; p.innerHTML=`<div class="inner">${html}</div>`; }
+const offlinePill=()=>LIVE.offline?'<span class="pill off">Offline</span>':'';
+window.onSowakaRoom=evt=>{ try{ onRoomEvent(evt); }catch(e){ console.error('Sowaka Pool event failed',e); } };
+function onRoomEvent(evt){ if(!evt||typeof evt!=='object')return;
+  switch(evt.type){
+    case 'state': onRoomState(evt.room||null); break;
+    case 'feed': onFeed(evt.item); break;
+    case 'invite': if(!evt.code)return; LIVE.invites=LIVE.invites.filter(i=>i.code!==evt.code).concat([{code:String(evt.code),from:evt.from||{},expiresAt:evt.expiresAt||null}]);
+      if(!LIVE.room){ show(`${first(evt.from&&evt.from.name)} invited you to table ${evt.code}`); if(screen==='lobby')renderLobby(); else if(screen==='menu')menu(); } break;
+    case 'kicked': LIVE.room=null; LIVE.seq=null; toLobby(); show('You were removed from the table',true); break;
+    case 'connection': LIVE.offline=!evt.online; if(screen==='lobby')renderLobby(); else if(screen==='waiting')renderWaiting(); if(!evt.online)show('Connection lost. Reconnecting…',true); else if(screen!=='menu')show('Back online'); break;
+    case 'fatal': LIVE.fatal=evt.message||'Sowaka Pool lost its connection. Close and reopen it.'; if(screen!=='menu'||G.online)fatalSheet(); break; } }
+/* ---------- the room view in ---------- */
+function onRoomState(room){
+  if(!room){ if(LIVE.leaving)return; const had=LIVE.room; LIVE.room=null; LIVE.seq=null; LIVE.pending=null; LIVE.own=null; if(had&&(screen==='waiting'||G.online)){ toLobby(); show(had.status==='over'?'The table closed':'The table closed',true); } return; }
+  if(G.online&&G.motion&&screen==='play'&&LIVE.room&&LIVE.room.code===room.code){ LIVE.pending=room; return; } // the balls are rolling: the view waits for them
+  const ls=room.lastShot||null, seq=ls?ls.seq|0:0, prev=LIVE.room;
+  const sameGame=prev&&prev.code===room.code&&prev.gameNo===room.gameNo&&prev.status==='playing';
+  if(ls&&G.online&&screen==='play'&&sameGame&&LIVE.seq!=null&&seq===LIVE.seq+1){
+    LIVE.seq=seq;
+    if(LIVE.own&&ls.by===G.me){ LIVE.own=null; applyRoom(room); return; } // our own shot, already shown as it was sent
+    LIVE.pending=room; startReplay(ls); return; }
+  LIVE.own=null; LIVE.seq=seq; applyRoom(room); }
+function applyRoom(room){ const prev=LIVE.room; LIVE.room=room; if(room.serverNow)LIVE.offset=room.serverNow-Date.now();
+  LIVE.invites=LIVE.invites.filter(i=>i.code!==room.code);
+  if(room.status==='lobby'){ LIVE.againSent=false; LIVE.resultKey=''; if(G.online||G.mode!=='menu'){ G.online=false; G.motion=null; G.shooting=false; G.replaying=false; G.mode='menu'; G.result=null; G.balls=rack(); $('#sheetHost').innerHTML=''; $('#leaveBtn').hidden=true; renderHud(); } renderWaiting(); return; }
+  const fresh=!G.online||screen!=='play'||!prev||prev.code!==room.code||prev.gameNo!==room.gameNo||prev.status==='lobby';
+  if(fresh)enterOnline(room); else syncTable(room); }
+function enterOnline(room){ Object.assign(G,{online:true,hotseat:false,practice:false,mode:'play',result:null,fouls:[0,0],started:Date.now(),shotAnim:null,motion:null,shooting:false,replaying:false,aim:0,power:0,spin:{top:0,side:0},calledPocket:null,lastFoul:null});
+  LIVE.againSent=false; LIVE.feedQ=[];
+  G.balls=dress(room.balls&&room.balls.length?room.balls:E.rack());
+  $('#menu').hidden=true; $('#sheetHost').innerHTML=''; pane(null); screen='play'; $('#leaveBtn').hidden=false; LIVE.leaveAsk=false; spinDot(); layout();
+  syncTable(room);
+  if(room.status==='playing'){ const me=G.me; show(room.turn===me?(room.breakShot?'You break. Pull the power bar and let go':'Your turn'):`${G.players[room.turn].name} ${room.breakShot?'breaks':'to shoot'}`); } }
+function syncTable(room){ const me=myIndex(room); G.me=me;
+  G.players=room.players.map(p=>({name:p.userId===room.you?first(p.name):first(p.name),photo:p.photoUrl||null,group:p.group||null,house:false,online:p.online!==false,userId:p.userId}));
+  while(G.players.length<2)G.players.push({name:'Open seat',photo:null,group:null,house:false,online:false,userId:null});
+  G.potted=[0,1].map(i=>room.players[i]?room.players[i].pottedCount|0:0);
+  if(room.balls&&room.balls.length)adopt(room.balls);
+  G.turn=room.turn|0; G.open=!!room.open8; G.kitchen=!!room.kitchen; G.inHand=!!room.inHand; G.breakShot=!!room.breakShot; G.calledPocket=room.calledPocket==null?null:room.calledPocket|0;
+  G.clockEnds=room.shotClock&&room.shotClock.endsAt?+room.shotClock.endsAt:null;
+  const key=`${room.lastShot?room.lastShot.seq:0}:${room.turn}:${room.message||''}`;
+  if(room.message&&key!==LIVE.msgKey){ LIVE.msgKey=key; const bad=/foul|scratch|time|weak/i.test(room.message); show(room.message+(bad&&room.inHand&&room.status==='playing'?`. ${room.turn===me?'You have':G.players[room.turn].name+' has'} ball in hand`:''),bad); if(bad)SFX.foul(); }
+  else if(!room.message&&key!==LIVE.msgKey&&room.status==='playing'&&room.lastShot){ LIVE.msgKey=key; if(room.turn===me)show('Your turn'); }
+  if(room.status==='over'){ G.mode='over'; const rk=`${room.code}:${room.gameNo}`;
+    if(room.result){ const win=room.result.winner===me; G.result={win,winner:room.result.winner};
+      if(LIVE.resultKey!==rk){ LIVE.resultKey=rk; if(win)SFX.win(); else SFX.lose(); buzz(win?'heavy':'medium'); setTimeout(()=>{ if(LIVE.room&&LIVE.room.status==='over')onlineResult(); },900); }
+      else if($('#sheetHost .result'))onlineResult(); } }
+  else { G.mode='play'; G.result=null; }
+  renderHud(); }
+/* ---------- a colleague's shot, replayed ---------- */
+function startReplay(ls){ const cue=G.balls.find(b=>b.n===0); if(!cue)return finishReplay();
+  if(ls.from&&Number.isFinite(+ls.from.x)){ cue.x=+ls.from.x; cue.y=+ls.from.y; } cue.on=true; cue.sink=0; cue.vx=0; cue.vy=0;
+  G.inHand=false; G.turn=ls.by|0; G.replaying=true; G.clockEnds=null; renderHud();
+  const shot={aim:+ls.aim||0,power:+ls.power||0,spin:{top:ls.spin?+ls.spin.top||0:0,side:ls.spin?+ls.spin.side||0:0}};
+  const snap=(ls.balls||[]).map(b=>({n:b.n,x:+b.x,y:+b.y,on:b.on!==false}));
+  const who=G.players[ls.by|0]?G.players[ls.by|0].name:'They';
+  swingTo(shot.aim,()=>{ if(!G.online||!G.replaying)return finishReplay();
+    const res=launch(shot,{snap:snap.length?snap:null,who,onDone:finishReplay});
+    if(!res)finishReplay(); }); }
+function finishReplay(){ G.replaying=false; const p=LIVE.pending; LIVE.pending=null; if(p)onRoomState(p); else renderHud(); flushFeed(); }
+/* ---------- our own moves out ---------- */
+async function sendShot(shot){ const api=LIVE.api; if(!api)return;
+  if(LIVE.room&&LIVE.room.replayUntil&&serverNow()<+LIVE.room.replayUntil){ show('The balls are still rolling',true); return; }
+  LIVE.own={at:Date.now()};
+  launch(shot,{who:'You',onDone:()=>{ const p=LIVE.pending; LIVE.pending=null; if(p)onRoomState(p); flushFeed(); }});
+  try{ const r=await api.shot(shot); const v=roomOf(r); if(v)onRoomState(v); }
+  catch(err){ LIVE.own=null; G.motion=null; G.shooting=false; G.shotAnim=null; show(err.message||'The shot was not accepted',true); if(LIVE.room)syncTable(LIVE.room); } }
+async function placeOnline(){ const api=LIVE.api, cue=G.balls.find(b=>b.n===0); if(!api||!cue)return; const x=cue.x, y=cue.y;
+  try{ const r=await api.place(x,y); const v=roomOf(r); if(v)onRoomState(v); }
+  catch(err){ show(err.message||'The cue ball cannot go there',true); if(LIVE.room)syncTable(LIVE.room); } }
+/* ---------- feed lines as toasts ---------- */
+const FEED={join:i=>`${first(i.name)} sat down`,leave:i=>`${first(i.name)} left the table`,host:i=>`${first(i.name)} is the host now`,foul:i=>i.text||`${first(i.name)} fouled`,timeout:i=>i.text||`${first(i.name)} ran out of time`};
+function onFeed(item){ if(!item||typeof item!=='object')return; const text=item.text&&!FEED[item.kind]?String(item.text):FEED[item.kind]?FEED[item.kind](item):null; if(!text)return;
+  if(G.motion||G.replaying)LIVE.feedQ.push(text); else toast(text);
+  if(screen==='waiting'&&(item.kind==='join'||item.kind==='leave'))SFX.pop(); }
+function flushFeed(){ const q=LIVE.feedQ.splice(0); q.forEach((t,i)=>setTimeout(()=>toast(t),i*250)); }
+/* ---------- screens: the lobby ---------- */
+async function openLobby(){ if(!LIVE.api){ needsApp(); return; } if(LIVE.fatal){ fatalSheet(); return; }
+  screen='lobby'; G.mode='menu'; G.balls=rack(); $('#menu').hidden=true; $('#sheetHost').innerHTML=''; $('#leaveBtn').hidden=true; renderHud(); renderLobby(); refreshLobby(); }
+async function refreshLobby(){ if(!LIVE.api||LIVE.busy)return; clearTimeout(LIVE.helloT);
+  try{ const h=await LIVE.api.hello(); LIVE.rooms=Array.isArray(h.rooms)?h.rooms:[]; LIVE.invites=Array.isArray(h.invites)?h.invites.map(i=>({code:String(i.code),from:i.from||{},players:i.players,expiresAt:i.expiresAt||null})):LIVE.invites;
+    const room=roomOf(h.room); if(room&&screen==='lobby'&&!LIVE.leaving){ onRoomState(room); return; } if(screen==='lobby'&&!busyInput())renderLobby(); }
+  catch(err){ if(screen==='lobby')show(err.message||'Could not reach the table list',true); }
+  if(screen==='lobby')LIVE.helloT=setTimeout(refreshLobby,8000); }
+const busyInput=()=>{ const a=document.activeElement; return !!(a&&a.matches&&a.matches('input')); };
+function renderLobby(){ screen='lobby'; const now=serverNow(); const inv=LIVE.invites.filter(i=>!i.expiresAt||+i.expiresAt>now).slice(-3).reverse();
+  const roomRow=r=>{ const ps=Array.isArray(r.players)?r.players:[]; const hostName=r.host&&r.host.name?first(r.host.name):ps[0]?first(ps[0].name):'A colleague'; const free=r.seatFree!==false&&ps.length<2;
+    const st=r.status==='lobby'?(free?'Waiting for a second player':'About to start'):r.status==='over'?'Between games':'Playing';
+    return `<div class="rowi"><div class="stack">${ps.slice(0,2).map(p=>face(p)).join('')||face(null)}</div><div class="who"><b>${esc(hostName)}'s table · ${esc(r.code)}</b><span>${st} · ${ps.length}/2</span></div><button class="btn ${free?'primary':''}" data-join="${esc(r.code)}" ${free?'':'disabled'}>${free?'Join':'Full'}</button></div>`; };
+  pane(`<div class="ptop"><button class="chip" data-act="back" aria-label="Back to the menu">‹</button><div class="ttl"><b>Play a colleague</b><span>8-ball, two at a table, 30 seconds a shot</span></div>${offlinePill()}</div>
+    ${inv.map(i=>`<div class="invite">${face(i.from)}<div class="who"><b>${esc(first(i.from&&i.from.name))} invited you</b><span>Table ${esc(i.code)}</span></div><button class="btn primary" data-join="${esc(i.code)}">Join</button></div>`).join('')}
+    <div class="card2"><h3>Rack up with someone</h3><p>Quick game puts you at the first open table, or starts one for you. A private table is joined only with its code or an invite.</p>
+      <div class="row2"><button class="btn primary" data-act="quick">Quick game</button><button class="btn" data-act="host">New table</button></div>
+      <div class="seg" style="margin:10px 0 0"><button class="${LIVE.hostOpen?'on':''}" data-open="1">Open to the company</button><button class="${LIVE.hostOpen?'':'on'}" data-open="0">Private</button></div>
+      <div class="codebox"><input id="code" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="Have a code? 4 digits" value="${esc(LIVE.codeInput)}" autocomplete="off"><button class="btn" data-act="code">Join</button></div></div>
+    <div class="card2"><h3>Open tables</h3>${LIVE.rooms.length?LIVE.rooms.map(roomRow).join(''):'<div class="empty">No open tables right now. Start one and invite a colleague, or tap Quick game.</div>'}</div>
+    <div class="card2"><h3>How it works</h3><p><b>The game.</b> 8-ball: the first ball you pot after the break gives you solids or stripes; pot all of yours, call a pocket and sink the 8.</p><p><b>The clock.</b> 30 seconds a shot, counted after the balls stop. Run out and your colleague gets ball in hand.</p><p><b>Coming and going.</b> Leaving mid-game hands your colleague the win. A finished table takes a rematch: the loser breaks.</p><p><b>Points.</b> 100 a ball you pot, 1,000 for the win.</p></div>`); }
+/* ---------- screens: the waiting room ---------- */
+function renderWaiting(){ const r=LIVE.room; if(!r)return; screen='waiting'; G.mode='menu'; $('#menu').hidden=true; $('#leaveBtn').hidden=true; renderHud();
+  const me=r.you, host=r.hostId===me, hostP=r.players.find(p=>p.userId===r.hostId)||r.players[0]||{name:'A colleague'}, ready=r.players.filter(p=>p.online!==false).length;
+  const seat=p=>p?`<div class="seat">${face(p,'lg'+(p.online===false?' off':''))}<b>${p.userId===me?'You':esc(first(p.name))}</b><span>${p.userId===r.hostId?'Host':p.online===false?'Away':'Ready'}</span></div>`
+    :`<div class="seat empty"><div class="face lg">?</div><b>Open seat</b><span>${(r.invited||[]).length?`${esc(first(r.invited[0].name))} invited`:host?'Invite a colleague or share the code':'Waiting for someone'}</span></div>`;
+  const wins=r.wins&&(r.wins[0]||r.wins[1])?` Games so far ${r.wins[0]|0} – ${r.wins[1]|0}.`:'';
+  pane(`<div class="ptop"><button class="chip" data-act="leave" aria-label="Leave the table">‹</button><div class="ttl"><b>${host?'Your table':esc(first(hostP.name))+"'s table"}</b><span>${r.open?'Listed in open tables':'Private · code and invites only'}</span></div>${offlinePill()}<span class="pill ${r.open?'on':''}">${r.open?'Open':'Private'}</span></div>
+    <div class="card2" style="text-align:center"><p style="margin:0">Table code</p><div class="bigcode">${esc(r.code)}</div><p>${host?'Share the code or invite a colleague, then start.':`Waiting for ${esc(first(hostP.name))} to start.`}${wins}</p>
+      <div class="seats">${seat(r.players[0])}${seat(r.players[1])}</div>
+      ${r.players.length<2?`<button class="btn" data-act="invite">Invite a colleague</button>`:''}</div>
+    <div class="card2"><h3>How it goes</h3><p>The first at the table breaks; after that the loser breaks. 30 seconds a shot, counted once the balls stop: run out and the other player gets ball in hand. Pot the 8 in the pocket you called to win.</p></div>
+    ${host?`<button class="btn primary" data-act="start" ${ready<2||LIVE.offline?'disabled':''}>${r.players.length<2?'Waiting for a second player':ready<2?`${esc(first((r.players.find(p=>p.userId!==me)||{}).name))} is away`:'Start the game'}</button>`:`<button class="btn" disabled>Waiting for ${esc(first(hostP.name))} to start</button>`}
+    <button class="btn" data-act="leave" style="margin-top:8px">Leave the table</button>`); }
+/* ---------- the invite picker: Sowaka.colleagues(q) hands over at most 50 a time, so each name typed is searched on the server ---------- */
+async function openPicker(){ LIVE.picker={q:'',list:[],loading:true,sent:[],ask:0,error:null,searched:''}; pickerSheet(); await loadColleagues(''); }
+async function loadColleagues(q){ const pk=LIVE.picker, b=window.Sowaka; if(!pk)return; const ask=++pk.ask;
+  try{ if(!b||typeof b.colleagues!=='function')throw new Error('Invites need the Sowaka app. Share the code instead.');
+    const res=await b.colleagues(q); if(!LIVE.picker||LIVE.picker.ask!==ask)return;
+    const me=LIVE.room&&LIVE.room.you; pk.list=((res&&res.colleagues)||[]).filter(p=>p&&p.userId&&p.userId!==me); pk.loading=false; pk.error=null; pk.searched=q; }
+  catch(err){ if(LIVE.picker&&LIVE.picker.ask===ask){ pk.loading=false; pk.error=err.message||'Could not load colleagues.'; } }
+  if(LIVE.picker&&LIVE.picker.ask===ask)pickerSheet(); }
+function pickerSheet(){ const pk=LIVE.picker; if(!pk)return; const r=LIVE.room||{players:[],invited:[]}; const q=(pk.q||'').toLowerCase();
+  const inRoom=new Set(r.players.map(p=>p.userId)), asked=new Set([...(r.invited||[]).map(i=>i.userId),...pk.sent]);
+  const list=pk.list.filter(p=>!inRoom.has(p.userId)&&(!q||String(p.name).toLowerCase().includes(q))).slice(0,60);
+  const typing=document.activeElement&&document.activeElement.id==='pickq';
+  sheet(`<h2>Invite to table ${esc(r.code||'')}</h2><input id="pickq" class="q" placeholder="Search colleagues" value="${esc(pk.q||'')}" autocomplete="off">
+    <div class="list">${pk.loading?'<div class="empty">Loading colleagues…</div>':pk.error?`<div class="empty">${esc(pk.error)}</div>`:list.length?list.map(p=>`<div class="rowi">${face(p)}<div class="who"><b>${esc(p.name)}</b><span>${esc(p.designation||p.department||'')}</span></div><button class="btn ${asked.has(p.userId)?'':'primary'}" data-inv="${esc(p.userId)}" ${asked.has(p.userId)?'disabled':''}>${asked.has(p.userId)?'Invited':'Invite'}</button></div>`).join(''):(pk.searched||'')!==(pk.q||'').trim()?'<div class="empty">Searching…</div>':'<div class="empty">Nobody to invite by that name.</div>'}</div>
+    ${!q&&!pk.loading&&pk.list.length>=50?'<div class="hint">Showing the first 50. Type a name to find anyone at the company.</div>':''}
+    <button class="btn" data-act="pickclose" style="margin-top:10px">Done</button>`,{keep:true});
+  if(typing){ const i=$('#pickq'); if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } } }
+let pickTimer=null;
+document.addEventListener('input',e=>{ const t=e.target; if(!t||!t.id)return;
+  if(t.id==='pickq'&&LIVE.picker){ LIVE.picker.q=t.value; clearTimeout(pickTimer); pickTimer=setTimeout(()=>loadColleagues(LIVE.picker?LIVE.picker.q.trim():''),250); }
+  if(t.id==='code')LIVE.codeInput=t.value.replace(/\D/g,'').slice(0,4); });
+document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target&&e.target.id==='code'){ e.preventDefault(); joinRoom(LIVE.codeInput); } });
+/* ---------- the result of a live game ---------- */
+const REASON={eight:(win,o)=>win?'You potted the 8 in the pocket you called':`${o} potted the 8 in the called pocket`,
+  foul:(win,o)=>win?`${o} lost the 8: too early, the wrong pocket, or with a scratch`:'You lost the 8: too early, the wrong pocket, or with a scratch',
+  left:(win,o)=>win?`${o} left the table`:'You left the table',away:(win,o)=>win?`${o} went offline`:'You were offline too long'};
+function onlineResult(){ const r=LIVE.room; if(!r||r.status!=='over'||!r.result)return; const me=G.me, win=r.result.winner===me, opp=G.players[1-me]||{name:'Your colleague'}, gone=r.players.length<2;
+  const why=REASON[r.result.reason]?REASON[r.result.reason](win,opp.name):String(r.result.reason||'');
+  const pts=G.potted[me]*100+(win?1000:0);
+  sheet(`<div class="result"><h2>${win?'You win!':`${esc(opp.name)} wins`}</h2><div class="stars">${win?'★★★':'☆☆☆'}</div><div class="score">${pts}</div><p>${esc(why)}.${r.wins?` Games at this table ${r.wins[me]|0} – ${r.wins[1-me]|0}.`:''}</p>
+    <button class="btn primary" data-act="rematch" ${gone||LIVE.againSent||LIVE.offline?'disabled':''}>${gone?`${esc(opp.name)} left`:LIVE.againSent?`Waiting for ${esc(opp.name)}…`:'Rematch'}</button><button class="btn" data-act="leave">Leave the table</button></div>`,{stay:true}); }
+/* ---------- leaving, errors, the app ---------- */
+function toLobby(){ G.online=false; G.motion=null; G.shooting=false; G.replaying=false; G.result=null; G.clockEnds=null; LIVE.leaveAsk=false; LIVE.againSent=false; $('#sheetHost').innerHTML=''; $('#leaveBtn').hidden=true; G.mode='menu'; G.balls=rack(); renderHud(); if(LIVE.api){ renderLobby(); refreshLobby(); } else menu(); }
+async function leaveRoom(){ const api=LIVE.api, was=LIVE.room; LIVE.room=null; LIVE.seq=null; LIVE.pending=null; LIVE.own=null; LIVE.leaving=true; $('#sheetHost').innerHTML=''; try{ if(api&&was)await api.leave(); }catch(e){} LIVE.leaving=false; toLobby(); }
+function leaveAskSheet(){ const playing=LIVE.room&&LIVE.room.status==='playing'; sheet(`<h2>Leave the table?</h2><p>${playing?'Leaving mid-game hands your colleague the win.':'You can come back with the code while the table is open.'}</p><div class="row2"><button class="btn" data-act="close">Stay</button><button class="btn primary" data-act="leave-now">Leave</button></div>`); }
+function needsApp(){ sheet(`<h2>Play a colleague</h2><p>Live tables need the Sowaka app: open Sowaka Pool from the Games tab to play someone at your company, with invites and a 4-digit table code.</p><button class="btn primary" data-act="close">OK</button>`); }
+function fatalSheet(){ sheet(`<h2>Connection lost</h2><p>${esc(LIVE.fatal||'Sowaka Pool lost its connection.')}</p><p>The games on this phone still work.</p><button class="btn primary" data-act="fatal-ok">Back to the menu</button>`,{stay:true}); }
+async function joinRoom(code){ const c=String(code||'').trim(); if(!/^[1-9]\d{3}$/.test(c)){ show('A table code is four digits',true); return; }
+  await act(async()=>{ const r=await LIVE.api.join(c); LIVE.codeInput=''; const v=roomOf(r); if(v)onRoomState(v); }); }
+async function act(fn){ if(LIVE.busy)return; LIVE.busy=true; try{ await fn(); }catch(err){ show(err.message||'Something went wrong. Try again.',true); } finally{ LIVE.busy=false; } }
+/* The room an invite opened the game on (startChallengeId "room:4821"), and the room we were already at: straight there. */
+function startCode(){ const S=window.Sowaka||{}; const m=/^(?:room:)?([1-9]\d{3})$/i.exec(String(S.startRoomCode||S.startChallengeId||'').trim()); return m?m[1]:null; }
+let booted=false;
+async function bootLive(){ const api=roomApi(); if(!api||booted)return; booted=true; LIVE.api=api; LIVE.on=true;
+  try{ const h=await api.hello(); LIVE.rooms=Array.isArray(h.rooms)?h.rooms:[]; LIVE.invites=Array.isArray(h.invites)?h.invites.map(i=>({code:String(i.code),from:i.from||{},players:i.players,expiresAt:i.expiresAt||null})):[];
+    const room=roomOf(h.room), code=startCode();
+    if(room)onRoomState(room); else if(code)await joinRoom(code); else if(screen==='menu')menu(); }
+  catch(err){ if(window.__poolLive&&window.__poolLive.fatal){ LIVE.fatal=window.__poolLive.fatal.message; } } }
+/* ============================== screens ============================== */
+function menu(){ G.mode='menu'; G.online=false; G.motion=null; G.shooting=false; G.replaying=false; screen='menu'; G.balls=rack(); renderHud(); pane(null); $('#leaveBtn').hidden=true; const best=Board.best(); const inv=LIVE.invites.length;
+  $('#menu').hidden=false; $('#menu').innerHTML=`<div class="card"><div class="best"><div><span>Your best</span><b>${best==null?'—':best}</b></div><button class="btn" style="width:auto;padding:0 14px;min-height:40px" data-act="board">Leaderboard</button></div>
+    <h2 class="title">Rack 'em up</h2><p class="sub">8-ball with a colleague or against the house. Drag to aim, pull the bar to shoot, tap the cue ball for spin.</p>
+    <button class="btn primary" data-act="colleague">Play a colleague${inv?` · ${inv} invite${inv===1?'':'s'}`:''}</button>
+    <div class="seg">${['easy','medium','pro'].map(d=>`<button class="${G.diff===d?'on':''}" data-diff="${d}">${d==='easy'?'Rookie':d==='medium'?'Sharp':'Hustler'}</button>`).join('')}</div>
+    <button class="btn" data-act="play" style="margin-top:0">Play the house</button><button class="btn" data-act="hotseat">Two players, one phone</button><div style="display:flex;gap:8px;margin-top:8px"><button class="btn" data-act="practice" style="flex:1">Practice</button><button class="btn" data-act="skins" style="flex:1">Skins · ${G.wins} win${G.wins===1?'':'s'}</button></div></div>`; }
+function skinsSheet(){ const row=(kind,label)=>`<p style="margin:10px 0 6px;color:var(--ink);font-weight:700">${label}</p><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px">${Object.entries(SKINS[kind]).map(([k,v])=>{ const locked=G.wins<v.need, on=G.skin[kind]===k; const sw=kind==='felt'?`background:linear-gradient(135deg,${v.a},${v.b})`:`background:linear-gradient(90deg,${v.tip} 0 18%,${v.shaft} 18% 55%,${v.butt} 55%)`;
+    return `<button data-skin="${kind}:${k}" ${locked?'disabled':''} style="border-radius:12px;padding:8px;background:var(--panel2);border:2px solid ${on?'var(--brass)':'var(--line)'};opacity:${locked?.45:1}"><div style="height:34px;border-radius:8px;${sw}"></div><div style="font-size:12px;font-weight:700;margin-top:6px">${v.name}</div><div style="font-size:10.5px;color:var(--muted)">${locked?`${v.need} win${v.need===1?'':'s'}`:on?'In use':'Tap to use'}</div></button>`; }).join('')}</div>`;
+  sheet(`<h2>Skins</h2><p>Win games against the house to unlock more. ${G.wins} win${G.wins===1?'':'s'} so far.</p>${row('felt','Table')}${row('cue','Cue')}<button class="btn" data-act="close" style="margin-top:14px">Done</button>`); }
+function showResult(){ const r=G.result; if(!r||G.online)return; const stars=r.win?(G.score>=1500?'★★★':G.score>=1100?'★★☆':'★☆☆'):'☆☆☆'; sheet(`<div class="result"><h2>${G.hotseat?`${G.players[r.winner].name} wins!`:r.win?(G.practice?'Table cleared!':'You win!'):`${G.players[1].name} wins`}</h2><div class="stars">${stars}</div><div class="score">${G.hotseat?`${G.potted[0]} – ${G.potted[1]}`:G.score}</div><p>${G.hotseat?'balls potted':G.potted[0]+' potted'} · ${G.fouls[0]} foul${G.fouls[0]===1?'':'s'}${r.win?' · win bonus':''}</p><button class="btn primary" data-act="again">Play again</button><button class="btn" data-act="menu">Menu</button></div>`); }
+/* A sheet over the table. stay: no closing by a tap outside; keep: the sheet is redrawn in place (the invite list while typing). */
+function sheet(html,o){ o=o||{}; const host=$('#sheetHost'); const open=host.querySelector('.sheet .box');
+  if(o.keep&&open){ open.innerHTML=html; return; }
+  host.innerHTML=`<div class="sheet" ${o.stay?'':'data-act="close"'}><div class="box">${html}</div></div>`; }
+function howto(){ sheet(`<div class="howto"><h2>How to play</h2><ol><li><b>Aim:</b> drag anywhere on the table to turn the cue. Drag far from the cue ball for fine control, or use ‹ ›.</li><li><b>Shoot:</b> pull the power bar down and let go. Further is harder.</li><li><b>Spin:</b> tap or drag on the small cue ball: top for follow, bottom for draw, sides for side spin. Double-tap to clear.</li><li><b>8-ball rules:</b> the first ball you pot after the break gives you solids or stripes. Pot all of yours, then call a pocket by tapping it and sink the 8. Scratch, hitting the wrong ball first, or nothing reaching a cushion is a foul: your opponent gets ball in hand (drag the cue ball). Sink the 8 early or in the wrong pocket and you lose.</li><li><b>Colleagues:</b> Play a colleague opens a live table: invite someone, share the 4-digit code, or take a Quick game. 30 seconds a shot.</li><li><b>Score:</b> 100 a ball, a win bonus, faster is better, fouls cost 50.</li></ol><button class="btn primary" data-act="close">Got it</button></div>`); }
+async function boardSheet(){ const b=bridge(); let rows=null; if(b&&b.leaderboard){ try{ rows=await b.leaderboard(); save('board',rows); }catch(e){} } if(!rows)rows=load('board',null);
+  if(rows&&rows.entries){ sheet(`<h2>Leaderboard</h2><p>${esc(rows.company||'Your company')}</p><ol class="board">${rows.entries.slice(0,10).map(e=>`<li class="${e.me?'me':''}"><b>#${e.rank}</b><span>${esc(e.name)}</span><b style="width:auto;color:inherit">${e.score}</b></li>`).join('')||'<li>No scores yet</li>'}</ol><button class="btn" data-act="close" style="margin-top:12px">Close</button>`); }
+  else { const l=load('local',[]); sheet(`<h2>Your best on this device</h2><ol class="board">${l.map((e,i)=>`<li><b>#${i+1}</b><span>${new Date(e.at).toLocaleDateString()}</span><b style="width:auto;color:inherit">${e.score}</b></li>`).join('')||'<li>No games yet</li>'}</ol><button class="btn" data-act="close" style="margin-top:12px">Close</button>`); } }
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-act],[data-diff],[data-skin],[data-join],[data-inv],[data-open]'); if(!b)return; if(b.classList.contains('sheet')&&e.target!==b)return;
+  if(b.dataset.skin){ const [kind,k]=b.dataset.skin.split(':'); if(G.wins<SKINS[kind][k].need)return; G.skin[kind]=k; save('skin',G.skin); SFX.tick(); buzz('light'); skinsSheet(); return; }
+  if(b.dataset.diff){ G.diff=b.dataset.diff; save('diff',G.diff); menu(); SFX.tick(); return; }
+  if(b.dataset.open!=null){ LIVE.hostOpen=b.dataset.open==='1'; renderLobby(); SFX.tick(); return; }
+  if(b.dataset.join){ buzz('light'); joinRoom(b.dataset.join); return; }
+  if(b.dataset.inv){ const id=b.dataset.inv; buzz('light'); act(async()=>{ await LIVE.api.invite(id); if(LIVE.picker){ LIVE.picker.sent.push(id); pickerSheet(); } show('Invite sent'); }); return; }
+  const act_=b.dataset.act; buzz('light');
+  switch(act_){
+    case 'play': $('#menu').hidden=true; $('#sheetHost').innerHTML=''; newGame({diff:G.diff}); break;
+    case 'practice': $('#menu').hidden=true; $('#sheetHost').innerHTML=''; newGame({practice:true}); break;
+    case 'hotseat': $('#menu').hidden=true; $('#sheetHost').innerHTML=''; newGame({hotseat:true}); break;
+    case 'skins': skinsSheet(); break;
+    case 'again': $('#sheetHost').innerHTML=''; newGame({diff:G.diff,practice:G.practice,hotseat:G.hotseat}); break;
+    case 'menu': $('#sheetHost').innerHTML=''; menu(); break;
+    case 'board': boardSheet(); break;
+    case 'close': $('#sheetHost').innerHTML=''; break;
+    case 'colleague': openLobby(); break;
+    case 'back': clearTimeout(LIVE.helloT); menu(); break;
+    case 'quick': act(async()=>{ const v=roomOf(await LIVE.api.quick()); if(v)onRoomState(v); }); break;
+    case 'host': act(async()=>{ const v=roomOf(await LIVE.api.host(LIVE.hostOpen)); if(v)onRoomState(v); }); break;
+    case 'code': joinRoom(LIVE.codeInput||($('#code')||{}).value); break;
+    case 'invite': openPicker(); break;
+    case 'pickclose': LIVE.picker=null; $('#sheetHost').innerHTML=''; break;
+    case 'start': act(async()=>{ const v=roomOf(await LIVE.api.start()); if(v)onRoomState(v); }); break;
+    case 'rematch': LIVE.againSent=true; onlineResult(); act(async()=>{ try{ const v=roomOf(await LIVE.api.again()); if(v)onRoomState(v); }catch(err){ LIVE.againSent=false; onlineResult(); throw err; } }); break;
+    case 'leave': if(LIVE.room&&LIVE.room.status==='playing'&&G.online){ leaveAskSheet(); break; } leaveRoom(); break;
+    case 'leave-now': leaveRoom(); break;
+    case 'fatal-ok': $('#sheetHost').innerHTML=''; LIVE.room=null; LIVE.api=null; LIVE.on=false; menu(); break; } });
+$('#howtoBtn').addEventListener('click',()=>{ buzz('light'); howto(); });
+$('#soundBtn').addEventListener('click',()=>{ soundOn=!soundOn; save('sound',soundOn); $('#soundBtn').textContent=soundOn?'🔊':'🔇'; if(soundOn){ ctx(); SFX.pop(); } });
+$('#leaveBtn').addEventListener('click',()=>{ buzz('light'); if(LIVE.room&&LIVE.room.status==='playing')leaveAskSheet(); else leaveRoom(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('#sheetHost .result'))$('#sheetHost').innerHTML=''; });
+window.addEventListener('sowaka-ready',()=>{ G.skin=Object.assign({felt:'green',cue:'classic'},load('skin',{})); G.wins=load('wins',0)||0; if(G.mode==='menu'&&screen==='menu')menu(); bootLive(); const code=startCode(); if(code&&LIVE.api&&!(LIVE.room&&LIVE.room.code===code)&&booted)joinRoom(code); });
+/* ============================== the demo (a browser preview with no server) ==============================
+   ?demo=lobby | waiting | online | result: a stand-in for the Sowaka server behind the same window.Sowaka.room API, so every live
+   screen can be checked with nobody else around. The colleague across the table shoots with the house's shot choice. */
+function demoFace(i){ const bg=['#3d5a80','#7a4a6e','#4a7a5e','#8a5a2b','#2f5f6f','#6b4f9a','#9a4f4f','#3f6b3f'][i%8], skin=['#f1c7a3','#d9a47a','#b97a52','#8d5a3b','#e8b896'][i%5], hair=['#2b1d14','#4a2e1a','#111','#6b3e1f','#1f1f1f'][(i*3)%5];
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><rect width="80" height="80" fill="${bg}"/><ellipse cx="40" cy="78" rx="28" ry="20" fill="${['#e0e0e0','#2d3e50','#c9962b','#5a7d9a','#a33'][i%5]}"/><rect x="34" y="50" width="12" height="12" fill="${skin}"/><circle cx="40" cy="36" r="17" fill="${skin}"/><path d="M23 34c0-12 8-19 17-19s17 7 17 19c-3-6-9-9-17-9s-14 3-17 9z" fill="${hair}"/><circle cx="34" cy="38" r="1.8" fill="#222"/><circle cx="46" cy="38" r="1.8" fill="#222"/><path d="M35 45q5 4 10 0" stroke="#7a3b2a" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>`;
+  return 'data:image/svg+xml;utf8,'+encodeURIComponent(svg); }
+function demoLive(mode){
+  const people=['Tanvi Shah','Priya Sharma','Rahul Mehta','Arjun Deshpande','Meera Iyer','Kabir Rao','Tanya Bhatia','Ishaan Kapoor','Nikhil Verma','Pooja Nair'];
+  const who=i=>({userId:'u'+i,name:people[i],photoUrl:demoFace(i)});
+  const ME=who(0), OTHER=who(1);
+  const D={room:null,seq:0,timer:null,rules:null};
+  const strip=b=>({n:b.n,x:b.x,y:b.y,on:b.on!==false});
+  const view=()=>D.room?JSON.parse(JSON.stringify(Object.assign({},D.room,{serverNow:Date.now()}))):null;
+  const push=ms=>setTimeout(()=>{ if(window.onSowakaRoom)window.onSowakaRoom({type:'state',room:view()}); },ms||40);
+  const feed=(item,ms)=>setTimeout(()=>{ if(window.onSowakaRoom)window.onSowakaRoom({type:'feed',item}); },ms||60);
+  const player=p=>Object.assign({},p,{online:true,group:null,pottedCount:0});
+  const mk=(code,open,host)=>({code,status:'lobby',you:ME.userId,hostId:(host||ME).userId,open:open!==false,players:[player(host||ME)],invited:[],turn:0,balls:[],inHand:false,kitchen:false,open8:true,breakShot:true,onEight:false,calledPocket:null,shotClock:null,replayUntil:0,lastShot:null,message:null,result:null,gameNo:0,wins:[0,0]});
+  function start(r,breaker){ r.status='playing'; r.gameNo++; r.turn=breaker|0; r.balls=E.rack().map(strip); r.inHand=true; r.kitchen=true; r.breakShot=true; r.open8=true; r.calledPocket=null; r.onEight=false; r.lastShot=null; r.message=null; r.result=null;
+    r.players.forEach(p=>{ p.group=null; p.pottedCount=0; }); D.rules={groups:[null,null]}; r.replayUntil=Date.now(); r.shotClock={endsAt:Date.now()+30000}; push(); if(r.turn===1)opponent(r); }
+  function finish(r,winner,reason){ r.status='over'; r.result={winner,reason}; r.wins[winner]++; r.shotClock=null; r.turn=winner; }
+  function shot(r,s,by){ const st={balls:r.balls.map(b=>Object.assign({vx:0,vy:0},b)),turn:by,groups:D.rules.groups,open:r.open8,inHand:r.inHand,kitchen:r.kitchen,breakShot:r.breakShot,calledPocket:r.calledPocket};
+    const cue=r.balls.find(b=>b.n===0); const from={x:cue.x,y:cue.y}; const res=E.simulateShot(st.balls,s); const out=E.resolve(st,res.balls,res.events); const at=Date.now();
+    r.lastShot={seq:++D.seq,by,aim:s.aim,power:s.power,spin:s.spin,from,events:res.events,balls:res.balls.map(strip),steps:res.steps,at};
+    r.balls=out.next.balls.map(strip); r.turn=out.next.turn; D.rules.groups=out.next.groups; r.open8=out.next.open; r.inHand=out.next.inHand; r.kitchen=out.next.kitchen; r.breakShot=false; r.calledPocket=null;
+    r.players.forEach((p,i)=>{ p.group=out.next.groups[i]; }); r.players[by].pottedCount+=out.potted.filter(n=>out.next.groups[by]==null||groupOf(n)===out.next.groups[by]).length;
+    r.onEight=E.onEight(out.next,r.turn); r.message=out.message; r.replayUntil=at+Math.min(20000,res.steps/240*1000+300);
+    const name=r.players[by].name;
+    if(out.foul)feed({kind:'foul',userId:r.players[by].userId,name,text:`${first(name)}: ${out.foul}`},res.steps/240*1000+400);
+    if(out.winner!=null)finish(r,out.winner,out.foul?'foul':'eight'); else r.shotClock={endsAt:r.replayUntil+30000};
+    push(); if(r.status==='playing'&&r.turn===1)opponent(r); }
+  function opponent(r){ clearTimeout(D.timer); const wait=Math.max(0,r.replayUntil-Date.now())+1800;
+    D.timer=setTimeout(()=>{ if(D.room!==r||r.status!=='playing'||r.turn!==1)return;
+      const plan=planShot({balls:r.balls,turn:1,groups:D.rules.groups,open:r.open8,breakShot:r.breakShot,kitchen:r.kitchen,inHand:r.inHand,diff:'medium'});
+      if(plan.place){ const cue=r.balls.find(b=>b.n===0); cue.x=plan.place.x; cue.y=plan.place.y; cue.on=true; push(); }
+      if(plan.called!=null){ r.calledPocket=plan.called; push(); }
+      setTimeout(()=>{ if(D.room===r&&r.status==='playing'&&r.turn===1)shot(r,{aim:plan.aim,power:plan.power,spin:{top:0,side:0}},1); },700); },wait); }
+  const refuse=(status,message)=>Object.assign(new Error(message),{status});
+  const delay=v=>new Promise(res=>setTimeout(()=>res(v),120));
+  const api={
+    hello:()=>delay({room:view(),rooms:D.rooms,invites:D.invites}),
+    host:open=>{ D.room=mk('4821',open); return delay(view()); },
+    quick:()=>{ D.room=mk('7350',true,OTHER); D.room.players.push(player(ME)); setTimeout(()=>{ if(D.room&&D.room.code==='7350'&&D.room.status==='lobby')start(D.room,0); },1800); return delay(view()); },
+    join:code=>{ const r=D.rooms.find(x=>x.code===code)||D.invites.find(x=>x.code===code); if(!r)return Promise.reject(refuse(404,'No table has that code at your company.')); if(r.players&&r.players.length>=2)return Promise.reject(refuse(409,'That table has two players already.'));
+      const host=(r.host&&who(people.indexOf(r.host.name)))||(r.from&&who(people.indexOf(r.from.name)))||OTHER; D.room=mk(code,true,host); D.room.players.push(player(ME)); D.invites=D.invites.filter(i=>i.code!==code);
+      setTimeout(()=>{ if(D.room&&D.room.code===code&&D.room.status==='lobby')start(D.room,0); },2200); return delay(view()); },
+    leave:()=>{ clearTimeout(D.timer); D.room=null; return delay({}); },
+    invite:userId=>{ const r=D.room; if(!r)return Promise.reject(refuse(404,'You are not at a table.')); const p=D.everyone.find(x=>x.userId===userId); if(p){ r.invited.push({userId:p.userId,name:p.name,photoUrl:p.photoUrl}); push();
+        setTimeout(()=>{ if(D.room!==r||r.players.length>=2)return; r.players.push(player(p)); r.invited=r.invited.filter(i=>i.userId!==p.userId); push(); feed({kind:'join',userId:p.userId,name:p.name}); },2500); } return delay({invited:true}); },
+    start:()=>{ const r=D.room; if(!r)return Promise.reject(refuse(404,'You are not at a table.')); if(r.hostId!==ME.userId)return Promise.reject(refuse(403,'Only the host starts the game.')); if(r.players.length<2)return Promise.reject(refuse(409,'The table needs two players.')); start(r,0); return delay(view()); },
+    again:()=>{ const r=D.room; if(!r||r.status!=='over')return Promise.reject(refuse(409,'The game is still on.')); if(r.players.length<2){ r.status='lobby'; r.balls=[]; push(); } else start(r,1-r.result.winner); return delay(view()); },
+    place:(x,y)=>{ const r=D.room; if(!r||r.status!=='playing'||r.turn!==0)return Promise.reject(refuse(409,"It isn't your turn.")); if(!r.inHand)return Promise.reject(refuse(409,'You do not have ball in hand.')); const ok=E.placementOk(r.balls.map(b=>Object.assign({vx:0,vy:0},b)),x,y,r.kitchen); if(!ok)return Promise.reject(refuse(400,'The cue ball cannot go there.')); const cue=r.balls.find(b=>b.n===0); cue.x=x; cue.y=y; cue.on=true; push(); return delay(view()); },
+    call:pocket=>{ const r=D.room; if(!r||r.status!=='playing'||r.turn!==0)return Promise.reject(refuse(409,"It isn't your turn.")); if(!r.onEight)return Promise.reject(refuse(409,'You are not on the 8 yet.')); r.calledPocket=pocket; push(); return delay(view()); },
+    shot:s=>{ const r=D.room; if(!r||r.status!=='playing'||r.turn!==0)return Promise.reject(refuse(409,"It isn't your turn.")); if(Date.now()<r.replayUntil)return Promise.reject(refuse(409,'The balls are still rolling.')); shot(r,{aim:+s.aim,power:+s.power,spin:{top:+s.spin.top||0,side:+s.spin.side||0}},0); return delay(view()); },
+  };
+  D.everyone=people.slice(2).map((n,i)=>who(i+2)).concat(Array.from({length:70},(_,i)=>({userId:'c'+i,name:`${'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[i%26]}${['arun','ita','ohan','eena'][i%4]} ${['Shah','Rao','Iyer'][i%3]}`,photoUrl:demoFace(i+2)}))).sort((a,b)=>a.name.localeCompare(b.name));
+  D.everyone.forEach((p,i)=>{ p.designation=['Designer','Engineer','Sales lead','HR partner'][i%4]; });
+  const t=Date.now();
+  D.rooms=[{code:'4821',host:{userId:'u2',name:people[2]},players:[who(2)],status:'lobby',seatFree:true,createdAt:t-120000},{code:'2196',host:{userId:'u3',name:people[3]},players:[who(3),who(4)],status:'playing',seatFree:false,createdAt:t-600000}];
+  D.invites=[{code:'5904',from:who(5),players:1,createdAt:t-30000,expiresAt:t+900000}];
+  window.Sowaka=Object.assign(window.Sowaka||{},{live:true,room:api,colleagues:q=>new Promise(r=>setTimeout(()=>r({colleagues:D.everyone.filter(p=>!q||p.name.toLowerCase().includes(String(q).toLowerCase())).slice(0,50)}),120))});
+  if(mode==='waiting'){ D.room=mk('4821',true); if(/guest/.test(location.search)){ D.room=mk('4821',false,OTHER); D.room.players.push(player(ME)); } }
+  if(mode==='online'||mode==='result'){ const r=D.room=mk('7350',true); r.players.push(player(OTHER)); start(r,0);
+    // a few shots in: solids to Tanvi, three balls down, Tanvi to shoot
+    const brk={aim:0.004,power:1,spin:{top:0,side:0}}; const res=E.simulateShot(E.rack(),brk); r.balls=res.balls.map(strip); r.breakShot=false; r.inHand=false; r.kitchen=false;
+    for(const n of [1,2,9]){ const b=r.balls.find(x=>x.n===n); b.on=false; } const cue=r.balls.find(b=>b.n===0); cue.on=true; cue.x=0.62; cue.y=0.48;
+    D.rules={groups:['solid','stripe']}; r.open8=false; r.players[0].group='solid'; r.players[1].group='stripe'; r.players[0].pottedCount=2; r.players[1].pottedCount=1; r.turn=0; r.shotClock={endsAt:Date.now()+30000}; r.replayUntil=Date.now(); r.wins=[1,0]; r.gameNo=2;
+    r.lastShot={seq:(D.seq=3),by:1,aim:2.4,power:0.5,spin:{top:0,side:0},from:{x:0.7,y:0.4},events:[],balls:r.balls.map(strip),steps:600,at:Date.now()-4000};
+    if(mode==='result'){ finish(r,/lose/.test(location.search)?1:0,/left/.test(location.search)?'left':/foul/.test(location.search)?'foul':'eight'); } }
+  bootLive().then(()=>{ if(mode==='lobby')openLobby(); });
+}
+/* ============================== start ============================== */
+G.diff=load('diff','medium'); G.skin=Object.assign({felt:'green',cue:'classic'},load('skin',{})); G.wins=load('wins',0)||0; $('#soundBtn').textContent=soundOn?'🔊':'🔇';
+layout(); spinDot(); menu();
+const demoMode=!window.__POOL&&!roomApi()?new URLSearchParams(location.search).get('demo'):null;
+if(demoMode)demoLive(demoMode); else { bootLive(); if(!load('seenHowTo',false)){ save('seenHowTo',true); setTimeout(howto,400); } }
+requestAnimationFrame(loop);
+window.__pool={G,LIVE,E,newGame,beginShot,houseTurn,planShot,rack,launch,onRoomState,applyRoom,startReplay,menu,screen:()=>screen};
+})();
+</script>
+</body>
+</html>
