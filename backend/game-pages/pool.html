@@ -372,7 +372,7 @@ function remaining(group){ return remainingOf(G.balls,group); }
 function onEight(i){ const g=ownGroup(i); return !!g&&remaining(g)===0; }
 /* Whose shot it is on this phone: the house and a colleague on another phone are not ours to play. */
 function localTurn(){ return G.mode==='play'&&(G.online?G.turn===G.me:!G.players[G.turn].house); }
-function canAct(){ return localTurn()&&!G.shooting&&!G.replaying&&!G.motion; }
+function canAct(){ return localTurn()&&!G.shooting&&!G.replaying&&!G.motion&&!(G.online&&LIVE.own); }
 function newGame(opts){ Object.assign(G,{balls:rack(),turn:0,open:true,inHand:false,kitchen:false,breakShot:true,shooting:false,motion:null,spin:{top:0,side:0},calledPocket:null,fouls:[0,0],potted:[0,0],score:0,started:Date.now(),result:null,shotAnim:null,practice:!!opts.practice,diff:opts.diff||G.diff,online:false,me:0,replaying:false,clockEnds:null,lastFoul:null,aiTarget:null});
   G.hotseat=!!opts.hotseat;
   const me={name:first(bridge()?bridge().playerName():'You'),group:null,house:false,photo:null,online:true};
@@ -388,7 +388,7 @@ function launch(shot,opts){
   opts=opts||{};
   const cue=G.balls.find(b=>b.n===0); if(!cue||!cue.on)return null;
   for(const b of G.balls){ b.vx=0; b.vy=0; }
-  const res=opts.result||E.simulateShot(plain(G.balls),shot);
+  const res=opts.result||(opts.snap?{balls:opts.snap,events:[],steps:0}:E.simulateShot(plain(G.balls),shot)); // a replay brings its own end positions
   const power=clamp(Number(shot.power)||0,0,1), dx=Math.cos(shot.aim), dy=Math.sin(shot.aim), v=VMAX*(0.18+0.82*power);
   cue.vx=dx*v; cue.vy=dy*v;
   G.motion={spin:{top:clamp(Number(shot.spin&&shot.spin.top)||0,-1,1),side:clamp(Number(shot.spin&&shot.spin.side)||0,-1,1),dirx:dx,diry:dy,used:false},res,snap:opts.snap||res.balls,steps:0,onDone:opts.onDone||null,firstHit:null,who:opts.who||null};
@@ -597,11 +597,12 @@ function renderHud(){ const h=$('#hud'); if(G.mode==='menu'){ h.innerHTML=''; $(
     const tag=p.house&&!G.practice?' · house':G.online&&i===G.me?' · you':'';
     const lbl=G.practice&&i===1?'solo':G.online&&p.online===false?'away':g?(onEight(i)?'on the 8':`${remaining(g)} left`):'open table';
     return `<div class="pcard ${G.turn===i&&playing?'on':''} ${G.online&&p.online===false?'away':''}"><div class="av ${p.photo?'photo':''}"${faceStyle(p)}>${ring}${p.photo?'':esc(initials(p.name))}</div><div class="who"><div class="nm">${esc(p.name)}${tag}</div><div class="grp">${dots}</div><div class="lbl">${lbl}</div></div></div>`; }).join('');
-  const mine=playing&&localTurn()&&!G.shooting&&!G.motion&&!G.replaying;
+  const mine=playing&&localTurn()&&!G.shooting&&!G.motion&&!G.replaying&&!(G.online&&LIVE.own);
   const controls=mine&&(G.online||!G.inHand); // on a live table the cue ball may be moved and shot from where it lies; at home a ball in hand is placed first
   $('#power').hidden=!controls; $('#spin').hidden=!controls; $('#fine').hidden=!controls;
-  $('#clock').hidden=!playing||G.practice||(G.online&&(!G.clockEnds||G.replaying||G.motion));
-  const w=$('#wait'); if(G.online&&playing&&!localTurn()&&!G.motion&&!G.replaying){ w.hidden=false; w.textContent=`${G.players[G.turn].name}${G.players[G.turn].online===false?' is away':' is lining up'}…`; } else w.hidden=true; }
+  $('#clock').hidden=!playing||G.practice||(G.online&&(!G.clockEnds||G.replaying||G.motion||!!LIVE.own));
+  const w=$('#wait'); if(G.online&&playing&&!G.motion&&!G.replaying&&LIVE.own){ w.hidden=false; w.textContent='Checking the shot…'; }
+  else if(G.online&&playing&&!localTurn()&&!G.motion&&!G.replaying){ w.hidden=false; w.textContent=`${G.players[G.turn].name}${G.players[G.turn].online===false?' is away':' is lining up'}…`; } else w.hidden=true; }
 let msgT=null; function show(t,bad){ const m=$('#msg'); m.textContent=t; m.className='msg show'+(bad?' bad':''); clearTimeout(msgT); msgT=setTimeout(()=>m.classList.remove('show'),2600); }
 function toast(text){ const host=$('#toasts'); const t=document.createElement('div'); t.className='toast'; t.textContent=text; host.appendChild(t); while(host.children.length>3)host.firstChild.remove(); setTimeout(()=>{ t.style.opacity='0'; setTimeout(()=>t.remove(),260); },2800); }
 /* ============================== input ============================== */
@@ -643,7 +644,7 @@ function setClock(left){ const prev=G.clock; G.clock=left; const el=$('#clock');
 function loop(now){ const dt=Math.min(0.05,(now-last)/1000); last=now;
   if(G.motion)advance(dt);
   else if(G.mode==='play'){
-    if(G.online){ if(G.clockEnds&&!G.replaying)setClock(clamp((G.clockEnds-serverNow())/1000,0,30)); }
+    if(G.online){ if(G.clockEnds&&!G.replaying&&!LIVE.own)setClock(clamp((G.clockEnds-serverNow())/1000,0,30)); }
     else if(!G.players[G.turn].house&&!G.practice){ const left=Math.max(0,30-(now-G.clockAt)/1000); setClock(left);
       if(left<=0){ G.fouls[G.turn]++; const o=1-G.turn; show(`Time is up: ${G.players[o].house?'the house has':G.players[o].name+' has'} ball in hand`,true); SFX.foul(); G.turn=o; G.inHand=true; G.kitchen=false; G.breakShot=false; G.calledPocket=null; startClock(); renderHud(); if(G.players[o].house)setTimeout(houseTurn,900); } } }
   draw(now); requestAnimationFrame(loop); }
@@ -655,7 +656,7 @@ const Board={ async submit(score){ const b=bridge(); if(b&&b.submitScore){ try{ 
    either, "Play a colleague" only says it needs the Sowaka app. The server is the referee: the page sends aim/power/spin, placements and
    the called pocket, and shows the room view it gets back. A new lastShot is replayed with the engine from the table as it was, then the
    table snaps to the positions the server sent. */
-const LIVE={api:null,on:false,offline:false,fatal:null,rooms:[],invites:[],room:null,seq:null,pending:null,own:null,feedQ:[],picker:null,hostOpen:true,codeInput:'',offset:0,msgKey:'',resultKey:'',againSent:false,helloT:null,busy:false,leaveAsk:false};
+const LIVE={api:null,on:false,offline:false,fatal:null,rooms:[],invites:[],room:null,seq:null,pending:null,own:null,feedQ:[],picker:null,hostOpen:true,codeInput:'',offset:0,msgKey:'',resultKey:'',againSent:false,helloT:null,busy:false,leaveAsk:false,leaving:false,foulFeed:false};
 const roomApi=()=>{ const S=window.Sowaka; return S&&S.live&&S.room?S.room:null; };
 const roomOf=d=>d&&typeof d==='object'?('room' in d&&!d.code?(d.room||null):(d.code?d:null)):null;
 const serverNow=()=>Date.now()+LIVE.offset;
@@ -675,35 +676,37 @@ function onRoomEvent(evt){ if(!evt||typeof evt!=='object')return;
     case 'fatal': LIVE.fatal=evt.message||'Sowaka Pool lost its connection. Close and reopen it.'; if(screen!=='menu'||G.online)fatalSheet(); break; } }
 /* ---------- the room view in ---------- */
 function onRoomState(room){
-  if(!room){ if(LIVE.leaving)return; const had=LIVE.room; LIVE.room=null; LIVE.seq=null; LIVE.pending=null; LIVE.own=null; if(had&&(screen==='waiting'||G.online)){ toLobby(); show(had.status==='over'?'The table closed':'The table closed',true); } return; }
-  if(G.online&&G.motion&&screen==='play'&&LIVE.room&&LIVE.room.code===room.code){ LIVE.pending=room; return; } // the balls are rolling: the view waits for them
+  if(!room){ if(LIVE.leaving)return; const had=LIVE.room; LIVE.room=null; LIVE.seq=null; LIVE.pending=null; LIVE.own=null; if(had&&(screen==='waiting'||G.online)){ toLobby(); show('The table closed',true); } return; }
+  if(G.online&&(G.motion||G.replaying)&&screen==='play'&&LIVE.room&&LIVE.room.code===room.code){ LIVE.pending=room; return; } // the balls are rolling (or the cue is swinging to a replay): the view waits for them
   const ls=room.lastShot||null, seq=ls?ls.seq|0:0, prev=LIVE.room;
   const sameGame=prev&&prev.code===room.code&&prev.gameNo===room.gameNo&&prev.status==='playing';
   if(ls&&G.online&&screen==='play'&&sameGame&&LIVE.seq!=null&&seq===LIVE.seq+1){
     LIVE.seq=seq;
-    if(LIVE.own&&ls.by===G.me){ LIVE.own=null; applyRoom(room); return; } // our own shot, already shown as it was sent
+    if(ls.by===G.me){ LIVE.own=null; applyRoom(room); return; } // our own shot (shown as it was sent, even if its ack was lost): no replay, no toasts about ourselves
     LIVE.pending=room; startReplay(ls); return; }
-  LIVE.own=null; LIVE.seq=seq; applyRoom(room); }
+  if(!(LIVE.own&&seq===LIVE.seq&&room.status==='playing'&&room.turn===G.me))LIVE.own=null; // a presence push while our verdict is pending keeps us waiting
+  LIVE.seq=seq; applyRoom(room); }
 function applyRoom(room){ const prev=LIVE.room; LIVE.room=room; if(room.serverNow)LIVE.offset=room.serverNow-Date.now();
   LIVE.invites=LIVE.invites.filter(i=>i.code!==room.code);
-  if(room.status==='lobby'){ LIVE.againSent=false; LIVE.resultKey=''; const lk=`lobby:${room.gameNo}:${room.message||''}`; if(room.message&&lk!==LIVE.msgKey){ LIVE.msgKey=lk; show(room.message,/abandon|away|left/i.test(room.message)); } if(G.online||G.mode!=='menu'){ G.online=false; G.motion=null; G.shooting=false; G.replaying=false; G.mode='menu'; G.result=null; G.balls=rack(); $('#sheetHost').innerHTML=''; $('#leaveBtn').hidden=true; renderHud(); } renderWaiting(); return; }
+  if(room.status==='lobby'){ LIVE.againSent=false; LIVE.resultKey=''; const lk=`lobby:${room.gameNo}:${room.message||''}`; if(room.message&&lk!==LIVE.msgKey){ LIVE.msgKey=lk; show(room.message,true); } if(G.online||G.mode!=='menu'){ G.online=false; G.motion=null; G.shooting=false; G.replaying=false; G.mode='menu'; G.result=null; G.balls=rack(); $('#sheetHost').innerHTML=''; $('#leaveBtn').hidden=true; renderHud(); } renderWaiting(); return; }
   const fresh=!G.online||screen!=='play'||!prev||prev.code!==room.code||prev.gameNo!==room.gameNo||prev.status==='lobby';
-  if(fresh)enterOnline(room); else syncTable(room); }
+  if(fresh)enterOnline(room); else syncTable(room,prev); }
 function enterOnline(room){ Object.assign(G,{online:true,hotseat:false,practice:false,mode:'play',result:null,fouls:[0,0],started:Date.now(),shotAnim:null,motion:null,shooting:false,replaying:false,aim:0,power:0,spin:{top:0,side:0},calledPocket:null,lastFoul:null});
   LIVE.againSent=false; LIVE.feedQ=[];
   G.balls=dress(room.balls&&room.balls.length?room.balls:E.rack());
   $('#menu').hidden=true; $('#sheetHost').innerHTML=''; pane(null); screen='play'; $('#leaveBtn').hidden=false; LIVE.leaveAsk=false; spinDot(); layout();
   syncTable(room);
   if(room.status==='playing'){ const me=G.me; show(room.turn===me?(room.breakShot?'You break. Pull the power bar and let go':'Your turn'):`${G.players[room.turn].name} ${room.breakShot?'breaks':'to shoot'}`); } }
-function syncTable(room){ const me=myIndex(room); G.me=me;
-  G.players=room.players.map(p=>({name:p.userId===room.you?first(p.name):first(p.name),photo:p.photoUrl||null,group:p.group||null,house:false,online:p.online!==false,userId:p.userId}));
+function syncTable(room,prev){ const me=myIndex(room); G.me=me;
+  G.players=room.players.map(p=>({name:first(p.name),photo:p.photoUrl||null,group:p.group||null,house:false,online:p.online!==false,userId:p.userId}));
   while(G.players.length<2)G.players.push({name:'Open seat',photo:null,group:null,house:false,online:false,userId:null});
   G.potted=[0,1].map(i=>room.players[i]?room.players[i].pottedCount|0:0);
   if(room.balls&&room.balls.length)adopt(room.balls);
   G.turn=room.turn|0; G.open=!!room.open8; G.kitchen=!!room.kitchen; G.inHand=!!room.inHand; G.breakShot=!!room.breakShot; G.calledPocket=room.calledPocket==null?null:room.calledPocket|0;
   G.clockEnds=room.shotClock&&room.shotClock.endsAt?+room.shotClock.endsAt:null;
   const key=`${room.lastShot?room.lastShot.seq:0}:${room.turn}:${room.message||''}`;
-  if(room.message&&key!==LIVE.msgKey){ LIVE.msgKey=key; const bad=/foul|scratch|time|weak/i.test(room.message); show(room.message+(bad&&room.inHand&&room.status==='playing'?`. ${room.turn===me?'You have':G.players[room.turn].name+' has'} ball in hand`:''),bad); if(bad)SFX.foul(); }
+  const foul=room.status==='playing'&&!!room.inHand&&!!prev&&prev.status==='playing'&&room.turn!==prev.turn||LIVE.foulFeed; LIVE.foulFeed=false; // ball in hand passed to the other seat: a foul or a timeout
+  if(room.message&&key!==LIVE.msgKey){ LIVE.msgKey=key; const bad=foul; show(room.message+(bad&&room.inHand&&room.status==='playing'?`. ${room.turn===me?'You have':G.players[room.turn].name+' has'} ball in hand`:''),bad); if(bad)SFX.foul(); }
   else if(!room.message&&key!==LIVE.msgKey&&room.status==='playing'&&room.lastShot){ LIVE.msgKey=key; if(room.turn===me)show('Your turn'); }
   if(room.status==='over'){ G.mode='over'; const rk=`${room.code}:${room.gameNo}`;
     if(room.result){ const win=room.result.winner===me; G.result={win,winner:room.result.winner};
@@ -728,20 +731,22 @@ async function sendShot(shot){ const api=LIVE.api; if(!api)return;
   LIVE.own={at:Date.now()};
   launch(shot,{who:'You',onDone:()=>{ const p=LIVE.pending; LIVE.pending=null; if(p)onRoomState(p); flushFeed(); }});
   try{ const r=await api.shot(shot); const v=roomOf(r); if(v)onRoomState(v); }
-  catch(err){ LIVE.own=null; G.motion=null; G.shooting=false; G.shotAnim=null; show(err.message||'The shot was not accepted',true); if(LIVE.room)syncTable(LIVE.room); } }
+  catch(err){ if(!err.status){ show('No answer from the server yet: the table will catch up',true); return; } // a lost ack: the shot may have landed; the next view (lastShot by us) says
+    LIVE.own=null; G.motion=null; G.shooting=false; G.shotAnim=null; show(err.message||'The shot was not accepted',true); if(LIVE.room)syncTable(LIVE.room,LIVE.room); } }
 async function placeOnline(){ const api=LIVE.api, cue=G.balls.find(b=>b.n===0); if(!api||!cue)return; const x=cue.x, y=cue.y;
   try{ const r=await api.place(x,y); const v=roomOf(r); if(v)onRoomState(v); }
   catch(err){ show(err.message||'The cue ball cannot go there',true); if(LIVE.room)syncTable(LIVE.room); } }
 /* ---------- feed lines as toasts ---------- */
 const FEED={join:i=>`${first(i.name)} sat down`,leave:i=>`${first(i.name)} left the table`,host:i=>`${first(i.name)} is the host now`,foul:i=>i.text||`${first(i.name)} fouled`,timeout:i=>i.text||`${first(i.name)} ran out of time`};
-function onFeed(item){ if(!item||typeof item!=='object')return; const text=item.text&&!FEED[item.kind]?String(item.text):FEED[item.kind]?FEED[item.kind](item):null; if(!text)return;
+function onFeed(item){ if(!item||typeof item!=='object')return; if(item.kind==='foul'||item.kind==='timeout')LIVE.foulFeed=true; const text=item.text&&!FEED[item.kind]?String(item.text):FEED[item.kind]?FEED[item.kind](item):null; if(!text)return;
   if(G.motion||G.replaying)LIVE.feedQ.push(text); else toast(text);
   if(screen==='waiting'&&(item.kind==='join'||item.kind==='leave'))SFX.pop(); }
 function flushFeed(){ const q=LIVE.feedQ.splice(0); q.forEach((t,i)=>setTimeout(()=>toast(t),i*250)); }
 /* ---------- screens: the lobby ---------- */
 async function openLobby(){ if(!LIVE.api){ needsApp(); return; } if(LIVE.fatal){ fatalSheet(); return; }
   screen='lobby'; G.mode='menu'; G.balls=rack(); $('#menu').hidden=true; $('#sheetHost').innerHTML=''; $('#leaveBtn').hidden=true; renderHud(); renderLobby(); refreshLobby(); }
-async function refreshLobby(){ if(!LIVE.api||LIVE.busy)return; clearTimeout(LIVE.helloT);
+async function refreshLobby(){ if(!LIVE.api)return; clearTimeout(LIVE.helloT);
+  if(LIVE.busy){ if(screen==='lobby')LIVE.helloT=setTimeout(refreshLobby,8000); return; }
   try{ const h=await LIVE.api.hello(); LIVE.rooms=Array.isArray(h.rooms)?h.rooms:[]; LIVE.invites=Array.isArray(h.invites)?h.invites.map(i=>({code:String(i.code),from:i.from||{},players:i.players,expiresAt:i.expiresAt||null})):LIVE.invites;
     const room=roomOf(h.room); if(room&&screen==='lobby'&&!LIVE.leaving){ onRoomState(room); return; } if(screen==='lobby'&&!busyInput())renderLobby(); }
   catch(err){ if(screen==='lobby')show(err.message||'Could not reach the table list',true); }
@@ -821,7 +826,7 @@ async function bootLive(){ const api=roomApi(); if(!api||booted)return; booted=t
     if(room)onRoomState(room); else if(code)await joinRoom(code); else if(screen==='menu')menu(); }
   catch(err){ if(window.__poolLive&&window.__poolLive.fatal){ LIVE.fatal=window.__poolLive.fatal.message; } } }
 /* ============================== screens ============================== */
-function menu(){ G.mode='menu'; G.online=false; G.motion=null; G.shooting=false; G.replaying=false; screen='menu'; G.balls=rack(); renderHud(); pane(null); $('#leaveBtn').hidden=true; const best=Board.best(); const inv=LIVE.invites.length;
+function menu(){ G.mode='menu'; G.online=false; G.motion=null; G.shooting=false; G.replaying=false; screen='menu'; G.balls=rack(); renderHud(); pane(null); $('#leaveBtn').hidden=true; const best=Board.best(); const now=serverNow(); const inv=LIVE.invites.filter(i=>!i.expiresAt||+i.expiresAt>now).length;
   $('#menu').hidden=false; $('#menu').innerHTML=`<div class="card"><div class="best"><div><span>Your best</span><b>${best==null?'—':best}</b></div><button class="btn" style="width:auto;padding:0 14px;min-height:40px" data-act="board">Leaderboard</button></div>
     <h2 class="title">Rack 'em up</h2><p class="sub">8-ball with a colleague or against the house. Drag to aim, pull the bar to shoot, tap the cue ball for spin.</p>
     <button class="btn primary" data-act="colleague">Play a colleague${inv?` · ${inv} invite${inv===1?'':'s'}`:''}</button>
