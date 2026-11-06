@@ -323,19 +323,39 @@ let touched=false; document.addEventListener('pointerdown',()=>{ touched=true; }
 const buzz=k=>{ const b=bridge(); if(b&&b.haptic)b.haptic(k); else if(navigator.vibrate&&touched)try{ navigator.vibrate(k==='heavy'?40:k==='medium'?20:8); }catch(e){} };
 /* ============================== sound ============================== */
 let audio=null, master=null, soundOn=load('sound',true);
-function ctx(){ try{ audio=audio||new (window.AudioContext||window.webkitAudioContext)(); if(audio.state==='suspended')audio.resume().catch(()=>{}); if(!master){ master=audio.createGain(); master.gain.value=.5; master.connect(audio.destination); } return audio; }catch(e){ return null; } }
+function ctx(){ try{ audio=audio||new (window.AudioContext||window.webkitAudioContext)(); if(audio.state==='suspended')audio.resume().catch(()=>{}); if(!master){ master=audio.createGain(); master.gain.value=.5; const comp=audio.createDynamicsCompressor(); comp.threshold.value=-14; comp.knee.value=12; comp.ratio.value=6; comp.attack.value=.002; comp.release.value=.12; master.connect(comp); comp.connect(audio.destination); } return audio; }catch(e){ return null; } }
 let noiseBuf=null;
+const audioLive=()=>!!audio&&audio.state==='running'; // sounds pushed by the server (not a tap) play only when audio already runs, else they would queue up for the next tap
 function tone(f,d,o={}){ if(!soundOn)return; const a=ctx(); if(!a)return; const t=a.currentTime+(o.at||0), osc=a.createOscillator(), g=a.createGain(); osc.type=o.type||'sine'; osc.frequency.setValueAtTime(f,t); if(o.to)osc.frequency.exponentialRampToValueAtTime(o.to,t+d); g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(o.gain||.1,t+(o.attack||.004)); g.gain.exponentialRampToValueAtTime(.0001,t+d); osc.connect(g).connect(master); osc.start(t); osc.stop(t+d+.02); }
 function hiss(d,o={}){ if(!soundOn)return; const a=ctx(); if(!a)return; if(!noiseBuf){ noiseBuf=a.createBuffer(1,a.sampleRate*.4|0,a.sampleRate); const x=noiseBuf.getChannelData(0); for(let i=0;i<x.length;i++)x[i]=Math.random()*2-1; }
   const t=a.currentTime+(o.at||0), s=a.createBufferSource(), f=a.createBiquadFilter(), g=a.createGain(); s.buffer=noiseBuf; f.type='bandpass'; f.Q.value=o.q||1; f.frequency.setValueAtTime(o.freq||2000,t); if(o.to)f.frequency.exponentialRampToValueAtTime(o.to,t+d); g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(o.gain||.1,t+(o.attack||.003)); g.gain.exponentialRampToValueAtTime(.0001,t+d); s.connect(f).connect(g).connect(master); s.start(t); s.stop(t+d+.02); }
+/* Every sound is made here (no files: the page may play only what it synthesises). Each one is a few layered
+   parts: a struck body (a low tone with a fast drop), a contact (a short noise burst) and a ring (a high partial). */
+function clink(at,gain,f){ f=f||2300+Math.random()*700; [1,1.49,2.11].forEach((m,i)=>tone(f*m,.11-i*.02,{at,gain:gain*(i?.4:1),type:i?'sine':'triangle',attack:.002})); hiss(.02,{at,gain:gain*.7,freq:6200,q:1.2,attack:.001}); }
 const SFX={
-  strike:p=>{ hiss(.04,{gain:.25*p+.05,freq:1800,to:600,q:.7}); tone(140,.08,{gain:.18*p+.04,to:70}); },
-  click:v=>{ const g=clamp(v*.25,.03,.3); tone(2600+Math.random()*600,.03,{gain:g,type:'triangle'}); hiss(.015,{gain:g*.6,freq:5000,q:1.5,attack:.001}); },
-  cushion:v=>{ tone(120,.07,{gain:clamp(v*.12,.02,.14),to:60}); hiss(.03,{gain:.05,freq:700,q:1}); },
-  pocket:()=>{ tone(520,.12,{gain:.12,to:180,type:'triangle'}); hiss(.16,{gain:.09,freq:900,to:300,q:.8,at:.03}); tone(90,.18,{gain:.12,at:.06,to:50}); },
-  win:()=>[523,659,784,1047,1319].forEach((f,i)=>tone(f,.4,{type:'triangle',gain:.09,at:.12+i*.09})),
-  lose:()=>[392,330,262].forEach((f,i)=>tone(f,.4,{type:'triangle',gain:.07,at:i*.18})),
-  foul:()=>{ tone(220,.2,{type:'square',gain:.05}); tone(180,.25,{type:'square',gain:.05,at:.18}); },
+  // the cue on the ball: a leather tip's thud with a crisp tick, louder with the power
+  strike:p=>{ const g=.12+.3*p; hiss(.03,{gain:g*.9,freq:2400,to:900,q:.8,attack:.001}); tone(160,.09,{gain:g,to:60}); tone(1900,.025,{gain:g*.35,type:'triangle',attack:.001}); },
+  // the break: the rack cracks open, a burst of clinks over a thud
+  crack:()=>{ tone(110,.18,{gain:.32,to:45}); hiss(.08,{gain:.35,freq:3200,to:900,q:.6,attack:.001}); for(let i=0;i<10;i++)clink(.01+i*.014+Math.random()*.01,.14-i*.008); },
+  // ball on ball: the classic clack, pitch and loudness with the speed
+  click:v=>{ const g=clamp(v*.3,.04,.42); const f=2300+Math.min(1,v/3)*700+Math.random()*250; tone(f,.045,{gain:g,type:'triangle',attack:.001}); tone(f*1.5,.03,{gain:g*.35,type:'sine',attack:.001}); hiss(.018,{gain:g*.8,freq:5200,to:3000,q:1.4,attack:.001}); tone(420,.04,{gain:g*.25,to:200}); },
+  // a cushion: a soft rubbery thud
+  cushion:v=>{ const g=clamp(v*.16,.03,.18); tone(135,.09,{gain:g,to:55}); hiss(.035,{gain:g*.5,freq:650,to:300,q:1}); },
+  // into the pocket: a knock on the leather, the drop, a rumble down the chute
+  pocket:()=>{ tone(600,.08,{gain:.16,to:240,type:'triangle'}); hiss(.05,{gain:.14,freq:1400,to:500,q:.8}); tone(95,.26,{gain:.18,at:.05,to:40}); hiss(.3,{gain:.08,freq:420,to:180,q:.7,at:.09}); clink(.12,.08,1700); clink(.21,.05,1500); },
+  // the cue swinging round (a colleague's or the house's shot)
+  swing:()=>hiss(.22,{gain:.05,freq:900,to:1800,q:.5,attack:.08}),
+  // chalking the tip before a shot
+  chalk:()=>{ hiss(.09,{gain:.07,freq:3800,q:.6,attack:.01}); hiss(.09,{gain:.06,freq:4200,q:.6,at:.11,attack:.01}); },
+  // the balls racked for a new game
+  rack:()=>{ for(let i=0;i<6;i++)clink(i*.05+Math.random()*.02,.07,2000+Math.random()*500); tone(120,.12,{gain:.1,at:.1,to:70}); },
+  // your turn: a two-note chime
+  turn:()=>{ tone(880,.14,{gain:.09,type:'triangle'}); tone(1318,.26,{gain:.09,type:'triangle',at:.12}); },
+  // the cue ball set down
+  place:()=>{ tone(500,.05,{gain:.06,to:300,type:'triangle'}); hiss(.02,{gain:.05,freq:2500,q:1}); },
+  win:()=>{ [523,659,784,1047,1319,1568].forEach((f,i)=>tone(f,.5,{type:'triangle',gain:.1,at:.1+i*.1})); for(let i=0;i<22;i++)hiss(.05,{gain:.05+Math.random()*.05,freq:1800+Math.random()*1500,q:1.5,at:.6+i*.075+Math.random()*.03,attack:.004}); },
+  lose:()=>[392,330,262,196].forEach((f,i)=>tone(f,.45,{type:'triangle',gain:.07,at:i*.2})),
+  foul:()=>{ tone(220,.22,{type:'square',gain:.05}); tone(170,.3,{type:'square',gain:.05,at:.2}); hiss(.12,{gain:.04,freq:300,q:.7,at:.2}); },
   tick:()=>tone(1200,.04,{gain:.05,type:'triangle'}),
   pop:()=>tone(440,.08,{gain:.08,to:880}),
 };
@@ -363,7 +383,7 @@ function trace(balls,cue,dx,dy){ let best=null; for(const b of balls){ if(!b.on|
 }
 function pathClear(balls,ax,ay,bx,by,ignore,margin){ const dx=bx-ax, dy=by-ay, len=Math.hypot(dx,dy); if(len===0)return true; const ux=dx/len, uy=dy/len; const need=2*R+(margin||-0.002); for(const b of balls){ if(!b.on||ignore.includes(b.n))continue; const t=clamp((b.x-ax)*ux+(b.y-ay)*uy,0,len); const px=ax+ux*t, py=ay+uy*t; if(Math.hypot(b.x-px,b.y-py)<need)return false; } return true; }
 /* ============================== game state ============================== */
-const G={ mode:'menu', balls:[], players:[], turn:0, open:true, inHand:false, kitchen:false, breakShot:true, shooting:false, spin:{top:0,side:0}, aim:Math.PI, power:0, calledPocket:null,
+const G={ mode:'menu', balls:[], players:[], turn:0, open:true, inHand:false, kitchen:false, breakShot:true, shooting:false, spin:{top:0,side:0}, aim:Math.PI, power:0, calledPocket:null, crackNext:false, crackAt:0, chalked:false,
   motion:null, clock:30, clockAt:0, clockEnds:null, fouls:[0,0], potted:[0,0], score:0, started:0, result:null, diff:'medium', practice:false, hotseat:false, online:false, me:0, replaying:false,
   shotAnim:null, hint:true, skin:{felt:'green',cue:'classic'}, wins:0, lastFoul:null, aiTarget:null, lastFirstHit:null, lastSettle:0 };
 let screen='menu'; // menu | lobby | waiting | play
@@ -373,7 +393,7 @@ function onEight(i){ const g=ownGroup(i); return !!g&&remaining(g)===0; }
 /* Whose shot it is on this phone: the house and a colleague on another phone are not ours to play. */
 function localTurn(){ return G.mode==='play'&&(G.online?G.turn===G.me:!G.players[G.turn].house); }
 function canAct(){ return localTurn()&&!G.shooting&&!G.replaying&&!G.motion&&!(G.online&&LIVE.own); }
-function newGame(opts){ Object.assign(G,{balls:rack(),turn:0,open:true,inHand:false,kitchen:false,breakShot:true,shooting:false,motion:null,spin:{top:0,side:0},calledPocket:null,fouls:[0,0],potted:[0,0],score:0,started:Date.now(),result:null,shotAnim:null,practice:!!opts.practice,diff:opts.diff||G.diff,online:false,me:0,replaying:false,clockEnds:null,lastFoul:null,aiTarget:null});
+function newGame(opts){ SFX.rack(); Object.assign(G,{balls:rack(),turn:0,open:true,inHand:false,kitchen:false,breakShot:true,shooting:false,motion:null,crackNext:false,crackAt:0,chalked:false,spin:{top:0,side:0},calledPocket:null,fouls:[0,0],potted:[0,0],score:0,started:Date.now(),result:null,shotAnim:null,practice:!!opts.practice,diff:opts.diff||G.diff,online:false,me:0,replaying:false,clockEnds:null,lastFoul:null,aiTarget:null});
   G.hotseat=!!opts.hotseat;
   const me={name:first(bridge()?bridge().playerName():'You'),group:null,house:false,photo:null,online:true};
   const other=opts.hotseat?{name:'Player 2',group:null,house:false,photo:null,online:true}:{name:opts.practice?'Practice':({easy:'Rookie',medium:'Sharp',pro:'Hustler'}[G.diff]),group:null,house:!opts.practice,photo:null,online:true};
@@ -393,7 +413,7 @@ function launch(shot,opts){
   cue.vx=dx*v; cue.vy=dy*v;
   G.motion={spin:{top:clamp(Number(shot.spin&&shot.spin.top)||0,-1,1),side:clamp(Number(shot.spin&&shot.spin.side)||0,-1,1),dirx:dx,diry:dy,used:false},res,snap:opts.snap||res.balls,steps:0,onDone:opts.onDone||null,firstHit:null,who:opts.who||null};
   G.shooting=true; G.inHand=false; acc=0;
-  G.shotAnim={at:performance.now(),power,x:cue.x,y:cue.y,aim:shot.aim}; SFX.strike(power); buzz('medium');
+  G.shotAnim={at:performance.now(),power,x:cue.x,y:cue.y,aim:shot.aim}; SFX.strike(power); G.crackNext=G.breakShot&&power>=0.6; G.chalked=false; buzz('medium');
   renderHud();
   return res; }
 /* One frame of motion: the engine's fixed steps, the sounds for what happened, the roll and the drops for the drawing. */
@@ -402,7 +422,7 @@ function advance(dt){ const m=G.motion; if(!m)return;
   while(acc>=DT){ acc-=DT; m.steps++; done=E.step(G.balls,m.spin,ev,DT); if(done||m.steps>=MAX_STEPS){ acc=0; done=true; break; } }
   for(const b of G.balls){ if(!b.on)continue; const sp=Math.hypot(b.vx,b.vy); if(sp>0){ b.rx+=sp*dt/R; b.ra=Math.atan2(b.vy,b.vx); } }
   for(const e of ev){
-    if(e.t==='hit'){ if(m.firstHit==null&&(e.a===0||e.b===0))m.firstHit=e.a===0?e.b:e.a; SFX.click(e.v); if(e.v>1.2)buzz('light'); }
+    if(e.t==='hit'){ if(m.firstHit==null&&(e.a===0||e.b===0))m.firstHit=e.a===0?e.b:e.a; if(G.crackNext&&(e.a===0||e.b===0)){ G.crackNext=false; G.crackAt=performance.now(); SFX.crack(); buzz('heavy'); } else if(!(G.crackAt&&performance.now()-G.crackAt<160)){ SFX.click(e.v); if(e.v>1.2)buzz('light'); } }
     else if(e.t==='cushion')SFX.cushion(e.v);
     else if(e.t==='pocket'||e.t==='scratch'){ const b=G.balls.find(x=>x.n===(e.t==='scratch'?0:e.n)); const p=POCKETS[e.p]; if(b&&p){ b.sink=1; b.px=p.x; b.py=p.y; } SFX.pocket(); if(e.t==='pocket'){ buzz('medium'); if(m.who)toast(`${m.who} potted the ${e.n}`); } } }
   if(done)settle(); }
@@ -440,6 +460,7 @@ function resolveLocal(res,shooter,called){
   adopt(out.next.balls);
   G.breakShot=false;
   if(win!=null){ endGame(win); return; }
+  G.chalked=false;
   if(G.practice){ G.turn=0; G.inHand=!!foul; G.kitchen=false; }
   else { G.turn=foul||!keep?opp:i; G.inHand=!!foul; G.kitchen=!!foul&&wasBreak; if(G.turn!==i&&!foul)show(`${G.players[G.turn].house||G.hotseat?G.players[G.turn].name+"'s":'Your'} turn`); }
   G.calledPocket=null; startClock(); renderHud();
@@ -488,7 +509,7 @@ function houseTurn(){ if(G.mode!=='play'||G.online||!G.players[G.turn].house||G.
   G.calledPocket=plan.called; G.aiTarget=plan.target;
   swingTo(plan.aim,()=>{ if(G.mode==='play'&&!G.online)beginShot(plan.power); }); }
 /* The cue turns to a shot over a moment, then strikes: the house's shots and a colleague's replayed ones. */
-function swingTo(to,then){ const from=G.aim, t0=performance.now(); const da=((to-from+Math.PI*3)%(Math.PI*2))-Math.PI;
+function swingTo(to,then){ SFX.swing(); const from=G.aim, t0=performance.now(); const da=((to-from+Math.PI*3)%(Math.PI*2))-Math.PI;
   const anim=()=>{ const k=Math.min(1,(performance.now()-t0)/700); G.aim=from+da*(1-Math.pow(1-k,3)); if(k<1)requestAnimationFrame(anim); else { G.aim=to; setTimeout(then,350); } };
   anim(); }
 /* ============================== view ============================== */
@@ -610,13 +631,14 @@ let drag=null;
 cv.addEventListener('pointerdown',e=>{ if(!canAct())return; const w=s2w(e.clientX-cv.getBoundingClientRect().left,e.clientY-cv.getBoundingClientRect().top); const cue=G.balls.find(b=>b.n===0);
   if(G.inHand&&Math.hypot(w.x-cue.x,w.y-cue.y)<R*4){ drag={kind:'place',moved:false}; cv.setPointerCapture(e.pointerId); return; }
   if(onEight(G.turn)){ for(const p of POCKETS)if(Math.hypot(w.x-p.x,w.y-p.y)<0.12){ callPocket(p.i); return; } }
+  if(!G.chalked){ G.chalked=true; SFX.chalk(); }
   drag={kind:'aim',a0:Math.atan2(w.y-cue.y,w.x-cue.x),aim0:G.aim,moved:0,lx:e.clientX,ly:e.clientY}; cv.setPointerCapture(e.pointerId); });
 cv.addEventListener('pointermove',e=>{ if(!drag)return; const rct=cv.getBoundingClientRect(); const w=s2w(e.clientX-rct.left,e.clientY-rct.top); const cue=G.balls.find(b=>b.n===0);
   if(drag.kind==='place'){ const x=clamp(w.x,R,G.kitchen?HEAD_X-R:L-R), y=clamp(w.y,R,Wd-R); if(E.placementOk(plain(G.balls),x,y,G.kitchen)){ cue.x=x; cue.y=y; drag.moved=true; } return; }
   const a1=Math.atan2(w.y-cue.y,w.x-cue.x); let da=a1-drag.a0; while(da>Math.PI)da-=2*Math.PI; while(da<-Math.PI)da+=2*Math.PI; const dist=Math.hypot(w.x-cue.x,w.y-cue.y); const fine=clamp(0.35/Math.max(dist,0.08),0.12,1); // far from the ball: finer
   G.aim=drag.aim0+da*fine; drag.moved+=Math.hypot(e.clientX-drag.lx,e.clientY-drag.ly); drag.lx=e.clientX; drag.ly=e.clientY; });
 cv.addEventListener('pointerup',e=>{ if(!drag)return; const d=drag; drag=null;
-  if(d.kind==='place'){ SFX.tick(); if(G.online){ if(d.moved)placeOnline(); return; } show('Cue ball placed. Aim and pull the power bar'); G.inHand=false; renderHud(); } });
+  if(d.kind==='place'){ if(G.online){ if(d.moved){ SFX.place(); placeOnline(); } return; } SFX.place(); show('Cue ball placed. Aim and pull the power bar'); G.inHand=false; renderHud(); } });
 cv.addEventListener('pointercancel',()=>{ drag=null; });
 function callPocket(i){ if(G.online){ const was=G.calledPocket; G.calledPocket=i; show('Pocket called'); SFX.tick(); buzz('light');
     LIVE.api.call(i).then(r=>{ const v=roomOf(r); if(v)onRoomState(v); }).catch(err=>{ G.calledPocket=was; show(err.message||'The pocket was not accepted',true); }); return; }
@@ -646,7 +668,7 @@ function loop(now){ const dt=Math.min(0.05,(now-last)/1000); last=now;
   else if(G.mode==='play'){
     if(G.online){ if(G.clockEnds&&!G.replaying&&!LIVE.own)setClock(clamp((G.clockEnds-serverNow())/1000,0,30)); }
     else if(!G.players[G.turn].house&&!G.practice){ const left=Math.max(0,30-(now-G.clockAt)/1000); setClock(left);
-      if(left<=0){ G.fouls[G.turn]++; const o=1-G.turn; show(`Time is up: ${G.players[o].house?'the house has':G.players[o].name+' has'} ball in hand`,true); SFX.foul(); G.turn=o; G.inHand=true; G.kitchen=false; G.breakShot=false; G.calledPocket=null; startClock(); renderHud(); if(G.players[o].house)setTimeout(houseTurn,900); } } }
+      if(left<=0){ G.fouls[G.turn]++; const o=1-G.turn; show(`Time is up: ${G.players[o].house?'the house has':G.players[o].name+' has'} ball in hand`,true); SFX.foul(); G.turn=o; G.chalked=false; G.inHand=true; G.kitchen=false; G.breakShot=false; G.calledPocket=null; startClock(); renderHud(); if(G.players[o].house)setTimeout(houseTurn,900); } } }
   draw(now); requestAnimationFrame(loop); }
 /* ============================== leaderboard / bridge ============================== */
 const Board={ async submit(score){ const b=bridge(); if(b&&b.submitScore){ try{ const r=await b.submitScore(score); save('board',r); return r; }catch(e){ return null; } } const list=load('local',[]); list.push({score,at:Date.now()}); list.sort((a,b)=>b.score-a.score); save('local',list.slice(0,10)); return null; },
@@ -656,7 +678,7 @@ const Board={ async submit(score){ const b=bridge(); if(b&&b.submitScore){ try{ 
    either, "Play a colleague" only says it needs the Sowaka app. The server is the referee: the page sends aim/power/spin, placements and
    the called pocket, and shows the room view it gets back. A new lastShot is replayed with the engine from the table as it was, then the
    table snaps to the positions the server sent. */
-const LIVE={api:null,on:false,offline:false,fatal:null,rooms:[],invites:[],room:null,seq:null,pending:null,own:null,feedQ:[],picker:null,hostOpen:true,codeInput:'',offset:0,msgKey:'',resultKey:'',againSent:false,helloT:null,busy:false,leaveAsk:false,leaving:false,foulFeed:false};
+const LIVE={api:null,on:false,offline:false,fatal:null,rooms:[],invites:[],room:null,seq:null,pending:null,own:null,feedQ:[],picker:null,hostOpen:true,codeInput:'',offset:0,msgKey:'',resultKey:'',chimeKey:'',againSent:false,helloT:null,busy:false,leaveAsk:false,leaving:false,foulFeed:false};
 const roomApi=()=>{ const S=window.Sowaka; return S&&S.live&&S.room?S.room:null; };
 const roomOf=d=>d&&typeof d==='object'?('room' in d&&!d.code?(d.room||null):(d.code?d:null)):null;
 const serverNow=()=>Date.now()+LIVE.offset;
@@ -691,23 +713,26 @@ function applyRoom(room){ const prev=LIVE.room; LIVE.room=room; if(room.serverNo
   if(room.status==='lobby'){ LIVE.againSent=false; LIVE.resultKey=''; const lk=`lobby:${room.gameNo}:${room.message||''}`; if(room.message&&lk!==LIVE.msgKey){ LIVE.msgKey=lk; show(room.message,true); } if(G.online||G.mode!=='menu'){ G.online=false; G.motion=null; G.shooting=false; G.replaying=false; G.mode='menu'; G.result=null; G.balls=rack(); $('#sheetHost').innerHTML=''; $('#leaveBtn').hidden=true; renderHud(); } renderWaiting(); return; }
   const fresh=!G.online||screen!=='play'||!prev||prev.code!==room.code||prev.gameNo!==room.gameNo||prev.status==='lobby';
   if(fresh)enterOnline(room); else syncTable(room,prev); }
-function enterOnline(room){ Object.assign(G,{online:true,hotseat:false,practice:false,mode:'play',result:null,fouls:[0,0],started:Date.now(),shotAnim:null,motion:null,shooting:false,replaying:false,aim:0,power:0,spin:{top:0,side:0},calledPocket:null,lastFoul:null});
+function chime(room){ const k=`${room.code}:${room.gameNo}:${room.lastShot?room.lastShot.seq:0}`; if(LIVE.chimeKey===k||!audioLive())return; LIVE.chimeKey=k; SFX.turn(); }
+function enterOnline(room){ Object.assign(G,{online:true,hotseat:false,practice:false,mode:'play',result:null,fouls:[0,0],started:Date.now(),shotAnim:null,motion:null,crackNext:false,crackAt:0,chalked:false,shooting:false,replaying:false,aim:0,power:0,spin:{top:0,side:0},calledPocket:null,lastFoul:null});
   LIVE.againSent=false; LIVE.feedQ=[];
   G.balls=dress(room.balls&&room.balls.length?room.balls:E.rack());
   $('#menu').hidden=true; $('#sheetHost').innerHTML=''; pane(null); screen='play'; $('#leaveBtn').hidden=false; LIVE.leaveAsk=false; spinDot(); layout();
   syncTable(room);
-  if(room.status==='playing'){ const me=G.me; show(room.turn===me?(room.breakShot?'You break. Pull the power bar and let go':'Your turn'):`${G.players[room.turn].name} ${room.breakShot?'breaks':'to shoot'}`); } }
+  if(room.breakShot&&!room.lastShot&&audioLive())SFX.rack();
+  if(room.status==='playing'){ const me=G.me; if(room.turn===me)chime(room); show(room.turn===me?(room.breakShot?'You break. Pull the power bar and let go':'Your turn'):`${G.players[room.turn].name} ${room.breakShot?'breaks':'to shoot'}`); } }
 function syncTable(room,prev){ const me=myIndex(room); G.me=me;
   G.players=room.players.map(p=>({name:first(p.name),photo:p.photoUrl||null,group:p.group||null,house:false,online:p.online!==false,userId:p.userId}));
   while(G.players.length<2)G.players.push({name:'Open seat',photo:null,group:null,house:false,online:false,userId:null});
   G.potted=[0,1].map(i=>room.players[i]?room.players[i].pottedCount|0:0);
   if(room.balls&&room.balls.length)adopt(room.balls);
+  if(!prev||prev.turn!==room.turn||prev.gameNo!==room.gameNo)G.chalked=false;
   G.turn=room.turn|0; G.open=!!room.open8; G.kitchen=!!room.kitchen; G.inHand=!!room.inHand; G.breakShot=!!room.breakShot; G.calledPocket=room.calledPocket==null?null:room.calledPocket|0;
   G.clockEnds=room.shotClock&&room.shotClock.endsAt?+room.shotClock.endsAt:null;
   const key=`${room.lastShot?room.lastShot.seq:0}:${room.turn}:${room.message||''}`;
   const foul=room.status==='playing'&&!!room.inHand&&!!prev&&prev.status==='playing'&&room.turn!==prev.turn||LIVE.foulFeed; LIVE.foulFeed=false; // ball in hand passed to the other seat: a foul or a timeout
   if(room.message&&key!==LIVE.msgKey){ LIVE.msgKey=key; const bad=foul; show(room.message+(bad&&room.inHand&&room.status==='playing'?`. ${room.turn===me?'You have':G.players[room.turn].name+' has'} ball in hand`:''),bad); if(bad)SFX.foul(); }
-  else if(!room.message&&key!==LIVE.msgKey&&room.status==='playing'&&room.lastShot){ LIVE.msgKey=key; if(room.turn===me)show('Your turn'); }
+  else if(!room.message&&key!==LIVE.msgKey&&room.status==='playing'&&room.lastShot){ LIVE.msgKey=key; if(room.turn===me){ if(!prev||prev.turn!==me)chime(room); show('Your turn'); } }
   if(room.status==='over'){ G.mode='over'; const rk=`${room.code}:${room.gameNo}`;
     if(room.result){ const win=room.result.winner===me; G.result={win,winner:room.result.winner};
       if(LIVE.resultKey!==rk){ LIVE.resultKey=rk; if(win)SFX.win(); else SFX.lose(); buzz(win?'heavy':'medium'); setTimeout(()=>{ if(LIVE.room&&LIVE.room.status==='over')onlineResult(); },900); }
@@ -953,7 +978,7 @@ layout(); spinDot(); menu();
 const demoMode=!window.__POOL&&!roomApi()?new URLSearchParams(location.search).get('demo'):null;
 if(demoMode)demoLive(demoMode); else { bootLive(); if(!load('seenHowTo',false)){ save('seenHowTo',true); setTimeout(howto,400); } }
 requestAnimationFrame(loop);
-window.__pool={G,LIVE,E,newGame,beginShot,houseTurn,planShot,rack,launch,onRoomState,applyRoom,startReplay,menu,screen:()=>screen};
+window.__pool={G,LIVE,E,SFX,newGame,beginShot,houseTurn,planShot,rack,launch,onRoomState,applyRoom,startReplay,menu,screen:()=>screen};
 })();
 </script>
 </body>
