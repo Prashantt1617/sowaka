@@ -249,7 +249,7 @@ export function resolve(st: RuleState, after: Ball[], events: ShotEvent[]): Rule
   }
   const groups: [Group, Group] = [st.groups[0], st.groups[1]];
   let open = st.open;
-  if (!foul && open && pot.length) {
+  if (!foul && open && pot.length && !st.breakShot) { // the table stays open after the break, whatever drops
     const firstPot = pot[0];
     groups[i] = groupOf(firstPot); groups[opp] = groups[i] === 'solid' ? 'stripe' : 'solid'; open = false;
     message = `${groups[i] === 'solid' ? 'Solids' : 'Stripes'} to the shooter`;
