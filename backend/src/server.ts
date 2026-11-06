@@ -9,6 +9,7 @@ import { closeRelayRealtime, initRelayRealtime } from './services/relay-realtime
 import { closeScribbleRealtime, initScribbleRealtime } from './services/scribble-realtime.service';
 import { closeTileUpRealtime, initTileUpRealtime } from './services/tileup-realtime.service';
 import { closePokerRealtime, initPokerRealtime } from './services/poker-realtime.service';
+import { closePoolRealtime, initPoolRealtime } from './services/pool-realtime.service';
 import { closeSquadRealtime, initSquadRealtime } from './services/secret-squad-realtime.service';
 import { closeRedis } from './config/redis';
 import { startCareScheduler, stopCareScheduler } from './services/care.service';
@@ -56,6 +57,8 @@ logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v
   initScribbleRealtime(io);
   initTileUpRealtime(io);
   initPokerRealtime(io);
+  // Sowaka Pool's two-player rooms: its own `/pool` namespace, built like Tile Up's.
+  initPoolRealtime(io);
   // Secret Squad's office sessions: a fourth namespace on the same server.
   initSquadRealtime(io);
 
@@ -64,6 +67,7 @@ logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v
     closeScribbleRealtime();
     closeTileUpRealtime();
     closePokerRealtime();
+    closePoolRealtime();
     closeSquadRealtime();
     closeRelayRealtime();
     closeConnectRealtime();
