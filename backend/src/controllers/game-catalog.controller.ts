@@ -75,6 +75,7 @@ const TILE_UP_KEY = 'tile-up';
 const SQUAD_KEY = 'secret-squad';
 const CUP_KEY = 'diwali-cup';
 const POKER_KEY = 'speed-poker';
+const POOL_KEY = 'pool';
 
 /** The live games whose page carries a socket ticket: the marker it leaves, and the global it gets. */
 const TICKETED: Record<string, { marker: string; global: string; name: string }> = {
@@ -86,6 +87,8 @@ const TICKETED: Record<string, { marker: string; global: string; name: string }>
   [CUP_KEY]: { marker: '<!--CUP-TICKET-->', global: '__CUP', name: 'the tournament' },
   // Speed Poker's tables and lobby: the same ticket, its own `/poker` namespace.
   [POKER_KEY]: { marker: '<!--POKER-TICKET-->', global: '__POKER', name: 'Speed Poker' },
+  // Sowaka Pool's two-player rooms: the same ticket, its own `/pool` namespace.
+  [POOL_KEY]: { marker: '<!--POOL-TICKET-->', global: '__POOL', name: 'Sowaka Pool' },
 };
 
 /** A JavaScript literal safe inside a `<script>` element (`<` can never close it). */
