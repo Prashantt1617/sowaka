@@ -1,4 +1,4 @@
-import type { PoolBallAtRest, PoolFeedItem, PoolPlayer, PoolResultReason, PoolRoom, PoolView } from '../models/pool.model';
+import type { PoolBallAtRest, PoolFeedItem, PoolFinalLine, PoolPlayer, PoolResultReason, PoolRoom, PoolView } from '../models/pool.model';
 import {
   Ball,
   DT,
@@ -175,8 +175,8 @@ export type Effect =
   | { type: 'invite'; userId: string; from: { userId: string; name: string; photoUrl: string | null }; code: string }
   /** Push a notification to the invitee. */
   | { type: 'notify'; userId: string; code: string; fromName: string }
-  /** The game ended: record the final lines. */
-  | { type: 'finished' }
+  /** The game ended: record these final lines (carried here, since the room may be a lobby again by the time they are read). */
+  | { type: 'finished'; gameId: string; lines: PoolFinalLine[] }
   /** The room is gone; whoever was in it is told so. */
   | { type: 'delete'; players: string[] };
 
@@ -267,27 +267,30 @@ export function finish(room: PoolRoom, winner: 0 | 1, reason: PoolResultReason, 
   room.status = 'over';
   room.shotEndsAt = 0;
   room.finishedAt = now;
-  return [{ type: 'finished' }];
+  return [{ type: 'finished', gameId: room.gameId ?? '', lines: room.final }];
 }
 
 const notPlaying = () => new PoolMoveError(409, 'The game is not on.');
 const notYourTurn = () => new PoolMoveError(409, "It isn't your turn.");
 
-/** The shooter's state, or a refusal: the game is on, it is their turn, and the last shot has stopped rolling. */
-function shooter(room: PoolRoom, userId: string, now: number): { st: RuleState; i: 0 | 1 } {
+/**
+ * The shooter's state, or a refusal: the game is on and it is their turn. The
+ * last shot still rolling on the pages stops only the next shot (`applyShot`):
+ * a pocket is called and ball in hand dragged while the balls settle.
+ */
+function shooter(room: PoolRoom, userId: string): { st: RuleState; i: 0 | 1 } {
   if (room.status !== 'playing' || !room.state) throw notPlaying();
   const i = indexOf(room, userId);
   if (i < 0) throw new PoolMoveError(404, 'You are not in this room.');
   if (room.state.turn !== i) throw notYourTurn();
-  if (now < room.replayUntil) throw new PoolMoveError(409, 'The balls are still rolling.');
   return { st: room.state, i: i as 0 | 1 };
 }
 
 const finite = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 /** Ball in hand: puts the cue ball where the shooter asks, if the table allows it. They may move it again until they shoot. */
-export function applyPlace(room: PoolRoom, userId: string, raw: { x?: unknown; y?: unknown }, now: number): void {
-  const { st } = shooter(room, userId, now);
+export function applyPlace(room: PoolRoom, userId: string, raw: { x?: unknown; y?: unknown }): void {
+  const { st } = shooter(room, userId);
   if (!st.inHand) throw new PoolMoveError(409, 'You do not have ball in hand.');
   const x = finite(raw.x), y = finite(raw.y);
   if (x === null || y === null) throw new PoolMoveError(400, 'Where should the cue ball go?');
@@ -300,8 +303,8 @@ export function applyPlace(room: PoolRoom, userId: string, raw: { x?: unknown; y
 }
 
 /** Calls the pocket for the 8: only when the shooter is on it. */
-export function applyCall(room: PoolRoom, userId: string, rawPocket: unknown, now: number): void {
-  const { st, i } = shooter(room, userId, now);
+export function applyCall(room: PoolRoom, userId: string, rawPocket: unknown): void {
+  const { st, i } = shooter(room, userId);
   if (!onEight(st, i)) throw new PoolMoveError(409, 'You can call a pocket only when you are on the 8.');
   const pocket = finite(rawPocket);
   if (pocket === null || !Number.isInteger(pocket) || pocket < 0 || pocket > 5) throw new PoolMoveError(400, 'Choose one of the six pockets.');
@@ -324,7 +327,8 @@ export function parseShot(raw: { aim?: unknown; power?: unknown; spin?: unknown 
  * (or the game finished when the 8 decided it).
  */
 export function applyShot(room: PoolRoom, userId: string, shot: Shot, now: number): Effect[] {
-  const { st, i } = shooter(room, userId, now);
+  const { st, i } = shooter(room, userId);
+  if (now < room.replayUntil) throw new PoolMoveError(409, 'The balls are still rolling.');
   const cue = st.balls.find((b) => b.n === 0);
   if (!cue || !cue.on) throw notPlaying();
   const from = { x: cue.x, y: cue.y };
@@ -384,19 +388,22 @@ export function nextHost(room: PoolRoom, except?: string): PoolPlayer | undefine
 }
 
 /**
- * Takes a player out. Mid-game the other player wins by forfeit; a finished
- * room goes back to its lobby for whoever stays; the host role passes on; an
- * empty room is deleted.
+ * Takes a player out. Mid-game the other player wins by forfeit (scored and
+ * tallied like any win); then, as for a finished room, the room goes back to
+ * its lobby for whoever stays, who is seat 0 now (the table, the turn and the
+ * result were indexed by the old seats, so none of them survives; the tally
+ * does). The host role passes on; an empty room is deleted.
  */
 export function removePlayer(room: PoolRoom, userId: string, now: number): Effect[] {
   const i = indexOf(room, userId);
   const player = room.players[i];
   if (!player) return [];
   const effects: Effect[] = [];
+  let message: string | null = null;
   if (room.status === 'playing' && room.players.length === 2) {
     const winner = (1 - i) as 0 | 1;
     effects.push(...finish(room, winner, 'left', now));
-    room.message = `${firstName(player.name)} left the table: ${firstName(nameAt(room, winner))} wins`;
+    message = `${firstName(player.name)} left the table: ${firstName(nameAt(room, winner))} wins`;
   }
   room.players = room.players.filter((p) => p.userId !== userId);
   effects.push({ type: 'feed', item: { kind: 'leave', userId, name: player.name } });
@@ -408,10 +415,9 @@ export function removePlayer(room: PoolRoom, userId: string, now: number): Effec
       effects.push({ type: 'feed', item: { kind: 'host', userId: next.userId, name: next.name } });
     }
   }
-  // The one who stays is seat 0 now; the result follows them, and they break next.
-  if (room.status === 'over' && room.result) {
-    const stayedWon = room.final?.find((f) => f.userId === room.players[0].userId)?.won ?? false;
-    room.result = { ...room.result, winner: stayedWon ? 0 : 1 };
+  if (room.status !== 'lobby') {
+    effects.push(...resetToLobby(room));
+    room.message = message;
   }
   room.breaker = 0;
   return effects;
@@ -449,8 +455,17 @@ export function advance(room: PoolRoom, now: number): Effect[] | null {
       break;
     }
     case 'playing': {
-      const gone = room.players.findIndex((p) => !p.online && p.offlineAt !== null && now - p.offlineAt >= POOL.playerGoneMs);
-      if (gone >= 0 && room.players.length === 2) {
+      // A player away too long forfeits, but only to an opponent who is here:
+      // with both gone the game is abandoned, nobody wins and nothing is paid.
+      const away = room.players.map((p) => !p.online && p.offlineAt !== null && now - p.offlineAt >= POOL.playerGoneMs);
+      if (room.players.length === 2 && away.every(Boolean)) {
+        effects.push(...resetToLobby(room));
+        room.message = 'Both players were away: the game was abandoned';
+        changed = true;
+        break;
+      }
+      const gone = away.indexOf(true);
+      if (gone >= 0 && room.players.length === 2 && room.players[1 - gone].online) {
         const winner = (1 - gone) as 0 | 1;
         effects.push(...finish(room, winner, 'away', now));
         room.message = `${firstName(nameAt(room, gone))} has gone: ${firstName(nameAt(room, winner))} wins`;

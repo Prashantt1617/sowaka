@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Filter } from 'mongodb';
 import { users } from '../config/db';
-import { PoolPlayer, PoolRoom, PoolView } from '../models/pool.model';
+import { PoolFinalLine, PoolPlayer, PoolRoom, PoolView } from '../models/pool.model';
 import type { User } from '../models/user.model';
 import type { Shot } from '../shared/pool/engine';
 import { recordServerScore } from './game-catalog.service';
@@ -28,7 +28,6 @@ import {
   resetToLobby,
   startGame,
   summaryOf,
-  viewFingerprint,
   viewFor,
 } from './pool-rooms-engine';
 import {
@@ -159,11 +158,11 @@ const INACTIVE: User['lifecycleStatus'][] = ['offboarded', 'terminated'];
 // ---------------------------------------------------------------- views out
 
 /**
- * What each player was last sent, so an unchanged room costs nothing. The
- * room's version goes with the fingerprint: this map is per process, and a
- * stale entry here must never swallow a change another instance wrote.
+ * The room version each player was last sent, so a version they already hold
+ * costs nothing. Per process: a stale entry here must never swallow a change
+ * another instance wrote, which the version (bumped on every write) ensures.
  */
-const lastSent = new Map<string, { print: string; version: number }>();
+const lastSent = new Map<string, { code: string; version: number }>();
 
 export function forgetSent(userId: string): void {
   lastSent.delete(userId);
@@ -175,12 +174,10 @@ function pushRoom(room: PoolRoom, force: string[] = []): void {
   const now = deps.now();
   const forced = new Set(force);
   for (const player of room.players) {
-    const view = viewFor(room, player.userId, now);
-    const print = viewFingerprint(view);
     const sent = lastSent.get(player.userId);
-    if (!forced.has(player.userId) && sent && sent.print === print && sent.version === room.version) continue;
-    lastSent.set(player.userId, { print, version: room.version });
-    emitter.toUser(player.userId, 'room:state', { room: view });
+    if (!forced.has(player.userId) && sent && sent.code === room.code && sent.version === room.version) continue;
+    lastSent.set(player.userId, { code: room.code, version: room.version });
+    emitter.toUser(player.userId, 'room:state', { room: viewFor(room, player.userId, now) });
   }
 }
 
@@ -216,7 +213,7 @@ async function applyEffects(room: PoolRoom, effects: Effect[]): Promise<{ delete
           .catch((error) => logger.error('Pool invite push failed', { org: room.org, code: room.code }, error));
         break;
       case 'finished':
-        recordScores(room);
+        recordScores(room, effect.gameId, effect.lines);
         break;
       case 'delete': {
         deleted = true;
@@ -245,9 +242,7 @@ async function applyEffects(room: PoolRoom, effects: Effect[]): Promise<{ delete
  * submits them), and each player is paid engagement points for their own
  * line, once per game however many instances see it finish.
  */
-function recordScores(room: PoolRoom): void {
-  const lines = room.final ?? [];
-  const gameId = room.gameId;
+function recordScores(room: PoolRoom, gameId: string, lines: PoolFinalLine[]): void {
   if (!gameId || lines.length < POOL.minPlayers) return;
   void (async () => {
     if (!(await claimOnce(`points:${room.org}:${gameId}`, 7 * 24 * 60 * 60 * 1000))) return;
@@ -363,23 +358,32 @@ export async function hostRoom(seat: Seat, options: { open?: unknown } = {}): Pr
   if (!(await claimWithin(`host:${seat.org}:${seat.userId}`, POOL.hostsPerWindow, POOL.hostWindowMs))) {
     throw new PoolError(429, 'That is enough new rooms for now. Try again in a few minutes.');
   }
-  await leaveRoom(seat);
   const now = deps.now();
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const code = makeCode(deps.random);
-    const room = newRoom(code, seat.org, { userId: seat.userId, name: seat.name, photoUrl: seat.photoUrl }, options.open !== false, now);
-    if (!(await createRoom(room))) continue;
-    await setSeat(seat.org, seat.userId, code);
-    emitter?.seat(seat.userId, seat.org, code, true);
-    lastSent.delete(seat.userId);
-    return viewFor(room, seat.userId, now);
+  // The new room first: a room that cannot be made must not cost them the one they sit in.
+  let room: PoolRoom | null = null;
+  for (let attempt = 0; attempt < 8 && !room; attempt += 1) {
+    const made = newRoom(makeCode(deps.random), seat.org, { userId: seat.userId, name: seat.name, photoUrl: seat.photoUrl }, options.open !== false, now);
+    if (await createRoom(made)) room = made;
   }
-  throw new PoolError(503, 'Could not make a room just now. Try again.');
+  if (!room) throw new PoolError(503, 'Could not make a room just now. Try again.');
+  await leaveRoom(seat);
+  await setSeat(seat.org, seat.userId, room.code);
+  emitter?.seat(seat.userId, seat.org, room.code, true);
+  lastSent.delete(seat.userId);
+  return viewFor(room, seat.userId, now);
 }
 
 const NO_ROOM = 'No room with that code at your company. Check it and try again.';
 const NOT_SEATED = 'You are not in that room any more.';
 const FULL = 'That table has two players already.';
+const UNDER_WAY = 'That game is already on.';
+
+/** A seat is taken only in the lobby: nobody joins a running or finished game and inherits its table. */
+function seatFree(room: PoolRoom): PoolError | null {
+  if (room.players.length >= POOL.maxPlayers) return new PoolError(409, FULL);
+  if (room.status !== 'lobby') return new PoolError(409, UNDER_WAY);
+  return null;
+}
 
 export async function joinRoom(seat: Seat, rawCode: unknown, options: { rejoin?: boolean } = {}): Promise<PoolView> {
   const rejoin = options.rejoin === true;
@@ -392,7 +396,10 @@ export async function joinRoom(seat: Seat, rawCode: unknown, options: { rejoin?:
   const already = playerOf(existing, seat.userId);
   // A rejoin (the page reconnecting to the room it was in) only ever puts back someone still seated there.
   if (!already && rejoin) throw new PoolError(404, NOT_SEATED);
-  if (!already && existing.players.length >= POOL.maxPlayers) throw new PoolError(409, FULL);
+  if (!already) {
+    const refused = seatFree(existing);
+    if (refused) throw refused;
+  }
   const current = await seatOf(seat.org, seat.userId);
   if (current && current !== code) await leaveRoom(seat);
 
@@ -407,7 +414,8 @@ export async function joinRoom(seat: Seat, rawCode: unknown, options: { rejoin?:
       mine.photoUrl = seat.photoUrl;
       return { result: true, effects: [], write: true };
     }
-    if (room.players.length >= POOL.maxPlayers) throw new PoolError(409, FULL);
+    const refused = seatFree(room);
+    if (refused) throw refused;
     // Someone who was invited shows as "accepted your invite".
     const invited = room.invited.some((i) => i.userId === seat.userId);
     room.players.push(asPlayer(seat, now));
@@ -471,23 +479,27 @@ export async function inviteToRoom(seat: Seat, rawUserId: unknown): Promise<{ in
   const userId = String(rawUserId ?? '').trim();
   if (!userId || userId === seat.userId) throw new PoolError(400, 'Choose a colleague to invite.');
   if (playerOf(room, userId)) return { invited: true };
-  if (room.players.length >= POOL.maxPlayers) throw new PoolError(409, FULL);
+  const refused = seatFree(room);
+  if (refused) throw refused;
   if (room.invitesSent >= POOL.invitesPerGame) throw new PoolError(429, 'That is enough invites for one game.');
   const colleague = await findColleague(seat.org, userId);
   if (!colleague) throw new PoolError(404, "That person isn't a colleague you can invite.");
   const photoUrl = (await resolveProfilePhoto(colleague)) ?? null;
-  // Keyed on the pair, not the room: a new room is not a fresh licence to push.
-  const push = await claimOnce(`invite:${seat.org}:${seat.userId}:${userId}`, POOL.invitePushEveryMs);
   const changed = await change(seat.org, room.code, (r) => {
     if (!playerOf(r, seat.userId)) throw new PoolError(404, 'You are not in a room.');
-    if (playerOf(r, userId)) return { result: true, effects: [], write: false };
+    if (playerOf(r, userId)) return { result: false, effects: [], write: false };
+    const blocked = seatFree(r);
+    if (blocked) throw blocked;
     if (!r.invited.some((i) => i.userId === userId)) r.invited.push({ userId, name: colleague.name, photoUrl });
     r.invitesSent += 1;
-    const effects: Effect[] = [{ type: 'invite', userId, from: { userId: seat.userId, name: seat.name, photoUrl: seat.photoUrl }, code: r.code }];
-    if (push) effects.push({ type: 'notify', userId, code: r.code, fromName: seat.name });
-    return { result: true, effects, write: true };
+    return { result: true, effects: [{ type: 'invite', userId, from: { userId: seat.userId, name: seat.name, photoUrl: seat.photoUrl }, code: r.code }], write: true };
   });
   if (!changed) throw new PoolError(404, 'That room has closed.');
+  // The push licence is spent only on an invite that went through: keyed on
+  // the pair, not the room (a new room is not a fresh licence), one in ten minutes.
+  if (changed.result && (await claimOnce(`invite:${seat.org}:${seat.userId}:${userId}`, POOL.invitePushEveryMs))) {
+    await applyEffects(changed.room, [{ type: 'notify', userId, code: changed.room.code, fromName: seat.name }]);
+  }
   return { invited: true };
 }
 
@@ -519,11 +531,13 @@ export async function startRoom(seat: Seat): Promise<void> {
  * at the table a new game starts at once and the loser breaks; with a seat
  * empty the room goes back to its lobby to wait for an opponent.
  */
+const notOver = (room: PoolRoom) => new PoolError(409, room.status === 'playing' ? 'The game is still on.' : 'There is no finished game to replay.');
+
 export async function againRoom(seat: Seat): Promise<void> {
   const room = await requireRoom(seat);
-  if (room.status !== 'over') throw new PoolError(409, 'The game is still on.');
+  if (room.status !== 'over') throw notOver(room);
   const changed = await change(seat.org, room.code, (r) => {
-    if (r.status !== 'over') throw new PoolError(409, 'The game is still on.');
+    if (r.status !== 'over') throw notOver(r);
     if (r.players.length < POOL.minPlayers || r.players.some((p) => !p.online)) return { result: true, effects: resetToLobby(r), write: true };
     try {
       return { result: true, effects: startGame(r, deps.now(), `g${randomUUID().slice(0, 8)}`), write: true };
@@ -539,7 +553,7 @@ export async function placeBall(seat: Seat, raw: { x?: unknown; y?: unknown }): 
   const room = await requireRoom(seat);
   const changed = await change(seat.org, room.code, (r) => {
     try {
-      applyPlace(r, seat.userId, raw, deps.now());
+      applyPlace(r, seat.userId, raw);
       return { result: true, effects: [], write: true };
     } catch (error) {
       return asPoolError(error);
@@ -554,7 +568,7 @@ export async function callPocket(seat: Seat, raw: { pocket?: unknown }): Promise
   const room = await requireRoom(seat);
   const changed = await change(seat.org, room.code, (r) => {
     try {
-      applyCall(r, seat.userId, raw.pocket, deps.now());
+      applyCall(r, seat.userId, raw.pocket);
       return { result: true, effects: [], write: true };
     } catch (error) {
       return asPoolError(error);
@@ -690,16 +704,15 @@ export async function tickPool(): Promise<void> {
     for (const { org, code } of await liveRooms()) {
       if (!(await leaseRoom(org, code, INSTANCE, LEASE_MS))) continue;
       try {
-        const room = await readRoom(org, code);
-        if (!room) {
-          await forgetLive(org, code);
-          continue;
-        }
         const now = deps.now();
+        // One read: the store calls back only for a room that is still there.
+        let seen = false;
         await change(org, code, (r) => {
+          seen = true;
           const effects = advance(r, now);
           return effects ? { result: true, effects, write: !effects.some((e) => e.type === 'delete') } : null;
         });
+        if (!seen) await forgetLive(org, code);
       } catch (error) {
         logger.error('Pool tick failed for a room', { org, code }, error);
       } finally {

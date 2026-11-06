@@ -196,6 +196,11 @@ async function main() {
     await request(D, 'room:leave');
     await request(C, 'room:leave');
     check('the last one out deletes the room', (await peekRoom(ORG, code2)) === null);
+    // A die that always lands on A's code: no new room can be made.
+    configurePool({ random: () => (Number(code) - 1000 + 0.5) / 9000 });
+    const unmade = await request(B, 'room:host', {});
+    configurePool({ random: die });
+    check('a room that cannot be made (503) leaves B seated where they were', !unmade.ok && unmade.status === 503 && (await peekRoom(ORG, code))?.players.length === 2 && (await request(B, 'room:hello')).ok);
     await until(() => A.feed.some((f) => f.kind === 'join' && f.userId === B.user.userId));
     check('A heard B come in', A.feed.some((f) => f.kind === 'join' && f.userId === B.user.userId));
 
@@ -248,23 +253,32 @@ async function main() {
 
     // ------------------------------------------------------------ to the 8
     console.log('\nthe 8');
+    // A's move bucket (2 a second, 6 in hand) has taken six quick moves; real time refills it.
+    await wait(2000);
     // The table set by hand: A (solids) has only the 8 left, B (stripes) has potted two.
     const balls: Ball[] = [{ n: 0, x: 1.5, y: 0.5, vx: 0, vy: 0, on: true }];
     for (let n = 1; n <= 7; n++) balls.push({ n, x: 0, y: 0, vx: 0, vy: 0, on: false });
     balls.push({ n: 8, x: 1.86, y: 0.14, vx: 0, vy: 0, on: true });
     for (let n = 9; n <= 15; n++) balls.push({ n, x: 0.2 + (n - 9) * 0.08, y: 0.9, vx: 0, vy: 0, on: n > 10 });
+    // A has ball in hand, and the previous shot is still rolling on the pages for five more seconds.
     const setAt = clock.now;
     await mutateRoom(ORG, code, (r) => {
-      r.state = { balls, turn: 0, groups: ['solid', 'stripe'], open: false, inHand: false, kitchen: false, breakShot: false, calledPocket: null };
-      r.replayUntil = 0;
-      r.shotEndsAt = setAt + POOL.shotSecs * 1000;
+      r.state = { balls, turn: 0, groups: ['solid', 'stripe'], open: false, inHand: true, kitchen: false, breakShot: false, calledPocket: null };
+      r.replayUntil = setAt + 5000;
+      r.shotEndsAt = r.replayUntil + POOL.shotSecs * 1000;
       return true;
     });
     const uncalled = await request(A, 'pool:call', { pocket: 7 });
     check('a pocket is one of six', !uncalled.ok && uncalled.status === 400);
     const called = await request(A, 'pool:call', { pocket: 2 });
-    check('A, on the 8, calls the corner pocket', called.ok && (called.data as PoolView).onEight && (called.data as PoolView).calledPocket === 2 && (called.data as PoolView).players[0].pottedCount === 7 && (called.data as PoolView).players[1].pottedCount === 2);
-    const winShot = await request(A, 'pool:shot', { aim: Math.atan2(0.14 - 0.5, 1.86 - 1.5), power: 0.4, spin: { top: 0, side: 0 } });
+    check('A, on the 8, calls the corner pocket while the balls still roll', called.ok && (called.data as PoolView).onEight && (called.data as PoolView).calledPocket === 2 && (called.data as PoolView).players[0].pottedCount === 7 && (called.data as PoolView).players[1].pottedCount === 2);
+    const cueFrom = { x: 1.45, y: 0.5 };
+    const dragged = await request(A, 'pool:place', cueFrom);
+    check('and drags ball in hand during the replay', dragged.ok && ballOn(dragged.data as PoolView, 0)?.x === cueFrom.x);
+    const tooSoon = await request(A, 'pool:shot', { aim: 0, power: 0.4, spin: { top: 0, side: 0 } });
+    check('but the shot waits for the replay', !tooSoon.ok && tooSoon.status === 409 && /still rolling/.test(tooSoon.message));
+    clock.now = setAt + 5000;
+    const winShot = await request(A, 'pool:shot', { aim: Math.atan2(0.14 - cueFrom.y, 1.86 - cueFrom.x), power: 0.4, spin: { top: 0, side: 0 } });
     await until(() => B.room?.status === 'over');
     const won = winShot.ok ? (winShot.data as PoolView) : null;
     check('the 8 drops in the called pocket: A wins', !!won && won.status === 'over' && won.result?.winner === 0 && won.result.reason === 'eight' && won.lastShot?.events.some((e) => e.t === 'pocket' && e.n === 8 && e.p === 2) === true && won.shotClock === null);
@@ -282,6 +296,10 @@ async function main() {
     await until(() => A.room?.gameNo === 2 && B.room?.gameNo === 2);
     check('the loser asks for a rematch: a second game starts at once, and the loser breaks', again.ok && A.room?.status === 'playing' && A.room.gameNo === 2 && A.room.turn === 1 && A.room.breakShot && A.room.result === null && A.room.lastShot === null && A.room.balls.every((b) => b.on));
     check('the tally stays', A.room?.wins[0] === 1 && A.room.wins[1] === 0);
+    const midGame = await request(C, 'room:join', { code });
+    check('nobody joins a game under way', !midGame.ok && midGame.status === 409);
+    const midInvite = await request(A, 'room:invite', { userId: C.user.userId });
+    check('nor is invited into one', !midInvite.ok && midInvite.status === 409);
 
     // ------------------------------------------------------------ away and back
     console.log('\naway and back');
@@ -297,29 +315,61 @@ async function main() {
     const strangerRejoin = await request(C, 'room:join', { code, rejoin: true });
     check('a rejoin by someone not seated is not', !strangerRejoin.ok && strangerRejoin.status === 404);
     A.socket.close();
-    await until(async () => (await peekRoom(ORG, code))?.players[0].online === false);
+    B2.socket.close();
+    await until(async () => (await peekRoom(ORG, code))?.players.every((p) => !p.online) === true);
+    clock.now += POOL.playerGoneMs + 1000;
+    await settle(async () => (await peekRoom(ORG, code))?.status === 'lobby');
+    const abandoned = (await peekRoom(ORG, code))!;
+    check('both away for a minute and a half: the game is abandoned, nobody wins', abandoned.status === 'lobby' && abandoned.result === null && abandoned.state === null && /abandoned/.test(abandoned.message ?? '') && abandoned.players.length === 2);
+    await settle(() => false);
+    check('and nothing is scored or paid', awards.length === 2 && scores.length === 2 && abandoned.players[0].wins === 1 && abandoned.players[1].wins === 0);
+    const A2 = await open(people[0]);
+    const B3 = await open(people[1]);
+    clients.push(A2, B3);
+    await until(async () => (await peekRoom(ORG, code))?.players.every((p) => p.online) === true && A2.room?.code === code);
+    const thirdGame = await request(A2, 'room:start');
+    await until(() => B3.room?.gameNo === 3);
+    check('both back: the host starts a third game', thirdGame.ok && B3.room?.status === 'playing' && B3.room.gameNo === 3);
+    B3.socket.close();
+    await until(async () => (await peekRoom(ORG, code))?.players[1].online === false);
     clock.now += POOL.playerGoneMs + 1000;
     await settle(async () => (await peekRoom(ORG, code))?.status === 'over');
     const forfeited = (await peekRoom(ORG, code))!;
-    check('A away for a minute and a half: B wins by forfeit', forfeited.status === 'over' && forfeited.result?.winner === 1 && forfeited.result.reason === 'away' && forfeited.players[1].wins === 1);
+    check('B away for a minute and a half while A waits: A wins by forfeit', forfeited.status === 'over' && forfeited.result?.winner === 0 && forfeited.result.reason === 'away' && forfeited.players[0].wins === 2);
     await until(() => awards.length >= 4);
-    check('a forfeit pays as a finished game: the win and nothing more', awards.length === 4 && awards.filter((a) => a.userId === B.user.userId).at(-1)?.points === Math.round(1000 / 70));
+    check('a forfeit pays as a finished game: the win and nothing more', awards.length === 4 && awards.filter((a) => a.userId === A.user.userId).at(-1)?.points === Math.round(1000 / 70) && awards.filter((a) => a.userId === B.user.userId).at(-1)?.points === 0);
 
     // ------------------------------------------------------------ out
     console.log('\nleaving');
-    const A2 = await open(people[0]);
-    clients.push(A2);
-    await until(() => A2.room?.code === code);
-    check('A, back, sees they lost', A2.room?.status === 'over' && A2.room.result?.winner === 1);
-    await request(A2, 'room:leave');
+    const B4 = await open(people[1]);
+    clients.push(B4);
+    await until(() => B4.room?.code === code);
+    check('B, back, sees they lost', B4.room?.status === 'over' && B4.room.result?.winner === 0 && B4.room.you === B.user.userId);
+    const fullInvite = await request(A2, 'room:invite', { userId: D.user.userId });
+    check('an invite to a full table is refused', !fullInvite.ok && fullInvite.status === 409);
+    await request(B4, 'room:leave');
+    await until(() => A2.room?.status === 'lobby');
     const oneLeft = (await peekRoom(ORG, code))!;
-    check('A leaves: B is host, seat 0, and still the winner', oneLeft.players.length === 1 && oneLeft.hostId === B.user.userId && oneLeft.result?.winner === 0);
-    const againAlone = await request(B2, 'room:again');
-    check('a rematch with no opponent waits in the lobby', againAlone.ok && (await peekRoom(ORG, code))?.status === 'lobby');
-    await request(B2, 'room:leave');
-    await until(() => B2.room === null);
-    check('the last one out deletes the room and is told', (await peekRoom(ORG, code)) === null && B2.room === null);
-    const helloEnd = await request(B2, 'room:hello');
+    check('B leaves the finished room: back to the lobby for A, seat 0 and host, the tally kept, the table gone', oneLeft.status === 'lobby' && oneLeft.players.length === 1 && oneLeft.hostId === A.user.userId && oneLeft.players[0].wins === 2 && oneLeft.result === null && oneLeft.state === null && oneLeft.lastShot === null && A2.room?.wins[0] === 2 && A2.room.balls.length === 0);
+    const againAlone = await request(A2, 'room:again');
+    check('there is nothing to replay in a lobby', !againAlone.ok && againAlone.status === 409 && againAlone.message === 'There is no finished game to replay.');
+    pushes.length = 0;
+    const inviteD = await request(A2, 'room:invite', { userId: D.user.userId });
+    await until(() => pushes.length > 0);
+    check('the refused invite did not spend the push: inviting D now pushes', inviteD.ok && pushes.some((p) => p.userIds[0] === D.user.userId && p.scenario === 'pool_invite' && p.data.challengeId === `room:${code}`));
+    const dJoins = await request(D, 'room:join', { code });
+    check('a newcomer takes the seat in the lobby', dJoins.ok && dJoins.data.players.length === 2 && dJoins.data.status === 'lobby');
+    await request(A2, 'room:start');
+    await until(() => D.room?.status === 'playing');
+    await request(D, 'room:leave');
+    await until(() => A2.room?.status === 'lobby' && A2.room.wins[0] === 3);
+    check('D leaves mid-game: A wins by forfeit and waits in the lobby with the tally', A2.room?.status === 'lobby' && A2.room.wins[0] === 3 && A2.room.players.length === 1 && /left the table/.test(A2.room.message ?? ''));
+    await until(() => awards.length >= 6);
+    check('the forfeit is scored and paid once', awards.length === 6 && scores.length === 4);
+    await request(A2, 'room:leave');
+    await until(() => A2.room === null);
+    check('the last one out deletes the room and is told', (await peekRoom(ORG, code)) === null && A2.room === null);
+    const helloEnd = await request(A2, 'room:hello');
     check('hello afterwards: nothing open', helloEnd.ok && helloEnd.data.room === null && helloEnd.data.rooms.length === 0);
   } finally {
     for (const c of clients) c.socket.close();
