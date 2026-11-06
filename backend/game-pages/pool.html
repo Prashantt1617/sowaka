@@ -631,11 +631,11 @@ cv.addEventListener('pointerdown',e=>{ if(!canAct())return; if(!G.chalked&&!G.in
   if(onEight(G.turn)){ for(const p of POCKETS)if(Math.hypot(w.x-p.x,w.y-p.y)<0.12){ callPocket(p.i); return; } }
   drag={kind:'aim',a0:Math.atan2(w.y-cue.y,w.x-cue.x),aim0:G.aim,moved:0,lx:e.clientX,ly:e.clientY}; cv.setPointerCapture(e.pointerId); });
 cv.addEventListener('pointermove',e=>{ if(!drag)return; const rct=cv.getBoundingClientRect(); const w=s2w(e.clientX-rct.left,e.clientY-rct.top); const cue=G.balls.find(b=>b.n===0);
-  if(drag.kind==='place'){ SFX.place(); const x=clamp(w.x,R,G.kitchen?HEAD_X-R:L-R), y=clamp(w.y,R,Wd-R); if(E.placementOk(plain(G.balls),x,y,G.kitchen)){ cue.x=x; cue.y=y; drag.moved=true; } return; }
+  if(drag.kind==='place'){ const x=clamp(w.x,R,G.kitchen?HEAD_X-R:L-R), y=clamp(w.y,R,Wd-R); if(E.placementOk(plain(G.balls),x,y,G.kitchen)){ cue.x=x; cue.y=y; drag.moved=true; } return; }
   const a1=Math.atan2(w.y-cue.y,w.x-cue.x); let da=a1-drag.a0; while(da>Math.PI)da-=2*Math.PI; while(da<-Math.PI)da+=2*Math.PI; const dist=Math.hypot(w.x-cue.x,w.y-cue.y); const fine=clamp(0.35/Math.max(dist,0.08),0.12,1); // far from the ball: finer
   G.aim=drag.aim0+da*fine; drag.moved+=Math.hypot(e.clientX-drag.lx,e.clientY-drag.ly); drag.lx=e.clientX; drag.ly=e.clientY; });
 cv.addEventListener('pointerup',e=>{ if(!drag)return; const d=drag; drag=null;
-  if(d.kind==='place'){ SFX.tick(); if(G.online){ if(d.moved)placeOnline(); return; } show('Cue ball placed. Aim and pull the power bar'); G.inHand=false; renderHud(); } });
+  if(d.kind==='place'){ SFX.place(); if(G.online){ if(d.moved)placeOnline(); return; } show('Cue ball placed. Aim and pull the power bar'); G.inHand=false; renderHud(); } });
 cv.addEventListener('pointercancel',()=>{ drag=null; });
 function callPocket(i){ if(G.online){ const was=G.calledPocket; G.calledPocket=i; show('Pocket called'); SFX.tick(); buzz('light');
     LIVE.api.call(i).then(r=>{ const v=roomOf(r); if(v)onRoomState(v); }).catch(err=>{ G.calledPocket=was; show(err.message||'The pocket was not accepted',true); }); return; }
