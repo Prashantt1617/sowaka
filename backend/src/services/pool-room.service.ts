@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Filter } from 'mongodb';
 import { users } from '../config/db';
-import { PoolFinalLine, PoolPlayer, PoolRoom, PoolView } from '../models/pool.model';
+import { PoolFinalLine, PoolPlayer, PoolRoom, PoolSize, PoolView } from '../models/pool.model';
 import type { User } from '../models/user.model';
 import type { Shot } from '../shared/pool/engine';
 import { recordServerScore } from './game-catalog.service';
@@ -14,18 +14,20 @@ import {
   PoolMoveError,
   PoolRoomSummary,
   advance,
-  applyCall,
   applyPlace,
   applyShot,
   firstName,
   inviteOpen,
   makeCode,
+  needPlayers,
   newRoom,
   parseCode,
   parseShot,
+  parseSize,
   playerOf,
   removePlayer,
   resetToLobby,
+  seated,
   startGame,
   summaryOf,
   viewFor,
@@ -51,7 +53,7 @@ import {
 import { logger } from '../utils/logger';
 
 /**
- * Sowaka Pool's rooms: what a player may do to one, and what everyone is told.
+ * Sowaka Pool's rooms (tables for two or four): what a player may do to one, and what everyone is told.
  * Tile Up's room service (`tileup-room.service.ts`) with pool's turns: every
  * operation reads the room, applies a rule from the engine under the store's
  * compare-and-set, carries out the effects (a feed line, a push, the scores)
@@ -173,7 +175,8 @@ function pushRoom(room: PoolRoom, force: string[] = []): void {
   if (!emitter) return;
   const now = deps.now();
   const forced = new Set(force);
-  for (const player of room.players) {
+  // Someone who left mid-game still holds a seat in the record, but is out of the room.
+  for (const player of seated(room)) {
     const sent = lastSent.get(player.userId);
     if (!forced.has(player.userId) && sent && sent.code === room.code && sent.version === room.version) continue;
     lastSent.set(player.userId, { code: room.code, version: room.version });
@@ -323,6 +326,7 @@ const asPlayer = (seat: Seat, now: number): PoolPlayer => ({
   online: true,
   offlineAt: null,
   wins: 0,
+  left: false,
 });
 
 // ---------------------------------------------------------------- the lobby
@@ -353,7 +357,13 @@ export async function hello(seat: Seat): Promise<{ room: PoolView | null; rooms:
 
 // ---------------------------------------------------------------- operations
 
-export async function hostRoom(seat: Seat, options: { open?: unknown } = {}): Promise<PoolView> {
+const WRONG_SIZE = 'A table seats two or four.';
+
+/** A new room of the host's own: open to the company or not, for two (the default) or four. The size is fixed from here on. */
+export async function hostRoom(seat: Seat, options: { open?: unknown; size?: unknown } = {}): Promise<PoolView> {
+  const asked = parseSize(options.size);
+  if (asked === null) throw new PoolError(400, WRONG_SIZE);
+  const size: PoolSize = asked ?? 2;
   // A few rooms in ten minutes is a game night; more is a loop.
   if (!(await claimWithin(`host:${seat.org}:${seat.userId}`, POOL.hostsPerWindow, POOL.hostWindowMs))) {
     throw new PoolError(429, 'That is enough new rooms for now. Try again in a few minutes.');
@@ -362,7 +372,7 @@ export async function hostRoom(seat: Seat, options: { open?: unknown } = {}): Pr
   // The new room first: a room that cannot be made must not cost them the one they sit in.
   let room: PoolRoom | null = null;
   for (let attempt = 0; attempt < 8 && !room; attempt += 1) {
-    const made = newRoom(makeCode(deps.random), seat.org, { userId: seat.userId, name: seat.name, photoUrl: seat.photoUrl }, options.open !== false, now);
+    const made = newRoom(makeCode(deps.random), seat.org, { userId: seat.userId, name: seat.name, photoUrl: seat.photoUrl }, options.open !== false, size, now);
     if (await createRoom(made)) room = made;
   }
   if (!room) throw new PoolError(503, 'Could not make a room just now. Try again.');
@@ -375,12 +385,12 @@ export async function hostRoom(seat: Seat, options: { open?: unknown } = {}): Pr
 
 const NO_ROOM = 'No room with that code at your company. Check it and try again.';
 const NOT_SEATED = 'You are not in that room any more.';
-const FULL = 'That table has two players already.';
+const FULL = 'That table is full.';
 const UNDER_WAY = 'That game is already on.';
 
 /** A seat is taken only in the lobby: nobody joins a running or finished game and inherits its table. */
 function seatFree(room: PoolRoom): PoolError | null {
-  if (room.players.length >= POOL.maxPlayers) return new PoolError(409, FULL);
+  if (room.players.length >= room.size) return new PoolError(409, FULL);
   if (room.status !== 'lobby') return new PoolError(409, UNDER_WAY);
   return null;
 }
@@ -434,11 +444,16 @@ export async function joinRoom(seat: Seat, rawCode: unknown, options: { rejoin?:
   return viewFor(changed.room, seat.userId, deps.now());
 }
 
-/** Quick join: the oldest open lobby with a seat, else a new open room of your own. */
-export async function quickJoin(seat: Seat): Promise<PoolView> {
+/**
+ * Quick join: the oldest open lobby with a seat (of the size asked for, or
+ * any size), else a new open room of your own (for two unless a size is given).
+ */
+export async function quickJoin(seat: Seat, options: { size?: unknown } = {}): Promise<PoolView> {
+  const size = parseSize(options.size);
+  if (size === null) throw new PoolError(400, WRONG_SIZE);
   const mine = await roomOf(seat);
   if (mine) return viewFor(mine, seat.userId, deps.now());
-  const rooms = (await openRooms(seat.org)).filter((r) => r.seatFree && r.status === 'lobby');
+  const rooms = (await openRooms(seat.org)).filter((r) => r.seatFree && r.status === 'lobby' && (size === undefined || r.size === size));
   for (const r of rooms) {
     try {
       return await joinRoom(seat, r.code);
@@ -446,7 +461,7 @@ export async function quickJoin(seat: Seat): Promise<PoolView> {
       if (!(error instanceof PoolError)) throw error;
     }
   }
-  return hostRoom(seat, { open: true });
+  return hostRoom(seat, { open: true, size: size ?? 2 });
 }
 
 export async function leaveRoom(seat: Seat): Promise<void> {
@@ -511,8 +526,8 @@ export async function startRoom(seat: Seat): Promise<void> {
   const changed = await change(seat.org, room.code, (r) => {
     if (r.hostId !== seat.userId) throw new PoolError(403, HOST_ONLY_START);
     if (r.status !== 'lobby') throw new PoolError(409, 'The game has already started.');
-    if (r.players.length < POOL.minPlayers) throw new PoolError(409, 'Need two players to start.');
-    if (r.players.some((p) => !p.online)) throw new PoolError(409, 'Wait for your opponent to come back.');
+    if (r.players.length < r.size) throw new PoolError(409, needPlayers(r.size));
+    if (r.players.some((p) => !p.online)) throw new PoolError(409, r.size === 2 ? 'Wait for your opponent to come back.' : 'Wait for everyone to come back.');
     // The engine empties the invite list as the game starts; remembered here
     // so the invitees' pending cards go with it.
     const invitees = r.invited.map((i) => i.userId);
@@ -527,9 +542,9 @@ export async function startRoom(seat: Seat): Promise<void> {
 }
 
 /**
- * A rematch from the podium, which either player may ask for: with both still
- * at the table a new game starts at once and the loser breaks; with a seat
- * empty the room goes back to its lobby to wait for an opponent.
+ * A rematch from the podium, which any player may ask for: with everyone still
+ * at the table a new game starts at once and the losing side breaks; with a
+ * seat empty or someone offline the room goes back to its lobby to wait.
  */
 const notOver = (room: PoolRoom) => new PoolError(409, room.status === 'playing' ? 'The game is still on.' : 'There is no finished game to replay.');
 
@@ -538,7 +553,7 @@ export async function againRoom(seat: Seat): Promise<void> {
   if (room.status !== 'over') throw notOver(room);
   const changed = await change(seat.org, room.code, (r) => {
     if (r.status !== 'over') throw notOver(r);
-    if (r.players.length < POOL.minPlayers || r.players.some((p) => !p.online)) return { result: true, effects: resetToLobby(r), write: true };
+    if (r.players.length < r.size || r.players.some((p) => !p.online)) return { result: true, effects: resetToLobby(r), write: true };
     try {
       return { result: true, effects: startGame(r, deps.now(), `g${randomUUID().slice(0, 8)}`), write: true };
     } catch (error) {
@@ -548,7 +563,7 @@ export async function againRoom(seat: Seat): Promise<void> {
   if (!changed) throw new PoolError(404, 'That room has closed.');
 }
 
-/** Ball in hand: `{x, y}` on the table (behind the head string after a break foul), clear of other balls. */
+/** Ball in hand, from the shooter's seat: `{x, y}` on the table (behind the head string after a break foul), clear of other balls. */
 export async function placeBall(seat: Seat, raw: { x?: unknown; y?: unknown }): Promise<PoolView> {
   const room = await requireRoom(seat);
   const changed = await change(seat.org, room.code, (r) => {
@@ -563,25 +578,10 @@ export async function placeBall(seat: Seat, raw: { x?: unknown; y?: unknown }): 
   return viewFor(changed.room, seat.userId, deps.now());
 }
 
-/** The called pocket for the 8, `{pocket: 0..5}`. */
-export async function callPocket(seat: Seat, raw: { pocket?: unknown }): Promise<PoolView> {
-  const room = await requireRoom(seat);
-  const changed = await change(seat.org, room.code, (r) => {
-    try {
-      applyCall(r, seat.userId, raw.pocket);
-      return { result: true, effects: [], write: true };
-    } catch (error) {
-      return asPoolError(error);
-    }
-  });
-  if (!changed) throw new PoolError(404, 'That room has closed.');
-  return viewFor(changed.room, seat.userId, deps.now());
-}
-
 /**
- * A shot on your turn, `{aim, power, spin: {top, side}}`: the server simulates
- * and rules it, keeps it as `lastShot` for both pages to replay, and answers
- * with the shooter's view (the same view everyone is pushed).
+ * A shot from the shooter's seat, `{aim, power, spin: {top, side}}`: the
+ * server simulates and rules it, keeps it as `lastShot` for every page to
+ * replay, and answers with the shooter's view (the same view everyone is pushed).
  */
 export async function takeShot(seat: Seat, raw: { aim?: unknown; power?: unknown; spin?: unknown }): Promise<PoolView> {
   const room = await requireRoom(seat);
