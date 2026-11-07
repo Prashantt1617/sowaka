@@ -1000,8 +1000,16 @@ function rulesBody(sh){ const r=sh.event.rules;
    final table). Its tables are the ordinary event tables (table:seated, table:state); everything around them is drawn
    here from shared.shootout, with Home and Watch along the top. */
 const soOn=sh=>!!(sh&&sh.shootout);
-/** On opening the game, a Shootout with its lobby open, its rounds on, or its results takes the player straight to it. */
-const soShown=sh=>soOn(sh)&&['lobby','shootout','over'].includes(sh.event.phase);
+/** On opening the game, only a Shootout the player is part of (in its queue, or still in its rounds) takes them straight
+   to it; its results, or a Shootout they are not in, wait behind the tournament card on the home. */
+const soShown=sh=>{ if(!soOn(sh))return false;
+  if(state.tv)return ['lobby','shootout','over'].includes(sh.event.phase); // a big screen shows the event whenever it is on
+  if(sh.event.phase==='lobby')return true; // sign-up time: everyone lands on the join screen
+  return ['seat','qualthrough','kothrough','qualwait'].includes(soScreen(soCtx(sh))[0]); }; // still in the rounds, by the one screen rule
+/** A finished Shootout's results stay on the home for a day (the server keeps handing out the latest event long after). */
+const soResultsFresh=sh=>{ const so=sh.shootout; if(so.status!=='done'||!so.standings||!so.standings.length)return false;
+  const last=(so.rounds||[]).slice(-1)[0], end=last&&last.endedAt?+new Date(last.endedAt):null; return !end||now()-end<86400000; };
+
 const SO_MIN=3; // SHOOTOUT.MIN_PLAYERS on the server
 const soOne=n=>/^Final/.test(n||'')?'Final':String(n||'').replace(/s$/,'');            // "Semi-finals" → "Semi-final"
 const soShort=r=>r.kind==='final'?'FINAL':r.kind==='qualifier'?'QUALIFIER':/^Semi/.test(r.name)?'SEMIS':/^Quarter/.test(r.name)?'QUARTERS':String(r.name).toUpperCase();
@@ -1286,7 +1294,7 @@ const R=()=>state.room;
 const isHost=()=>!!(R()&&R().hostId===R().you);
 const hostName=r=>{ const h=r&&r.players.find(p=>p.userId===r.hostId); return h?first(h.name):'the host'; };
 const houseFace=()=>`<div class="avatar house">♠</div>`;
-const tournamentOn=()=>!!(state.ev&&state.ev.event&&!casual(state.ev)&&state.ev.event.phase!=='over');
+const tournamentOn=()=>!!(state.ev&&state.ev.event&&!casual(state.ev)&&(state.ev.event.phase!=='over'||(soOn(state.ev)&&soResultsFresh(state.ev)))); // a just-finished Shootout keeps its card: the results live behind it
 function renderRooms(){
   const rooms=state.rooms||[], inv=(state.invites||[]).slice(-3).reverse();
   /* three faces, or two and "+n": the stack stays 76px wide so the table's state fits beside it on a 390px phone */
@@ -1309,7 +1317,7 @@ function renderRooms(){
       <button class="way" data-act="host"><span class="ic">+</span><b>New table</b><span class="cap">Host it, invite colleagues</span></button>
       <button class="way" data-act="codeopen"><span class="ic code">1234</span><b>Join with a code</b><span class="cap">Four digits from the host</span></button>
       <button class="way" data-act="practice"><span class="ic house">♠</span><b>Practice vs the house</b><span class="cap">On your own, any time</span></button></div>
-    ${tournamentOn()?`<div class="card" style="margin-top:12px"><div class="rowi"><div class="who"><b>🏆 ${esc(state.ev.event.name)}</b><span>${esc(phaseWords(state.ev).line)}</span></div><button class="btn small ghost" data-act="event">Open</button></div></div>`:''}
+    ${tournamentOn()?`<div class="card" style="margin-top:12px"><div class="rowi"><div class="who"><b>🏆 ${esc(state.ev.event.name)}</b><span>${esc(phaseWords(state.ev).line)}</span></div><button class="btn small ghost" data-act="event">${state.ev.event.phase==='over'?'Results':'Open'}</button></div></div>`:''}
     <div class="sect"><h3>Open tables</h3><span>${rooms.length?`${rooms.length} open`:''}</span></div>
     ${rooms.length?rooms.map(roomRow).join(''):`<div class="card"><div class="empty">No open tables right now. Start one and invite colleagues, or tap Quick game.</div></div>`}
     ${sheets()}</div>`;
@@ -2124,8 +2132,8 @@ async function load(){ try{
     /* At an event's table: that first. Else the group game (the event, if one is on, is a card in its lobby). */
     if(h&&h.table&&h.table.status==='playing'&&!rh.room){ state.mode='event'; state.shared=state.ev; state.table=h.table; state.view='table'; }
     else if(state.mode==='event'){ state.shared=state.ev; if(h&&h.table)state.table=h.table; }
-    /* Opening the game while a Shootout's lobby is open, its rounds are on, or its results are up: straight to it (an old practice
-       table is left, as below; a table with colleagues still comes first). */
+    /* Opening the game while a Shootout the player is in is on: straight to it (an old practice table is left, as below;
+       a table with colleagues still comes first). Its results never take over the open: the home shows first. */
     else if(!state.opened&&soShown(state.ev)&&!(rh.room&&!rh.room.practice)){ if(rh.room){ try{ await P.request('room:leave'); }catch(e){} }
       state.room=null; state.mode='event'; state.shared=state.ev; state.view='lobby'; if(h&&h.table)state.table=h.table; }
     /* Opening the game again (not a reconnect) is not a way back into an old

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Sowaka Pool</title>
+<title>Pool Table</title>
 <!--POOL-TICKET-->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Figtree:wght@400;600;700&display=swap">
 <style>
-/* Sowaka Pool: a dark, felt-and-brass table in the shape of the pool games people know. Layout: a slim header, then the play
+/* Pool Table: a dark, felt-and-brass table in the shape of the pool games people know. Layout: a slim header, then the play
    area: the table (a canvas; the two side cards float over its top) with the power bar as a cue-shaped strip in its own
    column outside the table, and a control dock (spin ball, fine aim, the shot clock) in its own strip outside the canvas, so
    the cue never runs under a control: below the table in portrait, beside it in landscape. The home screen, the live lobby,
@@ -287,7 +287,7 @@ canvas#table{position:absolute;inset:0;width:100%;height:100%;display:block}
 <main id="app">
   <header class="top">
     <button class="chip" id="leaveBtn" aria-label="Leave the table" hidden>‹</button>
-    <h1>SOWAKA POOL</h1>
+    <h1>POOL TABLE</h1>
     <div class="swg-slot"><span class="swg" role="img" aria-label="Sowaka Games"><span class="swg-logo">sowaka</span><span class="swg-box"><span class="swg-games">GAMES</span></span></span></div>
     <button class="chip" id="howtoBtn" aria-label="How to play">?</button>
     <button class="chip" id="soundBtn" aria-label="Sound">🔊</button>
@@ -316,7 +316,7 @@ canvas#table{position:absolute;inset:0;width:100%;height:100%;display:block}
 <!--SOCKET-IO-->
 <!--POOL-ENGINE-->
 <script>
-/* LIVE: Sowaka Pool against the real server, Tile Up's live bootstrap for the /pool namespace.
+/* LIVE: Pool Table against the real server, Tile Up's live bootstrap for the /pool namespace.
    The server puts a signed ticket in the page it sends (window.__POOL = {ticket, hopTicket}: a socket ticket and a short token for the
    reload below; the reloaded copy carries ticket alone). This script opens a socket.io connection with it on the /pool namespace and gives
    the game the room API (window.Sowaka.room.* out, window.onSowakaRoom(evt) in). Without a ticket (a plain browser, the artifact) it does
@@ -329,9 +329,9 @@ window.__poolLive={state:'none'};
 const L=window.__poolLive;
 if(!T||typeof T!=='object'||!T.ticket||typeof window.io!=='function')return;
 L.state='starting';
-const deliver=evt=>{ try{ if(window.onSowakaRoom)window.onSowakaRoom(evt); }catch(e){ console.error('Sowaka Pool event failed',e); } };
+const deliver=evt=>{ try{ if(window.onSowakaRoom)window.onSowakaRoom(evt); }catch(e){ console.error('Pool Table event failed',e); } };
 const errOf=(status,message,code)=>Object.assign(new Error(message||'Something went wrong. Try again.'),{status:status|0,code:code||null});
-const CLOSE_AND_REOPEN='Close and reopen Sowaka Pool to keep playing.';
+const CLOSE_AND_REOPEN='Close and reopen Pool Table to keep playing.';
 let fatal=null, sock=null;
 const waiters=[];
 function die(message,code){ if(fatal)return; fatal={message:String(message||CLOSE_AND_REOPEN),code:code||'fatal'}; L.state='dead'; L.fatal=fatal;
@@ -345,7 +345,7 @@ function blockedByPolicy(){ for(const m of document.querySelectorAll('meta[http-
     if(d&&/'none'/.test(d))return true; } return false; }
 if(blockedByPolicy()){
   const here=location.protocol==='https:'||location.protocol==='http:';
-  if(/[?&]ticket=/.test(location.search)||!here){ L.state='dead'; fatal={message:'Sowaka Pool could not reach the game server. '+CLOSE_AND_REOPEN,code:'blocked'}; L.fatal=fatal; return; }
+  if(/[?&]ticket=/.test(location.search)||!here){ L.state='dead'; fatal={message:'Pool Table could not reach the game server. '+CLOSE_AND_REOPEN,code:'blocked'}; L.fatal=fatal; return; }
   L.state='hopping'; L.hopping=true; document.documentElement.classList.add('hop');
   /* The URL carries the short hop token, never the socket ticket. */
   location.replace(location.origin+location.pathname+'?ticket='+encodeURIComponent(T.hopTicket||T.ticket)); return; }
@@ -383,7 +383,7 @@ sock.on('disconnect',reason=>{ if(fatal)return; L.state='offline';
 sock.on('connect_error',err=>{ const code=String((err&&err.data&&err.data.code)||(err&&err.message)||'');
   if(/ticket|auth|forbidden|unauthori[sz]ed|not_allowed|offboard/i.test(code)){
     const expired=/expired/i.test(code);
-    die((expired?'This Sowaka Pool session has expired. ':'Sowaka Pool could not sign you in. ')+CLOSE_AND_REOPEN,expired?'ticket_expired':'ticket_invalid'); return; }
+    die((expired?'This Pool Table session has expired. ':'Pool Table could not sign you in. ')+CLOSE_AND_REOPEN,expired?'ticket_expired':'ticket_invalid'); return; }
   if(!offline){ offline=true; deliver({type:'connection',online:false}); } });
 sock.on('room:state',p=>{ room=viewOf(p); deliver({type:'state',room}); });
 sock.on('room:feed',p=>{ const item=p&&p.item&&typeof p.item==='object'?p.item:p; if(item&&typeof item==='object')deliver({type:'feed',item}); });
@@ -426,7 +426,7 @@ catch(e){ S.startRoomCode=startOwn; }
 'use strict';
 /* ============================== basics ============================== */
 const E=window.PoolEngine;
-if(!E||typeof E.simulateShot!=='function')throw new Error('Sowaka Pool: the shared engine is missing. Build the page with games-web/pool/build.py');
+if(!E||typeof E.simulateShot!=='function')throw new Error('Pool Table: the shared engine is missing. Build the page with games-web/pool/build.py');
 const $=s=>document.querySelector(s);
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const bridge=()=>(window.Sowaka&&window.Sowaka.native)?window.Sowaka:null;
@@ -868,7 +868,7 @@ const teamOf=(p,i)=>p&&p.team!=null?p.team|0:i%2;
 const face=(p,cls)=>`<div class="face ${cls||''}"${p&&p.photoUrl?` style="background-image:url('${esc(p.photoUrl)}')"`:''}>${p&&p.photoUrl?'':esc(initials(p&&p.name))}</div>`;
 function pane(html){ const p=$('#pane'); if(html==null){ p.hidden=true; p.innerHTML=''; return; } p.hidden=false; p.innerHTML=`<div class="inner">${html}</div>`; }
 const offlinePill=()=>LIVE.offline?'<span class="pill off">Offline</span>':'';
-window.onSowakaRoom=evt=>{ try{ onRoomEvent(evt); }catch(e){ console.error('Sowaka Pool event failed',e); } };
+window.onSowakaRoom=evt=>{ try{ onRoomEvent(evt); }catch(e){ console.error('Pool Table event failed',e); } };
 function onRoomEvent(evt){ if(!evt||typeof evt!=='object')return;
   switch(evt.type){
     case 'state': onRoomState(evt.room||null); break;
@@ -877,7 +877,7 @@ function onRoomEvent(evt){ if(!evt||typeof evt!=='object')return;
       if(!LIVE.room){ show(`${first(evt.from&&evt.from.name)} invited you to table ${evt.code}`); if(screen==='lobby')renderLobby(); else if(screen==='menu')menu(); } break;
     case 'kicked': LIVE.room=null; LIVE.seq=null; toLobby(); show('You were removed from the table',true); break;
     case 'connection': LIVE.offline=!evt.online; if(screen==='lobby')renderLobby(); else if(screen==='waiting')renderWaiting(); if(!evt.online)show('Connection lost. Reconnecting…',true); else if(screen!=='menu')show('Back online'); break;
-    case 'fatal': LIVE.fatal=evt.message||'Sowaka Pool lost its connection. Close and reopen it.'; if(screen!=='menu'||G.online)fatalSheet(); break; } }
+    case 'fatal': LIVE.fatal=evt.message||'Pool Table lost its connection. Close and reopen it.'; if(screen!=='menu'||G.online)fatalSheet(); break; } }
 /* ---------- the room view in ---------- */
 function onRoomState(room){
   if(!room){ if(LIVE.leaving)return; const had=LIVE.room; LIVE.room=null; LIVE.seq=null; LIVE.pending=null; LIVE.own=null; if(had&&(screen==='waiting'||G.online)){ toLobby(); show('The table closed',true); } return; }
@@ -1032,8 +1032,8 @@ function onlineResult(){ const r=LIVE.room; if(!r||r.status!=='over'||!r.result)
 function toLobby(){ G.online=false; G.motion=null; G.shooting=false; G.replaying=false; G.result=null; G.clockEnds=null; LIVE.leaveAsk=false; LIVE.againSent=false; $('#sheetHost').innerHTML=''; $('#leaveBtn').hidden=true; G.mode='menu'; G.balls=rack(); renderHud(); if(LIVE.api){ renderLobby(); refreshLobby(); } else menu(); }
 async function leaveRoom(){ const api=LIVE.api, was=LIVE.room; LIVE.room=null; LIVE.seq=null; LIVE.pending=null; LIVE.own=null; LIVE.leaving=true; $('#sheetHost').innerHTML=''; try{ if(api&&was)await api.leave(); }catch(e){} LIVE.leaving=false; toLobby(); }
 function leaveAskSheet(){ const r=LIVE.room, playing=r&&r.status==='playing'; sheet(`<h2>Leave the table?</h2><p>${playing?(sizeOfRoom(r)===4?'Leaving mid-game leaves your partner to play on alone; if nobody of your side stays, the other side wins.':'Leaving mid-game hands your colleague the win.'):'You can come back with the code while the table is open.'}</p><div class="row2"><button class="btn" data-act="close">Stay</button><button class="btn primary" data-act="leave-now">Leave</button></div>`); }
-function needsApp(){ sheet(`<h2>Play a colleague</h2><p>Live tables need the Sowaka app: open Sowaka Pool from the Games tab to play someone at your company, with invites, a 4-digit table code and tables for two or four.</p><button class="btn primary" data-act="close">OK</button>`); }
-function fatalSheet(){ sheet(`<h2>Connection lost</h2><p>${esc(LIVE.fatal||'Sowaka Pool lost its connection.')}</p><p>The games on this phone still work.</p><button class="btn primary" data-act="fatal-ok">Back to the menu</button>`,{stay:true}); }
+function needsApp(){ sheet(`<h2>Play a colleague</h2><p>Live tables need the Sowaka app: open Pool Table from the Games tab to play someone at your company, with invites, a 4-digit table code and tables for two or four.</p><button class="btn primary" data-act="close">OK</button>`); }
+function fatalSheet(){ sheet(`<h2>Connection lost</h2><p>${esc(LIVE.fatal||'Pool Table lost its connection.')}</p><p>The games on this phone still work.</p><button class="btn primary" data-act="fatal-ok">Back to the menu</button>`,{stay:true}); }
 async function joinRoom(code){ const c=String(code||'').trim(); if(!/^[1-9]\d{3}$/.test(c)){ show('A table code is four digits',true); return; }
   await act(async()=>{ const r=await LIVE.api.join(c); LIVE.codeInput=''; const v=roomOf(r); if(v)onRoomState(v); }); }
 async function act(fn){ if(LIVE.busy)return; LIVE.busy=true; try{ await fn(); }catch(err){ show(err.message||'Something went wrong. Try again.',true); } finally{ LIVE.busy=false; } }
