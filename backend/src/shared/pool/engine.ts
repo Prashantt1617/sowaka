@@ -221,7 +221,7 @@ export function resolve(st: RuleState, after: Ball[], events: ShotEvent[]): Rule
   let firstHit: number | null = null, cushions = 0, scratch = false;
   const rails = new Set<number>();
   const pocketed: number[] = [];
-    let contact = false;
+  let contact = false;
   for (const e of events) {
     if (e.t === 'hit') { if (firstHit == null && (e.a === 0 || e.b === 0)) { firstHit = e.a === 0 ? e.b : e.a; contact = true; } }
     else if (e.t === 'cushion') { if (contact || st.breakShot) cushions += 1; rails.add(e.n); }
@@ -250,12 +250,12 @@ export function resolve(st: RuleState, after: Ball[], events: ShotEvent[]): Rule
   if (!foul && open && pot.length) { // the first ball potted (on the break too) gives the shooter its group
     const firstPot = pot[0];
     groups[i] = groupOf(firstPot); groups[opp] = groups[i] === 'solid' ? 'stripe' : 'solid'; open = false;
-    message = `${groups[i] === 'solid' ? 'Solids' : 'Stripes'} to the shooter`;
+    const took = `${groups[i] === 'solid' ? 'Solids' : 'Stripes'} to the shooter`;
+    message = message ? `${message}. ${took}` : took; // after an 8 re-spotted on the break both facts are told
   }
   if (!foul) {
     const own = pot.filter((n) => groups[i] == null || groupOf(n) === groups[i]);
     if (own.length) keep = true;
-    if (st.breakShot && pot.length) keep = true;
   }
   if (scratch) respot(balls, 0);
   const next: RuleState = {
