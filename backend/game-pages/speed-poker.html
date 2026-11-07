@@ -1002,10 +1002,10 @@ function rulesBody(sh){ const r=sh.event.rules;
 const soOn=sh=>!!(sh&&sh.shootout);
 /** On opening the game, only a Shootout the player is part of (in its queue, or still in its rounds) takes them straight
    to it; its results, or a Shootout they are not in, wait behind the tournament card on the home. */
-const soShown=sh=>{ if(!soOn(sh))return false; const ph=sh.event.phase, uid=me();
-  if(ph==='lobby')return sh.shootout.lobby.some(p=>p.userId===uid);
-  if(ph==='shootout'){ const c=soCtx(sh); return c.mi>=0&&c.mi===c.ci; } // in the round that is on
-  return false; };
+const soShown=sh=>{ if(!soOn(sh))return false;
+  if(state.tv)return ['lobby','shootout','over'].includes(sh.event.phase); // a big screen shows the event whenever it is on
+  return ['inlobby','seat','qualthrough','kothrough','qualwait'].includes(soScreen(soCtx(sh))[0]); }; // the one screen rule decides "in"
+
 const SO_MIN=3; // SHOOTOUT.MIN_PLAYERS on the server
 const soOne=n=>/^Final/.test(n||'')?'Final':String(n||'').replace(/s$/,'');            // "Semi-finals" → "Semi-final"
 const soShort=r=>r.kind==='final'?'FINAL':r.kind==='qualifier'?'QUALIFIER':/^Semi/.test(r.name)?'SEMIS':/^Quarter/.test(r.name)?'QUARTERS':String(r.name).toUpperCase();
@@ -1290,7 +1290,7 @@ const R=()=>state.room;
 const isHost=()=>!!(R()&&R().hostId===R().you);
 const hostName=r=>{ const h=r&&r.players.find(p=>p.userId===r.hostId); return h?first(h.name):'the host'; };
 const houseFace=()=>`<div class="avatar house">♠</div>`;
-const tournamentOn=()=>!!(state.ev&&state.ev.event&&!casual(state.ev)&&state.ev.event.phase!=='over');
+const tournamentOn=()=>!!(state.ev&&state.ev.event&&!casual(state.ev)&&(state.ev.event.phase!=='over'||(soOn(state.ev)&&state.ev.shootout.standings))); // a finished Shootout keeps its card: the results live behind it
 function renderRooms(){
   const rooms=state.rooms||[], inv=(state.invites||[]).slice(-3).reverse();
   /* three faces, or two and "+n": the stack stays 76px wide so the table's state fits beside it on a 390px phone */
@@ -1313,7 +1313,7 @@ function renderRooms(){
       <button class="way" data-act="host"><span class="ic">+</span><b>New table</b><span class="cap">Host it, invite colleagues</span></button>
       <button class="way" data-act="codeopen"><span class="ic code">1234</span><b>Join with a code</b><span class="cap">Four digits from the host</span></button>
       <button class="way" data-act="practice"><span class="ic house">♠</span><b>Practice vs the house</b><span class="cap">On your own, any time</span></button></div>
-    ${tournamentOn()?`<div class="card" style="margin-top:12px"><div class="rowi"><div class="who"><b>🏆 ${esc(state.ev.event.name)}</b><span>${esc(phaseWords(state.ev).line)}</span></div><button class="btn small ghost" data-act="event">Open</button></div></div>`:''}
+    ${tournamentOn()?`<div class="card" style="margin-top:12px"><div class="rowi"><div class="who"><b>🏆 ${esc(state.ev.event.name)}</b><span>${esc(phaseWords(state.ev).line)}</span></div><button class="btn small ghost" data-act="event">${state.ev.event.phase==='over'?'Results':'Open'}</button></div></div>`:''}
     <div class="sect"><h3>Open tables</h3><span>${rooms.length?`${rooms.length} open`:''}</span></div>
     ${rooms.length?rooms.map(roomRow).join(''):`<div class="card"><div class="empty">No open tables right now. Start one and invite colleagues, or tap Quick game.</div></div>`}
     ${sheets()}</div>`;
