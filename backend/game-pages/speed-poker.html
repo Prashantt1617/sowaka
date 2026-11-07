@@ -263,9 +263,93 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .sheet .shead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:none}
 .sheet .shead h2{margin:2px 0 8px}
 .sheet .shead .x{width:30px;height:30px;margin-top:-6px;border-radius:50%;background:rgba(255,255,255,.08);color:var(--muted);font-size:17px;display:flex;align-items:center;justify-content:center;flex:none}
-.sheet .howtext{overflow-y:auto;min-height:0}
-.sheet .howtext p{margin:0 0 10px;font-size:14px;line-height:1.45;color:#d3e3d9}
 .sheet .codebox{margin:0}
+/* ---------- How to play: a sheet with six drawn scenes, one at a time, as Secret Squad's (grab handle, a 250px stage, a bold
+   caption with the fact under it, dots with the current one drawn long, Next). Motion runs only while the stage has .move,
+   which it gets when nobody asked for less; every element's resting style is its final frame. ---------- */
+.sheet .box.how{padding-top:8px;gap:0}
+.sheet .grab{align-self:center;width:40px;height:5px;border-radius:999px;background:rgba(255,255,255,.18);margin-bottom:8px;flex:none}
+.hw-stage{position:relative;height:250px;border-radius:24px;overflow:hidden;flex:none;touch-action:pan-y;background:radial-gradient(circle at 50% 40%,#2a8a5b 0%,#155238 48%,#0b2a1c 100%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),inset 0 0 50px rgba(0,0,0,.35)}
+.hw-scene{position:absolute;inset:0}
+.hw-cap{flex:1 1 auto;min-height:74px;overflow-y:auto;margin:0;padding:10px 4px 6px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-size:20px;font-weight:700;line-height:1.25;color:var(--ink)}
+.hw-cap small{display:block;margin-top:6px;font-size:13px;font-weight:500;line-height:1.4;color:var(--muted)}
+.hw-dots{display:flex;justify-content:center;gap:0;flex:none;margin-bottom:4px}
+.hw-dots button{width:40px;height:40px;display:grid;place-items:center}
+.hw-dots button span{width:8px;height:8px;border-radius:999px;background:rgba(255,255,255,.2);transition:width .2s}
+.hw-dots button[aria-current="step"] span{width:24px;background:var(--gold)}
+/* the pieces: cards are the page's own (.pc), chips a stack of .hwc, people small initials */
+.hwc{display:inline-block;width:18px;height:18px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#fff 0 22%,var(--chip,#d23c3c) 23% 60%,#fff 61% 70%,var(--chip,#d23c3c) 71%);box-shadow:0 1px 2px rgba(0,0,0,.5)}
+.hwstack{position:relative;display:inline-block;width:18px;height:18px;flex:none}
+.hwstack .hwc{position:absolute;left:0;top:0}
+.hwstack .hwc:nth-child(2){top:-4px}.hwstack .hwc:nth-child(3){top:-8px;--chip:#2f7de1}.hwstack .hwc:nth-child(4){top:-12px;--chip:#d4a63a}
+.hw-tag{position:absolute;white-space:nowrap;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.04em;background:rgba(8,14,11,.9);color:#f3e2b2;box-shadow:inset 0 0 0 1px rgba(229,184,80,.4)}
+.hw-tag.you{background:var(--gold);color:#2a1a02;box-shadow:none}
+.hw-tag.ok{background:#2fbf71;color:#04150b;box-shadow:none}
+.hw-av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;color:#dfeee5;box-shadow:0 0 0 2px rgba(0,0,0,.45)}
+.hw-seat{position:absolute;display:flex;flex-direction:column;align-items:center;gap:4px}
+.hw-seat .hw-tag{position:static}
+/* 1: the deal */
+.hw-deck{position:absolute;left:50%;top:14px;width:38px;height:54px;margin-left:-19px}
+.hw-deck .pc{position:absolute;inset:0}
+.hw-deck .pc:nth-child(2){transform:translate(-2px,-2px)}.hw-deck .pc:nth-child(3){transform:translate(-4px,-4px)}
+.hw-deck.r{left:auto;right:16px;top:70px;margin:0}
+.hw-row{position:absolute;left:0;right:0;display:flex;justify-content:center;gap:6px}
+.hw-hole{position:absolute;left:50%;bottom:14px;display:flex;gap:6px;margin-left:-61px}
+.hw-stage .flip{width:38px;height:54px}
+.hw-hole .flip{width:58px;height:82px}
+.hw-stage:not(.move) .flip .in{animation:none}
+/* a short phone (the game inside the app on a 667px screen): the stage steps down and the scene scales with it */
+@media (max-height:700px){.hw-stage{height:200px}.hw-scene{top:-25px;bottom:-25px;transform:scale(.8)}.hw-cap{font-size:18px;padding-top:6px}.hw-cap small{font-size:12.5px}}
+.move .hw-in{animation:hwdealin .5s cubic-bezier(.2,.9,.3,1.2) both;animation-delay:var(--d,0ms)}
+@keyframes hwdealin{0%{transform:translateY(-70px) scale(.8);opacity:0}100%{transform:none;opacity:1}}
+/* 2: blinds and the bet */
+.hw-bet{position:absolute;display:flex;align-items:center;gap:5px;font-size:12px;font-weight:800;color:#f3e2b2;white-space:nowrap}
+.move .hw-bet{animation:hwbet .7s cubic-bezier(.2,.8,.3,1) both;animation-delay:var(--d,0ms)}
+@keyframes hwbet{0%{transform:translate(var(--sx,0),var(--sy,0)) scale(.6);opacity:0}30%{opacity:1}100%{transform:none;opacity:1}}
+.hw-abar{position:absolute;left:14px;right:14px;bottom:14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.hw-abar span{min-height:40px;border-radius:10px;font-weight:800;font-size:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1;box-shadow:inset 0 -2px 0 rgba(0,0,0,.25);color:#fff}
+.hw-abar span small{font-size:10px;font-weight:700;opacity:.85}
+.hw-abar .fold{background:linear-gradient(180deg,var(--fold2),var(--fold))}.hw-abar .call{background:linear-gradient(180deg,var(--call2),var(--call))}.hw-abar .raise{background:linear-gradient(180deg,var(--raise2),var(--raise))}
+.move .hw-abar .raise{animation:hwpulse .5s 1.5s ease-in-out 2}
+@keyframes hwpulse{50%{transform:scale(1.08);box-shadow:0 0 0 3px rgba(224,161,47,.45)}}
+.hw-slider{position:absolute;left:14px;right:14px;bottom:64px;height:6px;border-radius:3px;background:rgba(255,255,255,.14)}
+.hw-slider i{position:absolute;left:0;top:0;height:100%;width:var(--p,40%);border-radius:3px;background:var(--gold)}
+.hw-slider i::after{content:"";position:absolute;right:-9px;top:-6px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.move .hw-slider i{animation:hwslide 1s 1.6s cubic-bezier(.3,1.3,.4,1) both}
+@keyframes hwslide{0%{width:12%}100%{width:var(--p,40%)}}
+/* 3: the streets */
+.hw-lbl{position:absolute;top:140px;font-size:10px;font-weight:800;letter-spacing:.14em;color:rgba(255,255,255,.55);text-align:center}
+.move .hw-fade{animation:hwfade .4s ease-out both;animation-delay:var(--d,0ms)}
+@keyframes hwfade{0%{opacity:0;transform:translateY(6px)}100%{opacity:1;transform:none}}
+/* 4: the winner */
+.move .hw-best .pc.win{animation:hwglow .5s 1.1s ease-out both}
+@keyframes hwglow{0%{box-shadow:0 2px 6px rgba(0,0,0,.4)}100%{box-shadow:0 0 0 2px var(--gold),0 0 14px rgba(229,184,80,.7)}}
+.move .hw-best .pc.dim{animation:hwdim .5s 1.1s ease-out both}
+@keyframes hwdim{0%{filter:none}100%{filter:brightness(.55)}}
+.move .hw-pop{animation:hwpop .45s cubic-bezier(.2,1.7,.4,1) both;animation-delay:var(--d,0ms)}
+@keyframes hwpop{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
+.hw-pot{position:absolute;left:50%;top:106px;margin-left:-34px;display:flex;align-items:center;gap:6px;padding:4px 9px 4px 5px;border-radius:999px;background:rgba(0,0,0,.4);color:#f3e2b2;font-size:12px;font-weight:800;transform:translate(var(--tx,0),var(--ty,0))}
+.move .hw-pot{animation:hwpot .8s 2.1s cubic-bezier(.3,.8,.3,1) both}
+@keyframes hwpot{0%{transform:none}100%{transform:translate(var(--tx,0),var(--ty,0))}}
+/* 5: the numbers */
+.hw-tiles{position:absolute;left:12px;right:12px;top:50%;transform:translateY(-50%);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.hw-tile{background:rgba(8,20,14,.72);border-radius:16px;padding:12px 6px 10px;display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.hw-tile b{font-family:var(--display);font-size:26px;line-height:1;color:var(--gold)}
+.hw-tile span{font-size:11px;line-height:1.25;color:#cfe4d7}
+.hw-bars{display:flex;align-items:flex-end;gap:4px;height:28px}
+.hw-bars i{width:12px;border-radius:3px 3px 0 0;background:var(--gold);height:var(--h,10px);transform-origin:50% 100%}
+.move .hw-bars i{animation:hwgrow .5s cubic-bezier(.2,1.3,.4,1) both;animation-delay:var(--d,0ms)}
+@keyframes hwgrow{0%{transform:scaleY(0)}100%{transform:none}}
+.hw-clock{width:28px;height:28px;border-radius:50%;background:conic-gradient(var(--gold) 0 75%,rgba(255,255,255,.14) 0);box-shadow:inset 0 0 0 3px rgba(8,20,14,.72),0 0 0 2px var(--gold)}
+/* 6: the table */
+.hw-oval{position:absolute;left:50%;top:128px;width:232px;height:112px;margin:-56px 0 0 -116px;border-radius:50%;background:radial-gradient(100% 70% at 50% 45%,#2a8a5b,var(--felt2) 60%,var(--felt3));box-shadow:0 0 0 5px var(--rail),0 0 0 7px var(--rail2),0 0 0 8px rgba(229,184,80,.3),inset 0 0 24px rgba(0,0,0,.3)}
+.hw-oval::after{content:"";position:absolute;inset:8px;border-radius:50%;border:1px solid rgba(255,255,255,.08)}
+.hw-oval .hw-tag{left:50%;top:50%;transform:translate(-50%,-50%)}
+.hw-dbtn{position:absolute;right:-6px;top:-4px;width:18px;height:18px;border-radius:50%;background:#f7f3e6;color:#111;font-weight:900;font-size:10px;display:grid;place-items:center;box-shadow:0 2px 4px rgba(0,0,0,.5)}
+.move .hw-l{animation:hwfroml .5s cubic-bezier(.2,1.3,.4,1) both;animation-delay:var(--d,0ms)}
+.move .hw-r{animation:hwfromr .5s cubic-bezier(.2,1.3,.4,1) both;animation-delay:var(--d,0ms)}
+@keyframes hwfroml{0%{transform:translateX(-80px);opacity:0}100%{transform:none;opacity:1}}
+@keyframes hwfromr{0%{transform:translateX(80px);opacity:0}100%{transform:none;opacity:1}}
 .sheet .codebox input{height:52px;margin:0;padding:0 12px;font-size:22px}
 /* on its side: the table art beside the button, the cards still in one row */
 @media (orientation:landscape) and (max-height:520px){
@@ -743,8 +827,8 @@ const state={mode:'rooms',room:null,rooms:[],invites:[],me:null,ev:null,picker:n
   /* the big tables: from room:hello (the company's table), the chat sheet, and the table being watched */
   big:false,tables:null,chatOpen:false,chatDraft:'',chatSeen:0,chatRoom:null,watchCode:null,bubbles:{},bubbleRoom:null,chatIds:null,
   next:false,focusChat:false,resultHand:null,
-  /* the home's sheets: the code to join with (its box focused in the same tap), and how it works */
-  codeOpen:false,focusCode:false,howOpen:false,
+  /* the home's sheets: the code to join with (its box focused in the same tap), and How to play (open, and which of its scenes) */
+  codeOpen:false,focusCode:false,howOpen:false,howI:0,
   /* the Shootout: Home or Watch, the "you're through" screens already seen (by round), the whole standings list */
   soTab:'home',soAck:{},soAll:true,soHtml:''};
 const nextUi=()=>!!state.next;
@@ -1230,13 +1314,67 @@ function renderRooms(){
     ${rooms.length?rooms.map(roomRow).join(''):`<div class="card"><div class="empty">No open tables right now. Start one and invite colleagues, or tap Quick game.</div></div>`}
     ${sheets()}</div>`;
 }
-/** The rules, behind the ? on the home. */
-function howText(){ const big=state.big, chips=big&&state.tables?fmt(state.tables.buyIn):'1,500';
-  return `<p><b>The game.</b> No-limit Texas Hold'em. Two cards each, five shared, best five of seven wins.</p>
-      <p><b>A table.</b> Whoever opens it is the host and deals when two or more are in; a full table of ${big?'eight':'six'} deals itself. Blinds rise every three minutes; 20 seconds to act.</p>
-      <p><b>Coming and going.</b> Join mid-game and you are dealt in from the next hand while there is a seat. Leave whenever you like. Every game starts again at ${chips}.</p>
-      ${big?`<p><b>Watching and chat.</b> A full table can still be watched: tap Watch, and take a seat when one frees. Everyone at a table, and everyone watching it, can chat.</p>`:''}
-      <p><b>Just for fun.</b> No points, no board, no cash. Chips are only for the table.</p>`; }
+/* ---------- How to play, behind the ? on the home: six scenes drawn on a felt stage, one at a time ----------
+   Between them they say everything the old rules card said: no-limit Texas Hold'em, two cards each and five shared, best five of
+   seven wins; blinds rise every three minutes and there are 20 seconds to act; so many chips each and every game starts again at
+   that; join mid-game and you are dealt in from the next hand while there is a seat, leave whenever you like; whoever opens a table
+   is the host and deals when two or more are in, a full table deals itself; (big tables) a full table can be watched and everyone
+   at or watching it can chat; just for fun, no points, no board, no cash. */
+function howScenes(){ const big=state.big, chips=big&&state.tables?fmt(state.tables.buyIn):'1,500', seats=big?8:6, word=big?'eight':'six';
+  const flip=(c,d,fx,fy,cls)=>`<div class="flip" style="--d:${d}ms;--fx:${fx}px;--fy:${fy}px"><div class="in">${card(c,'',cls)}${back('')}</div></div>`;
+  const av=(ini,bg,extra)=>`<span class="hw-av ${extra||''}" style="background:${bg}">${ini}</span>`;
+  const stack=n=>`<span class="hwstack">${'<i class="hwc"></i>'.repeat(n)}</span>`;
+  // 6: everyone round the table, the host at the bottom with the button
+  const people=[['You','#3d5a80'],['RM','#7a4a6e'],['PS','#4a7a5e'],['AD','#8a5a2b'],['MI','#2f5f6f'],['KR','#6b4f9a'],['TB','#9a4f4f'],['IK','#3f6b3f']].slice(0,seats);
+  const ring=people.map(([ini,bg],k)=>{ const a=Math.PI/2+k*2*Math.PI/seats, x=Math.round(Math.cos(a)*118), y=Math.round(Math.sin(a)*58);
+    return `<div class="hw-seat hw-pop" style="left:calc(50% + ${x}px - 17px);top:${128+y-17}px;--d:${200+k*110}ms">${k?av(ini,bg):`<span style="position:relative">${av(ini,bg)}<span class="hw-dbtn">D</span></span>`}${k?'':'<span class="hw-tag you">HOST</span>'}</div>`; }).join('');
+  return [
+    {cap:'Two cards each, five shared',sub:"No-limit Texas Hold'em: your two cards are yours alone, the five on the table are everyone's.",
+     art:`<div class="hw-deck">${back('')}${back('')}${back('')}</div>
+      <div class="hw-row" style="top:92px">${[0,1,2,3,4].map(k=>`<div class="pc back hw-in" style="--d:${150+k*110}ms"></div>`).join('')}</div>
+      <div class="hw-hole">${flip('As',850,32,-154,'big')}${flip('Kh',1100,-32,-154,'big')}</div>
+      <span class="hw-tag you" style="left:50%;bottom:50px;transform:translateX(-50%);margin-left:-92px">YOU</span>`},
+    {cap:'Blinds, then bet, call, raise or fold',sub:'Two blinds start every hand. On your turn you have 20 seconds to act.',
+     art:`<div class="hw-seat" style="left:18px;top:30px">${av('RM','#7a4a6e')}<span class="hw-tag">Small blind 10</span></div>
+      <div class="hw-seat" style="right:18px;top:30px">${av('PS','#4a7a5e')}<span class="hw-tag">Big blind 20</span></div>
+      <div class="hw-bet" style="left:50%;top:70px;margin-left:-44px;--sx:-110px;--sy:-24px;--d:300ms">${stack(2)} 10</div>
+      <div class="hw-bet" style="left:50%;top:70px;margin-left:14px;--sx:110px;--sy:-24px;--d:700ms">${stack(3)} 20</div>
+      <div class="hw-bet" style="left:50%;top:104px;margin-left:-22px;--sx:0px;--sy:90px;--d:2400ms">${stack(4)} 60</div>
+      <span class="hw-tag you hw-fade" style="left:50%;top:138px;transform:translateX(-50%);--d:2700ms">YOU RAISE TO 60</span>
+      <div class="hw-slider"><i style="--p:46%"></i></div>
+      <div class="hw-abar"><span class="fold">Fold</span><span class="call">Call<small>20</small></span><span class="raise">Raise<small>60</small></span></div>`},
+    {cap:'Flop, turn, river',sub:'The five shared cards come out in three rounds, with a round of betting after each.',
+     art:`<div class="hw-deck r">${back('')}${back('')}${back('')}</div>
+      <div class="hw-row" style="top:72px">${[['Ah',300],['Kc',500],['7d',700],['9s',1600],['2c',2500]].map(([c,d],k)=>flip(c,d,150-(k-2)*44,0)).join('')}</div>
+      <span class="hw-lbl hw-fade" style="left:50%;margin-left:-110px;width:132px;--d:1000ms">FLOP</span>
+      <span class="hw-lbl hw-fade" style="left:50%;margin-left:22px;width:38px;--d:2300ms">TURN</span>
+      <span class="hw-lbl hw-fade" style="left:50%;margin-left:66px;width:38px;--d:3200ms">RIVER</span>`},
+    {cap:'Best five of seven wins the pot',sub:'Just for fun: no points, no board, no cash. Chips are only for the table.',
+     art:`<div class="hw-best"><div class="hw-row" style="top:22px">${card('Ah','','win')}${card('Kc','','win')}${card('7d','','dim')}${card('9s','','win')}${card('2c','','dim')}</div>
+      <div class="hw-row" style="top:104px;justify-content:flex-start;left:24px">${card('As','','win')}${card('Kh','','win')}</div></div>
+      <span class="hw-tag ok hw-pop" style="left:24px;top:170px;--d:1600ms">TWO PAIR · ACES AND KINGS</span>
+      <div class="hw-seat" style="right:22px;bottom:22px">${av('You','#3d5a80')}<span class="hw-tag you">YOU</span></div>
+      <div class="hw-pot" style="--tx:74px;--ty:72px">${stack(4)} 1,840</div>
+      <span class="hw-tag ok hw-pop" style="right:14px;top:112px;--d:2900ms">+1,840</span>`},
+    {cap:`${chips} chips each, blinds rise every three minutes, about 20 minutes a game`,sub:`Every game starts again at ${chips}. Leave whenever you like; join mid-game and you are dealt in from the next hand while there is a seat.`,
+     art:`<div class="hw-tiles">
+      <div class="hw-tile hw-pop" style="--d:100ms">${stack(4)}<b style="margin-top:10px">${chips}</b><span>chips each</span></div>
+      <div class="hw-tile hw-pop" style="--d:500ms"><span class="hw-bars"><i style="--h:9px;--d:900ms"></i><i style="--h:16px;--d:1100ms"></i><i style="--h:28px;--d:1300ms"></i></span><b>×2</b><span>blinds rise every 3 min</span></div>
+      <div class="hw-tile hw-pop" style="--d:900ms"><span class="hw-clock"></span><b>~20</b><span>minutes a game</span></div></div>`},
+    {cap:`Tables for two to ${word}; the host deals; join with a code or an invite`,
+     sub:`Whoever opens a table is the host and deals when two or more are in; a full table of ${word} deals itself.${big?' A full table can still be watched: tap Watch, and take a seat when one frees. Everyone at a table, and everyone watching it, can chat.':''}`,
+     art:`<div class="hw-oval"><span class="hw-tag hw-fade" style="--d:${300+seats*110}ms">2 TO ${seats} SEATS</span></div>${ring}
+      <span class="hw-tag hw-l" style="left:14px;top:14px;--d:${600+seats*110}ms">CODE 4821</span>
+      <span class="hw-tag hw-r" style="right:14px;top:14px;--d:${900+seats*110}ms">POOJA INVITED YOU</span>`}]; }
+function howSheet(){ const sc=howScenes(), n=sc.length, i=Math.max(0,Math.min(n-1,state.howI||0)), s=sc[i], last=i===n-1;
+  return `<div class="sheet" data-act="howclose"><div class="box how" role="dialog" aria-modal="true" aria-labelledby="howh"><span class="grab" aria-hidden="true"></span>
+    <div class="shead"><h2 id="howh">How to play</h2><button class="x" data-act="howclose" aria-label="Close">×</button></div>
+    <div class="hw-stage${calm()?'':' move'}" data-i="${i}" aria-hidden="true"><div class="hw-scene">${s.art}</div></div>
+    <p class="hw-cap" aria-live="polite">${s.cap}${s.sub?`<small>${s.sub}</small>`:''}</p>
+    <div class="hw-dots" role="group" aria-label="Steps">${sc.map((x,k)=>`<button data-act="how-go" data-i="${k}" aria-label="Step ${k+1} of ${n}"${k===i?' aria-current="step"':''}><span></span></button>`).join('')}</div>
+    <button class="btn primary" style="flex:none" data-act="how-next">${last?'Got it':'Next'}</button></div></div>`; }
+/** One scene on, or back (a dot, Next, a swipe, an arrow key); past the last, Next closes the sheet. */
+function howStep(d){ const n=howScenes().length, i=(state.howI||0)+d; if(i>=n){ state.howOpen=false; state.howI=0; } else state.howI=Math.max(0,i); render(); }
 function renderRoomLobby(){
   const r=R(), host=isHost(), places=r.players.length+r.house, ready=r.players.filter(p=>p.online).length+r.house;
   const slots=[];
@@ -1270,7 +1408,7 @@ function sheets(){
   if(state.mode==='rooms'&&!R()){
     if(state.codeOpen)return `<div class="sheet" data-act="codeclose"><div class="box"><div class="shead"><h2>Join with a code</h2><button class="x" data-act="codeclose" aria-label="Close">×</button></div><p>The four digits of the table, from its host.</p>
       <div class="codebox"><input id="code" inputmode="numeric" maxlength="4" placeholder="4 digits" value="${esc(state.codeInput||'')}" autocomplete="off"><button class="btn primary" data-act="code">Join</button></div></div></div>`;
-    if(state.howOpen)return `<div class="sheet" data-act="howclose"><div class="box"><div class="shead"><h2>How it works</h2><button class="x" data-act="howclose" aria-label="Close">×</button></div><div class="howtext">${howText()}</div><button class="btn primary" style="margin-top:10px;flex:none" data-act="howclose">Got it</button></div></div>`; }
+    if(state.howOpen)return howSheet(); }
   return '';
 }
 /* ---------- the big tables: chat, watching ---------- */
@@ -1618,8 +1756,10 @@ document.addEventListener('click',async e=>{
       case 'code': await joinCode(($('#code')||{}).value||state.codeInput); break;
       case 'codeopen': state.codeOpen=true; state.focusCode=true; break;
       case 'codeclose': state.codeOpen=false; break;
-      case 'how': state.howOpen=true; break;
+      case 'how': state.howOpen=true; state.howI=0; break;
       case 'howclose': state.howOpen=false; break;
+      case 'how-go': state.howI=+b.dataset.i||0; break;
+      case 'how-next': return howStep(1);
       case 'event': state.mode='event'; state.view='lobby'; state.shared=state.ev; break;
       case 'rooms': state.mode='rooms'; state.view=state.room&&state.room.table&&state.room.status!=='lobby'?'table':'lobby'; state.table=state.room&&state.room.table||null; refreshRooms(); break;
       case 'leaveask': if(R()&&R().practice){ await leavePractice(); return; } if(R()&&R().big&&R().watching){ await stopWatching(); return; } state.leaveAsk=true; break;
@@ -1654,7 +1794,12 @@ document.addEventListener('click',async e=>{
   const want=state.focusChat?'chatin':state.focusCode?'code':null; state.focusChat=state.focusCode=false;
   if(want){ const box=document.getElementById(want); if(box){ try{ box.focus({preventScroll:true}); }catch(e){ box.focus(); } } }
 });
-document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target&&e.target.id==='code'){ e.preventDefault(); joinCode(e.target.value).catch(err=>toast(err.message)); }
+/* How to play: a swipe across the stage, or an arrow key, moves a scene (a tap on it does nothing) */
+let swipeX=null;
+document.addEventListener('pointerdown',e=>{ swipeX=state.howOpen&&e.target.closest&&e.target.closest('.hw-stage')?e.clientX:null; },{passive:true});
+document.addEventListener('pointerup',e=>{ if(swipeX==null)return; const dx=e.clientX-swipeX; swipeX=null; if(state.howOpen&&Math.abs(dx)>=40&&(dx<0||state.howI>0))howStep(dx<0?1:-1); },{passive:true});
+document.addEventListener('keydown',e=>{ if(state.howOpen&&(e.key==='ArrowRight'||e.key==='ArrowLeft')){ e.preventDefault(); if(e.key==='ArrowRight'||state.howI>0)howStep(e.key==='ArrowRight'?1:-1); return; }
+  if(e.key==='Enter'&&e.target&&e.target.id==='code'){ e.preventDefault(); joinCode(e.target.value).catch(err=>toast(err.message)); }
   if(e.key==='Enter'&&e.target&&e.target.id==='chatin'&&!e.isComposing){ e.preventDefault(); sendChat(e.target.value,true); } });
 /* The keyboard's send key submits the box: one tap sends. (Enter on a hardware keyboard is caught above, so this does not send twice.) */
 document.addEventListener('submit',e=>{ if(e.target&&e.target.dataset&&e.target.dataset.form==='chat'){ e.preventDefault(); const i=$('#chatin'); sendChat(i?i.value:state.chatDraft,true); } });
@@ -2028,11 +2173,11 @@ function demo(){
   if(mode==='tv'){ state.tv=true; state.shared.event.phase='semis'; state.shared.semis={seededAt:t,startedAt:t,endedAt:null,tables:[{label:'A',tableId:'ta',players:[]},{label:'B',tableId:'tb',players:[]}]};
     const w=JSON.parse(JSON.stringify(state.table)); w.round='semi'; w.mySeat=null; w.choices=null; w.seats.forEach(s=>{s.me=false;s.cards=null;}); state.tvTables={ta:Object.assign({},w,{id:'ta',label:'A'}),tb:Object.assign({},w,{id:'tb',label:'B'})}; P.request=()=>new Promise(()=>{}); }
   if(!P.request)P.request=()=>Promise.reject(new Error('Demo: nothing is sent.'));
-  if(roomMode){ state.howOpen=q.get('how')==='1'; state.codeOpen=q.get('code')==='1'; return roomsDemo(mode,t,people); }
+  if(roomMode){ state.howOpen=q.get('how')==='1'; state.howI=+q.get('hw')||0; state.codeOpen=q.get('code')==='1'; return roomsDemo(mode,t,people); }
   state.view=['lobby','queue','picks','tv'].includes(mode)?'lobby':'table';
   render();
 }
-/* The group game's previews: ?demo=rooms (the home, with an invite; &how=1 opens How it works, &code=1 the code sheet), room (your table's
+/* The group game's previews: ?demo=rooms (the home, with an invite; &how=1 opens How to play at scene &hw=0..5, &code=1 the code sheet), room (your table's
    lobby), room-guest, room-table, room-over, invite (the colleague picker); the big tables' own are below. */
 function roomsDemo(mode,t,people){
   state.me={userId:'s0',name:people[0],photoUrl:demoFace(0)}; state.mine=null; state.shared=null;
