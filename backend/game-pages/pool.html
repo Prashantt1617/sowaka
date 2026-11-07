@@ -553,7 +553,7 @@ function newGame(opts){ SFX.rack();
   Object.assign(G,{size,balls:rack(),groups:[null,null],shooter:0,turn:0,ptr:[0,0],open:true,inHand:false,kitchen:false,breakShot:true,shooting:false,motion:null,crackNext:false,crackAt:0,chalked:false,spin:{top:0,side:0},fouls:[0,0],potted:[0,0],score:0,started:Date.now(),result:null,shotAnim:null,practice:!!opts.practice,diff:opts.diff||G.diff,online:false,me:0,replaying:false,clockEnds:null,lastFoul:null,aiTarget:null});
   G.hotseat=!!opts.hotseat;
   const seat=(name,house)=>({name,house:!!house,photo:null,online:true});
-  if(opts.hotseat){ const names=(opts.names||[]).map((n,i)=>first(String(n||'').trim()||`Player ${i+1}`)); while(names.length<size)names.push(`Player ${names.length+1}`); G.players=names.slice(0,size).map(n=>seat(n,false)); }
+  if(opts.hotseat){ const names=(opts.names||[]).map((n,i)=>(String(n||'').trim()||`Player ${i+1}`).slice(0,14)); /* the typed name as typed: two Priyas stay apart */ while(names.length<size)names.push(`Player ${names.length+1}`); G.players=names.slice(0,size).map(n=>seat(n,false)); }
   else { const me=seat(first(bridge()?bridge().playerName():'You'),false); const other=opts.practice?seat('Practice',false):seat({easy:'Rookie',medium:'Sharp',pro:'Hustler'}[G.diff],true); G.players=[me,other]; }
   passTo(0);
   G.mode='play'; screen='play'; G.aim=0; G.power=0; spinDot(); pane(null); $('#leaveBtn').hidden=true; startClock(); renderHud();
@@ -836,7 +836,7 @@ function finishPull(e,fire){ if(!pdrag||(e&&e.pointerId!=null&&e.pointerId!==pdr
   if(fire&&G.power>0.06&&canAct())beginShot(G.power); else setPower(0); }
 pw.addEventListener('pointerup',e=>finishPull(e,true));
 pw.addEventListener('pointercancel',e=>finishPull(e,false));
-pw.addEventListener('lostpointercapture',e=>finishPull(e,true));
+pw.addEventListener('lostpointercapture',e=>finishPull(e,false)); // capture dropped without a release: no shot
 document.addEventListener('pointerup',e=>{ if(pdrag&&e.pointerId===pdrag.id)finishPull(e,true); },true);
 // spin
 const sp=$('#spin'); let sdrag=null;
@@ -993,7 +993,8 @@ function renderWaiting(){ const r=LIVE.room; if(!r)return; screen='waiting'; G.m
     :`<div class="seat empty"><div class="face lg">?</div><b>Open seat</b><span>${inviteHint}</span></div>`; };
   const sideLbl=s=>{ const names=r.players.filter((p,i)=>teamOf(p,i)===s).map(p=>p.userId===me?'You':first(p.name)); return `Side ${s?'B':'A'}${names.length?' · '+esc(names.join(' & ')):''}`; };
   const seats=size===4?`<div class="sides"><div class="sidecol"><div class="sidelbl">${sideLbl(0)}</div>${seat(0)}${seat(2)}</div><div class="sidecol"><div class="sidelbl">${sideLbl(1)}</div>${seat(1)}${seat(3)}</div></div>`:`<div class="seats">${seat(0)}${seat(1)}</div>`;
-  const wins=r.wins&&(r.wins[0]||r.wins[1])?` Games so far ${r.wins[0]|0} – ${r.wins[1]|0}.`:'';
+  const mySd=Math.max(0,r.players.findIndex(p=>p.userId===me))%2; // mine first, as the result sheet reads it
+  const wins=r.wins&&(r.wins[0]||r.wins[1])?` Games so far ${r.wins[mySd]|0} – ${r.wins[1-mySd]|0}.`:'';
   const away=r.players.find(p=>p.online===false);
   const startLbl=!full?`Waiting for ${size-r.players.length} more`:ready<size?`${esc(first((away||{}).name))} is away`:'Start the game';
   pane(`<div class="ptop"><button class="chip" data-act="leave" aria-label="Leave the table">‹</button><div class="ttl"><b>${host?'Your table':esc(first(hostP.name))+"'s table"}</b><span>${size===4?'Table for 4, two sides of two':'Table for 2'} · ${r.open?'listed in open tables':'private: code and invites only'}</span></div>${offlinePill()}<span class="pill ${r.open?'on':''}">${r.open?'Open':'Private'}</span></div>
@@ -1157,7 +1158,7 @@ document.addEventListener('click',e=>{ const b=e.target.closest('[data-act],[dat
     case 'leave': if(LIVE.room&&LIVE.room.status==='playing'&&G.online){ leaveAskSheet(); break; } leaveRoom(); break;
     case 'leave-now': leaveRoom(); break;
     case 'fatal-ok': $('#sheetHost').innerHTML=''; LIVE.room=null; LIVE.api=null; LIVE.on=false; menu(); break; } });
-document.addEventListener('keydown',e=>{ if(e.target&&e.target.closest&&e.target.closest('.mode[role=button]')&&(e.key==='Enter'||e.key===' ')){ e.preventDefault(); e.target.closest('.mode').click(); } });
+document.addEventListener('keydown',e=>{ if(e.target&&e.target.closest&&!e.target.closest('button,input')&&e.target.closest('.mode[role=button]')&&(e.key==='Enter'||e.key===' ')){ /* the card itself, not a control inside it */ e.preventDefault(); e.target.closest('.mode').click(); } });
 $('#howtoBtn').addEventListener('click',()=>{ buzz('light'); howto(0); });
 $('#soundBtn').addEventListener('click',()=>{ soundOn=!soundOn; save('sound',soundOn); $('#soundBtn').textContent=soundOn?'🔊':'🔇'; if(soundOn){ ctx(); SFX.pop(); } });
 $('#leaveBtn').addEventListener('click',()=>{ buzz('light'); if(LIVE.room&&LIVE.room.status==='playing')leaveAskSheet(); else leaveRoom(); });
