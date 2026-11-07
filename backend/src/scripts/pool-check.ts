@@ -2,11 +2,15 @@
  * Sowaka Pool's rooms, end to end on a scratch database and real sockets:
  * the page's ticket, hosting, joining by code and by quick join, a third
  * player refused, invites (a colleague, a card, a push; another company
- * refused), the host starting, a legal break the engine rules, a shot out of
- * turn, ball-in-hand placement, the shot clock fouling through the tick, a
- * game played to the 8 (scores recorded, points paid once), a rematch the
- * loser breaks, a reconnect, a forfeit by absence, and the last one out
- * deleting the room. The clock is moved by hand.
+ * refused), the host starting, a legal break the engine rules (a pot on it
+ * gives the breaker its group), a shot out of turn, ball-in-hand placement,
+ * the shot clock fouling through the tick, a game played to the 8 (any
+ * pocket; scores recorded, points paid once), a rematch the loser breaks, a
+ * reconnect, a forfeit by absence, and the last one out deleting the room.
+ * Then a table for four: seats and sides, the innings rotating within a side,
+ * a leaver dropped from the rotation, a whole side leaving, final lines per
+ * player, the losing side's lower seat breaking the rematch, and quick join
+ * by size. The clock is moved by hand.
  *
  *   MONGODB_DB=pool_check npx tsx src/scripts/pool-check.ts
  *
@@ -26,7 +30,7 @@ import { configurePool, peekRoom, tickPool, type PoolAward } from '../services/p
 import { POOL } from '../services/pool-rooms-engine';
 import { mutateRoom, resetPoolMemory } from '../services/pool-store';
 import { mintTicket } from '../services/scribble-ticket.service';
-import type { Ball } from '../shared/pool/engine';
+import type { Ball, Group, RuleState } from '../shared/pool/engine';
 
 let failures = 0;
 let passes = 0;
@@ -133,7 +137,7 @@ async function main() {
       recordScore: async (org, player, score) => void scores.push({ org, userId: player.userId, score }),
       awardPoints: async (award) => void awards.push(award),
     });
-    const people = Array.from({ length: 4 }, (_, i) => seedUser(i + 1));
+    const people = Array.from({ length: 5 }, (_, i) => seedUser(i + 1));
     const stranger = seedUser(9, OTHER);
     await users().insertMany([...people, stranger]);
     await companies().insertMany([
@@ -159,7 +163,7 @@ async function main() {
     console.log('the page');
     const page = await fetch(`${BASE}/play/pool`, { headers: { authorization: `Bearer ${session}` } });
     check('the page is served with its ticket as window.__POOL', page.status === 200 && /window\.__POOL=\{"ticket":/.test(await page.text()));
-    for (const user of people) clients.push(await open(user));
+    for (const user of people.slice(0, 4)) clients.push(await open(user));
     const [A, B, C, D] = clients;
     const hello0 = await request(A, 'room:hello');
     check('hello with no room: nothing to show yet', hello0.ok && hello0.data.room === null && Array.isArray(hello0.data.rooms) && hello0.data.rooms.length === 0 && hello0.data.invites.length === 0);
@@ -168,7 +172,7 @@ async function main() {
     console.log('\nhosting and joining');
     const hosted = await request(A, 'room:host', { open: true });
     const code = hosted.ok ? String(hosted.data.code) : '';
-    check('A hosts an open room with a four-digit code, in its lobby, seat 0', hosted.ok && /^[1-9]\d{3}$/.test(code) && hosted.data.hostId === A.user.userId && hosted.data.open === true && hosted.data.status === 'lobby' && hosted.data.turn === 0 && hosted.data.players.length === 1);
+    check('A hosts an open room with a four-digit code, in its lobby, seat 0, a table for two by default', hosted.ok && /^[1-9]\d{3}$/.test(code) && hosted.data.hostId === A.user.userId && hosted.data.open === true && hosted.data.status === 'lobby' && hosted.data.turn === 0 && hosted.data.shooter === 0 && hosted.data.size === 2 && hosted.data.players.length === 1 && hosted.data.players[0].team === 0);
     const outsider = await request(A, 'room:invite', { userId: stranger.userId });
     check('someone at another company cannot be invited', !outsider.ok && outsider.status === 404);
     const nobody = await request(A, 'room:invite', { userId: 'nobody-here' });
@@ -179,13 +183,13 @@ async function main() {
     const push = pushes.find((p) => p.userIds[0] === C.user.userId);
     check('and a pool_invite push that opens this room', !!push && push.scenario === 'pool_invite' && /invited you to Sowaka Pool/.test(push.title) && push.data.gameKey === 'pool' && push.data.challengeId === `room:${code}` && push.data.destination === 'game_challenge');
     const helloB = await request(B, 'room:hello');
-    check("B's hello lists A's room with a seat free", helloB.ok && helloB.data.rooms.some((r: { code: string; host: { userId: string }; seatFree: boolean; status: string }) => r.code === code && r.host.userId === A.user.userId && r.seatFree && r.status === 'lobby'));
+    check("B's hello lists A's room with its size and a seat free", helloB.ok && helloB.data.rooms.some((r: { code: string; host: { userId: string }; size: number; seatFree: boolean; status: string }) => r.code === code && r.host.userId === A.user.userId && r.size === 2 && r.seatFree && r.status === 'lobby'));
     const bad = await request(B, 'room:join', { code: code === '1000' ? '1001' : '1000' });
     check('a code with no room: not found', !bad.ok && bad.status === 404);
     const joined = await request(B, 'room:join', { code: `room:${code}` });
-    check('B joins by code as seat 1', joined.ok && joined.data.players.length === 2 && joined.data.players[1].userId === B.user.userId);
+    check('B joins by code as seat 1, side 1', joined.ok && joined.data.players.length === 2 && joined.data.players[1].userId === B.user.userId && joined.data.players[1].team === 1);
     const third = await request(C, 'room:join', { code });
-    check('a third player is refused with a plain message', !third.ok && third.status === 409 && third.message === 'That table has two players already.');
+    check('a third player is refused with a plain message', !third.ok && third.status === 409 && third.message === 'That table is full.');
     const invFull = await request(A, 'room:invite', { userId: D.user.userId });
     check('and cannot be invited to a full table', !invFull.ok && invFull.status === 409);
     const quickC = await request(C, 'room:quick');
@@ -223,13 +227,11 @@ async function main() {
     const broke = brk.ok ? (brk.data as PoolView) : null;
     const last = broke?.lastShot ?? null;
     check('a legal break: lastShot with its events, the balls at rest, from the cue ball\'s spot', !!last && last.seq === 1 && last.by === 0 && last.events.length > 0 && last.balls.length === 16 && last.from.x === 0.4 && last.steps > 0);
-    check('four balls reached a cushion and the 13 dropped: no foul, the table still open, the breaker shoots again', !!broke && !!last && last.events.filter((e) => e.t === 'cushion').length >= 4 && last.events.some((e) => e.t === 'pocket' && e.n === 13) && broke.turn === 0 && broke.open8 && !broke.inHand && broke.message === null);
+    check('four balls reached a cushion and the 13 dropped: no foul, stripes to the breaker, who shoots again', !!broke && !!last && last.events.filter((e) => e.t === 'cushion').length >= 4 && last.events.some((e) => e.t === 'pocket' && e.n === 13) && broke.turn === 0 && broke.shooter === 0 && !broke.open8 && broke.players[0].group === 'stripe' && broke.players[1].group === 'solid' && broke.players[0].pottedCount === 1 && !broke.inHand && broke.message === 'Stripes to the shooter');
     check('B is sent the same shot to replay', !!last && B.room?.lastShot?.seq === 1 && B.room.lastShot.events.length === last.events.length && B.room.turn === 0);
     check('the next clock starts after the replay', !!broke && broke.replayUntil > clock.now && broke.shotClock?.endsAt === broke.replayUntil + POOL.shotSecs * 1000);
     const rolling = await request(A, 'pool:shot', { aim: 0, power: 0.5, spin: { top: 0, side: 0 } });
     check('a shot while the balls still roll is refused', !rolling.ok && rolling.status === 409 && /still rolling/.test(rolling.message));
-    const notOnEight = await request(A, 'pool:call', { pocket: 2 });
-    check('a pocket can be called only on the 8', !notOnEight.ok && notOnEight.status === 409);
 
     // ------------------------------------------------------------ the shot clock
     console.log('\nthe shot clock');
@@ -237,9 +239,9 @@ async function main() {
     clock.now = before.shotEndsAt + POOL.graceMs;
     await settle(async () => (await peekRoom(ORG, code))?.state?.turn === 1);
     const timedOut = (await peekRoom(ORG, code))!;
-    check('the shooter ran out of time: a foul, ball in hand to the other', timedOut.state?.turn === 1 && timedOut.state.inHand && !timedOut.state.kitchen && /ran out of time/.test(timedOut.message ?? ''));
+    check('the shooter ran out of time: a foul, ball in hand to the other', timedOut.state?.turn === 1 && timedOut.shooter === 1 && timedOut.state.inHand && !timedOut.state.kitchen && /ran out of time/.test(timedOut.message ?? ''));
     await until(() => B.room?.turn === 1 && B.room.inHand === true);
-    check('B is told, and the feed carries the timeout', B.room?.turn === 1 && B.room.inHand && B.feed.some((f) => f.kind === 'timeout'));
+    check('B is told, and the feed carries the timeout', B.room?.turn === 1 && B.room.shooter === 1 && B.room.inHand && B.feed.some((f) => f.kind === 'timeout'));
     const eight = ballOn(B.room, 8)!;
     const onBall = await request(B, 'pool:place', { x: eight.x, y: eight.y });
     check('the cue ball cannot go on another ball', !onBall.ok && onBall.status === 400);
@@ -255,7 +257,7 @@ async function main() {
     console.log('\nthe 8');
     // A's move bucket (2 a second, 6 in hand) has taken six quick moves; real time refills it.
     await wait(2000);
-    // The table set by hand: A (solids) has only the 8 left, B (stripes) has potted two.
+    // The table set by hand: A (solids) has only the 8 left, B (stripes) has potted two; each sank their own.
     const balls: Ball[] = [{ n: 0, x: 1.5, y: 0.5, vx: 0, vy: 0, on: true }];
     for (let n = 1; n <= 7; n++) balls.push({ n, x: 0, y: 0, vx: 0, vy: 0, on: false });
     balls.push({ n: 8, x: 1.86, y: 0.14, vx: 0, vy: 0, on: true });
@@ -263,25 +265,25 @@ async function main() {
     // A has ball in hand, and the previous shot is still rolling on the pages for five more seconds.
     const setAt = clock.now;
     await mutateRoom(ORG, code, (r) => {
-      r.state = { balls, turn: 0, groups: ['solid', 'stripe'], open: false, inHand: true, kitchen: false, breakShot: false, calledPocket: null };
+      r.state = { balls, turn: 0, groups: ['solid', 'stripe'], open: false, inHand: true, kitchen: false, breakShot: false };
+      r.pottedBy = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 9: 1, 10: 1 };
+      // The timeout had passed the inning to B; the shot is A's again.
+      r.shooter = 0;
       r.replayUntil = setAt + 5000;
       r.shotEndsAt = r.replayUntil + POOL.shotSecs * 1000;
       return true;
     });
-    const uncalled = await request(A, 'pool:call', { pocket: 7 });
-    check('a pocket is one of six', !uncalled.ok && uncalled.status === 400);
-    const called = await request(A, 'pool:call', { pocket: 2 });
-    check('A, on the 8, calls the corner pocket while the balls still roll', called.ok && (called.data as PoolView).onEight && (called.data as PoolView).calledPocket === 2 && (called.data as PoolView).players[0].pottedCount === 7 && (called.data as PoolView).players[1].pottedCount === 2);
     const cueFrom = { x: 1.45, y: 0.5 };
     const dragged = await request(A, 'pool:place', cueFrom);
-    check('and drags ball in hand during the replay', dragged.ok && ballOn(dragged.data as PoolView, 0)?.x === cueFrom.x);
+    const draggedView = dragged.ok ? (dragged.data as PoolView) : null;
+    check('A, on the 8, drags ball in hand during the replay', !!draggedView && ballOn(draggedView, 0)?.x === cueFrom.x && draggedView.onEight && draggedView.players[0].pottedCount === 7 && draggedView.players[1].pottedCount === 2);
     const tooSoon = await request(A, 'pool:shot', { aim: 0, power: 0.4, spin: { top: 0, side: 0 } });
     check('but the shot waits for the replay', !tooSoon.ok && tooSoon.status === 409 && /still rolling/.test(tooSoon.message));
     clock.now = setAt + 5000;
     const winShot = await request(A, 'pool:shot', { aim: Math.atan2(0.14 - cueFrom.y, 1.86 - cueFrom.x), power: 0.4, spin: { top: 0, side: 0 } });
     await until(() => B.room?.status === 'over');
     const won = winShot.ok ? (winShot.data as PoolView) : null;
-    check('the 8 drops in the called pocket: A wins', !!won && won.status === 'over' && won.result?.winner === 0 && won.result.reason === 'eight' && won.lastShot?.events.some((e) => e.t === 'pocket' && e.n === 8 && e.p === 2) === true && won.shotClock === null);
+    check('the 8 drops, in any pocket: A wins', !!won && won.status === 'over' && won.result?.winner === 0 && won.result.reason === 'eight' && won.lastShot?.events.some((e) => e.t === 'pocket' && e.n === 8) === true && won.shotClock === null);
     check('B sees the result too, and the tally', B.room?.status === 'over' && B.room.result?.winner === 0 && B.room.wins[0] === 1 && B.room.wins[1] === 0);
     await until(() => awards.length >= 2);
     check('both scores go to the leaderboard: 7 balls and the win is 1,700; 2 balls is 200', scores.length === 2 && scores.find((s) => s.userId === A.user.userId)?.score === 1700 && scores.find((s) => s.userId === B.user.userId)?.score === 200 && scores.every((s) => s.org === ORG));
@@ -294,7 +296,7 @@ async function main() {
     console.log('\nthe rematch');
     const again = await request(B, 'room:again');
     await until(() => A.room?.gameNo === 2 && B.room?.gameNo === 2);
-    check('the loser asks for a rematch: a second game starts at once, and the loser breaks', again.ok && A.room?.status === 'playing' && A.room.gameNo === 2 && A.room.turn === 1 && A.room.breakShot && A.room.result === null && A.room.lastShot === null && A.room.balls.every((b) => b.on));
+    check('the loser asks for a rematch: a second game starts at once, and the loser breaks', again.ok && A.room?.status === 'playing' && A.room.gameNo === 2 && A.room.turn === 1 && A.room.shooter === 1 && A.room.breakShot && A.room.result === null && A.room.lastShot === null && A.room.balls.every((b) => b.on));
     check('the tally stays', A.room?.wins[0] === 1 && A.room.wins[1] === 0);
     const midGame = await request(C, 'room:join', { code });
     check('nobody joins a game under way', !midGame.ok && midGame.status === 409);
@@ -371,6 +373,165 @@ async function main() {
     check('the last one out deletes the room and is told', (await peekRoom(ORG, code)) === null && A2.room === null);
     const helloEnd = await request(A2, 'room:hello');
     check('hello afterwards: nothing open', helloEnd.ok && helloEnd.data.room === null && helloEnd.data.rooms.length === 0);
+
+    // ------------------------------------------------------------ a table for four
+    console.log('\na table for four');
+    // A2 and B4 are the sockets A and B hold now; C and D still hold their first ones. E is a fifth colleague.
+    const E = await open(people[4]);
+    clients.push(E);
+    const [H, P, Q, S] = [A2, B4, C, D];
+    const wrongSize = await request(H, 'room:host', { open: true, size: 3 });
+    check('a table seats two or four', !wrongSize.ok && wrongSize.status === 400);
+    const hosted4 = await request(H, 'room:host', { open: true, size: 4 });
+    const code4 = hosted4.ok ? String(hosted4.data.code) : '';
+    check('A hosts a table for four', hosted4.ok && hosted4.data.size === 4 && hosted4.data.players.length === 1 && hosted4.data.players[0].team === 0 && hosted4.data.shooter === 0);
+    const helloE = await request(E, 'room:hello');
+    check("E's hello lists it with its size and a seat free", helloE.ok && helloE.data.rooms.some((r: { code: string; size: number; seatFree: boolean }) => r.code === code4 && r.size === 4 && r.seatFree));
+    const j1 = await request(P, 'room:join', { code: code4 });
+    const j2 = await request(Q, 'room:join', { code: code4 });
+    const three = await request(H, 'room:start');
+    check('three at the table: the host cannot start yet', !three.ok && three.status === 409 && three.message === 'Need four players to start.');
+    const j3 = await request(S, 'room:join', { code: code4 });
+    check('B, C and D join: seats 1, 2, 3, sides 0 & 2 against 1 & 3', j1.ok && j2.ok && j3.ok && j3.data.players.length === 4 && j3.data.players.map((p: { team: number }) => p.team).join('') === '0101' && j3.data.players[2].userId === C.user.userId);
+    const fifth = await request(E, 'room:join', { code: code4 });
+    check('a fifth is refused: the table is full', !fifth.ok && fifth.status === 409 && fifth.message === 'That table is full.');
+    const started4 = await request(H, 'room:start');
+    await until(() => S.room?.status === 'playing' && S.room.code === code4);
+    check('four at the table: the game starts, seat 0 breaks for side 0', started4.ok && S.room?.status === 'playing' && S.room.size === 4 && S.room.shooter === 0 && S.room.turn === 0 && S.room.breakShot);
+
+    // The same break as the table for two: the 13 drops and the breaker keeps the table.
+    const BREAK = { aim: 0.004, power: 1, spin: { top: 0, side: 0 } };
+    /** Straight along the table at the ball lined up ahead: it reaches the far cushion and nothing drops. */
+    const MISS = { aim: 0, power: 0.3, spin: { top: 0, side: 0 } };
+    /** From (1.45, 0.5) at a ball by the corner pocket at (2, 0): it drops. */
+    const POT = { aim: Math.atan2(0.14 - 0.5, 1.86 - 1.45), power: 0.4, spin: { top: 0, side: 0 } };
+    await request(H, 'pool:place', { x: 0.4, y: 0.5 });
+    const brk4 = await request(H, 'pool:shot', BREAK);
+    const b4 = brk4.ok ? (brk4.data as PoolView) : null;
+    check('a pot on the break keeps the table: the same shooter, stripes to side 0 (both partners)', !!b4 && b4.shooter === 0 && b4.turn === 0 && b4.lastShot?.by === 0 && b4.players[0].group === 'stripe' && b4.players[2].group === 'stripe' && b4.players[1].group === 'solid' && b4.players[0].pottedCount === 1 && b4.players[2].pottedCount === 1);
+    /**
+     * The table set by hand, keeping which balls are down: the cue ball and
+     * `target` lined up along the middle (a straight shot to the far cushion
+     * misses), or `target` by the corner pocket for a pot; the rest along the
+     * far rail. The replay is over and the shooter's clock runs.
+     */
+    const lineUp = (target: number, groups: [Group, Group], pot = false) =>
+      mutateRoom(ORG, code4, (r) => {
+        const down = new Set(r.state!.balls.filter((b) => !b.on).map((b) => b.n));
+        const set: Ball[] = pot
+          ? [{ n: 0, x: 1.45, y: 0.5, vx: 0, vy: 0, on: true }, { n: target, x: 1.86, y: 0.14, vx: 0, vy: 0, on: true }]
+          : [{ n: 0, x: 1.0, y: 0.5, vx: 0, vy: 0, on: true }, { n: target, x: 1.3, y: 0.5, vx: 0, vy: 0, on: true }];
+        let k = 0;
+        for (let n = 1; n <= 15; n++) if (n !== target) set.push({ n, x: 0.15 + k++ * 0.12, y: 0.93, vx: 0, vy: 0, on: !down.has(n) });
+        r.state = { ...(r.state as RuleState), balls: set, groups, open: false, inHand: false, kitchen: false, breakShot: false };
+        r.replayUntil = clock.now;
+        r.shotEndsAt = clock.now + POOL.shotSecs * 1000;
+        return true;
+      });
+    /** Moves the clock past the last shot's replay. */
+    const settled = async () => {
+      clock.now = Math.max(clock.now, (await peekRoom(ORG, code4))!.replayUntil);
+    };
+    const groups4: [Group, Group] = ['stripe', 'solid'];
+    await settled();
+    await lineUp(9, groups4);
+    const miss0 = await request(H, 'pool:shot', MISS);
+    check('seat 0 misses: the inning passes to side 1, its first seat, 1', miss0.ok && miss0.data.shooter === 1 && miss0.data.turn === 1 && miss0.data.message === null && !miss0.data.inHand);
+    await settled();
+    await lineUp(1, groups4);
+    const miss1 = await request(P, 'pool:shot', MISS);
+    check('seat 1 misses: side 0 again, and its other seat, 2', miss1.ok && miss1.data.shooter === 2 && miss1.data.turn === 0);
+    const partnerShot = await request(H, 'pool:shot', MISS);
+    const partnerPlace = await request(H, 'pool:place', { x: 0.3, y: 0.3 });
+    const otherSide = await request(S, 'pool:shot', MISS);
+    check('neither the partner nor the other side may shoot or place for seat 2', !partnerShot.ok && partnerShot.status === 409 && partnerShot.message === "It isn't your turn." && !partnerPlace.ok && partnerPlace.status === 409 && !otherSide.ok && otherSide.status === 409);
+    await settled();
+    await lineUp(11, groups4, true);
+    const pot2 = await request(Q, 'pool:shot', POT);
+    check('seat 2 pots a stripe: keeps the table', pot2.ok && pot2.data.shooter === 2 && pot2.data.turn === 0 && pot2.data.lastShot.by === 2 && pot2.data.lastShot.events.some((e: { t: string; n?: number }) => e.t === 'pocket' && e.n === 11) && pot2.data.players[2].pottedCount === 2);
+    await settled();
+    await lineUp(9, groups4);
+    const miss2 = await request(Q, 'pool:shot', MISS);
+    check('seat 2 misses: side 1 again, its other seat, 3', miss2.ok && miss2.data.shooter === 3 && miss2.data.turn === 1);
+    clock.now = (await peekRoom(ORG, code4))!.shotEndsAt + POOL.graceMs;
+    await settle(async () => (await peekRoom(ORG, code4))?.shooter === 0);
+    const t4 = (await peekRoom(ORG, code4))!;
+    check('seat 3 runs out of time: ball in hand to side 0, whose rotation is back at seat 0', t4.shooter === 0 && t4.state?.turn === 0 && t4.state.inHand && /ran out of time: ball in hand to/.test(t4.message ?? ''));
+    await until(() => H.room?.shooter === 0 && H.room.inHand === true);
+    // A's move bucket (2 a second, 6 in hand) has taken six quick moves; real time refills it.
+    await wait(2000);
+    await lineUp(10, groups4, true);
+    const pot0 = await request(H, 'pool:shot', POT);
+    check('seat 0 pots a stripe and keeps the table', pot0.ok && pot0.data.shooter === 0 && pot0.data.players[0].pottedCount === 3);
+    // Side 0 has only the 8 left, by a pocket.
+    await settled();
+    await mutateRoom(ORG, code4, (r) => {
+      const set: Ball[] = [{ n: 0, x: 1.45, y: 0.5, vx: 0, vy: 0, on: true }, { n: 8, x: 1.86, y: 0.14, vx: 0, vy: 0, on: true }];
+      for (let n = 1; n <= 7; n++) set.push({ n, x: 0.15 + n * 0.12, y: 0.93, vx: 0, vy: 0, on: true });
+      for (let n = 9; n <= 15; n++) set.push({ n, x: 0, y: 0, vx: 0, vy: 0, on: false });
+      r.state = { ...(r.state as RuleState), balls: set, groups: groups4, open: false, inHand: false, kitchen: false, breakShot: false };
+      r.replayUntil = clock.now;
+      r.shotEndsAt = clock.now + POOL.shotSecs * 1000;
+      return true;
+    });
+    const win4 = await request(H, 'pool:shot', POT);
+    await until(() => S.room?.status === 'over');
+    check('the 8 drops: side 0 wins, the result and the tally by side', win4.ok && win4.data.status === 'over' && win4.data.result.winner === 0 && win4.data.result.reason === 'eight' && S.room?.status === 'over' && S.room.wins[0] === 1 && S.room.wins[1] === 0 && S.room.players[2].group === 'stripe');
+    await until(() => awards.length >= 10);
+    const lines4 = scores.slice(4);
+    const paid4 = awards.slice(6);
+    check('final lines per player: A sank two stripes (1,200), C one (1,100), B and D nothing (not recorded); all four paid', scores.length === 6 && lines4.find((s) => s.userId === A.user.userId)?.score === 1200 && lines4.find((s) => s.userId === C.user.userId)?.score === 1100 && awards.length === 10 && paid4.find((a) => a.userId === A.user.userId)?.points === 17 && paid4.find((a) => a.userId === C.user.userId)?.points === 16 && paid4.filter((a) => a.points === 0 && !a.won).length === 2, JSON.stringify(lines4));
+
+    // ------------------------------------------------------------ the rematch, and seats emptying
+    console.log('\nthe rematch for four');
+    const again4 = await request(P, 'room:again');
+    await until(() => H.room?.gameNo === 2 && H.room.code === code4);
+    check('a rematch: the losing side breaks with its lower seat, 1', again4.ok && H.room?.status === 'playing' && H.room.shooter === 1 && H.room.turn === 1 && H.room.breakShot && H.room.players[1].group === null && H.room.wins[0] === 1);
+    await request(Q, 'room:leave');
+    await until(() => H.room?.players[2]?.left === true);
+    const dropped = (await peekRoom(ORG, code4))!;
+    check('C leaves mid-game: dropped from the rotation, the seat kept, the game on, B still to break', H.room?.status === 'playing' && H.room.players.length === 4 && H.room.players[2].left && H.room.players[2].online === false && H.room.shooter === 1 && dropped.rotation[0] === 0 && /plays on alone/.test(H.room.message ?? ''));
+    const helloQ = await request(Q, 'room:hello');
+    check('and is out of the room', helloQ.ok && helloQ.data.room === null);
+    await request(P, 'pool:place', { x: 0.4, y: 0.5 });
+    const brkB = await request(P, 'pool:shot', BREAK);
+    check('B breaks and pots: stripes to side 1, B shoots on', brkB.ok && brkB.data.shooter === 1 && brkB.data.players[1].group === 'stripe' && brkB.data.players[3].group === 'stripe');
+    const groupsB: [Group, Group] = ['solid', 'stripe'];
+    await settled();
+    await lineUp(9, groupsB);
+    const missB = await request(P, 'pool:shot', MISS);
+    check('B misses: side 0, which is A alone', missB.ok && missB.data.shooter === 0);
+    await settled();
+    await lineUp(1, groupsB);
+    const missA = await request(H, 'pool:shot', MISS);
+    check('A misses: side 1, seat 3', missA.ok && missA.data.shooter === 3);
+    await settled();
+    await lineUp(9, groupsB);
+    const missD = await request(S, 'pool:shot', MISS);
+    check('D misses: back to A, never the empty seat 2', missD.ok && missD.data.shooter === 0 && missD.data.turn === 0);
+    await request(S, 'room:leave');
+    await until(() => H.room?.players[3]?.left === true);
+    check('D leaves: B plays side 1 alone, the game still on, A to shoot', H.room?.status === 'playing' && H.room.players[3].left && H.room.shooter === 0);
+    await request(P, 'room:leave');
+    await until(() => H.room?.status === 'lobby');
+    const forfeit4 = (await peekRoom(ORG, code4))!;
+    check('B leaves too: side 0 wins by forfeit, and the room is a lobby for A alone, seat 0 and host, the tally kept', forfeit4.status === 'lobby' && forfeit4.players.length === 1 && forfeit4.players[0].userId === A.user.userId && forfeit4.hostId === A.user.userId && forfeit4.players[0].wins === 2 && forfeit4.state === null && /left the table/.test(forfeit4.message ?? '') && H.room?.wins[0] === 2 && H.room.size === 4 && H.room.players.length === 1);
+    await until(() => awards.length >= 14);
+    const lines5 = scores.slice(6);
+    check('the forfeit is scored per player: A and C (gone) 1,000 for the win, B 100 for the 13, D nothing', awards.length === 14 && scores.length === 9 && lines5.find((s) => s.userId === A.user.userId)?.score === 1000 && lines5.find((s) => s.userId === C.user.userId)?.score === 1000 && lines5.find((s) => s.userId === B.user.userId)?.score === 100 && !lines5.some((s) => s.userId === D.user.userId), JSON.stringify(lines5));
+
+    // ------------------------------------------------------------ quick join by size
+    console.log('\nquick join by size');
+    const quickE = await request(E, 'room:quick', { size: 4 });
+    check("quick join for a table of four finds A's", quickE.ok && quickE.data.code === code4 && quickE.data.size === 4 && quickE.data.players.length === 2);
+    const quickQ = await request(Q, 'room:quick', { size: 2 });
+    const code5 = quickQ.ok ? String(quickQ.data.code) : '';
+    check('quick join for a table of two: none open, so a new one of their own', quickQ.ok && code5 !== code4 && quickQ.data.size === 2 && quickQ.data.hostId === C.user.userId);
+    const quickS = await request(S, 'room:quick');
+    check("quick join with no size: the oldest open lobby with a seat, A's table for four", quickS.ok && quickS.data.code === code4 && quickS.data.players.length === 3);
+    for (const c of [E, S, H, Q]) await request(c, 'room:leave');
+    await until(async () => (await peekRoom(ORG, code4)) === null && (await peekRoom(ORG, code5)) === null);
+    check('everyone out: both rooms are gone', (await peekRoom(ORG, code4)) === null && (await peekRoom(ORG, code5)) === null);
   } finally {
     for (const c of clients) c.socket.close();
     closePoolRealtime();
