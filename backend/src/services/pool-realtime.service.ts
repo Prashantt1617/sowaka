@@ -7,7 +7,6 @@ import {
   PoolError,
   Seat,
   againRoom,
-  callPocket,
   forgetSent,
   hello,
   hostRoom,
@@ -221,9 +220,9 @@ function listen(socket: Socket, seated: Promise<Seat | null>) {
   };
 
   on('room:hello', buckets.small, (seat) => hello(seat));
-  on('room:host', buckets.host, (seat, p) => hostRoom(seat, { open: p.open }));
+  on('room:host', buckets.host, (seat, p) => hostRoom(seat, { open: p.open, size: p.size }));
   on('room:join', buckets.join, (seat, p) => joinRoom(seat, p.code, { rejoin: p.rejoin === true }));
-  on('room:quick', buckets.join, (seat) => quickJoin(seat));
+  on('room:quick', buckets.join, (seat, p) => quickJoin(seat, { size: p.size }));
   on('room:leave', buckets.small, async (seat) => {
     await leaveRoom(seat);
     return {};
@@ -238,7 +237,6 @@ function listen(socket: Socket, seated: Promise<Seat | null>) {
     return {};
   });
   on('pool:place', buckets.move, (seat, p) => placeBall(seat, { x: p.x, y: p.y }));
-  on('pool:call', buckets.small, (seat, p) => callPocket(seat, { pocket: p.pocket }));
   on('pool:shot', buckets.move, (seat, p) => takeShot(seat, { aim: p.aim, power: p.power, spin: p.spin }));
 
   socket.on('disconnect', async (reason) => {
