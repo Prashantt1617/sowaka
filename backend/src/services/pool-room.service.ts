@@ -14,6 +14,7 @@ import {
   PoolMoveError,
   PoolRoomSummary,
   advance,
+  againToLobby,
   applyPlace,
   applyShot,
   firstName,
@@ -26,7 +27,6 @@ import {
   parseSize,
   playerOf,
   removePlayer,
-  resetToLobby,
   seated,
   startGame,
   summaryOf,
@@ -246,7 +246,8 @@ async function applyEffects(room: PoolRoom, effects: Effect[]): Promise<{ delete
  * line, once per game however many instances see it finish.
  */
 function recordScores(room: PoolRoom, gameId: string, lines: PoolFinalLine[]): void {
-  if (!gameId || lines.length < POOL.minPlayers) return;
+  // The lines of those who stayed to the end: one alone, when the rest of a table for four walked out.
+  if (!gameId || lines.length === 0) return;
   void (async () => {
     if (!(await claimOnce(`points:${room.org}:${gameId}`, 7 * 24 * 60 * 60 * 1000))) return;
     for (const line of lines) {
@@ -553,7 +554,7 @@ export async function againRoom(seat: Seat): Promise<void> {
   if (room.status !== 'over') throw notOver(room);
   const changed = await change(seat.org, room.code, (r) => {
     if (r.status !== 'over') throw notOver(r);
-    if (r.players.length < r.size || r.players.some((p) => !p.online)) return { result: true, effects: resetToLobby(r), write: true };
+    if (r.players.length < r.size || r.players.some((p) => !p.online)) return { result: true, effects: againToLobby(r), write: true };
     try {
       return { result: true, effects: startGame(r, deps.now(), `g${randomUUID().slice(0, 8)}`), write: true };
     } catch (error) {

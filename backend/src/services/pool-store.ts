@@ -51,6 +51,22 @@ if redis.call('GET', KEYS[1]) == ARGV[1] then
 end
 return 0`;
 
+/**
+ * A room as stored, made whole. A room written before tables for four (v2)
+ * has no size, shooter, rotation or record of who sank what, and its players
+ * no `left`; it is a table for two whose shooter is the side on turn. Rooms
+ * live four hours, so some are mid-game when a build goes out.
+ */
+function hydrate(raw: string): PoolRoom {
+  const room = JSON.parse(raw) as Partial<PoolRoom> & Pick<PoolRoom, 'code' | 'org' | 'players' | 'state' | 'breaker'>;
+  room.size ??= 2;
+  room.shooter ??= room.state ? room.state.turn : room.breaker;
+  room.rotation ??= [0, 1];
+  room.pottedBy ??= {};
+  for (const player of room.players) player.left ??= false;
+  return room as PoolRoom;
+}
+
 export class PoolStoreConflict extends Error {
   constructor() {
     super('The room changed under us');
@@ -64,13 +80,13 @@ export async function readRoom(org: string, code: string): Promise<PoolRoom | nu
   if (client) {
     try {
       const raw = await client.get(key);
-      return raw ? (JSON.parse(raw) as PoolRoom) : null;
+      return raw ? hydrate(raw) : null;
     } catch (error) {
       logger.error('Pool room read failed', { org, code }, error);
     }
   }
   const raw = memoryRooms.get(key);
-  return raw ? (JSON.parse(raw) as PoolRoom) : null;
+  return raw ? hydrate(raw) : null;
 }
 
 /** Writes a new room, unless the code is taken. */
@@ -118,7 +134,7 @@ export async function mutateRoom<T>(
         return memoryMutate(org, code, change);
       }
       if (!before) return null;
-      const room = JSON.parse(before) as PoolRoom;
+      const room = hydrate(before);
       const result = change(room);
       if (result === null) return null;
       room.version += 1;
@@ -145,7 +161,7 @@ function memoryMutate<T>(
   const run = previous.then(() => {
     const before = memoryRooms.get(key);
     if (!before) return null;
-    const room = JSON.parse(before) as PoolRoom;
+    const room = hydrate(before);
     const result = change(room);
     if (result === null) return null;
     room.version += 1;

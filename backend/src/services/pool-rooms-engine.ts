@@ -78,8 +78,8 @@ export function parseCode(raw: unknown): string | null {
 /** `2` or `4` (a number or its string), `undefined` for nothing given, null for anything else. */
 export function parseSize(raw: unknown): PoolSize | undefined | null {
   if (raw === undefined || raw === null || raw === '') return undefined;
-  const n = Number(raw);
-  return n === 2 || n === 4 ? n : null;
+  const n = Number(raw) as PoolSize;
+  return POOL.sizes.includes(n) ? n : null;
 }
 
 export const firstName = (name: string) => String(name ?? '').trim().split(/\s+/)[0] || 'Someone';
@@ -130,12 +130,27 @@ export function inviteOpen(
 
 export const atRest = (balls: Ball[]): PoolBallAtRest[] => balls.map((b) => ({ n: b.n, x: b.x, y: b.y, on: b.on }));
 
-/** Balls of this group that have dropped. */
-export const pottedOf = (balls: Ball[], group: 'solid' | 'stripe' | null): number =>
-  group ? balls.filter((b) => !b.on && groupOf(b.n) === group).length : 0;
+/**
+ * The balls a seat is credited with: those of its side's group it sank itself
+ * (a ball sunk while the table was still open counts for whichever side ended
+ * up with that group). The opponents' balls it knocked in are nobody's.
+ */
+export function pottedBySeat(room: PoolRoom, seat: number): number {
+  const group = room.state?.groups[sideOf(seat)] ?? null;
+  if (!group) return 0;
+  return Object.entries(room.pottedBy).filter(([n, by]) => by === seat && groupOf(Number(n)) === group).length;
+}
 
-/** A side's tally: the most games any of its players has won here (a pair that has played together shows one number). */
-const sideWins = (room: PoolRoom, side: PoolSide): number => Math.max(0, ...seatsOf(room, side).map((i) => room.players[i].wins));
+/** A side's `pottedCount`: what its seats are credited with, a seat that has since left included (the balls stayed down). */
+const sidePotted = (room: PoolRoom, side: PoolSide): number =>
+  room.players.reduce((sum, _p, i) => (sideOf(i) === side ? sum + pottedBySeat(room, i) : sum), 0);
+
+/**
+ * A side's tally: the most games any of its players has won here (a pair that
+ * has played together shows one number). A seat that left mid-game still
+ * counts until the room re-seats, so the tally does not drop in play.
+ */
+const sideWins = (room: PoolRoom, side: PoolSide): number => Math.max(0, ...room.players.filter((_p, i) => sideOf(i) === side).map((p) => p.wins));
 
 /** One player's screen. Everyone sees the same table; `you` tells the page which seat is theirs. */
 export function viewFor(room: PoolRoom, userId: string, now: number): PoolView {
@@ -157,7 +172,7 @@ export function viewFor(room: PoolRoom, userId: string, now: number): PoolView {
       left: p.left,
       team: sideOf(i),
       group: st ? st.groups[sideOf(i)] ?? null : null,
-      pottedCount: st ? pottedOf(st.balls, st.groups[sideOf(i)] ?? null) : 0,
+      pottedCount: sidePotted(room, sideOf(i)),
     })),
     invited: room.invited,
     turn: st ? st.turn : room.breaker,
@@ -203,7 +218,7 @@ export function summaryOf(room: PoolRoom): PoolRoomSummary {
   return {
     code: room.code,
     host: host ? { userId: host.userId, name: host.name } : null,
-    players: room.players.map((p) => ({ userId: p.userId, name: p.name, photoUrl: p.photoUrl })),
+    players: seated(room).map((p) => ({ userId: p.userId, name: p.name, photoUrl: p.photoUrl })),
     status: room.status,
     size: room.size,
     seatFree: room.players.length < room.size,
@@ -325,49 +340,35 @@ function passInning(room: PoolRoom, side: PoolSide): void {
   room.rotation[side] = nextSeat(room, side, room.shooter);
 }
 
-/** The balls of their side's group this seat sank itself (balls potted while the table was open count for whichever side got that group). */
-function pottedBySeat(room: PoolRoom, seat: number): number {
-  const group = room.state?.groups[sideOf(seat)] ?? null;
-  if (!group) return 0;
-  return Object.entries(room.pottedBy).filter(([n, by]) => by === seat && groupOf(Number(n)) === group).length;
-}
-
 /**
  * The game is over. The final lines are fixed now (the leaderboard and the
  * points read them, whoever is still in the room by then), the winning side's
- * tally goes up, and the losing side breaks the next game.
+ * tally goes up, and the losing side breaks the next game. Someone who left
+ * mid-game walked out on it: their line shows what they sank but no win and no
+ * score, nothing is recorded or paid for them, and their tally stays. The
+ * room stays on its podium whoever has gone, so everyone sees the winning shot.
  */
 export function finish(room: PoolRoom, winner: PoolSide, reason: PoolResultReason, now: number): Effect[] {
   room.final = room.players.map((p, i) => {
     const potted = pottedBySeat(room, i);
-    const won = sideOf(i) === winner;
-    return { userId: p.userId, name: p.name, potted, won, score: potted * POOL.ballScore + (won ? POOL.winScore : 0) };
+    const won = !p.left && sideOf(i) === winner;
+    return { userId: p.userId, name: p.name, potted, won, score: p.left ? 0 : potted * POOL.ballScore + (won ? POOL.winScore : 0) };
   });
   room.players.forEach((p, i) => {
-    if (sideOf(i) === winner) p.wins += 1;
+    if (!p.left && sideOf(i) === winner) p.wins += 1;
   });
   room.result = { winner, reason };
   room.breaker = (1 - winner) as PoolSide;
   room.status = 'over';
   room.shotEndsAt = 0;
   room.finishedAt = now;
-  return [{ type: 'finished', gameId: room.gameId ?? '', lines: room.final }];
+  return [{ type: 'finished', gameId: room.gameId ?? '', lines: room.final.filter((_line, i) => !room.players[i].left) }];
 }
 
-/**
- * The game is over, with the referee's last word. A game that ends with a
- * seat gone (someone left mid-game at a table for four) has no podium to
- * stay on: the room goes straight back to its lobby for those who remain,
- * re-seated in joining order, and keeps the message.
- */
+/** The game is over, with the referee's last word. */
 function settle(room: PoolRoom, winner: PoolSide, reason: PoolResultReason, message: string | null, now: number): Effect[] {
   const effects = finish(room, winner, reason, now);
   room.message = message;
-  if (room.players.some((p) => p.left)) {
-    effects.push(...resetToLobby(room));
-    room.message = message;
-    room.breaker = 0;
-  }
   return effects;
 }
 
@@ -485,11 +486,36 @@ export function resetToLobby(room: PoolRoom): Effect[] {
   return [];
 }
 
+/**
+ * A rematch asked for with a seat empty or someone offline: back to the lobby
+ * to wait. With a seat gone (someone left mid-game), those who stay are
+ * re-seated in joining order and the forfeit's message stays with them.
+ */
+export function againToLobby(room: PoolRoom): Effect[] {
+  const gone = room.players.some((p) => p.left);
+  const message = room.message;
+  const effects = resetToLobby(room);
+  if (gone) {
+    room.message = message;
+    room.breaker = 0;
+  }
+  return effects;
+}
+
 /** The longest-present online player, else the longest-present at all. */
 export function nextHost(room: PoolRoom, except?: string): PoolPlayer | undefined {
   return seated(room)
     .filter((p) => p.userId !== except)
     .sort((a, b) => Number(b.online) - Number(a.online) || a.joinedAt - b.joinedAt)[0];
+}
+
+/** If this person was the host, the role passes to whoever is next. */
+function handOverHost(room: PoolRoom, userId: string, effects: Effect[]): void {
+  if (room.hostId !== userId) return;
+  const next = nextHost(room);
+  if (!next) return;
+  room.hostId = next.userId;
+  effects.push({ type: 'feed', item: { kind: 'host', userId: next.userId, name: next.name } });
 }
 
 /**
@@ -519,19 +545,12 @@ export function removePlayer(room: PoolRoom, userId: string, now: number): Effec
       room.rotation[side] = nextSeat(room, side, i);
       if (room.shooter === i) {
         // The partner inherits the shot as it stands, with a fresh clock.
-        room.shooter = room.rotation[side];
-        room.rotation[side] = nextSeat(room, side, room.shooter);
+        passInning(room, side);
         room.shotEndsAt = Math.max(now, room.replayUntil) + POOL.shotSecs * 1000;
       }
-      room.message = `${firstName(player.name)} left the table: ${firstName(nameAt(room, room.rotation[side]))} plays on alone`;
+      room.message = `${firstName(player.name)} left the table: ${firstName(nameAt(room, partners[0]))} plays on alone`;
       effects.push({ type: 'feed', item: { kind: 'leave', userId, name: player.name } });
-      if (room.hostId === userId) {
-        const next = nextHost(room);
-        if (next) {
-          room.hostId = next.userId;
-          effects.push({ type: 'feed', item: { kind: 'host', userId: next.userId, name: next.name } });
-        }
-      }
+      handOverHost(room, userId, effects);
       return effects;
     }
     effects.push(...finish(room, other, 'left', now));
@@ -540,13 +559,7 @@ export function removePlayer(room: PoolRoom, userId: string, now: number): Effec
   room.players = room.players.filter((p) => p.userId !== userId);
   effects.push({ type: 'feed', item: { kind: 'leave', userId, name: player.name } });
   if (seated(room).length === 0) return [...effects, { type: 'delete', players: [userId] }];
-  if (room.hostId === userId) {
-    const next = nextHost(room);
-    if (next) {
-      room.hostId = next.userId;
-      effects.push({ type: 'feed', item: { kind: 'host', userId: next.userId, name: next.name } });
-    }
-  }
+  handOverHost(room, userId, effects);
   if (room.status !== 'lobby') {
     effects.push(...resetToLobby(room));
     room.message = message;

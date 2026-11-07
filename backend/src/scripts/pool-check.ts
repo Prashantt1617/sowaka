@@ -10,7 +10,8 @@
  * Then a table for four: seats and sides, the innings rotating within a side,
  * a leaver dropped from the rotation, a whole side leaving, final lines per
  * player, the losing side's lower seat breaking the rematch, and quick join
- * by size. The clock is moved by hand.
+ * by size; last, a room stored by the build before, read whole and played
+ * on. The clock is moved by hand.
  *
  *   MONGODB_DB=pool_check npx tsx src/scripts/pool-check.ts
  *
@@ -21,14 +22,14 @@ import { io as connect, type Socket as ClientSocket } from 'socket.io-client';
 import { app } from '../app';
 import { authSessions, closeDb, companies, connectDb, gameCatalog, getDb, users } from '../config/db';
 import { env } from '../config/env';
-import type { PoolView } from '../models/pool.model';
+import type { PoolRoom, PoolView } from '../models/pool.model';
 import type { User } from '../models/user.model';
 import { hashSessionToken } from '../services/auth.service';
 import { closeConnectRealtime, initConnectRealtime } from '../services/connect-realtime.service';
 import { closePoolRealtime, initPoolRealtime } from '../services/pool-realtime.service';
 import { configurePool, peekRoom, tickPool, type PoolAward } from '../services/pool-room.service';
 import { POOL } from '../services/pool-rooms-engine';
-import { mutateRoom, resetPoolMemory } from '../services/pool-store';
+import { createRoom, mutateRoom, resetPoolMemory, setSeat } from '../services/pool-store';
 import { mintTicket } from '../services/scribble-ticket.service';
 import type { Ball, Group, RuleState } from '../shared/pool/engine';
 
@@ -509,16 +510,46 @@ async function main() {
     await lineUp(9, groupsB);
     const missD = await request(S, 'pool:shot', MISS);
     check('D misses: back to A, never the empty seat 2', missD.ok && missD.data.shooter === 0 && missD.data.turn === 0);
+    // Side 0 (A alone now) has only the 8 left: set by hand, two solids to A's credit.
+    await settled();
+    await mutateRoom(ORG, code4, (r) => {
+      const set: Ball[] = [{ n: 0, x: 1.45, y: 0.5, vx: 0, vy: 0, on: true }, { n: 8, x: 1.86, y: 0.14, vx: 0, vy: 0, on: true }];
+      for (let n = 1; n <= 7; n++) set.push({ n, x: 0, y: 0, vx: 0, vy: 0, on: false });
+      for (let n = 9; n <= 15; n++) set.push({ n, x: 0.15 + (n - 9) * 0.12, y: 0.93, vx: 0, vy: 0, on: n !== 13 });
+      r.state = { ...(r.state as RuleState), balls: set, groups: groupsB, open: false, inHand: false, kitchen: false, breakShot: false };
+      r.pottedBy = { ...r.pottedBy, 1: 0, 2: 0 };
+      r.replayUntil = clock.now;
+      r.shotEndsAt = clock.now + POOL.shotSecs * 1000;
+      return true;
+    });
+    const win5 = await request(H, 'pool:shot', POT);
+    await until(() => H.room?.status === 'over');
+    const podium = (await peekRoom(ORG, code4))!;
+    check('A pots the 8 with a seat gone: the podium stays, with the shot, for those still there; C gets no win, no score and no tally', win5.ok && podium.status === 'over' && podium.result?.winner === 0 && podium.result.reason === 'eight' && podium.players.length === 4 && podium.players[2].left && podium.players[2].wins === 1 && podium.players[0].wins === 2 && podium.lastShot?.by === 0 && podium.final?.length === 4 && podium.final[2].score === 0 && !podium.final[2].won && podium.final[0].score === 1200 && podium.final[0].won && H.room?.status === 'over' && H.room.wins[0] === 2 && H.room.wins[1] === 0 && H.room.players[0].pottedCount === 2);
+    await until(() => awards.length >= 13);
+    const lines5 = scores.slice(6);
+    check('scored per player: A 1,200, B 100 for the 13, D nothing; C, who walked out, nothing recorded or paid', awards.length === 13 && scores.length === 8 && lines5.find((s) => s.userId === A.user.userId)?.score === 1200 && lines5.find((s) => s.userId === B.user.userId)?.score === 100 && !lines5.some((s) => s.userId === C.user.userId || s.userId === D.user.userId) && !awards.slice(10).some((a) => a.userId === C.user.userId) && awards.slice(10).some((a) => a.userId === D.user.userId && a.points === 0), JSON.stringify(lines5));
+    const againGone = await request(P, 'room:again');
+    await until(() => H.room?.status === 'lobby');
+    const relobby = (await peekRoom(ORG, code4))!;
+    check('a rematch asked for with a seat gone: the lobby, re-seated in joining order (A, B, D), seat 0 the host, the tally kept', againGone.ok && relobby.status === 'lobby' && relobby.players.map((p) => p.userId).join() === [A, B, D].map((c) => c.user.userId).join() && relobby.hostId === A.user.userId && relobby.players[0].wins === 2 && relobby.players[1].wins === 0 && relobby.state === null && relobby.result === null && relobby.breaker === 0 && relobby.message === podium.message && H.room?.players.length === 3 && H.room.size === 4);
+
+    // ------------------------------------------------------------ a whole side leaving
+    console.log('\na whole side leaving');
+    await request(E, 'room:join', { code: code4 });
+    const third4 = await request(H, 'room:start');
+    await until(() => E.room?.status === 'playing' && E.room.gameNo === 3);
+    check('E takes the empty seat and a third game starts: A and D against B and E', third4.ok && E.room?.status === 'playing' && E.room.players[3].userId === E.user.userId && E.room.players[3].team === 1 && E.room.shooter === 0);
     await request(S, 'room:leave');
-    await until(() => H.room?.players[3]?.left === true);
-    check('D leaves: B plays side 1 alone, the game still on, A to shoot', H.room?.status === 'playing' && H.room.players[3].left && H.room.shooter === 0);
+    await request(E, 'room:leave');
+    await until(() => H.room?.players[2]?.left === true && H.room.players[3]?.left === true);
+    check('D and E leave: both dropped, A and B play on alone, the game still on', H.room?.status === 'playing' && H.room.players[2].left && H.room.players[3].left && H.room.shooter === 0 && H.room.players.length === 4);
     await request(P, 'room:leave');
     await until(() => H.room?.status === 'lobby');
     const forfeit4 = (await peekRoom(ORG, code4))!;
-    check('B leaves too: side 0 wins by forfeit, and the room is a lobby for A alone, seat 0 and host, the tally kept', forfeit4.status === 'lobby' && forfeit4.players.length === 1 && forfeit4.players[0].userId === A.user.userId && forfeit4.hostId === A.user.userId && forfeit4.players[0].wins === 2 && forfeit4.state === null && /left the table/.test(forfeit4.message ?? '') && H.room?.wins[0] === 2 && H.room.size === 4 && H.room.players.length === 1);
-    await until(() => awards.length >= 14);
-    const lines5 = scores.slice(6);
-    check('the forfeit is scored per player: A and C (gone) 1,000 for the win, B 100 for the 13, D nothing', awards.length === 14 && scores.length === 9 && lines5.find((s) => s.userId === A.user.userId)?.score === 1000 && lines5.find((s) => s.userId === C.user.userId)?.score === 1000 && lines5.find((s) => s.userId === B.user.userId)?.score === 100 && !lines5.some((s) => s.userId === D.user.userId), JSON.stringify(lines5));
+    check('B leaves too: side 1 is empty, side 0 wins by forfeit, and the room is a lobby for A alone, seat 0 and host, the tally kept', forfeit4.status === 'lobby' && forfeit4.players.length === 1 && forfeit4.players[0].userId === A.user.userId && forfeit4.hostId === A.user.userId && forfeit4.players[0].wins === 3 && forfeit4.state === null && /left the table/.test(forfeit4.message ?? '') && H.room?.wins[0] === 3 && H.room.size === 4 && H.room.players.length === 1);
+    await until(() => awards.length >= 15);
+    check('the forfeit is scored and paid for those who stayed to the end: A the win, B a line with nothing; D and E, who walked out, nothing', awards.length === 15 && scores.length === 9 && scores.at(-1)?.userId === A.user.userId && scores.at(-1)?.score === 1000 && awards.slice(13).some((a) => a.userId === B.user.userId && a.points === 0 && !a.won) && !awards.slice(13).some((a) => a.userId === D.user.userId || a.userId === E.user.userId));
 
     // ------------------------------------------------------------ quick join by size
     console.log('\nquick join by size');
@@ -532,6 +563,33 @@ async function main() {
     for (const c of [E, S, H, Q]) await request(c, 'room:leave');
     await until(async () => (await peekRoom(ORG, code4)) === null && (await peekRoom(ORG, code5)) === null);
     check('everyone out: both rooms are gone', (await peekRoom(ORG, code4)) === null && (await peekRoom(ORG, code5)) === null);
+
+    // ------------------------------------------------------------ a room from the last build
+    console.log('\na room from the last build');
+    // Written as the build before tables for four wrote it: no size, shooter, rotation or record of
+    // who sank what, no `left` on the players, a called pocket in the state; B on turn, a ball lined up.
+    const v1Balls: Ball[] = [{ n: 0, x: 1.0, y: 0.5, vx: 0, vy: 0, on: true }, { n: 1, x: 1.3, y: 0.5, vx: 0, vy: 0, on: true }];
+    for (let n = 2; n <= 15; n++) v1Balls.push({ n, x: 0.15 + (n - 2) * 0.12, y: 0.93, vx: 0, vy: 0, on: n !== 9 });
+    const v1 = {
+      code: '9876', org: ORG, gameKey: 'pool', hostId: A.user.userId, status: 'playing', open: true, createdAt: clock.now, updatedAt: clock.now,
+      players: [A, B].map((c, i) => ({ userId: c.user.userId, name: c.user.name, photoUrl: null, joinedAt: clock.now - 1000 + i, online: false, offlineAt: clock.now, wins: i })),
+      invited: [], invitesSent: 0, gameId: 'g-v1', gameNo: 1, breaker: 0,
+      state: { balls: v1Balls, turn: 1, groups: ['stripe', 'solid'], open: false, inHand: false, kitchen: false, breakShot: false, calledPocket: null },
+      shotEndsAt: clock.now + POOL.shotSecs * 1000, replayUntil: 0, shotSeq: 3, lastShot: null, message: null, result: null, final: null, finishedAt: null, version: 7,
+    };
+    check('the old record is stored as it was', await createRoom(v1 as unknown as PoolRoom));
+    await setSeat(ORG, A.user.userId, '9876');
+    await setSeat(ORG, B.user.userId, '9876');
+    const v1Read = (await peekRoom(ORG, '9876'))!;
+    check('read back whole: a table for two, B (on turn) the shooter, a fresh rotation, nobody credited, nobody left', v1Read.size === 2 && v1Read.shooter === 1 && v1Read.rotation[0] === 0 && v1Read.rotation[1] === 1 && Object.keys(v1Read.pottedBy).length === 0 && v1Read.players.every((p) => p.left === false));
+    const backA = await request(H, 'room:join', { code: '9876', rejoin: true });
+    const backB = await request(P, 'room:join', { code: '9876', rejoin: true });
+    check('A and B rejoin it and see the game on, B to shoot', backA.ok && backB.ok && backB.data.size === 2 && backB.data.shooter === 1 && backB.data.turn === 1 && backB.data.players[1].team === 1 && backB.data.wins[1] === 1);
+    const v1Shot = await request(P, 'pool:shot', MISS);
+    check('and play on: B misses, the inning passes to A', v1Shot.ok && v1Shot.data.shooter === 0 && v1Shot.data.turn === 0 && v1Shot.data.lastShot.seq === 4 && v1Shot.data.lastShot.by === 1);
+    await request(P, 'room:leave');
+    await request(H, 'room:leave');
+    check('and the room goes when they do', (await peekRoom(ORG, '9876')) === null);
   } finally {
     for (const c of clients) c.socket.close();
     closePoolRealtime();
