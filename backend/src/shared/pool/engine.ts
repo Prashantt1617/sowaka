@@ -176,7 +176,6 @@ export interface RuleState {
   inHand: boolean;
   kitchen: boolean;
   breakShot: boolean;
-  calledPocket: number | null;
 }
 export interface RuleOutcome {
   foul: string | null;
@@ -211,8 +210,10 @@ export function placementOk(balls: Ball[], x: number, y: number, kitchen: boolea
  * The 8-ball rules on a finished shot. `after` is the table after the shot;
  * the state's balls are replaced by it. Fouls give the other player ball in
  * hand (behind the head string after a break foul). The 8 on the break is
- * spotted; otherwise the 8 decides the game: legal in the called pocket wins,
- * anything else loses.
+ * spotted; otherwise the 8 decides the game: in any pocket once the shooter's
+ * group is cleared it wins, early or with a foul it loses (no called pocket,
+ * as in the pool games people know). A ball potted on the break already
+ * gives the breaker its group.
  */
 export function resolve(st: RuleState, after: Ball[], events: ShotEvent[]): RuleOutcome {
   const i = st.turn, opp = (1 - i) as 0 | 1;
@@ -220,12 +221,11 @@ export function resolve(st: RuleState, after: Ball[], events: ShotEvent[]): Rule
   let firstHit: number | null = null, cushions = 0, scratch = false;
   const rails = new Set<number>();
   const pocketed: number[] = [];
-  let eightIn: number | null = null;
   let contact = false;
   for (const e of events) {
     if (e.t === 'hit') { if (firstHit == null && (e.a === 0 || e.b === 0)) { firstHit = e.a === 0 ? e.b : e.a; contact = true; } }
     else if (e.t === 'cushion') { if (contact || st.breakShot) cushions += 1; rails.add(e.n); }
-    else if (e.t === 'pocket') { pocketed.push(e.n); if (e.n === 8) eightIn = e.p; }
+    else if (e.t === 'pocket') { pocketed.push(e.n); }
     else if (e.t === 'scratch') scratch = true;
   }
   let foul: string | null = null, keep = false, winner: 0 | 1 | null = null, message: string | null = null;
@@ -241,28 +241,26 @@ export function resolve(st: RuleState, after: Ball[], events: ShotEvent[]): Rule
     else if (!st.open && mine && firstHit !== 8 && g !== mine) foul = `Foul: ${mine === 'solid' ? 'a stripe' : 'a solid'} was hit first`;
     else if (pot.length === 0 && !eight && cushions === 0) foul = 'Foul: no ball reached a cushion';
   } else if (pot.length === 0 && rails.size < 4) foul = 'Weak break: four balls must reach a cushion';
-  if (!st.breakShot && eight) {
-    if (foul || !onEight(st, i) || st.calledPocket == null || eightIn !== st.calledPocket) {
-      winner = opp;
-      foul = foul || (onEight(st, i) ? 'The 8 went in the wrong pocket' : 'The 8 went in too early');
-    } else winner = i;
+  if (!st.breakShot && eight) { // the 8 in any pocket wins once the group is cleared; early, or with a foul, it loses
+    if (foul || !onEight(st, i)) { winner = opp; foul = foul || 'The 8 went in too early'; }
+    else winner = i;
   }
   const groups: [Group, Group] = [st.groups[0], st.groups[1]];
   let open = st.open;
-  if (!foul && open && pot.length && !st.breakShot) { // the table stays open after the break, whatever drops
+  if (!foul && open && pot.length) { // the first ball potted (on the break too) gives the shooter its group
     const firstPot = pot[0];
     groups[i] = groupOf(firstPot); groups[opp] = groups[i] === 'solid' ? 'stripe' : 'solid'; open = false;
-    message = `${groups[i] === 'solid' ? 'Solids' : 'Stripes'} to the shooter`;
+    const took = `${groups[i] === 'solid' ? 'Solids' : 'Stripes'} to the shooter`;
+    message = message ? `${message}. ${took}` : took; // after an 8 re-spotted on the break both facts are told
   }
   if (!foul) {
     const own = pot.filter((n) => groups[i] == null || groupOf(n) === groups[i]);
     if (own.length) keep = true;
-    if (st.breakShot && pot.length) keep = true;
   }
   if (scratch) respot(balls, 0);
   const next: RuleState = {
     balls, turn: winner != null ? i : foul || !keep ? opp : i, groups, open,
-    inHand: !!foul && winner == null, kitchen: !!foul && st.breakShot, breakShot: false, calledPocket: null,
+    inHand: !!foul && winner == null, kitchen: !!foul && st.breakShot, breakShot: false,
   };
   return { foul, keepTurn: !foul && keep, winner, potted: pot, message: foul ?? message, next };
 }
