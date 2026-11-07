@@ -88,7 +88,7 @@ const TICKETED: Record<string, { marker: string; global: string; name: string }>
   // Speed Poker's tables and lobby: the same ticket, its own `/poker` namespace.
   [POKER_KEY]: { marker: '<!--POKER-TICKET-->', global: '__POKER', name: 'Speed Poker' },
   // Sowaka Pool's two-player rooms: the same ticket, its own `/pool` namespace.
-  [POOL_KEY]: { marker: '<!--POOL-TICKET-->', global: '__POOL', name: 'Sowaka Pool' },
+  [POOL_KEY]: { marker: '<!--POOL-TICKET-->', global: '__POOL', name: 'Pool Table' },
 };
 
 /** A JavaScript literal safe inside a `<script>` element (`<` can never close it). */

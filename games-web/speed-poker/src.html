@@ -996,7 +996,11 @@ const soOn=sh=>!!(sh&&sh.shootout);
    to it; its results, or a Shootout they are not in, wait behind the tournament card on the home. */
 const soShown=sh=>{ if(!soOn(sh))return false;
   if(state.tv)return ['lobby','shootout','over'].includes(sh.event.phase); // a big screen shows the event whenever it is on
-  return ['inlobby','seat','qualthrough','kothrough','qualwait'].includes(soScreen(soCtx(sh))[0]); }; // the one screen rule decides "in"
+  if(sh.event.phase==='lobby')return true; // sign-up time: everyone lands on the join screen
+  return ['seat','qualthrough','kothrough','qualwait'].includes(soScreen(soCtx(sh))[0]); }; // still in the rounds, by the one screen rule
+/** A finished Shootout's results stay on the home for a day (the server keeps handing out the latest event long after). */
+const soResultsFresh=sh=>{ const so=sh.shootout; if(so.status!=='done'||!so.standings||!so.standings.length)return false;
+  const last=(so.rounds||[]).slice(-1)[0], end=last&&last.endedAt?+new Date(last.endedAt):null; return !end||now()-end<86400000; };
 
 const SO_MIN=3; // SHOOTOUT.MIN_PLAYERS on the server
 const soOne=n=>/^Final/.test(n||'')?'Final':String(n||'').replace(/s$/,'');            // "Semi-finals" → "Semi-final"
@@ -1282,7 +1286,7 @@ const R=()=>state.room;
 const isHost=()=>!!(R()&&R().hostId===R().you);
 const hostName=r=>{ const h=r&&r.players.find(p=>p.userId===r.hostId); return h?first(h.name):'the host'; };
 const houseFace=()=>`<div class="avatar house">♠</div>`;
-const tournamentOn=()=>!!(state.ev&&state.ev.event&&!casual(state.ev)&&(state.ev.event.phase!=='over'||(soOn(state.ev)&&state.ev.shootout.standings))); // a finished Shootout keeps its card: the results live behind it
+const tournamentOn=()=>!!(state.ev&&state.ev.event&&!casual(state.ev)&&(state.ev.event.phase!=='over'||(soOn(state.ev)&&soResultsFresh(state.ev)))); // a just-finished Shootout keeps its card: the results live behind it
 function renderRooms(){
   const rooms=state.rooms||[], inv=(state.invites||[]).slice(-3).reverse();
   /* three faces, or two and "+n": the stack stays 76px wide so the table's state fits beside it on a 390px phone */

@@ -147,9 +147,9 @@ async function main() {
     ] as never[]);
     const created = new Date();
     await gameCatalog().insertOne({
-      key: 'pool', name: 'Sowaka Pool', kind: 'web', order: 70, active: true,
+      key: 'pool', name: 'Pool Table', kind: 'web', order: 70, active: true,
       scoring: { higherIsBetter: true, label: 'points', max: 20000 },
-      html: '<!doctype html><html><head><meta charset="utf-8"><title>Sowaka Pool</title>\n<!--POOL-TICKET-->\n</head><body>page</body></html>',
+      html: '<!doctype html><html><head><meta charset="utf-8"><title>Pool Table</title>\n<!--POOL-TICKET-->\n</head><body>page</body></html>',
       createdAt: created, updatedAt: created,
     } as never);
     const session = `tok-${randomUUID()}`;
@@ -182,7 +182,7 @@ async function main() {
     await until(() => C.invites.length > 0);
     check('A invites C: a card at once', inv.ok && C.invites.some((i) => i.code === code && i.from.userId === A.user.userId));
     const push = pushes.find((p) => p.userIds[0] === C.user.userId);
-    check('and a pool_invite push that opens this room', !!push && push.scenario === 'pool_invite' && /invited you to Sowaka Pool/.test(push.title) && push.data.gameKey === 'pool' && push.data.challengeId === `room:${code}` && push.data.destination === 'game_challenge');
+    check('and a pool_invite push that opens this room', !!push && push.scenario === 'pool_invite' && /invited you to Pool Table/.test(push.title) && push.data.gameKey === 'pool' && push.data.challengeId === `room:${code}` && push.data.destination === 'game_challenge');
     const helloB = await request(B, 'room:hello');
     check("B's hello lists A's room with its size and a seat free", helloB.ok && helloB.data.rooms.some((r: { code: string; host: { userId: string }; size: number; seatFree: boolean; status: string }) => r.code === code && r.host.userId === A.user.userId && r.size === 2 && r.seatFree && r.status === 'lobby'));
     const bad = await request(B, 'room:join', { code: code === '1000' ? '1001' : '1000' });

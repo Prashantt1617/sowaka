@@ -87,7 +87,7 @@ async function personOf(userId: string) {
   return value;
 }
 
-const SIGN_IN_FAILED = 'Sowaka Pool could not sign you in. Close and reopen the game to keep playing.';
+const SIGN_IN_FAILED = 'Pool Table could not sign you in. Close and reopen the game to keep playing.';
 
 export function initPoolRealtime(io: SocketServer): Namespace {
   namespace = io.of('/pool');
@@ -124,7 +124,7 @@ export function initPoolRealtime(io: SocketServer): Namespace {
     // Each one waits for the seat, which the setup settles.
     const seated = welcome(socket).catch((error) => {
       logger.error('Pool socket setup failed', { userId: socket.data.userId }, error);
-      socket.emit('room:fatal', { code: 'setup_failed', message: 'Sowaka Pool could not start. Close and reopen the game to keep playing.' });
+      socket.emit('room:fatal', { code: 'setup_failed', message: 'Pool Table could not start. Close and reopen the game to keep playing.' });
       socket.disconnect(true);
       return null;
     });

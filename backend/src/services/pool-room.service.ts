@@ -126,9 +126,9 @@ async function payPoints(award: PoolAward): Promise<void> {
       source: 'game_challenge' as const,
       reason: 'game' as const,
       refId: award.gameId,
-      note: `Sowaka Pool · ${award.won ? 'won' : 'lost'} · ${award.potted} ${award.potted === 1 ? 'ball' : 'balls'} potted`,
+      note: `Pool Table · ${award.won ? 'won' : 'lost'} · ${award.potted} ${award.potted === 1 ? 'ball' : 'balls'} potted`,
       gameKey: 'pool',
-      title: 'Sowaka Pool',
+      title: 'Pool Table',
     }],
     { keepZero: true },
   );
@@ -207,7 +207,7 @@ async function applyEffects(room: PoolRoom, effects: Effect[]): Promise<{ delete
         void deps
           .notify([effect.userId], {
             scenario: 'pool_invite',
-            title: `${firstName(effect.fromName)} invited you to Sowaka Pool`,
+            title: `${firstName(effect.fromName)} invited you to Pool Table`,
             body: `Room ${effect.code} · tap to join`,
             // The app opens a game on this destination and hands the page the
             // challenge id, which the page's live bridge reads as the room.
