@@ -1000,8 +1000,12 @@ function rulesBody(sh){ const r=sh.event.rules;
    final table). Its tables are the ordinary event tables (table:seated, table:state); everything around them is drawn
    here from shared.shootout, with Home and Watch along the top. */
 const soOn=sh=>!!(sh&&sh.shootout);
-/** On opening the game, a Shootout with its lobby open, its rounds on, or its results takes the player straight to it. */
-const soShown=sh=>soOn(sh)&&['lobby','shootout','over'].includes(sh.event.phase);
+/** On opening the game, only a Shootout the player is part of (in its queue, or still in its rounds) takes them straight
+   to it; its results, or a Shootout they are not in, wait behind the tournament card on the home. */
+const soShown=sh=>{ if(!soOn(sh))return false; const ph=sh.event.phase, uid=me();
+  if(ph==='lobby')return sh.shootout.lobby.some(p=>p.userId===uid);
+  if(ph==='shootout'){ const c=soCtx(sh); return c.mi>=0&&c.mi===c.ci; } // in the round that is on
+  return false; };
 const SO_MIN=3; // SHOOTOUT.MIN_PLAYERS on the server
 const soOne=n=>/^Final/.test(n||'')?'Final':String(n||'').replace(/s$/,'');            // "Semi-finals" → "Semi-final"
 const soShort=r=>r.kind==='final'?'FINAL':r.kind==='qualifier'?'QUALIFIER':/^Semi/.test(r.name)?'SEMIS':/^Quarter/.test(r.name)?'QUARTERS':String(r.name).toUpperCase();
@@ -2124,8 +2128,8 @@ async function load(){ try{
     /* At an event's table: that first. Else the group game (the event, if one is on, is a card in its lobby). */
     if(h&&h.table&&h.table.status==='playing'&&!rh.room){ state.mode='event'; state.shared=state.ev; state.table=h.table; state.view='table'; }
     else if(state.mode==='event'){ state.shared=state.ev; if(h&&h.table)state.table=h.table; }
-    /* Opening the game while a Shootout's lobby is open, its rounds are on, or its results are up: straight to it (an old practice
-       table is left, as below; a table with colleagues still comes first). */
+    /* Opening the game while a Shootout the player is in is on: straight to it (an old practice table is left, as below;
+       a table with colleagues still comes first). Its results never take over the open: the home shows first. */
     else if(!state.opened&&soShown(state.ev)&&!(rh.room&&!rh.room.practice)){ if(rh.room){ try{ await P.request('room:leave'); }catch(e){} }
       state.room=null; state.mode='event'; state.shared=state.ev; state.view='lobby'; if(h&&h.table)state.table=h.table; }
     /* Opening the game again (not a reconnect) is not a way back into an old
