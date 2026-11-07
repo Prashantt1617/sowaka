@@ -215,6 +215,66 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .invite .who{flex:1;min-width:0;font-size:14px}
 .invite .who b{display:block}
 .invite .who span{font-size:12px;color:var(--muted)}
+/* ---------- the home: one way in up front (Quick game), the other three as cards, the open tables under them.
+   The rules sit behind the ? in the hero's corner, the code behind its card; both open as sheets. ---------- */
+.hero.home{padding:14px 14px 16px;text-align:center}
+.hero .help{position:absolute;right:10px;top:10px;z-index:2;width:32px;height:32px;border-radius:50%;background:rgba(0,0,0,.3);color:#e9f3ec;font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}
+/* the table from above, drawn here (no pictures): the deck, two cards turned up, a stack of chips */
+.hart{position:relative;height:110px;margin:0 auto 12px;max-width:280px}
+.hart .oval{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:228px;height:90px;border-radius:50%;background:radial-gradient(100% 70% at 50% 45%,#2a8a5b,var(--felt2) 60%,var(--felt3));box-shadow:0 0 0 6px var(--rail),0 0 0 8px var(--rail2),0 0 0 9px rgba(229,184,80,.3),0 12px 26px rgba(0,0,0,.45),inset 0 0 30px rgba(0,0,0,.3)}
+.hart .oval::after{content:"";position:absolute;inset:9px;border-radius:50%;border:1px solid rgba(255,255,255,.08)}
+.hart .hcards{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex}
+.hart .hcards .pc{width:40px;height:56px;border-radius:6px;box-shadow:0 4px 10px rgba(0,0,0,.45)}
+.hart .hcards .pc .r{font-size:18px;left:4px;top:2px}.hart .hcards .pc .s{font-size:23px;right:4px;bottom:1px}
+.hart .hcards .pc:first-child{transform:rotate(-9deg) translate(5px,2px)}
+.hart .hcards .pc:last-child{transform:rotate(9deg) translate(-5px,2px)}
+.hart .hdeck{position:absolute;left:28px;top:50%;width:26px;height:36px;transform:translateY(-50%)}
+.hart .hdeck .pc{position:absolute;inset:0;width:26px;height:36px;border-radius:4px}
+.hart .hdeck .pc:nth-child(2){transform:translate(-2px,-2px)}.hart .hdeck .pc:nth-child(3){transform:translate(-4px,-4px)}
+.hart .hchips{position:absolute;right:30px;top:50%;width:26px;height:26px;transform:translateY(-8px)}
+.hart .hchips i{position:absolute;left:0;width:26px;height:26px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#fff 0 22%,var(--chip,#d23c3c) 23% 60%,#fff 61% 70%,var(--chip,#d23c3c) 71%);box-shadow:0 1px 2px rgba(0,0,0,.5)}
+.hart .hchips i:nth-child(2){top:-5px;--chip:#2f7de1}.hart .hchips i:nth-child(3){top:-10px;--chip:#d4a63a}
+.btn.xl{width:100%;min-height:56px;font-size:18px;border-radius:16px}
+/* one line on any phone: the size follows the width (11.7px at 390, 13px from 434), and never wraps */
+.hero.home .sub{margin:10px -4px 0;font-size:clamp(10.5px,3vw,13px);color:#cfe4d7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ways{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 2px}
+.way{display:flex;flex-direction:column;align-items:flex-start;gap:5px;min-height:118px;padding:12px 11px 11px;border-radius:16px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line);text-align:left}
+.way:active{background:var(--panel2)}
+.way .ic{width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;margin-bottom:3px;background:linear-gradient(160deg,var(--felt1),var(--felt3));box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
+.way .ic.code{background:rgba(255,255,255,.08);color:var(--gold);font-family:var(--mono);font-size:11px;letter-spacing:.08em}
+.way .ic.house{background:linear-gradient(160deg,#7a1f1f,#3a0f0f);color:#f3e9d0}
+.way b{display:block;font-size:14px;line-height:1.2}
+.way .cap{font-size:11.5px;line-height:1.3;color:var(--muted)}
+.sect{display:flex;align-items:baseline;justify-content:space-between;margin:14px 2px 8px}
+.sect h3{margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.sect span{font-size:12px;color:var(--faint)}
+/* an open table: faces, whose it is and how full, its state and length, one action (a free seat at a table that can be watched also offers Watch) */
+.tcard{display:flex;align-items:center;gap:10px;min-height:64px;padding:10px 12px;margin-bottom:8px;border-radius:16px;background:var(--panel)}
+.tcard .stack{flex:none}
+.tcard .who{flex:1;min-width:0}
+.tcard .nm{display:flex;align-items:center;gap:6px;min-width:0}
+.tcard .nm b{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tcard .nm i{flex:none;font-style:normal;font-size:11px;font-weight:800;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.08);color:#d3e3d9}
+.tcard .meta{display:block;margin-top:3px;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tcard .meta+.meta{margin-top:1px}
+.tcard .meta .status::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin:0 5px 1px 0}
+.tcard .act{flex:none;display:flex;flex-direction:column;align-items:stretch;gap:3px}
+.tcard .act .btn{min-width:64px}
+.sheet .shead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:none}
+.sheet .shead h2{margin:2px 0 8px}
+.sheet .shead .x{width:30px;height:30px;margin-top:-6px;border-radius:50%;background:rgba(255,255,255,.08);color:var(--muted);font-size:17px;display:flex;align-items:center;justify-content:center;flex:none}
+.sheet .howtext{overflow-y:auto;min-height:0}
+.sheet .howtext p{margin:0 0 10px;font-size:14px;line-height:1.45;color:#d3e3d9}
+.sheet .codebox{margin:0}
+.sheet .codebox input{height:52px;margin:0;padding:0 12px;font-size:22px}
+/* on its side: the table art beside the button, the cards still in one row */
+@media (orientation:landscape) and (max-height:520px){
+  .hero.home{display:grid;grid-template-columns:1fr 1fr;grid-template-areas:"art btn" "art sub";align-items:center;column-gap:16px;text-align:left;padding:12px 52px 12px 16px}
+  .hero.home .hart{grid-area:art;margin:0 auto}
+  .hero.home .btn.xl{grid-area:btn;align-self:end}
+  .hero.home .sub{grid-area:sub;align-self:start;margin-top:8px}
+  .way{min-height:0}
+}
 .rtop{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .rtop .back,.top .back{width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font-size:18px;flex:none}
 .rtop .title{flex:1;min-width:0}
@@ -675,6 +735,8 @@ const state={mode:'rooms',room:null,rooms:[],invites:[],me:null,ev:null,picker:n
   /* the big tables: from room:hello (the company's table), the chat sheet, and the table being watched */
   big:false,tables:null,chatOpen:false,chatDraft:'',chatSeen:0,chatRoom:null,watchCode:null,bubbles:{},bubbleRoom:null,chatIds:null,
   next:false,focusChat:false,resultHand:null,
+  /* the home's sheets: the code to join with (its box focused in the same tap), and how it works */
+  codeOpen:false,focusCode:false,howOpen:false,
   /* the Shootout: Home or Watch, the "you're through" screens already seen (by round), the whole standings list */
   soTab:'home',soAck:{},soAll:true,soHtml:''};
 const nextUi=()=>!!state.next;
@@ -1135,30 +1197,38 @@ const houseFace=()=>`<div class="avatar house">♠</div>`;
 const tournamentOn=()=>!!(state.ev&&state.ev.event&&!casual(state.ev)&&state.ev.event.phase!=='over');
 function renderRooms(){
   const rooms=state.rooms||[], inv=(state.invites||[]).slice(-3).reverse();
-  const roomRow=r=>{ const face=state.big&&r.players.length+r.house>3?2:3, n=r.players.length+r.house, st=r.status==='lobby'?['wait','Waiting to deal']:r.status==='over'?['full','Between games']:r.seatFree?['play','Playing · seat free']:['full','Playing · full'];
-    return `<div class="rowi"><div class="stack" style="width:76px;flex:none">${r.players.slice(0,face).map(p=>avatarHtml(p.name,p.photoUrl||pic(p.userId),'sm')).join('')}${n>face?`<div class="avatar sm">+${n-face}</div>`:''}</div>
-      <div class="who"><b>${esc(r.host?first(r.host.name):'A')}'s table · ${n}/${r.seats}</b><span class="status ${st[0]}">${st[1]}</span><span> · ${r.minutes} min${r.watchable&&r.watchers?` · ${r.watchers} watching`:''}</span></div>
-      ${r.watchable&&!r.seatFree?`<button class="btn small ghost" data-watchroom="${esc(r.code)}">Watch</button>`
-        :r.watchable&&r.status==='playing'?`<div class="rbtns"><button class="btn small primary" data-join="${esc(r.code)}">Sit</button><button class="linkw" data-watchroom="${esc(r.code)}">Watch</button></div>`
-        :`<button class="btn small ${r.seatFree&&r.status!=='over'?'primary':'ghost'}" data-join="${esc(r.code)}" ${r.seatFree?'':'disabled'}>${r.seatFree?'Sit':'Full'}</button>`}</div>`; };
+  /* three faces, or two and "+n": the stack stays 76px wide so the table's state fits beside it on a 390px phone */
+  const roomRow=r=>{ const n=r.players.length+r.house, face=n>3?2:3, st=r.status==='lobby'?['wait','Waiting to deal']:r.status==='over'?['full','Between games']:r.seatFree?['play','Playing · seat free']:['full','Playing · full'];
+    const act=r.watchable&&!r.seatFree?`<button class="btn small ghost" data-watchroom="${esc(r.code)}">Watch</button>`
+        :r.watchable&&r.status==='playing'?`<button class="btn small primary" data-join="${esc(r.code)}">Sit</button><button class="linkw" data-watchroom="${esc(r.code)}">Watch</button>`
+        :`<button class="btn small ${r.seatFree&&r.status!=='over'?'primary':'ghost'}" data-join="${esc(r.code)}" ${r.seatFree?'':'disabled'}>${r.seatFree?'Sit':'Full'}</button>`;
+    return `<div class="tcard"><div class="stack">${r.players.slice(0,face).map(p=>avatarHtml(p.name,p.photoUrl||pic(p.userId),'sm')).join('')}${n>face?`<div class="avatar sm">+${n-face}</div>`:''}</div>
+      <div class="who"><div class="nm"><b>${esc(r.host?first(r.host.name):'A')}'s table</b><i class="num">${n}/${r.seats}</i></div><span class="meta"><span class="status ${st[0]}">${st[1]}</span> · ${r.minutes} min</span>${r.watchable&&r.watchers?`<span class="meta">${r.watchers} watching</span>`:''}</div>
+      <div class="act">${act}</div></div>`; };
   const big=state.big, chips=big&&state.tables?fmt(state.tables.buyIn):'1,500';
-  app.innerHTML=`<div id="lobby">
+  app.innerHTML=`<div id="lobby" class="home">
     <div class="top"><div class="brand"><div class="mark">♠</div><div><h1>Speed Poker</h1><div class="sub">Texas Hold'em with colleagues · no money</div></div></div><div class="swg-slot"><span class="swg" role="img" aria-label="Sowaka Games"><span class="swg-logo"><i></i></span><span class="swg-box"><span class="swg-games">GAMES</span></span></span></div>${state.me?avatarHtml(state.me.name,state.me.photoUrl,'me-face'):''}</div>
     ${inv.map(i=>`<div class="invite">${avatarHtml(i.from&&i.from.name,i.from&&i.from.photoUrl,'sm')}<div class="who"><b>${esc(first(i.from&&i.from.name))} invited you</b><span>Table ${esc(i.code)}${i.players?` · ${i.players} at the table`:''}</span></div><button class="btn small primary" data-join="${esc(i.code)}">Sit down</button></div>`).join('')}
-    <div class="hero"><div class="suits">♠♥♦♣</div><h2>Play a game</h2><p>${big?'Two to eight':'Two to six'} at a table, ${chips} chips each, about ${state.minutes||20} minutes a game. Just for fun.</p>
-      <div class="row"><button class="btn primary" data-act="quick">Quick game</button><button class="btn ghost" data-act="host">New table</button></div>
-      <div class="codebox"><input id="code" inputmode="numeric" maxlength="4" placeholder="Have a code? 4 digits" value="${esc(state.codeInput||'')}" autocomplete="off"><button class="btn ghost" data-act="code">Join</button></div>
-      <button class="linkbtn" data-act="practice">Practice against the house ›</button></div>
+    <div class="hero home"><div class="suits">♠♥♦♣</div><button class="help" data-act="how" aria-label="How it works">?</button>
+      <div class="hart" aria-hidden="true"><div class="oval"><div class="hdeck">${back('')}${back('')}${back('')}</div><div class="hcards">${card('As')}${card('Kh')}</div><div class="hchips"><i></i><i></i><i></i></div></div></div>
+      <button class="btn primary xl" data-act="quick">Quick game</button>
+      <p class="sub">${big?'Two to eight':'Two to six'} at a table, ${chips} chips each, about ${state.minutes||20} minutes</p></div>
+    <div class="ways">
+      <button class="way" data-act="host"><span class="ic">+</span><b>New table</b><span class="cap">Host it, invite colleagues</span></button>
+      <button class="way" data-act="codeopen"><span class="ic code">1234</span><b>Join with a code</b><span class="cap">Four digits from the host</span></button>
+      <button class="way" data-act="practice"><span class="ic house">♠</span><b>Practice vs the house</b><span class="cap">On your own, any time</span></button></div>
     ${tournamentOn()?`<div class="card" style="margin-top:12px"><div class="rowi"><div class="who"><b>🏆 ${esc(state.ev.event.name)}</b><span>${esc(phaseWords(state.ev).line)}</span></div><button class="btn small ghost" data-act="event">Open</button></div></div>`:''}
-    <div class="tabs"><button class="tab on">Open tables</button></div>
-    <div class="card">${rooms.length?rooms.map(roomRow).join(''):`<div class="empty">No open tables right now. Start one and invite colleagues, or tap Quick game.</div>`}</div>
-    <div class="card rules"><h3>How it works</h3>
-      <p><b>The game.</b> No-limit Texas Hold'em. Two cards each, five shared, best five of seven wins.</p>
+    <div class="sect"><h3>Open tables</h3><span>${rooms.length?`${rooms.length} open`:''}</span></div>
+    ${rooms.length?rooms.map(roomRow).join(''):`<div class="card"><div class="empty">No open tables right now. Start one and invite colleagues, or tap Quick game.</div></div>`}
+    ${sheets()}</div>`;
+}
+/** The rules, behind the ? on the home. */
+function howText(){ const big=state.big, chips=big&&state.tables?fmt(state.tables.buyIn):'1,500';
+  return `<p><b>The game.</b> No-limit Texas Hold'em. Two cards each, five shared, best five of seven wins.</p>
       <p><b>A table.</b> Whoever opens it is the host and deals when two or more are in; a full table of ${big?'eight':'six'} deals itself. Blinds rise every three minutes; 20 seconds to act.</p>
       <p><b>Coming and going.</b> Join mid-game and you are dealt in from the next hand while there is a seat. Leave whenever you like. Every game starts again at ${chips}.</p>
       ${big?`<p><b>Watching and chat.</b> A full table can still be watched: tap Watch, and take a seat when one frees. Everyone at a table, and everyone watching it, can chat.</p>`:''}
-      <p><b>Just for fun.</b> No points, no board, no cash. Chips are only for the table.</p></div></div>`;
-}
+      <p><b>Just for fun.</b> No points, no board, no cash. Chips are only for the table.</p>`; }
 function renderRoomLobby(){
   const r=R(), host=isHost(), places=r.players.length+r.house, ready=r.players.filter(p=>p.online).length+r.house;
   const slots=[];
@@ -1188,6 +1258,11 @@ function sheets(){
       ${!q&&!pk.loading&&(pk.list||[]).length>=50?'<div class="hint" style="font-size:12px;color:var(--muted);margin-top:6px;text-align:center">Showing the first 50. Type a name to find anyone at the company.</div>':''}
       <button class="btn ghost" style="margin-top:10px" data-act="pickclose">Done</button></div></div>`; }
   if(state.chatOpen&&R()&&R().big)return chatSheet(R());
+  /* the home's sheets (only there: a table of your own takes the whole screen) */
+  if(state.mode==='rooms'&&!R()){
+    if(state.codeOpen)return `<div class="sheet" data-act="codeclose"><div class="box"><div class="shead"><h2>Join with a code</h2><button class="x" data-act="codeclose" aria-label="Close">×</button></div><p>The four digits of the table, from its host.</p>
+      <div class="codebox"><input id="code" inputmode="numeric" maxlength="4" placeholder="4 digits" value="${esc(state.codeInput||'')}" autocomplete="off"><button class="btn primary" data-act="code">Join</button></div></div></div>`;
+    if(state.howOpen)return `<div class="sheet" data-act="howclose"><div class="box"><div class="shead"><h2>How it works</h2><button class="x" data-act="howclose" aria-label="Close">×</button></div><div class="howtext">${howText()}</div><button class="btn primary" style="margin-top:10px;flex:none" data-act="howclose">Got it</button></div></div>`; }
   return '';
 }
 /* ---------- the big tables: chat, watching ---------- */
@@ -1284,7 +1359,7 @@ function onFeed(f){ if(!f||!FEED[f.kind]||!state.room)return; const me=state.me&
 async function refreshRooms(){ if(!P.live)return; try{ const d=await P.request('room:list'); state.rooms=d.rooms||[]; if(state.mode==='rooms'&&!state.room&&!busyInput())render(); }catch(e){} }
 const busyInput=()=>{ const a=document.activeElement; return a&&a.matches&&a.matches('input'); };
 async function joinCode(code){ const c=String(code||'').trim(); if(!/^[1-9]\d{3}$/.test(c)){ toast('A table code is four digits.'); return; }
-  const d=await P.request('room:join',{code:c}); state.invites=(state.invites||[]).filter(i=>i.code!==c); state.codeInput=''; onRoom(d); }
+  const d=await P.request('room:join',{code:c}); state.invites=(state.invites||[]).filter(i=>i.code!==c); state.codeInput=''; state.codeOpen=false; onRoom(d); }
 
 /* ---------- office screen ---------- */
 function renderTv(){ const sh=state.shared, ph=phaseWords(sh);
@@ -1533,6 +1608,10 @@ document.addEventListener('click',async e=>{
       case 'quick': onRoom(await P.request('room:quick')); break;
       case 'host': onRoom(await P.request('room:host',{open:true})); break;
       case 'code': await joinCode(($('#code')||{}).value||state.codeInput); break;
+      case 'codeopen': state.codeOpen=true; state.focusCode=true; break;
+      case 'codeclose': state.codeOpen=false; break;
+      case 'how': state.howOpen=true; break;
+      case 'howclose': state.howOpen=false; break;
       case 'event': state.mode='event'; state.view='lobby'; state.shared=state.ev; break;
       case 'rooms': state.mode='rooms'; state.view=state.room&&state.room.table&&state.room.status!=='lobby'?'table':'lobby'; state.table=state.room&&state.room.table||null; refreshRooms(); break;
       case 'leaveask': if(R()&&R().practice){ await leavePractice(); return; } if(R()&&R().big&&R().watching){ await stopWatching(); return; } state.leaveAsk=true; break;
@@ -1563,8 +1642,9 @@ document.addEventListener('click',async e=>{
     }
   }catch(err){ toast(err.message||'Something went wrong.'); }
   render();
-  // Still inside the tap: focus the box so the phone's keyboard comes up with the chat.
-  if(state.focusChat){ state.focusChat=false; const box=document.getElementById('chatin'); if(box){ try{ box.focus({preventScroll:true}); }catch(e){ box.focus(); } } }
+  // Still inside the tap: focus the box so the phone's keyboard comes up with the chat (or the code sheet).
+  const want=state.focusChat?'chatin':state.focusCode?'code':null; state.focusChat=state.focusCode=false;
+  if(want){ const box=document.getElementById(want); if(box){ try{ box.focus({preventScroll:true}); }catch(e){ box.focus(); } } }
 });
 document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target&&e.target.id==='code'){ e.preventDefault(); joinCode(e.target.value).catch(err=>toast(err.message)); }
   if(e.key==='Enter'&&e.target&&e.target.id==='chatin'&&!e.isComposing){ e.preventDefault(); sendChat(e.target.value,true); } });
@@ -1940,10 +2020,12 @@ function demo(){
   if(mode==='tv'){ state.tv=true; state.shared.event.phase='semis'; state.shared.semis={seededAt:t,startedAt:t,endedAt:null,tables:[{label:'A',tableId:'ta',players:[]},{label:'B',tableId:'tb',players:[]}]};
     const w=JSON.parse(JSON.stringify(state.table)); w.round='semi'; w.mySeat=null; w.choices=null; w.seats.forEach(s=>{s.me=false;s.cards=null;}); state.tvTables={ta:Object.assign({},w,{id:'ta',label:'A'}),tb:Object.assign({},w,{id:'tb',label:'B'})}; P.request=()=>new Promise(()=>{}); }
   if(!P.request)P.request=()=>Promise.reject(new Error('Demo: nothing is sent.'));
-  if(roomMode)return roomsDemo(mode,t,people);
+  if(roomMode){ state.howOpen=q.get('how')==='1'; state.codeOpen=q.get('code')==='1'; return roomsDemo(mode,t,people); }
   state.view=['lobby','queue','picks','tv'].includes(mode)?'lobby':'table';
   render();
 }
+/* The group game's previews: ?demo=rooms (the home, with an invite; &how=1 opens How it works, &code=1 the code sheet), room (your table's
+   lobby), room-guest, room-table, room-over, invite (the colleague picker); the big tables' own are below. */
 function roomsDemo(mode,t,people){
   state.me={userId:'s0',name:people[0],photoUrl:demoFace(0)}; state.mine=null; state.shared=null;
   if(/8$/.test(mode))return bigDemo(mode,t,people);
