@@ -168,7 +168,7 @@ All protected endpoints expect `Authorization: Bearer <token>`.
 | Prefix | Endpoints | Consumer / purpose |
 |---|---|---|
 | `/auth` | `POST request-otp`, `POST verify-otp`, `GET me`, `POST logout` | Both clients; six-digit email OTP and session lifecycle |
-| `/leaves` | `POST /`, `GET mine`, `GET balance`, `GET inbox`, `PATCH :id/decision` | Mobile employee submission/history and manager approval |
+| `/leaves` | `POST /`, `GET mine`, `GET balance`, `GET inbox`, `PATCH :id/decision`, `POST :id/cancel` | Mobile employee submission/history and manager approval |
 | `/overtime` | `POST /`, `GET mine`, `GET inbox`, `PATCH :id/decision` | Mobile employee submission and manager approval |
 | `/reimbursements` | `POST /`, `GET mine`, `GET inbox`, `GET :id/receipt-url` | Mobile claims; multipart receipt is optional at transport level; decisions are HR-only |
 | `/attendance` | `GET mine?from&to`, `POST regularizations`, `GET regularizations/inbox`, `PATCH regularizations/:id/decision` | Mobile attendance calendar and manager correction approvals |

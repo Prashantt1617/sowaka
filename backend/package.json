@@ -33,6 +33,7 @@
     "media:backfill": "tsx src/scripts/media-copies-backfill.ts",
     "employee-details:check": "tsx src/scripts/employee-details-check.ts",
     "leave-without-pay:check": "tsx src/scripts/leave-without-pay-check.ts",
+    "leave-cancel:check": "tsx src/scripts/leave-cancel-check.ts",
     "employee-activity:check": "tsx src/scripts/employee-activity-check.ts",
     "suwi-bulk:check": "tsx src/scripts/suwi-bulk-check.ts",
     "celebrations:check": "tsx src/scripts/connect-celebrations-check.ts",

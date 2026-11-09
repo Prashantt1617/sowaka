@@ -16,7 +16,7 @@ export type LeaveDTO = {
   endDate: string;
   days: number;
   reason: string;
-  status: 'pending' | 'approved' | 'declined';
+  status: 'pending' | 'approved' | 'declined' | 'cancelled';
   managerNote?: string;
   createdAt: string;
   decidedAt?: string;

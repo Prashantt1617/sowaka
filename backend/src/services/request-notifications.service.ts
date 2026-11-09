@@ -240,6 +240,39 @@ export async function notifyLeaveSubmitted(input: {
   }
 }
 
+/**
+ * The employee took a leave back before it began. They get a quiet line in
+ * their own inbox; the approvers hear, with the note, so a plan made around
+ * the absence can be unmade.
+ */
+export async function notifyLeaveCancelled(input: {
+  employeeUserId: string; requestId?: string; type: string; startDate: Date; endDate: Date; days: number;
+  wasApproved: boolean; note: string;
+}) {
+  const employee = await users().findOne({ userId: input.employeeUserId });
+  if (!employee) return;
+  const range = dateRange(input.startDate, input.endDate);
+  const requestId = input.requestId ?? '';
+
+  await deliver([employee.userId], {
+    scenario: 'leave_cancelled',
+    title: 'Leave cancelled',
+    body: `${leaveLabel(input.type)}, ${range} (${days(input.days)}) is cancelled${input.wasApproved ? '; the days are back in your balance' : ''}`,
+    data: { type: 'leave', view: 'mine', requestId },
+    push: false,
+  });
+
+  const approvers = await approversFor(employee, 'leave');
+  for (const approver of approvers) {
+    await deliver([approver.userId], {
+      scenario: 'leave_cancelled',
+      title: `${employee.name} cancelled ${leaveLabel(input.type)}`,
+      body: `${range} (${days(input.days)})${input.note ? ` · “${input.note}”` : ''}`,
+      data: { type: 'leave', view: 'inbox', requestId },
+    });
+  }
+}
+
 /** Rows 1 and 2. */
 export async function notifyLeaveDecided(input: {
   employeeUserId: string; requestId?: string; type: string; startDate: Date; endDate: Date; days?: number;

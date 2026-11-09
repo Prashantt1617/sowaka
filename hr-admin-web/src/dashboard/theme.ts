@@ -59,7 +59,7 @@ export type View =
 
 /** A leave type as the lists show it: 'Casual', 'Comp-off', or a type HR added, 'Emergency'. */
 export type LeaveType = string;
-export type ReqStatus = 'Pending' | 'Approved' | 'Declined' | 'Paid';
+export type ReqStatus = 'Pending' | 'Approved' | 'Declined' | 'Paid' | 'Cancelled';
 export type FeedbackStatus = 'Submitted' | 'Acknowledged' | 'Pending' | 'Draft';
 export type EmpType = 'Full-time' | 'Contract' | 'Intern';
 export type OtDuration = 'Full day' | 'Half day';
@@ -104,6 +104,8 @@ export const STAT: Record<ReqStatus, Pill> = {
   Approved: SOLID.ok,
   Declined: SOLID.bad,
   Paid: SOLID.info,
+  // A leave the employee took back before it began: settled, nothing to decide.
+  Cancelled: SOLID.mute,
 };
 
 export const FSTAT: Record<FeedbackStatus, Pill> = {

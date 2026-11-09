@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import {
+  cancelMyLeave,
   createLeave,
   listManagerLeaves,
   leaveBalance,
@@ -19,3 +20,5 @@ leaveRouter.get('/mine', listMyLeaves);
 leaveRouter.get('/balance', leaveBalance);
 leaveRouter.get('/inbox', listManagerLeaves);
 leaveRouter.patch('/:leaveId/decision', updateLeaveDecision);
+// The employee's own leave, taken back before it begins; a note for the manager is optional.
+leaveRouter.post('/:leaveId/cancel', cancelMyLeave);

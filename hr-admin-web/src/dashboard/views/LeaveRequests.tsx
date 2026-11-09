@@ -75,7 +75,7 @@ export function LeaveRequests() {
       <Card padded>
       <div style={toolbar}>
         <StatusTabs<ReqStatus | 'all'>
-          options={['all', 'Pending', 'Approved', 'Declined']}
+          options={['all', 'Pending', 'Approved', 'Declined', 'Cancelled']}
           active={s.leaveStatus}
           onSelect={s.setLeaveStatus}
         />
