@@ -289,7 +289,10 @@ List<AttendanceDayView> buildAttendanceDays({
           record: record,
         );
       }
-      if (leave != null && leaveStatus != LeaveDecision.declined) {
+      // A declined or cancelled leave left no mark on the day.
+      if (leave != null &&
+          leaveStatus != LeaveDecision.declined &&
+          leaveStatus != LeaveDecision.cancelled) {
         final approved = leaveStatus == LeaveDecision.approved;
         if (approved && shift.isUnpaidLeave(leave.typeKey)) {
           return AttendanceDayView(
@@ -1216,7 +1219,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                       title: 'Payroll',
                       subtitle: 'Payslips, salary & tax',
                       onTap: () => _open(_QuickPage.payroll),
-                      imageAsset: 'assets/icons/request_reimbursement_money.png',
+                      imageAsset:
+                          'assets/icons/request_reimbursement_money.png',
                     ),
                     _HomeActionCard(
                       icon: Icons.edit_note_rounded,
@@ -2264,7 +2268,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     }
   }
 
-
   Widget _reimbursementHub() {
     final claims = widget.dashboard.myReimbursements;
     // Every claim in the list below, for the same reason as overtime.
@@ -3066,6 +3069,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   for (final action in _actionsForDay(day))
                     AttendanceDayAction(
                       label: action.label,
+                      link: action.link,
                       onTap: () {
                         Navigator.of(sheetContext).pop();
                         action.onTap();
@@ -3106,6 +3110,17 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   List<AttendanceDayAction> _actionsForDay(AttendanceDayView day) {
     // A request already with the manager replaces every action.
     if (_pendingNoticeFor(day) != null) return const [];
+    // A leave yet to begin, pending or approved, can be taken back from its
+    // day; one that has started is HR's to undo.
+    if (day.leave case final leave? when _leaveCancellable(leave)) {
+      return [
+        AttendanceDayAction(
+          label: 'Cancel Leave',
+          link: true,
+          onTap: () => _cancelLeave(day),
+        ),
+      ];
+    }
     // A day that can be corrected offers only that. Leave is what you do with
     // a day that has nothing to fix — a future date, mainly — so offering both
     // at once asks the wrong question of a day that has already gone wrong.
@@ -3124,6 +3139,34 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           onTap: () => _applyLeaveFor(day.date),
         ),
     ];
+  }
+
+  /// A leave can be taken back while it is still to come and still stands.
+  bool _leaveCancellable(LeaveRequest leave) {
+    if (leave.decision != LeaveDecision.pending &&
+        leave.decision != LeaveDecision.approved) {
+      return false;
+    }
+    return _dateOnly(leave.start).isAfter(_dateOnly(DateTime.now()));
+  }
+
+  /// Takes a leave back from its day: a note for the manager, then the
+  /// request; the day is plain again once the server agrees, and a toast says
+  /// so (nodes 2112:69787 and 2112:69226).
+  Future<void> _cancelLeave(AttendanceDayView day) async {
+    final leave = day.leave;
+    if (leave == null) return;
+    final done = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => _CancelLeaveSheet(
+        day: _dateOnly(day.date),
+        onSubmit: (note) => widget.bloc.add(CancelLeave(leave.id, note: note)),
+      ),
+    );
+    if (!mounted || done != true) return;
+    showAppToast(context, 'Leave successfully canceled');
   }
 
   /// Whether this day is one a leave request can still be made for.
@@ -3154,10 +3197,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       return 'Your missed punched request is currently under review by your '
           'manager for this day.';
     }
-    if (day.kind == AttendanceKind.leavePending) {
-      return 'Your leave request is currently under review by your manager '
-          'for this day.';
-    }
+    // A leave still with the manager is not a notice: the day wears its
+    // "Leave Applied" tag and, while the leave is yet to begin, offers to
+    // take it back (node 2112:69787).
     return null;
   }
 
@@ -4910,6 +4952,149 @@ const _correctionDayTypes = <_CorrectionDayType>[
 /// What the correction sheet asks the caller to do once it closes.
 enum _CorrectionOutcome { submitted, openLeaveForm }
 
+/// Takes a leave back: the day, a note for the manager, one button. Pops
+/// `true` once the server has cancelled it (node 2112:69976).
+class _CancelLeaveSheet extends StatefulWidget {
+  const _CancelLeaveSheet({required this.day, required this.onSubmit});
+
+  final DateTime day;
+  final Future<bool> Function(String note) onSubmit;
+
+  @override
+  State<_CancelLeaveSheet> createState() => _CancelLeaveSheetState();
+}
+
+class _CancelLeaveSheetState extends State<_CancelLeaveSheet> {
+  final _note = TextEditingController();
+  var _busy = false;
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final day = widget.day;
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        24 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _SheetHandle(),
+            const SizedBox(height: 12),
+            const Text(
+              'Cancel Leave',
+              style: TextStyle(
+                color: Color(0xFF2A2A2A),
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              '${_fullWeekdayNames[day.weekday - 1]}, ${day.day} ${_monthName(day.month)}',
+              style: const TextStyle(color: Color(0xFF6A6A6A), fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            const Row(
+              children: [
+                Text(
+                  'Notes ',
+                  style: TextStyle(
+                    color: Color(0xFF2A2A2A),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  '(optional)',
+                  style: TextStyle(color: Color(0xFF929292), fontSize: 12),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _note,
+              minLines: 3,
+              maxLines: 3,
+              maxLength: 500,
+              buildCounter:
+                  (
+                    _, {
+                    required currentLength,
+                    required isFocused,
+                    maxLength,
+                  }) => null,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF2A2A2A)),
+              decoration: InputDecoration(
+                hintText: 'Add a note for your manager...',
+                hintStyle: const TextStyle(
+                  color: Color(0xFF929292),
+                  fontSize: 13,
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 15,
+                  vertical: 13,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(
+                    color: Color(0xFF0571A6),
+                    width: 1.5,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 26),
+            _SheetPrimaryButton(
+              label: 'Cancel Leave',
+              color: const Color(0xFF0571A6),
+              onPressed: _busy
+                  ? null
+                  : () async {
+                      // Captured before the await: the sheet may be gone by
+                      // the time the request comes back.
+                      final navigator = Navigator.of(context);
+                      setState(() => _busy = true);
+                      final ok = await widget.onSubmit(_note.text.trim());
+                      if (!mounted) return;
+                      if (ok) {
+                        navigator.pop(true);
+                      } else {
+                        setState(() => _busy = false);
+                      }
+                    },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _CorrectionSheet extends StatefulWidget {
   const _CorrectionSheet({
     required this.day,
@@ -5259,10 +5444,18 @@ class _CorrectionDayTypeRow extends StatelessWidget {
 }
 
 class AttendanceDayAction {
-  const AttendanceDayAction({required this.label, required this.onTap});
+  const AttendanceDayAction({
+    required this.label,
+    required this.onTap,
+    this.link = false,
+  });
 
   final String label;
   final VoidCallback onTap;
+
+  /// Drawn as a small text link under the punch card rather than a button:
+  /// taking a leave back is offered beside the day, never urged.
+  final bool link;
 }
 
 class AttendanceDayDetail extends StatelessWidget {
@@ -5409,7 +5602,7 @@ class AttendanceDayDetail extends StatelessWidget {
             ),
           ],
           for (final action in actions) ...[
-            const SizedBox(height: 16),
+            SizedBox(height: action.link ? 6 : 16),
             _AttendanceDayActionButton(action: action),
           ],
           if (actions.isEmpty && blockedReason != null) ...[
@@ -5449,6 +5642,26 @@ class _AttendanceDayActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (action.link) {
+      // Node 2112:69967 — a small blue text link, left under the punch card.
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF4A74FF),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            minimumSize: const Size(0, 28),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            textStyle: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          onPressed: action.onTap,
+          child: Text(action.label),
+        ),
+      );
+    }
     // Node 2112:69779 — a hairline outline, not a filled button: the action
     // is offered, not urged.
     return SizedBox(
@@ -6272,6 +6485,7 @@ class _LeaveRequestCard extends StatelessWidget {
       LeaveDecision.approved => ('Approved', const Color(0xFF16A34A)),
       LeaveDecision.pending => ('Pending', const Color(0xFFFF383C)),
       LeaveDecision.declined => ('Declined', const Color(0xFF6B7280)),
+      LeaveDecision.cancelled => ('Cancelled', const Color(0xFF6B7280)),
     };
     final range = _sameDay(request.start, request.end)
         ? _short(request.start)
@@ -8660,6 +8874,7 @@ String _weekday(int weekday) =>
 String _decision(LeaveDecision decision) => switch (decision) {
   LeaveDecision.approved => 'Approved',
   LeaveDecision.declined => 'Declined',
+  LeaveDecision.cancelled => 'Cancelled',
   LeaveDecision.pending => 'Pending',
 };
 

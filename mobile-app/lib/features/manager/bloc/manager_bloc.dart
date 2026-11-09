@@ -81,6 +81,7 @@ class ManagerState {
         ? previous!.status
         : member.status;
   }
+
   final FeedbackFilter feedbackFilter;
   final String searchQuery;
   final bool showGiven;
@@ -252,6 +253,14 @@ class DecideLeave extends ManagerEvent {
   final String leaveId;
   final LeaveDecision decision;
   final String managerNote;
+}
+
+/// Takes back a leave of your own before it begins, with a note for the
+/// manager.
+class CancelLeave extends ManagerEvent {
+  const CancelLeave(this.leaveId, {this.note = ''});
+  final String leaveId;
+  final String note;
 }
 
 class DecideOvertime extends ManagerEvent {
@@ -453,6 +462,7 @@ class ManagerBloc {
     SubmitAttendanceRegularization() => 'attendance:apply',
     DecideLeave(:final leaveId, :final decision) =>
       'leave:decide:$leaveId:${decision.name}',
+    CancelLeave(:final leaveId) => 'leave:cancel:$leaveId',
     DecideOvertime(:final overtimeId, :final decision) =>
       'overtime:decide:$overtimeId:${decision.name}',
     DecideAttendanceRegularization(:final id, :final decision) =>
@@ -550,7 +560,9 @@ class ManagerBloc {
     _requestsChangedSub = socket.changes.listen(
       (kind) => refreshRequestsNow(kind.isEmpty ? null : kind),
     );
-    _requestsReconnectSub = socket.reconnects.listen((_) => refreshRequestsNow());
+    _requestsReconnectSub = socket.reconnects.listen(
+      (_) => refreshRequestsNow(),
+    );
     socket.connect();
     _requestsSocket = socket;
   }
@@ -572,12 +584,14 @@ class ManagerBloc {
               ? await _service.fetchDashboardFromCache()
               : null;
           if (remembered != null) {
-            _emit(_state.copyWith(
-              status: ManagerLoadStatus.ready,
-              dashboard: remembered,
-              fromCache: true,
-              error: null,
-            ));
+            _emit(
+              _state.copyWith(
+                status: ManagerLoadStatus.ready,
+                dashboard: remembered,
+                fromCache: true,
+                error: null,
+              ),
+            );
           } else if (_state.dashboard == null) {
             _emit(_state.copyWith(status: ManagerLoadStatus.loading));
           }
@@ -590,12 +604,14 @@ class ManagerBloc {
               previous: _state.dashboard,
               attendanceMonth: month,
               keep: _sameMonth(month, DateTime.now()),
-              onCore: (core) => _emit(_state.copyWith(
-                status: ManagerLoadStatus.ready,
-                dashboard: _keepCalendarMonth(core, month),
-                fromCache: false,
-                error: null,
-              )),
+              onCore: (core) => _emit(
+                _state.copyWith(
+                  status: ManagerLoadStatus.ready,
+                  dashboard: _keepCalendarMonth(core, month),
+                  fromCache: false,
+                  error: null,
+                ),
+              ),
             );
             _emit(
               _state.copyWith(
@@ -732,7 +748,8 @@ class ManagerBloc {
           if (member == null) return false;
           // The previous cycle, when asked for and still open: its own
           // parameters and whatever was already written for it.
-          final previous = period != null && member.previousCycle?.period == period
+          final previous =
+              period != null && member.previousCycle?.period == period
               ? member.previousCycle
               : null;
           _emit(
@@ -831,6 +848,26 @@ class ManagerBloc {
               message: decision == LeaveDecision.approved
                   ? 'Leave approved'
                   : 'Leave declined',
+            ),
+          );
+        case CancelLeave(:final leaveId, :final note):
+          final cancelled = await _service.cancelLeave(leaveId, note);
+          final data = _state.dashboard;
+          if (data == null) return false;
+          // An approved leave gives its days back, so the balance is re-read
+          // as after a decision; a failure there does not undo the cancel.
+          final refreshedBalance = await _service
+              .fetchLeaveBalance()
+              .catchError((_) => data.leaveBalance);
+          _emit(
+            _state.copyWith(
+              dashboard: data.copyWith(
+                myLeaves: [
+                  for (final leave in data.myLeaves)
+                    leave.id == leaveId ? cancelled : leave,
+                ],
+                leaveBalance: refreshedBalance,
+              ),
             ),
           );
         case DecideOvertime(
@@ -999,7 +1036,8 @@ class ManagerBloc {
         ? selected.score
         : params.fold<double>(0, (sum, item) => sum + item.score) /
               params.length;
-    final previousCycle = _state.recordPeriod != null &&
+    final previousCycle =
+        _state.recordPeriod != null &&
             selected.previousCycle?.period == _state.recordPeriod
         ? selected.previousCycle
         : null;
@@ -1119,7 +1157,8 @@ class ManagerBloc {
     _backgroundSince = null;
     if (!_pollingWanted || _controller.isClosed) return;
     _startLeavePolling();
-    if (since != null && DateTime.now().difference(since) >= const Duration(seconds: 60)) {
+    if (since != null &&
+        DateTime.now().difference(since) >= const Duration(seconds: 60)) {
       unawaited(_refreshLeavesSilently());
     }
   }
@@ -1168,12 +1207,16 @@ class ManagerBloc {
     try {
       final readPolicy =
           _policyReadAt == null ||
-          DateTime.now().difference(_policyReadAt!) > const Duration(minutes: 10);
+          DateTime.now().difference(_policyReadAt!) >
+              const Duration(minutes: 10);
       // Feedback rides the same throttle: a review stays editable until the
       // cycle closes, so an employee holding the page open should see a
       // revision without signing out.
       final feedbackFuture = readPolicy
-          ? _service.fetchFeedbackSnapshot().then<FeedbackSnapshot?>((v) => v).catchError((_) => null)
+          ? _service
+                .fetchFeedbackSnapshot()
+                .then<FeedbackSnapshot?>((v) => v)
+                .catchError((_) => null)
           : Future<FeedbackSnapshot?>.value(null);
       // Kept separate from the leave calls: an older server without this
       // route must not stop the leaves refreshing too.
@@ -1199,7 +1242,9 @@ class ManagerBloc {
             shift: shift,
             growthHistory: feedback?.growthHistory,
             cycleEndsOn: feedback?.cycleEndsOn,
-            team: feedback == null ? null : _mergeFeedback(latest.team, feedback),
+            team: feedback == null
+                ? null
+                : _mergeFeedback(latest.team, feedback),
           ),
         ),
       );
