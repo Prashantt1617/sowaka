@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import {
+  fbpBillFileHandler, getFbpHandler, getFbpHeadHandler, uploadFbpBillHandler,
+} from '../controllers/employeePayroll.controller';
+import {
   getDeclarationHandler, getProofsHandler, getSplitHandler, missingPunchesHandler, payrollHomeHandler, proofFileHandler,
   requirePayrollApp, reviewSplitHandler, saveDeclarationHandler, saveSplitHandler, uploadProofHandler,
 } from '../controllers/employeePayroll.controller';
@@ -24,3 +27,9 @@ employeePayrollRouter.put('/tax-declaration', saveDeclarationHandler);
 employeePayrollRouter.get('/investment-proofs', getProofsHandler);
 employeePayrollRouter.post('/investment-proofs/:item', uploadInvestmentProofFile, uploadProofHandler);
 employeePayrollRouter.get('/investment-proofs/:item/file', proofFileHandler);
+// FBP: the month's split, each head's bills this FY, and a month's bill
+// (multipart: the file as `proof`, PDF/JPEG/PNG up to 5 MB, and `period`, `amountPaise`).
+employeePayrollRouter.get('/me/fbp', getFbpHandler);
+employeePayrollRouter.get('/me/fbp/bills/:billId/file', fbpBillFileHandler);
+employeePayrollRouter.get('/me/fbp/:code', getFbpHeadHandler);
+employeePayrollRouter.post('/me/fbp/:code/bills', uploadInvestmentProofFile, uploadFbpBillHandler);

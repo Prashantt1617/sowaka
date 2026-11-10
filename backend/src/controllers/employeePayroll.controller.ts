@@ -6,6 +6,7 @@ import { EmployeePayrollError, PAYROLL_APP_OFF, askHr, payrollAppEnabled } from 
 import {
   decideProofForHr, listProofsForHr, myDeclaration, myProofFile, myProofs, proofFileForHr, saveMyDeclaration, uploadMyProof,
 } from '../services/employeePayroll.declaration';
+import { myFbp, myFbpBillFile, myFbpHead, uploadMyFbpBill } from '../services/employeePayroll.fbp';
 
 const callerId = (req: Request) => String(req.auth?.userId ?? '');
 const body = (req: Request) => (req.body ?? {}) as Record<string, unknown>;
@@ -48,6 +49,12 @@ export const uploadProofHandler = mine(async (req) => ({
   item: await uploadMyProof(callerId(req), String(req.params.item ?? ''), req.query.fy, { amountPaise: body(req).amountPaise, file: req.file }),
 }));
 export const proofFileHandler = mine(async (req) => ({ url: await myProofFile(callerId(req), String(req.params.item ?? ''), req.query.fy) }));
+export const getFbpHandler = mine(async (req) => ({ fbp: await myFbp(callerId(req)) }));
+export const getFbpHeadHandler = mine(async (req) => ({ head: await myFbpHead(callerId(req), String(req.params.code ?? '')) }));
+export const uploadFbpBillHandler = mine(async (req) => ({
+  head: await uploadMyFbpBill(callerId(req), String(req.params.code ?? ''), { period: body(req).period, amountPaise: body(req).amountPaise, file: req.file }),
+}));
+export const fbpBillFileHandler = mine(async (req) => ({ url: await myFbpBillFile(callerId(req), String(req.params.billId ?? '')) }));
 
 // —— HR ——
 export const hrListProofsHandler = handle(async (req) =>
