@@ -905,7 +905,7 @@ export type EmployeeSplitDTO = {
   poolPaise: number | null;
   /** HR has not set something the split needs (the pool, the cutoff day, the bills date, the − / + step). */
   notConfigured?: boolean;
-  missing?: ('flexiblePoolPaise' | 'splitCutoffDay' | 'billsDue' | 'splitStepPaise')[];
+  missing?: ('flexiblePoolPaise' | 'splitCutoffDay' | 'splitDue' | 'billsDue' | 'splitStepPaise')[];
   /** The month "in force now" means; null for a future FY. */
   asOf: string | null;
   /** What applies with no split: the structure's own amounts. */
@@ -913,8 +913,11 @@ export type EmployeeSplitDTO = {
   current: SplitVersionDTO | null;
   /** Oldest first. */
   versions: SplitVersionDTO[];
-  /** Without a cutoff day: open false and the months null. */
-  window: { open: boolean; effectiveFrom: string | null; effectiveTo: string | null; closesOn: string | null; reason: string | null };
+  /**
+   * Without a cutoff day or close date: open false, reason "payroll_not_configured". Past the FY's close date: open false,
+   * reason "locked_for_fy", closesOn the day it closed. While open, closesOn is the FY's close date.
+   */
+  window: { open: boolean; effectiveFrom: string | null; effectiveTo: string | null; closesOn: string | null; reason: 'locked_for_fy' | 'payroll_not_configured' | null; missing?: string[] };
   billsDueOn: string | null;
 };
 
@@ -935,16 +938,30 @@ export type EmployeeAppSettings = {
   billsDue: string | null;
   /** Paise, whole rupees: how much each − / + on the app's My split moves a head. Not a deadline: without it the split says not set up. */
   splitStepPaise: number | null;
+  /** "MM-DD", any day of the FY: the FY's one window to change the split closes on it, then the split is locked for the FY. Not a deadline: without it the split says not set up. */
+  splitDue: string | null;
+  /** 1 to 28: each month's FBP bills are due by this day of the month. Without it the app shows no monthly date. */
+  fbpBillsDueDay: number | null;
 };
-export type EmployeeAppDeadline = Exclude<keyof EmployeeAppSettings, 'appEnabled' | 'splitStepPaise'>;
+export type EmployeeAppDeadline = Exclude<keyof EmployeeAppSettings, 'appEnabled' | 'splitStepPaise' | 'splitDue' | 'fbpBillsDueDay'>;
 export type EmployeeAppSettingsResponse = {
   fy: string;
   settings: EmployeeAppSettings;
   /** Deadlines still to set; Payroll can be switched on only when empty. */
   missing: EmployeeAppDeadline[];
   ready: boolean;
-  /** The deadlines as days of `fy` (and this month's split cutoff); null where not set. */
-  dates: { splitClosesOn: string | null; declarationDueOn: string | null; proofsDueOn: string | null; billsDueOn: string | null };
+  /** The deadlines as days of `fy`, this month's split cutoff and FBP bills due date; null where not set. */
+  dates: {
+    /** The FY's split window closes on it (from splitDue). */
+    splitClosesOn: string | null;
+    /** This month's split cutoff (from splitCutoffDay). */
+    splitCutoffOn?: string | null;
+    /** This month's FBP bills due date (from fbpBillsDueDay). */
+    fbpBillsDueOn?: string | null;
+    declarationDueOn: string | null;
+    proofsDueOn: string | null;
+    billsDueOn: string | null;
+  };
   updatedAt: string | null;
   updatedBy: string | null;
 };

@@ -56,7 +56,8 @@ the values below are the ones the one-time seed writes, which HR can change):
 
 | What | Deadline |
 | --- | --- |
-| Change the flexible split for a month | until the `splitCutoffDay` of that month (seed: the **15th**) and only while that month's run is not locked |
+| Change the flexible split | one window a FY, until `splitDue` of the FY (e.g. **15 Nov**, `"11-15"`; not seeded, not required to switch Payroll on: without it the split is not set up, `missing: ["splitDue"]`). After it the split is **locked for the FY** (`locked_for_fy`), a first split too. While open, a change applies from this month until its `splitCutoffDay` (seed: the **15th**), else from next month, and never to a month whose run is locked |
+| FBP bills for a month | due by `fbpBillsDueDay` of that month (e.g. the **20th**; not seeded, optional: without it no monthly date is given, `monthlyDueOn: null`); `billsDue` stays the last day any bill of the FY can be sent |
 | Fix a missing punch / absent day | **per day**: the day + the correction window of the person's shift policy (`correction.backdateDays`, e.g. 7 days), and only while that month's run is not locked. Not a company setting: it comes from the shift policy, see §2 |
 | Choose the regime and declare investments | `declarationDue` of the FY (seed: **30 Nov**, `"11-30"`) |
 | Upload investment proofs | `proofsDue` of the FY (seed: **31 Jan**, `"01-31"`) |
@@ -109,7 +110,7 @@ a pay period that has not started is refused, 400).
   "todo": [                            // only what needs action now, in this order; empty when nothing does
     { "kind": "missing_punches", "count": 4, "dueOn": "2026-10-20", "period": "2026-10" },   // count: fixable days only; dueOn: the earliest fixBy among them
     { "kind": "flexible_split", "dueOn": "2026-11-15", "effectiveFrom": "2026-11", "submitted": false },
-    { "kind": "fbp_bills", "rejected": 1, "inReview": 3, "dueOn": "2027-03-31" },
+    { "kind": "fbp_bills", "pending": 3, "notUploaded": 3, "rejected": 1, "inReview": 3, "dueOn": "2026-10-20", "billsDueOn": "2027-03-31" },   // bills to upload (pending) or re-upload (rejected) this FY, while bills are open; dueOn: this month's due date (fbpBillsDueDay), null when not set
     { "kind": "tax_regime", "regime": "new", "chosen": false, "dueOn": "2026-11-30" },
     { "kind": "investment_proofs", "notUploaded": 3, "rejected": 1, "dueOn": "2027-01-31" }
   ],
@@ -274,7 +275,10 @@ replaces any split before it from that month on.
   "split": {
     "available": true,                 // false: no flexible components; everything below is empty
     "notConfigured": false,            // true: HR has not set something it needs; review/save answer 409
-    "missing": [],                     // of "flexiblePoolPaise" | "splitCutoffDay" | "billsDue" | "splitStepPaise"
+    "missing": [],                     // of "flexiblePoolPaise" | "splitCutoffDay" | "splitDue" | "billsDue" | "splitStepPaise"
+    "editable": true,                  // it can be changed now: window open and nothing missing
+    "lockedReason": null,              // "locked_for_fy" past the FY's close date (splitDue): a change goes through a ticket
+    "closesOn": "2026-11-15",          // while editable: the last day it can be changed (and changed again) this FY; else null
     "poolPaise": 600000,               // null when the template has no flexiblePoolPaise
     "assignedPaise": 450000,
     "unassignedPaise": 150000,
@@ -290,12 +294,14 @@ replaces any split before it from that month on.
       }
     ],
     "current": { "effectiveFrom": "2026-04", "submittedAt": "2026-04-10T09:12:00.000Z", "billsAcknowledgedAt": "2026-04-10T09:12:00.000Z" },  // billsAcknowledgedAt: when the bills tick was given; null on splits saved before it was kept;  // the split in force for window.effectiveFrom; null: the template's amounts
-    "window": {                        // without a splitCutoffDay: { "open": false, "effectiveFrom": null, "effectiveTo": null, "closesOn": null, "reason": "payroll_not_configured" }
-      "open": true,                    // always true today: some month is always open (kept for a future hard close)
+    "window": {                        // without a splitCutoffDay or splitDue: { "open": false, "effectiveFrom": null, "effectiveTo": null, "closesOn": null, "reason": "payroll_not_configured", "missing": [...] }
+                                       // past the close date: { "open": false, "effectiveFrom": null, "effectiveTo": null, "closesOn": "2026-11-15", "reason": "locked_for_fy", "missing": [] }
+      "open": true,
       "effectiveFrom": "2026-11",      // the first month a change made now applies to
       "effectiveTo": "2027-03",        // the FY's last month
-      "closesOn": "2026-11-15",        // last day to change it for effectiveFrom
-      "reason": null
+      "closesOn": "2026-11-15",        // the FY's close date (splitDue): the last day to change it this FY
+      "reason": null,
+      "missing": []
     },
     "billsDueOn": "2027-03-31"
   }
@@ -344,9 +350,15 @@ Response: the same `split` object as `GET /payroll/split`, now with the new
 amounts and `current.effectiveFrom` = `window.effectiveFrom`. Saving again
 for the same month replaces it.
 
-**How the window works.** A change made today applies from this month while
-today is on or before the cutoff day (15th) and this month's run is not
-locked; otherwise from the next month whose run is not locked. A month whose
+**How the window works.** Each FY has one window, closing on the company's
+`splitDue` for that FY (the FY of the month a change made now would apply
+from). Until then a change can be made, and made again. A change made today
+applies from this month while today is on or before the cutoff day (15th)
+and this month's run is not locked; otherwise from the next month whose run
+is not locked. After the close date the split is locked for the rest of the
+FY: GET says `editable: false, lockedReason: "locked_for_fy"`, review and
+save answer `409` `split_locked`. There is no exception for a first split:
+someone who joins after the close date is paid their structure's amounts. A month whose
 run is locked never changes. The payroll run pays each month the split in
 force for that month (the latest one starting on or before it, same FY), on
 top of the structure's own values; months before it keep what they had.
@@ -358,8 +370,10 @@ Errors (both review and save):
   true (save only).
 - `404` no salary structure assigned.
 - `409` no flexible components on the template; (save) `effectiveFrom` no
-  longer matches the window; `payroll_not_configured` (pool, cutoff day,
-  bills date or split step not set; `details.missing` names them).
+  longer matches the window; `split_locked` past the FY's close date
+  ("Your split is locked for this FY. To change it, raise a ticket.");
+  `payroll_not_configured` (pool, cutoff day, close date, bills date or
+  split step not set; `details.missing` names them).
 
 ---
 
@@ -728,12 +742,16 @@ Payroll access only (`403` otherwise); the viewer's own company. Query: `fy`
     "declarationDue": "11-30",         // MM-DD, in the FY's first calendar year (April to December)
     "proofsDue": "01-31",              // MM-DD, in the FY's second calendar year (January to March)
     "billsDue": null,                  // MM-DD, in the FY's second calendar year (January to March)
-    "splitStepPaise": 50000            // paise, whole rupees: each − / + on My split moves a head this much. Not a deadline (not in missing, does not hold Payroll off); while null the split says not set up
+    "splitStepPaise": 50000,           // paise, whole rupees: each − / + on My split moves a head this much. Not a deadline (not in missing, does not hold Payroll off); while null the split says not set up
+    "splitDue": "11-15",               // MM-DD, any day of the FY (April–December: its first year; January–March: its second): the FY's one split window closes on it, then the split is locked for the FY. Not a deadline; while null the split says not set up
+    "fbpBillsDueDay": 20               // 1 to 28: each month's FBP bills are due by this day of the month. Not a deadline; while null no monthly date is shown
   },
   "missing": ["billsDue"],             // deadlines still to set; Payroll can be switched on only when empty
   "ready": false,                      // missing is empty
-  "dates": {                           // the deadlines as days of `fy` (and this month's split cutoff); null where not set
-    "splitClosesOn": "2026-10-15",
+  "dates": {                           // the deadlines as days of `fy`, this month's split cutoff and FBP bills due date; null where not set
+    "splitClosesOn": "2026-11-15",     // from splitDue
+    "splitCutoffOn": "2026-10-15",     // this month's, from splitCutoffDay
+    "fbpBillsDueOn": "2026-10-20",     // this month's, from fbpBillsDueDay
     "declarationDueOn": "2026-11-30",
     "proofsDueOn": "2027-01-31",
     "billsDueOn": null
@@ -745,7 +763,7 @@ Payroll access only (`403` otherwise); the viewer's own company. Query: `fy`
 
 ### `PUT /admin/payroll/employee-app-settings`
 
-Body: any of the six fields; a field left out stays as it is, `null`
+Body: any of the eight fields; a field left out stays as it is, `null`
 clears it (it is then missing: there is no default to fall back to). Query: `fy` (optional; only used to check a full date).
 Response: the same body as the GET.
 
@@ -758,7 +776,8 @@ Response: the same body as the GET.
   deadlines, message e.g. "Set proofsDue, billsDue before switching Payroll on
   in the app") until every deadline is set, counting the ones in the same
   request. Clearing a deadline while it is on is refused the same way.
-- `splitCutoffDay`: a whole day of the month, **1 to 28**.
+- `splitCutoffDay`, `fbpBillsDueDay`: a whole day of the month, **1 to 28**.
+- `splitDue`: `"MM-DD"` or a full date within `fy` (1 April to 31 March).
 - `splitStepPaise`: paise in whole rupees, **100 to 1000000** (₹1 to ₹10,000).
 - `declarationDue`, `proofsDue`, `billsDue`: `"MM-DD"`, or a full `"YYYY-MM-DD"`
   date (only its month and day are kept: the deadline repeats every FY). They

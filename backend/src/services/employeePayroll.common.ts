@@ -89,6 +89,31 @@ export async function splitStepOf(org: string): Promise<number | null> {
   return splitStepFrom(company?.payrollEmployee);
 }
 
+/**
+ * The FY's split window close date as HR set it ("MM-DD"); null when not set
+ * (or unreadable): the split is then not set up (`splitDue` missing).
+ */
+export function splitDueFrom(s: EmployeePayrollSettings | undefined | null): string | null {
+  const v = s?.splitDue;
+  return typeof v === 'string' && MM_DD.test(v) ? v : null;
+}
+
+/** The split window's close date as a day of `fy`: April–December in its first year, January–March in its second. */
+export const splitClosesOnFor = (fy: string, splitDue: string | null) =>
+  splitDue === null ? null : `${Number(fy.slice(0, 4)) + (Number(splitDue.slice(0, 2)) >= 4 ? 0 : 1)}-${splitDue}`;
+
+/** The day of the month each month's FBP bills are due by, as HR set it (1 to 28); null when not set. */
+export function fbpBillsDueDayFrom(s: EmployeePayrollSettings | undefined | null): number | null {
+  const v = s?.fbpBillsDueDay;
+  return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 28 ? v : null;
+}
+
+/** The company's app payroll settings as stored (Company.payrollEmployee). */
+export async function payrollEmployeeOf(org: string): Promise<EmployeePayrollSettings | undefined> {
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, payrollEmployee: 1 } });
+  return company?.payrollEmployee;
+}
+
 export async function deadlinesOf(org: string): Promise<PayrollDeadlines> {
   const company = await companies().findOne({ id: org }, { projection: { _id: 0, payrollEmployee: 1 } });
   return deadlinesFrom(company?.payrollEmployee);

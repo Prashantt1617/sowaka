@@ -26,6 +26,7 @@ import { tabsForRequest } from '../models/dashboard-tabs';
 import { PayHead } from '../models/payHead.model';
 import { getCurrentAuthUser } from '../services/auth.service';
 import { myDeclaration, myProofs, saveMyDeclaration, uploadMyProof } from '../services/employeePayroll.declaration';
+import { myFbp } from '../services/employeePayroll.fbp';
 import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
 import { employeeAppSettingsForHr, seedEmployeePayrollSettings, setEmployeeAppSettingsForHr } from '../services/employeePayroll.settings';
 import { mySplit, reviewSplit, saveSplit, splitForHr, splitWindow } from '../services/employeePayroll.split';
@@ -150,6 +151,11 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('settings: a declaration date in the wrong year of the FY (400)', await bad({ declarationDue: '2027-12-15' }));
   check('settings: a proofs date in the FY\'s first year (400)', await bad({ proofsDue: '2026-02-15' }));
   check('settings: not a date (400)', await bad({ proofsDue: 'soon' }));
+  check('settings: FBP bills due day 0, 29, 1.5 or not a number (400)',
+    (await bad({ fbpBillsDueDay: 0 })) && (await bad({ fbpBillsDueDay: 29 })) && (await bad({ fbpBillsDueDay: 1.5 })) && (await bad({ fbpBillsDueDay: 'soon' })));
+  check('settings: split close date 30 Feb is no date (400)', await bad({ splitDue: '02-30' }));
+  check('settings: split close date in the wrong year of the FY (400): Nov 2027, Jan 2026',
+    (await bad({ splitDue: '2027-11-15' })) && (await bad({ splitDue: '2026-01-15' })));
   const early = await refusal(() => setEmployeeAppSettingsForHr('hr', FY, { appEnabled: true, splitCutoffDay: 20 }, oct20));
   check('settings: switching Payroll on before every deadline is set is refused (409), naming them',
     early?.status === 409 && early.details?.reason === 'payroll_not_configured' && (early.details?.missing as string[]).join() === 'declarationDue,proofsDue,billsDue'
@@ -166,9 +172,9 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('…and cannot be saved (409 payroll_not_configured)', dSave?.status === 409 && dSave.details?.reason === 'payroll_not_configured', dSave);
   const spNo = await mySplit('asha', oct20);
   check('split without a cutoff day or bills date: notConfigured, the window closed with no dates',
-    spNo.notConfigured && spNo.missing.join() === 'splitCutoffDay,billsDue' && !spNo.window.open && spNo.window.effectiveFrom === null && spNo.window.reason === 'payroll_not_configured' && spNo.billsDueOn === null, spNo);
+    spNo.notConfigured && spNo.missing.join() === 'splitCutoffDay,splitDue,billsDue' && !spNo.window.open && spNo.window.effectiveFrom === null && spNo.window.reason === 'payroll_not_configured' && spNo.billsDueOn === null, spNo);
   const rvNo = await refusal(() => reviewSplit('asha', { amounts: { FUEL: R(2000) } }, oct20));
-  check('…and cannot be reviewed (409, naming what is missing)', rvNo?.status === 409 && (rvNo.details?.missing as string[]).join() === 'splitCutoffDay,billsDue', rvNo);
+  check('…and cannot be reviewed (409, naming what is missing)', rvNo?.status === 409 && (rvNo.details?.missing as string[]).join() === 'splitCutoffDay,splitDue,billsDue', rvNo);
   await setEmployeeAppSettingsForHr('hr', FY, { declarationDue: '11-30' }, oct20);
   await saveMyDeclaration('asha', FY, { regime: 'old', items: { ppf: R(10_000) } }, oct20);
   const prNo = await myProofs('asha', FY, oct20);
@@ -212,7 +218,16 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     && afterSeed.settings.appEnabled === false, afterSeed);
   check('seed again: nothing left to write', Object.keys((await seedEmployeePayrollSettings(ORG, true, oct20)).writes).length === 0);
 
-  const s1 = await setEmployeeAppSettingsForHr('hr', FY, { appEnabled: true, splitCutoffDay: 20, proofsDue: '2027-02-15', billsDue: '03-15' }, oct20);
+  // The split's close date and the FBP bills due day are not deadlines: Payroll switched on without them.
+  check('settings: the split close date and the FBP bills due day read as not set, and are not among the deadlines to set',
+    afterSeed.settings.splitDue === null && afterSeed.settings.fbpBillsDueDay === null && afterSeed.dates.splitClosesOn === null && afterSeed.dates.fbpBillsDueOn === null
+    && afterSeed.missing.length === 0, afterSeed);
+  const s1 = await setEmployeeAppSettingsForHr('hr', FY, { appEnabled: true, splitCutoffDay: 20, proofsDue: '2027-02-15', billsDue: '03-15', splitDue: '2026-11-15', fbpBillsDueDay: 20 }, oct20);
+  check('settings: the split window closes 15 Nov 2026 (kept as "11-15"); FBP bills due by the 20th, this month 20 Oct; this month\'s cutoff 20 Oct',
+    s1.settings.splitDue === '11-15' && s1.dates.splitClosesOn === '2026-11-15' && s1.settings.fbpBillsDueDay === 20 && s1.dates.fbpBillsDueOn === '2026-10-20'
+    && s1.dates.splitCutoffOn === '2026-10-20', s1);
+  check('settings: a January close date falls in the FY\'s second year', (await employeeAppSettingsForHr('hr', FY, oct20)) && (await setEmployeeAppSettingsForHr('hr', FY, { splitDue: '2027-01-10' }, oct20)).dates.splitClosesOn === '2027-01-10');
+  await setEmployeeAppSettingsForHr('hr', FY, { splitDue: '11-15' }, oct20);
   check('settings: every deadline set, Payroll switched on; a full date kept as its month and day', s1.settings.appEnabled && s1.settings.splitCutoffDay === 20 && s1.settings.declarationDue === '12-15'
     && s1.settings.proofsDue === '02-15' && s1.settings.billsDue === '03-15' && s1.updatedBy === 'hr' && s1.ready && s1.missing.length === 0, s1);
   check('settings: stored on the company', (await companies().findOne({ id: ORG }))?.payrollEmployee?.declarationDue === '12-15');
@@ -223,7 +238,13 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('another company is still off', (await gate('otherco'))?.statusCode === 403 && (await employeeAppSettingsForHr('ohr', FY, oct20)).settings.appEnabled === false);
   check('the declaration reads the new due date', (await myDeclaration('asha', FY, oct20)).dueOn === '2026-12-15');
   const w20 = await splitWindow(ORG, oct20);
-  check('the split cutoff of 20: a change on 20 Oct still applies from October, until 20 Oct', w20.effectiveFrom === '2026-10' && w20.closesOn === '2026-10-20', w20);
+  check('the split cutoff of 20: a change on 20 Oct still applies from October; the window closes 15 Nov', w20.effectiveFrom === '2026-10' && w20.closesOn === '2026-11-15', w20);
+  check('the FBP page reads the monthly due day: October\'s bills by 20 Oct', (await myFbp('asha', oct20)).monthlyDueOn === '2026-10-20');
+  const cleared = await setEmployeeAppSettingsForHr('hr', FY, { fbpBillsDueDay: null, splitDue: null }, oct20);
+  check('settings: null clears the close date and the due day while Payroll is on (not deadlines); the split then says splitDue missing',
+    cleared.settings.appEnabled && cleared.settings.splitDue === null && cleared.settings.fbpBillsDueDay === null && (await mySplit('asha', oct20)).missing.includes('splitDue')
+    && (await myFbp('asha', oct20)).monthlyDueOn === null, cleared.settings);
+  await setEmployeeAppSettingsForHr('hr', FY, { fbpBillsDueDay: 20, splitDue: '11-15' }, oct20);
   check('the split shows the new bills date', (await mySplit('asha', oct20)).billsDueOn === '2027-03-15');
   const clear = await refusal(() => setEmployeeAppSettingsForHr('hr', FY, { billsDue: null }, oct20));
   check('settings: clearing a deadline while Payroll is on is refused (409)', clear?.status === 409 && (clear.details?.missing as string[]).join() === 'billsDue', clear);
