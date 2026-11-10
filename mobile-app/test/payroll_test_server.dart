@@ -67,15 +67,28 @@ class FakePayrollServer {
     'INTERNET': 100000,
     'TELEPHONE': 150000,
     'BOOKS': 50000,
+    'LTA': 200000,
   };
   static const _names = {
     'FUEL': 'Fuel & vehicle',
     'INTERNET': 'Internet',
     'TELEPHONE': 'Telephone',
     'BOOKS': 'Books & periodicals',
+    'LTA': 'Leave travel (LTA)',
   };
   static const pool = 600000;
   bool splitOpen = true;
+
+  /// The − / + step HR set (Payroll in the app); 0 sends none, as a company
+  /// that has not set it: the split then says it is not set up.
+  int splitStepPaise = 50000;
+
+  /// Review's tax saving; null: the FY's tax rules are not set up.
+  int? reviewSavingPaise = 94000;
+
+  /// The fifth head of Figma 4473:68656, Leave travel (LTA) at ₹0 of
+  /// ₹2,000; off by default so the totals other tests read stay the same.
+  void addLeaveTravel() => split['LTA'] = 0;
 
   /// Overtime on the payslips and on Home's salary; 0 leaves it off Home.
   int overtimePaise = 0;
@@ -161,6 +174,15 @@ class FakePayrollServer {
           },
       ];
       final total = lines.fold<num>(0, (t, l) => t + (l['amountPaise'] as num));
+      // As the server: a split that changes nothing is not a new one.
+      if (lines.every((l) => l['changePaise'] == 0)) {
+        return payrollJson({
+          'success': false,
+          'message':
+              'Nothing has changed in your split. Change at least one head '
+              'before you submit it',
+        }, 400);
+      }
       return payrollJson({
         'success': true,
         'review': {
@@ -171,7 +193,7 @@ class FakePayrollServer {
           'totalPaise': total,
           'poolPaise': pool,
           'unassignedPaise': pool - total,
-          'monthlyTaxSavingPaise': 94000,
+          'monthlyTaxSavingPaise': reviewSavingPaise,
           'billsDueOn': '2027-03-31',
         },
       });
@@ -350,6 +372,9 @@ class FakePayrollServer {
       'poolPaise': pool,
       'assignedPaise': assigned,
       'unassignedPaise': pool - assigned,
+      'notConfigured': splitStepPaise <= 0,
+      'missing': [if (splitStepPaise <= 0) 'splitStepPaise'],
+      'stepPaise': splitStepPaise <= 0 ? null : splitStepPaise,
       'components': [
         for (final code in split.keys)
           {
@@ -357,7 +382,7 @@ class FakePayrollServer {
             'name': _names[code],
             'limitPaise': _limits[code],
             'amountPaise': split[code],
-            'stepPaise': 50000,
+            'stepPaise': splitStepPaise <= 0 ? null : splitStepPaise,
             'bills': code == 'FUEL'
                 ? {'approved': 4, 'inReview': 1, 'rejected': 2}
                 : {'approved': 7, 'inReview': 0, 'rejected': 0},
@@ -366,6 +391,7 @@ class FakePayrollServer {
       'current': {
         'effectiveFrom': '2026-04',
         'submittedAt': '2026-04-10T09:12:00.000Z',
+        'billsAcknowledgedAt': '2026-04-10T09:12:00.000Z',
       },
       'window': {
         'open': splitOpen,
