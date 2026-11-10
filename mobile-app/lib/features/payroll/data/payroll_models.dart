@@ -281,7 +281,16 @@ class PayrollHome {
     this.salaryNotSetUp,
     this.missingPunches,
     this.declaration,
+    this.hasSplit = false,
+    this.proofs,
   });
+
+  /// The person's salary has flexible (FBP) heads to split: the server sends
+  /// a split summary only then. Without one there is no FBP to show.
+  final bool hasSplit;
+
+  /// Where their investment proofs stand, approved ones included.
+  final PayrollProofsSummary? proofs;
 
   final String period;
   final String fy;
@@ -300,7 +309,12 @@ class PayrollHome {
     final notSetUp = json['salaryNotSetUp'];
     final missing = json['missingPunches'];
     final declaration = json['declaration'];
+    final proofs = json['proofs'];
     return PayrollHome(
+      hasSplit: json['split'] is Map,
+      proofs: proofs is Map<String, dynamic>
+          ? PayrollProofsSummary.fromJson(proofs)
+          : null,
       period: _string(json['period']),
       fy: _string(json['fy']),
       hasSalaryStructure: json['hasSalaryStructure'] != false,
@@ -317,6 +331,37 @@ class PayrollHome {
       declaration: declaration is Map<String, dynamic>
           ? PayrollDeclarationState.fromJson(declaration)
           : null,
+    );
+  }
+}
+
+/// The proofs line of the payroll home: whether any are needed this year and
+/// how many stand where.
+class PayrollProofsSummary {
+  const PayrollProofsSummary({
+    required this.required,
+    required this.notUploaded,
+    required this.uploaded,
+    required this.approved,
+    required this.rejected,
+  });
+
+  final bool required;
+  final int notUploaded;
+  final int uploaded;
+  final int approved;
+  final int rejected;
+
+  int get total => notUploaded + uploaded + approved + rejected;
+
+  factory PayrollProofsSummary.fromJson(Map<String, dynamic> json) {
+    int n(Object? v) => v is num ? v.toInt() : 0;
+    return PayrollProofsSummary(
+      required: json['required'] == true,
+      notUploaded: n(json['notUploaded']),
+      uploaded: n(json['uploaded']),
+      approved: n(json['approved']),
+      rejected: n(json['rejected']),
     );
   }
 }

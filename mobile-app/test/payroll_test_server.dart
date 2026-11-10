@@ -37,6 +37,9 @@ class FakePayrollServer {
   /// Days this month with a punch missing, as the home counts them.
   int missingCount = 12;
 
+  /// The salary has flexible (FBP) heads; off, the home sends no split.
+  bool hasSplit = true;
+
   /// Every request, as "METHOD /path?query".
   final calls = <String>[];
 
@@ -319,7 +322,17 @@ class FakePayrollServer {
       'fixBy': _monthEnd,
       'locked': false,
     },
-    'split': null,
+    // The server sends a split summary only when the salary has flexible
+    // heads; this person has, so the FBP card shows.
+    'split': !hasSplit
+        ? null
+        : {
+            'open': true,
+            'poolPaise': pool,
+            'assignedPaise': split.values.fold(0, (a, b) => a + b),
+            'unassignedPaise': pool - split.values.fold(0, (a, b) => a + b),
+            'bills': {'approved': 0, 'inReview': 0, 'rejected': 0},
+          },
     'declaration': {
       'fy': '2026-27',
       'regime': 'new',

@@ -649,17 +649,40 @@ class _PayrollHomePageState extends State<_PayrollHomePage> {
                 imageAsset: 'assets/icons/action_card_policies_pencil.png',
                 onTap: () => _open(const _DeclarationPage()),
               ),
-              _HomeActionCard(
-                key: const ValueKey('payroll-fbp'),
-                icon: Icons.account_balance_wallet_rounded,
-                color: _Q.teal,
-                tint: _Q.tealTint,
-                title: 'FBP',
-                subtitle: 'Your flexible split',
-                imageAsset: 'assets/icons/action_card_reimbursement_rupee.png',
-                imageSize: 28,
-                onTap: () => _open(const _SplitPage()),
-              ),
+              // Only for someone whose salary has flexible heads to split.
+              if (home.hasSplit)
+                _HomeActionCard(
+                  key: const ValueKey('payroll-fbp'),
+                  icon: Icons.account_balance_wallet_rounded,
+                  color: _Q.teal,
+                  tint: _Q.tealTint,
+                  title: 'FBP',
+                  subtitle: 'Your flexible split',
+                  imageAsset:
+                      'assets/icons/action_card_reimbursement_rupee.png',
+                  imageSize: 28,
+                  onTap: () => _open(const _SplitPage()),
+                ),
+              // Proofs stay a tap away once uploaded or approved, not only
+              // while something is left to do.
+              if (home.proofs case final p? when p.required && p.total > 0)
+                _HomeActionCard(
+                  key: const ValueKey('payroll-proofs-card'),
+                  icon: Icons.verified_rounded,
+                  color: _Q.plum,
+                  tint: _Q.plumTint,
+                  title: 'Proofs',
+                  subtitle: p.approved == p.total
+                      ? 'All ${p.total} approved'
+                      : [
+                          if (p.approved > 0) '${p.approved} approved',
+                          if (p.uploaded > 0) '${p.uploaded} in review',
+                          if (p.notUploaded > 0) '${p.notUploaded} to upload',
+                          if (p.rejected > 0) '${p.rejected} rejected',
+                        ].join(' · '),
+                  imageAsset: 'assets/icons/leave_year_approved_badge.png',
+                  onTap: () => _open(const _ProofsPage()),
+                ),
             ],
           ),
         ],
@@ -2453,8 +2476,11 @@ class _ProofsPageState extends State<_ProofsPage> {
         else if (!proofs.required || proofs.items.isEmpty)
           _HubEmptyState(
             iconAsset: 'assets/icons/leave_year_approved_badge.png',
-            text: proofs.required
-                ? 'Nothing declared that needs a proof.'
+            // Nothing to prove has two reasons: the new regime, or an old
+            // regime with nothing declared above zero.
+            text: proofs.regime == 'old'
+                ? 'Nothing declared that needs a proof. Declare your '
+                      'investments under Tax to upload proofs for them.'
                 : 'No proofs needed — you are on the new regime.',
           )
         else ...[

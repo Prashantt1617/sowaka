@@ -174,6 +174,17 @@ void main() {
     await capture(tester, payroll(), 'payroll_home_scrolled');
   });
 
+  testWidgets('Payroll home: no FBP card for a salary without flexible heads', (
+    tester,
+  ) async {
+    final server = FakePayrollServer()..hasSplit = false;
+    await pumpPayroll(tester, server: server);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -700));
+    await settle(tester);
+    expect(find.text('Payslips'), findsOneWidget);
+    expect(find.byKey(const ValueKey('payroll-fbp')), findsNothing);
+  });
+
   testWidgets('Payroll home: approved overtime is a line of its own', (
     tester,
   ) async {
