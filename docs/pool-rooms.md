@@ -46,3 +46,11 @@ The page replays `lastShot` with `simulateShot` from `lastShot.from` positions (
 
 ## Page
 `games-web/pool/src.html` → `games-web/pool/build.py` → `backend/game-pages/pool.html`. The build inlines (1) the Socket.IO 4.8.3 block copied from `backend/game-pages/tile-up.html` at `<!--SOCKET-IO-->`, (2) the engine: `node_modules/.bin/esbuild backend/src/shared/pool/engine.ts --bundle --format=iife --global-name=PoolEngine --minify` at `<!--POOL-ENGINE-->` (the page's own physics is replaced by `PoolEngine.simulateShot`), (3) asserts the ticket marker. Live layer as Tile Up: `blockedByPolicy` → hop reload, socket, `request()`, reconnect with `room:join {code, rejoin:true}`, `window.Sowaka.room` API, `startChallengeId = "room:4821"` → join. No `__POOL` → the single-player modes work as now and "Play a colleague" shows "needs the Sowaka app".
+
+## Voice (walkie-talkie, 10 Nov 2026)
+`backend/src/services/game-voice.service.ts`, attached to this namespace (and to any other game's later). Behind `companies.features.gameVoice`; `room:hello` answers `voice: true` where it is on. One mic per table (`pool:{org}:{code}`); only players seated there talk and hear.
+- `voice:hold` → `{until, maxMs}` the mic is yours for 17 s, or 409 "Priya is talking". The others get `voice:floor {userId, name, until}`.
+- `voice:clip {data (base64), mime, ms}` → `{}`: the holder's recording (≤ 15 s, ≥ 0.4 s, ≤ 160,000 base64 chars, an audio type) goes to everyone else at the table as `voice:clip {userId, name, mime, ms, data}`, and the mic is free (`voice:floor {userId: null}`).
+- `voice:release` → `{}` let go without sending; a disconnect lets go too.
+- Limits: the mic twice a second, a clip every 3 s per socket. Nothing is stored. Check: `MONGODB_DB=game_voice_scratch npm run game-voice:check`.
+The app records (`Sowaka.voice.start/stop/cancel`, bridge v6: 16 kHz mono AAC in MP4, about 45 KB for 15 s); the page plays clips with Web Audio, one after another, the game's sounds dipped under them.

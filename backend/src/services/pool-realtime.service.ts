@@ -24,6 +24,9 @@ import {
   tickPool,
 } from './pool-room.service';
 import { verifyTicket } from './scribble-ticket.service';
+import { VoiceGame, dropMic, listenForVoice, voiceOn } from './game-voice.service';
+import { readRoom, seatOf } from './pool-store';
+import { seatedIds } from './pool-rooms-engine';
 import { logger } from '../utils/logger';
 
 /**
@@ -43,6 +46,20 @@ let namespace: Namespace | undefined;
 let timer: NodeJS.Timeout | undefined;
 
 const userRoom = (userId: string) => `pool:user:${userId}`;
+
+/** Pool Table's side of game voice: the caller's table is the room they are seated in. */
+const poolVoice: VoiceGame = {
+  async tableOf(org, userId) {
+    const code = await seatOf(org, userId);
+    if (!code) return null;
+    const room = await readRoom(org, code);
+    if (!room) return null;
+    return { channel: `pool:${org}:${code}`, members: seatedIds(room) };
+  },
+  emitTo(userId, event, payload) {
+    namespace?.to(userRoom(userId)).emit(event, payload);
+  },
+};
 const roomChannel = (org: string, code: string) => `pool:room:${org}:${code}`;
 
 /** A token bucket: `rate` a second, up to `burst` in hand. */
@@ -219,7 +236,8 @@ function listen(socket: Socket, seated: Promise<Seat | null>) {
     });
   };
 
-  on('room:hello', buckets.small, (seat) => hello(seat));
+  // `voice`: the company has game voice on, so the page offers the mic (companies.features.gameVoice).
+  on('room:hello', buckets.small, async (seat) => ({ ...(await hello(seat)), voice: await voiceOn(seat.org) }));
   on('room:host', buckets.host, (seat, p) => hostRoom(seat, { open: p.open, size: p.size }));
   on('room:join', buckets.join, (seat, p) => joinRoom(seat, p.code, { rejoin: p.rejoin === true }));
   on('room:quick', buckets.join, (seat, p) => quickJoin(seat, { size: p.size }));
@@ -238,6 +256,10 @@ function listen(socket: Socket, seated: Promise<Seat | null>) {
   });
   on('pool:place', buckets.move, (seat, p) => placeBall(seat, { x: p.x, y: p.y }));
   on('pool:shot', buckets.move, (seat, p) => takeShot(seat, { aim: p.aim, power: p.power, spin: p.spin }));
+  listenForVoice(socket, poolVoice, async () => {
+    const seat = await seated;
+    return seat ? { org: seat.org, userId: seat.userId, name: seat.name } : null;
+  });
 
   socket.on('disconnect', async (reason) => {
     logger.info('Pool socket disconnected', { userId, reason });
@@ -248,6 +270,8 @@ function listen(socket: Socket, seated: Promise<Seat | null>) {
       if (!seat) return;
       const remaining = await namespace?.in(userRoom(userId)).fetchSockets();
       if (remaining && remaining.length > 0) return;
+      // Gone mid-message: the mic is free for the others.
+      await dropMic(poolVoice, seat.org, userId);
       forgetSent(userId);
       await onDisconnected(seat);
       // A socket that arrived while that was written must not be left offline.

@@ -151,6 +151,11 @@ export interface CompanyFeatures {
    * the Games tab as before.
    */
   diwaliMehfil?: boolean;
+  /**
+   * Walkie-talkie voice at a game's table (services/game-voice.service.ts):
+   * hold the mic, let go and the others hear it. Pool Table first.
+   */
+  gameVoice?: boolean;
 }
 
 /** Versions by store: the App Store and Play Store builds ship separately. */

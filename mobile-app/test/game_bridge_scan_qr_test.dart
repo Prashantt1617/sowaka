@@ -65,7 +65,7 @@ void main() {
         userId: 'u-2',
         scansQr: true,
       );
-      expect(script, contains('S.version = 5;'));
+      expect(script, contains('S.version = 6;'));
       expect(
         script,
         contains("S.scanQr = function () { return call('scanQr'); };"),
@@ -76,7 +76,7 @@ void main() {
       'leaves it out where it cannot, so typeof Sowaka.scanQr is undefined',
       () {
         final script = gameBridgeScript(playerName: 'Tanvi', userId: 'u-2');
-        expect(script, contains('S.version = 5;'));
+        expect(script, contains('S.version = 6;'));
         expect(script, isNot(contains('scanQr')));
       },
     );
