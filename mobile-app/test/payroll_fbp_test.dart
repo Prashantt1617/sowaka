@@ -403,8 +403,9 @@ void main() {
     );
     await settle(tester);
     if (open) {
-      // The FBP card is the carousel's third: bring it in, then open it.
-      await tester.tap(find.byKey(const ValueKey('payroll-dot-2')));
+      // This home sends no salary card, so FBP is the carousel's second
+      // (after tax): bring it in, then open it.
+      await tester.tap(find.byKey(const ValueKey('payroll-dot-1')));
       await settle(tester);
       await tester.tap(find.byKey(const ValueKey('payroll-fbp')));
       await settle(tester);
