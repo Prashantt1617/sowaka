@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -13,6 +15,7 @@ import '../../auth/data/auth_models.dart';
 import '../../profile/profile_launcher.dart';
 import '../../shared/app_toast.dart';
 import '../data/game_bridge.dart';
+import '../data/game_voice_recorder.dart';
 import '../data/game_socket_service.dart';
 import '../data/games_api_service.dart';
 import '../data/games_models.dart';
@@ -49,7 +52,8 @@ class WebGameScreen extends StatefulWidget {
        service = null,
        challengeId = null,
        realtime = null,
-       scanQr = null;
+       scanQr = null,
+       voice = null;
 
   /// A game from the company's catalog.
   WebGameScreen.catalog({
@@ -60,6 +64,7 @@ class WebGameScreen extends StatefulWidget {
     this.challengeId,
     this.realtime,
     this.scanQr,
+    this.voice,
   }) : title = game.name,
        url = null;
 
@@ -79,6 +84,9 @@ class WebGameScreen extends StatefulWidget {
 
   /// Supplied by tests in place of the camera scanner.
   final Future<String?> Function()? scanQr;
+
+  /// Supplied by tests in place of the phone's recorder (`Sowaka.voice`).
+  final GameVoiceRecorder? voice;
 
   @override
   State<WebGameScreen> createState() => _WebGameScreenState();
@@ -175,6 +183,8 @@ class _WebGameScreenState extends State<WebGameScreen> {
       onOpenProfile: (userId) => openPersonProfile(userId),
       // `Sowaka.scanQr()`: the camera, over the game, where there is one.
       scanQr: _scansQr ? (widget.scanQr ?? _scanQr) : null,
+      // `Sowaka.voice`: hold-to-talk at the game's table, on a phone.
+      voice: _voice,
     );
     _controller
       ..enableZoom(false)
@@ -194,8 +204,19 @@ class _WebGameScreenState extends State<WebGameScreen> {
   @override
   void dispose() {
     _forwarder?.dispose();
+    // A message being recorded when the game closes is dropped, mic released.
+    unawaited(_voice?.dispose());
     super.dispose();
   }
+
+  /// Walkie-talkie recording, on the phones (a test or desktop run has none),
+  /// and only for the games built for it: no other page is handed a mic.
+  late final GameVoiceRecorder? _voice =
+      widget.voice ??
+      ((Platform.isIOS || Platform.isAndroid) &&
+              voiceGameKeys.contains(widget.game?.key)
+          ? GameVoiceRecorder()
+          : null);
 
   bool get _scansQr => widget.scanQr != null || canScanQr;
 
@@ -211,6 +232,7 @@ class _WebGameScreenState extends State<WebGameScreen> {
     // Offered only while the signed-in shell is there to open a profile.
     opensProfiles: canOpenPersonProfile,
     scansQr: _scansQr,
+    talks: _voice != null,
   );
 
   Future<void> _runInPage(String script) async {

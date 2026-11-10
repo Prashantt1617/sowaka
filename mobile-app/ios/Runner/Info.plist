@@ -22,23 +22,35 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.sowaka.connect.open</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>sowaka</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Sowaka uses the camera for the selfie that confirms it's you when you punch in or out, to take a photo for your profile picture or a post, and to scan a colleague's code in a game.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Sowaka checks that you are at the office when you punch in or out. Your location is only read at that moment — never in the background.</string>
-	<!-- The location plugin's code carries the "always" API, so Apple's scan
-	     asks for its purpose string even though the app never calls it. The
-	     string says what the app actually does, which is the same thing. -->
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Sowaka checks that you are at the office when you punch in or out. Your location is only read at that moment — never in the background.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Sowaka checks that you are at the office when you punch in or out. Your location is only read at that moment — never in the background.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Sowaka uses the microphone to dictate feedback notes.</string>
+	<string>Sowaka uses the microphone to dictate feedback notes and to send voice messages to the players at your game table.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>This app requires access to your photo library so you can select and upload a profile picture.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
@@ -64,21 +76,6 @@
 			</array>
 		</dict>
 	</dict>
-	<key>FlutterDeepLinkingEnabled</key>
-	<false/>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>com.sowaka.connect.open</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>sowaka</string>
-			</array>
-		</dict>
-	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

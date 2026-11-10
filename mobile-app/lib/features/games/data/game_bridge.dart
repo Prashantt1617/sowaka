@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'game_voice_recorder.dart';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
@@ -30,6 +31,15 @@ const String gameBridgeChannel = 'SowakaGame';
 ///                          is not allowed. Only there where the app can
 ///                          scan, and new in version 5: a page checks
 ///                          `typeof Sowaka.scanQr === 'function'`.
+///   Sowaka.voice           walkie-talkie for a game's table, new in version
+///                          6 and only where the app can record:
+///                          `voice.start()` a Promise once the mic is
+///                          recording (rejects 403 when it is not allowed),
+///                          `voice.stop()` a Promise of the clip `{data
+///                          (base64), mime, ms}` or null, `voice.cancel()`
+///                          drops it. Recording stops on its own at 15 s; the
+///                          page sends the clip over its own socket. A page
+///                          checks `typeof Sowaka.voice === 'object'`.
 ///
 /// and for colleague challenges, each a Promise of what the server answered:
 ///
@@ -62,6 +72,7 @@ String gameBridgeScript({
   String? startChallengeId,
   bool opensProfiles = false,
   bool scansQr = false,
+  bool talks = false,
 }) {
   // Inside a <script> element: '<' is escaped so a value can never close it.
   final name = _scriptJson(playerName);
@@ -86,7 +97,7 @@ String gameBridgeScript({
   function text(value) { return value == null ? null : String(value); }
   var S = window.Sowaka || {};
   S.native = true;
-  S.version = 5;
+  S.version = 6;
   S.userId = $id;
   S.playerName = function () { return $name; };
   S.submitScore = function (score) { return call('submitScore', { score: Number(score) }); };
@@ -104,7 +115,7 @@ String gameBridgeScript({
   S.haptic = function (kind) {
     try { $gameBridgeChannel.postMessage(JSON.stringify({ id: 'h', type: 'haptic', data: { kind: text(kind) || 'light' } })); } catch (e) {}
   };
-${opensProfiles ? _openProfileScript : ''}${scansQr ? _scanQrScript : ''}  S.__reply = function (id, ok, payload) {
+${opensProfiles ? _openProfileScript : ''}${scansQr ? _scanQrScript : ''}${talks ? _voiceScript : ''}  S.__reply = function (id, ok, payload) {
     var p = pending[id];
     if (!p) return;
     delete pending[id];
@@ -129,7 +140,16 @@ const String _openProfileScript =
 
 /// `Sowaka.scanQr()`: a request like any other, answered with the text read
 /// or null.
-const String _scanQrScript = '''  S.scanQr = function () { return call('scanQr'); };
+const String _scanQrScript =
+    '''  S.scanQr = function () { return call('scanQr'); };
+''';
+
+/// `Sowaka.voice`: hold-to-talk recording, requests like any other.
+const String _voiceScript = '''  S.voice = {
+    start: function () { return call('voiceStart'); },
+    stop: function () { return call('voiceStop'); },
+    cancel: function () { return call('voiceCancel'); }
+  };
 ''';
 
 /// The most of a scanned code handed to a page: far more than any game's
@@ -199,6 +219,7 @@ class GameBridge {
     required this.company,
     this.onOpenProfile,
     this.scanQr,
+    this.voice,
   });
 
   final GamesApiService service;
@@ -213,6 +234,10 @@ class GameBridge {
   /// the camera is not allowed. Null where this phone cannot scan; the page
   /// is then told so.
   final Future<String?> Function()? scanQr;
+
+  /// Records the page's walkie-talkie messages (`Sowaka.voice`). Null where
+  /// this phone cannot record; the page is then told so.
+  final GameVoiceRecorder? voice;
 
   /// Whether a scan is open: a second ask while it is gets null at once.
   bool _scanning = false;
@@ -287,6 +312,33 @@ class GameBridge {
             return reply(id, true, _scanned(text));
           } finally {
             _scanning = false;
+          }
+        case 'voiceStart' || 'voiceStop' || 'voiceCancel':
+          final recorder = voice;
+          if (recorder == null) {
+            return reply(id, false, {
+              'message': 'Voice is not available here',
+              'status': 501,
+            });
+          }
+          switch (message['type']) {
+            case 'voiceStart':
+              if (!await recorder.start()) {
+                return reply(id, false, {
+                  'message':
+                      'Allow Sowaka to use the microphone in Settings to talk.',
+                  'status': 403,
+                });
+              }
+              return reply(id, true, {
+                'maxMs': gameVoiceMaxDuration.inMilliseconds,
+              });
+            case 'voiceStop':
+              final clip = await recorder.stop();
+              return reply(id, true, clip?.toPageJson());
+            default:
+              await recorder.cancel();
+              return reply(id, true, const <String, Object>{});
           }
         case 'submitScore':
           final value = score();
