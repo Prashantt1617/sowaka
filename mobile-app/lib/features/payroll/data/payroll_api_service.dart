@@ -179,6 +179,18 @@ class PayrollApiService {
     );
   }
 
+  // ---------------------------------------------------------------- salary summary
+
+  /// One pay period's salary as a receipt, each line explained: the
+  /// previous pay period unless [period] ("2026-10") is given.
+  Future<PayrollSalarySummary> fetchSalarySummary({String? period}) async {
+    final json = await _json(
+      'GET',
+      _path('/payroll/me/salary', {'period': period}),
+    );
+    return PayrollSalarySummary.fromJson(_object(json['salary']));
+  }
+
   // ---------------------------------------------------------------- declaration
 
   Future<TaxDeclaration> fetchDeclaration({String? fy}) async {

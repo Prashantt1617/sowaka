@@ -62,7 +62,7 @@ const CLOSED_MESSAGES: Record<FixClosedReason, string> = {
  * is locked. A day the policy does not let anyone correct (its trigger off,
  * or no window) cannot be fixed at all.
  */
-async function missingPunchesFor(org: string, userId: string, employeeId: string | undefined, period: string, now: Date) {
+export async function missingPunchesFor(org: string, userId: string, employeeId: string | undefined, period: string, now: Date) {
   const from = `${period}-01`;
   const yesterday = dayOf(new Date(now.getTime() - 86_400_000));
   const to = lastDayOf(period) < yesterday ? lastDayOf(period) : yesterday;
@@ -129,7 +129,7 @@ export async function myMissingPunches(userId: string, periodRaw: unknown, now =
 
 // —— This month's pay ——
 
-function fromPayslip(slip: Payslip & { _id?: { toHexString(): string } }) {
+export function fromPayslip(slip: Payslip & { _id?: { toHexString(): string } }) {
   const full = slip.earnings.reduce((sum, e) => sum + e.fullPaise, 0);
   const paid = slip.earnings.reduce((sum, e) => sum + e.paidPaise, 0);
   return {
@@ -185,7 +185,7 @@ const periodKey = (range: PeriodRange) => `${range.year}-${String(range.month).p
  * not guessed at: the gross itself depends on it (employer contributions
  * inside CTC, statutory bonus), so the estimate says it is not set up.
  */
-async function estimateFor(org: string, userId: string, period: string, range: PeriodRange, now: Date) {
+export async function estimateFor(org: string, userId: string, period: string, range: PeriodRange, now: Date) {
   const structure = await salaryStructures().findOne({ org, userId });
   if (!structure?.salaryTemplateCode) return null;
   const splits = await flexibleSplits().find({ org, userId }).toArray();
@@ -251,7 +251,7 @@ async function estimateFor(org: string, userId: string, period: string, range: P
 }
 
 /** The pay cannot be estimated while HR's pay cycle is unusable: said, for someone who has a structure. */
-async function payPeriodNotSetUp(org: string, userId: string, problem: string) {
+export async function payPeriodNotSetUp(org: string, userId: string, problem: string) {
   const structure = await salaryStructures().findOne({ org, userId }, { projection: { _id: 0, salaryTemplateCode: 1 } });
   if (!structure?.salaryTemplateCode) return null;
   const notSetUp: SalaryNotSetUp = {
@@ -269,7 +269,7 @@ async function payPeriodNotSetUp(org: string, userId: string, problem: string) {
  * for, never one that has not started. A pay cycle set up wrong is not
  * guessed around: the range is null and `problem` says why.
  */
-async function homePayPeriod(org: string, periodRaw: unknown, now: Date): Promise<{ period: string; range: PeriodRange | null; problem: string | null }> {
+export async function homePayPeriod(org: string, periodRaw: unknown, now: Date): Promise<{ period: string; range: PeriodRange | null; problem: string | null }> {
   const today = istDayOf(now);
   let current: PeriodRange | undefined;
   let problem: string | null = null;

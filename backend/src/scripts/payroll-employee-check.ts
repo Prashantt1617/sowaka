@@ -11,12 +11,13 @@
  */
 import {
   attendanceRecords, companies, connectDb, flexibleSplits, getDb, payHeads, payrollPeriods, payrollRuns, payslips, salaryStructures, salaryTemplates,
-  shiftPolicies, statutoryConfigs, tdsConfigs, users,
+  shiftPolicies, statutoryConfigs, statutorySettings, tdsConfigs, users,
 } from '../config/db';
 import { env } from '../config/env';
 import { PayHead } from '../models/payHead.model';
 import { createRun, myPayslip, myPayslips, submitRun } from '../services/payrollRun.service';
 import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
+import { mySalarySummary } from '../services/employeePayroll.salary';
 import { mySplit, reviewSplit, saveSplit, splitWindow } from '../services/employeePayroll.split';
 import { STATUTORY_SEED, TDS_SEED } from './payroll-config-seed-data';
 
@@ -264,6 +265,116 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     bad.salary === null && bad.payPeriod === null && bad.salaryNotSetUp?.reason === 'pay_period_not_set_up' && /1 to 28/.test(bad.salaryNotSetUp.message) && /Ask HR\.$/.test(bad.salaryNotSetUp.message), bad.salaryNotSetUp);
   check('a broken pay cycle: the rest of home still shows', bad.todo.some((t) => t.kind === 'flexible_split'), bad.todo);
   await payrollPeriods().deleteMany({});
+
+  // —— the salary summary (GET /payroll/me/salary): one pay period as a receipt, each line explained ——
+  type Summary = Awaited<ReturnType<typeof mySalarySummary>>;
+  // The lines make the take-home: earnings in, loss of pay and deductions out.
+  const addsUp = (s: Summary) => s.takeHomePaise !== null
+    && s.lines.reduce((t, l) => t + (l.kind === 'earning' ? l.amountPaise : -l.amountPaise), 0) === s.takeHomePaise;
+  const lineOf = (s: Summary, key: string) => s.lines.find((l) => l.key === key);
+  const nov11 = new Date('2026-11-11T06:00:00Z');
+  const aSal = await mySalarySummary('asha', undefined, nov11);
+  const aHome = await homeOn('asha', '2026-10', nov11);
+  check('salary: on 11 Nov the default is the previous pay period, October, from its released payslip',
+    aSal.period === '2026-10' && aSal.label === 'October 2026' && aSal.released === true && aSal.payslipId === one.payslip.id, [aSal.period, aSal.released]);
+  check('salary: the same take-home and gross as Home shows for October', aSal.takeHomePaise === aHome.salary?.takeHomePaise && aSal.grossPaise === aHome.salary?.grossPaise, [aSal.takeHomePaise, aHome.salary]);
+  check('salary: the lines add up to the take-home', addsUp(aSal), aSal.lines);
+  check('salary: gross first, explained from the payslip\'s own components', aSal.lines[0]?.key === 'gross' && /before any deductions: Basic ₹75,000 \+/.test(aSal.lines[0].explanation), aSal.lines[0]);
+  check('salary: days paid of the run\'s base days, on its own dates (the calendar month)',
+    aSal.baseDays === 31 && aSal.daysInPeriod === 31 && aSal.periodFrom === '2026-10-01' && aSal.daysPaid === 31 - (aSal.lop?.days ?? 0), [aSal.daysPaid, aSal.baseDays, aSal.lop]);
+  const aLop = lineOf(aSal, 'lop');
+  check('salary: loss of pay explained from the days and one day\'s pay (gross ÷ 31 days in October)',
+    aSal.lop !== null && (aSal.lop.days === 0 ? aLop === undefined
+      : aLop?.kind === 'lop' && aLop.label.startsWith('Loss of pay · ')
+        && aLop.explanation.includes(`One day's pay is ₹${Math.round(aSal.lop.perDayPaise! / 100).toLocaleString('en-IN')} (₹${Math.round(aSal.grossPaise! / 100).toLocaleString('en-IN')} ÷ 31 days in October)`)),
+    [aLop, aSal.lop]);
+  check('salary: released payslips for the Past payslips row (October only)', aSal.payslips.count === 1 && aSal.payslips.from === '2026-10' && aSal.payslips.to === '2026-10', aSal.payslips);
+  check('salary: unpaid days open on October\'s list, locked by its run', aSal.unpaidDays.period === '2026-10' && aSal.unpaidDays.locked === true, aSal.unpaidDays);
+  check('salary: no not-set-up state', aSal.notSetUp === null);
+
+  // September, released with PF on Basic, the TDS engine on and 2 days of loss of pay HR typed for Asha.
+  await payHeads().updateOne({ org: ORG, code: 'BASIC' }, { $set: { considerForEpf: { consider: true } } });
+  await statutorySettings().insertOne({ org: ORG, tds: { enabled: true, defaultRegime: 'new' }, updatedAt: now } as never);
+  // ₹36 lakh a year from September, so the year's tax is above the rebate.
+  await salaryStructures().updateOne({ userId: 'asha' }, { $set: { annualCtcPaise: R(36_00_000) } });
+  const sep = await createRun('hr', { period: '2026-09', lopDays: { asha: 2 } });
+  await submitRun('hr', sep.run.id);
+  const sSal = await mySalarySummary('asha', '2026-09', nov11);
+  check('salary: September is its released payslip, and its lines add up', sSal.released === true && addsUp(sSal), sSal.lines);
+  check('salary: 28 of 30 days paid (2 days of loss of pay HR set)', sSal.daysPaid === 28 && sSal.baseDays === 30 && sSal.lop?.days === 2 && sSal.lop.enteredByHr === true, [sSal.daysPaid, sSal.lop]);
+  const sLop = lineOf(sSal, 'lop');
+  check('salary: its loss of pay says HR set it, and one day\'s pay (gross ÷ 30 days in September)',
+    sLop?.label === 'Loss of pay · 2 days' && sLop.explanation.startsWith('HR set 2 days of loss of pay for September.')
+      && sLop.explanation.includes(`(₹${Math.round(sSal.grossPaise! / 100).toLocaleString('en-IN')} ÷ 30 days in September)`), sLop);
+  const sPf = lineOf(sSal, 'epf');
+  check('salary: PF says the FY\'s rate (12%) and the wage it was worked out on', sPf !== undefined && /^12% of your PF wage of ₹[\d,]+/.test(sPf.explanation) && /retirement/.test(sPf.explanation), sPf);
+  const sTax = lineOf(sSal, 'income_tax');
+  check('salary: income tax from the TDS engine: the year\'s tax, what was taken before, the months left',
+    sTax !== undefined && /^Your income tax for FY 2026-27 under the new regime comes to ₹[\d,]+\. (₹[\d,]+ was taken before September, so the ₹[\d,]+ left|None of it was taken before September, so it) is split across the 7 months from September to March\.$/.test(sTax.explanation), sTax);
+  check('salary: deductions in order: PF, then income tax', sSal.lines.filter((l) => l.kind === 'deduction').map((l) => l.key).join() .startsWith('epf,income_tax'), sSal.lines.map((l) => l.key));
+  check('salary: two released payslips now, September to October', (await mySalarySummary('asha', undefined, nov11)).payslips.count === 2
+    && (await mySalarySummary('asha', undefined, nov11)).payslips.from === '2026-09', null);
+
+  // An estimate: December, for Bala in Karnataka (PT on), asked for on 5 January.
+  await users().updateOne({ userId: 'bala' }, { $set: { state: 'Karnataka' } });
+  const jan5 = new Date('2027-01-05T06:00:00Z');
+  const bSal = await mySalarySummary('bala', undefined, jan5);
+  const bHomeDec = await homeOn('bala', '2026-12', jan5);
+  check('salary: on 5 Jan the default is December: an estimate (no run yet)', bSal.period === '2026-12' && bSal.released === false && bSal.payslipId === null, [bSal.period, bSal.released]);
+  check('salary: the estimate is Home\'s own figure for December', bSal.takeHomePaise === bHomeDec.salary?.takeHomePaise && bSal.grossPaise === bHomeDec.salary?.grossPaise, [bSal.takeHomePaise, bHomeDec.salary?.takeHomePaise]);
+  check('salary: the estimate\'s lines add up', addsUp(bSal), bSal.lines);
+  check('salary: the estimate\'s loss of pay is the calendar\'s days, broken down',
+    bSal.lop !== null && bSal.lop.days === bHomeDec.salary?.lopDays
+      && bSal.lop.absentDays + bSal.lop.halfDays / 2 + bSal.lop.missedPunchDays + bSal.lop.unpaidLeaveDays === bSal.lop.days, bSal.lop);
+  const bLop = lineOf(bSal, 'lop');
+  check('salary: an estimate\'s loss of pay names the absent days', bSal.lop!.days === 0 || /^\d+ absent days?/.test(bLop?.explanation ?? ''), bLop);
+  const bPt = lineOf(bSal, 'pt');
+  check('salary: PT from Karnataka\'s slab in the FY\'s statutory row', bPt?.amountPaise === R(200) && bPt.explanation === 'A tax set by Karnataka: ₹200 a month for monthly pay of ₹25,000 or more.', bPt);
+  check('salary: the estimate\'s days paid are base days less loss of pay', bSal.daysPaid === 31 - bSal.lop!.days && bSal.baseDays === 31, [bSal.daysPaid, bSal.lop?.days]);
+  const bTax = lineOf(bSal, 'income_tax');
+  check('salary: an estimate\'s income tax says which payslip it is taken from',
+    bTax === undefined || /your October 2026 payslip took/.test(bTax.explanation), bTax);
+
+  // On the company's pay dates (26th to 25th): on 28 Dec the previous period is December, 26 Nov – 25 Dec.
+  await payrollPeriods().insertOne({ org: ORG, period: 'default', startDay: 26, updatedAt: now });
+  const pSum = await mySalarySummary('bala', undefined, new Date('2026-12-28T06:00:00Z'));
+  check('salary: with a 26th-to-25th cycle, on 28 Dec the previous pay period is December (26 Nov – 25 Dec)',
+    pSum.period === '2026-12' && pSum.periodFrom === '2026-11-26' && pSum.periodTo === '2026-12-25' && pSum.baseDays === 30 && pSum.daysInPeriod === 30, [pSum.period, pSum.periodFrom, pSum.periodTo, pSum.baseDays]);
+  check('salary: its loss of pay is divided by the 30 days from 26 Nov to 25 Dec',
+    pSum.lop!.days === 0 || (lineOf(pSum, 'lop')?.explanation ?? '').includes('÷ 30 days from 26 Nov to 25 Dec)'), lineOf(pSum, 'lop'));
+  check('salary: a month asked for is that month', (await mySalarySummary('asha', '2026-10', new Date('2026-12-28T06:00:00Z'))).period === '2026-10');
+  // November's pay period on 28 Oct: 26 and 27 Oct without punches are 2 absent days.
+  const lSum = await mySalarySummary('bala', '2026-11', oct28);
+  const lLop = lineOf(lSum, 'lop');
+  check('salary: an estimate\'s loss of pay: 2 absent days, one day\'s pay = gross ÷ 31 days from 26 Oct to 25 Nov',
+    lSum.released === false && lSum.lop?.days === 2 && lSum.lop.absentDays === 2 && lSum.daysPaid === 29 && lLop?.label === 'Loss of pay · 2 days'
+      && lLop.explanation === `2 absent days. One day's pay is ₹${Math.round(lSum.lop.perDayPaise! / 100).toLocaleString('en-IN')} (₹${Math.round(lSum.grossPaise! / 100).toLocaleString('en-IN')} ÷ 31 days from 26 Oct to 25 Nov).`,
+    [lLop, lSum.lop]);
+  check('salary: that estimate adds up', addsUp(lSum), lSum.lines);
+  const lPf = lineOf(lSum, 'epf');
+  check('salary: an estimate\'s PF: 12% of the ₹25,000 ceiling, the PF wage (Basic ₹50,000) above it',
+    lPf?.amountPaise === R(3000) && lPf.explanation === '12% of your PF wage of ₹25,000 (your PF wage is ₹50,000; PF is worked out on the ₹25,000 ceiling), saved in your PF account for retirement.', lPf);
+  await payrollPeriods().deleteMany({});
+
+  check('salary: a month not started is refused (400)', (await refusal(() => mySalarySummary('bala', '2027-02', jan5)))?.status === 400);
+  check('salary: a period not like 2026-10 is refused (400)', (await refusal(() => mySalarySummary('bala', 'October', jan5)))?.status === 400);
+  const devSal = await mySalarySummary('dev', undefined, jan5);
+  check('salary: no salary structure: no figures, says HR sets it up', devSal.notSetUp?.reason === 'no_salary_structure' && devSal.lines.length === 0 && devSal.takeHomePaise === null, devSal);
+
+  // The FY's statutory row missing: an estimate is not made up; a released payslip still shows, its rules "not set up".
+  const fyRow2 = await statutoryConfigs().findOne({ fy: '2026-27' });
+  await statutoryConfigs().deleteOne({ fy: '2026-27' });
+  const noFy = await mySalarySummary('bala', undefined, jan5);
+  check('salary: no statutory row: the estimate says not set up, ask HR', noFy.notSetUp?.reason === 'statutory_not_set_up' && /Ask HR\.$/.test(noFy.notSetUp.message) && noFy.lines.length === 0, noFy.notSetUp);
+  const noFyReleased = await mySalarySummary('asha', '2026-10', nov11);
+  check('salary: no statutory row: October\'s released figures still show',
+    noFyReleased.released && noFyReleased.takeHomePaise === aSal.takeHomePaise, noFyReleased.takeHomePaise);
+  const noFySep = await mySalarySummary('asha', '2026-09', nov11);
+  check('salary: no statutory row: September\'s PF line says its rate is not set up, ask HR',
+    noFySep.released && /FY 2026-27 are not set up/.test(lineOf(noFySep, 'epf')?.explanation ?? '') && /Ask HR\.$/.test(lineOf(noFySep, 'epf')?.explanation ?? ''), lineOf(noFySep, 'epf'));
+  await statutoryConfigs().insertOne(fyRow2!);
+  console.log('  salary summary sample:', JSON.stringify({ ...lSum, lines: lSum.lines.map((l) => `${l.label} ${l.amountPaise / 100} — ${l.explanation}`) }, null, 1));
+  console.log('  released sample:', JSON.stringify(sSal.lines.map((l) => `${l.label} ${l.amountPaise / 100} — ${l.explanation}`), null, 1));
 
   await db.dropDatabase();
   console.log(failed === 0 ? `\nall ${passed} payroll employee checks passed` : `\n${failed} check(s) failed, ${passed} passed`);

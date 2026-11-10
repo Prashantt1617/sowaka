@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
   getDeclarationHandler, getProofsHandler, getSplitHandler, missingPunchesHandler, payrollHomeHandler, proofFileHandler,
-  requirePayrollApp, reviewSplitHandler, saveDeclarationHandler, saveSplitHandler, uploadProofHandler,
+  requirePayrollApp, reviewSplitHandler, salarySummaryHandler, saveDeclarationHandler, saveSplitHandler, uploadProofHandler,
 } from '../controllers/employeePayroll.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { uploadInvestmentProofFile } from '../middleware/investment-proof-upload.middleware';
@@ -16,6 +16,8 @@ employeePayrollRouter.use(requireAuth);
 employeePayrollRouter.get('/home', payrollHomeHandler);
 employeePayrollRouter.use(requirePayrollApp);
 employeePayrollRouter.get('/missing-punches', missingPunchesHandler);
+// One pay period's pay as a receipt, each line explained (default: the previous pay period).
+employeePayrollRouter.get('/me/salary', salarySummaryHandler);
 employeePayrollRouter.get('/split', getSplitHandler);
 employeePayrollRouter.post('/split/review', reviewSplitHandler);
 employeePayrollRouter.put('/split', saveSplitHandler);

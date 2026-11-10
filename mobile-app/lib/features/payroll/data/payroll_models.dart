@@ -366,6 +366,165 @@ class PayrollProofsSummary {
   }
 }
 
+// ---------------------------------------------------------------- salary summary
+
+/// One line of the salary receipt (GET /payroll/me/salary): gross, loss of
+/// pay, a deduction, overtime or reimbursements, with what it is in words.
+class PayrollSalaryLine {
+  const PayrollSalaryLine({
+    required this.key,
+    required this.label,
+    required this.amountPaise,
+    required this.kind,
+    required this.explanation,
+  });
+
+  /// "gross" | "lop" | "overtime" | "epf" | "esi" | "income_tax" | "pt" |
+  /// "lwf" | "reimbursements" | "other_deductions" | a pay head code.
+  final String key;
+  final String label;
+  final int amountPaise;
+
+  /// "earning" (adds to the take-home), "deduction" or "lop" (comes off it).
+  final String kind;
+  final String explanation;
+
+  bool get isEarning => kind == 'earning';
+  bool get isLop => kind == 'lop';
+
+  factory PayrollSalaryLine.fromJson(Map<String, dynamic> json) =>
+      PayrollSalaryLine(
+        key: _string(json['key']),
+        label: _string(json['label']),
+        amountPaise: _paise(json['amountPaise']),
+        kind: _string(json['kind']).isEmpty
+            ? 'deduction'
+            : _string(json['kind']),
+        explanation: _string(json['explanation']),
+      );
+}
+
+/// What the loss of pay is made of.
+class PayrollSalaryLop {
+  const PayrollSalaryLop({
+    required this.days,
+    this.absentDays = 0,
+    this.halfDays = 0,
+    this.missedPunchDays = 0,
+    this.unpaidLeaveDays = 0,
+    this.perDayPaise,
+    this.enteredByHr = false,
+  });
+
+  final double days;
+  final int absentDays;
+  final int halfDays;
+  final double missedPunchDays;
+  final double unpaidLeaveDays;
+
+  /// One day's pay: gross ÷ base days.
+  final int? perDayPaise;
+  final bool enteredByHr;
+
+  factory PayrollSalaryLop.fromJson(Map<String, dynamic> json) =>
+      PayrollSalaryLop(
+        days: _number(json['days']),
+        absentDays: _int(json['absentDays']),
+        halfDays: _int(json['halfDays']),
+        missedPunchDays: _number(json['missedPunchDays']),
+        unpaidLeaveDays: _number(json['unpaidLeaveDays']),
+        perDayPaise: _paiseOrNull(json['perDayPaise']),
+        enteredByHr: _bool(json['enteredByHr']),
+      );
+}
+
+/// One pay period's salary as a receipt: the released payslip's figures, or
+/// the estimate from attendance so far, each line explained.
+class PayrollSalarySummary {
+  const PayrollSalarySummary({
+    required this.period,
+    required this.label,
+    required this.released,
+    required this.lines,
+    required this.unpaidDays,
+    this.payslipId,
+    this.periodFrom,
+    this.periodTo,
+    this.daysPaid,
+    this.daysInPeriod,
+    this.baseDays,
+    this.grossPaise,
+    this.takeHomePaise,
+    this.lop,
+    this.payslipCount = 0,
+    this.payslipsFrom,
+    this.payslipsTo,
+    this.notSetUp,
+  });
+
+  /// "2026-10"; [label] "October 2026".
+  final String period;
+  final String label;
+
+  /// The payslip is out: the figures are final.
+  final bool released;
+  final String? payslipId;
+  final DateTime? periodFrom;
+  final DateTime? periodTo;
+  final double? daysPaid;
+  final int? daysInPeriod;
+  final int? baseDays;
+  final int? grossPaise;
+  final int? takeHomePaise;
+  final List<PayrollSalaryLine> lines;
+  final PayrollSalaryLop? lop;
+
+  /// The unpaid-days list "Check unpaid days" opens.
+  final PayrollMissingPunches unpaidDays;
+
+  /// Released payslips: how many, and the first and last month.
+  final int payslipCount;
+  final DateTime? payslipsFrom;
+  final DateTime? payslipsTo;
+
+  /// Set (and the figures null) when the pay can't be worked out yet.
+  final PayrollSalaryNotSetUp? notSetUp;
+
+  bool get isEstimate => !released;
+
+  factory PayrollSalarySummary.fromJson(Map<String, dynamic> json) {
+    final payslips = _map(json['payslips']);
+    final notSetUp = json['notSetUp'];
+    return PayrollSalarySummary(
+      period: _string(json['period']),
+      label: _string(json['label']),
+      released: _bool(json['released']),
+      payslipId: _stringOrNull(json['payslipId']),
+      periodFrom: payrollDate(json['periodFrom']),
+      periodTo: payrollDate(json['periodTo']),
+      daysPaid: (json['daysPaid'] as num?)?.toDouble(),
+      daysInPeriod: (json['daysInPeriod'] as num?)?.toInt(),
+      baseDays: (json['baseDays'] as num?)?.toInt(),
+      grossPaise: _paiseOrNull(json['grossPaise']),
+      takeHomePaise: _paiseOrNull(json['takeHomePaise']),
+      lines: _list(json['lines']).map(PayrollSalaryLine.fromJson).toList(),
+      lop: json['lop'] is Map<String, dynamic>
+          ? PayrollSalaryLop.fromJson(json['lop'] as Map<String, dynamic>)
+          : null,
+      unpaidDays: PayrollMissingPunches.fromJson({
+        'period': _string(json['period']),
+        ..._map(json['unpaidDays']),
+      }),
+      payslipCount: _int(payslips['count']),
+      payslipsFrom: payrollMonth(payslips['from']),
+      payslipsTo: payrollMonth(payslips['to']),
+      notSetUp: notSetUp is Map<String, dynamic>
+          ? PayrollSalaryNotSetUp.fromJson(notSetUp)
+          : null,
+    );
+  }
+}
+
 // ---------------------------------------------------------------- missing punches
 
 /// A past working day with a punch missing.
