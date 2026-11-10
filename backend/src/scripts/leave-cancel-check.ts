@@ -91,8 +91,12 @@ const day = (offset: number) => { const d = new Date(Date.now() + offset * 86_40
     .some((n) => /back in your balance/.test(n.body)));
 
   console.log('what cannot be cancelled');
-  const todays = await applyForLeave('emp', { type: 'casual', startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10), reason: 'Today' }).catch(() => null);
+  // Today as the service reads it: the day in India. A weekend has no leave to apply for.
+  const istToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const weekend = [0, 6].includes(new Date(`${istToday}T00:00:00Z`).getUTCDay());
+  const todays = weekend ? null : await applyForLeave('emp', { type: 'casual', startDate: istToday, endDate: istToday, reason: 'Today' });
   if (todays) ok('a leave for today can still be taken back on the day', (await cancelLeave('emp', todays.id)).status === 'cancelled');
+  else console.log('  (skipped: today is a weekend)');
   const started = await applyForLeave('emp', { type: 'casual', startDate: day(-7), endDate: day(-7), reason: 'Last week' });
   const r1 = await refused(() => cancelLeave('emp', started.id));
   ok('a leave that has begun: ask HR', r1.status === 409 && /Ask HR/.test(r1.message), r1);
