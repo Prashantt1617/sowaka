@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
+import { myEarnings } from '../services/employeePayroll.earnings';
 import { mySplit, reviewSplit, saveSplit, splitForHr } from '../services/employeePayroll.split';
 import { employeeAppSettingsForHr, setEmployeeAppSettingsForHr } from '../services/employeePayroll.settings';
 import { EmployeePayrollError, PAYROLL_APP_OFF, askHr, payrollAppEnabled } from '../services/employeePayroll.common';
@@ -48,6 +49,7 @@ export const uploadProofHandler = mine(async (req) => ({
   item: await uploadMyProof(callerId(req), String(req.params.item ?? ''), req.query.fy, { amountPaise: body(req).amountPaise, file: req.file }),
 }));
 export const proofFileHandler = mine(async (req) => ({ url: await myProofFile(callerId(req), String(req.params.item ?? ''), req.query.fy) }));
+export const earningsHandler = mine(async (req) => ({ earnings: await myEarnings(callerId(req), req.query.fy) }));
 
 // —— HR ——
 export const hrListProofsHandler = handle(async (req) =>

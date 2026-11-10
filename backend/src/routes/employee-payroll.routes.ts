@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import {
-  getDeclarationHandler, getProofsHandler, getSplitHandler, missingPunchesHandler, payrollHomeHandler, proofFileHandler,
+  earningsHandler, getDeclarationHandler, getProofsHandler, getSplitHandler, missingPunchesHandler, payrollHomeHandler, proofFileHandler,
   requirePayrollApp, reviewSplitHandler, saveDeclarationHandler, saveSplitHandler, uploadProofHandler,
 } from '../controllers/employeePayroll.controller';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -24,3 +24,4 @@ employeePayrollRouter.put('/tax-declaration', saveDeclarationHandler);
 employeePayrollRouter.get('/investment-proofs', getProofsHandler);
 employeePayrollRouter.post('/investment-proofs/:item', uploadInvestmentProofFile, uploadProofHandler);
 employeePayrollRouter.get('/investment-proofs/:item/file', proofFileHandler);
+employeePayrollRouter.get('/me/earnings', earningsHandler);
