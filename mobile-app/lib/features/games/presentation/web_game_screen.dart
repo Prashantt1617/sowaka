@@ -20,6 +20,7 @@ import '../data/game_socket_service.dart';
 import '../data/games_api_service.dart';
 import '../data/games_models.dart';
 import 'qr_scanner_screen.dart';
+import 'sowaka_games_badge.dart';
 
 /// A web game, full screen under a bar with the way back and its name.
 ///
@@ -529,14 +530,28 @@ class _WebGameScreenState extends State<WebGameScreen> {
             ? SystemUiOverlayStyle.light
             : SystemUiOverlayStyle.dark,
         leading: const BackButton(),
-        title: Text(
-          widget.title,
-          style: TextStyle(
-            color: _foreground,
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.2,
-          ),
+        // The Sowaka GAMES lockup beside the back arrow, then the game's
+        // name; the pages draw the same lockup top right until this build is
+        // everyone's, then theirs goes.
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            const SowakaGamesBadge(key: ValueKey('game-header-logo')),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                widget.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _foreground,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ),
+          ],
         ),
         actions: [
           if (explains)
