@@ -91,6 +91,8 @@ const day = (offset: number) => { const d = new Date(Date.now() + offset * 86_40
     .some((n) => /back in your balance/.test(n.body)));
 
   console.log('what cannot be cancelled');
+  const todays = await applyForLeave('emp', { type: 'casual', startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10), reason: 'Today' }).catch(() => null);
+  if (todays) ok('a leave for today can still be taken back on the day', (await cancelLeave('emp', todays.id)).status === 'cancelled');
   const started = await applyForLeave('emp', { type: 'casual', startDate: day(-7), endDate: day(-7), reason: 'Last week' });
   const r1 = await refused(() => cancelLeave('emp', started.id));
   ok('a leave that has begun: ask HR', r1.status === 409 && /Ask HR/.test(r1.message), r1);
@@ -105,8 +107,8 @@ const day = (offset: number) => { const d = new Date(Date.now() + offset * 86_40
   ok('a note over 500 characters is refused', r2.status === 400 && /500/.test(r2.message), r2);
   const r3 = await refused(() => decideLeave('mgr', pending.id, { decision: 'approved' }));
   ok('deciding a cancelled leave says the employee cancelled it', r3.status === 409 && /cancelled/.test(r3.message), r3);
-  ok('the rows all kept', (await leaves().countDocuments({ userId: 'emp' })) === 5
-    && (await leaves().countDocuments({ userId: 'emp', status: 'cancelled' })) === 2);
+  ok('the rows all kept', (await leaves().countDocuments({ userId: 'emp' })) === (todays ? 6 : 5)
+    && (await leaves().countDocuments({ userId: 'emp', status: 'cancelled' })) === (todays ? 3 : 2));
 
   await db.dropDatabase();
   console.log(`\n${failed ? `${failed} failed, ` : 'all '}${passed} passed`);

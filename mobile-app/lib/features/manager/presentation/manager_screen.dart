@@ -3,7 +3,6 @@ import '../../manage/presentation/team_faces_layout.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-
 import '../../shared/image_crop_sheet.dart';
 import '../../shared/image_source_sheet.dart';
 import '../../shared/photo_viewer.dart';
@@ -33,6 +32,7 @@ import '../../games/presentation/web_game_screen.dart';
 import '../../games/presentation/web_games_home.dart';
 import '../../policies/data/policies_api_service.dart';
 import '../../attendance/presentation/punch_screen.dart';
+import '../../attendance/presentation/punch_out_gate.dart';
 import '../../attendance/presentation/slide_to_punch.dart';
 import '../../quick_actions/presentation/quick_actions_screen.dart';
 import '../../requests/presentation/request_summary.dart';
@@ -106,10 +106,12 @@ class _ManagerScreenState extends State<ManagerScreen> {
   late final QuickActionsController _quickActionsController;
   final _connectComposerController = ConnectComposerController();
   bool _profileOpen = false;
+
   /// The tab one's own profile opens on, and a count of openings so a profile
   /// opened afresh (from the feed, say, while it was open) starts on it again.
   ProfileTab? _profileOpenOn = ProfileTab.workDetail;
   int _profileOpenings = 0;
+
   /// Whether the punch screen has already been offered this session, so
   /// closing it does not bring it straight back on the next rebuild.
   bool _punchPrompted = false;
@@ -157,13 +159,13 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // already out of date: read it now rather than on the next poll. Only a
     // request's notification names its type; a post's or a support reply's
     // reads nothing.
-    _receivedSubscription = AppNotificationService.instance.received.listen(
-      (data) {
-        NotificationBadge.arrived();
-        final type = '${data['type'] ?? ''}';
-        if (type.isNotEmpty) _bloc.refreshRequestsNow(type);
-      },
-    );
+    _receivedSubscription = AppNotificationService.instance.received.listen((
+      data,
+    ) {
+      NotificationBadge.arrived();
+      final type = '${data['type'] ?? ''}';
+      if (type.isNotEmpty) _bloc.refreshRequestsNow(type);
+    });
     // The bell's dot: anything unread since the inbox was last opened, read
     // now and again whenever the app comes back to the front.
     unawaited(NotificationBadge.refresh(_session));
@@ -196,7 +198,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
 
   @override
   void dispose() {
-    if (identical(_profileFeed, _connectComposerController)) _profileFeed = null;
+    if (identical(_profileFeed, _connectComposerController))
+      _profileFeed = null;
     unregisterPersonProfileOpener(_openTeamMember);
     unregisterSupportTicketOpener(_raiseSupportTicket);
     unregisterInboxProfileAction(_inboxProfileAction);
@@ -492,9 +495,14 @@ class _ManagerScreenState extends State<ManagerScreen> {
   }
 
   /// "Ask HR" anywhere in the app: the Support Desk, straight on a new ticket.
-  void _raiseSupportTicket({String? about}) => _openSupportTicket('', raise: true, about: about);
+  void _raiseSupportTicket({String? about}) =>
+      _openSupportTicket('', raise: true, about: about);
 
-  void _openSupportTicket(String ticketId, {bool raise = false, String? about}) {
+  void _openSupportTicket(
+    String ticketId, {
+    bool raise = false,
+    String? about,
+  }) {
     final dashboard = _bloc.state.dashboard;
     if (!mounted) return;
     openSupportDesk(
@@ -555,9 +563,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
     if (userId.isEmpty) return null;
     final dashboard = _bloc.state.dashboard;
     if (dashboard == null) return null;
-    return [...dashboard.team, ...dashboard.recognitionCandidates]
-        .where((member) => member.userId == userId)
-        .firstOrNull;
+    return [
+      ...dashboard.team,
+      ...dashboard.recognitionCandidates,
+    ].where((member) => member.userId == userId).firstOrNull;
   }
 
   /// Opens someone's profile by userId, over whatever is on screen: one's own
@@ -612,9 +621,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // revokes. Bounded, and never in the way: offline, the phone still
     // signs out.
     final token = _session.token;
-    await AppNotificationService.instance
-        .detachSession()
-        .timeout(const Duration(seconds: 4), onTimeout: () {});
+    await AppNotificationService.instance.detachSession().timeout(
+      const Duration(seconds: 4),
+      onTimeout: () {},
+    );
     await AuthApiService()
         .logout(token)
         .timeout(const Duration(seconds: 4))
@@ -625,7 +635,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
     // What the web pages kept on the phone (the Games home, Odd One Out's
     // local storage, keyed by name rather than by person): cleared, so the
     // next account does not inherit it. Bounded, like the rest.
-    await clearGamesWebData().timeout(const Duration(seconds: 3), onTimeout: () {});
+    await clearGamesWebData().timeout(
+      const Duration(seconds: 3),
+      onTimeout: () {},
+    );
     forgetPolicies();
     await AuthSessionStore().clear();
     if (!mounted) return;
@@ -700,7 +713,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
         final dashboard = state.dashboard!;
         // Never on the device's copy: whether today has a punch is the
         // server's to say.
-        if (!state.fromCache && !_punchPrompted && !_punchPromptUsed && _shouldOfferPunch(dashboard)) {
+        if (!state.fromCache &&
+            !_punchPrompted &&
+            !_punchPromptUsed &&
+            _shouldOfferPunch(dashboard)) {
           _punchPrompted = true;
           unawaited(const StartupPrefs().markPunchPromptShown());
           WidgetsBinding.instance.addPostFrameCallback(
@@ -739,19 +755,21 @@ class _ManagerScreenState extends State<ManagerScreen> {
                                 // while it shows; the screen's own context would
                                 // put that inset back under the banner.
                                 child: Builder(
-                                  builder: (context) => MediaQuery.removePadding(
-                                    context: context,
-                                    removeBottom: true,
-                                    child: _TabContent(
-                                      session: _session,
-                                      state: state,
-                                      bloc: _bloc,
-                                      quickActionsController: _quickActionsController,
-                                      connectComposerController:
-                                          _connectComposerController,
-                                      onOpenProfile: _openProfile,
-                                    ),
-                                  ),
+                                  builder: (context) =>
+                                      MediaQuery.removePadding(
+                                        context: context,
+                                        removeBottom: true,
+                                        child: _TabContent(
+                                          session: _session,
+                                          state: state,
+                                          bloc: _bloc,
+                                          quickActionsController:
+                                              _quickActionsController,
+                                          connectComposerController:
+                                              _connectComposerController,
+                                          onOpenProfile: _openProfile,
+                                        ),
+                                      ),
                                 ),
                               ),
                               if (!keyboardOpen)
@@ -767,7 +785,10 @@ class _ManagerScreenState extends State<ManagerScreen> {
                           // Their own tree, over every tab, when the garden is on.
                           if (!keyboardOpen)
                             Positioned.fill(
-                              child: FloatingTree(session: _session, refreshKey: state.tab),
+                              child: FloatingTree(
+                                session: _session,
+                                refreshKey: state.tab,
+                              ),
                             ),
                         ],
                       ),

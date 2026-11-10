@@ -250,6 +250,10 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
     row?.status === 'pending' && row.managerUserId === 'mgr' && row.punchIn instanceof Date && row.faceCheck?.attempts === 3 && row.faceCheck.inside === true && row.faceCheck.officeName === 'HQ', row);
   check('only one per day', (await refusal(() => requestFaceFallback('esha')))?.status === 409);
   const outPass = await verifyFace('esha', { photo: await photo(410) });
+  // A punch-out on a day open only as a request waits half an hour from the request's punch-in too.
+  check('a punch-out on the request in its first 30 minutes is refused', (await refusal(() => recordPunch('esha', 'out', { latitude: 28.4596, longitude: 77.0267, accuracy: 12 }, undefined, false, outPass.token)))?.status === 409);
+  await attendanceRegularizations().updateOne({ _id: row!._id }, { $set: { punchIn: new Date(row!.punchIn!.getTime() - 31 * 60_000) } });
+  row!.punchIn = new Date(row!.punchIn!.getTime() - 31 * 60_000);
   const pendingOut = await recordPunch('esha', 'out', { latitude: 28.4596, longitude: 77.0267, accuracy: 12 }, undefined, false, outPass.token) as { request?: unknown; punchOut?: string };
   check('a checked punch-out rides on the request', Boolean(pendingOut.request) && typeof pendingOut.punchOut === 'string', pendingOut);
   check('and spends its token', (await refusal(() => claimFaceToken('esha', outPass.token, 'again')))?.status === 403);
@@ -267,6 +271,7 @@ const consent = { consent: true, consentVersion: FACE_CONSENT_VERSION };
   const chetanIn = await recordPunch('chetan', 'in', { latitude: 28.4596, longitude: 77.0267, accuracy: 12 }, undefined, false, setUpAtPunch.token) as { punchIn?: string };
   check('the setup carries that punch, with no second selfie', typeof chetanIn.punchIn === 'string', chetanIn);
   check('and the setup token is spent', (await refusal(() => claimFaceToken('chetan', setUpAtPunch.token, 'again')))?.status === 403);
+  await attendanceRecords().updateOne({ employeeId: 'E-C2' }, { $set: { punchIn: new Date(Date.now() - 31 * 60_000) } });
   const later = await refusal(() => recordPunch('chetan', 'out', { latitude: 28.4596, longitude: 77.0267, accuracy: 12 }));
   check('every later punch needs the normal check', later?.status === 403 && later.face?.reason === 'check_required', later);
 
