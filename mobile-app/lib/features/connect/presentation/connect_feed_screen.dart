@@ -39,7 +39,6 @@ import '../../games/data/games_models.dart';
 import '../../games/presentation/web_game_screen.dart';
 import '../../shared/app_toast.dart';
 import '../../shared/network_status.dart';
-import '../../shared/photo_viewer.dart';
 
 // The engagement contests (caption, photo, Most Likely), their entries
 // sheet, and the poll card are drawn in their own files: this one was already

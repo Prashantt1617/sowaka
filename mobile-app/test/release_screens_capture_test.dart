@@ -28,6 +28,7 @@ import 'package:mobile_app/features/attendance/presentation/punch_screen.dart';
 import 'package:mobile_app/features/attendance/presentation/slide_to_punch.dart';
 import 'package:mobile_app/features/auth/data/auth_models.dart';
 import 'package:mobile_app/features/connect/data/connect_api_service.dart';
+import 'package:mobile_app/features/connect/data/connect_socket_service.dart';
 import 'package:mobile_app/features/connect/presentation/connect_feed_screen.dart';
 import 'package:mobile_app/features/face_id/face_camera.dart';
 import 'package:mobile_app/features/face_id/face_capture_layout.dart';
@@ -1833,6 +1834,119 @@ void main() {
       'Support Desk opened from Raise ticket: new ticket, message started',
     );
   });
+
+  // 6. Picture poll, voted from inside the picture -------------------------
+  // Figma "Poll updated" (4610:23636): the card before a vote, a picture
+  // opened with its Vote button (4607:23605), the vote cast there, and the
+  // card with the shares after.
+  _scenario('Poll, vote from the picture', (tester, shot, phone) async {
+    final photos = _contestPhotos();
+    String? selected;
+    const base = {'a': 55, 'b': 24, 'c': 23, 'd': 22};
+    Map<String, dynamic> poll() => {
+      'id': 'poll',
+      'type': 'survey',
+      'tag': 'Poll',
+      'author': {
+        'userId': 'emily',
+        'name': 'Emily Rode',
+        'initials': 'ER',
+        'designation': 'Product Manager',
+      },
+      'audience': {'label': 'Team'},
+      'body': {
+        'title': 'Which team outing should we plan next month?',
+        'options': [
+          for (final (id, label, photo) in [
+            ('a', 'Bowling', photos['a']),
+            ('b', 'Trekking', photos['b']),
+            ('c', 'Escape room', photos['c']),
+            ('d', 'Karaoke', photos['a']),
+          ])
+            {
+              'id': id,
+              'label': label,
+              'votes': base[id]! + (selected == id ? 1 : 0),
+              'imageUrl': photo,
+            },
+        ],
+        'totalVotes': 124 + (selected == null ? 0 : 1),
+      },
+      'liked': false,
+      'likeCount': 0,
+      'commentCount': 0,
+      'comments': <dynamic>[],
+      'publishedAt': DateTime.now()
+          .subtract(const Duration(hours: 2))
+          .toUtc()
+          .toIso8601String(),
+      'selectedPollOptionId': selected,
+    };
+    final client = MockClient((request) async {
+      final path = request.url.path;
+      if (path.endsWith('/connect/posts/poll/actions')) {
+        selected = jsonDecode(request.body)['optionId'] as String?;
+        return _ok({'post': poll()});
+      }
+      if (path.endsWith('/connect/feed')) {
+        return _ok({
+          'posts': [poll()],
+        });
+      }
+      return _ok({});
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: _theme(),
+        home: Scaffold(
+          body: ConnectFeedScreen(
+            session: _viewer,
+            profileAction: const SizedBox.shrink(),
+            api: ConnectApiService(
+              session: _viewer,
+              baseUrl: 'https://example.test',
+              client: client,
+            ),
+            socket: _QuietSocket(),
+          ),
+        ),
+      ),
+    );
+    await _settle(tester);
+    final tile = find.byKey(const ValueKey('poll-option-image-b'));
+    await tester.ensureVisible(tile);
+    await _settle(tester);
+    await shot('poll-picture-card', 'Picture poll before a vote');
+    await tester.tap(tile);
+    await _settle(tester);
+    await shot(
+      'poll-picture-open',
+      'A picture opened from the poll: its name, votes and Vote',
+    );
+    await tester.tap(find.byKey(const ValueKey('poll-option-vote')));
+    await _settle(tester);
+    await shot('poll-picture-voted', 'Voted from inside the picture');
+    await tester.tap(find.byKey(const ValueKey('poll-option-viewer-close')));
+    await _settle(tester);
+    await shot('poll-picture-card-voted', 'The card after: shares, the pick');
+  });
 }
 
 void _noTicket({String? about}) {}
+
+/// A live feed that never says anything, for the feed screens shot here.
+class _QuietSocket implements ConnectSocketService {
+  @override
+  Stream<ConnectChange> get changes => const Stream.empty();
+  @override
+  Stream<void> get reconnects => const Stream.empty();
+  @override
+  bool get isConnected => false;
+  @override
+  void connect() {}
+  @override
+  void dispose() {}
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
