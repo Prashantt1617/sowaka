@@ -8,10 +8,11 @@
  * working days graded a missed punch or absent; fixing one is the existing
  * correction request (POST /attendance/regularizations).
  */
-import { attendanceRecords, attendanceRegularizations, flexibleSplits, salaryStructures } from '../config/db';
-import { Payslip } from '../models/payrollRun.model';
+import { ObjectId } from 'mongodb';
+import { attendanceRecords, attendanceRegularizations, flexibleSplits, payrollRuns, payslips, salaryStructures } from '../config/db';
+import { Payslip, PayrollRunStatus } from '../models/payrollRun.model';
 import { fyOf } from '../shared/payroll/tds';
-import { employeeDayStatuses } from './attendance-report.service';
+import { employeeDayStatuses, joinedOn } from './attendance-report.service';
 import { correctionTriggerFor } from './attendance.service';
 import { policyForUser, withPolicyMemo } from './shift.service';
 import {
@@ -296,6 +297,158 @@ async function homePayPeriod(org: string, periodRaw: unknown, now: Date): Promis
   }
 }
 
+// —— Home's summary cards (the carousel) ——
+
+function previousPeriod(period: string): string {
+  const [y, m] = period.split('-').map(Number);
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+}
+
+/** "2026-10" → "October". */
+const monthName = (period: string) =>
+  new Date(`${period}-01T00:00:00Z`).toLocaleString('en-IN', { month: 'long', timeZone: 'UTC' });
+
+/** Runs whose payslips the employee may see, as payrollRun.service has them. */
+const RELEASED_RUN_STATUSES: PayrollRunStatus[] = ['approved', 'paid'];
+
+const tdsOf = (slip: Payslip) => slip.deductions.find((d) => d.key === 'income_tax')?.amountPaise ?? 0;
+
+/**
+ * The last pay period's salary, as a card: its released payslip, else the
+ * estimate over all its days. Null for someone with no salary structure, or
+ * who joined after it ended; a not-set-up state when HR's settings are
+ * missing (never made-up figures).
+ */
+export type HomeSalaryCard = { period: string; label: string } & (SalaryNotSetUp | {
+  notConfigured: false;
+  released: boolean;
+  payslipId: string | null;
+  daysPaid: number | null;
+  daysInPeriod: number | null;
+  grossPaise: number;
+  takeHomePaise: number;
+  deductionsPaise: number;
+  lopPaise: number;
+  lopDays: number;
+  overtimePaise: number;
+  reimbursementsPaise: number;
+});
+
+async function salaryCard(org: string, userId: string, joined: string | undefined, period: string, now: Date): Promise<HomeSalaryCard | null> {
+  const prev = previousPeriod(period);
+  const label = monthName(prev);
+  const released = await myReleasedPayslipFor(userId, prev);
+  let range: PeriodRange | null = null;
+  let problem = 'the pay period is not set up';
+  if (!released) {
+    try {
+      range = await payrollPeriodRange(org, prev);
+    } catch (error) {
+      if (!(error instanceof PayrollInputsError) || error.statusCode !== 409) throw error;
+      problem = error.message;
+    }
+    // Not yet with the company then: there is no salary for that period.
+    if (range && joined && joined > range.to) return null;
+  }
+  const pay = released ? { salary: fromPayslip(released) }
+    : range ? await estimateFor(org, userId, prev, range, now)
+      : await payPeriodNotSetUp(org, userId, problem);
+  if (!pay) return null;
+  if ('notSetUp' in pay && pay.notSetUp) return { period: prev, label, ...pay.notSetUp };
+  if (!('salary' in pay) || !pay.salary) return null;
+  const s = pay.salary;
+  const daysInPeriod = s.baseDays;
+  return {
+    period: prev,
+    label,
+    notConfigured: false,
+    released: s.status === 'final',
+    payslipId: s.payslipId,
+    // Paid days = the period's base days less the days lost; unknown when the payslip has no base days.
+    daysPaid: daysInPeriod === null ? null : Math.max(0, daysInPeriod - s.lopDays),
+    daysInPeriod,
+    grossPaise: s.grossPaise,
+    takeHomePaise: s.takeHomePaise,
+    deductionsPaise: s.deductions.reduce((sum, d) => sum + d.amountPaise, 0),
+    lopPaise: s.lopPaise,
+    lopDays: s.lopDays,
+    // Paid on top of the gross (and inside the take-home): overtime, flexible and other reimbursements.
+    overtimePaise: s.overtimePaise,
+    reimbursementsPaise: s.reimbursementsPaise,
+  };
+}
+
+/** The person's released payslips of the months from..to, the newest run's for each month. */
+async function releasedPayslipsBetween(org: string, userId: string, from: string, to: string) {
+  const slips = await payslips().find({ org, userId, period: { $gte: from, $lte: to } }).sort({ createdAt: -1 }).toArray();
+  const runIds = [...new Set(slips.map((s) => s.runId))].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
+  const runs = runIds.length
+    ? await payrollRuns().find({ _id: { $in: runIds }, status: { $in: RELEASED_RUN_STATUSES } }, { projection: { _id: 1 } }).toArray()
+    : [];
+  const released = new Set(runs.map((r) => r._id.toHexString()));
+  const byPeriod = new Map<string, Payslip>();
+  for (const slip of slips) if (released.has(slip.runId) && !byPeriod.has(slip.period)) byPeriod.set(slip.period, slip);
+  return byPeriod;
+}
+
+/**
+ * Income tax this FY: what the released payslips withheld from April to the
+ * month before this pay period, and this period's own (its payslip once
+ * released, else the estimate's). The regime is the declaration's; a FY
+ * whose tax rules are not set up says so instead.
+ */
+async function taxCard(
+  org: string,
+  userId: string,
+  period: string,
+  declaration: { regime: string; chosen: boolean } | null,
+  thisMonth: { released: boolean; taxPaise: number } | null,
+) {
+  const { fy, firstPeriod } = fyOf(period);
+  if (!declaration) {
+    return {
+      fy,
+      notConfigured: true as const,
+      reason: 'tax_rules_not_set_up' as const,
+      message: askHr(`The income tax rules for FY ${fy} are not set up yet`),
+    };
+  }
+  const slips = await releasedPayslipsBetween(org, userId, firstPeriod, period);
+  let before = 0;
+  for (const [p, slip] of slips) if (p < period) before += tdsOf(slip);
+  const own = slips.get(period);
+  // This period's tax: its payslip, else the estimate; unknown while its pay can't be worked out.
+  const thisMonthPaise = own ? tdsOf(own) : thisMonth ? thisMonth.taxPaise : null;
+  return {
+    fy,
+    notConfigured: false as const,
+    regime: declaration.regime,
+    regimeChosen: declaration.chosen,
+    paidSoFarPaise: before + (thisMonthPaise ?? 0),
+    paidBeforeThisMonthPaise: before,
+    thisMonthPaise,
+    thisMonthReleased: Boolean(own),
+    fromMonth: firstPeriod,
+    // The months the total covers: up to this one, or the one before while this one is unknown.
+    toMonth: thisMonthPaise === null && period > firstPeriod ? previousPeriod(period) : period,
+    thisMonth: period,
+  };
+}
+
+/** The flexible pool as the person split it, head by head, and what is left; null without flexible heads. */
+function fbpCard(split: Awaited<ReturnType<typeof mySplit>> | null) {
+  if (!split?.available) return null;
+  return {
+    poolPaise: split.poolPaise,
+    heads: split.components.filter((c) => c.amountPaise > 0).map((c) => ({ code: c.code, name: c.name, amountPaise: c.amountPaise })),
+    assignedPaise: split.assignedPaise,
+    unassignedPaise: split.unassignedPaise,
+    // The pool itself not set: shown as split, without a "Not assigned" share.
+    notConfigured: split.notConfigured,
+    missing: split.missing,
+  };
+}
+
 // —— Home ——
 
 export async function myPayrollHome(userId: string, periodRaw: unknown, now = new Date()) {
@@ -328,6 +481,14 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
 
   const salary = pay && 'salary' in pay ? pay.salary : null;
   const salaryNotSetUp = pay && 'notSetUp' in pay ? pay.notSetUp : null;
+  // The carousel: last period's salary, this FY's tax, the flexible split.
+  const [salaryCardOf, taxCardOf] = await Promise.all([
+    salaryCard(org, userId, joinedOn(user), period, now),
+    taxCard(org, userId, period, declaration, salary
+      ? { released: salary.status === 'final', taxPaise: salary.deductions.find((d) => d.key === 'income_tax')?.amountPaise ?? 0 }
+      : null),
+  ]);
+  const cards = { salary: salaryCardOf, tax: taxCardOf, fbp: fbpCard(split) };
   const splitSummary = split?.available
     ? {
       notConfigured: split.notConfigured,
@@ -379,6 +540,7 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
     // Set (and salary null) when the pay cannot be worked out until HR sets something up.
     salaryNotSetUp,
     todo,
+    cards,
     missingPunches: { period: punchesPeriod, count: punches.count, fixBy: punches.fixBy, locked: punches.locked },
     split: splitSummary,
     declaration: declaration
