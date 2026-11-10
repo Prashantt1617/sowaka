@@ -918,13 +918,14 @@ async function startTalking(){ if(!canTalk()||VOICE.holding||VOICE.pending||VOIC
   if(VOICE.cancel)stopTalking(false); }
 async function stopTalking(drop){ if(VOICE.pending){ VOICE.cancel=true; return; } if(!VOICE.holding)return;
   VOICE.holding=false; clearInterval(VOICE.tick); micSync();
+  if(VOICE.redraw){ VOICE.redraw=false; if(screen==='waiting')renderWaiting(); }
   let clip=null; try{ clip=drop?(await window.Sowaka.voice.cancel(),null):await window.Sowaka.voice.stop(); }catch(e){ clip=null; }
   if(!clip||!clip.data||(+clip.ms||0)<400){ LIVE.api.voiceRelease().catch(()=>{}); if(!drop&&clip)show('Hold the mic a little longer to talk'); return; }
   VOICE.sending=true;
   try{ await LIVE.api.voiceClip(clip); buzz('light'); }
   catch(err){ LIVE.api.voiceRelease().catch(()=>{}); show(err.message||'That message did not go through',true); } // the mic is let go either way
   finally{ VOICE.sending=false; } }
-function playVoice(evt){ if(!evt||!evt.data||evt.userId===myId()||VOICE.muted.has(evt.userId))return;
+function playVoice(evt){ if(!evt||!evt.data||evt.userId===myId()||VOICE.muted.has(evt.userId)||!soundOn)return; // the speaker toggle mutes voices too
   VOICE.queue.push(evt); if(!VOICE.playing)nextVoice(); }
 async function nextVoice(){ const evt=VOICE.queue.shift(); if(!evt){ VOICE.playing=false; if(master)master.gain.value=.5; micSync(); return; }
   VOICE.playing=true; const a=ctx(); if(!a){ VOICE.playing=false; return; }
@@ -933,7 +934,7 @@ async function nextVoice(){ const evt=VOICE.queue.shift(); if(!evt){ VOICE.playi
   try{ const bin=atob(evt.data), bytes=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
     const buf=await new Promise((ok,no)=>{ const p=a.decodeAudioData(bytes.buffer,ok,no); if(p&&p.catch)p.catch(no); });
     if(master)master.gain.value=.12; // the game's sounds dip under the voice
-    src=a.createBufferSource(); src.buffer=buf; const g=a.createGain(); g.gain.value=1.4; src.connect(g); g.connect(a.destination);
+    src=a.createBufferSource(); src.buffer=buf; const g=a.createGain(); g.gain.value=1.2; if(!VOICE.comp){ VOICE.comp=a.createDynamicsCompressor(); VOICE.comp.threshold.value=-12; VOICE.comp.ratio.value=4; VOICE.comp.connect(a.destination); } src.connect(g); g.connect(VOICE.comp); // loud clips are evened out, never clipped
     await new Promise(done=>{ src.onended=done; src.start(); setTimeout(done,(buf.duration+.5)*1000); }); }
   catch(e){ /* a message this phone cannot decode is skipped */ }
   pill.onclick=null; nextVoice(); }
@@ -1053,7 +1054,9 @@ function renderLobby(){ screen='lobby'; const now=serverNow(); const inv=LIVE.in
       <div class="codebox"><span>Have a code?</span><input id="code" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="4 digits" value="${esc(LIVE.codeInput)}" autocomplete="off"><button class="btn" data-act="code">Join</button></div></div>
     <div class="card2"><h3>Open tables</h3>${LIVE.rooms.length?`<div class="tables">${LIVE.rooms.map(roomCard).join('')}</div>`:'<div class="empty">No open tables right now. Start one and invite a colleague, or tap Quick game.</div>'}</div>`); }
 /* ---------- screens: the waiting room ---------- */
-function renderWaiting(){ const r=LIVE.room; if(!r)return; voiceSwitch(); screen='waiting'; G.mode='menu'; $('#menu').hidden=true; $('#leaveBtn').hidden=true; renderHud();
+function renderWaiting(){ const r=LIVE.room; if(!r)return; voiceSwitch();
+  // Not redrawn under a finger holding its mic: the release must reach the button it pressed. Drawn when it lets go.
+  if(typeof VOICE!=='undefined'&&(VOICE.holding||VOICE.pending)&&document.querySelector('[data-mic]')){ VOICE.redraw=true; return; } screen='waiting'; G.mode='menu'; $('#menu').hidden=true; $('#leaveBtn').hidden=true; renderHud();
   const me=r.you, host=r.hostId===me, size=sizeOfRoom(r), hostP=r.players.find(p=>p.userId===r.hostId)||r.players[0]||{name:'A colleague'}, ready=r.players.filter(p=>p.online!==false).length, full=r.players.length>=size;
   const inviteHint=(r.invited||[]).length?`${esc(first(r.invited[0].name))} invited`:host?'Invite a colleague or share the code':'Waiting for someone';
   const seat=i=>{ const p=r.players[i]; return p?`<div class="seat">${face(p,'lg'+(p.online===false?' off':''))}<b>${p.userId===me?'You':esc(first(p.name))}</b><span>${p.userId===r.hostId?'Host':p.online===false?'Away':'Ready'}</span></div>`

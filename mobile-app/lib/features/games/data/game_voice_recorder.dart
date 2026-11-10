@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
@@ -32,7 +33,7 @@ class GameVoiceClip {
 ///
 /// The page asks for [start] when the mic is pressed and for [stop] when it is
 /// let go; [cancel] drops a recording nobody will hear. Voice quality only —
-/// 16 kHz mono AAC at 24 kbps, about 45 KB for the longest message — so a
+/// mono AAC at 32 kbps, about 60 KB for the longest message — so a
 /// clip crosses the game's socket in a moment. The phone keeps playing
 /// through the loudspeaker (not the earpiece) and mixes with the game's own
 /// sounds while it records.
@@ -63,13 +64,18 @@ class GameVoiceRecorder {
     await _recorder.start(
       const RecordConfig(
         encoder: AudioEncoder.aacLc,
-        sampleRate: 16000,
+        // 44.1 kHz, not 16: the rate becomes the whole app's while it records,
+        // and the game's own sound is made at the phone's usual rate.
+        sampleRate: 44100,
         numChannels: 1,
-        bitRate: 24000,
+        bitRate: 32000,
+        // Music in another app keeps playing (Android would pause it).
+        audioInterruption: AudioInterruptionMode.none,
         iosConfig: IosRecordConfig(
+          // No `allowBluetooth`: with it, AirPods drop into the low-quality
+          // call profile and stay there. The phone's own mic records.
           categoryOptions: [
             IosAudioCategoryOption.defaultToSpeaker,
-            IosAudioCategoryOption.allowBluetooth,
             IosAudioCategoryOption.allowBluetoothA2DP,
             IosAudioCategoryOption.mixWithOthers,
           ],
@@ -106,6 +112,20 @@ class GameVoiceRecorder {
     _startedAt = null;
     final path = await _recorder.stop() ?? _path;
     _deleteQuietly(path);
+    _restorePlayback();
+  }
+
+  /// Recording leaves the phone's audio set up to record (on iOS, for the
+  /// whole app, until something sets it back). Put it back to plain playback
+  /// so the game's sounds, the next message and every other player in the app
+  /// sound as they did before.
+  void _restorePlayback() {
+    if (_made == null) return;
+    unawaited(
+      AudioPlayer.global
+          .setAudioContext(AudioContextConfig().build())
+          .then((_) {}, onError: (Object _) {}),
+    );
   }
 
   Future<GameVoiceClip?> _finish() async {
@@ -118,6 +138,7 @@ class GameVoiceRecorder {
         .inMilliseconds
         .clamp(0, gameVoiceMaxDuration.inMilliseconds);
     final path = await _recorder.stop() ?? _path;
+    _restorePlayback();
     if (path == null) return null;
     try {
       final bytes = await File(path).readAsBytes();

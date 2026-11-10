@@ -52,5 +52,5 @@ The page replays `lastShot` with `simulateShot` from `lastShot.from` positions (
 - `voice:hold` → `{until, maxMs}` the mic is yours for 17 s, or 409 "Priya is talking". The others get `voice:floor {userId, name, until}`.
 - `voice:clip {data (base64), mime, ms}` → `{}`: the holder's recording (≤ 15 s, ≥ 0.4 s, ≤ 160,000 base64 chars, an audio type) goes to everyone else at the table as `voice:clip {userId, name, mime, ms, data}`, and the mic is free (`voice:floor {userId: null}`).
 - `voice:release` → `{}` let go without sending; a disconnect lets go too.
-- Limits: the mic twice a second, a clip every 3 s per socket. Nothing is stored. Check: `MONGODB_DB=game_voice_scratch npm run game-voice:check`.
-The app records (`Sowaka.voice.start/stop/cancel`, bridge v6: 16 kHz mono AAC in MP4, about 45 KB for 15 s); the page plays clips with Web Audio, one after another, the game's sounds dipped under them.
+- Limits per socket: the mic twice a second; a clip every 2 s after a burst of three; letting go is never limited. Nothing is stored. Check: `MONGODB_DB=game_voice_scratch npm run game-voice:check`.
+The app records (`Sowaka.voice.start/stop/cancel`, bridge v6: 44.1 kHz mono AAC at 32 kbps in MP4, about 60 KB for 15 s; the phone's audio is set back to plain playback after each message); the page plays clips with Web Audio, one after another, the game's sounds dipped under them.
