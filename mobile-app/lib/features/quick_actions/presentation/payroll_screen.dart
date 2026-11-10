@@ -661,7 +661,7 @@ class _PayrollHomePageState extends State<_PayrollHomePage> {
                   imageAsset:
                       'assets/icons/action_card_reimbursement_rupee.png',
                   imageSize: 28,
-                  onTap: () => _open(const _SplitPage()),
+                  onTap: () => _open(const _FbpPage()),
                 ),
               // Proofs stay a tap away once uploaded or approved, not only
               // while something is left to do.
