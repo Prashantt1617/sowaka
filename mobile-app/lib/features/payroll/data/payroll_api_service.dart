@@ -205,6 +205,15 @@ class PayrollApiService {
     );
   }
 
+  // ---------------------------------------------------------------- earnings
+
+  /// A financial year's earnings ("2026-27"); without [fy], the latest year
+  /// with pay.
+  Future<PayrollEarnings> fetchEarnings({String? fy}) async {
+    final json = await _json('GET', _path('/payroll/me/earnings', {'fy': fy}));
+    return PayrollEarnings.fromJson(_object(json['earnings']));
+  }
+
   // ---------------------------------------------------------------- declaration
 
   Future<TaxDeclaration> fetchDeclaration({String? fy}) async {

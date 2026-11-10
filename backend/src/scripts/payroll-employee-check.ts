@@ -20,6 +20,7 @@ import { PayHead } from '../models/payHead.model';
 import { createRun, myPayslip, myPayslips, recomputeRun, submitRun } from '../services/payrollRun.service';
 import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
 import { employeeAppSettingsForHr, setEmployeeAppSettingsForHr } from '../services/employeePayroll.settings';
+import { myEarnings } from '../services/employeePayroll.earnings';
 import { mySplit, reviewSplit, saveSplit, splitWindow } from '../services/employeePayroll.split';
 import { epfBalanceForHr, myEpf, setEpfBalanceForHr, setMyEpfBalance } from '../services/employeePayroll.epf';
 import { encryptField } from '../services/fieldCrypto';
@@ -382,6 +383,90 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     nEpf.enrolled && nEpf.monthly === null && nEpf.notSetUp?.reason === 'statutory_not_set_up' && /Ask HR\.$/.test(nEpf.notSetUp.message)
       && nEpf.savedThroughSowaka.employeePaise === novPf.employeePaise, nEpf);
   await statutoryConfigs().insertOne(fyRow2!);
+  // —— earnings: the year's released payslips, this pay period's estimate, the yearly salary ——
+  {
+    const nov12 = new Date('2026-11-12T06:00:00Z');
+    const e = await myEarnings('asha', undefined, nov12);
+    const octE = e.months.find((m) => m.period === '2026-10');
+    const novE = e.months.find((m) => m.period === '2026-11');
+    const octRow = await payslips().findOne({ runId: oct.run.id, userId: 'asha' });
+    check('earnings: FY 2026-27 by default, the only year with pay, and it is the current one',
+      e.fy === '2026-27' && e.current === true && e.fys.join() === '2026-27', [e.fy, e.current, e.fys]);
+    check('earnings: October from the released payslip (its gross, what reached the bank, its id)',
+      octE?.status === 'released' && octE.grossPaise === octRow!.grossPaise && octE.netPaise === octRow!.netPayablePaise
+        && octE.payslipId === octRow!._id.toHexString() && octE.label === 'October 2026', octE);
+    const novHome = (await homeOn('asha', undefined, nov12)).salary!;
+    check('earnings: November (its run still a draft) is Home\'s estimate, not the draft payslip',
+      novE?.status === 'estimate' && novE.payslipId === null && novE.netPaise === novHome.takeHomePaise
+        && novE.grossPaise === novHome.grossPaise - novHome.lopPaise, [novE, novHome]);
+    check('earnings: months oldest first, the span Oct–Nov', e.months.map((m) => m.period).join() === '2026-10,2026-11' && e.span === 'Oct–Nov', [e.months, e.span]);
+    check('earnings: the year\'s gross is the months\' gross', e.grossPaise === e.months.reduce((t, m) => t + m.grossPaise, 0), e.grossPaise);
+    check('earnings: gross − tax − PF and PT − other deductions + reimbursements = take-home = the months\' net',
+      e.grossPaise - e.taxPaise - e.pfPtPaise - e.otherDeductionsPaise + e.reimbursementsPaise === e.takeHomePaise
+        && e.takeHomePaise === e.months.reduce((t, m) => t + m.netPaise, 0), e);
+    const basic = e.components.find((c) => c.code === 'BASIC');
+    check('earnings: the yearly salary is the structure (Basic 50% of ₹18 lakh, the split\'s Fuel ₹3,000 × 12)',
+      e.componentsSource === 'structure' && basic?.annualPaise === R(9_00_000) && e.components.find((c) => c.code === 'FUEL')?.annualPaise === R(36_000)
+        && e.componentsNotSetUp === null, e.components);
+    check('earnings: "Total a year" is the components\' sum', e.annualTotalPaise === e.components.reduce((t, c) => t + c.annualPaise, 0) && e.annualTotalPaise > 0, e.annualTotalPaise);
+
+    // An earlier year: a released March 2026 payslip with 3 unpaid days and a hidden deduction.
+    const marRun = await payrollRuns().insertOne({ org: ORG, period: '2026-03', runType: 'regular', status: 'paid', employeeCount: 1, totals: { grossPaise: 0, employeeDeductionsPaise: 0, netPaise: 0, reimbursementsPaise: 0, employerCostPaise: 0 }, createdByUserId: 'hr', createdAt: now, updatedAt: now });
+    const marSlip = {
+      org: ORG, runId: marRun.insertedId.toHexString(), period: '2026-03', userId: 'asha', employeeName: 'Asha Test', annualCtcPaise: R(15_00_000), monthlyCtcPaise: R(1_25_000),
+      earnings: [
+        { code: 'BASIC', name: 'Basic', calcLabel: '', fullPaise: R(62_500), paidPaise: R(56_452) },
+        { code: 'FIXED_ALLOWANCE', name: 'Fixed Allowance', calcLabel: '', fullPaise: R(50_000), paidPaise: R(45_161) },
+      ],
+      deductions: [
+        { key: 'epf', name: 'EPF', amountPaise: R(1_800) },
+        { key: 'pt', name: 'Professional Tax', amountPaise: R(200) },
+        { key: 'income_tax', name: 'Income Tax', amountPaise: R(8_000) },
+        { key: 'LOAN', name: 'Loan recovery', amountPaise: R(1_000), hidden: true },
+      ],
+      reimbursementLines: [{ code: 'FUEL', name: 'Fuel & vehicle', amountPaise: R(2_500) }],
+      pfWagePaise: R(15_000), grossPaise: R(1_01_613), employeeDeductionsPaise: R(11_000), netPaise: R(90_613), reimbursementsPaise: R(2_500), netPayablePaise: R(93_113), employerCostPaise: 0,
+      epf: { contributionWagePaise: R(15_000), employeePaise: R(1_800), employerEpsPaise: 0, employerEpfPaise: 0 },
+      inputs: { workingDays: 31, lopDays: 3, payableDays: 28, approvedLeaveDays: 0, approvedOtHours: 0, overtimePaise: 0, reimbursementsPaise: 0, reimbursementClaimIds: [] },
+      createdAt: now,
+    };
+    await payslips().insertOne({ ...marSlip } as never);
+    // Neither another company's payslip nor a draft run's counts.
+    const otherRun = await payrollRuns().insertOne({ org: 'otherco', period: '2026-02', runType: 'regular', status: 'paid', employeeCount: 1, totals: { grossPaise: 0, employeeDeductionsPaise: 0, netPaise: 0, reimbursementsPaise: 0, employerCostPaise: 0 }, createdByUserId: 'hr', createdAt: now, updatedAt: now });
+    await payslips().insertOne({ ...marSlip, org: 'otherco', runId: otherRun.insertedId.toHexString(), period: '2026-02' } as never);
+    const draftRun = await payrollRuns().insertOne({ org: ORG, period: '2026-01', runType: 'regular', status: 'draft', employeeCount: 1, totals: { grossPaise: 0, employeeDeductionsPaise: 0, netPaise: 0, reimbursementsPaise: 0, employerCostPaise: 0 }, createdByUserId: 'hr', createdAt: now, updatedAt: now });
+    await payslips().insertOne({ ...marSlip, runId: draftRun.insertedId.toHexString(), period: '2026-01' } as never);
+
+    const p = await myEarnings('asha', '2025-26', nov12);
+    check('earnings: both years to switch between, newest first', p.fys.join() === '2026-27,2025-26', p.fys);
+    check('earnings: FY 2025-26 has only the released March (not another company\'s, not a draft run\'s)',
+      p.fy === '2025-26' && p.current === false && p.months.map((m) => m.period).join() === '2026-03' && p.span === 'Mar', p.months);
+    check('earnings: March has its 3 unpaid days', p.months[0]?.unpaidDays === 3 && p.months[0].grossPaise === R(1_01_613) && p.months[0].netPaise === R(93_113), p.months[0]);
+    check('earnings: March\'s tax, PF and PT, and the hidden loan as another deduction',
+      p.taxPaise === R(8_000) && p.pfPtPaise === R(2_000) && p.otherDeductionsPaise === R(1_000) && p.reimbursementsPaise === R(2_500) && p.takeHomePaise === R(93_113), p);
+    check('earnings: an earlier year\'s yearly salary is what its payslips were entitled to',
+      p.componentsSource === 'payslips' && p.components.map((c) => `${c.code}:${c.annualPaise}`).join() === `BASIC:${R(62_500)},FIXED_ALLOWANCE:${R(50_000)},FUEL:${R(2_500)}`
+        && p.annualTotalPaise === R(1_15_000) && p.estimateNotSetUp === null, p.components);
+    check('earnings: a year not started is refused (400)', (await refusal(() => myEarnings('asha', '2027-28', nov12)))?.status === 400);
+    check('earnings: a year written wrong is refused (400)', (await refusal(() => myEarnings('asha', '2026-28', nov12)))?.status === 400);
+    const none = await myEarnings('asha', '2024-25', nov12);
+    check('earnings: a year with no pay is empty, not made up', none.months.length === 0 && none.grossPaise === 0 && none.span === null && none.components.length === 0, none);
+
+    const d = await myEarnings('dev', undefined, nov12);
+    check('earnings: no structure and no pay: nothing listed, the salary says it is not set up',
+      d.fys.length === 0 && d.months.length === 0 && d.componentsNotSetUp?.reason === 'no_salary_structure' && /Ask HR\.$/.test(d.componentsNotSetUp.message), d);
+
+    const row = await statutoryConfigs().findOne({ fy: '2026-27' });
+    await statutoryConfigs().deleteOne({ fy: '2026-27' });
+    const s = await myEarnings('bala', undefined, nov12);
+    check('earnings: no statutory row: no estimate month, said, and no made-up yearly salary',
+      s.months.every((m) => m.status === 'released') && s.estimateNotSetUp?.reason === 'statutory_not_set_up'
+        && s.componentsNotSetUp?.reason === 'statutory_not_set_up' && s.components.length === 0 && /Ask HR\.$/.test(s.componentsNotSetUp.message), s);
+    check('earnings: no statutory row: the released October still shows', s.months.some((m) => m.period === '2026-10'), s.months);
+    await statutoryConfigs().insertOne(row!);
+    await payslips().deleteMany({ period: { $in: ['2026-01', '2026-02', '2026-03'] } });
+    await payrollRuns().deleteMany({ _id: { $in: [marRun.insertedId, otherRun.insertedId, draftRun.insertedId] } });
+  }
 
   await db.dropDatabase();
   console.log(failed === 0 ? `\nall ${passed} payroll employee checks passed` : `\n${failed} check(s) failed, ${passed} passed`);

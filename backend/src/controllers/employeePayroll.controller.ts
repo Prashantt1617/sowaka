@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
 import { epfBalanceForHr, myEpf, setEpfBalanceForHr, setMyEpfBalance } from '../services/employeePayroll.epf';
+import { myEarnings } from '../services/employeePayroll.earnings';
 import { mySplit, reviewSplit, saveSplit, splitForHr } from '../services/employeePayroll.split';
 import { employeeAppSettingsForHr, setEmployeeAppSettingsForHr } from '../services/employeePayroll.settings';
 import { EmployeePayrollError, PAYROLL_APP_OFF, askHr, payrollAppEnabled } from '../services/employeePayroll.common';
@@ -58,6 +59,7 @@ export const uploadFbpBillHandler = mine(async (req) => ({
 export const fbpBillFileHandler = mine(async (req) => ({ url: await myFbpBillFile(callerId(req), String(req.params.billId ?? '')) }));
 export const myEpfHandler = mine(async (req) => ({ epf: await myEpf(callerId(req)) }));
 export const setMyEpfBalanceHandler = mine(async (req) => ({ epf: await setMyEpfBalance(callerId(req), body(req)) }));
+export const earningsHandler = mine(async (req) => ({ earnings: await myEarnings(callerId(req), req.query.fy) }));
 
 // —— HR ——
 export const hrListProofsHandler = handle(async (req) =>

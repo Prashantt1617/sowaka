@@ -3,7 +3,7 @@ import {
   fbpBillFileHandler, getFbpHandler, getFbpHeadHandler, uploadFbpBillHandler,
 } from '../controllers/employeePayroll.controller';
 import {
-  getDeclarationHandler, getProofsHandler, myEpfHandler, setMyEpfBalanceHandler, getSplitHandler, missingPunchesHandler, payrollHomeHandler, proofFileHandler,
+  earningsHandler, getDeclarationHandler, getProofsHandler, myEpfHandler, setMyEpfBalanceHandler, getSplitHandler, missingPunchesHandler, payrollHomeHandler, proofFileHandler,
   requirePayrollApp, reviewSplitHandler, saveDeclarationHandler, saveSplitHandler, uploadProofHandler,
 } from '../controllers/employeePayroll.controller';
 import { requireAuth } from '../middleware/auth.middleware';
