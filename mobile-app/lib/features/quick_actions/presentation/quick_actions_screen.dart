@@ -3197,9 +3197,14 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       return 'Your missed punched request is currently under review by your '
           'manager for this day.';
     }
-    // A leave still with the manager is not a notice: the day wears its
-    // "Leave Applied" tag and, while the leave is yet to begin, offers to
-    // take it back (node 2112:69787).
+    // A leave still with the manager and yet to begin is not a notice: the
+    // day wears its "Leave Applied" tag and offers to take it back (node
+    // 2112:69787). Once it has begun there is nothing to do but wait.
+    if (day.kind == AttendanceKind.leavePending &&
+        !(day.leave != null && _leaveCancellable(day.leave!))) {
+      return 'Your leave request is currently under review by your manager '
+          'for this day.';
+    }
     return null;
   }
 

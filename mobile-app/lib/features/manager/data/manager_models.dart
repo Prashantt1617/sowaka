@@ -891,7 +891,6 @@ class OvertimeRequest {
       decision: switch (json['status']) {
         'approved' => LeaveDecision.approved,
         'declined' => LeaveDecision.declined,
-        'cancelled' => LeaveDecision.cancelled,
         _ => LeaveDecision.pending,
       },
       managerNote: json['managerNote'] as String? ?? '',

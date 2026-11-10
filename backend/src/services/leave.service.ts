@@ -583,7 +583,8 @@ async function carriedForwardInto(
  */
 async function yearWasTracked(userId: string, from: Date, to: Date): Promise<boolean> {
   const [leaveCount, attendanceCount] = await Promise.all([
-    leaves().countDocuments({ userId, startDate: { $lte: to }, endDate: { $gte: from } }, { limit: 1 }),
+    // A leave taken back is no sign the year was tracked.
+    leaves().countDocuments({ userId, status: { $ne: 'cancelled' }, startDate: { $lte: to }, endDate: { $gte: from } }, { limit: 1 }),
     attendanceRecords().countDocuments(
       { userId, workDate: { $gte: from.toISOString().slice(0, 10), $lte: to.toISOString().slice(0, 10) } },
       { limit: 1 },
@@ -690,6 +691,9 @@ export async function decideLeave(
   if (!employee || employee.managerUserId !== managerUserId) {
     throw new LeaveError(403, 'Only the employee’s current manager can decide this leave');
   }
+  if (leave.status === 'cancelled') {
+    throw new LeaveError(409, 'The employee cancelled this leave');
+  }
   if (leave.status !== 'pending') {
     throw new LeaveError(409, 'Leave request has already been decided');
   }
@@ -760,8 +764,10 @@ export async function cancelLeave(userId: string, leaveIdInput: string, input: {
   if (leave.status === 'declined') {
     throw new LeaveError(409, 'A declined leave has nothing to cancel');
   }
-  // Dates are stored as UTC midnight of the calendar day, so today is compared the same way.
-  const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+  // Dates are stored as UTC midnight of the calendar day; today is the day it is in India, where
+  // every org works, so at 02:00 IST a leave starting that day has begun, as the app sees it.
+  const istDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const today = new Date(`${istDay}T00:00:00.000Z`);
   if (leave.startDate.getTime() <= today.getTime()) {
     throw new LeaveError(409, 'Leave that has already started cannot be cancelled here. Ask HR.');
   }
@@ -846,6 +852,9 @@ export async function adminDecideLeave(
   if (!leave) throw new LeaveError(404, 'Leave request not found');
   if (leave.userId === adminUserId) {
     throw new LeaveError(403, 'You cannot override your own request');
+  }
+  if (leave.status === 'cancelled') {
+    throw new LeaveError(409, 'The employee cancelled this leave');
   }
   if (leave.status !== 'pending') {
     throw new LeaveError(409, 'Leave request has already been decided');

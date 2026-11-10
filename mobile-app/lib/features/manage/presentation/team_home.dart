@@ -1714,13 +1714,8 @@ class _RequestResponseBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final approved = decision == LeaveDecision.approved;
-    final foreground = approved
-        ? const Color(0xFF2F7A4F)
-        : const Color(0xFFB3261E);
-    final background = approved
-        ? const Color(0xFFE6F4EA)
-        : const Color(0xFFFDECEA);
+    final foreground = _decisionInk(decision);
+    final background = _decisionTint(decision);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1732,7 +1727,12 @@ class _RequestResponseBlock extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            approved ? 'Approved' : 'Declined',
+            switch (decision) {
+              LeaveDecision.approved => 'Approved',
+              // Nobody decided it: the employee took it back.
+              LeaveDecision.cancelled => 'Cancelled by the employee',
+              _ => 'Declined',
+            },
             style: TextStyle(
               color: foreground,
               fontSize: 13,

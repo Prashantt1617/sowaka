@@ -854,11 +854,18 @@ class ManagerBloc {
           final cancelled = await _service.cancelLeave(leaveId, note);
           final data = _state.dashboard;
           if (data == null) return false;
-          // An approved leave gives its days back, so the balance is re-read
-          // as after a decision; a failure there does not undo the cancel.
-          final refreshedBalance = await _service
-              .fetchLeaveBalance()
-              .catchError((_) => data.leaveBalance);
+          // Only an approved leave had counted: its days come back, so the
+          // balance is re-read as after a decision (a failure there does not
+          // undo the cancel). A pending one never touched it.
+          final wasApproved = data.myLeaves.any(
+            (leave) =>
+                leave.id == leaveId && leave.decision == LeaveDecision.approved,
+          );
+          final refreshedBalance = wasApproved
+              ? await _service.fetchLeaveBalance().catchError(
+                  (_) => data.leaveBalance,
+                )
+              : data.leaveBalance;
           _emit(
             _state.copyWith(
               dashboard: data.copyWith(

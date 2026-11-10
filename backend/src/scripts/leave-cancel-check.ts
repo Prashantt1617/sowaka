@@ -100,9 +100,12 @@ const day = (offset: number) => { const d = new Date(Date.now() + offset * 86_40
   await decideLeave('mgr', declined.id, { decision: 'declined', managerNote: 'Busy week' });
   ok('a declined one: nothing to cancel', (await refused(() => cancelLeave('emp', declined.id))).status === 409);
   ok('a bad id', (await refused(() => cancelLeave('emp', 'nope'))).status === 400 && (await refused(() => cancelLeave('emp', String(new ObjectId())))).status === 404);
-  const r2 = await refused(() => cancelLeave('emp', theirs.id, { note: 'x'.repeat(501) }));
-  ok('a note too long (checked after ownership)', r2.status === 404 || r2.status === 400, r2);
-  ok('the rows all kept', (await leaves().countDocuments({ userId: 'emp' })) === 4
+  const long = await applyForLeave('emp', { type: 'casual', startDate: day(40), endDate: day(40), reason: 'Later' });
+  const r2 = await refused(() => cancelLeave('emp', long.id, { note: 'x'.repeat(501) }));
+  ok('a note over 500 characters is refused', r2.status === 400 && /500/.test(r2.message), r2);
+  const r3 = await refused(() => decideLeave('mgr', pending.id, { decision: 'approved' }));
+  ok('deciding a cancelled leave says the employee cancelled it', r3.status === 409 && /cancelled/.test(r3.message), r3);
+  ok('the rows all kept', (await leaves().countDocuments({ userId: 'emp' })) === 5
     && (await leaves().countDocuments({ userId: 'emp', status: 'cancelled' })) === 2);
 
   await db.dropDatabase();
