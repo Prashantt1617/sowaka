@@ -71,7 +71,7 @@ import {
 import { getPaymentDetailsHandler, setPaymentDetailsHandler } from '../controllers/employeePayment.controller';
 import { getDeclarationHandler, setDeclarationHandler } from '../controllers/tds.controller';
 import {
-  hrDecideProofHandler, hrGetAppSettingsHandler, hrListProofsHandler, hrProofFileHandler, hrSetAppSettingsHandler, hrSplitHandler,
+  hrDecideProofHandler, hrEpfBalanceHandler, hrGetAppSettingsHandler, hrSetEpfBalanceHandler, hrListProofsHandler, hrProofFileHandler, hrSetAppSettingsHandler, hrSplitHandler,
 } from '../controllers/employeePayroll.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
@@ -176,6 +176,10 @@ payrollRouter.post('/investment-proofs/:proofId/decision', hrDecideProofHandler)
 
 // One employee's flexible split for a FY (?fy=2026-27): the one in force and every version.
 payrollRouter.get('/employees/:userId/flexible-split', hrSplitHandler);
+
+// One employee's PF balance as read off their EPFO passbook (Sowaka cannot read EPFO); the newest entry wins.
+payrollRouter.get('/employees/:userId/epf-balance', hrEpfBalanceHandler);
+payrollRouter.put('/employees/:userId/epf-balance', hrSetEpfBalanceHandler);
 
 // The app's Payroll for this company: on/off, and the deadlines its screens use.
 payrollRouter.get('/employee-app-settings', hrGetAppSettingsHandler);
