@@ -700,8 +700,8 @@ class _PayrollHomePageState extends State<_PayrollHomePage> {
     ) = switch (todo.kind) {
       'missing_punches' => (
         'assets/icons/attendance_review_clock.png',
-        'Fix ${todo.count} missing ${plural(todo.count, 'punch', 'punches')}',
-        'Days not fixed are unpaid',
+        'Fix ${todo.count} unpaid ${plural(todo.count, 'day', 'days')}',
+        'Missed punches and absences are unpaid until fixed',
         _fixPunches,
       ),
       'flexible_split' => (

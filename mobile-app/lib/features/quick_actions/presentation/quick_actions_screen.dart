@@ -2842,8 +2842,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final days = _attendanceDays();
     return _HubScaffold(
       key: const ValueKey('calendar'),
+      // From Payroll the same list is about pay: the days that go unpaid
+      // unless they are fixed.
       title: _calendarReturnPage == _QuickPage.payroll
-          ? 'Missing punches'
+          ? 'Unpaid days'
           : 'Attendance',
       onBack: _back,
       profileAction: widget.profileAction,
@@ -2904,6 +2906,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         const SizedBox(height: 24),
         AttendanceFilterChips(
           selected: _attendanceFilter,
+          missedPunchLabel: _calendarReturnPage == _QuickPage.payroll
+              ? 'Unpaid days'
+              : 'Missed Punch',
           counts: {
             for (final filter in AttendanceFilter.values)
               filter: days
@@ -4233,9 +4238,13 @@ class AttendanceFilterChips extends StatelessWidget {
     required this.selected,
     required this.onChanged,
     this.counts = const {},
+    this.missedPunchLabel = 'Missed Punch',
   });
 
   final AttendanceFilter? selected;
+
+  /// The red heading's name: "Unpaid days" when Payroll opened the list.
+  final String missedPunchLabel;
   final ValueChanged<AttendanceFilter?> onChanged;
 
   /// How many days of the month each heading covers, shown in its badge.
@@ -4246,8 +4255,8 @@ class AttendanceFilterChips extends StatelessWidget {
     void toggle(AttendanceFilter filter) =>
         onChanged(selected == filter ? null : filter);
 
-    const order = [
-      (AttendanceFilter.missedPunch, 'Missed Punch'),
+    final order = [
+      (AttendanceFilter.missedPunch, missedPunchLabel),
       (AttendanceFilter.present, 'Present'),
       (AttendanceFilter.late, 'Late'),
       (AttendanceFilter.halfDay, 'Half-day'),

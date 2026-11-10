@@ -151,7 +151,7 @@ void main() {
     expect(find.text('− ₹6,000'), findsOneWidget);
     expect(find.text('Overtime'), findsNothing);
     expect(find.text('Income tax (TDS)'), findsOneWidget);
-    expect(find.text('Fix 12 missing punches'), findsOneWidget);
+    expect(find.text('Fix 12 unpaid days'), findsOneWidget);
     expect(find.text('Choose tax regime'), findsOneWidget);
     await capture(tester, payroll(), 'payroll_home');
 
@@ -251,7 +251,7 @@ void main() {
       expect(find.text('Estimate'), findsNothing);
       expect(find.text('Try again'), findsNothing);
       expect(find.text('Choose tax regime'), findsOneWidget);
-      expect(find.text('Fix 12 missing punches'), findsOneWidget);
+      expect(find.text('Fix 12 unpaid days'), findsOneWidget);
       await capture(tester, payroll(), 'payroll_home_not_set_up');
     },
   );
@@ -657,7 +657,7 @@ void main() {
     );
     // The Attendance list, on its Missed punch heading, under Payroll's name.
     expect(find.byKey(const ValueKey('calendar')), findsOneWidget);
-    expect(find.text('Missing punches'), findsOneWidget);
+    expect(find.text('Unpaid days'), findsWidgets);
     final missing = _missedDays().length;
     // Early in a month there are no past days to miss: no note then.
     expect(
