@@ -45,7 +45,7 @@ export const getDeclarationHandler = mine(async (req) => ({ declaration: await m
 export const saveDeclarationHandler = mine(async (req) => ({ declaration: await saveMyDeclaration(callerId(req), req.query.fy, body(req)) }));
 export const getProofsHandler = mine(async (req) => ({ proofs: await myProofs(callerId(req), req.query.fy) }));
 export const uploadProofHandler = mine(async (req) => ({
-  item: await uploadMyProof(callerId(req), String(req.params.item ?? ''), req.query.fy, { amountPaise: body(req).amountPaise, file: req.file }),
+  item: await uploadMyProof(callerId(req), String(req.params.item ?? ''), req.query.fy, { amountPaise: body(req).amountPaise, landlordPan: body(req).landlordPan, file: req.file }),
 }));
 export const proofFileHandler = mine(async (req) => ({ url: await myProofFile(callerId(req), String(req.params.item ?? ''), req.query.fy) }));
 

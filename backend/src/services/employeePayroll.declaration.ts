@@ -206,6 +206,7 @@ function proofView(p: StoredProof) {
     uploadedAt: p.uploadedAt.toISOString(),
     decidedAt: p.decidedAt ? p.decidedAt.toISOString() : null,
     reason: p.status === 'rejected' ? p.reason ?? null : null,
+    landlordPan: p.landlordPan ?? null,
   };
 }
 
@@ -227,6 +228,18 @@ const PROOF_SECTION_LABELS: Record<DeclarationSectionKey, string> = {
   '80D': '80D',
   HRA: 'Rent (HRA)',
   '24B': 'Home loan',
+};
+/** The closed state's "What counted" table names items short. */
+const COUNTED_LABELS: Record<DeclarationItemKey, string> = {
+  ppf: 'PPF',
+  elss: 'ELSS',
+  lifeInsurance: 'Life insurance',
+  other80C: 'Other 80C',
+  nps: 'NPS',
+  healthSelf: 'Health insurance',
+  healthParents: 'Health insurance, parents',
+  rentMonthly: 'Rent (HRA)',
+  homeLoanInterest: 'Home loan interest',
 };
 const PROOF_LABELS: Partial<Record<DeclarationItemKey, string>> = {
   nps: 'NPS · your own contribution',
@@ -277,6 +290,8 @@ async function proofsView(org: string, userId: string, fy: string, now: Date) {
       // Rent is declared a month at a time for the whole FY: "₹15,000 a month · Apr to Mar".
       perMonth: monthly,
       months: monthly ? { from: `${startYear}-04`, to: `${startYear + 1}-03` } : null,
+      // The FY's amount: what a proof's "amount on proof" is set against (rent: twelve months).
+      yearPaise: monthly ? d.declaredPaise * 12 : d.declaredPaise,
       document: PROOF_DOCUMENTS[d.key],
       status: (p?.status ?? 'not_uploaded') as InvestmentProofStatus | 'not_uploaded',
       proof: p ? proofView(p) : null,
@@ -290,6 +305,14 @@ async function proofsView(org: string, userId: string, fy: string, now: Date) {
   const sections = (Object.keys(PROOF_SECTION_LABELS) as DeclarationSectionKey[])
     .map((key) => ({ key, label: PROOF_SECTION_LABELS[key], items: items.filter((i) => i.section === key) }))
     .filter((s) => s.items.length > 0);
+  // "What counted" once closed: a sent proof counts up to the amount on it, capped at
+  // the FY's declared amount; an item never sent (or sent back) counts nothing.
+  const countedRows = items.map((i) => {
+    const sent = i.status === 'uploaded' || i.status === 'approved';
+    const provedPaise = sent ? Math.min(i.yearPaise, i.proof?.amountPaise ?? 0) : 0;
+    return { item: i.item, label: COUNTED_LABELS[i.item], provedPaise, notProvedPaise: i.yearPaise - provedPaise };
+  });
+  const sum = (pick: (r: (typeof countedRows)[number]) => number) => countedRows.reduce((t, r) => t + pick(r), 0);
   return {
     fy,
     regime,
@@ -301,7 +324,21 @@ async function proofsView(org: string, userId: string, fy: string, now: Date) {
     locked,
     // Past the due date: when it closed, what is left, and where the rest can still go.
     closed: locked
-      ? { closedOn: dueOn, submitted, notSubmitted: items.length - submitted, total: items.length, lastPayPeriod: fyLastPeriod(fy), itrDueOn: itrDueOn(fy) }
+      ? {
+        closedOn: dueOn,
+        submitted,
+        notSubmitted: items.length - submitted,
+        total: items.length,
+        lastPayPeriod: fyLastPeriod(fy),
+        itrDueOn: itrDueOn(fy),
+        counted: {
+          rows: countedRows,
+          provedPaise: sum((r) => r.provedPaise),
+          notProvedPaise: sum((r) => r.notProvedPaise),
+          // The year's employee PF from payroll: it counts under 80C with no proof.
+          pfPaise: items.length > 0 ? await epfYearOf(org, userId) : 0,
+        },
+      }
       : null,
     itrDueOn: itrDueOn(fy),
     summary: {
@@ -330,7 +367,7 @@ export async function uploadMyProof(
   userId: string,
   itemRaw: string,
   fyRaw: unknown,
-  input: { amountPaise?: unknown; file?: { originalname: string; mimetype: string; size: number; buffer: Buffer } },
+  input: { amountPaise?: unknown; landlordPan?: unknown; file?: { originalname: string; mimetype: string; size: number; buffer: Buffer } },
   now = new Date(),
 ) {
   const { org } = await meOf(userId);
@@ -354,13 +391,22 @@ export async function uploadMyProof(
   if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_AMOUNT_PAISE) throw new EmployeePayrollError(400, 'Enter the amount on the proof, in paise');
   const file = input.file;
   if (!file) throw new EmployeePayrollError(400, 'Attach the proof: a PDF, JPEG or PNG');
+  // Rent's proof may carry the landlord's PAN; nothing else takes one.
+  const panRaw = typeof input.landlordPan === 'string' ? input.landlordPan.replace(/\s+/g, '').toUpperCase() : '';
+  if (panRaw && item !== 'rentMonthly') throw new EmployeePayrollError(400, 'Only rent takes a landlord PAN');
+  if (panRaw && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(panRaw)) throw new EmployeePayrollError(400, 'A PAN is 10 characters, like ABCDE1234F');
   if (!storage.available()) throw new EmployeePayrollError(503, 'File uploads are not set up on this server');
 
   const stored = await storage.upload(org, userId, { originalName: file.originalname, contentType: file.mimetype, size: file.size, bytes: file.buffer });
   const fileName = (file.originalname || 'proof').normalize('NFC').slice(-120);
   const write = {
-    $set: { org, userId, fy, item, status: 'uploaded' as const, amountPaise: amount, objectKey: stored.objectKey, fileName, contentType: file.mimetype, size: file.size, uploadedAt: now },
-    $unset: { decidedAt: '', decidedByUserId: '', reason: '' } as const,
+    $set: {
+      org, userId, fy, item, status: 'uploaded' as const, amountPaise: amount, objectKey: stored.objectKey, fileName, contentType: file.mimetype, size: file.size, uploadedAt: now,
+      ...(panRaw ? { landlordPan: panRaw } : {}),
+    },
+    $unset: (panRaw
+      ? { decidedAt: '', decidedByUserId: '', reason: '' }
+      : { decidedAt: '', decidedByUserId: '', reason: '', landlordPan: '' }) as Partial<Record<keyof InvestmentProof, ''>>,
   };
   // HR may have approved it since it was read: an approved proof is never written over.
   const replaced = existing
@@ -433,6 +479,7 @@ async function hrViews(org: string, rows: StoredProof[]) {
       decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
       decidedByUserId: r.decidedByUserId ?? null,
       reason: r.reason ?? null,
+      landlordPan: r.landlordPan ?? null,
     };
   });
 }

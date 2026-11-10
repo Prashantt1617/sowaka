@@ -249,6 +249,13 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   const byNote = await decideProofForHr('hr', elssId, { decision: 'rejected', note: 'The statement has no folio number.' }, oct);
   check('a rejection reason sent as `note` is kept the same way', byNote.status === 'rejected' && byNote.reason === 'The statement has no folio number.', byNote);
   await uploadMyProof('asha', 'elss', FY, { amountPaise: R(50_000), file: pdf('asha-elss-2') }, oct);
+  // Rent's proof takes the landlord's PAN; nothing else does.
+  check('a malformed landlord PAN is refused (400)', (await refusal(() => uploadMyProof('asha', 'rentMonthly', FY, { amountPaise: R(1_80_000), landlordPan: 'ABCD1234', file: pdf('r') }, oct)))?.status === 400);
+  check('a PAN on anything but rent is refused (400)', (await refusal(() => uploadMyProof('asha', 'nps', FY, { amountPaise: R(1_000), landlordPan: 'ABCDE1234F', file: pdf('n') }, oct)))?.status === 400);
+  const rentUp = await uploadMyProof('asha', 'rentMonthly', FY, { amountPaise: R(1_80_000), landlordPan: ' abcde 1234f ', file: pdf('asha-rent-2') }, oct);
+  check('rent re-sent for the year with the landlord PAN, kept in capitals',
+    rentUp.proof?.landlordPan === 'ABCDE1234F' && rentUp.proof.amountPaise === R(1_80_000) && rentUp.yearPaise === R(1_80_000) && rentUp.declaredPaise === R(15_000), rentUp);
+  check('HR sees the landlord PAN', (await listProofsForHr('hr', { fy: FY, status: 'uploaded' }, oct)).proofs.find((p) => p.item === 'rentMonthly')?.landlordPan === 'ABCDE1234F');
   const pending = await listProofsForHr('hr', { fy: FY, status: 'uploaded' }, oct);
   for (const p of pending.proofs) await decideProofForHr('hr', p.id, { decision: 'approved' }, oct);
   const allSet = await myProofs('asha', FY, oct);
@@ -270,6 +277,17 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
       && closed.closed.lastPayPeriod === '2027-03' && closed.closed.itrDueOn === '2027-07-31', closed.closed);
   const aClosed = await myProofs('asha', FY, feb);
   check('closed with everything approved: none left', aClosed.closed?.notSubmitted === 0 && aClosed.closed.submitted === 7, aClosed.closed);
+  const bCounted = closed.closed?.counted;
+  check('what counted, nothing sent: PPF ₹10,000 not proved, no PF without a structure',
+    bCounted?.rows.length === 1 && bCounted.rows[0].label === 'PPF' && bCounted.rows[0].provedPaise === 0 && bCounted.rows[0].notProvedPaise === R(10_000)
+      && bCounted.provedPaise === 0 && bCounted.notProvedPaise === R(10_000) && bCounted.pfPaise === 0, bCounted);
+  const aCounted = aClosed.closed?.counted;
+  const aRow = (key: string) => aCounted?.rows.find((r) => r.item === key);
+  check('what counted: a proof counts up to the amount on it (PPF ₹48,500 of ₹50,000), rent for the year, PF from payroll',
+    aRow('ppf')?.provedPaise === R(48_500) && aRow('ppf')?.notProvedPaise === R(1_500)
+      && aRow('rentMonthly')?.label === 'Rent (HRA)' && aRow('rentMonthly')?.provedPaise === R(1_80_000)
+      && aRow('lifeInsurance')?.provedPaise === R(1_000) && aCounted?.pfPaise === R(36_000)
+      && aCounted.provedPaise + aCounted.notProvedPaise === aCounted.rows.reduce((t, r) => t + r.provedPaise + r.notProvedPaise, 0), aCounted);
   check('the last day itself is still open', (await myProofs('bala', FY, new Date('2027-01-31T12:00:00Z'))).closed === null);
   check('a company can move the deadlines', await (async () => {
     await companies().updateOne({ id: ORG }, { $set: { payrollEmployee: { declarationDue: '12-15', proofsDue: '02-15' } } });
