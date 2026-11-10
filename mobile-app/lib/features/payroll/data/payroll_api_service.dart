@@ -450,7 +450,13 @@ class PayrollApiService {
           _ => said,
         },
         statusCode: status,
-        code: json['code'] is String ? json['code'] as String : null,
+        // The server names the case in details.reason (split_locked …); an
+        // older one sent it as code.
+        code: switch ((json['details'], json['code'])) {
+          ({'reason': final String reason}, _) => reason,
+          (_, final String code) => code,
+          _ => null,
+        },
       );
     }
     return json;
