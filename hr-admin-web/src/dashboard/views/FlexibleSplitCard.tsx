@@ -20,6 +20,7 @@ const dayLabel = (iso: string) => new Date(iso.length === 10 ? `${iso}T00:00:00Z
 const MISSING: Record<string, string> = {
   flexiblePoolPaise: 'The template has no flexible pool (Payroll › Salary Templates)',
   splitCutoffDay: 'No split cutoff day (Payroll Dashboard › Payroll in the app)',
+  splitDue: 'No date the split window closes (Payroll Dashboard › Payroll in the app)',
   billsDue: 'No bills due date (Payroll Dashboard › Payroll in the app)',
   splitStepPaise: 'No split step (Payroll Dashboard › Payroll in the app)',
 };
@@ -102,9 +103,9 @@ export function FlexibleSplitCard({ userId, name }: { userId: string; name: stri
         <Kv k="In force" v={cur ? `From ${monthLabel(cur.effectiveFrom)}` : 'No split chosen'} sub={cur ? `Submitted ${dayLabel(cur.submittedAt)}` : split.asOf ? 'The structure\'s own amounts apply' : 'The year has not started'} />
         <Kv
           k="A change now applies from"
-          v={split.window.effectiveFrom ? monthLabel(split.window.effectiveFrom) : 'Not set'}
-          warn={!split.window.effectiveFrom}
-          sub={`${split.window.closesOn ? `Until ${dayLabel(split.window.closesOn)}` : 'No cutoff day set'} · ${split.billsDueOn ? `bills due ${dayLabel(split.billsDueOn)}` : 'bills date not set'}`}
+          v={split.window.effectiveFrom ? monthLabel(split.window.effectiveFrom) : split.window.reason === 'locked_for_fy' ? 'Locked for this FY' : 'Not set'}
+          warn={!split.window.effectiveFrom && split.window.reason !== 'locked_for_fy'}
+          sub={`${split.window.reason === 'locked_for_fy' && split.window.closesOn ? `Closed ${dayLabel(split.window.closesOn)}` : split.window.closesOn ? `Until ${dayLabel(split.window.closesOn)}` : 'Window not set up'} · ${split.billsDueOn ? `bills due ${dayLabel(split.billsDueOn)}` : 'bills date not set'}`}
         />
       </div>
 

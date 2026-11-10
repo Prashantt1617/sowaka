@@ -19,7 +19,8 @@ import { env } from '../config/env';
 import { PayHead } from '../models/payHead.model';
 import { ReimbursementClaim } from '../models/reimbursement.model';
 import { FbpBillStorage, myFbp, myFbpBillFile, myFbpHead, setFbpBillStorageForTests, uploadMyFbpBill } from '../services/employeePayroll.fbp';
-import { mySplit } from '../services/employeePayroll.split';
+import { myPayrollHome } from '../services/employeePayroll.home';
+import { mySplit, reviewSplit } from '../services/employeePayroll.split';
 import { adminDecideReimbursement, listAllReimbursementsForAdmin } from '../services/reimbursement.service';
 
 const SCRATCH = 'payroll_fbp_scratch';
@@ -70,7 +71,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   userId, name, email: `${userId}@sowaka.test`, org: ORG, lifecycleStatus: 'active', employeeId: `E-${userId.toUpperCase()}`, managerUserId: 'hr', ...extra,
 });
 
-const SETTINGS = { appEnabled: true, splitCutoffDay: 15, declarationDue: '11-30', proofsDue: '01-31', billsDue: '03-31' };
+const SETTINGS = { appEnabled: true, splitCutoffDay: 15, declarationDue: '11-30', proofsDue: '01-31', billsDue: '03-31', splitDue: '11-15', fbpBillsDueDay: 20, splitStepPaise: R(500) };
 
 (async () => {
   if (env.mongoDbName !== SCRATCH) throw new Error(`refusing to run against ${env.mongoDbName}: set MONGODB_DB=${SCRATCH}`);
@@ -162,7 +163,17 @@ const SETTINGS = { appEnabled: true, splitCutoffDay: 15, declarationDue: '11-30'
   check('3 bills to upload · 1 to re-upload · 1 in review', f.summary.toUpload === 3 && f.summary.toReupload === 1 && f.summary.inReview === 1, f.summary);
   check('bills due 31 Mar 2027, nothing missing', f.billsDueOn === '2027-03-31' && f.missing.length === 0, { due: f.billsDueOn, missing: f.missing });
   check('the split is not locked: a change now applies from November, by 15 Nov',
-    !f.lock.locked && !f.lock.notConfigured && f.lock.effectiveFrom === '2026-11' && f.lock.closesOn === '2026-11-15', f.lock);
+    !f.lock.locked && !f.lock.notConfigured && f.lock.reason === null && f.lock.effectiveFrom === '2026-11' && f.lock.closesOn === '2026-11-15', f.lock);
+  check('October\'s bills are due by 20 Oct (the monthly due day); 31 Mar 2027 stays the last day', f.monthlyDueOn === '2026-10-20' && f.billsDueOn === '2027-03-31', f);
+
+  // —— the home to-do for FBP bills ——
+  const homeTodo = async (at: Date) => {
+    const home = await myPayrollHome('asha', undefined, at);
+    return home.appEnabled ? home.todo.find((t) => t.kind === 'fbp_bills') : undefined;
+  };
+  const t20 = await homeTodo(oct20);
+  check('home: "Submit FBP bills · 3 pending · 1 rejected", by 20 Oct',
+    t20?.pending === 3 && t20.rejected === 1 && t20.dueOn === '2026-10-20' && t20.notConfigured === false, t20);
 
   // —— a head ——
   const fuel = await myFbpHead('asha', 'fuel', oct20);
@@ -252,13 +263,34 @@ const SETTINGS = { appEnabled: true, splitCutoffDay: 15, declarationDue: '11-30'
   check('…and Books, now paid, wants November\'s bill but has no bill type (not set up)',
     novPage.heads.find((x) => x.code === 'BOOKS')!.toUpload === 1 && (await refusal(() => up('2026-11', R(500), jpeg('books'), 'asha', 'BOOKS', nov20)))?.reason === 'payroll_not_configured');
 
-  // —— the lock for the FY ——
+  // —— the lock for the FY: one window, closing on HR's date (15 Nov) ——
+  const nov15 = new Date('2026-11-15T06:00:00Z');
+  const nov16 = new Date('2026-11-16T06:00:00Z');
+  const o15 = await myFbp('asha', nov15);
+  check('15 Nov: still open, till 15 Nov', !o15.lock.locked && o15.lock.closesOn === '2026-11-15' && o15.lock.effectiveFrom === '2026-11', o15.lock);
+  const l16 = await myFbp('asha', nov16);
+  check('16 Nov: past the close date, locked for this FY, saying when it closed',
+    l16.lock.locked && l16.lock.reason === 'locked_for_fy' && l16.lock.closesOn === '2026-11-15' && l16.lock.effectiveFrom === null && !l16.lock.notConfigured, l16.lock);
+  const s16 = await mySplit('asha', nov16);
+  check('…GET split: not editable, lockedReason locked_for_fy, no closesOn', s16.editable === false && s16.lockedReason === 'locked_for_fy' && s16.closesOn === null && !s16.window.open, s16);
+  const rv16 = await refusal(() => reviewSplit('asha', { amounts: { FUEL: R(2000) } }, nov16));
+  check('…review refused: 409 split_locked, "raise a ticket"', rv16?.status === 409 && rv16.reason === 'split_locked' && rv16.message === 'Your split is locked for this FY. To change it, raise a ticket.', rv16);
+  const rvBala = await refusal(() => reviewSplit('bala', { amounts: { FUEL: R(2500) } }, nov16));
+  check('…a first split (Bala has none this FY) is locked too', rvBala?.status === 409 && rvBala.reason === 'split_locked', rvBala);
   const mar10 = new Date('2027-03-10T06:00:00Z');
-  const mar20 = new Date('2027-03-20T06:00:00Z');
+  check('10 Mar: still locked for this FY', (await myFbp('asha', mar10)).lock.locked);
+  const apr10 = new Date('2027-04-10T06:00:00Z');
+  const a10 = await myFbp('asha', apr10);
+  check('10 Apr 2027: a new FY, its own window open till 15 Nov 2027', a10.fy === '2027-28' && !a10.lock.locked && a10.lock.closesOn === '2027-11-15' && a10.lock.effectiveFrom === '2027-04', a10.lock);
+  // A close date in March: past March's cutoff a change could only start in April (next FY).
+  await companies().updateOne({ id: ORG }, { $set: { 'payrollEmployee.splitDue': '03-31' } });
   const m10 = await myFbp('asha', mar10);
-  check('10 Mar: a change still reaches March, by 15 Mar', !m10.lock.locked && m10.lock.effectiveFrom === '2027-03' && m10.lock.closesOn === '2027-03-15', m10.lock);
-  const m20 = await myFbp('asha', mar20);
-  check('20 Mar: past March\'s cutoff, a change would start in April (next FY): locked for this FY', m20.lock.locked && m20.lock.reason === 'fy_closed' && m20.lock.effectiveFrom === null, m20.lock);
+  check('close date 31 Mar: on 10 Mar a change still reaches March, till 31 Mar', !m10.lock.locked && m10.lock.effectiveFrom === '2027-03' && m10.lock.closesOn === '2027-03-31', m10.lock);
+  const m20 = await myFbp('asha', new Date('2027-03-20T06:00:00Z'));
+  check('…20 Mar: past March\'s cutoff, a change would start in April (next FY): locked for this FY', m20.lock.locked && m20.lock.reason === 'locked_for_fy' && m20.lock.effectiveFrom === null, m20.lock);
+  check('…and March\'s bills are due by the FY\'s last day for bills when that comes first (15 Mar < 20 Mar)',
+    await companies().updateOne({ id: ORG }, { $set: { 'payrollEmployee.billsDue': '03-15' } }).then(() => myFbp('asha', mar10)).then((x) => x.monthlyDueOn === '2027-03-15'));
+  await companies().updateOne({ id: ORG }, { $set: { payrollEmployee: SETTINGS } });
   await payrollRuns().insertMany(['2026-11', '2026-12', '2027-01', '2027-02', '2027-03'].map((period) => ({
     org: ORG, period, runType: 'regular', status: 'approved', employeeCount: 0,
     totals: { grossPaise: 0, employeeDeductionsPaise: 0, netPaise: 0, reimbursementsPaise: 0, employerCostPaise: 0 }, createdByUserId: 'hr', createdAt: now, updatedAt: now,
@@ -270,6 +302,17 @@ const SETTINGS = { appEnabled: true, splitCutoffDay: 15, declarationDue: '11-30'
   await companies().updateOne({ id: ORG }, { $unset: { 'payrollEmployee.splitCutoffDay': '', 'payrollEmployee.billsDue': '' } });
   const unset = await myFbp('asha', oct20);
   check('no cutoff day: the lock is not set up (not locked), named missing', !unset.lock.locked && unset.lock.notConfigured && unset.missing.includes('splitCutoffDay'), unset.lock);
+  await companies().updateOne({ id: ORG }, { $unset: { 'payrollEmployee.splitDue': '', 'payrollEmployee.fbpBillsDueDay': '' } });
+  const noClose = await myFbp('asha', nov16);
+  check('no close date: not set up (not locked, no date), named missing (splitDue)',
+    !noClose.lock.locked && noClose.lock.notConfigured && noClose.lock.closesOn === null && noClose.lock.missing.includes('splitDue') && noClose.missing.includes('splitDue'), noClose.lock);
+  const noCloseSplit = await mySplit('asha', nov16);
+  check('…the split: not editable, not locked, splitDue missing', !noCloseSplit.editable && noCloseSplit.lockedReason === null && noCloseSplit.notConfigured && noCloseSplit.missing.includes('splitDue'), noCloseSplit);
+  const rvNoClose = await refusal(() => reviewSplit('asha', { amounts: { FUEL: R(2000) } }, nov16));
+  check('…review refused as not set up (409 payroll_not_configured, splitDue)', rvNoClose?.status === 409 && rvNoClose.reason === 'payroll_not_configured' && (rvNoClose.missing as string[]).includes('splitDue'), rvNoClose);
+  check('no monthly due day: no monthly date, never a made-up one', noClose.monthlyDueOn === null, noClose.monthlyDueOn);
+  const tNoDay = await homeTodo(oct20);
+  check('…the home to-do is still there, with no date', typeof tNoDay?.pending === 'number' && (tNoDay.pending as number) + (tNoDay.rejected as number) > 0 && tNoDay.dueOn === null, tNoDay);
   check('no bills due date: none to read, named missing', unset.billsDueOn === null && unset.missing.includes('billsDue'), unset.missing);
   const noDue = await refusal(() => up('2026-09', R(1000), jpeg('t'), 'asha', 'TELEPHONE'));
   check('…and a bill can\'t be sent (409 not set up, ask HR)', noDue?.status === 409 && noDue.reason === 'payroll_not_configured' && (noDue.missing as string[]).includes('billsDue') && /Ask HR\.$/.test(noDue.message ?? ''), noDue);
