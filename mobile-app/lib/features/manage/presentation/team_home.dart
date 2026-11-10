@@ -1300,7 +1300,10 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
                 name: request.who,
                 role: request.team,
                 rows: [
-                  ('Type:', request.isOutOfLocation ? 'Out of location' : 'Correction'),
+                  (
+                    'Type:',
+                    request.isOutOfLocation ? 'Out of location' : 'Correction',
+                  ),
                   ('Date:', _shortAttendanceDate(request.workDate)),
                   if (request.isOutOfLocation) ...[
                     ('Reason:', request.outsideLocation?.reason ?? '—'),
@@ -1711,13 +1714,8 @@ class _RequestResponseBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final approved = decision == LeaveDecision.approved;
-    final foreground = approved
-        ? const Color(0xFF2F7A4F)
-        : const Color(0xFFB3261E);
-    final background = approved
-        ? const Color(0xFFE6F4EA)
-        : const Color(0xFFFDECEA);
+    final foreground = _decisionInk(decision);
+    final background = _decisionTint(decision);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1729,7 +1727,12 @@ class _RequestResponseBlock extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            approved ? 'Approved' : 'Declined',
+            switch (decision) {
+              LeaveDecision.approved => 'Approved',
+              // Nobody decided it: the employee took it back.
+              LeaveDecision.cancelled => 'Cancelled by the employee',
+              _ => 'Declined',
+            },
             style: TextStyle(
               color: foreground,
               fontSize: 13,
@@ -1756,12 +1759,15 @@ class _RequestResponseBlock extends StatelessWidget {
 Color _decisionInk(LeaveDecision decision) => switch (decision) {
   LeaveDecision.approved => const Color(0xFF2F7A4F),
   LeaveDecision.declined => const Color(0xFFB3261E),
+  // Taken back by the employee: settled, in grey.
+  LeaveDecision.cancelled => const Color(0xFF4E4E56),
   LeaveDecision.pending => const Color(0xFF8A6218),
 };
 
 Color _decisionTint(LeaveDecision decision) => switch (decision) {
   LeaveDecision.approved => const Color(0xFFE6F4EA),
   LeaveDecision.declined => const Color(0xFFFDECEA),
+  LeaveDecision.cancelled => const Color(0xFFEDEDF0),
   LeaveDecision.pending => const Color(0xFFFBEFD2),
 };
 

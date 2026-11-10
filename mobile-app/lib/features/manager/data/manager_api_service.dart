@@ -72,14 +72,16 @@ class ManagerApiService {
     ManagerDashboard? previous,
     void Function(ManagerDashboard core)? onCore,
     bool keep = true,
+
     /// Whose attendance to read: the month the calendar is on. This month
     /// when not given.
     DateTime? attendanceMonth,
   }) async {
     // One recording at a time: a second load while one is in flight would
     // split the replies between two maps and leave both copies incomplete.
-    final recording =
-        keep && _replay == null && _recording == null ? <String, Map<String, dynamic>>{} : null;
+    final recording = keep && _replay == null && _recording == null
+        ? <String, Map<String, dynamic>>{}
+        : null;
     final startedAt = DateTime.now();
     if (recording != null) _recording = recording;
     try {
@@ -89,11 +91,18 @@ class ManagerApiService {
         attendanceMonth: attendanceMonth ?? startedAt,
       );
       if (recording != null && !_partial) {
-        unawaited(DashboardCache.write(session.user.id, recording, startedAt: startedAt));
+        unawaited(
+          DashboardCache.write(
+            session.user.id,
+            recording,
+            startedAt: startedAt,
+          ),
+        );
       }
       return dashboard;
     } finally {
-      if (recording != null && identical(_recording, recording)) _recording = null;
+      if (recording != null && identical(_recording, recording))
+        _recording = null;
     }
   }
 
@@ -116,11 +125,23 @@ class ManagerApiService {
             return fallback;
           });
     final workspaceFuture = _request('GET', '/manager/workspace');
-    final myLeavesFuture = kept(fetchMyLeaves(), previous?.myLeaves ?? const <LeaveRequest>[]);
-    final managerLeavesFuture = kept(fetchManagerLeaves(), previous?.leaves ?? const <LeaveRequest>[]);
+    final myLeavesFuture = kept(
+      fetchMyLeaves(),
+      previous?.myLeaves ?? const <LeaveRequest>[],
+    );
+    final managerLeavesFuture = kept(
+      fetchManagerLeaves(),
+      previous?.leaves ?? const <LeaveRequest>[],
+    );
     final balanceFuture = _request('GET', '/leaves/balance');
-    final myOvertimeFuture = kept(fetchMyOvertime(), previous?.myOvertime ?? const <OvertimeRequest>[]);
-    final overtimeFuture = kept(fetchManagerOvertime(), previous?.overtime ?? const <OvertimeRequest>[]);
+    final myOvertimeFuture = kept(
+      fetchMyOvertime(),
+      previous?.myOvertime ?? const <OvertimeRequest>[],
+    );
+    final overtimeFuture = kept(
+      fetchManagerOvertime(),
+      previous?.overtime ?? const <OvertimeRequest>[],
+    );
     final reimbursementsFuture = kept(
       fetchMyReimbursements(),
       previous?.myReimbursements ?? const <ReimbursementClaim>[],
@@ -130,7 +151,10 @@ class ManagerApiService {
       previous?.reimbursementTypes ?? const <ReimbursementType>[],
     );
     final managerReimbursementsFuture = session.user.role == 'manager'
-        ? kept(fetchManagerReimbursements(), previous?.reimbursements ?? const <ReimbursementClaim>[])
+        ? kept(
+            fetchManagerReimbursements(),
+            previous?.reimbursements ?? const <ReimbursementClaim>[],
+          )
         : Future<List<ReimbursementClaim>>.value(const []);
     final month = attendanceMonth;
     final attendanceFuture = kept(
@@ -147,7 +171,8 @@ class ManagerApiService {
     final regularizationInboxFuture = session.user.role == 'manager'
         ? kept(
             fetchManagerAttendanceRegularizations(),
-            previous?.managerRegularizations ?? const <AttendanceRegularization>[],
+            previous?.managerRegularizations ??
+                const <AttendanceRegularization>[],
           )
         : Future<List<AttendanceRegularization>>.value(const []);
     final workspace = await workspaceFuture;
@@ -262,15 +287,17 @@ class ManagerApiService {
     );
     // The first screen has what it needs; the rest fills in behind it,
     // and until it does the lists stay as they were.
-    onCore?.call(build(
-      leaves: previous?.leaves ?? const [],
-      overtime: previous?.overtime ?? const [],
-      myOvertime: previous?.myOvertime ?? const [],
-      myReimbursements: previous?.myReimbursements ?? const [],
-      reimbursementTypes: previous?.reimbursementTypes ?? const [],
-      reimbursements: previous?.reimbursements ?? const [],
-      managerRegularizations: previous?.managerRegularizations ?? const [],
-    ));
+    onCore?.call(
+      build(
+        leaves: previous?.leaves ?? const [],
+        overtime: previous?.overtime ?? const [],
+        myOvertime: previous?.myOvertime ?? const [],
+        myReimbursements: previous?.myReimbursements ?? const [],
+        reimbursementTypes: previous?.reimbursementTypes ?? const [],
+        reimbursements: previous?.reimbursements ?? const [],
+        managerRegularizations: previous?.managerRegularizations ?? const [],
+      ),
+    );
     return build(
       leaves: await managerLeavesFuture,
       overtime: await overtimeFuture,
@@ -362,11 +389,14 @@ class ManagerApiService {
   Future<AttendanceRecord> recordPunch(
     String type, {
     PunchReading? reading,
+
     /// Why the employee is away, once the server has said they are outside.
     String? reason,
+
     /// Punch without saying why — allowed where the day is marked present
     /// without a manager's decision.
     bool skipReason = false,
+
     /// What a passed face check handed back, where the company checks faces.
     String? faceToken,
   }) async {
@@ -516,6 +546,7 @@ class ManagerApiService {
     required FeedbackStatus status,
     required List<FeedbackParam> params,
     required String extra,
+
     /// The cycle the review is for, when it is not the live one: the server
     /// accepts the previous cycle too.
     String? period,
@@ -552,6 +583,17 @@ class ManagerApiService {
       'PATCH',
       '/leaves/$leaveId/decision',
       body: {'decision': decision.name, 'managerNote': managerNote},
+    );
+    return LeaveRequest.fromJson(json['leave'] as Map<String, dynamic>);
+  }
+
+  /// Takes back a leave of your own that has not begun; the note, if any,
+  /// goes to the manager with the news.
+  Future<LeaveRequest> cancelLeave(String leaveId, String note) async {
+    final json = await _request(
+      'POST',
+      '/leaves/$leaveId/cancel',
+      body: {'note': note},
     );
     return LeaveRequest.fromJson(json['leave'] as Map<String, dynamic>);
   }
@@ -817,9 +859,21 @@ class ManagerApiService {
           ..headers['Authorization'] = 'Bearer ${session.token}'
           ..fields['consent'] = 'true'
           ..fields['consentVersion'] = consentVersion
-          ..files.add(http.MultipartFile.fromBytes('photo', front.photo, filename: 'face.jpg'));
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              'photo',
+              front.photo,
+              filename: 'face.jpg',
+            ),
+          );
     for (var i = 0; i < turned.length && i < 2; i++) {
-      request.files.add(http.MultipartFile.fromBytes('photo${i + 2}', turned[i].photo, filename: 'face${i + 2}.jpg'));
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'photo${i + 2}',
+          turned[i].photo,
+          filename: 'face${i + 2}.jpg',
+        ),
+      );
     }
     _attachBurst(request, front, challengeId, more: turned);
     final json = await _face(request);
@@ -842,14 +896,18 @@ class ManagerApiService {
     Uint8List? jpeg,
     String? livenessSessionId,
   }) async {
-    final request =
-        http.MultipartRequest('POST', Uri.parse('$_baseUrl/face/verify'))
-          ..headers['Authorization'] = 'Bearer ${session.token}';
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$_baseUrl/face/verify'),
+    )..headers['Authorization'] = 'Bearer ${session.token}';
     final photo = burst?.photo ?? jpeg;
     if (photo != null) {
-      request.files.add(http.MultipartFile.fromBytes('photo', photo, filename: 'face.jpg'));
+      request.files.add(
+        http.MultipartFile.fromBytes('photo', photo, filename: 'face.jpg'),
+      );
     }
-    if (livenessSessionId != null) request.fields['livenessSessionId'] = livenessSessionId;
+    if (livenessSessionId != null)
+      request.fields['livenessSessionId'] = livenessSessionId;
     if (burst != null) _attachBurst(request, burst, challengeId);
     return FaceCheckResult.fromJson(await _face(request));
   }
@@ -857,30 +915,62 @@ class ManagerApiService {
   /// The challenge's id, the burst's face crops as `crop0`…, and the phone's
   /// own readings, which the server logs (the crops are what it judges). At
   /// setup the turned photos' crops follow the front's, from `crop8`.
-  void _attachBurst(http.MultipartRequest request, FaceBurst burst, String? challengeId, {List<FaceBurst> more = const []}) {
+  void _attachBurst(
+    http.MultipartRequest request,
+    FaceBurst burst,
+    String? challengeId, {
+    List<FaceBurst> more = const [],
+  }) {
     if (challengeId != null) request.fields['challengeId'] = challengeId;
-    request.fields['challenge'] = [burst.report, for (final b in more) b.report].join(' || ');
-    if (burst.spoofPhone != null) request.fields['spoofPhone'] = burst.spoofPhone!.toStringAsFixed(3);
-    if (burst.motionMean != null) request.fields['motionMean'] = burst.motionMean!.toStringAsFixed(2);
-    if (burst.motionRigid != null) request.fields['motionRigid'] = burst.motionRigid!.toStringAsFixed(2);
+    request.fields['challenge'] = [
+      burst.report,
+      for (final b in more) b.report,
+    ].join(' || ');
+    if (burst.spoofPhone != null)
+      request.fields['spoofPhone'] = burst.spoofPhone!.toStringAsFixed(3);
+    if (burst.motionMean != null)
+      request.fields['motionMean'] = burst.motionMean!.toStringAsFixed(2);
+    if (burst.motionRigid != null)
+      request.fields['motionRigid'] = burst.motionRigid!.toStringAsFixed(2);
     var at = 0;
     for (final (index, b) in [burst, ...more].indexed) {
       at = index * 8;
       for (var i = 0; i < b.crops.length && i < 8; i++) {
-        request.files.add(http.MultipartFile.fromBytes('crop${at + i}', b.crops[i], filename: 'crop${at + i}.jpg'));
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'crop${at + i}',
+            b.crops[i],
+            filename: 'crop${at + i}.jpg',
+          ),
+        );
       }
     }
   }
 
   Future<FaceLivenessSession> startFaceLiveness() async =>
-      FaceLivenessSession.fromJson(await _face(_jsonRequest('POST', '/face/liveness-session')));
+      FaceLivenessSession.fromJson(
+        await _face(_jsonRequest('POST', '/face/liveness-session')),
+      );
 
   /// Today's punch to the manager, once the face check has failed enough.
-  Future<void> requestFaceFallback({String type = 'in', PunchReading? reading}) async {
-    await _face(_jsonRequest('POST', '/face/fallback', body: {'type': type, ...?reading?.toJson()}));
+  Future<void> requestFaceFallback({
+    String type = 'in',
+    PunchReading? reading,
+  }) async {
+    await _face(
+      _jsonRequest(
+        'POST',
+        '/face/fallback',
+        body: {'type': type, ...?reading?.toJson()},
+      ),
+    );
   }
 
-  http.Request _jsonRequest(String method, String path, {Map<String, dynamic>? body}) {
+  http.Request _jsonRequest(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+  }) {
     final request = http.Request(method, Uri.parse('$_baseUrl$path'))
       ..headers.addAll({
         'Authorization': 'Bearer ${session.token}',
@@ -897,7 +987,9 @@ class ManagerApiService {
         const Duration(seconds: 30),
         onTimeout: () => throw const ManagerApiException(
           "Face check isn't available right now. Try again in a minute.",
-          details: {'face': {'reason': 'unavailable'}},
+          details: {
+            'face': {'reason': 'unavailable'},
+          },
         ),
       );
 
@@ -937,7 +1029,10 @@ class ManagerApiService {
       // as this app can tell, until one gets through.
       NetworkStatus.reportFailure(error, probe: Uri.parse('$_baseUrl/health'));
       if (NetworkStatus.isNetworkError(error)) {
-        throw const ManagerApiException('No internet connection', offline: true);
+        throw const ManagerApiException(
+          'No internet connection',
+          offline: true,
+        );
       }
       rethrow;
     }
@@ -991,7 +1086,12 @@ String _dateOnly(DateTime value) {
 }
 
 class ManagerApiException implements Exception {
-  const ManagerApiException(this.message, {this.statusCode, this.details, this.offline = false});
+  const ManagerApiException(
+    this.message, {
+    this.statusCode,
+    this.details,
+    this.offline = false,
+  });
   final String message;
 
   /// The request never reached a server. The banner says so; screens need

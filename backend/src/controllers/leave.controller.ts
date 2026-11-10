@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import {
   applyForLeave,
+  cancelLeave,
   decideLeave,
   getManagerLeaveInbox,
   getMyLeaveBalance,
@@ -25,6 +26,18 @@ export async function createLeave(req: Request, res: Response, next: NextFunctio
       },
     });
     res.status(201).json({ success: true, leave });
+  } catch (error) {
+    handleLeaveError(error, res, next);
+  }
+}
+
+/** The employee takes back a leave of their own that has not begun. */
+export async function cancelMyLeave(req: Request, res: Response, next: NextFunction) {
+  try {
+    const leave = await cancelLeave(requireUserId(req), String(req.params.leaveId ?? ''), {
+      note: typeof req.body?.note === 'string' ? req.body.note : undefined,
+    });
+    res.json({ success: true, leave });
   } catch (error) {
     handleLeaveError(error, res, next);
   }

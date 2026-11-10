@@ -39,7 +39,8 @@ enum TeamSection { myTeam, requests, feedback }
 
 enum FeedbackStatus { pending, saved, sent, missed }
 
-enum LeaveDecision { pending, approved, declined }
+/// [cancelled]: the employee took the leave back before it began.
+enum LeaveDecision { pending, approved, declined, cancelled }
 
 enum TeamPresenceStatus { present, notPunchedIn }
 
@@ -716,6 +717,7 @@ class LeaveRequest {
       decision: switch (json['status']) {
         'approved' => LeaveDecision.approved,
         'declined' => LeaveDecision.declined,
+        'cancelled' => LeaveDecision.cancelled,
         _ => LeaveDecision.pending,
       },
       managerNote: json['managerNote'] as String? ?? '',

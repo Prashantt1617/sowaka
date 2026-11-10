@@ -73,7 +73,9 @@ Future<String?> _showAttendanceDecisionSheet(
                   icon: approved ? Icons.check_rounded : Icons.close_rounded,
                   // Same colours as the Approve and Reject buttons on the card
                   // this sheet was opened from.
-                  background: approved ? MColors.approveTint : MColors.rejectTint,
+                  background: approved
+                      ? MColors.approveTint
+                      : MColors.rejectTint,
                   foreground: approved ? MColors.approveInk : MColors.rejectInk,
                   onTap: () {
                     if (!approved && note.text.trim().isEmpty) return;
@@ -119,24 +121,26 @@ class _AttendanceCorrectionDetailPage extends StatelessWidget {
               SummaryRow('Date', _summaryDate(request.workDate)),
               SummaryRow(
                 'Time',
-                _attendanceClock(request.outsideLocation?.at ?? request.createdAt),
+                _attendanceClock(
+                  request.outsideLocation?.at ?? request.createdAt,
+                ),
               ),
               SummaryRow('Reason', request.outsideLocation?.reason ?? '—'),
               SummaryRow('Location', request.outsideLocation?.place ?? '—'),
               SummaryRow('Status', _decisionText(request.decision)),
             ]
           : [
-        SummaryRow('Employee', '${request.who} · ${request.team}'),
-        SummaryRow('Work Date', _summaryDate(request.workDate)),
-        // What the day holds now, then what approving would make it. A
-        // correction is raised precisely because one of these is missing, so
-        // both are shown even when they are blank.
-        SummaryRow('Punch In', _attendanceClock(request.punchIn)),
-        SummaryRow('Punch Out', _attendanceClock(request.punchOut)),
-        SummaryRow('Marked As', _attendancePeriod(request)),
-        SummaryRow('Raised On', _summaryDate(request.createdAt)),
-        SummaryRow('Status', _decisionText(request.decision)),
-      ],
+              SummaryRow('Employee', '${request.who} · ${request.team}'),
+              SummaryRow('Work Date', _summaryDate(request.workDate)),
+              // What the day holds now, then what approving would make it. A
+              // correction is raised precisely because one of these is missing, so
+              // both are shown even when they are blank.
+              SummaryRow('Punch In', _attendanceClock(request.punchIn)),
+              SummaryRow('Punch Out', _attendanceClock(request.punchOut)),
+              SummaryRow('Marked As', _attendancePeriod(request)),
+              SummaryRow('Raised On', _summaryDate(request.createdAt)),
+              SummaryRow('Status', _decisionText(request.decision)),
+            ],
       reason: request.isOutOfLocation ? '' : request.note,
     ),
     declineLabel: request.isOutOfLocation ? 'Reject' : 'Decline',
@@ -156,7 +160,9 @@ class _AttendanceCorrectionDetailPage extends StatelessWidget {
 
 /// The rows a request card shows. An out of location request says why and
 /// where from; a correction says what the day should become.
-List<(String, String)> _attendanceRequestRows(AttendanceRegularization request) {
+List<(String, String)> _attendanceRequestRows(
+  AttendanceRegularization request,
+) {
   if (request.isOutOfLocation) {
     return [
       ('Date:', _shortAttendanceDate(request.workDate)),
@@ -174,7 +180,8 @@ List<(String, String)> _attendanceRequestRows(AttendanceRegularization request) 
 /// What the employee is asking for: the day type on current corrections, and
 /// the punch times on ones raised before day types existed.
 String _attendancePeriod(AttendanceRegularization request) {
-  if (request.isOutOfLocation) return request.outsideLocation?.reason ?? 'Out of location';
+  if (request.isOutOfLocation)
+    return request.outsideLocation?.reason ?? 'Out of location';
   if (request.dayTypeLabel.isNotEmpty) return request.dayTypeLabel;
   final inAt = request.requestedPunchIn;
   final outAt = request.requestedPunchOut;
@@ -271,8 +278,10 @@ class _LeaveRequestDetailPage extends StatelessWidget {
                       SummaryRow('End Date', _summaryDate(leave.end)),
                       SummaryRow(
                         'Duration',
-                        leave.halfDay ? 'Half Day' : '${_days(leave.days)} day'
-                            '${leave.days == 1 ? '' : 's'}',
+                        leave.halfDay
+                            ? 'Half Day'
+                            : '${_days(leave.days)} day'
+                                  '${leave.days == 1 ? '' : 's'}',
                       ),
                       SummaryRow('Applied On', _summaryDate(leave.requestedOn)),
                       SummaryRow('Status', _statusLabel(leave.decision)),
@@ -337,6 +346,7 @@ class _LeaveRequestDetailPage extends StatelessWidget {
   static String _statusLabel(LeaveDecision decision) => switch (decision) {
     LeaveDecision.approved => 'Approved',
     LeaveDecision.declined => 'Declined',
+    LeaveDecision.cancelled => 'Cancelled',
     LeaveDecision.pending => 'Pending',
   };
 
@@ -346,7 +356,6 @@ class _LeaveRequestDetailPage extends StatelessWidget {
     bloc.add(DecideLeave(leave.id, decision, managerNote: result.managerNote));
   }
 }
-
 
 /// The frame every manager request detail shares: the summary the employee
 /// sent, their own note once decided, and the two decision buttons pinned to
@@ -446,6 +455,7 @@ class _RequestDetailScaffold extends StatelessWidget {
 String _decisionText(LeaveDecision decision) => switch (decision) {
   LeaveDecision.approved => 'Approved',
   LeaveDecision.declined => 'Declined',
+  LeaveDecision.cancelled => 'Cancelled',
   LeaveDecision.pending => 'Pending',
 };
 

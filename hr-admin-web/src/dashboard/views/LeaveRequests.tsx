@@ -51,7 +51,7 @@ export function LeaveRequests() {
         { header: 'Reason', value: (r) => r.eRemark },
         { header: 'Manager', value: (r) => r.manager },
         { header: 'Status', value: (r) => r.status },
-        { header: 'Decided by', value: (r) => (r.byAdmin ? 'admin' : 'manager') },
+        { header: 'Decided by', value: (r) => (r.status === 'Cancelled' ? 'employee (cancelled)' : r.status === 'Pending' ? '' : r.byAdmin ? 'admin' : 'manager') },
         { header: 'Applied', value: (r) => r.applied },
       ],
       rows,
@@ -75,7 +75,7 @@ export function LeaveRequests() {
       <Card padded>
       <div style={toolbar}>
         <StatusTabs<ReqStatus | 'all'>
-          options={['all', 'Pending', 'Approved', 'Declined']}
+          options={['all', 'Pending', 'Approved', 'Declined', 'Cancelled']}
           active={s.leaveStatus}
           onSelect={s.setLeaveStatus}
         />

@@ -3,7 +3,7 @@ import { attendanceRecords, leaves, overtimeRequests, users } from '../config/db
 import { Leave, LeaveStatus } from '../models/leave.model';
 import { User } from '../models/user.model';
 import { orgUsersWithRows, sortLikeMongo } from './admin-scope';
-import { notifyLeaveDecided, notifyLeaveSubmitted } from './request-notifications.service';
+import { notifyLeaveCancelled, notifyLeaveDecided, notifyLeaveSubmitted } from './request-notifications.service';
 import { holidayDatesForUser } from './holiday.service';
 import { presignReceiptDownload, uploadLeaveDocument } from './s3-receipt.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
@@ -47,6 +47,9 @@ export interface LeaveView {
   createdAt: string;
   decidedAt?: string;
   decidedByRole?: 'manager' | 'admin';
+  /** Set once the employee cancelled it; the note is what they told their manager. */
+  cancelledAt?: string;
+  cancelNote?: string;
 }
 
 export async function applyForLeave(
@@ -580,7 +583,8 @@ async function carriedForwardInto(
  */
 async function yearWasTracked(userId: string, from: Date, to: Date): Promise<boolean> {
   const [leaveCount, attendanceCount] = await Promise.all([
-    leaves().countDocuments({ userId, startDate: { $lte: to }, endDate: { $gte: from } }, { limit: 1 }),
+    // A leave taken back is no sign the year was tracked.
+    leaves().countDocuments({ userId, status: { $ne: 'cancelled' }, startDate: { $lte: to }, endDate: { $gte: from } }, { limit: 1 }),
     attendanceRecords().countDocuments(
       { userId, workDate: { $gte: from.toISOString().slice(0, 10), $lte: to.toISOString().slice(0, 10) } },
       { limit: 1 },
@@ -687,6 +691,9 @@ export async function decideLeave(
   if (!employee || employee.managerUserId !== managerUserId) {
     throw new LeaveError(403, 'Only the employee’s current manager can decide this leave');
   }
+  if (leave.status === 'cancelled') {
+    throw new LeaveError(409, 'The employee cancelled this leave');
+  }
   if (leave.status !== 'pending') {
     throw new LeaveError(409, 'Leave request has already been decided');
   }
@@ -729,6 +736,69 @@ export async function decideLeave(
     approved: decision === 'approved',
     comment: input.managerNote?.trim() ?? '',
     decidedByUserId: managerUserId,
+  });
+
+  return await toLeaveView(updated, employee);
+}
+
+/**
+ * The employee takes back a leave that has not begun — one still with the
+ * manager, or one already approved. The row stays, marked cancelled, so the
+ * history keeps it; the balance, the calendar, payroll and the reminders all
+ * ask for pending or approved rows by name, so from here on it counts
+ * nowhere. A leave that has started is HR's to undo, not the employee's. The
+ * approvers hear about it, with whatever note the employee left them.
+ */
+export async function cancelLeave(userId: string, leaveIdInput: string, input: { note?: string } = {}): Promise<LeaveView> {
+  if (!ObjectId.isValid(leaveIdInput)) {
+    throw new LeaveError(400, 'Invalid leave ID');
+  }
+  const leaveId = new ObjectId(leaveIdInput);
+  const leave = await leaves().findOne({ _id: leaveId });
+  if (!leave || leave.userId !== userId) {
+    throw new LeaveError(404, 'Leave request not found');
+  }
+  if (leave.status === 'cancelled') {
+    throw new LeaveError(409, 'This leave has already been cancelled');
+  }
+  if (leave.status === 'declined') {
+    throw new LeaveError(409, 'A declined leave has nothing to cancel');
+  }
+  // Dates are stored as UTC midnight of the calendar day; today is the day it is in India, where
+  // every org works, so at 02:00 IST a leave starting that day has begun, as the app sees it.
+  const istDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const today = new Date(`${istDay}T00:00:00.000Z`);
+  if (leave.startDate.getTime() <= today.getTime()) {
+    throw new LeaveError(409, 'Leave that has already started cannot be cancelled here. Ask HR.');
+  }
+  const note = input.note?.trim() ?? '';
+  if (note.length > 500) {
+    throw new LeaveError(400, 'Note cannot exceed 500 characters');
+  }
+  const employee = await users().findOne({ userId });
+  if (!employee) {
+    throw new LeaveError(404, 'Employee not found');
+  }
+
+  const cancelledAt = new Date();
+  const updated = await leaves().findOneAndUpdate(
+    { _id: leaveId, status: { $in: ['pending', 'approved'] } },
+    { $set: { status: 'cancelled', cancelledAt, updatedAt: cancelledAt, ...(note ? { cancelNote: note } : {}) } },
+    { returnDocument: 'after' },
+  );
+  if (!updated) {
+    throw new LeaveError(409, 'This leave has already been decided');
+  }
+
+  await notifyLeaveCancelled({
+    employeeUserId: userId,
+    requestId: String(leaveId),
+    type: leave.type,
+    startDate: leave.startDate,
+    endDate: leave.endDate,
+    days: leave.days ?? inclusiveDays(leave.startDate, leave.endDate),
+    wasApproved: leave.status === 'approved',
+    note,
   });
 
   return await toLeaveView(updated, employee);
@@ -782,6 +852,9 @@ export async function adminDecideLeave(
   if (!leave) throw new LeaveError(404, 'Leave request not found');
   if (leave.userId === adminUserId) {
     throw new LeaveError(403, 'You cannot override your own request');
+  }
+  if (leave.status === 'cancelled') {
+    throw new LeaveError(409, 'The employee cancelled this leave');
   }
   if (leave.status !== 'pending') {
     throw new LeaveError(409, 'Leave request has already been decided');
@@ -944,6 +1017,8 @@ async function toLeaveView(leave: Leave & { _id: ObjectId }, employee: User, typ
     createdAt: createdAt.toISOString(),
     decidedAt: leave.decidedAt?.toISOString(),
     decidedByRole: leave.decidedByRole,
+    cancelledAt: leave.cancelledAt?.toISOString(),
+    cancelNote: leave.cancelNote,
   };
 }
 

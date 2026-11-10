@@ -391,13 +391,14 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
     final today = DateTime.now();
     final posts = _posts;
     final tabs = profileTabsOpeningOn([
-      for (final tab in widget.publicOnly
-          ? fetchedProfileTabs(inViewerChain: member.inViewerChain)
-          : memberProfileTabs(
-              inViewerChain: member.inViewerChain,
-              viewerCanManage: widget.canManage,
-              hasDocuments: member.documents.isNotEmpty,
-            ))
+      for (final tab
+          in widget.publicOnly
+              ? fetchedProfileTabs(inViewerChain: member.inViewerChain)
+              : memberProfileTabs(
+                  inViewerChain: member.inViewerChain,
+                  viewerCanManage: widget.canManage,
+                  hasDocuments: member.documents.isNotEmpty,
+                ))
         if (tab != ProfileTab.posts || posts != null) tab,
     ], widget.openOn);
     final selected = _shownTab(tabs, _tab);
@@ -491,7 +492,12 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
       // No "your manager" line here: the reader usually is the manager, and
       // the month row's due card says what to do.
       ProfileTab.grow => [
-        _ProfileGrowTab(data: data, bloc: bloc, memberId: member.id, person: member),
+        _ProfileGrowTab(
+          data: data,
+          bloc: bloc,
+          memberId: member.id,
+          person: member,
+        ),
       ],
       ProfileTab.rank => [
         _RankHistory(service: _profileService, userId: member.userId),
@@ -905,8 +911,8 @@ class _ProfileHero extends StatelessWidget {
                   child: Text(
                     recognition,
                     style: ProfileStyle.sora(
-                    14,
-                    weight: FontWeight.w600,
+                      14,
+                      weight: FontWeight.w600,
                       color: const Color(0xFFFFBF1B),
                       height: 16.2,
                       spacing: -0.16,
@@ -1533,10 +1539,7 @@ List<(DateTime date, Widget card)> _myRequestEntries(ManagerDashboard data) {
         _ProfileRequestCard(
           iconAsset: _RequestIcons.leave,
           title: '${leave.type} leave request',
-          rows: [
-            ('Date:', _leaveDateRange(leave)),
-            ('Comment:', leave.reason),
-          ],
+          rows: [('Date:', _leaveDateRange(leave)), ('Comment:', leave.reason)],
           decision: leave.decision,
           readOnly: true,
         ),
@@ -1815,8 +1818,16 @@ class _ProfileDecisionButton extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
         boxShadow: const [
-          BoxShadow(color: Color(0x1A000000), blurRadius: 1.5, offset: Offset(0, 1)),
-          BoxShadow(color: Color(0x1A000000), blurRadius: 1, offset: Offset(0, 1)),
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 1.5,
+            offset: Offset(0, 1),
+          ),
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 1,
+            offset: Offset(0, 1),
+          ),
         ],
       ),
       child: DefaultTextStyle.merge(
@@ -1856,6 +1867,11 @@ class _ProfileStatusPill extends StatelessWidget {
         'DECLINED',
         const Color(0xFFDC2626),
         const Color(0x4DFF3838),
+      ),
+      LeaveDecision.cancelled => (
+        'CANCELLED',
+        const Color(0xFF4E4E56),
+        const Color(0x4DB0B0B8),
       ),
     };
     return Container(
@@ -1972,7 +1988,11 @@ class _AttendanceCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         boxShadow: const [
-          BoxShadow(color: Color(0x0F000000), blurRadius: 6, offset: Offset(0, 2)),
+          BoxShadow(
+            color: Color(0x0F000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
@@ -3817,7 +3837,8 @@ class _PrivacyAndDataRow extends StatelessWidget {
               const SizedBox(height: 8),
               const RaiseTicketLink(
                 label: 'Ask to close my account',
-                about: 'Please close my Sowaka account and delete my personal data.',
+                about:
+                    'Please close my Sowaka account and delete my personal data.',
               ),
               const SizedBox(height: 12),
               Text(
@@ -4763,7 +4784,12 @@ class _ProfileGrowTabState extends State<_ProfileGrowTab> {
         final member = widget.memberId == null
             ? null
             : data.team
-                      .where((member) => member.userId == widget.person?.userId || (widget.person == null && member.id == widget.memberId))
+                      .where(
+                        (member) =>
+                            member.userId == widget.person?.userId ||
+                            (widget.person == null &&
+                                member.id == widget.memberId),
+                      )
                       .firstOrNull ??
                   widget.person;
         final history = member?.history ?? data.growthHistory;
@@ -5841,9 +5867,7 @@ class _FeedbackFormPageState extends State<_FeedbackFormPage> {
       return;
     }
     // Loads the member's parameters into bloc state for the form to edit.
-    widget.bloc.add(
-      OpenFeedbackRecord(widget.memberId, period: widget.period),
-    );
+    widget.bloc.add(OpenFeedbackRecord(widget.memberId, period: widget.period));
     // Saving or sending clears the selected member on the bloc. That is the
     // signal the form is finished, so close the route rather than sitting on a
     // spinner waiting for a member that will never come back.

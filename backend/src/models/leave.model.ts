@@ -1,4 +1,5 @@
-export type LeaveStatus = 'pending' | 'approved' | 'declined';
+/** `cancelled`: the employee took it back before it began (see `cancelLeave`); every reader that counts leave asks for pending or approved rows by name, so a cancelled row counts nowhere. */
+export type LeaveStatus = 'pending' | 'approved' | 'declined' | 'cancelled';
 
 export interface Leave {
   userId: string; // -> User.userId
@@ -26,6 +27,9 @@ export interface Leave {
   decidedByUserId?: string; // -> User.userId
   decidedByRole?: 'manager' | 'admin'; // 'admin' = overridden from the HR dashboard
   decidedAt?: Date;
+  /** When the employee cancelled it, and what they told their manager, if anything. */
+  cancelledAt?: Date;
+  cancelNote?: string;
   createdAt?: number;
   updatedAt?: Date;
 }
