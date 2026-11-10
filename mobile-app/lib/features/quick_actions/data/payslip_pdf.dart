@@ -143,24 +143,54 @@ String _days(double days) => days == days.roundToDouble()
     ? days.round().toString()
     : days.toStringAsFixed(1);
 
+/// The app's own face, with a rupee sign; null (Helvetica and "Rs") if the
+/// font cannot be read.
+Future<pw.Font?> _payslipFont() async {
+  try {
+    return pw.Font.ttf(
+      await rootBundle.load(
+        'assets/fonts/plus_jakarta_sans/PlusJakartaSans-Variable.ttf',
+      ),
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
 Future<Uint8List> buildPayslipPdf({
   required Payslip slip,
   required PayslipCompany company,
 }) async {
-  // The app's own face, with a rupee sign; Helvetica and "Rs" if the font
-  // cannot be read.
-  pw.Font? regular;
-  pw.Font? bold;
-  try {
-    final data = await rootBundle.load(
-      'assets/fonts/plus_jakarta_sans/PlusJakartaSans-Variable.ttf',
-    );
-    regular = pw.Font.ttf(data);
-    bold = regular;
-  } catch (_) {
-    regular = null;
-    bold = null;
+  final doc = pw.Document(
+    title: 'Payslip · ${slip.employeeName} · ${_monthLabel(slip.period)}',
+  );
+  _addPayslipPage(doc, slip, company, await _payslipFont());
+  return doc.save();
+}
+
+/// Several payslips in one PDF, a page each in the order given, the font
+/// embedded once: Downloads' "Download all as one PDF".
+Future<Uint8List> buildPayslipsPdf({
+  required List<Payslip> slips,
+  required PayslipCompany company,
+  required String title,
+}) async {
+  final doc = pw.Document(title: title);
+  final font = await _payslipFont();
+  for (final slip in slips) {
+    _addPayslipPage(doc, slip, company, font);
   }
+  return doc.save();
+}
+
+void _addPayslipPage(
+  pw.Document doc,
+  Payslip slip,
+  PayslipCompany company,
+  pw.Font? font,
+) {
+  final regular = font;
+  final bold = font;
   final rupee = regular == null ? 'Rs ' : '₹';
   String inr(int paise) => '$rupee${_group((paise / 100).round())}';
 
@@ -272,9 +302,6 @@ Future<Uint8List> buildPayslipPdf({
     ),
   );
 
-  final doc = pw.Document(
-    title: 'Payslip · ${slip.employeeName} · ${_monthLabel(slip.period)}',
-  );
   doc.addPage(
     pw.Page(
       pageFormat: PdfPageFormat.a4,
@@ -534,5 +561,4 @@ Future<Uint8List> buildPayslipPdf({
       ),
     ),
   );
-  return doc.save();
 }
