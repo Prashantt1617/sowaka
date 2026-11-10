@@ -179,13 +179,15 @@ async function buildRunPayslips(
   period: string,
   range: PeriodRange,
   entered: { lopDays: Record<string, number>; overtimePaise: Record<string, number>; incomeTaxPaise: Record<string, number>; componentAmounts?: Amounts },
+  scope?: EstimateScope,
 ): Promise<Payslip[]> {
   const runAmounts = entered.componentAmounts ?? {};
   const lopOverrides = entered.lopDays;
   const otOverrides = entered.overtimePaise;
   const taxOverrides = entered.incomeTaxPaise;
-  const structures = await salaryStructures().find({ org, status: 'active' }).toArray();
+  const structures = await salaryStructures().find({ org, status: 'active', ...(scope ? { userId: scope.userId } : {}) }).toArray();
   if (structures.length === 0) {
+    if (scope) return [];
     throw new PayrollRunError(409, 'No active salary structures to run payroll for');
   }
   const catalog = await payHeads().find({ org }).toArray();
@@ -211,10 +213,16 @@ async function buildRunPayslips(
   const readsAttendance = docksForAttendance || (await anyApprovedLeave(structures.map((s) => s.userId), range));
   // Graded on the roster as it is now: a joining date just changed moves which
   // days are before joining, and payroll counts those itself below.
-  if (readsAttendance) invalidateAttendanceSetup(org);
-  const attendance = readsAttendance
-    ? await attendanceCountsForPeriod(adminUserId, period, range)
+  // (An estimate reads the setup as it is cached: it runs on every app home.)
+  if (readsAttendance && !scope) invalidateAttendanceSetup(org);
+  let attendance = readsAttendance
+    ? await attendanceCountsForPeriod(adminUserId, period, range, scope?.today)
     : new Map();
+  // Not on the cached roster (just joined, or just given a structure): read it afresh, as a run would.
+  if (readsAttendance && scope && !attendance.has(scope.userId)) {
+    invalidateAttendanceSetup(org);
+    attendance = await attendanceCountsForPeriod(adminUserId, period, range, scope.today);
+  }
 
   const employees = await users()
     .find({ userId: { $in: structures.map((s) => s.userId) } })
@@ -228,7 +236,8 @@ async function buildRunPayslips(
   // Fuel, Internet…: paid in full, taxed until bills; claims of a linked type are those bills, not paid again.
   const billCats = await billCategories(org);
   // Claims on another run (not rejected) are that run's: never paid twice.
-  const otherRuns = await payrollRuns().find({ org, status: { $ne: 'rejected' } } as never, { projection: { _id: 1 } }).toArray();
+  // (An estimate stands in for this period's run, so that run's own claims stay its to pay.)
+  const otherRuns = await payrollRuns().find({ org, status: { $ne: 'rejected' }, ...(scope ? { period: { $ne: period } } : {}) } as never, { projection: { _id: 1 } }).toArray();
   const otherRunIds = otherRuns.map((r) => r._id.toHexString()).filter((id) => id !== runIdHex);
   const reservedClaimIds = new Set(
     otherRunIds.length
@@ -323,7 +332,8 @@ async function buildRunPayslips(
         grossPaise: base.earnings.filter((l) => !l.oneTime).reduce((t, l) => t + l.monthlyPaise, 0),
       }, workingDays);
     const incomeTaxEnteredByHr = taxOverrides[structure.userId] !== undefined;
-    let incomeTaxPaise = nonNegInt(taxOverrides[structure.userId]);
+    // Without the TDS engine HR types the tax on each run: an estimate takes the last payslip's.
+    let incomeTaxPaise = nonNegInt(taxOverrides[structure.userId] ?? (scope && !tdsOn ? scope.incomeTaxWithoutEnginePaise : 0));
 
     const slipInput = {
       workingDays,
@@ -440,10 +450,32 @@ async function buildRunPayslips(
     });
   }
 
-  if (slips.length === 0) {
+  if (slips.length === 0 && !scope) {
     throw new PayrollRunError(409, 'No payslips could be generated for this period');
   }
   return slips;
+}
+
+/** One person's payslip as a run made now would compute it (the app's estimate). */
+export interface EstimateScope {
+  userId: string;
+  /** The day attendance is counted to, as the run counts it (today); defaults to today. */
+  today?: string;
+  /** The month's income tax when the org has no TDS engine on (HR types it on the run). */
+  incomeTaxWithoutEnginePaise?: number;
+}
+
+/**
+ * The payslip a run for `period` would give this person if it were made now:
+ * the run's own calculation (structure, flexible split, attendance's loss of
+ * pay by their paid days template, meal card, TDS), for them alone, saved
+ * nowhere. Null when the run would pay them nothing (no active structure, or
+ * not employed in the period). A missing statutory or income tax row is the
+ * run's 409 (PayrollConfigError).
+ */
+export async function estimatePayslip(org: string, period: string, range: PeriodRange, scope: EstimateScope): Promise<Payslip | null> {
+  const slips = await buildRunPayslips(scope.userId, org, '', period, range, { lopDays: {}, overtimePaise: {}, incomeTaxPaise: {} }, scope);
+  return slips[0] ?? null;
 }
 
 export async function listRuns(adminUserId: string) {

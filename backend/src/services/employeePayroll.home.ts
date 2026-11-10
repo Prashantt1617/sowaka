@@ -19,11 +19,10 @@ import {
   EmployeePayrollError, askHr, dayOf, lastDayOf, lockedPeriods, meOf, parsePeriodParam, payrollAppEnabled, periodOf,
 } from './employeePayroll.common';
 import { myDeclaration, myProofs } from './employeePayroll.declaration';
-import { mySplit, splitAmountsFor } from './employeePayroll.split';
-import { PayrollConfigError } from './payrollConfig.service';
+import { mySplit } from './employeePayroll.split';
+import { PayrollConfigError, tdsMissing } from './payrollConfig.service';
 import { PayrollInputsError, PeriodRange, payrollPeriodHolding, payrollPeriodRange } from './payroll-inputs.service';
-import { myLatestReleasedPayslipBefore, myReleasedPayslipFor } from './payrollRun.service';
-import { computeStructureFor } from './salaryStructure.service';
+import { estimatePayslip, myLatestReleasedPayslipBefore, myReleasedPayslipFor } from './payrollRun.service';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -153,23 +152,10 @@ function fromPayslip(slip: Payslip & { _id?: { toHexString(): string } }) {
   };
 }
 
-/** Loss of pay so far this pay period, as the calendar grades it: absences, half days, leave without pay. */
-function lopDaysOf(days: Awaited<ReturnType<typeof employeeDayStatuses>>): number {
-  let lop = 0;
-  for (const d of days ?? []) {
-    if (!d.final) continue;
-    if (d.status === 'absent') lop += 1;
-    else if (d.status === 'half_day') lop += 0.5;
-    else if (d.status === 'unpaid_leave') lop += d.halfDay ? 0.5 : 1;
-    else if (d.status === 'missed_punch') lop += d.countsAs === 'Absent' ? 1 : d.countsAs === 'Half Day' ? 0.5 : 0;
-  }
-  return lop;
-}
-
 /** Why Home cannot work out the pay yet: something HR sets up is missing. Shown instead of a made-up figure. */
 export interface SalaryNotSetUp {
   notConfigured: true;
-  reason: 'statutory_not_set_up' | 'pay_period_not_set_up';
+  reason: 'statutory_not_set_up' | 'tax_rules_not_set_up' | 'pay_period_not_set_up';
   fy: string | null;
   message: string;
 }
@@ -177,76 +163,58 @@ export interface SalaryNotSetUp {
 const monthLabel = (period: string) =>
   new Date(`${period}-01T00:00:00Z`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
+/** Runs whose payslips the employee may see, as payrollRun.service has them. */
+const RELEASED_RUN_STATUSES: PayrollRunStatus[] = ['approved', 'paid'];
+
+const tdsOf = (slip: Payslip) => slip.deductions.find((d) => d.key === 'income_tax')?.amountPaise ?? 0;
+
 const periodKey = (range: PeriodRange) => `${range.year}-${String(range.month).padStart(2, '0')}`;
 
 /**
- * The estimate for one pay period: the structure as it pays that month (its
- * FY's statutory row), loss of pay over the period's days so far, divided by
- * the period's base days, as the run does it. A FY with no statutory row is
- * not guessed at: the gross itself depends on it (employer contributions
- * inside CTC, statutory bonus), so the estimate says it is not set up.
+ * The estimate for one pay period: the payslip a run made now would give
+ * (estimatePayslip, the run's own calculation for this person alone), so the
+ * app's figure is what payroll will pay: the same deduction lines (meal card
+ * included), the same loss of pay from attendance counted to today by their
+ * paid days template, the same TDS. Without the TDS engine, the last
+ * released payslip's income tax stands in for the one HR will type. A FY
+ * with no statutory (or income tax) row is not guessed at: the estimate
+ * says it is not set up.
  */
 async function estimateFor(org: string, userId: string, period: string, range: PeriodRange, now: Date) {
-  const structure = await salaryStructures().findOne({ org, userId });
+  const structure = await salaryStructures().findOne({ org, userId }, { projection: { _id: 0, salaryTemplateCode: 1 } });
   if (!structure?.salaryTemplateCode) return null;
-  const splits = await flexibleSplits().find({ org, userId }).toArray();
-  let computed: Awaited<ReturnType<typeof computeStructureFor>>['computed'];
+  const last = await myLatestReleasedPayslipBefore(userId, period);
+  let slip: Payslip | null;
   try {
-    ({ computed } = await computeStructureFor(org, userId, {
-      ...structure,
-      componentValues: { ...(structure.componentValues ?? {}), ...splitAmountsFor(splits, period) },
-    }, undefined, period));
+    slip = await estimatePayslip(org, period, range, {
+      userId,
+      today: istDayOf(now),
+      incomeTaxWithoutEnginePaise: last ? tdsOf(last) : 0,
+    });
   } catch (error) {
     if (!(error instanceof PayrollConfigError) || error.statusCode !== 409) throw error;
     const fy = fyOf(period).fy;
+    const tax = error.message === tdsMissing(fy);
     const notSetUp: SalaryNotSetUp = {
       notConfigured: true,
-      reason: 'statutory_not_set_up',
+      reason: tax ? 'tax_rules_not_set_up' : 'statutory_not_set_up',
       fy,
-      message: `Your ${monthLabel(period)} pay can't be worked out yet: the statutory settings (PF, ESI, professional tax) for FY ${fy} are not set up. Ask HR.`,
+      message: tax
+        ? `Your ${monthLabel(period)} pay can't be worked out yet: the income tax settings for FY ${fy} are not set up. Ask HR.`
+        : `Your ${monthLabel(period)} pay can't be worked out yet: the statutory settings (PF, ESI, professional tax) for FY ${fy} are not set up. Ask HR.`,
     };
     return { notSetUp };
   }
-  const yesterday = dayOf(new Date(now.getTime() - 86_400_000));
-  const to = range.to < yesterday ? range.to : yesterday;
-  const graded = to >= range.from ? await employeeDayStatuses(org, userId, range.from, to).catch(() => null) : [];
-  const lopDays = lopDaysOf(graded);
-  const gross = computed.grossMonthlyPaise;
-  const lopPaise = Math.round((gross * lopDays) / range.baseDays / 100) * 100;
-  const st = computed.statutory;
-  const deductions = [
-    { key: 'epf', amountPaise: st.epf.employeePaise },
-    { key: 'esi', amountPaise: st.esi.applicable ? st.esi.employeePaise : 0 },
-    { key: 'pt', amountPaise: st.pt.amountPaise },
-    { key: 'lwf', amountPaise: st.lwf.applicable ? st.lwf.employeePaise : 0 },
-    ...computed.deductions.map((d) => ({ key: d.code, label: d.payslipName, amountPaise: d.monthlyPaise })),
-  ];
-  // Income tax: what the last released payslip withheld, as this month's best guess.
-  const last = await myLatestReleasedPayslipBefore(userId, period);
-  const tax = last?.deductions.find((d) => d.key === 'income_tax')?.amountPaise ?? 0;
-  deductions.push({ key: 'income_tax', amountPaise: tax });
-  const shown = deductions
-    .filter((d) => d.amountPaise > 0)
-    .map((d) => ({ key: d.key, label: ('label' in d && d.label) || DEDUCTION_LABELS[d.key] || d.key, amountPaise: d.amountPaise }));
-  const net = gross - lopPaise - shown.reduce((sum, d) => sum + d.amountPaise, 0);
-  const reimbursements = computed.reimbursements.reduce((sum, r) => sum + r.monthlyPaise, 0);
+  if (!slip) return null;
+  const shown = fromPayslip(slip);
   return {
     salary: {
-      period,
+      ...shown,
       status: 'estimate' as const,
       payslipId: null,
       periodFrom: range.from as string | null,
       periodTo: range.to as string | null,
       baseDays: range.baseDays as number | null,
-      grossPaise: gross,
-      lopDays,
-      lopPaise,
-      // Approved overtime is paid on the run, by the template's rule: not estimated.
-      overtimePaise: 0,
-      deductions: shown,
-      netPaise: net,
-      reimbursementsPaise: reimbursements,
-      takeHomePaise: net + reimbursements,
     },
   };
 }
@@ -308,10 +276,6 @@ function previousPeriod(period: string): string {
 const monthName = (period: string) =>
   new Date(`${period}-01T00:00:00Z`).toLocaleString('en-IN', { month: 'long', timeZone: 'UTC' });
 
-/** Runs whose payslips the employee may see, as payrollRun.service has them. */
-const RELEASED_RUN_STATUSES: PayrollRunStatus[] = ['approved', 'paid'];
-
-const tdsOf = (slip: Payslip) => slip.deductions.find((d) => d.key === 'income_tax')?.amountPaise ?? 0;
 
 /**
  * The last pay period's salary, as a card: its released payslip, else the
