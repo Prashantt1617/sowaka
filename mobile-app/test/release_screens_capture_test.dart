@@ -77,7 +77,10 @@ const _dpr = 3.0;
 void _setPhone(WidgetTester tester, _Phone phone) {
   tester.view.physicalSize = Size(phone.width * _dpr, phone.height * _dpr);
   tester.view.devicePixelRatio = _dpr;
-  final inset = FakeViewPadding(top: phone.top * _dpr, bottom: phone.bottom * _dpr);
+  final inset = FakeViewPadding(
+    top: phone.top * _dpr,
+    bottom: phone.bottom * _dpr,
+  );
   tester.view.padding = inset;
   tester.view.viewPadding = inset;
   addTearDown(tester.view.reset);
@@ -106,7 +109,12 @@ Widget _keyboardStandIn(BuildContext context, Widget? child) {
             child: Center(
               child: Text(
                 'keyboard',
-                style: TextStyle(fontFamily: 'Plus Jakarta Sans', color: Color(0xFF8E9099), fontSize: 13, decoration: TextDecoration.none),
+                style: TextStyle(
+                  fontFamily: 'Plus Jakarta Sans',
+                  color: Color(0xFF8E9099),
+                  fontSize: 13,
+                  decoration: TextDecoration.none,
+                ),
               ),
             ),
           ),
@@ -118,7 +126,10 @@ Widget _keyboardStandIn(BuildContext context, Widget? child) {
 /// The app's own theme, as main.dart sets it.
 ThemeData _theme() => ThemeData(
   fontFamily: 'Plus Jakarta Sans',
-  colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0571A6), brightness: Brightness.light),
+  colorScheme: ColorScheme.fromSeed(
+    seedColor: const Color(0xFF0571A6),
+    brightness: Brightness.light,
+  ),
   scaffoldBackgroundColor: const Color(0xFFF7F7F9),
   inputDecorationTheme: InputDecorationTheme(
     filled: true,
@@ -138,7 +149,12 @@ ThemeData _theme() => ThemeData(
   ),
   outlinedButtonTheme: OutlinedButtonThemeData(
     style: OutlinedButton.styleFrom(
-      textStyle: const TextStyle(fontFamily: 'Plus Jakarta Sans', fontSize: 14, height: 20 / 14, fontWeight: FontWeight.w600),
+      textStyle: const TextStyle(
+        fontFamily: 'Plus Jakarta Sans',
+        fontSize: 14,
+        height: 20 / 14,
+        fontWeight: FontWeight.w600,
+      ),
     ),
   ),
   textSelectionTheme: const TextSelectionThemeData(
@@ -178,6 +194,7 @@ const _order = [
   'grow-short-comment-error',
   'grow-two-levels-up',
   'grow-two-levels-up-scrolled',
+  'contest-gallery-tag',
   'contest-entry-votes',
   'contest-voted-by-sheet',
   'contest-own-entry-delete',
@@ -213,13 +230,18 @@ class _Shooter {
   void onError(FlutterErrorDetails details) {
     final text = details.exceptionAsString().trim();
     // A photo or face the fake servers do not have: not a layout problem.
-    if (text.contains('HTTP request failed') || text.contains('NetworkImageLoadException')) {
+    if (text.contains('HTTP request failed') ||
+        text.contains('NetworkImageLoadException')) {
       _pending.add('image: ${text.split('\n').first}');
       return;
     }
-    final where = RegExp(r'(lib/[\w/]+\.dart):(\d+)').firstMatch(details.toString());
+    final where = RegExp(
+      r'(lib/[\w/]+\.dart):(\d+)',
+    ).firstMatch(details.toString());
     final first = text.split('\n').first;
-    _pending.add('${where == null ? '' : '[${where.group(1)}:${where.group(2)}] '}$first');
+    _pending.add(
+      '${where == null ? '' : '[${where.group(1)}:${where.group(2)}] '}$first',
+    );
   }
 
   Future<void> _async(Future<void> Function() work) async {
@@ -237,7 +259,10 @@ class _Shooter {
     final hit = find.byType(RichText).hitTestable().evaluate().toSet();
     for (final element in find.byType(RichText).evaluate()) {
       final render = element.renderObject;
-      if (render is RenderParagraph && render.hasSize && render.didExceedMaxLines && hit.contains(element)) {
+      if (render is RenderParagraph &&
+          render.hasSize &&
+          render.didExceedMaxLines &&
+          hit.contains(element)) {
         found.add(render.text.toPlainText().replaceAll('\n', ' '));
       }
     }
@@ -250,7 +275,10 @@ class _Shooter {
     await _async(() async {
       for (final element in find.byType(Image).evaluate()) {
         try {
-          await precacheImage((element.widget as Image).image, element).timeout(const Duration(seconds: 3));
+          await precacheImage(
+            (element.widget as Image).image,
+            element,
+          ).timeout(const Duration(seconds: 3));
         } catch (_) {}
       }
       await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -298,7 +326,10 @@ class _Shooter {
 
 /// [body] once per phone. A failure is recorded and the test passes, so one
 /// broken screen does not cost the rest their pictures.
-void _scenario(String name, Future<void> Function(WidgetTester tester, _Shooter shot, _Phone phone) body) {
+void _scenario(
+  String name,
+  Future<void> Function(WidgetTester tester, _Shooter shot, _Phone phone) body,
+) {
   for (final phone in _phones) {
     testWidgets('$name · ${phone.tag}', (tester) async {
       if (_out.isEmpty) return;
@@ -334,7 +365,9 @@ Future<void> _settle(WidgetTester tester, {bool inAsync = false}) async {
     if (inAsync) {
       await Future<void>.delayed(const Duration(milliseconds: 60));
     } else {
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 60)));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 60)),
+      );
     }
   }
   await tester.pump(const Duration(milliseconds: 400));
@@ -358,7 +391,8 @@ String _ymd(DateTime day) =>
     '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
 
 /// A photo from the app's own assets, as a `data:` URI (no network here).
-String _photo(String asset) => 'data:image/jpeg;base64,${base64Encode(File(asset).readAsBytesSync())}';
+String _photo(String asset) =>
+    'data:image/jpeg;base64,${base64Encode(File(asset).readAsBytesSync())}';
 
 // ------------------------------------------------------------------ face
 
@@ -371,7 +405,9 @@ class _FakeCamera extends FaceCamera {
 
   void sees(FaceProblem next) {
     problem = next;
-    signal = next == FaceProblem.none ? FaceSignal.detected : FaceSignal.notDetected;
+    signal = next == FaceProblem.none
+        ? FaceSignal.detected
+        : FaceSignal.notDetected;
     notifyListeners();
   }
 
@@ -380,7 +416,10 @@ class _FakeCamera extends FaceCamera {
     onBurst?.call(
       FaceBurst(
         photo: Uint8List.fromList([0xff, 0xd8, 0xff, 0xe0, 1]),
-        crops: List.generate(8, (i) => Uint8List.fromList([0xff, 0xd8, 0xff, i])),
+        crops: List.generate(
+          8,
+          (i) => Uint8List.fromList([0xff, 0xd8, 0xff, i]),
+        ),
         spoofPhone: spoof,
         motionMean: 1.6,
         motionRigid: 0.42,
@@ -395,11 +434,15 @@ class _FakeGeolocator extends GeolocatorPlatform {
   @override
   Future<bool> isLocationServiceEnabled() async => true;
   @override
-  Future<LocationPermission> checkPermission() async => LocationPermission.always;
+  Future<LocationPermission> checkPermission() async =>
+      LocationPermission.always;
   @override
-  Future<LocationPermission> requestPermission() async => LocationPermission.always;
+  Future<LocationPermission> requestPermission() async =>
+      LocationPermission.always;
   @override
-  Future<Position> getCurrentPosition({LocationSettings? locationSettings}) async {
+  Future<Position> getCurrentPosition({
+    LocationSettings? locationSettings,
+  }) async {
     await Future<void>.delayed(const Duration(milliseconds: 300));
     return Position(
       latitude: 28.4595,
@@ -424,7 +467,11 @@ http.Client _faceServer() => MockClient((request) async {
     return _ok({
       'checkAtPunch': true,
       'enrolled': true,
-      'consent': {'version': 'v4', 'agree': "Sowaka keeps a template of your face to confirm it's you when you punch in."},
+      'consent': {
+        'version': 'v4',
+        'agree':
+            "Sowaka keeps a template of your face to confirm it's you when you punch in.",
+      },
       'liveness': {'mode': 'device'},
       'maxAttempts': 5,
       'failedAttempts': 0,
@@ -448,11 +495,19 @@ http.Client _faceServer() => MockClient((request) async {
     return _ok({
       'geofenced': true,
       'inside': true,
-      'office': {'id': 'o1', 'name': 'Sowaka Office, Gurugram', 'city': 'Gurugram'},
+      'office': {
+        'id': 'o1',
+        'name': 'Sowaka Office, Gurugram',
+        'city': 'Gurugram',
+      },
     });
   }
   if (path.endsWith('/attendance/punch')) {
-    return _ok({'workDate': '2026-11-02', 'punchIn': '2026-11-02T04:02:00.000Z', 'officeName': 'Sowaka Office, Gurugram'});
+    return _ok({
+      'workDate': '2026-11-02',
+      'punchIn': '2026-11-02T04:02:00.000Z',
+      'officeName': 'Sowaka Office, Gurugram',
+    });
   }
   return _ok({});
 });
@@ -468,13 +523,19 @@ AuthUser _faceUser({required bool enrolled}) => AuthUser.fromJson({
 });
 
 /// The home card's slider, dragged: the punch screen opens on the camera.
-Future<void> _slideToPunch(WidgetTester tester, {required bool enrolled}) async {
+Future<void> _slideToPunch(
+  WidgetTester tester, {
+  required bool enrolled,
+}) async {
   FaceSounds.enabled = false;
   FaceCheckOutcome.enrolledThisRun = false;
   FaceCamera.create = () => _camera = _FakeCamera();
   GeolocatorPlatform.instance = _FakeGeolocator();
   final api = ManagerApiService(
-    session: AuthSession(token: 't', user: _faceUser(enrolled: enrolled)),
+    session: AuthSession(
+      token: 't',
+      user: _faceUser(enrolled: enrolled),
+    ),
     baseUrl: 'https://example.test',
     client: _faceServer(),
   );
@@ -488,7 +549,10 @@ Future<void> _slideToPunch(WidgetTester tester, {required bool enrolled}) async 
           body: Center(
             child: TextButton(
               onPressed: () => Navigator.of(context).push<PunchOutcome>(
-                MaterialPageRoute(builder: (_) => PunchScreen(api: api, type: 'in', geofenced: true)),
+                MaterialPageRoute(
+                  builder: (_) =>
+                      PunchScreen(api: api, type: 'in', geofenced: true),
+                ),
               ),
               child: const Text('Attendance'),
             ),
@@ -501,7 +565,9 @@ Future<void> _slideToPunch(WidgetTester tester, {required bool enrolled}) async 
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 400));
   final slider = find.byType(SlideToPunch);
-  final knob = find.descendant(of: slider, matching: find.byType(GestureDetector)).last;
+  final knob = find
+      .descendant(of: slider, matching: find.byType(GestureDetector))
+      .last;
   await tester.drag(knob, Offset(tester.getSize(slider).width, 0));
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 400));
@@ -535,11 +601,28 @@ Map<String, dynamic> _member(
   'history': <dynamic>[],
 };
 
-String _period(DateTime date) => '${date.year}-${date.month.toString().padLeft(2, '0')}';
+String _period(DateTime date) =>
+    '${date.year}-${date.month.toString().padLeft(2, '0')}';
 final _thisMonth = _period(DateTime.now());
-final _lastMonth = _period(DateTime(DateTime.now().year, DateTime.now().month - 1));
-const _monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-String _short(String period) => '${_monthsShort[int.parse(period.substring(5)) - 1]} ${period.substring(0, 4)}';
+final _lastMonth = _period(
+  DateTime(DateTime.now().year, DateTime.now().month - 1),
+);
+const _monthsShort = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+String _short(String period) =>
+    '${_monthsShort[int.parse(period.substring(5)) - 1]} ${period.substring(0, 4)}';
 
 final _managerSession = AuthSession(
   token: 'token',
@@ -555,9 +638,20 @@ final _managerSession = AuthSession(
   ),
 );
 
-Future<ManagerBloc> _bootShell(WidgetTester tester, {List<Map<String, dynamic>> team = const []}) async {
+Future<ManagerBloc> _bootShell(
+  WidgetTester tester, {
+  List<Map<String, dynamic>> team = const [],
+}) async {
   final workspace = {
-    'team': [_member('pankaj', 'Pankaj Mehra', isSelf: true, designation: 'Design Lead'), ...team],
+    'team': [
+      _member(
+        'pankaj',
+        'Pankaj Mehra',
+        isSelf: true,
+        designation: 'Design Lead',
+      ),
+      ...team,
+    ],
     'recognitionCandidates': <dynamic>[],
     'nominations': <dynamic>[],
     'myParameters': <dynamic>[],
@@ -572,9 +666,12 @@ Future<ManagerBloc> _bootShell(WidgetTester tester, {List<Map<String, dynamic>> 
   };
   final client = MockClient((request) async {
     if (request.url.path.endsWith('/manager/workspace')) return _ok(workspace);
-    if (request.method == 'PUT' && request.url.path.contains('/manager/feedback/')) {
+    if (request.method == 'PUT' &&
+        request.url.path.contains('/manager/feedback/')) {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
-      return _ok({'feedback': {'status': body['status']}});
+      return _ok({
+        'feedback': {'status': body['status']},
+      });
     }
     return _ok({
       'leaves': <dynamic>[],
@@ -586,11 +683,18 @@ Future<ManagerBloc> _bootShell(WidgetTester tester, {List<Map<String, dynamic>> 
       'balance': <String, dynamic>{},
     });
   });
-  ConnectApiService.testClient = MockClient((request) async => _ok({'posts': <dynamic>[], 'nextCursor': null, 'total': 0}));
+  ConnectApiService.testClient = MockClient(
+    (request) async =>
+        _ok({'posts': <dynamic>[], 'nextCursor': null, 'total': 0}),
+  );
   addTearDown(() => ConnectApiService.testClient = null);
   final bloc = ManagerBloc(
     session: _managerSession,
-    service: ManagerApiService(session: _managerSession, baseUrl: 'https://example.test', client: client),
+    service: ManagerApiService(
+      session: _managerSession,
+      baseUrl: 'https://example.test',
+      client: client,
+    ),
   );
   await bloc.add(const LoadManagerDashboard());
   await tester.pumpWidget(
@@ -609,7 +713,12 @@ Future<ManagerBloc> _bootShell(WidgetTester tester, {List<Map<String, dynamic>> 
 /// The profile's own Grow tab (the bottom bar has one too): the higher one.
 Future<void> _openGrowTab(WidgetTester tester) async {
   final tabs = find.text('Grow').evaluate().toList()
-    ..sort((a, b) => tester.getTopLeft(find.byWidget(a.widget)).dy.compareTo(tester.getTopLeft(find.byWidget(b.widget)).dy));
+    ..sort(
+      (a, b) => tester
+          .getTopLeft(find.byWidget(a.widget))
+          .dy
+          .compareTo(tester.getTopLeft(find.byWidget(b.widget)).dy),
+    );
   await tester.ensureVisible(find.byWidget(tabs.first.widget));
   await tester.pumpAndSettle();
   await tester.tap(find.byWidget(tabs.first.widget));
@@ -635,12 +744,20 @@ Finder _note(String name) => find.descendant(
 
 Future<void> _rate(WidgetTester tester, Map<String, int> scores) async {
   for (final MapEntry(key: name, value: score) in scores.entries) {
-    await _settleTap(tester, find.byWidgetPredicate((w) => w is Semantics && w.properties.label == 'Rate $name $score out of 5'));
+    await _settleTap(
+      tester,
+      find.byWidgetPredicate(
+        (w) =>
+            w is Semantics &&
+            w.properties.label == 'Rate $name $score out of 5',
+      ),
+    );
     await tester.pump();
   }
 }
 
-const _long = 'Took the onboarding redesign end to end, ran three rounds of user tests and kept engineering in the loop.';
+const _long =
+    'Took the onboarding redesign end to end, ran three rounds of user tests and kept engineering in the loop.';
 
 // ------------------------------------------------------------------ contest
 
@@ -703,8 +820,22 @@ Map<String, dynamic> _contest(Map<String, String> photos) {
         {'userId': 'chitra', 'name': 'Chitra Rao'},
       ],
     ),
-    _entry('mine-1', userId: 'viewer', name: 'Tanvi Arora', photo: photos['c']!, votes: 1, text: 'My corner, plants and all.', createdAt: '2026-10-31T07:00:00.000Z'),
-    _entry('mine-2', userId: 'viewer', name: 'Tanvi Arora', photo: photos['a']!, createdAt: '2026-10-31T08:00:00.000Z'),
+    _entry(
+      'mine-1',
+      userId: 'viewer',
+      name: 'Tanvi Arora',
+      photo: photos['c']!,
+      votes: 1,
+      text: 'My corner, plants and all.',
+      createdAt: '2026-10-31T07:00:00.000Z',
+    ),
+    _entry(
+      'mine-2',
+      userId: 'viewer',
+      name: 'Tanvi Arora',
+      photo: photos['a']!,
+      createdAt: '2026-10-31T08:00:00.000Z',
+    ),
   ];
   return {
     'id': 'contest',
@@ -716,10 +847,14 @@ Map<String, dynamic> _contest(Map<String, String> photos) {
       'title': 'Best desk photo',
       'task': 'Share the best photo of your desk this Diwali week',
       'pointsPerVote': 10,
-      'closesAt': DateTime.now().add(const Duration(days: 2)).toUtc().toIso8601String(),
+      'closesAt': DateTime.now()
+          .add(const Duration(days: 2))
+          .toUtc()
+          .toIso8601String(),
       'entries': entries,
       'leaderboard': [
-        for (final (index, entry) in entries.indexed) {...entry, 'rank': index + 1},
+        for (final (index, entry) in entries.indexed)
+          {...entry, 'rank': index + 1},
       ],
       'myEntryId': null,
       'myEntryIds': ['mine-1', 'mine-2'],
@@ -734,7 +869,9 @@ Map<String, dynamic> _contest(Map<String, String> photos) {
   };
 }
 
-MockClient _contestServer(Map<String, String> photos) => MockClient((request) async {
+MockClient _contestServer(Map<String, String> photos) => MockClient((
+  request,
+) async {
   final path = request.url.path;
   if (path.endsWith('/auth/teammates')) {
     return _ok({
@@ -751,24 +888,55 @@ MockClient _contestServer(Map<String, String> photos) => MockClient((request) as
       ],
     });
   }
-  if (RegExp(r'/connect/posts/contest/captions/([^/]+)/voters$').hasMatch(path)) {
+  if (RegExp(
+    r'/connect/posts/contest/captions/([^/]+)/voters$',
+  ).hasMatch(path)) {
     return _ok({
       'voters': [
         for (final (id, name, initials, role, dept, color) in [
           ('kiran', 'Kiran Das', 'KD', 'Product Designer', 'Design', '#335577'),
           ('chitra', 'Chitra Rao', 'CR', 'Lead Visualiser', '3D', '#553377'),
-          ('chinmay', 'Chinmay Kulkarni', 'CK', 'Unreal Developer', 'Engineering', '#2F7D5B'),
-          ('aditi', 'Aditi Venkataraman-Iyer', 'AV', 'Senior Business Development Manager', 'Sales & Partnerships', '#A0522D'),
-          ('rohit', 'Rohit Nair', 'RN', 'QA Engineer', 'Engineering', '#4B5563'),
+          (
+            'chinmay',
+            'Chinmay Kulkarni',
+            'CK',
+            'Unreal Developer',
+            'Engineering',
+            '#2F7D5B',
+          ),
+          (
+            'aditi',
+            'Aditi Venkataraman-Iyer',
+            'AV',
+            'Senior Business Development Manager',
+            'Sales & Partnerships',
+            '#A0522D',
+          ),
+          (
+            'rohit',
+            'Rohit Nair',
+            'RN',
+            'QA Engineer',
+            'Engineering',
+            '#4B5563',
+          ),
         ])
-          {'userId': id, 'name': name, 'initials': initials, 'designation': role, 'department': dept, 'avatarColor': color},
+          {
+            'userId': id,
+            'name': name,
+            'initials': initials,
+            'designation': role,
+            'department': dept,
+            'avatarColor': color,
+          },
       ],
     });
   }
   if (path.endsWith('/connect/posts/contest/captions')) {
     return _ok({'post': _contest(photos)});
   }
-  if (path.endsWith('/connect/posts/contest')) return _ok({'post': _contest(photos)});
+  if (path.endsWith('/connect/posts/contest'))
+    return _ok({'post': _contest(photos)});
   return _ok({});
 });
 
@@ -781,7 +949,11 @@ Map<String, String> _contestPhotos() => {
 Future<void> _openEntries(WidgetTester tester) async {
   final photos = _contestPhotos();
   final client = _contestServer(photos);
-  final api = ConnectApiService(session: _viewer, baseUrl: 'https://example.test', client: client);
+  final api = ConnectApiService(
+    session: _viewer,
+    baseUrl: 'https://example.test',
+    client: client,
+  );
   await tester.pumpWidget(
     MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -792,7 +964,15 @@ Future<void> _openEntries(WidgetTester tester) async {
           body: Center(
             child: TextButton(
               onPressed: () => http.runWithClient(
-                () => unawaited(openContestEntries(context, _viewer, 'contest', api: api, onOpenPerson: (_) {})),
+                () => unawaited(
+                  openContestEntries(
+                    context,
+                    _viewer,
+                    'contest',
+                    api: api,
+                    onOpenPerson: (_) {},
+                  ),
+                ),
                 () => client,
               ),
               child: const Text('open'),
@@ -810,11 +990,15 @@ Future<void> _contestSettle(WidgetTester tester) async {
   for (var i = 0; i < 5; i++) {
     await tester.pump(const Duration(milliseconds: 300));
   }
-  await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+  await tester.runAsync(
+    () => Future<void>.delayed(const Duration(milliseconds: 100)),
+  );
   await tester.pump(const Duration(milliseconds: 100));
 }
 
-final _galleryCards = find.byWidgetPredicate((widget) => widget.runtimeType.toString() == '_GalleryEntryCard');
+final _galleryCards = find.byWidgetPredicate(
+  (widget) => widget.runtimeType.toString() == '_GalleryEntryCard',
+);
 
 /// Opens the entry [id] full screen, trying each gallery card in turn.
 Future<void> _openEntry(WidgetTester tester, String id) async {
@@ -852,7 +1036,9 @@ class _FakeFilePicker extends FilePickerMacOS {
     bool lockParentWindow = false,
     bool readSequential = false,
     bool cancelUploadOnWindowBlur = true,
-  }) async => FilePickerResult([PlatformFile(path: path, name: 'desk.jpg', size: File(path).lengthSync())]);
+  }) async => FilePickerResult([
+    PlatformFile(path: path, name: 'desk.jpg', size: File(path).lengthSync()),
+  ]);
 }
 
 // ------------------------------------------------------------------ actions (attendance, leave)
@@ -875,14 +1061,18 @@ AuthSession _actionsSession() => AuthSession(
 
 MockClient _actionsServer() {
   final lwpDay = DateTime(_joined.year, _joined.month, 27);
-  String at(DateTime day, int h, int m) => DateTime(day.year, day.month, day.day, h, m).toUtc().toIso8601String();
+  String at(DateTime day, int h, int m) =>
+      DateTime(day.year, day.month, day.day, h, m).toUtc().toIso8601String();
   return MockClient((request) async {
     final path = request.url.path;
     if (path.endsWith('/manager/workspace')) {
       return _ok({
         'team': <dynamic>[],
         'holidays': [
-          {'date': _ymd(DateTime(_joined.year, _joined.month, 20)), 'name': 'Diwali'},
+          {
+            'date': _ymd(DateTime(_joined.year, _joined.month, 20)),
+            'name': 'Diwali',
+          },
         ],
         'weekoffDays': [6, 0],
         'shift': {
@@ -895,13 +1085,38 @@ MockClient _actionsServer() {
             for (final week in ['1', '2', '3', '4', '5']) week: [5, 6],
           },
           'leaveTypes': [
-            {'key': 'casual', 'name': 'Casual Leave', 'advanceDays': 30, 'allowBackdated': true, 'backdatedDays': 7, 'unpaid': false},
-            {'key': 'sick', 'name': 'Sick Leave', 'advanceDays': 30, 'allowBackdated': true, 'backdatedDays': 7, 'unpaid': false},
-            {'key': 'without_pay', 'name': 'Leave without pay', 'advanceDays': 30, 'allowBackdated': true, 'backdatedDays': 7, 'unpaid': true},
+            {
+              'key': 'casual',
+              'name': 'Casual Leave',
+              'advanceDays': 30,
+              'allowBackdated': true,
+              'backdatedDays': 7,
+              'unpaid': false,
+            },
+            {
+              'key': 'sick',
+              'name': 'Sick Leave',
+              'advanceDays': 30,
+              'allowBackdated': true,
+              'backdatedDays': 7,
+              'unpaid': false,
+            },
+            {
+              'key': 'without_pay',
+              'name': 'Leave without pay',
+              'advanceDays': 30,
+              'allowBackdated': true,
+              'backdatedDays': 7,
+              'unpaid': true,
+            },
           ],
           'leaveBalanceTracked': true,
           'correction': {
-            'triggers': ['Missing punch-in', 'Missing punch-out', 'Both punches missing'],
+            'triggers': [
+              'Missing punch-in',
+              'Missing punch-out',
+              'Both punches missing',
+            ],
             'backdateDays': 31,
             'punchFormat': 'In-app punch in',
             'punchMode': 'Both punches',
@@ -916,9 +1131,29 @@ MockClient _actionsServer() {
         'balance': {
           'year': DateTime.now().year,
           'types': [
-            {'key': 'casual', 'name': 'Casual Leave', 'total': 2, 'used': 0, 'remaining': 2},
-            {'key': 'sick', 'name': 'Sick Leave', 'total': 1.5, 'used': 0, 'remaining': 1.5},
-            {'key': 'without_pay', 'name': 'Leave without pay', 'total': 0, 'used': 1, 'remaining': 0, 'unlimited': true, 'unpaid': true},
+            {
+              'key': 'casual',
+              'name': 'Casual Leave',
+              'total': 2,
+              'used': 0,
+              'remaining': 2,
+            },
+            {
+              'key': 'sick',
+              'name': 'Sick Leave',
+              'total': 1.5,
+              'used': 0,
+              'remaining': 1.5,
+            },
+            {
+              'key': 'without_pay',
+              'name': 'Leave without pay',
+              'total': 0,
+              'used': 1,
+              'remaining': 0,
+              'unlimited': true,
+              'unpaid': true,
+            },
           ],
         },
       });
@@ -942,15 +1177,28 @@ MockClient _actionsServer() {
       });
     }
     if (path.contains('/attendance/mine')) {
-      final from = DateTime.parse(request.url.queryParameters['from'] ?? _ymd(_joined));
-      final to = DateTime.parse(request.url.queryParameters['to'] ?? _ymd(DateTime.now()));
+      final from = DateTime.parse(
+        request.url.queryParameters['from'] ?? _ymd(_joined),
+      );
+      final to = DateTime.parse(
+        request.url.queryParameters['to'] ?? _ymd(DateTime.now()),
+      );
       final today = DateTime.now();
       final records = <Map<String, dynamic>>[];
-      for (var d = _joined; d.isBefore(DateTime(today.year, today.month, today.day)); d = DateTime(d.year, d.month, d.day + 1)) {
+      for (
+        var d = _joined;
+        d.isBefore(DateTime(today.year, today.month, today.day));
+        d = DateTime(d.year, d.month, d.day + 1)
+      ) {
         if (d.isBefore(from) || d.isAfter(to)) continue;
-        if (d.weekday >= DateTime.saturday || d.day == 20 || d == lwpDay) continue;
+        if (d.weekday >= DateTime.saturday || d.day == 20 || d == lwpDay)
+          continue;
         // One day with the punch-out missing.
-        records.add({'workDate': _ymd(d), 'punchIn': at(d, 9, 20 + d.day % 15), if (d.day != 23) 'punchOut': at(d, 18, 35 + d.day % 20)});
+        records.add({
+          'workDate': _ymd(d),
+          'punchIn': at(d, 9, 20 + d.day % 15),
+          if (d.day != 23) 'punchOut': at(d, 18, 35 + d.day % 20),
+        });
       }
       return _ok({'records': records, 'regularizations': <dynamic>[]});
     }
@@ -970,7 +1218,11 @@ Future<void> _pumpActions(WidgetTester tester) async {
   final session = _actionsSession();
   final bloc = ManagerBloc(
     session: session,
-    service: ManagerApiService(session: session, baseUrl: 'https://example.test', client: _actionsServer()),
+    service: ManagerApiService(
+      session: session,
+      baseUrl: 'https://example.test',
+      client: _actionsServer(),
+    ),
   );
   await tester.runAsync(() => bloc.add(const LoadManagerDashboard()));
   final controller = QuickActionsController();
@@ -1005,14 +1257,21 @@ Future<void> _pumpActions(WidgetTester tester) async {
 
 // ------------------------------------------------------------------ payroll
 
-Future<FakePayrollServer> _pumpPayroll(WidgetTester tester, FakePayrollServer server) async {
+Future<FakePayrollServer> _pumpPayroll(
+  WidgetTester tester,
+  FakePayrollServer server,
+) async {
   await tester.pumpWidget(
     MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: _theme(),
       home: Scaffold(
         body: PayrollScreen(
-          api: PayrollApiService(session: payrollSession, baseUrl: 'https://example.test', client: FakePayrollClient(server)),
+          api: PayrollApiService(
+            session: payrollSession,
+            baseUrl: 'https://example.test',
+            client: FakePayrollClient(server),
+          ),
           onClose: () {},
           profileAction: const SizedBox(width: 30, height: 30),
           onNotifications: () {},
@@ -1033,7 +1292,12 @@ Future<void> _payrollTap(WidgetTester tester, Finder finder) async {
     await tester.scrollUntilVisible(
       finder,
       300,
-      scrollable: find.descendant(of: find.byType(ListView).first, matching: find.byType(Scrollable)).first,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView).first,
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
   }
   await _tapVisible(tester, finder);
@@ -1046,7 +1310,10 @@ void main() {
     if (_out.isEmpty) return;
     Directory(_out).createSync(recursive: true);
     for (final (family, file) in [
-      ('Plus Jakarta Sans', 'assets/fonts/plus_jakarta_sans/PlusJakartaSans-Variable.ttf'),
+      (
+        'Plus Jakarta Sans',
+        'assets/fonts/plus_jakarta_sans/PlusJakartaSans-Variable.ttf',
+      ),
       ('Sora', 'assets/fonts/sora/Sora-Variable.ttf'),
       ('Manrope', 'assets/fonts/manrope/Manrope-Variable.ttf'),
       ('Figtree', 'assets/fonts/figtree/Figtree-Variable.ttf'),
@@ -1057,9 +1324,13 @@ void main() {
     }
     // Material's own fonts, from the Flutter install: icons, and Roboto for
     // any text with no family of its own.
-    const cache = '/opt/homebrew/share/flutter/bin/cache/artifacts/material_fonts';
-    Future<ByteData> bytes(String name) async => ByteData.sublistView(File('$cache/$name').readAsBytesSync());
-    await (FontLoader('MaterialIcons')..addFont(bytes('MaterialIcons-Regular.otf'))).load();
+    const cache =
+        '/opt/homebrew/share/flutter/bin/cache/artifacts/material_fonts';
+    Future<ByteData> bytes(String name) async =>
+        ByteData.sublistView(File('$cache/$name').readAsBytesSync());
+    await (FontLoader(
+      'MaterialIcons',
+    )..addFont(bytes('MaterialIcons-Regular.otf'))).load();
     final roboto = FontLoader('Roboto');
     for (final weight in ['Regular', 'Medium', 'Bold', 'Light']) {
       roboto.addFont(bytes('Roboto-$weight.ttf'));
@@ -1069,14 +1340,19 @@ void main() {
 
   tearDownAll(() {
     if (_out.isEmpty) return;
-    File('$_out/results.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert(_results));
+    File(
+      '$_out/results.json',
+    ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(_results));
   });
 
   // 1. Face check setup ---------------------------------------------------
   _scenario('Face check setup', (tester, shot, phone) async {
     await _slideToPunch(tester, enrolled: false);
     await _faceSettle(tester);
-    await shot('faceid-intro', 'Face check setup: intro with the three steps and consent');
+    await shot(
+      'faceid-intro',
+      'Face check setup: intro with the three steps and consent',
+    );
     await tester.tap(find.text('Set up face check'));
     await _faceSettle(tester);
     await shot('faceid-front-1of3', 'Face check setup: front photo, "1 of 3"');
@@ -1089,7 +1365,10 @@ void main() {
     _camera.bursts(yaw: -13);
     await _faceSettle(tester);
     await _faceSettle(tester);
-    await shot('faceid-done', 'Face check setup: done, "You\'re set up!" with the punch card');
+    await shot(
+      'faceid-done',
+      'Face check setup: done, "You\'re set up!" with the punch card',
+    );
     await tester.tap(find.text('Continue to Connect'));
     await _faceSettle(tester);
     await tester.pump(const Duration(seconds: 4));
@@ -1097,22 +1376,35 @@ void main() {
 
   _scenario('Face check setup done, onboarding', (tester, shot, phone) async {
     await tester.pumpWidget(
-      MaterialApp(debugShowCheckedModeBanner: false, theme: _theme(), home: FaceSetupDone(onDone: () {})),
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: _theme(),
+        home: FaceSetupDone(onDone: () {}),
+      ),
     );
     await _settle(tester);
-    await shot('faceid-done-onboarding', 'Face check setup done, onboarding: no punch card, just Continue');
+    await shot(
+      'faceid-done-onboarding',
+      'Face check setup done, onboarding: no punch card, just Continue',
+    );
   });
 
   // 2. Daily face check ---------------------------------------------------
   _scenario('Daily face check', (tester, shot, phone) async {
     await _slideToPunch(tester, enrolled: true);
     await _faceSettle(tester);
-    await shot('facecheck-camera', 'Daily Face check: camera with the tick ring');
+    await shot(
+      'facecheck-camera',
+      'Daily Face check: camera with the tick ring',
+    );
     _camera.sees(FaceProblem.none);
     _camera.bursts();
     await tester.pump();
     await _faceSettle(tester);
-    await shot('facecheck-punched-in', 'Daily Face check: matched, "Punched in" with the ring and tick');
+    await shot(
+      'facecheck-punched-in',
+      'Daily Face check: matched, "Punched in" with the ring and tick',
+    );
     await tester.pump(FaceCheckScreen.matchedPause);
     await _faceSettle(tester);
     await tester.pump(const Duration(seconds: 4));
@@ -1121,17 +1413,26 @@ void main() {
   // 3. Payroll ------------------------------------------------------------
   _scenario('Payroll home', (tester, shot, phone) async {
     await _pumpPayroll(tester, FakePayrollServer()..overtimePaise = 125000);
-    await shot('payroll-home-overtime', 'Payroll home: salary card with the Overtime row');
+    await shot(
+      'payroll-home-overtime',
+      'Payroll home: salary card with the Overtime row',
+    );
     await tester.drag(find.byType(ListView).first, const Offset(0, -700));
     await _settle(tester);
-    await shot('payroll-home-scrolled', 'Payroll home, scrolled: to-dos and quick actions');
+    await shot(
+      'payroll-home-scrolled',
+      'Payroll home, scrolled: to-dos and quick actions',
+    );
     await tester.drag(find.byType(ListView).first, const Offset(0, 1400));
     await _settle(tester);
     await _payrollTap(tester, find.text('Overtime'));
     await _payrollTap(tester, find.text('Provident fund'));
     await tester.drag(find.byType(ListView).first, const Offset(0, 1400));
     await _settle(tester);
-    await shot('payroll-salary-breakdown', 'Salary breakdown: Overtime and Provident fund lines opened');
+    await shot(
+      'payroll-salary-breakdown',
+      'Salary breakdown: Overtime and Provident fund lines opened',
+    );
   });
 
   _scenario('Payroll split', (tester, shot, phone) async {
@@ -1143,24 +1444,42 @@ void main() {
   _scenario('Payroll income tax', (tester, shot, phone) async {
     await _pumpPayroll(tester, FakePayrollServer());
     await _payrollTap(tester, find.byKey(const ValueKey('payroll-tax')));
-    await shot('payroll-income-tax', 'Income tax: regime and investment declaration');
+    await shot(
+      'payroll-income-tax',
+      'Income tax: regime and investment declaration',
+    );
   });
 
   _scenario('Payroll proofs', (tester, shot, phone) async {
     await _pumpPayroll(tester, FakePayrollServer());
-    await _payrollTap(tester, find.byKey(const ValueKey('payroll-todo-investment_proofs')));
-    await shot('payroll-investment-proofs', 'Investment proofs: to upload, in review, approved, rejected');
+    await _payrollTap(
+      tester,
+      find.byKey(const ValueKey('payroll-todo-investment_proofs')),
+    );
+    await shot(
+      'payroll-investment-proofs',
+      'Investment proofs: to upload, in review, approved, rejected',
+    );
   });
 
   _scenario('Payroll payslips', (tester, shot, phone) async {
     await _pumpPayroll(tester, FakePayrollServer()..overtimePaise = 125000);
     await _payrollTap(tester, find.byKey(const ValueKey('payroll-payslips')));
-    await shot('payroll-payslips', 'Payslips list, with "Can\'t find a payslip? Raise a ticket"');
+    await shot(
+      'payroll-payslips',
+      'Payslips list, with "Can\'t find a payslip? Raise a ticket"',
+    );
     await _payrollTap(tester, find.text('August 2026'));
-    await shot('payroll-payslip-detail', 'Payslip detail (August 2026) with loss of pay and overtime');
+    await shot(
+      'payroll-payslip-detail',
+      'Payslip detail (August 2026) with loss of pay and overtime',
+    );
     await tester.drag(find.byType(ListView).first, const Offset(0, -600));
     await _settle(tester);
-    await shot('payroll-payslip-detail-scrolled', 'Payslip detail, scrolled to Download');
+    await shot(
+      'payroll-payslip-detail-scrolled',
+      'Payslip detail, scrolled to Download',
+    );
   });
 
   _scenario('Payroll error', (tester, shot, phone) async {
@@ -1168,7 +1487,10 @@ void main() {
     addTearDown(() => unregisterSupportTicketOpener(_noTicket));
     await _pumpPayroll(tester, FakePayrollServer()..taxRulesSetUp = false);
     await _payrollTap(tester, find.byKey(const ValueKey('payroll-tax')));
-    await shot('payroll-error-raise-ticket', 'Payroll error: tax rules not set up, "Ask HR" with the Raise ticket link');
+    await shot(
+      'payroll-error-raise-ticket',
+      'Payroll error: tax rules not set up, "Ask HR" with the Raise ticket link',
+    );
   });
 
   // 4. Grow and reviews ---------------------------------------------------
@@ -1178,7 +1500,12 @@ void main() {
       'feedbackStatus': 'pending',
       'parameters': [
         {'parameterId': 'p1', 'name': 'Ownership', 'score': 0, 'note': ''},
-        {'parameterId': 'p2', 'name': 'Quality of work', 'score': 0, 'note': ''},
+        {
+          'parameterId': 'p2',
+          'name': 'Quality of work',
+          'score': 0,
+          'note': '',
+        },
       ],
       'previousCycle': {
         'period': _lastMonth,
@@ -1186,8 +1513,18 @@ void main() {
         'score': 0,
         'parameters': [
           {'parameterId': 'p1', 'name': 'Ownership', 'score': 0, 'note': ''},
-          {'parameterId': 'p3', 'name': 'Delivery on time', 'score': 0, 'note': ''},
-          {'parameterId': 'p4', 'name': 'Collaboration with other teams', 'score': 0, 'note': ''},
+          {
+            'parameterId': 'p3',
+            'name': 'Delivery on time',
+            'score': 0,
+            'note': '',
+          },
+          {
+            'parameterId': 'p4',
+            'name': 'Collaboration with other teams',
+            'score': 0,
+            'note': '',
+          },
         ],
         'extra': '',
       },
@@ -1199,9 +1536,15 @@ void main() {
     await _settleTap(tester, find.text(_short(_thisMonth)));
     await tester.drag(find.byType(ListWheelScrollView), const Offset(0, 52));
     await tester.pumpAndSettle();
-    await shot('grow-month-picker', 'Grow month picker (Select Month) with last month offered');
+    await shot(
+      'grow-month-picker',
+      'Grow month picker (Select Month) with last month offered',
+    );
     await _settleTap(tester, find.text('Select'));
-    await shot('grow-report-last-month-pending', 'Grow of a direct report: last month "Pending", "Feedback for … can still be given"');
+    await shot(
+      'grow-report-last-month-pending',
+      'Grow of a direct report: last month "Pending", "Feedback for … can still be given"',
+    );
     await _settleTap(tester, find.text('Give Feedback'));
     await shot('grow-feedback-form-last-month', 'Feedback form for last month');
     for (final (name, score, text) in [
@@ -1220,7 +1563,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(send);
     await tester.pumpAndSettle();
-    await shot('grow-short-comment-error', 'Send with a short comment: "Write at least 75 characters…"');
+    await shot(
+      'grow-short-comment-error',
+      'Send with a short comment: "Write at least 75 characters…"',
+    );
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
   });
@@ -1242,11 +1588,27 @@ void main() {
                 'period': _lastMonth,
                 'overallScore': 4.2,
                 'parameters': [
-                  {'name': 'Ownership', 'score': 4.5, 'note': 'Took the festive campaign banners end to end and shipped them two days early.'},
-                  {'name': 'Quality of work', 'score': 4.0, 'note': 'Clean files and consistent type; a few rounds on the hero image.'},
-                  {'name': 'Collaboration with other teams', 'score': 4.0, 'note': 'Worked closely with marketing on copy changes.'},
+                  {
+                    'name': 'Ownership',
+                    'score': 4.5,
+                    'note':
+                        'Took the festive campaign banners end to end and shipped them two days early.',
+                  },
+                  {
+                    'name': 'Quality of work',
+                    'score': 4.0,
+                    'note':
+                        'Clean files and consistent type; a few rounds on the hero image.',
+                  },
+                  {
+                    'name': 'Collaboration with other teams',
+                    'score': 4.0,
+                    'note': 'Worked closely with marketing on copy changes.',
+                  },
                 ],
-                'sentAt': DateTime.now().subtract(const Duration(days: 3)).toIso8601String(),
+                'sentAt': DateTime.now()
+                    .subtract(const Duration(days: 3))
+                    .toIso8601String(),
                 'managerName': 'Haider Ali',
               },
             ],
@@ -1256,21 +1618,42 @@ void main() {
       return http.Response('{"success":false}', 404);
     });
     addTearDown(() => ProfileApiService.testClient = null);
-    await _bootShell(tester, team: [_member('haider', 'Haider Ali', reportsToViewer: true)]);
+    await _bootShell(
+      tester,
+      team: [_member('haider', 'Haider Ali', reportsToViewer: true)],
+    );
     openPersonProfile('neha');
     await tester.pumpAndSettle();
     await _openGrowTab(tester);
-    await shot('grow-two-levels-up', 'Grow tab seen by a manager two levels up (the report\'s report)');
+    await shot(
+      'grow-two-levels-up',
+      'Grow tab seen by a manager two levels up (the report\'s report)',
+    );
     await tester.drag(find.text('Neha Kapoor').first, const Offset(0, -450));
     await tester.pumpAndSettle();
-    await shot('grow-two-levels-up-scrolled', 'Grow tab two levels up, scrolled to the review');
+    await shot(
+      'grow-two-levels-up-scrolled',
+      'Grow tab two levels up, scrolled to the review',
+    );
   });
 
   // 5. Photo contest ------------------------------------------------------
   _scenario('Contest, votes', (tester, shot, phone) async {
     await _openEntries(tester);
+    // The gallery's cards: one that tags a colleague wears "Tag" and the face (node 4592:26402).
+    await tester.ensureVisible(
+      find.ancestor(of: find.text('Manav Shah').first, matching: _galleryCards),
+    );
+    await _contestSettle(tester);
+    await shot(
+      'contest-gallery-tag',
+      'Contest gallery: "Tag" and the tagged face on a photo',
+    );
     await _openEntry(tester, 'kiran-1');
-    await shot('contest-entry-votes', 'Contest entry full screen: "5 votes · See who voted"');
+    await shot(
+      'contest-entry-votes',
+      'Contest entry full screen: "5 votes · See who voted"',
+    );
     await tester.tap(find.byKey(const ValueKey('entry-voters-kiran-1')));
     await _contestSettle(tester);
     await shot('contest-voted-by-sheet', 'Voted by sheet');
@@ -1279,10 +1662,16 @@ void main() {
   _scenario('Contest, own entry', (tester, shot, phone) async {
     await _openEntries(tester);
     await _openEntry(tester, 'mine-1');
-    await shot('contest-own-entry-delete', 'Your own entry full screen, with Delete');
+    await shot(
+      'contest-own-entry-delete',
+      'Your own entry full screen, with Delete',
+    );
     await tester.tap(find.byKey(const ValueKey('entry-delete-mine-1')));
     await _contestSettle(tester);
-    await shot('contest-own-entry-delete-confirm', 'Delete your photo? confirmation');
+    await shot(
+      'contest-own-entry-delete-confirm',
+      'Delete your photo? confirmation',
+    );
   });
 
   _scenario('Contest, @ colleague list', (tester, shot, phone) async {
@@ -1310,13 +1699,18 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('entries-pinned-cta')));
       await realWork(cropShowing);
       await tester.tap(find.text('Done'));
-      await realWork(() => !cropShowing() && find.byType(TextField).evaluate().isNotEmpty);
+      await realWork(
+        () => !cropShowing() && find.byType(TextField).evaluate().isNotEmpty,
+      );
       final story = find.byType(TextField);
       await tester.showKeyboard(story);
       _keyboardUp(tester, phone);
       await tester.enterText(story, 'Diwali desk with @Chi');
       await realWork(() => find.text('Chitra Rao').evaluate().isNotEmpty);
-      await shot('contest-mention-list', 'Entry text box with the "@" colleague list open (keyboard up)');
+      await shot(
+        'contest-mention-list',
+        'Entry text box with the "@" colleague list open (keyboard up)',
+      );
       shot.inAsync = false;
     });
   });
@@ -1324,7 +1718,10 @@ void main() {
   _scenario('Contest, tagged name', (tester, shot, phone) async {
     await _openEntries(tester);
     await _openEntry(tester, 'manav-1');
-    await shot('contest-tagged-link', 'Entry showing a tagged name (@Chitra Rao) as a link');
+    await shot(
+      'contest-tagged-link',
+      'Entry showing a tagged name (@Chitra Rao) as a link',
+    );
   });
 
   // 6. Attendance ---------------------------------------------------------
@@ -1332,27 +1729,44 @@ void main() {
     await _pumpActions(tester);
     await tester.tap(find.text('Attendance').first);
     await _settle(tester);
-    final prev = find.byWidgetPredicate((w) => w is AttendanceCalendarArrow && w.asset.endsWith('prev.svg'));
+    final prev = find.byWidgetPredicate(
+      (w) => w is AttendanceCalendarArrow && w.asset.endsWith('prev.svg'),
+    );
     await tester.tap(prev);
     await _settle(tester);
     await _settle(tester);
-    await shot('attendance-joined-mid-month', 'Attendance calendar: joined on the 14th, days before it empty');
-    final day = find.descendant(of: find.byType(AttendanceMonthGrid), matching: find.text('9'));
+    await shot(
+      'attendance-joined-mid-month',
+      'Attendance calendar: joined on the 14th, days before it empty',
+    );
+    final day = find.descendant(
+      of: find.byType(AttendanceMonthGrid),
+      matching: find.text('9'),
+    );
     if (day.evaluate().isNotEmpty) {
       await _tapVisible(tester, day.first);
       await tester.drag(find.byType(Scrollable).first, const Offset(0, -400));
       await _settle(tester);
     }
-    await shot('attendance-before-joining-day', 'Attendance: a day before joining tapped');
+    await shot(
+      'attendance-before-joining-day',
+      'Attendance: a day before joining tapped',
+    );
     // The 23rd is missing its punch-out: the correction is offered, in the
     // outlined button the theme now gives the app's font.
-    final missed = find.descendant(of: find.byType(AttendanceMonthGrid), matching: find.text('23'));
+    final missed = find.descendant(
+      of: find.byType(AttendanceMonthGrid),
+      matching: find.text('23'),
+    );
     if (missed.evaluate().isNotEmpty) {
       await _tapVisible(tester, missed.first);
       await tester.drag(find.byType(Scrollable).first, const Offset(0, -400));
       await _settle(tester);
     }
-    await shot('attendance-request-correction', 'Attendance: a day missing its punch-out, with Request Correction');
+    await shot(
+      'attendance-request-correction',
+      'Attendance: a day missing its punch-out, with Request Correction',
+    );
   });
 
   _scenario('Leave without pay', (tester, shot, phone) async {
@@ -1361,12 +1775,18 @@ void main() {
     await _settle(tester);
     await _tapVisible(tester, find.text('Apply Leave').first);
     await _tapVisible(tester, find.text('Select leave type'));
-    await shot('attendance-lwp-type-picker', 'Leave type picker, "Unpaid" beside Leave without pay');
+    await shot(
+      'attendance-lwp-type-picker',
+      'Leave type picker, "Unpaid" beside Leave without pay',
+    );
     await _tapVisible(tester, find.text('Leave without pay').last);
     // Back to the top of the form, where the banner is.
     await tester.drag(find.text('LEAVE TYPE'), const Offset(0, 800));
     await _settle(tester);
-    await shot('attendance-lwp-apply-form', 'Leave without pay apply form with its banner');
+    await shot(
+      'attendance-lwp-apply-form',
+      'Leave without pay apply form with its banner',
+    );
   });
 
   // 7. Support Desk -------------------------------------------------------
@@ -1382,13 +1802,17 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    await shot('support-contact-hr-toast', '"Contact HR" message with the Raise ticket action');
+    await shot(
+      'support-contact-hr-toast',
+      '"Contact HR" message with the Raise ticket action',
+    );
     await tester.pump(const Duration(seconds: 10));
   });
 
   _scenario('Support, new ticket', (tester, shot, phone) async {
     final client = MockClient((request) async {
-      if (request.url.path.endsWith('/support/topics')) return supportOk({'topics': supportTopics});
+      if (request.url.path.endsWith('/support/topics'))
+        return supportOk({'topics': supportTopics});
       return supportOk({'tickets': <dynamic>[]});
     });
     await tester.pumpWidget(
@@ -1398,12 +1822,16 @@ void main() {
         home: SupportDeskScreen(
           shell: supportShell(client, realtime: FakeSupportRealtime()),
           raiseOnOpen: true,
-          raiseAbout: 'Overtime is not enabled for your team. Speak to HR if you think it should be.',
+          raiseAbout:
+              'Overtime is not enabled for your team. Speak to HR if you think it should be.',
         ),
       ),
     );
     await _settle(tester);
-    await shot('support-new-ticket-prefilled', 'Support Desk opened from Raise ticket: new ticket, message started');
+    await shot(
+      'support-new-ticket-prefilled',
+      'Support Desk opened from Raise ticket: new ticket, message started',
+    );
   });
 }
 

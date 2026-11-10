@@ -880,6 +880,7 @@ class _EntriesSheetState extends State<_EntriesSheet> {
           key: _keyFor(entry.id),
           child: _GalleryEntryCard(
             entry: entry,
+            photos: _photos,
             closed: _contestClosed(post),
             onOpen: () => _openEntry(post, rows, entry),
             onVote: () => _vote(post, entry.id),
@@ -2455,6 +2456,7 @@ class _GalleryVotedPill extends StatelessWidget {
 class _GalleryEntryCard extends StatelessWidget {
   const _GalleryEntryCard({
     required this.entry,
+    this.photos = const {},
     required this.closed,
     required this.onOpen,
     required this.onVote,
@@ -2464,6 +2466,9 @@ class _GalleryEntryCard extends StatelessWidget {
   });
 
   final ConnectCaptionEntry entry;
+
+  /// Faces from the directory, by person, for the colleagues tagged in it.
+  final Map<String, String> photos;
   final bool closed;
   final VoidCallback onOpen;
   final VoidCallback onVote;
@@ -2506,6 +2511,19 @@ class _GalleryEntryCard extends StatelessWidget {
                     top: 8,
                     child: _GalleryRankPill(rank: rank),
                   ),
+                  // Node 4592:26402: "Tag" and the faces of the colleagues
+                  // the entry tags, low on the photo's left. It stops short
+                  // of the "Your vote" pill on the right.
+                  if (entry.mentions.isNotEmpty)
+                    Positioned(
+                      left: 6,
+                      bottom: 7,
+                      right: entry.votedByViewer ? 88 : 6,
+                      child: _GalleryTagRow(
+                        mentions: entry.mentions,
+                        photos: photos,
+                      ),
+                    ),
                   if (entry.votedByViewer)
                     const Positioned(
                       right: 7.5,
@@ -2576,6 +2594,94 @@ class _GalleryEntryCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// "Tag" and up to three tagged faces, 20 across, each over the last by 4
+/// (node 4592:26402); one more than three is a count.
+class _GalleryTagRow extends StatelessWidget {
+  const _GalleryTagRow({required this.mentions, required this.photos});
+
+  final List<ConnectMention> mentions;
+  final Map<String, String> photos;
+
+  static const _shown = 3;
+
+  @override
+  Widget build(BuildContext context) {
+    final faces = mentions.take(_shown).toList();
+    final more = mentions.length - faces.length;
+    Widget face(ConnectMention person) {
+      final photo = photos[person.userId] ?? '';
+      final initial = person.name.trim().isEmpty
+          ? '?'
+          : person.name.trim().characters.first.toUpperCase();
+      return Container(
+        width: 20,
+        height: 20,
+        clipBehavior: Clip.antiAlias,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: _avatarColorFor(person.userId),
+          shape: BoxShape.circle,
+        ),
+        child: photo.isEmpty
+            ? Text(
+                initial,
+                style: const TextStyle(fontSize: 9, color: Colors.white),
+              )
+            : Image(
+                image: _remoteImage(photo),
+                width: 20,
+                height: 20,
+                fit: BoxFit.cover,
+              ),
+      );
+    }
+
+    // White words straight on the photo, as drawn; a soft shadow keeps them
+    // readable on a light picture without a band the design does not have.
+    const shadow = [Shadow(color: Color(0x66000000), blurRadius: 4)];
+    return Semantics(
+      label: 'Tagged: ${mentions.map((m) => m.name).join(', ')}',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Tag',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+              color: Colors.white,
+              shadows: shadow,
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 20.0 + 16.0 * (faces.length - 1),
+            height: 20,
+            child: Stack(
+              children: [
+                for (final (i, person) in faces.indexed)
+                  Positioned(left: 16.0 * i, child: face(person)),
+              ],
+            ),
+          ),
+          if (more > 0) ...[
+            const SizedBox(width: 4),
+            Text(
+              '+$more',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+                shadows: shadow,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

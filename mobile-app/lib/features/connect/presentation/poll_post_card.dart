@@ -464,12 +464,24 @@ class _PollOptionGrid extends StatelessWidget {
                     height: 88,
                     child: image.isEmpty
                         ? const ColoredBox(color: _pollSurface)
-                        // Two fingers lift the picture out to zoom, as a
-                        // photo post's does. One finger's tap still votes.
-                        : _PinchToZoom(
-                            child: Image(
+                        // The image poll: a tap on the picture opens it full
+                        // screen; a tap anywhere else on the card votes. The
+                        // picture's own tap wins over the card's, being the
+                        // deeper of the two. Two fingers still lift it out to
+                        // zoom in place, as a photo post's does.
+                        : GestureDetector(
+                            key: ValueKey('poll-option-open-${option.id}'),
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => showPhotoViewer(
+                              context,
                               image: _remoteImage(image),
-                              fit: BoxFit.cover,
+                              label: option.label,
+                            ),
+                            child: _PinchToZoom(
+                              child: Image(
+                                image: _remoteImage(image),
+                                fit: BoxFit.cover,
+                              ),
                             ),
                           ),
                   ),

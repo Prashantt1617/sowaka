@@ -30,13 +30,16 @@ import '../../../services/linkified_text.dart';
 import '../../relay/presentation/relay_post_card.dart';
 import '../../relay/presentation/relay_style.dart' show relayCountdown;
 import '../../squad/presentation/secret_squad_post_card.dart';
-import '../../squad/presentation/secret_squad_results.dart' show SquadResultsBox;
-import '../../squad/data/secret_squad_post.dart' show SquadStanding, parseSquadStandings;
+import '../../squad/presentation/secret_squad_results.dart'
+    show SquadResultsBox;
+import '../../squad/data/secret_squad_post.dart'
+    show SquadStanding, parseSquadStandings;
 import '../../games/data/games_api_service.dart';
 import '../../games/data/games_models.dart';
 import '../../games/presentation/web_game_screen.dart';
 import '../../shared/app_toast.dart';
 import '../../shared/network_status.dart';
+import '../../shared/photo_viewer.dart';
 
 // The engagement contests (caption, photo, Most Likely), their entries
 // sheet, and the poll card are drawn in their own files: this one was already
@@ -123,13 +126,18 @@ class ConnectComposerController {
 
   /// The company directory, for tagging someone in a comment on a profile's
   /// post: the feed's, else the one kept for the session. Empty until read.
-  List<ConnectTeammate> get _feedPeople => _state?._taggablePeople ?? _people ?? const [];
+  List<ConnectTeammate> get _feedPeople =>
+      _state?._taggablePeople ?? _people ?? const [];
 
   /// Edits [post] in the feed's composer — a profile has none of its own,
   /// nor the lists and directory it needs — then has [alsoIn] read it again.
-  Future<void> _editPost(ConnectPost post, {required ConnectBloc alsoIn}) async {
+  Future<void> _editPost(
+    ConnectPost post, {
+    required ConnectBloc alsoIn,
+  }) async {
     final state = _state;
-    if (state == null || !await state._openComposer(post.type, existing: post)) return;
+    if (state == null || !await state._openComposer(post.type, existing: post))
+      return;
     await alsoIn.ensurePost(post.id, keepOnTop: false);
   }
 
@@ -220,11 +228,17 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen>
     final supplied = widget.bloc;
     _ownsBloc = supplied == null;
     // A post still going up from the feed this one replaces carries on here.
-    final adopted = supplied == null ? widget.composerController?._adopt() : null;
+    final adopted = supplied == null
+        ? widget.composerController?._adopt()
+        : null;
     _bloc =
         supplied ??
         adopted ??
-        ConnectBloc(session: widget.session, api: widget.api, socket: widget.socket);
+        ConnectBloc(
+          session: widget.session,
+          api: widget.api,
+          socket: widget.socket,
+        );
     if (_ownsBloc) {
       // The session's bloc, carried on with, is not read again: its live
       // socket has kept it current, and it reads the top again itself after
@@ -289,7 +303,11 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen>
     if (back != null) {
       _bloc = back;
     } else {
-      _bloc = ConnectBloc(session: widget.session, api: widget.api, socket: widget.socket);
+      _bloc = ConnectBloc(
+        session: widget.session,
+        api: widget.api,
+        socket: widget.socket,
+      );
       _bloc.load();
     }
   }
@@ -408,99 +426,100 @@ class _ConnectFeedScreenState extends State<ConnectFeedScreen>
           // never fight over the same fingers.
           valueListenable: _PinchToZoom.active,
           builder: (context, pinching, list) => ListView.separated(
-          physics: pinching ? const NeverScrollableScrollPhysics() : null,
-          controller: _feedScroll,
-          padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
-          // The composer, a placeholder while a post is being published,
-          // the posts, and — while older ones exist — a last row that asks
-          // for the next page as it comes into view.
-          itemCount: cards.length + 1 + publishing + (state.hasMore ? 1 : 0),
-          // 24 above every card, the first included (frame 3332:23887).
-          separatorBuilder: (_, _) => const SizedBox(height: 24),
-          itemBuilder: (context, index) {
-            if (index == cards.length + 1 + publishing) {
-              if (state.loadMoreFailed) {
-                return Center(
-                  child: TextButton(
-                    onPressed: _bloc.retryLoadMore,
-                    child: const Text(
-                      'Could not load more. Tap to retry.',
-                      style: TextStyle(
+            physics: pinching ? const NeverScrollableScrollPhysics() : null,
+            controller: _feedScroll,
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+            // The composer, a placeholder while a post is being published,
+            // the posts, and — while older ones exist — a last row that asks
+            // for the next page as it comes into view.
+            itemCount: cards.length + 1 + publishing + (state.hasMore ? 1 : 0),
+            // 24 above every card, the first included (frame 3332:23887).
+            separatorBuilder: (_, _) => const SizedBox(height: 24),
+            itemBuilder: (context, index) {
+              if (index == cards.length + 1 + publishing) {
+                if (state.loadMoreFailed) {
+                  return Center(
+                    child: TextButton(
+                      onPressed: _bloc.retryLoadMore,
+                      child: const Text(
+                        'Could not load more. Tap to retry.',
+                        style: TextStyle(
+                          color: _ConnectColors.terra,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  );
+                }
+                // Asked for after the frame, not during it: a build is not the
+                // place to start a request, and the bloc ignores repeats.
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _bloc.loadMore(),
+                );
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 18),
+                  child: Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
                         color: _ConnectColors.terra,
-                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 );
               }
-              // Asked for after the frame, not during it: a build is not the
-              // place to start a request, and the bloc ignores repeats.
-              WidgetsBinding.instance.addPostFrameCallback(
-                (_) => _bloc.loadMore(),
-              );
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 18),
-                child: Center(
-                  child: SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: _ConnectColors.terra,
+              // The composer entry point, now that the nav has no Post tab
+              // (node 2002:39114).
+              if (index == 0) {
+                return Column(
+                  children: [
+                    // The minor-update strip, when one is on for this company
+                    // and has not been closed.
+                    const AppUpdateStrip(),
+                    _StartAPostCard(
+                      initials: _viewerInitials,
+                      color: _viewerColor,
+                      photoUrl: _viewerPhotoUrl,
+                      onTap: _openPostTypePicker,
                     ),
-                  ),
-                ),
+                  ],
+                );
+              }
+              // The post on its way, where it will land (node 663:15998).
+              if (publishing == 1 && index == 1) {
+                return _PublishingPostCard(
+                  name: widget.session.user.name,
+                  designation: widget.session.user.designation ?? '',
+                  initials: _viewerInitials,
+                  color: _viewerColor,
+                  photoUrl: _viewerPhotoUrl,
+                  audienceLabel: _publishingLabel(state.publishingTo),
+                );
+              }
+              final card = cards[index - 1 - publishing];
+              // Everyone else's view of the day's celebrations: one row, a
+              // small card per person, each keyed by its own post so a
+              // notification about it scrolls straight to it.
+              if (_celebrationGroupOf(card.first).isNotEmpty) {
+                return _CelebrationsSection(
+                  posts: card,
+                  viewerUserId: widget.session.user.id,
+                  keyFor: (post) =>
+                      _postKeys.putIfAbsent(post.id, GlobalKey.new),
+                  onOpenWishes: (post, {initialText = ''}) =>
+                      _openComments(post.id, initialText: initialText),
+                );
+              }
+              final post = card.single;
+              return _postCard(
+                post,
+                state,
+                key: _postKeys.putIfAbsent(post.id, GlobalKey.new),
               );
-            }
-            // The composer entry point, now that the nav has no Post tab
-            // (node 2002:39114).
-            if (index == 0) {
-              return Column(
-                children: [
-                  // The minor-update strip, when one is on for this company
-                  // and has not been closed.
-                  const AppUpdateStrip(),
-                  _StartAPostCard(
-                    initials: _viewerInitials,
-                    color: _viewerColor,
-                    photoUrl: _viewerPhotoUrl,
-                    onTap: _openPostTypePicker,
-                  ),
-                ],
-              );
-            }
-            // The post on its way, where it will land (node 663:15998).
-            if (publishing == 1 && index == 1) {
-              return _PublishingPostCard(
-                name: widget.session.user.name,
-                designation: widget.session.user.designation ?? '',
-                initials: _viewerInitials,
-                color: _viewerColor,
-                photoUrl: _viewerPhotoUrl,
-                audienceLabel: _publishingLabel(state.publishingTo),
-              );
-            }
-            final card = cards[index - 1 - publishing];
-            // Everyone else's view of the day's celebrations: one row, a
-            // small card per person, each keyed by its own post so a
-            // notification about it scrolls straight to it.
-            if (_celebrationGroupOf(card.first).isNotEmpty) {
-              return _CelebrationsSection(
-                posts: card,
-                viewerUserId: widget.session.user.id,
-                keyFor: (post) => _postKeys.putIfAbsent(post.id, GlobalKey.new),
-                onOpenWishes: (post, {initialText = ''}) =>
-                    _openComments(post.id, initialText: initialText),
-              );
-            }
-            final post = card.single;
-            return _postCard(
-              post,
-              state,
-              key: _postKeys.putIfAbsent(post.id, GlobalKey.new),
-            );
-          },
-        ),
+            },
+          ),
         ),
       ),
     );
@@ -1310,7 +1329,8 @@ class _DoubleTapToLikeState extends State<_DoubleTapToLike>
                 final t = _pop.value;
                 if (t == 0 || t == 1) return const SizedBox.shrink();
                 // Grows in fast, holds, then fades as it lifts away.
-                final scale = Curves.elasticOut.transform((t * 2).clamp(0, 1)) * 1.0;
+                final scale =
+                    Curves.elasticOut.transform((t * 2).clamp(0, 1)) * 1.0;
                 final opacity = t < 0.6 ? 1.0 : (1 - (t - 0.6) / 0.4);
                 return Opacity(
                   opacity: opacity.clamp(0, 1),
@@ -1320,7 +1340,9 @@ class _DoubleTapToLikeState extends State<_DoubleTapToLike>
                       Icons.favorite_rounded,
                       size: 96,
                       color: Color(0xFFFF3B5C),
-                      shadows: [Shadow(color: Color(0x40000000), blurRadius: 16)],
+                      shadows: [
+                        Shadow(color: Color(0x40000000), blurRadius: 16),
+                      ],
                     ),
                   ),
                 );
@@ -1593,7 +1615,11 @@ class _VideoPostMedia extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: radius,
         boxShadow: const [
-          BoxShadow(color: Color(0x08000000), blurRadius: 6, offset: Offset(0, 2)),
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
         ],
       ),
       // Over the picture, or the video would paint across its own outline.
@@ -2172,13 +2198,14 @@ class _PostMediaFrame extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
-          BoxShadow(color: Color(0x1A000000), blurRadius: 3, offset: Offset(0, 1)),
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 3,
+            offset: Offset(0, 1),
+          ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: child,
-      ),
+      child: ClipRRect(borderRadius: BorderRadius.circular(16), child: child),
     );
   }
 }
@@ -2677,7 +2704,8 @@ class _PinchToZoom extends StatefulWidget {
   State<_PinchToZoom> createState() => _PinchToZoomState();
 }
 
-class _PinchToZoomState extends State<_PinchToZoom> with SingleTickerProviderStateMixin {
+class _PinchToZoomState extends State<_PinchToZoom>
+    with SingleTickerProviderStateMixin {
   final Map<int, Offset> _pointers = {};
   OverlayEntry? _entry;
   Rect _origin = Rect.zero;
@@ -2698,7 +2726,10 @@ class _PinchToZoomState extends State<_PinchToZoom> with SingleTickerProviderSta
     super.initState();
     _settle.addListener(() {
       final t = Curves.easeOutCubic.transform(_settle.value);
-      _transform.value = Matrix4Tween(begin: _settleFrom, end: Matrix4.identity()).lerp(t);
+      _transform.value = Matrix4Tween(
+        begin: _settleFrom,
+        end: Matrix4.identity(),
+      ).lerp(t);
       _dim.value = _settleDimFrom * (1 - t);
     });
     _settle.addStatusListener((status) {
@@ -2751,14 +2782,16 @@ class _PinchToZoomState extends State<_PinchToZoom> with SingleTickerProviderSta
             Positioned.fill(
               child: ValueListenableBuilder<double>(
                 valueListenable: _dim,
-                builder: (_, dim, _) => ColoredBox(color: Colors.black.withValues(alpha: dim)),
+                builder: (_, dim, _) =>
+                    ColoredBox(color: Colors.black.withValues(alpha: dim)),
               ),
             ),
             Positioned.fromRect(
               rect: _origin,
               child: ValueListenableBuilder<Matrix4>(
                 valueListenable: _transform,
-                builder: (_, matrix, child) => Transform(transform: matrix, child: child),
+                builder: (_, matrix, child) =>
+                    Transform(transform: matrix, child: child),
                 child: FittedBox(
                   fit: BoxFit.fill,
                   child: SizedBox.fromSize(size: _size, child: widget.child),
@@ -2798,7 +2831,8 @@ class _PinchToZoomState extends State<_PinchToZoom> with SingleTickerProviderSta
     final hadEntry = _entry != null;
     _entry?.remove();
     _entry = null;
-    if (hadEntry && _PinchToZoom.active.value) _PinchToZoom.active.value = false;
+    if (hadEntry && _PinchToZoom.active.value)
+      _PinchToZoom.active.value = false;
     if (rebuild && hadEntry && mounted) setState(() {});
   }
 
@@ -2907,14 +2941,29 @@ class _FeedPhotoState extends State<_FeedPhoto> {
             child: const Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.image_not_supported_outlined, size: 28, color: Color(0xFF9197A2)),
+                Icon(
+                  Icons.image_not_supported_outlined,
+                  size: 28,
+                  color: Color(0xFF9197A2),
+                ),
                 SizedBox(height: 8),
                 Text(
                   "Couldn't load photo",
-                  style: TextStyle(color: Color(0xFF484848), fontSize: 13, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: Color(0xFF484848),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 SizedBox(height: 2),
-                Text('Tap to retry', style: TextStyle(color: Color(0xFF0571A6), fontSize: 12, fontWeight: FontWeight.w600)),
+                Text(
+                  'Tap to retry',
+                  style: TextStyle(
+                    color: Color(0xFF0571A6),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
           ),
@@ -2932,7 +2981,8 @@ class _PhotoLoading extends StatefulWidget {
   State<_PhotoLoading> createState() => _PhotoLoadingState();
 }
 
-class _PhotoLoadingState extends State<_PhotoLoading> with SingleTickerProviderStateMixin {
+class _PhotoLoadingState extends State<_PhotoLoading>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _pulse = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
@@ -2949,7 +2999,11 @@ class _PhotoLoadingState extends State<_PhotoLoading> with SingleTickerProviderS
     return AnimatedBuilder(
       animation: _pulse,
       builder: (context, _) => ColoredBox(
-        color: Color.lerp(const Color(0xFFF0F0F3), const Color(0xFFE4E4EA), _pulse.value)!,
+        color: Color.lerp(
+          const Color(0xFFF0F0F3),
+          const Color(0xFFE4E4EA),
+          _pulse.value,
+        )!,
         child: const SizedBox.expand(),
       ),
     );
@@ -2967,7 +3021,10 @@ class _LocalMediaPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (attachment.mimeType.startsWith('video/')) {
-      return FeedVideo.file(key: ValueKey(attachment.path), path: attachment.path);
+      return FeedVideo.file(
+        key: ValueKey(attachment.path),
+        path: attachment.path,
+      );
     }
     if (!attachment.mimeType.startsWith('image/')) {
       return SizedBox(
@@ -3014,21 +3071,21 @@ class _MediaGalleryState extends State<_MediaGallery> {
             child: ValueListenableBuilder<bool>(
               valueListenable: _PinchToZoom.active,
               builder: (context, pinching, _) => PageView.builder(
-              physics: pinching ? const NeverScrollableScrollPhysics() : null,
-              controller: _controller,
-              itemCount: widget.urls.length,
-              onPageChanged: (index) => setState(() => _page = index),
-              // Contain, not cover: the frame already matches the first image,
-              // and a set can mix shapes. Cropping the odd one out is worse
-              // than letting it sit inside the frame whole.
-              itemBuilder: (context, index) => _PinchToZoom(
-                child: _FeedPhoto(
-                  url: widget.urls[index],
-                  fit: BoxFit.contain,
-                  width: double.infinity,
+                physics: pinching ? const NeverScrollableScrollPhysics() : null,
+                controller: _controller,
+                itemCount: widget.urls.length,
+                onPageChanged: (index) => setState(() => _page = index),
+                // Contain, not cover: the frame already matches the first image,
+                // and a set can mix shapes. Cropping the odd one out is worse
+                // than letting it sit inside the frame whole.
+                itemBuilder: (context, index) => _PinchToZoom(
+                  child: _FeedPhoto(
+                    url: widget.urls[index],
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                  ),
                 ),
               ),
-            ),
             ),
           ),
           Positioned(
@@ -4580,7 +4637,10 @@ class _PostFooter extends StatelessWidget {
                 if (matches.isEmpty) return const SizedBox.shrink();
                 return Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: _MentionSuggestions(people: matches, onPick: tags.pick),
+                  child: _MentionSuggestions(
+                    people: matches,
+                    onPick: tags.pick,
+                  ),
                 );
               },
             ),
@@ -4877,7 +4937,10 @@ class _QuickPostPageState extends State<_QuickPostPage> {
   Future<void> _addMedia() async {
     // A video goes on its own, so nothing is added beside one.
     if (_hasVideo) {
-      showAppToast(context, 'A video goes on its own — remove it to add photos.');
+      showAppToast(
+        context,
+        'A video goes on its own — remove it to add photos.',
+      );
       return;
     }
     final room = _maxMedia - _media.length;
@@ -5256,51 +5319,53 @@ class _QuickPostPageState extends State<_QuickPostPage> {
           const SizedBox(width: 8),
           Expanded(
             child: Align(
-            alignment: Alignment.centerLeft,
-            child: InkWell(
-            key: const ValueKey('composer-audience'),
-            // A contest goes to the whole company: the chip waits while one
-            // is on the page.
-            onTap: _contest == null ? _pickAudience : null,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // "Public", "Team", or the list's name (node 3809:76071).
-                  Flexible(
-                    child: Text(
-                      _contest == null ? audienceChoiceLabel(_audience) : 'Public',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: _soraFont,
-                        color: _contest == null
-                            ? const Color(0xFF484848)
-                            : const Color(0xFF9197A2),
-                        fontSize: 16,
-                        height: 22 / 16,
-                        fontWeight: FontWeight.w400,
-                        letterSpacing: 0.4,
+              alignment: Alignment.centerLeft,
+              child: InkWell(
+                key: const ValueKey('composer-audience'),
+                // A contest goes to the whole company: the chip waits while one
+                // is on the page.
+                onTap: _contest == null ? _pickAudience : null,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // "Public", "Team", or the list's name (node 3809:76071).
+                      Flexible(
+                        child: Text(
+                          _contest == null
+                              ? audienceChoiceLabel(_audience)
+                              : 'Public',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: _soraFont,
+                            color: _contest == null
+                                ? const Color(0xFF484848)
+                                : const Color(0xFF9197A2),
+                            fontSize: 16,
+                            height: 22 / 16,
+                            fontWeight: FontWeight.w400,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      // The exported glyph points left; the design rotates it -90°
+                      // so it reads as a downward "change audience" chevron.
+                      Transform.rotate(
+                        angle: -math.pi / 2,
+                        child: SvgPicture.asset(
+                          'assets/icons/composer_chevron.svg',
+                          width: 18,
+                          height: 18,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  // The exported glyph points left; the design rotates it -90°
-                  // so it reads as a downward "change audience" chevron.
-                  Transform.rotate(
-                    angle: -math.pi / 2,
-                    child: SvgPicture.asset(
-                      'assets/icons/composer_chevron.svg',
-                      width: 18,
-                      height: 18,
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
             ),
           ),
           const SizedBox(width: 12),
@@ -5714,6 +5779,7 @@ class _PostComposerPageState extends State<_PostComposerPage> {
   bool _resolvingLink = false;
   String _resolvedFor = '';
   Timer? _linkDebounce;
+
   /// Who the post goes to. A post already shared with a list keeps it:
   /// its people have seen it, and the server will not move it.
   late AudienceChoice _audience;
@@ -6675,7 +6741,9 @@ class _PostComposerPageState extends State<_PostComposerPage> {
     }
     // A video goes on its own, so it cannot join photos already chosen.
     if (_isVideoFile(file) && _extraMedia.isNotEmpty) {
-      _showValidation('A video goes on its own — remove the photos to add one.');
+      _showValidation(
+        'A video goes on its own — remove the photos to add one.',
+      );
       return;
     }
     // Images get a crop step so the author decides what the card shows; video
@@ -6899,6 +6967,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   void _onTyping() {
     if (mounted) setState(() {});
   }
+
   final Set<String> _expandedThreadIds = {};
   String? _replyingToId;
   String? _replyingToName;
@@ -7239,8 +7308,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                     textInputAction: TextInputAction.send,
                                     onSubmitted: (_) => _submit(),
                                     decoration: InputDecoration(
-                                      hintText:
-                                          'Write a comment... (@ to tag)',
+                                      hintText: 'Write a comment... (@ to tag)',
                                       hintStyle: const TextStyle(
                                         color: Color(0xFF717171),
                                         fontSize: 13,
@@ -7822,39 +7890,46 @@ class _CommentMenuButton extends StatelessWidget {
                   value: _PostMenuAction.delete,
                   child: Row(
                     children: [
-                      Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFE5484D)),
+                      Icon(
+                        Icons.delete_outline_rounded,
+                        size: 18,
+                        color: Color(0xFFE5484D),
+                      ),
                       SizedBox(width: 10),
-                      Text('Delete comment', style: TextStyle(color: Color(0xFFE5484D))),
+                      Text(
+                        'Delete comment',
+                        style: TextStyle(color: Color(0xFFE5484D)),
+                      ),
                     ],
                   ),
                 ),
               ]
             : [
-          const PopupMenuItem(
-            value: _PostMenuAction.report,
-            child: Row(
-              children: [
-                Icon(Icons.flag_outlined, size: 18),
-                SizedBox(width: 10),
-                Text('Report comment'),
-              ],
-            ),
-          ),
-          PopupMenuItem(
-            value: _PostMenuAction.block,
-            child: Row(
-              children: [
-                const Icon(Icons.block_rounded, size: 18),
-                const SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    'Block ${comment.name.split(' ').first}',
-                    overflow: TextOverflow.ellipsis,
+                const PopupMenuItem(
+                  value: _PostMenuAction.report,
+                  child: Row(
+                    children: [
+                      Icon(Icons.flag_outlined, size: 18),
+                      SizedBox(width: 10),
+                      Text('Report comment'),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ),
+                PopupMenuItem(
+                  value: _PostMenuAction.block,
+                  child: Row(
+                    children: [
+                      const Icon(Icons.block_rounded, size: 18),
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Text(
+                          'Block ${comment.name.split(' ').first}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
       ),
     );
@@ -9998,7 +10073,8 @@ List<String> _bodyStringList(ConnectPost post, String key) {
 /// A picture in the feed: the server's 1080 px copy, decoded at that width,
 /// cached on disk (see [mediaImageProvider]; legacy `data:` URIs decoded in
 /// place). Faces keep the small copy their URL already asks for.
-ImageProvider _remoteImage(String url) => mediaImageProvider(url, width: feedImageWidth);
+ImageProvider _remoteImage(String url) =>
+    mediaImageProvider(url, width: feedImageWidth);
 
 Color _hexColor(String value, Color fallback) {
   final normalized = value.replaceFirst('#', '');

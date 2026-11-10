@@ -444,6 +444,36 @@ void main() {
     expect(server.opened, ['chitra']);
   });
 
+  testWidgets('on the page, a photo that tags someone shows "Tag" and their '
+      'face on the picture (node 4592:26402); one that tags nobody does not', (
+    tester,
+  ) async {
+    await _openEntries(tester);
+    final tagged = _galleryCards.at(0);
+    await tester.ensureVisible(tagged);
+    await tester.pump();
+    expect(
+      find.descendant(of: tagged, matching: find.text('Tag')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: tagged,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Semantics &&
+              widget.properties.label == 'Tagged: Chitra Rao',
+        ),
+      ),
+      findsOneWidget,
+    );
+    final plain = _galleryCards.at(1);
+    expect(
+      find.descendant(of: plain, matching: find.text('Tag')),
+      findsNothing,
+    );
+  });
+
   testWidgets('"@" in a photo\'s story offers colleagues to tag; the one '
       'picked is sent with the entry', (tester) async {
     final path = _writePhoto();

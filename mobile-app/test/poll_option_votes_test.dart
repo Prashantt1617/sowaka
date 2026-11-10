@@ -1,7 +1,8 @@
 // A picture option shows how many votes it has instead of a share (words-only
 // options keep their share, with the count beside it), and a poll has no likes
-// or comments; a tap on an option votes, while two fingers on its picture
-// lift it out to zoom without voting.
+// or comments; a tap on an option's card votes, a tap on its picture opens
+// the picture full screen, and two fingers on it lift it out to zoom — neither
+// of those votes.
 import 'dart:async';
 import 'dart:convert';
 
@@ -15,6 +16,7 @@ import 'package:mobile_app/features/connect/bloc/connect_bloc.dart';
 import 'package:mobile_app/features/connect/data/connect_api_service.dart';
 import 'package:mobile_app/features/connect/data/connect_socket_service.dart';
 import 'package:mobile_app/features/connect/presentation/connect_feed_screen.dart';
+import 'package:mobile_app/features/shared/photo_viewer.dart';
 
 final _session = AuthSession(
   token: 'token',
@@ -238,9 +240,8 @@ void main() {
     await _tearDown(tester, feed.bloc);
   });
 
-  testWidgets('a tap on a picture option votes, and its count moves at once', (
-    tester,
-  ) async {
+  testWidgets('a tap on a picture option\'s card votes, and its count moves '
+      'at once', (tester) async {
     final feed = await _pumpFeed(tester, _poll());
     await tester.ensureVisible(_picture0f('b'));
     await tester.pump();
@@ -250,7 +251,7 @@ void main() {
       reason: 'no share before a vote',
     );
 
-    await tester.tap(_picture0f('b'));
+    await tester.tap(find.text('truth and dare'));
     // The shares count up over 380 ms once they appear.
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
@@ -300,15 +301,25 @@ void main() {
     await _tearDown(tester, feed.bloc);
   });
 
-  testWidgets('holding a picture opens nothing: pinching is the only zoom, '
-      'and the hold is a plain tap', (tester) async {
+  testWidgets('a tap on the picture opens it full screen and does not vote', (
+    tester,
+  ) async {
     final feed = await _pumpFeed(tester, _poll());
     await tester.ensureVisible(_picture0f('c'));
     await tester.pump();
 
-    await tester.longPress(_picture0f('c'));
+    await tester.tap(_picture0f('c'));
     await _settle(tester);
-    expect(find.byType(InteractiveViewer), findsNothing);
+    expect(find.byType(PhotoViewer), findsOneWidget);
+    expect(feed.votes, isEmpty);
+    expect(feed.bloc.state.posts.single.selectedPollOptionId, isNull);
+
+    // Put away, the card is as it was; a tap on its words then votes.
+    await tester.tapAt(const Offset(20, 20));
+    await _settle(tester);
+    expect(find.byType(PhotoViewer), findsNothing);
+    await tester.tap(find.text('Cricket'));
+    await _settle(tester);
     expect(feed.votes.map((vote) => vote.$1), ['c']);
     feed.votes.single.$2.complete(
       _ok({
