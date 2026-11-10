@@ -71,8 +71,12 @@ import {
 import { getPaymentDetailsHandler, setPaymentDetailsHandler } from '../controllers/employeePayment.controller';
 import { getDeclarationHandler, setDeclarationHandler } from '../controllers/tds.controller';
 import {
-  hrDecideProofHandler, hrGetAppSettingsHandler, hrListProofsHandler, hrProofFileHandler, hrSetAppSettingsHandler, hrSplitHandler,
+  hrDecideProofHandler, hrEpfBalanceHandler, hrGetAppSettingsHandler, hrSetEpfBalanceHandler, hrListProofsHandler, hrProofFileHandler, hrSetAppSettingsHandler, hrSplitHandler,
 } from '../controllers/employeePayroll.controller';
+import {
+  hrBulkUploadForm16Handler, hrDeleteForm16Handler, hrForm16FileHandler, hrForm16Handler, hrUploadForm16Handler,
+} from '../controllers/form16.controller';
+import { uploadForm16File, uploadForm16Files } from '../middleware/form16-upload.middleware';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireDashboardAccess, requireDashboardTabs } from '../middleware/admin.middleware';
 
@@ -174,8 +178,20 @@ payrollRouter.get('/investment-proofs', hrListProofsHandler);
 payrollRouter.get('/investment-proofs/:proofId/file', hrProofFileHandler);
 payrollRouter.post('/investment-proofs/:proofId/decision', hrDecideProofHandler);
 
+// Form 16 (HR uploads it; Sowaka does not generate it): who has one for a FY (?fy=2025-26),
+// one person's file, a batch named by PAN or employee ID, open and remove.
+payrollRouter.get('/form16', hrForm16Handler);
+payrollRouter.post('/form16/bulk', uploadForm16Files, hrBulkUploadForm16Handler);
+payrollRouter.post('/form16/employees/:userId', uploadForm16File, hrUploadForm16Handler);
+payrollRouter.get('/form16/:documentId/file', hrForm16FileHandler);
+payrollRouter.delete('/form16/:documentId', hrDeleteForm16Handler);
+
 // One employee's flexible split for a FY (?fy=2026-27): the one in force and every version.
 payrollRouter.get('/employees/:userId/flexible-split', hrSplitHandler);
+
+// One employee's PF balance as read off their EPFO passbook (Sowaka cannot read EPFO); the newest entry wins.
+payrollRouter.get('/employees/:userId/epf-balance', hrEpfBalanceHandler);
+payrollRouter.put('/employees/:userId/epf-balance', hrSetEpfBalanceHandler);
 
 // The app's Payroll for this company: on/off, and the deadlines its screens use.
 payrollRouter.get('/employee-app-settings', hrGetAppSettingsHandler);

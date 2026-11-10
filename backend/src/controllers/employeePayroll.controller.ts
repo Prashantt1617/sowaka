@@ -1,11 +1,16 @@
 import type { NextFunction, Request, Response } from 'express';
 import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
+import { epfBalanceForHr, myEpf, setEpfBalanceForHr, setMyEpfBalance } from '../services/employeePayroll.epf';
+import { myEarnings } from '../services/employeePayroll.earnings';
+import { mySalarySummary } from '../services/employeePayroll.salary';
 import { mySplit, reviewSplit, saveSplit, splitForHr } from '../services/employeePayroll.split';
 import { employeeAppSettingsForHr, setEmployeeAppSettingsForHr } from '../services/employeePayroll.settings';
 import { EmployeePayrollError, PAYROLL_APP_OFF, askHr, payrollAppEnabled } from '../services/employeePayroll.common';
 import {
   decideProofForHr, listProofsForHr, myDeclaration, myProofFile, myProofs, proofFileForHr, saveMyDeclaration, uploadMyProof,
 } from '../services/employeePayroll.declaration';
+import { myFbp, myFbpBillFile, myFbpHead, uploadMyFbpBill } from '../services/employeePayroll.fbp';
+import { myTaxSummary } from '../services/employeePayroll.tax';
 
 const callerId = (req: Request) => String(req.auth?.userId ?? '');
 const body = (req: Request) => (req.body ?? {}) as Record<string, unknown>;
@@ -38,16 +43,27 @@ const mine = (fn: Handler) => handle(async (req) => {
 // —— the signed-in employee's own payroll ——
 export const payrollHomeHandler = mine(async (req) => myPayrollHome(callerId(req), req.query.period));
 export const missingPunchesHandler = mine(async (req) => myMissingPunches(callerId(req), req.query.period));
+export const salarySummaryHandler = mine(async (req) => ({ salary: await mySalarySummary(callerId(req), req.query.period) }));
 export const getSplitHandler = mine(async (req) => ({ split: await mySplit(callerId(req)) }));
 export const reviewSplitHandler = mine(async (req) => ({ review: await reviewSplit(callerId(req), body(req)) }));
 export const saveSplitHandler = mine(async (req) => ({ split: await saveSplit(callerId(req), body(req)) }));
 export const getDeclarationHandler = mine(async (req) => ({ declaration: await myDeclaration(callerId(req), req.query.fy) }));
 export const saveDeclarationHandler = mine(async (req) => ({ declaration: await saveMyDeclaration(callerId(req), req.query.fy, body(req)) }));
+export const taxSummaryHandler = mine(async (req) => ({ tax: await myTaxSummary(callerId(req), req.query.fy) }));
 export const getProofsHandler = mine(async (req) => ({ proofs: await myProofs(callerId(req), req.query.fy) }));
 export const uploadProofHandler = mine(async (req) => ({
-  item: await uploadMyProof(callerId(req), String(req.params.item ?? ''), req.query.fy, { amountPaise: body(req).amountPaise, file: req.file }),
+  item: await uploadMyProof(callerId(req), String(req.params.item ?? ''), req.query.fy, { amountPaise: body(req).amountPaise, landlordPan: body(req).landlordPan, file: req.file }),
 }));
 export const proofFileHandler = mine(async (req) => ({ url: await myProofFile(callerId(req), String(req.params.item ?? ''), req.query.fy) }));
+export const getFbpHandler = mine(async (req) => ({ fbp: await myFbp(callerId(req)) }));
+export const getFbpHeadHandler = mine(async (req) => ({ head: await myFbpHead(callerId(req), String(req.params.code ?? '')) }));
+export const uploadFbpBillHandler = mine(async (req) => ({
+  head: await uploadMyFbpBill(callerId(req), String(req.params.code ?? ''), { period: body(req).period, amountPaise: body(req).amountPaise, file: req.file }),
+}));
+export const fbpBillFileHandler = mine(async (req) => ({ url: await myFbpBillFile(callerId(req), String(req.params.billId ?? '')) }));
+export const myEpfHandler = mine(async (req) => ({ epf: await myEpf(callerId(req)) }));
+export const setMyEpfBalanceHandler = mine(async (req) => ({ epf: await setMyEpfBalance(callerId(req), body(req)) }));
+export const earningsHandler = mine(async (req) => ({ earnings: await myEarnings(callerId(req), req.query.fy) }));
 
 // —— HR ——
 export const hrListProofsHandler = handle(async (req) =>
@@ -55,6 +71,8 @@ export const hrListProofsHandler = handle(async (req) =>
 export const hrProofFileHandler = handle(async (req) => ({ url: await proofFileForHr(callerId(req), String(req.params.proofId ?? '')) }));
 export const hrDecideProofHandler = handle(async (req) => ({ proof: await decideProofForHr(callerId(req), String(req.params.proofId ?? ''), body(req)) }));
 export const hrSplitHandler = handle(async (req) => ({ split: await splitForHr(callerId(req), String(req.params.userId ?? ''), req.query.fy) }));
+export const hrEpfBalanceHandler = handle(async (req) => epfBalanceForHr(callerId(req), String(req.params.userId ?? '')));
+export const hrSetEpfBalanceHandler = handle(async (req) => setEpfBalanceForHr(callerId(req), String(req.params.userId ?? ''), body(req)));
 export const hrGetAppSettingsHandler = handle(async (req) => employeeAppSettingsForHr(callerId(req), req.query.fy));
 export const hrSetAppSettingsHandler = handle(async (req) => setEmployeeAppSettingsForHr(callerId(req), req.query.fy, body(req)));
 

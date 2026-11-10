@@ -105,6 +105,32 @@ class PayrollApiService {
         ),
       );
 
+  // ---------------------------------------------------------------- EPF
+
+  /// What Sowaka knows about the person's PF, with their own UAN.
+  Future<EpfSummary> fetchEpf() async {
+    final json = await _json('GET', '/payroll/me/epf');
+    return EpfSummary.fromJson(_object(json['epf']));
+  }
+
+  /// Sets the PF balance read off the EPFO passbook ([balancePaise], whole
+  /// rupees, as on [asOn]) and returns the page as it now reads.
+  Future<EpfSummary> saveEpfBalance({
+    required int balancePaise,
+    required DateTime asOn,
+  }) async {
+    final day = asOn.day.toString().padLeft(2, '0');
+    final json = await _json(
+      'PUT',
+      '/payroll/me/epf/balance',
+      body: {
+        'balancePaise': balancePaise,
+        'asOn': '${payrollPeriod(asOn)}-$day',
+      },
+    );
+    return EpfSummary.fromJson(_object(json['epf']));
+  }
+
   // ---------------------------------------------------------------- split
 
   Future<FbpSplit> fetchSplit() async {
@@ -179,6 +205,73 @@ class PayrollApiService {
     );
   }
 
+  // ---------------------------------------------------------------- earnings
+
+  /// A financial year's earnings ("2026-27"); without [fy], the latest year
+  /// with pay.
+  Future<PayrollEarnings> fetchEarnings({String? fy}) async {
+    final json = await _json('GET', _path('/payroll/me/earnings', {'fy': fy}));
+    return PayrollEarnings.fromJson(_object(json['earnings']));
+  }
+
+  // ---------------------------------------------------------------- Form 16
+
+  /// Downloads › Form 16: the signed-in person's years and their files.
+  Future<Form16Overview> fetchForm16() async => Form16Overview.fromJson(
+    _object((await _json('GET', '/payroll/form16'))['form16']),
+  );
+
+  /// One of their Form 16 files as PDF bytes, under its own name: a
+  /// short-lived link from the server, then the file from storage.
+  Future<(Uint8List, String)> downloadForm16(Form16Document document) async {
+    final json = await _json(
+      'GET',
+      '/payroll/form16/${Uri.encodeComponent(document.id)}/file',
+    );
+    final url = Uri.tryParse(json['url'] as String? ?? '');
+    final name = json['fileName'] as String? ?? document.fileName;
+    if (url == null || !url.hasScheme) {
+      throw const PayrollApiException(PayrollApiException.failed);
+    }
+    final http.Response response;
+    try {
+      // The link is signed itself: no Authorization header goes to storage.
+      response = await _client
+          .send(http.Request('GET', url))
+          .then(http.Response.fromStream)
+          .timeout(uploadTimeout);
+    } catch (error) {
+      throw PayrollApiException(switch (error) {
+        TimeoutException() => PayrollApiException.tooSlow,
+        _ when NetworkStatus.isNetworkError(error) =>
+          PayrollApiException.offline,
+        _ => PayrollApiException.failed,
+      });
+    }
+    if (response.statusCode != 200 || response.bodyBytes.isEmpty) {
+      throw PayrollApiException(
+        PayrollApiException.failed,
+        statusCode: response.statusCode,
+      );
+    }
+    return (
+      response.bodyBytes,
+      name.isEmpty ? 'Form16-${document.fy}.pdf' : name,
+    );
+  }
+
+  // ---------------------------------------------------------------- salary summary
+
+  /// One pay period's salary as a receipt, each line explained: the
+  /// previous pay period unless [period] ("2026-10") is given.
+  Future<PayrollSalarySummary> fetchSalarySummary({String? period}) async {
+    final json = await _json(
+      'GET',
+      _path('/payroll/me/salary', {'period': period}),
+    );
+    return PayrollSalarySummary.fromJson(_object(json['salary']));
+  }
+
   // ---------------------------------------------------------------- declaration
 
   Future<TaxDeclaration> fetchDeclaration({String? fy}) async {
@@ -213,6 +306,14 @@ class PayrollApiService {
     return TaxDeclaration.fromJson(_object(json['declaration']));
   }
 
+  /// The year's income tax: paid months from released payslips, the rest
+  /// as the TDS engine projects them now. The regime is changed through
+  /// [saveDeclaration].
+  Future<TaxSummary> fetchTaxSummary({String? fy}) async {
+    final json = await _json('GET', _path('/payroll/me/tax', {'fy': fy}));
+    return TaxSummary.fromJson(_object(json['tax']));
+  }
+
   // ---------------------------------------------------------------- proofs
 
   Future<InvestmentProofs> fetchProofs({String? fy}) async {
@@ -223,12 +324,14 @@ class PayrollApiService {
     return InvestmentProofs.fromJson(_object(json['proofs']));
   }
 
-  /// Uploads (or replaces) the proof for one declared [item].
+  /// Uploads (or replaces) the proof for one declared [item], with the
+  /// amount on it and, for rent, the landlord's PAN.
   Future<InvestmentProofItem> uploadProof({
     required String item,
     required PayrollUpload file,
     required int amountPaise,
     String? fy,
+    String? landlordPan,
   }) async {
     final request =
         http.MultipartRequest(
@@ -239,6 +342,10 @@ class PayrollApiService {
           )
           ..headers['Authorization'] = 'Bearer ${session.token}'
           ..fields['amountPaise'] = '$amountPaise'
+          ..fields.addAll({
+            if (landlordPan != null && landlordPan.isNotEmpty)
+              'landlordPan': landlordPan,
+          })
           ..files.add(
             http.MultipartFile.fromBytes(
               'proof',
@@ -335,5 +442,53 @@ class PayrollApiService {
       }, statusCode: status);
     }
     return json;
+  }
+}
+
+// ---------------------------------------------------------------- FBP
+
+/// The FBP page and its bills (GET /payroll/me/fbp …).
+extension PayrollFbpApi on PayrollApiService {
+  Future<FbpPlan> fetchFbp() async {
+    final json = await _json('GET', '/payroll/me/fbp');
+    return FbpPlan.fromJson(PayrollApiService._object(json['fbp']));
+  }
+
+  Future<FbpHead> fetchFbpHead(String code) async {
+    final json = await _json(
+      'GET',
+      '/payroll/me/fbp/${Uri.encodeComponent(code)}',
+    );
+    return FbpHead.fromJson(PayrollApiService._object(json['head']));
+  }
+
+  /// Sends (or, after a rejection, sends again) the bill for [period]
+  /// ("2026-08") of head [code]. The head comes back as it now stands.
+  Future<FbpHead> uploadFbpBill({
+    required String code,
+    required String period,
+    required PayrollUpload file,
+    required int amountPaise,
+  }) async {
+    final request =
+        http.MultipartRequest(
+            'POST',
+            Uri.parse(
+              '$_baseUrl/payroll/me/fbp/${Uri.encodeComponent(code)}/bills',
+            ),
+          )
+          ..headers['Authorization'] = 'Bearer ${session.token}'
+          ..fields['period'] = period
+          ..fields['amountPaise'] = '$amountPaise'
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              'proof',
+              file.bytes,
+              filename: file.name,
+              contentType: file.mediaType,
+            ),
+          );
+    final json = await _send(request, limit: PayrollApiService.uploadTimeout);
+    return FbpHead.fromJson(PayrollApiService._object(json['head']));
   }
 }

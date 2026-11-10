@@ -36,10 +36,11 @@ const emptyCounts = (): DeductionCounts => ({ late: 0, early: 0, absent: 0, half
  * Everyone's counts for a YYYY-MM period, keyed by userId: the calendar month,
  * or the pay dates given (a company paying 26th to 25th). A future period counts nothing.
  */
-export async function attendanceCountsForPeriod(adminUserId: string, period: string, dates?: { from: string; to: string }): Promise<Map<string, DeductionCounts>> {
+export async function attendanceCountsForPeriod(adminUserId: string, period: string, dates?: { from: string; to: string }, asOf?: string): Promise<Map<string, DeductionCounts>> {
   const [year, month] = period.split('-').map(Number);
   const from = dates?.from ?? `${period}-01`;
-  const today = todayIso();
+  // Counted to today (or the day given, for an estimate worked out as of then).
+  const today = asOf ?? todayIso();
   const counts = new Map<string, DeductionCounts>();
   if (from > today) return counts;
   const periodEnd = dates?.to ?? new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);

@@ -194,7 +194,12 @@ MockClient _server({required bool tracked}) {
       });
     }
     if (path.contains('/attendance/mine')) {
-      final punchIn = DateTime(today.year, today.month, today.day, 9, 42);
+      // 09:42 at least 30 minutes ago, so the punch-out slider is open
+      // whatever time the suite runs (before 10:12 it is yesterday's 09:42).
+      var punchIn = DateTime(today.year, today.month, today.day, 9, 42);
+      if (DateTime.now().isBefore(punchIn.add(const Duration(minutes: 30)))) {
+        punchIn = punchIn.subtract(const Duration(days: 1));
+      }
       return _json({
         'success': true,
         'records': [

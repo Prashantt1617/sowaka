@@ -1439,12 +1439,13 @@ class _SmallEngagementButton extends StatelessWidget {
 /// Sends a contest entry: its words, the picture on a photo entry, the
 /// colleague named on a Most Likely one, and the colleagues tagged with "@"
 /// in the words. False when it did not go.
-typedef _SubmitEntry = Future<bool> Function(
-  String text,
-  String? photoPath,
-  String? taggedUserId,
-  List<String> mentionedUserIds,
-);
+typedef _SubmitEntry =
+    Future<bool> Function(
+      String text,
+      String? photoPath,
+      String? taggedUserId,
+      List<String> mentionedUserIds,
+    );
 
 /// Asks before an entry comes down: it may already hold votes, and deleting
 /// gives those up with the points they earned. [onDelete] is given the
@@ -1625,6 +1626,13 @@ class _EngagementBodyState extends State<_EngagementBody>
   /// card's bounds would look right but take no taps.
   final _portal = OverlayPortalController();
   final _link = LayerLink();
+
+  /// The box and its floating list are one tap region: a tap anywhere else
+  /// lets go of the box, which closes the list (a scroll already did).
+  final _tapGroup = Object();
+  void _tapOutside(PointerDownEvent _) {
+    if (_answerFocus.hasFocus) _answerFocus.unfocus();
+  }
 
   ConnectPost get _post => widget.post;
   bool get _isCaption => _post.type == ConnectPostType.captionChallenge;
@@ -1897,18 +1905,25 @@ class _EngagementBodyState extends State<_EngagementBody>
             targetAnchor: Alignment.topLeft,
             followerAnchor: Alignment.bottomLeft,
             offset: const Offset(0, -6),
-            child: _ColleagueSuggestions(
-              people: matches,
-              onPick: (person) {
-                // The name goes in; the listener on the box closes the list.
-                _mentions.pick(person);
-                setState(_syncPortal);
-              },
+            child: TapRegion(
+              groupId: _tapGroup,
+              child: _ColleagueSuggestions(
+                people: matches,
+                onPick: (person) {
+                  // The name goes in; the listener on the box closes the list.
+                  _mentions.pick(person);
+                  setState(_syncPortal);
+                },
+              ),
             ),
           ),
         );
       },
-      child: CompositedTransformTarget(link: _link, child: field),
+      child: TapRegion(
+        groupId: _tapGroup,
+        onTapOutside: _tapOutside,
+        child: CompositedTransformTarget(link: _link, child: field),
+      ),
     );
   }
 
@@ -2781,18 +2796,21 @@ class _EngagementBodyState extends State<_EngagementBody>
             targetAnchor: Alignment.topLeft,
             followerAnchor: Alignment.bottomLeft,
             offset: const Offset(0, 6),
-            child: _ColleagueSuggestions(
-              people: matches,
-              onPick: (person) {
-                setState(() {
-                  _picked = person;
-                  _answer.text = '@${person.name}';
-                  _answer.selection = TextSelection.collapsed(
-                    offset: _answer.text.length,
-                  );
-                  _syncPortal();
-                });
-              },
+            child: TapRegion(
+              groupId: _tapGroup,
+              child: _ColleagueSuggestions(
+                people: matches,
+                onPick: (person) {
+                  setState(() {
+                    _picked = person;
+                    _answer.text = '@${person.name}';
+                    _answer.selection = TextSelection.collapsed(
+                      offset: _answer.text.length,
+                    );
+                    _syncPortal();
+                  });
+                },
+              ),
             ),
           ),
         );
@@ -2806,15 +2824,19 @@ class _EngagementBodyState extends State<_EngagementBody>
               left: 0,
               right: 0,
               top: 28,
-              child: CompositedTransformTarget(
-                link: _link,
-                child: _AnswerField(
-                  controller: _answer,
-                  focusNode: _answerFocus,
-                  hint: 'Tag @teammate...',
-                  busy: _busy,
-                  enabled: widget.onSubmitCaption != null,
-                  onSend: _submit,
+              child: TapRegion(
+                groupId: _tapGroup,
+                onTapOutside: _tapOutside,
+                child: CompositedTransformTarget(
+                  link: _link,
+                  child: _AnswerField(
+                    controller: _answer,
+                    focusNode: _answerFocus,
+                    hint: 'Tag @teammate...',
+                    busy: _busy,
+                    enabled: widget.onSubmitCaption != null,
+                    onSend: _submit,
+                  ),
                 ),
               ),
             ),

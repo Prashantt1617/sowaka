@@ -6,11 +6,15 @@
  * reading the item totals, proof states (not uploaded, uploaded, approved,
  * rejected with a reason, re-upload), the proofs deadline, and who may see
  * and decide what: an employee only their own, HR only with payroll access
- * and only in their own company. File storage is faked: nothing reaches S3.
+ * and only in their own company. Then the year's tax summary (GET
+ * /payroll/me/tax): paid months from released payslips only, the rest on the
+ * TDS engine, the regime and its deadline, and each not-set-up reason. File storage is faked: nothing reaches S3.
  * It drops and recreates its own database, and refuses any other. Run with
  *   npm run payroll:declaration-check
  */
-import { companies, connectDb, getDb, investmentProofs, payHeads, salaryStructures, salaryTemplates, taxDeclarations, statutoryConfigs, tdsConfigs, users } from '../config/db';
+import {
+  companies, connectDb, getDb, investmentProofs, payHeads, payrollRuns, payslips, salaryStructures, salaryTemplates, statutoryConfigs, statutorySettings, taxDeclarations, tdsConfigs, users,
+} from '../config/db';
 import { env } from '../config/env';
 import { PayHead } from '../models/payHead.model';
 import { tabsForRequest } from '../models/dashboard-tabs';
@@ -18,6 +22,9 @@ import {
   decideProofForHr, listProofsForHr, myDeclaration, myProofFile, myProofs, ProofStorage, proofFileForHr, saveMyDeclaration, setProofStorageForTests, uploadMyProof,
 } from '../services/employeePayroll.declaration';
 import { myPayrollHome } from '../services/employeePayroll.home';
+import { myTaxSummary } from '../services/employeePayroll.tax';
+import { computeStructureFor } from '../services/salaryStructure.service';
+import { projectedTaxable } from '../shared/payroll/payroll-run.calculator';
 import { computeTds } from '../shared/payroll/tds';
 import { STATUTORY_SEED, TDS_SEED } from './payroll-config-seed-data';
 
@@ -174,6 +181,19 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     p0.required && p0.dueOn === '2027-01-31' && p0.items.every((i) => i.status === 'not_uploaded') && p0.summary.notUploaded === p0.items.length, p0);
   const items = p0.items.map((i) => i.item);
   check('the items are PPF, ELSS, LI, NPS, health (self), rent, home loan', items.join() === 'ppf,elss,lifeInsurance,nps,healthSelf,rentMonthly,homeLoanInterest', items);
+  const grouped = p0.sections.map((s) => `${s.key}:${s.label}:${s.items.map((i) => i.item).join('+')}`).join('|');
+  check('grouped by section in the declaration\'s order, with the proofs page\'s names',
+    grouped === '80C:80C:ppf+elss+lifeInsurance|80CCD1B:NPS (80CCD 1B):nps|80D:80D:healthSelf|HRA:Rent (HRA):rentMonthly|24B:Home loan:homeLoanInterest', grouped);
+  const rent = p0.items.find((i) => i.item === 'rentMonthly')!;
+  check('rent is a month\'s amount for April to March', rent.label === 'Rent' && rent.perMonth && rent.declaredPaise === R(15_000)
+    && rent.months?.from === '2026-04' && rent.months.to === '2027-03', rent);
+  const hint = (key: string) => p0.items.find((i) => i.item === key)?.document;
+  check('each item says what to upload: interest certificate, rent receipts, premium receipt, statements',
+    hint('homeLoanInterest') === 'Interest certificate from the bank' && hint('rentMonthly') === 'Rent receipts or the rent agreement'
+      && hint('healthSelf') === 'Premium receipt from the insurer' && hint('lifeInsurance') === 'Premium receipt from the insurer'
+      && /statement/.test(hint('ppf') ?? '') && /statement/.test(hint('elss') ?? ''), p0.items.map((i) => [i.item, i.document]));
+  check('not closed before the due date; the FY\'s ITR is due 31 Jul 2027', !p0.locked && p0.closed === null && p0.itrDueOn === '2027-07-31', { locked: p0.locked, closed: p0.closed, itr: p0.itrDueOn });
+  check('the ITR date follows the FY, not the calendar', (await myProofs('asha', '2027-28', oct)).itrDueOn === '2028-07-31');
   check('an item not declared cannot take a proof (400)', (await refusal(() => uploadMyProof('asha', 'healthParents', FY, { amountPaise: 100, file: pdf('x') }, oct)))?.status === 400);
   check('PF needs no proof (400)', (await refusal(() => uploadMyProof('asha', 'epf', FY, { amountPaise: 100, file: pdf('x') }, oct)))?.status === 400);
   check('no file (400)', (await refusal(() => uploadMyProof('asha', 'ppf', FY, { amountPaise: R(50_000) }, oct)))?.status === 400);
@@ -209,9 +229,17 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('rejected with the reason', rej.status === 'rejected' && rej.reason === reason && rej.decidedByUserId === 'hr', rej);
   const seen = (await myProofs('asha', FY, oct)).items.find((i) => i.item === 'ppf')!;
   check('Asha sees it rejected, with the reason', seen.status === 'rejected' && seen.proof?.reason === reason, seen);
+  const afterReject = await myProofs('asha', FY, oct);
+  check('a rejected proof counts as not submitted', afterReject.summary.rejected === 1 && afterReject.summary.submitted === 0 && afterReject.summary.notSubmitted === 7, afterReject.summary);
+  check('…and sits in its section with the reason', afterReject.sections[0].items[0].status === 'rejected' && afterReject.sections[0].items[0].proof?.reason === reason, afterReject.sections[0].items[0]);
   check('a rejected proof cannot be decided again (409)', (await refusal(() => decideProofForHr('hr', proofId, { decision: 'approved' }, oct)))?.status === 409);
-  const re = await uploadMyProof('asha', 'ppf', FY, { amountPaise: R(50_000), file: pdf('asha-ppf-2026') }, oct);
+  const re = await uploadMyProof('asha', 'ppf', FY, { amountPaise: R(48_500), file: pdf('asha-ppf-2026') }, oct);
   check('re-uploaded: in review again, the reason gone', re.status === 'uploaded' && re.proof?.reason === null && re.proof.decidedAt === null, re);
+  check('the re-upload keeps the amount on the new proof, the same row replaced',
+    re.proof?.amountPaise === R(48_500) && re.proof.id === proofId && (await investmentProofs().countDocuments({ userId: 'asha', fy: FY, item: 'ppf' })) === 1, re.proof);
+  const reHr = (await listProofsForHr('hr', { fy: FY, status: 'uploaded' }, oct)).proofs[0];
+  check('HR sees the re-upload in review with the new amount against the declared one, and what it should be',
+    reHr?.amountPaise === R(48_500) && reHr.declaredPaise === R(50_000) && reHr.reason === null && reHr.document === 'PPF passbook or statement', reHr);
   check('the replaced file was deleted from storage', removed.includes(firstKey) && !stored.has(firstKey), removed);
   check('filtering HR\'s list by status', (await listProofsForHr('hr', { fy: FY, status: 'uploaded' }, oct)).proofs.length === 1
     && (await listProofsForHr('hr', { fy: FY, status: 'rejected' }, oct)).proofs.length === 0);
@@ -224,6 +252,18 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   for (const item of others) await uploadMyProof('asha', item, FY, { amountPaise: R(1_000), file: pdf(`asha-${item}`) }, oct);
   const allSent = await myProofs('asha', FY, oct);
   check('every item uploaded: all sent for review, not all approved yet', allSent.summary.allSent && !allSent.summary.allApproved && allSent.summary.uploaded === 6, allSent.summary);
+  const elssId = (await listProofsForHr('hr', { fy: FY, status: 'uploaded' }, oct)).proofs.find((p) => p.item === 'elss')!.id;
+  const byNote = await decideProofForHr('hr', elssId, { decision: 'rejected', note: 'The statement has no folio number.' }, oct);
+  check('a rejection reason sent as `note` is kept the same way', byNote.status === 'rejected' && byNote.reason === 'The statement has no folio number.', byNote);
+  await uploadMyProof('asha', 'elss', FY, { amountPaise: R(50_000), file: pdf('asha-elss-2') }, oct);
+  // Rent's proof takes the landlord's PAN; nothing else does.
+  check('a malformed landlord PAN is refused (400)', (await refusal(() => uploadMyProof('asha', 'rentMonthly', FY, { amountPaise: R(1_80_000), landlordPan: 'ABCD1234', file: pdf('r') }, oct)))?.status === 400);
+  check('a PAN on anything but rent is refused (400)', (await refusal(() => uploadMyProof('asha', 'nps', FY, { amountPaise: R(1_000), landlordPan: 'ABCDE1234F', file: pdf('n') }, oct)))?.status === 400);
+  const rentUp = await uploadMyProof('asha', 'rentMonthly', FY, { amountPaise: R(1_80_000), landlordPan: ' abcde 1234f ', file: pdf('asha-rent-2') }, oct);
+  check('rent re-sent for the year with the landlord PAN, kept in capitals',
+    rentUp.proof?.landlordPan === 'ABCDE1234F' && rentUp.proof.amountPaise === R(1_80_000) && rentUp.yearPaise === R(1_80_000) && rentUp.declaredPaise === R(15_000), rentUp);
+  check('HR\'s list shows the landlord PAN masked (a third party\'s PAN is not sent out in bulk)', (await listProofsForHr('hr', { fy: FY, status: 'uploaded' }, oct)).proofs.find((p) => p.item === 'rentMonthly')?.landlordPan === '•••• 234F');
+  check('the landlord PAN is stored encrypted', (await investmentProofs().findOne({ item: 'rentMonthly', landlordPanLast4: '234F' }))?.landlordPan?.startsWith('ABCDE') === false);
   const pending = await listProofsForHr('hr', { fy: FY, status: 'uploaded' }, oct);
   for (const p of pending.proofs) await decideProofForHr('hr', p.id, { decision: 'approved' }, oct);
   const allSet = await myProofs('asha', FY, oct);
@@ -239,6 +279,24 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   const feb = new Date('2027-02-01T06:00:00Z');
   const lateProof = await refusal(() => uploadMyProof('bala', 'ppf', FY, { amountPaise: R(10_000), file: pdf('late') }, feb));
   check('after 31 Jan proofs are closed (409), saying to ask HR', lateProof?.status === 409 && /closed on 31 Jan 2027/.test(lateProof.message ?? '') && /ask HR\.$/.test(lateProof.message ?? ''), lateProof);
+  const closed = await myProofs('bala', FY, feb);
+  check('closed: when, how many of how many were not submitted, the last pay month and the ITR due date',
+    closed.locked && closed.closed?.closedOn === '2027-01-31' && closed.closed.notSubmitted === 1 && closed.closed.submitted === 0 && closed.closed.total === 1
+      && closed.closed.lastPayPeriod === '2027-03' && closed.closed.itrDueOn === '2027-07-31', closed.closed);
+  const aClosed = await myProofs('asha', FY, feb);
+  check('closed with everything approved: none left', aClosed.closed?.notSubmitted === 0 && aClosed.closed.submitted === 7, aClosed.closed);
+  const bCounted = closed.closed?.counted;
+  check('what counted, nothing sent: PPF ₹10,000 not proved, no PF without a structure',
+    bCounted?.rows.length === 1 && bCounted.rows[0].label === 'PPF' && bCounted.rows[0].provedPaise === 0 && bCounted.rows[0].notProvedPaise === R(10_000)
+      && bCounted.provedPaise === 0 && bCounted.notProvedPaise === R(10_000) && bCounted.pfPaise === 0, bCounted);
+  const aCounted = aClosed.closed?.counted;
+  const aRow = (key: string) => aCounted?.rows.find((r) => r.item === key);
+  check('what counted: a proof counts up to the amount on it (PPF ₹48,500 of ₹50,000), rent for the year, PF from payroll',
+    aRow('ppf')?.provedPaise === R(48_500) && aRow('ppf')?.notProvedPaise === R(1_500)
+      && aRow('rentMonthly')?.label === 'Rent (HRA)' && aRow('rentMonthly')?.provedPaise === R(1_80_000)
+      && aRow('lifeInsurance')?.provedPaise === R(1_000) && aCounted?.pfPaise === R(36_000)
+      && aCounted.provedPaise + aCounted.notProvedPaise === aCounted.rows.reduce((t, r) => t + r.provedPaise + r.notProvedPaise, 0), aCounted);
+  check('the last day itself is still open', (await myProofs('bala', FY, new Date('2027-01-31T12:00:00Z'))).closed === null);
   check('a company can move the deadlines', await (async () => {
     await companies().updateOne({ id: ORG }, { $set: { payrollEmployee: { declarationDue: '12-15', proofsDue: '02-15' } } });
     const d = await myDeclaration('bala', FY, dec1);
@@ -246,10 +304,87 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     return d.dueOn === '2026-12-15' && !d.locked && p.status === 'uploaded';
   })());
 
+  await companies().updateOne({ id: ORG }, { $set: { payrollEmployee: { appEnabled: true, declarationDue: '12-15' } } });
+  const unset = await myProofs('bala', FY, feb);
+  check('no proofs due date set: not set up, never closed, no date made up', unset.notConfigured && unset.missing.join() === 'proofsDue' && unset.dueOn === null && !unset.locked && unset.closed === null, unset);
+  const unsetUp = await refusal(() => uploadMyProof('bala', 'ppf', FY, { amountPaise: R(10_000), file: pdf('unset') }, feb));
+  check('…and an upload says HR has not set it up', unsetUp?.status === 409 && /not set the proofs due date/.test(unsetUp.message ?? ''), unsetUp);
+  await companies().updateOne({ id: ORG }, { $set: { payrollEmployee: { appEnabled: true, declarationDue: '12-15', proofsDue: '02-15' } } });
+
   // Asha's and Bala's views never mix.
   const aView = await myProofs('asha', FY, oct);
   const bView = await myProofs('bala', FY, oct);
   check('Asha\'s proofs are hers, Bala\'s his', aView.items.length === 7 && bView.items.length === 1 && bView.items[0].proof?.fileName === 'feb.pdf', { a: aView.items.length, b: bView.items });
+
+  // —— the year's tax (GET /payroll/me/tax) ——
+  await companies().updateOne({ id: ORG }, { $set: { payrollEmployee: { appEnabled: true, splitCutoffDay: 15, declarationDue: '11-30', proofsDue: '01-31', billsDue: '03-31' } } });
+  await users().insertMany([
+    person('chitra', 'Chitra Test', { joiningDate: new Date('2024-06-01T00:00:00Z') }),
+    person('dev', 'Dev Test', { joiningDate: new Date('2027-01-05T00:00:00Z') }),
+  ] as never[]);
+  for (const userId of ['chitra', 'dev']) {
+    await salaryStructures().insertOne({ org: ORG, userId, salaryTemplateCode: 'PLAIN', annualCtcPaise: R(24_00_000), status: 'active', createdAt: now, updatedAt: now });
+  }
+  const off = await myTaxSummary('chitra', FY, oct);
+  check('tax: TDS not switched on for the company: said, no figure', off.notConfigured && off.reason === 'tds_off' && off.annualTaxPaise === null && /Ask HR\.$/.test(off.message ?? '') && off.months.every((m) => m.amountPaise === null), off);
+  await statutorySettings().updateOne({ org: ORG }, { $set: { org: ORG, tds: { enabled: true, defaultRegime: 'new' }, updatedAt: now } }, { upsert: true });
+
+  // April to September released (paid), October still a draft, someone else's slips beside them.
+  const TAX = R(8_467);
+  const slipFor = async (userId: string, period: string, status: string, tax: number) => {
+    const run = await payrollRuns().insertOne({ org: ORG, period, status, runType: 'regular', employeeCount: 1, createdByUserId: 'hr', createdAt: now, updatedAt: now } as never);
+    await payslips().insertOne({ org: ORG, runId: run.insertedId.toHexString(), period, userId, grossPaise: R(2_00_000), taxablePaise: R(2_00_000), deductions: [{ key: 'income_tax', name: 'Income Tax', amountPaise: tax }], createdAt: now } as never);
+  };
+  for (const period of ['2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09']) await slipFor('chitra', period, period === '2026-04' ? 'approved' : 'paid', TAX);
+  await slipFor('chitra', '2026-10', 'draft', R(99_999));
+  await slipFor('asha', '2026-10', 'paid', R(55_555));
+
+  const t1 = await myTaxSummary('chitra', FY, oct);
+  check('tax: FY 2026-27, new regime by default, not chosen, regime due 30 Nov, open', t1.fy === FY && t1.regime === 'new' && !t1.chosen && t1.defaultRegime === 'new' && t1.regimeDueOn === '2026-11-30' && t1.proofsDueOn === '2027-01-31' && !t1.locked && t1.canChangeRegime, t1);
+  check('tax: paid till September, six released payslips\' tax only (no draft, no one else\'s)', t1.paidThroughMonth === '2026-09' && t1.paidSoFarPaise === TAX * 6, { through: t1.paidThroughMonth, paid: t1.paidSoFarPaise });
+  check('tax: twelve months April 2026 to March 2027, April to September paid at the payslip figure',
+    t1.months.length === 12 && t1.months[0].period === '2026-04' && t1.months[0].label === 'April 2026' && t1.months[11].period === '2027-03'
+      && t1.months.slice(0, 6).every((m) => m.status === 'paid' && m.amountPaise === TAX), t1.months);
+  check('tax: October (only a draft) to March are estimates at the monthly figure now',
+    t1.months.slice(6).every((m) => m.status === 'estimate' && m.amountPaise === t1.monthlyNowPaise) && t1.estimate && !t1.notConfigured, t1.months.slice(6));
+  const oct26 = (await computeStructureFor(ORG, 'chitra', (await salaryStructures().findOne({ org: ORG, userId: 'chitra' }))!, undefined, '2026-10')).computed;
+  const monthTaxable = projectedTaxable(oct26, STATUTORY_SEED.find((c) => c.fy === FY)!.mealCard.exemptMonthlyPaise);
+  const engine = computeTds({ config: TDS_SEED.find((c) => c.fy === FY && c.regime === 'new')!, ytdTaxablePaise: R(2_00_000) * 6, ytdTdsPaise: TAX * 6, currentTaxablePaise: monthTaxable, futureMonthlyTaxablePaise: monthTaxable, monthsAfter: 5 });
+  check('tax: the year\'s tax is the TDS engine\'s, on the year so far plus October to March on the structure',
+    t1.annualTaxPaise === engine.annualTaxPaise && t1.monthlyNowPaise === engine.monthlyTdsPaise && engine.annualTaxPaise > 0, { got: [t1.annualTaxPaise, t1.monthlyNowPaise], engine: [engine.annualTaxPaise, engine.monthlyTdsPaise] });
+  check('tax: the monthly figure spreads what is left over the six months to come',
+    t1.monthlyNowPaise === Math.max(0, Math.round((t1.annualTaxPaise! - t1.paidSoFarPaise) / 6 / 100) * 100), t1);
+
+  // Picking the old regime is the declaration save; its items count from then on.
+  await saveMyDeclaration('chitra', FY, { regime: 'old', items: {} }, oct);
+  const t2 = await myTaxSummary('chitra', FY, oct);
+  check('tax: the old regime once picked (chosen), worked out on its own rules', t2.regime === 'old' && t2.chosen && t2.annualTaxPaise !== null && t2.annualTaxPaise !== t1.annualTaxPaise, { new: t1.annualTaxPaise, old: t2.annualTaxPaise });
+  await saveMyDeclaration('chitra', FY, { regime: 'old', items: { ppf: R(1_00_000), healthSelf: R(25_000) } }, oct);
+  const t3 = await myTaxSummary('chitra', FY, oct);
+  check('tax: on the old regime, declared investments lower the year\'s tax', t3.annualTaxPaise! < t2.annualTaxPaise!, { before: t2.annualTaxPaise, after: t3.annualTaxPaise });
+  await saveMyDeclaration('chitra', FY, { regime: 'new', items: {} }, oct);
+  const t4 = await myTaxSummary('chitra', FY, oct);
+  const kept = await taxDeclarations().findOne({ org: ORG, userId: 'chitra', fy: FY });
+  check('tax: back to the new regime: the new figure again, the old items kept for a switch back',
+    t4.regime === 'new' && t4.annualTaxPaise === t1.annualTaxPaise && kept?.items?.ppf === R(1_00_000), { tax: t4.annualTaxPaise, items: kept?.items });
+
+  const t5 = await myTaxSummary('chitra', FY, dec1);
+  check('tax: after 30 Nov the regime is locked and can\'t be changed', t5.locked && !t5.canChangeRegime && t5.annualTaxPaise !== null, t5);
+  await companies().updateOne({ id: ORG }, { $unset: { 'payrollEmployee.declarationDue': '' } });
+  const t6 = await myTaxSummary('chitra', FY, oct);
+  check('tax: no declaration due date set: no date, nothing to change, the figures still shown',
+    t6.regimeDueOn === null && t6.missing.includes('declarationDue') && !t6.canChangeRegime && t6.annualTaxPaise === t1.annualTaxPaise, t6);
+  await companies().updateOne({ id: ORG }, { $set: { 'payrollEmployee.declarationDue': '11-30' } });
+
+  const joiner = await myTaxSummary('dev', FY, oct);
+  check('tax: joining in January: no payslip before it, estimates from January',
+    joiner.months.slice(0, 9).every((m) => m.status === 'no_payslip' && m.amountPaise === null) && joiner.months.slice(9).every((m) => m.status === 'estimate')
+      && joiner.paidThroughMonth === null && joiner.paidSoFarPaise === 0, joiner.months);
+  const nextFy = await myTaxSummary('chitra', '2027-28', oct);
+  check('tax: a FY with no income tax rules says so, no figure', nextFy.notConfigured && nextFy.reason === 'tax_rules_not_set_up' && nextFy.annualTaxPaise === null && !nextFy.canChangeRegime, nextFy);
+  const noSalary = await myTaxSummary('bala', FY, oct);
+  check('tax: no salary structure: said, no figure', noSalary.notConfigured && noSalary.reason === 'salary_not_set_up' && noSalary.annualTaxPaise === null, noSalary);
+  check('tax: a bad fy is refused (400)', (await refusal(() => myTaxSummary('chitra', '2026-28', oct)))?.status === 400);
 
   setProofStorageForTests(null);
   await db.dropDatabase();

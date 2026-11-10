@@ -4,9 +4,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart' as image_picker;
 
 import '../../support/support_launcher.dart';
 import 'package:printing/printing.dart';
+import 'package:url_launcher/url_launcher.dart' show LaunchMode, launchUrl;
 
 import '../data/payslip_pdf.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -30,6 +32,15 @@ import '../../support/presentation/support_desk_screen.dart';
 
 part 'placements_screen.dart';
 part 'payroll_screen.dart';
+part 'payroll_split.dart';
+part 'payroll_proofs.dart';
+part 'payroll_fbp.dart';
+part 'payroll_epf.dart';
+part 'payroll_earnings.dart';
+part 'payroll_downloads.dart';
+part 'payroll_tax.dart';
+part 'payroll_home_v2.dart';
+part 'payroll_salary.dart';
 part '../../placements/presentation/placements_style.dart';
 part '../../placements/presentation/candidate_pages.dart';
 part '../../placements/presentation/client_pages.dart';
@@ -2842,8 +2853,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final days = _attendanceDays();
     return _HubScaffold(
       key: const ValueKey('calendar'),
+      // From Payroll the same list is about pay: the days that go unpaid
+      // unless they are fixed.
       title: _calendarReturnPage == _QuickPage.payroll
-          ? 'Missing punches'
+          ? 'Unpaid days'
           : 'Attendance',
       onBack: _back,
       profileAction: widget.profileAction,
@@ -2904,6 +2917,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         const SizedBox(height: 24),
         AttendanceFilterChips(
           selected: _attendanceFilter,
+          missedPunchLabel: _calendarReturnPage == _QuickPage.payroll
+              ? 'Unpaid days'
+              : 'Missed Punch',
           counts: {
             for (final filter in AttendanceFilter.values)
               filter: days
@@ -4233,9 +4249,13 @@ class AttendanceFilterChips extends StatelessWidget {
     required this.selected,
     required this.onChanged,
     this.counts = const {},
+    this.missedPunchLabel = 'Missed Punch',
   });
 
   final AttendanceFilter? selected;
+
+  /// The red heading's name: "Unpaid days" when Payroll opened the list.
+  final String missedPunchLabel;
   final ValueChanged<AttendanceFilter?> onChanged;
 
   /// How many days of the month each heading covers, shown in its badge.
@@ -4246,8 +4266,8 @@ class AttendanceFilterChips extends StatelessWidget {
     void toggle(AttendanceFilter filter) =>
         onChanged(selected == filter ? null : filter);
 
-    const order = [
-      (AttendanceFilter.missedPunch, 'Missed Punch'),
+    final order = [
+      (AttendanceFilter.missedPunch, missedPunchLabel),
       (AttendanceFilter.present, 'Present'),
       (AttendanceFilter.late, 'Late'),
       (AttendanceFilter.halfDay, 'Half-day'),
@@ -8828,10 +8848,12 @@ bool matchesAttendanceFilter(AttendanceDayView day, AttendanceFilter? filter) {
     // A day with a punch missing belongs here whether the policy marked it a
     // half day or left it flagged — it is the same missed punch either way,
     // and someone looking for one should find it under one heading.
+    // Only days that are over: today is still being worked (or not begun),
+    // as the server counts missed punches only up to yesterday.
     AttendanceFilter.missedPunch =>
-      kind == AttendanceKind.attention ||
-          day.correctionPending ||
-          day.needsCorrection,
+      day.correctionPending ||
+          (_dayIsOver(day.date) &&
+              (kind == AttendanceKind.attention || day.needsCorrection)),
     AttendanceFilter.present => kind == AttendanceKind.present,
     AttendanceFilter.late => day.late,
     AttendanceFilter.halfDay => kind == AttendanceKind.halfDay,
@@ -8841,6 +8863,15 @@ bool matchesAttendanceFilter(AttendanceDayView day, AttendanceFilter? filter) {
     AttendanceFilter.leaveWithoutPay => kind == AttendanceKind.leaveWithoutPay,
     AttendanceFilter.holiday => kind == AttendanceKind.holiday,
   };
+}
+
+bool _dayIsOver(DateTime date) {
+  final now = DateTime.now();
+  return DateTime(
+    date.year,
+    date.month,
+    date.day,
+  ).isBefore(DateTime(now.year, now.month, now.day));
 }
 
 bool _sameDay(DateTime? a, DateTime? b) =>

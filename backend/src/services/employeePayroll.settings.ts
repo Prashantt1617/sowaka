@@ -1,7 +1,12 @@
 /**
  * The app's Payroll, per company, as HR sets it on the dashboard: whether the
- * app shows Payroll at all (`appEnabled`, off until HR turns it on) and the
- * deadlines the employee screens read (Company.payrollEmployee).
+ * app shows Payroll at all (`appEnabled`, off until HR turns it on), the
+ * deadlines the employee screens read (Company.payrollEmployee), and how much
+ * each − / + on My split moves a flexible head (`splitStepPaise`).
+ *
+ * The step is not a deadline: without it Payroll can still be switched on,
+ * but the split says it is not set up (missing `splitStepPaise`) and cannot be
+ * changed until HR sets it.
  *
  * Deadlines repeat every financial year, so they are kept as a day of the
  * month (the split cutoff) or "MM-DD" (the rest). The dashboard may send a
@@ -15,11 +20,11 @@
 import { companies } from '../config/db';
 import { EmployeePayrollSettings } from '../models/employeePayroll.model';
 import {
-  DEADLINE_FIELDS, EmployeePayrollError, NOT_CONFIGURED, billsDueOn, dayInMonth, deadlinesFrom, declarationDueOn, missingDeadlines, parseFyParam,
-  payrollAppEnabledFrom, payrollViewerOrg, periodOf, proofsDueOn,
+  DEADLINE_FIELDS, EmployeePayrollError, NOT_CONFIGURED, SPLIT_STEP_MAX_PAISE, billsDueOn, dayInMonth, deadlinesFrom, declarationDueOn, missingDeadlines,
+  parseFyParam, payrollAppEnabledFrom, payrollViewerOrg, periodOf, proofsDueOn, splitStepFrom,
 } from './employeePayroll.common';
 
-const FIELDS = ['appEnabled', 'splitCutoffDay', 'declarationDue', 'proofsDue', 'billsDue'] as const;
+const FIELDS = ['appEnabled', 'splitCutoffDay', 'declarationDue', 'proofsDue', 'billsDue', 'splitStepPaise'] as const;
 type Field = (typeof FIELDS)[number];
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -59,7 +64,7 @@ function viewOf(s: EmployeePayrollSettings | undefined, fy: string, now: Date) {
   return {
     fy,
     // As stored; null is a deadline HR has not set (there are no defaults).
-    settings: { appEnabled: payrollAppEnabledFrom(s), ...d },
+    settings: { appEnabled: payrollAppEnabledFrom(s), ...d, splitStepPaise: splitStepFrom(s) },
     // The deadlines still to set; Payroll can be switched on in the app only once this is empty.
     missing,
     ready: missing.length === 0,
@@ -106,6 +111,12 @@ export async function setEmployeeAppSettingsForHr(viewerUserId: string, fyRaw: u
       const n = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN;
       if (!Number.isInteger(n) || n < 1 || n > 28) throw new EmployeePayrollError(400, 'The split cutoff day must be a day of the month from 1 to 28');
       $set['payrollEmployee.splitCutoffDay'] = n;
+    } else if (f === 'splitStepPaise') {
+      const n = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN;
+      if (!Number.isInteger(n) || n < 100 || n > SPLIT_STEP_MAX_PAISE || n % 100 !== 0) {
+        throw new EmployeePayrollError(400, 'The split step is whole rupees, from ₹1 to ₹10,000 (in paise: 100 to 1000000)');
+      }
+      $set['payrollEmployee.splitStepPaise'] = n;
     } else {
       $set[`payrollEmployee.${f}`] = parseDate(f, raw, fy);
     }

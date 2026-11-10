@@ -758,6 +758,15 @@ export const getPaymentDetails = (userId: string) =>
 export const savePaymentDetails = (userId: string, input: PaymentDetailsInput) =>
   api<{ details: PaymentDetailsDTO }>(`/admin/payroll/employees/${userId}/payment-details`, { method: 'PUT', body: input }).then((r) => r.details);
 
+/** A PF balance read off the employee's EPFO passbook (Sowaka cannot read EPFO); the newest entry, by HR or the employee, wins. */
+export type EpfBalanceDTO = { balancePaise: number; asOn: string; source: 'hr' | 'employee'; updatedAt: string };
+
+export const getEpfBalance = (userId: string) =>
+  api<{ balance: EpfBalanceDTO | null }>(`/admin/payroll/employees/${userId}/epf-balance`).then((r) => r.balance);
+
+export const saveEpfBalance = (userId: string, input: { balancePaise: number; asOn: string }) =>
+  api<{ balance: EpfBalanceDTO | null }>(`/admin/payroll/employees/${userId}/epf-balance`, { method: 'PUT', body: input }).then((r) => r.balance);
+
 // ————————————————————————————————————————————————————————————————
 // Income tax: the TDS engine's working, and each person's declaration.
 // ————————————————————————————————————————————————————————————————
@@ -894,9 +903,9 @@ export type EmployeeSplitDTO = {
   template: { code: string; name: string } | null;
   /** The template's flexiblePoolPaise; null when it has none (or no structure). */
   poolPaise: number | null;
-  /** HR has not set something the split needs (the pool, the cutoff day, the bills date). */
+  /** HR has not set something the split needs (the pool, the cutoff day, the bills date, the − / + step). */
   notConfigured?: boolean;
-  missing?: ('flexiblePoolPaise' | 'splitCutoffDay' | 'billsDue')[];
+  missing?: ('flexiblePoolPaise' | 'splitCutoffDay' | 'billsDue' | 'splitStepPaise')[];
   /** The month "in force now" means; null for a future FY. */
   asOf: string | null;
   /** What applies with no split: the structure's own amounts. */
@@ -924,8 +933,10 @@ export type EmployeeAppSettings = {
   proofsDue: string | null;
   /** "MM-DD", January to March. */
   billsDue: string | null;
+  /** Paise, whole rupees: how much each − / + on the app's My split moves a head. Not a deadline: without it the split says not set up. */
+  splitStepPaise: number | null;
 };
-export type EmployeeAppDeadline = Exclude<keyof EmployeeAppSettings, 'appEnabled'>;
+export type EmployeeAppDeadline = Exclude<keyof EmployeeAppSettings, 'appEnabled' | 'splitStepPaise'>;
 export type EmployeeAppSettingsResponse = {
   fy: string;
   settings: EmployeeAppSettings;

@@ -37,6 +37,9 @@ class FakePayrollServer {
   /// Days this month with a punch missing, as the home counts them.
   int missingCount = 12;
 
+  /// The salary has flexible (FBP) heads; off, the home sends no split.
+  bool hasSplit = true;
+
   /// Every request, as "METHOD /path?query".
   final calls = <String>[];
 
@@ -64,15 +67,28 @@ class FakePayrollServer {
     'INTERNET': 100000,
     'TELEPHONE': 150000,
     'BOOKS': 50000,
+    'LTA': 200000,
   };
   static const _names = {
     'FUEL': 'Fuel & vehicle',
     'INTERNET': 'Internet',
     'TELEPHONE': 'Telephone',
     'BOOKS': 'Books & periodicals',
+    'LTA': 'Leave travel (LTA)',
   };
   static const pool = 600000;
   bool splitOpen = true;
+
+  /// The − / + step HR set (Payroll in the app); 0 sends none, as a company
+  /// that has not set it: the split then says it is not set up.
+  int splitStepPaise = 50000;
+
+  /// Review's tax saving; null: the FY's tax rules are not set up.
+  int? reviewSavingPaise = 94000;
+
+  /// The fifth head of Figma 4473:68656, Leave travel (LTA) at ₹0 of
+  /// ₹2,000; off by default so the totals other tests read stay the same.
+  void addLeaveTravel() => split['LTA'] = 0;
 
   /// Overtime on the payslips and on Home's salary; 0 leaves it off Home.
   int overtimePaise = 0;
@@ -116,6 +132,18 @@ class FakePayrollServer {
     'homeLoanInterest': 'rejected',
   };
 
+  /// The amount on each proof sent from the app ("amount on proof").
+  final proofAmounts = <String, int>{};
+
+  /// The landlord PAN sent with a rent proof.
+  final landlordPans = <String, String>{};
+
+  /// Past the proofs due date: the closed state, uploads refused.
+  bool proofsClosed = false;
+
+  /// False: HR has not set the proofs due date (dueOn null, not set up).
+  bool proofsDueSet = true;
+
   MockClient get client => MockClient(handle);
 
   Future<http.Response> handle(http.Request request) async {
@@ -158,6 +186,15 @@ class FakePayrollServer {
           },
       ];
       final total = lines.fold<num>(0, (t, l) => t + (l['amountPaise'] as num));
+      // As the server: a split that changes nothing is not a new one.
+      if (lines.every((l) => l['changePaise'] == 0)) {
+        return payrollJson({
+          'success': false,
+          'message':
+              'Nothing has changed in your split. Change at least one head '
+              'before you submit it',
+        }, 400);
+      }
       return payrollJson({
         'success': true,
         'review': {
@@ -168,7 +205,7 @@ class FakePayrollServer {
           'totalPaise': total,
           'poolPaise': pool,
           'unassignedPaise': pool - total,
-          'monthlyTaxSavingPaise': 94000,
+          'monthlyTaxSavingPaise': reviewSavingPaise,
           'billsDueOn': '2027-03-31',
         },
       });
@@ -240,6 +277,10 @@ class FakePayrollServer {
       uploadFileField = request.files.single.field;
       final item = path.split('/')[3];
       proofStatus[item] = 'uploaded';
+      proofAmounts[item] = int.parse(request.fields['amountPaise'] ?? '0');
+      if (request.fields['landlordPan'] case final pan?) {
+        landlordPans[item] = pan;
+      }
       return payrollJson({'success': true, 'item': _proofItem(item)});
     }
     return handle(request as http.Request);
@@ -313,13 +354,24 @@ class FakePayrollServer {
         'dueOn': '2027-01-31',
       },
     ],
+    'cards': _cards(),
     'missingPunches': {
       'period': period,
       'count': missingCount,
       'fixBy': _monthEnd,
       'locked': false,
     },
-    'split': null,
+    // The server sends a split summary only when the salary has flexible
+    // heads; this person has, so the FBP card shows.
+    'split': !hasSplit
+        ? null
+        : {
+            'open': true,
+            'poolPaise': pool,
+            'assignedPaise': split.values.fold(0, (a, b) => a + b),
+            'unassignedPaise': pool - split.values.fold(0, (a, b) => a + b),
+            'bills': {'approved': 0, 'inReview': 0, 'rejected': 0},
+          },
     'declaration': {
       'fy': '2026-27',
       'regime': 'new',
@@ -330,6 +382,85 @@ class FakePayrollServer {
     },
   };
 
+  // ------------------------------------------------------------ home cards
+  /// Last pay period's payslip is out: the salary card has no Estimate tag.
+  bool lastSalaryReleased = false;
+
+  /// The carousel's cards, with the figures the R1 design draws: October's
+  /// salary, the FY's tax to October, and the split ([split]) by head.
+  Map<String, dynamic> _cards() {
+    final assigned = split.values.fold(0, (a, b) => a + b);
+    return {
+      'salary': !statutorySetUp
+          ? {
+              'period': '2026-10',
+              'label': 'October',
+              'notConfigured': true,
+              'reason': 'statutory_not_set_up',
+              'fy': '2026-27',
+              'message':
+                  'Your October 2026 pay can\'t be worked out yet: the statutory '
+                  'settings (PF, ESI, professional tax) for FY 2026-27 are not '
+                  'set up. Ask HR.',
+            }
+          : {
+              'period': '2026-10',
+              'label': 'October',
+              'notConfigured': false,
+              'released': lastSalaryReleased,
+              'payslipId': lastSalaryReleased ? 'slip-oct' : null,
+              'daysPaid': 29,
+              'daysInPeriod': 31,
+              'grossPaise': 12400000,
+              'takeHomePaise': 10640000,
+              'deductionsPaise': 960000,
+              'lopPaise': 800000,
+              'lopDays': 2,
+              'overtimePaise': 0,
+              'reimbursementsPaise': 0,
+            },
+      'tax': !taxRulesSetUp
+          ? {
+              'fy': '2026-27',
+              'notConfigured': true,
+              'reason': 'tax_rules_not_set_up',
+              'message':
+                  'The income tax rules for FY 2026-27 are not set up yet. Ask HR.',
+            }
+          : {
+              'fy': '2026-27',
+              'notConfigured': false,
+              'regime': 'new',
+              'regimeChosen': false,
+              'paidSoFarPaise': 5840000,
+              'paidBeforeThisMonthPaise': 5080000,
+              'thisMonthPaise': 760000,
+              'thisMonthReleased': false,
+              'fromMonth': '2026-04',
+              'toMonth': '2026-10',
+              'thisMonth': '2026-10',
+            },
+      'fbp': !hasSplit
+          ? null
+          : {
+              'poolPaise': pool,
+              'heads': [
+                for (final code in split.keys)
+                  if (split[code]! > 0)
+                    {
+                      'code': code,
+                      'name': _names[code],
+                      'amountPaise': split[code],
+                    },
+              ],
+              'assignedPaise': assigned,
+              'unassignedPaise': pool - assigned,
+              'notConfigured': false,
+              'missing': <String>[],
+            },
+    };
+  }
+
   Map<String, dynamic> _split() {
     final assigned = split.values.fold(0, (a, b) => a + b);
     return {
@@ -337,6 +468,9 @@ class FakePayrollServer {
       'poolPaise': pool,
       'assignedPaise': assigned,
       'unassignedPaise': pool - assigned,
+      'notConfigured': splitStepPaise <= 0,
+      'missing': [if (splitStepPaise <= 0) 'splitStepPaise'],
+      'stepPaise': splitStepPaise <= 0 ? null : splitStepPaise,
       'components': [
         for (final code in split.keys)
           {
@@ -344,7 +478,7 @@ class FakePayrollServer {
             'name': _names[code],
             'limitPaise': _limits[code],
             'amountPaise': split[code],
-            'stepPaise': 50000,
+            'stepPaise': splitStepPaise <= 0 ? null : splitStepPaise,
             'bills': code == 'FUEL'
                 ? {'approved': 4, 'inReview': 1, 'rejected': 2}
                 : {'approved': 7, 'inReview': 0, 'rejected': 0},
@@ -353,6 +487,7 @@ class FakePayrollServer {
       'current': {
         'effectiveFrom': '2026-04',
         'submittedAt': '2026-04-10T09:12:00.000Z',
+        'billsAcknowledgedAt': '2026-04-10T09:12:00.000Z',
       },
       'window': {
         'open': splitOpen,
@@ -450,14 +585,38 @@ class FakePayrollServer {
     'homeLoanInterest': ('Home loan interest', '24B', 20000000),
   };
 
+  static const _proofDocuments = {
+    'ppf': 'PPF passbook or statement',
+    'elss': 'ELSS statement from the fund',
+    'lifeInsurance': 'Premium receipt from the insurer',
+    'healthSelf': 'Premium receipt from the insurer',
+    'rentMonthly': 'Rent receipts or the rent agreement',
+    'homeLoanInterest': 'Interest certificate from the bank',
+  };
+
+  static const _proofSections = [
+    {'key': '80C', 'label': '80C'},
+    {'key': '80CCD1B', 'label': 'NPS (80CCD 1B)'},
+    {'key': '80D', 'label': '80D'},
+    {'key': 'HRA', 'label': 'Rent (HRA)'},
+    {'key': '24B', 'label': 'Home loan'},
+  ];
+
   Map<String, dynamic> _proofItem(String key) {
     final (label, section, declared) = _proofLabels[key]!;
     final status = proofStatus[key]!;
+    final year = key == 'rentMonthly' ? declared * 12 : declared;
     return {
       'item': key,
       'label': label,
       'section': section,
       'declaredPaise': declared,
+      'yearPaise': year,
+      'perMonth': key == 'rentMonthly',
+      'months': key == 'rentMonthly'
+          ? {'from': '2026-04', 'to': '2027-03'}
+          : null,
+      'document': _proofDocuments[key],
       'status': status,
       'proof': status == 'not_uploaded'
           ? null
@@ -466,7 +625,8 @@ class FakePayrollServer {
               'fileName': '$key-proof.pdf',
               'contentType': 'application/pdf',
               'size': 182311,
-              'amountPaise': declared,
+              'amountPaise': proofAmounts[key] ?? year,
+              'landlordPan': landlordPans[key],
               'uploadedAt': '2027-01-16T10:00:00.000Z',
               'decidedAt': status == 'approved' || status == 'rejected'
                   ? '2027-01-19T10:00:00.000Z'
@@ -479,17 +639,85 @@ class FakePayrollServer {
     };
   }
 
-  Map<String, dynamic> _proofs() => {
-    'fy': '2026-27',
-    'regime': regime,
-    'required': regime == 'old',
-    'dueOn': '2027-01-31',
-    'locked': false,
-    'summary': <String, dynamic>{},
-    'items': regime == 'old'
-        ? [for (final key in proofStatus.keys) _proofItem(key)]
-        : <dynamic>[],
+  static const _countedLabels = {
+    'ppf': 'PPF',
+    'elss': 'ELSS',
+    'lifeInsurance': 'Life insurance',
+    'healthSelf': 'Health insurance',
+    'rentMonthly': 'Rent (HRA)',
+    'homeLoanInterest': 'Home loan interest',
   };
+
+  /// "What counted", as the server works it out: a sent proof up to the
+  /// amount on it, the rest not proved.
+  Map<String, dynamic> _counted(List<Map<String, dynamic>> items) {
+    final rows = [
+      for (final i in items)
+        () {
+          final year = i['yearPaise'] as int;
+          final sent = i['status'] == 'uploaded' || i['status'] == 'approved';
+          final amount = (i['proof'] as Map?)?['amountPaise'] as int? ?? 0;
+          final proved = sent ? (amount < year ? amount : year) : 0;
+          return {
+            'item': i['item'],
+            'label': _countedLabels[i['item']],
+            'provedPaise': proved,
+            'notProvedPaise': year - proved,
+          };
+        }(),
+    ];
+    int sum(String key) => rows.fold(0, (t, r) => t + (r[key] as int));
+    return {
+      'rows': rows,
+      'provedPaise': sum('provedPaise'),
+      'notProvedPaise': sum('notProvedPaise'),
+      'pfPaise': 2160000,
+    };
+  }
+
+  Map<String, dynamic> _proofs() {
+    final items = regime == 'old'
+        ? [for (final key in proofStatus.keys) _proofItem(key)]
+        : <Map<String, dynamic>>[];
+    final submitted = items
+        .where((i) => i['status'] == 'uploaded' || i['status'] == 'approved')
+        .length;
+    final locked = proofsDueSet && proofsClosed;
+    return {
+      'fy': '2026-27',
+      'regime': regime,
+      'required': items.isNotEmpty,
+      'dueOn': proofsDueSet ? '2027-01-31' : null,
+      'notConfigured': !proofsDueSet,
+      'missing': proofsDueSet ? <String>[] : ['proofsDue'],
+      'locked': locked,
+      'closed': locked
+          ? {
+              'closedOn': '2027-01-31',
+              'submitted': submitted,
+              'notSubmitted': items.length - submitted,
+              'total': items.length,
+              'lastPayPeriod': '2027-03',
+              'itrDueOn': '2027-07-31',
+              'counted': _counted(items),
+            }
+          : null,
+      'itrDueOn': '2027-07-31',
+      'summary': <String, dynamic>{},
+      'sections': [
+        for (final section in _proofSections)
+          if (items.any((i) => i['section'] == section['key']))
+            {
+              ...section,
+              'items': [
+                for (final i in items)
+                  if (i['section'] == section['key']) i,
+              ],
+            },
+      ],
+      'items': items,
+    };
+  }
 
   Map<String, dynamic> _payslips() {
     Map<String, dynamic> slip(

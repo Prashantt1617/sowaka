@@ -28,7 +28,7 @@ import { Field, GENDERS as GENDER_CHOICES, Select, TypeOrPick, grid2, grid3, inf
 import { ApiError } from '../../services/http';
 import { useAuth } from '../auth/AuthContext';
 import { canOpen, SALARY_DETAILS } from '../access';
-import { getEmployeePayslips, getPaymentDetails, inr as inrPaise, savePaymentDetails, type PaymentDetailsDTO, type PaymentDetailsInput, type PayrollRunDTO, type PayslipDTO } from '../../services/payroll';
+import { getEmployeePayslips, getEpfBalance, getPaymentDetails, inr as inrPaise, saveEpfBalance, savePaymentDetails, type EpfBalanceDTO, type PaymentDetailsDTO, type PaymentDetailsInput, type PayrollRunDTO, type PayslipDTO } from '../../services/payroll';
 import { EmployeeSalary } from './EmployeeSalary';
 import { EmployeeActivity } from './EmployeeActivity';
 import { isSelfOrBelow } from './selfOrBelow';
@@ -337,6 +337,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
           </Section>
             )}
             <div data-focus="bank"><PaymentDetails userId={emp.id} /></div>
+            <EpfBalance userId={emp.id} />
           </div>
         </div>
       )}
@@ -656,7 +657,10 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
   // The day HR is marking, if any. Only the current month can be marked.
   const [editing, setEditing] = useState<CalendarDayDTO | null>(null);
   const [saving, setSaving] = useState(false);
-  const editable = month === thisMonth() || (editableMonth !== undefined && month === editableMonth);
+  const monthEditable = month === thisMonth() || (editableMonth !== undefined && month === editableMonth);
+  // The server says which days HR may mark now (the open pay period reaches back into last month);
+  // an older server without the flag keeps the month rule.
+  const dayEditable = (day: CalendarDayDTO) => day.status !== 'before_joining' && (day.canMark ?? monthEditable);
   const reload = async () => {
     const fresh = await getEmployeeCalendar(userId, month);
     setCal(fresh);
@@ -755,10 +759,10 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
             return (
               <div
                 key={day.date}
-                title={`${day.date}${day.status === 'before_joining' ? ' · before joining' : ''}${detail ? ` · ${detail}` : ''}${day.hr ? ` · marked by ${day.hr.setByName ?? 'HR'}, was ${prev?.label}` : ''}${editable ? ' · click to mark' : ''}`}
-                onClick={editable && day.status !== 'before_joining' ? () => setEditing(day) : undefined}
+                title={`${day.date}${day.status === 'before_joining' ? ' · before joining' : ''}${detail ? ` · ${detail}` : ''}${day.hr ? ` · marked by ${day.hr.setByName ?? 'HR'}, was ${prev?.label}` : ''}${dayEditable(day) ? ' · click to mark' : ''}`}
+                onClick={dayEditable(day) ? () => setEditing(day) : undefined}
                 className={blankDay(day.status) ? 'pd-cd future' : 'pd-cd'}
-                style={{ background: blankDay(day.status) ? undefined : tone.bg, color: blankDay(day.status) ? undefined : tone.fg, borderColor: day.status === 'week_off' ? 'var(--line)' : undefined, cursor: editable && day.status !== 'before_joining' ? 'pointer' : 'default', boxShadow: ring ? 'inset 0 0 0 2px var(--bad)' : day.hr ? 'inset 0 0 0 2px var(--accent)' : undefined }}
+                style={{ background: blankDay(day.status) ? undefined : tone.bg, color: blankDay(day.status) ? undefined : tone.fg, borderColor: day.status === 'week_off' ? 'var(--line)' : undefined, cursor: dayEditable(day) ? 'pointer' : 'default', boxShadow: ring ? 'inset 0 0 0 2px var(--bad)' : day.hr ? 'inset 0 0 0 2px var(--accent)' : undefined }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 4 }}>
                   <b>{Number(day.date.slice(8))}</b>
@@ -776,7 +780,7 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
           })}
         </div>
       </div>
-      {editable && <div className="pd-subnote" style={{ marginTop: 12 }}>{highlight ? 'Ringed days cost pay. ' : ''}Click any day to mark it. The mark replaces what the punches, leave or holidays say, on the dashboard, in payroll and in the employee's app.</div>}
+      {(shown?.days.some(dayEditable) ?? monthEditable) && <div className="pd-subnote" style={{ marginTop: 12 }}>{highlight ? 'Ringed days cost pay. ' : ''}Click any day to mark it. The mark replaces what the punches, leave or holidays say, on the dashboard, in payroll and in the employee's app.</div>}
       {editing && <MarkDay day={editing} saving={saving} onClose={() => setEditing(null)} onSave={(status, note) => void mark(editing, status, note)} />}
     </section>
   );
@@ -991,6 +995,76 @@ function PaymentDetails({ userId }: { userId: string }) {
         </Grid>
       )}
       {!d.unmasked && (d.accountNumber || d.pan || d.uan) && <div className="pd-subnote" style={{ marginTop: 8 }}>Shown masked: full numbers are visible only with payroll access.</div>}
+    </Section>
+  );
+}
+
+// The PF balance from the employee's EPFO passbook: Sowaka cannot read EPFO,
+// so HR (or the employee, in the app) types it in with the date it is as on.
+// The app adds the PF payroll put in after that date. Payroll access only.
+function EpfBalance({ userId }: { userId: string }) {
+  const { flash } = useStore();
+  const [b, setB] = useState<EpfBalanceDTO | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'hidden'>('loading');
+  const [form, setForm] = useState<{ rupees: string; asOn: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    let live = true;
+    setState('loading');
+    getEpfBalance(userId)
+      .then((x) => { if (live) { setB(x); setState('ready'); } })
+      .catch(() => { if (live) setState('hidden'); });
+    return () => { live = false; };
+  }, [userId]);
+  if (state !== 'ready') return null;
+  const today = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const save = async () => {
+    if (!form) return;
+    const rupees = Number(form.rupees.replace(/[^0-9]/g, ''));
+    if (form.rupees.trim() === '' || !Number.isSafeInteger(rupees) || !form.asOn) {
+      flash('Enter the balance in rupees and the date it is as on', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      setB(await saveEpfBalance(userId, { balancePaise: rupees * 100, asOn: form.asOn }));
+      setForm(null);
+      flash('EPF balance saved');
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : 'Could not save the EPF balance', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Section
+      title="EPF balance"
+      action={!form ? <button type="button" onClick={() => setForm({ rupees: b ? String(b.balancePaise / 100) : '', asOn: b?.asOn ?? today })} className="pd-sec-act"><PdEdit /> {b ? 'Edit' : 'Add'}</button> : undefined}
+    >
+      {form ? (
+        <div style={{ paddingTop: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <label className="pd-label">
+              Balance (₹)
+              <input inputMode="numeric" value={form.rupees} placeholder="From the EPFO passbook" onChange={(e) => setForm({ ...form, rupees: e.target.value.replace(/[^0-9]/g, '') })} className="pd-inp" />
+            </label>
+            <label className="pd-label">
+              As on
+              <input type="date" max={today} value={form.asOn} onChange={(e) => setForm({ ...form, asOn: e.target.value })} className="pd-inp" />
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={() => setForm(null)} className="pd-btn">Cancel</button>
+            <button type="button" onClick={() => void save()} disabled={saving} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
+          </div>
+        </div>
+      ) : (
+        <Grid>
+          <Row label="Balance" value={b ? inrPaise(b.balancePaise) : '—'} />
+          <Row label="As on" value={b ? `${showDate(b.asOn)} · by ${b.source === 'hr' ? 'HR' : 'the employee'}` : '—'} />
+        </Grid>
+      )}
+      <div className="pd-subnote" style={{ marginTop: 8 }}>From the EPFO passbook. The app adds the PF paid through payroll after this date.</div>
     </Section>
   );
 }
