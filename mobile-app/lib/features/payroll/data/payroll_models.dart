@@ -742,6 +742,7 @@ class InvestmentProofFile {
     this.uploadedAt,
     this.decidedAt,
     this.reason,
+    this.landlordPan,
   });
 
   final String id;
@@ -753,6 +754,9 @@ class InvestmentProofFile {
   final DateTime? decidedAt;
   final String? reason;
 
+  /// Rent only: the landlord's PAN sent with the proof.
+  final String? landlordPan;
+
   factory InvestmentProofFile.fromJson(Map<String, dynamic> json) =>
       InvestmentProofFile(
         id: _string(json['id']),
@@ -763,6 +767,7 @@ class InvestmentProofFile {
         uploadedAt: _moment(json['uploadedAt']),
         decidedAt: _moment(json['decidedAt']),
         reason: _stringOrNull(json['reason']),
+        landlordPan: _stringOrNull(json['landlordPan']),
       );
 }
 
@@ -775,7 +780,12 @@ class InvestmentProofItem {
     required this.declaredPaise,
     required this.status,
     this.proof,
-  });
+    this.perMonth = false,
+    this.monthsFrom,
+    this.monthsTo,
+    this.document,
+    int? yearPaise,
+  }) : _yearPaise = yearPaise;
 
   final String item;
   final String label;
@@ -784,8 +794,26 @@ class InvestmentProofItem {
   final ProofStatus status;
   final InvestmentProofFile? proof;
 
+  /// [declaredPaise] is a month's amount (rent), for [monthsFrom]–[monthsTo].
+  final bool perMonth;
+  final DateTime? monthsFrom;
+  final DateTime? monthsTo;
+
+  /// What to upload: "Interest certificate from the bank". Null from an
+  /// older server.
+  final String? document;
+
+  final int? _yearPaise;
+
+  /// The FY's amount, which the amount on a proof is set against: rent's is
+  /// twelve months of it.
+  int get yearPaise =>
+      _yearPaise ??
+      (perMonth || item == 'rentMonthly' ? declaredPaise * 12 : declaredPaise);
+
   factory InvestmentProofItem.fromJson(Map<String, dynamic> json) {
     final proof = json['proof'];
+    final months = _map(json['months']);
     return InvestmentProofItem(
       item: _string(json['item']),
       label: _string(json['label']),
@@ -795,8 +823,116 @@ class InvestmentProofItem {
       proof: proof is Map<String, dynamic>
           ? InvestmentProofFile.fromJson(proof)
           : null,
+      perMonth: _bool(json['perMonth']),
+      monthsFrom: payrollMonth(months['from']),
+      monthsTo: payrollMonth(months['to']),
+      document: _stringOrNull(json['document']),
+      yearPaise: _paiseOrNull(json['yearPaise']),
     );
   }
+}
+
+/// One section's card on the proofs page: "80C" and the items under it.
+class InvestmentProofSection {
+  const InvestmentProofSection({
+    required this.key,
+    required this.label,
+    required this.items,
+  });
+
+  final String key;
+  final String label;
+  final List<InvestmentProofItem> items;
+}
+
+/// Past the proofs due date: when it closed, what never made it, and the
+/// two ways left — HR, for the FY's last pay month, or the tax return.
+class InvestmentProofsClosed {
+  const InvestmentProofsClosed({
+    required this.submitted,
+    required this.notSubmitted,
+    required this.total,
+    this.closedOn,
+    this.lastPayPeriod,
+    this.itrDueOn,
+    this.counted,
+  });
+
+  /// "What counted": each item proved or not, for the year.
+  final InvestmentProofsCounted? counted;
+
+  final DateTime? closedOn;
+  final int submitted;
+  final int notSubmitted;
+  final int total;
+
+  /// The FY's last pay month (March).
+  final DateTime? lastPayPeriod;
+
+  /// The FY's income tax return due date (31 July after it ends).
+  final DateTime? itrDueOn;
+
+  factory InvestmentProofsClosed.fromJson(Map<String, dynamic> json) =>
+      InvestmentProofsClosed(
+        closedOn: payrollDate(json['closedOn']),
+        submitted: _int(json['submitted']),
+        notSubmitted: _int(json['notSubmitted']),
+        total: _int(json['total']),
+        lastPayPeriod: payrollMonth(json['lastPayPeriod']),
+        itrDueOn: payrollDate(json['itrDueOn']),
+        counted: json['counted'] is Map<String, dynamic>
+            ? InvestmentProofsCounted.fromJson(json['counted'])
+            : null,
+      );
+}
+
+/// One line of "What counted": a declared item, proved or not.
+class InvestmentProofCountedRow {
+  const InvestmentProofCountedRow({
+    required this.item,
+    required this.label,
+    required this.provedPaise,
+    required this.notProvedPaise,
+  });
+
+  final String item;
+  final String label;
+  final int provedPaise;
+  final int notProvedPaise;
+
+  factory InvestmentProofCountedRow.fromJson(Map<String, dynamic> json) =>
+      InvestmentProofCountedRow(
+        item: _string(json['item']),
+        label: _string(json['label']),
+        provedPaise: _paise(json['provedPaise']),
+        notProvedPaise: _paise(json['notProvedPaise']),
+      );
+}
+
+/// What the closed proofs leave counting for the year, and the PF that
+/// counts with no proof.
+class InvestmentProofsCounted {
+  const InvestmentProofsCounted({
+    required this.rows,
+    required this.provedPaise,
+    required this.notProvedPaise,
+    required this.pfPaise,
+  });
+
+  final List<InvestmentProofCountedRow> rows;
+  final int provedPaise;
+  final int notProvedPaise;
+  final int pfPaise;
+
+  factory InvestmentProofsCounted.fromJson(Map<String, dynamic> json) =>
+      InvestmentProofsCounted(
+        rows: _list(
+          json['rows'],
+        ).map(InvestmentProofCountedRow.fromJson).toList(),
+        provedPaise: _paise(json['provedPaise']),
+        notProvedPaise: _paise(json['notProvedPaise']),
+        pfPaise: _paise(json['pfPaise']),
+      );
 }
 
 class InvestmentProofs {
@@ -807,6 +943,9 @@ class InvestmentProofs {
     required this.locked,
     required this.items,
     this.dueOn,
+    this.notConfigured = false,
+    this.closed,
+    this.sectionLabels = const {},
   });
 
   final String fy;
@@ -818,18 +957,56 @@ class InvestmentProofs {
   final bool locked;
   final List<InvestmentProofItem> items;
 
+  /// HR has not set the proofs due date: nothing can be uploaded yet.
+  final bool notConfigured;
+
+  /// Set once the due date has passed.
+  final InvestmentProofsClosed? closed;
+
+  /// The server's sections in its order: key → card title.
+  final Map<String, String> sectionLabels;
+
   int count(ProofStatus status) =>
       items.where((item) => item.status == status).length;
 
-  factory InvestmentProofs.fromJson(Map<String, dynamic> json) =>
-      InvestmentProofs(
-        fy: _string(json['fy']),
-        regime: _string(json['regime']),
-        required: _bool(json['required']),
-        dueOn: payrollDate(json['dueOn']),
-        locked: _bool(json['locked']),
-        items: _list(json['items']).map(InvestmentProofItem.fromJson).toList(),
-      );
+  /// The items in their section cards, in the server's order. An older
+  /// server sends no sections: the items' own order, the key as the title.
+  List<InvestmentProofSection> get sections {
+    final order = <String>{
+      ...sectionLabels.keys,
+      for (final item in items) item.section,
+    };
+    return [
+      for (final key in order)
+        if (items.where((item) => item.section == key).toList()
+            case final grouped when grouped.isNotEmpty)
+          InvestmentProofSection(
+            key: key,
+            label: sectionLabels[key] ?? key,
+            items: grouped,
+          ),
+    ];
+  }
+
+  factory InvestmentProofs.fromJson(Map<String, dynamic> json) {
+    final closed = json['closed'];
+    return InvestmentProofs(
+      fy: _string(json['fy']),
+      regime: _string(json['regime']),
+      required: _bool(json['required']),
+      dueOn: payrollDate(json['dueOn']),
+      locked: _bool(json['locked']),
+      notConfigured: _bool(json['notConfigured']),
+      closed: closed is Map<String, dynamic>
+          ? InvestmentProofsClosed.fromJson(closed)
+          : null,
+      sectionLabels: {
+        for (final section in _list(json['sections']))
+          _string(section['key']): _string(section['label']),
+      },
+      items: _list(json['items']).map(InvestmentProofItem.fromJson).toList(),
+    );
+  }
 
   InvestmentProofs replacing(InvestmentProofItem updated) => InvestmentProofs(
     fy: fy,
@@ -837,6 +1014,9 @@ class InvestmentProofs {
     required: required,
     dueOn: dueOn,
     locked: locked,
+    notConfigured: notConfigured,
+    closed: closed,
+    sectionLabels: sectionLabels,
     items: [
       for (final item in items) item.item == updated.item ? updated : item,
     ],

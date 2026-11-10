@@ -223,12 +223,14 @@ class PayrollApiService {
     return InvestmentProofs.fromJson(_object(json['proofs']));
   }
 
-  /// Uploads (or replaces) the proof for one declared [item].
+  /// Uploads (or replaces) the proof for one declared [item], with the
+  /// amount on it and, for rent, the landlord's PAN.
   Future<InvestmentProofItem> uploadProof({
     required String item,
     required PayrollUpload file,
     required int amountPaise,
     String? fy,
+    String? landlordPan,
   }) async {
     final request =
         http.MultipartRequest(
@@ -239,6 +241,10 @@ class PayrollApiService {
           )
           ..headers['Authorization'] = 'Bearer ${session.token}'
           ..fields['amountPaise'] = '$amountPaise'
+          ..fields.addAll({
+            if (landlordPan != null && landlordPan.isNotEmpty)
+              'landlordPan': landlordPan,
+          })
           ..files.add(
             http.MultipartFile.fromBytes(
               'proof',

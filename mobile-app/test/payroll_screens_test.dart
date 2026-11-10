@@ -485,84 +485,366 @@ void main() {
     expect(find.text('Declaration submitted'), findsOneWidget);
   });
 
-  testWidgets('proofs: not uploaded, in review, approved, rejected; upload', (
-    tester,
-  ) async {
-    final server = await pumpPayroll(tester);
-    await tap(
+  group('Investment proofs (Figma 4484:73360, 4484:73735, 4567:25245)', () {
+    final opened = <String?>[];
+    void opener({String? about}) => opened.add(about);
+    setUp(() {
+      opened.clear();
+      payrollProofCamera = (_) async => PayrollUpload(
+        name: 'camera-shot.jpg',
+        bytes: Uint8List.fromList(List.filled(2048, 7)),
+      );
+    });
+    tearDown(() => unregisterSupportTicketOpener(opener));
+
+    Future<void> openProofs(WidgetTester tester) async {
+      await tap(
+        tester,
+        find.byKey(const ValueKey('payroll-todo-investment_proofs')),
+      );
+      expect(find.byKey(const ValueKey('payroll-proofs')), findsOneWidget);
+    }
+
+    Color cardColour(WidgetTester tester, String section) {
+      final box = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byKey(ValueKey('proof-section-$section')),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      return (box.decoration! as BoxDecoration).color!;
+    }
+
+    testWidgets('the list: deadline, a card per section, every status', (
       tester,
-      find.byKey(const ValueKey('payroll-todo-investment_proofs')),
-    );
-    expect(find.byKey(const ValueKey('payroll-proofs')), findsOneWidget);
-    expect(find.text('2 to upload · 1 to re-upload'), findsOneWidget);
-    expect(find.text('Approved'), findsNWidgets(2));
-    expect(find.text('In review'), findsOneWidget);
-    expect(find.text('Rejected'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('proof-upload-lifeInsurance')),
-      findsOneWidget,
-    );
-    await capture(tester, payroll(), 'proofs');
+    ) async {
+      await pumpPayroll(tester);
+      await openProofs(tester);
+      expect(
+        find.text('Last date to upload all proofs is 31 Jan.'),
+        findsOneWidget,
+      );
+      for (final title in ['80C', '80D', 'Rent (HRA)', 'Home loan']) {
+        expect(find.text(title), findsOneWidget);
+      }
+      // 80C: approved, in review, and one to upload.
+      expect(find.text('PPF'), findsOneWidget);
+      expect(find.text('₹50,000'), findsNWidgets(2));
+      expect(find.text('Approved'), findsNWidgets(2));
+      expect(find.text('In review'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('proof-upload-lifeInsurance')),
+        findsOneWidget,
+      );
+      expect(find.text('₹28,400'), findsOneWidget);
+      expect(find.text('Health insurance · self and family'), findsOneWidget);
+      // Rent is a month's amount, April to March.
+      expect(find.text('₹15,000 a month · Apr to Mar'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('proof-upload-rentMonthly')),
+        findsOneWidget,
+      );
+      expect(cardColour(tester, '80C'), Colors.white);
+      await capture(tester, payroll(), 'proofs');
 
-    // Upload: nothing to send until a file is chosen.
-    await tap(tester, find.byKey(const ValueKey('proof-upload-lifeInsurance')));
-    expect(find.text('Upload proof'), findsOneWidget);
-    expect(find.text('Life insurance · Premium receipt'), findsOneWidget);
-    InkWell submitButton() => tester.widget<InkWell>(
-      find
-          .ancestor(
-            of: find.text('Submit for review'),
-            matching: find.byType(InkWell),
-          )
-          .first,
-    );
-    expect(submitButton().onTap, isNull);
-    await capture(tester, payroll(), 'proof_upload_sheet');
-    await tap(tester, find.byKey(const ValueKey('proof-pick')));
-    expect(find.text('lic-receipt.pdf'), findsOneWidget);
-    expect(submitButton().onTap, isNotNull);
-    await capture(tester, payroll(), 'proof_upload_sheet_file');
-    await tap(tester, find.text('Submit for review'));
-    expect(server.uploadFileField, 'proof');
-    expect(server.uploadFileName, 'lic-receipt.pdf');
-    expect(server.uploadFields, {'amountPaise': '2840000'});
-    expect(find.text('Upload proof'), findsNothing);
-    expect(find.text('In review'), findsNWidgets(2));
-    await tester.drag(find.byType(ListView).first, const Offset(0, 1000));
-    await settle(tester);
-    expect(find.text('1 to upload · 1 to re-upload'), findsOneWidget);
+      // The rejected one: its card pink, HR's reason, the re-upload.
+      await tester.drag(find.byType(ListView).first, const Offset(0, -600));
+      await settle(tester);
+      expect(find.text('Rejected'), findsOneWidget);
+      expect(find.text('₹2,00,000'), findsOneWidget);
+      expect(
+        find.text(
+          'This certificate is for FY 2025–26. Upload the one for '
+          'FY 2026–27.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('proof-reupload-homeLoanInterest')),
+        findsOneWidget,
+      );
+      expect(find.text('Re-upload proof'), findsOneWidget);
+      // The canvas's `.it.rj`: the card stays white, the rejected row pink
+      // to its edges.
+      expect(cardColour(tester, '24B'), Colors.white);
+      final row = tester.widget<Container>(
+        find.byKey(const ValueKey('proof-homeLoanInterest')),
+      );
+      expect((row.decoration! as BoxDecoration).color, const Color(0xFFFFF7F7));
+      await capture(tester, payroll(), 'proofs_scrolled');
+    });
 
-    // A rejected proof says why and is re-uploaded the same way (once the
-    // "sent" toast has gone).
-    await tester.pump(const Duration(seconds: 6));
-    await settle(tester);
-    await tester.drag(find.byType(ListView).first, const Offset(0, -600));
-    await settle(tester);
-    expect(
-      find.textContaining('This certificate is for FY 2025–26'),
-      findsOneWidget,
-    );
-    await capture(tester, payroll(), 'proofs_scrolled');
-    await tap(
+    testWidgets('re-upload: the sheet sends the photo and the amount on it', (
       tester,
-      find.byKey(const ValueKey('proof-reupload-homeLoanInterest')),
-    );
-    expect(find.text('Re-upload proof'), findsWidgets);
-    await tap(tester, find.byKey(const ValueKey('proof-pick')));
-    await tap(tester, find.text('Submit for review'));
-    expect(
-      server.calls.last,
-      'POST /payroll/investment-proofs/homeLoanInterest',
-    );
-    expect(find.text('Rejected'), findsNothing);
+    ) async {
+      final server = await pumpPayroll(tester);
+      await openProofs(tester);
+      await tap(
+        tester,
+        find.byKey(const ValueKey('proof-reupload-homeLoanInterest')),
+      );
+      // The sheet, as drawn: title, what to send, the box, the amount.
+      expect(find.text('Re-upload proof'), findsNWidgets(2));
+      expect(
+        find.text('Home loan interest · Interest certificate from the bank'),
+        findsOneWidget,
+      );
+      expect(find.text('Interest certificate from the bank'), findsOneWidget);
+      expect(find.text('Photo or PDF'), findsOneWidget);
+      expect(find.text('Take photo'), findsOneWidget);
+      expect(find.text('Choose file'), findsOneWidget);
+      expect(find.text('Amount on proof'), findsOneWidget);
+      final amount = tester.widget<TextField>(
+        find.byKey(const ValueKey('proof-amount')),
+      );
+      expect(amount.controller!.text, '₹2,00,000');
+      InkWell submit() => tester.widget<InkWell>(
+        find
+            .ancestor(
+              of: find.text('Submit for review'),
+              matching: find.byType(InkWell),
+            )
+            .first,
+      );
+      expect(submit().onTap, isNull);
+      await capture(tester, payroll(), 'proof_reupload_sheet');
 
-    // An approved one opens to show what was sent.
-    await tester.drag(find.byType(ListView).first, const Offset(0, 1200));
-    await settle(tester);
-    await tap(tester, find.byKey(const ValueKey('proof-view-ppf')));
-    expect(find.text('Amount on proof'), findsOneWidget);
-    expect(find.text('ppf-proof.pdf'), findsOneWidget);
-    await capture(tester, payroll(), 'proof_view_sheet');
+      await tap(tester, find.byKey(const ValueKey('proof-take-photo')));
+      // The file takes the box's place; × puts the box back.
+      expect(find.text('camera-shot.jpg'), findsOneWidget);
+      expect(find.text('JPG'), findsOneWidget);
+      expect(find.text('2 KB'), findsOneWidget);
+      expect(find.text('Photo or PDF'), findsNothing);
+      expect(find.text('Take photo'), findsNothing);
+      expect(submit().onTap, isNotNull);
+      await tap(tester, find.byKey(const ValueKey('proof-remove-file')));
+      expect(find.text('camera-shot.jpg'), findsNothing);
+      expect(find.text('Photo or PDF'), findsOneWidget);
+      expect(submit().onTap, isNull);
+      await tap(tester, find.byKey(const ValueKey('proof-take-photo')));
+      await tester.enterText(
+        find.byKey(const ValueKey('proof-amount')),
+        '195000',
+      );
+      await tester.pump();
+      expect(find.text('₹1,95,000'), findsOneWidget);
+      expect(submit().onTap, isNotNull);
+      await capture(tester, payroll(), 'proof_reupload_sheet_file');
+      await tap(tester, find.text('Submit for review'));
+
+      expect(
+        server.calls.last,
+        'POST /payroll/investment-proofs/homeLoanInterest',
+      );
+      expect(server.uploadFileField, 'proof');
+      expect(server.uploadFileName, 'camera-shot.jpg');
+      expect(server.uploadFields, {'amountPaise': '19500000'});
+      // Back on the list: in review again, the reason and the pink gone.
+      expect(find.text('Submit for review'), findsNothing);
+      expect(find.text('Rejected'), findsNothing);
+      expect(find.textContaining('This certificate is for'), findsNothing);
+      expect(find.text('In review'), findsNWidgets(2));
+      expect(cardColour(tester, '24B'), Colors.white);
+    });
+
+    testWidgets('upload: Choose file, the declared amount, then in review', (
+      tester,
+    ) async {
+      final server = await pumpPayroll(tester);
+      await openProofs(tester);
+      await tap(
+        tester,
+        find.byKey(const ValueKey('proof-upload-lifeInsurance')),
+      );
+      expect(find.text('Upload proof'), findsOneWidget);
+      expect(
+        find.text('Life insurance · Premium receipt from the insurer'),
+        findsOneWidget,
+      );
+      await tap(tester, find.byKey(const ValueKey('proof-pick')));
+      expect(find.text('lic-receipt.pdf'), findsOneWidget);
+      await tap(tester, find.text('Submit for review'));
+      expect(server.uploadFileName, 'lic-receipt.pdf');
+      expect(server.uploadFields, {'amountPaise': '2840000'});
+      expect(find.text('Upload proof'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('proof-upload-lifeInsurance')),
+        findsNothing,
+      );
+      expect(find.text('In review'), findsNWidgets(2));
+
+      // An approved one opens to show what was sent.
+      await tester.pump(const Duration(seconds: 6));
+      await settle(tester);
+      await tap(tester, find.byKey(const ValueKey('proof-view-ppf')));
+      expect(find.text('Amount on proof'), findsOneWidget);
+      expect(find.text('ppf-proof.pdf'), findsOneWidget);
+      await capture(tester, payroll(), 'proof_view_sheet');
+    });
+
+    testWidgets('closed: what never made it, and what can still be done', (
+      tester,
+    ) async {
+      registerSupportTicketOpener(opener);
+      await pumpPayroll(
+        tester,
+        server: FakePayrollServer()..proofsClosed = true,
+      );
+      await openProofs(tester);
+      expect(find.text('Proofs closed on 31 Jan'), findsOneWidget);
+      // Life insurance and rent never sent, home loan sent back.
+      expect(find.text('3 of 6 proofs weren’t submitted'), findsOneWidget);
+      expect(find.text('Closed'), findsOneWidget);
+      // What counted: sent proofs proved, the rest not, for the year.
+      expect(find.text('WHAT COUNTED'), findsOneWidget);
+      expect(find.text('DECLARED ITEM'), findsOneWidget);
+      expect(find.text('NOT PROVED'), findsOneWidget);
+      expect(find.text('Rent (HRA)'), findsOneWidget);
+      expect(find.text('₹1,80,000'), findsOneWidget);
+      expect(find.text('₹1,25,000'), findsOneWidget); // proved
+      expect(find.text('₹4,08,400'), findsOneWidget); // not proved
+      expect(
+        find.text(
+          'Your PF (₹21,600), standard deduction and approved FBP bills '
+          'still count. They don’t need proofs.',
+        ),
+        findsOneWidget,
+      );
+      // Nothing can go up any more.
+      expect(find.text('Upload'), findsNothing);
+      expect(find.text('Re-upload proof'), findsNothing);
+      await capture(tester, payroll(), 'proofs_closed');
+
+      await tester.drag(find.byType(ListView).first, const Offset(0, -600));
+      await settle(tester);
+      expect(find.text('WHAT YOU CAN STILL DO'), findsOneWidget);
+      expect(find.text('Claim it back when you file'), findsOneWidget);
+      expect(
+        find.text(
+          'The extra tax isn’t lost. Claim these in your return by '
+          '31 Jul 2027 with the same documents, and get it back as a refund. '
+          'Your Form 16 will show only the proved items.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Have the proofs now?'), findsOneWidget);
+      expect(
+        find.text('Ask HR if they can still accept them for March pay'),
+        findsOneWidget,
+      );
+      // The claim comes first, then HR.
+      expect(
+        tester.getTopLeft(find.text('Claim it back when you file')).dy,
+        lessThan(tester.getTopLeft(find.text('Have the proofs now?')).dy),
+      );
+      await capture(tester, payroll(), 'proofs_closed_scrolled');
+
+      await tap(tester, find.byKey(const ValueKey('proofs-ask-hr')));
+      expect(opened, hasLength(1));
+      expect(opened.single, contains('FY 2026-27'));
+      expect(opened.single, contains('by 31 Jan'));
+      expect(opened.single, contains('for March pay'));
+    });
+
+    testWidgets('closed with every proof in: all counted, nothing left to do', (
+      tester,
+    ) async {
+      final server = FakePayrollServer()..proofsClosed = true;
+      server.proofStatus.updateAll((_, _) => 'approved');
+      await pumpPayroll(tester, server: server);
+      await openProofs(tester);
+      expect(find.text('All 6 proofs were submitted'), findsOneWidget);
+      expect(find.text('WHAT COUNTED'), findsOneWidget);
+      expect(find.text('₹5,33,400'), findsOneWidget); // all proved
+      expect(find.text('₹0'), findsOneWidget); // nothing not proved
+      await tester.drag(find.byType(ListView).first, const Offset(0, -600));
+      await settle(tester);
+      expect(find.text('WHAT YOU CAN STILL DO'), findsNothing);
+      expect(find.text('Have the proofs now?'), findsNothing);
+    });
+
+    testWidgets('rent: the year\'s amount and the landlord PAN', (
+      tester,
+    ) async {
+      final server = await pumpPayroll(tester);
+      await openProofs(tester);
+      await tap(tester, find.byKey(const ValueKey('proof-upload-rentMonthly')));
+      expect(
+        find.text('Rent · Rent receipts or the rent agreement'),
+        findsOneWidget,
+      );
+      final amount = tester.widget<TextField>(
+        find.byKey(const ValueKey('proof-amount')),
+      );
+      expect(amount.controller!.text, '₹1,80,000');
+      expect(find.text('Landlord PAN'), findsOneWidget);
+      await tap(tester, find.byKey(const ValueKey('proof-pick')));
+      InkWell submit() => tester.widget<InkWell>(
+        find
+            .ancestor(
+              of: find.text('Submit for review'),
+              matching: find.byType(InkWell),
+            )
+            .first,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('proof-landlord-pan')),
+        'abcde1234',
+      );
+      await tester.pump();
+      expect(find.byKey(const ValueKey('proof-pan-error')), findsOneWidget);
+      expect(submit().onTap, isNull);
+      await tester.enterText(
+        find.byKey(const ValueKey('proof-landlord-pan')),
+        'abcde1234f',
+      );
+      await tester.pump();
+      expect(find.byKey(const ValueKey('proof-pan-error')), findsNothing);
+      await capture(tester, payroll(), 'proof_rent_sheet');
+      await tap(tester, find.text('Submit for review'));
+      expect(server.uploadFields, {
+        'amountPaise': '18000000',
+        'landlordPan': 'ABCDE1234F',
+      });
+      expect(
+        find.byKey(const ValueKey('proof-upload-rentMonthly')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the sheet\'s × closes it without sending', (tester) async {
+      final server = await pumpPayroll(tester);
+      await openProofs(tester);
+      await tap(
+        tester,
+        find.byKey(const ValueKey('proof-upload-lifeInsurance')),
+      );
+      expect(find.text('Upload proof'), findsOneWidget);
+      await tap(tester, find.byKey(const ValueKey('proof-sheet-close')));
+      expect(find.text('Upload proof'), findsNothing);
+      expect(server.uploadFields, isNull);
+      expect(
+        find.byKey(const ValueKey('proof-upload-lifeInsurance')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('no due date set: says so, nothing to upload yet', (
+      tester,
+    ) async {
+      await pumpPayroll(
+        tester,
+        server: FakePayrollServer()..proofsDueSet = false,
+      );
+      await openProofs(tester);
+      expect(find.byKey(const ValueKey('proofs-not-set-up')), findsOneWidget);
+      expect(find.textContaining('Last date to upload'), findsNothing);
+      expect(find.text('Upload'), findsNothing);
+      expect(find.text('Not uploaded'), findsNWidgets(2));
+      expect(find.text('Re-upload proof'), findsNothing);
+    });
   });
 
   testWidgets('payslips → a payslip with its loss of pay', (tester) async {
