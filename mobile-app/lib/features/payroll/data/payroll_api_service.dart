@@ -337,3 +337,51 @@ class PayrollApiService {
     return json;
   }
 }
+
+// ---------------------------------------------------------------- FBP
+
+/// The FBP page and its bills (GET /payroll/me/fbp …).
+extension PayrollFbpApi on PayrollApiService {
+  Future<FbpPlan> fetchFbp() async {
+    final json = await _json('GET', '/payroll/me/fbp');
+    return FbpPlan.fromJson(PayrollApiService._object(json['fbp']));
+  }
+
+  Future<FbpHead> fetchFbpHead(String code) async {
+    final json = await _json(
+      'GET',
+      '/payroll/me/fbp/${Uri.encodeComponent(code)}',
+    );
+    return FbpHead.fromJson(PayrollApiService._object(json['head']));
+  }
+
+  /// Sends (or, after a rejection, sends again) the bill for [period]
+  /// ("2026-08") of head [code]. The head comes back as it now stands.
+  Future<FbpHead> uploadFbpBill({
+    required String code,
+    required String period,
+    required PayrollUpload file,
+    required int amountPaise,
+  }) async {
+    final request =
+        http.MultipartRequest(
+            'POST',
+            Uri.parse(
+              '$_baseUrl/payroll/me/fbp/${Uri.encodeComponent(code)}/bills',
+            ),
+          )
+          ..headers['Authorization'] = 'Bearer ${session.token}'
+          ..fields['period'] = period
+          ..fields['amountPaise'] = '$amountPaise'
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              'proof',
+              file.bytes,
+              filename: file.name,
+              contentType: file.mediaType,
+            ),
+          );
+    final json = await _send(request, limit: PayrollApiService.uploadTimeout);
+    return FbpHead.fromJson(PayrollApiService._object(json['head']));
+  }
+}

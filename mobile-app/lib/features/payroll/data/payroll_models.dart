@@ -842,3 +842,258 @@ class InvestmentProofs {
     ],
   );
 }
+
+// ---------------------------------------------------------------- FBP
+
+/// Whether the flexible split can still change this financial year
+/// (GET /payroll/me/fbp › lock).
+class FbpLock {
+  const FbpLock({
+    required this.locked,
+    required this.notConfigured,
+    this.effectiveFrom,
+    this.closesOn,
+  });
+
+  /// No change made now can reach this FY's pay: the split stays as it is
+  /// until the FY ends (a change goes through HR).
+  final bool locked;
+
+  /// HR has not set the split cutoff day, so when a change applies is not
+  /// known: not locked, but not set up either.
+  final bool notConfigured;
+
+  /// While open: the month a change made now starts from, and the last day
+  /// to make it for that month.
+  final DateTime? effectiveFrom;
+  final DateTime? closesOn;
+
+  factory FbpLock.fromJson(Map<String, dynamic> json) => FbpLock(
+    locked: _bool(json['locked']),
+    notConfigured: _bool(json['notConfigured']),
+    effectiveFrom: payrollMonth(json['effectiveFrom']),
+    closesOn: payrollDate(json['closesOn']),
+  );
+}
+
+/// One flexible head on the FBP page: this month's amount and this FY's
+/// bills so far.
+class FbpHeadSummary {
+  const FbpHeadSummary({
+    required this.code,
+    required this.name,
+    required this.amountPaise,
+    required this.months,
+    required this.approved,
+    required this.inReview,
+    required this.rejected,
+    required this.toUpload,
+    required this.needsAction,
+  });
+
+  final String code;
+  final String name;
+  final int amountPaise;
+
+  /// The months this FY so far that want a bill.
+  final int months;
+  final int approved;
+  final int inReview;
+  final int rejected;
+  final int toUpload;
+
+  /// Bills still to send: not uploaded or rejected.
+  final int needsAction;
+
+  factory FbpHeadSummary.fromJson(Map<String, dynamic> json) => FbpHeadSummary(
+    code: _string(json['code']),
+    name: _string(json['name']),
+    amountPaise: _paise(json['amountPaise']),
+    months: _int(json['months']),
+    approved: _int(json['approved']),
+    inReview: _int(json['inReview']),
+    rejected: _int(json['rejected']),
+    toUpload: _int(json['toUpload']),
+    needsAction: _int(json['needsAction']),
+  );
+}
+
+/// The FBP page: the month's split, each head's bills, and the lock.
+class FbpPlan {
+  const FbpPlan({
+    required this.available,
+    required this.fy,
+    required this.period,
+    required this.assignedPaise,
+    required this.heads,
+    required this.toUpload,
+    required this.toReupload,
+    required this.lock,
+    this.poolPaise,
+    this.unassignedPaise,
+    this.declaredFrom,
+    this.declaredAt,
+    this.billsDueOn,
+    this.missing = const [],
+  });
+
+  /// False when the salary has no flexible heads.
+  final bool available;
+  final String fy;
+
+  /// The month the summary is for, "2026-10".
+  final String period;
+
+  /// Null while HR has not set the pool on the salary template.
+  final int? poolPaise;
+  final int assignedPaise;
+
+  /// Paid with salary and taxed in full; null while there is no pool.
+  final int? unassignedPaise;
+
+  /// The split this month's amounts come from; null when none was declared.
+  final DateTime? declaredFrom;
+  final DateTime? declaredAt;
+  final List<FbpHeadSummary> heads;
+  final int toUpload;
+  final int toReupload;
+  final DateTime? billsDueOn;
+  final FbpLock lock;
+
+  /// What HR has not set: "flexiblePoolPaise", "billsDue", "splitCutoffDay".
+  final List<String> missing;
+
+  factory FbpPlan.fromJson(Map<String, dynamic> json) {
+    final summary = _map(json['summary']);
+    final declared = _map(json['declared']);
+    return FbpPlan(
+      available: _bool(json['available']),
+      fy: _string(json['fy']),
+      period: _string(json['period']),
+      poolPaise: _paiseOrNull(json['poolPaise']),
+      assignedPaise: _paise(json['assignedPaise']),
+      unassignedPaise: _paiseOrNull(json['unassignedPaise']),
+      declaredFrom: payrollMonth(declared['effectiveFrom']),
+      declaredAt: _moment(declared['submittedAt']),
+      heads: _list(json['heads']).map(FbpHeadSummary.fromJson).toList(),
+      toUpload: _int(summary['toUpload']),
+      toReupload: _int(summary['toReupload']),
+      billsDueOn: payrollDate(json['billsDueOn']),
+      lock: FbpLock.fromJson(_map(json['lock'])),
+      missing: [
+        for (final item in json['missing'] as List<dynamic>? ?? const [])
+          if (item is String) item,
+      ],
+    );
+  }
+}
+
+enum FbpBillStatus { approved, inReview, rejected, notUploaded }
+
+FbpBillStatus _fbpBillStatus(Object? value) => switch (value) {
+  'approved' => FbpBillStatus.approved,
+  'in_review' => FbpBillStatus.inReview,
+  'rejected' => FbpBillStatus.rejected,
+  _ => FbpBillStatus.notUploaded,
+};
+
+/// The bill sent for a month, as HR sees it.
+class FbpBill {
+  const FbpBill({
+    required this.id,
+    required this.amountPaise,
+    this.fileName,
+    this.uploadedAt,
+    this.decidedAt,
+    this.reason,
+  });
+
+  final String id;
+  final int amountPaise;
+  final String? fileName;
+  final DateTime? uploadedAt;
+  final DateTime? decidedAt;
+
+  /// HR's note when it was rejected.
+  final String? reason;
+
+  factory FbpBill.fromJson(Map<String, dynamic> json) => FbpBill(
+    id: _string(json['id']),
+    amountPaise: _paise(json['amountPaise']),
+    fileName: _stringOrNull(json['fileName']),
+    uploadedAt: _moment(json['uploadedAt']),
+    decidedAt: _moment(json['decidedAt']),
+    reason: _stringOrNull(json['reason']),
+  );
+}
+
+/// One month of a head: its amount and where its bill stands.
+class FbpMonth {
+  const FbpMonth({
+    required this.period,
+    required this.amountPaise,
+    required this.status,
+    required this.canUpload,
+    this.bill,
+  });
+
+  /// "2026-08".
+  final String period;
+  final int amountPaise;
+  final FbpBillStatus status;
+  final FbpBill? bill;
+
+  /// A bill can be sent for it now.
+  final bool canUpload;
+
+  factory FbpMonth.fromJson(Map<String, dynamic> json) {
+    final bill = json['bill'];
+    return FbpMonth(
+      period: _string(json['period']),
+      amountPaise: _paise(json['amountPaise']),
+      status: _fbpBillStatus(json['status']),
+      canUpload: _bool(json['canUpload']),
+      bill: bill is Map<String, dynamic> ? FbpBill.fromJson(bill) : null,
+    );
+  }
+}
+
+/// One head's page (GET /payroll/me/fbp/:code): every month of this FY so
+/// far and its bill.
+class FbpHead {
+  const FbpHead({
+    required this.code,
+    required this.name,
+    required this.fy,
+    required this.amountPaise,
+    required this.months,
+    this.billType,
+    this.billsDueOn,
+    this.uploadsBlocked,
+  });
+
+  final String code;
+  final String name;
+  final String fy;
+  final int amountPaise;
+  final List<FbpMonth> months;
+
+  /// The bill type new bills go in as, as HR named it ("Fuel").
+  final String? billType;
+  final DateTime? billsDueOn;
+
+  /// Why bills can't be sent now (not set up, or closed), fit to show; null
+  /// while they can.
+  final String? uploadsBlocked;
+
+  factory FbpHead.fromJson(Map<String, dynamic> json) => FbpHead(
+    code: _string(json['code']),
+    name: _string(json['name']),
+    fy: _string(json['fy']),
+    amountPaise: _paise(json['amountPaise']),
+    months: _list(json['months']).map(FbpMonth.fromJson).toList(),
+    billType: _stringOrNull(json['billType']),
+    billsDueOn: payrollDate(json['billsDueOn']),
+    uploadsBlocked: _stringOrNull(_map(json['uploadsBlocked'])['message']),
+  );
+}
