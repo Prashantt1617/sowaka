@@ -233,21 +233,22 @@ replaces any split before it from that month on.
   "split": {
     "available": true,                 // false: no flexible components; everything below is empty
     "notConfigured": false,            // true: HR has not set something it needs; review/save answer 409
-    "missing": [],                     // of "flexiblePoolPaise" | "splitCutoffDay" | "billsDue"
+    "missing": [],                     // of "flexiblePoolPaise" | "splitCutoffDay" | "billsDue" | "splitStepPaise"
     "poolPaise": 600000,               // null when the template has no flexiblePoolPaise
     "assignedPaise": 450000,
     "unassignedPaise": 150000,
+    "stepPaise": 50000,                // each − / + moves a head this much (HR's splitStepPaise, §8); null: not set up (missing names it)
     "components": [
       {
         "code": "FUEL",
         "name": "Fuel & vehicle",      // payslip name
         "limitPaise": 300000,          // "Max ₹3,000"
         "amountPaise": 250000,         // what applies for window.effectiveFrom today
-        "stepPaise": 10000,            // suggested +/- step (₹100); any whole-rupee amount is accepted
+        "stepPaise": 50000,            // the same step as above (null when not set); any whole-rupee amount is accepted
         "bills": { "approved": 4, "inReview": 1, "rejected": 2 }   // this FY's bills for this head
       }
     ],
-    "current": { "effectiveFrom": "2026-04", "submittedAt": "2026-04-10T09:12:00.000Z" },  // the split in force for window.effectiveFrom; null: the template's amounts
+    "current": { "effectiveFrom": "2026-04", "submittedAt": "2026-04-10T09:12:00.000Z", "billsAcknowledgedAt": "2026-04-10T09:12:00.000Z" },  // billsAcknowledgedAt: when the bills tick was given; null on splits saved before it was kept;  // the split in force for window.effectiveFrom; null: the template's amounts
     "window": {                        // without a splitCutoffDay: { "open": false, "effectiveFrom": null, "effectiveTo": null, "closesOn": null, "reason": "payroll_not_configured" }
       "open": true,                    // always true today: some month is always open (kept for a future hard close)
       "effectiveFrom": "2026-11",      // the first month a change made now applies to
@@ -268,7 +269,9 @@ Checks a split and shows what it will be, without saving. Body:
 { "amounts": { "FUEL": 300000, "INTERNET": 100000, "TELEPHONE": 150000, "BOOKS": 50000 } }
 ```
 
-Codes left out keep their current amount.
+Codes left out keep their current amount. A split that changes nothing from
+the one in force (or, with none, the structure's own amounts) is refused
+(`400`, "Nothing has changed in your split …").
 
 ```jsonc
 {
@@ -282,7 +285,7 @@ Codes left out keep their current amount.
     "totalPaise": 600000,
     "poolPaise": 600000,
     "unassignedPaise": 0,
-    "monthlyTaxSavingPaise": 94000,    // about this much less tax a month once bills are approved; null when it cannot be worked out
+    "monthlyTaxSavingPaise": 94000,    // about this much less tax a month once bills are approved, for the whole new split (the TDS engine on the FY's tax rules); null when the rules are not set up or it cannot be worked out
     "billsDueOn": "2027-03-31"
   }
 }
@@ -292,7 +295,7 @@ Codes left out keep their current amount.
 
 Saves it. Body: `{ "amounts": { … }, "acknowledged": true, "effectiveFrom": "2026-11" }` —
 `acknowledged` is the "I'll keep bills … and upload them by 31 Mar" tick and
-must be `true`; `effectiveFrom` (optional, recommended) is the month the
+must be `true` (the split row keeps when it was given, `billsAcknowledgedAt`); `effectiveFrom` (optional, recommended) is the month the
 Review screen showed: if the window has moved since (the cutoff passed or a
 run locked that month), the save is refused with `409` and the app should
 review again.
@@ -310,11 +313,12 @@ top of the structure's own values; months before it keep what they had.
 Errors (both review and save):
 - `400` an unknown or non-flexible code; an amount that is negative, not whole
   rupees (multiple of 100 paise), or above its `limitPaise`; the total above
-  `poolPaise`; `acknowledged` not true (save only).
+  `poolPaise`; nothing changed from the split in force; `acknowledged` not
+  true (save only).
 - `404` no salary structure assigned.
 - `409` no flexible components on the template; (save) `effectiveFrom` no
-  longer matches the window; `payroll_not_configured` (pool, cutoff day or
-  bills date not set; `details.missing` names them).
+  longer matches the window; `payroll_not_configured` (pool, cutoff day,
+  bills date or split step not set; `details.missing` names them).
 
 ---
 
@@ -604,8 +608,8 @@ such person), `400` bad `fy`.
     "available": true,                   // the template has flexible components today
     "template": { "code": "FLEX", "name": "Flexible" },   // null without a structure
     "poolPaise": 600000,                 // today's pool: the template's flexiblePoolPaise; null without one (or without a structure)
-    "notConfigured": false,              // true: the pool, the cutoff day or the bills date is not set
-    "missing": [],                       // of "flexiblePoolPaise" | "splitCutoffDay" | "billsDue"
+    "notConfigured": false,              // true: the pool, the cutoff day, the bills date or the split step is not set
+    "missing": [],                       // of "flexiblePoolPaise" | "splitCutoffDay" | "billsDue" | "splitStepPaise"
     "asOf": "2026-10",                   // the month "in force now" means: this month; a past FY's last month; null for a future FY
     "baseline": [                        // what applies with no split: the structure's own amounts
       { "code": "FUEL", "name": "Fuel & vehicle", "amountPaise": 250000, "limitPaise": 300000 }
@@ -616,6 +620,7 @@ such person), `400` bad `fy`.
         "effectiveFrom": "2026-07",
         "effectiveTo": "2026-10",        // the month before the next version, else the FY's last month
         "submittedAt": "2026-07-10T09:12:00.000Z",
+        "billsAcknowledgedAt": "2026-07-10T09:12:00.000Z",   // when they ticked "I'll keep bills …"; null on splits saved before it was kept
         "inForce": false,
         "poolPaise": 600000,             // the pool it was saved against
         "poolSource": "saved",           // "saved" | "current_template" (older splits, saved before the pool was kept) | null
@@ -650,7 +655,8 @@ Payroll access only (`403` otherwise); the viewer's own company. Query: `fy`
     "splitCutoffDay": 15,              // day of the month until which that month's split can change
     "declarationDue": "11-30",         // MM-DD, in the FY's first calendar year (April to December)
     "proofsDue": "01-31",              // MM-DD, in the FY's second calendar year (January to March)
-    "billsDue": null                   // MM-DD, in the FY's second calendar year (January to March)
+    "billsDue": null,                  // MM-DD, in the FY's second calendar year (January to March)
+    "splitStepPaise": 50000            // paise, whole rupees: each − / + on My split moves a head this much. Not a deadline (not in missing, does not hold Payroll off); while null the split says not set up
   },
   "missing": ["billsDue"],             // deadlines still to set; Payroll can be switched on only when empty
   "ready": false,                      // missing is empty
@@ -667,7 +673,7 @@ Payroll access only (`403` otherwise); the viewer's own company. Query: `fy`
 
 ### `PUT /admin/payroll/employee-app-settings`
 
-Body: any of the five fields; a field left out stays as it is, `null`
+Body: any of the six fields; a field left out stays as it is, `null`
 clears it (it is then missing: there is no default to fall back to). Query: `fy` (optional; only used to check a full date).
 Response: the same body as the GET.
 
@@ -681,6 +687,7 @@ Response: the same body as the GET.
   in the app") until every deadline is set, counting the ones in the same
   request. Clearing a deadline while it is on is refused the same way.
 - `splitCutoffDay`: a whole day of the month, **1 to 28**.
+- `splitStepPaise`: paise in whole rupees, **100 to 1000000** (₹1 to ₹10,000).
 - `declarationDue`, `proofsDue`, `billsDue`: `"MM-DD"`, or a full `"YYYY-MM-DD"`
   date (only its month and day are kept: the deadline repeats every FY). They
   must fall **within the FY**: `declarationDue` from 1 April to 31 December,

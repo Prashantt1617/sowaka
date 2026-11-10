@@ -155,6 +155,8 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     early?.status === 409 && early.details?.reason === 'payroll_not_configured' && (early.details?.missing as string[]).join() === 'declarationDue,proofsDue,billsDue'
     && /declarationDue, proofsDue, billsDue/.test(early.message ?? ''), early);
   check('settings: a refused change saves nothing', (await companies().findOne({ id: ORG }))?.payrollEmployee === undefined);
+  // My split's − / + step (not a deadline: Payroll can be switched on without it, the split then says not set up).
+  check('settings: the split step is set like the rest (₹500)', (await setEmployeeAppSettingsForHr('hr', FY, { splitStepPaise: 50_000 }, oct20)).settings.splitStepPaise === 50_000);
 
   // —— what the app's screens say while a deadline is not set ——
   await tdsConfigs().insertMany(TDS_SEED.map((c) => ({ ...c, createdAt: now, updatedAt: now })));

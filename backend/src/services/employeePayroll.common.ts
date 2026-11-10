@@ -71,6 +71,24 @@ export const NOT_CONFIGURED = (missing: string[], message = askHr('HR has not fi
 export const dayLabel = (day: string) =>
   new Date(`${day}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
+/** The most a split step may be: ₹10,000 (more than any flexible head's month). */
+export const SPLIT_STEP_MAX_PAISE = 10_000_00;
+
+/**
+ * How much each − / + on My split moves a head, as HR set it: whole rupees,
+ * ₹1 to ₹10,000. Null when not set (or unreadable): the split is then not set
+ * up (`splitStepPaise` missing), never a step made up in code.
+ */
+export function splitStepFrom(s: EmployeePayrollSettings | undefined | null): number | null {
+  const v = s?.splitStepPaise;
+  return typeof v === 'number' && Number.isInteger(v) && v >= 100 && v <= SPLIT_STEP_MAX_PAISE && v % 100 === 0 ? v : null;
+}
+
+export async function splitStepOf(org: string): Promise<number | null> {
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, payrollEmployee: 1 } });
+  return splitStepFrom(company?.payrollEmployee);
+}
+
 export async function deadlinesOf(org: string): Promise<PayrollDeadlines> {
   const company = await companies().findOne({ id: org }, { projection: { _id: 0, payrollEmployee: 1 } });
   return deadlinesFrom(company?.payrollEmployee);

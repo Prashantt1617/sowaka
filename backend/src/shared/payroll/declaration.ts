@@ -180,9 +180,15 @@ export interface FlexibleComponentLimit {
 
 /**
  * Why a split cannot be saved, or null when it can: every code flexible, each
- * amount whole rupees within its limit, and the total within the pool.
+ * amount whole rupees within its limit, the total within the pool, and, given
+ * the split in force (`previous`), at least one head changed from it.
  */
-export function splitProblem(amounts: Record<string, number>, components: FlexibleComponentLimit[], poolPaise: number): string | null {
+export function splitProblem(
+  amounts: Record<string, number>,
+  components: FlexibleComponentLimit[],
+  poolPaise: number,
+  previous?: Record<string, number>,
+): string | null {
   const byCode = new Map(components.map((c) => [c.code, c]));
   let total = 0;
   for (const [code, value] of Object.entries(amounts)) {
@@ -194,6 +200,9 @@ export function splitProblem(amounts: Record<string, number>, components: Flexib
     total += value;
   }
   if (total > poolPaise) return `The split adds up to ₹${(total / 100).toLocaleString('en-IN')}, more than your ₹${(poolPaise / 100).toLocaleString('en-IN')} a month`;
+  if (previous && components.every((c) => (amounts[c.code] ?? 0) === (previous[c.code] ?? 0))) {
+    return 'Nothing has changed in your split. Change at least one head before you submit it';
+  }
   return null;
 }
 
