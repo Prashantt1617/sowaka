@@ -32,6 +32,8 @@ part 'placements_screen.dart';
 part 'payroll_screen.dart';
 part 'payroll_split.dart';
 part 'payroll_proofs.dart';
+part 'payroll_earnings.dart';
+part 'payroll_rev_stubs_earnings.dart';
 part '../../placements/presentation/placements_style.dart';
 part '../../placements/presentation/candidate_pages.dart';
 part '../../placements/presentation/client_pages.dart';

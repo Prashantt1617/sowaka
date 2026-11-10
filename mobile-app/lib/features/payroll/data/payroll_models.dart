@@ -599,6 +599,167 @@ class FbpReview {
   );
 }
 
+// ---------------------------------------------------------------- earnings
+
+/// One part of the yearly salary: Basic, House rent allowance, an FBP head …
+class EarningsComponent {
+  const EarningsComponent({
+    required this.code,
+    required this.name,
+    required this.annualPaise,
+  });
+
+  final String code;
+  final String name;
+  final int annualPaise;
+
+  factory EarningsComponent.fromJson(Map<String, dynamic> json) =>
+      EarningsComponent(
+        code: _string(json['code']),
+        name: _string(json['name']),
+        annualPaise: _paise(json['annualPaise']),
+      );
+}
+
+/// One paid month of the year: a released payslip, or this pay period's
+/// estimate.
+class EarningsMonth {
+  const EarningsMonth({
+    required this.period,
+    required this.label,
+    required this.grossPaise,
+    required this.netPaise,
+    required this.unpaidDays,
+    required this.isEstimate,
+    this.payslipId,
+  });
+
+  /// "2026-10".
+  final String period;
+
+  /// "October 2026".
+  final String label;
+
+  /// Gross paid that month (after loss of pay).
+  final int grossPaise;
+
+  /// What reached the bank (or will, for the estimate).
+  final int netPaise;
+
+  /// Loss-of-pay days; halves count.
+  final double unpaidDays;
+  final bool isEstimate;
+
+  /// The released payslip behind the month; null for the estimate.
+  final String? payslipId;
+
+  factory EarningsMonth.fromJson(Map<String, dynamic> json) => EarningsMonth(
+    period: _string(json['period']),
+    label: _string(json['label']),
+    grossPaise: _paise(json['grossPaise']),
+    netPaise: _paise(json['netPaise']),
+    unpaidDays: _number(json['unpaidDays']),
+    isEstimate: json['status'] == 'estimate',
+    payslipId: _stringOrNull(json['payslipId']),
+  );
+}
+
+/// Why a part of Earnings can't be shown yet: something HR sets up.
+class EarningsNotSetUp {
+  const EarningsNotSetUp({required this.reason, required this.message});
+
+  final String reason;
+  final String message;
+
+  static EarningsNotSetUp? fromJson(Object? value) {
+    final json = _map(value);
+    if (json.isEmpty) return null;
+    return EarningsNotSetUp(
+      reason: _string(json['reason']),
+      message: _string(json['message']),
+    );
+  }
+}
+
+/// A financial year's earnings (GET /payroll/me/earnings): the years with
+/// pay, the year's gross and what came off it, the yearly salary, and each
+/// paid month.
+class PayrollEarnings {
+  const PayrollEarnings({
+    required this.fy,
+    required this.current,
+    required this.fys,
+    required this.span,
+    required this.grossPaise,
+    required this.taxPaise,
+    required this.pfPtPaise,
+    required this.otherDeductionsPaise,
+    required this.reimbursementsPaise,
+    required this.takeHomePaise,
+    required this.fromStructure,
+    required this.components,
+    required this.annualTotalPaise,
+    required this.months,
+    this.componentsNotSetUp,
+    this.estimateNotSetUp,
+  });
+
+  /// "2026-27".
+  final String fy;
+
+  /// The year it is now: its gross is "so far".
+  final bool current;
+
+  /// The years with pay, newest first.
+  final List<String> fys;
+
+  /// "Apr–Oct"; null with no month paid.
+  final String? span;
+  final int grossPaise;
+  final int taxPaise;
+  final int pfPtPaise;
+  final int otherDeductionsPaise;
+  final int reimbursementsPaise;
+  final int takeHomePaise;
+
+  /// The yearly salary is the salary structure (the current year); else
+  /// what the year's payslips were entitled to.
+  final bool fromStructure;
+  final List<EarningsComponent> components;
+  final int annualTotalPaise;
+  final List<EarningsMonth> months;
+  final EarningsNotSetUp? componentsNotSetUp;
+  final EarningsNotSetUp? estimateNotSetUp;
+
+  factory PayrollEarnings.fromJson(Map<String, dynamic> json) =>
+      PayrollEarnings(
+        fy: _string(json['fy']),
+        current: _bool(json['current']),
+        fys: [
+          if (json['fys'] is List)
+            for (final fy in json['fys'] as List)
+              if (fy is String) fy,
+        ],
+        span: _stringOrNull(json['span']),
+        grossPaise: _paise(json['grossPaise']),
+        taxPaise: _paise(json['taxPaise']),
+        pfPtPaise: _paise(json['pfPtPaise']),
+        otherDeductionsPaise: _paise(json['otherDeductionsPaise']),
+        reimbursementsPaise: _paise(json['reimbursementsPaise']),
+        takeHomePaise: _paise(json['takeHomePaise']),
+        fromStructure: json['componentsSource'] != 'payslips',
+        components: _list(
+          json['components'],
+        ).map(EarningsComponent.fromJson).toList(),
+        annualTotalPaise: _paise(json['annualTotalPaise']),
+        months: _list(json['months']).map(EarningsMonth.fromJson).toList(),
+        componentsNotSetUp: EarningsNotSetUp.fromJson(
+          json['componentsNotSetUp'],
+        ),
+        estimateNotSetUp: EarningsNotSetUp.fromJson(json['estimateNotSetUp']),
+      );
+}
+
 // ---------------------------------------------------------------- declaration
 
 class TaxDeclarationItem {
