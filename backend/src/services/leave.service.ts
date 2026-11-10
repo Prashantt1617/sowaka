@@ -937,8 +937,6 @@ function inclusiveDays(startDate: Date, endDate: Date): number {
   return Math.floor((endDate.getTime() - startDate.getTime()) / 86_400_000) + 1;
 }
 
-/** YYYY-MM-DD company holidays for the employee's state inside a date range. */
-
 /**
  * Leave days consumed by a range: every calendar day in it, less the company's
  * week-offs — from the grid HR set under Shifts › Policies, so the 2nd Saturday

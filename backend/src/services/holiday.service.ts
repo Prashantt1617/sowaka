@@ -52,6 +52,9 @@ export async function listCompanyHolidays(
   }
   const keys = requested ? [requested.toLowerCase()] : locationKeysFor(user);
   if (!keys.length) throw new HolidayError(400, 'A work location is required');
+  // The employee's own list is the days the rest of the system treats as
+  // their holidays, picked by the same rule.
+  if (!requested) return (await holidaysForUser({ ...user, org })).map(toHolidayView);
   const documents = await holidays()
     .find({ org, $or: [{ state: { $in: keys } }, { state: ALL_LOCATIONS }] })
     .sort({ date: 1 })
@@ -242,12 +245,13 @@ export async function holidaysForUser(
   range?: { from: Date; to: Date },
 ) {
   if (!user.org) return [];
-  const filter: Record<string, unknown> = {
-    org: user.org,
-    $or: [{ state: { $in: locationKeysFor(user) } }, { state: ALL_LOCATIONS }],
-  };
+  const filter: Record<string, unknown> = { org: user.org };
   if (range) filter.date = { $gte: range.from, $lte: range.to };
-  return holidays().find(filter).sort({ date: 1 }).toArray();
+  // Every row of the org in the range is read and the one rule below picks
+  // this employee's, so the match is exactly the one the org report applies
+  // to many people at once. An org keeps a few dozen holidays a year.
+  const rows = await holidays().find(filter).sort({ date: 1 }).toArray();
+  return rows.filter((row) => holidayAppliesTo(row, user));
 }
 
 /** The same, as a set of `YYYY-MM-DD` keys. */
@@ -264,12 +268,30 @@ export async function holidayDatesForUser(
  * before holidays moved to work location may still carry a state or a branch,
  * so all three are matched rather than only the winner.
  */
-function locationKeysFor(user: { state?: string; location?: string; branch?: string }): string[] {
+export function locationKeysFor(user: { state?: string; location?: string; branch?: string }): string[] {
   return [...new Set(
     [user.location, user.state, user.branch]
       .map((value) => (value ?? '').trim().toLowerCase())
       .filter(Boolean),
   )];
+}
+
+/**
+ * Whether one holiday row is a day off for this employee. This is the only
+ * rule for it: the app's calendar, the dashboard's attendance report, leave
+ * day counts, reminders and payroll all come here, so none of them can count
+ * a local holiday as an absence while another shows it as a holiday. A row
+ * for every location (`*`, or an old row with no location at all) applies to
+ * everyone; any other row applies when its location, trimmed and lowercased,
+ * is the employee's location, state or branch.
+ */
+export function holidayAppliesTo(
+  holiday: { state?: string | null },
+  user: { state?: string; location?: string; branch?: string },
+): boolean {
+  const key = (holiday.state ?? '').trim().toLowerCase();
+  if (!key || key === ALL_LOCATIONS) return true;
+  return locationKeysFor(user).includes(key);
 }
 
 function toHolidayView(holiday: Holiday & { _id: ObjectId }): HolidayView {

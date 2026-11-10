@@ -1,4 +1,4 @@
-import { companies, holidays, users } from '../config/db';
+import { companies, users } from '../config/db';
 import { Company } from '../models/company.model';
 import { cycleWindow, DEFAULT_CYCLE_START_DAY, normaliseStartDay, periodFor } from './cycle';
 import { AdminError } from './admin.service';
@@ -182,15 +182,6 @@ export async function updateCompanySettings(
 /** True when `date` falls on a configured week-off weekday (UTC). */
 export function isWeekoffDay(date: Date, weekoffDays: number[]): boolean {
   return weekoffDays.includes(date.getUTCDay());
-}
-
-/** Distinct YYYY-MM-DD holiday dates for an org (UTC day granularity). */
-export async function getOrgHolidayDates(org: string | undefined): Promise<Set<string>> {
-  if (!org) return new Set();
-  const rows = await holidays().find({ org }).project({ date: 1 }).toArray();
-  return new Set(
-    rows.map((row) => (row as { date: Date }).date.toISOString().slice(0, 10)),
-  );
 }
 
 // ------------------------------------------------------- organisation profile

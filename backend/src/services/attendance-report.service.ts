@@ -6,7 +6,7 @@ import { DayMark, OrgShiftPolicy, PunchFormat, ShiftTemplate, isUnpaidLeaveType 
 import { User } from '../models/user.model';
 import { getOrgShiftPolicy, isWeekOffDay, onShiftSetupChanged } from './shift.service';
 import { SHIFT_UTC_OFFSET, markForDay, minutesAfterShiftStart, minutesBeforeShiftEnd, normalisePunches } from './attendance.service';
-import { holidaysForUser } from './holiday.service';
+import { holidayAppliesTo, holidaysForUser } from './holiday.service';
 
 /**
  * Reports › Attendance — how a date range actually went, one graded row per
@@ -345,20 +345,16 @@ export async function attendanceReport(
 
   const policyOn = dayPolicyResolver({ roster, templates, orgPolicy, timelines });
 
-  // ── holidays, by the location they apply to ───────────────────────────
-  const holidaysEverywhere = new Set<string>();
-  const holidaysByState = new Map<string, Set<string>>();
-  for (const holiday of holidayRows) {
-    const key = keyOf(holiday.date);
-    if (!holiday.state || holiday.state === '*') holidaysEverywhere.add(key);
-    else {
-      const set = holidaysByState.get(holiday.state) ?? new Set<string>();
-      set.add(key);
-      holidaysByState.set(holiday.state, set);
-    }
+  // ── holidays, by the people who observe them ──────────────────────────
+  // Each person's days off come from the rule their own calendar uses
+  // (holidayAppliesTo), so a holiday keyed to their work location is a
+  // holiday here too, and payroll, which reads this report, does not dock it.
+  const holidayDatesOf = new Map<string, Set<string>>();
+  for (const user of roster) {
+    const observed = holidayRows.filter((holiday) => holidayAppliesTo(holiday, user));
+    holidayDatesOf.set(user.userId, new Set(observed.map((holiday) => keyOf(holiday.date))));
   }
-  const isHoliday = (user: Person, key: string) =>
-    holidaysEverywhere.has(key) || (holidaysByState.get(user.state ?? user.branch ?? '')?.has(key) ?? false);
+  const isHoliday = (user: Person, key: string) => holidayDatesOf.get(user.userId)?.has(key) ?? false;
 
   // ── punches and leave, indexed by person and day ──────────────────────
   const punchKey = (id: string, date: string) => `${id}|${date}`;
