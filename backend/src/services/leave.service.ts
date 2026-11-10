@@ -742,8 +742,8 @@ export async function decideLeave(
 }
 
 /**
- * The employee takes back a leave that has not begun — one still with the
- * manager, or one already approved. The row stays, marked cancelled, so the
+ * The employee takes back a leave that has not begun (its first day still
+ * counts) — one still with the manager, or one already approved. The row stays, marked cancelled, so the
  * history keeps it; the balance, the calendar, payroll and the reminders all
  * ask for pending or approved rows by name, so from here on it counts
  * nowhere. A leave that has started is HR's to undo, not the employee's. The
@@ -768,7 +768,9 @@ export async function cancelLeave(userId: string, leaveIdInput: string, input: {
   // every org works, so at 02:00 IST a leave starting that day has begun, as the app sees it.
   const istDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   const today = new Date(`${istDay}T00:00:00.000Z`);
-  if (leave.startDate.getTime() <= today.getTime()) {
+  // Its own first day still counts as not begun: plans change in the morning. A leave that
+  // began on an earlier day is HR's to undo.
+  if (leave.startDate.getTime() < today.getTime()) {
     throw new LeaveError(409, 'Leave that has already started cannot be cancelled here. Ask HR.');
   }
   const note = input.note?.trim() ?? '';

@@ -2059,14 +2059,19 @@ class _AttendanceCard extends StatelessWidget {
                 label: 'Slide to Punch In',
                 onComplete: () => punch('in'),
               ),
-            ] else if (!singlePunch && punchOut == null) ...[
-              const SizedBox(height: 16),
-              SlideToPunch.filled(
-                label: 'Slide to Punch Out',
-                color: const Color(0xFF34A853),
-                onComplete: () => punch('out'),
+            ] else if (!singlePunch && punchOut == null)
+              // Nothing to slide in the first half hour after punching in.
+              PunchOutGate(
+                punchIn: punchIn!,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: SlideToPunch.filled(
+                    label: 'Slide to Punch Out',
+                    color: const Color(0xFF34A853),
+                    onComplete: () => punch('out'),
+                  ),
+                ),
               ),
-            ],
           ],
           if (autoPresent) ...[
             const SizedBox(height: 16),

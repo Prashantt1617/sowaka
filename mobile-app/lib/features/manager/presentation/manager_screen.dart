@@ -33,6 +33,7 @@ import '../../games/presentation/web_game_screen.dart';
 import '../../games/presentation/web_games_home.dart';
 import '../../policies/data/policies_api_service.dart';
 import '../../attendance/presentation/punch_screen.dart';
+import '../../attendance/presentation/punch_out_gate.dart';
 import '../../attendance/presentation/slide_to_punch.dart';
 import '../../quick_actions/presentation/quick_actions_screen.dart';
 import '../../requests/presentation/request_summary.dart';

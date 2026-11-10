@@ -141,6 +141,11 @@ async function call(handler: (req: Request, res: Response, next: (error?: unknow
   let refused = false;
   try { await recordPunch('a', 'in'); } catch (error) { refused = (error as { statusCode?: number }).statusCode === 409; }
   check('a second punch-in is refused', refused);
+  let early = '';
+  try { await recordPunch('a', 'out'); } catch (error) { early = (error as Error).message; }
+  check('a punch-out in the first 30 minutes is refused, saying from when', /punch out from .*30 minutes after punching in/.test(early), early);
+  // Half an hour on: the punch-in moved back, as the clock would have.
+  await attendanceRecords().updateOne({ employeeId: 'E-A' }, { $set: { punchIn: new Date(Date.now() - 31 * 60_000) } });
   const punchedOut = (await recordPunch('a', 'out')) as Record<string, unknown>;
   check('a punch-out comes back with both punches', typeof punchedOut.punchIn === 'string' && typeof punchedOut.punchOut === 'string', punchedOut);
   const day = await attendanceRecords().findOne({ employeeId: 'E-A' });

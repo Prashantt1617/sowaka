@@ -12,6 +12,7 @@ import '../data/payslip_pdf.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../attendance/presentation/punch_screen.dart';
+import '../../attendance/presentation/punch_out_gate.dart';
 import '../../attendance/presentation/slide_to_punch.dart';
 import '../../manager/bloc/manager_bloc.dart';
 import '../../manager/data/manager_models.dart';
@@ -3141,13 +3142,14 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     ];
   }
 
-  /// A leave can be taken back while it is still to come and still stands.
+  /// A leave can be taken back from its first day on, while it still stands.
   bool _leaveCancellable(LeaveRequest leave) {
     if (leave.decision != LeaveDecision.pending &&
         leave.decision != LeaveDecision.approved) {
       return false;
     }
-    return _dateOnly(leave.start).isAfter(_dateOnly(DateTime.now()));
+    // Its own first day still counts: plans change in the morning.
+    return !_dateOnly(leave.start).isBefore(_dateOnly(DateTime.now()));
   }
 
   /// Takes a leave back from its day: a note for the manager, then the
@@ -7661,26 +7663,31 @@ class _HomeAttendanceCard extends StatelessWidget {
                     ),
                   ),
                   // A day with both punches recorded has nothing left to
-                  // slide.
-                  if (punch != null && !singlePunch && punchOut == null) ...[
-                    const SizedBox(height: 16),
-                    SlideToPunch.filled(
-                      label: 'Slide to Punch Out',
-                      color: const Color(0xFF00C0E8),
-                      height: 48,
-                      knobInset: 7,
-                      knobIcon: false,
-                      labelStyle: const TextStyle(
-                        fontFamily: 'Sora',
-                        color: Color(0x66FFFFFF),
-                        fontSize: 13,
-                        height: 19.5 / 13,
-                        letterSpacing: .2,
-                        fontWeight: FontWeight.w600,
+                  // slide; the first half hour after punching in has nothing
+                  // to slide yet.
+                  if (punch != null && !singlePunch && punchOut == null)
+                    PunchOutGate(
+                      punchIn: start,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: SlideToPunch.filled(
+                          label: 'Slide to Punch Out',
+                          color: const Color(0xFF00C0E8),
+                          height: 48,
+                          knobInset: 7,
+                          knobIcon: false,
+                          labelStyle: const TextStyle(
+                            fontFamily: 'Sora',
+                            color: Color(0x66FFFFFF),
+                            fontSize: 13,
+                            height: 19.5 / 13,
+                            letterSpacing: .2,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          onComplete: () => punch('out'),
+                        ),
                       ),
-                      onComplete: () => punch('out'),
                     ),
-                  ],
                 ],
               ],
             ),

@@ -176,3 +176,6 @@ export interface AttendanceOverride {
   setByName?: string;
   setAt: Date;
 }
+
+/** How long after punching in a punch-out is accepted (app punches and the face-check fallback alike). The app hides the slider until then. */
+export const PUNCH_OUT_MIN_GAP_MINUTES = 30;

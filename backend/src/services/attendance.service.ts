@@ -12,8 +12,7 @@ import {
   PunchFaceCheck,
   REGULARIZATION_DAY_TYPES,
   RegularizationDayType,
-  RegularizationStatus,
-} from '../models/attendance.model';
+  RegularizationStatus, PUNCH_OUT_MIN_GAP_MINUTES } from '../models/attendance.model';
 import { approvalRulesFor, isWeekOffDay, managerMayDecide, policyForUser, shiftPolicyFor } from './shift.service';
 import { orgUsers, orgUsersWithRows, sortLikeMongo } from './admin-scope';
 import { DayMark, HALF_DAY_CORRECTION_OUTCOMES, ShiftPolicyRules } from '../models/shift.model';
@@ -137,6 +136,9 @@ export async function recordPunch(
     org ? companies().findOne({ id: org }, { projection: { _id: 0, faceId: 1 } }) : Promise.resolve(null),
   ]);
   const preloaded = { workDate, record: today };
+  // No punch-out in the first half hour after the punch-in: checked before the
+  // face check is spent, so an early try costs nothing but the answer.
+  if (kind === 'out') await refuseEarlyPunchOut(userId, workDate, today);
   // Only a geotagged shift is checked against an office. In-app punch-in is the
   // same punch without the location question — HR chooses it for people whose
   // work is not tied to a building — so asking them for a fix would refuse a
@@ -238,6 +240,31 @@ export async function recordPunch(
     }
     return writePunch(employee, kind, location, policy, undefined, preloaded, face);
   }
+}
+
+export { PUNCH_OUT_MIN_GAP_MINUTES };
+
+/**
+ * Refuses a punch-out that comes within [PUNCH_OUT_MIN_GAP_MINUTES] of the
+ * day's punch-in — the recorded one, or, while the day is open only as a
+ * request with the manager, the moment that request was made.
+ */
+async function refuseEarlyPunchOut(userId: string, workDate: string, today: { punchIn?: Date | null } | null) {
+  let punchedIn = today?.punchIn ?? null;
+  if (!punchedIn) {
+    const pending = await attendanceRegularizations().findOne(
+      { userId, workDate, status: 'pending', kind: { $in: ['out_of_location', 'face_check'] } },
+      { projection: { _id: 0, punchIn: 1, createdAt: 1 } },
+    );
+    punchedIn = pending?.punchIn ?? pending?.createdAt ?? null;
+  }
+  if (!punchedIn) return;
+  const opensAt = new Date(new Date(punchedIn).getTime() + PUNCH_OUT_MIN_GAP_MINUTES * 60_000);
+  if (Date.now() >= opensAt.getTime()) return;
+  const clock = opensAt.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' });
+  throw new AttendanceError(409, `You can punch out from ${clock}, ${PUNCH_OUT_MIN_GAP_MINUTES} minutes after punching in.`, {
+    punchOutFrom: opensAt.toISOString(),
+  });
 }
 
 /**

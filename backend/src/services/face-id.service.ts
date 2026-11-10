@@ -4,7 +4,7 @@ import {
   attendanceRecords, attendanceRegularizations, companies, faceChallenges, faceLivenessSessions, faceVerifications, offices, users,
   facePhoneLogs } from '../config/db';
 import { env } from '../config/env';
-import { AttendanceRegularization, FaceCheckNote, PunchFaceCheck } from '../models/attendance.model';
+import { AttendanceRegularization, FaceCheckNote, PunchFaceCheck, PUNCH_OUT_MIN_GAP_MINUTES } from '../models/attendance.model';
 import {
   FACE_CONSENT_AGREE, FACE_CONSENT_VERSION, FaceChallenge, FaceCheckReason, faceIdSettingsOf, FaceIdSettingsView, FaceVerification,
   UserFaceId,
@@ -654,6 +654,15 @@ export async function requestFaceFallback(
     if (pending) throw new FaceIdError(409, 'A request for today is already with your manager');
   } else {
     if (today?.punchOut) throw new FaceIdError(409, 'Already punched out today');
+    // The same half hour a punch-out waits for after the punch-in, by this way too.
+    const punchedIn = today?.punchIn ?? (pending && (pending.kind === 'out_of_location' || pending.kind === 'face_check') ? pending.punchIn ?? pending.createdAt : null);
+    if (punchedIn) {
+      const opensAt = new Date(new Date(punchedIn).getTime() + PUNCH_OUT_MIN_GAP_MINUTES * 60_000);
+      if (at.getTime() < opensAt.getTime()) {
+        const clock = opensAt.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' });
+        throw new FaceIdError(409, `You can punch out from ${clock}, ${PUNCH_OUT_MIN_GAP_MINUTES} minutes after punching in.`);
+      }
+    }
     if (pending) {
       // The day is open only as a request the manager has not settled: the
       // punch-out rides on it, as a punch-out does on an out-of-location one.
