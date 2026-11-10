@@ -17,10 +17,14 @@ import {
 } from '../config/db';
 import { env } from '../config/env';
 import { PayHead } from '../models/payHead.model';
-import { createRun, myPayslip, myPayslips, submitRun } from '../services/payrollRun.service';
+import { createRun, myPayslip, myPayslips, recomputeRun, submitRun } from '../services/payrollRun.service';
 import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
 import { employeeAppSettingsForHr, setEmployeeAppSettingsForHr } from '../services/employeePayroll.settings';
 import { mySplit, reviewSplit, saveSplit, splitWindow } from '../services/employeePayroll.split';
+import { epfBalanceForHr, myEpf, setEpfBalanceForHr, setMyEpfBalance } from '../services/employeePayroll.epf';
+import { encryptField } from '../services/fieldCrypto';
+import { randomBytes } from 'node:crypto';
+import { employeePaymentDetails } from '../config/db';
 import { STATUTORY_SEED, TDS_SEED } from './payroll-config-seed-data';
 
 /** Home with Payroll switched on (the seed turns it on for the org). */
@@ -314,6 +318,70 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     bad.salary === null && bad.payPeriod === null && bad.salaryNotSetUp?.reason === 'pay_period_not_set_up' && /1 to 28/.test(bad.salaryNotSetUp.message) && /Ask HR\.$/.test(bad.salaryNotSetUp.message), bad.salaryNotSetUp);
   check('a broken pay cycle: the rest of home still shows', bad.todo.some((t) => t.kind === 'flexible_split'), bad.todo);
   await payrollPeriods().deleteMany({});
+
+  // —— EPF: PF through payroll, the passbook balance, this month's split, the own UAN ——
+  // A throwaway key for this scratch run only (the UAN is encrypted at rest).
+  process.env.PAYROLL_FIELD_KEY ||= randomBytes(32).toString('base64');
+  await employeePaymentDetails().insertOne({ org: ORG, userId: 'asha', uan: encryptField('101234567890'), uanLast4: '7890', updatedAt: now, updatedByUserId: 'hr' });
+  const before = await myEpf('asha', oct31);
+  check('EPF: a salary none of whose pay heads count for PF: not deducted, nothing made up',
+    !before.enrolled && before.notEnrolledReason === 'not_deducted' && before.monthly === null && before.savedThroughSowaka.months === 0, before);
+  // Basic counts for PF from here; November's run is worked out again and released.
+  await payHeads().updateOne({ org: ORG, code: 'BASIC' }, { $set: { considerForEpf: { consider: true, condition: 'always' } } });
+  await recomputeRun('hr', nov.run.id, {});
+  await submitRun('hr', nov.run.id);
+  const nov30 = new Date('2026-11-30T06:00:00Z');
+  const novPf = (await payslips().findOne({ runId: nov.run.id, userId: 'asha' }))!.epf;
+  const epf = await myEpf('asha', nov30);
+  check('EPF: Asha is enrolled, with her own UAN in full', epf.enrolled && epf.notEnrolledReason === null && epf.uan === '101234567890' && epf.uanLast4 === '7890', epf);
+  check('EPF: saved through Sowaka is November\'s released payslip (employee + employer EPF); October paid no PF',
+    epf.savedThroughSowaka.employeePaise === novPf.employeePaise && epf.savedThroughSowaka.employerEpfPaise === novPf.employerEpfPaise
+      && epf.savedThroughSowaka.months === 1 && epf.savedThroughSowaka.sincePeriod === '2026-11' && epf.savedThroughSowaka.throughPeriod === '2026-11'
+      && novPf.employeePaise > 0 && novPf.employerEpfPaise > 0, [epf.savedThroughSowaka, novPf]);
+  const cfg = STATUTORY_SEED.find((c) => c.fy === '2026-27')!.epf;
+  const ceiling = [...cfg.wageCeilings].reverse().find((c) => c.from <= '2026-11-30')!.ceilingPaise;
+  const m = epf.monthly;
+  const rupee = (p: number) => Math.round(p / 100) * 100;
+  check('EPF: this month at the FY\'s rates: 12% of the PF wage from her, the employer\'s 12% split into EPS (8.33% to the ceiling) and EPF',
+    m !== null && m.ratePercent === cfg.employeeRate * 100 && m.employerRatePercent === cfg.employerRate * 100 && m.pfWagePaise > 0
+      && m.employeePaise === rupee(m.pfWagePaise * cfg.employeeRate)
+      && m.employerEpsPaise === rupee(Math.min(m.pfWagePaise, ceiling) * cfg.epsRate)
+      && m.employerEpsPaise + m.employerEpfPaise === rupee(m.pfWagePaise * cfg.employerRate) && m.period === '2026-11', [m, ceiling]);
+  check('EPF: restricted PF: the wage is capped at the ₹25,000 ceiling (Basic is ₹75,000)', m?.pfWagePaise === ceiling, m);
+  check('EPF: no balance typed in yet', epf.balance === null);
+  const bEpf = await myEpf('bala', nov30);
+  check('EPF: Bala sees no UAN (none recorded), never Asha\'s', bEpf.uan === null && bEpf.uanLast4 === null && bEpf.enrolled, bEpf);
+  await salaryStructures().updateOne({ userId: 'chetan' }, { $set: { statutory: { epf: false } } });
+  const cEpf = await myEpf('chetan', nov30);
+  check('EPF: PF switched off for Chetan: not enrolled, no monthly split', !cEpf.enrolled && cEpf.notEnrolledReason === 'pf_off_for_you' && cEpf.monthly === null, cEpf);
+  const dEpf = await myEpf('dev', nov30);
+  check('EPF: no salary structure: not enrolled, nothing saved', !dEpf.enrolled && dEpf.notEnrolledReason === 'no_salary_structure' && dEpf.savedThroughSowaka.months === 0, dEpf);
+
+  const withBal = await setMyEpfBalance('asha', { balancePaise: R(230000), asOn: '2026-09-30' }, nov30);
+  const novTotal = novPf.employeePaise + novPf.employerEpfPaise;
+  check('EPF balance: ₹2,30,000 as on 30 Sep plus the PF payroll put in after it (November)',
+    withBal.balance?.balancePaise === R(230000) && withBal.balance.asOn === '2026-09-30' && withBal.balance.source === 'employee'
+      && withBal.balance.addedSincePaise === novTotal && withBal.balance.totalPaise === R(230000) + novTotal, withBal.balance);
+  const asOnNov = await setMyEpfBalance('asha', { balancePaise: R(240000), asOn: '2026-11-30' }, nov30);
+  check('EPF balance: the newest entry wins; one as on 30 Nov adds nothing after it', asOnNov.balance?.balancePaise === R(240000) && asOnNov.balance.addedSincePaise === 0 && asOnNov.balance.totalPaise === R(240000), asOnNov.balance);
+  check('EPF balance: a negative amount is refused (400)', (await refusal(() => setMyEpfBalance('asha', { balancePaise: -100, asOn: '2026-10-01' }, nov30)))?.status === 400);
+  check('EPF balance: paise that are not whole rupees are refused', (await refusal(() => setMyEpfBalance('asha', { balancePaise: 12345, asOn: '2026-10-01' }, nov30)))?.status === 400);
+  check('EPF balance: a date in the future is refused', (await refusal(() => setMyEpfBalance('asha', { balancePaise: R(100), asOn: '2026-12-01' }, nov30)))?.status === 400);
+  check('EPF balance: a day that does not exist is refused', (await refusal(() => setMyEpfBalance('asha', { balancePaise: R(100), asOn: '2026-02-30' }, nov30)))?.status === 400);
+  check('EPF balance: ₹0 is a balance', (await setMyEpfBalance('bala', { balancePaise: 0, asOn: '2026-10-01' }, nov30)).balance?.balancePaise === 0);
+  const hrSet = await setEpfBalanceForHr('hr', 'bala', { balancePaise: R(150000), asOn: '2026-09-30' }, nov30);
+  check('EPF balance: HR sets Bala\'s, and it is the one he sees', hrSet.balance?.source === 'hr' && (await myEpf('bala', nov30)).balance?.balancePaise === R(150000), hrSet);
+  check('EPF balance: HR reads it back', (await epfBalanceForHr('hr', 'bala')).balance?.balancePaise === R(150000));
+  check('EPF balance: someone without payroll access cannot set another\'s (403)', (await refusal(() => setEpfBalanceForHr('asha', 'bala', { balancePaise: R(1), asOn: '2026-09-30' }, nov30)))?.status === 403);
+  check('EPF balance: Asha\'s own entries did not touch Bala\'s', (await myEpf('bala', nov30)).balance?.source === 'hr');
+
+  const fyRow2 = await statutoryConfigs().findOne({ fy: '2026-27' });
+  await statutoryConfigs().deleteOne({ fy: '2026-27' });
+  const nEpf = await myEpf('asha', nov30);
+  check('EPF: no statutory row: no made-up monthly split, a not-set-up line saying to ask HR; what payroll put in still shows',
+    nEpf.enrolled && nEpf.monthly === null && nEpf.notSetUp?.reason === 'statutory_not_set_up' && /Ask HR\.$/.test(nEpf.notSetUp.message)
+      && nEpf.savedThroughSowaka.employeePaise === novPf.employeePaise, nEpf);
+  await statutoryConfigs().insertOne(fyRow2!);
 
   await db.dropDatabase();
   console.log(failed === 0 ? `\nall ${passed} payroll employee checks passed` : `\n${failed} check(s) failed, ${passed} passed`);

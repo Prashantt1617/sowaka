@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import '../../support/support_launcher.dart';
 import 'package:printing/printing.dart';
+import 'package:url_launcher/url_launcher.dart' show LaunchMode, launchUrl;
 
 import '../data/payslip_pdf.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -33,6 +34,7 @@ part 'payroll_screen.dart';
 part 'payroll_split.dart';
 part 'payroll_proofs.dart';
 part 'payroll_fbp.dart';
+part 'payroll_epf.dart';
 part '../../placements/presentation/placements_style.dart';
 part '../../placements/presentation/candidate_pages.dart';
 part '../../placements/presentation/client_pages.dart';

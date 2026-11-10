@@ -366,6 +366,155 @@ class PayrollProofsSummary {
   }
 }
 
+// ---------------------------------------------------------------- EPF
+
+/// The PF put in through Sowaka payroll: the employee's and the employer's
+/// EPF share (not the pension share) from released payslips.
+class EpfSaved {
+  const EpfSaved({
+    required this.employeePaise,
+    required this.employerEpfPaise,
+    required this.months,
+    this.sincePeriod,
+    this.throughPeriod,
+  });
+
+  final int employeePaise;
+  final int employerEpfPaise;
+  final int months;
+
+  /// The first and last month ("2026-04") with PF on a payslip.
+  final String? sincePeriod;
+  final String? throughPeriod;
+
+  int get totalPaise => employeePaise + employerEpfPaise;
+
+  factory EpfSaved.fromJson(Map<String, dynamic> json) => EpfSaved(
+    employeePaise: _paise(json['employeePaise']),
+    employerEpfPaise: _paise(json['employerEpfPaise']),
+    months: _int(json['months']),
+    sincePeriod: _stringOrNull(json['sincePeriod']),
+    throughPeriod: _stringOrNull(json['throughPeriod']),
+  );
+}
+
+/// A PF balance typed in from the EPFO passbook (by the person or HR), with
+/// the PF payroll put in after its date.
+class EpfBalance {
+  const EpfBalance({
+    required this.balancePaise,
+    required this.asOn,
+    required this.source,
+    required this.addedSincePaise,
+    required this.totalPaise,
+  });
+
+  final int balancePaise;
+  final DateTime asOn;
+
+  /// "employee" | "hr".
+  final String source;
+  final int addedSincePaise;
+
+  /// [balancePaise] + [addedSincePaise]: what the card shows.
+  final int totalPaise;
+
+  static EpfBalance? fromJson(Map<String, dynamic> json) {
+    final asOn = payrollDate(json['asOn']);
+    if (asOn == null) return null;
+    return EpfBalance(
+      balancePaise: _paise(json['balancePaise']),
+      asOn: asOn,
+      source: _string(json['source']),
+      addedSincePaise: _paise(json['addedSincePaise']),
+      totalPaise: _paise(json['totalPaise']),
+    );
+  }
+}
+
+/// This month's PF from the salary structure, on the year's rates.
+class EpfMonthly {
+  const EpfMonthly({
+    required this.employeePaise,
+    required this.employerEpfPaise,
+    required this.employerEpsPaise,
+    required this.pfWagePaise,
+    required this.ratePercent,
+    required this.employerRatePercent,
+  });
+
+  final int employeePaise;
+  final int employerEpfPaise;
+  final int employerEpsPaise;
+
+  /// The wage [ratePercent] is taken of.
+  final int pfWagePaise;
+  final double ratePercent;
+  final double employerRatePercent;
+
+  factory EpfMonthly.fromJson(Map<String, dynamic> json) => EpfMonthly(
+    employeePaise: _paise(json['employeePaise']),
+    employerEpfPaise: _paise(json['employerEpfPaise']),
+    employerEpsPaise: _paise(json['employerEpsPaise']),
+    pfWagePaise: _paise(json['pfWagePaise']),
+    ratePercent: _number(json['ratePercent']),
+    employerRatePercent: _number(json['employerRatePercent']),
+  );
+}
+
+/// The EPF page: what Sowaka knows about the person's PF. The full balance,
+/// with interest and past employers, is on EPFO.
+class EpfSummary {
+  const EpfSummary({
+    required this.enrolled,
+    required this.saved,
+    this.notEnrolledReason,
+    this.uan,
+    this.uanLast4,
+    this.balance,
+    this.monthly,
+    this.notSetUpMessage,
+  });
+
+  final bool enrolled;
+
+  /// "no_salary_structure" | "pf_off_for_company" | "pf_off_for_you" |
+  /// "not_deducted".
+  final String? notEnrolledReason;
+
+  /// The person's own UAN in full, for Copy; null when none is recorded.
+  final String? uan;
+
+  /// Its last four, when the UAN is on record but could not be read.
+  final String? uanLast4;
+  final EpfSaved saved;
+  final EpfBalance? balance;
+
+  /// Null when the year's statutory settings are missing
+  /// ([notSetUpMessage] says so, ending "Ask HR.").
+  final EpfMonthly? monthly;
+  final String? notSetUpMessage;
+
+  factory EpfSummary.fromJson(Map<String, dynamic> json) {
+    final monthly = json['monthly'];
+    final balance = json['balance'];
+    return EpfSummary(
+      enrolled: _bool(json['enrolled']),
+      notEnrolledReason: _stringOrNull(json['notEnrolledReason']),
+      uan: _stringOrNull(json['uan']),
+      uanLast4: _stringOrNull(json['uanLast4']),
+      saved: EpfSaved.fromJson(_map(json['savedThroughSowaka'])),
+      balance: balance is Map<String, dynamic>
+          ? EpfBalance.fromJson(balance)
+          : null,
+      monthly: monthly is Map<String, dynamic>
+          ? EpfMonthly.fromJson(monthly)
+          : null,
+      notSetUpMessage: _stringOrNull(_map(json['notSetUp'])['message']),
+    );
+  }
+}
+
 // ---------------------------------------------------------------- missing punches
 
 /// A past working day with a punch missing.

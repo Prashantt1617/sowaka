@@ -105,6 +105,32 @@ class PayrollApiService {
         ),
       );
 
+  // ---------------------------------------------------------------- EPF
+
+  /// What Sowaka knows about the person's PF, with their own UAN.
+  Future<EpfSummary> fetchEpf() async {
+    final json = await _json('GET', '/payroll/me/epf');
+    return EpfSummary.fromJson(_object(json['epf']));
+  }
+
+  /// Sets the PF balance read off the EPFO passbook ([balancePaise], whole
+  /// rupees, as on [asOn]) and returns the page as it now reads.
+  Future<EpfSummary> saveEpfBalance({
+    required int balancePaise,
+    required DateTime asOn,
+  }) async {
+    final day = asOn.day.toString().padLeft(2, '0');
+    final json = await _json(
+      'PUT',
+      '/payroll/me/epf/balance',
+      body: {
+        'balancePaise': balancePaise,
+        'asOn': '${payrollPeriod(asOn)}-$day',
+      },
+    );
+    return EpfSummary.fromJson(_object(json['epf']));
+  }
+
   // ---------------------------------------------------------------- split
 
   Future<FbpSplit> fetchSplit() async {

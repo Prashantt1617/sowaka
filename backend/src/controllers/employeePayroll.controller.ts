@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
+import { epfBalanceForHr, myEpf, setEpfBalanceForHr, setMyEpfBalance } from '../services/employeePayroll.epf';
 import { mySplit, reviewSplit, saveSplit, splitForHr } from '../services/employeePayroll.split';
 import { employeeAppSettingsForHr, setEmployeeAppSettingsForHr } from '../services/employeePayroll.settings';
 import { EmployeePayrollError, PAYROLL_APP_OFF, askHr, payrollAppEnabled } from '../services/employeePayroll.common';
@@ -55,6 +56,8 @@ export const uploadFbpBillHandler = mine(async (req) => ({
   head: await uploadMyFbpBill(callerId(req), String(req.params.code ?? ''), { period: body(req).period, amountPaise: body(req).amountPaise, file: req.file }),
 }));
 export const fbpBillFileHandler = mine(async (req) => ({ url: await myFbpBillFile(callerId(req), String(req.params.billId ?? '')) }));
+export const myEpfHandler = mine(async (req) => ({ epf: await myEpf(callerId(req)) }));
+export const setMyEpfBalanceHandler = mine(async (req) => ({ epf: await setMyEpfBalance(callerId(req), body(req)) }));
 
 // —— HR ——
 export const hrListProofsHandler = handle(async (req) =>
@@ -62,6 +65,8 @@ export const hrListProofsHandler = handle(async (req) =>
 export const hrProofFileHandler = handle(async (req) => ({ url: await proofFileForHr(callerId(req), String(req.params.proofId ?? '')) }));
 export const hrDecideProofHandler = handle(async (req) => ({ proof: await decideProofForHr(callerId(req), String(req.params.proofId ?? ''), body(req)) }));
 export const hrSplitHandler = handle(async (req) => ({ split: await splitForHr(callerId(req), String(req.params.userId ?? ''), req.query.fy) }));
+export const hrEpfBalanceHandler = handle(async (req) => epfBalanceForHr(callerId(req), String(req.params.userId ?? '')));
+export const hrSetEpfBalanceHandler = handle(async (req) => setEpfBalanceForHr(callerId(req), String(req.params.userId ?? ''), body(req)));
 export const hrGetAppSettingsHandler = handle(async (req) => employeeAppSettingsForHr(callerId(req), req.query.fy));
 export const hrSetAppSettingsHandler = handle(async (req) => setEmployeeAppSettingsForHr(callerId(req), req.query.fy, body(req)));
 
