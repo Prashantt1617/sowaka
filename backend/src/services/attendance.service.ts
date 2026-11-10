@@ -12,8 +12,7 @@ import {
   PunchFaceCheck,
   REGULARIZATION_DAY_TYPES,
   RegularizationDayType,
-  RegularizationStatus,
-} from '../models/attendance.model';
+  RegularizationStatus, PUNCH_OUT_MIN_GAP_MINUTES } from '../models/attendance.model';
 import { approvalRulesFor, isWeekOffDay, managerMayDecide, policyForUser, shiftPolicyFor } from './shift.service';
 import { orgUsers, orgUsersWithRows, sortLikeMongo } from './admin-scope';
 import { DayMark, HALF_DAY_CORRECTION_OUTCOMES, ShiftPolicyRules } from '../models/shift.model';
@@ -243,8 +242,7 @@ export async function recordPunch(
   }
 }
 
-/** How long after punching in a punch-out is accepted. The app hides the slider until then. */
-export const PUNCH_OUT_MIN_GAP_MINUTES = 30;
+export { PUNCH_OUT_MIN_GAP_MINUTES };
 
 /**
  * Refuses a punch-out that comes within [PUNCH_OUT_MIN_GAP_MINUTES] of the
