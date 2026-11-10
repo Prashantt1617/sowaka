@@ -6,6 +6,7 @@ import { EmployeePayrollError, PAYROLL_APP_OFF, askHr, payrollAppEnabled } from 
 import {
   decideProofForHr, listProofsForHr, myDeclaration, myProofFile, myProofs, proofFileForHr, saveMyDeclaration, uploadMyProof,
 } from '../services/employeePayroll.declaration';
+import { myTaxSummary } from '../services/employeePayroll.tax';
 
 const callerId = (req: Request) => String(req.auth?.userId ?? '');
 const body = (req: Request) => (req.body ?? {}) as Record<string, unknown>;
@@ -43,6 +44,7 @@ export const reviewSplitHandler = mine(async (req) => ({ review: await reviewSpl
 export const saveSplitHandler = mine(async (req) => ({ split: await saveSplit(callerId(req), body(req)) }));
 export const getDeclarationHandler = mine(async (req) => ({ declaration: await myDeclaration(callerId(req), req.query.fy) }));
 export const saveDeclarationHandler = mine(async (req) => ({ declaration: await saveMyDeclaration(callerId(req), req.query.fy, body(req)) }));
+export const taxSummaryHandler = mine(async (req) => ({ tax: await myTaxSummary(callerId(req), req.query.fy) }));
 export const getProofsHandler = mine(async (req) => ({ proofs: await myProofs(callerId(req), req.query.fy) }));
 export const uploadProofHandler = mine(async (req) => ({
   item: await uploadMyProof(callerId(req), String(req.params.item ?? ''), req.query.fy, { amountPaise: body(req).amountPaise, file: req.file }),
