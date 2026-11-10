@@ -132,6 +132,29 @@ export async function uploadInvestmentProof(org: string, userId: string, file: R
 }
 
 /**
+ * A Form 16 HR files for an employee. Same bucket and encryption as the
+ * investment proofs, its own prefix, `…/form16/<org>/<userId>/`, and a random
+ * name: HR's file name (which often carries the PAN) is kept on the row only.
+ */
+export async function uploadForm16(org: string, userId: string, file: ReceiptFile) {
+  validateConfiguration();
+  const root = env.s3.receiptPrefix.replace(/^\/+|\/+$/g, '').split('/')[0];
+  const safe = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const objectKey = [root, 'form16', safe(org), safe(userId), `${randomUUID()}.pdf`].filter(Boolean).join('/');
+  await getClient().send(
+    new PutObjectCommand({
+      Bucket: env.s3.bucket,
+      Key: objectKey,
+      Body: file.bytes,
+      ContentType: 'application/pdf',
+      ContentLength: file.size,
+      ...s3EncryptionParams(),
+    }),
+  );
+  return { objectKey, contentType: 'application/pdf', size: file.size };
+}
+
+/**
  * The photo a Face ID was enrolled from. Same bucket and encryption, under its
  * own prefix (`faces/<org>/<userId>/`), with a random name. Never presigned
  * for anyone: it is kept to re-index a face or look into a dispute, and is

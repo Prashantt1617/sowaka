@@ -55,6 +55,8 @@ const RULES: Rule[] = [
   { path: /^\/admin\/payroll\/employees\/[^/]+\/tax-declaration/, read: ['salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
   // Employees' investment proofs: payroll access only.
   { path: /^\/admin\/payroll\/investment-proofs/, read: ['salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
+  // Form 16 files: payroll access only.
+  { path: /^\/admin\/payroll\/form16/, read: ['salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
   // One person's flexible split, and the app's payroll switch and deadlines: payroll access only.
   { path: /^\/admin\/payroll\/employees\/[^/]+\/flexible-split/, read: ['salarydetails', 'payruns'] },
   { path: /^\/admin\/payroll\/employee-app-settings/, read: ['salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },

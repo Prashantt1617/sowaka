@@ -61,6 +61,7 @@
     "payroll:config-check": "MONGODB_DB=payroll_config_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= PAYROLL_CONFIG_ORGS= tsx src/scripts/payroll-config-check.ts",
     "payroll:employee-check": "MONGODB_DB=payroll_employee_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/payroll-employee-check.ts",
     "payroll:declaration-check": "MONGODB_DB=payroll_declaration_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/payroll-declaration-check.ts",
+    "form16:check": "MONGODB_DB=form16_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/form16-check.ts",
     "payroll:employee-settings-seed": "tsx src/scripts/payroll-employee-settings-seed.ts",
     "payroll:overtime-check": "MONGODB_DB=payroll_overtime_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/payroll-overtime-check.ts",
     "payroll:dashboard-check": "MONGODB_DB=payroll_dashboard_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/payroll-dashboard-check.ts",
