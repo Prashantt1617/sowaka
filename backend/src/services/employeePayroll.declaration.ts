@@ -13,7 +13,7 @@ import { investmentProofs, salaryStructures, taxDeclarations, users } from '../c
 import { InvestmentProof, InvestmentProofStatus } from '../models/employeePayroll.model';
 import { TaxDeclarationRow } from '../models/tds.model';
 import {
-  DECLARATION_ITEM_KEYS, DECLARATION_ITEMS, DeclarationFlags, DeclarationItemKey, DeclarationItems, declarationSections,
+  DECLARATION_ITEM_KEYS, DECLARATION_ITEMS, DeclarationFlags, DeclarationItemKey, DeclarationItems, DeclarationSectionKey, declarationSections,
   toTaxDeclarations,
 } from '../shared/payroll/declaration';
 import { TaxDeclarations, TaxRegime } from '../shared/payroll/tds';
@@ -210,11 +210,51 @@ function proofView(p: StoredProof) {
 }
 
 /** The items a declaration needs proofs for: old regime, declared above zero. */
-function provable(row: TaxDeclarationRow | null): { key: DeclarationItemKey; label: string; section: string; declaredPaise: number }[] {
+function provable(row: TaxDeclarationRow | null): { key: DeclarationItemKey; label: string; section: DeclarationSectionKey; declaredPaise: number }[] {
   if (row?.regime !== 'old') return [];
   const items = itemsOf(row);
   return DECLARATION_ITEMS.filter((d) => (items[d.key] ?? 0) > 0).map((d) => ({ key: d.key, label: d.label, section: d.section, declaredPaise: items[d.key]! }));
 }
+
+/**
+ * How the proofs page names things. The declaration's labels are prompts
+ * for an input ("Rent a month"); a proof row names what is proved, and its
+ * amount line says the rest.
+ */
+const PROOF_SECTION_LABELS: Record<DeclarationSectionKey, string> = {
+  '80C': '80C',
+  '80CCD1B': 'NPS (80CCD 1B)',
+  '80D': '80D',
+  HRA: 'Rent (HRA)',
+  '24B': 'Home loan',
+};
+const PROOF_LABELS: Partial<Record<DeclarationItemKey, string>> = {
+  nps: 'NPS · your own contribution',
+  healthSelf: 'Health insurance · self and family',
+  healthParents: 'Health insurance · parents',
+  rentMonthly: 'Rent',
+};
+/** What to upload for each item: the document HR checks it against. */
+const PROOF_DOCUMENTS: Record<DeclarationItemKey, string> = {
+  ppf: 'PPF passbook or statement',
+  elss: 'ELSS statement from the fund',
+  lifeInsurance: 'Premium receipt from the insurer',
+  other80C: 'Receipt or certificate for the payment',
+  nps: 'NPS contribution statement',
+  healthSelf: 'Premium receipt from the insurer',
+  healthParents: 'Premium receipt from the insurer',
+  rentMonthly: 'Rent receipts or the rent agreement',
+  homeLoanInterest: 'Interest certificate from the bank',
+};
+
+/**
+ * The FY's income tax return due date for a salaried person: 31 July after
+ * the FY ends (Income-tax Act s.139(1)). It is the law's date, the same for
+ * every company, so it is derived from the FY rather than set by HR.
+ */
+export const itrDueOn = (fy: string) => `${Number(fy.slice(0, 4)) + 1}-07-31`;
+/** The FY's last pay month ("2027-03"): the last payroll a late proof can still reach. */
+const fyLastPeriod = (fy: string) => `${Number(fy.slice(0, 4)) + 1}-03`;
 
 async function proofsView(org: string, userId: string, fy: string, now: Date) {
   const [row, rows, deadlines, settings] = await Promise.all([
@@ -225,12 +265,31 @@ async function proofsView(org: string, userId: string, fy: string, now: Date) {
   ]);
   const regime: TaxRegime = row?.regime ?? settings.tds?.defaultRegime ?? 'new';
   const byItem = new Map(rows.map((r) => [r.item, r]));
+  const startYear = Number(fy.slice(0, 4));
   const items = provable(row).map((d) => {
     const p = byItem.get(d.key);
-    return { item: d.key, label: d.label, section: d.section, declaredPaise: d.declaredPaise, status: (p?.status ?? 'not_uploaded') as InvestmentProofStatus | 'not_uploaded', proof: p ? proofView(p) : null };
+    const monthly = d.key === 'rentMonthly';
+    return {
+      item: d.key,
+      label: PROOF_LABELS[d.key] ?? d.label,
+      section: d.section,
+      declaredPaise: d.declaredPaise,
+      // Rent is declared a month at a time for the whole FY: "₹15,000 a month · Apr to Mar".
+      perMonth: monthly,
+      months: monthly ? { from: `${startYear}-04`, to: `${startYear + 1}-03` } : null,
+      document: PROOF_DOCUMENTS[d.key],
+      status: (p?.status ?? 'not_uploaded') as InvestmentProofStatus | 'not_uploaded',
+      proof: p ? proofView(p) : null,
+    };
   });
   const count = (s: string) => items.filter((i) => i.status === s).length;
   const dueOn = proofsDueOn(fy, deadlines);
+  const locked = dueOn !== null && dayOf(now) > dueOn;
+  // Sent and standing (in review or approved), against never sent or sent back.
+  const submitted = count('uploaded') + count('approved');
+  const sections = (Object.keys(PROOF_SECTION_LABELS) as DeclarationSectionKey[])
+    .map((key) => ({ key, label: PROOF_SECTION_LABELS[key], items: items.filter((i) => i.section === key) }))
+    .filter((s) => s.items.length > 0);
   return {
     fy,
     regime,
@@ -239,16 +298,25 @@ async function proofsView(org: string, userId: string, fy: string, now: Date) {
     // HR has not set the proofs due date: no uploads until they do (dueOn null).
     notConfigured: dueOn === null,
     missing: dueOn === null ? ['proofsDue'] : [],
-    locked: dueOn !== null && dayOf(now) > dueOn,
+    locked,
+    // Past the due date: when it closed, what is left, and where the rest can still go.
+    closed: locked
+      ? { closedOn: dueOn, submitted, notSubmitted: items.length - submitted, total: items.length, lastPayPeriod: fyLastPeriod(fy), itrDueOn: itrDueOn(fy) }
+      : null,
+    itrDueOn: itrDueOn(fy),
     summary: {
       total: items.length,
       notUploaded: count('not_uploaded'),
       uploaded: count('uploaded'),
       approved: count('approved'),
       rejected: count('rejected'),
+      submitted,
+      notSubmitted: items.length - submitted,
       allSent: items.length > 0 && count('not_uploaded') + count('rejected') === 0,
       allApproved: items.length > 0 && count('approved') === items.length,
     },
+    // The same items, grouped by section in the declaration's order.
+    sections,
     items,
   };
 }
@@ -354,6 +422,7 @@ async function hrViews(org: string, rows: StoredProof[]) {
       item: r.item,
       label: def?.label ?? r.item,
       section: def?.section ?? null,
+      document: def ? PROOF_DOCUMENTS[def.key] : null,
       declaredPaise: declared.get(`${r.userId}|${r.fy}`)?.[r.item] ?? 0,
       amountPaise: r.amountPaise,
       status: r.status,
@@ -398,7 +467,9 @@ export async function decideProofForHr(viewerUserId: string, proofId: string, bo
   const org = await payrollViewer(viewerUserId);
   const decision = body.decision;
   if (decision !== 'approved' && decision !== 'rejected') throw new EmployeePayrollError(400, 'decision is approved or rejected');
-  const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+  // The dashboard sends `reason`; `note` is read the same, for a caller that names it so.
+  const said = body.reason ?? body.note;
+  const reason = typeof said === 'string' ? said.trim() : '';
   if (decision === 'rejected' && (reason.length < 3 || reason.length > 500)) throw new EmployeePayrollError(400, 'Say why the proof is rejected (3 to 500 characters)');
   const p = await hrProof(org, proofId);
   // Only what the employee sent last can be decided: a decided or replaced proof is not this one any more.
