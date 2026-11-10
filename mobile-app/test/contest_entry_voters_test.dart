@@ -57,19 +57,31 @@ Map<String, dynamic> _entry(
 };
 
 /// A photo contest as the server sends it: Manav's photo, which tags Chitra
-/// in its story and has two votes, then the viewer's own two photos.
-Map<String, dynamic> _contest({List<String> without = const []}) {
+/// in its story and has two votes, then the viewer's own two photos. With
+/// [crowd], Manav's photo tags four colleagues and holds the viewer's vote.
+Map<String, dynamic> _contest({
+  List<String> without = const [],
+  bool crowd = false,
+}) {
   final entries = [
-    _entry(
-      'manav-1',
-      userId: 'manav',
-      name: 'Manav Shah',
-      votes: 2,
-      text: 'Shot with @Chitra Rao on the roof',
-      mentions: [
-        {'userId': 'chitra', 'name': 'Chitra Rao'},
-      ],
-    ),
+    {
+      ..._entry(
+        'manav-1',
+        userId: 'manav',
+        name: 'Manav Shah',
+        votes: 2,
+        text: 'Shot with @Chitra Rao on the roof',
+        mentions: [
+          {'userId': 'chitra', 'name': 'Chitra Rao'},
+          if (crowd) ...[
+            {'userId': 'kiran', 'name': 'Kiran Das'},
+            {'userId': 'asha', 'name': 'Asha Iyer'},
+            {'userId': 'dev', 'name': 'Dev Patel'},
+          ],
+        ],
+      ),
+      if (crowd) 'votedByViewer': true,
+    },
     _entry(
       'mine-1',
       userId: 'viewer',
@@ -211,11 +223,16 @@ class _Server {
 
 /// Opens the contest's Entries page the way the Games tab does, with the
 /// directory of colleagues read through [server] too.
-Future<_Server> _openEntries(WidgetTester tester) async {
-  tester.view.physicalSize = const Size(1179, 2556);
+Future<_Server> _openEntries(
+  WidgetTester tester, {
+  Size phone = const Size(393, 852),
+  Map<String, dynamic>? contest,
+}) async {
+  tester.view.physicalSize = phone * 3;
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
   final server = _Server();
+  if (contest != null) server.contest = contest;
   final api = ConnectApiService(
     session: _session,
     baseUrl: 'https://example.test',
@@ -471,6 +488,51 @@ void main() {
     expect(
       find.descendant(of: plain, matching: find.text('Tag')),
       findsNothing,
+    );
+  });
+
+  testWidgets('on a narrow card the Tag row fits beside "Your vote": fewer '
+      'faces and a count of the rest, never an overflow', (tester) async {
+    await _openEntries(
+      tester,
+      phone: const Size(360, 740),
+      contest: _contest(crowd: true),
+    );
+    final tagged = _galleryCards.at(0);
+    await tester.ensureVisible(tagged);
+    await tester.pump();
+    expect(tester.getSize(tagged).width, lessThan(165));
+    expect(tester.takeException(), isNull);
+    expect(
+      find.descendant(of: tagged, matching: find.text('Tag')),
+      findsOneWidget,
+    );
+    // Everyone tagged is still named to a screen reader.
+    expect(
+      find.descendant(
+        of: tagged,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Semantics &&
+              widget.properties.label ==
+                  'Tagged: Chitra Rao, Kiran Das, Asha Iyer, Dev Patel',
+        ),
+      ),
+      findsOneWidget,
+    );
+    // The faces shown and the "+N" after them add up to the four tagged.
+    final faces = find
+        .descendant(
+          of: tagged,
+          matching: find.byKey(const ValueKey('gallery-tag-face')),
+        )
+        .evaluate()
+        .length;
+    final rest = 4 - faces;
+    expect(faces, lessThan(4));
+    expect(
+      find.descendant(of: tagged, matching: find.text('+$rest')),
+      findsOneWidget,
     );
   });
 

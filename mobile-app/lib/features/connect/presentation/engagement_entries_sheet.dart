@@ -2600,7 +2600,9 @@ class _GalleryEntryCard extends StatelessWidget {
 }
 
 /// "Tag" and up to three tagged faces, 20 across, each over the last by 4
-/// (node 4592:26402); one more than three is a count.
+/// (node 4592:26402); anyone past those is a count. Where the row is short
+/// of room — a narrow card that also wears "Your vote" — it shows fewer
+/// faces and counts the rest, down to the count alone, rather than run over.
 class _GalleryTagRow extends StatelessWidget {
   const _GalleryTagRow({required this.mentions, required this.photos});
 
@@ -2609,41 +2611,34 @@ class _GalleryTagRow extends StatelessWidget {
 
   static const _shown = 3;
 
+  // White words straight on the photo, as drawn; a soft shadow keeps them
+  // readable on a light picture without a band the design does not have.
+  static const _shadow = [Shadow(color: Color(0x66000000), blurRadius: 4)];
+  static const _moreStyle = TextStyle(
+    fontSize: 11,
+    fontWeight: FontWeight.w600,
+    color: Colors.white,
+    shadows: _shadow,
+  );
+
+  static double _facesWidth(int count) =>
+      count == 0 ? 0 : 20.0 + 16.0 * (count - 1);
+
   @override
   Widget build(BuildContext context) {
-    final faces = mentions.take(_shown).toList();
-    final more = mentions.length - faces.length;
     Widget face(ConnectMention person) {
-      final photo = photos[person.userId] ?? '';
-      final initial = person.name.trim().isEmpty
-          ? '?'
-          : person.name.trim().characters.first.toUpperCase();
-      return Container(
-        width: 20,
-        height: 20,
-        clipBehavior: Clip.antiAlias,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
+      final name = person.name.trim();
+      return KeyedSubtree(
+        key: const ValueKey('gallery-tag-face'),
+        child: _InitialAvatar(
+          initials: name.isEmpty ? '?' : name.characters.first.toUpperCase(),
           color: _avatarColorFor(person.userId),
-          shape: BoxShape.circle,
+          size: 20,
+          photoUrl: photos[person.userId] ?? '',
         ),
-        child: photo.isEmpty
-            ? Text(
-                initial,
-                style: const TextStyle(fontSize: 9, color: Colors.white),
-              )
-            : Image(
-                image: _remoteImage(photo),
-                width: 20,
-                height: 20,
-                fit: BoxFit.cover,
-              ),
       );
     }
 
-    // White words straight on the photo, as drawn; a soft shadow keeps them
-    // readable on a light picture without a band the design does not have.
-    const shadow = [Shadow(color: Color(0x66000000), blurRadius: 4)];
     return Semantics(
       label: 'Tagged: ${mentions.map((m) => m.name).join(', ')}',
       child: Row(
@@ -2655,32 +2650,71 @@ class _GalleryTagRow extends StatelessWidget {
               fontSize: 12,
               fontWeight: FontWeight.w400,
               color: Colors.white,
-              shadows: shadow,
+              shadows: _shadow,
             ),
           ),
           const SizedBox(width: 8),
-          SizedBox(
-            width: 20.0 + 16.0 * (faces.length - 1),
-            height: 20,
-            child: Stack(
-              children: [
-                for (final (i, person) in faces.indexed)
-                  Positioned(left: 16.0 * i, child: face(person)),
-              ],
+          Flexible(
+            child: LayoutBuilder(
+              builder: (context, box) {
+                final scaler = MediaQuery.textScalerOf(context);
+                final direction = Directionality.of(context);
+                double countWidth(int rest) {
+                  final painter = TextPainter(
+                    text: TextSpan(text: '+$rest', style: _moreStyle),
+                    textDirection: direction,
+                    textScaler: scaler,
+                    maxLines: 1,
+                  )..layout();
+                  final width = painter.width;
+                  painter.dispose();
+                  return 4 + width;
+                }
+
+                // As many faces as fit with the count of the rest after them.
+                var count = math.min(_shown, mentions.length);
+                while (count > 0) {
+                  final rest = mentions.length - count;
+                  final needed =
+                      _facesWidth(count) + (rest > 0 ? countWidth(rest) : 0);
+                  if (needed <= box.maxWidth) break;
+                  count--;
+                }
+                final rest = mentions.length - count;
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (count > 0)
+                      SizedBox(
+                        width: _facesWidth(count),
+                        height: 20,
+                        child: Stack(
+                          children: [
+                            for (final (i, person)
+                                in mentions.take(count).indexed)
+                              Positioned(left: 16.0 * i, child: face(person)),
+                          ],
+                        ),
+                      ),
+                    if (rest > 0) ...[
+                      if (count > 0) const SizedBox(width: 4),
+                      // Clipped rather than run over, should even the count
+                      // alone not fit.
+                      Flexible(
+                        child: Text(
+                          '+$rest',
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.clip,
+                          style: _moreStyle,
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
             ),
           ),
-          if (more > 0) ...[
-            const SizedBox(width: 4),
-            Text(
-              '+$more',
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-                shadows: shadow,
-              ),
-            ),
-          ],
         ],
       ),
     );

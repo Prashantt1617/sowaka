@@ -114,6 +114,7 @@ class _PollPressableState extends State<_PollPressable> {
 class _PollPostCard extends StatelessWidget {
   const _PollPostCard({
     required this.post,
+    required this.bloc,
     required this.busy,
     required this.canManage,
     required this.commentController,
@@ -129,6 +130,9 @@ class _PollPostCard extends StatelessWidget {
   });
 
   final ConnectPost post;
+
+  /// Where [post] comes from, for a picture opened from it to follow.
+  final ConnectBloc bloc;
   final bool busy;
   final bool canManage;
 
@@ -210,7 +214,7 @@ class _PollPostCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: withImages
-                ? _PollOptionGrid(post: post, onAction: onAction)
+                ? _PollOptionGrid(post: post, bloc: bloc, onAction: onAction)
                 : _PollOptionBars(post: post, onAction: onAction),
           ),
           const SizedBox(height: 12),
@@ -433,9 +437,16 @@ class _PollBadge extends StatelessWidget {
 /// 4604:23303). The picture being looked at is outlined too while its viewer
 /// is up (node 4607:23534).
 class _PollOptionGrid extends StatefulWidget {
-  const _PollOptionGrid({required this.post, required this.onAction});
+  const _PollOptionGrid({
+    required this.post,
+    required this.bloc,
+    required this.onAction,
+  });
 
   final ConnectPost post;
+
+  /// Where [post] comes from, for an open viewer to follow.
+  final ConnectBloc bloc;
   final Future<void> Function({String? optionId}) onAction;
 
   @override
@@ -443,32 +454,8 @@ class _PollOptionGrid extends StatefulWidget {
 }
 
 class _PollOptionGridState extends State<_PollOptionGrid> {
-  /// The post as the feed has it now, for an open viewer to follow: the
-  /// optimistic vote, the server's answer to it, or the vote put back when
-  /// sending failed all reach the viewer through here.
-  late final ValueNotifier<ConnectPost> _live = ValueNotifier(widget.post);
-
   /// The option whose viewer is up, if any.
   String? _openId;
-
-  @override
-  void didUpdateWidget(_PollOptionGrid oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (identical(widget.post, oldWidget.post)) return;
-    // The viewer is another route, outside this build, so it hears of the
-    // change once this frame is done rather than in the middle of it.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _live.value = widget.post;
-    });
-  }
-
-  @override
-  void dispose() {
-    // An open viewer still listens; it lets go when it closes, and the
-    // notifier goes with it.
-    if (_openId == null) _live.dispose();
-    super.dispose();
-  }
 
   Future<void> _open(ConnectPollOption option) async {
     setState(() => _openId = option.id);
@@ -477,7 +464,8 @@ class _PollOptionGridState extends State<_PollOptionGrid> {
       barrierColor: const Color(0x76000000),
       barrierLabel: 'Close',
       builder: (_) => _PollOptionViewer(
-        post: _live,
+        bloc: widget.bloc,
+        postId: widget.post.id,
         optionId: option.id,
         onAction: widget.onAction,
       ),
@@ -627,20 +615,25 @@ class _PollOptionGridState extends State<_PollOptionGrid> {
 /// is voted on from here, never from the card. The close button on the
 /// picture, a tap outside or Back puts it away.
 ///
-/// Voting goes the card's way, through [onAction], so the feed moves the
-/// count at once and sends the vote as it always has. Here the button turns
-/// to a filled "Voted" and the count steps up the moment it is pressed; the
-/// design draws only the open option before a vote, so that voted look is
-/// the Vote button's own filled form. Voting for another option later, from
-/// its own picture, moves the vote as a tap on a words-only option does.
+/// It draws the post exactly as [bloc] holds it, read by [postId] on every
+/// change: voting goes the card's way, through [onAction], and the bloc puts
+/// the vote on at once and takes it off again if sending fails, so the
+/// button and the count here follow it with no copy of their own. The
+/// design draws only the open option before a vote; the voted look is the
+/// Vote button's own pill filled, reading "Voted". Voting for another option
+/// later, from its own picture, moves the vote as a tap on a words-only
+/// option does. Should the post or this option go while it is open — the
+/// poll deleted, its options edited — it closes.
 class _PollOptionViewer extends StatefulWidget {
   const _PollOptionViewer({
-    required this.post,
+    required this.bloc,
+    required this.postId,
     required this.optionId,
     required this.onAction,
   });
 
-  final ValueNotifier<ConnectPost> post;
+  final ConnectBloc bloc;
+  final String postId;
   final String optionId;
   final Future<void> Function({String? optionId}) onAction;
 
@@ -654,73 +647,40 @@ class _PollOptionViewerState extends State<_PollOptionViewer> {
     color: _pollInkSecondary,
   );
 
-  /// The vote pressed here while it travels: shown at once even where the
-  /// feed has not drawn it yet, and let go once the feed has drawn its
-  /// answer, so a vote that failed comes off again.
-  String? _pending;
+  bool _closing = false;
 
-  /// The vote has its answer, and [_pending] goes when the feed next moves.
-  bool _answered = false;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.post.addListener(_feedMoved);
-  }
-
-  @override
-  void dispose() {
-    widget.post.removeListener(_feedMoved);
-    super.dispose();
-  }
-
-  void _feedMoved() {
-    if (_answered && _pending != null) {
-      setState(() {
-        _pending = null;
-        _answered = false;
-      });
-    }
-  }
-
-  Future<void> _vote() async {
-    setState(() {
-      _pending = widget.optionId;
-      _answered = false;
+  /// Puts the viewer away once, after this frame: what it showed is gone.
+  void _close() {
+    if (_closing) return;
+    _closing = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).maybePop();
     });
-    try {
-      await widget.onAction(optionId: widget.optionId);
-    } finally {
-      if (mounted) {
-        // The feed reaches this route a frame after it draws, so its answer
-        // may not be here yet; letting go of the vote now would flash the
-        // button back to "Vote" for that frame.
-        if (widget.post.value.selectedPollOptionId == _pending) {
-          setState(() => _pending = null);
-        } else {
-          _answered = true;
-        }
-      }
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ConnectPost>(
-      valueListenable: widget.post,
-      builder: (context, live, _) {
-        final pending = _pending;
-        final post = pending == null ? live : live.withPollVote(pending);
-        final option = post.pollOptions.firstWhere(
-          (o) => o.id == widget.optionId,
-          orElse: () =>
-              ConnectPollOption(id: widget.optionId, label: '', votes: 0),
-        );
+    return StreamBuilder<ConnectState>(
+      stream: widget.bloc.stream,
+      initialData: widget.bloc.state,
+      builder: (context, snapshot) {
+        final post = (snapshot.data ?? widget.bloc.state).posts
+            .where((p) => p.id == widget.postId)
+            .firstOrNull;
+        final option = post?.pollOptions
+            .where((o) => o.id == widget.optionId)
+            .firstOrNull;
+        if (post == null || option == null) {
+          _close();
+          return const SizedBox.shrink();
+        }
         final voted = post.selectedPollOptionId == option.id;
         final image = option.imageUrl ?? '';
         return Center(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            // Clear of the screen's edges, so on a short screen the picture
+            // gives up height rather than the card running off it.
+            padding: const EdgeInsets.all(16),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 361),
               child: Material(
@@ -738,67 +698,72 @@ class _PollOptionViewerState extends State<_PollOptionViewer> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       // 337 by 319 on the design's 361-wide card, kept in
-                      // that shape on any other width.
-                      AspectRatio(
-                        aspectRatio: 337 / 319,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              if (image.isEmpty)
-                                const ColoredBox(color: _pollIcons)
-                              else
-                                Semantics(
-                                  image: true,
-                                  label: option.label,
-                                  child: _PinchToZoom(
-                                    child: Image(
-                                      image: _remoteImage(image),
-                                      fit: BoxFit.cover,
+                      // that shape on any other width — and shorter, cropped
+                      // the more, where the screen is too short for it (a
+                      // phone on its side, large text), so the name and the
+                      // Vote button below always fit.
+                      Flexible(
+                        child: AspectRatio(
+                          aspectRatio: 337 / 319,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                if (image.isEmpty)
+                                  const ColoredBox(color: _pollIcons)
+                                else
+                                  Semantics(
+                                    image: true,
+                                    label: option.label,
+                                    child: _PinchToZoom(
+                                      child: Image(
+                                        image: _remoteImage(image),
+                                        fit: BoxFit.cover,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              // The 24 grey disc 13 from the top and 10 from
-                              // the right (node 4610:23631), with a finger's
-                              // room around it to hit.
-                              Positioned(
-                                top: 5,
-                                right: 2,
-                                child: Semantics(
-                                  button: true,
-                                  label: 'Close',
-                                  child: GestureDetector(
-                                    key: const ValueKey(
-                                      'poll-option-viewer-close',
-                                    ),
-                                    behavior: HitTestBehavior.opaque,
-                                    onTap: () =>
-                                        Navigator.of(context).maybePop(),
-                                    child: SizedBox(
-                                      width: 40,
-                                      height: 40,
-                                      child: Center(
-                                        child: Container(
-                                          width: 23.995,
-                                          height: 23.995,
-                                          alignment: Alignment.center,
-                                          decoration: const BoxDecoration(
-                                            color: Color(0xFF767676),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: SvgPicture.asset(
-                                            'assets/icons/poll_viewer_close.svg',
-                                            width: 14,
-                                            height: 14,
+                                // The 24 grey disc 13 from the top and 10 from
+                                // the right (node 4610:23631), with a finger's
+                                // room around it to hit.
+                                Positioned(
+                                  top: 5,
+                                  right: 2,
+                                  child: Semantics(
+                                    button: true,
+                                    label: 'Close',
+                                    child: GestureDetector(
+                                      key: const ValueKey(
+                                        'poll-option-viewer-close',
+                                      ),
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () =>
+                                          Navigator.of(context).maybePop(),
+                                      child: SizedBox(
+                                        width: 40,
+                                        height: 40,
+                                        child: Center(
+                                          child: Container(
+                                            width: 23.995,
+                                            height: 23.995,
+                                            alignment: Alignment.center,
+                                            decoration: const BoxDecoration(
+                                              color: Color(0xFF767676),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: SvgPicture.asset(
+                                              'assets/icons/poll_viewer_close.svg',
+                                              width: 14,
+                                              height: 14,
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -840,7 +805,8 @@ class _PollOptionViewerState extends State<_PollOptionViewer> {
                           const SizedBox(width: 12),
                           _PollVoteButton(
                             voted: voted,
-                            onPressed: voted ? null : _vote,
+                            onVote: () =>
+                                widget.onAction(optionId: widget.optionId),
                           ),
                         ],
                       ),
@@ -858,49 +824,53 @@ class _PollOptionViewerState extends State<_PollOptionViewer> {
 
 /// The viewer's Vote button (node 4610:23614): brand-blue words in a
 /// hairline brand-blue pill. Once this option holds the viewer's vote it is
-/// the same pill filled, reading "Voted", and takes no more taps.
+/// the same pill filled, reading "Voted" — no longer a button at all: it
+/// neither gives under the finger nor offers a tap to a screen reader.
 class _PollVoteButton extends StatelessWidget {
-  const _PollVoteButton({required this.voted, required this.onPressed});
+  const _PollVoteButton({required this.voted, required this.onVote});
 
   final bool voted;
-  final VoidCallback? onPressed;
+  final VoidCallback onVote;
 
+  // One tree either way, so the pill's fill still eases from white to blue;
+  // only the pointer and the button role come and go.
   @override
   Widget build(BuildContext context) => Semantics(
-    button: true,
-    enabled: onPressed != null,
+    key: const ValueKey('poll-option-vote'),
+    button: !voted,
     selected: voted,
-    child: _PollPressable(
-      key: const ValueKey('poll-option-vote'),
-      onTap: () => onPressed?.call(),
-      child: AnimatedContainer(
-        duration: _pollMotion,
-        curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 21, vertical: 5),
-        decoration: BoxDecoration(
-          color: voted ? _pollBrand : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _pollBrand),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x1A000000),
-              blurRadius: 1.5,
-              offset: Offset(0, 1),
-            ),
-          ],
+    child: IgnorePointer(
+      ignoring: voted,
+      child: _PollPressable(onTap: onVote, child: _pill()),
+    ),
+  );
+
+  Widget _pill() => AnimatedContainer(
+    duration: _pollMotion,
+    curve: Curves.easeOutCubic,
+    padding: const EdgeInsets.symmetric(horizontal: 21, vertical: 5),
+    decoration: BoxDecoration(
+      color: voted ? _pollBrand : Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: _pollBrand),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x1A000000),
+          blurRadius: 1.5,
+          offset: Offset(0, 1),
         ),
-        child: Text(
-          voted ? 'Voted' : 'Vote',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: _soraFont,
-            fontSize: 16,
-            height: 24 / 16,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.16,
-            color: voted ? Colors.white : _pollBrand,
-          ),
-        ),
+      ],
+    ),
+    child: Text(
+      voted ? 'Voted' : 'Vote',
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontFamily: _soraFont,
+        fontSize: 16,
+        height: 24 / 16,
+        fontWeight: FontWeight.w600,
+        letterSpacing: -0.16,
+        color: voted ? Colors.white : _pollBrand,
       ),
     ),
   );

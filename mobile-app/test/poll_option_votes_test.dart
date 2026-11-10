@@ -92,29 +92,43 @@ http.Response _ok(Map<String, dynamic> json) =>
     http.Response(jsonEncode({'success': true, ...json}), 200);
 
 class _Feed {
-  _Feed(this.bloc, this.votes);
+  _Feed(this.bloc, this.votes, this.posts);
 
   final ConnectBloc bloc;
 
   /// The options a vote was sent for, each answered when its completer is.
   final List<(String, Completer<http.Response>)> votes;
+
+  /// What the server's feed holds, read again on a refresh.
+  final List<Map<String, dynamic>> posts;
 }
 
-Future<_Feed> _pumpFeed(WidgetTester tester, Map<String, dynamic> poll) async {
-  tester.view.physicalSize = const Size(1179, 2556);
+/// The feed with [poll] in it, on a [phone] of that many logical pixels. A
+/// vote waits for its completer in [_Feed.votes] — or, with [failVotes],
+/// fails at once, before a frame, as does reading the post again after.
+Future<_Feed> _pumpFeed(
+  WidgetTester tester,
+  Map<String, dynamic> poll, {
+  Size phone = const Size(393, 852),
+  bool failVotes = false,
+}) async {
+  tester.view.physicalSize = phone * 3;
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
   final votes = <(String, Completer<http.Response>)>[];
+  final posts = [poll];
   final client = MockClient((request) async {
     if (request.url.path.endsWith('/connect/posts/poll/actions')) {
+      if (failVotes) return http.Response('{"success":false}', 500);
       final reply = Completer<http.Response>();
       votes.add((jsonDecode(request.body)['optionId'] as String, reply));
       return reply.future;
     }
+    if (request.url.path.endsWith('/connect/posts/poll')) {
+      return http.Response('{"success":false}', 500);
+    }
     if (request.url.path.endsWith('/connect/feed')) {
-      return _ok({
-        'posts': [poll],
-      });
+      return _ok({'posts': posts});
     }
     return _ok({});
   });
@@ -142,7 +156,7 @@ Future<_Feed> _pumpFeed(WidgetTester tester, Map<String, dynamic> poll) async {
     ),
   );
   await tester.pump(const Duration(milliseconds: 300));
-  return _Feed(bloc, votes);
+  return _Feed(bloc, votes, posts);
 }
 
 /// The faces the app sets these screens in, so text takes the room it takes
@@ -357,8 +371,19 @@ void main() {
     expect(_inViewer('Voted'), findsOneWidget);
     expect(_inViewer('1 vote'), findsOneWidget);
 
-    // Voted takes no more taps: a second one sends nothing.
-    await tester.tap(_voteButton);
+    // Voted is not a button any more: no tap for a screen reader, and a
+    // finger on it sends nothing.
+    final semantics = tester.ensureSemantics();
+    expect(
+      tester.getSemantics(_voteButton),
+      isNot(containsSemantics(hasTapAction: true)),
+    );
+    expect(
+      tester.getSemantics(_voteButton),
+      isNot(containsSemantics(isButton: true)),
+    );
+    semantics.dispose();
+    await tester.tap(_voteButton, warnIfMissed: false);
     await _settle(tester);
     expect(feed.votes, hasLength(1));
 
@@ -420,6 +445,82 @@ void main() {
     expect(_inViewer('Vote'), findsOneWidget);
     expect(_inViewer('1 vote'), findsOneWidget);
 
+    await _tearDown(tester, feed.bloc);
+  });
+
+  testWidgets('a vote that fails at once, before a frame, never sticks on '
+      'Voted', (tester) async {
+    final feed = await _pumpFeed(tester, _poll(), failVotes: true);
+    await _open(tester, 'c');
+    final semantics = tester.ensureSemantics();
+    expect(tester.getSemantics(_voteButton), containsSemantics(isButton: true));
+    semantics.dispose();
+
+    await tester.tap(_voteButton);
+    await _settle(tester);
+    await _settle(tester);
+
+    expect(feed.bloc.state.posts.single.selectedPollOptionId, isNull);
+    expect(_inViewer('Vote'), findsOneWidget);
+    expect(_inViewer('Voted'), findsNothing);
+    expect(_inViewer('1 vote'), findsOneWidget);
+    // And it can be tried again.
+    await tester.tap(_voteButton);
+    await _settle(tester);
+    expect(_inViewer('Vote'), findsOneWidget);
+
+    await _tearDown(tester, feed.bloc);
+  });
+
+  testWidgets('the picture closes when its poll goes while it is open', (
+    tester,
+  ) async {
+    final feed = await _pumpFeed(tester, _poll());
+    await _open(tester, 'b');
+    expect(_viewer, findsOneWidget);
+
+    // The poll is deleted: the feed read again no longer has it.
+    feed.posts.clear();
+    await feed.bloc.refresh();
+    await _settle(tester);
+    await _settle(tester);
+
+    expect(feed.bloc.state.posts, isEmpty);
+    expect(_viewer, findsNothing);
+    expect(_voteButton, findsNothing);
+    expect(feed.votes, isEmpty);
+
+    await _tearDown(tester, feed.bloc);
+  });
+
+  testWidgets('on a short screen with large text the picture gives up '
+      'height and the Vote button stays on screen', (tester) async {
+    tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final feed = await _pumpFeed(tester, _poll(), phone: const Size(844, 390));
+    await _open(tester, 'a');
+
+    expect(tester.takeException(), isNull);
+    expect(_viewer, findsOneWidget);
+    final screen = tester.getRect(find.byType(Scaffold).first);
+    final vote = tester.getRect(_voteButton);
+    expect(vote.bottom, lessThanOrEqualTo(screen.bottom));
+    expect(tester.getRect(_viewer).bottom, lessThanOrEqualTo(screen.bottom));
+
+    await tester.tap(_voteButton);
+    await _settle(tester);
+    expect(feed.votes.map((vote) => vote.$1), ['a']);
+    expect(_inViewer('Voted'), findsOneWidget);
+
+    feed.votes.single.$2.complete(
+      _ok({
+        'post': _poll(
+          selected: 'a',
+          votes: const {'a': 2, 'b': 0, 'c': 1, 'd': 1},
+        ),
+      }),
+    );
+    await _settle(tester);
     await _tearDown(tester, feed.bloc);
   });
 
