@@ -132,6 +132,18 @@ class FakePayrollServer {
     'homeLoanInterest': 'rejected',
   };
 
+  /// The amount on each proof sent from the app ("amount on proof").
+  final proofAmounts = <String, int>{};
+
+  /// The landlord PAN sent with a rent proof.
+  final landlordPans = <String, String>{};
+
+  /// Past the proofs due date: the closed state, uploads refused.
+  bool proofsClosed = false;
+
+  /// False: HR has not set the proofs due date (dueOn null, not set up).
+  bool proofsDueSet = true;
+
   MockClient get client => MockClient(handle);
 
   Future<http.Response> handle(http.Request request) async {
@@ -265,6 +277,10 @@ class FakePayrollServer {
       uploadFileField = request.files.single.field;
       final item = path.split('/')[3];
       proofStatus[item] = 'uploaded';
+      proofAmounts[item] = int.parse(request.fields['amountPaise'] ?? '0');
+      if (request.fields['landlordPan'] case final pan?) {
+        landlordPans[item] = pan;
+      }
       return payrollJson({'success': true, 'item': _proofItem(item)});
     }
     return handle(request as http.Request);
@@ -489,14 +505,38 @@ class FakePayrollServer {
     'homeLoanInterest': ('Home loan interest', '24B', 20000000),
   };
 
+  static const _proofDocuments = {
+    'ppf': 'PPF passbook or statement',
+    'elss': 'ELSS statement from the fund',
+    'lifeInsurance': 'Premium receipt from the insurer',
+    'healthSelf': 'Premium receipt from the insurer',
+    'rentMonthly': 'Rent receipts or the rent agreement',
+    'homeLoanInterest': 'Interest certificate from the bank',
+  };
+
+  static const _proofSections = [
+    {'key': '80C', 'label': '80C'},
+    {'key': '80CCD1B', 'label': 'NPS (80CCD 1B)'},
+    {'key': '80D', 'label': '80D'},
+    {'key': 'HRA', 'label': 'Rent (HRA)'},
+    {'key': '24B', 'label': 'Home loan'},
+  ];
+
   Map<String, dynamic> _proofItem(String key) {
     final (label, section, declared) = _proofLabels[key]!;
     final status = proofStatus[key]!;
+    final year = key == 'rentMonthly' ? declared * 12 : declared;
     return {
       'item': key,
       'label': label,
       'section': section,
       'declaredPaise': declared,
+      'yearPaise': year,
+      'perMonth': key == 'rentMonthly',
+      'months': key == 'rentMonthly'
+          ? {'from': '2026-04', 'to': '2027-03'}
+          : null,
+      'document': _proofDocuments[key],
       'status': status,
       'proof': status == 'not_uploaded'
           ? null
@@ -505,7 +545,8 @@ class FakePayrollServer {
               'fileName': '$key-proof.pdf',
               'contentType': 'application/pdf',
               'size': 182311,
-              'amountPaise': declared,
+              'amountPaise': proofAmounts[key] ?? year,
+              'landlordPan': landlordPans[key],
               'uploadedAt': '2027-01-16T10:00:00.000Z',
               'decidedAt': status == 'approved' || status == 'rejected'
                   ? '2027-01-19T10:00:00.000Z'
@@ -518,17 +559,85 @@ class FakePayrollServer {
     };
   }
 
-  Map<String, dynamic> _proofs() => {
-    'fy': '2026-27',
-    'regime': regime,
-    'required': regime == 'old',
-    'dueOn': '2027-01-31',
-    'locked': false,
-    'summary': <String, dynamic>{},
-    'items': regime == 'old'
-        ? [for (final key in proofStatus.keys) _proofItem(key)]
-        : <dynamic>[],
+  static const _countedLabels = {
+    'ppf': 'PPF',
+    'elss': 'ELSS',
+    'lifeInsurance': 'Life insurance',
+    'healthSelf': 'Health insurance',
+    'rentMonthly': 'Rent (HRA)',
+    'homeLoanInterest': 'Home loan interest',
   };
+
+  /// "What counted", as the server works it out: a sent proof up to the
+  /// amount on it, the rest not proved.
+  Map<String, dynamic> _counted(List<Map<String, dynamic>> items) {
+    final rows = [
+      for (final i in items)
+        () {
+          final year = i['yearPaise'] as int;
+          final sent = i['status'] == 'uploaded' || i['status'] == 'approved';
+          final amount = (i['proof'] as Map?)?['amountPaise'] as int? ?? 0;
+          final proved = sent ? (amount < year ? amount : year) : 0;
+          return {
+            'item': i['item'],
+            'label': _countedLabels[i['item']],
+            'provedPaise': proved,
+            'notProvedPaise': year - proved,
+          };
+        }(),
+    ];
+    int sum(String key) => rows.fold(0, (t, r) => t + (r[key] as int));
+    return {
+      'rows': rows,
+      'provedPaise': sum('provedPaise'),
+      'notProvedPaise': sum('notProvedPaise'),
+      'pfPaise': 2160000,
+    };
+  }
+
+  Map<String, dynamic> _proofs() {
+    final items = regime == 'old'
+        ? [for (final key in proofStatus.keys) _proofItem(key)]
+        : <Map<String, dynamic>>[];
+    final submitted = items
+        .where((i) => i['status'] == 'uploaded' || i['status'] == 'approved')
+        .length;
+    final locked = proofsDueSet && proofsClosed;
+    return {
+      'fy': '2026-27',
+      'regime': regime,
+      'required': items.isNotEmpty,
+      'dueOn': proofsDueSet ? '2027-01-31' : null,
+      'notConfigured': !proofsDueSet,
+      'missing': proofsDueSet ? <String>[] : ['proofsDue'],
+      'locked': locked,
+      'closed': locked
+          ? {
+              'closedOn': '2027-01-31',
+              'submitted': submitted,
+              'notSubmitted': items.length - submitted,
+              'total': items.length,
+              'lastPayPeriod': '2027-03',
+              'itrDueOn': '2027-07-31',
+              'counted': _counted(items),
+            }
+          : null,
+      'itrDueOn': '2027-07-31',
+      'summary': <String, dynamic>{},
+      'sections': [
+        for (final section in _proofSections)
+          if (items.any((i) => i['section'] == section['key']))
+            {
+              ...section,
+              'items': [
+                for (final i in items)
+                  if (i['section'] == section['key']) i,
+              ],
+            },
+      ],
+      'items': items,
+    };
+  }
 
   Map<String, dynamic> _payslips() {
     Map<String, dynamic> slip(

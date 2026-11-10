@@ -51,6 +51,8 @@ export interface InvestmentProof {
   decidedByUserId?: string;
   /** Why HR sent it back. */
   reason?: string;
+  /** Rent only: the landlord's PAN, as the employee typed it on the proof (upper case). */
+  landlordPan?: string;
 }
 
 /**

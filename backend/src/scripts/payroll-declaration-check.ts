@@ -174,6 +174,19 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     p0.required && p0.dueOn === '2027-01-31' && p0.items.every((i) => i.status === 'not_uploaded') && p0.summary.notUploaded === p0.items.length, p0);
   const items = p0.items.map((i) => i.item);
   check('the items are PPF, ELSS, LI, NPS, health (self), rent, home loan', items.join() === 'ppf,elss,lifeInsurance,nps,healthSelf,rentMonthly,homeLoanInterest', items);
+  const grouped = p0.sections.map((s) => `${s.key}:${s.label}:${s.items.map((i) => i.item).join('+')}`).join('|');
+  check('grouped by section in the declaration\'s order, with the proofs page\'s names',
+    grouped === '80C:80C:ppf+elss+lifeInsurance|80CCD1B:NPS (80CCD 1B):nps|80D:80D:healthSelf|HRA:Rent (HRA):rentMonthly|24B:Home loan:homeLoanInterest', grouped);
+  const rent = p0.items.find((i) => i.item === 'rentMonthly')!;
+  check('rent is a month\'s amount for April to March', rent.label === 'Rent' && rent.perMonth && rent.declaredPaise === R(15_000)
+    && rent.months?.from === '2026-04' && rent.months.to === '2027-03', rent);
+  const hint = (key: string) => p0.items.find((i) => i.item === key)?.document;
+  check('each item says what to upload: interest certificate, rent receipts, premium receipt, statements',
+    hint('homeLoanInterest') === 'Interest certificate from the bank' && hint('rentMonthly') === 'Rent receipts or the rent agreement'
+      && hint('healthSelf') === 'Premium receipt from the insurer' && hint('lifeInsurance') === 'Premium receipt from the insurer'
+      && /statement/.test(hint('ppf') ?? '') && /statement/.test(hint('elss') ?? ''), p0.items.map((i) => [i.item, i.document]));
+  check('not closed before the due date; the FY\'s ITR is due 31 Jul 2027', !p0.locked && p0.closed === null && p0.itrDueOn === '2027-07-31', { locked: p0.locked, closed: p0.closed, itr: p0.itrDueOn });
+  check('the ITR date follows the FY, not the calendar', (await myProofs('asha', '2027-28', oct)).itrDueOn === '2028-07-31');
   check('an item not declared cannot take a proof (400)', (await refusal(() => uploadMyProof('asha', 'healthParents', FY, { amountPaise: 100, file: pdf('x') }, oct)))?.status === 400);
   check('PF needs no proof (400)', (await refusal(() => uploadMyProof('asha', 'epf', FY, { amountPaise: 100, file: pdf('x') }, oct)))?.status === 400);
   check('no file (400)', (await refusal(() => uploadMyProof('asha', 'ppf', FY, { amountPaise: R(50_000) }, oct)))?.status === 400);
@@ -209,9 +222,17 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('rejected with the reason', rej.status === 'rejected' && rej.reason === reason && rej.decidedByUserId === 'hr', rej);
   const seen = (await myProofs('asha', FY, oct)).items.find((i) => i.item === 'ppf')!;
   check('Asha sees it rejected, with the reason', seen.status === 'rejected' && seen.proof?.reason === reason, seen);
+  const afterReject = await myProofs('asha', FY, oct);
+  check('a rejected proof counts as not submitted', afterReject.summary.rejected === 1 && afterReject.summary.submitted === 0 && afterReject.summary.notSubmitted === 7, afterReject.summary);
+  check('…and sits in its section with the reason', afterReject.sections[0].items[0].status === 'rejected' && afterReject.sections[0].items[0].proof?.reason === reason, afterReject.sections[0].items[0]);
   check('a rejected proof cannot be decided again (409)', (await refusal(() => decideProofForHr('hr', proofId, { decision: 'approved' }, oct)))?.status === 409);
-  const re = await uploadMyProof('asha', 'ppf', FY, { amountPaise: R(50_000), file: pdf('asha-ppf-2026') }, oct);
+  const re = await uploadMyProof('asha', 'ppf', FY, { amountPaise: R(48_500), file: pdf('asha-ppf-2026') }, oct);
   check('re-uploaded: in review again, the reason gone', re.status === 'uploaded' && re.proof?.reason === null && re.proof.decidedAt === null, re);
+  check('the re-upload keeps the amount on the new proof, the same row replaced',
+    re.proof?.amountPaise === R(48_500) && re.proof.id === proofId && (await investmentProofs().countDocuments({ userId: 'asha', fy: FY, item: 'ppf' })) === 1, re.proof);
+  const reHr = (await listProofsForHr('hr', { fy: FY, status: 'uploaded' }, oct)).proofs[0];
+  check('HR sees the re-upload in review with the new amount against the declared one, and what it should be',
+    reHr?.amountPaise === R(48_500) && reHr.declaredPaise === R(50_000) && reHr.reason === null && reHr.document === 'PPF passbook or statement', reHr);
   check('the replaced file was deleted from storage', removed.includes(firstKey) && !stored.has(firstKey), removed);
   check('filtering HR\'s list by status', (await listProofsForHr('hr', { fy: FY, status: 'uploaded' }, oct)).proofs.length === 1
     && (await listProofsForHr('hr', { fy: FY, status: 'rejected' }, oct)).proofs.length === 0);
@@ -224,6 +245,17 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   for (const item of others) await uploadMyProof('asha', item, FY, { amountPaise: R(1_000), file: pdf(`asha-${item}`) }, oct);
   const allSent = await myProofs('asha', FY, oct);
   check('every item uploaded: all sent for review, not all approved yet', allSent.summary.allSent && !allSent.summary.allApproved && allSent.summary.uploaded === 6, allSent.summary);
+  const elssId = (await listProofsForHr('hr', { fy: FY, status: 'uploaded' }, oct)).proofs.find((p) => p.item === 'elss')!.id;
+  const byNote = await decideProofForHr('hr', elssId, { decision: 'rejected', note: 'The statement has no folio number.' }, oct);
+  check('a rejection reason sent as `note` is kept the same way', byNote.status === 'rejected' && byNote.reason === 'The statement has no folio number.', byNote);
+  await uploadMyProof('asha', 'elss', FY, { amountPaise: R(50_000), file: pdf('asha-elss-2') }, oct);
+  // Rent's proof takes the landlord's PAN; nothing else does.
+  check('a malformed landlord PAN is refused (400)', (await refusal(() => uploadMyProof('asha', 'rentMonthly', FY, { amountPaise: R(1_80_000), landlordPan: 'ABCD1234', file: pdf('r') }, oct)))?.status === 400);
+  check('a PAN on anything but rent is refused (400)', (await refusal(() => uploadMyProof('asha', 'nps', FY, { amountPaise: R(1_000), landlordPan: 'ABCDE1234F', file: pdf('n') }, oct)))?.status === 400);
+  const rentUp = await uploadMyProof('asha', 'rentMonthly', FY, { amountPaise: R(1_80_000), landlordPan: ' abcde 1234f ', file: pdf('asha-rent-2') }, oct);
+  check('rent re-sent for the year with the landlord PAN, kept in capitals',
+    rentUp.proof?.landlordPan === 'ABCDE1234F' && rentUp.proof.amountPaise === R(1_80_000) && rentUp.yearPaise === R(1_80_000) && rentUp.declaredPaise === R(15_000), rentUp);
+  check('HR sees the landlord PAN', (await listProofsForHr('hr', { fy: FY, status: 'uploaded' }, oct)).proofs.find((p) => p.item === 'rentMonthly')?.landlordPan === 'ABCDE1234F');
   const pending = await listProofsForHr('hr', { fy: FY, status: 'uploaded' }, oct);
   for (const p of pending.proofs) await decideProofForHr('hr', p.id, { decision: 'approved' }, oct);
   const allSet = await myProofs('asha', FY, oct);
@@ -239,12 +271,37 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   const feb = new Date('2027-02-01T06:00:00Z');
   const lateProof = await refusal(() => uploadMyProof('bala', 'ppf', FY, { amountPaise: R(10_000), file: pdf('late') }, feb));
   check('after 31 Jan proofs are closed (409), saying to ask HR', lateProof?.status === 409 && /closed on 31 Jan 2027/.test(lateProof.message ?? '') && /ask HR\.$/.test(lateProof.message ?? ''), lateProof);
+  const closed = await myProofs('bala', FY, feb);
+  check('closed: when, how many of how many were not submitted, the last pay month and the ITR due date',
+    closed.locked && closed.closed?.closedOn === '2027-01-31' && closed.closed.notSubmitted === 1 && closed.closed.submitted === 0 && closed.closed.total === 1
+      && closed.closed.lastPayPeriod === '2027-03' && closed.closed.itrDueOn === '2027-07-31', closed.closed);
+  const aClosed = await myProofs('asha', FY, feb);
+  check('closed with everything approved: none left', aClosed.closed?.notSubmitted === 0 && aClosed.closed.submitted === 7, aClosed.closed);
+  const bCounted = closed.closed?.counted;
+  check('what counted, nothing sent: PPF ₹10,000 not proved, no PF without a structure',
+    bCounted?.rows.length === 1 && bCounted.rows[0].label === 'PPF' && bCounted.rows[0].provedPaise === 0 && bCounted.rows[0].notProvedPaise === R(10_000)
+      && bCounted.provedPaise === 0 && bCounted.notProvedPaise === R(10_000) && bCounted.pfPaise === 0, bCounted);
+  const aCounted = aClosed.closed?.counted;
+  const aRow = (key: string) => aCounted?.rows.find((r) => r.item === key);
+  check('what counted: a proof counts up to the amount on it (PPF ₹48,500 of ₹50,000), rent for the year, PF from payroll',
+    aRow('ppf')?.provedPaise === R(48_500) && aRow('ppf')?.notProvedPaise === R(1_500)
+      && aRow('rentMonthly')?.label === 'Rent (HRA)' && aRow('rentMonthly')?.provedPaise === R(1_80_000)
+      && aRow('lifeInsurance')?.provedPaise === R(1_000) && aCounted?.pfPaise === R(36_000)
+      && aCounted.provedPaise + aCounted.notProvedPaise === aCounted.rows.reduce((t, r) => t + r.provedPaise + r.notProvedPaise, 0), aCounted);
+  check('the last day itself is still open', (await myProofs('bala', FY, new Date('2027-01-31T12:00:00Z'))).closed === null);
   check('a company can move the deadlines', await (async () => {
     await companies().updateOne({ id: ORG }, { $set: { payrollEmployee: { declarationDue: '12-15', proofsDue: '02-15' } } });
     const d = await myDeclaration('bala', FY, dec1);
     const p = await uploadMyProof('bala', 'ppf', FY, { amountPaise: R(10_000), file: pdf('feb') }, feb);
     return d.dueOn === '2026-12-15' && !d.locked && p.status === 'uploaded';
   })());
+
+  await companies().updateOne({ id: ORG }, { $set: { payrollEmployee: { appEnabled: true, declarationDue: '12-15' } } });
+  const unset = await myProofs('bala', FY, feb);
+  check('no proofs due date set: not set up, never closed, no date made up', unset.notConfigured && unset.missing.join() === 'proofsDue' && unset.dueOn === null && !unset.locked && unset.closed === null, unset);
+  const unsetUp = await refusal(() => uploadMyProof('bala', 'ppf', FY, { amountPaise: R(10_000), file: pdf('unset') }, feb));
+  check('…and an upload says HR has not set it up', unsetUp?.status === 409 && /not set the proofs due date/.test(unsetUp.message ?? ''), unsetUp);
+  await companies().updateOne({ id: ORG }, { $set: { payrollEmployee: { appEnabled: true, declarationDue: '12-15', proofsDue: '02-15' } } });
 
   // Asha's and Bala's views never mix.
   const aView = await myProofs('asha', FY, oct);
