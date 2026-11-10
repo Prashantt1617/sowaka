@@ -368,6 +368,90 @@ void main() {
     expect(plus.onTap, isNull);
   });
 
+  testWidgets('Payroll home: the FBP bills to-do, its counts and due pill', (
+    tester,
+  ) async {
+    final soon = DateTime.now().add(const Duration(days: 2));
+    String iso(DateTime d) =>
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}';
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final server = FakePayrollServer()..fbpBillsDueOn = iso(soon);
+    await pumpPayroll(tester, server: server);
+    final row = find.byKey(const ValueKey('payroll-todo-fbp_bills'));
+    await tester.scrollUntilVisible(
+      row,
+      300,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView).first,
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    Finder inRow(String text) =>
+        find.descendant(of: row, matching: find.text(text));
+    expect(inRow('Submit FBP bills'), findsOneWidget);
+    expect(inRow('3 pending · 1 rejected'), findsOneWidget);
+    final pill = inRow('by ${soon.day} ${months[soon.month - 1]}');
+    expect(pill, findsOneWidget);
+    // Two days to go: red, as the other to-dos.
+    expect(tester.widget<Text>(pill).style?.color, const Color(0xFFB3261E));
+  });
+
+  testWidgets('a split locked for the FY: the lock, no Submit, a ticket', (
+    tester,
+  ) async {
+    final server = FakePayrollServer()..splitLockedForFy = true;
+    await pumpPayroll(tester, server: server);
+    await tap(
+      tester,
+      find.byKey(const ValueKey('payroll-todo-flexible_split')),
+    );
+    expect(find.byKey(const ValueKey('split-locked')), findsOneWidget);
+    expect(
+      find.text(
+        'Your split is locked for this FY. To change it, raise a ticket.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('split-raise-ticket')), findsOneWidget);
+    expect(find.byKey(const ValueKey('split-submit-split')), findsNothing);
+    final plus = tester.widget<InkWell>(
+      find.descendant(
+        of: find.byKey(const ValueKey('split-plus-FUEL')),
+        matching: find.byType(InkWell),
+      ),
+    );
+    expect(plus.onTap, isNull);
+  });
+
+  testWidgets('a save refused as locked shows the server\'s words', (
+    tester,
+  ) async {
+    final server = FakePayrollServer()..refuseSaveAsLocked = true;
+    await pumpPayroll(tester, server: server);
+    await tap(
+      tester,
+      find.byKey(const ValueKey('payroll-todo-flexible_split')),
+    );
+    await tap(tester, find.byKey(const ValueKey('split-plus-FUEL')));
+    await tap(tester, find.byKey(const ValueKey('split-submit-split')));
+    await tap(tester, find.byKey(const ValueKey('split-agree')));
+    await tap(tester, find.byKey(const ValueKey('split-submit-declaration')));
+    expect(
+      find.text(
+        'Your split is locked for this FY. To change it, raise a ticket.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('The window has moved, review again'), findsNothing);
+    expect(find.byKey(const ValueKey('payroll-split-review')), findsOneWidget);
+  });
+
   // Figma 4473:68656 "My split" and 4506:22931 "Review".
   group('My split and its Review', () {
     /// Whether the InkWell under [key] can be pressed.

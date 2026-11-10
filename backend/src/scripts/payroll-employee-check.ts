@@ -74,7 +74,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   if (db.databaseName !== SCRATCH) throw new Error(`refusing to run against ${db.databaseName}: set MONGODB_DB=${SCRATCH}`);
   await db.dropDatabase();
 
-  await companies().insertOne({ id: ORG, name: 'Sowaka (scratch)', payrollEmployee: { appEnabled: true, splitCutoffDay: 15, declarationDue: '11-30', proofsDue: '01-31', billsDue: '03-31', splitStepPaise: R(500) } } as never);
+  await companies().insertOne({ id: ORG, name: 'Sowaka (scratch)', payrollEmployee: { appEnabled: true, splitCutoffDay: 15, declarationDue: '11-30', proofsDue: '01-31', billsDue: '03-31', splitStepPaise: R(500), splitDue: '11-15', fbpBillsDueDay: 20 } } as never);
   await companies().insertOne({ id: 'otherco', name: 'Other (scratch)' } as never);
   // People punch in and out (the default policy marks everyone present).
   await shiftPolicies().insertOne({ org: ORG, correction: { punchFormat: 'Geotag (powered by Sowaka)' } } as never);
@@ -128,6 +128,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('on 31 Oct (past the 15th) a change applies from November, until 15 Nov, to March',
     s0.window.effectiveFrom === '2026-11' && s0.window.closesOn === '2026-11-15' && s0.window.effectiveTo === '2027-03', s0.window);
   check('on 10 Oct it applies from October', (await splitWindow(ORG, oct10)).effectiveFrom === '2026-10');
+  check('GET split while open: editable, not locked, closes 15 Nov', s0.editable && s0.lockedReason === null && s0.closesOn === '2026-11-15', s0);
 
   // —— the − / + step is HR's (Payroll in the app), never one made up in code ——
   check('the step is the company\'s ₹500, on the split and on every head',
@@ -214,11 +215,33 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   await payrollRuns().insertOne({ org: ORG, period: '2026-11', runType: 'regular', status: 'paid', employeeCount: 0, totals: { grossPaise: 0, employeeDeductionsPaise: 0, netPaise: 0, reimbursementsPaise: 0, employerCostPaise: 0 }, createdByUserId: 'hr', createdAt: now, updatedAt: now });
   const nov5 = new Date('2026-11-05T06:00:00Z');
   const w = await splitWindow(ORG, nov5);
-  check('once November\'s run is locked, a change on 5 Nov applies from December', w.effectiveFrom === '2026-12' && w.closesOn === '2026-12-15', w);
+  check('once November\'s run is locked, a change on 5 Nov applies from December, still till the FY\'s 15 Nov', w.effectiveFrom === '2026-12' && w.closesOn === '2026-11-15' && w.open, w);
   await payrollRuns().updateOne({ period: '2026-11' }, { $set: { status: 'draft' } });
   check('a draft run does not lock its month', (await splitWindow(ORG, nov5)).effectiveFrom === '2026-11');
   await payrollRuns().deleteMany({});
-  check('a March change after the 15th starts the next FY\'s split', (await splitWindow(ORG, new Date('2027-03-20T06:00:00Z'))).effectiveTo === '2028-03');
+  check('a March change after the 15th starts the next FY\'s split (its own window, till 15 Nov 2027)',
+    (await splitWindow(ORG, new Date('2027-03-20T06:00:00Z'))).effectiveTo === '2028-03' && (await splitWindow(ORG, new Date('2027-03-20T06:00:00Z'))).closesOn === '2027-11-15');
+
+  // —— one window a FY: change and change again until 15 Nov, then locked for the FY ——
+  const nov12 = new Date('2026-11-12T06:00:00Z');
+  const again = await reviewSplit('asha', { amounts: { FUEL: R(2500) } }, nov12);
+  check('12 Nov: Asha can change her November split again: "You can change this again until 15 Nov"', again.effectiveFrom === '2026-11' && again.closesOn === '2026-11-15', again);
+  const nov16 = new Date('2026-11-16T06:00:00Z');
+  const w16 = await splitWindow(ORG, nov16);
+  check('16 Nov: the window is shut for the FY (locked_for_fy), no month to apply to, closed on 15 Nov',
+    !w16.open && w16.reason === 'locked_for_fy' && w16.effectiveFrom === null && w16.closesOn === '2026-11-15', w16);
+  check('…not reopened next month: 10 Dec, 10 Feb still locked',
+    (await splitWindow(ORG, new Date('2026-12-10T06:00:00Z'))).reason === 'locked_for_fy' && (await splitWindow(ORG, new Date('2027-02-10T06:00:00Z'))).reason === 'locked_for_fy');
+  const g16 = await mySplit('asha', nov16);
+  check('…GET split: editable false, lockedReason locked_for_fy, the split in force still shown', !g16.editable && g16.lockedReason === 'locked_for_fy' && g16.current?.effectiveFrom === '2026-11' && !g16.notConfigured, g16);
+  const locked = { status: 409, message: 'Your split is locked for this FY. To change it, raise a ticket.' };
+  const rv16 = await refusal(() => reviewSplit('asha', { amounts: { FUEL: R(2500) } }, nov16));
+  check('…review: 409 "locked for this FY, raise a ticket"', rv16?.status === locked.status && rv16.message === locked.message, rv16);
+  const sv16 = await refusal(() => saveSplit('asha', { amounts: { FUEL: R(2500) }, acknowledged: true }, nov16));
+  check('…save: the same 409', sv16?.status === locked.status && sv16.message === locked.message, sv16);
+  const bala16 = await refusal(() => saveSplit('bala', { amounts: { FUEL: R(2500) }, acknowledged: true }, nov16));
+  check('…a first split (Bala has none this FY) is locked too', bala16?.status === 409 && bala16.message === locked.message, bala16);
+  check('…nothing saved', (await flexibleSplits().countDocuments({ org: ORG })) === 1);
 
   // —— the payroll run pays the split from its month on ——
   const oct = await createRun('hr', { period: '2026-10' });
@@ -269,7 +292,12 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('home: Asha has split this FY, so no split to-do', !home.todo.some((t) => t.kind === 'flexible_split'), home.todo);
   const bHome = await homeOn('bala', undefined, new Date('2026-12-02T06:00:00Z'));
   check('home: December for Bala is an estimate', bHome.salary?.status === 'estimate' && bHome.salary.grossPaise > 0, bHome.salary);
-  check('home: Bala has not split: a split to-do', bHome.todo.some((t) => t.kind === 'flexible_split'), bHome.todo);
+  check('home: Bala has not split, but on 2 Dec the window has closed for the FY: no split to-do, the split shown locked',
+    !bHome.todo.some((t) => t.kind === 'flexible_split') && bHome.split?.open === false, bHome.todo);
+  const bHomeOpen = await homeOn('bala', undefined, nov12);
+  check('home: on 12 Nov Bala has a split to-do, by 15 Nov', bHomeOpen.todo.some((t) => t.kind === 'flexible_split' && t.dueOn === '2026-11-15'), bHomeOpen.todo);
+  const bBills = bHomeOpen.todo.find((t) => t.kind === 'fbp_bills');
+  check('home: Bala\'s FBP bills to-do: bills pending this FY, due by 20 Nov', typeof bBills?.pending === 'number' && (bBills.pending as number) > 0 && bBills.rejected === 0 && bBills.dueOn === '2026-11-20', bBills);
   check('home: Bala\'s split summary is his own pool and amounts', bHome.split?.poolPaise === R(6000) && bHome.split.assignedPaise === R(6000), bHome.split);
   const cHome = await homeOn('chetan', '2026-10', oct31);
   check('home: no flexible components, no split section', cHome.split === null, cHome.split);
@@ -394,7 +422,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   const bad = await homeOn('bala', undefined, new Date('2026-12-02T06:00:00Z')); // December: no payslip yet
   check('a broken pay cycle: no salary, pay_period_not_set_up, ask HR',
     bad.salary === null && bad.payPeriod === null && bad.salaryNotSetUp?.reason === 'pay_period_not_set_up' && /1 to 28/.test(bad.salaryNotSetUp.message) && /Ask HR\.$/.test(bad.salaryNotSetUp.message), bad.salaryNotSetUp);
-  check('a broken pay cycle: the rest of home still shows', bad.todo.some((t) => t.kind === 'flexible_split'), bad.todo);
+  check('a broken pay cycle: the rest of home still shows (the FBP bills to-do; the split is locked by then)', bad.todo.some((t) => t.kind === 'fbp_bills') && bad.split !== null, bad.todo);
   await payrollPeriods().deleteMany({});
 
   {

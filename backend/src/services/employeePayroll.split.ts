@@ -9,9 +9,15 @@
  * that financial year; the payroll run reads it over the structure's own
  * per-person values (`splitAmountsFor`).
  *
- * The window: a change made today applies from this month while today is on
- * or before the company's cutoff day, else from next month, and never to a
- * month a run has locked.
+ * The window: each FY has one window to change the split, closing on the
+ * company's close date for that FY (`splitDue`). Until then the person can
+ * change it, and change it again; a change made today applies from this
+ * month while today is on or before the company's cutoff day, else from next
+ * month, and never to a month a run has locked. After the close date the
+ * split is locked for the rest of that FY (`locked_for_fy`): a change goes
+ * through HR (a ticket). That holds for everyone, a first split too: there
+ * is no separate rule for someone with no split yet (a joiner after the
+ * close date is paid their salary structure's amounts).
  */
 import { flexibleSplits, reimbursementClaims, salaryStructures, salaryTemplates, taxDeclarations, users } from '../config/db';
 import { FlexibleSplit } from '../models/employeePayroll.model';
@@ -22,8 +28,8 @@ import { fyEndPeriod, splitProblem } from '../shared/payroll/declaration';
 import { applyOverrides, resolveTemplateComponents } from '../shared/payroll/resolve';
 import { fyOf, taxOnIncome, TaxRegime } from '../shared/payroll/tds';
 import {
-  EmployeePayrollError, NOT_CONFIGURED, askHr, billsDueOn, dayInMonth, dayOf, deadlinesOf, fyLastDay, lockedPeriods, meOf, nextPeriod, parseFyParam,
-  payrollViewerOrgFor, periodOf, splitStepOf,
+  EmployeePayrollError, NOT_CONFIGURED, askHr, billsDueOn, dayInMonth, dayOf, deadlinesFrom, deadlinesOf, fyLastDay, lockedPeriods, meOf, nextPeriod,
+  parseFyParam, payrollEmployeeOf, payrollViewerOrgFor, periodOf, splitClosesOnFor, splitDueFrom, splitStepOf,
 } from './employeePayroll.common';
 import { billCategories } from './reimbursementBills.service';
 import { computeStructureFor } from './salaryStructure.service';
@@ -74,24 +80,43 @@ export async function splitsByUser(org: string, userIds: string[]): Promise<Map<
   return out;
 }
 
+export type SplitWindowReason = 'locked_for_fy' | 'payroll_not_configured';
+
 export interface SplitWindow {
   open: boolean;
-  /** Null (and `open` false) while HR has not set the split cutoff day: `reason` "payroll_not_configured". */
+  /** The months a change made now applies to; null (and `open` false) while it can't be made (locked, or not set up). */
   effectiveFrom: string | null;
   effectiveTo: string | null;
+  /** The close date of the FY's split window (the FY a change made now is for), open or locked; null while not set up. */
   closesOn: string | null;
-  reason: string | null;
+  /** Null while open; "locked_for_fy" past the close date; "payroll_not_configured" while `missing` is not empty. */
+  reason: SplitWindowReason | null;
+  /** What HR has not set that the window needs: "splitCutoffDay", "splitDue". */
+  missing: string[];
 }
 
-/** The first month a change made at `now` applies to, and until when it can still be made for it. */
+export const SPLIT_LOCKED_MESSAGE = 'Your split is locked for this FY. To change it, raise a ticket.';
+export const SPLIT_LOCKED = () => new EmployeePayrollError(409, SPLIT_LOCKED_MESSAGE, { reason: 'split_locked' });
+
+/**
+ * The first month a change made at `now` applies to, and the close date of
+ * that FY's window: past it, locked for the rest of the FY.
+ */
 export async function splitWindow(org: string, now: Date): Promise<SplitWindow> {
-  const { splitCutoffDay } = await deadlinesOf(org);
-  if (splitCutoffDay === null) return { open: false, effectiveFrom: null, effectiveTo: null, closesOn: null, reason: 'payroll_not_configured' };
+  const settings = await payrollEmployeeOf(org);
+  const { splitCutoffDay } = deadlinesFrom(settings);
+  const splitDue = splitDueFrom(settings);
+  const missing = [...(splitCutoffDay === null ? ['splitCutoffDay'] : []), ...(splitDue === null ? ['splitDue'] : [])];
+  const shut = (reason: SplitWindowReason, closesOn: string | null): SplitWindow => ({ open: false, effectiveFrom: null, effectiveTo: null, closesOn, reason, missing });
+  if (splitCutoffDay === null) return shut('payroll_not_configured', null);
   let period = periodOf(now);
   if (dayOf(now) > dayInMonth(period, splitCutoffDay)) period = nextPeriod(period);
   const locked = await lockedPeriods(org, period, `${Number(period.slice(0, 4)) + 1}-12`);
   while (locked.has(period)) period = nextPeriod(period);
-  return { open: true, effectiveFrom: period, effectiveTo: fyEndPeriod(period), closesOn: dayInMonth(period, splitCutoffDay), reason: null };
+  if (splitDue === null) return shut('payroll_not_configured', null);
+  const closesOn = splitClosesOnFor(fyOf(period).fy, splitDue)!;
+  if (dayOf(now) > closesOn) return shut('locked_for_fy', closesOn);
+  return { open: true, effectiveFrom: period, effectiveTo: fyEndPeriod(period), closesOn, reason: null, missing };
 }
 
 interface Context {
@@ -146,19 +171,23 @@ async function billCounts(org: string, userId: string, fy: string): Promise<Map<
   return out;
 }
 
+/** "locked_for_fy" while the window is past its close date, else null. */
+const lockedReasonOf = (window: SplitWindow) => (window.reason === 'locked_for_fy' ? 'locked_for_fy' as const : null);
+
 const EMPTY_SPLIT = (window: SplitWindow, billsDueOn: string | null) => ({
   available: false, notConfigured: false, missing: [] as string[], poolPaise: 0 as number | null, assignedPaise: 0, unassignedPaise: 0 as number | null,
   stepPaise: null as number | null, components: [], current: null, window, billsDueOn,
+  editable: false, lockedReason: lockedReasonOf(window), closesOn: null as string | null,
 });
 
 /** The FY a split change made now is for: the window's, else (window not set up) today's. */
 const splitFyOf = (window: SplitWindow, now: Date) => fyOf(window.effectiveFrom ?? periodOf(now)).fy;
 
-/** What HR has not set that the split needs: the pool, the cutoff day, the bills date, the − / + step. */
+/** What HR has not set that the split needs: the pool, the cutoff day, the window's close date, the bills date, the − / + step. */
 function splitMissing(ctx: Context, window: SplitWindow, billsDue: string | null, stepPaise: number | null): string[] {
   return [
     ...(ctx.poolPaise === null ? ['flexiblePoolPaise'] : []),
-    ...(window.effectiveFrom === null ? ['splitCutoffDay'] : []),
+    ...window.missing,
     ...(billsDue === null ? ['billsDue'] : []),
     ...(stepPaise === null ? ['splitStepPaise'] : []),
   ];
@@ -178,8 +207,15 @@ export async function mySplit(userId: string, now = new Date()) {
   const current = splitFor(splits, window.effectiveFrom ?? periodOf(now));
   const amounts = amountsOf(ctx.components, current?.amounts);
   const assigned = Object.values(amounts).reduce((a, b) => a + b, 0);
+  const editable = window.open && missing.length === 0;
   return {
     available: true,
+    // It can be changed now: the window is open and HR has set up everything it needs.
+    editable,
+    // "locked_for_fy" past the FY's close date: a change goes through HR (a ticket).
+    lockedReason: lockedReasonOf(window),
+    // While editable: the last day it can be changed (and changed again) this FY.
+    closesOn: editable ? window.closesOn : null,
     // HR has not set something the split needs: shown, but it cannot be changed (missing names what).
     notConfigured: missing.length > 0,
     missing,
@@ -230,8 +266,10 @@ async function proposal(userId: string, body: Record<string, unknown>, now: Date
   }
   const [window, deadlines, stepPaise] = await Promise.all([splitWindow(ctx.org, now), deadlinesOf(ctx.org), splitStepOf(ctx.org)]);
   const billsDue = billsDueOn(splitFyOf(window, now), deadlines);
+  // Past the FY's close date: locked for the FY, whatever else is set.
+  if (window.reason === 'locked_for_fy') throw SPLIT_LOCKED();
   const missing = splitMissing(ctx, window, billsDue, stepPaise);
-  if (missing.length > 0 ||ctx.poolPaise === null || window.effectiveFrom === null || window.effectiveTo === null || window.closesOn === null || billsDue === null) {
+  if (missing.length > 0 || ctx.poolPaise === null || window.effectiveFrom === null || window.effectiveTo === null || window.closesOn === null || billsDue === null) {
     throw NOT_CONFIGURED(missing, askHr('HR has not finished setting up the flexible split yet, so it can\'t be changed now'));
   }
   const given = parseAmounts(body.amounts);
@@ -402,7 +440,7 @@ export async function splitForHr(viewerUserId: string, userId: string, fyRaw: un
     template: ctx ? { code: ctx.template.code, name: ctx.template.name } : null,
     // Null while the template has no flexiblePoolPaise (HR sets it on the salary template).
     poolPaise: ctx?.poolPaise ?? null,
-    notConfigured: ctx !== null && ctx.components.length > 0 && (ctx.poolPaise === null || window.effectiveFrom === null || deadlines.billsDue === null || stepPaise === null),
+    notConfigured: ctx !== null && ctx.components.length > 0 && (ctx.poolPaise === null || window.missing.length > 0 || deadlines.billsDue === null || stepPaise === null),
     missing: ctx && ctx.components.length > 0 ? splitMissing(ctx, window, billsDueOn(fy, deadlines), stepPaise) : [],
     asOf,
     // What applies before any split (or with none): the structure's own amounts.

@@ -13,15 +13,18 @@
  * as any claim (adminDecideReimbursement); the note HR writes on a rejection
  * is the reason the app shows.
  *
- * Every date and rule is HR's: the bills due date and the split cutoff day
- * (Company.payrollEmployee), the pool (the salary template), the bill types.
- * One not set comes back as not set up (`missing`), never a default.
+ * Every date and rule is HR's: the bills due date, the day of the month
+ * each month's bills are due by, the split cutoff day and the split window's
+ * close date (Company.payrollEmployee), the pool (the salary template), the
+ * bill types. One not set comes back as not set up (`missing`), never a
+ * default; without the monthly due day no monthly date is given
+ * (`monthlyDueOn` null), and the FY's bills due date stays the last day
+ * bills can be sent.
  *
- * "Locked for this FY": the split's own window rule. A change made now
- * applies from the window's month; when that month is already in the next
- * FY (the cutoff for March has passed, or a run has locked every month left
- * in this FY) no change can reach this FY's pay, and the split is locked
- * until the FY ends.
+ * "Locked for this FY": the split's own window rule. Past the FY's close
+ * date (`splitDue`) the split is locked until the FY ends; so is it when a
+ * change made now could only reach the next FY's pay (March's cutoff has
+ * passed, or a run has locked every month left in this FY).
  */
 import { ObjectId } from 'mongodb';
 import { flexibleSplits, reimbursementClaims, reimbursementTypes, salaryStructures, salaryTemplates, users } from '../config/db';
@@ -30,7 +33,8 @@ import { ReimbursementClaim } from '../models/reimbursement.model';
 import { applyOverrides, resolveTemplateComponents } from '../shared/payroll/resolve';
 import { fyOf } from '../shared/payroll/tds';
 import {
-  EmployeePayrollError, NOT_CONFIGURED, askHr, billsDueOn, dayLabel, dayOf, deadlinesOf, istPeriodOf, lastDayOf, meOf, nextPeriod,
+  EmployeePayrollError, NOT_CONFIGURED, askHr, billsDueOn, dayInMonth, dayLabel, deadlinesFrom, fbpBillsDueDayFrom, istPeriodOf, lastDayOf, meOf,
+  nextPeriod, payrollEmployeeOf, splitClosesOnFor, splitDueFrom,
 } from './employeePayroll.common';
 import { FlexibleComponent, flexibleComponentsOf, splitFor, splitWindow } from './employeePayroll.split';
 import { emitRequestsChanged } from './connect-realtime.service';
@@ -148,6 +152,10 @@ interface Fbp {
   uploadTypeOf: Map<string, { name: string; maxLimit: number }>;
   claims: Claim[];
   billsDue: string | null;
+  /** This month's bills are due by it: the monthly due day of this month (never past the FY's bills date); null when HR has not set the day. */
+  monthlyDueOn: string | null;
+  /** The close date of this FY's split window; null when not set. */
+  splitClosesOn: string | null;
   window: Awaited<ReturnType<typeof splitWindow>>;
 }
 
@@ -166,13 +174,17 @@ async function fbpOf(userId: string, now: Date): Promise<Fbp> {
 
   const period = istPeriodOf(now);
   const { fy } = fyOf(period);
-  const [splits, categories, types, window, deadlines] = await Promise.all([
+  const [splits, categories, types, window, settings] = await Promise.all([
     flexibleSplits().find({ org, userId }, { projection: { _id: 0 } }).toArray(),
     billCategories(org),
     reimbursementTypes().find({ org, active: true, payHeadCode: { $exists: true, $ne: '' } } as never).sort({ name: 1 }).toArray(),
     splitWindow(org, now),
-    deadlinesOf(org),
+    payrollEmployeeOf(org),
   ]);
+  const deadlines = deadlinesFrom(settings);
+  const billsDue = billsDueOn(fy, deadlines);
+  const dueDay = fbpBillsDueDayFrom(settings);
+  const monthDue = dueDay === null ? null : dayInMonth(period, dueDay);
   const categoriesOf = new Map<string, string[]>();
   for (const [category, code] of categories) categoriesOf.set(code, [...(categoriesOf.get(code) ?? []), category]);
   const uploadTypeOf = new Map<string, { name: string; maxLimit: number }>();
@@ -193,7 +205,9 @@ async function fbpOf(userId: string, now: Date): Promise<Fbp> {
     org, userId, fy, period, components,
     poolPaise: typeof template.flexiblePoolPaise === 'number' ? template.flexiblePoolPaise : null,
     splits, months, categoriesOf, uploadTypeOf, claims,
-    billsDue: billsDueOn(fy, deadlines),
+    billsDue,
+    monthlyDueOn: monthDue !== null && billsDue !== null && billsDue < monthDue ? billsDue : monthDue,
+    splitClosesOn: splitClosesOnFor(fy, splitDueFrom(settings)),
     window,
   };
 }
@@ -234,23 +248,25 @@ function monthsFor(f: Fbp, component: FlexibleComponent, now: Date): FbpMonth[] 
 const countOf = (months: FbpMonth[], status: FbpBillStatus) => months.filter((m) => m.status === status).length;
 
 /**
- * Whether the split can still change this FY. `locked` only on the window's
- * own rule; `notConfigured` while HR has not set the split cutoff day.
+ * Whether the split can still change this FY: locked past this FY's close
+ * date, or when a change made now could only reach the next FY's pay.
+ * `notConfigured` while HR has not set the split cutoff day or the close date.
  */
-function lockOf(f: Fbp) {
+function lockOf(f: Fbp): { locked: boolean; notConfigured: boolean; missing: string[]; reason: 'locked_for_fy' | null; effectiveFrom: string | null; closesOn: string | null } {
   const w = f.window;
-  if (w.effectiveFrom === null) {
-    return { locked: false, notConfigured: true, missing: ['splitCutoffDay'], reason: 'payroll_not_configured', effectiveFrom: null, closesOn: null };
+  if (w.reason === 'payroll_not_configured') {
+    return { locked: false, notConfigured: true, missing: w.missing, reason: null, effectiveFrom: null, closesOn: null };
   }
-  const locked = fyOf(w.effectiveFrom).fy !== f.fy;
+  const locked = w.reason === 'locked_for_fy' || w.effectiveFrom === null || fyOf(w.effectiveFrom).fy !== f.fy;
   return {
     locked,
     notConfigured: false,
-    missing: [] as string[],
-    reason: locked ? 'fy_closed' : null,
-    // While open: the month a change made now starts from, and the last day to make it for that month.
+    missing: [],
+    reason: locked ? 'locked_for_fy' : null,
+    // While open: the month a change made now starts from.
     effectiveFrom: locked ? null : w.effectiveFrom,
-    closesOn: locked ? null : w.closesOn,
+    // This FY's close date, open or locked: "You can change your split till …".
+    closesOn: f.splitClosesOn,
   };
 }
 
@@ -258,7 +274,8 @@ function lockOf(f: Fbp) {
 export async function myFbp(userId: string, now = new Date()) {
   const f = await fbpOf(userId, now);
   const lock = lockOf(f);
-  const base = { fy: f.fy, period: f.period, billsDueOn: f.billsDue, lock };
+  // billsDueOn: the last day this FY's bills can be sent; monthlyDueOn: this month's are due by it.
+  const base = { fy: f.fy, period: f.period, billsDueOn: f.billsDue, monthlyDueOn: f.monthlyDueOn, lock };
   if (f.components.length === 0) {
     return { available: false, ...base, poolPaise: f.poolPaise, assignedPaise: 0, unassignedPaise: null, declared: null, heads: [], summary: { toUpload: 0, toReupload: 0, inReview: 0, approved: 0 }, missing: [] };
   }

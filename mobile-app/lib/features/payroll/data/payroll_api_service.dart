@@ -16,10 +16,18 @@ import 'payroll_models.dart';
 /// server writes its messages for the person, and anything else becomes a
 /// plain line here.
 class PayrollApiException implements Exception {
-  const PayrollApiException(this.message, {this.statusCode});
+  const PayrollApiException(this.message, {this.statusCode, this.code});
 
   final String message;
   final int? statusCode;
+
+  /// The server's own name for the refusal ("split_locked"), when it sent
+  /// one.
+  final String? code;
+
+  /// The split is locked for this FY: no change can be saved; the message
+  /// says to raise a ticket.
+  bool get isSplitLocked => code == 'split_locked';
 
   static const failed = 'Something went wrong. Try again.';
   static const offline = 'No internet connection';
@@ -431,15 +439,25 @@ class PayrollApiService {
       final said = json['message'] is String
           ? (json['message'] as String).trim()
           : '';
-      throw PayrollApiException(switch (status) {
-        404 when said.isEmpty || said.startsWith('Route not found') =>
-          PayrollApiException.unavailable,
-        413 => 'Choose a file smaller than 5 MB.',
-        409 when said.isEmpty => PayrollApiException.conflict,
-        >= 500 when said.isEmpty => PayrollApiException.failed,
-        _ when said.isEmpty => PayrollApiException.failed,
-        _ => said,
-      }, statusCode: status);
+      throw PayrollApiException(
+        switch (status) {
+          404 when said.isEmpty || said.startsWith('Route not found') =>
+            PayrollApiException.unavailable,
+          413 => 'Choose a file smaller than 5 MB.',
+          409 when said.isEmpty => PayrollApiException.conflict,
+          >= 500 when said.isEmpty => PayrollApiException.failed,
+          _ when said.isEmpty => PayrollApiException.failed,
+          _ => said,
+        },
+        statusCode: status,
+        // The server names the case in details.reason (split_locked …); an
+        // older one sent it as code.
+        code: switch ((json['details'], json['code'])) {
+          ({'reason': final String reason}, _) => reason,
+          (_, final String code) => code,
+          _ => null,
+        },
+      );
     }
     return json;
   }

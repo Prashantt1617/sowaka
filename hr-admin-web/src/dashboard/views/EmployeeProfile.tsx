@@ -694,6 +694,15 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
   // Another month (or person) shows its own skeleton, not the last month's days.
   const shown = cal && cal.month === month ? cal : null;
   const loading = !shown && !error;
+  // Only part of the month may be open (26–31 of last month for a 26th–25th pay cycle): say which days.
+  const open = shown ? shown.days.filter(dayEditable) : [];
+  const markable = shown ? shown.days.filter((d) => d.status !== 'before_joining') : [];
+  const dayNo = (d: CalendarDayDTO) => Number(d.date.slice(8));
+  const markHint = open.length === 0 || open.length === markable.length
+    ? 'Click any day to mark it'
+    : open.length === 1
+      ? `Only the ${dayNo(open[0])}${ordinal(dayNo(open[0]))} can be marked now`
+      : `Only the ${dayNo(open[0])}${ordinal(dayNo(open[0]))} to the ${dayNo(open[open.length - 1])}${ordinal(dayNo(open[open.length - 1]))} can be marked now (the open pay period); click one to mark it`;
 
   // Monday-first grid, the way the app lays the month out.
   const lead = shown ? (new Date(`${shown.month}-01T00:00:00Z`).getUTCDay() + 6) % 7 : 0;
@@ -780,7 +789,7 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
           })}
         </div>
       </div>
-      {(shown?.days.some(dayEditable) ?? monthEditable) && <div className="pd-subnote" style={{ marginTop: 12 }}>{highlight ? 'Ringed days cost pay. ' : ''}Click any day to mark it. The mark replaces what the punches, leave or holidays say, on the dashboard, in payroll and in the employee's app.</div>}
+      {(shown?.days.some(dayEditable) ?? monthEditable) && <div className="pd-subnote" style={{ marginTop: 12 }}>{highlight ? 'Ringed days cost pay. ' : ''}{markHint}. The mark replaces what the punches, leave or holidays say, on the dashboard, in payroll and in the employee's app.</div>}
       {editing && <MarkDay day={editing} saving={saving} onClose={() => setEditing(null)} onSave={(status, note) => void mark(editing, status, note)} />}
     </section>
   );
@@ -1428,4 +1437,10 @@ export function ShiftPicker({ emp, onChanged }: { emp: Emp; onChanged: () => voi
       <div className="pd-subnote" style={{ marginTop: 8 }}>A change starts tomorrow; today stays on the current shift.</div>
     </div>
   );
+}
+
+/** "st", "nd", "rd" or "th" for a day of the month. */
+function ordinal(n: number): string {
+  if (n % 100 >= 11 && n % 100 <= 13) return 'th';
+  return n % 10 === 1 ? 'st' : n % 10 === 2 ? 'nd' : n % 10 === 3 ? 'rd' : 'th';
 }

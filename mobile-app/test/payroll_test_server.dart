@@ -79,6 +79,16 @@ class FakePayrollServer {
   static const pool = 600000;
   bool splitOpen = true;
 
+  /// The FY's close date has passed: the split says so and a save is
+  /// refused with 409 split_locked.
+  bool splitLockedForFy = false;
+
+  /// A save refused as locked, though the split read as open.
+  bool refuseSaveAsLocked = false;
+
+  /// The fbp_bills to-do's date; null sends no such to-do.
+  String? fbpBillsDueOn;
+
   /// The − / + step HR set (Payroll in the app); 0 sends none, as a company
   /// that has not set it: the split then says it is not set up.
   int splitStepPaise = 50000;
@@ -211,6 +221,14 @@ class FakePayrollServer {
       });
     }
     if (path == '/payroll/split' && request.method == 'PUT') {
+      if (splitLockedForFy || refuseSaveAsLocked) {
+        return payrollJson({
+          'success': false,
+          'code': 'split_locked',
+          'message':
+              'Your split is locked for this FY. To change it, raise a ticket.',
+        }, 409);
+      }
       final from = bodies[path]!['effectiveFrom'];
       if (from != null && from != windowMonth) {
         return payrollJson({
@@ -341,6 +359,13 @@ class FakePayrollServer {
         'effectiveFrom': '2026-11',
         'submitted': false,
       },
+      if (fbpBillsDueOn != null)
+        {
+          'kind': 'fbp_bills',
+          'dueOn': fbpBillsDueOn,
+          'pending': 3,
+          'rejected': 1,
+        },
       {
         'kind': 'tax_regime',
         'regime': 'new',
@@ -470,6 +495,9 @@ class FakePayrollServer {
       'unassignedPaise': pool - assigned,
       'notConfigured': splitStepPaise <= 0,
       'missing': [if (splitStepPaise <= 0) 'splitStepPaise'],
+      'editable': !splitLockedForFy && splitOpen && splitStepPaise > 0,
+      'lockedReason': splitLockedForFy ? 'locked_for_fy' : null,
+      'closesOn': splitLockedForFy ? null : '2026-11-15',
       'stepPaise': splitStepPaise <= 0 ? null : splitStepPaise,
       'components': [
         for (final code in split.keys)

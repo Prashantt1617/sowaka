@@ -19,6 +19,7 @@ import {
   EmployeePayrollError, askHr, dayOf, lastDayOf, lockedPeriods, meOf, parsePeriodParam, payrollAppEnabled, periodOf,
 } from './employeePayroll.common';
 import { myDeclaration, myProofs } from './employeePayroll.declaration';
+import { myFbp } from './employeePayroll.fbp';
 import { mySplit } from './employeePayroll.split';
 import { PayrollConfigError, tdsMissing } from './payrollConfig.service';
 import { PayrollInputsError, PeriodRange, payrollPeriodHolding, payrollPeriodRange } from './payroll-inputs.service';
@@ -427,7 +428,7 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
   const { period, range, problem } = await homePayPeriod(org, periodRaw, now);
   const punchesPeriod = period < periodOf(now) ? period : periodOf(now);
   const released = await myReleasedPayslipFor(userId, period);
-  const [pay, punches, split, declaration, proofs] = await Promise.all([
+  const [pay, punches, split, declaration, proofs, fbp] = await Promise.all([
     released ? Promise.resolve({ salary: fromPayslip(released) })
       : range ? estimateFor(org, userId, period, range, now)
         : payPeriodNotSetUp(org, userId, problem ?? 'the pay period is not set up'),
@@ -442,6 +443,11 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
       throw error;
     }),
     myProofs(userId, fy, now),
+    // The FBP page's own counts, for the bills to-do; no salary structure: none.
+    myFbp(userId, now).catch((error) => {
+      if (error instanceof EmployeePayrollError && error.statusCode === 404) return null;
+      throw error;
+    }),
   ]);
 
   const salary = pay && 'salary' in pay ? pay.salary : null;
@@ -482,8 +488,18 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
   if (split?.available && splitThisYear === 0 && (split.window.open || split.notConfigured)) {
     todo.push({ kind: 'flexible_split', dueOn: split.window.closesOn, effectiveFrom: split.window.effectiveFrom, submitted: false, ...notSet(split.missing) });
   }
-  if (splitSummary && splitSummary.bills.rejected > 0) {
-    todo.push({ kind: 'fbp_bills', rejected: splitSummary.bills.rejected, inReview: splitSummary.bills.inReview, dueOn: split!.billsDueOn, ...notSet(split!.billsDueOn ? [] : ['billsDue']) });
+  // Bills to upload or re-upload this FY, while they can still be sent: due by this month's due day
+  // (fbpBillsDueDay; no date when HR has not set it), the FY's bills date the last day.
+  if (fbp?.available) {
+    const pending = fbp.summary.toUpload;
+    const rejected = fbp.summary.toReupload;
+    const closed = fbp.billsDueOn !== null && istDayOf(now) > fbp.billsDueOn;
+    if (pending + rejected > 0 && !closed) {
+      todo.push({
+        kind: 'fbp_bills', pending, notUploaded: pending, rejected, inReview: fbp.summary.inReview, dueOn: fbp.monthlyDueOn, billsDueOn: fbp.billsDueOn,
+        ...notSet(fbp.billsDueOn ? [] : ['billsDue']),
+      });
+    }
   }
   if (!declaration) {
     todo.push({ kind: 'tax_regime', regime: null, chosen: false, dueOn: null, notConfigured: true, reason: 'tax_rules_not_set_up', missing: [] });

@@ -75,6 +75,15 @@ export interface EmployeePayrollSettings {
   appEnabled?: boolean;
   /** Paise, whole rupees: how much each − / + on My split moves a flexible head. Absent: the split cannot be changed (not set up). */
   splitStepPaise?: number;
+  /**
+   * "MM-DD": the last day of the FY's one window to change the flexible split
+   * (April to December in the FY's first calendar year, January to March in
+   * its second). After it the split is locked for the rest of the FY. Absent:
+   * the split cannot be changed (not set up).
+   */
+  splitDue?: string;
+  /** Day of the month (1 to 28) by which each month's FBP bills are due. Absent: no monthly due date is shown. */
+  fbpBillsDueDay?: number;
   updatedAt?: Date;
   updatedBy?: string;
 }

@@ -80,8 +80,8 @@ export const PAYROLL_TERMS: PayrollTerm[] = [
   {
     key: 'form16',
     title: 'Form 16',
-    aliases: ['form 16', 'form-16', 'tds certificate', 'part a', 'part b'],
-    explain: 'The certificate the employer gives each employee after the financial year showing the salary paid and the tax deducted and deposited. Part A (from the TRACES portal) lists the TDS deposited quarter by quarter; Part B is the salary break-up and the tax computation. It is due by 15 June and is what the employee files their return from. Sowaka does not yet generate or track Form 16; the TDS work sheet on each payslip holds the same computation.',
+    aliases: ['form 16', 'form-16', 'tds certificate', 'part a', 'part b', 'traces', 'form 16 upload', 'download form 16'],
+    explain: 'The certificate the employer gives each employee after the financial year showing the salary paid and the tax deducted and deposited. Part A (from the TRACES portal) lists the TDS deposited quarter by quarter; Part B is the salary break-up and the tax computation. It is due by 15 June after the financial year and is what the employee files their return from. Sowaka does not generate Form 16: Part A comes from TRACES after the Q4 TDS return is filed, Part B from the payroll software or CA. HR uploads the PDFs on the dashboard (Payroll Runs › Form 16, one person at a time or in bulk with file names carrying the PAN or employee ID), and employees download them in the app under Payroll › Downloads › Form 16. The TDS work sheet on each payslip holds the same computation as Part B.',
     example: 'For FY 2026-27 (April 2026 to March 2027), Form 16 is issued by 15 June 2027. A person who paid ₹26,000 TDS through the year sees ₹26,000 in Part A and the ₹13,00,000 salary computation in Part B.',
   },
   {
