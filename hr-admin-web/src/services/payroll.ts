@@ -758,6 +758,15 @@ export const getPaymentDetails = (userId: string) =>
 export const savePaymentDetails = (userId: string, input: PaymentDetailsInput) =>
   api<{ details: PaymentDetailsDTO }>(`/admin/payroll/employees/${userId}/payment-details`, { method: 'PUT', body: input }).then((r) => r.details);
 
+/** A PF balance read off the employee's EPFO passbook (Sowaka cannot read EPFO); the newest entry, by HR or the employee, wins. */
+export type EpfBalanceDTO = { balancePaise: number; asOn: string; source: 'hr' | 'employee'; updatedAt: string };
+
+export const getEpfBalance = (userId: string) =>
+  api<{ balance: EpfBalanceDTO | null }>(`/admin/payroll/employees/${userId}/epf-balance`).then((r) => r.balance);
+
+export const saveEpfBalance = (userId: string, input: { balancePaise: number; asOn: string }) =>
+  api<{ balance: EpfBalanceDTO | null }>(`/admin/payroll/employees/${userId}/epf-balance`, { method: 'PUT', body: input }).then((r) => r.balance);
+
 // ————————————————————————————————————————————————————————————————
 // Income tax: the TDS engine's working, and each person's declaration.
 // ————————————————————————————————————————————————————————————————
