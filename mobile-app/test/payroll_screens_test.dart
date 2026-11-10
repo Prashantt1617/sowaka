@@ -265,7 +265,8 @@ void main() {
     expect(find.byKey(const ValueKey('payroll-split')), findsOneWidget);
     expect(find.text('Fuel & vehicle'), findsOneWidget);
     expect(find.text('Max ₹3,000'), findsOneWidget);
-    expect(find.text('2 rejected'), findsOneWidget);
+    // Bills live on the FBP page; My split shows only the heads (Figma 4473:68656).
+    expect(find.text('2 rejected'), findsNothing);
     expect(find.text('Books & periodicals'), findsOneWidget);
     final total = find.byKey(const ValueKey('split-total'));
     expect(
@@ -292,7 +293,7 @@ void main() {
       '₹6,000 of ₹6,000 assigned · All set',
     );
 
-    await tap(tester, find.text('Review split'));
+    await tap(tester, find.text('Submit Split'));
     expect(server.bodies['/payroll/split/review'], {
       'amounts': {
         'FUEL': 300000,
@@ -302,37 +303,30 @@ void main() {
       },
     });
     expect(find.byKey(const ValueKey('payroll-split-review')), findsOneWidget);
-    expect(find.text('YOUR NEW SPLIT · NOV 2026 TO MAR 2027'), findsOneWidget);
+    expect(find.text('YOUR NEW SPLIT · NOV TO MAR 2027'), findsOneWidget);
     expect(find.text('+₹500'), findsNWidgets(2));
     expect(find.text('New'), findsOneWidget);
     expect(find.textContaining('₹940 a month'), findsOneWidget);
     await capture(tester, payroll(), 'review_split');
 
     // The promise comes first.
-    await tap(tester, find.text('Submit split'));
+    await tap(tester, find.text('Submit declaration'));
     expect(server.bodies.containsKey('/payroll/split'), isFalse);
     await tap(tester, find.byKey(const ValueKey('split-agree')));
-    await tap(tester, find.text('Submit split'));
+    await tap(tester, find.text('Submit declaration'));
     expect(server.bodies['/payroll/split']!['acknowledged'], isTrue);
-    expect(find.text('Split submitted'), findsOneWidget);
+    expect(find.text('Declaration submitted'), findsOneWidget);
     await capture(tester, payroll(), 'split_submitted');
 
-    // Closing goes home, which is read again.
+    // Back to FBP leaves the flow for where it was opened (here, home),
+    // which is read again.
     final homeReads = server.calls
         .where((c) => c == 'GET /payroll/home')
         .length;
-    await tap(
-      tester,
-      find.ancestor(
-        of: find.byWidgetPredicate(
-          (w) =>
-              w is SvgPicture &&
-              (w.bytesLoader as SvgAssetLoader).assetName ==
-                  'assets/icons/hub_close_x.svg',
-        ),
-        matching: find.byType(InkWell),
-      ),
-    );
+    await tester.tap(find.text('Back to FBP'));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('payroll-split')), findsNothing);
+    expect(find.byKey(const ValueKey('payroll-split-review')), findsNothing);
     expect(find.byKey(const ValueKey('payroll-home')), findsOneWidget);
     expect(
       server.calls.where((c) => c == 'GET /payroll/home').length,
@@ -346,25 +340,25 @@ void main() {
     final server = await pumpPayroll(tester);
     await tap(tester, find.byKey(const ValueKey('payroll-fbp')));
     await tap(tester, find.byKey(const ValueKey('split-plus-FUEL')));
-    await tap(tester, find.text('Review split'));
-    expect(find.text('YOUR NEW SPLIT · NOV 2026 TO MAR 2027'), findsOneWidget);
+    await tap(tester, find.text('Submit Split'));
+    expect(find.text('YOUR NEW SPLIT · NOV TO MAR 2027'), findsOneWidget);
 
     // The cutoff passes while the person reads.
     server.windowMonth = '2026-12';
     await tap(tester, find.byKey(const ValueKey('split-agree')));
-    await tap(tester, find.text('Submit split'));
+    await tap(tester, find.text('Submit declaration'));
     expect(server.bodies['/payroll/split']!['effectiveFrom'], '2026-11');
     expect(find.text('The window has moved, review again'), findsOneWidget);
-    expect(find.text('Split submitted'), findsNothing);
-    expect(find.text('YOUR NEW SPLIT · DEC 2026 TO MAR 2027'), findsOneWidget);
+    expect(find.text('Declaration submitted'), findsNothing);
+    expect(find.text('YOUR NEW SPLIT · DEC TO MAR 2027'), findsOneWidget);
 
     // Ticked again, it goes through for the new month.
     await tester.pump(const Duration(seconds: 6));
     await settle(tester);
     await tap(tester, find.byKey(const ValueKey('split-agree')));
-    await tap(tester, find.text('Submit split'));
+    await tap(tester, find.text('Submit declaration'));
     expect(server.bodies['/payroll/split']!['effectiveFrom'], '2026-12');
-    expect(find.text('Split submitted'), findsOneWidget);
+    expect(find.text('Declaration submitted'), findsOneWidget);
   });
 
   testWidgets('a closed split window says why and cannot be reviewed', (
@@ -381,6 +375,269 @@ void main() {
       ),
     );
     expect(plus.onTap, isNull);
+  });
+
+  // Figma 4473:68656 "My split" and 4506:22931 "Review".
+  group('My split and its Review', () {
+    /// Whether the InkWell under [key] can be pressed.
+    bool live(WidgetTester tester, String key) =>
+        tester
+            .widget<InkWell>(
+              find.descendant(
+                of: find.byKey(ValueKey(key)),
+                matching: find.byType(InkWell),
+              ),
+            )
+            .onTap !=
+        null;
+
+    String plain(WidgetTester tester, String key) =>
+        tester.widget<Text>(find.byKey(ValueKey(key))).textSpan!.toPlainText();
+
+    String amount(WidgetTester tester, String code) =>
+        tester.widget<Text>(find.byKey(ValueKey('split-amount-$code'))).data!;
+
+    Future<FakePayrollServer> openSplit(
+      WidgetTester tester, {
+      FakePayrollServer? server,
+    }) async {
+      final fake = await pumpPayroll(tester, server: server);
+      await tap(
+        tester,
+        find.byKey(const ValueKey('payroll-todo-flexible_split')),
+      );
+      expect(find.byKey(const ValueKey('payroll-split')), findsOneWidget);
+      return fake;
+    }
+
+    testWidgets('steppers: limits, greyed buttons, the footer totals', (
+      tester,
+    ) async {
+      final server = FakePayrollServer()..addLeaveTravel();
+      await openSplit(tester, server: server);
+      expect(find.text('Change my split'), findsOneWidget);
+      expect(find.text('Leave travel (LTA)'), findsOneWidget);
+      expect(find.text('Max ₹2,000'), findsOneWidget);
+      await capture(tester, payroll(), 'figma_my_split');
+
+      // At its limit Internet cannot go up; at ₹0 Books and LTA cannot go
+      // down; the rest can go both ways.
+      expect(live(tester, 'split-plus-INTERNET'), isFalse);
+      expect(live(tester, 'split-minus-INTERNET'), isTrue);
+      expect(live(tester, 'split-minus-BOOKS'), isFalse);
+      expect(live(tester, 'split-minus-LTA'), isFalse);
+      expect(live(tester, 'split-plus-FUEL'), isTrue);
+      expect(live(tester, 'split-minus-FUEL'), isTrue);
+      expect(
+        plain(tester, 'split-total'),
+        '₹4,500 of ₹6,000 assigned · ₹1,500 left',
+      );
+      // Nothing changed: nothing to submit.
+      expect(live(tester, 'split-submit-split'), isFalse);
+
+      // HR's ₹500 step, up to the limit and no further.
+      await tap(tester, find.byKey(const ValueKey('split-plus-FUEL')));
+      expect(amount(tester, 'FUEL'), '₹3,000');
+      expect(live(tester, 'split-plus-FUEL'), isFalse);
+      expect(
+        plain(tester, 'split-total'),
+        '₹5,000 of ₹6,000 assigned · ₹1,000 left',
+      );
+      expect(live(tester, 'split-submit-split'), isTrue);
+
+      // Down to ₹0 and no further.
+      await tap(tester, find.byKey(const ValueKey('split-minus-INTERNET')));
+      await tap(tester, find.byKey(const ValueKey('split-minus-INTERNET')));
+      expect(amount(tester, 'INTERNET'), '₹0');
+      expect(live(tester, 'split-minus-INTERNET'), isFalse);
+      expect(
+        plain(tester, 'split-total'),
+        '₹4,000 of ₹6,000 assigned · ₹2,000 left',
+      );
+
+      // More than the pool: said in the footer, and it cannot be sent.
+      for (var i = 0; i < 4; i++) {
+        await tap(tester, find.byKey(const ValueKey('split-plus-LTA')));
+      }
+      expect(amount(tester, 'LTA'), '₹2,000');
+      expect(live(tester, 'split-plus-LTA'), isFalse);
+      await tap(tester, find.byKey(const ValueKey('split-plus-BOOKS')));
+      expect(
+        plain(tester, 'split-total'),
+        '₹6,500 of ₹6,000 assigned · ₹500 over',
+      );
+      expect(live(tester, 'split-submit-split'), isFalse);
+      await tap(tester, find.byKey(const ValueKey('split-minus-LTA')));
+      expect(
+        plain(tester, 'split-total'),
+        '₹6,000 of ₹6,000 assigned · All set',
+      );
+      expect(live(tester, 'split-submit-split'), isTrue);
+
+      // Back where it started: nothing to submit again.
+      await tap(tester, find.byKey(const ValueKey('split-minus-LTA')));
+      await tap(tester, find.byKey(const ValueKey('split-minus-LTA')));
+      await tap(tester, find.byKey(const ValueKey('split-minus-LTA')));
+      await tap(tester, find.byKey(const ValueKey('split-minus-BOOKS')));
+      await tap(tester, find.byKey(const ValueKey('split-plus-INTERNET')));
+      await tap(tester, find.byKey(const ValueKey('split-plus-INTERNET')));
+      await tap(tester, find.byKey(const ValueKey('split-minus-FUEL')));
+      expect(
+        plain(tester, 'split-total'),
+        '₹4,500 of ₹6,000 assigned · ₹1,500 left',
+      );
+      expect(live(tester, 'split-submit-split'), isFalse);
+    });
+
+    testWidgets('the step is HR\'s: ₹100 moves by ₹100', (tester) async {
+      final server = FakePayrollServer()..splitStepPaise = 10000;
+      await openSplit(tester, server: server);
+      await tap(tester, find.byKey(const ValueKey('split-plus-FUEL')));
+      expect(amount(tester, 'FUEL'), '₹2,600');
+      await tap(tester, find.byKey(const ValueKey('split-minus-TELEPHONE')));
+      expect(amount(tester, 'TELEPHONE'), '₹900');
+    });
+
+    testWidgets('no step set: not set up, Ask HR, nothing can move', (
+      tester,
+    ) async {
+      final server = FakePayrollServer()..splitStepPaise = 0;
+      await openSplit(tester, server: server);
+      expect(
+        find.textContaining(
+          'HR hasn\'t finished setting up the flexible split',
+        ),
+        findsOneWidget,
+      );
+      for (final code in ['FUEL', 'INTERNET', 'TELEPHONE', 'BOOKS']) {
+        expect(live(tester, 'split-plus-$code'), isFalse, reason: code);
+        expect(live(tester, 'split-minus-$code'), isFalse, reason: code);
+      }
+      expect(live(tester, 'split-submit-split'), isFalse);
+    });
+
+    testWidgets('review: deltas, New, the saving, the tick gates Submit', (
+      tester,
+    ) async {
+      final server = await openSplit(tester);
+      await tap(tester, find.byKey(const ValueKey('split-plus-FUEL')));
+      await tap(tester, find.byKey(const ValueKey('split-plus-TELEPHONE')));
+      await tap(tester, find.byKey(const ValueKey('split-plus-BOOKS')));
+      await tap(tester, find.byKey(const ValueKey('split-submit-split')));
+      expect(
+        find.byKey(const ValueKey('payroll-split-review')),
+        findsOneWidget,
+      );
+      expect(find.text('Review'), findsOneWidget);
+      await capture(tester, payroll(), 'figma_review');
+
+      // The months it runs, as the design writes them.
+      expect(find.text('YOUR NEW SPLIT · NOV TO MAR 2027'), findsOneWidget);
+      Finder inLine(String code, Finder what) => find.descendant(
+        of: find.byKey(ValueKey('split-line-$code')),
+        matching: what,
+      );
+      // Raised heads carry their delta, a head that was ₹0 is New, an
+      // unchanged one has neither.
+      expect(inLine('FUEL', find.text('+₹500')), findsOneWidget);
+      expect(inLine('FUEL', find.text('₹3,000')), findsOneWidget);
+      expect(inLine('TELEPHONE', find.text('+₹500')), findsOneWidget);
+      expect(inLine('BOOKS', find.text('New')), findsOneWidget);
+      expect(inLine('BOOKS', find.text('+₹500')), findsNothing);
+      expect(inLine('INTERNET', find.byType(Container)), findsNothing);
+      expect(plain(tester, 'split-review-total'), '₹6,000 a month');
+      expect(
+        tester
+            .widget<Text>(
+              find
+                  .descendant(
+                    of: find.byKey(const ValueKey('split-saving')),
+                    matching: find.byType(Text),
+                  )
+                  .last,
+            )
+            .textSpan!
+            .toPlainText(),
+        'Saves about ₹940 a month in tax, once bills are approved.',
+      );
+      expect(
+        find.text(
+          'I\'ll keep bills for these heads and upload them by 31 Mar 2027.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text('You can change this again until 15 Nov.'),
+        findsOneWidget,
+      );
+
+      // Submit stays off until the box is ticked, and off again untick.
+      expect(live(tester, 'split-submit-declaration'), isFalse);
+      bool ticked() => find
+          .byWidgetPredicate(
+            (w) =>
+                w is SvgPicture &&
+                (w.bytesLoader as SvgAssetLoader).assetName ==
+                    'assets/icons/payroll_split_check.svg',
+          )
+          .evaluate()
+          .isNotEmpty;
+      expect(ticked(), isFalse);
+      await tap(tester, find.byKey(const ValueKey('split-agree')));
+      expect(ticked(), isTrue);
+      expect(live(tester, 'split-submit-declaration'), isTrue);
+      await capture(tester, payroll(), 'figma_review_ticked');
+      await tap(tester, find.byKey(const ValueKey('split-agree')));
+      expect(live(tester, 'split-submit-declaration'), isFalse);
+      await tap(tester, find.byKey(const ValueKey('split-submit-declaration')));
+      expect(server.bodies.containsKey('/payroll/split'), isFalse);
+
+      // Ticked and sent: the split, the acknowledgement, the month.
+      await tap(tester, find.byKey(const ValueKey('split-agree')));
+      await tap(tester, find.byKey(const ValueKey('split-submit-declaration')));
+      expect(server.bodies['/payroll/split'], {
+        'amounts': {
+          'FUEL': 300000,
+          'INTERNET': 100000,
+          'TELEPHONE': 150000,
+          'BOOKS': 50000,
+        },
+        'acknowledged': true,
+        'effectiveFrom': '2026-11',
+      });
+
+      // The success sheet (canvas HF4c), then on to a bill.
+      expect(find.byKey(const ValueKey('split-done-sheet')), findsOneWidget);
+      expect(find.text('Declaration submitted'), findsOneWidget);
+      expect(
+        find.text(
+          'Your new split of ₹6,000 a month applies from November pay till '
+          'March. Upload bills each month so these heads stay tax-free.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Back to FBP'), findsOneWidget);
+      await capture(tester, payroll(), 'figma_review_done');
+      await tester.tap(find.text('Upload a bill'));
+      await settle(tester);
+      expect(find.byKey(const ValueKey('split-done-sheet')), findsNothing);
+      expect(find.byKey(const ValueKey('payroll-split-review')), findsNothing);
+      expect(find.byKey(const ValueKey('payroll-split')), findsNothing);
+      expect(find.byKey(const ValueKey('payroll-home')), findsOneWidget);
+    });
+
+    testWidgets('review without tax rules: no saving note', (tester) async {
+      final server = FakePayrollServer()..reviewSavingPaise = null;
+      await openSplit(tester, server: server);
+      await tap(tester, find.byKey(const ValueKey('split-plus-FUEL')));
+      await tap(tester, find.byKey(const ValueKey('split-submit-split')));
+      expect(
+        find.byKey(const ValueKey('payroll-split-review')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('split-saving')), findsNothing);
+      expect(find.textContaining('Saves about'), findsNothing);
+    });
   });
 
   group('contact HR goes to a Support Desk ticket', () {

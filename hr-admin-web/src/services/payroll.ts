@@ -894,9 +894,9 @@ export type EmployeeSplitDTO = {
   template: { code: string; name: string } | null;
   /** The template's flexiblePoolPaise; null when it has none (or no structure). */
   poolPaise: number | null;
-  /** HR has not set something the split needs (the pool, the cutoff day, the bills date). */
+  /** HR has not set something the split needs (the pool, the cutoff day, the bills date, the − / + step). */
   notConfigured?: boolean;
-  missing?: ('flexiblePoolPaise' | 'splitCutoffDay' | 'billsDue')[];
+  missing?: ('flexiblePoolPaise' | 'splitCutoffDay' | 'billsDue' | 'splitStepPaise')[];
   /** The month "in force now" means; null for a future FY. */
   asOf: string | null;
   /** What applies with no split: the structure's own amounts. */
@@ -924,8 +924,10 @@ export type EmployeeAppSettings = {
   proofsDue: string | null;
   /** "MM-DD", January to March. */
   billsDue: string | null;
+  /** Paise, whole rupees: how much each − / + on the app's My split moves a head. Not a deadline: without it the split says not set up. */
+  splitStepPaise: number | null;
 };
-export type EmployeeAppDeadline = Exclude<keyof EmployeeAppSettings, 'appEnabled'>;
+export type EmployeeAppDeadline = Exclude<keyof EmployeeAppSettings, 'appEnabled' | 'splitStepPaise'>;
 export type EmployeeAppSettingsResponse = {
   fy: string;
   settings: EmployeeAppSettings;

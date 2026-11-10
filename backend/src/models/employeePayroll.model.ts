@@ -20,6 +20,8 @@ export interface FlexibleSplit {
   amounts: Record<string, number>;
   /** They ticked "I'll keep bills for these heads". */
   acknowledged: true;
+  /** When they ticked it (Review's "I'll keep bills … by 31 Mar"). Absent on splits saved before it was kept; submittedAt then stands for it. */
+  billsAcknowledgedAt?: Date;
   submittedAt: Date;
   /** The pool and each component's limit when it was saved, for HR's history. Absent on splits saved before they were kept. */
   poolPaise?: number;
@@ -67,6 +69,8 @@ export interface EmployeePayrollSettings {
   billsDue?: string;
   /** Whether the app shows Payroll to this company's people. Absent is off. */
   appEnabled?: boolean;
+  /** Paise, whole rupees: how much each − / + on My split moves a flexible head. Absent: the split cannot be changed (not set up). */
+  splitStepPaise?: number;
   updatedAt?: Date;
   updatedBy?: string;
 }

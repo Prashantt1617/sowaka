@@ -459,7 +459,9 @@ class FbpComponent {
   final int limitPaise;
   final int amountPaise;
 
-  /// The +/− step the server suggests; any whole-rupee amount is accepted.
+  /// How much each − / + moves this head, as HR set it (Payroll in the app).
+  /// 0 when HR has not set it: the steppers stay off and the split says it
+  /// is not set up. There is no step made up here.
   final int stepPaise;
   final FbpBills bills;
 
@@ -468,9 +470,7 @@ class FbpComponent {
     name: _string(json['name']),
     limitPaise: _paise(json['limitPaise']),
     amountPaise: _paise(json['amountPaise']),
-    stepPaise: _paise(json['stepPaise']) > 0
-        ? _paise(json['stepPaise'])
-        : 10000,
+    stepPaise: _paise(json['stepPaise']),
     bills: FbpBills.fromJson(_map(json['bills'])),
   );
 }
@@ -512,6 +512,9 @@ class FbpSplit {
     required this.window,
     this.currentEffectiveFrom,
     this.billsDueOn,
+    this.notConfigured = false,
+    this.missing = const [],
+    this.billsAcknowledgedAt,
   });
 
   final bool available;
@@ -523,16 +526,60 @@ class FbpSplit {
   final DateTime? currentEffectiveFrom;
   final DateTime? billsDueOn;
 
-  factory FbpSplit.fromJson(Map<String, dynamic> json) => FbpSplit(
-    available: _bool(json['available']),
-    poolPaise: _paise(json['poolPaise']),
-    assignedPaise: _paise(json['assignedPaise']),
-    unassignedPaise: _paise(json['unassignedPaise']),
-    components: _list(json['components']).map(FbpComponent.fromJson).toList(),
-    window: FbpWindow.fromJson(_map(json['window'])),
-    currentEffectiveFrom: payrollMonth(_map(json['current'])['effectiveFrom']),
-    billsDueOn: payrollDate(json['billsDueOn']),
-  );
+  /// HR has not set something the split needs (the pool, the cutoff day,
+  /// the bills date, the − / + step): it shows, but cannot be changed.
+  final bool notConfigured;
+
+  /// What is not set: "flexiblePoolPaise", "splitCutoffDay", "billsDue",
+  /// "splitStepPaise".
+  final List<String> missing;
+
+  /// When the split in force had its "I'll keep bills" tick; null for one
+  /// saved before that was kept, or no split yet.
+  final DateTime? billsAcknowledgedAt;
+
+  /// The split can be changed now: the window is open and HR has set up
+  /// everything it needs.
+  bool get editable => available && window.open && !notConfigured;
+
+  factory FbpSplit.fromJson(Map<String, dynamic> json) {
+    final step = _paise(json['stepPaise']);
+    final components = _list(json['components']).map((c) {
+      final head = FbpComponent.fromJson(c);
+      // A server that sends the step once, on the split, rather than per head.
+      return head.stepPaise > 0 || step <= 0
+          ? head
+          : FbpComponent(
+              code: head.code,
+              name: head.name,
+              limitPaise: head.limitPaise,
+              amountPaise: head.amountPaise,
+              stepPaise: step,
+              bills: head.bills,
+            );
+    }).toList();
+    return FbpSplit(
+      available: _bool(json['available']),
+      poolPaise: _paise(json['poolPaise']),
+      assignedPaise: _paise(json['assignedPaise']),
+      unassignedPaise: _paise(json['unassignedPaise']),
+      components: components,
+      window: FbpWindow.fromJson(_map(json['window'])),
+      currentEffectiveFrom: payrollMonth(
+        _map(json['current'])['effectiveFrom'],
+      ),
+      billsDueOn: payrollDate(json['billsDueOn']),
+      notConfigured: _bool(json['notConfigured']),
+      missing: [
+        if (json['missing'] is List)
+          for (final m in json['missing'] as List)
+            if (m is String) m,
+      ],
+      billsAcknowledgedAt: _moment(
+        _map(json['current'])['billsAcknowledgedAt'],
+      ),
+    );
+  }
 }
 
 class FbpReviewLine {

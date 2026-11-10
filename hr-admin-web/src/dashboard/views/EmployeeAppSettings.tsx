@@ -2,7 +2,8 @@
 // the app at all (off until HR turns it on), and the deadlines its screens
 // use: until which day of a month the flexible split for that month can
 // change, and when the investment declaration, its proofs and the flexible
-// heads' bills are due. Every value is what HR saved: there are no defaults,
+// heads' bills are due, and how much each − / + on My split moves a head
+// (not a deadline). Every value is what HR saved: there are no defaults,
 // so a deadline not set shows "Not set", and the server refuses to switch
 // Payroll on until all of them are. Dates repeat every financial year; the
 // fields show them for the current one. Payroll access only: without it the
@@ -17,7 +18,9 @@ import { Card, LoadError, SkeletonLines } from '../ui';
 import * as Lk from './look';
 
 type DateField = Exclude<EmployeeAppDeadline, 'splitCutoffDay'>;
-type FormState = Record<EmployeeAppDeadline, string>;
+/** The deadlines, and the split's − / + step in whole rupees (not a deadline: it does not hold Payroll off). */
+type FormField = EmployeeAppDeadline | 'splitStepPaise';
+type FormState = Record<FormField, string>;
 
 const FIELDS: { key: DateField; title: string; note: string; secondYear: boolean }[] = [
   { key: 'declarationDue', title: 'Choose the regime and declare investments by', note: 'Between 1 April and 31 December. After it the declaration is read only on the app.', secondYear: false },
@@ -35,6 +38,7 @@ const formOf = (r: EmployeeAppSettingsResponse): FormState => ({
   declarationDue: r.dates.declarationDueOn ?? '',
   proofsDue: r.dates.proofsDueOn ?? '',
   billsDue: r.dates.billsDueOn ?? '',
+  splitStepPaise: r.settings.splitStepPaise == null ? '' : String(r.settings.splitStepPaise / 100),
 });
 const listOf = (keys: EmployeeAppDeadline[]) => {
   const names = keys.map((k) => NAMES[k]);
@@ -79,7 +83,7 @@ export function EmployeeAppSettingsCard() {
   const missing = new Set(data.missing);
   const y1 = Number(data.fy.slice(0, 4));
   const original = formOf(data);
-  const dirty = (Object.keys(form) as EmployeeAppDeadline[]).filter((k) => form[k] !== original[k]);
+  const dirty = (Object.keys(form) as FormField[]).filter((k) => form[k] !== original[k]);
 
   const put = async (body: Parameters<typeof saveEmployeeAppSettings>[0], done: string) => {
     setSaving(true);
@@ -98,13 +102,18 @@ export function EmployeeAppSettingsCard() {
     }
   };
   const save = () => {
-    const body: { splitCutoffDay?: number | null } & Partial<Record<DateField, string | null>> = {};
+    const body: { splitCutoffDay?: number | null; splitStepPaise?: number | null } & Partial<Record<DateField, string | null>> = {};
     for (const k of dirty) {
       if (k === 'splitCutoffDay') {
         if (form.splitCutoffDay.trim() === '') { body.splitCutoffDay = null; continue; }
         const n = Number(form.splitCutoffDay);
         if (!Number.isInteger(n) || n < 1 || n > 28) return flash('The split cutoff is a day from 1 to 28', 'error');
         body.splitCutoffDay = n;
+      } else if (k === 'splitStepPaise') {
+        if (form.splitStepPaise.trim() === '') { body.splitStepPaise = null; continue; }
+        const rupees = Number(form.splitStepPaise);
+        if (!Number.isInteger(rupees) || rupees < 1 || rupees > 10_000) return flash('The split step is whole rupees, from ₹1 to ₹10,000', 'error');
+        body.splitStepPaise = rupees * 100;
       } else {
         body[k] = form[k] || null;
       }
@@ -160,6 +169,17 @@ export function EmployeeAppSettingsCard() {
             <div style={note}>
               1 to 28. A change after it applies from next month.
               {data.dates.splitClosesOn ? ` This month: ${dateLabel(data.dates.splitClosesOn)}.` : ' Until it is set, nobody can change their split.'}
+            </div>
+          </div>
+          <div style={{ ...tile, ...(s.splitStepPaise == null ? tileMissing : null) }}>
+            <div style={Lk.label}>Each − / + on My split moves a head by {s.splitStepPaise == null && <>· {notSet}</>}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>₹</span>
+              <input type="number" min={1} max={10000} step={1} value={form.splitStepPaise} placeholder="Not set" onChange={(e) => setForm({ ...form, splitStepPaise: e.target.value })} className="lk-in" aria-label="Split step in rupees" style={{ ...Lk.input, width: 120 }} />
+            </div>
+            <div style={note}>
+              Whole rupees, ₹1 to ₹10,000. A head never goes past its monthly limit.
+              {s.splitStepPaise == null ? ' Until it is set, nobody can change their split.' : ''}
             </div>
           </div>
           {FIELDS.map((f) => {

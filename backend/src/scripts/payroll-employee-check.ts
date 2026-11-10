@@ -1,7 +1,9 @@
 /**
  * Scratch-database check of the app's Payroll screens: the home summary, the
- * missing punches of a month, the flexible split (limits, pool, the window
- * and the run's lock, the payroll run paying the split from its month on),
+ * missing punches of a month, the flexible split (limits, pool, the − / +
+ * step HR sets, the window and the run's lock, Review's deltas and tax saving,
+ * no unchanged split, the bills acknowledgement kept with the split, the
+ * payroll run paying the split from its month on),
  * payslips (only released ones, only one's own), the home estimate on the
  * company's pay period (payroll_periods) and its "not set up" states, and the
  * 409s telling the person to ask HR. It drops and recreates
@@ -17,6 +19,7 @@ import { env } from '../config/env';
 import { PayHead } from '../models/payHead.model';
 import { createRun, myPayslip, myPayslips, submitRun } from '../services/payrollRun.service';
 import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
+import { employeeAppSettingsForHr, setEmployeeAppSettingsForHr } from '../services/employeePayroll.settings';
 import { mySplit, reviewSplit, saveSplit, splitWindow } from '../services/employeePayroll.split';
 import { STATUTORY_SEED, TDS_SEED } from './payroll-config-seed-data';
 
@@ -63,7 +66,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   if (db.databaseName !== SCRATCH) throw new Error(`refusing to run against ${db.databaseName}: set MONGODB_DB=${SCRATCH}`);
   await db.dropDatabase();
 
-  await companies().insertOne({ id: ORG, name: 'Sowaka (scratch)', payrollEmployee: { appEnabled: true, splitCutoffDay: 15, declarationDue: '11-30', proofsDue: '01-31', billsDue: '03-31' } } as never);
+  await companies().insertOne({ id: ORG, name: 'Sowaka (scratch)', payrollEmployee: { appEnabled: true, splitCutoffDay: 15, declarationDue: '11-30', proofsDue: '01-31', billsDue: '03-31', splitStepPaise: R(500) } } as never);
   await companies().insertOne({ id: 'otherco', name: 'Other (scratch)' } as never);
   // People punch in and out (the default policy marks everyone present).
   await shiftPolicies().insertOne({ org: ORG, correction: { punchFormat: 'Geotag (powered by Sowaka)' } } as never);
@@ -117,6 +120,31 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('on 31 Oct (past the 15th) a change applies from November, until 15 Nov, to March',
     s0.window.effectiveFrom === '2026-11' && s0.window.closesOn === '2026-11-15' && s0.window.effectiveTo === '2027-03', s0.window);
   check('on 10 Oct it applies from October', (await splitWindow(ORG, oct10)).effectiveFrom === '2026-10');
+
+  // —— the − / + step is HR's (Payroll in the app), never one made up in code ——
+  check('the step is the company\'s ₹500, on the split and on every head',
+    s0.stepPaise === R(500) && s0.components.every((c) => c.stepPaise === R(500)) && !s0.notConfigured, [s0.stepPaise, s0.components.map((c) => c.stepPaise)]);
+  await companies().updateOne({ id: ORG }, { $unset: { 'payrollEmployee.splitStepPaise': '' } });
+  const noStep = await mySplit('asha', oct31);
+  check('no step set: the split says not set up (splitStepPaise missing), no step made up',
+    noStep.notConfigured && noStep.missing.join() === 'splitStepPaise' && noStep.stepPaise === null && noStep.components.every((c) => c.stepPaise === null), noStep);
+  const rvNoStep = await reviewSplit('asha', { amounts: { FUEL: R(3000) } }, oct31).then(() => null, (e: { statusCode?: number; message?: string; details?: { missing?: string[] } }) => e);
+  check('…and cannot be reviewed (409, naming splitStepPaise, saying to ask HR)',
+    rvNoStep?.statusCode === 409 && rvNoStep.details?.missing?.join() === 'splitStepPaise' && /Ask HR\.$/.test(rvNoStep.message ?? ''), rvNoStep);
+  const badStep = async (v: unknown) => (await refusal(() => setEmployeeAppSettingsForHr('hr', undefined, { splitStepPaise: v }, oct31)))?.status === 400;
+  check('settings: a step of 0, 50 paise, ₹500.50, above ₹10,000 or not a number is refused (400)',
+    (await badStep(0)) && (await badStep(50)) && (await badStep(50050)) && (await badStep(R(10_001))) && (await badStep('lots')));
+  check('settings: the step reads as not set', (await employeeAppSettingsForHr('hr', undefined, oct31)).settings.splitStepPaise === null);
+  const setStep = await setEmployeeAppSettingsForHr('hr', undefined, { splitStepPaise: R(500) }, oct31);
+  check('settings: HR sets it to ₹500; it is not a deadline (Payroll stays on, nothing else missing)',
+    setStep.settings.splitStepPaise === R(500) && setStep.settings.appEnabled && setStep.missing.length === 0, setStep);
+  check('…and the split reads it', (await mySplit('asha', oct31)).stepPaise === R(500));
+
+  // —— nothing changed is not a split ——
+  const same = await refusal(() => reviewSplit('asha', { amounts: {} }, oct31));
+  check('reviewing the split in force unchanged is refused (400)', same?.status === 400 && /Nothing has changed/.test(same.message ?? ''), same);
+  const sameAgain = await refusal(() => reviewSplit('asha', { amounts: { FUEL: R(2500), INTERNET: R(1000) } }, oct31));
+  check('…also when the same amounts are sent back', sameAgain?.status === 400 && /Nothing has changed/.test(sameAgain.message ?? ''), sameAgain);
   const plain = await mySplit('chetan', oct31);
   check('a template without flexible components: not available', plain.available === false && plain.components.length === 0, plain);
   const noSplit = await refusal(() => reviewSplit('chetan', { amounts: {} }, oct31));
@@ -126,8 +154,9 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('an amount above its limit is refused (400)', over?.status === 400 && /Fuel & vehicle can be at most ₹3,000/.test(over.message ?? ''), over);
   const pool = await refusal(() => reviewSplit('asha', { amounts: { FUEL: R(3000), TELEPHONE: R(1500), BOOKS: R(500), INTERNET: R(1000) } }, oct31));
   check('a total within limits but above the pool is refused', pool === null, pool); // 3000+1000+1500+500 = 6000: exactly the pool
-  const pool2 = await refusal(() => reviewSplit('bala', { amounts: { FUEL: R(3000), TELEPHONE: R(1500), BOOKS: R(500), INTERNET: R(1000) } }, oct31));
-  check('(the pool is the template\'s, the same ₹6,000 for Bala: exactly full is fine)', pool2 === null, pool2);
+  // Bala has no split yet and his structure pays every head its limit: the full ₹6,000 already, so only a change can be reviewed.
+  const pool2 = await refusal(() => reviewSplit('bala', { amounts: { FUEL: R(2500) } }, oct31));
+  check('(the pool is the template\'s, the same ₹6,000 for Bala: within it is fine)', pool2 === null, pool2);
   await salaryTemplates().updateOne({ code: 'FLEX' }, { $set: { flexiblePoolPaise: R(5000) } });
   const pool3 = await refusal(() => reviewSplit('asha', { amounts: { FUEL: R(3000), TELEPHONE: R(1500), BOOKS: R(500), INTERNET: R(1000) } }, oct31));
   check('above a ₹5,000 pool it is refused (400)', pool3?.status === 400 && /more than your ₹5,000/.test(pool3.message ?? ''), pool3);
@@ -142,6 +171,21 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('review: Fuel +₹500, Books new, total ₹6,000 a month, nothing left',
     fuel.changePaise === R(500) && books.isNew && review.totalPaise === R(6000) && review.unassignedPaise === 0, review);
   check('review: a tax saving is estimated (new regime, ₹18 lakh CTC)', typeof review.monthlyTaxSavingPaise === 'number' && review.monthlyTaxSavingPaise > 0, review.monthlyTaxSavingPaise);
+  const lineOf = (code: string) => review.lines.find((l) => l.code === code)!;
+  check('review: Internet unchanged (no delta, not new), Telephone +₹500, Books ₹0 → ₹500 is new, not a delta',
+    lineOf('INTERNET').changePaise === 0 && !lineOf('INTERNET').isNew && lineOf('TELEPHONE').changePaise === R(500) && !lineOf('TELEPHONE').isNew
+    && books.isNew && books.previousPaise === 0 && books.amountPaise === R(500), review.lines);
+  check('review: Nov to Mar 2027, change again until 15 Nov, bills by 31 Mar 2027',
+    review.effectiveFrom === '2026-11' && review.effectiveTo === '2027-03' && review.closesOn === '2026-11-15' && review.billsDueOn === '2027-03-31', review);
+  check('review: the saving is in whole rupees', (review.monthlyTaxSavingPaise ?? 1) % 100 === 0, review.monthlyTaxSavingPaise);
+  const smaller = await reviewSplit('asha', { amounts: { FUEL: R(3000) } }, oct31);
+  check('review: a smaller split saves less tax', (smaller.monthlyTaxSavingPaise ?? 0) > 0 && smaller.monthlyTaxSavingPaise! < review.monthlyTaxSavingPaise!,
+    [smaller.monthlyTaxSavingPaise, review.monthlyTaxSavingPaise]);
+  await tdsConfigs().deleteMany({ fy: '2026-27' });
+  const noRules = await reviewSplit('asha', { amounts: { FUEL: R(3000), TELEPHONE: R(1500), BOOKS: R(500) } }, oct31);
+  check('review: no tax rules for the FY, no saving shown (null), the rest as before',
+    noRules.monthlyTaxSavingPaise === null && noRules.totalPaise === R(6000), noRules.monthlyTaxSavingPaise);
+  await tdsConfigs().insertMany(TDS_SEED.filter((c) => c.fy === '2026-27').map((c) => ({ ...c, createdAt: now, updatedAt: now })));
   check('review saves nothing', (await flexibleSplits().countDocuments({})) === 0);
 
   check('saving without the bills tick is refused', (await refusal(() => saveSplit('asha', { amounts: { FUEL: R(3000) } }, oct31)))?.status === 400);
@@ -149,6 +193,12 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('saving for a month whose window has closed is refused (409)', stale?.status === 409 && /November 2026/.test(stale.message ?? ''), stale);
   const saved = await saveSplit('asha', { amounts: { FUEL: R(3000), TELEPHONE: R(1500), BOOKS: R(500) }, acknowledged: true, effectiveFrom: '2026-11' }, oct31);
   check('saved from November', saved.current?.effectiveFrom === '2026-11' && saved.assignedPaise === R(6000), saved);
+  const row = await flexibleSplits().findOne({ org: ORG, userId: 'asha', effectiveFrom: '2026-11' });
+  check('the bills acknowledgement is kept with the split (billsAcknowledgedAt, when it was ticked)',
+    row?.acknowledged === true && row.billsAcknowledgedAt?.toISOString() === oct31.toISOString(), row);
+  check('…and the split says when', saved.current?.billsAcknowledgedAt === oct31.toISOString(), saved.current);
+  const resave = await refusal(() => saveSplit('asha', { amounts: { FUEL: R(3000), TELEPHONE: R(1500), BOOKS: R(500) }, acknowledged: true, effectiveFrom: '2026-11' }, oct31));
+  check('submitting the same split again is refused (400, nothing changed)', resave?.status === 400 && /Nothing has changed/.test(resave.message ?? ''), resave);
   const bView = await mySplit('bala', oct31);
   check('Bala still sees his own split, untouched by Asha\'s', bView.current === null && bView.components.find((c) => c.code === 'FUEL')?.amountPaise === R(3000), bView);
 

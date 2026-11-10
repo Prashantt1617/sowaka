@@ -21,6 +21,7 @@ const MISSING: Record<string, string> = {
   flexiblePoolPaise: 'The template has no flexible pool (Payroll › Salary Templates)',
   splitCutoffDay: 'No split cutoff day (Payroll Dashboard › Payroll in the app)',
   billsDue: 'No bills due date (Payroll Dashboard › Payroll in the app)',
+  splitStepPaise: 'No split step (Payroll Dashboard › Payroll in the app)',
 };
 
 function fyOf(d: Date): string {
