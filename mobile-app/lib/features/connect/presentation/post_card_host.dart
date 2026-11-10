@@ -69,6 +69,7 @@ mixin _PostCardHost<T extends StatefulWidget> on State<T> {
     return _ConnectPostCard(
       key: key,
       post: post,
+      bloc: _bloc,
       conversation: conversation,
       busy: state.busyPostId == post.id,
       canManage:

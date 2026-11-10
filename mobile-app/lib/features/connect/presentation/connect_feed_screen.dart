@@ -662,6 +662,7 @@ class _ConnectPostCard extends StatefulWidget {
   const _ConnectPostCard({
     super.key,
     required this.post,
+    required this.bloc,
     required this.busy,
     required this.canManage,
     required this.onLike,
@@ -688,6 +689,10 @@ class _ConnectPostCard extends StatefulWidget {
   final bool busy;
   final bool canManage;
   final VoidCallback onLike;
+
+  /// The posts [post] is one of, for a poll's opened picture to follow as
+  /// the vote made in it goes on (or comes off again).
+  final ConnectBloc bloc;
 
   /// The latest comments and the comment box under the likes; false on a
   /// profile's Post tab (see `_PostFooter.conversation`).
@@ -787,6 +792,7 @@ class _ConnectPostCardState extends State<_ConnectPostCard> {
     if (post.type == ConnectPostType.survey) {
       return _PollPostCard(
         post: post,
+        bloc: widget.bloc,
         busy: widget.busy,
         canManage: widget.canManage,
         commentController: _commentController,

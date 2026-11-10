@@ -3070,7 +3070,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                   for (final action in _actionsForDay(day))
                     AttendanceDayAction(
                       label: action.label,
-                      link: action.link,
                       onTap: () {
                         Navigator.of(sheetContext).pop();
                         action.onTap();
@@ -3115,9 +3114,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     // day; one that has started is HR's to undo.
     if (day.leave case final leave? when _leaveCancellable(leave)) {
       return [
+        // Node 2112:69218: the same outlined button as Apply leave.
         AttendanceDayAction(
           label: 'Cancel Leave',
-          link: true,
           onTap: () => _cancelLeave(day),
         ),
       ];
@@ -4914,7 +4913,8 @@ AttendanceTagStyle attendanceTagStyle(AttendanceKind kind) => switch (kind) {
     label: 'Leave Without Pay',
   ),
   AttendanceKind.leavePending => (
-    bg: const Color(0xFFDBEAFE),
+    // Node 1236:14766, the "Leave applied" tag.
+    bg: const Color(0xFFEAE5FF),
     fg: const Color(0xFF0571A6),
     label: 'Leave Applied',
   ),
@@ -5451,18 +5451,10 @@ class _CorrectionDayTypeRow extends StatelessWidget {
 }
 
 class AttendanceDayAction {
-  const AttendanceDayAction({
-    required this.label,
-    required this.onTap,
-    this.link = false,
-  });
+  const AttendanceDayAction({required this.label, required this.onTap});
 
   final String label;
   final VoidCallback onTap;
-
-  /// Drawn as a small text link under the punch card rather than a button:
-  /// taking a leave back is offered beside the day, never urged.
-  final bool link;
 }
 
 class AttendanceDayDetail extends StatelessWidget {
@@ -5609,7 +5601,7 @@ class AttendanceDayDetail extends StatelessWidget {
             ),
           ],
           for (final action in actions) ...[
-            SizedBox(height: action.link ? 6 : 16),
+            const SizedBox(height: 16),
             _AttendanceDayActionButton(action: action),
           ],
           if (actions.isEmpty && blockedReason != null) ...[
@@ -5649,35 +5641,23 @@ class _AttendanceDayActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (action.link) {
-      // Node 2112:69967 — a small blue text link, left under the punch card.
-      return Align(
-        alignment: Alignment.centerLeft,
-        child: TextButton(
-          style: TextButton.styleFrom(
-            foregroundColor: const Color(0xFF4A74FF),
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            minimumSize: const Size(0, 28),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            textStyle: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          onPressed: action.onTap,
-          child: Text(action.label),
-        ),
-      );
-    }
-    // Node 2112:69779 — a hairline outline, not a filled button: the action
-    // is offered, not urged.
+    // Nodes 2112:69218 / 2112:69404 — a hairline outline with no fill, on the
+    // page's own grey: the action is offered, not urged. 12 + 20 + 12 plus
+    // the 1.4 border top and bottom.
     return SizedBox(
-      height: 48,
+      height: 46,
       child: OutlinedButton(
         style: OutlinedButton.styleFrom(
-          backgroundColor: Colors.white,
+          backgroundColor: Colors.transparent,
           foregroundColor: const Color(0xFF222222),
           side: const BorderSide(color: Color(0xFFEBEBEB), width: 1.4),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          textStyle: const TextStyle(
+            fontFamily: 'Sora',
+            fontSize: 14,
+            height: 20 / 14,
+            fontWeight: FontWeight.w600,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),

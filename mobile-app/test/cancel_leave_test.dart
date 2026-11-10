@@ -58,7 +58,7 @@ void main() {
   });
 
   testWidgets(
-    'a link action is a small text link under the punch card, not a button',
+    'Cancel Leave is the outlined day button under the punch card (2112:69218)',
     (tester) async {
       final day = AttendanceDayView(
         date: DateTime(2026, 9, 16),
@@ -75,7 +75,6 @@ void main() {
               actions: [
                 AttendanceDayAction(
                   label: 'Cancel Leave',
-                  link: true,
                   onTap: () => tapped = true,
                 ),
               ],
@@ -85,8 +84,9 @@ void main() {
       );
       expect(find.text('Leave Applied'), findsOneWidget);
       expect(find.text('Punch-in'), findsOneWidget);
-      expect(find.widgetWithText(TextButton, 'Cancel Leave'), findsOneWidget);
-      expect(find.widgetWithText(OutlinedButton, 'Cancel Leave'), findsNothing);
+      final button = find.widgetWithText(OutlinedButton, 'Cancel Leave');
+      expect(button, findsOneWidget);
+      expect(tester.getSize(button).height, 46);
       await tester.tap(find.text('Cancel Leave'));
       expect(tapped, isTrue);
     },
@@ -265,7 +265,7 @@ void main() {
     await tester.tap(find.text('Cancel Leave'));
     await settle();
 
-    // The sheet: its title and its button, over the day's own link.
+    // The sheet: its title and its button, over the day's own button.
     expect(find.text('Cancel Leave'), findsNWidgets(3));
     expect(find.text('Add a note for your manager...'), findsOneWidget);
     await tester.enterText(find.byType(TextField).last, 'Plans changed');

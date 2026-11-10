@@ -21,6 +21,7 @@ class _PollPercent extends StatelessWidget {
     required this.value,
     required this.style,
     this.votes = false,
+    this.countIn = true,
   });
 
   final int value;
@@ -29,9 +30,13 @@ class _PollPercent extends StatelessWidget {
   /// Shown as "3 votes" instead of "3%".
   final bool votes;
 
+  /// Whether it counts up from nothing when it first shows; otherwise it
+  /// starts at [value] and moves only when that changes.
+  final bool countIn;
+
   @override
   Widget build(BuildContext context) => TweenAnimationBuilder<double>(
-    tween: Tween(begin: 0, end: value.toDouble()),
+    tween: Tween(begin: countIn ? 0 : value.toDouble(), end: value.toDouble()),
     duration: _pollMotion,
     curve: Curves.easeOutCubic,
     builder: (context, shown, _) {
@@ -69,7 +74,7 @@ class _PollOptionVotes extends StatelessWidget {
 
 /// An option that gives under the finger, so a tap is felt before the vote lands.
 class _PollPressable extends StatefulWidget {
-  const _PollPressable({required this.onTap, required this.child});
+  const _PollPressable({super.key, required this.onTap, required this.child});
 
   final VoidCallback onTap;
   final Widget child;
@@ -109,6 +114,7 @@ class _PollPressableState extends State<_PollPressable> {
 class _PollPostCard extends StatelessWidget {
   const _PollPostCard({
     required this.post,
+    required this.bloc,
     required this.busy,
     required this.canManage,
     required this.commentController,
@@ -124,6 +130,9 @@ class _PollPostCard extends StatelessWidget {
   });
 
   final ConnectPost post;
+
+  /// Where [post] comes from, for a picture opened from it to follow.
+  final ConnectBloc bloc;
   final bool busy;
   final bool canManage;
 
@@ -205,7 +214,7 @@ class _PollPostCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: withImages
-                ? _PollOptionGrid(post: post, onAction: onAction)
+                ? _PollOptionGrid(post: post, bloc: bloc, onAction: onAction)
                 : _PollOptionBars(post: post, onAction: onAction),
           ),
           const SizedBox(height: 12),
@@ -419,53 +428,95 @@ class _PollBadge extends StatelessWidget {
   }
 }
 
-/// Picture options, two to a row (node 3553:46841). The share shows once the
-/// viewer has voted; their pick is outlined in brand blue.
-class _PollOptionGrid extends StatelessWidget {
-  const _PollOptionGrid({required this.post, required this.onAction});
+/// Picture options, two to a row (section 4610:23636, "Poll updated"): each
+/// option is its picture, 152 tall, darkened toward the bottom with its name
+/// in white on it. A tap on a picture does not vote — it opens the picture
+/// in [_PollOptionViewer], and the vote is cast from in there. Once the
+/// viewer has voted each picture carries its share beside its name, and
+/// their pick is outlined in brand blue with its words in light blue (node
+/// 4604:23303). The picture being looked at is outlined too while its viewer
+/// is up (node 4607:23534).
+class _PollOptionGrid extends StatefulWidget {
+  const _PollOptionGrid({
+    required this.post,
+    required this.bloc,
+    required this.onAction,
+  });
 
   final ConnectPost post;
+
+  /// Where [post] comes from, for an open viewer to follow.
+  final ConnectBloc bloc;
   final Future<void> Function({String? optionId}) onAction;
 
   @override
+  State<_PollOptionGrid> createState() => _PollOptionGridState();
+}
+
+class _PollOptionGridState extends State<_PollOptionGrid> {
+  /// The option whose viewer is up, if any.
+  String? _openId;
+
+  Future<void> _open(ConnectPollOption option) async {
+    setState(() => _openId = option.id);
+    await showDialog<void>(
+      context: context,
+      barrierColor: const Color(0x76000000),
+      barrierLabel: 'Close',
+      builder: (_) => _PollOptionViewer(
+        bloc: widget.bloc,
+        postId: widget.post.id,
+        optionId: option.id,
+        onAction: widget.onAction,
+      ),
+    );
+    if (mounted) setState(() => _openId = null);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final post = widget.post;
     final options = post.pollOptions;
     final voted = post.selectedPollOptionId != null;
+    final total = post.totalVotes == 0 ? 1 : post.totalVotes;
     Widget tile(ConnectPollOption option) {
       final selected = voted && post.selectedPollOptionId == option.id;
-      final ink = selected ? _pollBrand : _pollInkSecondary;
+      final outlined = selected || _openId == option.id;
+      final ink = selected ? const Color(0xFF83CFF4) : Colors.white;
       final image = option.imageUrl ?? '';
+      final pct = ((option.votes / total) * 100).round();
       return Semantics(
         button: true,
         selected: selected,
         label: option.label,
+        hint: 'Opens the picture to vote',
         child: _PollPressable(
-          onTap: () => onAction(optionId: option.id),
+          key: ValueKey('poll-option-open-${option.id}'),
+          onTap: () => _open(option),
           child: AnimatedContainer(
             duration: _pollMotion,
             curve: Curves.easeOutCubic,
-            padding: EdgeInsets.all(selected ? 10.5 : 11),
-            decoration: BoxDecoration(
-              color: selected ? const Color(0xFFEFF6FF) : Colors.white,
+            // The outline sits over the picture, as the design's stroke does.
+            foregroundDecoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: selected ? const Color(0xFF0571A5) : _pollBorder,
-                width: selected ? 1.5 : 1,
+                color: outlined ? const Color(0xFF0571A5) : _pollBorder,
+                width: outlined ? 1.5 : 1,
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: SizedBox(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  SizedBox.expand(
                     key: ValueKey('poll-option-image-${option.id}'),
-                    height: 88,
                     child: image.isEmpty
-                        ? const ColoredBox(color: _pollSurface)
-                        // Two fingers lift the picture out to zoom, as a
-                        // photo post's does. One finger's tap still votes.
+                        // An option posted without a picture keeps its place
+                        // in the grid on a flat grey the white words read on.
+                        ? const ColoredBox(color: _pollIcons)
+                        // Two fingers still lift the picture out to zoom in
+                        // place, as a photo post's do.
                         : _PinchToZoom(
                             child: Image(
                               image: _remoteImage(image),
@@ -473,36 +524,61 @@ class _PollOptionGrid extends StatelessWidget {
                             ),
                           ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  option.label,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: _soraFont,
-                    fontSize: 15,
-                    height: 22.5 / 15,
-                    fontWeight: FontWeight.w600,
-                    color: ink,
+                  const IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0x57666666), Color(0x57000000)],
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-                if (voted) ...[
-                  const SizedBox(height: 4),
-                  // A picture option counts votes, not a share of them.
-                  _PollPercent(
-                    value: option.votes,
-                    votes: true,
-                    style: TextStyle(
-                      fontFamily: _soraFont,
-                      fontSize: 16,
-                      height: 24 / 16,
-                      fontWeight: FontWeight.w700,
-                      color: ink,
+                  Positioned(
+                    left: 8,
+                    right: 8,
+                    bottom: 8,
+                    child: IgnorePointer(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: AnimatedDefaultTextStyle(
+                              duration: _pollMotion,
+                              style: TextStyle(
+                                fontFamily: _soraFont,
+                                fontSize: 12,
+                                height: 22.5 / 12,
+                                fontWeight: FontWeight.w600,
+                                color: ink,
+                              ),
+                              child: Text(
+                                option.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                          if (voted) ...[
+                            const SizedBox(width: 8),
+                            _PollPercent(
+                              value: pct,
+                              style: TextStyle(
+                                fontFamily: _soraFont,
+                                fontSize: 12,
+                                height: 24 / 12,
+                                fontWeight: FontWeight.w700,
+                                color: ink,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -513,7 +589,8 @@ class _PollOptionGrid extends StatelessWidget {
       children: [
         for (var i = 0; i < options.length; i += 2) ...[
           if (i > 0) const SizedBox(height: 12),
-          IntrinsicHeight(
+          SizedBox(
+            height: 152,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -531,6 +608,288 @@ class _PollOptionGrid extends StatelessWidget {
       ],
     );
   }
+}
+
+/// One picture option opened over the feed (node 4607:23605): the picture,
+/// its name and how many votes it has, and the Vote button — a picture poll
+/// is voted on from here, never from the card. The close button on the
+/// picture, a tap outside or Back puts it away.
+///
+/// It draws the post exactly as [bloc] holds it, read by [postId] on every
+/// change: voting goes the card's way, through [onAction], and the bloc puts
+/// the vote on at once and takes it off again if sending fails, so the
+/// button and the count here follow it with no copy of their own. The
+/// design draws only the open option before a vote; the voted look is the
+/// Vote button's own pill filled, reading "Voted". Voting for another option
+/// later, from its own picture, moves the vote as a tap on a words-only
+/// option does. Should the post or this option go while it is open — the
+/// poll deleted, its options edited — it closes.
+class _PollOptionViewer extends StatefulWidget {
+  const _PollOptionViewer({
+    required this.bloc,
+    required this.postId,
+    required this.optionId,
+    required this.onAction,
+  });
+
+  final ConnectBloc bloc;
+  final String postId;
+  final String optionId;
+  final Future<void> Function({String? optionId}) onAction;
+
+  @override
+  State<_PollOptionViewer> createState() => _PollOptionViewerState();
+}
+
+class _PollOptionViewerState extends State<_PollOptionViewer> {
+  static const _ink = TextStyle(
+    fontFamily: _soraFont,
+    color: _pollInkSecondary,
+  );
+
+  bool _closing = false;
+
+  /// Puts the viewer away once, after this frame: what it showed is gone.
+  void _close() {
+    if (_closing) return;
+    _closing = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // This viewer's own route, wherever it is: a screen opened over it
+      // (a tapped notification) is not the one to close.
+      final route = ModalRoute.of(context);
+      if (route == null) return;
+      if (route.isCurrent) {
+        Navigator.of(context).pop();
+      } else if (route.isActive) {
+        Navigator.of(context).removeRoute(route);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<ConnectState>(
+      stream: widget.bloc.stream,
+      initialData: widget.bloc.state,
+      builder: (context, snapshot) {
+        final post = (snapshot.data ?? widget.bloc.state).posts
+            .where((p) => p.id == widget.postId)
+            .firstOrNull;
+        final option = post?.pollOptions
+            .where((o) => o.id == widget.optionId)
+            .firstOrNull;
+        if (post == null || option == null) {
+          _close();
+          return const SizedBox.shrink();
+        }
+        final voted = post.selectedPollOptionId == option.id;
+        final image = option.imageUrl ?? '';
+        return Center(
+          child: Padding(
+            // Clear of the screen's edges, so on a short screen the picture
+            // gives up height rather than the card running off it.
+            padding: const EdgeInsets.all(16),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 361),
+              child: Material(
+                key: const ValueKey('poll-option-viewer'),
+                color: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: const BorderSide(color: _pollBorder),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // 337 by 319 on the design's 361-wide card, kept in
+                      // that shape on any other width — and shorter, cropped
+                      // the more, where the screen is too short for it (a
+                      // phone on its side, large text), so the name and the
+                      // Vote button below always fit.
+                      Flexible(
+                        child: AspectRatio(
+                          aspectRatio: 337 / 319,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                if (image.isEmpty)
+                                  const ColoredBox(color: _pollIcons)
+                                else
+                                  Semantics(
+                                    image: true,
+                                    label: option.label,
+                                    child: _PinchToZoom(
+                                      child: Image(
+                                        image: _remoteImage(image),
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                  ),
+                                // The 24 grey disc 13 from the top and 10 from
+                                // the right (node 4610:23631), with a finger's
+                                // room around it to hit.
+                                Positioned(
+                                  top: 5,
+                                  right: 2,
+                                  child: Semantics(
+                                    button: true,
+                                    label: 'Close',
+                                    child: GestureDetector(
+                                      key: const ValueKey(
+                                        'poll-option-viewer-close',
+                                      ),
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () =>
+                                          Navigator.of(context).maybePop(),
+                                      child: SizedBox(
+                                        width: 40,
+                                        height: 40,
+                                        child: Center(
+                                          child: Container(
+                                            width: 23.995,
+                                            height: 23.995,
+                                            alignment: Alignment.center,
+                                            decoration: const BoxDecoration(
+                                              color: Color(0xFF767676),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: SvgPicture.asset(
+                                              'assets/icons/poll_viewer_close.svg',
+                                              width: 14,
+                                              height: 14,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  option.label,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: _ink.copyWith(
+                                    fontSize: 16,
+                                    height: 16.2 / 16,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: -0.16,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                // Steps up from where it stood when a vote
+                                // lands, rather than counting from nothing
+                                // each time the picture opens.
+                                _PollPercent(
+                                  value: option.votes,
+                                  votes: true,
+                                  countIn: false,
+                                  style: _ink.copyWith(
+                                    fontSize: 12,
+                                    height: 24 / 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          _PollVoteButton(
+                            voted: voted,
+                            onVote: () =>
+                                widget.onAction(optionId: widget.optionId),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The viewer's Vote button (node 4610:23614): brand-blue words in a
+/// hairline brand-blue pill. Once this option holds the viewer's vote it is
+/// the same pill filled, reading "Voted" — no longer a button at all: it
+/// neither gives under the finger nor offers a tap to a screen reader.
+class _PollVoteButton extends StatelessWidget {
+  const _PollVoteButton({required this.voted, required this.onVote});
+
+  final bool voted;
+  final VoidCallback onVote;
+
+  // One tree either way, so the pill's fill still eases from white to blue;
+  // only the pointer and the button role come and go.
+  @override
+  Widget build(BuildContext context) => Semantics(
+    key: const ValueKey('poll-option-vote'),
+    button: !voted,
+    selected: voted,
+    child: IgnorePointer(
+      ignoring: voted,
+      // The pill is drawn 36 tall; the finger gets 46 (5 above and below).
+      child: _PollPressable(
+        onTap: onVote,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: _pill(),
+        ),
+      ),
+    ),
+  );
+
+  Widget _pill() => AnimatedContainer(
+    duration: _pollMotion,
+    curve: Curves.easeOutCubic,
+    padding: const EdgeInsets.symmetric(horizontal: 21, vertical: 5),
+    decoration: BoxDecoration(
+      color: voted ? _pollBrand : Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: _pollBrand),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x1A000000),
+          blurRadius: 1.5,
+          offset: Offset(0, 1),
+        ),
+      ],
+    ),
+    child: Text(
+      voted ? 'Voted' : 'Vote',
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontFamily: _soraFont,
+        fontSize: 16,
+        height: 24 / 16,
+        fontWeight: FontWeight.w600,
+        letterSpacing: -0.16,
+        color: voted ? Colors.white : _pollBrand,
+      ),
+    ),
+  );
 }
 
 /// Words-only options keep the result bars, set in the card's face: the bar

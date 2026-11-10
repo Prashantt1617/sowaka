@@ -880,6 +880,7 @@ class _EntriesSheetState extends State<_EntriesSheet> {
           key: _keyFor(entry.id),
           child: _GalleryEntryCard(
             entry: entry,
+            photos: _photos,
             closed: _contestClosed(post),
             onOpen: () => _openEntry(post, rows, entry),
             onVote: () => _vote(post, entry.id),
@@ -2455,6 +2456,7 @@ class _GalleryVotedPill extends StatelessWidget {
 class _GalleryEntryCard extends StatelessWidget {
   const _GalleryEntryCard({
     required this.entry,
+    this.photos = const {},
     required this.closed,
     required this.onOpen,
     required this.onVote,
@@ -2464,6 +2466,9 @@ class _GalleryEntryCard extends StatelessWidget {
   });
 
   final ConnectCaptionEntry entry;
+
+  /// Faces from the directory, by person, for the colleagues tagged in it.
+  final Map<String, String> photos;
   final bool closed;
   final VoidCallback onOpen;
   final VoidCallback onVote;
@@ -2506,6 +2511,19 @@ class _GalleryEntryCard extends StatelessWidget {
                     top: 8,
                     child: _GalleryRankPill(rank: rank),
                   ),
+                  // Node 4592:26402: "Tag" and the faces of the colleagues
+                  // the entry tags, low on the photo's left. It stops short
+                  // of the "Your vote" pill on the right.
+                  if (entry.mentions.isNotEmpty)
+                    Positioned(
+                      left: 6,
+                      bottom: 7,
+                      right: entry.votedByViewer ? 88 : 6,
+                      child: _GalleryTagRow(
+                        mentions: entry.mentions,
+                        photos: photos,
+                      ),
+                    ),
                   if (entry.votedByViewer)
                     const Positioned(
                       right: 7.5,
@@ -2576,6 +2594,128 @@ class _GalleryEntryCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// "Tag" and up to three tagged faces, 20 across, each over the last by 4
+/// (node 4592:26402); anyone past those is a count. Where the row is short
+/// of room — a narrow card that also wears "Your vote" — it shows fewer
+/// faces and counts the rest, down to the count alone, rather than run over.
+class _GalleryTagRow extends StatelessWidget {
+  const _GalleryTagRow({required this.mentions, required this.photos});
+
+  final List<ConnectMention> mentions;
+  final Map<String, String> photos;
+
+  static const _shown = 3;
+
+  // White words straight on the photo, as drawn; a soft shadow keeps them
+  // readable on a light picture without a band the design does not have.
+  static const _shadow = [Shadow(color: Color(0x66000000), blurRadius: 4)];
+  static const _moreStyle = TextStyle(
+    fontSize: 11,
+    fontWeight: FontWeight.w600,
+    color: Colors.white,
+    shadows: _shadow,
+  );
+
+  static double _facesWidth(int count) =>
+      count == 0 ? 0 : 20.0 + 16.0 * (count - 1);
+
+  @override
+  Widget build(BuildContext context) {
+    Widget face(ConnectMention person) {
+      final name = person.name.trim();
+      return KeyedSubtree(
+        key: const ValueKey('gallery-tag-face'),
+        child: _InitialAvatar(
+          initials: name.isEmpty ? '?' : name.characters.first.toUpperCase(),
+          color: _avatarColorFor(person.userId),
+          size: 20,
+          photoUrl: photos[person.userId] ?? '',
+        ),
+      );
+    }
+
+    return Semantics(
+      label: 'Tagged: ${mentions.map((m) => m.name).join(', ')}',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Tag',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+              color: Colors.white,
+              shadows: _shadow,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: LayoutBuilder(
+              builder: (context, box) {
+                final scaler = MediaQuery.textScalerOf(context);
+                final direction = Directionality.of(context);
+                double countWidth(int rest) {
+                  final painter = TextPainter(
+                    text: TextSpan(text: '+$rest', style: _moreStyle),
+                    textDirection: direction,
+                    textScaler: scaler,
+                    maxLines: 1,
+                  )..layout();
+                  final width = painter.width;
+                  painter.dispose();
+                  return 4 + width;
+                }
+
+                // As many faces as fit with the count of the rest after them.
+                var count = math.min(_shown, mentions.length);
+                while (count > 0) {
+                  final rest = mentions.length - count;
+                  final needed =
+                      _facesWidth(count) + (rest > 0 ? countWidth(rest) : 0);
+                  if (needed <= box.maxWidth) break;
+                  count--;
+                }
+                final rest = mentions.length - count;
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (count > 0)
+                      SizedBox(
+                        width: _facesWidth(count),
+                        height: 20,
+                        child: Stack(
+                          children: [
+                            for (final (i, person)
+                                in mentions.take(count).indexed)
+                              Positioned(left: 16.0 * i, child: face(person)),
+                          ],
+                        ),
+                      ),
+                    if (rest > 0) ...[
+                      if (count > 0) const SizedBox(width: 4),
+                      // Clipped rather than run over, should even the count
+                      // alone not fit.
+                      Flexible(
+                        child: Text(
+                          '+$rest',
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.clip,
+                          style: _moreStyle,
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
