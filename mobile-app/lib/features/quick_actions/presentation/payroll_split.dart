@@ -127,6 +127,11 @@ class _SplitPageState extends State<_SplitPage> {
       );
       // Saved: this page is done too; whoever opened it hears what was picked.
       if (done != null && mounted) Navigator.of(context).pop(done);
+    } on PayrollApiException catch (error) {
+      if (!mounted) return;
+      showAppToast(context, error.message);
+      // Locked since the page opened: read it again so it shows the lock.
+      if (error.isSplitLocked) unawaited(_load());
     } catch (error) {
       if (mounted) showAppToast(context, payrollErrorText(error));
     } finally {
@@ -144,7 +149,8 @@ class _SplitPageState extends State<_SplitPage> {
       context,
       key: const ValueKey('payroll-split'),
       title: 'Change my split',
-      footer: !ready
+      // Locked for the FY: the lock and the way to HR stand in for Submit.
+      footer: !ready || split.lockedForFy
           ? null
           : _SplitFooter(
               totalPaise: _total,
@@ -164,7 +170,14 @@ class _SplitPageState extends State<_SplitPage> {
             text: 'Your salary has no flexible heads to split.',
           )
         else ...[
-          if (split.notConfigured) ...[
+          if (split.lockedForFy) ...[
+            const KeyedSubtree(
+              key: ValueKey('split-locked'),
+              child: _PrNote(_splitLockedForFy),
+            ),
+            const _SplitTicketLink(about: _splitTicketAbout),
+            const SizedBox(height: 12),
+          ] else if (split.notConfigured) ...[
             const _PrNote(_splitNotSetUp),
             const RaiseTicketLink(about: _splitNotSetUp),
             const SizedBox(height: 12),
@@ -189,6 +202,44 @@ class _SplitPageState extends State<_SplitPage> {
       ],
     );
   }
+}
+
+const _splitLockedForFy =
+    'Your split is locked for this FY. To change it, raise a ticket.';
+
+const _splitTicketAbout = 'I would like to change my FBP split:';
+
+/// "To change it, raise a ticket": the Support Desk with [about] filled in,
+/// or the desk the Payroll pages were given when nothing else can open it.
+class _SplitTicketLink extends StatelessWidget {
+  const _SplitTicketLink({required this.about});
+
+  final String about;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: InkWell(
+      key: const ValueKey('split-raise-ticket'),
+      borderRadius: BorderRadius.circular(8),
+      onTap: () {
+        if (!raiseSupportTicket(about: about)) {
+          _PayrollScope.of(context).onRaiseTicket?.call();
+        }
+      },
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          widthFactor: 1,
+          child: Text(
+            'To change it, raise a ticket',
+            style: _splitText(13.5, FontWeight.w600, color: _prBlue),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 const _splitNotSetUp =
@@ -565,7 +616,9 @@ class _SplitReviewPageState extends State<_SplitReviewPage> {
       Navigator.of(context).pop(choice ?? _SplitDone.backToFbp);
     } on PayrollApiException catch (error) {
       if (!mounted) return;
-      if (!error.isConflict) {
+      // Locked for the FY since the review: say so (the server's words),
+      // nothing to review again.
+      if (!error.isConflict || error.isSplitLocked) {
         setState(() => _busy = false);
         showAppToast(context, error.message);
         return;

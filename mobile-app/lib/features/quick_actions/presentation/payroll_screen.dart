@@ -590,11 +590,13 @@ class _PayrollHomePageState extends State<_PayrollHomePage> {
       ),
       'fbp_bills' => (
         'assets/icons/action_card_reimbursement_money.png',
-        'Re-upload FBP bills',
-        // Listed only when a bill was sent back.
+        'Submit FBP bills',
         [
+          if (todo.pending > 0) '${todo.pending} pending',
           if (todo.rejected > 0) '${todo.rejected} rejected',
-          if (todo.inReview > 0) '${todo.inReview} in review',
+          // A server that sends neither: what is still with HR.
+          if (todo.pending == 0 && todo.rejected == 0 && todo.inReview > 0)
+            '${todo.inReview} in review',
         ].join(' · '),
         () => _open(const _FbpPage()),
       ),
