@@ -214,6 +214,52 @@ class PayrollApiService {
     return PayrollEarnings.fromJson(_object(json['earnings']));
   }
 
+  // ---------------------------------------------------------------- Form 16
+
+  /// Downloads › Form 16: the signed-in person's years and their files.
+  Future<Form16Overview> fetchForm16() async => Form16Overview.fromJson(
+    _object((await _json('GET', '/payroll/form16'))['form16']),
+  );
+
+  /// One of their Form 16 files as PDF bytes, under its own name: a
+  /// short-lived link from the server, then the file from storage.
+  Future<(Uint8List, String)> downloadForm16(Form16Document document) async {
+    final json = await _json(
+      'GET',
+      '/payroll/form16/${Uri.encodeComponent(document.id)}/file',
+    );
+    final url = Uri.tryParse(json['url'] as String? ?? '');
+    final name = json['fileName'] as String? ?? document.fileName;
+    if (url == null || !url.hasScheme) {
+      throw const PayrollApiException(PayrollApiException.failed);
+    }
+    final http.Response response;
+    try {
+      // The link is signed itself: no Authorization header goes to storage.
+      response = await _client
+          .send(http.Request('GET', url))
+          .then(http.Response.fromStream)
+          .timeout(uploadTimeout);
+    } catch (error) {
+      throw PayrollApiException(switch (error) {
+        TimeoutException() => PayrollApiException.tooSlow,
+        _ when NetworkStatus.isNetworkError(error) =>
+          PayrollApiException.offline,
+        _ => PayrollApiException.failed,
+      });
+    }
+    if (response.statusCode != 200 || response.bodyBytes.isEmpty) {
+      throw PayrollApiException(
+        PayrollApiException.failed,
+        statusCode: response.statusCode,
+      );
+    }
+    return (
+      response.bodyBytes,
+      name.isEmpty ? 'Form16-${document.fy}.pdf' : name,
+    );
+  }
+
   // ---------------------------------------------------------------- declaration
 
   Future<TaxDeclaration> fetchDeclaration({String? fy}) async {

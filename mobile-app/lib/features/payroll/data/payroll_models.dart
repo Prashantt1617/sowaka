@@ -956,6 +956,121 @@ class PayrollEarnings {
       );
 }
 
+// ---------------------------------------------------------------- downloads (Form 16)
+
+/// The financial year a month falls in: April 2026 to March 2027 is
+/// "2026-27".
+String payrollFyOf(DateTime month) {
+  final start = month.month >= 4 ? month.year : month.year - 1;
+  return '$start-${((start + 1) % 100).toString().padLeft(2, '0')}';
+}
+
+/// "2026-27" as it is written for people: "FY 2026–27".
+String payrollFyLabel(String fy) => 'FY ${fy.replaceFirst('-', '–')}';
+
+/// One Form 16 file HR filed: a Part A, a Part B, or both in one PDF.
+class Form16Document {
+  const Form16Document({
+    required this.id,
+    required this.fy,
+    required this.part,
+    required this.fileName,
+    this.size = 0,
+    this.uploadedAt,
+  });
+
+  final String id;
+  final String fy;
+
+  /// "A", "B" or "combined".
+  final String part;
+  final String fileName;
+  final int size;
+  final DateTime? uploadedAt;
+
+  factory Form16Document.fromJson(Map<String, dynamic> json) => Form16Document(
+    id: _string(json['id']),
+    fy: _string(json['fy']),
+    part: _string(json['part']),
+    fileName: _string(json['fileName']),
+    size: _int(json['size']),
+    uploadedAt: _moment(json['uploadedAt']),
+  );
+}
+
+enum Form16Status {
+  /// Files to download.
+  ready,
+
+  /// Not due yet: ready by [Form16Year.readyBy].
+  pending,
+
+  /// Past its due date with nothing filed: ask HR.
+  missing,
+}
+
+/// One financial year's Form 16 for the signed-in person.
+class Form16Year {
+  const Form16Year({
+    required this.fy,
+    required this.status,
+    required this.documents,
+    this.readyBy,
+  });
+
+  final String fy;
+  final Form16Status status;
+
+  /// 15 June after the year ends, as the server works it out.
+  final DateTime? readyBy;
+  final List<Form16Document> documents;
+
+  /// Both parts are there, in one file or two.
+  bool get complete =>
+      documents.any((d) => d.part == 'combined') ||
+      (documents.any((d) => d.part == 'A') &&
+          documents.any((d) => d.part == 'B'));
+
+  factory Form16Year.fromJson(Map<String, dynamic> json) => Form16Year(
+    fy: _string(json['fy']),
+    status: switch (json['status']) {
+      'ready' => Form16Status.ready,
+      'missing' => Form16Status.missing,
+      _ => Form16Status.pending,
+    },
+    readyBy: payrollDate(json['readyBy']),
+    documents: _list(json['documents']).map(Form16Document.fromJson).toList(),
+  );
+}
+
+/// Downloads › Form 16: the person's years, newest first, and the return
+/// filing date the tip quotes.
+class Form16Overview {
+  const Form16Overview({
+    required this.currentFy,
+    required this.years,
+    this.filingFy,
+    this.filingLastDate,
+  });
+
+  final String currentFy;
+
+  /// The last FY that has ended, and the last day to file its return.
+  final String? filingFy;
+  final DateTime? filingLastDate;
+  final List<Form16Year> years;
+
+  factory Form16Overview.fromJson(Map<String, dynamic> json) {
+    final filing = _map(json['filing']);
+    return Form16Overview(
+      currentFy: _string(json['currentFy']),
+      filingFy: _stringOrNull(filing['fy']),
+      filingLastDate: payrollDate(filing['lastDate']),
+      years: _list(json['years']).map(Form16Year.fromJson).toList(),
+    );
+  }
+}
+
 // ---------------------------------------------------------------- declaration
 
 class TaxDeclarationItem {

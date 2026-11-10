@@ -6,6 +6,7 @@ import {
   earningsHandler, getDeclarationHandler, getProofsHandler, myEpfHandler, setMyEpfBalanceHandler, getSplitHandler, missingPunchesHandler, payrollHomeHandler, proofFileHandler,
   requirePayrollApp, reviewSplitHandler, saveDeclarationHandler, saveSplitHandler, uploadProofHandler,
 } from '../controllers/employeePayroll.controller';
+import { myForm16FileHandler, myForm16Handler } from '../controllers/form16.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { uploadInvestmentProofFile } from '../middleware/investment-proof-upload.middleware';
 
@@ -33,3 +34,6 @@ employeePayrollRouter.get('/me/fbp', getFbpHandler);
 employeePayrollRouter.get('/me/fbp/bills/:billId/file', fbpBillFileHandler);
 employeePayrollRouter.get('/me/fbp/:code', getFbpHeadHandler);
 employeePayrollRouter.post('/me/fbp/:code/bills', uploadInvestmentProofFile, uploadFbpBillHandler);
+// Downloads › Form 16: the person's years, and a short-lived link to one file.
+employeePayrollRouter.get('/form16', myForm16Handler);
+employeePayrollRouter.get('/form16/:documentId/file', myForm16FileHandler);
