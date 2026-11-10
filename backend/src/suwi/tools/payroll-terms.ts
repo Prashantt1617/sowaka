@@ -12,6 +12,7 @@ import { listSalaryTemplates } from '../../services/salaryTemplate.service';
 import { listPaidDaysTemplates } from '../../services/paidDaysTemplate.service';
 import { listReimbursementTypes } from '../../services/reimbursement-type.service';
 import { tdsConfigsFor } from '../../services/tds.service';
+import { form16ForHr } from '../../services/form16.service';
 import { findPayrollTerm, PAYROLL_TERMS } from '../content/payrollTerms';
 import { defineTools, rupees, str, SuwiContext, SuwiLink } from '../tools';
 import { fyOfPeriod, monthLabel } from './payroll-common';
@@ -171,7 +172,19 @@ async function companySetting(ctx: SuwiContext, key: string): Promise<Setting> {
         links: [{ label: 'Open Salary Templates', view: 'templates' }],
       };
     case 'form16':
-      return { setting: { tracked: false, note: 'Sowaka does not generate Form 16 yet; each payslip has a TDS work sheet.' }, links: [{ label: 'Open payroll runs', view: 'payruns' }] };
+    {
+      const status = await form16ForHr(ctx.userId, undefined);
+      return {
+        setting: {
+          generated: false,
+          fy: status.fy,
+          readyBy: status.readyBy,
+          uploaded: `${status.counts.withForm16} of ${status.counts.employees} people have a Form 16 uploaded for FY ${status.fy}`,
+          note: 'Sowaka does not generate Form 16 (Part A from TRACES, Part B from the payroll software or CA). HR uploads the PDFs on Payroll Runs › Form 16, one by one or in bulk named by PAN or employee ID; employees download them in the app under Payroll › Downloads › Form 16.',
+        },
+        links: [{ label: 'Open payroll runs', view: 'payruns' }],
+      };
+    }
     case 'fnf':
       return { setting: { separateRun: false, note: 'A leaver is paid through the regular run up to their last day; encashment and recoveries are one-time amounts on that run.' }, links: [{ label: 'Open payroll runs', view: 'payruns' }] };
     default:
