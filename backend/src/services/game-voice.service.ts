@@ -49,10 +49,18 @@ interface Floor {
   userId: string;
   name: string;
   until: number;
+  /** The table as it was when the mic was taken: who to tell when it is let go, even after the holder has left it. */
+  table: VoiceTable;
 }
 
-/** Who holds the mic, by table. One API process holds it; a crash frees every mic. */
+/**
+ * Who holds the mic, by table, and which table each holder holds it at. One
+ * API process holds this (the backend runs a single process; a second would
+ * need it in Redis); a restart frees every mic.
+ */
 const floors = new Map<string, Floor>();
+const holding = new Map<string, string>();
+const holderKey = (org: string, userId: string) => `${org}:${userId}`;
 
 export class VoiceError extends Error {
   constructor(
@@ -100,8 +108,9 @@ export async function holdMic(game: VoiceGame, who: { org: string; userId: strin
   const table = await tableFor(game, who.org, who.userId);
   const current = holderOf(table.channel);
   if (current && current.userId !== who.userId) throw new VoiceError(409, `${firstName(current.name)} is talking`);
-  const floor = { userId: who.userId, name: who.name, until: Date.now() + FLOOR_MS };
+  const floor = { userId: who.userId, name: who.name, until: Date.now() + FLOOR_MS, table };
   floors.set(table.channel, floor);
+  holding.set(holderKey(who.org, who.userId), table.channel);
   tellTable(game, table, who.userId, 'voice:floor', { userId: floor.userId, name: floor.name, until: floor.until });
   return { until: floor.until, maxMs: VOICE_MAX_MS };
 }
@@ -114,7 +123,7 @@ export async function sendClip(game: VoiceGame, who: { org: string; userId: stri
   const data = typeof raw.data === 'string' ? raw.data : '';
   const mime = typeof raw.mime === 'string' ? raw.mime.toLowerCase() : '';
   const ms = Math.round(Number(raw.ms));
-  release(game, table, who.userId);
+  release(game, who.org, who.userId);
   if (!data || data.length > MAX_CLIP_CHARS || !/^[A-Za-z0-9+/=]+$/.test(data)) throw new VoiceError(400, 'That message could not be sent.');
   if (!MIMES.has(mime)) throw new VoiceError(400, 'That recording format is not supported.');
   if (!Number.isFinite(ms) || ms < VOICE_MIN_MS) throw new VoiceError(400, 'Hold the mic a little longer to talk.');
@@ -122,27 +131,29 @@ export async function sendClip(game: VoiceGame, who: { org: string; userId: stri
   return {};
 }
 
-/** Let go without sending. */
+/** Let go without sending. Works after the holder has left the table too: the mic remembers where it was taken. */
 export async function releaseMic(game: VoiceGame, who: { org: string; userId: string }) {
-  const table = await game.tableOf(who.org, who.userId);
-  if (table) release(game, table, who.userId);
+  release(game, who.org, who.userId);
   return {};
 }
 
-function release(game: VoiceGame, table: VoiceTable, userId: string) {
-  const current = floors.get(table.channel);
+function release(game: VoiceGame, org: string, userId: string) {
+  const key = holderKey(org, userId);
+  const channel = holding.get(key);
+  if (!channel) return;
+  holding.delete(key);
+  const current = floors.get(channel);
   if (!current || current.userId !== userId) return;
-  floors.delete(table.channel);
-  tellTable(game, table, userId, 'voice:floor', { userId: null });
+  floors.delete(channel);
+  tellTable(game, current.table, userId, 'voice:floor', { userId: null });
 }
 
-/** A socket that goes away lets go of any mic it held. */
+/** A socket that goes away, or a player who leaves the table, lets go of any mic they held. */
 export async function dropMic(game: VoiceGame, org: string, userId: string) {
   try {
-    const table = await game.tableOf(org, userId);
-    if (table) release(game, table, userId);
+    release(game, org, userId);
   } catch (error) {
-    logger.error('Voice release on disconnect failed', { userId, org }, error);
+    logger.error('Voice release failed', { userId, org }, error);
   }
 }
 
@@ -151,12 +162,13 @@ const firstName = (name: string) => name.trim().split(/\s+/)[0] || 'Someone';
 /** For checks: forget every mic and switch. */
 export function resetVoice(): void {
   floors.clear();
+  holding.clear();
   switchCache.clear();
 }
 
-/** A socket's own voice limits: the mic twice a second at most, a clip every 3 s. */
+/** A socket's own voice limits: the mic twice a second at most, a clip every 2 s after a burst of three. Letting go is never limited. */
 export function voiceBuckets() {
-  return { hold: new RateBucket(2, 3), clip: new RateBucket(1 / 3, 2) };
+  return { hold: new RateBucket(2, 3), clip: new RateBucket(1 / 2, 3), release: new RateBucket(50, 50) };
 }
 
 export class RateBucket {
@@ -212,5 +224,5 @@ export function listenForVoice(
   };
   on('voice:hold', buckets.hold, (person) => holdMic(game, person));
   on('voice:clip', buckets.clip, (person, payload) => sendClip(game, person, payload));
-  on('voice:release', buckets.hold, (person) => releaseMic(game, person));
+  on('voice:release', buckets.release, (person) => releaseMic(game, person));
 }

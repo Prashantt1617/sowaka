@@ -89,6 +89,16 @@ const clip = (extra: Record<string, unknown> = {}) => ({ data: Buffer.alloc(3000
   await dropMic(game, 'voiceco', 'asha');
   ok('a dropped connection frees it too', (await holdMic(game, who('bala'))).until > Date.now());
   ok('someone not at a table cannot talk', (await refused(() => holdMic(game, who('nobody')))).status === 409);
+  // Bala holds the mic, then leaves the table: the seat is gone before the release comes.
+  await releaseMic(game, who('bala'));
+  await holdMic(game, who('bala'));
+  const before = tables.bala;
+  delete tables.bala;
+  sent.length = 0;
+  await releaseMic(game, who('bala'));
+  tables.bala = before;
+  ok('a holder who has left the table still frees the mic for the others', sent.filter((s) => s.event === 'voice:floor' && s.payload.userId === null).map((s) => s.to).sort().join() === 'asha,chitra', sent);
+  ok('and Asha can take it at once', (await holdMic(game, who('asha'))).until > Date.now());
 
   await db.dropDatabase();
   console.log(`\n${failed ? `${failed} failed, ` : 'all '}${passed} passed`);

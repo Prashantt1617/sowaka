@@ -209,10 +209,14 @@ class _WebGameScreenState extends State<WebGameScreen> {
     super.dispose();
   }
 
-  /// Walkie-talkie recording, on the phones (a test or desktop run has none).
+  /// Walkie-talkie recording, on the phones (a test or desktop run has none),
+  /// and only for the games built for it: no other page is handed a mic.
   late final GameVoiceRecorder? _voice =
       widget.voice ??
-      (Platform.isIOS || Platform.isAndroid ? GameVoiceRecorder() : null);
+      ((Platform.isIOS || Platform.isAndroid) &&
+              voiceGameKeys.contains(widget.game?.key)
+          ? GameVoiceRecorder()
+          : null);
 
   bool get _scansQr => widget.scanQr != null || canScanQr;
 

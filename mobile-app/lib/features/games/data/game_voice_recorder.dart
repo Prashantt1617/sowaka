@@ -5,6 +5,9 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
+/// The games whose pages talk (`Sowaka.voice`); no other page gets the mic.
+const voiceGameKeys = {'pool'};
+
 /// The longest walkie-talkie message: recording stops on its own here, and
 /// the server refuses anything longer (`VOICE_MAX_MS`).
 const gameVoiceMaxDuration = Duration(seconds: 15);
@@ -44,8 +47,9 @@ class GameVoiceRecorder {
   String? _path;
   Timer? _limit;
 
-  /// The clip the 15-second limit stopped, waiting for the page's [stop].
-  GameVoiceClip? _cut;
+  /// The clip the 15-second limit is stopping (or has stopped), for the
+  /// page's [stop] that arrives while it does.
+  Future<GameVoiceClip?>? _cut;
 
   bool get recording => _startedAt != null;
 
@@ -76,17 +80,21 @@ class GameVoiceRecorder {
     _path = path;
     _cut = null;
     _startedAt = DateTime.now();
-    _limit = Timer(gameVoiceMaxDuration, () async => _cut = await _finish());
+    _limit = Timer(gameVoiceMaxDuration, () {
+      // Stopping is under way from here: a stop() in the meantime waits on it.
+      _cut = _finish().catchError((Object _) => null);
+    });
     return true;
   }
 
   /// Stops and hands back the clip; null when nothing was recorded.
   Future<GameVoiceClip?> stop() async {
-    if (!recording) {
-      final cut = _cut;
+    final cut = _cut;
+    if (cut != null) {
       _cut = null;
       return cut;
     }
+    if (!recording) return null;
     return _finish();
   }
 

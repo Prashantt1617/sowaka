@@ -889,14 +889,15 @@ window.onSowakaRoom=evt=>{ try{ onRoomEvent(evt); }catch(e){ console.error('Pool
 /* The app records (Sowaka.voice, bridge v6); the server holds the table's one mic and passes each message to the
    others (voice:* on this socket, companies.features.gameVoice). A message plays as soon as it lands, one after
    another, with the game's sounds dipped under it. Nothing is kept. */
-const VOICE={floor:null,holding:false,pending:false,cancel:false,queue:[],playing:false,muted:new Set(load('voiceMuted',[])),tick:null};
+const VOICE={floor:null,holding:false,pending:false,sending:false,cancel:false,queue:[],playing:false,muted:new Set(),tick:null,pid:null}; // a mute lasts while the game is open
+const nowServer=()=>(typeof serverNow==='function'?serverNow():Date.now());
 const myId=()=>(LIVE.room&&LIVE.room.you)||(window.Sowaka&&window.Sowaka.userId)||null;
 const canTalk=()=>!!(LIVE.voiceOn&&window.Sowaka&&typeof window.Sowaka.voice==='object'&&LIVE.room&&(screen==='play'&&G.online||screen==='waiting'));
 /* The company switch comes with hello; a table opened straight from an invite asks once. */
 function voiceSwitch(){ if(LIVE.voiceOn!==undefined||!LIVE.api||VOICE.asked)return; VOICE.asked=true; LIVE.api.hello().then(h=>{ LIVE.voiceOn=!!(h&&h.voice); micSync(); if(LIVE.voiceOn&&screen==='waiting')renderWaiting(); }).catch(()=>{ VOICE.asked=false; }); }
 function micSync(){ const btn=$('#micBtn'); if(!btn)return; const on=canTalk(); btn.hidden=!(on&&screen==='play');
   if(!on&&(VOICE.holding||VOICE.pending))stopTalking(true);
-  const other=VOICE.floor&&VOICE.floor.userId!==myId()&&VOICE.floor.until>Date.now()?VOICE.floor:null;
+  const other=VOICE.floor&&VOICE.floor.userId!==myId()&&VOICE.floor.until>nowServer()?VOICE.floor:null;
   document.querySelectorAll('.mic').forEach(m=>{ m.classList.toggle('busy',!!other&&!VOICE.holding); m.classList.toggle('rec',VOICE.holding); });
   if(screen==='waiting'){ const w=document.querySelector('[data-mic]'); if(w)w.lastChild.textContent=VOICE.holding?' Talking · let go to send':other?` ${first(other.name)} is talking…`:' Hold to talk'; }
   const pill=$('#talkPill'); if(VOICE.holding){ pill.hidden=false; pill.classList.add('me'); return; }
@@ -904,8 +905,8 @@ function micSync(){ const btn=$('#micBtn'); if(!btn)return; const on=canTalk(); 
 function talkCountdown(){ clearInterval(VOICE.tick); const started=Date.now(), pill=$('#talkPill');
   const draw=()=>{ const left=Math.max(0,15-Math.floor((Date.now()-started)/1000)); pill.textContent=`Talking · ${left}s · let go to send`; if(left<=0)stopTalking(false); };
   draw(); VOICE.tick=setInterval(draw,250); }
-async function startTalking(){ if(!canTalk()||VOICE.holding||VOICE.pending)return;
-  const other=VOICE.floor&&VOICE.floor.userId!==myId()&&VOICE.floor.until>Date.now()?VOICE.floor:null;
+async function startTalking(){ if(!canTalk()||VOICE.holding||VOICE.pending||VOICE.sending)return;
+  const other=VOICE.floor&&VOICE.floor.userId!==myId()&&VOICE.floor.until>nowServer()?VOICE.floor:null;
   if(other){ show(`${first(other.name)} is talking`); buzz('light'); return; }
   VOICE.pending=true; VOICE.cancel=false;
   try{ await LIVE.api.voiceHold(); }
@@ -919,13 +920,15 @@ async function stopTalking(drop){ if(VOICE.pending){ VOICE.cancel=true; return; 
   VOICE.holding=false; clearInterval(VOICE.tick); micSync();
   let clip=null; try{ clip=drop?(await window.Sowaka.voice.cancel(),null):await window.Sowaka.voice.stop(); }catch(e){ clip=null; }
   if(!clip||!clip.data||(+clip.ms||0)<400){ LIVE.api.voiceRelease().catch(()=>{}); if(!drop&&clip)show('Hold the mic a little longer to talk'); return; }
+  VOICE.sending=true;
   try{ await LIVE.api.voiceClip(clip); buzz('light'); }
-  catch(err){ show(err.message||'That message did not go through',true); } }
+  catch(err){ LIVE.api.voiceRelease().catch(()=>{}); show(err.message||'That message did not go through',true); } // the mic is let go either way
+  finally{ VOICE.sending=false; } }
 function playVoice(evt){ if(!evt||!evt.data||evt.userId===myId()||VOICE.muted.has(evt.userId))return;
   VOICE.queue.push(evt); if(!VOICE.playing)nextVoice(); }
 async function nextVoice(){ const evt=VOICE.queue.shift(); if(!evt){ VOICE.playing=false; if(master)master.gain.value=.5; micSync(); return; }
   VOICE.playing=true; const a=ctx(); if(!a){ VOICE.playing=false; return; }
-  const pill=$('#talkPill'); pill.textContent=`${first(evt.name)} · tap to mute`; pill.hidden=false; pill.onclick=()=>{ VOICE.muted.add(evt.userId); save('voiceMuted',[...VOICE.muted]); show(`${first(evt.name)} muted`); try{ src&&src.stop(); }catch(e){} };
+  const pill=$('#talkPill'); pill.textContent=`${first(evt.name)} · tap to mute`; pill.hidden=false; pill.onclick=()=>{ VOICE.muted.add(evt.userId); show(`${first(evt.name)} muted until you close the game`); VOICE.queue=VOICE.queue.filter(q=>q.userId!==evt.userId); try{ src&&src.stop(); }catch(e){} };
   let src=null;
   try{ const bin=atob(evt.data), bytes=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
     const buf=await new Promise((ok,no)=>{ const p=a.decodeAudioData(bytes.buffer,ok,no); if(p&&p.catch)p.catch(no); });
@@ -936,9 +939,10 @@ async function nextVoice(){ const evt=VOICE.queue.shift(); if(!evt){ VOICE.playi
   pill.onclick=null; nextVoice(); }
 setInterval(micSync,1000); // screens change in many places; the mic and a lapsed hold follow within a second
 (function wireMic(){
-  document.addEventListener('pointerdown',e=>{ const m=e.target&&e.target.closest&&e.target.closest('.mic'); if(!m)return; e.preventDefault(); e.stopPropagation(); try{ m.setPointerCapture(e.pointerId); }catch(_){} ctx(); startTalking(); },true);
-  document.addEventListener('pointerup',e=>{ if(VOICE.holding||VOICE.pending)stopTalking(false); },true);
-  document.addEventListener('pointercancel',()=>{ if(VOICE.holding||VOICE.pending)stopTalking(true); },true);
+  document.addEventListener('pointerdown',e=>{ const m=e.target&&e.target.closest&&e.target.closest('.mic'); if(!m)return; e.preventDefault(); e.stopPropagation(); VOICE.pid=e.pointerId; try{ m.setPointerCapture(e.pointerId); }catch(_){} ctx(); startTalking(); },true);
+  // Only the finger on the mic lets go of it: another finger aiming does not cut the message short.
+  document.addEventListener('pointerup',e=>{ if(e.pointerId===VOICE.pid&&(VOICE.holding||VOICE.pending)){ VOICE.pid=null; stopTalking(false); } },true);
+  document.addEventListener('pointercancel',e=>{ if(e.pointerId===VOICE.pid&&(VOICE.holding||VOICE.pending)){ VOICE.pid=null; stopTalking(true); } },true);
   document.addEventListener('contextmenu',e=>{ if(e.target&&e.target.closest&&e.target.closest('.mic'))e.preventDefault(); });
   document.addEventListener('visibilitychange',()=>{ if(document.hidden&&(VOICE.holding||VOICE.pending))stopTalking(true); }); })();
 function onRoomEvent(evt){ if(!evt||typeof evt!=='object')return;

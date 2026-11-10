@@ -237,11 +237,17 @@ function listen(socket: Socket, seated: Promise<Seat | null>) {
   };
 
   // `voice`: the company has game voice on, so the page offers the mic (companies.features.gameVoice).
-  on('room:hello', buckets.small, async (seat) => ({ ...(await hello(seat)), voice: await voiceOn(seat.org) }));
+  on('room:hello', buckets.small, async (seat) => {
+    // The voice switch is a nicety: read beside the hello, and a fault reading it is just "off".
+    const [view, voice] = await Promise.all([hello(seat), voiceOn(seat.org).catch(() => false)]);
+    return { ...view, voice };
+  });
   on('room:host', buckets.host, (seat, p) => hostRoom(seat, { open: p.open, size: p.size }));
   on('room:join', buckets.join, (seat, p) => joinRoom(seat, p.code, { rejoin: p.rejoin === true }));
   on('room:quick', buckets.join, (seat, p) => quickJoin(seat, { size: p.size }));
   on('room:leave', buckets.small, async (seat) => {
+    // Leaving lets go of the table's mic, so the others are not left waiting on it.
+    await dropMic(poolVoice, seat.org, seat.userId);
     await leaveRoom(seat);
     return {};
   });
