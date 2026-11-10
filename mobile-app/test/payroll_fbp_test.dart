@@ -45,6 +45,9 @@ class _FakeFbpServer {
   /// No change made now can reach this FY: the split is locked.
   bool locked = false;
 
+  /// This month's bills date, when HR set one ("2026-10-20").
+  String? monthlyDueOn;
+
   /// An older server without the FBP routes.
   bool hasFbpRoutes = true;
 
@@ -138,12 +141,13 @@ class _FakeFbpServer {
       'fy': '2026-27',
       'period': '2026-10',
       'billsDueOn': '2027-03-31',
+      'monthlyDueOn': monthlyDueOn,
       'lock': locked
           ? {
               'locked': true,
               'notConfigured': false,
               'missing': <String>[],
-              'reason': 'fy_closed',
+              'reason': 'locked_for_fy',
               'effectiveFrom': null,
               'closesOn': null,
             }
@@ -230,12 +234,18 @@ class _FakeFbpServer {
         // The home's summary cards: the FBP one is the way into the FBP page.
         'cards': {
           'salary': null,
-          'tax': {'fy': '2026-27', 'notConfigured': true, 'reason': 'tax_rules_not_set_up', 'message': 'Not set up. Ask HR.'},
+          'tax': {
+            'fy': '2026-27',
+            'notConfigured': true,
+            'reason': 'tax_rules_not_set_up',
+            'message': 'Not set up. Ask HR.',
+          },
           'fbp': {
             'poolPaise': 600000,
             'heads': [
               for (final e in amounts.entries)
-                if (e.value > 0) {'code': e.key, 'name': e.key, 'amountPaise': e.value},
+                if (e.value > 0)
+                  {'code': e.key, 'name': e.key, 'amountPaise': e.value},
             ],
             'assignedPaise': 450000,
             'unassignedPaise': 150000,
@@ -515,6 +525,16 @@ void main() {
     expect(find.byKey(const ValueKey('payroll-split')), findsOneWidget);
   });
 
+  testWidgets('FBP: this month\'s bills date, when HR set one', (tester) async {
+    await pumpFbp(
+      tester,
+      server: _FakeFbpServer()..monthlyDueOn = '2026-10-20',
+    );
+    final line = tester.widget<Text>(find.byKey(const ValueKey('fbp-todo')));
+    expect(line.data, '3 bills to upload · 1 to re-upload · by 20 Oct');
+    expect(line.style?.color, const Color(0xFFB42318));
+  });
+
   testWidgets('FBP: nothing left to send says so in green', (tester) async {
     final server = _FakeFbpServer()
       ..status['FUEL'] = List.filled(7, 'approved')
@@ -534,10 +554,15 @@ void main() {
     testWidgets('no summary, the lock, and the way to HR', (tester) async {
       opened.clear();
       registerSupportTicketOpener(opener);
-      await pumpFbp(tester, server: _FakeFbpServer()..locked = true);
+      await pumpFbp(
+        tester,
+        server: _FakeFbpServer()
+          ..locked = true
+          ..monthlyDueOn = '2026-10-20',
+      );
       expect(find.byKey(const ValueKey('fbp-summary')), findsNothing);
       expect(
-        find.text('3 bills to upload · 1 to re-upload · by 31 Mar'),
+        find.text('3 bills to upload · 1 to re-upload · by 20 Oct'),
         findsOneWidget,
       );
       expect(find.text('4 of 7 bills approved'), findsOneWidget);

@@ -174,6 +174,8 @@ class _FbpPageState extends State<_FbpPage> {
       if (plan.toReupload > 0) '${plan.toReupload} to re-upload',
     ];
     final locked = plan.lock.locked;
+    // This month's bills date when HR set one; else the FY's last date.
+    final dueOn = plan.monthlyDueOn ?? plan.billsDueOn;
     return [
       const _FbpTip(
         'Until a bill is approved, that FBP money is taxed like salary. We '
@@ -210,10 +212,7 @@ class _FbpPageState extends State<_FbpPage> {
         child: Text(
           todo.isEmpty
               ? 'All bills sent for review'
-              : [
-                  ...todo,
-                  if (plan.billsDueOn != null) 'by ${_short(plan.billsDueOn!)}',
-                ].join(' · '),
+              : [...todo, if (dueOn != null) 'by ${_short(dueOn)}'].join(' · '),
           key: const ValueKey('fbp-todo'),
           style: _fbpType(13.5, color: todo.isEmpty ? _fbpDone : _fbpAlert),
         ),

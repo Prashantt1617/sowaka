@@ -179,6 +179,7 @@ class PayrollTodo {
     this.rejected = 0,
     this.inReview = 0,
     this.notUploaded = 0,
+    this.pending = 0,
     this.regime,
     this.chosen = false,
   });
@@ -194,6 +195,9 @@ class PayrollTodo {
   final int rejected;
   final int inReview;
   final int notUploaded;
+
+  /// fbp_bills: the bills still to upload (rejected ones are [rejected]).
+  final int pending;
   final String? regime;
   final bool chosen;
 
@@ -207,6 +211,7 @@ class PayrollTodo {
     rejected: _int(json['rejected']),
     inReview: _int(json['inReview']),
     notUploaded: _int(json['notUploaded']),
+    pending: _int(json['pending']),
     regime: _stringOrNull(json['regime']),
     chosen: _bool(json['chosen']),
   );
@@ -1028,6 +1033,9 @@ class FbpSplit {
     this.notConfigured = false,
     this.missing = const [],
     this.billsAcknowledgedAt,
+    this.serverEditable,
+    this.lockedReason,
+    this.closesOn,
   });
 
   final bool available;
@@ -1051,9 +1059,28 @@ class FbpSplit {
   /// saved before that was kept, or no split yet.
   final DateTime? billsAcknowledgedAt;
 
-  /// The split can be changed now: the window is open and HR has set up
-  /// everything it needs.
-  bool get editable => available && window.open && !notConfigured;
+  /// The server's own word on whether the split can change now; null from
+  /// a server that does not send it.
+  final bool? serverEditable;
+
+  /// Why it can't: "locked_for_fy" once the FY's close date has passed.
+  final String? lockedReason;
+
+  /// While it can: the last day to change it.
+  final DateTime? closesOn;
+
+  /// The split is locked for the rest of this FY: a change goes through a
+  /// ticket.
+  bool get lockedForFy => lockedReason == 'locked_for_fy';
+
+  /// The split can be changed now: the window is open, HR has set up
+  /// everything it needs, and the server has not locked it.
+  bool get editable =>
+      available &&
+      window.open &&
+      !notConfigured &&
+      serverEditable != false &&
+      !lockedForFy;
 
   factory FbpSplit.fromJson(Map<String, dynamic> json) {
     final step = _paise(json['stepPaise']);
@@ -1091,6 +1118,11 @@ class FbpSplit {
       billsAcknowledgedAt: _moment(
         _map(json['current'])['billsAcknowledgedAt'],
       ),
+      serverEditable: json['editable'] is bool
+          ? json['editable'] as bool
+          : null,
+      lockedReason: _stringOrNull(json['lockedReason']),
+      closesOn: payrollDate(json['closesOn']),
     );
   }
 }
@@ -1987,6 +2019,8 @@ class FbpLock {
     required this.notConfigured,
     this.effectiveFrom,
     this.closesOn,
+    this.reason,
+    this.missing = const [],
   });
 
   /// No change made now can reach this FY's pay: the split stays as it is
@@ -2002,11 +2036,23 @@ class FbpLock {
   final DateTime? effectiveFrom;
   final DateTime? closesOn;
 
+  /// Why it is locked: "locked_for_fy"; null while open.
+  final String? reason;
+
+  /// What HR has not set for it, as the server names it.
+  final List<String> missing;
+
   factory FbpLock.fromJson(Map<String, dynamic> json) => FbpLock(
     locked: _bool(json['locked']),
     notConfigured: _bool(json['notConfigured']),
     effectiveFrom: payrollMonth(json['effectiveFrom']),
     closesOn: payrollDate(json['closesOn']),
+    reason: _stringOrNull(json['reason']),
+    missing: [
+      if (json['missing'] is List)
+        for (final m in json['missing'] as List)
+          if (m is String) m,
+    ],
   );
 }
 
@@ -2068,6 +2114,7 @@ class FbpPlan {
     this.declaredFrom,
     this.declaredAt,
     this.billsDueOn,
+    this.monthlyDueOn,
     this.missing = const [],
   });
 
@@ -2092,6 +2139,10 @@ class FbpPlan {
   final int toUpload;
   final int toReupload;
   final DateTime? billsDueOn;
+
+  /// The last day to send this month's bills; null when HR has not set a
+  /// monthly date (then [billsDueOn], the FY's, is the one shown).
+  final DateTime? monthlyDueOn;
   final FbpLock lock;
 
   /// What HR has not set: "flexiblePoolPaise", "billsDue", "splitCutoffDay".
@@ -2113,6 +2164,7 @@ class FbpPlan {
       toUpload: _int(summary['toUpload']),
       toReupload: _int(summary['toReupload']),
       billsDueOn: payrollDate(json['billsDueOn']),
+      monthlyDueOn: payrollDate(json['monthlyDueOn']),
       lock: FbpLock.fromJson(_map(json['lock'])),
       missing: [
         for (final item in json['missing'] as List<dynamic>? ?? const [])
