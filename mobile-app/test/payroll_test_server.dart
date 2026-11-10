@@ -354,6 +354,7 @@ class FakePayrollServer {
         'dueOn': '2027-01-31',
       },
     ],
+    'cards': _cards(),
     'missingPunches': {
       'period': period,
       'count': missingCount,
@@ -380,6 +381,85 @@ class FakePayrollServer {
       'dueOn': '2026-11-30',
     },
   };
+
+  // ------------------------------------------------------------ home cards
+  /// Last pay period's payslip is out: the salary card has no Estimate tag.
+  bool lastSalaryReleased = false;
+
+  /// The carousel's cards, with the figures the R1 design draws: October's
+  /// salary, the FY's tax to October, and the split ([split]) by head.
+  Map<String, dynamic> _cards() {
+    final assigned = split.values.fold(0, (a, b) => a + b);
+    return {
+      'salary': !statutorySetUp
+          ? {
+              'period': '2026-10',
+              'label': 'October',
+              'notConfigured': true,
+              'reason': 'statutory_not_set_up',
+              'fy': '2026-27',
+              'message':
+                  'Your October 2026 pay can\'t be worked out yet: the statutory '
+                  'settings (PF, ESI, professional tax) for FY 2026-27 are not '
+                  'set up. Ask HR.',
+            }
+          : {
+              'period': '2026-10',
+              'label': 'October',
+              'notConfigured': false,
+              'released': lastSalaryReleased,
+              'payslipId': lastSalaryReleased ? 'slip-oct' : null,
+              'daysPaid': 29,
+              'daysInPeriod': 31,
+              'grossPaise': 12400000,
+              'takeHomePaise': 10640000,
+              'deductionsPaise': 960000,
+              'lopPaise': 800000,
+              'lopDays': 2,
+              'overtimePaise': 0,
+              'reimbursementsPaise': 0,
+            },
+      'tax': !taxRulesSetUp
+          ? {
+              'fy': '2026-27',
+              'notConfigured': true,
+              'reason': 'tax_rules_not_set_up',
+              'message':
+                  'The income tax rules for FY 2026-27 are not set up yet. Ask HR.',
+            }
+          : {
+              'fy': '2026-27',
+              'notConfigured': false,
+              'regime': 'new',
+              'regimeChosen': false,
+              'paidSoFarPaise': 5840000,
+              'paidBeforeThisMonthPaise': 5080000,
+              'thisMonthPaise': 760000,
+              'thisMonthReleased': false,
+              'fromMonth': '2026-04',
+              'toMonth': '2026-10',
+              'thisMonth': '2026-10',
+            },
+      'fbp': !hasSplit
+          ? null
+          : {
+              'poolPaise': pool,
+              'heads': [
+                for (final code in split.keys)
+                  if (split[code]! > 0)
+                    {
+                      'code': code,
+                      'name': _names[code],
+                      'amountPaise': split[code],
+                    },
+              ],
+              'assignedPaise': assigned,
+              'unassignedPaise': pool - assigned,
+              'notConfigured': false,
+              'missing': <String>[],
+            },
+    };
+  }
 
   Map<String, dynamic> _split() {
     final assigned = split.values.fold(0, (a, b) => a + b);

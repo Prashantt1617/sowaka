@@ -1,3 +1,4 @@
+import { ObjectId } from 'mongodb';
 /**
  * Scratch-database check of the app's Payroll screens: the home summary, the
  * missing punches of a month, the flexible split (limits, pool, the − / +
@@ -12,7 +13,7 @@
  *   npm run payroll:employee-check
  */
 import {
-  attendanceRecords, companies, connectDb, flexibleSplits, getDb, payHeads, payrollPeriods, payrollRuns, payslips, salaryStructures, salaryTemplates,
+  attendanceOverrides, attendanceRecords, companies, connectDb, flexibleSplits, getDb, payHeads, payrollPeriods, payrollRuns, payslips, salaryStructures, salaryTemplates,
   shiftPolicies, statutoryConfigs, tdsConfigs, users,
 } from '../config/db';
 import { env } from '../config/env';
@@ -35,7 +36,8 @@ async function homeOn(...args: Parameters<typeof myPayrollHome>) {
   return h;
 }
 
-const SCRATCH = 'payroll_employee_scratch';
+// A suffixed name (payroll_employee_scratch_<who>) lets two checkouts run it at once.
+const SCRATCH = /^payroll_employee_scratch(_[a-z0-9]+)?$/.test(env.mongoDbName) ? env.mongoDbName : 'payroll_employee_scratch';
 const ORG = 'sowaka';
 const R = (rupees: number) => rupees * 100;
 
@@ -276,6 +278,66 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('home: no salary structure: nothing to set up either', dHome.salaryNotSetUp === null, dHome.salaryNotSetUp);
   check('home: a company with no pay cycle is paid by the calendar month', bHome.payPeriod?.from === '2026-12-01' && bHome.payPeriod.to === '2026-12-31' && bHome.salary?.baseDays === 31, bHome.payPeriod);
 
+  // —— home's cards: last period's salary, this FY's tax, the flexible split ——
+  const nov11 = new Date('2026-11-11T06:00:00Z');
+  // Tax withheld: ₹7,600 on October's payslip, ₹5,000 on a paid September run; a draft August
+  // run's and last FY's March payslips must not count.
+  const withTds = (slip: NonNullable<typeof octSlip>, paise: number) => ({
+    ...slip,
+    deductions: [...slip.deductions.filter((d) => d.key !== 'income_tax'), { key: 'income_tax', name: 'Income Tax', amountPaise: paise }],
+  });
+  const octStored = (await payslips().findOne({ runId: oct.run.id, userId: 'asha' }))!;
+  await payslips().replaceOne({ _id: octStored._id }, withTds(octStored, R(7600)));
+  const cardRuns: string[] = [];
+  for (const [period, status, tds] of [['2026-09', 'paid', 5000], ['2026-08', 'draft', 9999], ['2026-03', 'paid', 4321]] as const) {
+    const { insertedId } = await payrollRuns().insertOne({ org: ORG, period, runType: 'regular', status, employeeCount: 1, totals: { grossPaise: 0, employeeDeductionsPaise: 0, netPaise: 0, reimbursementsPaise: 0, employerCostPaise: 0 }, createdByUserId: 'hr', createdAt: now, updatedAt: now });
+    const { _id, ...rest } = withTds(octStored, R(tds));
+    void _id;
+    await payslips().insertOne({ ...rest, period, runId: insertedId.toHexString() } as never);
+    cardRuns.push(insertedId.toHexString());
+  }
+  const aCards = (await homeOn('asha', undefined, nov11)).cards;
+  const octAsha = (await payslips().findOne({ runId: oct.run.id, userId: 'asha' }))!;
+  const sc = aCards.salary;
+  const octFull = octAsha.earnings.reduce((t, e) => t + e.fullPaise, 0);
+  const octLost = octFull - octAsha.earnings.reduce((t, e) => t + e.paidPaise, 0);
+  const octTds = octAsha.deductions.find((d) => d.key === 'income_tax')?.amountPaise ?? 0;
+  check('cards: on 11 Nov the salary card is October, from its released payslip',
+    sc !== null && !sc.notConfigured && sc.period === '2026-10' && sc.label === 'October' && sc.released === true && sc.payslipId === one.payslip.id, sc);
+  check('cards: the salary card\'s figures are the payslip\'s (gross, take-home, loss of pay, deductions)',
+    sc !== null && !sc.notConfigured && sc.grossPaise === octFull && sc.takeHomePaise === octAsha.netPayablePaise && sc.lopPaise === octLost
+      && sc.deductionsPaise === octAsha.deductions.filter((d) => !d.hidden && d.amountPaise > 0).reduce((t, d) => t + d.amountPaise, 0), [sc, octAsha.deductions]);
+  check('cards: days paid = the run\'s 31 base days less the days lost',
+    sc !== null && !sc.notConfigured && sc.daysInPeriod === 31 && sc.daysPaid === 31 - sc.lopDays, sc);
+  const tc = aCards.tax;
+  check('cards: tax is this FY\'s, on the declaration\'s regime (new, not chosen yet)',
+    !tc.notConfigured && tc.fy === '2026-27' && tc.regime === 'new' && tc.regimeChosen === false && tc.fromMonth === '2026-04' && tc.toMonth === '2026-11', tc);
+  check('cards: tax paid before November is September\'s and October\'s TDS; draft runs and last FY are not counted',
+    !tc.notConfigured && octTds === R(7600) && tc.paidBeforeThisMonthPaise === R(5000) + R(7600) && tc.thisMonthReleased === false, [tc, octTds]);
+  check('cards: November\'s tax is the estimate (last payslip\'s TDS), and paid so far adds it',
+    !tc.notConfigured && tc.thisMonthPaise === R(7600) && tc.paidSoFarPaise === R(5000) + 2 * R(7600), tc);
+  const fc = aCards.fbp;
+  check('cards: the FBP card is the split head by head (₹6,000 pool, all assigned)',
+    fc !== null && fc.poolPaise === R(6000) && fc.unassignedPaise === 0
+      && fc.heads.map((h) => `${h.code}:${h.amountPaise}`).join() === `FUEL:${R(3000)},INTERNET:${R(1000)},TELEPHONE:${R(1500)},BOOKS:${R(500)}`, fc);
+  const bCards = bHome.cards;
+  check('cards: on 2 Dec Bala\'s November is an estimate (its run is still a draft), on 30 days',
+    bCards.salary !== null && !bCards.salary.notConfigured && bCards.salary.period === '2026-11' && bCards.salary.released === false
+      && bCards.salary.payslipId === null && bCards.salary.daysInPeriod === 30 && bCards.salary.daysPaid === 30 - bCards.salary.lopDays && bCards.salary.grossPaise > 0, bCards.salary);
+  check('cards: the estimate adds up: take-home = gross − loss of pay − deductions + reimbursements',
+    bCards.salary !== null && !bCards.salary.notConfigured
+      && bCards.salary.takeHomePaise === bCards.salary.grossPaise - bCards.salary.lopPaise - bCards.salary.deductionsPaise + bCards.salary.reimbursementsPaise, bCards.salary);
+  check('cards: unassigned FBP is the pool less the split', bCards.fbp !== null && bCards.fbp.unassignedPaise === R(6000) - bCards.fbp.assignedPaise, bCards.fbp);
+  check('cards: no flexible heads, no FBP card', cHome.cards.fbp === null, cHome.cards.fbp);
+  check('cards: no salary structure, no salary card', dHome.cards.salary === null, dHome.cards.salary);
+  await users().insertOne(person('esha', 'Esha Joiner', { joiningDate: new Date('2026-11-05T00:00:00Z') }) as never);
+  await salaryStructures().insertOne({ org: ORG, userId: 'esha', salaryTemplateCode: 'PLAIN', annualCtcPaise: R(6_00_000), status: 'active', createdAt: now, updatedAt: now } as never);
+  check('cards: joined in November, no October salary card', (await homeOn('esha', undefined, nov11)).cards.salary === null);
+  // The cards' extra runs (and October's TDS) go again, so later checks see the company as it was.
+  await payslips().deleteMany({ runId: { $in: cardRuns } });
+  await payrollRuns().deleteMany({ _id: { $in: cardRuns.map((id) => new ObjectId(id)) } });
+  await payslips().replaceOne({ _id: octStored._id }, octStored);
+
   // —— home on the company's pay period (26th to 25th, November's base days set to 26) ——
   await payrollPeriods().insertMany([
     { org: ORG, period: 'default', startDay: 26, updatedAt: now },
@@ -288,8 +350,8 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('pay period: its dates and base days come from payroll_periods',
     pSal?.periodFrom === '2026-10-26' && pSal.periodTo === '2026-11-25' && pSal.baseDays === 26
       && pHome.payPeriod?.from === '2026-10-26' && pHome.payPeriod.baseDays === 26, [pSal, pHome.payPeriod]);
-  check('pay period: 26 and 27 Oct without punches are loss of pay (not 1–27 Oct)', pSal?.lopDays === 2, pSal?.lopDays);
-  check('pay period: loss of pay is gross ÷ 26 base days × days lost', pSal !== null && pSal !== undefined && pSal.lopPaise === Math.round((pSal.grossPaise * 2) / 26 / 100) * 100 && pSal.lopPaise > 0, pSal);
+  check('pay period: 26 and 27 Oct without punches are loss of pay (counted to yesterday; today is still going), not 1–28 Oct', pSal?.lopDays === 2, pSal?.lopDays);
+  check('pay period: loss of pay is gross ÷ 26 base days × days lost', pSal !== null && pSal !== undefined && Math.abs(pSal.lopPaise - (pSal.grossPaise * 2) / 26) <= 100 && pSal.lopPaise > 0, pSal);
   check('pay period: missing punches stay on the calendar month', pHome.missingPunches.period === '2026-10', pHome.missingPunches);
   check('pay period: asking for November on 28 Oct is fine (it has started)', (await homeOn('bala', '2026-11', oct28)).salary?.period === '2026-11');
   check('pay period: December has not started', (await refusal(() => homeOn('bala', '2026-12', oct28)))?.status === 400);
@@ -310,7 +372,21 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
       && /FY 2026-27/.test(sh.salaryNotSetUp.message) && /Ask HR\.$/.test(sh.salaryNotSetUp.message), sh.salaryNotSetUp);
   check('no statutory row: the to-dos and sections still show', sh.todo.some((t) => t.kind === 'flexible_split') && sh.split !== null && sh.proofs.fy === '2026-27', sh.todo);
   check('no statutory row: a released payslip still shows as final', (await homeOn('asha', '2026-10', oct31)).salary?.status === 'final');
+  const sCards = (await homeOn('bala', undefined, new Date('2026-12-02T06:00:00Z'))).cards;
+  check('no statutory row: the salary card says not set up (November\'s estimate), with no figures',
+    sCards.salary !== null && sCards.salary.notConfigured === true && sCards.salary.reason === 'statutory_not_set_up' && sCards.salary.label === 'November'
+      && /Ask HR\.$/.test(sCards.salary.message) && !('grossPaise' in sCards.salary), sCards.salary);
+  check('no statutory row: this month\'s tax is unknown, so paid so far runs to November only',
+    !sCards.tax.notConfigured && sCards.tax.thisMonthPaise === null && sCards.tax.toMonth === '2026-11' && sCards.tax.paidSoFarPaise === sCards.tax.paidBeforeThisMonthPaise, sCards.tax);
   await statutoryConfigs().insertOne(fyRow!);
+
+  // —— the FY's tax rules are missing: the tax card says so ——
+  const tdsRows = await tdsConfigs().find({ fy: '2026-27' }).toArray();
+  await tdsConfigs().deleteMany({ fy: '2026-27' });
+  const tNone = (await homeOn('asha', undefined, nov11)).cards.tax;
+  check('no tax rules: the tax card is not set up, saying to ask HR, with no figures',
+    tNone.notConfigured === true && tNone.reason === 'tax_rules_not_set_up' && tNone.fy === '2026-27' && !('paidSoFarPaise' in tNone) && /Ask HR\.$/.test(tNone.message), tNone);
+  if (tdsRows.length) await tdsConfigs().insertMany(tdsRows);
 
   // —— a pay cycle HR set up wrong: said, not guessed around ——
   await payrollPeriods().updateOne({ org: ORG, period: 'default' }, { $set: { startDay: 30 } });
@@ -468,6 +544,57 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     nEpf.enrolled && nEpf.monthly === null && nEpf.notSetUp?.reason === 'statutory_not_set_up' && /Ask HR\.$/.test(nEpf.notSetUp.message)
       && nEpf.savedThroughSowaka.employeePaise === novPf.employeePaise, nEpf);
   await statutoryConfigs().insertOne(fyRow2!);
+  // —— the estimate is what the run pays: a meal card, absences, a missed punch and a half day ——
+  // Gita (meal card ₹2,200 a month) in July: absent 6 and 7 Jul, only a punch-in on 8 Jul, HR
+  // marked 9 Jul a half day, every other weekday punched in and out.
+  await payHeads().insertOne(head({ code: 'MEAL_CARD', name: 'Meal Card', category: 'earning', componentType: 'meal_card', calculation: { mode: 'flat_per_month', amountPaise: R(2200) } }));
+  await salaryTemplates().insertOne({
+    org: ORG, name: 'With meal card', code: 'MEALT', active: true, createdAt: now, updatedAt: now, balancingComponentCode: 'FIXED_ALLOWANCE',
+    components: [
+      { payHeadCode: 'BASIC', calculation: { mode: 'percentage', percent: 50, base: 'ctc' } },
+      { payHeadCode: 'MEAL_CARD', calculation: { mode: 'flat_per_month', amountPaise: R(2200) } },
+      { payHeadCode: 'FIXED_ALLOWANCE', calculation: { mode: 'flat_amount' } },
+    ],
+  } as never);
+  await users().insertOne(person('gita', 'Gita Meal', { joiningDate: new Date('2026-01-01T00:00:00Z') }) as never);
+  await salaryStructures().insertOne({ org: ORG, userId: 'gita', salaryTemplateCode: 'MEALT', annualCtcPaise: R(9_60_000), status: 'active', createdAt: now, updatedAt: now } as never);
+  const julyDays: unknown[] = [];
+  for (let d = 1; d <= 31; d++) {
+    const date = `2026-07-${String(d).padStart(2, '0')}`;
+    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+    if (weekday === 0 || weekday === 6 || d === 6 || d === 7) continue;
+    julyDays.push({
+      userId: 'gita', employeeId: 'E-GITA', workDate: date, createdAt: now, updatedAt: now,
+      punchIn: new Date(`${date}T03:30:00Z`),
+      ...(d === 8 ? {} : { punchOut: new Date(`${date}T12:40:00Z`) }),
+    });
+  }
+  await attendanceRecords().insertMany(julyDays as never[]);
+  await attendanceOverrides().insertOne({ org: ORG, userId: 'gita', workDate: '2026-07-09', status: 'half_day', setByUserId: 'hr', setAt: now } as never);
+  // The home on 5 Aug: July is the last pay period, not run yet, so its card is the estimate.
+  const gHome = await homeOn('gita', undefined, new Date('2026-08-05T06:00:00Z'));
+  const julyRun = await createRun('hr', { period: '2026-07' });
+  const gSlip = (await payslips().findOne({ runId: julyRun.run.id, userId: 'gita' }))!;
+  const gCard = gHome.cards.salary;
+  const gFull = gSlip.earnings.reduce((t, e) => t + e.fullPaise, 0);
+  const gShown = gSlip.deductions.filter((d) => !d.hidden && d.amountPaise > 0);
+  check('estimate = run: July\'s card is an estimate on the run\'s own loss of pay (absences, the missed punch, the half day)',
+    gCard !== null && !gCard.notConfigured && gCard.released === false && gCard.lopDays === gSlip.inputs!.lopDays && gCard.lopDays >= 2.5,
+    [gCard, gSlip.inputs?.lopDays, gSlip.inputs?.attendanceDeductions]);
+  check('estimate = run: the same gross, loss of pay and take-home',
+    gCard !== null && !gCard.notConfigured && gCard.grossPaise === gFull
+      && gCard.lopPaise === gFull - gSlip.earnings.reduce((t, e) => t + e.paidPaise, 0) && gCard.takeHomePaise === gSlip.netPayablePaise,
+    [gCard, { gross: gFull, net: gSlip.netPayablePaise }]);
+  check('estimate = run: the same deduction lines, the meal card\'s food coupons among them',
+    gCard !== null && !gCard.notConfigured && gShown.some((d) => d.key === 'food_coupon')
+      && gCard.deductionsPaise === gShown.reduce((t, d) => t + d.amountPaise, 0), [gCard, gSlip.deductions]);
+  const gJuly = (await homeOn('gita', '2026-07', new Date('2026-08-05T06:00:00Z'))).salary ?? null;
+  check('estimate = run: the July salary on home (the screen the summary opens) lists the run\'s deductions',
+    gJuly !== null && gJuly.status === 'estimate' && gJuly.deductions.map((d) => d.key).join() === gShown.map((d) => d.key).join()
+      && gJuly.takeHomePaise === gSlip.netPayablePaise && gJuly.lopDays === gSlip.inputs!.lopDays, [gJuly?.deductions, gShown]);
+  await payslips().deleteMany({ runId: julyRun.run.id });
+  await payrollRuns().deleteOne({ period: '2026-07' });
+
   await db.dropDatabase();
   console.log(failed === 0 ? `\nall ${passed} payroll employee checks passed` : `\n${failed} check(s) failed, ${passed} passed`);
   process.exit(failed === 0 ? 0 : 1);

@@ -132,9 +132,9 @@ class PayrollSalary {
     lopDays: _number(json['lopDays']),
     lopPaise: _paise(json['lopPaise']),
     overtimePaise: _paise(json['overtimePaise']),
-    deductions: _list(
-      json['deductions'],
-    ).map(PayrollDeduction.fromJson).toList(),
+    deductions: _list(json['deductions'])
+        .map(PayrollDeduction.fromJson)
+        .toList(),
     netPaise: _paise(json['netPaise']),
     reimbursementsPaise: _paise(json['reimbursementsPaise']),
     takeHomePaise: _paise(json['takeHomePaise']),
@@ -283,7 +283,12 @@ class PayrollHome {
     this.declaration,
     this.hasSplit = false,
     this.proofs,
+    this.cards = PayrollHomeCards.none,
   });
+
+  /// The summary carousel: last pay period's salary, this FY's tax and the
+  /// flexible split, each null when there is nothing to show.
+  final PayrollHomeCards cards;
 
   /// The person's salary has flexible (FBP) heads to split: the server sends
   /// a split summary only then. Without one there is no FBP to show.
@@ -311,6 +316,7 @@ class PayrollHome {
     final declaration = json['declaration'];
     final proofs = json['proofs'];
     return PayrollHome(
+      cards: PayrollHomeCards.fromJson(_map(json['cards'])),
       hasSplit: json['split'] is Map,
       proofs: proofs is Map<String, dynamic>
           ? PayrollProofsSummary.fromJson(proofs)
@@ -333,6 +339,205 @@ class PayrollHome {
           : null,
     );
   }
+}
+
+/// The Payroll home's summary cards (`cards` on GET /payroll/home).
+class PayrollHomeCards {
+  const PayrollHomeCards({this.salary, this.tax, this.fbp});
+
+  static const none = PayrollHomeCards();
+
+  /// The last pay period's salary; null with no salary structure for it.
+  final PayrollSalaryCard? salary;
+
+  /// Income tax withheld this FY; null from a server without it.
+  final PayrollTaxCard? tax;
+
+  /// The flexible split; null when the salary has no flexible heads.
+  final PayrollFbpCard? fbp;
+
+  factory PayrollHomeCards.fromJson(Map<String, dynamic> json) {
+    final salary = json['salary'];
+    final tax = json['tax'];
+    final fbp = json['fbp'];
+    return PayrollHomeCards(
+      salary: salary is Map<String, dynamic>
+          ? PayrollSalaryCard.fromJson(salary)
+          : null,
+      tax: tax is Map<String, dynamic> ? PayrollTaxCard.fromJson(tax) : null,
+      fbp: fbp is Map<String, dynamic> ? PayrollFbpCard.fromJson(fbp) : null,
+    );
+  }
+}
+
+/// The last pay period's salary as the home's first card: its released
+/// payslip, else an estimate; or, when HR has not set something up,
+/// [notConfigured] with the server's [message] and no figures.
+class PayrollSalaryCard {
+  const PayrollSalaryCard({
+    required this.period,
+    required this.label,
+    this.notConfigured = false,
+    this.message,
+    this.released = false,
+    this.payslipId,
+    this.daysPaid,
+    this.daysInPeriod,
+    this.grossPaise = 0,
+    this.takeHomePaise = 0,
+    this.deductionsPaise = 0,
+    this.lopPaise = 0,
+    this.lopDays = 0,
+    this.overtimePaise = 0,
+    this.reimbursementsPaise = 0,
+  });
+
+  /// "2026-10", and its month as the card names it ("October").
+  final String period;
+  final String label;
+  final bool notConfigured;
+  final String? message;
+
+  /// The payslip is out: the figures are final, not an estimate.
+  final bool released;
+  final String? payslipId;
+
+  /// Paid days of [daysInPeriod] (the period's base days); null when the
+  /// server does not know them.
+  final double? daysPaid;
+  final int? daysInPeriod;
+  final int grossPaise;
+  final int takeHomePaise;
+  final int deductionsPaise;
+  final int lopPaise;
+  final double lopDays;
+
+  /// Paid on top of the gross, inside the take-home.
+  final int overtimePaise;
+  final int reimbursementsPaise;
+
+  int get extrasPaise => overtimePaise + reimbursementsPaise;
+
+  factory PayrollSalaryCard.fromJson(Map<String, dynamic> json) =>
+      PayrollSalaryCard(
+        period: _string(json['period']),
+        label: _string(json['label']),
+        notConfigured: _bool(json['notConfigured']),
+        message: _stringOrNull(json['message']),
+        released: _bool(json['released']),
+        payslipId: _stringOrNull(json['payslipId']),
+        daysPaid: (json['daysPaid'] as num?)?.toDouble(),
+        daysInPeriod: switch (json['daysInPeriod']) {
+          final num n when n > 0 => n.toInt(),
+          _ => null,
+        },
+        grossPaise: _paise(json['grossPaise']),
+        takeHomePaise: _paise(json['takeHomePaise']),
+        deductionsPaise: _paise(json['deductionsPaise']),
+        lopPaise: _paise(json['lopPaise']),
+        lopDays: _number(json['lopDays']),
+        overtimePaise: _paise(json['overtimePaise']),
+        reimbursementsPaise: _paise(json['reimbursementsPaise']),
+      );
+}
+
+/// Income tax withheld this FY, as the home's second card: the released
+/// payslips' TDS before this pay period, and this period's own (its payslip,
+/// else the estimate). [notConfigured] when the FY's tax rules are not set
+/// up.
+class PayrollTaxCard {
+  const PayrollTaxCard({
+    required this.fy,
+    this.notConfigured = false,
+    this.message,
+    this.regime,
+    this.regimeChosen = false,
+    this.paidSoFarPaise = 0,
+    this.paidBeforeThisMonthPaise = 0,
+    this.thisMonthPaise,
+    this.thisMonthReleased = false,
+    this.fromMonth,
+    this.toMonth,
+    this.thisMonth,
+  });
+
+  final String fy;
+  final bool notConfigured;
+  final String? message;
+
+  /// "new" | "old".
+  final String? regime;
+  final bool regimeChosen;
+  final int paidSoFarPaise;
+  final int paidBeforeThisMonthPaise;
+
+  /// Null while this period's pay can't be worked out.
+  final int? thisMonthPaise;
+  final bool thisMonthReleased;
+
+  /// The months [paidSoFarPaise] covers, and this pay period's month.
+  final DateTime? fromMonth;
+  final DateTime? toMonth;
+  final DateTime? thisMonth;
+
+  factory PayrollTaxCard.fromJson(Map<String, dynamic> json) => PayrollTaxCard(
+    fy: _string(json['fy']),
+    notConfigured: _bool(json['notConfigured']),
+    message: _stringOrNull(json['message']),
+    regime: _stringOrNull(json['regime']),
+    regimeChosen: _bool(json['regimeChosen']),
+    paidSoFarPaise: _paise(json['paidSoFarPaise']),
+    paidBeforeThisMonthPaise: _paise(json['paidBeforeThisMonthPaise']),
+    thisMonthPaise: _paiseOrNull(json['thisMonthPaise']),
+    thisMonthReleased: _bool(json['thisMonthReleased']),
+    fromMonth: payrollMonth(json['fromMonth']),
+    toMonth: payrollMonth(json['toMonth']),
+    thisMonth: payrollMonth(json['thisMonth']),
+  );
+}
+
+/// One flexible head and what goes to it a month.
+class PayrollFbpHead {
+  const PayrollFbpHead({
+    required this.code,
+    required this.name,
+    required this.amountPaise,
+  });
+
+  final String code;
+  final String name;
+  final int amountPaise;
+
+  factory PayrollFbpHead.fromJson(Map<String, dynamic> json) => PayrollFbpHead(
+    code: _string(json['code']),
+    name: _string(json['name']),
+    amountPaise: _paise(json['amountPaise']),
+  );
+}
+
+/// The flexible pool as split, as the home's third card.
+class PayrollFbpCard {
+  const PayrollFbpCard({
+    required this.heads,
+    this.poolPaise,
+    this.unassignedPaise,
+  });
+
+  /// Null while HR has not set the pool.
+  final int? poolPaise;
+  final List<PayrollFbpHead> heads;
+  final int? unassignedPaise;
+
+  int get assignedPaise => heads.fold(0, (sum, h) => sum + h.amountPaise);
+
+  /// The pool, or what is split when the pool is not set.
+  int get totalPaise => poolPaise ?? assignedPaise;
+
+  factory PayrollFbpCard.fromJson(Map<String, dynamic> json) => PayrollFbpCard(
+    poolPaise: _paiseOrNull(json['poolPaise']),
+    heads: _list(json['heads']).map(PayrollFbpHead.fromJson).toList(),
+    unassignedPaise: _paiseOrNull(json['unassignedPaise']),
+  );
 }
 
 /// The proofs line of the payroll home: whether any are needed this year and
@@ -1186,9 +1391,9 @@ class TaxDeclaration {
     metro: _bool(json['metro']),
     selfSenior: _bool(json['selfSenior']),
     parentsSenior: _bool(json['parentsSenior']),
-    sections: _list(
-      json['sections'],
-    ).map(TaxDeclarationSection.fromJson).toList(),
+    sections: _list(json['sections'])
+        .map(TaxDeclarationSection.fromJson)
+        .toList(),
   );
 }
 

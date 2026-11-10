@@ -58,7 +58,7 @@ export interface EarningsMonth {
 }
 
 export interface EarningsNotSetUp {
-  reason: 'no_salary_structure' | 'statutory_not_set_up' | 'structure_not_set_up' | 'pay_period_not_set_up';
+  reason: 'no_salary_structure' | 'statutory_not_set_up' | 'structure_not_set_up' | 'pay_period_not_set_up' | 'tax_rules_not_set_up';
   message: string;
 }
 

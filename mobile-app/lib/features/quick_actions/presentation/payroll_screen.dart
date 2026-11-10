@@ -560,132 +560,8 @@ class _PayrollHomePageState extends State<_PayrollHomePage> {
           const _PrLoading()
         else if (home == null)
           _PrError(_error!, onRetry: _load)
-        else ...[
-          if (home.salary case final salary? when home.hasSalaryStructure)
-            _SalaryCard(salary: salary, onUnpaidDays: _fixPunches)
-          else if (home.salaryNotSetUp case final notSetUp?)
-            _SalaryNotSetUpCard(period: home.period, notSetUp: notSetUp)
-          else
-            const _HubEmptyState(
-              iconAsset: 'assets/icons/request_reimbursement_money.png',
-              text:
-                  'Your salary shows here once HR sets up your pay.\n'
-                  'Payslips and tax are below.',
-            ),
-          if (home.todo.isNotEmpty) ...[
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                const _HomeSectionLabel('To do'),
-                const SizedBox(width: 6),
-                Container(
-                  constraints: const BoxConstraints(minWidth: 18),
-                  height: 18,
-                  padding: const EdgeInsets.symmetric(horizontal: 5),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF383C),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Text(
-                    '${home.todo.length}',
-                    style: const TextStyle(
-                      fontFamily: 'Sora',
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _FormCard(
-              children: [
-                for (final (index, todo) in home.todo.indexed) ...[
-                  if (index > 0)
-                    const Divider(
-                      height: 1,
-                      thickness: 1,
-                      color: Color(0xFFF3F4F6),
-                    ),
-                  _todoRow(todo),
-                ],
-              ],
-            ),
-          ],
-          const SizedBox(height: 20),
-          const _HomeSectionLabel('Quick actions'),
-          const SizedBox(height: 12),
-          GridView(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: EdgeInsets.zero,
-            // The Actions home's own grid: two across, the same fixed row.
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              mainAxisExtent: 123.185,
-            ),
-            children: [
-              _HomeActionCard(
-                key: const ValueKey('payroll-payslips'),
-                icon: Icons.receipt_long_rounded,
-                color: _prBlue,
-                tint: _prBlueTint,
-                title: 'Payslips',
-                subtitle: 'Monthly slips & PDF',
-                imageAsset: 'assets/icons/request_reimbursement_money.png',
-                onTap: () => _open(const _PayslipsPage()),
-              ),
-              _HomeActionCard(
-                key: const ValueKey('payroll-tax'),
-                icon: Icons.calculate_rounded,
-                color: _Q.plum,
-                tint: _Q.plumTint,
-                title: 'Tax',
-                subtitle: 'Regime & investments',
-                imageAsset: 'assets/icons/action_card_policies_pencil.png',
-                onTap: () => _open(const _DeclarationPage()),
-              ),
-              // Only for someone whose salary has flexible heads to split.
-              if (home.hasSplit)
-                _HomeActionCard(
-                  key: const ValueKey('payroll-fbp'),
-                  icon: Icons.account_balance_wallet_rounded,
-                  color: _Q.teal,
-                  tint: _Q.tealTint,
-                  title: 'FBP',
-                  subtitle: 'Your flexible split',
-                  imageAsset:
-                      'assets/icons/action_card_reimbursement_rupee.png',
-                  imageSize: 28,
-                  onTap: () => _open(const _FbpPage()),
-                ),
-              // Proofs stay a tap away once uploaded or approved, not only
-              // while something is left to do.
-              if (home.proofs case final p? when p.required && p.total > 0)
-                _HomeActionCard(
-                  key: const ValueKey('payroll-proofs-card'),
-                  icon: Icons.verified_rounded,
-                  color: _Q.plum,
-                  tint: _Q.plumTint,
-                  title: 'Proofs',
-                  subtitle: p.approved == p.total
-                      ? 'All ${p.total} approved'
-                      : [
-                          if (p.approved > 0) '${p.approved} approved',
-                          if (p.uploaded > 0) '${p.uploaded} in review',
-                          if (p.notUploaded > 0) '${p.notUploaded} to upload',
-                          if (p.rejected > 0) '${p.rejected} rejected',
-                        ].join(' · '),
-                  imageAsset: 'assets/icons/leave_year_approved_badge.png',
-                  onTap: () => _open(const _ProofsPage()),
-                ),
-            ],
-          ),
-        ],
+        else
+          ..._homeV2(home),
       ],
     );
   }
@@ -720,7 +596,7 @@ class _PayrollHomePageState extends State<_PayrollHomePage> {
           if (todo.rejected > 0) '${todo.rejected} rejected',
           if (todo.inReview > 0) '${todo.inReview} in review',
         ].join(' · '),
-        () => _open(const _SplitPage()),
+        () => _open(const _FbpPage()),
       ),
       'tax_regime' => (
         'assets/icons/action_card_policies_pencil.png',
@@ -744,44 +620,13 @@ class _PayrollHomePageState extends State<_PayrollHomePage> {
         () {},
       ),
     };
-    final due = todo.dueOn;
-    final today = _dateOnly(DateTime.now());
-    final urgent = due != null && due.difference(today).inDays <= 3;
-    return InkWell(
+    return _PrTodoRow(
       key: ValueKey('payroll-todo-${todo.kind}'),
+      asset: asset,
+      title: title,
+      subtitle: subtitle,
+      dueOn: todo.dueOn,
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Row(
-          children: [
-            _IllustrationTile(asset: asset),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: _PrText.title),
-                  if (subtitle.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(subtitle, style: _PrText.sub),
-                  ],
-                ],
-              ),
-            ),
-            if (due != null) ...[
-              const SizedBox(width: 8),
-              _PrPill(
-                'by ${_short(due)}',
-                color: urgent ? _prRed : _Q.gold,
-                tint: urgent ? _prRedTint : _Q.goldTint,
-              ),
-            ],
-            const SizedBox(width: 2),
-            const _PrChevron(),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -1496,9 +1341,8 @@ class _DeclarationPageState extends State<_DeclarationPage> {
   Future<void> _load() async {
     setState(() => _error = null);
     try {
-      final declaration = await _PayrollScope.of(
-        context,
-      ).api.fetchDeclaration();
+      final declaration = await _PayrollScope.of(context).api
+          .fetchDeclaration();
       if (!mounted) return;
       setState(() {
         _declaration = declaration;
