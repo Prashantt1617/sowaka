@@ -24,6 +24,7 @@ import { downloadPayslipPdf } from '../payslip';
 import { downloadTdsSheetPdf } from '../tdsSheet';
 import { LossOfPayExplainer } from '../LossOfPayExplainer';
 import { EmployeeCalendar } from './EmployeeProfile';
+import { Form16Section } from './Form16Section';
 import { exportReport } from './PayrollReports';
 import { getSalaryRegister } from '../../services/payroll';
 import * as L from './look';
@@ -188,6 +189,8 @@ export function PayrollRuns() {
           </table>
         )}
       </Card>
+
+      <Form16Section />
     </div>
   );
 }
