@@ -43,9 +43,9 @@ class OrgBranding {
   /// Sowaka's logo drawn under "powered by" instead of the Anton wordmark.
   final String? poweredByLogoAsset;
 
-  /// Sowaka's own face: the product's default, and the sowaka company itself,
-  /// which differs only in the logo its header wears.
-  bool get isSowaka => org.isEmpty || org == 'sowaka';
+  /// Sowaka's own face: the product's default, the sowaka company itself, and
+  /// the Sowaka Demo company — which differ only in the logo the header wears.
+  bool get isSowaka => org.isEmpty || org == 'sowaka' || org == 'halcyon';
 
   /// Whose brand the app currently wears: the signed-in org's, or the one
   /// this device last saw. Widgets that show the brand listen to this, so a
@@ -63,6 +63,14 @@ class OrgBranding {
     // header where an unbranded org shows the Convrse logo.
     'sowaka': OrgBranding(
       org: 'sowaka',
+      wordmark: 'sowaka',
+      tagline: 'Your workplace, connected.',
+      homeLogoAsset: 'assets/images/sowaka_header_logo.png',
+    ),
+    // Sowaka Demo (org id `halcyon`), the sales demo company: Sowaka's own
+    // face throughout, like the sowaka company, never another client's logo.
+    'halcyon': OrgBranding(
+      org: 'halcyon',
       wordmark: 'sowaka',
       tagline: 'Your workplace, connected.',
       homeLogoAsset: 'assets/images/sowaka_header_logo.png',
