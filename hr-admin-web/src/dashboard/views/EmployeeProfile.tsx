@@ -657,7 +657,10 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
   // The day HR is marking, if any. Only the current month can be marked.
   const [editing, setEditing] = useState<CalendarDayDTO | null>(null);
   const [saving, setSaving] = useState(false);
-  const editable = month === thisMonth() || (editableMonth !== undefined && month === editableMonth);
+  const monthEditable = month === thisMonth() || (editableMonth !== undefined && month === editableMonth);
+  // The server says which days HR may mark now (the open pay period reaches back into last month);
+  // an older server without the flag keeps the month rule.
+  const dayEditable = (day: CalendarDayDTO) => day.status !== 'before_joining' && (day.canMark ?? monthEditable);
   const reload = async () => {
     const fresh = await getEmployeeCalendar(userId, month);
     setCal(fresh);
@@ -756,10 +759,10 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
             return (
               <div
                 key={day.date}
-                title={`${day.date}${day.status === 'before_joining' ? ' · before joining' : ''}${detail ? ` · ${detail}` : ''}${day.hr ? ` · marked by ${day.hr.setByName ?? 'HR'}, was ${prev?.label}` : ''}${editable ? ' · click to mark' : ''}`}
-                onClick={editable && day.status !== 'before_joining' ? () => setEditing(day) : undefined}
+                title={`${day.date}${day.status === 'before_joining' ? ' · before joining' : ''}${detail ? ` · ${detail}` : ''}${day.hr ? ` · marked by ${day.hr.setByName ?? 'HR'}, was ${prev?.label}` : ''}${dayEditable(day) ? ' · click to mark' : ''}`}
+                onClick={dayEditable(day) ? () => setEditing(day) : undefined}
                 className={blankDay(day.status) ? 'pd-cd future' : 'pd-cd'}
-                style={{ background: blankDay(day.status) ? undefined : tone.bg, color: blankDay(day.status) ? undefined : tone.fg, borderColor: day.status === 'week_off' ? 'var(--line)' : undefined, cursor: editable && day.status !== 'before_joining' ? 'pointer' : 'default', boxShadow: ring ? 'inset 0 0 0 2px var(--bad)' : day.hr ? 'inset 0 0 0 2px var(--accent)' : undefined }}
+                style={{ background: blankDay(day.status) ? undefined : tone.bg, color: blankDay(day.status) ? undefined : tone.fg, borderColor: day.status === 'week_off' ? 'var(--line)' : undefined, cursor: dayEditable(day) ? 'pointer' : 'default', boxShadow: ring ? 'inset 0 0 0 2px var(--bad)' : day.hr ? 'inset 0 0 0 2px var(--accent)' : undefined }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 4 }}>
                   <b>{Number(day.date.slice(8))}</b>
@@ -777,7 +780,7 @@ export function EmployeeCalendar({ userId, initial, onChanged, startMonth, edita
           })}
         </div>
       </div>
-      {editable && <div className="pd-subnote" style={{ marginTop: 12 }}>{highlight ? 'Ringed days cost pay. ' : ''}Click any day to mark it. The mark replaces what the punches, leave or holidays say, on the dashboard, in payroll and in the employee's app.</div>}
+      {(shown?.days.some(dayEditable) ?? monthEditable) && <div className="pd-subnote" style={{ marginTop: 12 }}>{highlight ? 'Ringed days cost pay. ' : ''}Click any day to mark it. The mark replaces what the punches, leave or holidays say, on the dashboard, in payroll and in the employee's app.</div>}
       {editing && <MarkDay day={editing} saving={saving} onClose={() => setEditing(null)} onSave={(status, note) => void mark(editing, status, note)} />}
     </section>
   );

@@ -10,7 +10,7 @@
 import { attendanceRecords, connectDb, getDb, paidDaysTemplates, payHeads, payrollPeriods, payrollRuns, payslips, salaryStructures, salaryTemplates, users } from '../config/db';
 import type { User } from '../models/user.model';
 import { AttendanceRecord } from '../models/attendance.model';
-import { AttendanceOverrideError, setAttendanceOverride } from '../services/attendance-override.service';
+import { AttendanceOverrideError, markableDates, setAttendanceOverride } from '../services/attendance-override.service';
 import { attendanceReport, employeeCalendar } from '../services/attendance-report.service';
 import { parsePeriod, payrollPeriodHolding, payrollPeriodRange } from '../services/payroll-inputs.service';
 import { createRun, recomputeRun } from '../services/payrollRun.service';
@@ -163,9 +163,13 @@ const setting = (period: string, extra: Record<string, unknown>) =>
   ok('a day before someone joined cannot be marked', beforeJoining.status === 400 && /joined on 2026-09-03/.test(beforeJoining.message), beforeJoining);
   const october = await mark('2026-09-28');
   ok('28 Sep is October\'s, which has no run', october.status === 400, october);
+  const open = await markableDates('hr', 'gap', ['2026-08-20', '2026-08-28', '2026-09-01', '2026-09-28']);
+  ok('the calendar opens exactly the days a save accepts', open.has('2026-08-28') && open.has('2026-09-01') && !open.has('2026-08-20') && !open.has('2026-09-28'), [...open]);
+  ok('nothing opens on HR\'s own calendar', (await markableDates('hr', 'hr', ['2026-08-28'])).size === 0);
   await payrollRuns().updateOne({ org: ORG, period: '2026-09' }, { $set: { status: 'paid' } });
   const shut = await mark('2026-09-01');
   ok('once the run is paid its days are shut', shut.status === 409 && /2026-09/.test(shut.message), shut);
+  ok('a paid run\'s days close on the calendar too', !(await markableDates('hr', 'gap', ['2026-09-01'])).has('2026-09-01'));
   ok('the error is the marks\' own', (await refusal(() => setAttendanceOverride('hr', 'gap', '2026-08-27', { status: 'present' }))).status === 409
     && AttendanceOverrideError.name === 'AttendanceOverrideError');
 

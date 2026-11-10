@@ -4,7 +4,7 @@ import { users } from '../config/db';
 import { NextFunction, Request, Response } from 'express';
 import { applyImport, cancelImport, importTemplate, previewImport } from '../services/employeeImport.service';
 import { attendanceReport, employeeCalendar } from '../services/attendance-report.service';
-import { clearAttendanceOverride, setAttendanceOverride } from '../services/attendance-override.service';
+import { clearAttendanceOverride, markableDates, setAttendanceOverride } from '../services/attendance-override.service';
 import { listDashboardAccesses, setDashboardAccess } from '../services/dashboard-access.service';
 import {
   AttendanceError,
@@ -234,7 +234,9 @@ export async function employeeCalendarHandler(req: Request, res: Response, next:
       String(req.params.userId ?? ''),
       String(req.query.month ?? ''),
     );
-    res.status(200).json({ success: true, calendar });
+    // Each day says whether HR may mark it now (the current pay period reaches back into last month).
+    const markable = await markableDates(adminUserId(req), String(req.params.userId ?? ''), calendar.days.map((d) => d.date));
+    res.status(200).json({ success: true, calendar: { ...calendar, days: calendar.days.map((d) => ({ ...d, canMark: markable.has(d.date) })) } });
   } catch (error) { next(error); }
 }
 

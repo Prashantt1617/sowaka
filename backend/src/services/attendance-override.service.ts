@@ -55,20 +55,59 @@ async function adminAndEmployee(adminUserId: string, userId: string) {
  * as paid. A run pays the dates kept on it (a company paying 26th to 25th);
  * a run made before runs kept them paid its calendar month.
  */
-async function checkDate(workDate: string, org: string) {
+type RunWindow = { period: string; periodFrom?: string; periodTo?: string; status: string };
+interface DateContext { runs: RunWindow[]; current: { from: string; to: string } | null; today: string; month: string }
+
+async function dateContext(org: string): Promise<DateContext> {
+  const today = todayIso();
+  const [runs, current] = await Promise.all([
+    payrollRuns().find({ org, status: { $in: ['approved', 'paid', 'draft', 'pending_approval'] } }, { projection: { _id: 0, period: 1, periodFrom: 1, periodTo: 1, status: 1 } }).toArray() as Promise<RunWindow[]>,
+    payrollPeriodHolding(org, today),
+  ]);
+  return { runs, current: current ? { from: current.from, to: current.to } : null, today, month: currentMonthIst() };
+}
+
+/** Why this day can't be marked now, or null when it can (one rule for saving and for the calendar). */
+function refusal(workDate: string, ctx: DateContext): AttendanceOverrideError | null {
   if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(workDate)) {
-    throw new AttendanceOverrideError(400, 'The day must be YYYY-MM-DD');
+    return new AttendanceOverrideError(400, 'The day must be YYYY-MM-DD');
   }
   const month = workDate.slice(0, 7);
-  const paying = { org, $or: [{ periodFrom: { $lte: workDate }, periodTo: { $gte: workDate } }, { periodFrom: { $exists: false }, period: month }] };
-  const finished = await payrollRuns().findOne({ ...paying, status: { $in: ['approved', 'paid'] } }, { projection: { _id: 1, period: 1 } });
-  if (finished) throw new AttendanceOverrideError(409, `Payroll for ${finished.period} is submitted: its days can no longer be changed`);
-  if (month === currentMonthIst()) return;
-  const today = todayIso();
-  const current = await payrollPeriodHolding(org, today);
-  if (current && current.from <= workDate && workDate <= current.to) return;
-  const open = workDate < today && await payrollRuns().findOne({ ...paying, status: { $in: ['draft', 'pending_approval'] } }, { projection: { _id: 1 } });
-  if (!open) throw new AttendanceOverrideError(400, 'Only the current month or pay period, or one whose payroll run is still open, can be corrected');
+  const pays = (r: RunWindow) => (r.periodFrom ? r.periodFrom <= workDate && workDate <= (r.periodTo ?? r.periodFrom) : r.period === month);
+  const finished = ctx.runs.find((r) => (r.status === 'approved' || r.status === 'paid') && pays(r));
+  if (finished) return new AttendanceOverrideError(409, `Payroll for ${finished.period} is submitted: its days can no longer be changed`);
+  if (month === ctx.month) return null;
+  if (ctx.current && ctx.current.from <= workDate && workDate <= ctx.current.to) return null;
+  const open = workDate < ctx.today && ctx.runs.some((r) => (r.status === 'draft' || r.status === 'pending_approval') && pays(r));
+  if (!open) return new AttendanceOverrideError(400, 'Only the current month or pay period, or one whose payroll run is still open, can be corrected');
+  return null;
+}
+
+async function checkDate(workDate: string, org: string) {
+  const error = refusal(workDate, await dateContext(org));
+  if (error) throw error;
+}
+
+/**
+ * Which of these days HR may mark for this person now, by the same rule a save
+ * checks (`checkDate` and the joining date): the dashboard calendar opens
+ * exactly these, so a company paying 26th to 25th can settle 26–31 of last
+ * month while that pay period is open. Nothing for HR's own calendar.
+ */
+export async function markableDates(adminUserId: string, userId: string, dates: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  let who: Awaited<ReturnType<typeof adminAndEmployee>>;
+  try {
+    who = await adminAndEmployee(adminUserId, userId);
+  } catch {
+    return out;
+  }
+  const ctx = await dateContext(who.org);
+  for (const date of dates) {
+    if (who.joined && date < who.joined) continue;
+    if (!refusal(date, ctx)) out.add(date);
+  }
+  return out;
 }
 
 export async function setAttendanceOverride(
