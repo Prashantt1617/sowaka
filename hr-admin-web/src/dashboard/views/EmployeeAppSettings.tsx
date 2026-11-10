@@ -60,8 +60,8 @@ export function EmployeeAppSettingsCard() {
   const [attempt, setAttempt] = useState(0);
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
-  // The server's answer when it refused to switch Payroll on.
-  const [refusal, setRefusal] = useState<string | null>(null);
+  // The server's answer when it refused to switch Payroll on, or to save deadlines that would leave it on without one.
+  const [refusal, setRefusal] = useState<{ message: string; toggle: boolean } | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -103,7 +103,7 @@ export function EmployeeAppSettingsCard() {
       flash(done);
     } catch (e) {
       const message = e instanceof ApiError ? e.message : 'Could not save the settings';
-      if (e instanceof ApiError && e.status === 409) setRefusal(message);
+      if (e instanceof ApiError && e.status === 409) setRefusal({ message, toggle: 'appEnabled' in body });
       flash(message, 'error');
     } finally {
       setSaving(false);
@@ -169,7 +169,7 @@ export function EmployeeAppSettingsCard() {
         {refusal && (
           <div role="alert" style={{ ...Lk.note, marginTop: 14, background: 'var(--warn-bg)', borderColor: 'transparent', color: 'var(--ink)' }}>
             <span aria-hidden style={{ fontWeight: 700, color: 'var(--warn)' }}>!</span>
-            <span><strong style={{ fontWeight: 600 }}>Not switched on.</strong> {refusal}</span>
+            <span><strong style={{ fontWeight: 600 }}>{refusal.toggle ? 'Not switched on.' : 'Not saved.'}</strong> {refusal.message}</span>
           </div>
         )}
 

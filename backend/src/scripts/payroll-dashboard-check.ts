@@ -159,7 +159,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   const early = await refusal(() => setEmployeeAppSettingsForHr('hr', FY, { appEnabled: true, splitCutoffDay: 20 }, oct20));
   check('settings: switching Payroll on before every deadline is set is refused (409), naming them',
     early?.status === 409 && early.details?.reason === 'payroll_not_configured' && (early.details?.missing as string[]).join() === 'declarationDue,proofsDue,billsDue'
-    && /declarationDue, proofsDue, billsDue/.test(early.message ?? ''), early);
+    && /Set the declaration date, the proofs date and the bills date first/.test(early.message ?? ''), early);
   check('settings: a refused change saves nothing', (await companies().findOne({ id: ORG }))?.payrollEmployee === undefined);
   // My split's − / + step (not a deadline: Payroll can be switched on without it, the split then says not set up).
   check('settings: the split step is set like the rest (₹500)', (await setEmployeeAppSettingsForHr('hr', FY, { splitStepPaise: 50_000 }, oct20)).settings.splitStepPaise === 50_000);

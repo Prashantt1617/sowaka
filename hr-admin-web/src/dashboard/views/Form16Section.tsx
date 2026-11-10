@@ -29,7 +29,9 @@ function previousFy(fy: string): string {
   const start = Number(fy.slice(0, 4)) - 1;
   return `${start}-${String((start + 1) % 100).padStart(2, '0')}`;
 }
-const dateLabel = (iso: string) => new Date(iso.length === 10 ? `${iso}T00:00:00Z` : iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+// A day ("2026-06-15") is read as itself; a moment (an upload's time) as its day in India, so a
+// file uploaded at 02:00 IST is not dated the day before.
+const dateLabel = (iso: string) => new Date(iso.length === 10 ? `${iso}T00:00:00Z` : iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: iso.length === 10 ? 'UTC' : 'Asia/Kolkata' });
 const sizeLabel = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 const PART_LABEL: Record<Form16Part, string> = { A: 'Part A', B: 'Part B', combined: 'Part A + B' };
 

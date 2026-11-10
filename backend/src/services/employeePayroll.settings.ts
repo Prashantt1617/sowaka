@@ -96,6 +96,10 @@ function viewOf(s: EmployeePayrollSettings | undefined, fy: string, now: Date) {
   };
 }
 
+const DEADLINE_NAMES: Record<string, string> = {
+  splitCutoffDay: 'the split cutoff day', declarationDue: 'the declaration date', proofsDue: 'the proofs date', billsDue: 'the bills date',
+};
+
 export async function employeeAppSettingsForHr(viewerUserId: string, fyRaw: unknown, now = new Date()) {
   const org = await payrollViewerOrg(viewerUserId, 'see the app\'s payroll settings');
   const fy = parseFyParam(fyRaw, now);
@@ -150,7 +154,10 @@ export async function setEmployeeAppSettingsForHr(viewerUserId: string, fyRaw: u
   if (after.appEnabled === true) {
     const missing = missingDeadlines(deadlinesFrom(after as EmployeePayrollSettings));
     if (missing.length > 0) {
-      throw NOT_CONFIGURED(missing, `Set ${missing.join(', ')} before switching Payroll on in the app`);
+      // In words: the dashboard shows this message as it is (it was "Set splitCutoffDay, billsDue …").
+      const names = missing.map((f) => DEADLINE_NAMES[f] ?? f);
+      const list = names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+      throw NOT_CONFIGURED(missing, `Set ${list} first: Payroll can be on in the app only while every deadline is set`);
     }
   }
   $set['payrollEmployee.updatedAt'] = now;
