@@ -720,6 +720,124 @@ class TaxDeclaration {
   );
 }
 
+// ---------------------------------------------------------------- tax summary
+
+/// One month of the year's tax: what its released payslip withheld, or the
+/// figure a run would take now.
+class TaxMonth {
+  const TaxMonth({
+    required this.period,
+    required this.label,
+    required this.status,
+    this.amountPaise,
+  });
+
+  /// "2026-04".
+  final String period;
+
+  /// "April 2026".
+  final String label;
+
+  /// "paid" | "estimate" | "no_payslip" (before joining, or paid elsewhere).
+  final String status;
+
+  /// Null for a month with no payslip, and for estimates while the tax
+  /// can't be worked out.
+  final int? amountPaise;
+
+  bool get isPaid => status == 'paid';
+  bool get isEstimate => status == 'estimate';
+
+  factory TaxMonth.fromJson(Map<String, dynamic> json) => TaxMonth(
+    period: _string(json['period']),
+    label: _string(json['label']),
+    status: _string(json['status']),
+    amountPaise: _paiseOrNull(json['amountPaise']),
+  );
+}
+
+/// The financial year's income tax (GET /payroll/me/tax): the year's figure
+/// from the TDS engine, what has been paid, the monthly figure now and the
+/// regime with its last date to change. When HR has not set something up,
+/// [notConfigured] with [reason] and [message], and no figures.
+class TaxSummary {
+  const TaxSummary({
+    required this.fy,
+    required this.regime,
+    required this.chosen,
+    required this.defaultRegime,
+    required this.locked,
+    required this.canChangeRegime,
+    required this.notConfigured,
+    required this.paidSoFarPaise,
+    required this.months,
+    required this.missing,
+    this.regimeDueOn,
+    this.proofsDueOn,
+    this.reason,
+    this.message,
+    this.annualTaxPaise,
+    this.paidThroughMonth,
+    this.monthlyNowPaise,
+    this.estimate = true,
+  });
+
+  final String fy;
+
+  /// "new" | "old".
+  final String regime;
+  final bool chosen;
+  final String defaultRegime;
+  final DateTime? regimeDueOn;
+  final DateTime? proofsDueOn;
+  final bool locked;
+  final bool canChangeRegime;
+  final bool notConfigured;
+
+  /// "tax_rules_not_set_up" | "tds_off" | "salary_not_set_up" |
+  /// "statutory_not_set_up".
+  final String? reason;
+  final String? message;
+
+  /// The deadlines HR has not set: "declarationDue", "proofsDue".
+  final List<String> missing;
+  final int? annualTaxPaise;
+  final int paidSoFarPaise;
+
+  /// The last month with a released payslip ("2026-09"), as its first day.
+  final DateTime? paidThroughMonth;
+  final int? monthlyNowPaise;
+  final List<TaxMonth> months;
+  final bool estimate;
+
+  bool get isOld => regime == 'old';
+
+  factory TaxSummary.fromJson(Map<String, dynamic> json) => TaxSummary(
+    fy: _string(json['fy']),
+    regime: _string(json['regime']) == 'old' ? 'old' : 'new',
+    chosen: _bool(json['chosen']),
+    defaultRegime: _string(json['defaultRegime']) == 'old' ? 'old' : 'new',
+    regimeDueOn: payrollDate(json['regimeDueOn']),
+    proofsDueOn: payrollDate(json['proofsDueOn']),
+    locked: _bool(json['locked']),
+    canChangeRegime: _bool(json['canChangeRegime']),
+    notConfigured: _bool(json['notConfigured']),
+    reason: _stringOrNull(json['reason']),
+    message: _stringOrNull(json['message']),
+    missing: [
+      if (json['missing'] is List)
+        for (final item in json['missing'] as List)
+          if (item is String) item,
+    ],
+    annualTaxPaise: _paiseOrNull(json['annualTaxPaise']),
+    paidSoFarPaise: _paise(json['paidSoFarPaise']),
+    paidThroughMonth: payrollMonth(json['paidThroughMonth']),
+    monthlyNowPaise: _paiseOrNull(json['monthlyNowPaise']),
+    months: _list(json['months']).map(TaxMonth.fromJson).toList(),
+    estimate: json['estimate'] != false,
+  );
+}
+
 // ---------------------------------------------------------------- proofs
 
 enum ProofStatus { notUploaded, uploaded, approved, rejected }

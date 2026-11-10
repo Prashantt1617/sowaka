@@ -213,6 +213,14 @@ class PayrollApiService {
     return TaxDeclaration.fromJson(_object(json['declaration']));
   }
 
+  /// The year's income tax: paid months from released payslips, the rest
+  /// as the TDS engine projects them now. The regime is changed through
+  /// [saveDeclaration].
+  Future<TaxSummary> fetchTaxSummary({String? fy}) async {
+    final json = await _json('GET', _path('/payroll/me/tax', {'fy': fy}));
+    return TaxSummary.fromJson(_object(json['tax']));
+  }
+
   // ---------------------------------------------------------------- proofs
 
   Future<InvestmentProofs> fetchProofs({String? fy}) async {
