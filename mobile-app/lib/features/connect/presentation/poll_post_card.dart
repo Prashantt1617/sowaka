@@ -654,7 +654,16 @@ class _PollOptionViewerState extends State<_PollOptionViewer> {
     if (_closing) return;
     _closing = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) Navigator.of(context).maybePop();
+      if (!mounted) return;
+      // This viewer's own route, wherever it is: a screen opened over it
+      // (a tapped notification) is not the one to close.
+      final route = ModalRoute.of(context);
+      if (route == null) return;
+      if (route.isCurrent) {
+        Navigator.of(context).pop();
+      } else if (route.isActive) {
+        Navigator.of(context).removeRoute(route);
+      }
     });
   }
 
@@ -841,7 +850,14 @@ class _PollVoteButton extends StatelessWidget {
     selected: voted,
     child: IgnorePointer(
       ignoring: voted,
-      child: _PollPressable(onTap: onVote, child: _pill()),
+      // The pill is drawn 36 tall; the finger gets 46 (5 above and below).
+      child: _PollPressable(
+        onTap: onVote,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: _pill(),
+        ),
+      ),
     ),
   );
 
