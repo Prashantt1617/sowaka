@@ -262,7 +262,8 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   const rentUp = await uploadMyProof('asha', 'rentMonthly', FY, { amountPaise: R(1_80_000), landlordPan: ' abcde 1234f ', file: pdf('asha-rent-2') }, oct);
   check('rent re-sent for the year with the landlord PAN, kept in capitals',
     rentUp.proof?.landlordPan === 'ABCDE1234F' && rentUp.proof.amountPaise === R(1_80_000) && rentUp.yearPaise === R(1_80_000) && rentUp.declaredPaise === R(15_000), rentUp);
-  check('HR sees the landlord PAN', (await listProofsForHr('hr', { fy: FY, status: 'uploaded' }, oct)).proofs.find((p) => p.item === 'rentMonthly')?.landlordPan === 'ABCDE1234F');
+  check('HR\'s list shows the landlord PAN masked (a third party\'s PAN is not sent out in bulk)', (await listProofsForHr('hr', { fy: FY, status: 'uploaded' }, oct)).proofs.find((p) => p.item === 'rentMonthly')?.landlordPan === '•••• 234F');
+  check('the landlord PAN is stored encrypted', (await investmentProofs().findOne({ item: 'rentMonthly', landlordPanLast4: '234F' }))?.landlordPan?.startsWith('ABCDE') === false);
   const pending = await listProofsForHr('hr', { fy: FY, status: 'uploaded' }, oct);
   for (const p of pending.proofs) await decideProofForHr('hr', p.id, { decision: 'approved' }, oct);
   const allSet = await myProofs('asha', FY, oct);

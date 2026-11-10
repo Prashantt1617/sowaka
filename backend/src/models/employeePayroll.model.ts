@@ -52,7 +52,9 @@ export interface InvestmentProof {
   /** Why HR sent it back. */
   reason?: string;
   /** Rent only: the landlord's PAN, as the employee typed it on the proof (upper case). */
+  /** Encrypted with PAYROLL_FIELD_KEY (a third party's PAN); `landlordPanLast4` for masked views. */
   landlordPan?: string;
+  landlordPanLast4?: string;
 }
 
 /**

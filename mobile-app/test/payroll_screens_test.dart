@@ -1375,15 +1375,15 @@ void main() {
         expect(find.byKey(const ValueKey('payroll-home')), findsOneWidget);
       }
 
-      await opens(card('payroll-card-salary'), 'payroll-r2');
-      await opens(card('payroll-card-tax'), 'payroll-r3');
+      await opens(card('payroll-card-salary'), 'payroll-salary');
+      await opens(card('payroll-card-tax'), 'payroll-tax');
       await opens(card('payroll-fbp'), 'payroll-split');
       await opens(card('payroll-todo-tax_regime'), 'payroll-declaration');
       await opens(card('payroll-todo-investment_proofs'), 'payroll-proofs');
       await opens(card('payroll-todo-flexible_split'), 'payroll-split');
-      await opens(card('payroll-qa-earnings'), 'payroll-r4');
-      await opens(card('payroll-qa-downloads'), 'payroll-r5');
-      await opens(card('payroll-qa-epf'), 'payroll-r6');
+      await opens(card('payroll-qa-earnings'), 'payroll-earnings');
+      await opens(card('payroll-qa-downloads'), 'payroll-downloads');
+      await opens(card('payroll-qa-epf'), 'payroll-epf');
     });
   });
 

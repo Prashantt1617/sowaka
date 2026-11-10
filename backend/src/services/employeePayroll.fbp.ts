@@ -40,6 +40,9 @@ import { catalogWithStandard } from './standardComponents.service';
 
 // —— bill storage (S3), swappable so the checks never reach the bucket ——
 
+
+/** Today in India, as the pay months are kept (a bill sent at 2 am on the 1st is that month's). */
+const istDayOf = (now: Date) => new Date(now.getTime() + 5.5 * 3600_000).toISOString().slice(0, 10);
 export interface FbpBillStorage {
   available(): boolean;
   upload(userId: string, file: { originalName: string; contentType: string; size: number; bytes: Buffer }): Promise<{ objectKey: string }>;
@@ -201,7 +204,7 @@ function uploadBlock(f: Fbp, code: string, now: Date): { reason: string; message
   if (!f.uploadTypeOf.has(code)) {
     return { reason: 'payroll_not_configured', missing: ['billType'], message: askHr('HR has not set up bills for this head yet, so they can\'t be uploaded') };
   }
-  if (dayOf(now) > f.billsDue) {
+  if (istDayOf(now) > f.billsDue) {
     return { reason: 'bills_closed', message: `FBP bills for FY ${f.fy} closed on ${dayLabel(f.billsDue)}. To send one late, ask HR.` };
   }
   return null;
@@ -376,7 +379,7 @@ export async function uploadMyFbpBill(
   if (!storage.available()) throw new EmployeePayrollError(503, 'File uploads are not set up on this server');
 
   const stored = await storage.upload(userId, { originalName: file.originalname, contentType: file.mimetype, size: file.size, bytes: file.buffer });
-  const today = dayOf(now);
+  const today = istDayOf(now);
   const expenseDay = lastDayOf(period) < today ? lastDayOf(period) : today;
   const employee = await users().findOne({ userId }, { projection: { _id: 0, managerUserId: 1 } });
   const claim: ReimbursementClaim = {

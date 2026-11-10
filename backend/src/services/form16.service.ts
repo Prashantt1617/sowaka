@@ -302,10 +302,14 @@ export async function bulkUploadForm16ForHr(
         if (pansInName.includes(pan) && person.has(c.userId)) matches.push(c.userId);
       }
     }
-    if (matches.length === 0) {
+    // A file named by PAN is matched by PAN only: falling back to employee IDs could land another
+    // person's Form 16 on someone whose ID happens to appear in the name (a year's digits, say).
+    if (matches.length === 0 && pansInName.length === 0) {
       matchedBy = 'employeeId';
+      // Years (2026-27, AY 2027-28) are not employee IDs.
+      const named = base.replace(/\b\d{4}-\d{2,4}\b/g, ' ');
       matches = withIds
-        .filter((p) => new RegExp(`(?:^|[^A-Z0-9])${escape(p.employeeId!.trim().toUpperCase())}(?=[^A-Z0-9]|$)`).test(base))
+        .filter((p) => new RegExp(`(?:^|[^A-Z0-9])${escape(p.employeeId!.trim().toUpperCase())}(?=[^A-Z0-9]|$)`).test(named))
         .map((p) => p.userId);
     }
     matches = [...new Set(matches)];
@@ -314,7 +318,9 @@ export async function bulkUploadForm16ForHr(
         fileName,
         reason: pansInName.length > 0 && !canReadPan
           ? 'PANs can\'t be read on this server; name the file by employee ID'
-          : 'No employee with this PAN or employee ID',
+          : pansInName.length > 0
+            ? 'No employee has this PAN saved in Bank & PAN: save their PAN, or name the file by employee ID'
+            : 'No employee with this PAN or employee ID',
       });
       continue;
     }

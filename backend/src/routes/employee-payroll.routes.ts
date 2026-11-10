@@ -4,7 +4,7 @@ import {
 } from '../controllers/employeePayroll.controller';
 import {
   earningsHandler, getDeclarationHandler, getProofsHandler, myEpfHandler, setMyEpfBalanceHandler, getSplitHandler, missingPunchesHandler, payrollHomeHandler, proofFileHandler,
-  requirePayrollApp, reviewSplitHandler, saveDeclarationHandler, saveSplitHandler, taxSummaryHandler, uploadProofHandler,
+  requirePayrollApp, reviewSplitHandler, salarySummaryHandler, saveDeclarationHandler, saveSplitHandler, taxSummaryHandler, uploadProofHandler,
 } from '../controllers/employeePayroll.controller';
 import { myForm16FileHandler, myForm16Handler } from '../controllers/form16.controller';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -20,6 +20,12 @@ employeePayrollRouter.use(requireAuth);
 employeePayrollRouter.get('/home', payrollHomeHandler);
 employeePayrollRouter.use(requirePayrollApp);
 employeePayrollRouter.get('/missing-punches', missingPunchesHandler);
+// One pay period's pay as a receipt, each line explained (default: the previous pay period).
+employeePayrollRouter.get('/me/salary', salarySummaryHandler);
+employeePayrollRouter.get('/me/earnings', earningsHandler);
+// EPF: PF put in through payroll, a balance typed in from the EPFO passbook, this month's split, their own UAN.
+employeePayrollRouter.get('/me/epf', myEpfHandler);
+employeePayrollRouter.put('/me/epf/balance', setMyEpfBalanceHandler);
 employeePayrollRouter.get('/split', getSplitHandler);
 employeePayrollRouter.post('/split/review', reviewSplitHandler);
 employeePayrollRouter.put('/split', saveSplitHandler);

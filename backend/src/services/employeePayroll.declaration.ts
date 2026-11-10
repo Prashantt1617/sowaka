@@ -8,6 +8,7 @@
  * the engine reads) in step with them. Proofs live in `investment_proofs`,
  * one per declared item.
  */
+import { decryptField, encryptField, fieldKeyConfigured, maskTail } from './fieldCrypto';
 import { ObjectId } from 'mongodb';
 import { investmentProofs, salaryStructures, taxDeclarations, users } from '../config/db';
 import { InvestmentProof, InvestmentProofStatus } from '../models/employeePayroll.model';
@@ -196,6 +197,16 @@ export async function saveMyDeclaration(userId: string, fyRaw: unknown, body: Re
 
 type StoredProof = InvestmentProof & { _id: ObjectId };
 
+
+/** A stored landlord PAN as text: decrypted when the key is here, else masked from its last four. */
+function readPan(stored: string, last4: string | undefined): string {
+  try {
+    return decryptField(stored);
+  } catch {
+    return maskTail(last4 ?? stored.slice(-4)) ?? '';
+  }
+}
+
 function proofView(p: StoredProof) {
   return {
     id: p._id.toHexString(),
@@ -206,7 +217,8 @@ function proofView(p: StoredProof) {
     uploadedAt: p.uploadedAt.toISOString(),
     decidedAt: p.decidedAt ? p.decidedAt.toISOString() : null,
     reason: p.status === 'rejected' ? p.reason ?? null : null,
-    landlordPan: p.landlordPan ?? null,
+    // Their own proof: the full PAN they typed.
+    landlordPan: p.landlordPan ? readPan(p.landlordPan, p.landlordPanLast4) : null,
   };
 }
 
@@ -402,11 +414,11 @@ export async function uploadMyProof(
   const write = {
     $set: {
       org, userId, fy, item, status: 'uploaded' as const, amountPaise: amount, objectKey: stored.objectKey, fileName, contentType: file.mimetype, size: file.size, uploadedAt: now,
-      ...(panRaw ? { landlordPan: panRaw } : {}),
+      ...(panRaw ? { ...(fieldKeyConfigured() ? { landlordPan: encryptField(panRaw) } : {}), landlordPanLast4: panRaw.slice(-4) } : {}),
     },
     $unset: (panRaw
       ? { decidedAt: '', decidedByUserId: '', reason: '' }
-      : { decidedAt: '', decidedByUserId: '', reason: '', landlordPan: '' }) as Partial<Record<keyof InvestmentProof, ''>>,
+      : { decidedAt: '', decidedByUserId: '', reason: '', landlordPan: '', landlordPanLast4: '' }) as Partial<Record<keyof InvestmentProof, ''>>,
   };
   // HR may have approved it since it was read: an approved proof is never written over.
   const replaced = existing
@@ -479,7 +491,8 @@ async function hrViews(org: string, rows: StoredProof[]) {
       decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
       decidedByUserId: r.decidedByUserId ?? null,
       reason: r.reason ?? null,
-      landlordPan: r.landlordPan ?? null,
+      // HR's list: masked; a third party's PAN is not sent out in bulk.
+      landlordPan: r.landlordPanLast4 || r.landlordPan ? maskTail(r.landlordPanLast4 ?? readPan(r.landlordPan!, undefined)) ?? null : null,
     };
   });
 }

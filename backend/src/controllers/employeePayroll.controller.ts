@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
 import { epfBalanceForHr, myEpf, setEpfBalanceForHr, setMyEpfBalance } from '../services/employeePayroll.epf';
 import { myEarnings } from '../services/employeePayroll.earnings';
+import { mySalarySummary } from '../services/employeePayroll.salary';
 import { mySplit, reviewSplit, saveSplit, splitForHr } from '../services/employeePayroll.split';
 import { employeeAppSettingsForHr, setEmployeeAppSettingsForHr } from '../services/employeePayroll.settings';
 import { EmployeePayrollError, PAYROLL_APP_OFF, askHr, payrollAppEnabled } from '../services/employeePayroll.common';
@@ -42,6 +43,7 @@ const mine = (fn: Handler) => handle(async (req) => {
 // —— the signed-in employee's own payroll ——
 export const payrollHomeHandler = mine(async (req) => myPayrollHome(callerId(req), req.query.period));
 export const missingPunchesHandler = mine(async (req) => myMissingPunches(callerId(req), req.query.period));
+export const salarySummaryHandler = mine(async (req) => ({ salary: await mySalarySummary(callerId(req), req.query.period) }));
 export const getSplitHandler = mine(async (req) => ({ split: await mySplit(callerId(req)) }));
 export const reviewSplitHandler = mine(async (req) => ({ review: await reviewSplit(callerId(req), body(req)) }));
 export const saveSplitHandler = mine(async (req) => ({ split: await saveSplit(callerId(req), body(req)) }));

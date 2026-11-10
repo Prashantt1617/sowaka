@@ -106,13 +106,28 @@ export function Form16Section() {
     setResult(null);
     setBatch({ done: 0, total: pdfs.length });
     const out: Form16BulkDTO = { fy, uploaded: [], unmatched: files.filter((f) => !/\.pdf$/i.test(f.name)).map((f) => ({ fileName: f.name, reason: 'Not a PDF' })) };
+    // A big batch goes up in several requests: at most FORM16_BATCH files and 40 MB each, under
+    // the server's 50 MB request limit; a request that fails lists its files and the rest carry on.
+    const groups: File[][] = [];
+    for (const f of pdfs) {
+      const last = groups[groups.length - 1];
+      const size = last ? last.reduce((t, x) => t + x.size, 0) : 0;
+      if (!last || last.length >= FORM16_BATCH || size + f.size > 40 * 1024 * 1024) groups.push([f]);
+      else last.push(f);
+    }
     try {
-      // A big batch goes up in several requests, as the server takes them.
-      for (let i = 0; i < pdfs.length; i += FORM16_BATCH) {
-        const part = await bulkUploadForm16(fy, pdfs.slice(i, i + FORM16_BATCH));
-        out.uploaded.push(...part.uploaded);
-        out.unmatched.push(...part.unmatched);
-        setBatch({ done: Math.min(pdfs.length, i + FORM16_BATCH), total: pdfs.length });
+      let done = 0;
+      for (const group of groups) {
+        try {
+          const part = await bulkUploadForm16(fy, group);
+          out.uploaded.push(...part.uploaded);
+          out.unmatched.push(...part.unmatched);
+        } catch (e) {
+          const reason = e instanceof ApiError ? e.message : 'Could not upload';
+          out.unmatched.push(...group.map((f) => ({ fileName: f.name, reason })));
+        }
+        done += group.length;
+        setBatch({ done, total: pdfs.length });
       }
       flash(`${out.uploaded.length} Form 16 ${out.uploaded.length === 1 ? 'file' : 'files'} uploaded${out.unmatched.length ? `, ${out.unmatched.length} not matched` : ''}`, out.unmatched.length && !out.uploaded.length ? 'error' : undefined);
     } catch (e) {

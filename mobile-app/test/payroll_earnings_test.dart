@@ -455,7 +455,7 @@ void main() {
     final server = await pumpEarnings(tester);
     await tap(tester, find.byKey(const ValueKey('earnings-month-2026-10')));
     expect(
-      find.byKey(const ValueKey('payroll-salary-summary')),
+      find.byKey(const ValueKey('payroll-salary')),
       findsOneWidget,
     );
     expect(server.calls.where((c) => c.startsWith('GET /payslips')), isEmpty);

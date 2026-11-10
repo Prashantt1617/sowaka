@@ -227,6 +227,22 @@ class _FakeFbpServer {
           'unassignedPaise': 150000,
           'bills': {'approved': 0, 'inReview': 0, 'rejected': 0},
         },
+        // The home's summary cards: the FBP one is the way into the FBP page.
+        'cards': {
+          'salary': null,
+          'tax': {'fy': '2026-27', 'notConfigured': true, 'reason': 'tax_rules_not_set_up', 'message': 'Not set up. Ask HR.'},
+          'fbp': {
+            'poolPaise': 600000,
+            'heads': [
+              for (final e in amounts.entries)
+                if (e.value > 0) {'code': e.key, 'name': e.key, 'amountPaise': e.value},
+            ],
+            'assignedPaise': 450000,
+            'unassignedPaise': 150000,
+            'notConfigured': false,
+            'missing': <String>[],
+          },
+        },
       });
     }
     if (path == '/payroll/split') {
@@ -387,6 +403,9 @@ void main() {
     );
     await settle(tester);
     if (open) {
+      // The FBP card is the carousel's third: bring it in, then open it.
+      await tester.tap(find.byKey(const ValueKey('payroll-dot-2')));
+      await settle(tester);
       await tester.tap(find.byKey(const ValueKey('payroll-fbp')));
       await settle(tester);
     }

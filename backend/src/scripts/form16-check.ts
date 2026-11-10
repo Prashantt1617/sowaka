@@ -195,6 +195,7 @@ const blob = (text: string) => new Blob([Buffer.from(text)], { type: 'applicatio
         pdf('cs3 form 16.pdf'), // Chitra, any case
         pdf('E-EVE Part-B.pdf'),
         pdf('ZZZZZ9999Z.pdf'), // a PAN nobody has
+        pdf('YYYYY8888Y_E-ASHA.pdf'), // a PAN nobody has, next to someone's employee ID: never Asha's
         pdf('random.pdf'),
         notPdf('E-NEW.pdf'),
         pdf('CS379 Part A copy.pdf'), // Dev's Part A twice in one batch
@@ -207,9 +208,10 @@ const blob = (text: string) => new Blob([Buffer.from(text)], { type: 'applicatio
     check('"E-EVE Part-B" is Eve\'s Part B', got['E-EVE Part-B.pdf'] === 'eve:B:employeeId', got);
     const why = Object.fromEntries(batch.unmatched.map((u) => [u.fileName, u.reason]));
     check('an unknown PAN and a name with nothing in it are listed back', /No employee/.test(why['ZZZZZ9999Z.pdf'] ?? '') && /No employee/.test(why['random.pdf'] ?? ''), why);
+    check('a file named by an unknown PAN is never matched by an employee ID in it', !got['YYYYY8888Y_E-ASHA.pdf'] && /PAN/.test(why['YYYYY8888Y_E-ASHA.pdf'] ?? ''), [got, why]);
     check('a file that is not a PDF is listed back', /PDF/.test(why['E-NEW.pdf'] ?? ''), why);
     check('the same person and part twice in a batch: the second is listed back', /already/.test(why['CS379 Part A copy.pdf'] ?? ''), why);
-    check('4 stored, 4 listed back', batch.uploaded.length === 4 && batch.unmatched.length === 4, { up: batch.uploaded.length, un: batch.unmatched.length });
+    check('4 stored, 5 listed back', batch.uploaded.length === 4 && batch.unmatched.length === 5, { up: batch.uploaded.length, un: batch.unmatched.length });
     const forced = await bulkUploadForm16ForHr('hr', { fy: LAST, part: 'B', files: [pdf('CS379.pdf')] }, nov);
     check('a part for the whole batch wins over the name', forced.uploaded[0]?.document.part === 'B', forced);
     check('a batch for this FY: 409', (await refusal(() => bulkUploadForm16ForHr('hr', { fy: '2026-27', files: [pdf('CS379.pdf')] }, nov)))?.status === 409);
