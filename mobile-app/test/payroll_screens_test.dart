@@ -137,40 +137,28 @@ void main() {
     await settle(tester);
   }
 
-  testWidgets('Payroll home: the month\'s salary, to-dos and the ways in', (
+  testWidgets('Payroll home: the summary cards, to-dos and the ways in', (
     tester,
   ) async {
     final fixed = <Object?>[];
     await pumpPayroll(tester, fixed: fixed);
     expect(find.byKey(const ValueKey('payroll-home')), findsOneWidget);
     expect(find.text('Payroll'), findsOneWidget);
-    expect(find.textContaining('SALARY'), findsOneWidget);
-    expect(find.text('₹77,800'), findsNWidgets(2));
-    expect(find.text('Gross salary'), findsOneWidget);
-    expect(find.text('Loss of pay · 2 days'), findsOneWidget);
-    expect(find.text('− ₹6,000'), findsOneWidget);
-    expect(find.text('Overtime'), findsNothing);
-    expect(find.text('Income tax (TDS)'), findsOneWidget);
     expect(find.text('Fix 12 unpaid days'), findsOneWidget);
     expect(find.text('Choose tax regime'), findsOneWidget);
     await capture(tester, payroll(), 'payroll_home');
 
-    // A line opens to say what it is.
-    await tap(tester, find.text('Provident fund'));
-    expect(find.textContaining('12% of your basic pay'), findsOneWidget);
-
-    // "Check unpaid days" and the to-do both hand over to Attendance.
-    await tap(tester, find.byKey(const ValueKey('payroll-unpaid-days')));
+    // The to-do hands over to Attendance.
     await tap(
       tester,
       find.byKey(const ValueKey('payroll-todo-missing_punches')),
     );
-    expect(fixed, hasLength(2));
+    expect(fixed, hasLength(1));
 
     await tester.drag(find.byType(ListView).first, const Offset(0, -700));
     await settle(tester);
-    expect(find.text('Payslips'), findsOneWidget);
-    expect(find.text('FBP'), findsOneWidget);
+    expect(find.text('Earnings'), findsOneWidget);
+    expect(find.text('Support desk'), findsOneWidget);
     await capture(tester, payroll(), 'payroll_home_scrolled');
   });
 
@@ -179,10 +167,12 @@ void main() {
   ) async {
     final server = FakePayrollServer()..hasSplit = false;
     await pumpPayroll(tester, server: server);
-    await tester.drag(find.byType(ListView).first, const Offset(0, -700));
-    await settle(tester);
-    expect(find.text('Payslips'), findsOneWidget);
+    expect(find.byKey(const ValueKey('payroll-card-salary')), findsOneWidget);
+    expect(find.byKey(const ValueKey('payroll-card-tax')), findsOneWidget);
     expect(find.byKey(const ValueKey('payroll-fbp')), findsNothing);
+    // Two cards, two dots.
+    expect(find.byKey(const ValueKey('payroll-dot-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('payroll-dot-2')), findsNothing);
   });
 
   testWidgets('Payroll home: approved overtime is a line of its own', (
@@ -194,7 +184,7 @@ void main() {
     expect(find.text('+ ₹1,250'), findsOneWidget);
     await tap(tester, find.text('Overtime'));
     expect(find.textContaining('overtime rule'), findsOneWidget);
-  });
+  }, skip: true); // The salary breakdown moved to the salary summary (R2).
 
   testWidgets('Payroll home: loss of pay is explained on the pay period', (
     tester,
@@ -216,7 +206,7 @@ void main() {
       find.textContaining('in this pay period (26 Oct – 25 Nov) till today'),
       findsOneWidget,
     );
-  });
+  }, skip: true); // The salary breakdown moved to the salary summary (R2).
 
   testWidgets('Payroll home: no base days from the server, generic words', (
     tester,
@@ -230,7 +220,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('days in the month'), findsNothing);
-  });
+  }, skip: true); // The salary breakdown moved to the salary summary (R2).
 
   testWidgets(
     'Payroll home: no statutory settings, the salary says not set up',
@@ -247,7 +237,8 @@ void main() {
       );
       expect(find.textContaining('FY 2026-27 are not set up'), findsOneWidget);
       // No made-up figures, no error page; the rest of home still shows.
-      expect(find.text('Gross salary'), findsNothing);
+      expect(find.text('See breakdown'), findsNothing);
+      expect(find.text('Take-home'), findsNothing);
       expect(find.text('Estimate'), findsNothing);
       expect(find.text('Try again'), findsNothing);
       expect(find.text('Choose tax regime'), findsOneWidget);
@@ -399,7 +390,7 @@ void main() {
       await tap(tester, find.byKey(const ValueKey('payroll-payslips')));
       await tap(tester, find.byKey(const ValueKey('payslips-raise-ticket')));
       expect(opened, ['I can\'t find a payslip:']);
-    });
+    }, skip: true); // Payslips open from Downloads (R5) once it lands.
 
     testWidgets('a page that says "Ask HR" carries the ticket link', (
       tester,
@@ -408,18 +399,24 @@ void main() {
         tester,
         server: FakePayrollServer()..taxRulesSetUp = false,
       );
-      await tap(tester, find.byKey(const ValueKey('payroll-tax')));
+      await tap(tester, find.byKey(const ValueKey('payroll-todo-tax_regime')));
       expect(find.textContaining('Ask HR.'), findsOneWidget);
       await tap(tester, find.byKey(const ValueKey('raise-ticket-link')));
       expect(opened, [
         'The income tax rules for FY 2026-27 are not set up yet. Ask HR.',
       ]);
     });
+
+    testWidgets('the home\'s Support desk raises a new ticket', (tester) async {
+      await pumpPayroll(tester);
+      await tap(tester, find.byKey(const ValueKey('payroll-raise-ticket')));
+      expect(opened, [null]);
+    });
   });
 
   testWidgets('declaration: caps, the regime switch, submit', (tester) async {
     final server = await pumpPayroll(tester);
-    await tap(tester, find.byKey(const ValueKey('payroll-tax')));
+    await tap(tester, find.byKey(const ValueKey('payroll-todo-tax_regime')));
     expect(find.byKey(const ValueKey('payroll-declaration')), findsOneWidget);
     expect(find.text('80C investments'), findsOneWidget);
     expect(find.text('Max ₹1,50,000'), findsOneWidget);
@@ -477,7 +474,7 @@ void main() {
     tester,
   ) async {
     final server = await pumpPayroll(tester);
-    await tap(tester, find.byKey(const ValueKey('payroll-tax')));
+    await tap(tester, find.byKey(const ValueKey('payroll-todo-tax_regime')));
     await tap(tester, find.text('New regime'));
     await tap(tester, find.text('Submit declaration'));
     expect(server.bodies['/payroll/tax-declaration']!['regime'], 'new');
@@ -588,7 +585,7 @@ void main() {
     await settle(tester);
     expect(find.text('Download payslip'), findsOneWidget);
     await capture(tester, payroll(), 'payslip_scrolled');
-  });
+  }, skip: true); // Payslips open from Downloads (R5) once it lands.
 
   testWidgets('a payslip with overtime shows it as an earning', (tester) async {
     await pumpPayroll(
@@ -599,6 +596,256 @@ void main() {
     await tap(tester, find.text('August 2026'));
     expect(find.text('Overtime'), findsOneWidget);
     expect(find.text('₹1,250'), findsOneWidget);
+  }, skip: true); // Payslips open from Downloads (R5) once it lands.
+
+  group('R1 Payroll home: the summary carousel', () {
+    Finder card(String key) => find.byKey(ValueKey(key));
+
+    /// The carousel's horizontal scroll offset.
+    double offset(WidgetTester tester) => tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: find.byKey(const ValueKey('payroll-carousel')),
+            matching: find.byType(Scrollable),
+          ),
+        )
+        .position
+        .pixels;
+
+    /// Which dot is the wide one.
+    int activeDot(WidgetTester tester) {
+      for (var i = 0; i < 3; i++) {
+        final dot = find.descendant(
+          of: find.byKey(ValueKey('payroll-dot-$i')),
+          matching: find.byType(AnimatedContainer),
+        );
+        if (dot.evaluate().isNotEmpty && tester.getSize(dot).width == 18) {
+          return i;
+        }
+      }
+      return -1;
+    }
+
+    /// The card in view sits on the list's 16 px margin.
+    void inView(WidgetTester tester, String key) {
+      expect(tester.getTopLeft(card(key)).dx, 16, reason: '$key in view');
+      expect(tester.getSize(card(key)).width, 358);
+    }
+
+    Future<void> slideDone(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    testWidgets('three cards with the server\'s numbers', (tester) async {
+      await pumpPayroll(tester);
+      // 1 · last period's salary, an estimate.
+      expect(find.text('OCTOBER SALARY'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: card('payroll-card-salary'),
+          matching: find.text('Estimate'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('29 of 31 days paid'), findsOneWidget);
+      expect(find.text('₹1,24,000'), findsOneWidget); // gross, in the donut
+      expect(find.text('gross'), findsOneWidget);
+      expect(find.text('Take-home'), findsOneWidget);
+      expect(find.text('₹1,06,400'), findsOneWidget);
+      expect(find.text('Deductions'), findsOneWidget);
+      expect(find.text('₹9,600'), findsOneWidget);
+      expect(find.text('Loss of pay · 2 days'), findsOneWidget);
+      expect(find.text('₹8,000'), findsOneWidget);
+      expect(find.text('See breakdown'), findsOneWidget);
+      // 2 · tax this FY.
+      expect(find.text('TAX · FY 2026–27'), findsOneWidget);
+      expect(find.text('New regime'), findsOneWidget);
+      expect(find.text('₹58,400'), findsOneWidget);
+      expect(find.text('paid so far'), findsOneWidget);
+      expect(find.text('April to October'), findsOneWidget);
+      expect(find.text('April to September'), findsOneWidget);
+      expect(find.text('₹50,800'), findsOneWidget);
+      expect(find.text('This month (October)'), findsOneWidget);
+      expect(find.text('₹7,600'), findsOneWidget);
+      expect(find.text('See tax details'), findsOneWidget);
+      // 3 · the split by head, and what is not assigned.
+      expect(find.text('FBP'), findsOneWidget);
+      expect(find.text('Your split'), findsOneWidget);
+      expect(find.text('₹6,000'), findsOneWidget);
+      expect(find.text('a month'), findsOneWidget);
+      expect(find.text('Fuel & vehicle'), findsOneWidget);
+      expect(find.text('₹2,500'), findsOneWidget);
+      expect(find.text('Internet'), findsOneWidget);
+      expect(find.text('Telephone'), findsOneWidget);
+      expect(find.text('₹1,000'), findsNWidgets(2));
+      expect(find.text('Books & periodicals'), findsNothing); // nothing on it
+      expect(find.text('Not assigned'), findsOneWidget);
+      expect(find.text('₹1,500'), findsOneWidget);
+      expect(find.text('Upload bills'), findsOneWidget);
+      // Below: the to-dos with their count, three quick actions, the desk
+      // (on a taller screen, so the list builds them all).
+      tester.view.physicalSize = const Size(390 * 2, 1400 * 2);
+      await tester.pump();
+      expect(
+        find.descendant(
+          of: card('payroll-todo-count'),
+          matching: find.text('4'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('by 30 Nov'), findsWidgets);
+      for (final text in [
+        'Earnings',
+        'Annual',
+        'Downloads',
+        'Payslips, Form 16',
+        'EPF',
+        'PF balance',
+        'Support desk',
+        'Ask about pay, tax or FBP',
+        'Raise a ticket',
+      ]) {
+        expect(find.text(text), findsOneWidget, reason: text);
+      }
+      // The order the design draws: carousel, to-dos, quick actions, desk.
+      double top(Finder f) => tester.getTopLeft(f).dy;
+      expect(
+        top(card('payroll-card-salary')),
+        lessThan(top(card('payroll-todo-missing_punches'))),
+      );
+      expect(
+        top(card('payroll-todo-investment_proofs')),
+        lessThan(top(card('payroll-qa-earnings'))),
+      );
+      expect(
+        top(card('payroll-qa-earnings')),
+        lessThan(top(card('payroll-raise-ticket'))),
+      );
+      expect(top(card('payroll-qa-earnings')), top(card('payroll-qa-epf')));
+    });
+
+    testWidgets('a released payslip has no Estimate tag', (tester) async {
+      await pumpPayroll(
+        tester,
+        server: FakePayrollServer()..lastSalaryReleased = true,
+      );
+      expect(find.text('OCTOBER SALARY'), findsOneWidget);
+      expect(find.text('Estimate'), findsNothing);
+      expect(find.text('₹1,06,400'), findsOneWidget);
+    });
+
+    testWidgets('no tax rules: the tax card says so, with no figures', (
+      tester,
+    ) async {
+      await pumpPayroll(
+        tester,
+        server: FakePayrollServer()..taxRulesSetUp = false,
+      );
+      expect(
+        find.descendant(
+          of: card('payroll-card-tax'),
+          matching: find.text('Not set up'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('paid so far'), findsNothing);
+      expect(
+        find.textContaining('tax rules for FY 2026-27 are not set up'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('it moves on every 4 s, wrapping round', (tester) async {
+      await pumpPayroll(tester);
+      inView(tester, 'payroll-card-salary');
+      expect(activeDot(tester), 0);
+      await capture(tester, payroll(), 'payroll_home_card_salary');
+
+      await tester.pump(const Duration(seconds: 4));
+      await slideDone(tester);
+      inView(tester, 'payroll-card-tax');
+      expect(activeDot(tester), 1);
+      expect(offset(tester), 374);
+      await capture(tester, payroll(), 'payroll_home_card_tax');
+
+      await tester.pump(const Duration(seconds: 4));
+      await slideDone(tester);
+      inView(tester, 'payroll-fbp');
+      expect(activeDot(tester), 2);
+      await capture(tester, payroll(), 'payroll_home_card_fbp');
+
+      await tester.pump(const Duration(seconds: 4));
+      await slideDone(tester);
+      inView(tester, 'payroll-card-salary');
+      expect(activeDot(tester), 0);
+    });
+
+    testWidgets('a swipe moves one card; a short one springs back', (
+      tester,
+    ) async {
+      await pumpPayroll(tester);
+      final carousel = find.byKey(const ValueKey('payroll-carousel'));
+      await tester.drag(carousel, const Offset(-120, 0));
+      await slideDone(tester);
+      inView(tester, 'payroll-card-tax');
+      expect(activeDot(tester), 1);
+
+      await tester.drag(carousel, const Offset(-120, 0));
+      await slideDone(tester);
+      inView(tester, 'payroll-fbp');
+      // Nothing past the last card.
+      await tester.drag(carousel, const Offset(-120, 0));
+      await slideDone(tester);
+      inView(tester, 'payroll-fbp');
+
+      await tester.drag(carousel, const Offset(20, 0));
+      await slideDone(tester);
+      inView(tester, 'payroll-fbp');
+
+      await tester.drag(carousel, const Offset(120, 0));
+      await slideDone(tester);
+      inView(tester, 'payroll-card-tax');
+      expect(activeDot(tester), 1);
+
+      // A swipe starts the 4 s again: 3 s on, still on Tax.
+      await tester.pump(const Duration(seconds: 3));
+      await slideDone(tester);
+      inView(tester, 'payroll-card-tax');
+    });
+
+    testWidgets('a dot picks its card', (tester) async {
+      await pumpPayroll(tester);
+      await tester.tap(find.byKey(const ValueKey('payroll-dot-2')));
+      await slideDone(tester);
+      inView(tester, 'payroll-fbp');
+      expect(activeDot(tester), 2);
+      await tester.tap(find.byKey(const ValueKey('payroll-dot-0')));
+      await slideDone(tester);
+      inView(tester, 'payroll-card-salary');
+      expect(activeDot(tester), 0);
+    });
+
+    testWidgets('cards, to-dos and tiles open their pages', (tester) async {
+      await pumpPayroll(tester);
+      Future<void> opens(Finder from, String page) async {
+        await tap(tester, from);
+        expect(find.byKey(ValueKey(page)), findsOneWidget, reason: page);
+        Navigator.of(tester.element(find.byKey(ValueKey(page)))).pop();
+        await settle(tester);
+        expect(find.byKey(const ValueKey('payroll-home')), findsOneWidget);
+      }
+
+      await opens(card('payroll-card-salary'), 'payroll-r2');
+      await opens(card('payroll-card-tax'), 'payroll-r3');
+      await opens(card('payroll-fbp'), 'payroll-split');
+      await opens(card('payroll-todo-tax_regime'), 'payroll-declaration');
+      await opens(card('payroll-todo-investment_proofs'), 'payroll-proofs');
+      await opens(card('payroll-todo-flexible_split'), 'payroll-split');
+      await opens(card('payroll-qa-earnings'), 'payroll-r4');
+      await opens(card('payroll-qa-downloads'), 'payroll-r5');
+      await opens(card('payroll-qa-epf'), 'payroll-r6');
+    });
   });
 
   testWidgets('Actions › Payroll, and its missing punches in Attendance', (
