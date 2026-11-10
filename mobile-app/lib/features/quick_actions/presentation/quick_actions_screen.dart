@@ -8847,10 +8847,12 @@ bool matchesAttendanceFilter(AttendanceDayView day, AttendanceFilter? filter) {
     // A day with a punch missing belongs here whether the policy marked it a
     // half day or left it flagged — it is the same missed punch either way,
     // and someone looking for one should find it under one heading.
+    // Only days that are over: today is still being worked (or not begun),
+    // as the server counts missed punches only up to yesterday.
     AttendanceFilter.missedPunch =>
-      kind == AttendanceKind.attention ||
-          day.correctionPending ||
-          day.needsCorrection,
+      day.correctionPending ||
+          (_dayIsOver(day.date) &&
+              (kind == AttendanceKind.attention || day.needsCorrection)),
     AttendanceFilter.present => kind == AttendanceKind.present,
     AttendanceFilter.late => day.late,
     AttendanceFilter.halfDay => kind == AttendanceKind.halfDay,
@@ -8860,6 +8862,15 @@ bool matchesAttendanceFilter(AttendanceDayView day, AttendanceFilter? filter) {
     AttendanceFilter.leaveWithoutPay => kind == AttendanceKind.leaveWithoutPay,
     AttendanceFilter.holiday => kind == AttendanceKind.holiday,
   };
+}
+
+bool _dayIsOver(DateTime date) {
+  final now = DateTime.now();
+  return DateTime(
+    date.year,
+    date.month,
+    date.day,
+  ).isBefore(DateTime(now.year, now.month, now.day));
 }
 
 bool _sameDay(DateTime? a, DateTime? b) =>
