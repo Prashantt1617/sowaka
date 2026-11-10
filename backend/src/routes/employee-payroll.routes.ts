@@ -4,7 +4,7 @@ import {
 } from '../controllers/employeePayroll.controller';
 import {
   earningsHandler, getDeclarationHandler, getProofsHandler, myEpfHandler, setMyEpfBalanceHandler, getSplitHandler, missingPunchesHandler, payrollHomeHandler, proofFileHandler,
-  requirePayrollApp, reviewSplitHandler, saveDeclarationHandler, saveSplitHandler, uploadProofHandler,
+  requirePayrollApp, reviewSplitHandler, saveDeclarationHandler, saveSplitHandler, taxSummaryHandler, uploadProofHandler,
 } from '../controllers/employeePayroll.controller';
 import { myForm16FileHandler, myForm16Handler } from '../controllers/form16.controller';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -25,6 +25,7 @@ employeePayrollRouter.post('/split/review', reviewSplitHandler);
 employeePayrollRouter.put('/split', saveSplitHandler);
 employeePayrollRouter.get('/tax-declaration', getDeclarationHandler);
 employeePayrollRouter.put('/tax-declaration', saveDeclarationHandler);
+employeePayrollRouter.get('/me/tax', taxSummaryHandler);
 employeePayrollRouter.get('/investment-proofs', getProofsHandler);
 employeePayrollRouter.post('/investment-proofs/:item', uploadInvestmentProofFile, uploadProofHandler);
 employeePayrollRouter.get('/investment-proofs/:item/file', proofFileHandler);
