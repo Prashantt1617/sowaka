@@ -30,8 +30,11 @@
 .ua-fun { display: flex; flex-direction: column; gap: 6px; }
 .ua-fs { border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
 .ua-fs.on { border-color: var(--accent); }
-.ua-fh { display: grid; grid-template-columns: 32px minmax(180px, 1.2fr) minmax(120px, 2fr) auto auto; gap: 14px; align-items: center; width: 100%; border: 0; background: var(--surface); padding: 12px 14px; text-align: left; font: inherit; color: inherit; cursor: pointer; }
-.ua-fh:not([disabled]):hover { background: var(--surface-2); }
+.ua-fh { cursor: default; display: grid; grid-template-columns: 32px minmax(180px, 1.2fr) minmax(120px, 2fr) auto auto; gap: 14px; align-items: center; width: 100%; border: 0; background: var(--surface); padding: 12px 14px; text-align: left; font: inherit; color: inherit; }
+.ua-stuck { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px 0 5px; border: 1px solid transparent; border-radius: 99px; background: var(--warn-bg); color: var(--warn); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.ua-stuck:hover { border-color: var(--warn); }
+.ua-plus { width: 18px; height: 18px; border-radius: 50%; background: var(--warn); color: var(--surface); display: grid; place-items: center; font-size: 14px; font-weight: 700; line-height: 1; transition: transform .15s; }
+.ua-plus.on { transform: rotate(45deg); }
 .ua-fh[disabled] { cursor: default; }
 .ua-fn { width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-ink); display: grid; place-items: center; font-weight: 600; font-size: 13px; }
 .ua-fh .grow b, .ua-rh .grow b { display: block; font-size: 14px; font-weight: 500; }
