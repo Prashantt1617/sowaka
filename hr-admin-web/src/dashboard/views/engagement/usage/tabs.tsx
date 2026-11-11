@@ -3,12 +3,12 @@
 // the people already narrowed to the department and location picked.
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { UsageGroup, UsageManagerDTO, UsageSummaryDTO } from '../../../../services/engagement-usage';
+import type { UsageGroup, UsageSummaryDTO } from '../../../../services/engagement-usage';
 import { StatusTabs } from '../../../ui';
 import { Td, Th } from '../../lookUi';
 import * as L from '../../look';
-import { Card, Kpis, LastOpened, PeopleList, RatioRow, RemindButton, Who } from './parts';
-import { GROUP_SHORT, addDays, pct, plural, rangeLabel, sd } from './format';
+import { Card, Kpis, LastOpened, PeopleList, RatioRow, RemindButton } from './parts';
+import { GROUP_SHORT, addDays, pct, rangeLabel, sd } from './format';
 import type { Col, Person } from './parts';
 import { WhenPanel } from './trend';
 
@@ -81,7 +81,7 @@ export function FunnelTab({ c }: { c: TabCtx }) {
   );
 }
 
-// ── 2. Requests and approvals ─────────────────────────────────────────────
+// ── 2. Active usage: the feed, games, attendance & requests, manager actions ──
 const could = (P: Person[], can: (p: Person) => boolean, did: (p: Person) => boolean) => {
   // Anyone who did it could, even if their setup has changed since.
   const den = P.filter((p) => can(p) || did(p));
@@ -89,115 +89,80 @@ const could = (P: Person[], can: (p: Person) => boolean, did: (p: Person) => boo
   return { den, yes, no: den.filter((p) => !did(p)) };
 };
 
-export function RequestsTab({ c }: { c: TabCtx }) {
-  const P = c.people;
-  const today = c.summary.today;
-  const appP = P.filter((p) => p.group === 'app');
-  const missed = P.filter((p) => p.missed);
-  const fixedN = missed.filter((p) => p.fixed).length;
-  const raisedAny = (p: Person) => p.leave || p.ot || p.reimb;
-  const any = could(P, (p) => p.loggedIn && p.hasManager, raisedAny);
-  const types: [string, string, (p: Person) => boolean, (p: Person) => boolean][] = [
-    ['Leave', 'Logged in, with a manager to approve it', (p) => p.loggedIn && p.hasManager, (p) => p.leave],
-    ['Overtime', 'Logged in, and their shift, department and profile allow overtime', (p) => p.loggedIn && p.otEligible, (p) => p.ot],
-    ['Reimbursement', 'Logged in, with a manager', (p) => p.loggedIn && p.hasManager, (p) => p.reimb],
-  ];
-  const ids = new Set(P.map((p) => p.id));
-  const byId = new Map(c.summary.people.map((p) => [p.id, p]));
-  const M = c.summary.managers.filter((m) => ids.has(m.id));
-  const tot = M.reduce((s, m) => ({ got: s.got + m.got, app: s.app + m.app, web: s.web + m.web, wait: s.wait + m.wait }), { got: 0, app: 0, web: 0, wait: 0 });
-  return (
-    <>
-      <Card title="Attendance on the app" note="Only people who are meant to use the app for it">
-        <RatioRow
-          id="r|punch" open={c.open} onToggle={c.toggle} nameOf={c.nameOf}
-          label="Punched in on the app" sub="People whose shift has them punch on the app"
-          n={appP.filter((p) => p.appPunch).length} d={appP.length} missing={appP.filter((p) => !p.appPunch)}
-          cols={[lastCol(today), ['Face check', (p) => (p.face ? 'Set up' : <span style={L.pill('warn')}><span style={L.pillDot} />Not set up</span>)]]}
-        />
-        <RatioRow
-          id="r|corr" open={c.open} onToggle={c.toggle} nameOf={c.nameOf}
-          label="Fixed missed punch on the app"
-          sub={c.summary.missedKnown ? 'People with a missed punch in these dates, as Reports › Attendance grades them' : 'Missed punches could not be graded for these dates: only people who asked are counted'}
-          n={fixedN} d={missed.length} missing={missed.filter((p) => !p.fixed)}
-          cols={[groupCol, lastCol(today)]}
-        />
-      </Card>
-      <Card title="Requests raised from the app" note="People who could raise each kind of request, and who did. Every request is raised in the app.">
-        <RatioRow id="r|any" open={c.open} onToggle={c.toggle} nameOf={c.nameOf} label="Raised any request" sub="Everyone who has logged in and has a manager"
-          n={any.yes.length} d={any.den.length} missing={any.no} cols={[lastCol(today)]} />
-        <div className="ua-sub">By type</div>
-        {types.map(([t, sub, can, did]) => {
-          const r = could(P, can, did);
-          return <RatioRow key={t} id={`r|${t}`} open={c.open} onToggle={c.toggle} nameOf={c.nameOf} label={t} sub={sub} n={r.yes.length} d={r.den.length} missing={r.no} cols={[lastCol(today)]} />;
-        })}
-      </Card>
-      <Card title="Approvals from the app" note="Managers with team requests raised in these dates (leave, overtime, attendance fixes), and where they were settled">
-        <Kpis items={[
-          ['Requests to approve', tot.got, plural(M.length, 'manager')],
-          ['Approved on the app', tot.app, pct(tot.app, tot.got)],
-          ['Approved by admin', tot.web, pct(tot.web, tot.got)],
-          ['Still waiting', tot.wait, pct(tot.wait, tot.got)],
-        ]} />
-        {M.length ? (
-          <div className="ua-scroll">
-            <table className="lk-t" style={L.table}>
-              <thead>
-                <tr><Th>Manager</Th><Th right>Team</Th><Th right>To approve</Th><Th width="22%">Acted on</Th><Th right>On the app</Th><Th right>By admin</Th><Th right>Waiting</Th></tr>
-              </thead>
-              <tbody>
-                {M.map((m: UsageManagerDTO) => {
-                  const p = byId.get(m.id);
-                  return (
-                    <tr key={m.id}>
-                      <Td>{p ? <Who p={p} /> : c.nameOf(m.id)}</Td>
-                      <Td right>{p?.reports ?? 0}</Td>
-                      <Td right>{m.got}</Td>
-                      <Td>
-                        <div className="ua-stk" title={`${m.app} on the app, ${m.web} by admin, ${m.wait} waiting`}>
-                          {m.app > 0 && <i style={{ flex: m.app, background: 'var(--p-green)' }} />}
-                          {m.web > 0 && <i style={{ flex: m.web, background: 'var(--accent)' }} />}
-                          {m.wait > 0 && <i style={{ flex: m.wait, background: 'var(--line-2)' }} />}
-                        </div>
-                      </Td>
-                      <Td right>{m.app}</Td>
-                      <Td right>{m.web}</Td>
-                      <Td right>{m.wait ? <span style={L.pill('warn')}>{m.wait}</span> : 0}</Td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : <p className="ua-muted" style={{ margin: 0, fontSize: 13 }}>No team requests were raised in these dates.</p>}
-        <div className="ua-legs">
-          <span className="ua-leg"><i style={{ background: 'var(--p-green)' }} />On the app</span>
-          <span className="ua-leg"><i style={{ background: 'var(--accent)' }} />By admin</span>
-          <span className="ua-leg"><i style={{ background: 'var(--line-2)' }} />Waiting</span>
-        </div>
-        <p className="ua-note">Approved on the app: the manager decided it on their phone. Approved by admin: HR, or someone else with dashboard access, decided it on the dashboard instead. Both include declines. Reimbursements are left out: they are only ever decided on the dashboard. Managers are filtered by their own department and location.</p>
-      </Card>
-    </>
-  );
-}
+type ActiveRow = { id: string; label: string; sub?: string; can: (p: Person) => boolean; did: (p: Person) => boolean; head?: boolean; untracked?: boolean; cols?: 'face' | 'group' };
+type ActiveSection = { area: string; note: string; rows: ActiveRow[] };
 
-// ── 3. Active usage ───────────────────────────────────────────────────────
+const feedAny = (p: Person) => p.contest || p.voted || p.liked || p.commented || p.post;
+const raisedAny = (p: Person) => p.leave || p.ot || p.reimb;
+
 export function ActiveTab({ c }: { c: TabCtx }) {
   const P = c.people;
-  const rows: [string, string, string, (p: Person) => boolean, boolean][] = [
-    ['a|open', 'Opened the app', '', (p) => p.opened, c.untracked],
-    ['a|game', 'Played a game', 'Tile Up, Scribble, Pool, challenges, or a new best in any other game', (p) => p.game, false],
-    ['a|post', 'Posted on the feed', 'A post of their own', (p) => p.post, false],
-    ['a|contest', 'Took part in a contest', 'Entered, voted or nominated', (p) => p.contest, false],
-    ['a|tour', 'Played in a tournament', 'Cup match, Poker table or Relay', (p) => p.tour, false],
+  const today = c.summary.today;
+  const managers = (p: Person) => p.reports > 0;
+  const sections: ActiveSection[] = [
+    {
+      area: 'Feed', note: 'Likes and poll votes keep no time of their own, so they count on posts published in these dates.',
+      rows: [
+        { id: 'f|any', label: 'Interacted on the feed', sub: 'Any of the below', can: everyone, did: feedAny, head: true },
+        { id: 'f|contest', label: 'Took part in a contest', sub: 'Entered, voted or nominated', can: everyone, did: (p) => p.contest },
+        { id: 'f|vote', label: 'Voted in a poll', can: everyone, did: (p) => p.voted },
+        { id: 'f|like', label: 'Liked a post', can: everyone, did: (p) => p.liked },
+        { id: 'f|comment', label: 'Commented', can: everyone, did: (p) => p.commented },
+        { id: 'f|post', label: 'Posted', sub: 'A post of their own', can: everyone, did: (p) => p.post },
+      ],
+    },
+    {
+      area: 'Games', note: 'A solo round that didn’t beat the person’s best is stored nowhere, so it isn’t counted.',
+      rows: [
+        { id: 'g|play', label: 'Played any game', can: everyone, did: (p) => p.game, head: true },
+        { id: 'g|challenge', label: 'Challenged someone', sub: 'Sent a colleague a game challenge', can: everyone, did: (p) => p.challenged },
+        { id: 'g|tour', label: 'Played a tournament', sub: 'A games tournament, Hint Relay or Secret Squad', can: everyone, did: (p) => p.tour },
+      ],
+    },
+    {
+      area: 'Attendance & requests', note: 'Every request is raised in the app. Punching on the app only counts people whose shift has them punch on the app.',
+      rows: [
+        { id: 'r|punch', label: 'Punched in on the app', sub: 'People whose shift has them punch on the app', can: (p) => p.group === 'app', did: (p) => p.appPunch, cols: 'face' },
+        { id: 'r|corr', label: 'Fixed missed punch on the app', sub: c.summary.missedKnown ? 'People with a missed punch in these dates' : 'Only people who asked are counted: missed punches could not be graded for these dates', can: (p) => p.missed, did: (p) => p.fixed, cols: 'group' },
+        { id: 'r|any', label: 'Raised any request', sub: 'Leave, overtime or reimbursement · people with a manager', can: (p) => p.loggedIn && p.hasManager, did: raisedAny },
+      ],
+    },
+    {
+      area: 'Manager actions', note: 'Managers are people with someone reporting to them. Approving includes declines.',
+      rows: [
+        { id: 'm|approve', label: 'Approved a request from the app', sub: 'Leave, overtime or an attendance fix · out of managers', can: managers, did: (p) => p.decidedOnApp },
+        { id: 'm|feedback', label: 'Given feedback this month', sub: 'Sent a review this calendar month, whatever dates are picked', can: managers, did: (p) => p.reviewMonth },
+      ],
+    },
   ];
+  const faceCol: [string, (p: Person) => ReactNode] = ['Face check', (p) => (p.face ? 'Set up' : <span style={L.pill('warn')}><span style={L.pillDot} />Not set up</span>)];
+  const done = sections.flatMap((sec) => sec.rows.filter((r) => !r.head).map((r) => ({ area: sec.area, label: r.label, n: P.filter(r.did).length })));
+  const opened = P.filter((p) => p.opened);
   return (
-    <Card title="Active usage" note="Out of everyone in the filter. Click a row to see who hasn’t.">
-      {rows.map(([id, label, sub, did, untracked]) => (
-        <RatioRow key={id} id={id} open={c.open} onToggle={c.toggle} nameOf={c.nameOf} label={label} sub={sub || undefined}
-          n={P.filter(did).length} d={P.length} missing={P.filter((p) => !did(p))} cols={[lastCol(c.summary.today)]} untracked={untracked} />
+    <>
+      <Card title="What people do most on the app" note={`Everything people did on the app, by area · ${rangeLabel(c.summary.from, c.summary.to)}`}>
+        <UseDonut rows={done} colors={ACTIVE_COLOR} />
+        <p className="ua-note">Each slice adds up the people who did each thing in that area, so someone who liked a post and also commented counts twice.</p>
+      </Card>
+      <Card title="Active usage" note="Out of everyone each row applies to. Click a row to see who hasn’t.">
+        <RatioRow id="a|open" open={c.open} onToggle={c.toggle} nameOf={c.nameOf} label="Opened the app"
+          n={opened.length} d={P.length} missing={P.filter((p) => !p.opened)} cols={[lastCol(today)]} untracked={c.untracked} />
+      </Card>
+      {sections.map((sec) => (
+        <Card key={sec.area} title={sec.area} note={sec.note}>
+          {sec.rows.map((r) => {
+            const x = could(P, r.can, r.did);
+            const cols = r.cols === 'face' ? [lastCol(today), faceCol] : r.cols === 'group' ? [groupCol, lastCol(today)] : [lastCol(today)];
+            return (
+              <div key={r.id} className={r.head ? 'ua-headrow' : undefined}>
+                <RatioRow id={r.id} open={c.open} onToggle={c.toggle} nameOf={c.nameOf} label={r.label} sub={r.sub}
+                  n={x.yes.length} d={x.den.length} missing={x.no} cols={cols} untracked={r.untracked} />
+              </div>
+            );
+          })}
+        </Card>
       ))}
-    </Card>
+    </>
   );
 }
 
@@ -344,6 +309,12 @@ const ROWS: UseRow[] = [
 ];
 
 /** One colour per area of the app, from the dashboard's palette. */
+const ACTIVE_COLOR: Record<string, string> = {
+  Feed: 'var(--p-purple)',
+  Games: 'var(--p-orange)',
+  'Attendance & requests': 'var(--p-green)',
+  'Manager actions': 'var(--p-blue)',
+};
 const AREA_COLOR: Record<string, string> = {
   'Feed & fun': 'var(--p-purple)',
   Attendance: 'var(--p-green)',
@@ -357,8 +328,8 @@ const AREA_COLOR: Record<string, string> = {
  * is a share of all the things people did, not of people, since one person
  * can do several.
  */
-function UseDonut({ rows }: { rows: { area: string; label: string; n: number }[] }) {
-  const areas = Object.keys(AREA_COLOR).map((area) => {
+function UseDonut({ rows, colors = AREA_COLOR }: { rows: { area: string; label: string; n: number }[]; colors?: Record<string, string> }) {
+  const areas = Object.keys(colors).map((area) => {
     const own = rows.filter((r) => r.area === area);
     const n = own.reduce((t, r) => t + r.n, 0);
     const top = own.slice().sort((x, y) => y.n - x.n)[0];
@@ -374,7 +345,7 @@ function UseDonut({ rows }: { rows: { area: string; label: string; n: number }[]
         <circle cx="70" cy="70" r={R} fill="none" stroke="var(--surface-2)" strokeWidth={W} />
         {areas.map((x) => {
           const len = (x.n / total) * C;
-          const el = <circle key={x.area} cx="70" cy="70" r={R} fill="none" stroke={AREA_COLOR[x.area]} strokeWidth={W}
+          const el = <circle key={x.area} cx="70" cy="70" r={R} fill="none" stroke={colors[x.area]} strokeWidth={W}
             strokeDasharray={`${Math.max(len - 2, 0.5)} ${C}`} strokeDashoffset={-at} transform="rotate(-90 70 70)"><title>{`${x.area}: ${x.n} (${pct(x.n, total)})`}</title></circle>;
           at += len;
           return el;
@@ -385,7 +356,7 @@ function UseDonut({ rows }: { rows: { area: string; label: string; n: number }[]
       <ul className="ua-dl">
         {areas.map((x) => (
           <li key={x.area}>
-            <i style={{ background: AREA_COLOR[x.area] }} />
+            <i style={{ background: colors[x.area] }} />
             <span><b>{x.area}</b>{x.top && <small>Most: {x.top}</small>}</span>
             <span className="ua-dn">{x.n.toLocaleString('en-IN')}</span>
             <span className="ua-dp">{pct(x.n, total)}</span>
@@ -411,14 +382,9 @@ export function UseTab({ c }: { c: TabCtx }) {
       </div>
     );
   };
-  const done = ROWS.filter(live).map((r) => ({ area: r.area, label: r.label, n: P.filter(r.did).length }));
   let last = '';
   return (
     <>
-      <Card title="What people do most on the app" note={`Everything people did on the app, by area · ${rangeLabel(c.summary.from, c.summary.to)}`}>
-        <UseDonut rows={done} />
-        <p className="ua-note">Each slice adds up the people who did each thing in that area, so someone who applied for leave and fixed a missed punch counts in both.</p>
-      </Card>
       <Card title="What they use in the app" note={`Out of the people each thing applies to, how many did it · ${rangeLabel(c.summary.from, c.summary.to)}`}>
         <div className="ua-scroll">
           <table className="lk-t ua-use" style={L.table}>

@@ -33,6 +33,11 @@ export type UsagePersonDTO = {
   reimb: boolean;
   decidedOnApp: boolean;
   review: boolean;
+  reviewMonth: boolean;
+  liked: boolean;
+  commented: boolean;
+  voted: boolean;
+  challenged: boolean;
   payslips: boolean;
   payroll: boolean;
   proofs: boolean;

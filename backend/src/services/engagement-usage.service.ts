@@ -40,6 +40,7 @@ import { notifiesOrg, notifyUsers } from './notification.service';
 import { pointEvents } from './points-ledger.service';
 import { pokerResults } from './poker-db';
 import { policiesForPeople } from './shift.service';
+import { squadPayouts } from './secret-squad.service';
 
 export type UsageGroup = 'app' | 'bio' | 'present';
 
@@ -85,6 +86,16 @@ export type UsagePerson = {
   decidedOnApp: boolean;
   /** Sent at least one feedback review. */
   review: boolean;
+  /** Sent a feedback review this calendar month (IST), whatever dates are picked. */
+  reviewMonth: boolean;
+  /** Liked a post published in the range (likes keep no time of their own). */
+  liked: boolean;
+  /** Wrote a comment in the range. */
+  commented: boolean;
+  /** Voted in a poll published in the range (votes keep no time of their own). */
+  voted: boolean;
+  /** Challenged a colleague to a game in the range. */
+  challenged: boolean;
   payslips: boolean;
   payroll: boolean;
   proofs: boolean;
@@ -183,6 +194,7 @@ export async function usageSummary(caller: { userId: string; org: string }, inpu
     policies, company, firstDay, lastOpenRows, openedRows,
     punchers, fixers, leaveBy, otBy, reimbBy, reviewers, proofers, posters,
     approvals, missedUsers, played, contested, toured,
+    likers, commenters, voters, challengers, monthReviewers,
   ] = await Promise.all([
     policiesForPeople(roster.map((u) => ({ userId: u.userId, org: u.org })), to < today ? to : today),
     getCompanyConfig(org),
@@ -211,6 +223,11 @@ export async function usageSummary(caller: { userId: string; org: string }, inpu
     gamePlayersIn(org, ids, start, end),
     contestantsIn(org, ids, start, end),
     tournamentPlayersIn(org, ids, start, end),
+    likersIn(org, ids, start, end),
+    commentersIn(org, ids, start, end),
+    pollVotersIn(org, ids, start, end),
+    distinctOf(gameChallenges(), { org, challengerUserId: inRoster, createdAt: { $gte: start, $lte: end } }, '$challengerUserId'),
+    reviewersIn(ids, istSpan(`${today.slice(0, 7)}-01`, today).start, istSpan(`${today.slice(0, 7)}-01`, today).end),
   ]);
 
   const lastOpen = new Map(lastOpenRows.map((r) => [r._id, r.last]));
@@ -258,6 +275,11 @@ export async function usageSummary(caller: { userId: string; org: string }, inpu
       reimb: reimbBy.has(u.userId),
       decidedOnApp: approvals.decidedOnApp.has(u.userId),
       review: reviewers.has(u.userId),
+      reviewMonth: monthReviewers.has(u.userId),
+      liked: likers.has(u.userId),
+      commented: commenters.has(u.userId),
+      voted: voters.has(u.userId),
+      challenged: challengers.has(u.userId),
       payslips: did?.has('payslips') ?? false,
       payroll: did?.has('payroll') ?? false,
       proofs: proofers.has(u.userId),
@@ -581,7 +603,7 @@ async function gamePlayersIn(org: string, ids: string[], start: Date, end: Date)
   return union(...sets);
 }
 
-/** Played in a tournament: joined a Cup match, sat at a Poker table, or showed up for a Relay. */
+/** Played in a tournament: joined a Cup match, sat at a Poker table, showed up for a Relay, or played a Secret Squad round. */
 async function tournamentPlayersIn(org: string, ids: string[], start: Date, end: Date): Promise<Set<string>> {
   const inIds = { $in: ids };
   const relayIds = (await relayEvents().find({ org }, { projection: { _id: 0, id: 1 } }).toArray()).map((e) => e.id);
@@ -597,8 +619,45 @@ async function tournamentPlayersIn(org: string, ids: string[], start: Date, end:
     relayIds.length
       ? distinctOf(relayPresence(), { eventId: { $in: relayIds }, userId: inIds, lastSeenAt: { $gte: start, $lte: end } })
       : Promise.resolve(new Set<string>()),
+    // Secret Squad: everyone a round paid points to.
+    squadPayouts().find({ org, paidAt: { $gte: start, $lte: end } }, { projection: { _id: 0, points: 1 } }).toArray()
+      .then((rows) => new Set(rows.flatMap((r) => Object.keys(r.points ?? {})).filter((id) => ids.includes(id)))),
   ]);
   return union(...sets);
+}
+
+/** Liked a post published in the range: a like keeps no time, so the post's own date stands in. */
+async function likersIn(org: string, ids: string[], start: Date, end: Date): Promise<Set<string>> {
+  const rows = await connectPosts().aggregate<{ _id: string }>([
+    { $match: { org, publishedAt: { $gte: start, $lte: end }, 'likedBy.0': { $exists: true } } },
+    { $unwind: '$likedBy' },
+    { $match: { likedBy: { $in: ids } } },
+    { $group: { _id: '$likedBy' } },
+  ]).toArray();
+  return new Set(rows.map((r) => r._id));
+}
+
+/** Wrote a comment in the range. */
+async function commentersIn(org: string, ids: string[], start: Date, end: Date): Promise<Set<string>> {
+  const rows = await connectPosts().aggregate<{ _id: string }>([
+    { $match: { org, 'comments.createdAt': { $gte: start, $lte: end } } },
+    { $unwind: '$comments' },
+    { $match: { 'comments.createdAt': { $gte: start, $lte: end }, 'comments.userId': { $in: ids } } },
+    { $group: { _id: '$comments.userId' } },
+  ]).toArray();
+  return new Set(rows.map((r) => r._id));
+}
+
+/** Voted in a poll published in the range: a vote keeps no time, so the poll's date stands in. */
+async function pollVotersIn(org: string, ids: string[], start: Date, end: Date): Promise<Set<string>> {
+  const rows = await connectPosts().aggregate<{ _id: string }>([
+    { $match: { org, type: 'survey', publishedAt: { $gte: start, $lte: end }, pollVotes: { $exists: true } } },
+    { $project: { v: { $objectToArray: '$pollVotes' } } },
+    { $unwind: '$v' },
+    { $match: { 'v.k': { $in: ids } } },
+    { $group: { _id: '$v.k' } },
+  ]).toArray();
+  return new Set(rows.map((r) => r._id));
 }
 
 /** Managers who sent a feedback review in the range (older reviews without sentAt read their last update). */
