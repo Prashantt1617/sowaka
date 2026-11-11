@@ -117,7 +117,7 @@ export function RequestsTab({ c }: { c: TabCtx }) {
         />
         <RatioRow
           id="r|corr" open={c.open} onToggle={c.toggle} nameOf={c.nameOf}
-          label="Asked to fix a missed punch from the app"
+          label="Fixed missed punch on the app"
           sub={c.summary.missedKnown ? 'People with a missed punch in these dates, as Reports › Attendance grades them' : 'Missed punches could not be graded for these dates: only people who asked are counted'}
           n={fixedN} d={missed.length} missing={missed.filter((p) => !p.fixed)}
           cols={[groupCol, lastCol(today)]}
