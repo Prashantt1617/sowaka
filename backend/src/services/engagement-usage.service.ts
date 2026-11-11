@@ -40,6 +40,7 @@ import { notifiesOrg, notifyUsers } from './notification.service';
 import { pointEvents } from './points-ledger.service';
 import { pokerResults } from './poker-db';
 import { policiesForPeople } from './shift.service';
+import { squadPayouts } from './secret-squad.service';
 
 export type UsageGroup = 'app' | 'bio' | 'present';
 
@@ -581,7 +582,7 @@ async function gamePlayersIn(org: string, ids: string[], start: Date, end: Date)
   return union(...sets);
 }
 
-/** Played in a tournament: joined a Cup match, sat at a Poker table, or showed up for a Relay. */
+/** Played in a tournament: joined a Cup match, sat at a Poker table, showed up for a Hint Relay, or played a Secret Squad round. */
 async function tournamentPlayersIn(org: string, ids: string[], start: Date, end: Date): Promise<Set<string>> {
   const inIds = { $in: ids };
   const relayIds = (await relayEvents().find({ org }, { projection: { _id: 0, id: 1 } }).toArray()).map((e) => e.id);
@@ -597,6 +598,9 @@ async function tournamentPlayersIn(org: string, ids: string[], start: Date, end:
     relayIds.length
       ? distinctOf(relayPresence(), { eventId: { $in: relayIds }, userId: inIds, lastSeenAt: { $gte: start, $lte: end } })
       : Promise.resolve(new Set<string>()),
+    // Secret Squad: everyone a round paid points to.
+    squadPayouts().find({ org, paidAt: { $gte: start, $lte: end } }, { projection: { _id: 0, points: 1 } }).toArray()
+      .then((rows) => new Set(rows.flatMap((r) => Object.keys(r.points ?? {})).filter((id) => ids.includes(id)))),
   ]);
   return union(...sets);
 }

@@ -16,14 +16,14 @@ import { Modal } from '../kpiUi';
 import * as L from '../look';
 import { addDays, istToday, pct, plural, rangeLabel, sd } from './usage/format';
 import type { Person } from './usage/parts';
-import { ActiveTab, FunnelTab, RequestsTab, StatusTab, UseTab } from './usage/tabs';
+import { FunnelTab, StatusTab, UseTab } from './usage/tabs';
 import type { TabCtx } from './usage/tabs';
 import { TrendTab } from './usage/trend';
 
-type Tab = 'funnel' | 'trend' | 'req' | 'active' | 'status' | 'use';
-const TABS: Tab[] = ['funnel', 'trend', 'req', 'active', 'status', 'use'];
+type Tab = 'funnel' | 'trend' | 'status' | 'use';
+const TABS: Tab[] = ['funnel', 'use', 'status', 'trend'];
 const TAB_LABEL: Record<Tab, string> = {
-  funnel: 'Funnel', trend: 'Over time', req: 'Requests & approvals', active: 'Active usage', status: 'Active & inactive', use: 'What they use',
+  funnel: 'Funnel', trend: 'Over time', status: 'Active & inactive', use: 'What they use',
 };
 const QUICK: [string, number][] = [['Last 7 days', -6], ['Last 30 days', -29], ['Last 3 months', -89]];
 
@@ -135,8 +135,6 @@ export function AppUsage() {
       ) : !people.length ? (
         <div className="ua-card"><p className="ua-muted" style={{ margin: 0, textAlign: 'center', padding: 24 }}>{data?.people.length ? 'Nobody matches these filters.' : 'Nobody is on the employee list yet.'}</p></div>
       ) : tab === 'funnel' ? <FunnelTab c={ctx} />
-        : tab === 'req' ? <RequestsTab c={ctx} />
-          : tab === 'active' ? <ActiveTab c={ctx} />
             : tab === 'status' ? <StatusTab c={ctx} />
               : <UseTab c={ctx} />}
 
