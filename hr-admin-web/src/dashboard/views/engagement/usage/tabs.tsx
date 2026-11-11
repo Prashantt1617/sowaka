@@ -35,18 +35,15 @@ export function FunnelTab({ c }: { c: TabCtx }) {
   const login = P.filter((p) => p.loggedIn);
   const photo = login.filter((p) => p.photo);
   const ints = photo.filter((p) => p.interests);
-  const faceBase = ints.filter((p) => p.group === 'app');
-  const face = faceBase.filter((p) => p.face);
   const steps: { id: string; label: string; sub: string; L: Person[]; prev: Person[] | null }[] = [
     { id: 'all', label: 'On Sowaka', sub: 'Everyone in the employee list', L: P, prev: null },
     { id: 'login', label: 'Logged in', sub: 'Downloaded the app and signed in at least once', L: login, prev: P },
     { id: 'photo', label: 'Uploaded a photo', sub: 'Profile step 1', L: photo, prev: login },
     { id: 'ints', label: 'Added interests', sub: 'Profile step 2', L: ints, prev: photo },
-    { id: 'face', label: 'Set up face check', sub: 'Profile step 3 · only for people who punch on the app', L: face, prev: faceBase },
   ];
   const top = P.length || 1;
   return (
-    <Card title="Adoption funnel" note="From the employee list to a completed profile. Click a step to see who’s stuck before it.">
+    <Card title="Adoption funnel" note="From the employee list to a completed profile. Click “stuck” on a step to see who hasn’t got there.">
       <div className="ua-fun">
         {steps.map((s, i) => {
           const key = `f|${s.id}`;
@@ -55,15 +52,18 @@ export function FunnelTab({ c }: { c: TabCtx }) {
           const stuck = s.prev ? s.prev.filter((p) => !inStep.has(p.id)) : [];
           return (
             <div key={s.id} className={`ua-fs${on ? ' on' : ''}`}>
-              <button type="button" className="ua-fh" disabled={i === 0} aria-expanded={i ? on : undefined} onClick={() => c.toggle(key)}>
+              <div className="ua-fh">
                 <span className="ua-fn">{i + 1}</span>
                 <div className="grow"><b>{s.label}</b><span>{s.sub}</span></div>
                 <div className="ua-fbar"><i style={{ width: `${(s.L.length / top) * 100}%` }} /></div>
                 <span className="ua-fc"><b>{s.L.length}</b>{s.prev ? `of ${s.prev.length} · ${pct(s.L.length, s.prev.length)}` : ''}</span>
                 {i > 0 && (stuck.length
-                  ? <span style={L.pill('warn')}><span style={L.pillDot} />{stuck.length} stuck</span>
+                  // Only the stuck count opens the list; the plus says it can be clicked.
+                  ? <button type="button" className="ua-stuck" aria-expanded={on} aria-label={`${on ? 'Hide' : 'Show'} the ${stuck.length} stuck before ${s.label}`} onClick={() => c.toggle(key)}>
+                      <span className={`ua-plus${on ? ' on' : ''}`} aria-hidden>+</span>{stuck.length} stuck
+                    </button>
                   : <span style={L.pill('ok')}><span style={L.pillDot} />None stuck</span>)}
-              </button>
+              </div>
               {i > 0 && on && (
                 <PeopleList
                   people={stuck}
@@ -76,7 +76,7 @@ export function FunnelTab({ c }: { c: TabCtx }) {
           );
         })}
       </div>
-      <p className="ua-note">Face check setup only applies to people whose shift has them punch on the app (Geotag). The funnel is where everyone stands today, whatever dates are picked.</p>
+      <p className="ua-note">The funnel is where everyone stands today, whatever dates are picked.</p>
     </Card>
   );
 }
@@ -117,7 +117,7 @@ export function RequestsTab({ c }: { c: TabCtx }) {
         />
         <RatioRow
           id="r|corr" open={c.open} onToggle={c.toggle} nameOf={c.nameOf}
-          label="Asked to fix a missed punch from the app"
+          label="Fixed missed punch on the app"
           sub={c.summary.missedKnown ? 'People with a missed punch in these dates, as Reports › Attendance grades them' : 'Missed punches could not be graded for these dates: only people who asked are counted'}
           n={fixedN} d={missed.length} missing={missed.filter((p) => !p.fixed)}
           cols={[groupCol, lastCol(today)]}
