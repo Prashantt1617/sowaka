@@ -16,7 +16,9 @@ export const DASHBOARD_TABS = [
   'attendancereport',
   'payschedule', 'taxdetails', 'payheads', 'statutorycomponents', 'templates', 'paiddays', 'payruns', 'payrolldash', 'payrollreports', 'payrollbulk',
   'reimbursements', 'reimbursementtypes',
-  'games', 'engagementposts', 'relaygame', 'contentreports',
+  // Engagement. Replaced Connect's engagementposts, relaygame and contentreports
+  // (scripts/engagement-tabs-migrate.ts moved stored lists over).
+  'appusage', 'feed', 'engagementplan', 'contests', 'games',
   // Only for a company with features.placements; its routes check that too.
   'placements',
 ] as const;
@@ -87,10 +89,15 @@ const RULES: Rule[] = [
   { path: /^\/admin\/company\/settings/, write: ['organisation', 'departments', 'designations', 'cycle'] },
   { path: /^\/admin\/feedback/, read: ['feedback', 'overview'] },
   { path: /^\/admin\/kpi/, write: ['kpi', 'kpitemplates', 'kpibulk', 'feedback', 'cycle'] },
-  // Connect
-  { path: /^\/admin\/games/, read: ['games', 'engagementposts'], write: ['games', 'engagementposts'] },
-  { path: /^\/admin\/relay/, read: ['relaygame', 'engagementposts'], write: ['relaygame'] },
-  { path: /^\/admin\/connect\/reports/, read: ['contentreports'], write: ['contentreports'] },
+  // Engagement
+  { path: /^\/admin\/engagement\/usage/, read: ['appusage'], write: ['appusage'] },
+  { path: /^\/admin\/engagement\/feed/, read: ['feed'], write: ['feed'] },
+  { path: /^\/admin\/connect\/reports/, read: ['feed'], write: ['feed'] },
+  // The plan lists contests and games too, so reading it goes with any of them.
+  { path: /^\/admin\/engagement\/plan/, read: ['engagementplan', 'contests', 'games'], write: ['engagementplan'] },
+  { path: /^\/admin\/engagement\/contests/, read: ['contests', 'engagementplan'], write: ['contests'] },
+  { path: /^\/admin\/engagement\/games/, read: ['games', 'engagementplan'], write: ['games'] },
+  { path: /^\/admin\/(games|relay|cup)/, read: ['games'], write: ['games'] },
   // Placements: a placement agency's clients, candidates and placements, reading included.
   { path: /^\/admin\/placements/, read: ['placements'], write: ['placements'] },
   { path: /^\/holidays/, write: ['holidaybank'] },

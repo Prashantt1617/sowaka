@@ -8,6 +8,7 @@ import { logger } from '../utils/logger';
 import type { User } from '../models/user.model';
 import type { AuthSessionDocument } from '../models/auth.model';
 import { runAsViewer } from './request-viewer';
+import { noteAppRequest } from '../services/app-activity.service';
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
@@ -91,6 +92,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       dashboardAccess: user.dashboardAccess === true,
       user,
     };
+    // The dashboard's App usage page: who used the app, and when.
+    noteAppRequest(req, user);
     // So `orgUsers` and the services that need the caller's org know it
     // without reading the user again.
     runAsRequestUser({ userId: session.userId, org: user.org }, () => runAsViewer(user as Omit<User, 'profilePhotoUrl'>, next));

@@ -133,7 +133,7 @@ defineTools(
       const plan = await buildPlan(ctx, monthOf(i.month, ctx.today), str(i.office));
       return {
         data: { ...plan, note: 'Suggestions, not decisions. Offices are the people\'s work location on their profile. Connect cannot schedule a post for later: event posts announce a future date and go up when confirmed; Relay and Secret Squad sessions are set up by hand on their pages.' },
-        links: [{ label: 'Open engagement posts', view: 'engagementposts' }, { label: 'Open Relay game', view: 'relaygame' }, { label: 'Open holiday bank', view: 'holidaybank' }],
+        links: [{ label: 'Open the feed', view: 'feed' }, { label: 'Open games', view: 'games' }, { label: 'Open holiday bank', view: 'holidaybank' }],
       };
     },
   },
@@ -172,7 +172,7 @@ defineTools(
         ],
         effectiveFrom: ctx.today, typeToConfirm: drafts.length >= 5 ? String(drafts.length) : undefined,
       });
-      return { data: { prepared: true, posts: drafts.map((d) => ({ kind: d.kind, text: d.preview, audience: d.audience })), scheduleByHand: byHand, note: 'Nothing is published until HR presses Confirm on the card.' }, proposalId, links: [{ label: 'Open engagement posts', view: 'engagementposts' }] };
+      return { data: { prepared: true, posts: drafts.map((d) => ({ kind: d.kind, text: d.preview, audience: d.audience })), scheduleByHand: byHand, note: 'Nothing is published until HR presses Confirm on the card.' }, proposalId, links: [{ label: 'Open the feed', view: 'feed' }] };
     },
   },
 );

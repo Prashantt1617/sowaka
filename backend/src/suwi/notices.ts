@@ -151,7 +151,7 @@ async function computeNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
   {
     if (relay === 0 && recent === 0) {
       out.push({
-        key: 'engagement_quiet', icon: 'spark', view: 'engagementposts', count: 1,
+        key: 'engagement_quiet', icon: 'spark', view: 'feed', count: 1,
         title: 'Nothing scheduled for engagement',
         why: 'No Relay game is scheduled and no engagement post went out in the last two weeks.',
         ask: 'What could we run for engagement this month?',

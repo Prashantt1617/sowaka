@@ -130,7 +130,7 @@ defineTools({
         ...(skipped.length ? { skipped } : {}),
         note: 'Facts only, in no particular order of merit. Post one shout-out per person (prepare_connect_post, kind shoutout); never publish a ranking or compare people.',
       },
-      links: [{ label: 'Open engagement posts', view: 'engagementposts' }],
+      links: [{ label: 'Open the feed', view: 'feed' }],
     };
   },
 });

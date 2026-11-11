@@ -82,13 +82,15 @@ const CLAIMS: NavItem[] = [
   { key: 'reimbursements', label: 'Reimbursement requests' },
   { key: 'reimbursementtypes', label: 'Reimbursement Types' },
 ];
-// Connect's own section: moderation is not an HR request queue like leave, and
-// filing it under one would bury it.
-const CONNECT: NavItem[] = [
-  { key: 'engagementposts', label: 'Engagement posts' },
-  { key: 'relaygame', label: 'Relay game' },
-  { key: 'cuptv', label: 'Tournament TV' },
-  { key: 'contentreports', label: 'Moderate feed' },
+// Engagement: how people use the app, the feed (reported posts included, so
+// moderation sits where the posts are), the plan, contests and games. Tournament
+// TV and relay teams live inside a game's page.
+const ENGAGEMENT: NavItem[] = [
+  { key: 'appusage', label: 'App usage' },
+  { key: 'feed', label: 'Feed' },
+  { key: 'engagementplan', label: 'Engagement plan' },
+  { key: 'contests', label: 'Contests' },
+  { key: 'games', label: 'Games' },
 ];
 // Placements: a placement agency's own work, so it comes first; only a
 // company with the feature sees it (see access.ts).
@@ -107,7 +109,7 @@ export const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'REPORTS', items: REPORTS },
   { title: 'PAYROLL', items: PAYROLL },
   { title: 'CLAIMS', items: CLAIMS },
-  { title: 'CONNECT', items: CONNECT },
+  { title: 'ENGAGEMENT', items: ENGAGEMENT },
   { title: 'SUWI', items: [{ key: 'suwi', label: 'Settings & activity' }] },
 ];
 const SOON: Partial<Record<View, boolean>> = {};

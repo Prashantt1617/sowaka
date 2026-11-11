@@ -47,11 +47,12 @@ export type View =
   | 'cycle'
   | 'reimbursementtypes'
   | 'shiftbulk'
+  | 'appusage'
+  | 'feed'
+  | 'engagementplan'
+  | 'contests'
   | 'games'
-  | 'relaygame'
   | 'cuptv'
-  | 'engagementposts'
-  | 'contentreports'
   | 'placements'
   | 'placementclients'
   | 'placementcustomers'
@@ -183,11 +184,12 @@ export const TITLES: Record<View, [string, string]> = {
   cycle: ['Cycle', 'Performance · the monthly review cycle'],
   reimbursementtypes: ['Reimbursement Types', 'Claims · what can be claimed, and the cap on each'],
   shiftbulk: ['Bulk Assign', 'Shifts · through Suwi'],
-  games: ['Games', 'Connect · hosted games and leaderboards'],
-  relaygame: ['Relay game', 'Connect · launch-event teams and questions'],
-  cuptv: ['Tournament TV', 'Connect · the tournament live, for the office screen'],
-  engagementposts: ['Engagement posts', 'Connect · challenges published for people to play'],
-  contentreports: ['Reported content', 'Connect · posts and comments employees have reported'],
+  appusage: ['App usage', 'Engagement · who uses the app, and for what'],
+  feed: ['Feed', 'Engagement · the feed as employees see it, and reported posts'],
+  engagementplan: ['Engagement plan', 'Engagement · what has happened and what is coming up'],
+  contests: ['Contests', 'Engagement · contests, their results, and starting a new one'],
+  games: ['Games', 'Engagement · the games on the app, tournaments and teams'],
+  cuptv: ['Tournament TV', 'Engagement · the tournament live, for the office screen'],
   placements: ['Placements', 'Placements · candidates put forward to clients, from shortlist to joining'],
   placementclients: ['Clients', 'Placements · the companies hiring'],
   placementcustomers: ['Candidates', 'Placements · the candidates being placed'],
