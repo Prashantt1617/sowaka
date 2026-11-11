@@ -135,15 +135,15 @@ export function RequestsTab({ c }: { c: TabCtx }) {
       <Card title="Approvals from the app" note="Managers with team requests raised in these dates (leave, overtime, attendance fixes), and where they were settled">
         <Kpis items={[
           ['Requests to approve', tot.got, plural(M.length, 'manager')],
-          ['Approved or declined on the app', tot.app, pct(tot.app, tot.got)],
-          ['On the web dashboard', tot.web, pct(tot.web, tot.got)],
+          ['Approved on the app', tot.app, pct(tot.app, tot.got)],
+          ['Approved by admin', tot.web, pct(tot.web, tot.got)],
           ['Still waiting', tot.wait, pct(tot.wait, tot.got)],
         ]} />
         {M.length ? (
           <div className="ua-scroll">
             <table className="lk-t" style={L.table}>
               <thead>
-                <tr><Th>Manager</Th><Th right>Team</Th><Th right>To approve</Th><Th width="22%">Acted on</Th><Th right>On the app</Th><Th right>On the web</Th><Th right>Waiting</Th></tr>
+                <tr><Th>Manager</Th><Th right>Team</Th><Th right>To approve</Th><Th width="22%">Acted on</Th><Th right>On the app</Th><Th right>By admin</Th><Th right>Waiting</Th></tr>
               </thead>
               <tbody>
                 {M.map((m: UsageManagerDTO) => {
@@ -154,7 +154,7 @@ export function RequestsTab({ c }: { c: TabCtx }) {
                       <Td right>{p?.reports ?? 0}</Td>
                       <Td right>{m.got}</Td>
                       <Td>
-                        <div className="ua-stk" title={`${m.app} on the app, ${m.web} on the web, ${m.wait} waiting`}>
+                        <div className="ua-stk" title={`${m.app} on the app, ${m.web} by admin, ${m.wait} waiting`}>
                           {m.app > 0 && <i style={{ flex: m.app, background: 'var(--p-green)' }} />}
                           {m.web > 0 && <i style={{ flex: m.web, background: 'var(--accent)' }} />}
                           {m.wait > 0 && <i style={{ flex: m.wait, background: 'var(--line-2)' }} />}
@@ -172,10 +172,10 @@ export function RequestsTab({ c }: { c: TabCtx }) {
         ) : <p className="ua-muted" style={{ margin: 0, fontSize: 13 }}>No team requests were raised in these dates.</p>}
         <div className="ua-legs">
           <span className="ua-leg"><i style={{ background: 'var(--p-green)' }} />On the app</span>
-          <span className="ua-leg"><i style={{ background: 'var(--accent)' }} />On the web</span>
+          <span className="ua-leg"><i style={{ background: 'var(--accent)' }} />By admin</span>
           <span className="ua-leg"><i style={{ background: 'var(--line-2)' }} />Waiting</span>
         </div>
-        <p className="ua-note">Managers decide from the app; a decision on the web dashboard was made by HR or someone else with dashboard access. Reimbursements are left out: they are only ever decided on the dashboard. Managers are filtered by their own department and location.</p>
+        <p className="ua-note">Approved on the app: the manager decided it on their phone. Approved by admin: HR, or someone else with dashboard access, decided it on the dashboard instead. Both include declines. Reimbursements are left out: they are only ever decided on the dashboard. Managers are filtered by their own department and location.</p>
       </Card>
     </>
   );
