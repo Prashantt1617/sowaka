@@ -1,0 +1,85 @@
+/* Engagement › Feed. The feed column draws posts the way the Connect app's
+   cards do, in the dashboard's own tokens so both themes work. */
+
+.fd-grid { display: grid; grid-template-columns: minmax(360px, 440px) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 1180px) { .fd-grid { grid-template-columns: minmax(0, 1fr); } }
+.fd-left { position: sticky; top: 16px; }
+@media (max-width: 1180px) { .fd-left { position: static; } }
+
+/* The phone-ish frame the cards sit in */
+.af {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 12px;
+  display: flex; flex-direction: column; gap: 14px; max-height: calc(100vh - 260px); min-height: 420px;
+  overflow: auto; scrollbar-width: thin;
+}
+.af-bar { display: flex; align-items: center; justify-content: space-between; background: var(--surface); border-radius: 16px; padding: 10px 12px; }
+.af-bar .af-logo { background: #B23500; color: #fff; font-weight: 700; font-size: 15px; letter-spacing: -.3px; border-radius: 7px; padding: 2px 10px; }
+.af-bar span { font-size: 12px; color: var(--ink-3); font-weight: 500; }
+.af-card { background: var(--surface); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.af-h { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.af-h .nm { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; color: var(--ink); flex-wrap: wrap; }
+.af-h small { display: block; font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+.af-co { font-size: 11px; color: var(--ink-2); border: 1px solid var(--line-2); border-radius: 10px; padding: 1px 8px; font-weight: 500; }
+.af-tag { align-self: flex-start; font-size: 11px; font-weight: 700; letter-spacing: .5px; border-radius: 8px; padding: 4px 10px; text-transform: uppercase; }
+.af-t { font-size: 17px; font-weight: 700; line-height: 1.3; color: var(--ink); overflow-wrap: anywhere; }
+.af-b { font-size: 14px; line-height: 1.5; color: var(--ink-2); margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
+.af-opts { display: flex; flex-direction: column; gap: 8px; }
+.af-opt { position: relative; min-height: 40px; border: 1px solid var(--line-2); border-radius: 12px; display: flex; align-items: center; gap: 10px; padding: 6px 14px; font-size: 14px; font-weight: 500; overflow: hidden; color: var(--ink); }
+.af-opt i { position: absolute; inset: 0 auto 0 0; background: var(--accent-soft); z-index: 0; }
+.af-opt > * { position: relative; z-index: 1; }
+.af-opt .v { margin-left: auto; font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.af-opt img { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; }
+.af-media { display: grid; gap: 4px; border-radius: 12px; overflow: hidden; background: var(--surface-2); }
+.af-media.n2 { grid-template-columns: 1fr 1fr; }
+.af-media img, .af-media video { width: 100%; display: block; max-height: 360px; object-fit: cover; background: var(--surface-2); }
+.af-media.n2 img { aspect-ratio: 1; }
+.af-game { border-radius: 12px; padding: 16px; color: #fff; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; min-height: 96px; }
+.af-game b { font-size: 19px; font-weight: 700; letter-spacing: -.2px; line-height: 1.1; }
+.af-game small { display: block; font-size: 12px; opacity: .9; margin-top: 4px; }
+.af-play { height: 34px; border-radius: 17px; background: #fff; color: #1B1B22; font-weight: 700; padding: 0 14px; display: inline-flex; align-items: center; font-size: 12.5px; flex: none; }
+.af-cta { height: 40px; border-radius: 20px; background: var(--accent-grad); color: #fff; font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+.af-person { display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 12px; background: var(--surface-2); }
+.af-link { display: flex; gap: 10px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 12px; text-decoration: none; color: var(--ink); min-width: 0; }
+.af-link img { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; flex: none; }
+.af-link span { display: block; font-size: 12px; color: var(--ink-3); }
+.af-meta { font-size: 12px; color: var(--ink-3); display: flex; gap: 14px; flex-wrap: wrap; }
+.af-pin { font-size: 12px; font-weight: 600; color: var(--warn); display: flex; gap: 6px; align-items: center; }
+.af-empty { background: var(--surface); border-radius: 16px; padding: 28px 16px; text-align: center; color: var(--ink-3); font-size: 13px; }
+
+/* A post in the feed column: click to select */
+.fd-it { border-radius: 20px; outline: 2px solid transparent; outline-offset: 2px; cursor: pointer; transition: outline-color .15s; display: flex; flex-direction: column; }
+.fd-it:hover { outline-color: var(--line-2); }
+.fd-it.on { outline-color: var(--accent); }
+.fd-it:focus-visible { outline-color: var(--accent); }
+.fd-ctl { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 6px 2px; }
+.fd-s { display: inline-flex; gap: 4px; align-items: center; font-size: 12.5px; color: var(--ink-2); margin-right: 8px; font-weight: 500; }
+.fd-ctl .sp { flex: 1; }
+
+/* Insights */
+.fd-ih { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+.fd-ih h3 { font-size: 18px; font-weight: 600; margin: 8px 0 4px; letter-spacing: -.01em; color: var(--ink); overflow-wrap: anywhere; }
+.fd-ih .sub { color: var(--ink-3); font-size: 12.5px; line-height: 1.5; }
+.fd-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.fd-k { background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+.fd-k span { font-size: 12px; color: var(--ink-3); }
+.fd-k b { font-size: 22px; font-weight: 400; letter-spacing: -.02em; line-height: 1.2; color: var(--ink); font-variant-numeric: tabular-nums; }
+.fd-k small { font-size: 12px; color: var(--ink-2); }
+.fd-sec { margin-top: 20px; }
+.fd-sec > h4 { margin: 0 0 10px; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--ink); }
+.fd-sec > h4 small { font-weight: 400; color: var(--ink-3); font-size: 12.5px; }
+.fd-cm { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.fd-cm:last-child { border-bottom: 0; }
+.fd-cm.reply { padding-left: 34px; }
+.fd-cm .grow { flex: 1; min-width: 0; }
+.fd-cm p { margin: 2px 0 0; font-size: 13.5px; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Reports */
+.fd-reps { display: flex; flex-direction: column; gap: 14px; }
+.fd-rep { border: 1px solid var(--line); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: var(--surface); }
+.fd-rep-h { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.fd-rep-h .txt { flex: 1; min-width: 0; }
+.fd-rep-h .txt b { display: block; font-size: 14px; font-weight: 500; color: var(--ink); }
+.fd-rep-h .txt span { font-size: 12.5px; color: var(--ink-3); }
+.fd-quote { background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; font-size: 13.5px; font-style: italic; line-height: 1.55; color: var(--ink); white-space: pre-wrap; margin: 0; overflow-wrap: anywhere; }
+.fd-rep-f { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.fd-rep-f .acts { display: flex; gap: 6px; flex-wrap: wrap; }

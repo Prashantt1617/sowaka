@@ -226,7 +226,7 @@ defineTools(
             'Quiet is an activity fact, not a judgement about anyone.',
           ],
         },
-        links: [{ label: 'Open engagement posts', view: 'engagementposts' }, { label: 'Open games', view: 'games' }],
+        links: [{ label: 'Open the feed', view: 'feed' }, { label: 'Open games', view: 'games' }],
       };
     },
   },
@@ -262,7 +262,7 @@ defineTools(
       for (const r of rows) byCategory[r.suggestedCategory] = (byCategory[r.suggestedCategory] ?? 0) + 1;
       return {
         data: { status, total: reports.length, byCategory, reports: rows, note: 'The suggested category is a starting point from the reason and note; read the text and re-sort where it reads differently. Decisions (action or dismiss) are HR\'s, on the Content reports page; Suwi never removes, hides or closes anything.' },
-        links: [{ label: 'Open content reports', view: 'contentreports' }],
+        links: [{ label: 'Open the feed', view: 'feed' }],
       };
     },
   },
@@ -300,7 +300,7 @@ defineTools(
           anniversariesNext7Days: roster.filter((p) => p.joiningDate && years(p.joiningDate) >= 1 && inWindow(p.joiningDate, ctx.today, weekEnd)).map((p) => ({ userId: p.userId, name: p.name, on: mmdd(p.joiningDate), years: years(p.joiningDate!), team: teamOf(p) })),
           headcount: roster.length,
         },
-        links: [{ label: 'Open holiday bank', view: 'holidaybank' }, { label: 'Open engagement posts', view: 'engagementposts' }],
+        links: [{ label: 'Open holiday bank', view: 'holidaybank' }, { label: 'Open the feed', view: 'feed' }],
       };
     },
   },
@@ -336,7 +336,7 @@ defineTools(
         { text: 'Undo deletes the post (likes and comments on it go with it).', tone: 'info' as const },
       ];
       const proposalId = await proposePosts(ctx, [d], { title: d.kind === 'shoutout' ? `Publish ${d.preview.split('\n')[0]}` : `Publish ${noun}: ${str(d.body.title as string, 60) || str(d.body.text as string, 60)}`, summary: `${d.preview}\n\nTo: ${d.audience}`, lines });
-      return { data: { prepared: true, kind: d.kind, fullText: d.preview, audience: d.audience, note: 'Nothing is published until HR presses Confirm on the card.' }, proposalId, links: [{ label: 'Open engagement posts', view: 'engagementposts' }] };
+      return { data: { prepared: true, kind: d.kind, fullText: d.preview, audience: d.audience, note: 'Nothing is published until HR presses Confirm on the card.' }, proposalId, links: [{ label: 'Open the feed', view: 'feed' }] };
     },
   },
 );

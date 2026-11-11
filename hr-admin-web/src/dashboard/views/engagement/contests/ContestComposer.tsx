@@ -1,30 +1,25 @@
-// Engagement posts — the contests HR publishes into Connect for people to play
-// with. The composer is the app's contest screen (contest_composer.dart,
+// The "start a contest" composer, moved here verbatim from the old Engagement
+// posts page (the old views/EngagementPosts.tsx). The composer is the app's contest screen (contest_composer.dart,
 // frames 3417:51828 and 3464:62471) at the phone's width: pick the format from
 // the pills, write it straight onto a live preview of the card, choose how
 // long it runs, and go live. The one thing the dashboard adds is the points
 // per vote, which the app always leaves at 10.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import {
-  deleteEngagementPost,
-  getEngagementPosts,
   publishCaptionChallenge,
-  type EngagementPostDTO,
   type EngagementPostType,
-} from '../../services/hrms';
-import { ApiError } from '../../services/http';
-import { useStore } from '../store';
-import { ListPending, LoadingFigure } from '../ui';
-import type { LoadState } from '../ui';
-import * as L from './look';
-import './look.css';
+} from '../../../../services/hrms';
+import { ApiError } from '../../../../services/http';
+import { useStore } from '../../../store';
+import * as L from '../../look';
+import '../../look.css';
 
-const ICONS = '/engagement';
-const SORA = "'Sora', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+export const ICONS = '/engagement';
+export const SORA = "'Sora', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
 // The composer's palette (contest_composer.dart) and the card's
 // (_EngagementColors in engagement_cards.dart).
-const C = {
+export const C = {
   ink: 'var(--ink)',
   secondary: 'var(--ink-2)',
   tertiary: 'var(--ink-3)',
@@ -44,9 +39,9 @@ const C = {
 /** The points a vote is worth, as the server clamps them (normalizePoints). */
 const MIN_POINTS = 1;
 const MAX_POINTS = 100;
-const DEFAULT_POINTS = 10;
+export const DEFAULT_POINTS = 10;
 
-type Format = {
+export type Format = {
   type: EngagementPostType;
   label: string;
   icon: string;
@@ -55,7 +50,7 @@ type Format = {
 };
 
 /** The three formats, in the app's order (ContestFormat). */
-const FORMATS: Format[] = [
+export const FORMATS: Format[] = [
   {
     type: 'caption_challenge',
     label: 'Caption This',
@@ -78,10 +73,10 @@ const FORMATS: Format[] = [
 
 // Closing times read in India time, whatever zone the browser is in.
 const IST_WEEKDAY_TIME = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', weekday: 'long', hour: 'numeric', minute: '2-digit', hour12: true });
-const IST_CLOSES = new Intl.DateTimeFormat(undefined, { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+export const IST_CLOSES = new Intl.DateTimeFormat(undefined, { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
 
 /** "Friday, 5 pm" / "Friday, 5:30 pm", as the app writes a closing time. */
-function weekdayTime(when: Date) {
+export function weekdayTime(when: Date) {
   const part = Object.fromEntries(IST_WEEKDAY_TIME.formatToParts(when).map((p) => [p.type, p.value]));
   const minute = part.minute === '00' ? '' : `:${part.minute}`;
   return `${part.weekday}, ${part.hour}${minute} ${part.dayPeriod.toLowerCase()}`;
@@ -97,144 +92,17 @@ function selectedDays(closesAt: string): 1 | 2 | null {
   return null;
 }
 
-const listButton = (bg: string, color = '#fff'): CSSProperties => ({
-  ...L.btnSm,
-  border: '1px solid transparent',
-  background: bg,
-  color,
-});
-
 const capsLabel: CSSProperties = {
   fontFamily: SORA,
   ...L.eyebrow,
   lineHeight: '16px',
 };
 
-export function EngagementPosts() {
-  const { flash } = useStore();
-  const [posts, setPosts] = useState<EngagementPostDTO[]>([]);
-  // Until the feed has loaded once: a skeleton, then Retry if it failed.
-  const [state, setState] = useState<LoadState>('loading');
-
-  const load = async () => {
-    try {
-      setPosts(await getEngagementPosts());
-      setState('ready');
-    } catch (e) {
-      setState((st) => (st === 'ready' ? st : 'error'));
-      flash(e instanceof ApiError ? e.message : 'Could not load engagement posts', 'error');
-    }
-  };
-  useEffect(() => {
-    void load();
-  }, []);
-
-  const remove = async (post: EngagementPostDTO) => {
-    const entries = Number((post.body.entryCount as number) ?? 0);
-    const warning = entries
-      ? `Delete this challenge? ${entries} ${entries === 1 ? 'entry' : 'entries'} and the points they earned go with it.`
-      : 'Delete this challenge?';
-    if (!window.confirm(warning)) return;
-    try {
-      await deleteEngagementPost(post.id);
-      await load();
-      flash('Challenge deleted');
-    } catch (e) {
-      flash(e instanceof ApiError ? e.message : 'Could not delete', 'error');
-    }
-  };
-
-  return (
-    <div
-      style={{
-        animation: 'fade .3s ease both',
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'flex-start',
-        gap: 20,
-      }}
-    >
-      <ContestComposer onPublished={load} />
-
-      <div style={{ flex: '1 1 340px', minWidth: 0, background: 'var(--surface)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow)', padding: '20px 20px 8px' }}>
-        <div style={{ ...L.cardTitle, marginBottom: 4 }}>
-          Already in the feed · <LoadingFigure state={state} w={14} h={10}>{posts.length}</LoadingFigure>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {state !== 'ready' && (
-            <ListPending state={state} onRetry={() => { setState('loading'); void load(); }} rows={3} cols={1} rowHeight={78} />
-          )}
-          {state === 'ready' && posts.length === 0 && (
-            <div
-              style={{
-                padding: '40px 20px',
-                textAlign: 'center',
-                color: 'var(--ink-3)',
-                fontSize: 13,
-              }}
-            >
-              Nothing published yet. A contest gives the feed something to play
-              with for a day or two.
-            </div>
-          )}
-          {posts.map((post) => {
-            const entries = Number((post.body.entryCount as number) ?? 0);
-            const points = Number(post.body.pointsPerVote ?? DEFAULT_POINTS);
-            return (
-              <div
-                key={post.id}
-                className="lk-row"
-                style={{
-                  borderBottom: '1px solid var(--line)',
-                  padding: '12px 0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                }}
-              >
-                <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{post.tagIcon}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500 }}>
-                    {String(post.body.title ?? 'Caption this')}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12.5,
-                      color: 'var(--ink-2)',
-                      marginTop: 1,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {String(post.body.task || post.body.question || '')}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2 }}>
-                    {entries} {entries === 1 ? 'entry' : 'entries'} · {points} pts per vote
-                    {post.body.closesAt
-                      ? ` · closes ${IST_CLOSES.format(new Date(String(post.body.closesAt)))}`
-                      : ''}
-                  </div>
-                </div>
-                <button
-                  style={listButton('var(--bad-bg)', 'var(--bad)')}
-                  onClick={() => void remove(post)}
-                >
-                  Delete
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ------------------------------------------------------------------ composer
 
 /** The app's contest screen, at the phone's width, with points per vote. */
-function ContestComposer({ onPublished }: { onPublished: () => Promise<void> }) {
+export function ContestComposer({ onPublished }: { onPublished: () => Promise<void> }) {
   const { flash } = useStore();
   const [format, setFormat] = useState<Format>(FORMATS[0]);
   const [title, setTitle] = useState(FORMATS[0].defaultTitle);
@@ -302,6 +170,8 @@ function ContestComposer({ onPublished }: { onPublished: () => Promise<void> }) 
 
   const goLive = async () => {
     if (!ready) return;
+    // Going live posts to the company feed straight away, so it is asked once.
+    if (!window.confirm(`Put this ${format.label} contest live in everyone's Connect feed now?`)) return;
     const name = title.trim();
     setBusy(true);
     try {
@@ -799,7 +669,7 @@ function PreviewCard({
 }
 
 /** The upload tray from the exported art, cropped as the design crops it, at 56x59. */
-function UploadTrayIcon({ scale = 1 }: { scale?: number }) {
+export function UploadTrayIcon({ scale = 1 }: { scale?: number }) {
   return (
     <div
       style={{

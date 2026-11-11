@@ -29,6 +29,10 @@ import { placementsAdminRouter, placementsRouter } from './placements.routes';
 import { gamesRouter, playRouter, pokerWebRouter, squadWebRouter } from './game-catalog.routes';
 import { cupRouter } from './cup.routes';
 import { cupAdminRouter } from './cup-admin.routes';
+import { engagementUsageRouter } from './engagement-usage.routes';
+import { engagementFeedRouter } from './engagement-feed.routes';
+import { engagementPlanRouter, engagementContestsRouter } from './engagement-plan.routes';
+import { engagementGamesRouter } from './engagement-games.routes';
 import { policiesRouter } from './policy-document.routes';
 import { appPagesRouter } from './app-page.routes';
 import { appUpdateRouter } from './app-update.routes';
@@ -48,6 +52,11 @@ router.use('/holidays', holidayRouter);
 // Before `/admin`: the Support desk is gated by a Support role, not by a
 // dashboard tab, and has its own auth chain.
 router.use('/admin/support', supportAdminRouter);
+router.use('/admin/engagement/usage', engagementUsageRouter);
+router.use('/admin/engagement/feed', engagementFeedRouter);
+router.use('/admin/engagement/plan', engagementPlanRouter);
+router.use('/admin/engagement/contests', engagementContestsRouter);
+router.use('/admin/engagement/games', engagementGamesRouter);
 router.use('/admin', adminRouter);
 router.use('/leaves', leaveRouter);
 router.use('/payslips', payslipRouter);

@@ -46,14 +46,29 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M9 9h.01M12 9h.01M15 9h.01M9 13h.01M12 13h.01M15 13h.01M10 21v-4h4v4" />
     </svg>
   ),
-  engagementposts: (
+  // A bar chart: how the app is used.
+  appusage: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M4 20V10M10 20V4M16 20v-7M21 20H3" />
+    </svg>
+  ),
+  // A speech bubble: the feed.
+  feed: (
     <svg {...base(18, 'currentColor')}>
       <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 21l1.9-4.1A8.4 8.4 0 0 1 4 11.5a8.4 8.4 0 0 1 9-8.4 8.4 8.4 0 0 1 8 8.4z" />
     </svg>
   ),
-  contentreports: (
+  // A calendar: the plan.
+  engagementplan: (
     <svg {...base(18, 'currentColor')}>
-      <path d="M4 21V4M4 5h11l-1.5 3L15 11H4" />
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01" />
+    </svg>
+  ),
+  // A star: contests.
+  contests: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" />
     </svg>
   ),
   // A person handed on: a placement.
@@ -83,14 +98,6 @@ export const navIcon: Record<View, ReactElement> = {
     <svg {...base(18, 'currentColor')}>
       <path d="M7 8h10a4 4 0 0 1 3.7 5.5l-1.2 3a2 2 0 0 1-3.2.8L14.8 16H9.2l-1.5 1.3a2 2 0 0 1-3.2-.8l-1.2-3A4 4 0 0 1 7 8z" />
       <path d="M8 11v4M6 13h4M16 12h.01M18 14h.01" />
-    </svg>
-  ),
-  relaygame: (
-    <svg {...base(18, 'currentColor')}>
-      <circle cx="5" cy="7" r="2" />
-      <circle cx="12" cy="7" r="2" />
-      <circle cx="19" cy="7" r="2" />
-      <path d="M7 11h10M7 11l-2 4M17 11l2 4M12 9v9" />
     </svg>
   ),
   cuptv: (

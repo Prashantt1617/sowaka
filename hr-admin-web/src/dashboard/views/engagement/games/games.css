@@ -1,0 +1,102 @@
+/* Engagement › Games: what inline styles can't express. Tokens only, so the
+   light and dark themes both hold. */
+
+/* The game list */
+.eg-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.eg-row:last-child { border-bottom: 0; }
+.eg-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; border: 0; background: none; text-align: left; padding: 2px 0; font: inherit; color: inherit; cursor: pointer; border-radius: 12px; }
+.eg-open:hover .eg-name { text-decoration: underline; }
+.eg-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.eg-name { font-size: 17px; font-weight: 600; letter-spacing: -.01em; color: var(--ink); line-height: 1.2; }
+.eg-kind { font-size: 12px; color: var(--ink-3); }
+.eg-sub { font-size: 12.5px; color: var(--ink-3); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 2px; }
+.eg-badge { background: var(--accent-soft); color: var(--accent-ink); border-radius: 7px; padding: 1px 8px; font-weight: 500; font-size: 12px; }
+
+/* A game's tile, drawn like the app's */
+.eg-ic { width: 56px; height: 56px; border-radius: 14px; overflow: hidden; flex: none; display: block; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-2); }
+.eg-ic svg, .eg-ic img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.eg-ic.xs { width: 22px; height: 22px; border-radius: 6px; display: inline-block; vertical-align: middle; margin-right: 8px; }
+.eg-ic.lg { width: 72px; height: 72px; border-radius: 18px; }
+.eg-ic.xl { width: 80px; height: 80px; border-radius: 20px; }
+.eg-letter { width: 100%; height: 100%; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 40%; }
+
+/* Leaderboards */
+.eg-lr { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--line); }
+.eg-lr:last-child { border-bottom: 0; }
+.eg-rank { width: 38px; font-weight: 600; color: var(--ink-3); font-variant-numeric: tabular-nums; flex: none; }
+.eg-lr.top .eg-rank { color: var(--ink); }
+.eg-lr .grow { flex: 1; min-width: 0; }
+.eg-lr .grow b { display: block; font-size: 14px; font-weight: 500; color: var(--ink); }
+.eg-lr .grow span { display: block; font-size: 12px; color: var(--ink-3); }
+.eg-pts { font-weight: 600; white-space: nowrap; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* KPI strip */
+.eg-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.eg-k { background: var(--surface-2); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; }
+.eg-k span { font-size: 12px; color: var(--ink-3); }
+.eg-k b { font-size: 22px; font-weight: 400; letter-spacing: -.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.eg-k small { font-size: 11.5px; color: var(--ink-3); }
+
+/* Breakdown bars */
+.eg-brk { display: grid; grid-template-columns: minmax(110px, 200px) minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 6px 0; font-size: 13px; }
+.eg-brk .lb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); display: flex; align-items: center; }
+.eg-brk .bar { height: 10px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.eg-brk .bar i { display: block; height: 100%; border-radius: 99px; background: var(--accent); }
+.eg-brk .r { color: var(--ink-3); font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.eg-an2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; margin: 18px 0; }
+@media (max-width: 860px) { .eg-an2 { grid-template-columns: minmax(0, 1fr); } }
+.eg-h4 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.eg-h4 small { font-weight: 400; color: var(--ink-3); font-size: 12.5px; margin-left: 6px; }
+
+/* When people play */
+.eg-when { border: 1px solid var(--line); border-radius: var(--r-lg); padding: 14px 16px; margin: 18px 0; }
+.eg-when-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.eg-nav { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.eg-nav label { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-3); }
+.eg-nav input[type=date] { height: 36px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; padding: 0 8px; color-scheme: light dark; }
+.eg-quick { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.eg-bars { display: flex; align-items: flex-end; gap: 2px; height: 170px; margin-top: 16px; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+.eg-b { flex: 1; min-width: 0; height: 100%; display: flex; align-items: flex-end; justify-content: center; position: relative; }
+.eg-b i { display: block; width: 100%; max-width: 38px; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 2px; }
+.eg-b.zero i { background: var(--line-2); }
+.eg-b.wkend i { opacity: .6; }
+.eg-b.cur i { opacity: .7; }
+.eg-b:hover i { filter: brightness(1.12); }
+.eg-b span { position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+
+/* Game page */
+.eg-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.eg-head h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -.02em; color: var(--ink); }
+.eg-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.eg-meta small { display: block; font-size: 11.5px; color: var(--ink-3); }
+.eg-meta b { font-size: 14px; font-weight: 500; color: var(--ink); }
+.eg-how { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 860px) { .eg-how { grid-template-columns: minmax(0, 1fr); } }
+.eg-phone { border: 3px solid var(--ink); border-radius: 28px; padding: 20px 14px; background: var(--surface-2); display: flex; flex-direction: column; gap: 12px; }
+.eg-ph { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; }
+.eg-ph b { font-size: 20px; font-weight: 700; letter-spacing: .02em; margin-top: 6px; color: var(--ink); }
+.eg-ph small { font-size: 13px; color: var(--ink-3); }
+.eg-steps { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.eg-steps li { display: flex; gap: 12px; align-items: flex-start; padding: 11px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; font-size: 13px; color: var(--ink-2); line-height: 1.45; }
+.eg-steps i { font-style: normal; flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; color: #fff; background: var(--c, var(--accent)); font-size: 13px; }
+.eg-cta { height: 46px; border-radius: 14px; background: var(--c, var(--accent)); color: #fff; font-weight: 700; font-size: 16px; display: grid; place-items: center; }
+.eg-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.eg-facts > div { display: flex; flex-direction: column; gap: 3px; background: var(--surface-2); border-radius: 14px; padding: 12px 14px; }
+.eg-facts small { font-size: 12px; color: var(--ink-3); }
+.eg-facts b { font-size: 13.5px; font-weight: 500; color: var(--ink); }
+
+/* Tournaments */
+.eg-grp { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--hi); margin: 18px 0 8px; }
+.eg-grp:first-child { margin-top: 0; }
+.eg-tr { border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; display: flex; gap: 14px; align-items: flex-start; margin-bottom: 10px; }
+.eg-date { flex: none; width: 52px; text-align: center; border-radius: 12px; background: var(--surface-2); padding: 6px 0; }
+.eg-date b { display: block; font-size: 20px; font-weight: 600; color: var(--ink); line-height: 1.1; }
+.eg-date small { display: block; font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
+.eg-tr-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.eg-tr-b > b { font-size: 15px; font-weight: 600; color: var(--ink); }
+.eg-tr-s { font-size: 12.5px; color: var(--ink-3); }
+.eg-tr-st { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-2); margin-top: 4px; }
+.eg-tr-st b { color: var(--ink); font-weight: 600; }
+.eg-tr-a { display: flex; gap: 8px; flex-wrap: wrap; flex: none; }
+.eg-stand { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 6px; max-height: 360px; overflow: auto; }
+@media (max-width: 640px) { .eg-tr { flex-wrap: wrap; } .eg-tr-a { width: 100%; } }
