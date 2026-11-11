@@ -8,7 +8,7 @@ import { StatusTabs } from '../../../ui';
 import { Td, Th } from '../../lookUi';
 import * as L from '../../look';
 import { Card, Kpis, LastOpened, PeopleList, RatioRow, RemindButton, Who } from './parts';
-import { GROUPS, GROUP_COLOR, GROUP_LONG, GROUP_SHORT, addDays, pct, plural, rangeLabel, sd } from './format';
+import { GROUP_SHORT, addDays, pct, plural, rangeLabel, sd } from './format';
 import type { Col, Person } from './parts';
 import { WhenPanel } from './trend';
 
@@ -343,13 +343,65 @@ const ROWS: UseRow[] = [
   { area: 'Payroll', label: 'Uploaded investment proofs', sub: 'Everyone', can: everyone, did: (p) => p.proofs },
 ];
 
+/** One colour per area of the app, from the dashboard's palette. */
+const AREA_COLOR: Record<string, string> = {
+  'Feed & fun': 'var(--p-purple)',
+  Attendance: 'var(--p-green)',
+  'Leave & requests': 'var(--p-blue)',
+  Team: 'var(--p-orange)',
+  Payroll: 'var(--p-yellow)',
+};
+
+/**
+ * What people do most: every "did it" in the table, added up by area. A slice
+ * is a share of all the things people did, not of people, since one person
+ * can do several.
+ */
+function UseDonut({ rows }: { rows: { area: string; label: string; n: number }[] }) {
+  const areas = Object.keys(AREA_COLOR).map((area) => {
+    const own = rows.filter((r) => r.area === area);
+    const n = own.reduce((t, r) => t + r.n, 0);
+    const top = own.slice().sort((x, y) => y.n - x.n)[0];
+    return { area, n, top: top && top.n ? top.label : '' };
+  }).filter((x) => x.n > 0).sort((x, y) => y.n - x.n);
+  const total = areas.reduce((t, x) => t + x.n, 0);
+  if (!total) return <p className="ua-muted" style={{ margin: 0 }}>Nothing done on the app in these dates yet.</p>;
+  const R = 54, W = 16, C = 2 * Math.PI * R;
+  let at = 0;
+  return (
+    <div className="ua-donut">
+      <svg viewBox="0 0 140 140" width="150" height="150" role="img" aria-label={`What people do most on the app: ${areas.map((x) => `${x.area} ${pct(x.n, total)}`).join(', ')}`}>
+        <circle cx="70" cy="70" r={R} fill="none" stroke="var(--surface-2)" strokeWidth={W} />
+        {areas.map((x) => {
+          const len = (x.n / total) * C;
+          const el = <circle key={x.area} cx="70" cy="70" r={R} fill="none" stroke={AREA_COLOR[x.area]} strokeWidth={W}
+            strokeDasharray={`${Math.max(len - 2, 0.5)} ${C}`} strokeDashoffset={-at} transform="rotate(-90 70 70)"><title>{`${x.area}: ${x.n} (${pct(x.n, total)})`}</title></circle>;
+          at += len;
+          return el;
+        })}
+        <text x="70" y="68" textAnchor="middle" style={{ fontSize: 22, fontWeight: 600, fill: 'var(--ink)' }}>{total.toLocaleString('en-IN')}</text>
+        <text x="70" y="86" textAnchor="middle" style={{ fontSize: 10.5, fill: 'var(--ink-3)' }}>things done</text>
+      </svg>
+      <ul className="ua-dl">
+        {areas.map((x) => (
+          <li key={x.area}>
+            <i style={{ background: AREA_COLOR[x.area] }} />
+            <span><b>{x.area}</b>{x.top && <small>Most: {x.top}</small>}</span>
+            <span className="ua-dn">{x.n.toLocaleString('en-IN')}</span>
+            <span className="ua-dp">{pct(x.n, total)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function UseTab({ c }: { c: TabCtx }) {
   const P = c.people;
-  const GS = GROUPS.map((g) => P.filter((p) => p.group === g));
-  const cell = (L2: Person[], g: UsageGroup | null, r: UseRow): ReactNode => {
-    if (g && r.na?.[g]) return <span className="ua-muted">{r.na[g]}</span>;
-    if (r.tracked && c.untracked) return <span className="ua-muted">Not tracked</span>;
-    const den = L2.filter((p) => r.can(p) || r.did(p));
+  const live = (r: UseRow) => !(r.tracked && c.untracked);
+  const cell = (r: UseRow): ReactNode => {
+    if (!live(r)) return <span className="ua-muted">Not tracked</span>;
+    const den = P.filter((p) => r.can(p) || r.did(p));
     if (!den.length) return <span className="ua-muted">—</span>;
     const n = den.filter(r.did).length;
     return (
@@ -359,41 +411,45 @@ export function UseTab({ c }: { c: TabCtx }) {
       </div>
     );
   };
+  const done = ROWS.filter(live).map((r) => ({ area: r.area, label: r.label, n: P.filter(r.did).length }));
   let last = '';
   return (
-    <Card title="What they use in the app" note={`Out of the people each thing applies to, how many did it · ${rangeLabel(c.summary.from, c.summary.to)}`}>
-      <div className="ua-scroll">
-        <table className="lk-t ua-use" style={L.table}>
-          <thead>
-            <tr>
-              <Th>What they did</Th>
-              <Th>Everyone <small>{P.length}</small></Th>
-              {GROUPS.map((g, i) => <Th key={g}><span className="ua-gd" style={{ background: GROUP_COLOR[g] }} />{GROUP_LONG[g]} <small>{GS[i].length}</small></Th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {ROWS.flatMap((r) => {
-              const out = [];
-              if (r.area !== last) out.push(<tr key={`h|${r.area}`} className="ua-ar"><td colSpan={5} style={L.td}>{r.area}</td></tr>);
-              last = r.area;
-              out.push(
-                <tr key={r.label}>
-                  <Td><span style={{ ...L.cellName, display: 'block' }}>{r.label}</span><span style={{ ...L.cellSub, display: 'block' }}>{r.sub}</span></Td>
-                  <Td>{cell(P, null, r)}</Td>
-                  {GS.map((L2, i) => <Td key={GROUPS[i]}>{cell(L2, GROUPS[i], r)}</Td>)}
-                </tr>,
-              );
-              return out;
-            })}
-          </tbody>
-        </table>
-      </div>
-      <p className="ua-note">
-        Each row only counts the people it applies to, so overtime is out of people allowed overtime and the team rows are out of managers (people with reports).
-        Leave, overtime, reimbursement and missed punches match Requests &amp; approvals. Payslips and salary &amp; tax are counted from when app activity tracking began.
-        <b> Punch on the app</b>: the daily punch brings them in. <b>Biometric</b>: they punch on a device and use the app to fix missed punches. <b>Always present</b>: no punch.
-      </p>
-    </Card>
+    <>
+      <Card title="What people do most on the app" note={`Everything people did on the app, by area · ${rangeLabel(c.summary.from, c.summary.to)}`}>
+        <UseDonut rows={done} />
+        <p className="ua-note">Each slice adds up the people who did each thing in that area, so someone who applied for leave and fixed a missed punch counts in both.</p>
+      </Card>
+      <Card title="What they use in the app" note={`Out of the people each thing applies to, how many did it · ${rangeLabel(c.summary.from, c.summary.to)}`}>
+        <div className="ua-scroll">
+          <table className="lk-t ua-use" style={L.table}>
+            <thead>
+              <tr>
+                <Th>What they did</Th>
+                <Th>People <small>{P.length}</small></Th>
+              </tr>
+            </thead>
+            <tbody>
+              {ROWS.flatMap((r) => {
+                const out = [];
+                if (r.area !== last) out.push(<tr key={`h|${r.area}`} className="ua-ar"><td colSpan={2} style={L.td}>{r.area}</td></tr>);
+                last = r.area;
+                out.push(
+                  <tr key={r.label}>
+                    <Td><span style={{ ...L.cellName, display: 'block' }}>{r.label}</span><span style={{ ...L.cellSub, display: 'block' }}>{r.sub}</span></Td>
+                    <Td>{cell(r)}</Td>
+                  </tr>,
+                );
+                return out;
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="ua-note">
+          Each row only counts the people it applies to, so overtime is out of people allowed overtime, punching on the app is out of people whose shift has them punch on the app, and the team rows are out of managers (people with reports).
+          Leave, overtime, reimbursement and missed punches match Requests &amp; approvals. Payslips and salary &amp; tax are counted from when app activity tracking began.
+        </p>
+      </Card>
+    </>
   );
 }
 
