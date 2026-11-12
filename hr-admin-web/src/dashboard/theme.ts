@@ -43,6 +43,7 @@ export type View =
   | 'peopletasks'
   | 'orgchart'
   | 'attendancereport'
+  | 'companycalendar'
   | 'usersroles'
   | 'cycle'
   | 'reimbursementtypes'
@@ -180,6 +181,7 @@ export const TITLES: Record<View, [string, string]> = {
   peopletasks: ['Tasks', 'People · who still needs a template, salary, bank details or basic details'],
   orgchart: ['Org chart', 'People'],
   attendancereport: ['Attendance report', 'Reports'],
+  companycalendar: ['Company calendar', 'Reports · who is in, away or off on any day'],
   usersroles: ['Accesses', 'People · users, roles and permissions'],
   cycle: ['Cycle', 'Performance · the monthly review cycle'],
   reimbursementtypes: ['Reimbursement Types', 'Claims · what can be claimed, and the cap on each'],

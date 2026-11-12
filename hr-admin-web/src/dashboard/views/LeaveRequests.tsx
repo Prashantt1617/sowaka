@@ -196,9 +196,6 @@ export function LeaveRequests() {
     <div style={{ animation: 'fade .3s ease both' }}>
       <PageActions>
         {viewToggle}
-        <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
-          <IconDownload stroke="currentColor" /> Export
-        </button>
       </PageActions>
 
       <NeedsAction state={st} onAll={showAllPending} />
@@ -289,6 +286,9 @@ export function LeaveRequests() {
                   <option value="name">Name A–Z</option>
                   <option value="days">Most days</option>
                 </SelectBox>
+                <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
+                  <IconDownload stroke="currentColor" /> Export
+                </button>
               </div>
 
               <div style={{ overflowX: 'auto' }}>

@@ -983,6 +983,8 @@ export type ReportRow = ReportPersonDTO & {
   /** An overlay on a day that has a punch-in, not a status of its own. */
   late: boolean;
   lateByMinutes: number;
+  /** Minutes before the shift's end they punched out; 0 when not early. */
+  earlyByMinutes: number;
   punchIn: string | null;
   punchOut: string | null;
   leaveType: string | null;

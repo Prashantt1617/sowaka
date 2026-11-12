@@ -18,6 +18,8 @@ export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boo
   if (view === 'suwi') return true;
   // Investment proofs and Statutory & tax settings go with payroll access, as the server decides it: Payroll Runs or Salary details.
   if (view === 'investmentproofs' || view === 'payrollconfig') return canOpen(user, 'payruns') || canOpen(user, SALARY_DETAILS);
+  // Reports › Company calendar reads the attendance report, so it goes with it.
+  if (view === 'companycalendar') return canOpen(user, 'attendancereport');
   // People › Tasks goes with Employees.
   if (view === 'peopletasks') return canOpen(user, 'employees');
   // The Diwali Cup TV (and its void) is HR's: an admin, or someone never limited to some tabs.

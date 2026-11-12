@@ -5,7 +5,7 @@ import type { ReqStatus } from '../theme';
 import type { Overtime as OvertimeRow } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
-import { Card, EmptyRow, ListPending, PageActions, Pill, SearchInput, SelectBox, StatusTabs, Th } from '../ui';
+import { Card, EmptyRow, ListPending, Pill, SearchInput, SelectBox, StatusTabs, Th } from '../ui';
 import type { LoadState } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { btn, btnClass, cellName, cellSub, TH, toolbar, TR } from '../ds';
@@ -142,12 +142,6 @@ export function Overtime() {
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
-      <PageActions>
-        <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
-          <IconDownload stroke="currentColor" /> Export
-        </button>
-      </PageActions>
-
       <NeedsAction state={st} />
 
       <Card padded>
@@ -220,6 +214,9 @@ export function Overtime() {
                   <option value="all">All departments</option>
                   {departments.map((d) => <option key={d} value={d}>{d}</option>)}
                 </SelectBox>
+                <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
+                  <IconDownload stroke="currentColor" /> Export
+                </button>
               </div>
 
               <div style={{ overflowX: 'auto' }}>

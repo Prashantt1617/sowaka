@@ -6,8 +6,9 @@ import { getHolidays } from '../../services/hrms';
 import type { HolidayDTO } from '../../services/hrms';
 import { Card, EmptyRow, ListPending, LoadingFigure, SelectBox, Th } from '../ui';
 import type { LoadState } from '../ui';
-import { cellSub, iconBtn, SEG, segBtn, TH } from '../ds';
-import { IconChevronLeft, IconChevronRight } from '../icons';
+import { btn, btnClass, cellSub, iconBtn, SEG, segBtn, TH } from '../ds';
+import { IconChevronLeft, IconChevronRight, IconDownload } from '../icons';
+import { downloadCsv } from '../export';
 import { dateOf, dayLabel, daysIn, isoOf, isWeekend, LEAVE_COLS, MONTH, needsActionSummary, peopleTotals, perDay, todayISO } from './leaveDays';
 import { DayBars, LeaveRow, Swatch } from './leaveParts';
 
@@ -81,6 +82,24 @@ export function LeaveCalendar({ state, initialDay, onPending, onOpenDay }: {
     .filter((l) => !dept || l.team === dept);
   const crowded = di >= 0 ? depts.filter((d) => d.size >= 3 && offIn(di, d.name) / d.size >= TOO_MANY) : [];
   const fest = festByDay.get(day);
+
+  const exportDay = () =>
+    downloadCsv<Leave>(
+      `leave-${day}${dept ? `-${dept}` : ''}`,
+      [
+        { header: 'Employee', value: (r) => r.name },
+        { header: 'Team', value: (r) => r.team },
+        { header: 'Type', value: (r) => r.type },
+        { header: 'From', value: (r) => r.from },
+        { header: 'To', value: (r) => r.to },
+        { header: 'Days', value: (r) => r.dayN },
+        { header: 'Reason', value: (r) => r.eRemark },
+        { header: 'Manager', value: (r) => r.manager },
+        { header: 'Status', value: (r) => r.status },
+        { header: 'Applied', value: (r) => r.applied },
+      ],
+      dayRows,
+    );
 
   const na = needsActionSummary(s.leaves);
   const types = [...new Set(s.leaves.map((r) => r.type))].sort();
@@ -189,7 +208,10 @@ export function LeaveCalendar({ state, initialDay, onPending, onOpenDay }: {
                   : a + p === 0 ? 'Nobody on leave' : `${a + p} on leave · ${a} approved, ${p} pending`}
               </span>
             </div>
-            <button type="button" onClick={() => onOpenDay(day)} style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontSize: 13.5, fontWeight: 500, color: 'var(--accent-ink)' }}>Open in list view</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <button type="button" onClick={() => onOpenDay(day)} style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontSize: 13.5, fontWeight: 500, color: 'var(--accent-ink)' }}>Open in list view</button>
+              <button type="button" disabled={dayRows.length === 0} onClick={exportDay} className={btnClass()} style={btn()}><IconDownload stroke="currentColor" /> Export</button>
+            </div>
           </div>
           {!dept && crowded.length > 0 && (
             <div style={{ padding: '10px 14px', borderRadius: 12, background: 'var(--bad-bg)', color: 'var(--bad)', fontSize: 13.5 }}>
