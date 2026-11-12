@@ -411,6 +411,7 @@ export async function decideOvertime(req: Request, res: Response, next: NextFunc
       {
         decision: String(req.body.decision ?? ''),
         managerNote: req.body.managerNote == null ? undefined : String(req.body.managerNote),
+        compensation: req.body.compensation,
       },
     );
     res.status(200).json({ success: true, overtime });

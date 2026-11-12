@@ -806,6 +806,19 @@ class Nomination {
   }
 }
 
+/// "Overtime Pay" or "Leave (Comp-off) · Full day" for a kind ('pay' or
+/// 'comp_off') and its comp-off days; empty for none.
+String overtimeChoiceLabel(String kind, double days) => switch (kind) {
+  'pay' => 'Overtime Pay',
+  'comp_off' => 'Leave (Comp-off) · ${days >= 1 ? 'Full day' : 'Half day'}',
+  _ => '',
+};
+
+/// The choice with what it adds: "Leave (Comp-off) · Full day, +1 Comp-off".
+String overtimeChoiceDetail(String kind, double days) => kind == 'comp_off'
+    ? '${overtimeChoiceLabel(kind, days)}, +${formatDays(days)} Comp-off'
+    : overtimeChoiceLabel(kind, days);
+
 class OvertimeRequest {
   const OvertimeRequest({
     required this.id,
@@ -827,6 +840,9 @@ class OvertimeRequest {
     this.duration = '',
     this.compensationKind = '',
     this.compOffDays = 0,
+    this.preferredKind = '',
+    this.preferredCompOffDays = 0,
+    this.compOffAvailable = true,
   });
 
   final String id;
@@ -851,29 +867,71 @@ class OvertimeRequest {
   /// 'half_day' or 'full_day' from the server; empty from an older one.
   final String duration;
 
-  /// How the person asked to be compensated: 'pay' (paid in payroll) or
-  /// 'comp_off' (added to their Comp-off balance). Empty on a request from
+  /// How the overtime is compensated: 'pay' (paid in payroll) or 'comp_off'
+  /// (added to their Comp-off balance). The employee's preference while
+  /// pending; once approved, the approver's decision. Empty on a request from
   /// before the choice existed, or from an older server.
   final String compensationKind;
 
-  /// The comp-off days asked for — 1 or 0.5 — when [compensationKind] is
-  /// 'comp_off'; 0 otherwise.
+  /// The comp-off days — 1 or 0.5 — when [compensationKind] is 'comp_off';
+  /// 0 otherwise.
   final double compOffDays;
 
-  /// The choice in the form's words: "Overtime Pay" or
-  /// "Leave (Comp-off) · Full day". Empty when none was made.
-  String get compensationLabel => switch (compensationKind) {
-    'pay' => 'Overtime Pay',
-    'comp_off' =>
-      'Leave (Comp-off) · ${compOffDays >= 1 ? 'Full day' : 'Half day'}',
-    _ => '',
-  };
+  /// What the employee asked for on the form, whatever was decided: 'pay',
+  /// 'comp_off', or empty when they chose nothing.
+  final String preferredKind;
 
-  /// The choice with what it adds, for a manager deciding:
-  /// "Leave (Comp-off) · Full day, +1 Comp-off" or "Overtime Pay".
-  String get compensationDetail => compensationKind == 'comp_off'
-      ? '$compensationLabel, +${formatDays(compOffDays)} Comp-off'
-      : compensationLabel;
+  /// The comp-off days they asked for, when [preferredKind] is 'comp_off'.
+  final double preferredCompOffDays;
+
+  /// Whether the approver may decide comp-off: HR has a Comp-off leave type
+  /// for this employee. An older server does not say, and is taken as yes.
+  final bool compOffAvailable;
+
+  /// The current compensation in the form's words: "Overtime Pay" or
+  /// "Leave (Comp-off) · Full day". Empty when none was made.
+  String get compensationLabel =>
+      overtimeChoiceLabel(compensationKind, compOffDays);
+
+  /// The compensation with what it adds: "Leave (Comp-off) · Full day,
+  /// +1 Comp-off" or "Overtime Pay".
+  String get compensationDetail =>
+      overtimeChoiceDetail(compensationKind, compOffDays);
+
+  /// The employee's preference in the form's words; empty when none.
+  String get preferenceLabel =>
+      overtimeChoiceLabel(preferredKind, preferredCompOffDays);
+
+  /// The preference with what it would add, for the approver.
+  String get preferenceDetail =>
+      overtimeChoiceDetail(preferredKind, preferredCompOffDays);
+
+  /// Whether a final call has been made on pay or comp-off: approved, with a
+  /// compensation on record.
+  bool get hasCompensationDecision =>
+      decision == LeaveDecision.approved && compensationKind.isNotEmpty;
+
+  /// The decision with what it adds, once approved; empty otherwise.
+  String get decisionDetail =>
+      hasCompensationDecision ? compensationDetail : '';
+
+  /// Whether the approver decided something other than the preference.
+  bool get decisionDiffersFromPreference =>
+      hasCompensationDecision &&
+      preferredKind.isNotEmpty &&
+      (preferredKind != compensationKind ||
+          (compensationKind == 'comp_off' &&
+              preferredCompOffDays != compOffDays));
+
+  /// What a card shows: the preference while it waits (or was declined); the
+  /// decision once approved, and the preference beside it when it differs.
+  List<(String, String)> get compensationCardRows => [
+    if (hasCompensationDecision) ...[
+      ('Decision:', decisionDetail),
+      if (decisionDiffersFromPreference) ('Preferred:', preferenceLabel),
+    ] else if (preferenceLabel.isNotEmpty)
+      ('Preference:', preferenceDetail),
+  ];
 
   bool get decidedByAdmin => decidedByRole == 'admin';
 
@@ -922,17 +980,34 @@ class OvertimeRequest {
       managerNote: json['managerNote'] as String? ?? '',
       decidedByRole: json['decidedByRole'] as String? ?? '',
       duration: json['duration'] as String? ?? '',
-      compensationKind: switch (json['compensation']) {
-        {'kind': final String kind} when kind == 'pay' || kind == 'comp_off' =>
-          kind,
-        _ => '',
-      },
-      compOffDays: switch (json['compensation']) {
-        {'kind': 'comp_off', 'days': final num days} => days.toDouble(),
-        _ => 0,
-      },
+      compensationKind: _overtimeKindOf(json['compensation']),
+      compOffDays: _overtimeDaysOf(json['compensation']),
+      // A server from before the approver's decision sends only
+      // `compensation`, which is then the preference.
+      preferredKind: _overtimeKindOf(
+        json.containsKey('preferredCompensation')
+            ? json['preferredCompensation']
+            : json['compensation'],
+      ),
+      preferredCompOffDays: _overtimeDaysOf(
+        json.containsKey('preferredCompensation')
+            ? json['preferredCompensation']
+            : json['compensation'],
+      ),
+      compOffAvailable: json['compOffAvailable'] as bool? ?? true,
     );
   }
+
+  static String _overtimeKindOf(Object? compensation) => switch (compensation) {
+    {'kind': final String kind} when kind == 'pay' || kind == 'comp_off' =>
+      kind,
+    _ => '',
+  };
+
+  static double _overtimeDaysOf(Object? compensation) => switch (compensation) {
+    {'kind': 'comp_off', 'days': final num days} => days.toDouble(),
+    _ => 0,
+  };
 
   OvertimeRequest copyWith({LeaveDecision? decision, String? managerNote}) {
     return OvertimeRequest(
@@ -950,6 +1025,9 @@ class OvertimeRequest {
       duration: duration,
       compensationKind: compensationKind,
       compOffDays: compOffDays,
+      preferredKind: preferredKind,
+      preferredCompOffDays: preferredCompOffDays,
+      compOffAvailable: compOffAvailable,
       note: note,
       requestedOn: requestedOn,
       decision: decision ?? this.decision,

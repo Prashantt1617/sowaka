@@ -22,6 +22,9 @@ export type Leave = {
   byAdmin?: boolean;
 };
 
+/** An overtime pay / comp-off choice as a select value. */
+export type OtChoice = 'pay' | 'comp_off_1' | 'comp_off_0.5';
+
 export type Overtime = {
   id: string;
   name: string;
@@ -29,10 +32,20 @@ export type Overtime = {
   appliedOn: string;
   otDate: string;
   duration: OtDuration;
-  /** "Overtime Pay", or "Leave (Comp-off) · Full day"; empty on a request from before the choice. */
-  compensation?: string;
-  /** "+1 Comp-off" / "+0.5 Comp-off" when taken as comp-off; empty otherwise. */
-  compOffCredit?: string;
+  /** The employee's preference: "Overtime Pay", or "Leave (Comp-off) · Full day"; empty on a request from before the choice. */
+  preference?: string;
+  /** "+1 Comp-off" / "+0.5 Comp-off" when the preference is comp-off; empty otherwise. */
+  preferenceCredit?: string;
+  /** The preference as a decision select value, to start HR's select from. */
+  preferredChoice?: OtChoice;
+  /** The final call once approved, in the same words; empty while pending, declined, or on an older request with none. */
+  decision?: string;
+  /** "+1 Comp-off" / "+0.5 Comp-off" when decided as comp-off. */
+  decisionCredit?: string;
+  /** Whether the decision differs from what the employee asked for. */
+  decisionDiffers?: boolean;
+  /** Whether comp-off can be decided for this person (HR has a Comp-off leave type for them). */
+  compOffAvailable: boolean;
   hours: number;
   day: string;
   status: ReqStatus;

@@ -4,9 +4,9 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { ReactNode } from 'react';
 import type { View, ReqStatus, FeedbackStatus } from './theme';
 import { emptyForm } from './seed';
-import type { Correction, Emp, FbEmp, Feedback, FbMgr, Leave, Overtime, Reimb, UserForm } from './seed';
+import type { Correction, Emp, FbEmp, Feedback, FbMgr, Leave, OtChoice, Overtime, Reimb, UserForm } from './seed';
 import {
-  adaptCorrection, adaptEmployees, adaptFeedbackList, adaptLeave, adaptOvertime, adaptReimb,
+  adaptCorrection, adaptEmployees, adaptFeedbackList, adaptLeave, adaptOvertime, adaptReimb, otCompensationOf,
 } from './adapters';
 import {
   decideLeave,
@@ -169,7 +169,7 @@ function useProvideStore() {
   const [otFrom, setOtFrom] = useState('');
   const [otTo, setOtTo] = useState('');
   // overtime override confirm modal (approve/decline + note)
-  const [otConfirm, setOtConfirm] = useState<{ id: string; action: 'approve' | 'decline' } | null>(null);
+  const [otConfirm, setOtConfirm] = useState<{ id: string; action: 'approve' | 'decline'; choice?: OtChoice } | null>(null);
   const [otNote, setOtNote] = useState('');
 
   // Who the org chart should open centred on — set by a profile's "Open in
@@ -504,16 +504,18 @@ function useProvideStore() {
 
   // Confirm modal for overtime overrides — captures an optional note on both
   // approve and decline.
-  const otAsk = (id: string, action: 'approve' | 'decline') => {
+  // `choice` is HR's decision of overtime pay or comp-off from the drawer;
+  // absent, the employee's preference stands.
+  const otAsk = (id: string, action: 'approve' | 'decline', choice?: OtChoice) => {
     const r = ots.find((x) => x.id === id);
     if (blockSelfOverride(r?.submitterId)) return;
     setOtNote('');
-    setOtConfirm({ id, action });
+    setOtConfirm({ id, action, ...(action === 'approve' && choice ? { choice } : {}) });
   };
   const otCloseConfirm = () => setOtConfirm(null);
   const otDecide = async () => {
     if (!otConfirm) return;
-    const { id, action } = otConfirm;
+    const { id, action, choice } = otConfirm;
     const r = ots.find((x) => x.id === id);
     if (blockSelfOverride(r?.submitterId)) {
       setOtConfirm(null);
@@ -523,7 +525,12 @@ function useProvideStore() {
     setOtConfirm(null);
     setOtDrawerId(null);
     try {
-      const updated = await decideOvertime(id, action === 'approve' ? 'approved' : 'declined', note || undefined);
+      const updated = await decideOvertime(
+        id,
+        action === 'approve' ? 'approved' : 'declined',
+        note || undefined,
+        action === 'approve' && choice ? otCompensationOf(choice) : undefined,
+      );
       setOts((s) => s.map((x) => (x.id === id ? adaptOvertime(updated, r?.manager ?? managerName) : x)));
       flash(`${r ? first(r.name) : 'Overtime'}’s overtime ${action === 'approve' ? 'approved' : 'declined'}`);
     } catch (e) {

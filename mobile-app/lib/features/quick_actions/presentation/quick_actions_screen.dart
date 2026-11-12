@@ -2089,10 +2089,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     rows: [
                       SummaryRow('Work Date', _summaryDate(request.workDate)),
                       SummaryRow('Duration', request.hoursLabel),
-                      // Overtime pay or comp-off, as chosen; nothing on a
-                      // request from before there was a choice.
-                      if (request.compensationLabel.isNotEmpty)
-                        SummaryRow('Compensation', request.compensationDetail),
+                      // Overtime pay or comp-off, as they asked for it;
+                      // nothing on a request from before there was a choice.
+                      if (request.preferenceLabel.isNotEmpty)
+                        SummaryRow('Preference', request.preferenceDetail),
+                      // Once approved, what the manager decided — final.
+                      if (request.hasCompensationDecision)
+                        SummaryRow('Decision', request.decisionDetail),
                       SummaryRow('Time', request.timeRangeLabel),
                       SummaryRow(
                         'Applied On',
@@ -2135,7 +2138,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       footer: _FormSubmitBar(
         label: 'Apply Overtime',
         // Off until the date and duration are both valid for the policy and
-        // the compensation has been chosen.
+        // the preference has been chosen.
         enabled: _overtimeFormComplete && !_submitting,
         busy: _submitting,
         onTap: _submitOvertimeApplication,
@@ -2163,11 +2166,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             _LeaveFieldLabel('Reason'),
             _FormTextArea(controller: _overtimeNote, height: 85.6),
             const SizedBox(height: 16),
-            // Overtime pay or comp-off (Figma 3205:39887, 4453:64935).
-            _LeaveFieldLabel('Compensation'),
+            // Overtime pay or comp-off, as the employee would prefer it
+            // (Figma 3205:39887, 4453:64935); the manager makes the final
+            // call on approval.
+            _LeaveFieldLabel('Preference'),
             _LeaveDropdownField(
               key: const ValueKey('overtime-compensation'),
-              value: _overtimeCompensationLabel ?? 'Select compensation',
+              value: _overtimeCompensationLabel ?? 'Select preference',
               filled: _overtimeCompensation != null,
               onTap: _pickOvertimeCompensation,
             ),
@@ -2175,10 +2180,13 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               const SizedBox(height: 8),
               Text(
                 _overtimeCompensation == 'pay'
-                    ? 'Once approved, it is paid with your salary.'
-                    : 'Once approved, ${formatDays(_overtimeCompOffDays)} '
+                    ? 'If approved as you prefer, it is paid with your salary. '
+                          'Your manager makes the final call.'
+                    : 'If approved as you prefer, '
+                          '${formatDays(_overtimeCompOffDays)} '
                           '${_overtimeCompOffDays == 1 ? 'day is' : 'days are'} '
-                          'added to your comp-off balance.',
+                          'added to your comp-off balance. Your manager makes '
+                          'the final call.',
                 style: const TextStyle(
                   color: Color(0xFF717171),
                   fontSize: 13,
@@ -2192,7 +2200,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     );
   }
 
-  /// The compensation as the field reads it: "Overtime Pay", or
+  /// The preference as the field reads it: "Overtime Pay", or
   /// "Leave (Comp-off) · Full day". Null until one is chosen.
   String? get _overtimeCompensationLabel => switch (_overtimeCompensation) {
     'pay' => 'Overtime Pay',
@@ -2331,7 +2339,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   /// Whether the overtime form holds something the server would accept: a
-  /// duration, a date inside the backdating window, and a compensation.
+  /// duration, a date inside the backdating window, and a preference.
   bool get _overtimeFormComplete {
     final date = _overtimeDate;
     if (date == null || _overtimeDuration == null) return false;
@@ -2355,7 +2363,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           compensationLabel == null) {
         showAppToast(
           context,
-          'Pick a date, a duration and a compensation to continue.',
+          'Pick a date, a duration and a preference to continue.',
         );
         return;
       }
@@ -2392,7 +2400,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             SummaryRow('Date', _summaryDate(date)),
             SummaryRow('Start Time', _summaryClock(startDateTime)),
             SummaryRow('End Time', _summaryClock(startDateTime.add(worked))),
-            SummaryRow('Compensation', compensationLabel),
+            SummaryRow('Preference', compensationLabel),
           ],
           reason: _overtimeNote.text.trim(),
         ),

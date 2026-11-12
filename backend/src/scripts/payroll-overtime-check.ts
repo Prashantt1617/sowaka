@@ -10,16 +10,18 @@
  * the `sowaka` org with invented people and amounts. Scratch database only:
  *   MONGODB_DB=payroll_overtime_scratch npm run payroll:overtime-check
  */
+import { ObjectId } from 'mongodb';
 import {
   companies, connectDb, getDb, overtimeRequests, paidDaysTemplates, payHeads, payrollPeriods, payslips, salaryStructures,
   salaryTemplates, shiftTemplates, statutoryConfigs, tdsConfigs, users,
 } from '../config/db';
 import type { User } from '../models/user.model';
-import type { OvertimeCompensation, OvertimeRequest } from '../models/overtime.model';
+import { OVERTIME_PAID_IN_PAYROLL, type OvertimeCompensation, type OvertimeRequest } from '../models/overtime.model';
 import { DEFAULT_ORG_SHIFT_POLICY } from '../models/shift.model';
 import { myPayrollHome } from '../services/employeePayroll.home';
 import { applyForLeave, getMyLeaveBalance } from '../services/leave.service';
-import { createOvertimeRequest, decideOvertime } from '../services/overtime.service';
+import { adminDecideOvertime, createOvertimeRequest, decideOvertime, getManagerOvertimeInbox, getMyOvertimeRequests, listAllOvertimeForAdmin } from '../services/overtime.service';
+import { compensationNote, overtimeApprovedEmail } from '../services/request-notifications.service';
 import { createRun, myPayslipHtml, myPayslips, recomputeRun, submitRun } from '../services/payrollRun.service';
 import { getSalaryTemplate, updateSalaryTemplate } from '../services/salaryTemplate.service';
 import { STATUTORY_SEED, TDS_SEED } from './payroll-config-seed-data';
@@ -77,6 +79,7 @@ const inr = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { min
     person('bala', { employeeId: 'E2' }),
     person('chitra', { employeeId: 'E3' }),
     person('dev', { employeeId: 'E4' }),
+    person('farah', { employeeId: 'E5' }),
   ]);
   // A 26th-to-25th cycle: September is 26 Aug – 25 Sep, 31 base days.
   await payrollPeriods().insertOne({ org: ORG, period: 'default', startDay: 26, updatedAt: now } as never);
@@ -225,7 +228,7 @@ const inr = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { min
   const before = (await compOff('chitra', year)).total;
   const half = await claim('chitra', daysAgo(2), 'half_day', { kind: 'comp_off', days: 0.5 });
   ok('comp-off is stored on the request and shown to the manager', JSON.stringify(half.compensation) === JSON.stringify({ kind: 'comp_off', days: 0.5 }), half.compensation);
-  const inbox = await (await import('../services/overtime.service')).getManagerOvertimeInbox('hr');
+  const inbox = await getManagerOvertimeInbox('hr');
   ok('…in the manager\'s inbox too', JSON.stringify(inbox.find((r) => r.id === half.id)?.compensation) === JSON.stringify({ kind: 'comp_off', days: 0.5 }));
   ok('pending: nothing credited yet', (await compOff('chitra', year)).total === before);
   await decideOvertime('hr', half.id, { decision: 'approved' });
@@ -240,6 +243,73 @@ const inr = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { min
   ok('an app from before the choice sends none: accepted, stored without one', legacy.compensation === null && !(await overtimeRequests().findOne({ workDate: new Date(`${daysAgo(5)}T00:00:00Z`), userId: 'chitra' }))?.compensation);
   await decideOvertime('hr', legacy.id, { decision: 'approved' });
   ok('…and approved, it credits its full day as before', (await compOff('chitra', year)).total === before + 1.5);
+
+  console.log('the manager decides: the employee\'s choice is a preference');
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  const paidInPayroll = async (id: string) =>
+    Boolean(await overtimeRequests().findOne({ _id: new ObjectId(id), ...OVERTIME_PAID_IN_PAYROLL }));
+  const stored = async (id: string) => (await overtimeRequests().findOne({ _id: new ObjectId(id) }))!;
+  const credit = (await compOff('chitra', year)).total;
+
+  const wantsDay = await claim('chitra', daysAgo(6), 'full_day', { kind: 'comp_off', days: 1 });
+  const pendingView = (await getManagerOvertimeInbox('hr')).find((r) => r.id === wantsDay.id);
+  ok('pending: the inbox shows the preference, and that comp-off can be chosen for her',
+    same(pendingView?.preferredCompensation, { kind: 'comp_off', days: 1 }) && pendingView?.compOffAvailable === true, pendingView);
+  const toPay = await decideOvertime('hr', wantsDay.id, { decision: 'approved', compensation: { kind: 'pay' } });
+  ok('comp-off preferred, manager decides overtime pay: the request is paid…',
+    same(toPay.compensation, { kind: 'pay' }) && same(toPay.preferredCompensation, { kind: 'comp_off', days: 1 }) && await paidInPayroll(wantsDay.id), toPay);
+  ok('…and credits no comp-off', (await compOff('chitra', year)).total === credit, (await compOff('chitra', year)).total);
+  ok('…stored: compensation is the decision, preferredCompensation her choice',
+    same((await stored(wantsDay.id)).compensation, { kind: 'pay' }) && same((await stored(wantsDay.id)).preferredCompensation, { kind: 'comp_off', days: 1 }));
+  const mineAfter = (await getMyOvertimeRequests('chitra')).find((r) => r.id === wantsDay.id);
+  ok('…and she sees both: decided pay, preferred comp-off', same(mineAfter?.compensation, { kind: 'pay' }) && same(mineAfter?.preferredCompensation, { kind: 'comp_off', days: 1 }), mineAfter);
+
+  const wantsPay = await claim('chitra', daysAgo(7), 'full_day', { kind: 'pay' });
+  const toHalf = await decideOvertime('hr', wantsPay.id, { decision: 'approved', compensation: { kind: 'comp_off', days: 0.5 } });
+  ok('pay preferred, manager decides half a day of comp-off: +0.5, not paid',
+    (await compOff('chitra', year)).total === credit + 0.5 && !(await paidInPayroll(wantsPay.id)) && same(toHalf.preferredCompensation, { kind: 'pay' }), toHalf);
+
+  const asIs = await claim('farah', daysAgo(1), 'half_day', { kind: 'comp_off', days: 0.5 });
+  const stands = await decideOvertime('hr', asIs.id, { decision: 'approved' });
+  ok('no decision sent (an older manager app): the preference stands, +0.5',
+    same(stands.compensation, { kind: 'comp_off', days: 0.5 }) && same(stands.preferredCompensation, { kind: 'comp_off', days: 0.5 }) && (await compOff('farah', year)).total === 0.5, stands);
+
+  const halfClaim = await claim('farah', daysAgo(2), 'half_day', { kind: 'pay' });
+  ok('an unknown decision is refused (400)', (await refusal(() => decideOvertime('hr', halfClaim.id, { decision: 'approved', compensation: { kind: 'cash' } }))).status === 400);
+  ok('comp-off of 2 days is refused (400)', (await refusal(() => decideOvertime('hr', halfClaim.id, { decision: 'approved', compensation: { kind: 'comp_off', days: 2 } }))).status === 400);
+  ok('a full day off for a half-day claim is refused (400)', (await refusal(() => decideOvertime('hr', halfClaim.id, { decision: 'approved', compensation: { kind: 'comp_off', days: 1 } }))).status === 400);
+  ok('…and nothing was decided by the refusals', (await stored(halfClaim.id)).status === 'pending');
+  const declined = await decideOvertime('hr', halfClaim.id, { decision: 'declined', managerNote: 'No', compensation: { kind: 'cash' } });
+  ok('a decline ignores any decision sent, and keeps the preference', declined.status === 'declined' && same(declined.compensation, { kind: 'pay' }) && (await stored(halfClaim.id)).preferredCompensation === undefined, declined);
+
+  const devClaim = await claim('dev', daysAgo(2), 'half_day', { kind: 'pay' });
+  ok('the inbox says comp-off can\'t be chosen where HR has no Comp-off type',
+    (await getManagerOvertimeInbox('hr')).find((r) => r.id === devClaim.id)?.compOffAvailable === false);
+  const devRefused = await refusal(() => decideOvertime('hr', devClaim.id, { decision: 'approved', compensation: { kind: 'comp_off', days: 0.5 } }));
+  ok('deciding comp-off there is refused (409), with a reason', devRefused.status === 409 && /comp-off isn't set up/i.test(devRefused.message), devRefused);
+
+  console.log('HR decides from the dashboard the same way');
+  const hrList = await listAllOvertimeForAdmin('hr');
+  ok('the dashboard list carries the preference and whether comp-off can be chosen',
+    same(hrList.find((r) => r.id === devClaim.id)?.preferredCompensation, { kind: 'pay' }) && hrList.find((r) => r.id === devClaim.id)?.compOffAvailable === false);
+  ok('HR deciding comp-off there is refused (409) too', (await refusal(() => adminDecideOvertime('hr', devClaim.id, { decision: 'approved', compensation: { kind: 'comp_off', days: 0.5 } }))).status === 409);
+  ok('HR\'s unknown decision is refused (400)', (await refusal(() => adminDecideOvertime('hr', devClaim.id, { decision: 'approved', compensation: 'pay' }))).status === 400);
+  const hrDay = await claim('farah', daysAgo(3), 'full_day', { kind: 'pay' });
+  const hrDecided = await adminDecideOvertime('hr', hrDay.id, { decision: 'approved', compensation: { kind: 'comp_off', days: 1 } });
+  ok('HR decides a full day of comp-off over a pay preference: +1, not paid',
+    hrDecided.decidedByRole === 'admin' && same(hrDecided.compensation, { kind: 'comp_off', days: 1 }) && same(hrDecided.preferredCompensation, { kind: 'pay' })
+      && (await compOff('farah', year)).total === 1.5 && !(await paidInPayroll(hrDay.id)), hrDecided);
+
+  const legacyDecided = await claim('farah', daysAgo(4), 'full_day');
+  const legacyPay = await decideOvertime('hr', legacyDecided.id, { decision: 'approved', compensation: { kind: 'pay' } });
+  ok('a request with no preference, decided as pay: paid, no credit, and no preference shown',
+    legacyPay.preferredCompensation === null && same(legacyPay.compensation, { kind: 'pay' }) && await paidInPayroll(legacyDecided.id) && (await compOff('farah', year)).total === 1.5, legacyPay);
+
+  console.log('what the employee is told');
+  ok('approved as asked: "· +1 Comp-off"', compensationNote('Leave (Comp-off) · Full day') === ' · +1 Comp-off');
+  ok('decided otherwise: says so', compensationNote('Overtime Pay', 'Leave (Comp-off) · Full day') === ' · paid as overtime (you preferred Leave (Comp-off) · Full day)', compensationNote('Overtime Pay', 'Leave (Comp-off) · Full day'));
+  ok('the email gives the decision and the preference it differs from',
+    /Decision: Overtime Pay\nYour preference was: Leave \(Comp-off\) · Full day/.test(overtimeApprovedEmail({ userId: 'chitra', name: 'Chitra' }, 'Full day', '1 Nov', 'Overtime Pay', 'Leave (Comp-off) · Full day').body));
 
   console.log('the comp-off is spent through Apply Leave');
   let ahead = new Date(Date.now() + 3 * 86_400_000);

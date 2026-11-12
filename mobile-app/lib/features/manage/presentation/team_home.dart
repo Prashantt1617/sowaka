@@ -1248,9 +1248,9 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
                   ('Type:', 'Overtime'),
                   ('Date:', _managerDate(request.workDate)),
                   ('Overtime hrs:', request.hoursLabel),
-                  // What they asked for: overtime pay or comp-off.
-                  if (request.compensationLabel.isNotEmpty)
-                    ('Compensation:', request.compensationDetail),
+                  // Overtime pay or comp-off: the preference while pending, the
+                  // decision once approved.
+                  ...request.compensationCardRows,
                   (
                     'Comment:',
                     request.note.isEmpty
