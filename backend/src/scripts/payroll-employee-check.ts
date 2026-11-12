@@ -565,7 +565,7 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     else await statutorySettings().deleteMany({ org: ORG });
   }
 
-  // —— earnings: the year's released payslips, this pay period's estimate, the yearly salary ——
+  // —— earnings: only months payroll has run for (released payslips), the yearly salary ——
   {
     const nov12 = new Date('2026-11-12T06:00:00Z');
     const e = await myEarnings('asha', undefined, nov12);
@@ -577,11 +577,9 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     check('earnings: October from the released payslip (its gross, what reached the bank, its id)',
       octE?.status === 'released' && octE.grossPaise === octRow!.grossPaise && octE.netPaise === octRow!.netPayablePaise
         && octE.payslipId === octRow!._id.toHexString() && octE.label === 'October 2026', octE);
-    const novHome = (await homeOn('asha', undefined, nov12)).salary!;
-    check('earnings: November (its run still a draft) is Home\'s estimate, not the draft payslip',
-      novE?.status === 'estimate' && novE.payslipId === null && novE.netPaise === novHome.takeHomePaise
-        && novE.grossPaise === novHome.grossPaise - novHome.lopPaise, [novE, novHome]);
-    check('earnings: months oldest first, the span Oct–Nov', e.months.map((m) => m.period).join() === '2026-10,2026-11' && e.span === 'Oct–Nov', [e.months, e.span]);
+    check('earnings: November (its run still a draft, the pay period still going) is not listed — no estimate, no draft payslip',
+      novE === undefined && e.estimateNotSetUp === null, [novE, e.estimateNotSetUp]);
+    check('earnings: only the month payroll has run for, the span Oct', e.months.map((m) => m.period).join() === '2026-10' && e.span === 'Oct', [e.months, e.span]);
     check('earnings: the year\'s gross is the months\' gross', e.grossPaise === e.months.reduce((t, m) => t + m.grossPaise, 0), e.grossPaise);
     check('earnings: gross − tax − PF and PT − other deductions + reimbursements = take-home = the months\' net',
       e.grossPaise - e.taxPaise - e.pfPtPaise - e.otherDeductionsPaise + e.reimbursementsPaise === e.takeHomePaise
@@ -641,8 +639,8 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
     const row = await statutoryConfigs().findOne({ fy: '2026-27' });
     await statutoryConfigs().deleteOne({ fy: '2026-27' });
     const s = await myEarnings('bala', undefined, nov12);
-    check('earnings: no statutory row: no estimate month, said, and no made-up yearly salary',
-      s.months.every((m) => m.status === 'released') && s.estimateNotSetUp?.reason === 'statutory_not_set_up'
+    check('earnings: no statutory row: only released months, and no made-up yearly salary',
+      s.months.every((m) => m.status === 'released') && s.estimateNotSetUp === null
         && s.componentsNotSetUp?.reason === 'statutory_not_set_up' && s.components.length === 0 && /Ask HR\.$/.test(s.componentsNotSetUp.message), s);
     check('earnings: no statutory row: the released October still shows', s.months.some((m) => m.period === '2026-10'), s.months);
     await statutoryConfigs().insertOne(row!);

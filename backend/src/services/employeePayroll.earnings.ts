@@ -3,9 +3,10 @@
  * financial year, month by month, and their yearly salary.
  *
  * Every figure comes from the person's own released payslips (a run that was
- * approved or paid), plus, for the year it is in, this pay period's estimate
- * as Home works it out (the same numbers Home shows). Nothing is filled in:
- * a month with no released payslip and no estimate is simply not listed, and
+ * approved or paid) — only months payroll has actually run for. The pay
+ * period still going (Home's estimate) is not listed and counts towards no
+ * total: Earnings is what has been paid. Nothing is filled in: a month with
+ * no released payslip is simply not listed, and
  * a salary structure or setup that is missing says so (`componentsNotSetUp`,
  * `estimateNotSetUp`) instead of carrying a made-up figure.
  *
@@ -194,7 +195,7 @@ function payslipComponents(slips: Payslip[]): EarningsComponent[] {
  * The signed-in person's earnings for a financial year ("2026-27"; default
  * the latest year they have pay in): the years they can switch between, the
  * year's gross so far with its tax, PF and PT and take-home, the yearly
- * salary, and each paid month (the current one an estimate).
+ * salary, and each month payroll has run for (released payslips only).
  */
 export async function myEarnings(userId: string, fyRaw: unknown, now = new Date()) {
   const { org } = await meOf(userId);
@@ -204,8 +205,8 @@ export async function myEarnings(userId: string, fyRaw: unknown, now = new Date(
   const currentFy = fyOf(estimate.period).fy;
   if (asked && asked > currentFy) throw new EmployeePayrollError(400, 'That financial year has not started yet');
 
-  const estimateFy = estimate.month ? fyOf(estimate.period).fy : null;
-  const fys = [...new Set([...slips.map((s) => fyOf(s.period).fy), ...(estimateFy ? [estimateFy] : [])])].sort().reverse();
+  // Only years payroll has run in; the pay period still going is not a paid month.
+  const fys = [...new Set(slips.map((s) => fyOf(s.period).fy))].sort().reverse();
   const fy = asked ?? fys[0] ?? currentFy;
 
   const yearSlips = slips.filter((s) => fyOf(s.period).fy === fy);
@@ -216,9 +217,6 @@ export async function myEarnings(userId: string, fyRaw: unknown, now = new Date(
     status: 'released',
     payslipId: s._id.toHexString(),
   }));
-  if (estimate.month && estimateFy === fy && !rows.some((r) => r.period === estimate.period)) {
-    rows.push({ period: estimate.period, money: estimate.month.money, unpaidDays: estimate.month.unpaidDays, status: 'estimate', payslipId: null });
-  }
   rows.sort((a, b) => a.period.localeCompare(b.period));
 
   const sum = (key: keyof MonthMoney) => rows.reduce((total, r) => total + r.money[key], 0);
@@ -250,8 +248,8 @@ export async function myEarnings(userId: string, fyRaw: unknown, now = new Date(
     components: yearly.components,
     annualTotalPaise: yearly.components.reduce((total, c) => total + c.annualPaise, 0),
     componentsNotSetUp: yearly.notSetUp,
-    /** Set when this pay period's estimate can't be worked out (the month is then not listed). */
-    estimateNotSetUp: isCurrent ? estimate.notSetUp : null,
+    /** Kept for older app builds: Earnings no longer lists the pay period still going, so there is no estimate to be missing. */
+    estimateNotSetUp: null,
     months: rows.map((r): EarningsMonth => ({
       period: r.period,
       label: monthLabel(r.period),
