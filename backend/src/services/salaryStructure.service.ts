@@ -46,6 +46,8 @@ export async function listSalaryStructures(adminUserId: string) {
     userId: doc.userId,
     employeeName: byId.get(doc.userId)?.name,
     salaryTemplateCode: doc.salaryTemplateCode,
+    // Absent = the company's Default paid days template.
+    paidDaysTemplateCode: doc.paidDaysTemplateCode,
     annualCtcPaise: doc.annualCtcPaise,
     status: doc.status,
     updatedAt: doc.updatedAt.toISOString(),

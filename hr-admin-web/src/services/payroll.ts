@@ -357,6 +357,8 @@ export type StructureListRow = {
   userId: string;
   employeeName?: string;
   salaryTemplateCode?: string;
+  /** Absent = the company's Default paid days template. */
+  paidDaysTemplateCode?: string;
   annualCtcPaise: number;
   status: 'draft' | 'active';
   updatedAt: string;
