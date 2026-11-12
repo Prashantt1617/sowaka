@@ -131,6 +131,25 @@ const person = (userId: string, org: string, extra: Partial<User> = {}): User =>
   check('the other org sees only its own', outRows.length === 1 && outRows[0].userId === 'outsider', outRows);
   check('a bad range is a 400', (await get('hr', `/admin/punch-log?from=${day}&to=2026-11-01`)).status === 400);
 
+  console.log('punch log: loaded once, then only what changed');
+  // PUNCH_LOG_DELTA_MS=0 (set below in package.json) makes every read ask for the changes.
+  await attendanceRecords().insertOne(record('facer', { sourceKey: `check:facer:${day}` }) as never);
+  const withNew = ((await get('hr', `/admin/punch-log?from=${day}&to=${day}`)).body.punches ?? []) as { userId: string; waiting?: boolean }[];
+  check('a punch written after the first load shows on the next read', withNew.some((r) => r.userId === 'facer') && withNew.length === 3, withNew.map((r) => r.userId));
+  const ool = await attendanceRegularizations().insertOne({
+    userId: 'reporter', employeeId: 'E-REPORTER', managerUserId: 'hr', workDate: day, kind: 'out_of_location',
+    outsideLocation: { at: at('09:40'), punchType: 'in', reason: 'Client visit', latitude: 12.9, longitude: 77.5, officeName: 'HQ', distanceMeters: 2500 },
+    note: 'At a client', status: 'pending', createdAt: new Date(),
+  } as never);
+  const withWaiting = ((await get('hr', `/admin/punch-log?from=${day}&to=${day}`)).body.punches ?? []) as { userId: string; waiting?: boolean }[];
+  check('an out-of-location punch raised since joins as waiting', withWaiting.some((r) => r.userId === 'reporter' && r.waiting === true), withWaiting.map((r) => [r.userId, r.waiting]));
+  await attendanceRegularizations().updateOne({ _id: ool.insertedId }, { $set: { status: 'declined', decidedAt: new Date() } });
+  const afterDecline = ((await get('hr', `/admin/punch-log?from=${day}&to=${day}`)).body.punches ?? []) as { userId: string; waiting?: boolean }[];
+  check('…and leaves once it is declined', !afterDecline.some((r) => r.userId === 'reporter'), afterDecline.map((r) => r.userId));
+  await attendanceRecords().updateOne({ userId: 'emp2', workDate: day }, { $set: { punchOut: at('20:15'), updatedAt: new Date() } });
+  const afterEdit = ((await get('hr', `/admin/punch-log?from=${day}&to=${day}`)).body.punches ?? []) as { userId: string; punchOut: string | null }[];
+  check('an edited punch reads its new time', afterEdit.find((r) => r.userId === 'emp2')?.punchOut === at('20:15').toISOString(), afterEdit.find((r) => r.userId === 'emp2'));
+
   console.log('pay cycle');
   const none = await get('hr', '/admin/pay-cycle');
   check('no pay cycle set: current is null, no calendar month stands in', none.status === 200 && (none.body.cycle as { current: unknown }).current === null, none.body);

@@ -15,6 +15,7 @@ import {
 import { deleteOffice, listOffices, officeView, saveOffice } from '../services/geofence.service';
 import { requireOrg, todayIso } from '../services/shift.service';
 import { payCycleForAdmin, PunchLogError, punchLogForAdmin } from '../services/punch-log.service';
+import { cachedSwr } from '../services/swr-cache';
 import { PayrollInputsError } from '../services/payroll-inputs.service';
 import { hasAllDashboardTabs } from '../middleware/admin.middleware';
 import { adminDecideLeave, decideLeaveCancellation, listAllLeavesForAdmin } from '../services/leave.service';
@@ -78,7 +79,11 @@ export async function listOutOfLocation(req: Request, res: Response, next: NextF
     const today = new Date().toISOString().slice(0, 10);
     const from = String(req.query.from ?? `${today.slice(0, 8)}01`);
     const to = String(req.query.to ?? today);
-    res.status(200).json({ success: true, checkIns: await listOutOfLocationForAdmin(adminUserId(req), from, to) });
+    const who = adminUserId(req);
+    // Kept per org and range and refreshed behind the reader (swr-cache); a decision drops it.
+    const org = await requireOrg(who);
+    const checkIns = await cachedSwr(org, 'ool', { from, to }, () => listOutOfLocationForAdmin(who, from, to));
+    res.status(200).json({ success: true, checkIns });
   } catch (error) {
     next(error);
   }

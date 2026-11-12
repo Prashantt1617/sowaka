@@ -166,6 +166,9 @@ const ADMIN_ORG_TTL_MS = 10 * 60_000;
 // re-request — never waits on the link twice.
 const reportCache = new Map<string, { expires: number; value: AttendanceReport }>();
 const REPORT_TTL_MS = 2 * 60_000;
+/** How long past its TTL a report is still served (while one refresh runs). */
+const STALE_SERVE_MS = 13 * 60_000;
+const refreshingReports = new Set<string>();
 
 // A template edit, an assignment or a new default has to show on the next
 // refresh; a finished report for that org is just as stale as its setup.
@@ -523,6 +526,7 @@ export async function missedPunchPeople(
 export async function attendanceReport(
   adminUserId: string,
   input: { from?: string; to?: string },
+  opts: { refresh?: boolean } = {},
 ): Promise<AttendanceReport> {
   const from = input.from ?? '';
   const to = input.to ?? '';
@@ -536,9 +540,21 @@ export async function attendanceReport(
   const org = await adminOrg(adminUserId);
 
   const cacheKey = `${org}|${from}|${to}`;
-  const cached = reportCache.get(cacheKey);
+  const cached = opts.refresh ? undefined : reportCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
     console.log(`[attendance-report] ${org} ${from}..${to}: served from cache`);
+    return cached.value;
+  }
+  // Past its two minutes but under fifteen: answer with it now and work it out again behind the
+  // reader (the Company calendar and Punch log wait seconds otherwise on this database tier).
+  if (cached && cached.expires + STALE_SERVE_MS > Date.now()) {
+    if (!refreshingReports.has(cacheKey)) {
+      refreshingReports.add(cacheKey);
+      attendanceReport(adminUserId, input, { refresh: true })
+        .catch(() => undefined)
+        .finally(() => refreshingReports.delete(cacheKey));
+    }
+    console.log(`[attendance-report] ${org} ${from}..${to}: served while refreshing`);
     return cached.value;
   }
 

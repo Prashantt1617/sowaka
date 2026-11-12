@@ -44,6 +44,10 @@ const shiftMonth = (month: string, by: number) => {
 /** One person counted on one day for one thing, with the line that says why. */
 type Hit = { userId: string; name: string; code: string; dept: string; manager: string; detail: string };
 
+/** What this session has already loaded, per month: a revisit shows it at once. */
+const calendarMemo = new Map<string, AttendanceReportDTO>();
+const oolMemo = new Map<string, OutOfLocationDTO[]>();
+
 export function CompanyCalendar() {
   const s = useStore();
   const { user } = useAuth();
@@ -66,15 +70,17 @@ export function CompanyCalendar() {
 
   useEffect(() => {
     let live = true;
-    setReport(null);
+    const key = `${first}|${upTo}`;
+    // A month seen before shows at once from memory while the fresh answer comes in.
+    setReport(calendarMemo.get(key) ?? null);
     setError('');
     if (first > today) { setReport({ from: first, to: last, departments: [], templates: [], leaveTypes: [], punchFormats: [], managers: [], people: {}, days: [] }); return; }
     getAttendanceReport({ from: first, to: upTo })
-      .then((r) => { if (live) setReport(r); })
-      .catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load the month'); });
+      .then((r) => { calendarMemo.set(key, r); if (live) setReport(r); })
+      .catch((e) => { if (live && !calendarMemo.has(key)) setError(e instanceof Error ? e.message : 'Could not load the month'); });
     // Out-of-location punches are their own list (and their own access); without it that count stays empty.
-    setOol([]);
-    if (canOpen(user, 'oolcheckins')) getOutOfLocation(first, upTo).then((r) => live && setOol(r)).catch(() => undefined);
+    setOol(oolMemo.get(key) ?? []);
+    if (canOpen(user, 'oolcheckins')) getOutOfLocation(first, upTo).then((r) => { oolMemo.set(key, r); if (live) setOol(r); }).catch(() => undefined);
     return () => { live = false; };
   }, [month, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
 

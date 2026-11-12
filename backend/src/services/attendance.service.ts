@@ -1,5 +1,6 @@
 import { ObjectId, type WithId } from 'mongodb';
 import { attendanceRecords, attendanceRegularizations, companies, offices, users } from '../config/db';
+import { forgetSwr } from './swr-cache';
 import { PunchLocation } from '../models/office.model';
 import { User } from '../models/user.model';
 import { locateForPunch, officeView, placeLabel, punchLocationFrom } from './geofence.service';
@@ -842,6 +843,12 @@ export async function listAllRegularizationsForAdmin(adminUserId: string) {
   }));
 }
 
+/** Drop the kept Punch log / out-of-location answers of this person's company (swr-cache). */
+async function forgetTimeOfficeFor(userId: string): Promise<void> {
+  const org = (await users().findOne({ userId }, { projection: { _id: 0, org: 1 } }))?.org;
+  if (org) forgetSwr(org);
+}
+
 export async function decideRegularization(
   managerUserId: string, id: string, input: { decision?: string; managerNote?: string },
 ) {
@@ -876,6 +883,8 @@ export async function decideRegularization(
   if (!result) throw new AttendanceError(404, 'Pending regularization request not found');
 
   await applyRegularizationDecision(result, decision, decidedAt, managerNote);
+  // A decided request shows on the Time office pages at once, not after their cache's minute.
+  await forgetTimeOfficeFor(result.userId);
   return (await enrichRegularizations([result]))[0];
 }
 
@@ -924,6 +933,8 @@ export async function adminDecideRegularization(
   if (!result) throw new AttendanceError(409, 'Correction request has already been decided');
 
   await applyRegularizationDecision(result, decision, decidedAt, managerNote);
+  // A decided request shows on the Time office pages at once, not after their cache's minute.
+  await forgetTimeOfficeFor(result.userId);
   return (await enrichRegularizations([result]))[0];
 }
 
@@ -968,7 +979,8 @@ async function applyRegularizationDecision(
     await attendanceRecords().updateOne(
       { employeeId: result.employeeId, workDate: result.workDate },
       {
-        $set: { employeeId: result.employeeId, userId: result.userId, workDate: result.workDate, ...punchUpdate, ...outside },
+        // updatedAt too: the Punch log reloads only the rows changed since its last read.
+        $set: { employeeId: result.employeeId, userId: result.userId, workDate: result.workDate, ...punchUpdate, ...outside, updatedAt: decidedAt },
         $setOnInsert: {
           source: 'manual',
           sourceKey: `regularization|${result.employeeId}|${result.workDate}`,
