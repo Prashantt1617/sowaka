@@ -28,6 +28,9 @@ const REQUESTS: NavItem[] = [
   { key: 'overtime', label: 'Overtime' },
   { key: 'attendance', label: 'Attendance' },
   { key: 'oolcheckins', label: 'OOL check-ins' },
+  // Who is in, away or off, and every punch: read alongside the requests.
+  { key: 'companycalendar', label: 'Company calendar' },
+  { key: 'punchlog', label: 'Punch log' },
 ];
 // Support is its own section, like Claims: a desk of conversations handled by
 // the people given a Support role, not one more approval queue.
@@ -56,13 +59,6 @@ const SHIFTS: NavItem[] = [
   { key: 'shiftbulk', label: 'Bulk Assign' },
   { key: 'offices', label: 'Offices' },
   { key: 'faceid', label: 'Face check' },
-];
-// Reports sits above Payroll: it is what HR reads before a pay cycle is run,
-// and the attendance behind it is what the cycle is built from.
-const REPORTS: NavItem[] = [
-  { key: 'attendancereport', label: 'Attendance' },
-  { key: 'companycalendar', label: 'Company calendar' },
-  { key: 'punchlog', label: 'Punch log' },
 ];
 const PAYROLL: NavItem[] = [
   { key: 'payrolldash', label: 'Payroll Dashboard' },
@@ -107,12 +103,11 @@ const PLACEMENTS: NavItem[] = [
 ];
 export const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'PLACEMENTS', items: PLACEMENTS },
-  { title: 'REQUESTS', items: REQUESTS },
+  { title: 'TIME OFFICE', items: REQUESTS },
   { title: 'SUPPORT', items: SUPPORT },
   { title: 'PEOPLE', items: PEOPLE },
   { title: 'SHIFTS', items: SHIFTS },
   { title: 'PERFORMANCE', items: PERFORMANCE },
-  { title: 'REPORTS', items: REPORTS },
   { title: 'PAYROLL', items: PAYROLL },
   { title: 'CLAIMS', items: CLAIMS },
   { title: 'ENGAGEMENT', items: ENGAGEMENT },

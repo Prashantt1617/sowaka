@@ -21,10 +21,10 @@ import './people.css';
 type Metric = 'present' | 'late' | 'early' | 'half' | 'missed' | 'ool' | 'absent' | 'leave' | 'lwp';
 /** The colours the profile calendar gives the same statuses. */
 const METRICS: { key: Metric; label: string; phrase: string; bg: string; fg: string; look: [string, View]; head: string }[] = [
-  { key: 'present', label: 'Present', phrase: 'present', bg: 'var(--ok-bg)', fg: 'var(--ok)', look: ['Attendance report', 'attendancereport'], head: 'Punched in' },
-  { key: 'late', label: 'Late', phrase: 'late', bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)', look: ['Attendance report', 'attendancereport'], head: 'Punched in' },
-  { key: 'early', label: 'Left early', phrase: 'left early', bg: 'var(--warn-bg)', fg: 'var(--warn)', look: ['Attendance report', 'attendancereport'], head: 'Punched out' },
-  { key: 'half', label: 'Half day', phrase: 'on a half day', bg: 'var(--warn-bg)', fg: 'var(--warn)', look: ['Attendance report', 'attendancereport'], head: 'Worked' },
+  { key: 'present', label: 'Present', phrase: 'present', bg: 'var(--ok-bg)', fg: 'var(--ok)', look: ['Punch log', 'punchlog'], head: 'Punched in' },
+  { key: 'late', label: 'Late', phrase: 'late', bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)', look: ['Punch log', 'punchlog'], head: 'Punched in' },
+  { key: 'early', label: 'Left early', phrase: 'left early', bg: 'var(--warn-bg)', fg: 'var(--warn)', look: ['Punch log', 'punchlog'], head: 'Punched out' },
+  { key: 'half', label: 'Half day', phrase: 'on a half day', bg: 'var(--warn-bg)', fg: 'var(--warn)', look: ['Punch log', 'punchlog'], head: 'Worked' },
   { key: 'missed', label: 'Missed punch', phrase: 'with a missed punch', bg: 'var(--t-peach)', fg: 'var(--warn)', look: ['Attendance corrections', 'attendance'], head: 'What’s missing' },
   { key: 'ool', label: 'Out of location', phrase: 'out of location', bg: 'var(--t-sky)', fg: 'var(--t-sky-i)', look: ['OOL check-ins', 'oolcheckins'], head: 'Reason' },
   { key: 'absent', label: 'Absent', phrase: 'absent', bg: 'var(--bad-bg)', fg: 'var(--bad)', look: ['Attendance corrections', 'attendance'], head: 'What we have' },

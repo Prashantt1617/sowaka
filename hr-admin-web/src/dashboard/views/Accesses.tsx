@@ -62,7 +62,7 @@ type Role = { name: string; admin?: boolean; tabs: AccessKey[]; desc: string };
 const ROLES: Role[] = [
   { name: 'Admin', admin: true, tabs: ALL_TABS, desc: 'Everything, and People › Accesses: decides who sees what.' },
   { name: 'Operations Manager', tabs: ALL_TABS.filter((t) => t !== 'organisation'), desc: 'Everything except organisation settings and accesses.' },
-  { name: 'Time Reviewer', tabs: tabsOf('Overview', 'Requests', 'Reports'), desc: 'Leave, overtime, attendance corrections, OOL check-ins, the attendance report, company calendar and punch log. No pay.' },
+  { name: 'Time Reviewer', tabs: tabsOf('Overview', 'Time office'), desc: 'Leave, overtime, attendance corrections, OOL check-ins, company calendar and punch log. No pay.' },
   { name: 'Money Reviewer', tabs: tabsOf('Overview', 'Payroll', 'Claims', 'Salary details'), desc: 'Payroll, claims and what each employee earns. No leave or attendance.' },
 ];
 
