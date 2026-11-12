@@ -6,7 +6,10 @@
  * them in it), one upload per person and FY with parts replacing a combined
  * file and back, a bulk batch matched by PAN or employee ID (whole words, so
  * CS3 is not CS379), who may see and change what, and the HTTP routes with
- * real multipart uploads. File storage is faked: nothing reaches S3. It drops
+ * real multipart uploads, and the company switch (companies.features.form16:
+ * off, the app's list is empty, its files 404, home and the Tax page say
+ * form16Enabled false and Suwi tells HR it is hidden, while HR still uploads).
+ * File storage is faked: nothing reaches S3. It drops
  * and recreates its own database, and refuses any other. Run with
  *   env -u REDIS_URL npm run form16:check
  */
@@ -17,6 +20,11 @@ import { app } from '../app';
 import { authSessions, closeDb, companies, connectDb, employeePaymentDetails, getDb, payrollRuns, payslips, users } from '../config/db';
 import { env } from '../config/env';
 import { tabsForRequest } from '../models/dashboard-tabs';
+import { myPayrollHome } from '../services/employeePayroll.home';
+import { myTaxSummary } from '../services/employeePayroll.tax';
+import '../suwi/registry';
+import { contextFor, SUWI_AREAS, toolByName, type SuwiArea, type SuwiLevel } from '../suwi/tools';
+import type { User } from '../models/user.model';
 import { hashSessionToken } from '../services/auth.service';
 import { encryptField, fieldKeyConfigured } from '../services/fieldCrypto';
 import {
@@ -100,7 +108,8 @@ const blob = (text: string) => new Blob([Buffer.from(text)], { type: 'applicatio
     setForm16StorageForTests(fakeStorage);
 
     await companies().insertMany([
-      { id: ORG, name: 'Sowaka (scratch)', payrollEmployee: { appEnabled: true } },
+      // Form 16 shown in the app here; the switch's own section turns it off and on.
+      { id: ORG, name: 'Sowaka (scratch)', payrollEmployee: { appEnabled: true }, features: { form16: true } },
       { id: 'otherco', name: 'Other (scratch)', payrollEmployee: { appEnabled: true } },
     ] as never[]);
     await users().insertMany([
@@ -146,7 +155,7 @@ const blob = (text: string) => new Blob([Buffer.from(text)], { type: 'applicatio
     const empty = await myForm16('asha', nov);
     check('nothing filed: only this FY, pending, ready by 15 Jun 2027', empty.years.length === 1 && empty.years[0].fy === '2026-27'
       && empty.years[0].status === 'pending' && empty.years[0].readyBy === '2027-06-15' && empty.years[0].documents.length === 0, empty);
-    check('the filing tip is for FY 2025-26, last date 31 Jul 2026', empty.currentFy === '2026-27' && empty.filing.fy === LAST && empty.filing.lastDate === '2026-07-31', empty.filing);
+    check('the filing tip is for FY 2025-26, last date 31 Jul 2026', empty.currentFy === '2026-27' && empty.filing?.fy === LAST && empty.filing?.lastDate === '2026-07-31', empty.filing);
 
     // —— HR: one person's file ——
     console.log('one person\'s Form 16');
@@ -248,8 +257,8 @@ const blob = (text: string) => new Blob([Buffer.from(text)], { type: 'applicatio
     const eveJune = await myForm16('eve', new Date('2026-06-10T06:00:00Z'));
     check('on 10 Jun 2026 the same year is pending, ready by 15 Jun 2026', eveJune.years.map((y) => `${y.fy}:${y.status}:${y.readyBy}`).join() === '2026-27:pending:2027-06-15,2025-26:pending:2026-06-15', eveJune.years);
     const eveMarch = await myForm16('eve', march);
-    check('on 10 Mar 2026 this FY is 2025-26 (pending) and the tip is for 2024-25 (31 Jul 2025)', eveMarch.currentFy === LAST && eveMarch.filing.fy === '2024-25'
-      && eveMarch.filing.lastDate === '2025-07-31' && eveMarch.years.map((y) => `${y.fy}:${y.status}`).join() === '2025-26:pending', eveMarch);
+    check('on 10 Mar 2026 this FY is 2025-26 (pending) and the tip is for 2024-25 (31 Jul 2025)', eveMarch.currentFy === LAST && eveMarch.filing?.fy === '2024-25'
+      && eveMarch.filing?.lastDate === '2025-07-31' && eveMarch.years.map((y) => `${y.fy}:${y.status}`).join() === '2025-26:pending', eveMarch);
     const bala = await myForm16('bala', nov);
     check('a draft run is not pay: Bala\'s year is there only for his file', bala.years.map((y) => `${y.fy}:${y.status}`).join() === '2026-27:pending,2025-26:ready', bala.years);
     const nina = await myForm16('newbie', nov);
@@ -267,6 +276,43 @@ const blob = (text: string) => new Blob([Buffer.from(text)], { type: 'applicatio
     check('HR removes it: the row and the stored file', gone.removed.id === ashaDoc.id && stored.size === before - 1 && !(await form16Documents().findOne({ _id: new ObjectId(ashaDoc.id) })), gone);
     check('removing it again: 404', (await refusal(() => deleteForm16ForHr('hr', ashaDoc.id)))?.status === 404);
     check('the dashboard tab rule: payroll tabs only', JSON.stringify(tabsForRequest('POST', '/admin/payroll/form16/bulk')) === JSON.stringify(['salarydetails', 'payruns']), tabsForRequest('POST', '/admin/payroll/form16/bulk'));
+
+    // —— the company switch (companies.features.form16) ——
+    console.log('the switch');
+    const suwiAs = async (userId: string, tool: string, input: Record<string, unknown> = {}) => {
+      const user = (await users().findOne({ userId }, { projection: { _id: 0 } })) as unknown as User;
+      const levels = Object.fromEntries(SUWI_AREAS.map((a) => [a.key, 'answer'])) as Record<SuwiArea, SuwiLevel>;
+      return JSON.stringify((await toolByName(tool)!.run(contextFor(user, levels, '2026-11-11'), input)).data);
+    };
+    const promisesDownload = (text: string) => /employees download (it|them) in the app/i.test(text);
+    check('on: home and the Tax page say form16Enabled', (await myPayrollHome('asha', undefined, nov)).form16Enabled === true
+      && (await myTaxSummary('asha', undefined, nov)).form16Enabled === true);
+    check('on: HR\'s list says shownInApp', (await form16ForHr('hr', LAST, nov)).shownInApp === true);
+    check('on: Suwi\'s form16_status says employees download it in the app', promisesDownload(await suwiAs('hr', 'form16_status')));
+    await companies().updateOne({ id: ORG }, { $set: { 'features.form16': false } });
+    const hiddenList = await myForm16('bala', nov);
+    check('off: the app\'s list is empty, no tip, enabled false', hiddenList.enabled === false && hiddenList.years.length === 0 && hiddenList.filing === null, hiddenList);
+    const balaDoc = (await form16Documents().findOne({ org: ORG, userId: 'bala', fy: LAST }))!;
+    const hiddenFile = await refusal(() => myForm16File('bala', balaDoc._id.toHexString()));
+    check('off: their own file is not found (404 form16_off)', hiddenFile?.status === 404 && hiddenFile.reason === 'form16_off', hiddenFile);
+    check('off: home and the Tax page say form16Enabled false', (await myPayrollHome('asha', undefined, nov)).form16Enabled === false
+      && (await myTaxSummary('asha', undefined, nov)).form16Enabled === false);
+    const hrHidden = await form16ForHr('hr', LAST, nov);
+    check('off: HR still lists, shownInApp false', hrHidden.shownInApp === false && hrHidden.counts.withForm16 > 0, hrHidden.counts);
+    const ahead = await uploadForm16ForHr('hr', 'chitra', { fy: LAST, file: pdf('chitra-ahead.pdf') }, nov);
+    check('off: HR still uploads (ahead of turning it on)', ahead.fileName === 'chitra-ahead.pdf');
+    check('off: HR still opens a file', (await form16FileForHr('hr', ahead.id)).fileName === 'chitra-ahead.pdf');
+    for (const [tool, input] of [['form16_status', {}], ['payroll_term', { term: 'Form 16' }], ['tax_proofs_status', {}], ['dashboard_help', { question: 'how do I upload form 16' }], ['dashboard_help', { question: 'generate form 16' }]] as const) {
+      const said = await suwiAs('hr', tool, input);
+      check(`off: Suwi's ${tool}${'question' in input ? ` ("${input.question}")` : ''} says it is hidden in the app, never that employees download it`,
+        !promisesDownload(said) && /hidden in the app/.test(said), said.slice(0, 400));
+    }
+    await companies().updateOne({ id: ORG }, { $unset: { 'features.form16': '' } });
+    check('absent (never set): hidden too', (await myForm16('bala', nov)).enabled === false && (await myPayrollHome('asha', undefined, nov)).form16Enabled === false);
+    await companies().updateOne({ id: ORG }, { $set: { 'features.form16': true } });
+    const back = await myForm16('chitra', nov);
+    check('on again: the file uploaded while hidden is there', back.enabled === true && back.years.some((y) => y.documents.some((d) => d.id === ahead.id)), back.years);
+    await deleteForm16ForHr('hr', ahead.id);
 
     // —— over HTTP, with real multipart uploads ——
     console.log('over HTTP');
@@ -309,6 +355,18 @@ const blob = (text: string) => new Blob([Buffer.from(text)], { type: 'applicatio
     check('GET /payroll/form16/:id/file gives a link', file.status === 200 && typeof file.body.url === 'string' && file.body.fileName === 'bala.pdf', file.body);
     const notMine = await call('asha', 'GET', `/payroll/form16/${balaYear?.documents?.[0]?.id}/file`);
     check('another person\'s file: 404', notMine.status === 404, notMine);
+    await companies().updateOne({ id: ORG }, { $set: { 'features.form16': false } });
+    const offList = await call('bala', 'GET', '/payroll/form16');
+    check('switch off: GET /payroll/form16 lists nothing', offList.status === 200 && offList.body.form16?.enabled === false && offList.body.form16?.years?.length === 0, offList.body);
+    const offFile = await call('bala', 'GET', `/payroll/form16/${balaYear?.documents?.[0]?.id}/file`);
+    check('switch off: GET /payroll/form16/:id/file 404', offFile.status === 404 && offFile.body.details?.reason === 'form16_off', offFile.body);
+    const offHome = await call('bala', 'GET', '/payroll/home');
+    check('switch off: GET /payroll/home says form16Enabled false', offHome.status === 200 && offHome.body.form16Enabled === false, offHome.body.form16Enabled);
+    const offHr = await call('hr', 'GET', `/admin/payroll/form16?fy=${fy}`);
+    check('switch off: HR\'s GET /admin/payroll/form16 still lists, shownInApp false', offHr.status === 200 && offHr.body.shownInApp === false && offHr.body.employees?.length > 0, offHr.body.shownInApp);
+    await companies().updateOne({ id: ORG }, { $set: { 'features.form16': true } });
+    const onHome = await call('bala', 'GET', '/payroll/home');
+    check('switch on: GET /payroll/home says form16Enabled true at once', onHome.body.form16Enabled === true, onHome.body.form16Enabled);
     await companies().updateOne({ id: 'otherco' }, { $set: { 'payrollEmployee.appEnabled': false } });
     const off = await call('ohr', 'GET', '/payroll/form16');
     check('Payroll off for the company: 403 payroll_app_off', off.status === 403 && off.body.details?.reason === 'payroll_app_off', off.body);

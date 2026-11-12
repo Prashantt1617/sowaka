@@ -127,6 +127,17 @@ export async function payrollAppEnabled(org: string): Promise<boolean> {
   return payrollAppEnabledFrom(company?.payrollEmployee);
 }
 
+/**
+ * Whether the app shows Form 16 to this company's people
+ * (companies.features.form16): only when Sowaka has set it in the database,
+ * there is no dashboard control. Absent or false is hidden. Read fresh each
+ * time, so a switch flipped in the database shows on the next request.
+ */
+export async function form16AppEnabled(org: string): Promise<boolean> {
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, 'features.form16': 1 } });
+  return company?.features?.form16 === true;
+}
+
 export const PAYROLL_APP_OFF = () =>
   new EmployeePayrollError(403, 'Payroll is not switched on in the app for your company yet', { reason: 'payroll_app_off' });
 

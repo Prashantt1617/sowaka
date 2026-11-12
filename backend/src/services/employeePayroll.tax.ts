@@ -18,7 +18,7 @@ import { projectedTaxable } from '../shared/payroll/payroll-run.calculator';
 import { SalaryCalcResult } from '../shared/payroll/salary-calculator';
 import { TaxRegime, TdsConfigIncompleteError } from '../shared/payroll/tds';
 import {
-  askHr, dayOf, deadlinesOf, declarationDueOn, istPeriodOf, meOf, nextPeriod, parseFyParam, periodOf, proofsDueOn,
+  askHr, dayOf, deadlinesOf, declarationDueOn, form16AppEnabled, istPeriodOf, meOf, nextPeriod, parseFyParam, periodOf, proofsDueOn,
 } from './employeePayroll.common';
 import { splitAmountsFor } from './employeePayroll.split';
 import { PayrollConfigError, statutoryConfigForPeriod } from './payrollConfig.service';
@@ -155,13 +155,14 @@ export async function myTaxSummary(userId: string, fyRaw: unknown, now = new Dat
   const { org } = await meOf(userId);
   const fy = parseFyParam(fyRaw, now);
   const periods = fyPeriods(fy);
-  const [row, settings, deadlines, configs, paid, person] = await Promise.all([
+  const [row, settings, deadlines, configs, paid, person, form16Enabled] = await Promise.all([
     taxDeclarations().findOne({ org, userId, fy }, { projection: { _id: 0 } }),
     statutorySettingsFor(org),
     deadlinesOf(org),
     tdsConfigsFor(fy),
     releasedSlips(org, userId, periods[0], periods[11]),
     users().findOne({ userId }, { projection: { _id: 0, joiningDate: 1 } }),
+    form16AppEnabled(org),
   ]);
   // The regime as the declaration page shows it.
   const regime: TaxRegime = row?.regime ?? settings.tds?.defaultRegime ?? 'new';
@@ -230,5 +231,7 @@ export async function myTaxSummary(userId: string, fyRaw: unknown, now = new Dat
     monthlyNowPaise,
     months,
     estimate: coming.length > 0,
+    // Whether the page offers "Download Form 16": companies.features.form16, set by Sowaka.
+    form16Enabled,
   };
 }

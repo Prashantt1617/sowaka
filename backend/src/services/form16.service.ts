@@ -7,6 +7,12 @@
  * The app's Payroll › Downloads › Form 16 lists a person's years and opens a
  * file through a short-lived link.
  *
+ * The app shows it only where Sowaka has switched it on for the company
+ * (companies.features.form16, see form16AppEnabled): off, the person's list
+ * is empty and their files are not found, whatever is uploaded, so an app
+ * build that does not know the switch shows nothing either. HR's side works
+ * either way, so HR can upload ahead of turning it on.
+ *
  * Rows live in `form16_documents`, one per person, FY and part (A, B or
  * combined); the files in the receipts bucket under `…/form16/`.
  *
@@ -18,7 +24,9 @@ import { ObjectId } from 'mongodb';
 import { employeePaymentDetails, getDb, payrollRuns, payslips, users } from '../config/db';
 import { FORM16_PARTS, Form16Document, Form16Part } from '../models/form16.model';
 import { fyOf } from '../shared/payroll/tds';
-import { EmployeePayrollError, dayLabel, dayOf, istPeriodOf, meOf, parseFyParam, payrollViewerOrg, payrollViewerOrgFor } from './employeePayroll.common';
+import {
+  EmployeePayrollError, dayLabel, dayOf, form16AppEnabled, istPeriodOf, meOf, parseFyParam, payrollViewerOrg, payrollViewerOrgFor,
+} from './employeePayroll.common';
 import { decryptField, fieldKeyConfigured } from './fieldCrypto';
 import { deleteReimbursementReceipt, hasReceiptStorage, presignReceiptDownload, uploadForm16 } from './s3-receipt.service';
 
@@ -126,6 +134,8 @@ export async function myForm16(userId: string, now = new Date()) {
   const { org } = await meOf(userId);
   const thisFy = currentFy(now);
   const lastFy = previousFy(thisFy);
+  // Hidden in the app at this company: no years, no tip, nothing to open.
+  if (!(await form16AppEnabled(org))) return { enabled: false as const, currentFy: thisFy, filing: null, years: [] };
   const rows = (await form16Documents().find({ org, userId }).sort({ fy: -1, part: 1 }).toArray()) as StoredForm16[];
   const byFy = new Map<string, StoredForm16[]>();
   for (const row of rows) byFy.set(row.fy, [...(byFy.get(row.fy) ?? []), row]);
@@ -141,12 +151,13 @@ export async function myForm16(userId: string, now = new Date()) {
       const status = docs.length > 0 ? 'ready' : fy === thisFy || today <= readyBy ? 'pending' : 'missing';
       return { fy, status, readyBy, documents: docs.map(documentView) };
     });
-  return { currentFy: thisFy, filing: { fy: lastFy, lastDate: returnDueOn(lastFy) }, years };
+  return { enabled: true as const, currentFy: thisFy, filing: { fy: lastFy, lastDate: returnDueOn(lastFy) }, years };
 }
 
 /** A short-lived link to one of the person's own files. */
 export async function myForm16File(userId: string, documentId: string) {
   const { org } = await meOf(userId);
+  if (!(await form16AppEnabled(org))) throw new EmployeePayrollError(404, 'Form 16 not found', { reason: 'form16_off' });
   if (!ObjectId.isValid(documentId)) throw new EmployeePayrollError(404, 'Form 16 not found');
   const doc = (await form16Documents().findOne({ _id: new ObjectId(documentId), org, userId })) as StoredForm16 | null;
   if (!doc) throw new EmployeePayrollError(404, 'Form 16 not found');
@@ -187,9 +198,10 @@ export async function form16ForHr(viewerUserId: string, fyRaw: unknown, now = ne
   const org = await viewer(viewerUserId);
   const fy = fyRaw === undefined || fyRaw === '' ? previousFy(currentFy(now)) : parseFyParam(fyRaw, now);
   const fyEnd = new Date(`${fyStart(fy) + 1}-04-01T00:00:00Z`);
-  const [docs, paidUserIds] = await Promise.all([
+  const [docs, paidUserIds, shownInApp] = await Promise.all([
     form16Documents().find({ org, fy }).toArray() as Promise<StoredForm16[]>,
     payslips().distinct('userId', { org, period: { $gte: fyFirstPeriod(fy), $lte: fyLastPeriod(fy) } }),
+    form16AppEnabled(org),
   ]);
   // Everyone working here who had joined by the FY's end, anyone paid in it, anyone with a file.
   const people = await users().find(
@@ -223,6 +235,8 @@ export async function form16ForHr(viewerUserId: string, fyRaw: unknown, now = ne
     fy,
     readyBy: form16DueOn(fy),
     ended: fyStart(fy) < fyStart(currentFy(now)),
+    // Whether employees see Form 16 in the app (companies.features.form16, set by Sowaka in the database).
+    shownInApp,
     counts: { employees: employees.length, withForm16: employees.filter((e) => e.documents.length > 0).length },
     employees,
   };

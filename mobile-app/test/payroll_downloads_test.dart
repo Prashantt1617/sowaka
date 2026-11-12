@@ -233,6 +233,7 @@ void main() {
     _FakeDownloadsServer? server,
     String? startTab,
     List<String>? tickets,
+    bool form16 = true,
   }) async {
     tester.view.physicalSize = const Size(390 * 2, 844 * 2);
     tester.view.devicePixelRatio = 2;
@@ -250,6 +251,7 @@ void main() {
         home: Scaffold(
           body: PayrollDownloadsScreen(
             startTab: startTab,
+            form16: form16,
             savePdf: (bytes, name) async => saved.add((name, bytes)),
             payroll: PayrollScreen(
               api: api,
@@ -519,6 +521,47 @@ void main() {
     await settle(tester);
     expect(find.text('Ready by 15 Jun 2027'), findsOneWidget);
     expect(server.calls.where((c) => c == 'GET /payroll/form16').length, 2);
+  });
+
+  group('the Form 16 switch off (the default)', () {
+    testWidgets('payslips only: no tabs, Form 16 never asked for', (
+      tester,
+    ) async {
+      final server = await pumpDownloads(tester, form16: false);
+      expect(server.calls, ['GET /payslips/mine?limit=24']);
+      expect(find.byKey(const ValueKey('downloads-tabs')), findsNothing);
+      expect(find.text('Form 16'), findsNothing);
+      expect(find.text('September 2026'), findsOneWidget);
+      expect(find.text('Download all as one PDF'), findsOneWidget);
+      expect(find.byKey(const ValueKey('form16-tip')), findsNothing);
+    });
+
+    testWidgets('asked to open on Form 16, it opens on payslips', (
+      tester,
+    ) async {
+      final server = await pumpDownloads(
+        tester,
+        form16: false,
+        startTab: 'form16',
+      );
+      expect(server.calls, ['GET /payslips/mine?limit=24']);
+      expect(find.text('Form 16'), findsNothing);
+      expect(find.text('September 2026'), findsOneWidget);
+    });
+
+    testWidgets('the ticket is about a payslip', (tester) async {
+      final opened = <String?>[];
+      void opener({String? about}) => opened.add(about);
+      registerSupportTicketOpener(opener);
+      addTearDown(() => unregisterSupportTicketOpener(opener));
+      await pumpDownloads(tester, form16: false);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('downloads-raise-ticket')),
+      );
+      await tester.tap(find.byKey(const ValueKey('downloads-raise-ticket')));
+      await settle(tester);
+      expect(opened, ['I can\'t find a payslip:']);
+    });
   });
 
   group('"Can\'t find a document?"', () {

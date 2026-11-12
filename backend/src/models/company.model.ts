@@ -156,6 +156,13 @@ export interface CompanyFeatures {
    * hold the mic, let go and the others hear it. Pool Table first.
    */
   gameVoice?: boolean;
+  /**
+   * Form 16 in the app (Payroll › Downloads › Form 16, the Tax page's
+   * "Download Form 16"). Off: the app hides it and GET /payroll/form16 lists
+   * nothing; HR can still upload on Payroll Runs › Form 16 ahead of turning it
+   * on. Set with `npm run form16:switch` (src/scripts/form16-switch.ts).
+   */
+  form16?: boolean;
 }
 
 /** Versions by store: the App Store and Play Store builds ship separately. */

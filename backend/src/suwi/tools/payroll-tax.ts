@@ -5,11 +5,12 @@
 // inbox and email). The reminder cannot be taken back once sent.
 import { salaryStructures, taxDeclarations, users } from '../../config/db';
 import { notifyUsers } from '../../services/notification.service';
+import { form16AppEnabled } from '../../services/employeePayroll.common';
 import { form16ForHr } from '../../services/form16.service';
 import { payrollAccessOf } from '../../services/payrollAccess.service';
 import { defineExecutor, propose } from '../proposals';
 import { defineTools, str, SuwiContext } from '../tools';
-import { fyOfPeriod } from './payroll-common';
+import { FORM16_HIDDEN_NOTE, form16InAppLine, fyOfPeriod } from './payroll-common';
 
 const ACTIVE = { lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } as const;
 const fyFrom = (v: unknown, today: string) => (typeof v === 'string' && /^\d{4}-\d{2}$/.test(v) ? v : fyOfPeriod(today.slice(0, 7)));
@@ -41,7 +42,7 @@ defineTools(
     api: { method: 'GET', path: '/admin/payroll/employees/x/tax-declaration' },
     async run(ctx, i) {
       const fy = fyFrom(i.fy, ctx.today);
-      const rows = await proofStatus(ctx, fy);
+      const [rows, shownInApp] = await Promise.all([proofStatus(ctx, fy), form16AppEnabled(ctx.org)]);
       const count = (s: Row['status']) => rows.filter((r) => r.status === s).length;
       const fyEnd = `${Number(fy.slice(0, 4)) + 1}-03-31`;
       return {
@@ -50,7 +51,7 @@ defineTools(
           counts: { noDeclaration: count('no declaration'), declaredNoProofs: count('declared, no proofs'), proofsSubmitted: count('proofs submitted'), proofsVerified: count('proofs verified') },
           needAttention: rows.filter((r) => r.status === 'no declaration' || r.status === 'declared, no proofs').slice(0, 50),
           submittedAwaitingCheck: rows.filter((r) => r.status === 'proofs submitted').slice(0, 30),
-          form16: `For FY ${fy} Form 16 is due to employees by 15 June ${Number(fy.slice(0, 4)) + 1}. Sowaka does not generate it (Part A from TRACES, Part B from the payroll software or CA); HR uploads the PDFs on Payroll Runs › Form 16 and employees download them in the app under Payroll › Downloads › Form 16. For who has one uploaded, use form16_status.`,
+          form16: `For FY ${fy} Form 16 is due to employees by 15 June ${Number(fy.slice(0, 4)) + 1}. Sowaka does not generate it (Part A from TRACES, Part B from the payroll software or CA); HR uploads the PDFs on Payroll Runs › Form 16. ${form16InAppLine(shownInApp)} For who has one uploaded, use form16_status.`,
           note: `Declarations are entered by HR on each person's Salary details (Tax declaration). Without one, the TDS engine uses the company's default regime and no deductions. The financial year ends ${fyEnd}.`,
         },
         links: [{ label: 'Open payroll runs', view: 'payruns' }, { label: 'Open employees', view: 'employees' }],
@@ -62,7 +63,7 @@ defineTools(
     area: 'payroll',
     payroll: true,
     label: (i) => `Form 16 uploads for FY ${i.fy ?? 'last year'}`,
-    description: "For a financial year (default: the last one that ended, like 2025-26): who should get a Form 16 (paid in that year, or working here by its end) and whether HR has uploaded theirs, with who is still missing one and the due date (15 June after the year). Sowaka does not generate Form 16: HR uploads the PDFs on Payroll Runs › Form 16 (one by one, or in bulk with file names carrying the PAN or employee ID) and employees download them in the app under Payroll › Downloads › Form 16. Use for 'who is missing Form 16', 'Form 16 status', 'has X got their Form 16'.",
+    description: "For a financial year (default: the last one that ended, like 2025-26): who should get a Form 16 (paid in that year, or working here by its end) and whether HR has uploaded theirs, with who is still missing one and the due date (15 June after the year). Sowaka does not generate Form 16: HR uploads the PDFs on Payroll Runs › Form 16 (one by one, or in bulk with file names carrying the PAN or employee ID). Employees download them in the app under Payroll › Downloads › Form 16 only where the company has Form 16 switched on in the app (shownInApp); otherwise it is hidden in the app and HR can upload ahead. Use for 'who is missing Form 16', 'Form 16 status', 'has X got their Form 16'.",
     input_schema: { type: 'object', properties: { fy: { type: 'string', description: 'Like 2025-26' } } },
     api: { method: 'GET', path: '/admin/payroll/form16' },
     async run(ctx, i) {
@@ -75,7 +76,9 @@ defineTools(
           counts: { shouldHaveForm16: status.counts.employees, uploaded: status.counts.withForm16, missing: missing.length },
           missing: missing.slice(0, 50).map(person),
           uploaded: status.employees.filter((e) => e.documents.length > 0).slice(0, 30).map(person),
-          note: 'Sowaka does not generate Form 16 (Part A from TRACES after the Q4 TDS return, Part B from the payroll software or CA). Upload on Payroll Runs › Form 16; employees download in the app under Payroll › Downloads › Form 16.',
+          shownInApp: status.shownInApp,
+          note: `Sowaka does not generate Form 16 (Part A from TRACES after the Q4 TDS return, Part B from the payroll software or CA). Upload on Payroll Runs › Form 16. ${form16InAppLine(status.shownInApp)}`,
+          ...(status.shownInApp ? {} : { inApp: FORM16_HIDDEN_NOTE }),
         },
         links: [{ label: 'Open payroll runs', view: 'payruns' }],
       };

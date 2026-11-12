@@ -1396,7 +1396,8 @@ void main() {
         'Earnings',
         'Annual',
         'Downloads',
-        'Payslips, F-16',
+        // Form 16 hidden: the home sends no switch.
+        'Payslips',
         'EPF',
         'PF balance',
         'Support desk',
@@ -1682,6 +1683,47 @@ void main() {
       await opens(card('payroll-qa-earnings'), 'payroll-earnings');
       await opens(card('payroll-qa-downloads'), 'payroll-downloads');
       await opens(card('payroll-qa-epf'), 'payroll-epf');
+    });
+
+    group('the Form 16 switch', () {
+      for (final (name, flag) in [
+        ('not sent (an older server)', null),
+        ('off', false),
+      ]) {
+        testWidgets('$name: Downloads is payslips only', (tester) async {
+          final server = FakePayrollServer()..form16Enabled = flag;
+          await pumpPayroll(tester, server: server);
+          tester.view.physicalSize = const Size(390 * 2, 1400 * 2);
+          await tester.pump();
+          expect(
+            find.descendant(
+              of: card('payroll-qa-downloads'),
+              matching: find.text('Payslips'),
+            ),
+            findsOneWidget,
+          );
+          expect(find.text('Payslips, F-16'), findsNothing);
+          await tap(tester, card('payroll-qa-downloads'));
+          expect(
+            find.byKey(const ValueKey('payroll-downloads')),
+            findsOneWidget,
+          );
+          expect(find.byKey(const ValueKey('downloads-tabs')), findsNothing);
+          expect(find.text('Form 16'), findsNothing);
+          expect(server.calls, isNot(contains('GET /payroll/form16')));
+        });
+      }
+
+      testWidgets('on: "Payslips, F-16" and the Form 16 tab', (tester) async {
+        final server = FakePayrollServer()..form16Enabled = true;
+        await pumpPayroll(tester, server: server);
+        tester.view.physicalSize = const Size(390 * 2, 1400 * 2);
+        await tester.pump();
+        expect(find.text('Payslips, F-16'), findsOneWidget);
+        await tap(tester, card('payroll-qa-downloads'));
+        expect(find.byKey(const ValueKey('downloads-tabs')), findsOneWidget);
+        expect(find.text('Form 16'), findsOneWidget);
+      });
     });
   });
 

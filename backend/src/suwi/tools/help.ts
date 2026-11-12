@@ -1,7 +1,9 @@
 // Where is it, and how does it work: answered only from content/help.ts, so
 // Suwi never describes a page or a feature Sowaka doesn't have.
+import { form16AppEnabled } from '../../services/employeePayroll.common';
 import { defineTools, str } from '../tools';
 import { HOW_TOS, NOT_SUPPORTED, VIEWS } from '../content/help';
+import { form16HiddenText } from './payroll-common';
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 /** Words too common to point anywhere on their own. */
@@ -27,7 +29,7 @@ defineTools({
   description: 'Where something is in the HR dashboard and how it works: what each page does, step-by-step how-tos (add a holiday, assign a shift, add an employee, import, run payroll, set up reimbursement types, approvals, leave types, salary, access) and a list of what Sowaka does not do. Answer such questions ONLY from what this returns; if nothing matches, say Sowaka does not have it.',
   input_schema: { type: 'object', properties: { question: { type: 'string', description: 'What they asked, in their words' }, view: { type: 'string', description: 'A page key to describe, if known' } } },
   api: { method: 'GET', path: '/admin/employees' },
-  async run(_ctx, i) {
+  async run(ctx, i) {
     const question = str(i.question, 300);
     const view = str(i.view, 40);
     const pages = VIEWS.filter((v) => (view && v.view === view) || (question && score(question, v.keywords, v.title) > 0))
@@ -40,12 +42,17 @@ defineTools({
     // A question that is mainly about something Sowaka doesn't do gets that answer, not a loosely related page.
     const onlyUnsupported = unsupported.length > 0 && unsupported[0].s >= best;
     const first = onlyUnsupported ? undefined : (howTos[0] && howTos[0].s >= (pages[0]?.s ?? 0) ? howTos[0] : pages[0]);
+    // Form 16 hidden in the app at this company (companies.features.form16): no entry says employees can download it.
+    const listsAll = (!pages.length && !howTos.length) || onlyUnsupported;
+    const said = [...(onlyUnsupported ? [] : howTos.flatMap((h) => h.steps)), ...unsupported.map((n) => n.what), ...(listsAll ? NOT_SUPPORTED.map((n) => n.what) : [])];
+    const mentionsForm16 = said.some((t) => /download/i.test(t) && /Form 16/.test(t));
+    const say = mentionsForm16 && !(await form16AppEnabled(ctx.org)) ? form16HiddenText : (t: string) => t;
     return {
       data: {
         pages: onlyUnsupported ? [] : pages.map(({ view: key, title, section, what }) => ({ view: key, title, section, what })),
-        howTos: onlyUnsupported ? [] : howTos.map(({ key, title, view: key2, steps }) => ({ key, title, view: key2, steps })),
-        notSupported: unsupported.length ? unsupported.map((n) => n.what) : undefined,
-        allNotSupported: (!pages.length && !howTos.length) || onlyUnsupported ? NOT_SUPPORTED.map((n) => n.what) : undefined,
+        howTos: onlyUnsupported ? [] : howTos.map(({ key, title, view: key2, steps }) => ({ key, title, view: key2, steps: steps.map(say) })),
+        notSupported: unsupported.length ? unsupported.map((n) => say(n.what)) : undefined,
+        allNotSupported: listsAll ? NOT_SUPPORTED.map((n) => say(n.what)) : undefined,
         note: onlyUnsupported
           ? 'Sowaka does not do this (see notSupported). Say so plainly in one or two sentences; do not suggest a workaround inside Sowaka unless one is listed.'
           : pages.length || howTos.length

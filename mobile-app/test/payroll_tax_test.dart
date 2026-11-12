@@ -60,6 +60,10 @@ class _FakeTaxServer {
   bool locked = false;
   bool notConfigured = false;
 
+  /// The company's Form 16 switch as the server sends it; null: a server
+  /// that does not send it.
+  bool? form16Enabled = true;
+
   /// Paid each month April to September, and the monthly figure from
   /// October on, by regime: ₹8,467 × 6 + ₹7,600 × 6 = ₹96,400 on the new.
   static const _paid = 846700;
@@ -104,6 +108,7 @@ class _FakeTaxServer {
         },
     ],
     'estimate': true,
+    if (form16Enabled != null) 'form16Enabled': form16Enabled,
   };
 
   Map<String, dynamic> declaration() => {
@@ -149,6 +154,24 @@ class _FakeTaxServer {
           'locked': false,
           'dueOn': '2027-01-31',
           'items': <Object>[],
+        },
+      });
+    }
+    if (request.method == 'GET' && path == '/payroll/form16') {
+      return _json({
+        'success': true,
+        'form16': {
+          'enabled': true,
+          'currentFy': '2026-27',
+          'filing': {'fy': '2025-26', 'lastDate': '2026-07-31'},
+          'years': [
+            {
+              'fy': '2026-27',
+              'status': 'pending',
+              'readyBy': '2027-06-15',
+              'documents': <Object>[],
+            },
+          ],
         },
       });
     }
@@ -456,5 +479,36 @@ void main() {
     await tap(tester, find.byKey(const ValueKey('tax-regime-old')));
     expect(find.byKey(const ValueKey('tax-regime-save')), findsNothing);
     expect(server.bodies, isEmpty);
+  });
+  group('Form 16 switch', () {
+    testWidgets('on: "Download Form 16" opens Downloads on its tab', (
+      tester,
+    ) async {
+      final server = await pumpTax(tester);
+      await tap(tester, find.byKey(const ValueKey('tax-form16')));
+      expect(find.byKey(const ValueKey('payroll-downloads')), findsOneWidget);
+      expect(find.byKey(const ValueKey('downloads-tabs')), findsOneWidget);
+      expect(server.calls, contains('GET /payroll/form16'));
+      expect(find.text('Ready by 15 Jun 2027'), findsOneWidget);
+    });
+
+    for (final (name, flag) in [
+      ('off', false),
+      ('not sent (an older server)', null),
+    ]) {
+      testWidgets('$name: no Form 16 on the page', (tester) async {
+        final server = _FakeTaxServer()..form16Enabled = flag;
+        await pumpTax(tester, server);
+        expect(find.text('MANAGE'), findsOneWidget);
+        expect(find.text('Tax regime'), findsOneWidget);
+        expect(find.byKey(const ValueKey('tax-form16')), findsNothing);
+        expect(find.text('Download Form 16'), findsNothing);
+        expect(
+          find.text('You need Form 16 to file your income tax return'),
+          findsNothing,
+        );
+        expect(server.calls, isNot(contains('GET /payroll/form16')));
+      });
+    }
   });
 }

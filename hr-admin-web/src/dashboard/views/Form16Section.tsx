@@ -182,6 +182,12 @@ export function Form16Section() {
               ? `${counts.uploaded} of ${counts.all} employees have a Form 16 for FY ${fy} · due by ${dateLabel(list.data.readyBy)}`
               : `Each employee's Form 16 for FY ${fy}, downloaded in the app under Payroll › Downloads`}
           </div>
+          {/* The company's switch is set by Sowaka in the database: read-only here, uploads work either way. */}
+          {ready && list.data?.shownInApp === false && (
+            <div style={{ marginTop: 8 }} title="Employees can't see Form 16 in the app yet. You can still upload ahead; ask Sowaka to switch it on.">
+              <Pill label="Hidden in the app for this company" tone={STAT.Cancelled} />
+            </div>
+          )}
         </div>
         <SelectBox value={fy} onChange={setFy}>
           {fyOptions.map((f) => <option key={f} value={f}>FY {f}</option>)}
