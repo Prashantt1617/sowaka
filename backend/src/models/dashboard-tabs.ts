@@ -83,6 +83,9 @@ const RULES: Rule[] = [
   { path: /^\/admin\/reimbursements/, read: ['reimbursements', 'overview'], write: ['reimbursements', 'overview'] },
   { path: /^\/admin\/regularizations/, read: ['attendance', 'overview'], write: ['attendance', 'overview'] },
   { path: /^\/admin\/out-of-location/, read: ['oolcheckins'] },
+  // The punch log goes with the attendance pages; the pay cycle with any page that counts against payroll.
+  { path: /^\/admin\/punch-log/, read: ['attendancereport', 'attendance', 'oolcheckins'] },
+  { path: /^\/admin\/pay-cycle/, read: ['attendance', 'attendancereport', 'oolcheckins', 'payruns'] },
   { path: /^\/admin\/reports\/attendance/, read: ['attendancereport', 'overview', 'employees', 'payruns'] },
   // Set-up
   // Face ID: who has enrolled and the check log are biometric records, so even reading needs the tab.

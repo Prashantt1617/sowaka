@@ -61,6 +61,8 @@ const SHIFTS: NavItem[] = [
 // and the attendance behind it is what the cycle is built from.
 const REPORTS: NavItem[] = [
   { key: 'attendancereport', label: 'Attendance' },
+  { key: 'companycalendar', label: 'Company calendar' },
+  { key: 'punchlog', label: 'Punch log' },
 ];
 const PAYROLL: NavItem[] = [
   { key: 'payrolldash', label: 'Payroll Dashboard' },

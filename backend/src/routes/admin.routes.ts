@@ -14,6 +14,8 @@ import {
   deleteOfficeHandler,
   listOfficesHandler,
   listOutOfLocation,
+  payCycleHandler,
+  punchLogHandler,
   saveOfficeHandler,
   employeeCalendarHandler,
   employeeLeaveBalanceHandler,
@@ -84,6 +86,8 @@ adminRouter.get('/reimbursements', listReimbursements);
 adminRouter.get('/regularizations', listRegularizations);
 // Punches taken away from every office — what HR reads as "OOL check-ins".
 adminRouter.get('/out-of-location', listOutOfLocation);
+adminRouter.get('/punch-log', punchLogHandler);
+adminRouter.get('/pay-cycle', payCycleHandler);
 // Face ID: the company's switches, who has set it up, resets and the check log.
 adminRouter.get('/face-id', adminFaceOverview);
 adminRouter.patch('/face-id/settings', adminFaceSettings);
