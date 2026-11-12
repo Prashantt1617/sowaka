@@ -1,6 +1,7 @@
 // Form 16 on the dashboard: HR uploads each employee's PDF for a FY (Sowaka
 // does not generate it), one at a time or as a batch named by PAN or
-// employee ID. The app shows them under Payroll › Downloads › Form 16.
+// employee ID. The app shows them under Payroll › Downloads › Form 16 once
+// Sowaka switches Form 16 on for the company (shownInApp).
 import { api, apiUpload } from './http';
 
 export type Form16Part = 'A' | 'B' | 'combined';
@@ -28,6 +29,12 @@ export type Form16ListDTO = {
   readyBy: string;
   /** Uploads are taken only for a FY that has ended. */
   ended: boolean;
+  /**
+   * Whether employees see Form 16 in the app: the company's switch
+   * (companies.features.form16), set by Sowaka in the database, not here.
+   * Absent from an older server: treated as shown.
+   */
+  shownInApp?: boolean;
   counts: { employees: number; withForm16: number };
   employees: Form16EmployeeDTO[];
 };

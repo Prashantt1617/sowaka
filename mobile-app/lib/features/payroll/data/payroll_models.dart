@@ -351,7 +351,12 @@ class PayrollHome {
     this.proofs,
     this.cards = PayrollHomeCards.none,
     this.setup,
+    this.form16Enabled = false,
   });
+
+  /// The company shows Form 16 in the app (Downloads' Form 16 tab): Sowaka
+  /// switches it on per company. False when the server does not say.
+  final bool form16Enabled;
 
   /// "Set up your payroll"; null from a server without it.
   final PayrollSetup? setup;
@@ -391,6 +396,7 @@ class PayrollHome {
           ? PayrollSetup.fromJson(setup)
           : null,
       cards: PayrollHomeCards.fromJson(_map(json['cards'])),
+      form16Enabled: _bool(json['form16Enabled']),
       hasSplit: json['split'] is Map,
       proofs: proofs is Map<String, dynamic>
           ? PayrollProofsSummary.fromJson(proofs)
@@ -1787,9 +1793,14 @@ class TaxSummary {
     this.paidThroughMonth,
     this.monthlyNowPaise,
     this.estimate = true,
+    this.form16Enabled = false,
   });
 
   final String fy;
+
+  /// The company shows Form 16 in the app: the page offers "Download Form
+  /// 16". False when the server does not say.
+  final bool form16Enabled;
 
   /// "new" | "old".
   final String regime;
@@ -1842,6 +1853,7 @@ class TaxSummary {
     monthlyNowPaise: _paiseOrNull(json['monthlyNowPaise']),
     months: _list(json['months']).map(TaxMonth.fromJson).toList(),
     estimate: json['estimate'] != false,
+    form16Enabled: _bool(json['form16Enabled']),
   );
 }
 

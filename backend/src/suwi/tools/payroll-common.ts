@@ -113,3 +113,19 @@ export const showLines = (lines: SlipLine[]) => lines.map((l) => ({ code: l.code
 export const delta = (paise: number) => (paise === 0 ? 'no change' : `${paise > 0 ? '+' : '−'}${rupees(Math.abs(paise))}`);
 
 export const pct = (part: number, whole: number) => (whole ? Math.round((part / whole) * 1000) / 10 : 0);
+
+/**
+ * What to tell HR about Form 16 in the app at their company
+ * (companies.features.form16, switched on by Sowaka in the database, not on
+ * the dashboard). Off: never say employees can download it.
+ */
+export const FORM16_HIDDEN_NOTE =
+  'Form 16 is hidden in the app for this company: employees cannot see or download it yet, even once uploaded. Sowaka switches it on (there is no dashboard setting); HR can upload ahead of that.';
+export const form16InAppLine = (shownInApp: boolean) =>
+  shownInApp ? 'Employees download them in the app under Payroll › Downloads › Form 16.' : FORM16_HIDDEN_NOTE;
+/** Static help text that says employees download Form 16 in the app, saying instead that it is hidden. */
+export const form16HiddenText = (text: string) =>
+  text
+    .replace(/,? and employees download them in the app under Payroll › Downloads › Form 16\./g, `. ${FORM16_HIDDEN_NOTE}`)
+    .replace(/Employees download it in the app under Payroll › Downloads › Form 16\./g, FORM16_HIDDEN_NOTE)
+    .replace(/ and employees download them in the app/g, '; it is hidden in the app for this company until Sowaka switches it on');

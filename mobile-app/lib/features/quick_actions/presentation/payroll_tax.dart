@@ -177,27 +177,30 @@ class _TaxSummaryPageState extends State<_TaxSummaryPage> {
                 ),
               ),
             ),
-          const SizedBox(height: 12),
-          _TaxCard(
-            child: _TaxManageRow(
-              key: const ValueKey('tax-form16'),
-              picture: ClipRect(
-                child: Image.asset(
-                  'assets/icons/payroll_tax_form16.png',
-                  width: 25,
-                  height: 25,
-                  fit: BoxFit.cover,
+          // Form 16 only where the company shows it in the app.
+          if (tax.form16Enabled) ...[
+            const SizedBox(height: 12),
+            _TaxCard(
+              child: _TaxManageRow(
+                key: const ValueKey('tax-form16'),
+                picture: ClipRect(
+                  child: Image.asset(
+                    'assets/icons/payroll_tax_form16.png',
+                    width: 25,
+                    height: 25,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                title: 'Download Form 16',
+                subtitle: 'You need Form 16 to file your income tax return',
+                trailing: const _TaxChevron(),
+                onTap: () => _pushPayroll<void>(
+                  context,
+                  const _DownloadsPage(startTab: 'form16', form16: true),
                 ),
               ),
-              title: 'Download Form 16',
-              subtitle: 'You need Form 16 to file your income tax return',
-              trailing: const _TaxChevron(),
-              onTap: () => _pushPayroll<void>(
-                context,
-                const _DownloadsPage(startTab: 'form16'),
-              ),
             ),
-          ),
+          ],
         ],
       ],
     );

@@ -43,6 +43,10 @@ class FakePayrollServer {
   /// The home's "Set up your payroll" block; null sends none (all set up).
   Map<String, dynamic>? setup;
 
+  /// The company's Form 16 switch as the home sends it; null sends none
+  /// (an older server), which the app reads as hidden.
+  bool? form16Enabled;
+
   /// Every request, as "METHOD /path?query".
   final calls = <String>[];
 
@@ -314,6 +318,7 @@ class FakePayrollServer {
     'success': true,
     'period': period,
     'fy': '2026-27',
+    if (form16Enabled != null) 'form16Enabled': form16Enabled,
     'hasSalaryStructure': true,
     if (!statutorySetUp) 'salary': null,
     if (!statutorySetUp)

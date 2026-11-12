@@ -16,7 +16,7 @@ import { employeeDayStatuses, joinedOn } from './attendance-report.service';
 import { correctionTriggerFor } from './attendance.service';
 import { policyForUser, withPolicyMemo } from './shift.service';
 import {
-  EmployeePayrollError, askHr, dayOf, lastDayOf, lockedPeriods, meOf, parsePeriodParam, payrollAppEnabled, periodOf,
+  EmployeePayrollError, askHr, dayOf, form16AppEnabled, lastDayOf, lockedPeriods, meOf, parsePeriodParam, payrollAppEnabled, periodOf,
 } from './employeePayroll.common';
 import { myDeclaration, myProofs } from './employeePayroll.declaration';
 import { myFbp } from './employeePayroll.fbp';
@@ -429,7 +429,7 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
   const { period, range, problem } = await homePayPeriod(org, periodRaw, now);
   const punchesPeriod = period < periodOf(now) ? period : periodOf(now);
   const released = await myReleasedPayslipFor(userId, period);
-  const [pay, punches, split, declaration, proofs, fbp] = await Promise.all([
+  const [pay, punches, split, declaration, proofs, fbp, form16Enabled] = await Promise.all([
     released ? Promise.resolve({ salary: fromPayslip(released) })
       : range ? estimateFor(org, userId, period, range, now)
         : payPeriodNotSetUp(org, userId, problem ?? 'the pay period is not set up'),
@@ -449,6 +449,7 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
       if (error instanceof EmployeePayrollError && error.statusCode === 404) return null;
       throw error;
     }),
+    form16AppEnabled(org),
   ]);
 
   const salary = pay && 'salary' in pay ? pay.salary : null;
@@ -524,6 +525,8 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
     appEnabled: true as const,
     period,
     fy,
+    // Whether the app shows Form 16 (Downloads' tab, the Tax page's row): companies.features.form16, set by Sowaka.
+    form16Enabled,
     // The days this pay period pays for and the base days its loss of pay is divided by; null when the pay cycle is not usable.
     payPeriod: range ? { period, from: range.from, to: range.to, baseDays: range.baseDays } : null,
     hasSalaryStructure: Boolean(salary || salaryNotSetUp),

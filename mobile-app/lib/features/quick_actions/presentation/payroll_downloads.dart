@@ -32,6 +32,7 @@ class PayrollDownloadsScreen extends StatelessWidget {
     required this.payroll,
     this.startTab,
     this.savePdf,
+    this.form16 = false,
   });
 
   final PayrollScreen payroll;
@@ -40,6 +41,9 @@ class PayrollDownloadsScreen extends StatelessWidget {
   final String? startTab;
   final PayrollPdfSaver? savePdf;
 
+  /// The company shows Form 16 in the app ([PayrollHome.form16Enabled]).
+  final bool form16;
+
   @override
   Widget build(BuildContext context) => _PayrollScope(
     screen: payroll,
@@ -47,7 +51,7 @@ class PayrollDownloadsScreen extends StatelessWidget {
       savePdf: savePdf ?? _sharePdf,
       child: Navigator(
         onGenerateRoute: (_) => MaterialPageRoute<void>(
-          builder: (_) => _DownloadsPage(startTab: startTab),
+          builder: (_) => _DownloadsPage(startTab: startTab, form16: form16),
         ),
       ),
     ),
@@ -60,18 +64,26 @@ class PayrollDownloadsScreen extends StatelessWidget {
 /// Payslip PDFs are drawn on the phone ([buildPayslipPdf]), as the payslip
 /// page's own download is; Form 16 is a file HR uploaded, fetched through a
 /// short-lived link.
+///
+/// Form 16 is there only when the company shows it in the app ([form16],
+/// from [PayrollHome.form16Enabled] or [TaxSummary.form16Enabled]): Sowaka
+/// switches it on per company. Without it the page is payslips alone, with
+/// no tabs, and never asks for Form 16.
 class _DownloadsPage extends StatefulWidget {
-  const _DownloadsPage({this.startTab});
+  const _DownloadsPage({this.startTab, this.form16 = false});
 
   /// "payslips" (the default) or "form16".
   final String? startTab;
+
+  /// The company shows Form 16 in the app.
+  final bool form16;
 
   @override
   State<_DownloadsPage> createState() => _DownloadsPageState();
 }
 
 class _DownloadsPageState extends State<_DownloadsPage> {
-  late bool _form16 = widget.startTab == 'form16';
+  late bool _form16 = widget.form16 && widget.startTab == 'form16';
 
   Future<(PayslipCompany, List<Payslip>)>? _payslips;
   Future<Form16Overview>? _form16s;
@@ -99,7 +111,7 @@ class _DownloadsPageState extends State<_DownloadsPage> {
   }
 
   void _pick(bool form16) {
-    if (form16 == _form16) return;
+    if (form16 == _form16 || (form16 && !widget.form16)) return;
     setState(() {
       _form16 = form16;
       _load();
@@ -217,14 +229,16 @@ class _DownloadsPageState extends State<_DownloadsPage> {
       key: const ValueKey('payroll-downloads'),
       title: 'Downloads',
       children: [
-        LeaveViewSwitch(
-          key: const ValueKey('downloads-tabs'),
-          history: _form16,
-          firstLabel: 'Payslips',
-          secondLabel: 'Form 16',
-          onChanged: _pick,
-        ),
-        const SizedBox(height: 16),
+        if (widget.form16) ...[
+          LeaveViewSwitch(
+            key: const ValueKey('downloads-tabs'),
+            history: _form16,
+            firstLabel: 'Payslips',
+            secondLabel: 'Form 16',
+            onChanged: _pick,
+          ),
+          const SizedBox(height: 16),
+        ],
         if (_form16) _form16Tab() else _payslipsTab(),
         if (raiseTicket != null || canRaiseSupportTicket) ...[
           const SizedBox(height: 16),

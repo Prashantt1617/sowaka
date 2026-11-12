@@ -15,7 +15,7 @@ import { tdsConfigsFor } from '../../services/tds.service';
 import { form16ForHr } from '../../services/form16.service';
 import { findPayrollTerm, PAYROLL_TERMS } from '../content/payrollTerms';
 import { defineTools, rupees, str, SuwiContext, SuwiLink } from '../tools';
-import { fyOfPeriod, monthLabel } from './payroll-common';
+import { form16HiddenText, form16InAppLine, fyOfPeriod, monthLabel } from './payroll-common';
 
 const pctOf = (r: number) => `${Math.round(r * 10000) / 100}%`;
 const calcText = (c: CalculationBasis | undefined, names: Map<string, string>) => {
@@ -180,7 +180,8 @@ async function companySetting(ctx: SuwiContext, key: string): Promise<Setting> {
           fy: status.fy,
           readyBy: status.readyBy,
           uploaded: `${status.counts.withForm16} of ${status.counts.employees} people have a Form 16 uploaded for FY ${status.fy}`,
-          note: 'Sowaka does not generate Form 16 (Part A from TRACES, Part B from the payroll software or CA). HR uploads the PDFs on Payroll Runs › Form 16, one by one or in bulk named by PAN or employee ID; employees download them in the app under Payroll › Downloads › Form 16.',
+          shownInApp: status.shownInApp,
+          note: `Sowaka does not generate Form 16 (Part A from TRACES, Part B from the payroll software or CA). HR uploads the PDFs on Payroll Runs › Form 16, one by one or in bulk named by PAN or employee ID. ${form16InAppLine(status.shownInApp)}`,
         },
         links: [{ label: 'Open payroll runs', view: 'payruns' }],
       };
@@ -204,8 +205,10 @@ defineTools({
     const term = findPayrollTerm(str(i.term));
     if (!term) return { data: { found: false, known: PAYROLL_TERMS.map((t) => t.title), note: 'Not a term I have an explanation for.' } };
     const { setting, links } = await companySetting(ctx, term.key);
+    // Form 16 hidden in the app here: the explanation must not promise employees a download.
+    const hidden = (setting as { shownInApp?: boolean }).shownInApp === false;
     return {
-      data: { found: true, term: term.title, explanation: term.explain, example: term.example, exampleNote: 'Round numbers for illustration; the company\'s own figures are under thisCompany.', thisCompany: setting },
+      data: { found: true, term: term.title, explanation: hidden ? form16HiddenText(term.explain) : term.explain, example: term.example, exampleNote: 'Round numbers for illustration; the company\'s own figures are under thisCompany.', thisCompany: setting },
       links,
     };
   },

@@ -142,8 +142,9 @@ extension _PayrollHomeV2 on _PayrollHomePageState {
               key: const ValueKey('payroll-qa-downloads'),
               emoji: '📥',
               title: 'Downloads',
-              subtitle: 'Payslips, F-16',
-              onTap: () => _open(const _DownloadsPage()),
+              // Form 16 only where the company shows it in the app.
+              subtitle: home.form16Enabled ? 'Payslips, F-16' : 'Payslips',
+              onTap: () => _open(_DownloadsPage(form16: home.form16Enabled)),
             ),
           ),
           const SizedBox(width: 10),

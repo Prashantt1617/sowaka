@@ -83,6 +83,7 @@ a pay period that has not started is refused, 400).
   "appEnabled": true,                  // false: Payroll is off for the company; the body is only appEnabled, period, fy
   "period": "2026-10",                 // the pay period the salary is for
   "fy": "2026-27",
+  "form16Enabled": false,              // the app shows Form 16 (Downloads' tab, the Tax page's row) only when true (§14, the Form 16 switch)
   "payPeriod": { "period": "2026-10", "from": "2026-09-26", "to": "2026-10-25", "baseDays": 30 },   // null when HR's pay cycle is not usable
   "hasSalaryStructure": true,          // false: no structure assigned yet; salary and salaryNotSetUp are null
   "salaryNotSetUp": null,              // or { "notConfigured": true, "reason": "statutory_not_set_up" | "tax_rules_not_set_up" | "pay_period_not_set_up", "fy": "2026-27" | null,
@@ -899,7 +900,8 @@ Query: `fy` (optional, default the current FY).
       // status: "paid" (the payslip's) | "estimate" (monthlyNowPaise; null while not set up)
       //       | "no_payslip" (before the projection with no released payslip: before joining, or paid elsewhere; amountPaise null)
     ],
-    "estimate": true                   // some month is still to come
+    "estimate": true,                  // some month is still to come
+    "form16Enabled": false             // the page offers "Download Form 16" only when true (§14, the Form 16 switch)
   }
 }
 ```
@@ -1146,6 +1148,17 @@ a Part `B`: a combined upload replaces both parts, a part replaces the
 combined file. The dates are the law's, worked out from the FY: Form 16 is
 due by **15 June** after the FY (Rule 31), the return by **31 July** (s.139(1)).
 
+**The Form 16 switch.** The app shows Form 16 only where Sowaka has set
+`companies.features.form16: true` in the database (no dashboard control; set
+it with `npm run form16:switch -- --org <id> --on --apply`, see
+`backend/src/scripts/form16-switch.ts`). Absent or false is hidden:
+`GET /payroll/home` and `GET /payroll/me/tax` send `"form16Enabled": false`,
+and the app hides the Downloads tab and the Tax page's "Download Form 16";
+`GET /payroll/form16` answers `{ "enabled": false, "currentFy": "…", "filing": null, "years": [] }`
+and every file `404` (`details.reason: "form16_off"`), so an app build that
+does not read the flag shows nothing either. HR's routes below work either
+way (HR can upload ahead), and their list says `shownInApp`.
+
 A document, everywhere below:
 
 ```jsonc
@@ -1161,6 +1174,7 @@ not due yet), every FY with a file, and last FY when Sowaka paid them in it.
 {
   "success": true,
   "form16": {
+    "enabled": true,                                          // false: the company's switch is off, and years is []
     "currentFy": "2026-27",
     "filing": { "fy": "2025-26", "lastDate": "2026-07-31" },   // last FY's return date
     "years": [
@@ -1192,6 +1206,7 @@ end, anyone paid in it, anyone with a file.
   "fy": "2025-26",
   "readyBy": "2026-06-15",
   "ended": true,                       // false for the current FY: uploads for it are refused
+  "shownInApp": false,                 // companies.features.form16: false, the dashboard notes "Hidden in the app for this company"
   "counts": { "employees": 48, "withForm16": 40 },
   "employees": [                       // by name
     { "userId": "…", "name": "Asha Test", "employeeId": "E-ASHA", "panLast4": "234F", "documents": [ { … } ] }
