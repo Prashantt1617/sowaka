@@ -680,7 +680,8 @@ class _ContestTitleField extends StatelessWidget {
     return _CardTextField(
       controller: controller,
       hint: hint,
-      maxLength: 80,
+      // Up to 100 characters; the card shows what fits, the entries page all of it.
+      maxLength: 100,
       autofocus: true,
       style: const TextStyle(
         fontFamily: _soraFont,
@@ -707,7 +708,7 @@ class _ContestHeadingField extends StatelessWidget {
       child: _CardTextField(
         controller: controller,
         hint: hint,
-        maxLength: 400,
+        maxLength: 100,
         maxLines: 4,
         autofocus: true,
         style: const TextStyle(

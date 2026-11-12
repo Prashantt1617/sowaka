@@ -377,6 +377,24 @@ void main() {
     expect(sheet, findsNothing);
   });
 
+  testWidgets('the Tag by sheet closes on a tap anywhere outside it', (
+    tester,
+  ) async {
+    await _openEntries(tester);
+    final manavRow = find.byKey(const ValueKey('tag-by-row')).first;
+    await tester.tap(
+      find.descendant(of: manavRow, matching: find.text('View all')),
+    );
+    await _settle(tester);
+    final sheet = find.byKey(const ValueKey('tag-by-sheet'));
+    expect(sheet, findsOneWidget);
+    // High on the dimmed page, well above the sheet.
+    expect(tester.getTopLeft(sheet).dy, greaterThan(200));
+    await tester.tapAt(const Offset(40, 120));
+    await _settle(tester);
+    expect(sheet, findsNothing);
+  });
+
   testWidgets('a row with few taggers has no count', (tester) async {
     await _openEntries(tester);
     final kiranRow = find.byKey(const ValueKey('tag-by-row')).at(1);

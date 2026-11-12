@@ -604,7 +604,7 @@ function PreviewCard({
               ariaLabel="Task"
               value={task}
               onChange={onTask}
-              maxLength={400}
+              maxLength={100}
               placeholder="Post a photo of someone looking angry in the office."
               style={{
                 fontSize: 17,
@@ -620,7 +620,7 @@ function PreviewCard({
             ariaLabel="Contest name"
             value={title}
             onChange={onTitle}
-            maxLength={80}
+            maxLength={100}
             singleLine
             placeholder={format.defaultTitle}
             style={{ fontSize: 21, lineHeight: '28px', fontWeight: 500, color: '#fff' }}
