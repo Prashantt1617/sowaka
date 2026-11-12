@@ -41,7 +41,7 @@ const RIDES_ALONG = new Set<AccessKey>([...PLACEMENT_VIEWS.filter((v) => v !== '
 const SECTION_UNITS: Unit[] = SECTIONS.flatMap((s) => {
   const items = s.items.filter((i) => i.key !== 'usersroles' && i.key !== 'support' && i.key !== 'cuptv');
   if (items.length === 0) return [];
-  return [{ key: s.title, title: titleCase(s.title), tabs: items.filter((i) => !RIDES_ALONG.has(i.key)).map((i) => i.key), hint: items.map((i) => i.label).join(' · ') }];
+  return [{ key: s.title, title: titleCase(s.title), tabs: items.filter((i) => !RIDES_ALONG.has(i.key)).map((i) => i.key), hint: items.filter((i) => !i.hidden).map((i) => i.label).join(' · ') }];
 });
 const UNITS: Unit[] = [
   { key: 'overview', title: OVERVIEW_ITEM.label, tabs: ['overview'], hint: 'Pending requests at a glance' },
@@ -62,7 +62,7 @@ type Role = { name: string; admin?: boolean; tabs: AccessKey[]; desc: string };
 const ROLES: Role[] = [
   { name: 'Admin', admin: true, tabs: ALL_TABS, desc: 'Everything, and People › Accesses: decides who sees what.' },
   { name: 'Operations Manager', tabs: ALL_TABS.filter((t) => t !== 'organisation'), desc: 'Everything except organisation settings and accesses.' },
-  { name: 'Time Reviewer', tabs: tabsOf('Overview', 'Time office'), desc: 'Leave, overtime, attendance corrections, OOL check-ins, company calendar and punch log. No pay.' },
+  { name: 'Time Reviewer', tabs: tabsOf('Overview', 'Time office'), desc: 'Leave, overtime, attendance corrections, company calendar and punch log. No pay.' },
   { name: 'Money Reviewer', tabs: tabsOf('Overview', 'Payroll', 'Claims', 'Salary details'), desc: 'Payroll, claims and what each employee earns. No leave or attendance.' },
 ];
 
