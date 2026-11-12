@@ -15,7 +15,9 @@ function computeRows(s: ReturnType<typeof useStore>): Leave[] {
   let rows = s.leaves.slice();
   const q = s.leaveSearch.trim().toLowerCase();
   if (q) rows = rows.filter((r) => r.name.toLowerCase().includes(q));
-  if (s.leaveStatus !== 'all') rows = rows.filter((r) => r.status === s.leaveStatus);
+  // Cancellation: approved leaves whose employee asked to cancel them, waiting on a decision.
+  if (s.leaveStatus === 'Cancellation') rows = rows.filter((r) => r.cancelRequest?.status === 'Pending');
+  else if (s.leaveStatus !== 'all') rows = rows.filter((r) => r.status === s.leaveStatus);
   if (s.leaveType !== 'all') rows = rows.filter((r) => r.type === s.leaveType);
   rows = rows.filter((r) => inDateRange(r.refISO, s.leaveFrom, s.leaveTo));
   const sort = s.leaveSort;
@@ -37,6 +39,7 @@ export function LeaveRequests() {
     approved: ranged.filter((r) => r.status === 'Approved').length,
     declined: ranged.filter((r) => r.status === 'Declined').length,
   };
+  const cancellationsWaiting = s.leaves.filter((r) => r.cancelRequest?.status === 'Pending').length;
   const rows = computeRows(s);
   const exportRows = () =>
     downloadCsv<Leave>(
@@ -50,8 +53,10 @@ export function LeaveRequests() {
         { header: 'Days', value: (r) => r.dayN },
         { header: 'Reason', value: (r) => r.eRemark },
         { header: 'Manager', value: (r) => r.manager },
-        { header: 'Status', value: (r) => r.status },
-        { header: 'Decided by', value: (r) => (r.status === 'Cancelled' ? 'employee (cancelled)' : r.status === 'Pending' ? '' : r.byAdmin ? 'admin' : 'manager') },
+        { header: 'Status', value: (r) => r.statusLabel },
+        { header: 'Decided by', value: (r) => (r.status === 'Cancelled' && !r.cancelRequest ? 'employee (cancelled)' : r.status === 'Pending' ? '' : r.byAdmin ? 'admin' : 'manager') },
+        { header: 'Cancellation request', value: (r) => (r.cancelRequest ? `${r.cancelRequest.status}${r.cancelRequest.byAdmin ? ' (admin)' : ''}` : '') },
+        { header: 'Cancellation note', value: (r) => r.cancelNote },
         { header: 'Applied', value: (r) => r.applied },
       ],
       rows,
@@ -74,8 +79,10 @@ export function LeaveRequests() {
 
       <Card padded>
       <div style={toolbar}>
-        <StatusTabs<ReqStatus | 'all'>
-          options={['all', 'Pending', 'Approved', 'Declined', 'Cancelled']}
+        <StatusTabs<ReqStatus | 'all' | 'Cancellation'>
+          options={['all', 'Pending', 'Approved', 'Declined', 'Cancelled', 'Cancellation']}
+          labels={{ Cancellation: 'Cancellation requests' }}
+          counts={cancellationsWaiting ? { Cancellation: cancellationsWaiting } : undefined}
           active={s.leaveStatus}
           onSelect={s.setLeaveStatus}
         />
@@ -132,8 +139,9 @@ export function LeaveRequests() {
             <div style={{ whiteSpace: 'nowrap' }}>{r.days}</div>
             <div style={{ color: r.eRemark ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
             <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.manager}</div>
-            <div>
-              <Pill label={r.byAdmin ? `${r.status} · by admin` : r.status} tone={STAT[r.status]} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+              <Pill label={r.byAdmin && r.status !== 'Cancelled' ? `${r.statusLabel} · by admin` : r.statusLabel} tone={STAT[r.status]} />
+              {r.cancelRequest?.status === 'Pending' && <Pill label="Cancellation requested" tone={STAT.Pending} />}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
               <button onClick={() => s.setDrawerId(r.id)} title="View details" className="ds-icon-btn" style={iconBtn(34)}>

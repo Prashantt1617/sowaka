@@ -587,13 +587,29 @@ class ManagerApiService {
     return LeaveRequest.fromJson(json['leave'] as Map<String, dynamic>);
   }
 
-  /// Takes back a leave of your own that has not begun; the note, if any,
-  /// goes to the manager with the news.
+  /// Takes back a leave of your own: a pending one is withdrawn; an approved
+  /// one comes back still approved, with a cancellation request for the
+  /// manager. The note, if any, goes to the manager with it.
   Future<LeaveRequest> cancelLeave(String leaveId, String note) async {
     final json = await _request(
       'POST',
       '/leaves/$leaveId/cancel',
       body: {'note': note},
+    );
+    return LeaveRequest.fromJson(json['leave'] as Map<String, dynamic>);
+  }
+
+  /// The manager's answer to a report's request to cancel an approved leave:
+  /// approved cancels the leave, declined keeps it (with the note, if any).
+  Future<LeaveRequest> decideLeaveCancellation(
+    String leaveId,
+    LeaveDecision decision,
+    String note,
+  ) async {
+    final json = await _request(
+      'PATCH',
+      '/leaves/$leaveId/cancellation',
+      body: {'decision': decision.name, if (note.isNotEmpty) 'note': note},
     );
     return LeaveRequest.fromJson(json['leave'] as Map<String, dynamic>);
   }

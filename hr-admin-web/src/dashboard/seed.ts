@@ -20,6 +20,22 @@ export type Leave = {
   refISO: string; // canonical date for range filtering (leave start date)
   submitterId?: string;
   byAdmin?: boolean;
+  /**
+   * What the status pill reads: the status, except for a cancelled leave, which says what it had
+   * been ("Cancelled pending leave" / "Cancelled approved leave").
+   */
+  statusLabel: string;
+  /** The employee's note when they cancelled it (or asked to). */
+  cancelNote: string;
+  cancelledOn?: string;
+  /** The employee's request to cancel this leave once approved. */
+  cancelRequest?: {
+    status: 'Pending' | 'Approved' | 'Declined';
+    requested: string;
+    note: string;
+    decisionNote: string;
+    byAdmin: boolean;
+  };
 };
 
 /** An overtime pay / comp-off choice as a select value. */

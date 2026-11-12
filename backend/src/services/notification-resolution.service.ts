@@ -13,7 +13,8 @@
  *   punch_out_half_day,      that day has since been corrected: an approved
  *   correction/punch         correction, or HR marked it from the calendar
  *   declined
- *   *_requested              that request is no longer pending
+ *   *_requested              that request is no longer pending (a leave
+ *                            cancellation: its cancelRequest)
  *   pending_requests_reminder  a newer reminder supersedes it; the newest is
  *                            resolved once nothing waits on the approver
  *   feedback_cycle_open,     every report has had their feedback sent
@@ -170,7 +171,10 @@ async function fixedDays(userId: string, rows: AppNotification[], resolved: Set<
 async function decidedRequests(rows: AppNotification[], resolved: Set<string>) {
   const asks = rows.filter((row) => row.scenario.endsWith('_requested') && row.data?.requestId);
   if (!asks.length) return;
-  const idsOf = (type: string) => objectIds(asks.filter((row) => row.data.type === type).map((row) => row.data.requestId));
+  // A request to cancel an approved leave is about the leave's cancelRequest, not its status.
+  const cancelAsk = (row: AppNotification) => row.scenario === 'leave_cancel_requested';
+  const idsOf = (type: string) => objectIds(asks.filter((row) => row.data.type === type && !cancelAsk(row)).map((row) => row.data.requestId));
+  const cancelIds = objectIds(asks.filter(cancelAsk).map((row) => row.data.requestId));
   const pendingIds = async (ids: ObjectId[], find: (ids: ObjectId[]) => Promise<Array<{ _id?: ObjectId }>>) =>
     ids.length ? (await find(ids)).map((row) => String(row._id)) : [];
   const projection = { projection: { _id: 1 } };
@@ -180,8 +184,10 @@ async function decidedRequests(rows: AppNotification[], resolved: Set<string>) {
     pendingIds(idsOf('overtime'), (ids) => overtimeRequests().find({ _id: { $in: ids }, status: 'pending' }, projection).toArray()),
     pendingIds(idsOf('attendance'), (ids) => attendanceRegularizations().find({ _id: { $in: ids }, status: 'pending' }, projection).toArray()),
   ])).flat());
+  const cancelPending = new Set(await pendingIds(cancelIds, (ids) =>
+    leaves().find({ _id: { $in: ids }, status: 'approved', 'cancelRequest.status': 'pending' }, projection).toArray()));
   for (const row of asks) {
-    if (!stillPending.has(row.data.requestId)) resolved.add(row.id);
+    if (!(cancelAsk(row) ? cancelPending : stillPending).has(row.data.requestId)) resolved.add(row.id);
   }
 }
 

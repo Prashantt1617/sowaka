@@ -630,6 +630,10 @@ class LeaveRequest {
     required this.decision,
     required this.managerNote,
     this.decidedByRole = '',
+    this.cancelNote = '',
+    this.cancelledAt,
+    this.cancelRequest,
+    this.cancelledFromApproved = false,
     this.halfDay = false,
     this.documentName,
     this.documentUrl,
@@ -664,6 +668,32 @@ class LeaveRequest {
   final String managerNote;
   final String decidedByRole; // 'admin' = overridden from the HR dashboard
 
+  /// Why the employee took the leave back, when they said (empty otherwise).
+  final String cancelNote;
+  final DateTime? cancelledAt;
+
+  /// The employee's request to cancel this leave once it was approved, and
+  /// what became of it. Null when there has never been one.
+  final LeaveCancelRequest? cancelRequest;
+
+  /// On a cancelled leave: it had been approved, and was cancelled through a
+  /// cancellation request its approver agreed to. False: withdrawn while
+  /// still pending.
+  final bool cancelledFromApproved;
+
+  /// An approved leave whose cancellation is waiting on the approver.
+  bool get cancellationPending =>
+      decision == LeaveDecision.approved &&
+      cancelRequest?.status == LeaveDecision.pending;
+
+  /// What a cancelled leave says it was: "Cancelled approved leave" or
+  /// "Cancelled pending leave". Null on one that is not cancelled.
+  String? get cancelledLabel => decision != LeaveDecision.cancelled
+      ? null
+      : cancelledFromApproved
+      ? 'Cancelled approved leave'
+      : 'Cancelled pending leave';
+
   /// Half a day off — only ever true on a single-date request.
   final bool halfDay;
 
@@ -685,6 +715,11 @@ class LeaveRequest {
         .trim();
     final start = DateTime.parse(json['startDate'] as String);
     final end = DateTime.parse(json['endDate'] as String);
+    final cancelRequest = json['cancelRequest'] is Map
+        ? LeaveCancelRequest.fromJson(
+            Map<String, dynamic>.from(json['cancelRequest'] as Map),
+          )
+        : null;
     return LeaveRequest(
       id: json['id'] as String? ?? '',
       userId: json['userId'] as String? ?? '',
@@ -722,6 +757,19 @@ class LeaveRequest {
       },
       managerNote: json['managerNote'] as String? ?? '',
       decidedByRole: json['decidedByRole'] as String? ?? '',
+      cancelNote: (json['cancelNote'] as String? ?? '').trim(),
+      cancelledAt: DateTime.tryParse('${json['cancelledAt'] ?? ''}'),
+      cancelRequest: cancelRequest,
+      // Servers before cancellation requests send no `cancelledFrom`: a
+      // decision on record before the cancel means it had been approved.
+      cancelledFromApproved: switch (json['cancelledFrom']) {
+        'approved' => true,
+        'pending' => false,
+        _ =>
+          cancelRequest?.status == LeaveDecision.approved ||
+              (cancelRequest == null &&
+                  '${json['decidedAt'] ?? ''}'.isNotEmpty),
+      },
     );
   }
 
@@ -744,11 +792,57 @@ class LeaveRequest {
       decision: decision ?? this.decision,
       managerNote: managerNote ?? this.managerNote,
       decidedByRole: decidedByRole,
+      cancelNote: cancelNote,
+      cancelledAt: cancelledAt,
+      cancelRequest: cancelRequest,
+      cancelledFromApproved: cancelledFromApproved,
       halfDay: halfDay,
       documentName: documentName,
       documentUrl: documentUrl,
     );
   }
+}
+
+/// An employee's request to cancel a leave that was already approved. While
+/// [status] is pending the leave stays approved; approved, the leave is
+/// cancelled; declined, it stays approved and [decisionNote] says why.
+class LeaveCancelRequest {
+  const LeaveCancelRequest({
+    required this.requestedAt,
+    required this.status,
+    this.note = '',
+    this.decidedAt,
+    this.decisionNote = '',
+    this.decidedByRole = '',
+  });
+
+  final DateTime requestedAt;
+
+  /// pending, approved or declined.
+  final LeaveDecision status;
+
+  /// What the employee told their manager.
+  final String note;
+  final DateTime? decidedAt;
+
+  /// The approver's note with the decision.
+  final String decisionNote;
+  final String decidedByRole;
+
+  factory LeaveCancelRequest.fromJson(Map<String, dynamic> json) =>
+      LeaveCancelRequest(
+        requestedAt:
+            DateTime.tryParse('${json['requestedAt'] ?? ''}') ?? DateTime.now(),
+        status: switch (json['status']) {
+          'approved' => LeaveDecision.approved,
+          'declined' => LeaveDecision.declined,
+          _ => LeaveDecision.pending,
+        },
+        note: (json['note'] as String? ?? '').trim(),
+        decidedAt: DateTime.tryParse('${json['decidedAt'] ?? ''}'),
+        decisionNote: (json['decisionNote'] as String? ?? '').trim(),
+        decidedByRole: json['decidedByRole'] as String? ?? '',
+      );
 }
 
 class AwardNomination {
@@ -1077,8 +1171,7 @@ class ReimbursementClaim {
   final String note;
   final String status;
   final DateTime createdAt;
-  final String
-  decidedByRole; // reimbursements are always decided from the dashboard ('admin')
+  final String decidedByRole; // reimbursements are always decided from the dashboard ('admin')
 
   /// The note left with the decision, so the manager and the employee can both
   /// read why a claim went the way it did.
@@ -2099,9 +2192,8 @@ class AttendanceRecord {
         workDate: DateTime.parse(json['workDate'] as String),
         officeName: json['office'] as String?,
         punchIn: DateTime.tryParse(json['punchIn'] as String? ?? '')?.toLocal(),
-        punchOut: DateTime.tryParse(
-          json['punchOut'] as String? ?? '',
-        )?.toLocal(),
+        punchOut: DateTime.tryParse(json['punchOut'] as String? ?? '')
+            ?.toLocal(),
         dayType: json['dayType'] as String? ?? '',
         outsideLocation: OutsideLocationNote.fromJson(
           json['outsideLocation'] as Map<String, dynamic>?,

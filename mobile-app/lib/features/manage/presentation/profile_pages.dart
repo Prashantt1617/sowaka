@@ -295,6 +295,48 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
             },
           ),
         ),
+      // An approved leave the report asked to cancel: the manager agrees
+      // (the leave is cancelled) or keeps it.
+      for (final leave in data.leaves.where(
+        (item) => item.userId == member.userId && item.cancellationPending,
+      ))
+        (
+          leave.cancelRequest!.requestedAt,
+          _ProfileRequestCard(
+            iconAsset: _RequestIcons.leave,
+            title: '${leave.type} leave cancellation',
+            rows: [
+              ('Date:', _leaveDateRange(leave)),
+              if (leave.cancelRequest!.note.isNotEmpty)
+                ('Note:', leave.cancelRequest!.note),
+            ],
+            decision: LeaveDecision.pending,
+            approving: bloc.isBusy(
+              DecideLeaveCancellation(leave.id, LeaveDecision.approved),
+            ),
+            declining: bloc.isBusy(
+              DecideLeaveCancellation(leave.id, LeaveDecision.declined),
+            ),
+            onApprove: () => bloc.add(
+              DecideLeaveCancellation(leave.id, LeaveDecision.approved),
+            ),
+            onReject: () async {
+              final result = await _showLeaveCancellationDecisionSheet(
+                context,
+                leave,
+                LeaveDecision.declined,
+              );
+              if (result == null) return;
+              bloc.add(
+                DecideLeaveCancellation(
+                  leave.id,
+                  LeaveDecision.declined,
+                  note: result.managerNote,
+                ),
+              );
+            },
+          ),
+        ),
       for (final request in data.overtime.where(
         (item) =>
             item.userId == member.userId &&
@@ -1544,6 +1586,8 @@ List<(DateTime date, Widget card)> _myRequestEntries(ManagerDashboard data) {
           title: '${leave.type} leave request',
           rows: [('Date:', _leaveDateRange(leave)), ('Comment:', leave.reason)],
           decision: leave.decision,
+          // A cancelled leave says what it had been.
+          statusLabel: leave.cancelledLabel?.toUpperCase(),
           readOnly: true,
         ),
       ),
@@ -1597,7 +1641,11 @@ class _ProfileRequestCard extends StatelessWidget {
     this.readOnly = false,
     this.approving = false,
     this.declining = false,
+    this.statusLabel,
   });
+
+  /// The status pill's words, when the decision alone does not say it.
+  final String? statusLabel;
 
   final String iconAsset;
   final String title;
@@ -1645,7 +1693,11 @@ class _ProfileRequestCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (readOnly) _ProfileStatusPill(decision: decision),
+                        if (readOnly)
+                          _ProfileStatusPill(
+                            decision: decision,
+                            label: statusLabel,
+                          ),
                       ],
                     ),
                     for (final (index, row) in rows.indexed)
@@ -1852,13 +1904,16 @@ class _ProfileDecisionButton extends StatelessWidget {
 }
 
 class _ProfileStatusPill extends StatelessWidget {
-  const _ProfileStatusPill({required this.decision});
+  const _ProfileStatusPill({required this.decision, this.label});
 
   final LeaveDecision decision;
 
+  /// In place of the decision's own word ("CANCELLED APPROVED LEAVE").
+  final String? label;
+
   @override
   Widget build(BuildContext context) {
-    final (label, color, background) = switch (decision) {
+    final (word, color, background) = switch (decision) {
       LeaveDecision.pending => (
         'PENDING',
         const Color(0xFFD97706),
@@ -1887,7 +1942,7 @@ class _ProfileStatusPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
-        label,
+        label ?? word,
         style: TextStyle(
           color: color,
           fontSize: 10,

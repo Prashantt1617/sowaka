@@ -841,12 +841,12 @@ function MarkDay({ day, saving, onClose, onSave }: { day: CalendarDayDTO; saving
 }
 
 // —— Requests: this person's, from the live queues ———————————————————————
-type Req = { id: string; kind: string; detail: string; when: string; status: ReqStatus; ord: number };
+type Req = { id: string; kind: string; detail: string; when: string; status: ReqStatus; ord: number; label?: string };
 function RequestsForEmployee({ emp }: { emp: Emp }) {
   const s = useStore();
   const mine = (id?: string) => id === emp.id;
   const rows: Req[] = [
-    ...s.leaves.filter((r) => mine(r.submitterId)).map((r) => ({ id: `lv-${r.id}`, kind: `${r.type} leave`, detail: r.days, when: `${r.from} – ${r.to}`, status: r.status, ord: r.ord })),
+    ...s.leaves.filter((r) => mine(r.submitterId)).map((r) => ({ id: `lv-${r.id}`, kind: `${r.type} leave`, detail: r.days, when: `${r.from} – ${r.to}`, status: r.status, label: r.statusLabel, ord: r.ord })),
     ...s.ots.filter((r) => mine(r.submitterId)).map((r) => ({ id: `ot-${r.id}`, kind: 'Overtime', detail: r.duration, when: r.otDate, status: r.status, ord: r.ord })),
     ...s.rbs.filter((r) => mine(r.submitterId)).map((r) => ({ id: `rb-${r.id}`, kind: 'Reimbursement', detail: `${r.type} · ${r.amount}`, when: r.billDate, status: r.status, ord: r.ord })),
     ...s.corrs.filter((r) => mine(r.submitterId)).map((r) => ({ id: `cr-${r.id}`, kind: 'Attendance correction', detail: r.dayType, when: r.workDate, status: r.status, ord: r.ord })),
@@ -871,7 +871,7 @@ function RequestsForEmployee({ emp }: { emp: Emp }) {
           <div style={{ fontSize: 14, fontWeight: 400 }}>{r.kind}</div>
           <div style={{ fontSize: 13, color: 'var(--ink-2)', fontWeight: 400 }}>{r.detail}</div>
           <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>{r.when}</div>
-          <Pill label={r.status} tone={STAT[r.status]} fontSize={11.5} />
+          <Pill label={r.label ?? r.status} tone={STAT[r.status]} fontSize={11.5} />
         </div>
       ))}</div>}
     </section>

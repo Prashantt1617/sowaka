@@ -17,14 +17,16 @@ function DecisionFooter({
   onDecline,
   onApprove,
   approveLabel,
+  declineLabel = 'Decline',
 }: {
   onDecline: () => void;
   onApprove: () => void;
   approveLabel: string;
+  declineLabel?: string;
 }) {
   return (
     <div style={{ position: 'sticky', bottom: 0, marginTop: 'auto', background: 'var(--surface)', borderTop: '1px solid var(--line)', padding: '16px 20px', display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-      <button onClick={onDecline} className={btnClass('no')} style={btn('no')}>Decline</button>
+      <button onClick={onDecline} className={btnClass('no')} style={btn('no')}>{declineLabel}</button>
       <button onClick={onApprove} className={btnClass('primary')} style={btn('primary')}>
         <IconCheck size={15} stroke="currentColor" />
         {approveLabel}
@@ -100,7 +102,8 @@ function LeaveDrawer() {
       <div style={{ padding: 20 }}>
         <SuwiInsight kind="leave" id={d.id} pending={d.status === 'Pending'} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-          <Pill label={d.byAdmin ? `${d.status} · by admin` : d.status} tone={STAT[d.status]} />
+          <Pill label={d.byAdmin && d.status !== 'Cancelled' ? `${d.statusLabel} · by admin` : d.statusLabel} tone={STAT[d.status]} />
+          {d.cancelRequest?.status === 'Pending' && <Pill label="Cancellation requested" tone={STAT.Pending} />}
           <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 14, fontWeight: 400, color: 'var(--ink-2)' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: typeColor(d.type) }} />
             {d.type} leave
@@ -116,9 +119,41 @@ function LeaveDrawer() {
         />
         <RemarkBlock label="EMPLOYEE REMARK" text={d.eRemark || 'No remark provided.'} filled={!!d.eRemark} marginBottom={16} />
         <RemarkBlock label="MANAGER REMARK" text={d.mRemark || 'No remark yet.'} filled={!!d.mRemark} marginBottom={8} />
+        {/* Why the employee took it back, or asked to; and, for a request, what became of it. */}
+        {(d.status === 'Cancelled' || d.cancelRequest) && (
+          <div style={{ marginTop: 16 }}>
+            {d.cancelRequest && (
+              <InfoGrid
+                cells={[
+                  { label: 'CANCELLATION ASKED', value: d.cancelRequest.requested },
+                  {
+                    label: 'CANCELLATION',
+                    value: d.cancelRequest.status === 'Pending'
+                      ? 'Waiting on a decision'
+                      : `${d.cancelRequest.status}${d.cancelRequest.byAdmin ? ' by admin' : ''}${d.cancelledOn ? ` · ${d.cancelledOn}` : ''}`,
+                  },
+                ]}
+              />
+            )}
+            <RemarkBlock label="CANCELLATION NOTE" text={d.cancelNote || 'No note left.'} filled={!!d.cancelNote} marginBottom={8} />
+            {d.cancelRequest?.decisionNote && (
+              <div style={{ marginTop: 8 }}>
+                <RemarkBlock label="CANCELLATION DECISION NOTE" text={d.cancelRequest.decisionNote} filled marginBottom={8} />
+              </div>
+            )}
+          </div>
+        )}
       </div>
       {d.status === 'Pending' && (
         <DecisionFooter onDecline={() => s.lvAsk(d.id, 'decline')} onApprove={() => s.lvAsk(d.id, 'approve')} approveLabel="Approve leave" />
+      )}
+      {d.status === 'Approved' && d.cancelRequest?.status === 'Pending' && (
+        <DecisionFooter
+          onDecline={() => s.lvAsk(d.id, 'decline', true)}
+          onApprove={() => s.lvAsk(d.id, 'approve', true)}
+          approveLabel="Approve cancellation"
+          declineLabel="Keep leave"
+        />
       )}
     </DrawerShell>
   );
@@ -415,6 +450,22 @@ function LeaveConfirmModal() {
   const d = c ? s.leaves.find((l) => l.id === c.id) : null;
   if (!c || !d) return null;
   const approve = c.action === 'approve';
+  if (c.cancellation) {
+    return (
+      <ConfirmOverrideModal
+        action={c.action}
+        title={approve ? 'Cancel this approved leave?' : 'Keep this leave approved?'}
+        summary={approve
+          ? <><b>{d.name}</b> asked to cancel their {d.type.toLowerCase()} leave ({d.days}). Approving cancels it: the days go back to their balance and come off attendance and payroll.</>
+          : <>You’re declining <b>{d.name}</b>’s request to cancel their {d.type.toLowerCase()} leave ({d.days}). It stays approved.</>}
+        note={s.lvNote}
+        onNote={s.setLvNote}
+        onCancel={s.lvCloseConfirm}
+        onConfirm={s.lvDecide}
+        confirmLabel={approve ? 'Approve cancellation' : 'Keep leave'}
+      />
+    );
+  }
   return (
     <ConfirmOverrideModal
       action={c.action}

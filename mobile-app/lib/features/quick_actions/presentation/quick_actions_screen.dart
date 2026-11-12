@@ -648,6 +648,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   /// What the summary screen is showing, and where closing it returns to.
   RequestSummary? _submittedSummary;
+
+  /// The leave a detail page shows, when it shows one: it offers Cancel
+  /// Leave while the leave can still be taken back.
+  String? _submittedLeaveId;
   _QuickPage _submittedReturnPage = _QuickPage.home;
 
   /// False when the summary is being looked at later rather than just sent.
@@ -1419,14 +1423,18 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                         'Applied On',
                         _summaryDate(request.requestedOn),
                       ),
-                      SummaryRow('Status', _decision(request.decision)),
+                      SummaryRow('Status', _leaveStatusText(request)),
                       if (request.managerNote.isNotEmpty)
                         SummaryRow('Manager Note', request.managerNote),
+                      if (request.decision == LeaveDecision.cancelled &&
+                          request.cancelNote.isNotEmpty)
+                        SummaryRow('Cancellation Note', request.cancelNote),
                     ],
                     reason: request.reason,
                     documentName: request.documentName,
                     documentUrl: request.documentUrl,
                   ),
+                  leaveId: request.id,
                 ),
               ),
             ),
@@ -3247,13 +3255,14 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   List<AttendanceDayAction> _actionsForDay(AttendanceDayView day) {
     // A request already with the manager replaces every action.
     if (_pendingNoticeFor(day) != null) return const [];
-    // A leave yet to begin, pending or approved, can be taken back from its
-    // day; one that has started is HR's to undo.
+    // A leave can be taken back from its day as far back as its type can be
+    // applied for: a pending one is withdrawn, an approved one is asked of
+    // the manager. Further back it is HR's to undo.
     if (day.leave case final leave? when _leaveCancellable(leave)) {
       return [
         // Node 2112:69218: the same outlined button as Apply leave.
         AttendanceDayAction(
-          label: 'Cancel Leave',
+          label: _cancelActionLabel(leave),
           onTap: () => _cancelLeave(day),
         ),
       ];
@@ -3278,19 +3287,49 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     ];
   }
 
-  /// A leave can be taken back from its first day on, while it still stands.
+  /// Whether a leave can be taken back now, as the server rules it: a
+  /// pending or an approved one (not one whose cancellation is already with
+  /// the manager), as far back as its type can be applied for. Its own first
+  /// day and later always (plans change in the morning); an earlier start
+  /// only inside the type's backdating window. A month whose payroll has run
+  /// is refused by the server, which says so.
   bool _leaveCancellable(LeaveRequest leave) {
     if (leave.decision != LeaveDecision.pending &&
         leave.decision != LeaveDecision.approved) {
       return false;
     }
-    // Its own first day still counts: plans change in the morning.
-    return !_dateOnly(leave.start).isBefore(_dateOnly(DateTime.now()));
+    if (leave.cancellationPending) return false;
+    final today = _dateOnly(DateTime.now());
+    final start = _dateOnly(leave.start);
+    if (!start.isBefore(today)) return true;
+    LeaveTypeWindow? type;
+    for (final item in widget.dashboard.shift.leaveTypes) {
+      if (item.key == leave.typeKey) type = item;
+    }
+    if (type == null || !type.allowBackdated) return false;
+    // Whole days between two local midnights, a DST hour either way.
+    final daysAgo = (today.difference(start).inHours / 24).round();
+    return daysAgo <= type.backdatedDays;
   }
+
+  /// A pending leave is cancelled outright; an approved one is asked of the
+  /// manager.
+  String _cancelActionLabel(LeaveRequest leave) =>
+      leave.decision == LeaveDecision.approved
+      ? 'Request cancellation'
+      : 'Cancel Leave';
+
+  /// What the employee hears once the server has taken the cancel: a pending
+  /// leave is gone; an approved one waits on the manager.
+  String _cancelToast(LeaveRequest leave) =>
+      leave.decision == LeaveDecision.approved
+      ? 'Cancellation sent to your manager'
+      : 'Leave successfully canceled';
 
   /// Takes a leave back from its day: a note for the manager, then the
   /// request; the day is plain again once the server agrees, and a toast says
-  /// so (nodes 2112:69787 and 2112:69226).
+  /// so (nodes 2112:69787 and 2112:69226). An approved leave stays on the day
+  /// until the manager agrees.
   Future<void> _cancelLeave(AttendanceDayView day) async {
     final leave = day.leave;
     if (leave == null) return;
@@ -3300,11 +3339,12 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       backgroundColor: Colors.transparent,
       builder: (sheetContext) => _CancelLeaveSheet(
         day: _dateOnly(day.date),
+        requestOnly: leave.decision == LeaveDecision.approved,
         onSubmit: (note) => widget.bloc.add(CancelLeave(leave.id, note: note)),
       ),
     );
     if (!mounted || done != true) return;
-    showAppToast(context, 'Leave successfully canceled');
+    showAppToast(context, _cancelToast(leave));
   }
 
   /// Whether this day is one a leave request can still be made for.
@@ -3331,6 +3371,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   /// The amber line shown while a request for this day is with the manager.
   String? _pendingNoticeFor(AttendanceDayView day) {
+    if (day.leave?.cancellationPending ?? false) {
+      return 'Cancellation requested. Your manager will decide; the leave '
+          'stays approved until then.';
+    }
     if (day.correctionPending) {
       return 'Your missed punched request is currently under review by your '
           'manager for this day.';
@@ -4035,13 +4079,65 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
         RequestSummaryBody(summary: summary, showSuccess: _submittedSuccess),
+        // Where a request to cancel it stands: with the manager, or declined
+        // with their note.
+        if (!_submittedSuccess)
+          if (_submittedLeave case final leave?
+              when leave.decision == LeaveDecision.approved &&
+                  leave.cancelRequest != null) ...[
+            const SizedBox(height: 16),
+            _LeaveCancellationStatus(leave: leave),
+          ],
+        // A leave looked at later can be taken back here too, as from its
+        // calendar day: a pending one cancelled, an approved one requested.
+        if (!_submittedSuccess)
+          if (_submittedLeave case final leave?
+              when _leaveCancellable(leave)) ...[
+            const SizedBox(height: 24),
+            _AttendanceDayActionButton(
+              key: const ValueKey('leave-detail-cancel'),
+              action: AttendanceDayAction(
+                label: _cancelActionLabel(leave),
+                onTap: () => _cancelLeaveFromDetail(leave),
+              ),
+            ),
+          ],
       ],
     );
+  }
+
+  /// The leave on the detail page as it stands now (it may have changed).
+  LeaveRequest? get _submittedLeave {
+    final id = _submittedLeaveId;
+    if (id == null) return null;
+    for (final leave in widget.dashboard.myLeaves) {
+      if (leave.id == id) return leave;
+    }
+    return null;
+  }
+
+  /// The calendar's Cancel Leave, from a leave's detail page: the note sheet,
+  /// the request, a toast, and back to the list it was opened from.
+  Future<void> _cancelLeaveFromDetail(LeaveRequest leave) async {
+    final done = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => _CancelLeaveSheet(
+        day: _dateOnly(leave.start),
+        requestOnly: leave.decision == LeaveDecision.approved,
+        onSubmit: (note) => widget.bloc.add(CancelLeave(leave.id, note: note)),
+      ),
+    );
+    if (!mounted || done != true) return;
+    showAppToast(context, _cancelToast(leave));
+    _back();
   }
 
   void _showSubmitted(RequestSummary summary, _QuickPage returnTo) {
     setState(() {
       _submittedSummary = summary;
+      _submittedLeaveId = null;
       _submittedReturnPage = returnTo;
       _submittedSuccess = true;
       _page = _QuickPage.submitted;
@@ -4051,9 +4147,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   /// A request that was sent earlier, on the same screen it was sent from —
   /// minus the success header, which belongs to the moment it was submitted.
-  void _showRequestDetail(RequestSummary summary) {
+  void _showRequestDetail(RequestSummary summary, {String? leaveId}) {
     setState(() {
       _submittedSummary = summary;
+      _submittedLeaveId = leaveId;
       _submittedReturnPage = _page;
       _submittedSuccess = false;
       _page = _QuickPage.submitted;
@@ -5101,12 +5198,19 @@ const _correctionDayTypes = <_CorrectionDayType>[
 enum _CorrectionOutcome { submitted, openLeaveForm }
 
 /// Takes a leave back: the day, a note for the manager, one button. Pops
-/// `true` once the server has cancelled it (node 2112:69976).
+/// `true` once the server has taken it (node 2112:69976). [requestOnly] is an
+/// approved leave: the sheet asks the manager to cancel it rather than
+/// cancelling it.
 class _CancelLeaveSheet extends StatefulWidget {
-  const _CancelLeaveSheet({required this.day, required this.onSubmit});
+  const _CancelLeaveSheet({
+    required this.day,
+    required this.onSubmit,
+    this.requestOnly = false,
+  });
 
   final DateTime day;
   final Future<bool> Function(String note) onSubmit;
+  final bool requestOnly;
 
   @override
   State<_CancelLeaveSheet> createState() => _CancelLeaveSheetState();
@@ -5143,14 +5247,26 @@ class _CancelLeaveSheetState extends State<_CancelLeaveSheet> {
           children: [
             const _SheetHandle(),
             const SizedBox(height: 12),
-            const Text(
-              'Cancel Leave',
-              style: TextStyle(
+            Text(
+              widget.requestOnly ? 'Request cancellation' : 'Cancel Leave',
+              style: const TextStyle(
                 color: Color(0xFF2A2A2A),
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
             ),
+            if (widget.requestOnly) ...[
+              const SizedBox(height: 6),
+              const Text(
+                'This leave is approved, so your manager decides. It stays '
+                'approved until they do.',
+                style: TextStyle(
+                  color: Color(0xFF6A6A6A),
+                  fontSize: 12.5,
+                  height: 1.4,
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
             Text(
               '${_fullWeekdayNames[day.weekday - 1]}, ${day.day} ${_monthName(day.month)}',
@@ -5217,7 +5333,9 @@ class _CancelLeaveSheetState extends State<_CancelLeaveSheet> {
             ),
             const SizedBox(height: 26),
             _SheetPrimaryButton(
-              label: 'Cancel Leave',
+              label: widget.requestOnly
+                  ? 'Request cancellation'
+                  : 'Cancel Leave',
               color: const Color(0xFF0571A6),
               onPressed: _busy
                   ? null
@@ -5775,7 +5893,7 @@ class AttendanceDayDetail extends StatelessWidget {
 }
 
 class _AttendanceDayActionButton extends StatelessWidget {
-  const _AttendanceDayActionButton({required this.action});
+  const _AttendanceDayActionButton({super.key, required this.action});
 
   final AttendanceDayAction action;
 
@@ -6609,10 +6727,18 @@ class _LeaveRequestCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (status, color) = switch (request.decision) {
+      // Still approved, while the manager decides on cancelling it.
+      LeaveDecision.approved when request.cancellationPending => (
+        'Cancellation requested',
+        const Color(0xFFB45309),
+      ),
       LeaveDecision.approved => ('Approved', const Color(0xFF16A34A)),
       LeaveDecision.pending => ('Pending', const Color(0xFFFF383C)),
       LeaveDecision.declined => ('Declined', const Color(0xFF6B7280)),
-      LeaveDecision.cancelled => ('Cancelled', const Color(0xFF6B7280)),
+      LeaveDecision.cancelled => (
+        request.cancelledLabel!,
+        const Color(0xFF6B7280),
+      ),
     };
     final range = _sameDay(request.start, request.end)
         ? _short(request.start)
@@ -9013,6 +9139,61 @@ String _rangeLabel(DateTime from, DateTime to) {
 
 String _weekday(int weekday) =>
     const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1];
+
+/// A leave's status in words: a cancelled one says what it had been.
+String _leaveStatusText(LeaveRequest leave) =>
+    leave.cancelledLabel ?? _decision(leave.decision);
+
+/// Where an approved leave's cancellation request stands, on its detail page:
+/// with the manager (amber), or declined with their note (red).
+class _LeaveCancellationStatus extends StatelessWidget {
+  const _LeaveCancellationStatus({required this.leave});
+
+  final LeaveRequest leave;
+
+  @override
+  Widget build(BuildContext context) {
+    final request = leave.cancelRequest!;
+    final waiting = request.status == LeaveDecision.pending;
+    final ink = waiting ? const Color(0xFF8A6218) : const Color(0xFFB3261E);
+    return Container(
+      key: const ValueKey('leave-cancellation-status'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: waiting ? const Color(0xFFFBEFD2) : const Color(0xFFFDECEA),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            waiting ? 'Cancellation requested' : 'Cancellation declined',
+            style: TextStyle(
+              color: ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            waiting
+                ? 'Your manager will decide. The leave stays approved until '
+                      'then.'
+                : request.decisionNote.isNotEmpty
+                ? request.decisionNote
+                : 'Your manager kept this leave approved.',
+            style: TextStyle(
+              color: ink.withValues(alpha: .9),
+              fontSize: 12.5,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 String _decision(LeaveDecision decision) => switch (decision) {
   LeaveDecision.approved => 'Approved',

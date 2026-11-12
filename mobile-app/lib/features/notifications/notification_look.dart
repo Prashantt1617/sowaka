@@ -234,6 +234,12 @@ class NotificationLook {
           from,
           declined ? Icons.highlight_off_rounded : Icons.how_to_reg_outlined,
         );
+      // The answer to a request to cancel an approved leave.
+      case 'leave_cancel_decided':
+        return _priority(
+          from,
+          declined ? Icons.highlight_off_rounded : Icons.event_busy_outlined,
+        );
       case 'overtime_decided':
         return _priority(
           from,
@@ -243,6 +249,7 @@ class NotificationLook {
         return _priority(_fromManager, Icons.chat_bubble_outline_rounded);
       case 'pending_requests_reminder':
       case 'leave_requested':
+      case 'leave_cancel_requested':
       case 'overtime_requested':
       case 'correction_requested':
         return _priority(

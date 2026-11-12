@@ -97,10 +97,11 @@ class _TeamHomeState extends State<_TeamHome> {
   );
 }
 
-/// Requests still waiting on this manager: leave, overtime and attendance
-/// corrections alike.
+/// Requests still waiting on this manager: leave (and requests to cancel an
+/// approved one), overtime and attendance corrections alike.
 int _pendingTeamRequests(ManagerDashboard data) =>
     data.leaves.where((l) => l.decision == LeaveDecision.pending).length +
+    data.leaves.where((l) => l.cancellationPending).length +
     data.overtime.where((o) => o.decision == LeaveDecision.pending).length +
     data.managerRegularizations
         .where((r) => r.decision == LeaveDecision.pending)
@@ -1111,7 +1112,11 @@ class _TagChip extends StatelessWidget {
 int _pendingRequestCount(ManagerDashboard data, String userId) {
   if (userId.isEmpty) return 0;
   final leaves = data.leaves
-      .where((l) => l.userId == userId && l.decision == LeaveDecision.pending)
+      .where(
+        (l) =>
+            l.userId == userId &&
+            (l.decision == LeaveDecision.pending || l.cancellationPending),
+      )
       .length;
   final overtime = data.overtime
       .where((o) => o.userId == userId && o.decision == LeaveDecision.pending)
@@ -1202,7 +1207,14 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
                   ('Comment:', leave.reason),
                 ],
                 decision: leave.decision,
-                responseNote: leave.managerNote,
+                // A cancelled leave says what it had been ("Cancelled pending
+                // leave" / "Cancelled approved leave") and reports the
+                // employee's reason for taking it back; a decided one the
+                // manager's note.
+                responseLabel: leave.cancelledLabel,
+                responseNote: leave.decision == LeaveDecision.cancelled
+                    ? leave.cancelNote
+                    : leave.managerNote,
                 approving: bloc.isBusy(
                   DecideLeave(leave.id, LeaveDecision.approved),
                 ),
@@ -1225,6 +1237,75 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
               ),
               leave.decision == LeaveDecision.pending,
             ),
+          // A report's request to cancel an approved leave: a request of its
+          // own, decided here as a leave is. Approving cancels the leave.
+          for (final leave in data.leaves)
+            if (leave.cancelRequest case final cancel?)
+              (
+                cancel.requestedAt,
+                leave.who,
+                'leave',
+                _TeamRequestCard(
+                  key: ValueKey('leave-cancellation-${leave.id}'),
+                  onViewDetails: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => _LeaveRequestDetailPage(
+                        leave: leave,
+                        bloc: bloc,
+                        cancellation: true,
+                      ),
+                    ),
+                  ),
+                  initial: leave.initial,
+                  avatarIndex: leave.avatarIndex,
+                  photoUrl: leave.photoUrl,
+                  name: leave.who,
+                  role: leave.team,
+                  rows: [
+                    ('Type:', 'Leave cancellation'),
+                    ('Leave:', leave.type),
+                    ('Date:', _leaveDateRange(leave)),
+                    if (cancel.note.isNotEmpty) ('Note:', cancel.note),
+                  ],
+                  // Pending while it waits; once agreed to the leave is
+                  // cancelled, in a cancelled leave's grey; declined when it
+                  // was kept.
+                  decision: cancel.status == LeaveDecision.approved
+                      ? LeaveDecision.cancelled
+                      : cancel.status,
+                  responseLabel: switch (cancel.status) {
+                    LeaveDecision.approved => 'Cancelled approved leave',
+                    LeaveDecision.declined => 'Cancellation declined',
+                    _ => null,
+                  },
+                  responseNote: cancel.decisionNote,
+                  approving: bloc.isBusy(
+                    DecideLeaveCancellation(leave.id, LeaveDecision.approved),
+                  ),
+                  declining: bloc.isBusy(
+                    DecideLeaveCancellation(leave.id, LeaveDecision.declined),
+                  ),
+                  onApprove: () => bloc.add(
+                    DecideLeaveCancellation(leave.id, LeaveDecision.approved),
+                  ),
+                  onReject: () async {
+                    final result = await _showLeaveCancellationDecisionSheet(
+                      context,
+                      leave,
+                      LeaveDecision.declined,
+                    );
+                    if (result == null) return;
+                    bloc.add(
+                      DecideLeaveCancellation(
+                        leave.id,
+                        LeaveDecision.declined,
+                        note: result.managerNote,
+                      ),
+                    );
+                  },
+                ),
+                leave.cancellationPending,
+              ),
           for (final request in data.overtime)
             (
               request.requestedOn,
@@ -1545,6 +1626,7 @@ void _showViewBySheet(
 
 class _TeamRequestCard extends StatelessWidget {
   const _TeamRequestCard({
+    super.key,
     this.onViewDetails,
     required this.initial,
     required this.avatarIndex,
@@ -1558,6 +1640,7 @@ class _TeamRequestCard extends StatelessWidget {
     this.approving = false,
     this.declining = false,
     this.responseNote = '',
+    this.responseLabel,
   });
 
   final String initial;
@@ -1581,6 +1664,10 @@ class _TeamRequestCard extends StatelessWidget {
 
   /// The note left with the decision, shown once a request has been reviewed.
   final String responseNote;
+
+  /// The outcome in words, when the decision alone does not say it (a
+  /// cancelled leave says what it had been).
+  final String? responseLabel;
 
   /// Opens the request in full — everything the employee filled in, and the
   /// response if it has been decided.
@@ -1676,7 +1763,11 @@ class _TeamRequestCard extends StatelessWidget {
           // Once a request has been decided, the card reports the outcome
           // instead of offering buttons that would do nothing.
           if (decision != LeaveDecision.pending)
-            _RequestResponseBlock(decision: decision, note: responseNote)
+            _RequestResponseBlock(
+              decision: decision,
+              note: responseNote,
+              label: responseLabel,
+            )
           else
             Row(
               children: [
@@ -1710,10 +1801,17 @@ class _TeamRequestCard extends StatelessWidget {
 /// What happened to a request, for the Reviewed list: the decision, who made
 /// it when that was not this manager, and the note that went with it.
 class _RequestResponseBlock extends StatelessWidget {
-  const _RequestResponseBlock({required this.decision, required this.note});
+  const _RequestResponseBlock({
+    required this.decision,
+    required this.note,
+    this.label,
+  });
 
   final LeaveDecision decision;
   final String note;
+
+  /// In place of the decision's own word.
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -1730,12 +1828,13 @@ class _RequestResponseBlock extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            switch (decision) {
-              LeaveDecision.approved => 'Approved',
-              // Nobody decided it: the employee took it back.
-              LeaveDecision.cancelled => 'Cancelled by the employee',
-              _ => 'Declined',
-            },
+            label ??
+                switch (decision) {
+                  LeaveDecision.approved => 'Approved',
+                  // Taken back while nobody had decided it yet.
+                  LeaveDecision.cancelled => 'Cancelled pending leave',
+                  _ => 'Declined',
+                },
             style: TextStyle(
               color: foreground,
               fontSize: 13,

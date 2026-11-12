@@ -3,6 +3,7 @@ import {
   applyForLeave,
   cancelLeave,
   decideLeave,
+  decideLeaveCancellation,
   getManagerLeaveInbox,
   getMyLeaveBalance,
   getMyLeaves,
@@ -31,7 +32,11 @@ export async function createLeave(req: Request, res: Response, next: NextFunctio
   }
 }
 
-/** The employee takes back a leave of their own that has not begun. */
+/**
+ * The employee takes back a leave of their own: a pending one is withdrawn; an approved one
+ * becomes a cancellation request for its approver (the leave comes back still approved, with
+ * `cancelRequest.status: 'pending'`).
+ */
 export async function cancelMyLeave(req: Request, res: Response, next: NextFunction) {
   try {
     const leave = await cancelLeave(requireUserId(req), String(req.params.leaveId ?? ''), {
@@ -77,6 +82,19 @@ export async function updateLeaveDecision(req: Request, res: Response, next: Nex
       decision: String(req.body.decision ?? ''),
       managerNote: req.body.managerNote == null ? undefined : String(req.body.managerNote),
     });
+    res.status(200).json({ success: true, leave });
+  } catch (error) {
+    handleLeaveError(error, res, next);
+  }
+}
+
+/** The manager answers a report's request to cancel an approved leave. */
+export async function updateLeaveCancellationDecision(req: Request, res: Response, next: NextFunction) {
+  try {
+    const leave = await decideLeaveCancellation(requireUserId(req), String(req.params.leaveId ?? ''), {
+      decision: String(req.body?.decision ?? ''),
+      note: req.body?.note == null ? undefined : String(req.body.note),
+    }, 'manager');
     res.status(200).json({ success: true, leave });
   } catch (error) {
     handleLeaveError(error, res, next);

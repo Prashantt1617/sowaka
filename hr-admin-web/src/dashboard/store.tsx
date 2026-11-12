@@ -10,6 +10,7 @@ import {
 } from './adapters';
 import {
   decideLeave,
+  decideLeaveCancellation,
   decideOvertime,
   decideRegularization,
   decideReimb,
@@ -36,6 +37,8 @@ export type StoreList = 'leaves' | 'overtime' | 'claims' | 'corrections' | 'feed
 export type SuwiBulkArea = 'shifts' | 'performance' | 'payroll' | 'any';
 
 type LeaveStatusFilter = ReqStatus | 'all';
+/** The Leave page's tabs: a status, or the approved leaves with a cancellation request waiting. */
+type LeaveTabFilter = LeaveStatusFilter | 'Cancellation';
 type FbStatusFilter = FeedbackStatus | 'all';
 
 export type Store = ReturnType<typeof useProvideStore>;
@@ -84,7 +87,7 @@ function useProvideStore() {
   // leave
   const [leaves, setLeaves] = useState<Leave[]>([]);
   const [leaveSearch, setLeaveSearch] = useState('');
-  const [leaveStatus, setLeaveStatus] = useState<LeaveStatusFilter>('all');
+  const [leaveStatus, setLeaveStatus] = useState<LeaveTabFilter>('all');
   const [leaveType, setLeaveType] = useState('all');
   const [leaveSort, setLeaveSort] = useState('recent');
   const [leaveFrom, setLeaveFrom] = useState('');
@@ -92,8 +95,9 @@ function useProvideStore() {
   const [drawerId, setDrawerId] = useState<string | null>(null);
   const [declineId, setDeclineId] = useState<string | null>(null);
   const [declineText, setDeclineText] = useState('');
-  // leave override confirm modal (approve/decline + note)
-  const [lvConfirm, setLvConfirm] = useState<{ id: string; action: 'approve' | 'decline' } | null>(null);
+  // leave override confirm modal (approve/decline + note); `cancellation` answers the employee's
+  // request to cancel an approved leave rather than the leave itself.
+  const [lvConfirm, setLvConfirm] = useState<{ id: string; action: 'approve' | 'decline'; cancellation?: boolean } | null>(null);
   const [lvNote, setLvNote] = useState('');
 
   // feedback
@@ -378,16 +382,16 @@ function useProvideStore() {
 
   // Confirm modal for leave overrides — captures an optional note for why the
   // request was overridden, on BOTH approve and decline.
-  const lvAsk = (id: string, action: 'approve' | 'decline') => {
+  const lvAsk = (id: string, action: 'approve' | 'decline', cancellation = false) => {
     const r = leaves.find((l) => l.id === id);
     if (blockSelfOverride(r?.submitterId)) return;
     setLvNote('');
-    setLvConfirm({ id, action });
+    setLvConfirm({ id, action, cancellation });
   };
   const lvCloseConfirm = () => setLvConfirm(null);
   const lvDecide = async () => {
     if (!lvConfirm) return;
-    const { id, action } = lvConfirm;
+    const { id, action, cancellation } = lvConfirm;
     const r = leaves.find((l) => l.id === id);
     if (blockSelfOverride(r?.submitterId)) {
       setLvConfirm(null);
@@ -397,9 +401,14 @@ function useProvideStore() {
     setLvConfirm(null);
     setDrawerId(null);
     try {
-      const updated = await decideLeave(id, action === 'approve' ? 'approved' : 'declined', note || undefined);
+      const decision = action === 'approve' ? 'approved' : 'declined';
+      const updated = cancellation
+        ? await decideLeaveCancellation(id, decision, note || undefined)
+        : await decideLeave(id, decision, note || undefined);
       setLeaves((s) => s.map((l) => (l.id === id ? adaptLeave(updated, r?.manager ?? managerName) : l)));
-      flash(`${r ? first(r.name) : 'Leave'}’s leave ${action === 'approve' ? 'approved' : 'declined'}`);
+      flash(cancellation
+        ? `${r ? first(r.name) : 'Leave'}’s cancellation ${decision}${decision === 'approved' ? ': leave cancelled' : ': leave stays approved'}`
+        : `${r ? first(r.name) : 'Leave'}’s leave ${decision}`);
     } catch (e) {
       handleError(e);
     }

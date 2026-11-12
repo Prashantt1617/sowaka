@@ -67,6 +67,11 @@ async function deliver(userIds: string[], input: Parameters<typeof notifyUsers>[
 }
 
 type Party = Pick<User, 'userId' | 'name'>;
+
+/** Leave rows waiting on an approver: a request, or an approved leave with a cancellation request. */
+const LEAVE_AWAITING_DECISION = {
+  $or: [{ status: 'pending' as const }, { status: 'approved' as const, 'cancelRequest.status': 'pending' as const }],
+};
 type RequestKind = 'leave' | 'overtime' | 'correction';
 
 /** HR for an org: everyone with dashboard access who is still here. */
@@ -295,6 +300,56 @@ export async function notifyLeaveCancelled(input: {
       data: { type: 'leave', view: 'inbox', requestId },
     });
   }
+}
+
+/**
+ * The employee asked to cancel a leave that was already approved. It stays approved until the
+ * approver decides, so they hear it as a request (push + inbox, opening the inbox); the employee
+ * gets a quiet line saying it was sent.
+ */
+export async function notifyLeaveCancellationRequested(input: {
+  employeeUserId: string; requestId?: string; type: string; startDate: Date; endDate: Date; days: number; note: string;
+}) {
+  const employee = await users().findOne({ userId: input.employeeUserId });
+  if (!employee) return;
+  const range = dateRange(input.startDate, input.endDate);
+  const requestId = input.requestId ?? '';
+
+  await deliver([employee.userId], {
+    scenario: 'leave_cancel_sent',
+    title: 'Cancellation sent to your manager',
+    body: `${leaveLabel(input.type)}, ${range} (${days(input.days)}) stays approved until they decide`,
+    data: { type: 'leave', view: 'mine', requestId },
+    push: false,
+  });
+
+  for (const approver of await approversFor(employee, 'leave')) {
+    await deliver([approver.userId], {
+      scenario: 'leave_cancel_requested',
+      title: `${employee.name} asked to cancel their approved leave`,
+      body: `${leaveLabel(input.type)}, ${range} (${days(input.days)})${input.note ? ` · “${input.note}”` : ''}`,
+      data: { type: 'leave', view: 'inbox', requestId, kind: 'cancellation' },
+    });
+  }
+}
+
+/** The approver agreed to cancel an approved leave, or kept it: the employee hears either way. */
+export async function notifyLeaveCancellationDecided(input: {
+  employeeUserId: string; requestId?: string; type: string; startDate: Date; endDate: Date; days: number;
+  approved: boolean; comment: string; decidedByUserId?: string;
+}) {
+  const employee = await users().findOne({ userId: input.employeeUserId });
+  if (!employee) return;
+  const approver = await nameOf(input.decidedByUserId);
+  const range = dateRange(input.startDate, input.endDate);
+  await deliver([employee.userId], {
+    scenario: 'leave_cancel_decided',
+    title: input.approved ? 'Leave cancelled ✓' : 'Cancellation not approved',
+    body: input.approved
+      ? `${approver} approved cancelling your ${leaveLabel(input.type)}, ${range}; the days are back in your balance`
+      : quoted(approver, input.comment) || `${approver} kept your ${leaveLabel(input.type)}, ${range} (${days(input.days)}) approved`,
+    data: { type: 'leave', view: 'mine', requestId: input.requestId ?? '', from: decidedBy(employee, input.decidedByUserId) },
+  });
 }
 
 /** Rows 1 and 2. */
@@ -548,7 +603,8 @@ export async function pendingFor(approver: User, now: Date): Promise<{ leave: nu
     .toArray();
   const ids = people.map((p) => p.userId);
   const [pendingLeave, pendingOvertime, pendingCorrections] = await Promise.all([
-    leaves().find({ userId: { $in: ids }, status: 'pending' }).toArray(),
+    // A leave waiting on a decision, or an approved one whose cancellation is.
+    leaves().find({ userId: { $in: ids }, ...LEAVE_AWAITING_DECISION }).toArray(),
     overtimeRequests().find({ userId: { $in: ids }, status: 'pending' }).toArray(),
     attendanceRegularizations().find({ userId: { $in: ids }, status: 'pending' }).toArray(),
   ]);
@@ -560,7 +616,8 @@ export async function pendingFor(approver: User, now: Date): Promise<{ leave: nu
   const forHr = (person: { userId: string }) => hr && person.userId !== approver.userId;
   // A leave that ended before today can no longer be acted on in any useful
   // way, so its owner's policy need not be looked up.
-  const usefulPending = pendingLeave.filter((row) => row.endDate.toISOString().slice(0, 10) >= todayKey);
+  // A cancellation request can be answered for a leave already taken (inside its type's window).
+  const usefulPending = pendingLeave.filter((row) => row.status !== 'pending' || row.endDate.toISOString().slice(0, 10) >= todayKey);
 
   // The policies that decide it, all in one lookup: on the team, a manager
   // acts unless the policy names HR; for HR it matters only when the person
@@ -632,7 +689,7 @@ export async function sendPendingRequestReminders(now = new Date()): Promise<num
   const todayKey = istParts(now).dateKey;
   const approvers = new Map<string, User>();
   const pendingOwners = new Set<string>();
-  for (const row of await leaves().find({ status: 'pending' }, { projection: { userId: 1 } }).toArray()) pendingOwners.add(row.userId);
+  for (const row of await leaves().find(LEAVE_AWAITING_DECISION, { projection: { userId: 1 } }).toArray()) pendingOwners.add(row.userId);
   for (const row of await overtimeRequests().find({ status: 'pending' }, { projection: { userId: 1 } }).toArray()) pendingOwners.add(row.userId);
   for (const row of await attendanceRegularizations().find({ status: 'pending' }, { projection: { userId: 1 } }).toArray()) pendingOwners.add(row.userId);
   if (!pendingOwners.size) return 0;
