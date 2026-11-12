@@ -102,11 +102,7 @@ const _composerMuted = Color(0xFF96B7C7);
 const _composerSurface = Color(0xFFF7F7F9);
 
 class ContestComposerPage extends StatefulWidget {
-  const ContestComposerPage({
-    super.key,
-    this.existing,
-    this.draft,
-  });
+  const ContestComposerPage({super.key, this.existing, this.draft});
 
   /// A contest already in the feed, being edited.
   final ConnectPost? existing;
@@ -131,7 +127,6 @@ class _ContestComposerPageState extends State<ContestComposerPage> {
   Map<String, dynamic> _carried = const {};
 
   bool get _editing => widget.existing != null;
-
 
   @override
   void initState() {
@@ -362,16 +357,16 @@ class _ContestComposerPageState extends State<ContestComposerPage> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Text(
-                              _editing ? 'Save' : 'Go live',
-                              style: const TextStyle(
-                                fontFamily: _soraFont,
-                                fontSize: 16,
-                                height: 16.2 / 16,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: -0.16,
-                                color: Colors.white,
-                              ),
-                            ),
+                        _editing ? 'Save' : 'Go live',
+                        style: const TextStyle(
+                          fontFamily: _soraFont,
+                          fontSize: 16,
+                          height: 16.2 / 16,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.16,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
                   ),
                 ),

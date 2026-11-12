@@ -62,6 +62,7 @@ class _FeedScope extends InheritedWidget {
     required this.people,
     required this.viewerUserId,
     required this.onOpenPerson,
+    this.viewerPhotoUrl,
     required super.child,
   });
 
@@ -75,7 +76,12 @@ class _FeedScope extends InheritedWidget {
   /// Opens a person's profile. Null where the host cannot navigate.
   final ValueChanged<String>? onOpenPerson;
 
+  /// The viewer's own photo: the directory leaves the viewer out, so without
+  /// it their own entries showed initials where everyone else's had a face.
+  final String? viewerPhotoUrl;
+
   late final Map<String, String> _photos = {
+    if ((viewerPhotoUrl ?? '').isNotEmpty) viewerUserId: viewerPhotoUrl!,
     for (final person in people)
       if ((person.photoUrl ?? '').isNotEmpty) person.userId: person.photoUrl!,
   };
@@ -2382,6 +2388,7 @@ class _EngagementBodyState extends State<_EngagementBody>
     child: _EngagementAvatar(
       userId: entry.userId,
       initials: entry.initials,
+      photoUrl: entry.authorPhotoUrl,
       size: 48,
       borderColor: _EngagementColors.border,
       fontSize: 18,
@@ -2556,6 +2563,7 @@ class _EngagementBodyState extends State<_EngagementBody>
                 child: _EngagementAvatar(
                   userId: entry.userId,
                   initials: entry.initials,
+                  photoUrl: entry.authorPhotoUrl,
                   size: 32,
                   fontSize: 13,
                 ),
@@ -3253,6 +3261,7 @@ class _TagBar extends StatelessWidget {
                   child: _EngagementAvatar(
                     userId: row.userId,
                     initials: row.initials,
+                    photoUrl: row.authorPhotoUrl,
                     size: 33,
                     fontSize: 13,
                   ),

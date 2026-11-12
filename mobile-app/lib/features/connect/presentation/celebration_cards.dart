@@ -37,7 +37,8 @@ String _celebrationGroupOf(ConnectPost post) =>
 /// today's and yesterday's celebrations show; older days drop off the feed.
 List<List<ConnectPost>> _feedCards(List<ConnectPost> posts) {
   final recent = {_todayInIndia(), _todayInIndia(daysAgo: 1)};
-  bool stale(String key) => key.isNotEmpty && !recent.contains(key.split(':').last);
+  bool stale(String key) =>
+      key.isNotEmpty && !recent.contains(key.split(':').last);
   final clubs = <String, List<ConnectPost>>{};
   for (final post in posts) {
     final key = _celebrationGroupOf(post);
@@ -1030,7 +1031,10 @@ class _YearsBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: _CelebrationColors.yearsDisc,
         shape: BoxShape.circle,
-        border: Border.all(color: _CelebrationColors.yearsDiscBorder, width: 0.4),
+        border: Border.all(
+          color: _CelebrationColors.yearsDiscBorder,
+          width: 0.4,
+        ),
       ),
       child: _YearArt.has(years)
           ? _YearArt(

@@ -94,6 +94,7 @@ Future<void> _openEntriesSheet(
         initialPost: post,
         people: scope?.people ?? const [],
         viewerUserId: scope?.viewerUserId ?? '',
+        viewerPhotoUrl: scope?.viewerPhotoUrl,
         onOpenPerson: scope?.onOpenPerson,
         onAddEntry: onAddEntry,
       ),
@@ -111,7 +112,12 @@ class _EntriesSheet extends StatefulWidget {
     required this.onOpenPerson,
     required this.onAddEntry,
     this.viewerUserId = '',
+    this.viewerPhotoUrl,
   });
+
+  /// The viewer's own photo, for their own entries (the directory leaves the
+  /// viewer out).
+  final String? viewerPhotoUrl;
 
   /// Null only where there is no live feed behind the sheet; it then shows
   /// the post as it was opened and takes no votes.
@@ -136,6 +142,8 @@ class _EntriesSheetState extends State<_EntriesSheet> {
   final _keys = <String, GlobalKey>{};
 
   late final Map<String, String> _photos = {
+    if ((widget.viewerPhotoUrl ?? '').isNotEmpty)
+      widget.viewerUserId: widget.viewerPhotoUrl!,
     for (final person in widget.people)
       if ((person.photoUrl ?? '').isNotEmpty) person.userId: person.photoUrl!,
   };
@@ -812,7 +820,7 @@ class _EntriesSheetState extends State<_EntriesSheet> {
             child: _CaptionEntryCard(
               entry: entry,
               closed: _contestClosed(post),
-              photo: _photos[entry.userId],
+              photo: entry.authorPhotoUrl ?? _photos[entry.userId],
               onOpen: () => _openEntry(post, rows, entry),
               onVote: () => _vote(post, entry.id),
               onOpenPerson: () => _openPerson(entry.userId),
@@ -855,7 +863,7 @@ class _EntriesSheetState extends State<_EntriesSheet> {
                       suffix: row.userId == post.myTaggedUserId
                           ? '(You tagged)'
                           : (row.isMine ? '(You)' : ''),
-                      photo: _photos[row.userId],
+                      photo: row.authorPhotoUrl ?? _photos[row.userId],
                       onOpenPerson: () => _openPerson(row.userId),
                     ),
                     if (row.taggedBy.isNotEmpty)
@@ -943,14 +951,14 @@ class _SheetHero extends StatelessWidget {
     // Beside the caption's picture the title has 130 wide; one that needs
     // more than three lines there goes full width under the picture instead,
     // so it is shown whole without a column of one-word lines.
-    final longCaption = isCaption &&
+    final longCaption =
+        isCaption &&
         (TextPainter(
-              text: TextSpan(text: heading, style: headingStyle),
-              textDirection: TextDirection.ltr,
-              textScaler: MediaQuery.textScalerOf(context),
-              maxLines: 3,
-            )..layout(maxWidth: 130))
-            .didExceedMaxLines;
+          text: TextSpan(text: heading, style: headingStyle),
+          textDirection: TextDirection.ltr,
+          textScaler: MediaQuery.textScalerOf(context),
+          maxLines: 3,
+        )..layout(maxWidth: 130)).didExceedMaxLines;
     final column = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -1381,7 +1389,9 @@ class _EntryVoteButton extends StatelessWidget {
           padding: const EdgeInsets.only(top: 5, bottom: 4),
           alignment: Alignment.center,
           decoration: decoration,
-          child: body,
+          // The arrow, count and "votes" fill the box's 43 exactly; a font a
+          // touch taller (or larger text) shrinks them instead of spilling.
+          child: FittedBox(fit: BoxFit.scaleDown, child: body),
         ),
       ),
     );
@@ -3380,7 +3390,8 @@ class _EntryFullViewState extends State<_EntryFullView>
                     onPageChanged: _turnedTo,
                     itemBuilder: (context, index) {
                       final entry = _known[widget.entries[index].id]!;
-                      final photo = widget.photos[entry.userId];
+                      final photo =
+                          entry.authorPhotoUrl ?? widget.photos[entry.userId];
                       void vote() => widget.onVote(post, entry.id);
                       void openPerson() => widget.onOpenPerson(entry.userId);
                       final showVoters = widget.onShowVoters;
@@ -4243,38 +4254,42 @@ class _EntryPhotoBoxState extends State<_EntryPhotoBox> {
       alignment: Alignment.topCenter,
       child: AspectRatio(
         aspectRatio: _ratio ?? 4 / 5,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            ColoredBox(color: widget.backdrop),
-            if (url.isNotEmpty) ...[
-              ExcludeSemantics(
-                child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(
-                    sigmaX: 28,
-                    sigmaY: 28,
-                    tileMode: TileMode.mirror,
-                  ),
-                  child: Image(
-                    image: _remoteImage(url),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                  ),
-                ),
-              ),
-              ColoredBox(color: widget.backdrop.withValues(alpha: 0.45)),
-            ],
-            widget.zoom(
-              url.isEmpty
-                  ? const SizedBox.expand()
-                  : Image(
+        // Clipped: the blurred backdrop samples past its edges and, unclipped,
+        // darkened the top of the name row under the picture.
+        child: ClipRect(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ColoredBox(color: widget.backdrop),
+              if (url.isNotEmpty) ...[
+                ExcludeSemantics(
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(
+                      sigmaX: 28,
+                      sigmaY: 28,
+                      tileMode: TileMode.mirror,
+                    ),
+                    child: Image(
                       image: _remoteImage(url),
-                      fit: BoxFit.contain,
+                      fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => const SizedBox.shrink(),
                     ),
-            ),
-            ...widget.children,
-          ],
+                  ),
+                ),
+                ColoredBox(color: widget.backdrop.withValues(alpha: 0.45)),
+              ],
+              widget.zoom(
+                url.isEmpty
+                    ? const SizedBox.expand()
+                    : Image(
+                        image: _remoteImage(url),
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      ),
+              ),
+              ...widget.children,
+            ],
+          ),
         ),
       ),
     );

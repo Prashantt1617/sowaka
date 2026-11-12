@@ -46,7 +46,10 @@ class FeedVideoCache {
   void keep(String url) {
     if (!_keeping.add(url)) return;
     unawaited(
-      _files.downloadFile(url).then<void>((_) {}, onError: (Object _) {}).whenComplete(() => _keeping.remove(url)),
+      _files
+          .downloadFile(url)
+          .then<void>((_) {}, onError: (Object _) {})
+          .whenComplete(() => _keeping.remove(url)),
     );
   }
 }
@@ -91,10 +94,10 @@ class FeedVideo extends StatefulWidget {
 
   /// A file on this phone: the composer's preview of what is about to go up.
   const FeedVideo.file({super.key, required String path, this.controls = true})
-      : url = null,
-        filePath = path,
-        header = null,
-        surfaceWrapper = null;
+    : url = null,
+      filePath = path,
+      header = null,
+      surfaceWrapper = null;
 
   /// The API's `/media/...` path, or a whole URL.
   final String? url;
@@ -130,7 +133,8 @@ class FeedVideo extends StatefulWidget {
 /// Builds the author row over a video post. In the feed [closeButton] is null
 /// and the row ends in the post's menu; full screen it is the way back, and
 /// stands where the menu was.
-typedef FeedVideoHeaderBuilder = Widget Function(BuildContext context, Widget? closeButton);
+typedef FeedVideoHeaderBuilder =
+    Widget Function(BuildContext context, Widget? closeButton);
 
 /// How far in from the edges a video post's overlays sit (node 3752:27075):
 /// 12 from the sides, 22 from the top and bottom.
@@ -201,7 +205,8 @@ class _FeedVideoState extends State<FeedVideo> {
       _scroll = scroll?..addListener(_followSight);
     }
     // A tab in the background, or a page pushed over the feed.
-    final shown = TickerMode.valuesOf(context).enabled && Visibility.of(context);
+    final shown =
+        TickerMode.valuesOf(context).enabled && Visibility.of(context);
     if (shown != _shown) {
       _shown = shown;
       if (!shown && !_fullScreen) _pause();
@@ -245,15 +250,19 @@ class _FeedVideoState extends State<FeedVideo> {
         : VideoPlayerController.networkUrl(Uri.parse(_url));
     controller.addListener(_onTick);
     setState(() => _controller = controller);
-    controller.initialize().then((_) {
-      if (!mounted || !identical(_controller, controller)) return;
-      controller.setLooping(!_streaming);
-      controller.setVolume(_muted ? 0 : 1);
-      setState(() {});
-      _followSightSoon();
-    }).catchError((Object _) {
-      if (mounted && identical(_controller, controller)) setState(() => _failed = true);
-    });
+    controller
+        .initialize()
+        .then((_) {
+          if (!mounted || !identical(_controller, controller)) return;
+          controller.setLooping(!_streaming);
+          controller.setVolume(_muted ? 0 : 1);
+          setState(() {});
+          _followSightSoon();
+        })
+        .catchError((Object _) {
+          if (mounted && identical(_controller, controller))
+            setState(() => _failed = true);
+        });
   }
 
   /// Thrown away and made again: a retry, or another video in this card.
@@ -280,7 +289,11 @@ class _FeedVideoState extends State<FeedVideo> {
   /// nothing more downloaded), else streamed once more.
   void _onTick() {
     final controller = _controller;
-    if (controller == null || !_streaming || _looping || !controller.value.isCompleted) return;
+    if (controller == null ||
+        !_streaming ||
+        _looping ||
+        !controller.value.isCompleted)
+      return;
     _looping = true;
     unawaited(_loopAgain(controller).whenComplete(() => _looping = false));
   }
@@ -290,7 +303,10 @@ class _FeedVideoState extends State<FeedVideo> {
     final keepGoing = identical(_playing, this) && !_held;
     // Full screen holds this player, so it stays on it until it is back.
     final kept = _fullScreen ? null : await FeedVideo.cache.cached(_url);
-    if (!mounted || generation != _generation || !identical(_controller, streamed)) return;
+    if (!mounted ||
+        generation != _generation ||
+        !identical(_controller, streamed))
+      return;
     if (kept != null) {
       final local = VideoPlayerController.file(kept);
       try {
@@ -299,7 +315,9 @@ class _FeedVideoState extends State<FeedVideo> {
         await local.dispose();
         return _streamAgain(streamed, keepGoing);
       }
-      if (!mounted || generation != _generation || !identical(_controller, streamed)) {
+      if (!mounted ||
+          generation != _generation ||
+          !identical(_controller, streamed)) {
         await local.dispose();
         return;
       }
@@ -316,7 +334,10 @@ class _FeedVideoState extends State<FeedVideo> {
     await _streamAgain(streamed, keepGoing);
   }
 
-  Future<void> _streamAgain(VideoPlayerController streamed, bool keepGoing) async {
+  Future<void> _streamAgain(
+    VideoPlayerController streamed,
+    bool keepGoing,
+  ) async {
     await streamed.seekTo(Duration.zero);
     if (keepGoing && identical(_playing, this) && !_held) await streamed.play();
   }
@@ -352,7 +373,10 @@ class _FeedVideoState extends State<FeedVideo> {
     if (_failed) return _reopen();
     _soundOn = !_soundOn;
     controller?.setVolume(_soundOn ? 1 : 0);
-    if (controller != null && controller.value.isInitialized && !controller.value.isPlaying && !_held) {
+    if (controller != null &&
+        controller.value.isInitialized &&
+        !controller.value.isPlaying &&
+        !_held) {
       _play();
     }
   }
@@ -390,7 +414,8 @@ class _FeedVideoState extends State<FeedVideo> {
     if (!mounted) return;
     if (controller == null) {
       // Not made yet: made once enough of it is in sight.
-      if (!_failed && _shown && widget.url != null && _inSight() >= _openAt) unawaited(_open());
+      if (!_failed && _shown && widget.url != null && _inSight() >= _openAt)
+        unawaited(_open());
       return;
     }
     if (!controller.value.isInitialized || _fullScreen) return;
@@ -440,7 +465,9 @@ class _FeedVideoState extends State<FeedVideo> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        widget._wrap(Stack(fit: StackFit.expand, children: [const _TopShade(), child])),
+        widget._wrap(
+          Stack(fit: StackFit.expand, children: [const _TopShade(), child]),
+        ),
         Positioned(
           left: _chromeSide,
           top: _chromeTop,
@@ -464,7 +491,11 @@ class _FeedVideoState extends State<FeedVideo> {
         onTap: widget.controls ? () => unawaited(_open()) : null,
         child: _withHeader(
           const Center(
-            child: Icon(Icons.movie_outlined, size: 32, color: Color(0x99FFFFFF)),
+            child: Icon(
+              Icons.movie_outlined,
+              size: 32,
+              color: Color(0x99FFFFFF),
+            ),
           ),
         ),
       );
@@ -476,7 +507,11 @@ class _FeedVideoState extends State<FeedVideo> {
         return const _VideoFrame(
           aspectRatio: 4 / 5,
           child: Center(
-            child: Icon(Icons.videocam_off_outlined, size: 24, color: Color(0x99FFFFFF)),
+            child: Icon(
+              Icons.videocam_off_outlined,
+              size: 24,
+              color: Color(0x99FFFFFF),
+            ),
           ),
         );
       }
@@ -504,7 +539,10 @@ class _FeedVideoState extends State<FeedVideo> {
                 child: SizedBox(
                   width: 28,
                   height: 28,
-                  child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ),
@@ -544,14 +582,21 @@ class _FeedVideoState extends State<FeedVideo> {
                 ),
               ),
               if (value.isPlaying && value.isBuffering)
-                const Center(child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white)),
+                const Center(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
+                  ),
+                ),
               if (!controls)
                 const SizedBox.shrink()
               else if (header == null) ...[
                 Positioned(
                   left: 12,
                   bottom: 12,
-                  child: _VideoChip(label: _clock(left.isNegative ? Duration.zero : left)),
+                  child: _VideoChip(
+                    label: _clock(left.isNegative ? Duration.zero : left),
+                  ),
                 ),
                 Positioned(
                   right: 8,
@@ -559,7 +604,9 @@ class _FeedVideoState extends State<FeedVideo> {
                   child: Row(
                     children: [
                       _RoundIconButton(
-                        icon: value.volume == 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                        icon: value.volume == 0
+                            ? Icons.volume_off_rounded
+                            : Icons.volume_up_rounded,
                         label: value.volume == 0 ? 'Sound on' : 'Mute',
                         onTap: toggleSound,
                       ),
@@ -589,9 +636,16 @@ class _FeedVideoState extends State<FeedVideo> {
                       _ChromeButton(
                         label: 'Full screen',
                         onTap: _openFullScreen,
-                        child: const Icon(Icons.fullscreen_rounded, size: 20, color: _chromeGlyph),
+                        child: const Icon(
+                          Icons.fullscreen_rounded,
+                          size: 20,
+                          color: _chromeGlyph,
+                        ),
                       ),
-                      _SoundToggle(muted: value.volume == 0, onTap: toggleSound),
+                      _SoundToggle(
+                        muted: value.volume == 0,
+                        onTap: toggleSound,
+                      ),
                     ],
                   ),
                 ),
@@ -647,7 +701,10 @@ class _FullScreenVideo extends StatelessWidget {
         child: ValueListenableBuilder<VideoPlayerValue>(
           valueListenable: controller,
           builder: (context, value, _) {
-            final ended = value.duration > Duration.zero && value.position >= value.duration && !value.isPlaying;
+            final ended =
+                value.duration > Duration.zero &&
+                value.position >= value.duration &&
+                !value.isPlaying;
             return Stack(
               children: [
                 Positioned.fill(
@@ -665,7 +722,11 @@ class _FullScreenVideo extends StatelessWidget {
                 if (!value.isPlaying)
                   IgnorePointer(
                     child: Center(
-                      child: _PlayButton(icon: ended ? Icons.replay_rounded : Icons.play_arrow_rounded),
+                      child: _PlayButton(
+                        icon: ended
+                            ? Icons.replay_rounded
+                            : Icons.play_arrow_rounded,
+                      ),
                     ),
                   ),
                 Positioned(
@@ -704,9 +765,12 @@ class _FullScreenVideo extends StatelessWidget {
                       _VideoChip(label: _clock(value.duration)),
                       const SizedBox(width: 6),
                       _RoundIconButton(
-                        icon: value.volume == 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                        icon: value.volume == 0
+                            ? Icons.volume_off_rounded
+                            : Icons.volume_up_rounded,
                         label: value.volume == 0 ? 'Sound on' : 'Mute',
-                        onTap: () => controller.setVolume(value.volume == 0 ? 1 : 0),
+                        onTap: () =>
+                            controller.setVolume(value.volume == 0 ? 1 : 0),
                       ),
                     ],
                   ),
@@ -728,7 +792,10 @@ class _FullScreenVideo extends StatelessWidget {
       body: ValueListenableBuilder<VideoPlayerValue>(
         valueListenable: controller,
         builder: (context, value, _) {
-          final ended = value.duration > Duration.zero && value.position >= value.duration && !value.isPlaying;
+          final ended =
+              value.duration > Duration.zero &&
+              value.position >= value.duration &&
+              !value.isPlaying;
           return Stack(
             children: [
               Positioned.fill(
@@ -747,7 +814,11 @@ class _FullScreenVideo extends StatelessWidget {
               if (!value.isPlaying)
                 IgnorePointer(
                   child: Center(
-                    child: _PlayButton(icon: ended ? Icons.replay_rounded : Icons.play_arrow_rounded),
+                    child: _PlayButton(
+                      icon: ended
+                          ? Icons.replay_rounded
+                          : Icons.play_arrow_rounded,
+                    ),
                   ),
                 ),
               Positioned.fill(
@@ -765,7 +836,11 @@ class _FullScreenVideo extends StatelessWidget {
                           _ChromeButton(
                             label: 'Close',
                             onTap: () => Navigator.of(context).pop(),
-                            child: const Icon(Icons.close_rounded, size: 20, color: _chromeGlyph),
+                            child: const Icon(
+                              Icons.close_rounded,
+                              size: 20,
+                              color: _chromeGlyph,
+                            ),
                           ),
                         ),
                         const Spacer(),
@@ -779,7 +854,9 @@ class _FullScreenVideo extends StatelessWidget {
                                 child: VideoProgressIndicator(
                                   controller,
                                   allowScrubbing: true,
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                  ),
                                   colors: const VideoProgressColors(
                                     playedColor: Colors.white,
                                     bufferedColor: Color(0x66FFFFFF),
@@ -796,7 +873,9 @@ class _FullScreenVideo extends StatelessWidget {
                               offset: const Offset(_ChromeButton.slop, 0),
                               child: _SoundToggle(
                                 muted: value.volume == 0,
-                                onTap: () => controller.setVolume(value.volume == 0 ? 1 : 0),
+                                onTap: () => controller.setVolume(
+                                  value.volume == 0 ? 1 : 0,
+                                ),
                               ),
                             ),
                           ],
@@ -867,7 +946,13 @@ class _PlayButton extends StatelessWidget {
       decoration: const BoxDecoration(
         color: Colors.white,
         shape: BoxShape.circle,
-        boxShadow: [BoxShadow(color: Color(0x33000000), blurRadius: 20, offset: Offset(0, 8))],
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 20,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
       child: Icon(icon, size: 34, color: const Color(0xFF15140F)),
     );
@@ -901,7 +986,11 @@ class _VideoChip extends StatelessWidget {
 }
 
 class _RoundIconButton extends StatelessWidget {
-  const _RoundIconButton({required this.icon, required this.label, required this.onTap});
+  const _RoundIconButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
 
   final IconData icon;
   final String label;
@@ -933,7 +1022,11 @@ class _RoundIconButton extends StatelessWidget {
 }
 
 class _VideoMessage extends StatelessWidget {
-  const _VideoMessage({required this.icon, required this.title, required this.action});
+  const _VideoMessage({
+    required this.icon,
+    required this.title,
+    required this.action,
+  });
 
   final IconData icon;
   final String title;
@@ -949,12 +1042,20 @@ class _VideoMessage extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             title,
-            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 2),
           Text(
             action,
-            style: const TextStyle(color: Color(0xFF8FD3F5), fontSize: 12, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              color: Color(0xFF8FD3F5),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -989,7 +1090,11 @@ class _TopShade extends StatelessWidget {
 /// A 30px glass circle on a video post, the design's grey at 39%. It takes
 /// taps a little past its edge, so it is easier to hit than it looks.
 class _ChromeButton extends StatelessWidget {
-  const _ChromeButton({required this.label, required this.onTap, required this.child});
+  const _ChromeButton({
+    required this.label,
+    required this.onTap,
+    required this.child,
+  });
 
   /// How far past the circle a tap still counts.
   static const double slop = 6;
@@ -1012,7 +1117,10 @@ class _ChromeButton extends StatelessWidget {
             width: 30,
             height: 30,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(color: Color(0x638A8A8A), shape: BoxShape.circle),
+            decoration: const BoxDecoration(
+              color: Color(0x638A8A8A),
+              shape: BoxShape.circle,
+            ),
             child: child,
           ),
         ),
@@ -1041,7 +1149,9 @@ class _SoundToggle extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(_ChromeButton.slop),
           child: SvgPicture.asset(
-            muted ? 'assets/icons/connect_video_muted.svg' : 'assets/icons/connect_video_sound_on.svg',
+            muted
+                ? 'assets/icons/connect_video_muted.svg'
+                : 'assets/icons/connect_video_sound_on.svg',
             width: 30,
             height: 30,
           ),

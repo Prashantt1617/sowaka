@@ -102,8 +102,8 @@ class ConnectState {
 /// already says so — and the error's own words otherwise.
 String? _backgroundMessage(Object error) =>
     error is ConnectOfflineException || NetworkStatus.isNetworkError(error)
-        ? null
-        : error.toString();
+    ? null
+    : error.toString();
 
 class ConnectBloc {
   ConnectBloc({
@@ -174,16 +174,20 @@ class ConnectBloc {
         ? await _api.fetchFeedFromCache()
         : null;
     if (remembered != null && remembered.posts.isNotEmpty) {
-      _emit(ConnectState(
-        status: ConnectLoadStatus.ready,
-        posts: _withEnsured(remembered.posts, settle: false),
-        hasMore: false,
-        fromCache: true,
-        publishing: _state.publishing,
-        publishingTo: _state.publishingTo,
-      ));
+      _emit(
+        ConnectState(
+          status: ConnectLoadStatus.ready,
+          posts: _withEnsured(remembered.posts, settle: false),
+          hasMore: false,
+          fromCache: true,
+          publishing: _state.publishing,
+          publishingTo: _state.publishingTo,
+        ),
+      );
     } else if (_state.posts.isEmpty) {
-      _emit(_state.copyWith(status: ConnectLoadStatus.loading, clearError: true));
+      _emit(
+        _state.copyWith(status: ConnectLoadStatus.loading, clearError: true),
+      );
     }
     // Whatever the live page does, changes are listened for and a lost
     // connection is retried once it is back.
@@ -192,14 +196,16 @@ class ConnectBloc {
       final page = await _fetchPage();
       if (_controller.isClosed) return;
       _cursor = page.nextCursor;
-      _emit(ConnectState(
-        status: ConnectLoadStatus.ready,
-        posts: _withEnsured(page.posts),
-        hasMore: page.nextCursor != null,
-        publishing: _state.publishing,
-        publishingTo: _state.publishingTo,
-        total: page.total,
-      ));
+      _emit(
+        ConnectState(
+          status: ConnectLoadStatus.ready,
+          posts: _withEnsured(page.posts),
+          hasMore: page.nextCursor != null,
+          publishing: _state.publishing,
+          publishingTo: _state.publishingTo,
+          total: page.total,
+        ),
+      );
       // The second page is asked for as soon as the first is on screen, so
       // the first scroll never waits on a spinner.
       unawaited(loadMore());
@@ -207,7 +213,12 @@ class ConnectBloc {
       // The copy stays on show if there was one, still marked as the copy;
       // only an empty feed fails.
       if (_state.posts.isNotEmpty) {
-        _emit(_state.copyWith(message: _backgroundMessage(error), clearMessage: _backgroundMessage(error) == null));
+        _emit(
+          _state.copyWith(
+            message: _backgroundMessage(error),
+            clearMessage: _backgroundMessage(error) == null,
+          ),
+        );
         return;
       }
       _emit(
@@ -263,11 +274,13 @@ class ConnectBloc {
     // don't ask for the same post in the same second. While the server is
     // struggling the wait grows.
     if (_pendingRefetch.containsKey(change.postId)) {
-      _pendingRefetch[change.postId] = change.action == ConnectChangeAction.created ||
+      _pendingRefetch[change.postId] =
+          change.action == ConnectChangeAction.created ||
           _pendingRefetch[change.postId]!;
       return;
     }
-    _pendingRefetch[change.postId] = change.action == ConnectChangeAction.created;
+    _pendingRefetch[change.postId] =
+        change.action == ConnectChangeAction.created;
     final waitMs = 400 + _jitter.nextInt(2600) + _refetchBackoffMs;
     await Future<void>.delayed(Duration(milliseconds: waitMs));
     final created = _pendingRefetch.remove(change.postId) ?? false;
@@ -295,7 +308,9 @@ class ConnectBloc {
         // it again.
         _emit(
           _state.copyWith(
-            posts: _state.posts.where((item) => item.id != change.postId).toList(),
+            posts: _state.posts
+                .where((item) => item.id != change.postId)
+                .toList(),
           ),
         );
       } else if (error.statusCode >= 500 || error.statusCode == 429) {
@@ -320,15 +335,17 @@ class ConnectBloc {
     try {
       final page = await _fetchPage();
       _cursor = page.nextCursor;
-      _emit(_state.copyWith(
-        status: ConnectLoadStatus.ready,
-        posts: _withEnsured(page.posts),
-        hasMore: page.nextCursor != null,
-        loadingMore: false,
-        // The live page now, whatever was on show before it.
-        fromCache: false,
-        total: page.total,
-      ));
+      _emit(
+        _state.copyWith(
+          status: ConnectLoadStatus.ready,
+          posts: _withEnsured(page.posts),
+          hasMore: page.nextCursor != null,
+          loadingMore: false,
+          // The live page now, whatever was on show before it.
+          fromCache: false,
+          total: page.total,
+        ),
+      );
     } catch (error) {
       _emit(_state.copyWith(message: error.toString()));
     }
@@ -343,17 +360,26 @@ class ConnectBloc {
       if (_controller.isClosed) return;
       final current = _state.posts;
       final byId = {for (final post in page.posts) post.id: post};
-      final fresh = page.posts.where((post) => !current.any((p) => p.id == post.id)).toList();
+      final fresh = page.posts
+          .where((post) => !current.any((p) => p.id == post.id))
+          .toList();
       final updated = current.map((post) => byId[post.id] ?? post).toList();
       if (current.isEmpty) _cursor = page.nextCursor;
-      _emit(_state.copyWith(
-        status: ConnectLoadStatus.ready,
-        posts: [...fresh, ...updated],
-        hasMore: current.isEmpty ? page.nextCursor != null : _state.hasMore,
-        fromCache: false,
-      ));
+      _emit(
+        _state.copyWith(
+          status: ConnectLoadStatus.ready,
+          posts: [...fresh, ...updated],
+          hasMore: current.isEmpty ? page.nextCursor != null : _state.hasMore,
+          fromCache: false,
+        ),
+      );
     } catch (error) {
-      _emit(_state.copyWith(message: _backgroundMessage(error), clearMessage: _backgroundMessage(error) == null));
+      _emit(
+        _state.copyWith(
+          message: _backgroundMessage(error),
+          clearMessage: _backgroundMessage(error) == null,
+        ),
+      );
     }
   }
 
@@ -367,10 +393,7 @@ class ConnectBloc {
   /// carry kept on top, as [ensurePost] put them. A live page that does
   /// carry one settles it back into its own place from then on; the device's
   /// copy ([settle] false) does not, since the live page is still to come.
-  List<ConnectPost> _withEnsured(
-    List<ConnectPost> page, {
-    bool settle = true,
-  }) {
+  List<ConnectPost> _withEnsured(List<ConnectPost> page, {bool settle = true}) {
     final inPage = {for (final post in page) post.id};
     if (settle) _ensured.removeAll(inPage);
     final kept = [
@@ -416,7 +439,11 @@ class ConnectBloc {
   /// offers a retry instead of asking on every rebuild.
   Future<void> loadMore() async {
     final cursor = _cursor;
-    if (cursor == null || _state.loadingMore || !_state.hasMore || _state.loadMoreFailed) return;
+    if (cursor == null ||
+        _state.loadingMore ||
+        !_state.hasMore ||
+        _state.loadMoreFailed)
+      return;
     _emit(_state.copyWith(loadingMore: true));
     try {
       final page = await _fetchPage(cursor: cursor);
@@ -425,17 +452,26 @@ class ConnectBloc {
       if (_cursor != cursor) return;
       _cursor = page.nextCursor;
       final known = _state.posts.map((post) => post.id).toSet();
-      _emit(_state.copyWith(
-        posts: [
-          ..._state.posts,
-          ...page.posts.where((post) => !known.contains(post.id)),
-        ],
-        hasMore: page.nextCursor != null,
-        loadingMore: false,
-      ));
+      _emit(
+        _state.copyWith(
+          posts: [
+            ..._state.posts,
+            ...page.posts.where((post) => !known.contains(post.id)),
+          ],
+          hasMore: page.nextCursor != null,
+          loadingMore: false,
+        ),
+      );
     } catch (error) {
       if (_controller.isClosed) return;
-      _emit(_state.copyWith(loadingMore: false, loadMoreFailed: true, message: _backgroundMessage(error), clearMessage: _backgroundMessage(error) == null));
+      _emit(
+        _state.copyWith(
+          loadingMore: false,
+          loadMoreFailed: true,
+          message: _backgroundMessage(error),
+          clearMessage: _backgroundMessage(error) == null,
+        ),
+      );
     }
   }
 
@@ -566,31 +602,27 @@ class ConnectBloc {
   /// A comment goes at once, with the replies under it; if the server
   /// refuses, it comes back. False when it could not be deleted.
   Future<bool> deleteComment(String postId, String commentId) {
-    return _mutateOptimistically(
-      postId,
-      (post) {
-        final gone = {commentId};
-        for (var grew = true; grew;) {
-          grew = false;
-          for (final comment in post.comments) {
-            final parent = comment.parentId;
-            if (parent != null && gone.contains(parent) && gone.add(comment.id)) {
-              grew = true;
-            }
+    return _mutateOptimistically(postId, (post) {
+      final gone = {commentId};
+      for (var grew = true; grew;) {
+        grew = false;
+        for (final comment in post.comments) {
+          final parent = comment.parentId;
+          if (parent != null && gone.contains(parent) && gone.add(comment.id)) {
+            grew = true;
           }
         }
-        final kept = [
-          for (final comment in post.comments)
-            if (!gone.contains(comment.id)) comment,
-        ];
-        return post.copyWith(
-          comments: kept,
-          commentCount: (post.commentCount - (post.comments.length - kept.length))
-              .clamp(0, 1 << 30),
-        );
-      },
-      () => _api.deleteComment(postId, commentId),
-    );
+      }
+      final kept = [
+        for (final comment in post.comments)
+          if (!gone.contains(comment.id)) comment,
+      ];
+      return post.copyWith(
+        comments: kept,
+        commentCount: (post.commentCount - (post.comments.length - kept.length))
+            .clamp(0, 1 << 30),
+      );
+    }, () => _api.deleteComment(postId, commentId));
   }
 
   /// The celebrant has opened their wishes: the card's "N new" goes at once,
@@ -679,17 +711,23 @@ class ConnectBloc {
     if (index < 0) return;
     final shown = _state.posts[index];
     final wanted = shown.myContestVote == entryId ? null : entryId;
-    _emit(_state.copyWith(
-      posts: [..._state.posts]..[index] = shown.withContestVote(wanted),
-      clearMessage: true,
-    ));
+    _emit(
+      _state.copyWith(
+        posts: [..._state.posts]..[index] = shown.withContestVote(wanted),
+        clearMessage: true,
+      ),
+    );
     _latestContestVote[postId] = wanted;
     if (!_votingContests.add(postId)) return;
     try {
       // The server's vote as last known: the feed's copy until it answers.
       var onServer = shown.myContestVote;
       ConnectPost? reply;
-      for (var step = 0; step < 4 && onServer != _latestContestVote[postId]; step++) {
+      for (
+        var step = 0;
+        step < 4 && onServer != _latestContestVote[postId];
+        step++
+      ) {
         final target = _latestContestVote[postId] ?? onServer!;
         reply = await _api.voteCaption(postId, target);
         if (_controller.isClosed) return;
@@ -705,7 +743,9 @@ class ConnectBloc {
       if (_controller.isClosed) return;
       final posts = truth != null
           ? _replacePost(truth)
-          : _state.posts.map((post) => post.id == postId ? shown : post).toList();
+          : _state.posts
+                .map((post) => post.id == postId ? shown : post)
+                .toList();
       _emit(_state.copyWith(posts: posts, message: error.toString()));
     } finally {
       _votingContests.remove(postId);
@@ -866,10 +906,12 @@ class ConnectBloc {
     final index = _state.posts.indexWhere((post) => post.id == postId);
     if (index < 0) return;
     final before = _state.posts[index];
-    _emit(_state.copyWith(
-      posts: [..._state.posts]..[index] = before.withPollVote(optionId),
-      clearMessage: true,
-    ));
+    _emit(
+      _state.copyWith(
+        posts: [..._state.posts]..[index] = before.withPollVote(optionId),
+        clearMessage: true,
+      ),
+    );
     _latestPollPick[postId] = optionId;
     if (!_votingPolls.add(postId)) return;
     try {
@@ -890,7 +932,9 @@ class ConnectBloc {
       if (_controller.isClosed) return;
       final posts = truth != null
           ? _replacePost(truth)
-          : _state.posts.map((post) => post.id == postId ? before : post).toList();
+          : _state.posts
+                .map((post) => post.id == postId ? before : post)
+                .toList();
       _emit(_state.copyWith(posts: posts, message: error.toString()));
     } finally {
       _votingPolls.remove(postId);
@@ -966,14 +1010,20 @@ class ConnectBloc {
   /// when this list has it, and otherwise left alone, as a like on a post
   /// beyond the pages loaded is.
   void adoptPost(ConnectPost post) {
-    if (_controller.isClosed || !_state.posts.any((item) => item.id == post.id)) return;
+    if (_controller.isClosed || !_state.posts.any((item) => item.id == post.id))
+      return;
     _emit(_state.copyWith(posts: _replacePost(post, announce: false)));
   }
 
   /// A post deleted from another list of the same posts: gone from this one.
   void forgetPost(String postId) {
-    if (_controller.isClosed || !_state.posts.any((item) => item.id == postId)) return;
-    _emit(_state.copyWith(posts: _state.posts.where((post) => post.id != postId).toList()));
+    if (_controller.isClosed || !_state.posts.any((item) => item.id == postId))
+      return;
+    _emit(
+      _state.copyWith(
+        posts: _state.posts.where((post) => post.id != postId).toList(),
+      ),
+    );
   }
 
   /// [updated] in its place. It is the server's copy after a change made here,
