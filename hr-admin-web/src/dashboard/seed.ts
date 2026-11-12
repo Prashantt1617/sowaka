@@ -63,6 +63,15 @@ export type Correction = {
   refISO: string;
   submitterId?: string;
   byAdmin?: boolean;
+  /** What is being corrected: a missing punch (which), or a punch away from every office. */
+  kind?: 'out' | 'in' | 'both' | 'day' | 'ool';
+  /** What they asked the day to count as: "Full day", "Half day", "Work from home"… */
+  askedFor?: string;
+  /** Raw punch times, ISO, for the detail panel. */
+  punchInISO?: string;
+  punchOutISO?: string;
+  /** Out of location only. */
+  ool?: { reason: string; place: string; latitude: number; longitude: number; at: string };
 };
 
 export type FbMgr = {

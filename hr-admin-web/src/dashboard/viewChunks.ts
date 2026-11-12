@@ -24,6 +24,7 @@ const LOADERS: Partial<Record<View, Loader>> = {
   peopletasks: () => import('./views/PeopleTasks').then((m) => ({ default: m.PeopleTasks })),
   attendancereport: () => import('./views/AttendanceReport').then((m) => ({ default: m.AttendanceReport })),
   companycalendar: () => import('./views/CompanyCalendar').then((m) => ({ default: m.CompanyCalendar })),
+  punchlog: () => import('./views/PunchLog').then((m) => ({ default: m.PunchLog })),
   orgchart: () => import('./views/OrgChart').then((m) => ({ default: m.OrgChart })),
   usersroles: () => import('./views/Accesses').then((m) => ({ default: m.Accesses })),
   reimbursementtypes: () => import('./views/ReimbursementTypes').then((m) => ({ default: m.ReimbursementTypes })),

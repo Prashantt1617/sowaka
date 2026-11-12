@@ -699,6 +699,42 @@ export type OutOfLocationDTO = OutsideLocationDTO & {
   managerNote: string;
 };
 
+/** Where one punch was taken, as the device reported it. */
+export type PunchPlaceDTO = {
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  officeName: string | null;
+  distanceMeters: number | null;
+  inOffice: boolean;
+  mocked: boolean;
+  place: string;
+};
+/** One person's one day in the punch log. */
+export type PunchDayDTO = {
+  userId: string;
+  name: string;
+  employeeCode: string;
+  department: string;
+  manager: string;
+  workDate: string;
+  punchIn: string | null;
+  punchOut: string | null;
+  inLocation: PunchPlaceDTO | null;
+  outLocation: PunchPlaceDTO | null;
+  outside: OutsideLocationDTO | null;
+  face: { similarity: number | null; liveness: string } | null;
+  dayType: string | null;
+  /** An out-of-location punch still waiting on the manager (no record yet). */
+  waiting: boolean;
+};
+export const getPunchLog = (from: string, to: string) =>
+  api<{ punches: PunchDayDTO[] }>(`/admin/punch-log?from=${from}&to=${to}`).then((r) => r.punches);
+
+export type PayCycleDTO = { current: { from: string; to: string } | null; previous: { from: string; to: string } | null };
+/** This pay cycle and the last, as payroll reads them. */
+export const getPayCycle = () => api<{ cycle: PayCycleDTO }>('/admin/pay-cycle').then((r) => r.cycle);
+
 export const getOutOfLocation = (from: string, to: string) =>
   api<{ checkIns: OutOfLocationDTO[] }>(`/admin/out-of-location?from=${from}&to=${to}`).then((r) => r.checkIns);
 

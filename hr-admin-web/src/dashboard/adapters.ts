@@ -137,6 +137,13 @@ export function adaptCorrection(dto: RegularizationDTO, managerName: string): Co
     refISO: dto.workDate,
     submitterId: dto.userId,
     byAdmin: dto.decidedByRole === 'admin',
+    kind: dto.kind === 'out_of_location' ? 'ool' : !dto.punchIn && !dto.punchOut ? 'both' : !dto.punchOut ? 'out' : !dto.punchIn ? 'in' : 'day',
+    askedFor: dto.kind === 'out_of_location' ? 'Full day' : DAY_TYPE[dto.requestedDayType ?? ''] ?? 'Correction',
+    punchInISO: dto.punchIn,
+    punchOutISO: dto.punchOut,
+    ool: dto.outsideLocation
+      ? { reason: dto.outsideLocation.reason, place: dto.outsideLocation.place, latitude: dto.outsideLocation.latitude, longitude: dto.outsideLocation.longitude, at: dto.outsideLocation.at }
+      : undefined,
   };
 }
 

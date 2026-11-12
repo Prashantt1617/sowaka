@@ -249,3 +249,59 @@ export function LeaveRow({ r, last, onOpen }: { r: Leave; last: boolean; onOpen:
     </div>
   );
 }
+
+/**
+ * Counts per day stacked by kind (punch-out missed, punch-in missed…), each
+ * kind its own colour, bottom to top in the order given.
+ */
+export function StackBars({ days, series, today, height = 120, shadeFuture = true }: {
+  days: string[];
+  series: { label: string; color: string; values: number[] }[];
+  today: string;
+  height?: number;
+  shadeFuture?: boolean;
+}) {
+  const totals = days.map((_, i) => series.reduce((a, s) => a + (s.values[i] ?? 0), 0));
+  const max = Math.max(1, ...totals);
+  const n = days.length;
+  const track: CSSProperties = { display: 'grid', gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`, gap: 4 };
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ minWidth: n > 10 ? Math.max(760, n * 26) : 420, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ ...track, alignItems: 'end', height: height + 40 }}>
+          {days.map((d, i) => {
+            const future = shadeFuture && d > today;
+            const title = `${dayLabel(d)}: ${series.map((s) => `${s.values[i] ?? 0} ${s.label.toLowerCase()}`).join(', ')}`;
+            const shown = series.filter((s) => (s.values[i] ?? 0) > 0).reverse();
+            return (
+              <div key={d} title={title} style={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', borderRadius: 6, padding: '2px 1px 0', background: future ? 'repeating-linear-gradient(0deg, var(--surface-2) 0 4px, var(--surface) 4px 8px)' : isWeekend(d) ? 'var(--surface-2)' : 'transparent' }}>
+                <span style={{ fontSize: 11, fontWeight: 600, textAlign: 'center', color: 'var(--ink)' }}>{totals[i] || ''}</span>
+                {shown.map((s, k) => (
+                  <span key={s.label} style={{ display: 'block', height: Math.round(((s.values[i] ?? 0) / max) * height), background: s.color, borderRadius: shown.length === 1 ? 3 : k === 0 ? '3px 3px 0 0' : k === shown.length - 1 ? '0 0 3px 3px' : 0 }} />
+                ))}
+              </div>
+            );
+          })}
+        </div>
+        <div style={track}>
+          {days.map((d) => {
+            const dt = dateOf(d);
+            const dim = isWeekend(d) || (shadeFuture && d > today);
+            return (
+              <div key={d} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <span style={d === today ? { fontSize: 11, fontWeight: 700, color: 'var(--on-sel)', background: 'var(--sel)', borderRadius: 999, padding: '0 5px' } : { fontSize: 11, fontWeight: 500, color: dim ? 'var(--ink-3)' : 'var(--ink)' }}>{dt.getDate()}</span>
+                <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{WD1[dt.getDay()]}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A legend entry: a colour swatch and its name. */
+export function Key({ color, children }: { color: string; children: ReactNode }) {
+  return <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span aria-hidden style={{ width: 12, height: 12, borderRadius: 3, background: color, display: 'inline-block' }} />{children}</span>;
+}
+

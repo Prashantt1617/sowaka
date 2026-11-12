@@ -107,7 +107,7 @@ export function needsActionSummary(leaves: Leave[]) {
   };
 }
 
-export type PeriodId = 'last' | 'week' | 'month' | 'next' | 'all' | 'custom';
+export type PeriodId = 'last' | 'week' | 'month' | 'next' | 'all' | 'custom' | 'cycle' | 'lastcycle' | 'today';
 
 /** The bounds of a period, and its heading. Empty bounds are open. */
 export function periodRange(id: PeriodId, customFrom: string, customTo: string): { from: string; to: string; title: string } {

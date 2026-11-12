@@ -20,6 +20,8 @@ export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boo
   if (view === 'investmentproofs' || view === 'payrollconfig') return canOpen(user, 'payruns') || canOpen(user, SALARY_DETAILS);
   // Reports › Company calendar reads the attendance report, so it goes with it.
   if (view === 'companycalendar') return canOpen(user, 'attendancereport');
+  // Reports › Punch log goes with any of the attendance pages, as the server allows it.
+  if (view === 'punchlog') return canOpen(user, 'attendancereport') || canOpen(user, 'attendance') || canOpen(user, 'oolcheckins');
   // People › Tasks goes with Employees.
   if (view === 'peopletasks') return canOpen(user, 'employees');
   // The Diwali Cup TV (and its void) is HR's: an admin, or someone never limited to some tabs.
