@@ -112,13 +112,13 @@ const billView = (c: Claim): NonNullable<FbpMonth['bill']> => ({
 });
 
 /** The head's amount in a month: the split in force then (a head it leaves out is 0), else the structure's own. */
-const amountIn = (component: FlexibleComponent, splits: FlexibleSplit[], period: string) => {
+export const amountIn = (component: FlexibleComponent, splits: FlexibleSplit[], period: string) => {
   const split = splitFor(splits, period);
   return split ? split.amounts[component.code] ?? 0 : component.basePaise;
 };
 
 /** The months of `fy` from April (or the month pay started, if later) to `through`. */
-function monthsOf(fy: string, through: string, startedOn: Date | null): string[] {
+export function monthsOf(fy: string, through: string, startedOn: Date | null): string[] {
   let period = `${fy.slice(0, 4)}-04`;
   const started = startedOn ? istPeriodOf(startedOn) : null;
   if (started && started > period) period = started;

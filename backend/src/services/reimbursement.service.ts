@@ -13,6 +13,7 @@ import { orgUsersWithRows, sortLikeMongo } from './admin-scope';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { requestViewerWithPhoto } from '../middleware/request-viewer';
 import { resolveTypeForClaim } from './reimbursement-type.service';
+import { notFbpBillFilter } from './reimbursementBills.service';
 
 const decisions = new Set<ReimbursementStatus>(['approved', 'declined', 'paid']);
 
@@ -46,6 +47,11 @@ export async function createReimbursementClaim(
   // of the list is fetched once and can be stale by the time someone submits.
   const type = await resolveTypeForClaim(employee.org, input.category);
   if (!type) throw new ReimbursementError(400, 'Expense category is invalid');
+  // A type linked to an FBP head takes that head's bills, sent from the app's
+  // FBP page (one per month, against the split): never as an expense claim.
+  if (type.payHeadCode) {
+    throw new ReimbursementError(400, `${type.name} bills are FBP bills: upload them from Payroll › FBP in the app`);
+  }
   const daysBack = Math.round(
     (startOfUtcDay(new Date()).getTime() - expenseDate.getTime()) / 86_400_000,
   );
@@ -115,7 +121,9 @@ export async function getMyReimbursementClaims(userId: string) {
     reimbursementClaims().find({ userId }).sort({ createdAt: -1 }).toArray(),
   ]);
   if (!employee) throw new ReimbursementError(404, 'Employee not found');
-  return Promise.all(claims.map((claim) => toView(claim, employee as User)));
+  // FBP bills are on the person's FBP page, not among their claims.
+  const fbp = await fbpCategoriesOf(employee as User, userId);
+  return Promise.all(claims.filter((claim) => !fbp.has(claim.category)).map((claim) => toView(claim, employee as User)));
 }
 
 /** The fields of a person a claim view shows. */
@@ -123,11 +131,18 @@ const CLAIM_VIEW_EMPLOYEE = {
   _id: 0, userId: 1, name: 1, department: 1, designation: 1, profilePhotoKey: 1, profilePhotoUrl: 1,
 } as const;
 
+/** The claim categories that are FBP bills in this person's company. */
+async function fbpCategoriesOf(person: Pick<User, 'org'> | null | undefined, userId: string): Promise<Set<string>> {
+  const org = person?.org ?? (await users().findOne({ userId }, { projection: { _id: 0, org: 1 } }))?.org;
+  return new Set((await notFbpBillFilter(org)).category?.$nin ?? []);
+}
+
 export async function getManagerReimbursementInbox(managerUserId: string) {
   // The claims and the people who made them in one trip, not two.
   const rows = await reimbursementClaims()
     .aggregate<ReimbursementClaim & { _id: ObjectId; employee: User[] }>([
-      { $match: { managerUserId } },
+      // FBP bills are decided by HR on FBP requests; they are no manager's claims.
+      { $match: { managerUserId, ...(await notFbpBillFilter(await orgOfUser(managerUserId))) } },
       { $sort: { status: -1, createdAt: -1 } },
       {
         $lookup: {
@@ -160,7 +175,9 @@ export async function listAllReimbursementsForAdmin(adminUserId: string) {
   });
   if (employees.length === 0) return [];
   const employeeById = new Map(employees.map((e) => [e.userId, e]));
-  const claims = sortLikeMongo(rows, [['status', -1], ['createdAt', -1]]);
+  // FBP bills are on Payroll › FBP requests, not here.
+  const fbp = await fbpCategoriesOf(null, adminUserId);
+  const claims = sortLikeMongo(rows.filter((row) => !fbp.has(row.category)), [['status', -1], ['createdAt', -1]]);
   return Promise.all(
     claims.flatMap((claim) => {
       const employee = employeeById.get(claim.userId);
@@ -243,7 +260,7 @@ export async function getReceiptDownloadUrl(
  * signing date is bucketed, so the same receipt keeps the same URL between
  * refreshes instead of looking like a new file each time.
  */
-async function toView(claim: ReimbursementClaim & { _id: ObjectId }, employee: User) {
+export async function toView(claim: ReimbursementClaim & { _id: ObjectId }, employee: User) {
   return {
     id: claim._id.toHexString(),
     userId: claim.userId,
@@ -275,6 +292,10 @@ async function toView(claim: ReimbursementClaim & { _id: ObjectId }, employee: U
     paidAt: claim.paidAt?.toISOString(),
     decidedByRole: claim.decidedByRole,
   };
+}
+
+async function orgOfUser(userId: string): Promise<string | undefined> {
+  return (await users().findOne({ userId }, { projection: { _id: 0, org: 1 } }))?.org;
 }
 
 function parseDateOnly(value: string): Date {

@@ -321,6 +321,20 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M9 11l2 2 4-4" />
     </svg>
   ),
+  // A bill with a rupee line: an FBP bill.
+  fbprequests: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
+      <path d="M9 8h6M9 11h6M11 11c2 0 2 3 0 3h-1l3 3" />
+    </svg>
+  ),
+  // A pool cut into shares: the flexible split.
+  fbpsplits: (
+    <svg {...base(18, 'currentColor')}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 3.5V12l6 6M12 12H3.5" />
+    </svg>
+  ),
   payruns: (
     <svg {...base(18, 'currentColor')}>
       <path d="M5 3h9l5 5v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />

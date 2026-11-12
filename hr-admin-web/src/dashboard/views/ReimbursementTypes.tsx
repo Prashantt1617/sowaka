@@ -29,6 +29,15 @@ export function ReimbursementTypes() {
   const [failed, setFailed] = useState(false);
   const [editing, setEditing] = useState<ReimbursementTypeDTO | null>(null);
   const [adding, setAdding] = useState(false);
+  // FBP head names, for "FBP bill type for Fuel Reimbursement".
+  const [headNames, setHeadNames] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    void listPayHeads().then((heads) => setHeadNames(new Map(heads.map((h) => [h.code, h.name])))).catch(() => undefined);
+  }, []);
+  const headName = (code: string) => headNames.get(code) ?? code.toLowerCase().replace(/_/g, ' ');
+  // Expense claim types first; the types linked to an FBP head are a group of their own.
+  const claimTypes = types.filter((t) => !t.payHeadCode);
+  const fbpTypes = types.filter((t) => t.payHeadCode);
 
   const reload = () =>
     getReimbursementTypes()
@@ -58,7 +67,33 @@ export function ReimbursementTypes() {
     { header: 'Max limit (₹)', value: (t: ReimbursementTypeDTO) => (t.maxLimit > 0 ? t.maxLimit : 'No cap') },
     { header: 'Can be backdated (days)', value: (t: ReimbursementTypeDTO) => t.backdateDays },
     { header: 'Status', value: (t: ReimbursementTypeDTO) => (t.active ? 'Active' : 'Off') },
+    { header: 'FBP bill type for', value: (t: ReimbursementTypeDTO) => (t.payHeadCode ? headName(t.payHeadCode) : '') },
   ], types);
+
+  const renderRow = (t: ReimbursementTypeDTO, last: boolean) => (
+              <tr key={t.id} className="dc-row">
+                <Td last={last}>
+                  <strong style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{t.name}</strong>
+                  {t.payHeadCode && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2 }}>FBP bill type for {headName(t.payHeadCode)} · not in the app's claim list</div>}
+                </Td>
+                <Td muted last={last}>{t.description || '—'}</Td>
+                <Td right mono last={last}>{rupees(t.maxLimit)}</Td>
+                <Td right mono last={last}>{t.backdateDays === 0 ? 'Today only' : `${t.backdateDays} days`}</Td>
+                <Td last={last}>
+                  <Pill label={t.active ? 'Active' : 'Off'} tone={t.active ? onPill : offPill} />
+                </Td>
+                <Td right last={last}>
+                  <div style={{ display: 'inline-flex', gap: 6 }}>
+                    <button className="ds-icon-btn" style={roundBtn(34)} title="Edit" onClick={() => setEditing(t)}><IconEdit /></button>
+                    <button
+                      className="ds-icon-btn"
+                      style={{ ...roundBtn(34), color: 'var(--bad)' }}
+                      title="Delete"
+                      onClick={() => void remove(t)}
+                    ><IconTrash /></button>
+                  </div>
+                </Td>
+              </tr>);
 
   return (
     <div>
@@ -82,9 +117,11 @@ export function ReimbursementTypes() {
       <div style={note}>
         <span style={{ display: 'inline-flex', marginTop: 2, flexShrink: 0 }}><IconInfo size={15} stroke="var(--accent)" /></span>
         <div style={{ flex: 1 }}>
-          An employee picks one of these when raising a claim. A type that is switched off stays on
-          old claims but disappears from the app's list, which is how to retire one people have
-          already used.
+          An employee picks one of these when raising a claim; an approved claim is paid on top of
+          salary in the next payroll run. A type that is switched off stays on old claims but
+          disappears from the app's list, which is how to retire one people have already used.
+          FBP bill types are not in the app's claim list: their bills are uploaded from the app's
+          FBP page and decided on Payroll › FBP requests.
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
           {loading ? <Spinner /> : failed && types.length === 0 ? '' : `${types.length} type${types.length === 1 ? '' : 's'}`}
@@ -104,31 +141,15 @@ export function ReimbursementTypes() {
             </tr>
           </thead>
           <tbody>
-            {types.map((t, i) => (
-              <tr key={t.id} className="dc-row">
-                <Td last={i === types.length - 1}>
-                  <strong style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{t.name}</strong>
-                  {t.payHeadCode && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2 }}>Bills for the {t.payHeadCode.toLowerCase().replace(/_/g, ' ')} component · tax-free, not paid again</div>}
-                </Td>
-                <Td muted last={i === types.length - 1}>{t.description || '—'}</Td>
-                <Td right mono last={i === types.length - 1}>{rupees(t.maxLimit)}</Td>
-                <Td right mono last={i === types.length - 1}>{t.backdateDays === 0 ? 'Today only' : `${t.backdateDays} days`}</Td>
-                <Td last={i === types.length - 1}>
-                  <Pill label={t.active ? 'Active' : 'Off'} tone={t.active ? onPill : offPill} />
-                </Td>
-                <Td right last={i === types.length - 1}>
-                  <div style={{ display: 'inline-flex', gap: 6 }}>
-                    <button className="ds-icon-btn" style={roundBtn(34)} title="Edit" onClick={() => setEditing(t)}><IconEdit /></button>
-                    <button
-                      className="ds-icon-btn"
-                      style={{ ...roundBtn(34), color: 'var(--bad)' }}
-                      title="Delete"
-                      onClick={() => void remove(t)}
-                    ><IconTrash /></button>
-                  </div>
-                </Td>
+            {claimTypes.map((t, i) => renderRow(t, i === claimTypes.length - 1 && fbpTypes.length === 0))}
+            {fbpTypes.length > 0 && (
+              <tr>
+                <td colSpan={6} style={{ padding: '18px 12px 8px', fontSize: 11.5, fontWeight: 600, letterSpacing: '.06em', color: 'var(--ink-3)' }}>
+                  FBP BILL TYPES · bills for an FBP head, paid with salary: an approved bill is not paid again, it makes that much tax-free
+                </td>
               </tr>
-            ))}
+            )}
+            {fbpTypes.map((t, i) => renderRow(t, i === fbpTypes.length - 1))}
             {(loading || (failed && types.length === 0)) && (
               <tr><td colSpan={6} style={{ padding: 0 }}><ListPending state={loading ? 'loading' : 'error'} onRetry={() => { setLoading(true); void reload(); }} rows={4} cols={6} avatar={false} rowHeight={52} /></td></tr>
             )}
@@ -236,15 +257,15 @@ function TypeModal({ initial, onClose, onSaved }: {
             </div>
           </Field>
           {(components?.length ?? 0) > 0 && (
-            <Field label="Bills for a salary component">
+            <Field label="FBP bill type for">
               <select value={billsFor} onChange={(e) => setBillsFor(e.target.value)} className="ds-inp" style={inputStyle}>
-                <option value="">None: an expense claim, paid on the next run</option>
-                {components!.map((h) => <option key={h.code} value={h.code}>{h.name}</option>)}
+                <option value="">None: an expense claim, paid on top of salary on the next run</option>
+                {components!.map((h) => <option key={h.code} value={h.code}>FBP bill type for {h.name}</option>)}
               </select>
               <div style={{ ...hint, marginTop: 6 }}>
                 {billsFor
-                  ? 'This component is already paid with salary every month and taxed until bills come in. An approved claim of this type is not paid again: it makes that much of the component tax-free, and the income tax drops from the next payroll run.'
-                  : 'The approved amount is paid on the next payroll run.'}
+                  ? 'This FBP head is part of the salary: it is paid every month and taxed until bills come in. Its bills are uploaded from the app\'s FBP page (not the claim list) and decided on Payroll › FBP requests. An approved bill is not paid again: it makes that much of the head tax-free, and the income tax drops from the next payroll run.'
+                  : 'An expense claim: the approved amount is paid on top of salary on the next payroll run.'}
               </div>
             </Field>
           )}

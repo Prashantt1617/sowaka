@@ -71,7 +71,7 @@ import {
 import { getPaymentDetailsHandler, setPaymentDetailsHandler } from '../controllers/employeePayment.controller';
 import { getDeclarationHandler, setDeclarationHandler } from '../controllers/tds.controller';
 import {
-  hrDecideProofHandler, hrEpfBalanceHandler, hrGetAppSettingsHandler, hrSetEpfBalanceHandler, hrListProofsHandler, hrProofFileHandler, hrSetAppSettingsHandler, hrSplitHandler,
+  hrDecideProofHandler, hrEpfBalanceHandler, hrFbpDecideHandler, hrFbpPendingCountHandler, hrFbpRequestsHandler, hrFbpSplitsHandler, hrGetAppSettingsHandler, hrSetEpfBalanceHandler, hrListProofsHandler, hrProofFileHandler, hrSetAppSettingsHandler, hrSplitHandler,
 } from '../controllers/employeePayroll.controller';
 import {
   hrBulkUploadForm16Handler, hrDeleteForm16Handler, hrForm16FileHandler, hrForm16Handler, hrUploadForm16Handler,
@@ -185,6 +185,13 @@ payrollRouter.post('/form16/bulk', uploadForm16Files, hrBulkUploadForm16Handler)
 payrollRouter.post('/form16/employees/:userId', uploadForm16File, hrUploadForm16Handler);
 payrollRouter.get('/form16/:documentId/file', hrForm16FileHandler);
 payrollRouter.delete('/form16/:documentId', hrDeleteForm16Handler);
+
+// FBP (Payroll › FBP requests, FBP splits): the FBP bills to approve or reject (?fy=2026-27),
+// the pending count for the sidebar, a decision, and every employee's split for a FY.
+payrollRouter.get('/fbp/requests', hrFbpRequestsHandler);
+payrollRouter.get('/fbp/requests/pending-count', hrFbpPendingCountHandler);
+payrollRouter.post('/fbp/requests/:billId/decision', hrFbpDecideHandler);
+payrollRouter.get('/fbp/splits', hrFbpSplitsHandler);
 
 // One employee's flexible split for a FY (?fy=2026-27): the one in force and every version.
 payrollRouter.get('/employees/:userId/flexible-split', hrSplitHandler);

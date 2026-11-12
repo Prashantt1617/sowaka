@@ -21,6 +21,18 @@ export async function billCategories(org: string): Promise<Map<string, string>> 
   return new Map(types.map((t) => [t.name.toLowerCase(), t.payHeadCode!]));
 }
 
+/**
+ * FBP bills are kept as claims of a linked type, but they are not reimbursement
+ * requests: they live on the dashboard's FBP requests page and the app's FBP
+ * page, and are never paid out. Lists and counts of reimbursement requests
+ * leave them out with this filter (an org with no linked type: nothing).
+ */
+export async function notFbpBillFilter(org: string | undefined | null): Promise<{ category?: { $nin: string[] } }> {
+  if (!org) return {};
+  const categories = [...(await billCategories(org)).keys()];
+  return categories.length ? { category: { $nin: categories } } : {};
+}
+
 const fyStart = (period: string) => new Date(`${fyOf(period).firstPeriod}-01T00:00:00Z`);
 
 /** Approved bills this FY up to `until`, per person per component, in paise. */

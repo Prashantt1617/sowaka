@@ -35,6 +35,8 @@ export type View =
   | 'statutorycomponents'
   | 'payruns'
   | 'investmentproofs'
+  | 'fbprequests'
+  | 'fbpsplits'
   | 'payrollconfig'
   | 'departments'
   | 'designations'
@@ -173,6 +175,8 @@ export const TITLES: Record<View, [string, string]> = {
   payruns: ['Payroll Runs', 'Payroll · monthly runs and payslips'],
   payrollconfig: ['Statutory & tax settings', 'Payroll · every statutory and income tax figure, per financial year'],
   investmentproofs: ['Investment proofs', 'Payroll · the proofs employees upload for their tax declaration'],
+  fbprequests: ['FBP requests', 'Payroll · the FBP bills employees upload: approved bills make that much of the head tax-free'],
+  fbpsplits: ['FBP splits', 'Payroll · how each employee splits their flexible benefit pool this FY'],
   departments: ['Departments', 'People'],
   designations: ['Designations', 'People'],
   employees: ['Employees', 'People'],

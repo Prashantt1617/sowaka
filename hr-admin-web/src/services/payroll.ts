@@ -681,7 +681,8 @@ export type PayrollDashboardReport = {
   dues: { period: string; status: RunStatus; epfPaise: number; esiPaise: number; tdsPaise: number; ptPaise: number; lwfPaise: number } | null;
   people: { active: number; withSalary: number; noSalary: number; noBankAccount: number; noPan: number };
   cost: { range: CostRange; label: string; months: { period: string; status: RunStatus | null; netPayPaise: number; taxesPaise: number; deductionsPaise: number; employerPaise: number }[] };
-  todo: { pendingClaims: number; runsAwaitingApproval: number };
+  /** Reimbursement requests and FBP bills are counted apart: they are two pages. */
+  todo: { pendingClaims: number; pendingFbpBills?: number; runsAwaitingApproval: number };
 };
 const reportQs = (q: Record<string, string | boolean | undefined>) =>
   Object.entries(q).filter(([, v]) => v !== undefined && v !== false).map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join('&');
@@ -1039,3 +1040,76 @@ export const saveTdsConfig = (fy: string, regime: TaxRegime, config: Omit<TdsCon
   api<TdsConfigYear>(`/admin/payroll/tds-config?fy=${fy}&regime=${regime}`, { method: 'PUT', body: config });
 export const copyTdsConfig = (fy: string, copyFrom: string) =>
   api<TdsConfigYear>(`/admin/payroll/tds-config?fy=${fy}&copyFrom=${copyFrom}`, { method: 'POST' });
+
+// —— FBP (Payroll › FBP requests, FBP splits) ——
+
+export type FbpRequestStatus = 'pending' | 'approved' | 'rejected';
+/** One FBP bill: a month's bill for one FBP head. Approving it makes that much of the head tax-free; it is never paid out. */
+export type FbpRequestDTO = {
+  id: string;
+  userId: string;
+  employee: { name: string; employeeId: string | null; department: string | null; photoUrl?: string };
+  headCode: string;
+  headName: string;
+  billType: string;
+  /** "YYYY-MM": the month the bill is for. */
+  period: string;
+  amountPaise: number;
+  uploadedAt: string;
+  fileName: string | null;
+  hasFile: boolean;
+  fileUrl?: string;
+  fileType: string | null;
+  note: string | null;
+  status: FbpRequestStatus;
+  /** HR's reason on a rejection, as the app shows it. */
+  reason: string | null;
+  decidedAt: string | null;
+};
+export type FbpRequestsDTO = { fy: string; requests: FbpRequestDTO[]; counts: Record<FbpRequestStatus, number>; pendingOtherYears: number };
+
+export const listFbpRequests = (fy: string) => api<FbpRequestsDTO>(`/admin/payroll/fbp/requests?fy=${encodeURIComponent(fy)}`);
+export const fbpPendingCount = () => api<{ pending: number }>('/admin/payroll/fbp/requests/pending-count').then((r) => r.pending);
+export const decideFbpRequest = (billId: string, decision: 'approve' | 'reject', reason?: string) =>
+  api<{ request: FbpRequestDTO }>(`/admin/payroll/fbp/requests/${billId}/decision`, {
+    method: 'POST',
+    body: { decision, ...(reason ? { reason } : {}) },
+  }).then((r) => r.request);
+
+export type FbpSplitHeadDTO = {
+  code: string;
+  name: string;
+  limitPaise: number;
+  /** The head's monthly amount now: the split's, else the salary structure's. */
+  amountPaise: number;
+  billType: string | null;
+  /** Months this FY so far that the head paid something, and where each month's bill stands. */
+  bills: { due: number; approved: number; inReview: number; rejected: number; missing: number };
+};
+export type FbpSplitRowDTO = {
+  userId: string;
+  name: string;
+  employeeId: string | null;
+  department: string | null;
+  designation: string | null;
+  template: { code: string; name: string };
+  poolPaise: number | null;
+  assignedPaise: number;
+  unassignedPaise: number | null;
+  heads: FbpSplitHeadDTO[];
+  declared: { firstAt: string; changedAt: string | null; versions: number; effectiveFrom: string; billsAcknowledgedAt: string } | null;
+};
+export type FbpSplitsDTO = {
+  fy: string;
+  asOf: string | null;
+  rows: FbpSplitRowDTO[];
+  departments: string[];
+  setup: {
+    headsWithoutBillType: { code: string; name: string }[];
+    templatesWithoutPool: { code: string; name: string }[];
+    templates: { code: string; name: string; heads: { code: string; name: string; limitPaise: number }[]; poolPaise: number | null }[];
+    billTypes: { name: string; headCode: string; headName: string; active: boolean }[];
+    rules: { splitStepPaise: number | null; splitCutoffDay: number | null; splitClosesOn: string | null; fbpBillsDueDay: number | null; billsDueOn: string | null };
+  };
+};
+export const listFbpSplits = (fy: string) => api<FbpSplitsDTO>(`/admin/payroll/fbp/splits?fy=${encodeURIComponent(fy)}`);
