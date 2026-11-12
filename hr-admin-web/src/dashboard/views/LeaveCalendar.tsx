@@ -1,19 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
-import { STAT, typeColor } from '../theme';
 import type { Leave } from '../seed';
 import { getHolidays } from '../../services/hrms';
 import type { HolidayDTO } from '../../services/hrms';
-import { Card, EmptyRow, ListPending, LoadingFigure, Pill, SelectBox, Th } from '../ui';
+import { Card, EmptyRow, ListPending, LoadingFigure, SelectBox, Th } from '../ui';
 import type { LoadState } from '../ui';
-import { PersonAvatar } from '../PersonAvatar';
-import { cellName, cellSub, iconBtn, SEG, segBtn, TH, TR } from '../ds';
+import { cellSub, iconBtn, SEG, segBtn, TH } from '../ds';
 import { IconChevronLeft, IconChevronRight } from '../icons';
-import { dateOf, dayLabel, daysIn, isoOf, isWeekend, MONTH, needsActionSummary, perDay, todayISO } from './leaveDays';
-import { DayBars, Swatch } from './leaveParts';
+import { dateOf, dayLabel, daysIn, isoOf, isWeekend, LEAVE_COLS, MONTH, needsActionSummary, peopleTotals, perDay, todayISO } from './leaveDays';
+import { DayBars, LeaveRow, Swatch } from './leaveParts';
 
-const COLS = '1.7fr 1fr 1.3fr .6fr 1.7fr 1.3fr 1.1fr .8fr';
 const who = (l: Leave) => l.submitterId || l.name;
 /** Shares of a department off that the heatmap calls out. */
 const BUSY = 0.25;
@@ -53,6 +50,7 @@ export function LeaveCalendar({ state, initialDay, onPending, onOpenDay }: {
 
   const leaves = useMemo(() => (type === 'all' ? s.leaves : s.leaves.filter((l) => l.type === type)), [s.leaves, type]);
   const counts = useMemo(() => perDay(leaves, days), [leaves, month]); // eslint-disable-line react-hooks/exhaustive-deps
+  const totals = useMemo(() => peopleTotals(counts), [counts]);
 
   const festByDay = useMemo(() => {
     const m = new Map<string, string[]>();
@@ -128,7 +126,7 @@ export function LeaveCalendar({ state, initialDay, onPending, onOpenDay }: {
                 <span style={{ color: 'var(--ink-3)' }}>Click a day to see who is off</span>
               </div>
               <LoadingFigure state={state} w="100%" h={190}>
-                <DayBars days={days} counts={counts} today={today} selected={day} onPick={(d) => { setDay(d); setDept(null); }} height={140} />
+                <DayBars days={days} totals={totals} today={today} selected={day} onPick={(d) => { setDay(d); setDept(null); }} height={140} />
               </LoadingFigure>
               {festByDay.size > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -200,7 +198,7 @@ export function LeaveCalendar({ state, initialDay, onPending, onOpenDay }: {
           )}
           <div style={{ overflowX: 'auto' }}>
             <div style={{ minWidth: 980 }}>
-              <div style={TH(COLS)}>
+              <div style={TH(LEAVE_COLS)}>
                 <Th>EMPLOYEE</Th>
                 <Th>TYPE</Th>
                 <Th>LEAVE DATES</Th>
@@ -210,30 +208,7 @@ export function LeaveCalendar({ state, initialDay, onPending, onOpenDay }: {
                 <Th>STATUS</Th>
                 <Th align="right">APPLIED</Th>
               </div>
-              {dayRows.map((r, i) => {
-                const pend = r.status === 'Pending';
-                return (
-                  <div key={r.id} className="dc-row" onClick={() => s.setDrawerId(r.id)} style={{ ...TR(COLS, i === dayRows.length - 1), cursor: 'pointer', ...(pend ? { background: 'var(--warn-bg)', boxShadow: 'inset 3px 0 0 var(--warn)' } : null) }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                      <PersonAvatar name={r.name} userId={r.submitterId} />
-                      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <div style={{ ...cellName, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                        <div style={cellSub}>{r.team}</div>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: typeColor(r.type) }} />
-                      <span>{r.type}</span>
-                    </div>
-                    <div style={{ whiteSpace: 'nowrap' }}>{r.from === r.to ? r.from : `${r.from} – ${r.to}`}</div>
-                    <div style={{ whiteSpace: 'nowrap' }}>{r.days}</div>
-                    <div style={{ color: r.eRemark ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
-                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.manager}</div>
-                    <div><Pill label={r.byAdmin ? `${r.status} · by admin` : r.status} tone={STAT[r.status]} /></div>
-                    <div style={{ textAlign: 'right', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{r.applied}</div>
-                  </div>
-                );
-              })}
+              {dayRows.map((r, i) => <LeaveRow key={r.id} r={r} last={i === dayRows.length - 1} onOpen={() => s.setDrawerId(r.id)} />)}
               <ListPending state={state} onRetry={() => void s.reload()} cols={8} rows={3} />
               {state === 'ready' && dayRows.length === 0 && <EmptyRow text="Nobody is on leave this day." />}
             </div>

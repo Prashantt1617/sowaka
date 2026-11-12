@@ -92,7 +92,7 @@ export const SLOW_DAYS = 2;
 /** A pending leave as Needs action sees it: how soon it starts and how long it has waited. */
 export function pendingFacts(l: Leave, today = todayISO()) {
   const toStart = daysBetween(today, startOf(l));
-  const waited = l.ord ? Math.max(0, Math.floor((Date.now() - l.ord) / 86_400_000)) : 0;
+  const waited = daysSince(l.ord);
   return { toStart, waited, passed: toStart < 0, soon: toStart >= 0 && toStart <= 7, slow: waited > SLOW_DAYS };
 }
 
@@ -106,3 +106,54 @@ export function needsActionSummary(leaves: Leave[]) {
     slow: facts.filter((f) => f.slow).length,
   };
 }
+
+export type PeriodId = 'last' | 'week' | 'month' | 'next' | 'all' | 'custom';
+
+/** The bounds of a period, and its heading. Empty bounds are open. */
+export function periodRange(id: PeriodId, customFrom: string, customTo: string): { from: string; to: string; title: string } {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const month = (k: number) => {
+    const first = new Date(y, m + k, 1);
+    return { from: isoOf(first), to: isoOf(new Date(first.getFullYear(), first.getMonth() + 1, 0)), title: `${MONTH[first.getMonth()]} ${first.getFullYear()}` };
+  };
+  if (id === 'last') return month(-1);
+  if (id === 'next') return month(1);
+  if (id === 'month') return month(0);
+  if (id === 'week') {
+    const back = (now.getDay() + 6) % 7; // Monday starts the week
+    const from = addDays(todayISO(), -back);
+    const to = addDays(from, 6);
+    const f = dateOf(from), t = dateOf(to);
+    const span = f.getMonth() === t.getMonth() ? `${f.getDate()}–${t.getDate()} ${MON[t.getMonth()]}` : `${f.getDate()} ${MON[f.getMonth()]} – ${t.getDate()} ${MON[t.getMonth()]}`;
+    return { from, to, title: `This week · ${span}` };
+  }
+  if (id === 'custom') {
+    if (!customFrom) return { from: '', to: '', title: 'Custom range' };
+    return { from: customFrom, to: customTo, title: customFrom === customTo ? dayLabel(customFrom) : `${dayLabel(customFrom)} – ${dayLabel(customTo)}` };
+  }
+  return { from: '', to: '', title: 'All dates' };
+}
+
+/** The days a period's chart draws: none for All dates or anything over two months. */
+export const chartDaysOf = (r: { from: string; to: string }) =>
+  r.from && r.to && r.from <= r.to && daysBetween(r.from, r.to) <= 62 ? daysIn(r.from, r.to) : [];
+
+/** Whole days since a timestamp (ms). */
+export const daysSince = (ms: number) => (ms ? Math.max(0, Math.floor((Date.now() - ms) / 86_400_000)) : 0);
+
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** Checks a custom range before it is applied; the message, or '' when fine. */
+export const rangeProblem = (from: string, to: string) =>
+  !from || !to ? 'Pick both a start and an end date.' : to < from ? 'The end date is before the start date.' : '';
+
+/** The leave tables' columns: employee, type, dates, days, reason, manager, status, applied. */
+export const LEAVE_COLS = '1.7fr 1fr 1.3fr .6fr 1.7fr 1.3fr 1.1fr .8fr';
+
+/** perDay's leaves as head counts: each person once a day, approved and pending. */
+export const peopleTotals = (rows: { approved: Leave[]; pending: Leave[] }[]) => {
+  const n = (ls: Leave[]) => new Set(ls.map((l) => l.submitterId || l.name)).size;
+  return rows.map((r) => ({ a: n(r.approved), p: n(r.pending) }));
+};
