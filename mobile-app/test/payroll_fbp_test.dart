@@ -650,6 +650,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Take photo'), findsOneWidget);
+    expect(find.text('Gallery'), findsOneWidget);
     expect(find.text('Choose file'), findsOneWidget);
     InkWell submit() =>
         tester.widget<InkWell>(find.byKey(const ValueKey('fbp-bill-submit')));
@@ -685,6 +686,12 @@ void main() {
     final server = await pumpFbp(tester);
     final camera = payrollFbpCamera;
     addTearDown(() => payrollFbpCamera = camera);
+    final gallery = payrollFbpGallery;
+    addTearDown(() => payrollFbpGallery = gallery);
+    payrollFbpGallery = (_) async => PayrollUpload(
+      name: 'IMG_0100.png',
+      bytes: Uint8List.fromList([0x89, 0x50, 0x4e, 0x47]),
+    );
     payrollFbpCamera = (_) async => PayrollUpload(
       name: 'IMG_0042.jpg',
       bytes: Uint8List.fromList([0xff, 0xd8, 0xff, 0x00]),
@@ -706,6 +713,11 @@ void main() {
     // Removed, the box to add one is back.
     await tap(tester, find.byTooltip('Remove file'));
     expect(find.byKey(const ValueKey('fbp-bill-drop')), findsOneWidget);
+    // A photo already on the phone, from the gallery.
+    await tap(tester, find.byKey(const ValueKey('fbp-bill-gallery')));
+    expect(find.text('IMG_0100.png'), findsOneWidget);
+    expect(find.text('PNG'), findsOneWidget);
+    await tap(tester, find.byTooltip('Remove file'));
     await tap(tester, find.byKey(const ValueKey('fbp-bill-take-photo')));
     await tap(tester, find.byKey(const ValueKey('fbp-bill-submit')));
     expect(server.uploadFields, {'period': '2026-08', 'amountPaise': '250000'});

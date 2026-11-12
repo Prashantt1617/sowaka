@@ -2,10 +2,13 @@ part of 'quick_actions_screen.dart';
 
 // ---------------------------------------------------------------- FBP
 
-/// Takes a photo of a bill. Until the app's camera helper is shared by the
-/// Payroll pages, Take photo opens the file picker; tests put their own
-/// here.
-PayrollFilePicker payrollFbpCamera = _pickProofFile;
+/// Takes a photo of a bill with the camera ([_takeProofPhoto]); tests put
+/// their own here.
+PayrollFilePicker payrollFbpCamera = _takeProofPhoto;
+
+/// Picks a photo of a bill from the gallery ([_chooseProofPhoto]); tests put
+/// their own here.
+PayrollFilePicker payrollFbpGallery = _chooseProofPhoto;
 
 /// The type the FBP pages are set in (Figma 4473:67946): Sora, with the
 /// app's own face behind it for the rupee sign.
@@ -1088,6 +1091,7 @@ Future<FbpHead?> _showFbpBillSheet(
       api: scope.api,
       pickFile: scope.pickFile ?? _pickProofFile,
       takePhoto: payrollFbpCamera,
+      choosePhoto: payrollFbpGallery,
     ),
   );
 }
@@ -1103,6 +1107,7 @@ class _FbpBillSheet extends StatefulWidget {
     required this.api,
     required this.pickFile,
     required this.takePhoto,
+    required this.choosePhoto,
   });
 
   final FbpHead head;
@@ -1110,6 +1115,7 @@ class _FbpBillSheet extends StatefulWidget {
   final PayrollApiService api;
   final PayrollFilePicker pickFile;
   final PayrollFilePicker takePhoto;
+  final PayrollFilePicker choosePhoto;
 
   @override
   State<_FbpBillSheet> createState() => _FbpBillSheetState();
@@ -1360,6 +1366,12 @@ class _FbpBillSheetState extends State<_FbpBillSheet> {
                               'Take photo',
                               const ValueKey('fbp-bill-take-photo'),
                               widget.takePhoto,
+                            ),
+                            const SizedBox(width: 8),
+                            _sourceButton(
+                              'Gallery',
+                              const ValueKey('fbp-bill-gallery'),
+                              widget.choosePhoto,
                             ),
                             const SizedBox(width: 8),
                             _sourceButton(

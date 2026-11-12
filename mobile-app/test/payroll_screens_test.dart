@@ -912,6 +912,10 @@ void main() {
         name: 'camera-shot.jpg',
         bytes: Uint8List.fromList(List.filled(2048, 7)),
       );
+      payrollProofGallery = (_) async => PayrollUpload(
+        name: 'gallery-shot.jpg',
+        bytes: Uint8List.fromList(List.filled(1024, 7)),
+      );
     });
     tearDown(() => unregisterSupportTicketOpener(opener));
 
@@ -1012,6 +1016,7 @@ void main() {
       expect(find.text('Interest certificate from the bank'), findsOneWidget);
       expect(find.text('Photo or PDF'), findsOneWidget);
       expect(find.text('Take photo'), findsOneWidget);
+      expect(find.text('Gallery'), findsOneWidget);
       expect(find.text('Choose file'), findsOneWidget);
       expect(find.text('Amount on proof'), findsOneWidget);
       final amount = tester.widget<TextField>(
@@ -1041,6 +1046,11 @@ void main() {
       expect(find.text('camera-shot.jpg'), findsNothing);
       expect(find.text('Photo or PDF'), findsOneWidget);
       expect(submit().onTap, isNull);
+      // A photo already on the phone, from the gallery.
+      await tap(tester, find.byKey(const ValueKey('proof-gallery')));
+      expect(find.text('gallery-shot.jpg'), findsOneWidget);
+      expect(submit().onTap, isNotNull);
+      await tap(tester, find.byKey(const ValueKey('proof-remove-file')));
       await tap(tester, find.byKey(const ValueKey('proof-take-photo')));
       await tester.enterText(
         find.byKey(const ValueKey('proof-amount')),

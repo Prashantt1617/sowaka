@@ -4,7 +4,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart' as image_picker;
 
 import '../../support/support_launcher.dart';
 
@@ -30,6 +29,8 @@ import '../../policies/data/policies_api_service.dart';
 import '../../policies/data/policies_models.dart';
 import '../../policies/presentation/policy_body_view.dart';
 import '../../shared/app_toast.dart';
+import '../../shared/attachment_picker.dart';
+import '../../shared/image_source_sheet.dart' show ImageSourceChoice;
 import '../../support/presentation/support_desk_screen.dart';
 
 part 'placements_screen.dart';
@@ -7188,23 +7189,18 @@ class _ReceiptUploadField extends StatelessWidget {
   final String? fileName;
   final ValueChanged<PlatformFile?> onPicked;
 
+  /// Take a photo, Choose from gallery or Choose file: a PDF, JPEG or PNG
+  /// of at most 5 MB, as the server takes.
   Future<void> _pick(BuildContext context) async {
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
-        withData: true,
-      );
-      if (result == null || result.files.isEmpty || !context.mounted) return;
-      onPicked(result.files.single);
-    } catch (_) {
-      // File picking was cancelled or unsupported on this platform.
-    }
+    final file = await pickAttachment(context);
+    if (file == null || !context.mounted) return;
+    onPicked(file.toPlatformFile());
   }
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
+      key: const ValueKey('reimbursement-receipt-upload'),
       onTap: () => _pick(context),
       borderRadius: BorderRadius.circular(12),
       child: CustomPaint(
@@ -7224,11 +7220,17 @@ class _ReceiptUploadField extends StatelessWidget {
                 height: 16,
               ),
               const SizedBox(width: 8),
-              Text(
-                fileName ?? 'Upload receipt',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+              // A long file name is cut short rather than overflowing.
+              Flexible(
+                child: Text(
+                  fileName ?? 'Upload receipt',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF9CA3AF),
+                    fontSize: 12,
+                  ),
+                ),
               ),
             ],
           ),
@@ -7408,24 +7410,18 @@ class _LeaveAttachmentField extends StatelessWidget {
   final String? fileName;
   final ValueChanged<PlatformFile?> onPicked;
 
+  /// Take a photo, Choose from gallery or Choose file: a PDF, JPEG or PNG
+  /// of at most 5 MB, as the server takes.
   Future<void> _pick(BuildContext context) async {
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
-        // Bytes, not just a name: the file has to reach the server.
-        withData: true,
-      );
-      if (result == null || result.files.isEmpty || !context.mounted) return;
-      onPicked(result.files.single);
-    } catch (_) {
-      // File picking was cancelled or unsupported on this platform.
-    }
+    final file = await pickAttachment(context);
+    if (file == null || !context.mounted) return;
+    onPicked(file.toPlatformFile());
   }
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
+      key: const ValueKey('leave-attachment-upload'),
       onTap: () => _pick(context),
       borderRadius: BorderRadius.circular(12),
       child: Container(
@@ -7444,11 +7440,14 @@ class _LeaveAttachmentField extends StatelessWidget {
               height: 16,
             ),
             const SizedBox(width: 8),
-            Text(
-              fileName ?? 'Upload document',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+            // A long file name is cut short rather than overflowing.
+            Flexible(
+              child: Text(
+                fileName ?? 'Upload document',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+              ),
             ),
           ],
         ),
@@ -8432,28 +8431,12 @@ class _UploadCard extends StatelessWidget {
 
   String? get _extension => value?.split('.').last.toLowerCase();
 
+  /// Take a photo, Choose from gallery or Choose file: a PDF, JPEG or PNG
+  /// of at most 5 MB (a bigger photo is shrunk to fit), as the server takes.
   Future<void> _pickFile(BuildContext context) async {
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
-        withData: true,
-      );
-      if (result == null || result.files.isEmpty || !context.mounted) return;
-      final file = result.files.single;
-      if (file.size > 5 * 1024 * 1024) {
-        showAppToast(context, 'Choose a file smaller than 5 MB.');
-        return;
-      }
-      if (file.bytes == null) {
-        showAppToast(context, 'Could not read the selected file.');
-        return;
-      }
-      onChanged(file);
-    } catch (_) {
-      if (!context.mounted) return;
-      showAppToast(context, 'Could not open the file picker.');
-    }
+    final file = await pickAttachment(context);
+    if (file == null || !context.mounted) return;
+    onChanged(file.toPlatformFile());
   }
 
   @override
@@ -8461,6 +8444,7 @@ class _UploadCard extends StatelessWidget {
     return Column(
       children: [
         InkWell(
+          key: const ValueKey('flow-upload-card'),
           borderRadius: BorderRadius.circular(16),
           onTap: () => _pickFile(context),
           child: Container(

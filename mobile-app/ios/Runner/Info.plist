@@ -44,7 +44,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Sowaka uses the camera for the selfie that confirms it's you when you punch in or out, to take a photo for your profile picture or a post, and to scan a colleague's code in a game.</string>
+	<string>Sowaka uses the camera for the selfie that confirms it's you when you punch in or out, to take a photo for your profile picture or a post, to photograph a receipt, bill or document for a leave, reimbursement or payroll request, and to scan a colleague's code in a game.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Sowaka checks that you are at the office when you punch in or out. Your location is only read at that moment — never in the background.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
@@ -52,7 +52,7 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Sowaka uses the microphone to dictate feedback notes and to send voice messages to the players at your game table.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app requires access to your photo library so you can select and upload a profile picture.</string>
+	<string>Sowaka uses your photo library so you can choose a profile picture, photos for a post, or a photo of a receipt, bill or document to attach to a leave, reimbursement or payroll request.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Sowaka uses speech recognition to turn dictated feedback into text.</string>
 	<key>UIApplicationSceneManifest</key>

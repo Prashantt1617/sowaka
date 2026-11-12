@@ -52,6 +52,7 @@ class _ProofsPageState extends State<_ProofsPage> {
         api: scope.api,
         pickFile: scope.pickFile ?? _pickProofFile,
         takePhoto: payrollProofCamera,
+        choosePhoto: payrollProofGallery,
       ),
     );
     if (updated == null || !mounted) return;
@@ -1166,9 +1167,14 @@ class _PrSheet extends StatelessWidget {
 /// tests put their own here.
 PayrollFilePicker payrollProofCamera = _takeProofPhoto;
 
+/// Picks a photo of a proof from the gallery ([_chooseProofPhoto]); tests
+/// put their own here.
+PayrollFilePicker payrollProofGallery = _chooseProofPhoto;
+
 /// Upload / Re-upload proof (Figma 4567:25245), self-contained so the bill
 /// sheets can read the same: title, "`item` · `document`", the document as
-/// a label over a "Photo or PDF" box with Take photo and Choose file, the
+/// a label over a "Photo or PDF" box with Take photo, Gallery and Choose
+/// file (the feed's three sources), the
 /// amount on the proof (the declared amount to start), and Submit for
 /// review.
 class _ProofUploadSheet extends StatefulWidget {
@@ -1178,6 +1184,7 @@ class _ProofUploadSheet extends StatefulWidget {
     required this.api,
     required this.pickFile,
     required this.takePhoto,
+    required this.choosePhoto,
   });
 
   final InvestmentProofItem item;
@@ -1185,6 +1192,7 @@ class _ProofUploadSheet extends StatefulWidget {
   final PayrollApiService api;
   final PayrollFilePicker pickFile;
   final PayrollFilePicker takePhoto;
+  final PayrollFilePicker choosePhoto;
 
   @override
   State<_ProofUploadSheet> createState() => _ProofUploadSheetState();
@@ -1334,6 +1342,12 @@ class _ProofUploadSheetState extends State<_ProofUploadSheet> {
               'Take photo',
               () => _pick(widget.takePhoto),
               const ValueKey('proof-take-photo'),
+            ),
+            const SizedBox(width: 8),
+            _outline(
+              'Gallery',
+              () => _pick(widget.choosePhoto),
+              const ValueKey('proof-gallery'),
             ),
             const SizedBox(width: 8),
             _outline(
@@ -1662,68 +1676,28 @@ class _ProofUploadSheetState extends State<_ProofUploadSheet> {
 }
 
 /// The system picker, for a PDF, JPEG or PNG of at most 5 MB.
-Future<PayrollUpload?> _pickProofFile(BuildContext context) async {
-  try {
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
-      withData: true,
-    );
-    if (result == null || result.files.isEmpty || !context.mounted) {
-      return null;
-    }
-    final file = result.files.single;
-    final bytes = file.bytes;
-    if (file.size > PayrollApiService.maxProofBytes) {
-      showAppToast(context, 'Choose a file smaller than 5 MB.');
-      return null;
-    }
-    if (bytes == null) {
-      showAppToast(context, 'Could not read the selected file.');
-      return null;
-    }
-    return PayrollUpload(name: file.name, bytes: bytes);
-  } catch (_) {
-    if (context.mounted) {
-      showAppToast(context, 'Could not open the file picker.');
-    }
-    return null;
-  }
-}
+Future<PayrollUpload?> _pickProofFile(BuildContext context) =>
+    _proofFrom(context, ImageSourceChoice.files);
 
 /// The camera, straight away, on a phone; elsewhere there is none, so the
 /// file picker opens instead. Sized as every other photo the app takes.
-Future<PayrollUpload?> _takeProofPhoto(BuildContext context) async {
-  final platform = Theme.of(context).platform;
-  if (platform != TargetPlatform.iOS && platform != TargetPlatform.android) {
-    return _pickProofFile(context);
-  }
-  try {
-    final picked = await image_picker.ImagePicker().pickImage(
-      source: image_picker.ImageSource.camera,
-      maxWidth: 2048,
-      maxHeight: 2048,
-      imageQuality: 90,
-    );
-    if (picked == null || !context.mounted) return null;
-    final bytes = await picked.readAsBytes();
-    if (!context.mounted) return null;
-    if (bytes.length > PayrollApiService.maxProofBytes) {
-      showAppToast(context, 'That photo is over 5 MB. Try again.');
-      return null;
-    }
-    final name = picked.name.contains('.') ? picked.name : '${picked.name}.jpg';
-    return PayrollUpload(name: name, bytes: bytes);
-  } on PlatformException catch (error) {
-    // A denied camera permission arrives here rather than as a crash.
-    if (context.mounted) {
-      showAppToast(
-        context,
-        error.code == 'camera_access_denied'
-            ? 'Sowaka needs permission for the camera. Turn it on in Settings.'
-            : 'Could not open the camera. Choose a file instead.',
-      );
-    }
-    return null;
-  }
+Future<PayrollUpload?> _takeProofPhoto(BuildContext context) =>
+    _proofFrom(context, ImageSourceChoice.camera);
+
+/// The photo library, as the feed opens it; the file picker on desktop.
+Future<PayrollUpload?> _chooseProofPhoto(BuildContext context) =>
+    _proofFrom(context, ImageSourceChoice.gallery);
+
+/// One proof from [source], kept to what the server takes: a PDF, JPEG or
+/// PNG of at most 5 MB, a photo shrunk to fit.
+Future<PayrollUpload?> _proofFrom(
+  BuildContext context,
+  ImageSourceChoice source,
+) async {
+  final file = await pickAttachmentFrom(
+    context,
+    source,
+    maxBytes: PayrollApiService.maxProofBytes,
+  );
+  return file == null ? null : PayrollUpload(name: file.name, bytes: file.bytes);
 }
