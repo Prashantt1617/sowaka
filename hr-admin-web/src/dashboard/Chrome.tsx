@@ -520,7 +520,7 @@ export function Topbar() {
         <div style={{ flex: 1 }} />
         {!suwiOff && (
           <button type="button" onClick={() => setSuwiOpen(!suwiOpen)} aria-expanded={suwiOpen} title="Ask Suwi, your HR assistant" className="ds-suwi-btn"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 40, padding: '0 14px 0 8px', borderRadius: 999, border: '1px solid color-mix(in srgb, var(--hi) 30%, var(--line))', background: 'linear-gradient(120deg, var(--surface), var(--sky-soft))', color: 'var(--hi)', fontFamily: 'inherit', fontSize: 13, fontWeight: 500, lineHeight: 1.5, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 40, padding: '0 14px 0 8px', borderRadius: 999, border: '1px solid color-mix(in srgb, var(--suwi) 30%, var(--line))', background: 'linear-gradient(120deg, var(--surface), var(--suwi-soft))', color: 'var(--suwi-ink)', fontFamily: 'inherit', fontSize: 13, fontWeight: 500, lineHeight: 1.5, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
             <SuwiOrb size={22} />Ask Suwi
           </button>
         )}
