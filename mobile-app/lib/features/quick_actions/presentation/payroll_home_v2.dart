@@ -75,6 +75,16 @@ extension _PayrollHomeV2 on _PayrollHomePageState {
           ),
         ),
     ];
+    // Setting up isn't finished: the checklist, and only the to-dos it does
+    // not already hold (the regime and the FBP split are rows of it).
+    final setup = home.setup?.pending == true ? home.setup : null;
+    final todos = setup == null
+        ? home.todo
+        : [
+            for (final todo in home.todo)
+              if (todo.kind != 'tax_regime' && todo.kind != 'flexible_split')
+                todo,
+          ];
     return [
       if (summaries.isNotEmpty)
         _PrSummaryCarousel(summaries: summaries)
@@ -86,36 +96,30 @@ extension _PayrollHomeV2 on _PayrollHomePageState {
           iconAsset: 'assets/icons/request_reimbursement_money.png',
           text: 'Your salary shows here once HR sets up your pay.',
         ),
-      if (home.todo.isNotEmpty) ...[
+      if (setup != null) ...[
         const SizedBox(height: 24),
-        Row(
-          children: [
-            const _HomeSectionLabel('To do'),
-            const SizedBox(width: 6),
-            Container(
-              key: const ValueKey('payroll-todo-count'),
-              constraints: const BoxConstraints(minWidth: 20),
-              height: 20,
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFF383C),
-                borderRadius: BorderRadius.circular(99),
-              ),
-              child: Text(
-                '${home.todo.length}',
-                style: const TextStyle(
-                  fontFamily: 'Sora',
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
+        _PrSectionHead(
+          'Set up your payroll',
+          count: setup.total - setup.done,
+          countKey: const ValueKey('payroll-setup-count'),
+        ),
+        const SizedBox(height: 14),
+        _PrSetupProgress(setup: setup),
+        const SizedBox(height: 12),
+        _PrTodoCard(
+          key: const ValueKey('payroll-setup'),
+          rows: [for (final item in setup.items) _setupRow(item, home)],
+        ),
+      ],
+      if (todos.isNotEmpty) ...[
+        const SizedBox(height: 24),
+        _PrSectionHead(
+          'To do',
+          count: todos.length,
+          countKey: const ValueKey('payroll-todo-count'),
         ),
         const SizedBox(height: 12),
-        _PrTodoCard(rows: [for (final todo in home.todo) _todoRow(todo)]),
+        _PrTodoCard(rows: [for (final todo in todos) _todoRow(todo)]),
       ],
       const SizedBox(height: 24),
       const _HomeSectionLabel('Quick actions'),
@@ -126,7 +130,7 @@ extension _PayrollHomeV2 on _PayrollHomePageState {
           Expanded(
             child: _PrQuickTile(
               key: const ValueKey('payroll-qa-earnings'),
-              asset: 'assets/icons/request_reimbursement_money.png',
+              asset: 'assets/icons/payroll_qa_earnings.png',
               title: 'Earnings',
               subtitle: 'Annual',
               onTap: () => _open(const _EarningsPage()),
@@ -136,9 +140,9 @@ extension _PayrollHomeV2 on _PayrollHomePageState {
           Expanded(
             child: _PrQuickTile(
               key: const ValueKey('payroll-qa-downloads'),
-              asset: 'assets/icons/document_file.svg',
+              emoji: '📥',
               title: 'Downloads',
-              subtitle: 'Payslips, Form 16',
+              subtitle: 'Payslips, F-16',
               onTap: () => _open(const _DownloadsPage()),
             ),
           ),
@@ -146,7 +150,7 @@ extension _PayrollHomeV2 on _PayrollHomePageState {
           Expanded(
             child: _PrQuickTile(
               key: const ValueKey('payroll-qa-epf'),
-              asset: 'assets/icons/placements_client_building.png',
+              asset: 'assets/icons/payroll_qa_epf.png',
               title: 'EPF',
               subtitle: 'PF balance',
               onTap: () => _open(const _EpfPage()),
@@ -160,8 +164,89 @@ extension _PayrollHomeV2 on _PayrollHomePageState {
   }
 
   /// A new Support Desk ticket (the shell's own flow), else the desk.
-  void _raiseTicket() {
-    if (!raiseSupportTicket()) _PayrollScope.of(context).onRaiseTicket?.call();
+  void _raiseTicket({String? about}) {
+    if (!raiseSupportTicket(about: about)) {
+      _PayrollScope.of(context).onRaiseTicket?.call();
+    }
+  }
+
+  /// One row of "Set up your payroll", tapping to where it is done. Bank,
+  /// PAN and UAN are kept by HR (the profile's Payment and tax IDs; the app
+  /// has no screen to change them), so those rows ask HR in a ticket.
+  Widget _setupRow(PayrollSetupItem item, PayrollHome home) {
+    final pool = home.cards.fbp?.poolPaise;
+    final (
+      String? asset,
+      String? emoji,
+      String title,
+      String subtitle,
+      VoidCallback onTap,
+    ) = switch (item.key) {
+      'bank' => (
+        'assets/icons/payroll_setup_bank.png',
+        null,
+        'Add bank account',
+        'Needed to pay your salary',
+        () => _raiseTicket(
+          about:
+              'Please add my bank account for payroll so my salary can be '
+              'paid.',
+        ),
+      ),
+      'pan' => (
+        'assets/icons/payroll_setup_pan.png',
+        null,
+        'Add PAN',
+        'Tax is cut at 20% without it',
+        () => _raiseTicket(about: 'Please add my PAN for payroll.'),
+      ),
+      'regime' => (
+        'assets/icons/payroll_setup_regime.png',
+        null,
+        'Choose tax regime',
+        'New regime applies if you skip',
+        () => _open(const _DeclarationPage()),
+      ),
+      'fbp' => (
+        'assets/icons/payroll_setup_fbp.png',
+        null,
+        'Declare your FBP',
+        pool != null && pool > 0
+            ? 'Save tax on ${_rupees(pool)} a month'
+            : 'Save tax on part of your salary',
+        () => _open(const _SplitPage()),
+      ),
+      'uan' => (
+        null,
+        '🔗',
+        'Link PF account (UAN)',
+        'So your PF reaches your account',
+        () =>
+            _raiseTicket(about: 'Please link my PF account (UAN) for payroll.'),
+      ),
+      _ => (
+        'assets/icons/request_reimbursement_money.png',
+        null,
+        item.key,
+        '',
+        () {},
+      ),
+    };
+    return _PrSetupRow(
+      key: ValueKey('payroll-setup-${item.key}'),
+      asset: asset,
+      emoji: emoji,
+      title: title,
+      subtitle: subtitle,
+      done: item.done,
+      dueOn: item.dueOn,
+      tone: item.required
+          ? _PrPillTone.urgent
+          : item.key == 'fbp'
+          ? _PrPillTone.info
+          : _PrPillTone.soon,
+      onTap: onTap,
+    );
   }
 }
 
@@ -1062,7 +1147,7 @@ class _PrFbpSummaryCard extends StatelessWidget {
 
 /// The to-dos on amber, one row each, hairlines between.
 class _PrTodoCard extends StatelessWidget {
-  const _PrTodoCard({required this.rows});
+  const _PrTodoCard({super.key, required this.rows});
 
   final List<Widget> rows;
 
@@ -1184,11 +1269,239 @@ class _PrTodoRow extends StatelessWidget {
   }
 }
 
-/// The 40 px white tile a picture sits on (11 radius, hairline, soft shadow).
-class _PrIconTile extends StatelessWidget {
-  const _PrIconTile({required this.asset});
+/// A section's label with a red count beside it ("TO DO  3").
+class _PrSectionHead extends StatelessWidget {
+  const _PrSectionHead(this.text, {required this.count, this.countKey});
 
-  final String asset;
+  final String text;
+  final int count;
+  final Key? countKey;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      _HomeSectionLabel(text),
+      if (count > 0) ...[
+        const SizedBox(width: 6),
+        Container(
+          key: countKey,
+          constraints: const BoxConstraints(minWidth: 20),
+          height: 20,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFF383C),
+            borderRadius: BorderRadius.circular(99),
+          ),
+          child: Text(
+            '$count',
+            style: const TextStyle(
+              fontFamily: 'Sora',
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    ],
+  );
+}
+
+/// "1 of 5 done · Before your first payroll" over a thin blue bar.
+class _PrSetupProgress extends StatelessWidget {
+  const _PrSetupProgress({required this.setup});
+
+  final PayrollSetup setup;
+
+  @override
+  Widget build(BuildContext context) {
+    const style = TextStyle(
+      fontFamily: 'Sora',
+      color: _prInkSoft,
+      fontSize: 12.5,
+      height: 16 / 12.5,
+      fontWeight: FontWeight.w600,
+    );
+    final share = setup.total == 0 ? 0.0 : setup.done / setup.total;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Text(
+              '${setup.done} of ${setup.total} done',
+              key: const ValueKey('payroll-setup-progress'),
+              style: style,
+            ),
+            const Spacer(),
+            if (setup.beforeFirstPayroll)
+              const Text('Before your first payroll', style: style),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: SizedBox(
+            height: 6,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                const ColoredBox(color: Color(0xFFEDEDF0)),
+                FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: share.clamp(0.0, 1.0),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E8BF5),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// How a setup row's date reads: red when pay needs it, amber for a
+/// deadline with a default, blue for a saving.
+enum _PrPillTone { urgent, soon, info }
+
+/// One row of "Set up your payroll": to do (what, why, by when, ›) or done
+/// (struck through, a green tick).
+class _PrSetupRow extends StatelessWidget {
+  const _PrSetupRow({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.done,
+    required this.tone,
+    required this.onTap,
+    this.asset,
+    this.emoji,
+    this.dueOn,
+  });
+
+  final String? asset;
+  final String? emoji;
+  final String title;
+  final String subtitle;
+  final bool done;
+  final DateTime? dueOn;
+  final _PrPillTone tone;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final due = dueOn;
+    final (Color tint, Color ink) = switch (tone) {
+      _PrPillTone.urgent => (const Color(0xFFFDECEC), const Color(0xFFB42318)),
+      _PrPillTone.soon => (const Color(0xFFFFF1D6), const Color(0xFF8A4B00)),
+      _PrPillTone.info => (const Color(0xFFE8F2F8), const Color(0xFF05608D)),
+    };
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Row(
+        children: [
+          _PrIconTile(asset: asset, emoji: emoji),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontFamily: 'Sora',
+                    color: done ? const Color(0xFF6B6B72) : _prInk,
+                    fontSize: 15,
+                    height: 20 / 15,
+                    fontWeight: FontWeight.w700,
+                    decoration: done ? TextDecoration.lineThrough : null,
+                    decorationColor: const Color(0xFF6B6B72),
+                  ),
+                ),
+                if (!done && subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontFamily: 'Sora',
+                      color: _prInkSoft,
+                      fontSize: 12.5,
+                      height: 16.88 / 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (done)
+            Container(
+              key: const ValueKey('payroll-setup-done'),
+              width: 22,
+              height: 22,
+              decoration: const BoxDecoration(
+                color: Color(0xFF34C759),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_rounded,
+                size: 14,
+                color: Colors.white,
+              ),
+            )
+          else ...[
+            if (due != null) ...[
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                decoration: BoxDecoration(
+                  color: tint,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  _short(due),
+                  style: TextStyle(
+                    fontFamily: 'Sora',
+                    color: ink,
+                    fontSize: 11.5,
+                    height: 15 / 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(width: 12),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: Color(0xFFA0A0A8),
+            ),
+          ],
+        ],
+      ),
+    );
+    return Semantics(
+      button: !done,
+      label: done ? '$title, done' : null,
+      child: done ? row : InkWell(onTap: onTap, child: row),
+    );
+  }
+}
+
+/// The 40 px white tile a picture sits on (11 radius, hairline, soft shadow).
+/// An [emoji] stands in where the design draws one.
+class _PrIconTile extends StatelessWidget {
+  const _PrIconTile({this.asset, this.emoji});
+
+  final String? asset;
+  final String? emoji;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -1207,9 +1520,24 @@ class _PrIconTile extends StatelessWidget {
         ),
       ],
     ),
-    child: asset.endsWith('.svg')
-        ? SvgPicture.asset(asset, width: 22, height: 22)
-        : Image.asset(asset, width: 24, height: 24, fit: BoxFit.contain),
+    child: switch ((asset, emoji)) {
+      (final String a, _) when a.endsWith('.svg') => SvgPicture.asset(
+        a,
+        width: 22,
+        height: 22,
+      ),
+      (final String a, _) => Image.asset(
+        a,
+        width: 24,
+        height: 24,
+        fit: BoxFit.contain,
+      ),
+      (_, final String e) => Text(
+        e,
+        style: const TextStyle(fontSize: 20, height: 1),
+      ),
+      _ => const SizedBox.shrink(),
+    },
   );
 }
 
@@ -1217,13 +1545,15 @@ class _PrIconTile extends StatelessWidget {
 class _PrQuickTile extends StatelessWidget {
   const _PrQuickTile({
     super.key,
-    required this.asset,
+    this.asset,
+    this.emoji,
     required this.title,
     required this.subtitle,
     required this.onTap,
   });
 
-  final String asset;
+  final String? asset;
+  final String? emoji;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
@@ -1248,7 +1578,7 @@ class _PrQuickTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _PrIconTile(asset: asset),
+                _PrIconTile(asset: asset, emoji: emoji),
                 const SizedBox(height: 14),
                 FittedBox(
                   fit: BoxFit.scaleDown,

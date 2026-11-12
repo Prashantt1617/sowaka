@@ -217,6 +217,67 @@ class PayrollTodo {
   );
 }
 
+/// One row of "Set up your payroll": something done once so payroll can pay
+/// the person right. Presence only — the server never sends the numbers.
+class PayrollSetupItem {
+  const PayrollSetupItem({
+    required this.key,
+    required this.done,
+    required this.required,
+    this.dueOn,
+  });
+
+  /// "bank" | "pan" | "regime" | "fbp" | "uan".
+  final String key;
+  final bool done;
+
+  /// Pay can't go out right without it (bank, PAN); the rest have a default.
+  final bool required;
+
+  /// The date it is needed by; null when HR has not set it.
+  final DateTime? dueOn;
+
+  factory PayrollSetupItem.fromJson(Map<String, dynamic> json) =>
+      PayrollSetupItem(
+        key: _string(json['key']),
+        done: _bool(json['done']),
+        required: _bool(json['required']),
+        dueOn: payrollDate(json['dueOn']),
+      );
+}
+
+/// "Set up your payroll" (`setup` on GET /payroll/home).
+class PayrollSetup {
+  const PayrollSetup({
+    required this.items,
+    required this.done,
+    required this.total,
+    this.beforeFirstPayroll = false,
+  });
+
+  final List<PayrollSetupItem> items;
+  final int done;
+  final int total;
+
+  /// No payslip has been released to them yet.
+  final bool beforeFirstPayroll;
+
+  /// Something is still to do: the home shows the checklist.
+  bool get pending => total > 0 && done < total;
+
+  factory PayrollSetup.fromJson(Map<String, dynamic> json) {
+    final items = _list(json['items']).map(PayrollSetupItem.fromJson).toList();
+    return PayrollSetup(
+      items: items,
+      done: json['done'] is num
+          ? _int(json['done'])
+          : items.where((i) => i.done).length,
+      total: json['total'] is num ? _int(json['total']) : items.length,
+      beforeFirstPayroll: _bool(json['beforeFirstPayroll']),
+    );
+  }
+}
+
 /// The month's days with a punch missing: how many, and the last day to fix
 /// them.
 class PayrollMissingPunches {
@@ -289,7 +350,11 @@ class PayrollHome {
     this.hasSplit = false,
     this.proofs,
     this.cards = PayrollHomeCards.none,
+    this.setup,
   });
+
+  /// "Set up your payroll"; null from a server without it.
+  final PayrollSetup? setup;
 
   /// The summary carousel: last pay period's salary, this FY's tax and the
   /// flexible split, each null when there is nothing to show.
@@ -320,7 +385,11 @@ class PayrollHome {
     final missing = json['missingPunches'];
     final declaration = json['declaration'];
     final proofs = json['proofs'];
+    final setup = json['setup'];
     return PayrollHome(
+      setup: setup is Map<String, dynamic>
+          ? PayrollSetup.fromJson(setup)
+          : null,
       cards: PayrollHomeCards.fromJson(_map(json['cards'])),
       hasSplit: json['split'] is Map,
       proofs: proofs is Map<String, dynamic>

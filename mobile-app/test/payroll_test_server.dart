@@ -40,6 +40,9 @@ class FakePayrollServer {
   /// The salary has flexible (FBP) heads; off, the home sends no split.
   bool hasSplit = true;
 
+  /// The home's "Set up your payroll" block; null sends none (all set up).
+  Map<String, dynamic>? setup;
+
   /// Every request, as "METHOD /path?query".
   final calls = <String>[];
 
@@ -380,6 +383,7 @@ class FakePayrollServer {
       },
     ],
     'cards': _cards(),
+    if (setup != null) 'setup': setup,
     'missingPunches': {
       'period': period,
       'count': missingCount,
