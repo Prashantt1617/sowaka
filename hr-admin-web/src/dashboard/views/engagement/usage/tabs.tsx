@@ -152,7 +152,6 @@ export function StatusTab({ c }: { c: TabCtx }) {
           ['Come back daily', pct(d1, d30), `${sd(today)} ÷ ${rangeLabel(addDays(today, -29), today)}`],
         ]} />
         {tracked && tracked > addDays(today, -29) && <p className="ua-note" style={{ marginTop: -4 }}>Tracking since {sd(tracked)}: the 7- and 30-day counts only cover the days since.</p>}
-        {c.summary.estimatedUntil && c.summary.estimatedUntil >= addDays(today, -29) && <p className="ua-note" style={{ marginTop: -4 }}>Days up to {sd(c.summary.estimatedUntil)} are estimated from what people did in the app (punches, requests, posts, games…).</p>}
       </div>
       <WhenPanel from={c.summary.from} to={c.summary.to} load={c.when} />
       <div className="ua-sec">

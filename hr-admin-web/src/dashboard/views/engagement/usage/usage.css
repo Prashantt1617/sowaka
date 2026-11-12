@@ -108,7 +108,6 @@
 .ua-col.part .st { opacity: .6; }
 /* Estimated from app activity (punches, requests, posts…), not tracked: drawn lighter. */
 .ua-col.est .st { opacity: .5; }
-.ua-est-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--accent); opacity: .5; margin-right: 6px; vertical-align: -1px; }
 .ua-col:hover .st { filter: brightness(1.08); }
 .ua-tip { position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); background: var(--sel); color: var(--on-sel); font-size: 11.5px; padding: 6px 9px; border-radius: 8px; white-space: nowrap; pointer-events: none; z-index: 2; line-height: 1.45; }
 .ua-when { display: grid; grid-template-columns: minmax(0, 2.4fr) minmax(0, 1fr); gap: 20px; }
