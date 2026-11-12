@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store';
-import { OTDUR, STAT } from '../theme';
+import { OTDUR, TO_STAT } from '../theme';
 import type { ReqStatus } from '../theme';
 import type { Overtime as OvertimeRow } from '../seed';
 import { inDateRange, otShortLabel } from '../adapters';
@@ -10,11 +10,21 @@ import type { LoadState } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { btn, btnClass, cellName, cellSub, TH, toolbar, TR } from '../ds';
 import { IconDownload } from '../icons';
-import { chartDaysOf, dayLabel, daysSince, periodRange, plural, rangeProblem, SLOW_DAYS, todayISO } from './leaveDays';
+import { chartDaysOf, dayLabel, daysSince, PENDING_ROW, periodRange, plural, rangeProblem, SLOW_DAYS, todayISO } from './leaveDays';
 import type { PeriodId } from './leaveDays';
 import { CustomRange, DayBars, NeedsActionShell, PendingChip, PeriodButtons, StatTile, Swatch, Waiting } from './leaveParts';
 
-const COLS = '1.6fr 1fr .8fr 1.1fr 1.1fr 1.5fr 1fr .8fr .8fr';
+const COLS = '1.5fr .95fr .9fr 1.35fr 1.15fr 1.25fr 1fr .75fr';
+type Given = 'all' | 'pay' | 'comp';
+/**
+ * Pay, comp-off or both, as the "Pay and comp-off" filter reads a request: an
+ * approved one by what it was given as (a request from before the choice is
+ * paid and credited, so it is both), any other by what was asked for.
+ */
+const givenAs = (r: OvertimeRow): { pay: boolean; comp: boolean } =>
+  r.status === 'Approved'
+    ? { pay: r.paidInPayroll, comp: r.compOffDays > 0 }
+    : { pay: r.preferredChoice === 'pay', comp: Boolean(r.preferredChoice && r.preferredChoice !== 'pay') };
 
 /** "Leave (Comp-off) · Full day (+1 Comp-off)", for the CSV and a cell's tooltip. */
 const withCredit = (label?: string, credit?: string) => (label ? `${label}${credit ? ` (${credit})` : ''}` : '');
@@ -70,6 +80,7 @@ export function Overtime() {
   const [draftTo, setDraftTo] = useState(s.otTo);
   const [rangeError, setRangeError] = useState('');
   const [dept, setDept] = useState('all');
+  const [given, setGiven] = useState<Given>('all');
   const today = todayISO();
 
   const range = periodRange(period, s.otFrom, s.otTo);
@@ -80,11 +91,12 @@ export function Overtime() {
   const chartDays = chartDaysOf(range);
   const totals = useMemo(() => {
     const ix = new Map(chartDays.map((d, i) => [d, i]));
-    const t = chartDays.map(() => ({ a: 0, p: 0 }));
+    // a: approved as pay (a request from before the choice is paid, so it counts here), c: as comp-off.
+    const t = chartDays.map(() => ({ a: 0, p: 0, c: 0 }));
     for (const r of inPeriod) {
       const i = ix.get(workDay(r));
       if (i === undefined) continue;
-      if (r.status === 'Approved') t[i].a++;
+      if (r.status === 'Approved') { if (r.paidInPayroll) t[i].a++; else t[i].c++; }
       else if (r.status === 'Pending') t[i].p++;
     }
     return t;
@@ -93,7 +105,8 @@ export function Overtime() {
   const stats = useMemo(() => {
     const approved = inPeriod.filter((r) => r.status === 'Approved');
     let best = -1;
-    totals.forEach((t, i) => { if (t.a + t.p > 0 && (best < 0 || t.a + t.p > totals[best].a + totals[best].p)) best = i; });
+    const sum = (t: { a: number; p: number; c: number }) => t.a + t.p + t.c;
+    totals.forEach((t, i) => { if (sum(t) > 0 && (best < 0 || sum(t) > sum(totals[best]))) best = i; });
     return {
       requests: inPeriod.length,
       approved: approved.length,
@@ -106,7 +119,7 @@ export function Overtime() {
       toPayLegacy: approved.filter((r) => r.paidInPayroll && !r.decision).length,
       // A request from before the choice credits its comp-off and is paid too, as it always was.
       compOffLegacy: approved.filter((r) => r.compOffDays > 0 && !r.decision).length,
-      busiest: best >= 0 ? { d: chartDays[best], n: totals[best].a + totals[best].p } : null,
+      busiest: best >= 0 ? { d: chartDays[best], n: sum(totals[best]) } : null,
     };
   }, [inPeriod, totals]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -117,8 +130,9 @@ export function Overtime() {
     if (q) out = out.filter((r) => r.name.toLowerCase().includes(q));
     if (s.otStatus !== 'all') out = out.filter((r) => r.status === s.otStatus);
     if (dept !== 'all') out = out.filter((r) => r.team === dept);
+    if (given !== 'all') out = out.filter((r) => givenAs(r)[given]);
     return out.sort((a, b) => b.ord - a.ord);
-  }, [inPeriod, s.otSearch, s.otStatus, dept]);
+  }, [inPeriod, s.otSearch, s.otStatus, dept, given]);
 
   const statusCounts = useMemo(() => {
     const c: Partial<Record<ReqStatus | 'all', number>> = { all: inPeriod.length };
@@ -186,8 +200,7 @@ export function Overtime() {
           {!waitingForDates && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
               <StatTile state={st} label="Overtime requests" value={stats.requests} sub={`${stats.approved} approved · ${stats.declined} declined`} />
-              <StatTile state={st} label="Pending" value={stats.pending} sub="Waiting for a decision" warn />
-              <StatTile state={st} label="Comp-off credited" value={stats.compOff} unit={stats.compOff === 1 ? 'day' : 'days'} sub={`Added to leave balances${stats.compOffLegacy ? ` · ${stats.compOffLegacy} from before the choice` : ''}`} />
+              <StatTile state={st} label="Pending" value={stats.pending} sub="Waiting for a decision" attn />
               <StatTile
                 state={st}
                 label="To pay in payroll"
@@ -195,6 +208,7 @@ export function Overtime() {
                 unit={stats.toPay === 1 ? 'request' : 'requests'}
                 sub={`${stats.toPayHours} h · approved as overtime pay${stats.toPayLegacy ? `, ${stats.toPayLegacy} from before the choice` : ''}`}
               />
+              <StatTile state={st} label="Comp-off credited" value={stats.compOff} unit={stats.compOff === 1 ? 'day' : 'days'} sub={`Added to leave balances${stats.compOffLegacy ? ` · ${stats.compOffLegacy} from before the choice` : ''}`} />
               <StatTile
                 state={st}
                 label="Most overtime in a day"
@@ -210,11 +224,12 @@ export function Overtime() {
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                 <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 600 }}>Overtime worked, day by day</h3>
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, fontSize: 12.5, color: 'var(--ink-2)' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Swatch kind="approved" />Approved</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Swatch kind="approved" />Pay</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Swatch kind="second" />Comp-off</span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Swatch kind="pending" />Pending</span>
                 </div>
               </div>
-              <DayBars days={chartDays} totals={totals} today={today} shadeFuture />
+              <DayBars days={chartDays} totals={totals} today={today} shadeFuture words={['pay', 'pending', 'comp-off']} />
             </div>
           )}
 
@@ -236,29 +251,33 @@ export function Overtime() {
                   <option value="all">All departments</option>
                   {departments.map((d) => <option key={d} value={d}>{d}</option>)}
                 </SelectBox>
+                <SelectBox value={given} onChange={(v) => setGiven(v as Given)}>
+                  <option value="all">Pay and comp-off</option>
+                  <option value="pay">Pay</option>
+                  <option value="comp">Comp-off</option>
+                </SelectBox>
                 <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
                   <IconDownload stroke="currentColor" /> Export
                 </button>
               </div>
 
               <div style={{ overflowX: 'auto' }}>
-                <div style={{ minWidth: 1180 }}>
+                <div style={{ minWidth: 1040 }}>
                   <div style={TH(COLS)}>
                     <Th>EMPLOYEE</Th>
                     <Th>WORKED ON</Th>
                     <Th>DURATION</Th>
+                    <Th>NOTE</Th>
                     <Th>PREFERENCE</Th>
                     <Th>DECISION</Th>
-                    <Th>NOTE</Th>
                     <Th>STATUS</Th>
-                    <Th>DECIDED BY</Th>
                     <Th align="right">APPLIED</Th>
                   </div>
                   {rows.map((r, i) => {
                     const pend = r.status === 'Pending';
                     const open = () => s.setOtDrawerId(r.id);
                     return (
-                      <div key={r.id} className="dc-row" onClick={open} style={{ ...TR(COLS, i === rows.length - 1), cursor: 'pointer', ...(pend ? { background: 'var(--warn-bg)', boxShadow: 'inset 3px 0 0 var(--warn)' } : null) }}>
+                      <div key={r.id} className="dc-row" onClick={open} style={{ ...TR(COLS, i === rows.length - 1), cursor: 'pointer', ...(pend ? PENDING_ROW : null) }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                           <PersonAvatar name={r.name} userId={r.submitterId} />
                           <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -268,6 +287,7 @@ export function Overtime() {
                         </div>
                         <div style={{ whiteSpace: 'nowrap' }}>{worked(r)}</div>
                         <div><Pill label={r.duration} tone={OTDUR[r.duration]} /></div>
+                        <div style={{ color: r.eRemark ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
                         {/* What the employee asked for: overtime pay, or comp-off and how much. */}
                         <div
                           style={{ color: r.preference ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
@@ -277,19 +297,21 @@ export function Overtime() {
                         </div>
                         {/* The final call, once approved: what payroll and the Comp-off balance use. */}
                         <div
-                          style={{ fontWeight: r.decisionDiffers ? 600 : 400, color: r.decision ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                          style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}
                           title={r.decision ? `${withCredit(r.decision, r.decisionCredit)}${r.decisionDiffers ? ' — differs from the preference' : ''}` : pend ? 'Decided on approval' : ''}
                         >
-                          {r.decision ? otShortLabel(r.decision, r.decisionCredit) : '—'}
+                          <span style={{ fontWeight: r.decisionDiffers ? 600 : 400, color: r.decision ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {r.decision ? otShortLabel(r.decision, r.decisionCredit) : '—'}
+                          </span>
+                          {/* Who decided it, as the design's "Given as" has it under the decision. */}
+                          {!pend && <span style={cellSub}>{r.status === 'Declined' ? 'Declined ' : ''}by {r.byAdmin ? 'HR' : 'manager'}</span>}
                         </div>
-                        <div style={{ color: r.eRemark ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
-                        <div>{pend ? <PendingChip onClick={open} label={`Review ${r.name}'s overtime request`} /> : <Pill label={r.status} tone={STAT[r.status]} />}</div>
-                        <div style={{ color: pend ? 'var(--ink-3)' : 'var(--ink)' }}>{pend ? '—' : r.byAdmin ? 'HR' : 'Manager'}</div>
+                        <div>{pend ? <PendingChip onClick={open} label={`Review ${r.name}'s overtime request`} /> : <Pill label={r.status} tone={TO_STAT[r.status]} />}</div>
                         <div style={{ textAlign: 'right', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{r.appliedOn}</div>
                       </div>
                     );
                   })}
-                  <ListPending state={st} onRetry={() => void s.reload()} cols={9} />
+                  <ListPending state={st} onRetry={() => void s.reload()} cols={8} />
                   {st === 'ready' && rows.length === 0 && <EmptyRow text="No overtime requests match your filters." />}
                 </div>
               </div>

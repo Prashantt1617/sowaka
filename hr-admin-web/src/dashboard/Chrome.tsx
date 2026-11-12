@@ -24,16 +24,16 @@ import { PAGE_ACTIONS_ID } from './ds';
 export type NavItem = { key: View; label: string; hidden?: boolean };
 
 export const OVERVIEW_ITEM: NavItem = { key: 'overview', label: 'Overview' };
+// In the redesign's order: who is in or off and every punch first, then the
+// requests that change them. OOL check-ins stays reachable (granted with Time
+// office) but off the sidebar: the Punch log shows those punches.
 const REQUESTS: NavItem[] = [
-  { key: 'leave', label: 'Leave requests' },
-  { key: 'overtime', label: 'Overtime' },
-  { key: 'attendance', label: 'Attendance' },
-  // Out of the sidebar (the Punch log shows out-of-location punches), but still granted with
-  // Time office: the Company calendar and Punch log read its list.
-  { key: 'oolcheckins', label: 'OOL check-ins', hidden: true },
-  // Who is in, away or off, and every punch: read alongside the requests.
   { key: 'companycalendar', label: 'Company calendar' },
   { key: 'punchlog', label: 'Punch log' },
+  { key: 'attendance', label: 'Attendance corrections' },
+  { key: 'leave', label: 'Leave requests' },
+  { key: 'overtime', label: 'Overtime' },
+  { key: 'oolcheckins', label: 'OOL check-ins', hidden: true },
 ];
 // Support is its own section, like Claims: a desk of conversations handled by
 // the people given a Support role, not one more approval queue.

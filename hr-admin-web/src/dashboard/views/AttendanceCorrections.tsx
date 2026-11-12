@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
-import { STAT } from '../theme';
+import { TO_STAT } from '../theme';
 import type { ReqStatus } from '../theme';
 import type { Correction, CorrectionKind } from '../seed';
 import { inDateRange } from '../adapters';
@@ -22,11 +22,11 @@ import { btn, btnClass, cellName, cellSub, textareaStyle, TH, TILE, toolbar, TR 
 import { IconDownload, IconX } from '../icons';
 import { SuwiInsight } from '../suwi/SuwiInsight';
 import { DrawerHeader, DrawerShell, InfoGrid, RemarkBlock } from '../drawers/shell';
-import { chartDaysOf, dateOf, dayLabel, daysBetween, daysSince, MON, plural, rangeProblem, todayISO } from './leaveDays';
+import { chartDaysOf, dateOf, dayLabel, daysBetween, daysSince, MON, PENDING_ROW, plural, rangeProblem, todayISO } from './leaveDays';
 import type { PeriodId } from './leaveDays';
 import { CustomRange, Key, LinkButton, PendingChip, PeriodButtons, StackBars, StatTile } from './leaveParts';
 
-const COLS = '36px 1.6fr 1fr 1.2fr 1fr .8fr 1.4fr 1.1fr 1.1fr';
+const COLS = '32px 1.5fr .95fr 1.15fr 1.3fr .9fr 1.2fr 1fr 1.1fr';
 type Kind = CorrectionKind;
 /**
  * What each request is, from the request itself (adapters' correctionKindOf):
@@ -35,7 +35,7 @@ type Kind = CorrectionKind;
  */
 const KIND: Record<Kind, { label: string; color: string; bg: string; fg: string }> = {
   full: { label: 'Full day asked', color: 'var(--accent)', bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
-  half: { label: 'Half day asked', color: 'var(--warn)', bg: 'var(--warn-bg)', fg: 'var(--warn)' },
+  half: { label: 'Half day asked', color: 'var(--t-peach-i)', bg: 'var(--t-peach)', fg: 'var(--t-peach-i)' },
   wfh: { label: 'Work from home', color: 'var(--t-lilac-i)', bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' },
   visit: { label: 'Client visit', color: 'var(--t-plum-i)', bg: 'var(--t-plum)', fg: 'var(--t-plum-i)' },
   leave: { label: 'Leave asked', color: 'color-mix(in srgb, var(--accent) 40%, var(--surface))', bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
@@ -223,8 +223,8 @@ export function AttendanceCorrections() {
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
       {(st !== 'ready' || inCycle.length > 0 || earlier > 0) && (
-        <section aria-labelledby="corr-before-payroll" style={{ ...TILE, padding: 0, overflow: 'hidden', border: '1px solid var(--warn-line)', marginBottom: 20 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 22px', background: 'var(--warn-bg)' }}>
+        <section aria-labelledby="corr-before-payroll" style={{ ...TILE, padding: 0, overflow: 'hidden', border: '1px solid var(--attn-line)', marginBottom: 20 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 22px', background: 'var(--attn-bg)' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <h2 id="corr-before-payroll" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Before payroll</h2>
               <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>
@@ -291,7 +291,7 @@ export function AttendanceCorrections() {
           {!waitingForDates && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
               <StatTile state={st} label="Corrections" value={stats.total} />
-              <StatTile state={st} label="Pending" value={stats.pending} sub={`${stats.pay} affect pay`} warn />
+              <StatTile state={st} label="Pending" value={stats.pending} sub={`${stats.pay} affect pay`} attn />
               <StatTile state={st} label="Approved · Declined" value={<>{stats.approved} <span style={{ fontSize: 17, color: 'var(--ink-3)' }}>· {stats.declined}</span></>} />
               <StatTile state={st} label="Most corrections in a day" value={stats.top ? stats.top[1] : '—'} sub={stats.top ? <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{dayLabel(stats.top[0])}</span> : 'No corrections'} />
             </div>
@@ -356,7 +356,7 @@ export function AttendanceCorrections() {
               )}
 
               <div style={{ overflowX: 'auto' }}>
-                <div style={{ minWidth: 1100 }}>
+                <div style={{ minWidth: 1040 }}>
                   <div style={TH(COLS)}>
                     <div><input type="checkbox" aria-label="Select all pending rows" checked={allPicked} disabled={pendingRows.length === 0} onChange={() => setSelected(allPicked ? new Set() : new Set(pendingRows.map((r) => r.id)))} /></div>
                     <Th>EMPLOYEE</Th>
@@ -372,7 +372,7 @@ export function AttendanceCorrections() {
                     const pend = r.status === 'Pending';
                     const k = KIND[kindOf(r)];
                     return (
-                      <div key={r.id} className="dc-row" onClick={() => setOpenId(r.id)} style={{ ...TR(COLS, i === rows.length - 1), cursor: 'pointer', ...(pend ? { background: 'var(--warn-bg)', boxShadow: 'inset 3px 0 0 var(--warn)' } : null) }}>
+                      <div key={r.id} className="dc-row" onClick={() => setOpenId(r.id)} style={{ ...TR(COLS, i === rows.length - 1), cursor: 'pointer', ...(pend ? PENDING_ROW : null), ...(selected.has(r.id) && pend ? { background: 'color-mix(in srgb, var(--accent) 14%, var(--surface))' } : null) }}>
                         <div onClick={(e) => e.stopPropagation()}>
                           {pend && <input type="checkbox" aria-label={`Select ${r.name}, ${r.workDate}`} checked={selected.has(r.id)} onChange={() => toggle(r.id)} />}
                         </div>
@@ -391,12 +391,12 @@ export function AttendanceCorrections() {
                           <span style={{ alignSelf: 'flex-start', fontSize: 11.5, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: k.bg, color: k.fg, whiteSpace: 'nowrap' }}>{k.label}</span>
                           {r.ool && <span style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.ool.reason}</span>}
                         </div>
-                        <div style={{ fontSize: 13, color: r.recorded === 'No punch' ? 'var(--warn)' : 'var(--ink-2)', whiteSpace: 'nowrap' }}>{r.recorded === 'No punch' ? '— → —' : r.recorded}</div>
+                        <div style={{ fontSize: 13, color: r.recorded === 'No punch' ? 'var(--ink-3)' : 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.recorded}>{r.recorded === 'No punch' ? '— → —' : r.recorded}</div>
                         <div>{r.askedFor ?? r.dayType}</div>
                         <div style={{ color: r.eRemark ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
                         <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.manager}>{r.manager || '—'}</div>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
-                          {pend ? <PendingChip onClick={() => setOpenId(r.id)} label={`Review ${r.name}'s correction`} /> : <Pill label={r.byAdmin ? `${r.status} · by admin` : r.status} tone={STAT[r.status]} />}
+                          {pend ? <PendingChip onClick={() => setOpenId(r.id)} label={`Review ${r.name}'s correction`} /> : <Pill label={r.byAdmin ? `${r.status} · by admin` : r.status} tone={TO_STAT[r.status]} />}
                           {affectsPay(r) && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--bad)' }}>Affects pay</span>}
                         </div>
                       </div>
@@ -435,7 +435,7 @@ function CorrectionDrawer({ r, onClose }: { r: Correction; onClose: () => void }
       <div style={{ padding: 20 }}>
         <SuwiInsight kind="correction" id={r.id} pending={pend} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
-          <Pill label={r.byAdmin ? `${r.status} · by admin` : r.status} tone={STAT[r.status]} />
+          <Pill label={r.byAdmin ? `${r.status} · by admin` : r.status} tone={TO_STAT[r.status]} />
           <Pill label={k.label} tone={{ bg: k.bg, fg: k.fg }} />
           {affectsPay(r) && <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--bad)' }}>Affects pay until decided</span>}
         </div>

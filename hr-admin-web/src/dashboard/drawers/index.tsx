@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from '../store';
 import { getReimbReceiptUrl } from '../../services/hrms';
-import { ETYPE, OTDUR, STAT, typeColor } from '../theme';
+import { ETYPE, OTDUR, STAT, TO_STAT, typeColor } from '../theme';
 import type { OtChoice, Overtime, Reimb } from '../seed';
 import { OT_CHOICE_LABEL } from '../adapters';
 import { Pill, Avatar, SelectBox } from '../ui';
@@ -102,8 +102,8 @@ function LeaveDrawer() {
       <div style={{ padding: 20 }}>
         <SuwiInsight kind="leave" id={d.id} pending={d.status === 'Pending'} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-          <Pill label={d.byAdmin && d.status !== 'Cancelled' ? `${d.statusLabel} · by admin` : d.statusLabel} tone={STAT[d.status]} />
-          {d.cancelRequest?.status === 'Pending' && <Pill label="Cancellation requested" tone={STAT.Pending} />}
+          <Pill label={d.byAdmin && d.status !== 'Cancelled' ? `${d.statusLabel} · by admin` : d.statusLabel} tone={TO_STAT[d.status]} />
+          {d.cancelRequest?.status === 'Pending' && <Pill label="Cancellation requested" tone={TO_STAT.Pending} />}
           <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 14, fontWeight: 400, color: 'var(--ink-2)' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: typeColor(d.type) }} />
             {d.type} leave
@@ -117,7 +117,7 @@ function LeaveDrawer() {
             { label: 'APPLIED ON', value: d.applied },
           ]}
         />
-        <RemarkBlock label="EMPLOYEE REMARK" text={d.eRemark || 'No remark provided.'} filled={!!d.eRemark} marginBottom={16} />
+        <RemarkBlock label="EMPLOYEE REASON" text={d.eRemark || 'No reason given.'} filled={!!d.eRemark} marginBottom={16} />
         <RemarkBlock label="MANAGER REMARK" text={d.mRemark || 'No remark yet.'} filled={!!d.mRemark} marginBottom={8} />
         {/* Why the employee took it back, or asked to; and, for a request, what became of it. */}
         {(d.status === 'Cancelled' || d.cancelRequest) && (
@@ -190,7 +190,7 @@ function OvertimeDrawerBody({ d }: { d: Overtime }) {
       <div style={{ padding: 20 }}>
         <SuwiInsight kind="overtime" id={d.id} pending={d.status === 'Pending'} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-          <Pill label={d.byAdmin ? `${d.status} · by admin` : d.status} tone={STAT[d.status]} />
+          <Pill label={d.byAdmin ? `${d.status} · by admin` : d.status} tone={TO_STAT[d.status]} />
           <Pill label={d.duration} tone={OTDUR[d.duration]} />
         </div>
         <InfoGrid
@@ -237,7 +237,7 @@ function OvertimeDrawerBody({ d }: { d: Overtime }) {
         <RemarkBlock label="MANAGER REMARK" text={d.mRemark || 'No remark yet.'} filled={!!d.mRemark} />
       </div>
       {d.status === 'Pending' && (
-        <DecisionFooter onDecline={() => s.otAsk(d.id, 'decline')} onApprove={() => s.otAsk(d.id, 'approve', choice || undefined)} approveLabel="Approve overtime" />
+        <DecisionFooter onDecline={() => s.otAsk(d.id, 'decline')} onApprove={() => s.otAsk(d.id, 'approve', choice || undefined)} approveLabel={choice === 'pay' ? 'Approve as pay' : choice ? 'Approve as comp-off' : 'Approve overtime'} />
       )}
     </DrawerShell>
   );

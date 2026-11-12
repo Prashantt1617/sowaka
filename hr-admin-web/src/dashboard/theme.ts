@@ -113,6 +113,11 @@ export const STAT: Record<ReqStatus, Pill> = {
   Cancelled: SOLID.mute,
 };
 
+/** Time office's "waiting on a decision": a calm blue tint, not the yellow pill. */
+export const ATTN_PILL: Pill = { bg: 'var(--attn-bg)', fg: 'var(--attn)' };
+/** STAT as the Time office pages show it: Pending in the attention blue, the rest as everywhere. */
+export const TO_STAT: Record<ReqStatus, Pill> = { ...STAT, Pending: ATTN_PILL };
+
 export const FSTAT: Record<FeedbackStatus, Pill> = {
   Acknowledged: SOLID.ok,
   Submitted: SOLID.info,
@@ -146,9 +151,9 @@ export function initials(name: string): string {
 export const TITLES: Record<View, [string, string]> = {
   organisation: ['Organisation', 'Company profile, identity & contact details'],
   overview: ['HR control room', ''], // the date is filled in by Topbar
-  leave: ['Leave requests', 'Tracking time off · approved by reporting managers'],
-  overtime: ['Overtime', 'Tracking overtime · approved by reporting managers'],
-  attendance: ['Attendance corrections', 'Time office · days employees asked to have corrected'],
+  leave: ['Leave requests', 'Time office · approved by reporting managers, HR oversees'],
+  overtime: ['Overtime', 'Time office · decided by reporting managers or HR'],
+  attendance: ['Attendance corrections', 'Time office · days waiting to count as present, decided by managers or HR'],
   feedback: ['Performance Reviews', 'Performance · manager reviews & recognition'],
   kpi: ['KPI Parameters', 'Performance · define measurable KPIs'],
   kpitemplates: ['Templates', 'Performance · weighted sets of KPI parameters'],
@@ -186,8 +191,8 @@ export const TITLES: Record<View, [string, string]> = {
   peopletasks: ['Tasks', 'People · who still needs a template, salary, bank details or basic details'],
   orgchart: ['Org chart', 'People'],
   attendancereport: ['Attendance report', 'Reports'],
-  companycalendar: ['Company calendar', 'Time office · who is in, away or off on any day'],
-  punchlog: ['Punch log', 'Time office · every punch, in office and out of location'],
+  companycalendar: ['Company calendar', 'Time office · who is in, away or off on any day: punches, leave and corrections together'],
+  punchlog: ['Punch log', 'Time office · every punch, in office and out of location; approvals happen in Attendance corrections'],
   usersroles: ['Accesses', 'People · users, roles and permissions'],
   cycle: ['Cycle', 'Performance · the monthly review cycle'],
   reimbursementtypes: ['Reimbursement Types', 'Claims · what can be claimed, and the cap on each'],

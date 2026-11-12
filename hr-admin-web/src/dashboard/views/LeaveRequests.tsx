@@ -30,9 +30,9 @@ function NeedsAction({ state, onAll, onCancellations }: { state: LoadState; onAl
   if (state === 'ready' && list.length === 0) return null;
   const chips = [
     ...(sum.passed ? [{ tone: 'bad' as const, text: `${sum.passed} ${sum.passed === 1 ? 'date' : 'dates'} already passed` }] : []),
-    ...(sum.soon ? [{ tone: 'warn' as const, text: `${sum.soon} start within 7 days` }] : []),
+    ...(sum.soon ? [{ tone: 'attn' as const, text: `${sum.soon} start within 7 days` }] : []),
     ...(sum.slow ? [{ tone: 'mute' as const, text: `${sum.slow} waiting over ${SLOW_DAYS} days` }] : []),
-    ...(sum.cancellations.length ? [{ tone: 'warn' as const, text: plural(sum.cancellations.length, 'cancellation request') }] : []),
+    ...(sum.cancellations.length ? [{ tone: 'attn' as const, text: plural(sum.cancellations.length, 'cancellation request') }] : []),
   ];
   const summary = sum.cancellations.length
     ? `${plural(sum.pending.length, 'request')} waiting for approval, ${plural(sum.cancellations.length, 'cancellation request')} · all dates`
@@ -43,7 +43,8 @@ function NeedsAction({ state, onAll, onCancellations }: { state: LoadState; onAl
       state={state}
       summary={summary}
       chips={chips}
-      more={list.length > NEEDS_ACTION_SHOWN ? (
+      // As the design has it, the footer always leads to the full list, filtered.
+      more={list.length > 0 ? (
         <div style={{ display: 'flex', gap: 18 }}>
           {sum.cancellations.length > 0 && <LinkButton onClick={onCancellations}>View {plural(sum.cancellations.length, 'cancellation request')}</LinkButton>}
           {sum.pending.length > 0 && <LinkButton onClick={onAll}>View all {sum.pending.length} pending</LinkButton>}
@@ -65,8 +66,8 @@ function NeedsAction({ state, onAll, onCancellations }: { state: LoadState; onAl
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span style={{ fontSize: 13.5 }}>{l.from === l.to ? l.from : `${l.from} – ${l.to}`} · {l.days}</span>
               {cancel
-                ? <Flag tone="warn">Cancellation requested{l.cancelRequest?.requested ? ` · ${l.cancelRequest.requested}` : ''}</Flag>
-                : f.passed ? <Flag tone="bad">Date passed, still pending</Flag> : <Flag tone={f.soon ? 'warn' : 'mute'}>{startsIn(f.toStart)}</Flag>}
+                ? <Flag tone="attn">Cancellation requested{l.cancelRequest?.requested ? ` · ${l.cancelRequest.requested}` : ''}</Flag>
+                : f.passed ? <Flag tone="bad">Date passed, still pending</Flag> : <Flag tone={f.soon ? 'attn' : 'mute'}>{startsIn(f.toStart)}</Flag>}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
               <span style={cellSub}>Manager</span>
@@ -267,7 +268,7 @@ export function LeaveRequests() {
                 value={stats.approx ? <>≈ {stats.days}</> : stats.days}
                 sub={stats.approx ? 'approx. · leaves running past the period are cut by date, weekends taken out' : undefined}
               />
-              <StatTile state={st} label="Pending" value={stats.pending} warn />
+              <StatTile state={st} label="Pending" value={stats.pending} attn />
               <StatTile state={st} label="Approved · Declined" value={<>{stats.approved} <span style={{ fontSize: 17, color: 'var(--ink-3)' }}>· {stats.declined}</span></>} />
               <StatTile
                 state={st}

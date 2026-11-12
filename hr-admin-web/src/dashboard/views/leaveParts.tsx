@@ -2,22 +2,23 @@
 // period picker, the Needs action panel, the Pending chip and the stat tiles.
 import type { CSSProperties, ReactNode } from 'react';
 import { LoadingFigure, Pill } from '../ui';
-import { STAT, typeColor } from '../theme';
+import { TO_STAT, typeColor } from '../theme';
 import type { Leave } from '../seed';
 import { PersonAvatar } from '../PersonAvatar';
 import type { LoadState } from '../ui';
 import { btn, btnClass, cellName, cellSub, SEG, segBtn, TILE, TR } from '../ds';
-import { APPROVED_FILL, dateOf, dayLabel, isWeekend, LEAVE_COLS, PENDING_FILL } from './leaveDays';
+import { APPROVED_FILL, dateOf, dayLabel, isWeekend, LEAVE_COLS, PENDING_FILL, PENDING_ROW, SECOND_FILL } from './leaveDays';
 import type { PeriodId } from './leaveDays';
 
-export function Swatch({ kind }: { kind: 'approved' | 'pending' | 'holiday' }) {
+export function Swatch({ kind }: { kind: 'approved' | 'pending' | 'holiday' | 'second' }) {
   if (kind === 'holiday') return <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--ink)', display: 'inline-block' }} />;
-  return <span aria-hidden style={{ width: 12, height: 12, borderRadius: 3, display: 'inline-block', ...(kind === 'pending' ? PENDING_FILL : { background: APPROVED_FILL }) }} />;
+  return <span aria-hidden style={{ width: 12, height: 12, borderRadius: 3, display: 'inline-block', ...(kind === 'pending' ? PENDING_FILL : { background: kind === 'second' ? SECOND_FILL : APPROVED_FILL }) }} />;
 }
 
-const FLAG: Record<'bad' | 'warn' | 'mute', CSSProperties> = {
+// "attn" is the Time office's needs-attention tint (a calm blue); red only where it is bad.
+const FLAG: Record<'bad' | 'attn' | 'mute', CSSProperties> = {
   bad: { background: 'var(--bad-bg)', color: 'var(--bad)' },
-  warn: { background: 'var(--warn-bg)', color: 'var(--warn)' },
+  attn: { background: 'var(--attn-bg)', color: 'var(--attn)' },
   mute: { background: 'var(--mute-bg)', color: 'var(--ink-2)' },
 };
 type FlagTone = keyof typeof FLAG;
@@ -50,16 +51,16 @@ export function PendingChip({ onClick, label, dot = false }: { onClick: () => vo
       type="button"
       aria-label={label}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: dot ? 32 : 26, padding: dot ? '0 12px' : '0 10px', borderRadius: 999, border: '1px solid var(--warn-line)', background: 'var(--warn-bg)', color: 'var(--warn)', fontSize: dot ? 13 : 12, fontWeight: 600, cursor: 'pointer', font: 'inherit', whiteSpace: 'nowrap' }}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: dot ? 32 : 26, padding: dot ? '0 12px' : '0 10px', borderRadius: 999, border: '1px solid var(--attn-line)', background: 'var(--attn-bg)', color: 'var(--attn)', fontSize: dot ? 13 : 12, fontWeight: 600, cursor: 'pointer', font: 'inherit', whiteSpace: 'nowrap' }}
     >
-      {dot && <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--warn)' }} />}
+      {dot && <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--attn)' }} />}
       Pending
       <svg aria-hidden width={dot ? 14 : 12} height={dot ? 14 : 12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
     </button>
   );
 }
 
-/** The amber "Needs action" panel: a heading, a summary line, count chips, then rows. */
+/** The "Needs action" panel, in the attention tint: a heading, a summary line, count chips, then rows. */
 export function NeedsActionShell({ id, state, summary, chips, children, more }: {
   id: string;
   state: LoadState;
@@ -69,8 +70,8 @@ export function NeedsActionShell({ id, state, summary, chips, children, more }: 
   more?: ReactNode;
 }) {
   return (
-    <section aria-labelledby={id} style={{ ...TILE, padding: 0, overflow: 'hidden', border: '1px solid var(--warn-line)', marginBottom: 20 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 22px', background: 'var(--warn-bg)' }}>
+    <section aria-labelledby={id} style={{ ...TILE, padding: 0, overflow: 'hidden', border: '1px solid var(--attn-line)', marginBottom: 20 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 22px', background: 'var(--attn-bg)' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 12 }}>
           <h2 id={id} style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Needs action</h2>
           <span style={{ fontSize: 13.5, color: 'var(--ink-2)' }}><LoadingFigure state={state} w={140} h={14}>{summary}</LoadingFigure></span>
@@ -88,9 +89,9 @@ export function NeedsActionShell({ id, state, summary, chips, children, more }: 
 }
 
 
-/** "Waiting": days since it was submitted, red once it is past the limit. */
+/** "Waiting": days since it was submitted, bold at the limit and red past it. */
 export function Waiting({ days, slow }: { days: number; slow: number }) {
-  const color = days > slow ? 'var(--bad)' : days === slow ? 'var(--warn)' : 'var(--ink)';
+  const color = days > slow ? 'var(--bad)' : days === slow ? 'var(--attn)' : 'var(--ink)';
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       <span style={cellSub}>Waiting</span>
@@ -136,45 +137,48 @@ export function CustomRange({ applied, draftFrom, draftTo, onDraftFrom, onDraftT
 
 const statTile: CSSProperties = { border: '1px solid var(--line)', borderRadius: 16, padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 };
 const statNum: CSSProperties = { fontSize: 26, fontWeight: 400, letterSpacing: '-.02em', fontVariantNumeric: 'tabular-nums' };
-/** One figure in a period's summary; `warn` is the amber Pending tile. */
-export function StatTile({ label, value, unit, sub, state, warn, action }: {
+/** One figure in a period's summary; `attn` is the Pending tile, in the attention tint. */
+export function StatTile({ label, value, unit, sub, state, attn, action }: {
   label: string;
   value: ReactNode;
   unit?: string;
   sub?: ReactNode;
   state: LoadState;
-  warn?: boolean;
+  attn?: boolean;
   action?: ReactNode;
 }) {
   return (
-    <div style={{ ...statTile, ...(warn ? { background: 'var(--warn-bg)', border: '1px solid var(--warn-line)' } : null) }}>
+    <div style={{ ...statTile, ...(attn ? { background: 'var(--attn-bg)', border: '1px solid var(--attn-line)' } : null) }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ ...cellSub, fontSize: 12.5, color: warn ? 'var(--warn)' : 'var(--ink-3)' }}>{label}</span>
+        <span style={{ ...cellSub, fontSize: 12.5, color: attn ? 'var(--attn)' : 'var(--ink-3)' }}>{label}</span>
         {action}
       </div>
       <span style={statNum}>
         <LoadingFigure state={state}>{value}{unit && <span style={{ fontSize: 15, color: 'var(--ink-3)' }}> {unit}</span>}</LoadingFigure>
       </span>
-      {sub != null && <span style={{ fontSize: 12.5, color: warn ? 'var(--warn)' : 'var(--ink-3)' }}>{sub}</span>}
+      {sub != null && <span style={{ fontSize: 12.5, color: attn ? 'var(--attn)' : 'var(--ink-3)' }}>{sub}</span>}
     </div>
   );
 }
 
 /**
- * A count per day as stacked bars: the decided part solid, pending hatched on
- * top. Days after today can be shaded as not yet happened.
+ * A count per day as stacked bars: the decided part solid (optionally split in
+ * two, `a` then `c` above it), pending hatched on top. Days after today can be
+ * shaded as not yet happened; `marks` puts a dot under a day (a holiday).
  */
-export function DayBars({ days, totals, today, onPick, selected, height = 120, words = ['approved', 'pending'], shadeFuture = false }: {
+export function DayBars({ days, totals, today, onPick, selected, height = 120, words = ['approved', 'pending'], shadeFuture = false, marks }: {
   days: string[];
-  totals: { a: number; p: number }[];
+  totals: { a: number; p: number; c?: number }[];
   today: string;
   onPick?: (iso: string) => void;
   selected?: string;
   height?: number;
-  words?: [string, string];
+  /** What a, p and (when given) c are called in each day's tooltip. */
+  words?: [string, string] | [string, string, string];
   shadeFuture?: boolean;
+  marks?: Map<string, string>;
 }) {
-  const max = Math.max(1, ...totals.map((t) => t.a + t.p));
+  const max = Math.max(1, ...totals.map((t) => t.a + t.p + (t.c ?? 0)));
   const n = days.length;
   const track: CSSProperties = { display: 'grid', gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`, gap: 4 };
   return (
@@ -183,15 +187,19 @@ export function DayBars({ days, totals, today, onPick, selected, height = 120, w
         <div style={{ ...track, alignItems: 'end', height: height + 40 }}>
           {days.map((d, i) => {
             const { a, p } = totals[i];
+            const c = totals[i].c ?? 0;
             const wk = isWeekend(d);
             const on = selected === d;
             const future = shadeFuture && d > today;
-            const label = `${dayLabel(d)}: ${a} ${words[0]}, ${p} ${words[1]}`;
+            const mark = marks?.get(d);
+            const label = `${dayLabel(d)}${mark ? ` (${mark})` : ''}: ${a} ${words[0]}${words[2] ? `, ${c} ${words[2]}` : ''}, ${p} ${words[1]}`;
+            const past = !shadeFuture && d < today ? 0.55 : 1;
             const body = (
               <>
-                <span style={{ fontSize: 11, fontWeight: 600, textAlign: 'center', color: 'var(--ink)' }}>{a + p || ''}</span>
-                {p > 0 && <span style={{ display: 'block', height: Math.round((p / max) * height), borderRadius: a ? '3px 3px 0 0' : 3, ...PENDING_FILL }} />}
-                {a > 0 && <span style={{ display: 'block', height: Math.round((a / max) * height), background: APPROVED_FILL, opacity: !shadeFuture && d < today ? 0.55 : 1, borderRadius: p ? '0 0 3px 3px' : 3 }} />}
+                <span style={{ fontSize: 11, fontWeight: 600, textAlign: 'center', color: 'var(--ink)' }}>{a + p + c || ''}</span>
+                {p > 0 && <span style={{ display: 'block', height: Math.round((p / max) * height), borderRadius: a || c ? '3px 3px 0 0' : 3, ...PENDING_FILL }} />}
+                {c > 0 && <span style={{ display: 'block', height: Math.round((c / max) * height), background: SECOND_FILL, opacity: past, borderRadius: p ? (a ? 0 : '0 0 3px 3px') : a ? '3px 3px 0 0' : 3 }} />}
+                {a > 0 && <span style={{ display: 'block', height: Math.round((a / max) * height), background: APPROVED_FILL, opacity: past, borderRadius: p || c ? '0 0 3px 3px' : 3 }} />}
               </>
             );
             const bg = on ? 'var(--accent-soft)' : future ? 'repeating-linear-gradient(0deg, var(--surface-2) 0 4px, var(--surface) 4px 8px)' : wk ? 'var(--surface-2)' : 'transparent';
@@ -209,9 +217,10 @@ export function DayBars({ days, totals, today, onPick, selected, height = 120, w
             const isToday = d === today;
             const dim = isWeekend(d) || (shadeFuture && d > today);
             return (
-              <div key={d} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div key={d} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                 <span style={isToday ? { fontSize: 11, fontWeight: 700, color: 'var(--on-sel)', background: 'var(--sel)', borderRadius: 999, padding: '0 5px' } : { fontSize: 11, fontWeight: 500, color: dim ? 'var(--ink-3)' : 'var(--ink)' }}>{dt.getDate()}</span>
                 <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{WD1[dt.getDay()]}</span>
+                {marks && <span aria-hidden title={marks.get(d)} style={{ width: 6, height: 6, borderRadius: '50%', background: marks.has(d) ? 'var(--ink)' : 'transparent' }} />}
               </div>
             );
           })}
@@ -228,7 +237,7 @@ export function LeaveRow({ r, last, onOpen }: { r: Leave; last: boolean; onOpen:
   // An approved leave its employee asked to cancel waits on a decision too.
   const cancelAsked = r.cancelRequest?.status === 'Pending';
   return (
-    <div className="dc-row" onClick={onOpen} style={{ ...TR(LEAVE_COLS, last), position: 'relative', cursor: 'pointer', ...(pend || cancelAsked ? { background: 'var(--warn-bg)', boxShadow: 'inset 3px 0 0 var(--warn)' } : null) }}>
+    <div className="dc-row" onClick={onOpen} style={{ ...TR(LEAVE_COLS, last), position: 'relative', cursor: 'pointer', ...(pend || cancelAsked ? PENDING_ROW : null) }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
         <PersonAvatar name={r.name} userId={r.submitterId} />
         <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -247,8 +256,8 @@ export function LeaveRow({ r, last, onOpen }: { r: Leave; last: boolean; onOpen:
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
         {pend
           ? <PendingChip onClick={onOpen} label={`Review ${r.name}'s leave request`} />
-          : <Pill label={r.byAdmin && r.status !== 'Cancelled' ? `${r.statusLabel} · by admin` : r.statusLabel} tone={STAT[r.status]} />}
-        {cancelAsked && <Pill label="Cancellation requested" tone={STAT.Pending} />}
+          : <Pill label={r.byAdmin && r.status !== 'Cancelled' ? `${r.statusLabel} · by admin` : r.statusLabel} tone={TO_STAT[r.status]} />}
+        {cancelAsked && <Pill label="Cancellation requested" tone={TO_STAT.Pending} />}
       </div>
       <div style={{ textAlign: 'right', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{r.applied}</div>
     </div>

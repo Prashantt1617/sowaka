@@ -59,6 +59,8 @@ export function LeaveCalendar({ state, initialDay, onPending, onCancellations, o
     for (const h of holidays) if (h.date.startsWith(month)) m.set(h.date.slice(0, 10), [...(m.get(h.date.slice(0, 10)) ?? []), h.name]);
     return m;
   }, [holidays, month]);
+  // A dot under each holiday's date in the bars, named in its tooltip.
+  const festMarks = useMemo(() => new Map([...festByDay.entries()].map(([d, names]) => [d, names.join(', ')])), [festByDay]);
 
   // Department sizes: everyone still at the company, by department.
   const depts = useMemo(() => {
@@ -109,7 +111,7 @@ export function LeaveCalendar({ state, initialDay, onPending, onCancellations, o
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {na.all.length > 0 && (
-        <button type="button" onClick={na.pending.length ? onPending : onCancellations} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '14px 20px', background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 16, cursor: 'pointer', font: 'inherit', color: 'var(--ink)', textAlign: 'left' }}>
+        <button type="button" onClick={na.pending.length ? onPending : onCancellations} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '14px 20px', background: 'var(--attn-bg)', border: '1px solid var(--attn-line)', borderRadius: 16, cursor: 'pointer', font: 'inherit', color: 'var(--ink)', textAlign: 'left' }}>
           <span style={{ fontSize: 14 }}>
             <span style={{ fontWeight: 600 }}>Needs action:</span> {na.all.length} waiting
             {na.pending.length > 0 && na.cancellations.length > 0 && ` (${na.pending.length} pending, ${na.cancellations.length} cancellation ${na.cancellations.length === 1 ? 'request' : 'requests'})`}
@@ -117,7 +119,7 @@ export function LeaveCalendar({ state, initialDay, onPending, onCancellations, o
             {na.passed > 0 && ` · ${na.passed} ${na.passed === 1 ? 'date' : 'dates'} already passed`}
             {na.soon > 0 && ` · ${na.soon} start within 7 days`}
           </span>
-          <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--warn)' }}>{na.pending.length ? 'Review pending' : 'Review cancellation requests'}</span>
+          <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--attn)' }}>{na.pending.length ? 'Review pending' : 'Review cancellation requests'}</span>
         </button>
       )}
 
@@ -145,15 +147,16 @@ export function LeaveCalendar({ state, initialDay, onPending, onCancellations, o
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, fontSize: 12.5, color: 'var(--ink-2)' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Swatch kind="approved" />Approved</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Swatch kind="pending" />Pending (tentative)</span>
-                {festByDay.size > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Swatch kind="holiday" />Holiday</span>}
+                {festByDay.size > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Swatch kind="holiday" />Festival / holiday</span>}
                 <span style={{ color: 'var(--ink-3)' }}>Click a day to see who is off</span>
                 <span style={{ color: 'var(--ink-3)' }} title="By leave dates; when a leave counts fewer days than its span, Saturday and Sunday are taken out. Week offs per shift are not applied.">Days off are approx.</span>
               </div>
               <LoadingFigure state={state} w="100%" h={190}>
-                <DayBars days={days} totals={totals} today={today} selected={day} onPick={(d) => { setDay(d); setDept(null); }} height={140} />
+                <DayBars days={days} totals={totals} today={today} selected={day} onPick={(d) => { setDay(d); setDept(null); }} height={140} marks={festMarks} />
               </LoadingFigure>
               {festByDay.size > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Festivals this month:</span>
                   {[...festByDay.entries()].sort().map(([d, names]) => (
                     <button key={d} type="button" onClick={() => setDay(d)} style={{ border: '1px solid var(--line-2)', background: d === day ? 'var(--accent-soft)' : 'var(--surface)', borderRadius: 999, padding: '3px 10px', fontSize: 12, cursor: 'pointer', font: 'inherit', color: 'var(--ink-2)' }}>
                       {dateOf(d).getDate()} · {names.join(', ')}
@@ -175,7 +178,10 @@ export function LeaveCalendar({ state, initialDay, onPending, onCancellations, o
                   <div style={{ display: 'grid', gridTemplateColumns: `160px repeat(${days.length}, minmax(0, 1fr))`, gap: 4 }}>
                     <span />
                     {days.map((d) => (
-                      <span key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: d === today ? 700 : 500, color: isWeekend(d) ? 'var(--ink-3)' : 'var(--ink)' }}>{dateOf(d).getDate()}</span>
+                      <span key={d} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', fontSize: 11, fontWeight: d === today ? 700 : 500, color: isWeekend(d) ? 'var(--ink-3)' : 'var(--ink)' }}>
+                        {dateOf(d).getDate()}
+                        <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--ink-3)' }}>{WD1[dateOf(d).getDay()]}</span>
+                      </span>
                     ))}
                   </div>
                   {depts.map((dp) => (
@@ -247,4 +253,5 @@ export function LeaveCalendar({ state, initialDay, onPending, onCancellations, o
 }
 
 const legend: CSSProperties = { width: 14, height: 14, borderRadius: 3, display: 'inline-block' };
+const WD1 = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const BUSY_BG = 'color-mix(in srgb, var(--accent) 32%, var(--surface))';

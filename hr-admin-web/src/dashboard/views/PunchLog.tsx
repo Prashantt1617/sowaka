@@ -23,19 +23,21 @@ const COLS = '1.7fr 1fr .8fr .8fr .7fr 1.6fr 1.2fr 48px';
 type Counted = 'present' | 'late' | 'early' | 'half' | 'open' | 'lateopen' | 'waiting' | 'corr' | 'missed' | 'absent' | 'leave' | 'none';
 const COUNTED: Record<Counted, { label: string; bg: string; fg: string }> = {
   present: { label: 'Present', bg: 'var(--ok-bg)', fg: 'var(--ok)' },
-  late: { label: 'Late', bg: 'var(--t-peach)', fg: 'var(--warn)' },
-  early: { label: 'Left early', bg: 'var(--t-peach)', fg: 'var(--warn)' },
+  late: { label: 'Late', bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' },
+  early: { label: 'Left early', bg: 'var(--t-peach)', fg: 'var(--t-peach-i)' },
   half: { label: 'Half day', bg: 'var(--t-sky)', fg: 'var(--t-sky-i)' },
   open: { label: 'In office now', bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
-  lateopen: { label: 'Late · in now', bg: 'var(--t-peach)', fg: 'var(--warn)' },
-  waiting: { label: 'Waiting on manager', bg: 'var(--warn-bg)', fg: 'var(--warn)' },
-  corr: { label: 'Correction raised', bg: 'var(--warn-bg)', fg: 'var(--warn)' },
-  missed: { label: 'Missed punch', bg: 'var(--warn-bg)', fg: 'var(--warn)' },
+  lateopen: { label: 'Late · in now', bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' },
+  // Waiting on someone's decision: the Time office attention tint.
+  waiting: { label: 'Waiting on manager', bg: 'var(--attn-bg)', fg: 'var(--attn)' },
+  corr: { label: 'Correction raised', bg: 'var(--attn-bg)', fg: 'var(--attn)' },
+  missed: { label: 'Missed punch', bg: 'var(--mute-bg)', fg: 'var(--ink-2)' },
   absent: { label: 'Absent', bg: 'var(--bad-bg)', fg: 'var(--bad)' },
   leave: { label: 'On leave', bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
   none: { label: '—', bg: 'var(--mute-bg)', fg: 'var(--ink-3)' },
 };
-const OOL_COLOR = 'var(--t-sky-i)';
+// Teal, as the design has it: apart from the accent blue of In office.
+const OOL_COLOR = 'var(--t-mint-i)';
 const clock = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : '—');
 const hoursOf = (a: string | null, b: string | null) => {
   if (!a || !b) return '—';
@@ -43,6 +45,9 @@ const hoursOf = (a: string | null, b: string | null) => {
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 };
 const mapUrl = (p: { latitude: number; longitude: number }) => `https://www.google.com/maps?q=${p.latitude},${p.longitude}`;
+/** How an app punch was made, from where it was taken: inside an office's geofence or away from all of them. */
+const methodOf = (loc: PunchPlaceDTO | null, outside: boolean) =>
+  outside ? 'App check-in, out of location' : loc ? (loc.inOffice ? 'App punch inside the office geofence' : 'App punch outside every office') : '';
 
 /** One person's day as the table reads it. */
 type Row = PunchDayDTO & { key: string; ool: boolean; where: string; whereSub: string; counted: Counted; why: string; report?: ReportRow };
@@ -179,9 +184,17 @@ export function PunchLog() {
     const people = new Set(rows.filter((r) => r.punchIn || r.outside).map((r) => r.userId)).size;
     const ool = rows.filter((r) => r.ool);
     const waitingCorr = s.corrs.filter((c) => c.status === 'Pending' && (c.refISO || '').slice(0, 10) >= range.from && (c.refISO || '').slice(0, 10) <= range.to).length;
+    const punched = rows.filter((r) => r.punchIn || r.outside);
+    // Out of location by the reason given ("11 WFH · 2 client visit"), the commonest first.
+    const why = new Map<string, number>();
+    for (const r of ool) { const k = r.outside?.reason || 'Away from every office'; why.set(k, (why.get(k) ?? 0) + 1); }
     return {
-      people, days: rows.length, office: rows.length - ool.length, ool: ool.length,
+      people, days: rows.length, personDays: punched.length, office: rows.length - ool.length, ool: ool.length,
       oolPresent: ool.filter((r) => !r.waiting).length, oolWaiting: ool.filter((r) => r.waiting).length, waitingCorr,
+      late: rows.filter((r) => r.counted === 'late' || r.counted === 'lateopen').length,
+      early: rows.filter((r) => r.counted === 'early').length,
+      half: rows.filter((r) => r.counted === 'half').length,
+      reasons: [...why.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => `${n} ${k}`).join(' · '),
     };
   }, [rows, s.corrs, range.from, range.to]);
 
@@ -244,10 +257,13 @@ export function PunchLog() {
 
           {!waitingForDates && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
-              <StatTile state={state} label="People punched in" value={stats.people} sub={period === 'today' ? 'Today' : `${plural(stats.days, 'punch day')}`} />
+              {/* Today: people; a longer period: person-days, with how they counted (from the attendance report). */}
+              {period === 'today'
+                ? <StatTile state={state} label="Punched in today" value={stats.people} sub={report && report.length ? `${stats.late} late so far` : 'Today'} />
+                : <StatTile state={state} label="Person-days punched in" value={stats.personDays} sub={report && report.length ? `${stats.late} late · ${stats.early} left early · ${stats.half} half day` : `${plural(stats.people, 'person', 'people')}`} />}
               <StatTile state={state} label="In office" value={stats.office} unit={stats.office === 1 ? 'day' : 'days'} sub="At an office or on its device" />
-              <StatTile state={state} label="Out of location" value={stats.ool} sub={`${stats.oolPresent} counted · ${stats.oolWaiting} waiting`} />
-              <StatTile state={state} label="Waiting in corrections" value={stats.waitingCorr} sub="Not counted as present yet" warn={stats.waitingCorr > 0}
+              <StatTile state={state} label="Out of location" value={stats.ool} sub={stats.ool ? `${stats.reasons}${stats.oolWaiting ? ` · ${stats.oolWaiting} waiting` : ''}` : 'None in this period'} />
+              <StatTile state={state} label="Waiting in corrections" value={stats.waitingCorr} sub="Not counted as present yet" attn={stats.waitingCorr > 0}
                 action={canOpen(user, 'attendance') ? <LinkButton onClick={() => s.setView('attendance')}>Open</LinkButton> : undefined} />
             </div>
           )}
@@ -374,9 +390,9 @@ function PunchDrawer({ r, onClose, onCorrections }: { r: Row; onClose: () => voi
         </div>
         {r.why && <div style={{ padding: '10px 14px', borderRadius: 12, background: 'var(--surface-2)', fontSize: 13.5, color: 'var(--ink-2)' }}>{r.why}</div>}
         {(r.counted === 'corr' || r.counted === 'waiting') && onCorrections && (
-          <button type="button" onClick={() => { onClose(); onCorrections(); }} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 12, background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', cursor: 'pointer', font: 'inherit', color: 'var(--ink)', textAlign: 'left' }}>
+          <button type="button" onClick={() => { onClose(); onCorrections(); }} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 12, background: 'var(--attn-bg)', border: '1px solid var(--attn-line)', cursor: 'pointer', font: 'inherit', color: 'var(--ink)', textAlign: 'left' }}>
             <span style={{ fontSize: 13.5 }}>{r.counted === 'waiting' ? 'The out-of-location request is waiting on the manager.' : 'A correction for this day is waiting for a decision.'}</span>
-            <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--warn)', whiteSpace: 'nowrap' }}>Open in corrections</span>
+            <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--attn)', whiteSpace: 'nowrap' }}>Open in corrections</span>
           </button>
         )}
         <div>
@@ -386,8 +402,9 @@ function PunchDrawer({ r, onClose, onCorrections }: { r: Row; onClose: () => voi
               <div key={p.kind} style={{ padding: '12px 14px', borderRadius: 12, border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                   <span style={{ fontSize: 13.5, fontWeight: 500 }}>{p.kind}</span>
-                  <span style={{ fontSize: 13.5, fontVariantNumeric: 'tabular-nums', color: p.at ? 'var(--ink)' : 'var(--ink-3)' }}>{p.at ? clock(p.at) : 'None'}</span>
+                  <span style={{ fontSize: 13.5, fontVariantNumeric: 'tabular-nums', color: p.at ? 'var(--ink)' : 'var(--ink-3)' }}>{p.at ? clock(p.at) : p.kind === 'Punch out' && r.punchIn && r.workDate === todayISO() ? 'Not yet' : 'Missed'}</span>
                 </div>
+                {!p.at && <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>No punch recorded</span>}
                 {p.at && (
                   <>
                     <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>
@@ -398,6 +415,7 @@ function PunchDrawer({ r, onClose, onCorrections }: { r: Row; onClose: () => voi
                       const at = p.loc ?? r.outside!;
                       return <a href={mapUrl(at)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5, color: 'var(--accent-ink)' }}>{at.latitude.toFixed(5)}, {at.longitude.toFixed(5)} · Open in map</a>;
                     })()}
+                    {(() => { const m = methodOf(p.loc, Boolean(r.outside && r.outside.punchType === (p.kind === 'Punch in' ? 'in' : 'out'))); return m ? <span style={cellSub}>{m}</span> : null; })()}
                     {p.extra && <span style={cellSub}>{p.extra}</span>}
                   </>
                 )}

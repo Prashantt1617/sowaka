@@ -81,13 +81,17 @@ export function perDay(leaves: Leave[], days: string[]) {
   return rows;
 }
 
-/** A pending bar or swatch: hatched in the warning colour, so it reads as not yet decided. */
+/** A pending bar or swatch: hatched in the attention blue, so it reads as not yet decided. */
 export const PENDING_FILL: CSSProperties = {
-  border: '1.5px solid var(--warn)',
+  border: '1.5px solid var(--attn)',
   boxSizing: 'border-box',
-  background: 'repeating-linear-gradient(45deg, var(--warn-bg) 0 3px, var(--surface) 3px 6px)',
+  background: 'repeating-linear-gradient(45deg, var(--attn-line) 0 3px, var(--surface) 3px 6px)',
 };
 export const APPROVED_FILL = 'var(--accent)';
+/** A row waiting on a decision: the attention tint with a bar down its left edge. */
+export const PENDING_ROW: CSSProperties = { background: 'var(--attn-bg)', boxShadow: 'inset 3px 0 0 var(--attn)' };
+/** A second decided kind stacked on the first: overtime given as comp-off. */
+export const SECOND_FILL = 'color-mix(in srgb, var(--t-mint-i) 55%, var(--surface))';
 
 /** A request waiting more than this many days is called out. */
 export const SLOW_DAYS = 2;
