@@ -152,3 +152,5 @@ export function useBrandDocument() {
 
 /** Sowaka's own logo (the reddish-brown "sowaka" tile the app wears), for every company without one of its own. */
 export const SOWAKA_MARK = '/brand/sowaka-icon.png';
+/** The wide "sowaka" logo the app's header uses (404×175). */
+export const SOWAKA_WORDMARK = '/brand/sowaka-wordmark.png';

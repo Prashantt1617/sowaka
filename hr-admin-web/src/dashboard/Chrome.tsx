@@ -1,6 +1,6 @@
 // Sidebar, topbar and toast — the persistent shell around the views.
 import { useState } from 'react';
-import { SOWAKA_MARK, useBrand } from './brand';
+import { SOWAKA_MARK, SOWAKA_WORDMARK, useBrand } from './brand';
 import { useAuth } from './auth/AuthContext';
 import type { ReactNode } from 'react';
 import type { View } from './theme';
@@ -395,16 +395,9 @@ export function Sidebar() {
       </div>
 
       {/* Platform mark — bottom-left. The HRMS this workspace runs on. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', borderTop: '1px solid var(--line)' }}>
-        <img
-          src={SOWAKA_MARK}
-          alt=""
-          style={{ width: 32, height: 32, borderRadius: 10, objectFit: 'cover', flexShrink: 0, boxShadow: '0 2px 6px rgba(178,53,0,.28)' }}
-        />
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.5 }}>{PLATFORM_NAME}</div>
-          <div style={{ fontSize: 11.5, fontWeight: 400, lineHeight: 1.5, color: 'var(--ink-3)' }}>HRMS platform</div>
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6, padding: '16px 20px', borderTop: '1px solid var(--line)' }}>
+        <img src={SOWAKA_WORDMARK} alt={PLATFORM_NAME} style={{ height: 30, width: 'auto', display: 'block' }} />
+        <div style={{ fontSize: 11.5, fontWeight: 400, lineHeight: 1.5, color: 'var(--ink-3)' }}>HRMS platform</div>
       </div>
     </aside>
   );
