@@ -306,7 +306,7 @@ void main() {
   );
 
   testWidgets(
-    'Payslips: a group per FY, a PDF per month and a year in one PDF',
+    'Payslips: a group per FY and a PDF per month, no download-all',
     (tester) async {
       final server = await pumpDownloads(tester);
       expect(server.calls, ['GET /payslips/mine?limit=24']);
@@ -318,8 +318,8 @@ void main() {
       expect(find.text('September 2026'), findsOneWidget);
       expect(find.text('Credited 30 Sep · PDF'), findsOneWidget);
       expect(find.text('Credited 31 Aug · PDF'), findsOneWidget);
-      expect(find.text('Download all as one PDF'), findsOneWidget);
-      expect(find.text('Download FY 2025–26 as one PDF'), findsOneWidget);
+      // No "Download all as one PDF" for any year.
+      expect(find.textContaining('as one PDF'), findsNothing);
       expect(
         find.text('Can\'t find a document? Raise a ticket'),
         findsOneWidget,
@@ -347,22 +347,6 @@ void main() {
       expect(saved.map((s) => s.$1), ['payslip-2026-09.pdf']);
       expect(ascii.decode(saved.single.$2.sublist(0, 5)), '%PDF-');
 
-      await tapAndWait(
-        tester,
-        find.byKey(const ValueKey('download-all-2026-27')),
-        () => saved.length > 1,
-      );
-      expect(saved.map((s) => s.$1), [
-        'payslip-2026-09.pdf',
-        'payslips-FY2026-27.pdf',
-      ]);
-      final year = saved.last.$2;
-      expect(ascii.decode(year.sublist(0, 5)), '%PDF-');
-      // Two months, two pages.
-      expect(
-        RegExp(r'/Type\s*/Page[^s]').allMatches(latin1.decode(year)).length,
-        2,
-      );
       expect(find.text('Preparing…'), findsNothing);
     },
   );
@@ -532,7 +516,6 @@ void main() {
       expect(find.byKey(const ValueKey('downloads-tabs')), findsNothing);
       expect(find.text('Form 16'), findsNothing);
       expect(find.text('September 2026'), findsOneWidget);
-      expect(find.text('Download all as one PDF'), findsOneWidget);
       expect(find.byKey(const ValueKey('form16-tip')), findsNothing);
     });
 
