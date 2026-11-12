@@ -2,14 +2,15 @@ import type { NextFunction, Request, Response } from 'express';
 import multer from 'multer';
 import { FaceIdError } from '../services/face-id.service';
 
-// The app sends a JPEG of about 1,000 px; this leaves room for a phone that
-// sends its camera's own, which is re-encoded before Rekognition sees it.
+// The app sends a JPEG of at most 480 px (800 before November); this leaves
+// room for a phone that sends its camera's own, which is re-encoded before
+// Rekognition sees it.
 const MAX_FACE_BYTES = 8 * 1024 * 1024;
 
 /**
  * The selfie (and at setup the two turned photos), the burst of face crops
- * the server's screen detector judges (eight from the front photo, and at
- * setup eight from each turn, kept for the log), and the colour-flash crops
+ * the server's screen detector judges (eight from the front photo; builds
+ * before November also sent eight from each setup turn, unread), and the colour-flash crops
  * builds 59 and 60 still send (ignored).
  */
 const CROPS = Array.from({ length: 24 }, (_, i) => `crop${i}` as const);

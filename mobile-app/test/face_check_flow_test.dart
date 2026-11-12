@@ -120,6 +120,7 @@ Map<String, dynamic> _where = _inside;
 const _matched = {'passed': true, 'reason': 'matched', 'token': 'verify-tok'};
 List<Map<String, dynamic>> _verifyReplies = [];
 bool _fallbackOnStatus = false;
+bool _dropVerify = false;
 
 http.Client _server() => MockClient((request) async {
   final path = request.url.path;
@@ -149,6 +150,7 @@ http.Client _server() => MockClient((request) async {
     return http.Response(jsonEncode({'success': true, 'enrolled': true, 'token': 'enrol-tok'}), 201);
   }
   if (path.endsWith('/face/verify')) {
+    if (_dropVerify) throw http.ClientException('Connection reset by peer');
     _verifyBody = String.fromCharCodes(request.bodyBytes);
     await Future<void>.delayed(const Duration(milliseconds: 300));
     final reply = _verifyReplies.isEmpty ? _matched : _verifyReplies.removeAt(0);
@@ -231,6 +233,7 @@ void main() {
     _fallbackBody = null;
     _where = _inside;
     _verifyReplies = [];
+    _dropVerify = false;
     _fallbackOnStatus = false;
     FaceSounds.enabled = false;
     FaceCheckOutcome.enrolledThisRun = false;
@@ -408,6 +411,19 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
+  testWidgets('no answer from the server: the connection is slow, not a try, no fallback', (tester) async {
+    _dropVerify = true;
+    await slide(tester, enrolled: true);
+    await settle(tester);
+    _camera.bursts();
+    await settle(tester, const Duration(milliseconds: 400));
+    expect(_headline(tester), 'Your connection is slow');
+    expect(_line(tester), 'Try again on Wi-Fi or a stronger signal.');
+    expect(find.textContaining('to manager'), findsNothing);
+    expect(_punchBody, isNull);
+    await tester.pump(const Duration(seconds: 3));
+  });
+
   testWidgets('the gate says one thing at a time, in the copy table\'s words', (tester) async {
     await slide(tester, enrolled: true);
     await settle(tester);
@@ -508,8 +524,13 @@ void main() {
     final body = _enrolBody!;
     expect(_field(body, 'consentVersion'), 'v4');
     expect(_field(body, 'challengeId'), isNotNull);
-    for (final name in ['photo', 'photo2', 'photo3', 'crop0', 'crop7', 'crop8', 'crop16', 'crop23']) {
+    for (final name in ['photo', 'photo2', 'photo3', 'crop0', 'crop7']) {
       expect(_hasFile(body, name), isTrue, reason: name);
+    }
+    // The server judges the front burst only: the turned ones send their
+    // readings, not their crops.
+    for (final name in ['crop8', 'crop16', 'crop23']) {
+      expect(_hasFile(body, name), isFalse, reason: name);
     }
     expect(_punchBody?['faceToken'], 'enrol-tok');
     expect(find.text("You're set up!"), findsOneWidget);

@@ -89,6 +89,7 @@ class FaceCameraView extends StatelessWidget {
     this.steps,
     this.dim = false,
     this.setup = false,
+    this.progress,
   });
 
   final String headline;
@@ -121,6 +122,9 @@ class FaceCameraView extends StatelessWidget {
 
   /// Setup's camera (S2–S4): its headline, close icon and spacing, in Sora.
   final bool setup;
+
+  /// The share of an upload sent, 0 to 1: a bar across the oval while it goes.
+  final double? progress;
 
   @override
   Widget build(BuildContext context) {
@@ -256,6 +260,22 @@ class FaceCameraView extends StatelessWidget {
                               ),
                             ),
                             Positioned.fill(child: _TickRing(ring: ring, amber: fix, pulse: arrowPulse)),
+                            if (progress != null)
+                              Positioned(
+                                left: 80,
+                                right: 80,
+                                top: 197,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(3),
+                                  child: LinearProgressIndicator(
+                                    key: const ValueKey('face-upload-progress'),
+                                    value: progress,
+                                    minHeight: 6,
+                                    color: Colors.white,
+                                    backgroundColor: Colors.white24,
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ),

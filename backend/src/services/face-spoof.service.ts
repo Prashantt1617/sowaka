@@ -19,13 +19,17 @@ import { logger } from '../utils/logger';
  * The pre-processing is shared with the app (`face_spoof_check.dart`, keep
  * the two in step: the 0–1 against 0–255 bug of October came from them
  * drifting): the crop is the face box scaled 2.7 about its centre, held
- * inside the picture, sent as a 160 px square JPEG; the model reads it at
- * 80 × 80, bilinear, as BGR values 0–255, channels first; its output index 1
- * is "real".
+ * inside the picture, sent as a 96 px square JPEG at quality 80 (builds
+ * before November sent 160 px at 90; the model's own 80 px read makes the
+ * two score alike, `npm run face:spoof-check` measures it); the model reads
+ * it at 80 × 80, bilinear, as BGR values 0–255, channels first; its output
+ * index 1 is "real". Any crop size is read: there is no lower bound here.
  */
 
 export const SPOOF_SIDE = 80;
-export const CROP_SIDE = 160;
+/** The crop the app sends: [CROP_SIDE] px square, JPEG quality [CROP_QUALITY]. */
+export const CROP_SIDE = 96;
+export const CROP_QUALITY = 80;
 
 type LiteRtModule = {
   loadLiteRt: (path: string) => Promise<unknown>;

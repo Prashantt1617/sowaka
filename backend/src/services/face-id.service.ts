@@ -780,7 +780,7 @@ export async function issueFaceChallenge(userId: string) {
   return { id: row.id, expiresAt: row.expiresAt.toISOString() };
 }
 
-/** What the app sends with the selfie: the challenge it answers, the burst of 160 px face crops, and its own readings. */
+/** What the app sends with the selfie: the challenge it answers, the burst of face crops (96 px; 160 px from builds before November), and its own readings. */
 export interface LivenessEvidence {
   challengeId?: unknown;
   crops?: Buffer[];
