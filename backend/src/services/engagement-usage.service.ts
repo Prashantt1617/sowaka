@@ -139,6 +139,12 @@ type EveryoneRow = RosterRow & Pick<User, 'state' | 'joiningDate'> & { hidden: b
 
 /** Rows per cursor round trip: the default of a hundred turns a big roster into several trips. */
 const ONE_BATCH = { batchSize: 10_000 };
+/**
+ * The roll's assignment rows under other orgs are found by person: left to the
+ * planner, `org: {$ne}` can pick the {org, effectiveFrom} index and walk every
+ * other company's rows.
+ */
+const BY_PERSON = { userId: 1, effectiveFrom: -1 };
 
 const ROSTER_FIELDS = {
   _id: 0, userId: 1, name: 1, org: 1, department: 1, location: 1, branch: 1, managerUserId: 1, lastLoginAt: 1,
@@ -218,7 +224,7 @@ async function buildUsageSummary(org: string, from: string, to: string, today: s
   const ASSIGNMENT_FIELDS = { projection: { _id: 0, org: 1, userId: 1, templateId: 1, effectiveFrom: 1, createdAt: 1 }, ...ONE_BATCH };
   const ownRows = shiftAssignments().find({ org }, ASSIGNMENT_FIELDS).sort({ effectiveFrom: -1 }).toArray();
   const otherRows = ids.length
-    ? shiftAssignments().find({ userId: { $in: ids }, org: { $ne: org } }, ASSIGNMENT_FIELDS).toArray()
+    ? shiftAssignments().find({ userId: { $in: ids }, org: { $ne: org } }, { ...ASSIGNMENT_FIELDS, hint: BY_PERSON }).toArray()
     : Promise.resolve([] as ShiftAssignment[]);
   const assignments: Promise<(ShiftAssignment & { elsewhere?: true })[]> = Promise.all([ownRows, otherRows])
     .then(([own, other]) => [...own, ...other.map((r) => ({ ...r, elsewhere: true as const }))]);
@@ -486,7 +492,7 @@ async function filteredPeople(org: string, input: { dept?: unknown; loc?: unknow
   if (!roster.length) return [];
   const ids = roster.map((u) => u.userId);
   const onRoll = new Set(ids);
-  const other = await shiftAssignments().find({ userId: { $in: ids }, org: { $ne: org }, effectiveFrom: { $lte: asOf } }, fields).toArray();
+  const other = await shiftAssignments().find({ userId: { $in: ids }, org: { $ne: org }, effectiveFrom: { $lte: asOf } }, { ...fields, hint: BY_PERSON }).toArray();
   const rows = [...own.filter((r) => onRoll.has(r.userId)), ...other].sort(newestFirst);
   const policies = resolvePolicies(roster.map((u) => ({ userId: u.userId, org: u.org })), setup, rows);
   return roster.map((u) => ({ id: u.userId, group: groupOf(policies.get(u.userId)?.correction?.punchFormat) }));

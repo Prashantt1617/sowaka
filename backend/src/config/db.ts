@@ -735,6 +735,23 @@ export async function proposedHeavyPageIndexes(database: Db): Promise<void> {
   await database.collection('suwi_audit').createIndex({ org: 1, kind: 1, at: -1 });
 }
 
+/**
+ * Indexes proposed for Dashboard › Engagement › Games. NOT CALLED, for the
+ * same reason as `proposedHeavyPageIndexes`: they wait for approval. Each
+ * replaces a collection scan seen in explain("executionStats") of the Games
+ * overview's per-org reads on 12 Nov 2026 (game_scores scans every org's
+ * catalog scores by gameId prefix; the rest have no index starting with org).
+ */
+export async function proposedEngagementIndexes(database: Db): Promise<void> {
+  await database.collection('game_scores').createIndex({ org: 1, gameId: 1 });
+  await database.collection('game_launch_scores').createIndex({ org: 1 });
+  await database.collection('game_challenges').createIndex({ org: 1, createdAt: -1 });
+  await database.collection('cup_matches').createIndex({ org: 1, eventId: 1 });
+  await database.collection('poker_results').createIndex({ org: 1, eventId: 1 });
+  await database.collection('secret_squad_payouts').createIndex({ org: 1, sessionId: 1 });
+  await database.collection('secret_squad_sessions').createIndex({ org: 1, startsAt: -1 });
+}
+
 export async function closeDb(): Promise<void> {
   if (client) {
     await client.close();

@@ -199,7 +199,7 @@ export async function seedMore(): Promise<void> {
   ] as never[]);
   await db.collection('cup_events').insertMany([{ id: 'cup1', org: ORG, gameKey: 'pool', phase: 'running', name: 'Cup', rounds: [], entrants: [] }, { id: 'cup2', org: ORG, gameKey: 'pool', phase: 'done', name: 'Cup 2', rounds: [], entrants: [] }]);
   await db.collection('cup_matches').insertMany([{ org: ORG, eventId: 'cup1', joined: { [ids[32]]: at(addDays(today, -1)), [ids[33]]: at(addDays(today, -1)) }, finals: { [ids[32]]: { at: at(addDays(today, -1), 9) } } }]);
-  await db.collection('poker_events').insertMany([{ id: 'pk1', org: ORG, catalogKey: '', status: 'over' }, { id: 'pk2', org: ORG, status: 'draft' }]);
+  await db.collection('poker_events').insertMany([{ id: 'pk1', org: ORG, catalogKey: '', status: 'over', config: {} }, { id: 'pk2', org: ORG, status: 'draft', config: {} }]);
   await db.collection('poker_results').insertMany([
     { org: ORG, eventId: 'pk1', userId: ids[34], at: at(addDays(today, -3)), points: 40 },
     { org: ORG, eventId: 'pk1', userId: ids[35], at: at(addDays(today, -3)), points: 10, voided: true },
