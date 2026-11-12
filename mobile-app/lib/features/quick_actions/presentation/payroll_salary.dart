@@ -1,11 +1,14 @@
 part of 'quick_actions_screen.dart';
 
-/// Payroll › "October salary": one pay period's pay as a receipt (Figma
-/// R 2). The take-home on top, then each line that makes it — gross, loss of
-/// pay, every deduction — opening to say in plain words what it is, from the
-/// server's own figures and the company's rules (GET /payroll/me/salary).
-/// The previous pay period unless [period] ("2026-10") is given; an estimate
-/// until its payslip is released.
+/// Payroll › "October salary" (Figma 4484:71428 / 4653:27605): one pay
+/// period's pay as a receipt. A Previous Month | Current Month switch on
+/// top — the pay period most recently over (its released payslip, else its
+/// estimate) and the one running now (its estimate, `?view=current`) — then
+/// the salary summary donut, the take-home and each line that makes it —
+/// gross, loss of pay, every deduction — opening to say in plain words what
+/// it is, from the server's own figures and the company's rules (GET
+/// /payroll/me/salary). With [period] ("2026-10") that month alone, no
+/// switch.
 class _SalarySummaryPage extends StatefulWidget {
   const _SalarySummaryPage({this.period});
 
@@ -16,54 +19,120 @@ class _SalarySummaryPage extends StatefulWidget {
 }
 
 class _SalarySummaryPageState extends State<_SalarySummaryPage> {
-  PayrollSalarySummary? _summary;
-  String? _error;
+  /// Each side of the switch, read once: false the previous pay period,
+  /// true the current one.
+  final _summaries = <bool, PayrollSalarySummary>{};
+  final _errors = <bool, String>{};
+  bool _current = false;
   bool _started = false;
+  bool _downloading = false;
 
   /// The line opened to its explanation; one at a time.
   int? _open;
   bool _estimateOpen = false;
+
+  PayrollSalarySummary? get _summary => _summaries[_current];
+  String? get _error => _errors[_current];
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_started) return;
     _started = true;
-    unawaited(_load());
+    unawaited(_load(_current));
   }
 
-  Future<void> _load() async {
+  Future<void> _load(bool current) async {
     final api = _PayrollScope.of(context).api;
     try {
-      final summary = await api.fetchSalarySummary(period: widget.period);
+      final summary = await api.fetchSalarySummary(
+        period: widget.period,
+        current: current,
+      );
       if (!mounted) return;
       setState(() {
-        _summary = summary;
-        _error = null;
+        _summaries[current] = summary;
+        _errors.remove(current);
       });
     } catch (error) {
-      if (mounted) setState(() => _error = payrollErrorText(error));
+      if (mounted) setState(() => _errors[current] = payrollErrorText(error));
     }
   }
 
   void _retry() {
-    setState(() => _error = null);
-    unawaited(_load());
+    setState(() => _errors.remove(_current));
+    unawaited(_load(_current));
+  }
+
+  void _switchTo(bool current) {
+    if (current == _current) return;
+    setState(() {
+      _current = current;
+      _open = null;
+      _estimateOpen = false;
+    });
+    if (!_summaries.containsKey(current) && !_errors.containsKey(current)) {
+      unawaited(_load(current));
+    }
+  }
+
+  /// The released payslip behind this salary, as a PDF.
+  Future<void> _download(String payslipId) async {
+    if (_downloading) return;
+    setState(() => _downloading = true);
+    var ok = false;
+    try {
+      final (company, slip) = await _PayrollScope.of(
+        context,
+      ).api.fetchPayslip(payslipId);
+      ok = await _sharePayslipPdf(slip, company);
+    } catch (_) {
+      ok = false;
+    }
+    if (!mounted) return;
+    setState(() => _downloading = false);
+    if (!ok) showAppToast(context, 'Could not prepare the payslip. Try again.');
   }
 
   String get _title {
-    final month = payrollMonth(_summary?.period ?? widget.period);
+    final month = payrollMonth(
+      _summary?.period ??
+          widget.period ??
+          (_current
+              ? _summaries[false]?.currentPeriod
+              : _summaries[true]?.previousPeriod),
+    );
     return month == null ? 'Salary' : '${_monthName(month.month)} salary';
+  }
+
+  /// The pay period payroll runs next, for "No payslips yet".
+  String? get _firstPayrollPeriod {
+    final previous = _summaries[false];
+    if (previous != null) return previous.released ? null : previous.period;
+    return _summaries[true]?.previousPeriod ?? _summary?.period;
   }
 
   @override
   Widget build(BuildContext context) {
     final summary = _summary;
+    final payslipId = summary?.released == true ? summary?.payslipId : null;
     return _payrollPage(
       context,
       key: const ValueKey('payroll-salary'),
       title: _title,
+      trailing: payslipId == null
+          ? null
+          : _PrDownloadButton(
+              key: const ValueKey('payroll-salary-download'),
+              onTap: () => _download(payslipId),
+              busy: _downloading,
+            ),
       children: [
+        if (widget.period == null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: _PrSegmented(current: _current, onChanged: _switchTo),
+          ),
         if (summary == null && _error == null)
           const _PrLoading()
         else if (summary == null)
@@ -71,10 +140,16 @@ class _SalarySummaryPageState extends State<_SalarySummaryPage> {
         else ...[
           if (summary.notSetUp case final notSetUp?)
             _SalaryNotSetUpCard(period: summary.period, notSetUp: notSetUp)
-          else
+          else ...[
+            _SalaryDonutCard(summary: summary),
+            const SizedBox(height: 12),
             _receipt(summary),
+          ],
           const SizedBox(height: 12),
-          _PastPayslipsRow(summary: summary),
+          _PastPayslipsRow(
+            summary: summary,
+            firstPayrollPeriod: _firstPayrollPeriod,
+          ),
         ],
       ],
     );
@@ -367,9 +442,10 @@ class _SalarySummaryPageState extends State<_SalarySummaryPage> {
 
 /// "Past payslips · April to September 2026": the payslips list.
 class _PastPayslipsRow extends StatelessWidget {
-  const _PastPayslipsRow({required this.summary});
+  const _PastPayslipsRow({required this.summary, this.firstPayrollPeriod});
 
   final PayrollSalarySummary summary;
+  final String? firstPayrollPeriod;
 
   String get _span {
     final from = summary.payslipsFrom;
@@ -391,14 +467,18 @@ class _PastPayslipsRow extends StatelessWidget {
     borderRadius: BorderRadius.circular(18),
     child: InkWell(
       key: const ValueKey('payroll-salary-past-payslips'),
-      onTap: () => _pushPayroll<void>(context, const _PayslipsPage()),
+      onTap: () => _pushPayroll<void>(
+        context,
+        _PayslipsPage(firstPayrollPeriod: firstPayrollPeriod),
+      ),
       borderRadius: BorderRadius.circular(18),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
             const _IllustrationTile(
-              asset: 'assets/icons/request_reimbursement_money.png',
+              asset: 'assets/icons/payroll_payslip.png',
+              size: 25,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -434,6 +514,308 @@ class _PastPayslipsRow extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// "Previous Month | Current Month" (Figma "seg2"): the white thumb on the
+/// side shown.
+class _PrSegmented extends StatelessWidget {
+  const _PrSegmented({required this.current, required this.onChanged});
+
+  final bool current;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget side(String label, bool value) {
+      final on = current == value;
+      return Expanded(
+        child: Semantics(
+          button: true,
+          selected: on,
+          child: GestureDetector(
+            key: ValueKey(
+              'payroll-salary-view-${value ? 'current' : 'previous'}',
+            ),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => onChanged(value),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(vertical: 9),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: on ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: on
+                    ? const [
+                        BoxShadow(
+                          color: Color(0x14000000),
+                          blurRadius: 1.5,
+                          offset: Offset(0, 1),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  fontFamily: 'Sora',
+                  fontFamilyFallback: _soraFallback,
+                  color: on ? _prBlue : const Color(0xFF55555C),
+                  fontSize: 13.5,
+                  height: 17 / 13.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8E8EC),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [side('Previous Month', false), side('Current Month', true)],
+      ),
+    );
+  }
+}
+
+/// "SALARY SUMMARY" (Figma "Sum"): the gross as a donut cut into what is
+/// deducted, the loss of pay and the take-home, with the figures beside it.
+/// Every figure is a line of the same summary, so it adds up with the
+/// receipt below.
+class _SalaryDonutCard extends StatelessWidget {
+  const _SalaryDonutCard({required this.summary});
+
+  final PayrollSalarySummary summary;
+
+  static const deductionsColor = Color(0xFF9CCBFA);
+  static const lopColor = Color(0xFFFF5A5F);
+  static const takeHomeColor = Color(0xFF1E8BF5);
+
+  @override
+  Widget build(BuildContext context) {
+    final s = summary;
+    final deductions = s.deductionsPaise;
+    final lop = s.lopPaise;
+    final takeHome = s.takeHomePaise ?? 0;
+    final lopDays = s.lop?.days ?? 0;
+    final legend = TextStyle(
+      fontFamily: 'Sora',
+      fontFamilyFallback: _soraFallback,
+      color: const Color(0xFF55555C),
+      fontSize: 12.5,
+      height: 16 / 12.5,
+      fontWeight: FontWeight.w600,
+    );
+    final figure = const TextStyle(
+      fontFamily: 'Sora',
+      fontFamilyFallback: _soraFallback,
+      color: Color(0xFF111827),
+      fontSize: 12,
+      height: 16 / 12,
+      fontWeight: FontWeight.w700,
+      fontFeatures: [FontFeature.tabularFigures()],
+    );
+    Widget row(Color color, String label, String value, {bool total = false}) {
+      return Row(
+        children: [
+          Container(
+            width: 9,
+            height: 9,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: total
+                  ? legend.copyWith(
+                      color: const Color(0xFF111827),
+                      fontWeight: FontWeight.w700,
+                    )
+                  : legend,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            value,
+            style: total
+                ? figure.copyWith(fontSize: 15, height: 19 / 15)
+                : figure,
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      key: const ValueKey('payroll-salary-summary'),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 1,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'SALARY SUMMARY',
+                  style: _PrText.label.copyWith(
+                    fontSize: 13,
+                    height: 18 / 13,
+                    letterSpacing: .8,
+                  ),
+                ),
+              ),
+              if (s.isEstimate)
+                const _PrPill('Estimate', color: _prBlue, tint: _prBlueTint),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              SizedBox(
+                width: 108,
+                height: 108,
+                child: CustomPaint(
+                  painter: _DonutPainter([
+                    (deductions, deductionsColor),
+                    (lop, lopColor),
+                    (takeHome, takeHomeColor),
+                  ]),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _rupees(s.grossPaise ?? 0),
+                          key: const ValueKey('payroll-salary-summary-gross'),
+                          style: figure.copyWith(fontSize: 11.9),
+                        ),
+                        Text(
+                          'gross',
+                          style: figure.copyWith(
+                            color: const Color(0xFF8E8E95),
+                            fontSize: 9.7,
+                            height: 12 / 9.7,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  children: [
+                    row(
+                      deductionsColor,
+                      'Deductions',
+                      '−${_rupees(deductions)}',
+                    ),
+                    const SizedBox(height: 9),
+                    row(
+                      lopColor,
+                      lopDays > 0
+                          ? 'Loss of pay · ${_payDays(lopDays)} '
+                                '${lopDays == 1 ? 'day' : 'days'}'
+                          : 'Loss of pay',
+                      '−${_rupees(lop)}',
+                    ),
+                    const SizedBox(height: 9),
+                    Container(
+                      padding: const EdgeInsets.only(top: 2),
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          top: BorderSide(color: Color(0xFFF1F1F4)),
+                        ),
+                      ),
+                      child: row(
+                        takeHomeColor,
+                        'Take-home',
+                        _rupees(takeHome),
+                        total: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A ring cut into [slices] by size, clockwise from the top; a ring with
+/// nothing in it is drawn empty.
+/// One turn, in radians.
+const _fullTurn = 6.283185307179586;
+
+class _DonutPainter extends CustomPainter {
+  const _DonutPainter(this.slices);
+
+  final List<(int, Color)> slices;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 16.0;
+    final rect = Rect.fromCircle(
+      center: size.center(Offset.zero),
+      radius: (size.shortestSide - stroke) / 2 - 4,
+    );
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke;
+    final total = slices.fold<int>(0, (sum, s) => sum + (s.$1 < 0 ? 0 : s.$1));
+    if (total <= 0) {
+      canvas.drawArc(
+        rect,
+        0,
+        _fullTurn,
+        false,
+        paint..color = const Color(0xFFE8E8EC),
+      );
+      return;
+    }
+    var start = -_fullTurn / 4;
+    for (final (value, color) in slices) {
+      if (value <= 0) continue;
+      final sweep = _fullTurn * value / total;
+      canvas.drawArc(rect, start, sweep, false, paint..color = color);
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DonutPainter old) =>
+      old.slices.length != slices.length ||
+      [
+        for (var i = 0; i < slices.length; i++) old.slices[i] != slices[i],
+      ].any((changed) => changed);
 }
 
 /// The receipt's dashed cut line, reaching 4 px past the card's padding.

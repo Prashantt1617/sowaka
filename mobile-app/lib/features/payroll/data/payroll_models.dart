@@ -132,9 +132,9 @@ class PayrollSalary {
     lopDays: _number(json['lopDays']),
     lopPaise: _paise(json['lopPaise']),
     overtimePaise: _paise(json['overtimePaise']),
-    deductions: _list(
-      json['deductions'],
-    ).map(PayrollDeduction.fromJson).toList(),
+    deductions: _list(json['deductions'])
+        .map(PayrollDeduction.fromJson)
+        .toList(),
     netPaise: _paise(json['netPaise']),
     reimbursementsPaise: _paise(json['reimbursementsPaise']),
     takeHomePaise: _paise(json['takeHomePaise']),
@@ -819,11 +819,21 @@ class PayrollSalarySummary {
     this.payslipsFrom,
     this.payslipsTo,
     this.notSetUp,
+    this.view,
+    this.currentPeriod,
+    this.previousPeriod,
   });
 
   /// "2026-10"; [label] "October 2026".
   final String period;
   final String label;
+
+  /// The side of the Previous Month | Current Month switch this is
+  /// ("previous" or "current"), or null when a month was asked for; and the
+  /// two pay periods the switch flips between ("2026-11", "2026-10").
+  final String? view;
+  final String? currentPeriod;
+  final String? previousPeriod;
 
   /// The payslip is out: the figures are final.
   final bool released;
@@ -880,8 +890,21 @@ class PayrollSalarySummary {
       notSetUp: notSetUp is Map<String, dynamic>
           ? PayrollSalaryNotSetUp.fromJson(notSetUp)
           : null,
+      view: _stringOrNull(json['view']),
+      currentPeriod: _stringOrNull(json['currentPeriod']),
+      previousPeriod: _stringOrNull(json['previousPeriod']),
     );
   }
+
+  /// What the deduction lines (PF, tax, PT…) take, loss of pay apart.
+  int get deductionsPaise => lines
+      .where((line) => !line.isEarning && !line.isLop)
+      .fold(0, (sum, line) => sum + line.amountPaise);
+
+  /// The loss-of-pay line's amount, or 0.
+  int get lopPaise => lines
+      .where((line) => line.isLop)
+      .fold(0, (sum, line) => sum + line.amountPaise);
 }
 
 // ---------------------------------------------------------------- missing punches
@@ -1340,9 +1363,9 @@ class PayrollEarnings {
         reimbursementsPaise: _paise(json['reimbursementsPaise']),
         takeHomePaise: _paise(json['takeHomePaise']),
         fromStructure: json['componentsSource'] != 'payslips',
-        components: _list(
-          json['components'],
-        ).map(EarningsComponent.fromJson).toList(),
+        components: _list(json['components'])
+            .map(EarningsComponent.fromJson)
+            .toList(),
         annualTotalPaise: _paise(json['annualTotalPaise']),
         months: _list(json['months']).map(EarningsMonth.fromJson).toList(),
         componentsNotSetUp: EarningsNotSetUp.fromJson(
@@ -1582,9 +1605,9 @@ class TaxDeclaration {
     metro: _bool(json['metro']),
     selfSenior: _bool(json['selfSenior']),
     parentsSenior: _bool(json['parentsSenior']),
-    sections: _list(
-      json['sections'],
-    ).map(TaxDeclarationSection.fromJson).toList(),
+    sections: _list(json['sections'])
+        .map(TaxDeclarationSection.fromJson)
+        .toList(),
   );
 }
 
@@ -1912,9 +1935,9 @@ class InvestmentProofsCounted {
 
   factory InvestmentProofsCounted.fromJson(Map<String, dynamic> json) =>
       InvestmentProofsCounted(
-        rows: _list(
-          json['rows'],
-        ).map(InvestmentProofCountedRow.fromJson).toList(),
+        rows: _list(json['rows'])
+            .map(InvestmentProofCountedRow.fromJson)
+            .toList(),
         provedPaise: _paise(json['provedPaise']),
         notProvedPaise: _paise(json['notProvedPaise']),
         pfPaise: _paise(json['pfPaise']),

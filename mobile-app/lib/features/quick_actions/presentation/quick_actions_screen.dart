@@ -41,6 +41,7 @@ part 'payroll_downloads.dart';
 part 'payroll_tax.dart';
 part 'payroll_home_v2.dart';
 part 'payroll_salary.dart';
+part 'payroll_payslips_v2.dart';
 part '../../placements/presentation/placements_style.dart';
 part '../../placements/presentation/candidate_pages.dart';
 part '../../placements/presentation/client_pages.dart';

@@ -459,6 +459,16 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('salary: released payslips for the Past payslips row (October only)', aSal.payslips.count === 1 && aSal.payslips.from === '2026-10' && aSal.payslips.to === '2026-10', aSal.payslips);
   check('salary: unpaid days open on October\'s list, locked by its run', aSal.unpaidDays.period === '2026-10' && aSal.unpaidDays.locked === true, aSal.unpaidDays);
   check('salary: no not-set-up state', aSal.notSetUp === null);
+  // The switch's other side: this pay period's estimate, the run's own calculation for one person (Home's figure).
+  const aCur = await mySalarySummary('asha', undefined, nov11, 'current');
+  const aHomeNov = await homeOn('asha', '2026-11', nov11);
+  check('salary: the default view is "previous", flipping between November and October', aSal.view === 'previous' && aSal.currentPeriod === '2026-11' && aSal.previousPeriod === '2026-10', [aSal.view, aSal.currentPeriod, aSal.previousPeriod]);
+  check('salary: view=current on 11 Nov is November, an estimate', aCur.view === 'current' && aCur.period === '2026-11' && aCur.released === false && aCur.payslipId === null && aCur.notSetUp === null, [aCur.view, aCur.period, aCur.released, aCur.notSetUp]);
+  check('salary: the current estimate is Home\'s own November figure', aCur.takeHomePaise === aHomeNov.salary?.takeHomePaise && aCur.grossPaise === aHomeNov.salary?.grossPaise && aCur.lop?.days === aHomeNov.salary?.lopDays, [aCur.takeHomePaise, aHomeNov.salary]);
+  check('salary: the current estimate\'s lines add up', addsUp(aCur), aCur.lines);
+  check('salary: the current view\'s unpaid days are November\'s', aCur.unpaidDays.period === '2026-11', aCur.unpaidDays);
+  check('salary: a period asked for has no view', (await mySalarySummary('asha', '2026-10', nov11, 'current')).view === null);
+  check('salary: a view not previous/current is refused (400)', (await refusal(() => mySalarySummary('asha', undefined, nov11, 'next')))?.status === 400);
 
   // September, released with PF on Basic, the TDS engine on and 2 days of loss of pay HR typed for Asha.
   await payHeads().updateOne({ org: ORG, code: 'BASIC' }, { $set: { considerForEpf: { consider: true } } });
