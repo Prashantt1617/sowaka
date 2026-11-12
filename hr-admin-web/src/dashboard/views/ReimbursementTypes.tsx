@@ -1,5 +1,7 @@
 // Claims › Reimbursement Types — what an employee may claim against, and what
-// each is capped at.
+// each is capped at. FBP bill types (a type linked to an FBP head) are not
+// claims: the same list, with kind="fbp", sits on Payroll › FBP splits, and
+// this page leaves them out.
 //
 // These used to be four values baked into the app. HR owns the list now, and
 // the cap is real: the app hides anything over it before submitting, and the
@@ -21,9 +23,12 @@ import { listPayHeads, type PayHeadDTO } from '../../services/payroll';
 const rupees = (value: number) =>
   value > 0 ? `₹${value.toLocaleString('en-IN')}` : 'No cap';
 
-export function ReimbursementTypes() {
+export function ReimbursementTypes({ kind = 'claim' }: { kind?: 'claim' | 'fbp' } = {}) {
+  const fbp = kind === 'fbp';
+  // On FBP splits the buttons sit with the section, not in the page header.
+  const Actions = fbp ? InlineActions : PageActions;
   const { flash } = useStore();
-  const [types, setTypes] = useState<ReimbursementTypeDTO[]>([]);
+  const [allTypes, setTypes] = useState<ReimbursementTypeDTO[]>([]);
   const [loading, setLoading] = useState(true);
   // The first load failed: say so, with Retry, rather than "No reimbursement types yet".
   const [failed, setFailed] = useState(false);
@@ -35,9 +40,8 @@ export function ReimbursementTypes() {
     void listPayHeads().then((heads) => setHeadNames(new Map(heads.map((h) => [h.code, h.name])))).catch(() => undefined);
   }, []);
   const headName = (code: string) => headNames.get(code) ?? code.toLowerCase().replace(/_/g, ' ');
-  // Expense claim types first; the types linked to an FBP head are a group of their own.
-  const claimTypes = types.filter((t) => !t.payHeadCode);
-  const fbpTypes = types.filter((t) => t.payHeadCode);
+  // Claim types here; the types linked to an FBP head only on FBP splits.
+  const types = allTypes.filter((t) => (fbp ? !!t.payHeadCode : !t.payHeadCode));
 
   const reload = () =>
     getReimbursementTypes()
@@ -61,20 +65,20 @@ export function ReimbursementTypes() {
     }
   };
 
-  const download = () => downloadCsv('reimbursement-types', [
+  const download = () => downloadCsv(fbp ? 'fbp-bill-types' : 'reimbursement-types', [
+    ...(fbp ? [{ header: 'FBP head', value: (t: ReimbursementTypeDTO) => (t.payHeadCode ? headName(t.payHeadCode) : '') }] : []),
     { header: 'Type', value: (t: ReimbursementTypeDTO) => t.name },
     { header: 'Description', value: (t: ReimbursementTypeDTO) => t.description },
     { header: 'Max limit (₹)', value: (t: ReimbursementTypeDTO) => (t.maxLimit > 0 ? t.maxLimit : 'No cap') },
     { header: 'Can be backdated (days)', value: (t: ReimbursementTypeDTO) => t.backdateDays },
     { header: 'Status', value: (t: ReimbursementTypeDTO) => (t.active ? 'Active' : 'Off') },
-    { header: 'FBP bill type for', value: (t: ReimbursementTypeDTO) => (t.payHeadCode ? headName(t.payHeadCode) : '') },
   ], types);
 
   const renderRow = (t: ReimbursementTypeDTO, last: boolean) => (
               <tr key={t.id} className="dc-row">
                 <Td last={last}>
                   <strong style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{t.name}</strong>
-                  {t.payHeadCode && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2 }}>FBP bill type for {headName(t.payHeadCode)} · not in the app's claim list</div>}
+                  {t.payHeadCode && <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 2 }}>Bills for {headName(t.payHeadCode)}</div>}
                 </Td>
                 <Td muted last={last}>{t.description || '—'}</Td>
                 <Td right mono last={last}>{rupees(t.maxLimit)}</Td>
@@ -99,32 +103,43 @@ export function ReimbursementTypes() {
     <div>
       {(adding || editing) && (
         <TypeModal
+          fbp={fbp}
           initial={editing}
           onClose={() => { setAdding(false); setEditing(null); }}
           onSaved={async (message) => { await reload(); flash(message); setAdding(false); setEditing(null); }}
         />
       )}
 
-      <PageActions>
+      <Actions>
         <button className={btnClass()} style={btn()} onClick={download} disabled={types.length === 0}>
           <IconDownload /> Download
         </button>
         <button className={btnClass('primary')} style={btn('primary')} onClick={() => setAdding(true)}>
-          <IconPlus size={15} stroke="currentColor" /> Add reimbursement type
+          <IconPlus size={15} stroke="currentColor" /> {fbp ? 'Add FBP bill type' : 'Add reimbursement type'}
         </button>
-      </PageActions>
+      </Actions>
 
       <div style={note}>
         <span style={{ display: 'inline-flex', marginTop: 2, flexShrink: 0 }}><IconInfo size={15} stroke="var(--accent)" /></span>
         <div style={{ flex: 1 }}>
-          An employee picks one of these when raising a claim; an approved claim is paid on top of
-          salary in the next payroll run. A type that is switched off stays on old claims but
-          disappears from the app's list, which is how to retire one people have already used.
-          FBP bill types are not in the app's claim list: their bills are uploaded from the app's
-          FBP page and decided on Payroll › FBP requests.
+          {fbp ? (
+            <>
+              FBP bill types: what bills an employee uploads against each FBP head, from the app's FBP
+              page. They are decided on Payroll › FBP requests. An approved bill is not paid again (the
+              head is already paid with salary): it makes that much of the head tax-free. A type that is
+              switched off stays on old bills but can't take new ones.
+            </>
+          ) : (
+            <>
+              An employee picks one of these when raising a claim; an approved claim is paid on top of
+              salary in the next payroll run. A type that is switched off stays on old claims but
+              disappears from the app's list, which is how to retire one people have already used.
+              FBP bill types are set on Payroll › FBP splits.
+            </>
+          )}
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
-          {loading ? <Spinner /> : failed && types.length === 0 ? '' : `${types.length} type${types.length === 1 ? '' : 's'}`}
+          {loading ? <Spinner /> : failed && allTypes.length === 0 ? '' : `${types.length} type${types.length === 1 ? '' : 's'}`}
         </div>
       </div>
 
@@ -132,7 +147,7 @@ export function ReimbursementTypes() {
         <table style={tableStyle}>
           <thead className="ds-thead">
             <tr>
-              <Th>Type</Th>
+              <Th>{fbp ? 'Bill type' : 'Type'}</Th>
               <Th>Description</Th>
               <Th right width={150}>Max limit</Th>
               <Th right width={150}>Backdating</Th>
@@ -141,20 +156,12 @@ export function ReimbursementTypes() {
             </tr>
           </thead>
           <tbody>
-            {claimTypes.map((t, i) => renderRow(t, i === claimTypes.length - 1 && fbpTypes.length === 0))}
-            {fbpTypes.length > 0 && (
-              <tr>
-                <td colSpan={6} style={{ padding: '18px 12px 8px', fontSize: 11.5, fontWeight: 600, letterSpacing: '.06em', color: 'var(--ink-3)' }}>
-                  FBP BILL TYPES · bills for an FBP head, paid with salary: an approved bill is not paid again, it makes that much tax-free
-                </td>
-              </tr>
-            )}
-            {fbpTypes.map((t, i) => renderRow(t, i === fbpTypes.length - 1))}
-            {(loading || (failed && types.length === 0)) && (
+            {types.map((t, i) => renderRow(t, i === types.length - 1))}
+            {(loading || (failed && allTypes.length === 0)) && (
               <tr><td colSpan={6} style={{ padding: 0 }}><ListPending state={loading ? 'loading' : 'error'} onRetry={() => { setLoading(true); void reload(); }} rows={4} cols={6} avatar={false} rowHeight={52} /></td></tr>
             )}
             {!loading && !failed && types.length === 0 && (
-              <tr><td colSpan={6}><EmptyRow text="No reimbursement types yet — add one to let people claim." /></td></tr>
+              <tr><td colSpan={6}><EmptyRow text={fbp ? 'No FBP bill types yet — add one per FBP head so people can upload bills for it.' : 'No reimbursement types yet — add one to let people claim.'} /></td></tr>
             )}
           </tbody>
         </table>
@@ -163,7 +170,8 @@ export function ReimbursementTypes() {
   );
 }
 
-function TypeModal({ initial, onClose, onSaved }: {
+function TypeModal({ fbp, initial, onClose, onSaved }: {
+  fbp: boolean;
   initial: ReimbursementTypeDTO | null;
   onClose: () => void;
   onSaved: (message: string) => void;
@@ -184,6 +192,7 @@ function TypeModal({ initial, onClose, onSaved }: {
 
   const save = async () => {
     if (!name.trim()) { setError('Give the type a name'); return; }
+    if (fbp && !billsFor) { setError('Pick the FBP head these bills are for'); return; }
     setSaving(true); setError('');
     try {
       const input = {
@@ -191,7 +200,8 @@ function TypeModal({ initial, onClose, onSaved }: {
         description: description.trim(),
         maxLimit: Number(maxLimit) || 0,
         backdateDays: Number(backdateDays) || 0,
-        payHeadCode: billsFor || null,
+        // A claim type is never an FBP bill type; an FBP bill type always has its head.
+        payHeadCode: fbp ? billsFor : null,
         active,
       };
       if (initial) await updateReimbursementType(initial.id, input);
@@ -207,14 +217,14 @@ function TypeModal({ initial, onClose, onSaved }: {
       <div className="scry" style={modalCard} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
           <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.5 }}>
-            {initial ? 'Edit reimbursement type' : 'New reimbursement type'}
+            {fbp ? (initial ? 'Edit FBP bill type' : 'New FBP bill type') : (initial ? 'Edit reimbursement type' : 'New reimbursement type')}
           </div>
           <button onClick={onClose} className="ds-icon-btn" style={roundBtn(42)} aria-label="Close"><IconClose size={18} stroke="currentColor" /></button>
         </div>
 
         <div style={{ padding: 20, flex: 1, overflowY: 'auto' }}>
           <Field label="Name" required>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Travel" className="ds-inp" style={inputStyle} autoFocus />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={fbp ? 'e.g. Fuel bills' : 'e.g. Travel'} className="ds-inp" style={inputStyle} autoFocus />
           </Field>
           <Field label="Description">
             <textarea
@@ -256,22 +266,20 @@ function TypeModal({ initial, onClose, onSaved }: {
                 : 'Zero means today only — no past dates can be claimed.'}
             </div>
           </Field>
-          {(components?.length ?? 0) > 0 && (
-            <Field label="FBP bill type for">
+          {fbp && (
+            <Field label="FBP head" required>
               <select value={billsFor} onChange={(e) => setBillsFor(e.target.value)} className="ds-inp" style={inputStyle}>
-                <option value="">None: an expense claim, paid on top of salary on the next run</option>
-                {components!.map((h) => <option key={h.code} value={h.code}>FBP bill type for {h.name}</option>)}
+                <option value="">{components === null ? 'Loading…' : components.length === 0 ? 'No FBP heads in Salary Components' : 'Pick the FBP head'}</option>
+                {(components ?? []).map((h) => <option key={h.code} value={h.code}>{h.name}</option>)}
               </select>
               <div style={{ ...hint, marginTop: 6 }}>
-                {billsFor
-                  ? 'This FBP head is part of the salary: it is paid every month and taxed until bills come in. Its bills are uploaded from the app\'s FBP page (not the claim list) and decided on Payroll › FBP requests. An approved bill is not paid again: it makes that much of the head tax-free, and the income tax drops from the next payroll run.'
-                  : 'An expense claim: the approved amount is paid on top of salary on the next payroll run.'}
+                This FBP head is part of the salary: it is paid every month and taxed until bills come in. Its bills are uploaded from the app's FBP page and decided on Payroll › FBP requests. An approved bill is not paid again: it makes that much of the head tax-free, and the income tax drops from the next payroll run.
               </div>
             </Field>
           )}
           <label style={checkRow}>
             <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
-            Available in the app
+            {fbp ? 'Takes new bills' : 'Available in the app'}
           </label>
           {error && <div style={errorTag}>{error}</div>}
         </div>
@@ -287,6 +295,9 @@ function TypeModal({ initial, onClose, onSaved }: {
   );
 }
 
+function InlineActions({ children }: { children: ReactNode }) {
+  return <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>{children}</div>;
+}
 function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
     <div style={{ marginBottom: 16 }}>

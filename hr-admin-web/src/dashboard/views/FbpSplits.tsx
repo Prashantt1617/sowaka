@@ -16,6 +16,7 @@ import { Card, EmptyRow, ListPending, SearchInput, SelectBox, StatusTabs, Summar
 import { PersonAvatar } from '../PersonAvatar';
 import { cellName, cellSub, hint, TH, toolbar, TR } from '../ds';
 import { dateLabel, fyOfDate, money, monthLabel, previousFy } from './FbpRequests';
+import { ReimbursementTypes } from './ReimbursementTypes';
 
 const COLS = '1.6fr 0.9fr 2.6fr 0.9fr 1.2fr 1fr';
 type Filter = 'all' | 'declared' | 'not_declared';
@@ -106,6 +107,13 @@ export function FbpSplits() {
           Bills count months from April (or when pay started) to {list.data?.asOf ? monthLabel(list.data.asOf) : 'now'} that the head paid something. Open someone to see every version of their split.
         </div>
       </Card>
+
+      {/* FBP bill types live here, not on Reimbursement Types: what bills each FBP head takes. */}
+      <div id="fbp-bill-types" style={{ marginTop: 28 }}>
+        <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.5, marginBottom: 4 }}>FBP bill types</div>
+        <div style={{ ...hint, marginBottom: 12 }}>The bills people upload for each FBP head. Add one for every head, or its bills can't be uploaded and it stays taxable.</div>
+        <ReimbursementTypes kind="fbp" />
+      </div>
     </div>
   );
 }
@@ -154,7 +162,7 @@ function SplitRow({ row: r, last, open }: { row: FbpSplitRowDTO; last: boolean; 
   );
 }
 
-function SetupNote({ data, go }: { data: FbpSplitsDTO; go: (v: 'payheads' | 'templates' | 'payrolldash' | 'reimbursementtypes') => void }) {
+function SetupNote({ data, go }: { data: FbpSplitsDTO; go: (v: 'payheads' | 'templates' | 'payrolldash') => void }) {
   const { headsWithoutBillType, templatesWithoutPool, rules } = data.setup;
   const rulesMissing = [
     rules.splitStepPaise === null ? 'the split step' : '',
@@ -168,7 +176,7 @@ function SetupNote({ data, go }: { data: FbpSplitsDTO; go: (v: 'payheads' | 'tem
     notes.push(
       <span key="heads">
         No bill type is linked to {headsWithoutBillType.map((h) => h.name).join(', ')}, so bills can't be uploaded for {headsWithoutBillType.length === 1 ? 'it' : 'them'} and {headsWithoutBillType.length === 1 ? 'it stays' : 'they stay'} taxable.{' '}
-        <LinkButton onClick={() => go('reimbursementtypes')}>Link a bill type</LinkButton>
+        <LinkButton onClick={() => document.getElementById('fbp-bill-types')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Add a bill type below</LinkButton>
       </span>,
     );
   }
