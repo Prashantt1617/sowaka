@@ -216,7 +216,7 @@ void main() {
               profileAction: const SizedBox(width: 30, height: 30),
               onNotifications: () {},
               onQuickCreate: () {},
-              onFixMissingPunches: (_) {},
+              onFixPunchDay: (_) {},
             ),
           ),
         ),

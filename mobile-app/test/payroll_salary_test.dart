@@ -1,7 +1,7 @@
 // The salary summary page (Payroll › "October salary", Figma R 2) against a
 // small fake server of its own: the estimate with its note, the released
 // payslip with no pill, rows opening to their explanations one at a time,
-// "Check unpaid days" handing over to the unpaid-days list, and the Past
+// "Check unpaid days" opening the Missed punches page, and the Past
 // payslips row opening the payslips list. Every figure is invented; the org
 // is sowaka. A layout that overflows fails the test.
 //
@@ -264,6 +264,27 @@ class _FakeSalaryServer {
             : _salary(),
       }),
       '/payslips/mine' => _json(_payslips()),
+      '/payroll/missing-punches' => _json({
+        'success': true,
+        'period': request.url.queryParameters['period'] ?? '2026-11',
+        'fixBy': '2026-11-14',
+        'locked': false,
+        'count': 1,
+        'days': [
+          {
+            'date': '2026-10-07',
+            'weekday': 'Wed',
+            'punchIn': null,
+            'punchOut': null,
+            'trigger': 'Both punches missing',
+            'status': 'absent',
+            'label': 'Absent',
+            'fixBy': '2026-11-14',
+            'canFix': true,
+            'request': null,
+          },
+        ],
+      }),
       _ => _json({'success': false, 'message': 'Route not found'}, 404),
     };
   });
@@ -321,7 +342,7 @@ void main() {
     WidgetTester tester, {
     _FakeSalaryServer? server,
     String? period,
-    List<PayrollMissingPunches?>? fixed,
+    List<MissingPunchDay>? fixed,
   }) async {
     tester.view.physicalSize = const Size(390 * 2, 844 * 2);
     tester.view.devicePixelRatio = 2;
@@ -344,7 +365,7 @@ void main() {
               profileAction: const SizedBox(width: 30, height: 30),
               onNotifications: () {},
               onQuickCreate: () {},
-              onFixMissingPunches: (info) => fixed?.add(info),
+              onFixPunchDay: (day) => fixed?.add(day),
             ),
           ),
         ),
@@ -473,9 +494,8 @@ void main() {
     );
   });
 
-  testWidgets('"Check unpaid days" opens the unpaid-days list', (tester) async {
-    final fixed = <PayrollMissingPunches?>[];
-    await pumpSalary(tester, fixed: fixed);
+  testWidgets('"Check unpaid days" opens Missed punches', (tester) async {
+    final server = await pumpSalary(tester);
     expect(text('Check unpaid days'), findsOneWidget);
     // It sits under the loss-of-pay line, above PF.
     expect(
@@ -487,11 +507,12 @@ void main() {
       lessThan(tester.getTopLeft(text('Provident fund')).dy),
     );
     await tester.tap(text('Check unpaid days'));
-    await tester.pump();
-    expect(fixed, hasLength(1));
-    expect(fixed.single?.period, '2026-10');
-    expect(fixed.single?.count, 3);
-    expect(fixed.single?.fixBy, DateTime(2026, 11, 14));
+    await settle(tester);
+    // The Missed punches page, on the salary's month, as the to-do opens it.
+    expect(find.byKey(const ValueKey('payroll-missed-punches')), findsOne);
+    expect(server.calls.last, 'GET /payroll/missing-punches?period=2026-10');
+    expect(text('October 2026'), findsOneWidget);
+    expect(text('1 day to fix by 14 Nov'), findsOneWidget);
   });
 
   testWidgets('Past payslips row opens the payslips list', (tester) async {
@@ -579,8 +600,7 @@ void main() {
   testWidgets('Previous Month | Current Month switches the pay period', (
     tester,
   ) async {
-    final fixed = <PayrollMissingPunches?>[];
-    final server = await pumpSalary(tester, fixed: fixed);
+    final server = await pumpSalary(tester);
     expect(text('Previous Month'), findsOneWidget);
     expect(text('Current Month'), findsOneWidget);
     expect(text('October salary'), findsOneWidget);

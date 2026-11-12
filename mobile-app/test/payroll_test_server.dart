@@ -37,6 +37,9 @@ class FakePayrollServer {
   /// Days this month with a punch missing, as the home counts them.
   int missingCount = 12;
 
+  /// GET /payroll/missing-punches's days, for whichever month is asked.
+  List<Map<String, dynamic>> missingDays = [];
+
   /// The salary has flexible (FBP) heads; off, the home sends no split.
   bool hasSplit = true;
 
@@ -181,11 +184,11 @@ class FakePayrollServer {
     if (path == '/payroll/missing-punches') {
       return payrollJson({
         'success': true,
-        'period': period,
-        'fixBy': _monthEnd,
+        'period': request.url.queryParameters['period'] ?? period,
+        'fixBy': missingCount > 0 ? _monthEnd : null,
         'locked': false,
         'count': missingCount,
-        'days': <dynamic>[],
+        'days': missingDays,
       });
     }
     if (path == '/payroll/split' && request.method == 'GET') {

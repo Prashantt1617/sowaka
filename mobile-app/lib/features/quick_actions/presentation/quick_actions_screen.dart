@@ -42,6 +42,7 @@ part 'payroll_tax.dart';
 part 'payroll_home_v2.dart';
 part 'payroll_salary.dart';
 part 'payroll_payslips_v2.dart';
+part 'payroll_missed_punches.dart';
 part '../../placements/presentation/placements_style.dart';
 part '../../placements/presentation/candidate_pages.dart';
 part '../../placements/presentation/client_pages.dart';
@@ -697,11 +698,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   /// Payroll keeps its own pages too; a fresh key each time, as Placements.
   var _payrollKey = GlobalKey<_PayrollScreenState>();
 
-  /// Where Back from the Attendance list goes: the Actions home, or Payroll
-  /// when Payroll opened it on the missed punches; and the line under the
-  /// month that Payroll asks for ("12 days to fix by 31 Oct").
-  _QuickPage _calendarReturnPage = _QuickPage.home;
-  String? _calendarNote;
   DateTime? _policiesFetchedAt;
   bool _policiesFetching = false;
   static const _policiesStale = Duration(minutes: 2);
@@ -812,10 +808,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     if (page == _QuickPage.payroll) {
       _payrollKey = GlobalKey<_PayrollScreenState>();
     }
-    if (page == _QuickPage.calendar) {
-      _calendarReturnPage = _QuickPage.home;
-      _calendarNote = null;
-    }
     setState(() => _page = page);
     widget.controller._navigationChanged();
     // Read again whenever the list is opened, so an edit shows the next time
@@ -922,13 +914,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
         _page = _QuickPage.overtime;
       } else if (_page == _QuickPage.applyReimbursement) {
         _page = _QuickPage.reimbursements;
-      } else if (_page == _QuickPage.calendar &&
-          _calendarReturnPage == _QuickPage.payroll) {
-        // Back to Payroll's home, which reads the count again.
-        _payrollKey = GlobalKey<_PayrollScreenState>();
-        _page = _QuickPage.payroll;
-        _calendarReturnPage = _QuickPage.home;
-        _calendarNote = null;
       } else if (_page == _QuickPage.wizard && _step > 0) {
         _step--;
         _restoreStepInput(_stepsForCurrentFlow()[_step]);
@@ -986,7 +971,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           profileAction: widget.profileAction,
           onNotifications: widget.onNotifications,
           onQuickCreate: _showQuickCreateComingSoon,
-          onFixMissingPunches: _openMissingPunches,
+          onFixPunchDay: _fixPunchDay,
           onRaiseTicket: _openSupportDesk,
           pickFile: widget.pickPayrollFile,
         ),
@@ -1282,27 +1267,46 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     );
   }
 
-  /// Payroll's "Fix missing punches": the Attendance list on its Missed
-  /// punch heading, where each day is corrected through the same sheet and
-  /// request as anywhere else. Back returns to Payroll.
-  void _openMissingPunches(PayrollMissingPunches? info) {
-    final month = payrollMonth(info?.period);
-    final fixBy = info?.fixBy;
-    setState(() {
-      _attendanceFilter = AttendanceFilter.missedPunch;
-      _selectedCalendarDay = null;
-      _calendarReturnPage = _QuickPage.payroll;
-      _calendarNote = info == null || info.count == 0
-          ? null
-          : '${info.count} ${info.count == 1 ? 'day' : 'days'} to fix'
-                '${fixBy == null ? '' : ' by ${_short(fixBy)}'}';
-      _page = _QuickPage.calendar;
-    });
-    widget.controller._navigationChanged();
-    if (month != null &&
-        (month.year != _attendanceMonth.year ||
-            month.month != _attendanceMonth.month)) {
-      unawaited(widget.bloc.add(LoadAttendanceMonth(month)));
+  /// A day of Payroll's Missed punches page: the correction the Attendance
+  /// list opens for it, read from that month's attendance. A day that can be
+  /// corrected goes straight to the form (the page already shows its
+  /// punches); any other day opens its details, which say why not. The
+  /// month the calendar was on comes back afterwards.
+  Future<void> _fixPunchDay(MissingPunchDay punch) async {
+    final date = _dateOnly(punch.date);
+    final shown = _attendanceMonth;
+    final otherMonth = date.year != shown.year || date.month != shown.month;
+    if (otherMonth) {
+      try {
+        await widget.bloc.add(LoadAttendanceMonth(date));
+      } catch (_) {
+        if (mounted) {
+          showAppToast(context, 'Could not read that month. Try again.');
+        }
+        return;
+      }
+    }
+    try {
+      if (!mounted) return;
+      // The bloc has the month's days before this widget is rebuilt with them.
+      final days = _attendanceDays(widget.bloc.state.dashboard);
+      final day = days.where((day) => _sameDay(day.date, date)).firstOrNull;
+      if (day == null) return;
+      final correctable =
+          _pendingNoticeFor(day) == null &&
+          !(day.leave != null && _leaveCancellable(day.leave!)) &&
+          _correctionBlockedReason(day) == null;
+      if (correctable) {
+        await _showRegularization(day);
+      } else {
+        await _showAttendanceDaySheet(day);
+      }
+    } finally {
+      if (otherMonth && mounted) {
+        unawaited(
+          widget.bloc.add(LoadAttendanceMonth(shown)).catchError((_) => true),
+        );
+      }
     }
   }
 
@@ -2967,11 +2971,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     final days = _attendanceDays();
     return _HubScaffold(
       key: const ValueKey('calendar'),
-      // From Payroll the same list is about pay: the days that go unpaid
-      // unless they are fixed.
-      title: _calendarReturnPage == _QuickPage.payroll
-          ? 'Unpaid days'
-          : 'Attendance',
+      title: 'Attendance',
       onBack: _back,
       profileAction: widget.profileAction,
       onNotifications: widget.onNotifications,
@@ -3015,25 +3015,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             ),
           ],
         ),
-        if (_calendarNote case final note?) ...[
-          const SizedBox(height: 6),
-          Text(
-            note,
-            key: const ValueKey('calendar-note'),
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFFB3261E),
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
         const SizedBox(height: 24),
         AttendanceFilterChips(
           selected: _attendanceFilter,
-          missedPunchLabel: _calendarReturnPage == _QuickPage.payroll
-              ? 'Unpaid days'
-              : 'Missed Punch',
           counts: {
             for (final filter in AttendanceFilter.values)
               filter: days
@@ -3122,17 +3106,22 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     return days.where((day) => _sameDay(day.date, now)).firstOrNull;
   }
 
-  List<AttendanceDayView> _attendanceDays() => buildAttendanceDays(
-    month: _attendanceMonth,
-    records: widget.dashboard.attendance,
-    serverDays: widget.dashboard.serverDays,
-    regularizations: widget.dashboard.regularizations,
-    leaves: widget.dashboard.myLeaves,
-    holidays: widget.dashboard.holidays,
-    overtime: widget.dashboard.myOvertime,
-    shift: widget.dashboard.shift,
-    joinedOn: DateTime.tryParse(widget.bloc.session.user.joiningDate ?? ''),
-  );
+  /// The shown month's days, from [data] when given (the bloc's, newer
+  /// than this widget's while a rebuild is on its way).
+  List<AttendanceDayView> _attendanceDays([ManagerDashboard? data]) {
+    final dashboard = data ?? widget.dashboard;
+    return buildAttendanceDays(
+      month: _attendanceMonth,
+      records: dashboard.attendance,
+      serverDays: dashboard.serverDays,
+      regularizations: dashboard.regularizations,
+      leaves: dashboard.myLeaves,
+      holidays: dashboard.holidays,
+      overtime: dashboard.myOvertime,
+      shift: dashboard.shift,
+      joinedOn: DateTime.tryParse(widget.bloc.session.user.joiningDate ?? ''),
+    );
+  }
 
   /// How far ahead attendance can be paged. There is nothing recorded in the
   /// future, and the arrows used to run on for ever.

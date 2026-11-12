@@ -1,8 +1,9 @@
 // The Payroll screens (Actions › Payroll) against a fake server: the home,
 // Change my split → Review → submit, the investment declaration with its caps
 // and the regime switch, the proof upload states, and payslips → payslip.
-// The last test opens Payroll from the Actions home and follows "Fix missing
-// punches" into the Attendance list it reuses. A layout that overflows fails
+// The Missed punches page (Figma 4473:67442) on its own, and the last test
+// opens Payroll from the Actions home, follows "Fix missing punches" onto it
+// and taps a day into the Attendance correction form it reuses. A layout that overflows fails
 // the test.
 //
 // `flutter test --update-goldens --dart-define=SCREENSHOTS=<dir> test/payroll_screens_test.dart`
@@ -18,6 +19,7 @@ import 'package:http/http.dart' as http;
 import 'package:mobile_app/features/manager/bloc/manager_bloc.dart';
 import 'package:mobile_app/features/manager/data/manager_api_service.dart';
 import 'package:mobile_app/features/payroll/data/payroll_api_service.dart';
+import 'package:mobile_app/features/payroll/data/payroll_models.dart';
 import 'package:mobile_app/features/quick_actions/presentation/quick_actions_screen.dart';
 import 'package:mobile_app/features/support/support_launcher.dart';
 
@@ -102,7 +104,7 @@ void main() {
             profileAction: const SizedBox(width: 30, height: 30),
             onNotifications: () {},
             onQuickCreate: () {},
-            onFixMissingPunches: (info) => fixed?.add(info),
+            onFixPunchDay: (day) => fixed?.add(day),
             onRaiseTicket: () {},
             pickFile: (_) async => PayrollUpload(
               name: 'lic-receipt.pdf',
@@ -144,16 +146,22 @@ void main() {
     await pumpPayroll(tester, fixed: fixed);
     expect(find.byKey(const ValueKey('payroll-home')), findsOneWidget);
     expect(find.text('Payroll'), findsOneWidget);
-    expect(find.text('Fix 12 unpaid days'), findsOneWidget);
+    expect(find.text('Fix 12 missing punches'), findsOneWidget);
+    expect(find.text('To avoid loss of pay'), findsOneWidget);
     expect(find.text('Choose tax regime'), findsOneWidget);
     await capture(tester, payroll(), 'payroll_home');
 
-    // The to-do hands over to Attendance.
+    // The to-do opens Missed punches; a day there is fixed in Attendance.
     await tap(
       tester,
       find.byKey(const ValueKey('payroll-todo-missing_punches')),
     );
-    expect(fixed, hasLength(1));
+    expect(find.byKey(const ValueKey('payroll-missed-punches')), findsOne);
+    expect(fixed, isEmpty);
+    Navigator.of(
+      tester.element(find.byKey(const ValueKey('payroll-missed-punches'))),
+    ).pop();
+    await settle(tester);
 
     await tester.drag(find.byType(ListView).first, const Offset(0, -700));
     await settle(tester);
@@ -242,7 +250,7 @@ void main() {
       expect(find.text('Estimate'), findsNothing);
       expect(find.text('Try again'), findsNothing);
       expect(find.text('Choose tax regime'), findsOneWidget);
-      expect(find.text('Fix 12 unpaid days'), findsOneWidget);
+      expect(find.text('Fix 12 missing punches'), findsOneWidget);
       await capture(tester, payroll(), 'payroll_home_not_set_up');
     },
   );
@@ -1683,6 +1691,10 @@ void main() {
       await opens(card('payroll-qa-earnings'), 'payroll-earnings');
       await opens(card('payroll-qa-downloads'), 'payroll-downloads');
       await opens(card('payroll-qa-epf'), 'payroll-epf');
+      await opens(
+        card('payroll-todo-missing_punches'),
+        'payroll-missed-punches',
+      );
     });
 
     group('the Form 16 switch', () {
@@ -1727,12 +1739,298 @@ void main() {
     });
   });
 
-  testWidgets('Actions › Payroll, and its missing punches in Attendance', (
+  group('Missed punches (Figma 4473:67442)', () {
+    String ymd(DateTime day) =>
+        '${day.year}-${day.month.toString().padLeft(2, '0')}-'
+        '${day.day.toString().padLeft(2, '0')}';
+    final thisMonth = DateTime(DateTime.now().year, DateTime.now().month);
+    final lastMonth = DateTime(thisMonth.year, thisMonth.month - 1);
+    String period(DateTime month) =>
+        '${month.year}-${month.month.toString().padLeft(2, '0')}';
+    DateTime day(int d) => DateTime(thisMonth.year, thisMonth.month, d);
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    Map<String, dynamic> missed(
+      DateTime date, {
+      DateTime? punchIn,
+      bool canFix = true,
+      String? closedReason,
+      String? closedMessage,
+      String? request,
+    }) => {
+      'date': ymd(date),
+      'weekday': weekdays[date.weekday - 1],
+      'punchIn': punchIn?.toUtc().toIso8601String(),
+      'punchOut': null,
+      'trigger': punchIn == null ? 'Both punches missing' : 'Missing punch-out',
+      'status': punchIn == null ? 'absent' : 'missed_punch',
+      'label': punchIn == null ? 'Absent' : 'Missed Punch',
+      'countsAs': punchIn == null ? null : 'Half Day',
+      'fixBy': canFix ? ymd(date.add(const Duration(days: 7))) : null,
+      'canFix': canFix,
+      'closedReason': closedReason,
+      'closedMessage': closedMessage,
+      'request': request == null ? null : {'id': 'r1', 'status': request},
+    };
+
+    /// Four days, sent out of order: two to fix (one punched in at
+    /// 10:02 AM), one already sent, one past its window.
+    FakePayrollServer server() => FakePayrollServer()
+      ..missingCount = 2
+      ..missingDays = [
+        missed(
+          day(5),
+          punchIn: DateTime(thisMonth.year, thisMonth.month, 5, 10, 2),
+        ),
+        missed(day(1)),
+        missed(day(3), request: 'pending'),
+        missed(
+          day(2),
+          canFix: false,
+          closedReason: 'window_closed',
+          closedMessage: 'The time to fix this day has passed',
+        ),
+      ];
+
+    Finder dayCard(DateTime date) =>
+        find.byKey(ValueKey('missed-punch-${ymd(date)}'));
+
+    Future<void> openPage(WidgetTester tester) async {
+      await tap(
+        tester,
+        find.byKey(const ValueKey('payroll-todo-missing_punches')),
+      );
+      expect(find.byKey(const ValueKey('payroll-missed-punches')), findsOne);
+    }
+
+    testWidgets('the to-do counts what can be fixed, one punch or many', (
+      tester,
+    ) async {
+      await pumpPayroll(tester, server: FakePayrollServer()..missingCount = 5);
+      expect(find.text('Fix 5 missing punches'), findsOneWidget);
+      expect(find.text('To avoid loss of pay'), findsOneWidget);
+      expect(find.text('Fix 5 unpaid days'), findsNothing);
+      // The due pill and the chevron stay, as on the other to-dos.
+      final todo = find.byKey(const ValueKey('payroll-todo-missing_punches'));
+      expect(
+        find.descendant(of: todo, matching: find.textContaining('by ')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: todo,
+          matching: find.byIcon(Icons.chevron_right_rounded),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('one day to fix reads in the singular', (tester) async {
+      await pumpPayroll(tester, server: FakePayrollServer()..missingCount = 1);
+      expect(find.text('Fix 1 missing punch'), findsOneWidget);
+      expect(find.text('To avoid loss of pay'), findsOneWidget);
+    });
+
+    testWidgets('the month, the line under it, a card per day', (tester) async {
+      final fake = await pumpPayroll(tester, server: server());
+      await openPage(tester);
+      expect(
+        fake.calls.last,
+        'GET /payroll/missing-punches?period=${period(thisMonth)}',
+      );
+      expect(find.text('Missed punches'), findsOneWidget);
+      expect(
+        find.text(
+          '${const ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][thisMonth.month - 1]} ${thisMonth.year}',
+        ),
+        findsOneWidget,
+      );
+      final monthEnd = DateTime(thisMonth.year, thisMonth.month + 1, 0);
+      const short = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ];
+      expect(
+        find.text(
+          '2 days to fix by ${monthEnd.day} ${short[monthEnd.month - 1]}',
+        ),
+        findsOneWidget,
+      );
+      final note = tester.widget<Text>(
+        find.byKey(const ValueKey('missed-punches-note')),
+      );
+      expect(note.style?.color, const Color(0xFFB3261E));
+
+      // Oldest first, whatever order the server sent.
+      final tops = [
+        for (final d in [1, 2, 3, 5]) tester.getTopLeft(dayCard(day(d))).dy,
+      ];
+      expect(tops, orderedEquals([...tops]..sort()));
+
+      // No check-in: NA in red; no check-out: a dash.
+      final first = dayCard(day(1));
+      expect(find.descendant(of: first, matching: find.text('1')), findsOne);
+      expect(
+        find.descendant(
+          of: first,
+          matching: find.text(weekdays[day(1).weekday - 1]),
+        ),
+        findsOne,
+      );
+      expect(
+        find.descendant(of: first, matching: find.text('Check-in')),
+        findsOne,
+      );
+      expect(
+        find.descendant(of: first, matching: find.text('Check-out')),
+        findsOne,
+      );
+      final na = tester.widget<Text>(
+        find.descendant(of: first, matching: find.text('NA')),
+      );
+      expect(na.style?.color, const Color(0xFFC4382E));
+      expect(find.descendant(of: first, matching: find.text('—')), findsOne);
+      expect(
+        find.descendant(
+          of: first,
+          matching: find.byKey(const ValueKey('missed-punch-chevron')),
+        ),
+        findsOne,
+      );
+
+      // A check-in at 10:02 AM, on the phone's clock.
+      final fifth = dayCard(day(5));
+      expect(
+        find.descendant(of: fifth, matching: find.text('10:02 AM')),
+        findsOne,
+      );
+      expect(
+        find.descendant(of: fifth, matching: find.text('NA')),
+        findsNothing,
+      );
+
+      // Sent for correction: its state, and it still opens.
+      final third = dayCard(day(3));
+      expect(find.descendant(of: third, matching: find.text('Sent')), findsOne);
+
+      // Past its window: why, and no chevron.
+      final closed = dayCard(day(2));
+      expect(
+        find.descendant(
+          of: closed,
+          matching: find.text('The time to fix this day has passed'),
+        ),
+        findsOne,
+      );
+      expect(
+        find.descendant(
+          of: closed,
+          matching: find.byKey(const ValueKey('missed-punch-chevron')),
+        ),
+        findsNothing,
+      );
+      await capture(tester, payroll(), 'missed_punches');
+    });
+
+    testWidgets('a day to fix opens its correction; a closed one does not', (
+      tester,
+    ) async {
+      final fixed = <Object?>[];
+      final fake = await pumpPayroll(tester, server: server(), fixed: fixed);
+      await openPage(tester);
+      final reads = fake.calls
+          .where((c) => c.contains('missing-punches'))
+          .length;
+
+      await tap(tester, dayCard(day(2)));
+      expect(fixed, isEmpty);
+
+      await tap(tester, dayCard(day(1)));
+      expect(fixed, hasLength(1));
+      final sent = fixed.single as MissingPunchDay;
+      expect(sent.date, day(1));
+      expect(sent.canFix, isTrue);
+      expect(sent.punchIn, isNull);
+      // Closed again: read once more, for the day's new state.
+      expect(
+        fake.calls.where((c) => c.contains('missing-punches')).length,
+        reads + 1,
+      );
+    });
+
+    testWidgets('the arrows step the months, never past this one', (
+      tester,
+    ) async {
+      final fake = await pumpPayroll(tester, server: server());
+      await openPage(tester);
+      final next = find.byKey(const ValueKey('missed-punches-next'));
+      expect(tester.widget<InkWell>(next).onTap, isNull);
+
+      await tap(tester, find.byKey(const ValueKey('missed-punches-previous')));
+      expect(
+        fake.calls.last,
+        'GET /payroll/missing-punches?period=${period(lastMonth)}',
+      );
+      expect(
+        find.text(
+          '${const ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][lastMonth.month - 1]} ${lastMonth.year}',
+        ),
+        findsOneWidget,
+      );
+      expect(tester.widget<InkWell>(next).onTap, isNotNull);
+
+      await tap(tester, next);
+      expect(
+        fake.calls.last,
+        'GET /payroll/missing-punches?period=${period(thisMonth)}',
+      );
+      expect(tester.widget<InkWell>(next).onTap, isNull);
+    });
+
+    testWidgets('nothing to fix: a grey line, and the empty state', (
+      tester,
+    ) async {
+      await pumpPayroll(tester, server: FakePayrollServer()..missingCount = 0);
+      await openPage(tester);
+      final note = tester.widget<Text>(
+        find.byKey(const ValueKey('missed-punches-note')),
+      );
+      expect(note.data, 'Nothing to fix');
+      expect(note.style?.color, const Color(0xFF8E8E95));
+      expect(find.text('No missed punches this month.'), findsOneWidget);
+    });
+  });
+
+  testWidgets('Actions › Payroll › Missed punches › a day\'s correction', (
     tester,
   ) async {
     phone(tester);
     final payrollServer = FakePayrollServer()
-      ..missingCount = _missedDays().length;
+      ..missingCount = _missedDays().length
+      ..missingDays = [
+        for (final day in _missedDays())
+          {
+            'date': _ymd(day),
+            'punchIn': _at(day, 9, 24),
+            'punchOut': null,
+            'trigger': 'Missing punch-out',
+            'status': 'missed_punch',
+            'label': 'Missed Punch',
+            'fixBy': _ymd(day.add(const Duration(days: 31))),
+            'canFix': true,
+            'request': null,
+          },
+      ];
     final bloc = ManagerBloc(
       session: payrollSession,
       service: ManagerApiService(
@@ -1781,42 +2079,27 @@ void main() {
       tester,
       find.byKey(const ValueKey('payroll-todo-missing_punches')),
     );
-    // The Attendance list, on its Missed punch heading, under Payroll's name.
-    expect(find.byKey(const ValueKey('calendar')), findsOneWidget);
-    expect(find.text('Unpaid days'), findsWidgets);
-    final missing = _missedDays().length;
-    // Early in a month there are no past days to miss: no note then.
-    expect(
-      find.byKey(const ValueKey('calendar-note')),
-      missing > 0 ? findsOneWidget : findsNothing,
-    );
-    if (missing > 0) {
-      expect(
-        find.textContaining(
-          '$missing ${missing == 1 ? 'day' : 'days'} to fix by',
-        ),
-        findsOneWidget,
-      );
-    }
-    if (_missedDay() != null) {
-      expect(find.text('Request Correction'), findsNothing);
-      expect(
-        find.byType(AttendanceListCard),
-        findsNWidgets(_missedDays().length),
-      );
-    }
+    // Payroll's own page now, not the Attendance list.
+    expect(find.byKey(const ValueKey('payroll-missed-punches')), findsOne);
+    expect(find.byKey(const ValueKey('calendar')), findsNothing);
+    final missed = _missedDays();
     await capture(tester, actions, 'missing_punches');
 
-    // A day opens the correction it always did.
-    if (_missedDay() != null) {
-      await tap(tester, find.byType(AttendanceListCard).first);
+    // A day opens the correction form the Attendance list would.
+    if (missed.isNotEmpty) {
+      await tap(
+        tester,
+        find.byKey(ValueKey('missed-punch-${_ymd(missed.first)}')),
+      );
       expect(find.text('Request Correction'), findsOneWidget);
+      expect(find.text('What should this day be?'), findsOneWidget);
       await capture(tester, find.byType(MaterialApp), 'missing_punches_day');
-      Navigator.of(tester.element(find.text('Request Correction'))).pop();
+      Navigator.of(tester.element(find.text('What should this day be?'))).pop();
       await settle(tester);
+      expect(find.byKey(const ValueKey('payroll-missed-punches')), findsOne);
     }
 
-    // Back returns to Payroll, not the Actions home.
+    // Back returns to Payroll, then the Actions home.
     controller.handleBack();
     await settle(tester);
     expect(find.byKey(const ValueKey('payroll-home')), findsOneWidget);
@@ -1841,8 +2124,6 @@ List<DateTime> _missedDays() {
   final days = _pastWeekdays();
   return [for (var i = 1; i < days.length && i < 12; i += 4) days[i]];
 }
-
-DateTime? _missedDay() => _missedDays().firstOrNull;
 
 String _ymd(DateTime day) =>
     '${day.year}-${day.month.toString().padLeft(2, '0')}-'
