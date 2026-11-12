@@ -4,8 +4,9 @@ import 'package:flutter/material.dart';
 
 /// The Sowaka GAMES lockup the game pages draw in their top-right corner:
 /// "sowaka" on the burnt-orange badge with the tilted yellow GAMES tag tucked
-/// against it. The app's game screen wears it in its own header, beside the
-/// back arrow, so the pages can drop theirs once this build is out.
+/// against it. The app's game screen wears it at the right end of its own
+/// header, where the pages draw theirs, so the pages can drop it once this
+/// build is out.
 ///
 /// Measured from the pages' CSS (`.swg`): 28 tall at [height] 22 and every
 /// part in proportion to it.
@@ -40,14 +41,22 @@ class SowakaGamesBadge extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8 * u),
               ),
               alignment: Alignment.center,
-              child: Text('sowaka', style: type(Colors.white)),
+              child: Text(
+                'sowaka',
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.visible,
+                style: type(Colors.white),
+              ),
             ),
+            // The tag sizes itself to GAMES: a fixed width cut it to "GAM…"
+            // wherever the font came out a little wider than the page's.
             Transform.translate(
               offset: Offset(-8 * u, 0),
               child: SizedBox(
-                width: 70.214 * u,
                 height: 28.577 * u,
                 child: Center(
+                  widthFactor: 1,
                   child: Transform.rotate(
                     angle: -3 * math.pi / 180,
                     child: Container(
@@ -66,6 +75,9 @@ class SowakaGamesBadge extends StatelessWidget {
                       alignment: Alignment.center,
                       child: Text(
                         'GAMES',
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.visible,
                         style: type(const Color(0xFF160D2C)),
                       ),
                     ),

@@ -1,6 +1,7 @@
-// The game screen's own header wears the Sowaka GAMES lockup beside the back
-// arrow, sized like the pages' (28.577 units at 22 tall).
+// The game screen's own header wears the Sowaka GAMES lockup at its right end,
+// sized like the pages' (28.577 units at 22 tall), and GAMES is never cut.
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile_app/features/games/presentation/sowaka_games_badge.dart';
 
@@ -22,7 +23,7 @@ void main() {
   });
 
   testWidgets(
-    'it fits an app bar beside the back arrow with a long game name',
+    'top right of an app bar with a long game name, GAMES shown whole',
     (tester) async {
       tester.view.physicalSize = const Size(360 * 3, 640 * 3);
       tester.view.devicePixelRatio = 3;
@@ -33,23 +34,19 @@ void main() {
             appBar: AppBar(
               leading: const BackButton(),
               titleSpacing: 0,
-              title: const Row(
-                children: [
-                  SowakaGamesBadge(),
-                  SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      'A very long game name that has to be cut short',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
+              title: const Text(
+                'A very long game name that has to be cut short',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               actions: [
                 IconButton(
                   onPressed: () {},
                   icon: const Icon(Icons.help_outline_rounded),
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(left: 2, right: 14),
+                  child: Center(child: SowakaGamesBadge()),
                 ),
               ],
             ),
@@ -57,7 +54,12 @@ void main() {
         ),
       );
       expect(tester.takeException(), isNull);
-      expect(find.byType(SowakaGamesBadge), findsOneWidget);
+      final badge = tester.getRect(find.byType(SowakaGamesBadge));
+      expect(badge.right, greaterThan(360 - 30));
+      // The tag is as wide as its word: nothing ellipsised or clipped.
+      final games = tester.renderObject<RenderParagraph>(find.text('GAMES'));
+      expect(games.didExceedMaxLines, isFalse);
+      expect(tester.getRect(find.text('GAMES')).right, lessThanOrEqualTo(360));
     },
   );
 }
