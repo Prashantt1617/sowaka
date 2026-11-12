@@ -20,14 +20,17 @@ import { SuwiOrb } from './suwi/SuwiPanel';
 import { useSuwiNotices } from './suwi/SuwiNoticed';
 import { PAGE_ACTIONS_ID } from './ds';
 
-export type NavItem = { key: View; label: string };
+/** `hidden`: not shown in the sidebar, but still part of its section's access (Accesses grants it). */
+export type NavItem = { key: View; label: string; hidden?: boolean };
 
 export const OVERVIEW_ITEM: NavItem = { key: 'overview', label: 'Overview' };
 const REQUESTS: NavItem[] = [
   { key: 'leave', label: 'Leave requests' },
   { key: 'overtime', label: 'Overtime' },
   { key: 'attendance', label: 'Attendance' },
-  { key: 'oolcheckins', label: 'OOL check-ins' },
+  // Out of the sidebar (the Punch log shows out-of-location punches), but still granted with
+  // Time office: the Company calendar and Punch log read its list.
+  { key: 'oolcheckins', label: 'OOL check-ins', hidden: true },
   // Who is in, away or off, and every punch: read alongside the requests.
   { key: 'companycalendar', label: 'Company calendar' },
   { key: 'punchlog', label: 'Punch log' },
@@ -266,7 +269,7 @@ export function Sidebar() {
   const orgActive = view === 'organisation';
   // Only the tabs People › Accesses gives this person.
   const orgOpen = canOpen(user, 'organisation');
-  const sections = SECTIONS.map((s) => ({ ...s, items: s.items.filter((item) => canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
+  const sections = SECTIONS.map((s) => ({ ...s, items: s.items.filter((item) => !item.hidden && canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
   // A cancellation request on an approved leave waits on HR's decision too.
   const leavesPending = leaves.filter((l) => l.status === 'Pending' || l.cancelRequest?.status === 'Pending').length;
   const otPending = ots.filter((o) => o.status === 'Pending').length;
