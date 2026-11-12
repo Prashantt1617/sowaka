@@ -63,8 +63,6 @@ export function AppUsage() {
 
   const tracking = data?.trackingSince ?? null;
   const untracked = !tracking || to < tracking;
-  // Some of the range's days are estimated from app activity (punches, requests, posts…), not tracked.
-  const estimated = Boolean(!untracked && data?.estimatedUntil && from <= data.estimatedUntil);
   const opened = people.filter((p) => p.opened).length;
   const logged = people.filter((p) => p.loggedIn).length;
   const profile = people.filter((p) => p.loggedIn && p.photo && p.interests && (p.group !== 'app' || p.face)).length;
@@ -94,7 +92,7 @@ export function AppUsage() {
       <div className="ua-tiles">
         {data ? (
           <>
-            <SummaryCard label={`Opened the app · ${rangeLabel(from, to)}`} value={untracked ? '—' : pct(opened, people.length)} sub={untracked ? 'Not tracked for these dates' : `${plural(opened, 'person', 'people')}${estimated ? ' · partly estimated' : ''}`} />
+            <SummaryCard label={`Opened the app · ${rangeLabel(from, to)}`} value={untracked ? '—' : pct(opened, people.length)} sub={untracked ? 'Not tracked for these dates' : plural(opened, 'person', 'people')} />
             <SummaryCard label="Have logged in" value={pct(logged, people.length)} sub={`${logged} of ${people.length}`} />
             <SummaryCard label="Finished their profile" value={pct(profile, people.length)} sub={`${profile} · photo, interests${people.some((p) => p.group === 'app') ? ', face check' : ''}`} />
             <SummaryCard label={`Not active · ${rangeLabel(from, to)}`} value={untracked ? '—' : people.length - opened} sub={untracked ? 'Not tracked for these dates' : 'didn’t open the app'} />
