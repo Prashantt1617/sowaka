@@ -103,7 +103,7 @@ const PLACEMENTS: NavItem[] = [
 ];
 export const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'PLACEMENTS', items: PLACEMENTS },
-  { title: 'REQUESTS', items: REQUESTS },
+  { title: 'TIME OFFICE', items: REQUESTS },
   { title: 'SUPPORT', items: SUPPORT },
   { title: 'PEOPLE', items: PEOPLE },
   { title: 'SHIFTS', items: SHIFTS },
