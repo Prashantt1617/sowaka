@@ -1,12 +1,18 @@
 // Payroll › Earnings against a fake server of its own: the financial-year
-// switch, the Earned card's totals, the yearly salary, the month rows (unpaid
-// days, the estimate) and where a month leads — the estimate to the salary
-// summary, a past month to its payslip. A layout that overflows fails the
-// test. Every figure is invented; the org is sowaka.
+// dropdown, the Earned card's totals, the yearly salary, the folded month
+// list (unpaid days, the estimate) and where a month leads — the estimate to
+// the salary summary, a past month to its payslip. A layout that overflows
+// fails the test. Every figure is invented; the org is sowaka.
+//
+// `--dart-define=EARNINGS_SHOTS=<dir>` also saves the page, months folded and
+// open, as earnings-collapsed.png and earnings-expanded.png in <dir>.
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -44,6 +50,10 @@ class _EarningsServer {
 
   /// Off: no pay at all yet.
   bool hasPay = true;
+
+  /// Other deductions and reimbursements over the current year, in rupees.
+  int otherDeductions = 0;
+  int reimbursements = 0;
 
   static const _months = [
     'April',
@@ -153,9 +163,10 @@ class _EarningsServer {
       'grossPaise': (current ? 848000 : 1320000) * _r,
       'taxPaise': (current ? 58400 : 79800) * _r,
       'pfPtPaise': (current ? 14000 : 24000) * _r,
-      'otherDeductionsPaise': 0,
-      'reimbursementsPaise': 0,
-      'takeHomePaise': (current ? 775600 : 1216200) * _r,
+      'otherDeductionsPaise': (current ? otherDeductions : 0) * _r,
+      'reimbursementsPaise': (current ? reimbursements : 0) * _r,
+      'takeHomePaise':
+          (current ? 775600 - otherDeductions + reimbursements : 1216200) * _r,
       'componentsSource': current ? 'structure' : 'payslips',
       'components': [
         if (showComponents)
@@ -273,8 +284,9 @@ void main() {
   Future<_EarningsServer> pumpEarnings(
     WidgetTester tester, {
     _EarningsServer? server,
+    Size size = const Size(390, 844),
   }) async {
-    tester.view.physicalSize = const Size(390 * 2, 844 * 2);
+    tester.view.physicalSize = size * 2;
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
     final fake = server ?? _EarningsServer();
@@ -282,19 +294,22 @@ void main() {
       MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: ThemeData(fontFamily: 'Plus Jakarta Sans'),
-        home: Scaffold(
-          body: PayrollScreen(
-            api: PayrollApiService(
-              session: _session,
-              baseUrl: 'https://example.test',
-              client: fake.client,
+        home: RepaintBoundary(
+          key: const ValueKey('earnings-shot'),
+          child: Scaffold(
+            body: PayrollScreen(
+              api: PayrollApiService(
+                session: _session,
+                baseUrl: 'https://example.test',
+                client: fake.client,
+              ),
+              onClose: () {},
+              profileAction: const SizedBox(width: 30, height: 30),
+              onNotifications: () {},
+              onQuickCreate: () {},
+              onFixMissingPunches: (_) {},
+              onRaiseTicket: () {},
             ),
-            onClose: () {},
-            profileAction: const SizedBox(width: 30, height: 30),
-            onNotifications: () {},
-            onQuickCreate: () {},
-            onFixMissingPunches: (_) {},
-            onRaiseTicket: () {},
           ),
         ),
       ),
@@ -343,16 +358,59 @@ void main() {
     await settle(tester);
   }
 
-  testWidgets('the current year: totals, the bar, the yearly salary', (
+  final toggle = find.byKey(const ValueKey('earnings-months-toggle'));
+  Finder anyMonth() => find.byWidgetPredicate(
+    (w) =>
+        w.key is ValueKey<String> &&
+        (w.key! as ValueKey<String>).value.startsWith('earnings-month-'),
+  );
+
+  /// Unfolds "Month by month" if it is folded.
+  Future<void> openMonths(WidgetTester tester) async {
+    if (anyMonth().evaluate().isNotEmpty) return;
+    await tap(tester, toggle);
+    expect(anyMonth(), findsWidgets);
+  }
+
+  /// Picks a year from the header's dropdown.
+  Future<void> pickYear(WidgetTester tester, String label) async {
+    await tester.tap(find.byKey(const ValueKey('earnings-fy-picker')));
+    await settle(tester);
+    await tester.tap(find.text(label).last);
+    await settle(tester);
+  }
+
+  Future<void> shoot(WidgetTester tester, String name) async {
+    const dir = String.fromEnvironment('EARNINGS_SHOTS');
+    if (dir.isEmpty) return;
+    final boundary = tester.renderObject<RenderRepaintBoundary>(
+      find.byKey(const ValueKey('earnings-shot')),
+    );
+    await tester.runAsync(() async {
+      final image = await boundary.toImage(pixelRatio: 2);
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      File('$dir/$name.png')
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(bytes!.buffer.asUint8List());
+    });
+  }
+
+  testWidgets('the current year: totals, the yearly salary, no bar', (
     tester,
   ) async {
     final server = await pumpEarnings(tester);
     expect(server.calls, contains('GET /payroll/me/earnings'));
     expect(inPage(find.text('Earnings')), findsWidgets);
-    // Only the years with pay, the latest chosen.
-    for (final fy in ['FY 2026–27', 'FY 2025–26', 'FY 2024–25']) {
-      expect(inPage(find.text(fy)), findsOneWidget);
-    }
+    // The header's dropdown names the year read; the others wait in it.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('earnings-fy-picker')),
+        matching: find.text('FY 2026–27'),
+      ),
+      findsOneWidget,
+    );
+    expect(inPage(find.text('FY 2025–26')), findsNothing);
+    expect(find.byKey(const ValueKey('earnings-fy-2025-26')), findsNothing);
     expect(inPage(find.text('EARNED · FY 2026–27')), findsOneWidget);
     expect(inPage(find.text('Apr–Oct')), findsOneWidget);
     expect(
@@ -360,9 +418,10 @@ void main() {
       '₹8,48,000',
     );
     expect(inPage(find.text('Gross pay so far this year')), findsOneWidget);
-    expect(inPage(find.text('Take-home')), findsWidgets); // a row and the bar
-    expect(inPage(find.text('Tax')), findsOneWidget);
-    expect(inPage(find.text('PF and PT')), findsOneWidget);
+    // No stacked bar or its legend: only the rows.
+    expect(inPage(find.text('Take-home')), findsOneWidget);
+    expect(inPage(find.text('Tax')), findsNothing);
+    expect(inPage(find.text('PF and PT')), findsNothing);
     expect(inPage(find.text('Income tax (TDS)')), findsOneWidget);
     expect(inPage(find.text('− ₹58,400')), findsOneWidget);
     expect(inPage(find.text('PF and professional tax')), findsOneWidget);
@@ -389,10 +448,16 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('month by month: unpaid days and the estimate', (tester) async {
+  testWidgets('month by month: folded, then unpaid days and the estimate', (
+    tester,
+  ) async {
     await pumpEarnings(tester);
+    await reveal(tester, toggle);
+    expect(inPage(find.text('Month by month')), findsOneWidget);
+    expect(anyMonth(), findsNothing);
+    expect(inPage(find.text('October 2026')), findsNothing);
+    await openMonths(tester);
     await reveal(tester, find.byKey(const ValueKey('earnings-month-2026-10')));
-    expect(inPage(find.text('MONTH BY MONTH')), findsOneWidget);
     expect(inPage(find.text('October 2026')), findsOneWidget);
     expect(inPage(find.text('Gross ₹1,16,000 · Estimate')), findsOneWidget);
     expect(inPage(find.text('₹1,06,400')), findsOneWidget);
@@ -406,58 +471,79 @@ void main() {
     await reveal(tester, find.byKey(const ValueKey('earnings-month-2026-04')));
     expect(inPage(find.text('April 2026')), findsOneWidget);
     expect(inPage(find.text('Gross ₹1,24,000')), findsWidgets);
+    // And folded again.
+    await tap(tester, toggle);
+    expect(anyMonth(), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('switching the year reads that year', (tester) async {
-    final server = await pumpEarnings(tester);
-    await tap(tester, find.byKey(const ValueKey('earnings-fy-2025-26')));
-    expect(server.calls.last, 'GET /payroll/me/earnings?fy=2025-26');
-    expect(inPage(find.text('EARNED · FY 2025–26')), findsOneWidget);
-    expect(inPage(find.text('Apr–Mar')), findsOneWidget);
-    expect(
-      tester.widget<Text>(find.byKey(const ValueKey('earnings-gross'))).data,
-      '₹13,20,000',
-    );
-    expect(inPage(find.text('Gross pay for the year')), findsOneWidget);
-    expect(inPage(find.text('− ₹79,800')), findsOneWidget);
-    expect(inPage(find.text('₹12,16,200')), findsOneWidget);
-    await reveal(tester, find.byKey(const ValueKey('earnings-annual-total')));
-    expect(inPage(find.text('₹5,28,000')), findsOneWidget);
-    // An earlier year's salary is what its payslips paid.
-    await reveal(tester, find.textContaining('payslips paid in full'));
-    // Half days read as halves; no estimate in a closed year.
-    await reveal(tester, find.byKey(const ValueKey('earnings-month-2026-03')));
-    expect(inPage(find.text('March 2026')), findsOneWidget);
-    expect(
-      inPage(find.text('Gross ₹1,10,000 · 0.5 days unpaid')),
-      findsOneWidget,
-    );
-    expect(inPage(find.textContaining('Estimate')), findsNothing);
-    // And back.
-    await tester.drag(
-      find.descendant(of: page(), matching: find.byType(Scrollable)).first,
-      const Offset(0, 3000),
-    );
-    await settle(tester);
-    await tap(tester, find.byKey(const ValueKey('earnings-fy-2026-27')));
-    expect(server.calls.last, 'GET /payroll/me/earnings?fy=2026-27');
-    expect(
-      tester.widget<Text>(find.byKey(const ValueKey('earnings-gross'))).data,
-      '₹8,48,000',
-    );
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'the dropdown lists the years with pay and reads the one picked',
+    (tester) async {
+      final server = await pumpEarnings(tester);
+      await tester.tap(find.byKey(const ValueKey('earnings-fy-picker')));
+      await settle(tester);
+      for (final fy in ['FY 2026–27', 'FY 2025–26', 'FY 2024–25']) {
+        expect(find.text(fy), findsWidgets);
+      }
+      await tester.tap(find.text('FY 2025–26').last);
+      await settle(tester);
+      expect(server.calls.last, 'GET /payroll/me/earnings?fy=2025-26');
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('earnings-fy-picker')),
+          matching: find.text('FY 2025–26'),
+        ),
+        findsOneWidget,
+      );
+      expect(inPage(find.text('EARNED · FY 2025–26')), findsOneWidget);
+      expect(inPage(find.text('Apr–Mar')), findsOneWidget);
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('earnings-gross'))).data,
+        '₹13,20,000',
+      );
+      expect(inPage(find.text('Gross pay for the year')), findsOneWidget);
+      expect(inPage(find.text('− ₹79,800')), findsOneWidget);
+      expect(inPage(find.text('₹12,16,200')), findsOneWidget);
+      await reveal(tester, find.byKey(const ValueKey('earnings-annual-total')));
+      expect(inPage(find.text('₹5,28,000')), findsOneWidget);
+      // An earlier year's salary is what its payslips paid.
+      await reveal(tester, find.textContaining('payslips paid in full'));
+      // Half days read as halves; no estimate in a closed year.
+      await openMonths(tester);
+      await reveal(
+        tester,
+        find.byKey(const ValueKey('earnings-month-2026-03')),
+      );
+      expect(inPage(find.text('March 2026')), findsOneWidget);
+      expect(
+        inPage(find.text('Gross ₹1,10,000 · 0.5 days unpaid')),
+        findsOneWidget,
+      );
+      expect(inPage(find.textContaining('Estimate')), findsNothing);
+      // And back.
+      await tester.drag(
+        find.descendant(of: page(), matching: find.byType(Scrollable)).first,
+        const Offset(0, 3000),
+      );
+      await settle(tester);
+      await pickYear(tester, 'FY 2026–27');
+      expect(server.calls.last, 'GET /payroll/me/earnings?fy=2026-27');
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('earnings-gross'))).data,
+        '₹8,48,000',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('the estimate opens the salary summary; a month its payslip', (
     tester,
   ) async {
     final server = await pumpEarnings(tester);
+    await openMonths(tester);
     await tap(tester, find.byKey(const ValueKey('earnings-month-2026-10')));
-    expect(
-      find.byKey(const ValueKey('payroll-salary')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('payroll-salary')), findsOneWidget);
     expect(server.calls.where((c) => c.startsWith('GET /payslips')), isEmpty);
     tester
         .state<NavigatorState>(
@@ -472,6 +558,7 @@ void main() {
     await settle(tester);
     expect(page(), findsOneWidget);
 
+    await openMonths(tester);
     await tap(tester, find.byKey(const ValueKey('earnings-month-2026-04')));
     expect(server.calls.last, 'GET /payslips/slip-2026-04');
     expect(find.byKey(const ValueKey('payslip-slip-2026-04')), findsOneWidget);
@@ -490,6 +577,11 @@ void main() {
       find.textContaining('Your yearly salary can\'t be worked out yet'),
     );
     expect(inPage(find.text('Total a year')), findsNothing);
+    await openMonths(tester);
+    expect(
+      find.byKey(const ValueKey('earnings-month-2026-09')),
+      findsOneWidget,
+    );
     await reveal(
       tester,
       find.textContaining('Your October 2026 pay can\'t be worked out yet'),
@@ -508,6 +600,39 @@ void main() {
       findsOneWidget,
     );
     expect(inPage(find.textContaining('FY 20')), findsNothing);
+    expect(find.byKey(const ValueKey('earnings-fy-picker')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('other deductions and reimbursements: rows before take-home', (
+    tester,
+  ) async {
+    await pumpEarnings(
+      tester,
+      server: _EarningsServer()
+        ..otherDeductions = 2000
+        ..reimbursements = 5000,
+    );
+    expect(inPage(find.text('Other deductions')), findsOneWidget);
+    expect(inPage(find.text('− ₹2,000')), findsOneWidget);
+    expect(inPage(find.text('Reimbursements')), findsOneWidget);
+    expect(inPage(find.text('+ ₹5,000')), findsOneWidget);
+    expect(inPage(find.text('₹7,78,600')), findsOneWidget);
+    double top(String text) => tester.getTopLeft(inPage(find.text(text))).dy;
+    expect(top('PF and professional tax'), lessThan(top('Other deductions')));
+    expect(top('Other deductions'), lessThan(top('Reimbursements')));
+    expect(top('Reimbursements'), lessThan(top('Take-home')));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('screenshots: months folded and open', (tester) async {
+    await pumpEarnings(tester, size: const Size(393, 860));
+    await shoot(tester, 'earnings-collapsed');
+    tester.view.physicalSize = const Size(393 * 2, 1380 * 2);
+    await tester.pump();
+    await tap(tester, toggle);
+    expect(anyMonth(), findsNWidgets(7));
+    await shoot(tester, 'earnings-expanded');
     expect(tester.takeException(), isNull);
   });
 }
