@@ -30,6 +30,11 @@ export type OvertimeDTO = {
   workDate: string;
   /** Graded by the server against the requester's shift. */
   duration: 'half_day' | 'full_day';
+  /**
+   * Overtime pay or comp-off, as the employee chose it. Null on a request
+   * from before the choice existed (and from older app builds).
+   */
+  compensation?: { kind: 'pay' } | { kind: 'comp_off'; days: 1 | 0.5 } | null;
   hours: number;
   note?: string;
   managerNote?: string;

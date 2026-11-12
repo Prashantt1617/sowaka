@@ -1,11 +1,17 @@
 import { ObjectId } from 'mongodb';
 import { overtimeRequests, shiftAssignments, users } from '../config/db';
-import { OvertimeRequest, OvertimeStatus, overtimeDurationOf } from '../models/overtime.model';
+import {
+  compensationLabel,
+  OvertimeCompensation,
+  OvertimeRequest,
+  OvertimeStatus,
+  overtimeDurationOf,
+} from '../models/overtime.model';
 import { User } from '../models/user.model';
 import { orgUsersWithRows, sortLikeMongo } from './admin-scope';
 import { requestUserFor } from './request-user';
 import { getCompanyConfig } from './company-settings.service';
-import type { OvertimeDuration, ShiftAssignment } from '../models/shift.model';
+import { COMP_OFF_CREDIT, type OvertimeDuration, type ShiftAssignment, type ShiftPolicyRules } from '../models/shift.model';
 import { fullDayHoursFor, orgPolicySetup, policiesForPeople, policyForUser, resolvePolicies, todayIso } from './shift.service';
 import { notifyOvertimeDecided, notifyOvertimeSubmitted } from './request-notifications.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
@@ -15,7 +21,15 @@ const decisions = new Set<OvertimeStatus>(['approved', 'declined']);
 
 export async function createOvertimeRequest(
   userId: string,
-  input: { workDate: string; startTime: string; endTime: string; duration?: string; note?: string },
+  input: {
+    workDate: string;
+    startTime: string;
+    endTime: string;
+    duration?: string;
+    /** `{ kind: 'pay' }` or `{ kind: 'comp_off', days: 1 | 0.5 }`; absent from older app builds. */
+    compensation?: unknown;
+    note?: string;
+  },
 ) {
   const employee = await requireEmployeeWithManager(userId);
   const workDate = parseDateOnly(input.workDate, 'workDate');
@@ -25,7 +39,8 @@ export async function createOvertimeRequest(
   // How far back a claim may reach is the org's call, from Policies › Overtime.
   // It was configurable but never consulted, so a claim for a day six months
   // ago was accepted.
-  const overtimeRules = (await policyForUser(userId)).overtime;
+  const policy = await policyForUser(userId);
+  const overtimeRules = policy.overtime;
   // Whether overtime is offered to these people at all. It is set on their
   // shift template, or on the org under Policies › Overtime — and until now it
   // was saved and never read, so switching it off did nothing.
@@ -61,6 +76,21 @@ export async function createOvertimeRequest(
   }
   const duration: OvertimeDuration =
     chosen === 'half_day' || chosen === 'full_day' ? chosen : earned;
+  // Overtime pay or comp-off, as chosen. An app that predates the choice sends
+  // nothing, and its request is handled exactly as before.
+  const compensation = parseCompensation(input.compensation);
+  if (compensation?.kind === 'comp_off') {
+    // Comp-off is a leave type HR keeps on the shift template; without it (or
+    // with leave balances off) a credit would land nowhere, so it is refused
+    // rather than quietly turned into something else.
+    if (!compOffSetUp(policy)) {
+      throw new OvertimeError(409, "Comp-off isn't set up for you — ask HR");
+    }
+    // As much comp-off as the overtime claimed, never more.
+    if (compensation.days > COMP_OFF_CREDIT[duration]) {
+      throw new OvertimeError(400, 'A full day of comp-off needs a full day of overtime');
+    }
+  }
 
   // Team gate. Overtime of any length may be logged for any past day: a long
   // stretch on a working day is exactly what overtime is for, and refusing it
@@ -91,6 +121,7 @@ export async function createOvertimeRequest(
     endTime,
     hours,
     duration,
+    ...(compensation ? { compensation } : {}),
     note,
     status: 'pending',
     createdAt: now,
@@ -102,6 +133,7 @@ export async function createOvertimeRequest(
     requestId: String(result.insertedId),
     workDate,
     duration: labelOf(duration),
+    compensation: compensationLabel(compensation),
     reason: note ?? '',
   });
   return await toView({ ...request, _id: result.insertedId }, employee, await fullDayHoursFor(userId));
@@ -205,6 +237,7 @@ export async function decideOvertime(
     employeeUserId: request.userId,
     workDate: request.workDate,
     duration: await durationLabel(request),
+    compensation: compensationLabel(request.compensation),
     approved: decision === 'approved',
     comment: managerNote ?? '',
     decidedByUserId: updated.decidedByUserId,
@@ -317,6 +350,7 @@ export async function adminDecideOvertime(
     employeeUserId: request.userId,
     workDate: request.workDate,
     duration: await durationLabel(request),
+    compensation: compensationLabel(request.compensation),
     approved: decision === 'approved',
     comment: managerNote ?? '',
     decidedByUserId: updated.decidedByUserId,
@@ -359,6 +393,9 @@ async function toView(request: OvertimeRequest & { _id: ObjectId }, employee: Us
     // The half or full day that was claimed, which is what the comp-off is
     // credited as; an older record is graded by its hours.
     duration: overtimeDurationOf(request, fullDayHours),
+    // Overtime pay or comp-off (with its days), as chosen — what the manager
+    // sees when deciding. Null on a request from before the choice existed.
+    compensation: request.compensation ?? null,
     note: request.note,
     managerNote: request.managerNote,
     status: request.status,
@@ -379,6 +416,34 @@ async function requireEmployeeWithManager(userId: string) {
     throw new OvertimeError(409, 'The assigned manager is not active');
   }
   return employee;
+}
+
+/**
+ * The compensation the form sent: `{ kind: 'pay' }` or
+ * `{ kind: 'comp_off', days: 1 | 0.5 }`. Nothing sent is undefined — an app
+ * build from before the choice — and is handled as before.
+ */
+function parseCompensation(raw: unknown): OvertimeCompensation | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new OvertimeError(400, 'Compensation must be overtime pay or comp-off');
+  }
+  const { kind, days } = raw as { kind?: unknown; days?: unknown };
+  if (kind === 'pay') return { kind: 'pay' };
+  if (kind === 'comp_off') {
+    if (days === 1 || days === 0.5) return { kind: 'comp_off', days };
+    throw new OvertimeError(400, 'Comp-off must be a full day (1) or a half day (0.5)');
+  }
+  throw new OvertimeError(400, 'Compensation must be overtime pay or comp-off');
+}
+
+/**
+ * Whether comp-off can be credited to this person: their leave types (from
+ * their shift template, or the org's) include Comp-off, and their leave is
+ * counted from a balance at all.
+ */
+function compOffSetUp(policy: Pick<ShiftPolicyRules, 'leave'>): boolean {
+  return policy.leave.balanceTracked !== false && policy.leave.types.some((type) => type.key === 'comp_off');
 }
 
 function parseDateOnly(value: string, field: string): Date {

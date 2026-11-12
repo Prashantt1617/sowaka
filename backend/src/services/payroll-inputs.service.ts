@@ -10,6 +10,7 @@
 
 import { leaves, overtimeRequests, payrollPeriods, reimbursementClaims } from '../config/db';
 import { DEFAULT_PAYROLL_PERIOD } from '../models/payrollPeriod.model';
+import { OVERTIME_PAID_IN_PAYROLL } from '../models/overtime.model';
 
 export interface PeriodRange {
   year: number;
@@ -174,8 +175,11 @@ async function countApprovedLeaveDays(userId: string, range: PeriodRange): Promi
 }
 
 async function sumApprovedOtHours(userId: string, range: PeriodRange): Promise<number> {
+  // Overtime taken as comp-off is leave, not pay: it is credited to the
+  // Comp-off balance instead. Overtime pay, and every request from before the
+  // choice existed, is paid as it always was.
   const rows = await overtimeRequests()
-    .find({ userId, status: 'approved', workDate: { $gte: range.start, $lte: range.end } })
+    .find({ userId, status: 'approved', workDate: { $gte: range.start, $lte: range.end }, ...OVERTIME_PAID_IN_PAYROLL })
     .toArray();
   return rows.reduce((sum, row) => sum + (row.hours ?? 0), 0);
 }

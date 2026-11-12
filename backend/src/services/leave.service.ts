@@ -11,8 +11,8 @@ import {
   approvalRulesFor, fullDayHoursFor, hrMayDecide, isWeekOffDay, leaveRulesFor, leaveTypeRulesFor, withPolicyMemo,
   managerMayDecide, policiesForPeople, weekOffGridFor,
 } from './shift.service';
-import { OvertimeRequest, overtimeDurationOf } from '../models/overtime.model';
-import { COMP_OFF_CREDIT, LEAVE_KEY_PATTERN, LEAVE_TYPE_KEYS, LeaveTypeKey, LeaveTypeRule, leaveTypeLabel, processYearEnd } from '../models/shift.model';
+import { OvertimeRequest, compOffDaysOf } from '../models/overtime.model';
+import { LEAVE_KEY_PATTERN, LEAVE_TYPE_KEYS, LeaveTypeKey, LeaveTypeRule, leaveTypeLabel, processYearEnd } from '../models/shift.model';
 import { carriedFromRuns as carriedFromYearEndRuns } from './leave-year-end.service';
 import { requestViewer, requestViewerWithPhoto } from '../middleware/request-viewer';
 
@@ -462,12 +462,16 @@ function balanceReads(userId: string, year: number) {
  * Comp-off earned by approved overtime, for any window inside the requests
  * given.
  *
- * Each request is the half or full day that was claimed; a record from before
- * that was stored is graded by its hours against the shift's full-day threshold.
+ * A request taken as comp-off credits the days chosen (1 or 0.5); one taken
+ * as overtime pay credits nothing, payroll pays it. A request from before the
+ * choice credits the half or full day claimed, as it always did — a record
+ * older still is graded by its hours against the shift's full-day threshold.
+ * Only approved requests are read, so a declined one (or an approval later
+ * undone) credits nothing.
  */
 function compOffCredit(approved: OvertimeRequest[], fullDayHours: number) {
   const inWindow = (from: Date, to: Date) => approved.filter((request) => request.workDate >= from && request.workDate <= to);
-  const credit = (request: OvertimeRequest) => COMP_OFF_CREDIT[overtimeDurationOf(request, fullDayHours)];
+  const credit = (request: OvertimeRequest) => compOffDaysOf(request, fullDayHours);
   return {
     /** Days credited in a window. */
     creditedIn: (from: Date, to: Date) => round(inWindow(from, to).reduce((total, request) => total + credit(request), 0)),

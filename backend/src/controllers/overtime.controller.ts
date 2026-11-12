@@ -14,6 +14,7 @@ export async function createOvertime(req: Request, res: Response, next: NextFunc
       startTime: String(req.body.startTime ?? ''),
       endTime: String(req.body.endTime ?? ''),
       duration: req.body.duration == null ? undefined : String(req.body.duration),
+      compensation: req.body.compensation,
       note: req.body.note == null ? undefined : String(req.body.note),
     });
     res.status(201).json({ success: true, overtime });

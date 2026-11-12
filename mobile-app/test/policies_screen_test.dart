@@ -356,9 +356,13 @@ void main() {
     await tester.tap(find.text('Overtime policy'));
     await tester.pumpAndSettle();
     expect(
+      find.text('A full day is 8 hours and a half day 4.'),
+      findsOneWidget,
+    );
+    expect(
       find.text(
-        'A full day is 8 hours and credits 1 day of comp-off. A half day is '
-        '4 hours and credits 0.5.',
+        'You choose how it is compensated: overtime pay with your salary, or '
+        'comp-off leave — 1 day for a full day, 0.5 for a half day.',
       ),
       findsOneWidget,
     );

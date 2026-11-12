@@ -29,6 +29,10 @@ export type Overtime = {
   appliedOn: string;
   otDate: string;
   duration: OtDuration;
+  /** "Overtime Pay", or "Leave (Comp-off) · Full day"; empty on a request from before the choice. */
+  compensation?: string;
+  /** "+1 Comp-off" / "+0.5 Comp-off" when taken as comp-off; empty otherwise. */
+  compOffCredit?: string;
   hours: number;
   day: string;
   status: ReqStatus;

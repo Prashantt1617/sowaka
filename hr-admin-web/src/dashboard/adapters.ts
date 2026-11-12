@@ -86,6 +86,7 @@ export function adaptOvertime(dto: OvertimeDTO, managerName: string): Overtime {
     appliedOn: fmtDay(dto.createdAt),
     otDate: fmtDay(dto.workDate),
     duration: (dto.duration === 'full_day' ? 'Full day' : 'Half day') as OtDuration,
+    ...otCompensation(dto.compensation),
     hours: dto.hours,
     day: weekday(dto.workDate),
     status: cap(dto.status) as ReqStatus,
@@ -96,6 +97,19 @@ export function adaptOvertime(dto: OvertimeDTO, managerName: string): Overtime {
     refISO: dto.workDate,
     submitterId: dto.userId,
     byAdmin,
+  };
+}
+
+/**
+ * The compensation an overtime request asked for, in the app form's words.
+ * Nothing on a request from before the choice existed.
+ */
+function otCompensation(c: OvertimeDTO['compensation']): Pick<Overtime, 'compensation' | 'compOffCredit'> {
+  if (!c) return {};
+  if (c.kind === 'pay') return { compensation: 'Overtime Pay' };
+  return {
+    compensation: `Leave (Comp-off) · ${c.days === 1 ? 'Full day' : 'Half day'}`,
+    compOffCredit: `+${c.days} Comp-off`,
   };
 }
 
