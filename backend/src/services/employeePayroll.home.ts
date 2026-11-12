@@ -181,18 +181,26 @@ const periodKey = (range: PeriodRange) => `${range.year}-${String(range.month).p
  * with no statutory (or income tax) row is not guessed at: the estimate
  * says it is not set up.
  */
-export async function estimateFor(org: string, userId: string, period: string, range: PeriodRange, now: Date) {
-  const structure = await salaryStructures().findOne({ org, userId });
+export async function estimateFor(
+  org: string,
+  userId: string,
+  period: string,
+  range: PeriodRange,
+  now: Date,
+  /** One map per request when estimating more than one period for the person: what they share is read once. */
+  shared?: Map<string, Promise<unknown>>,
+) {
+  const [structure, last] = await Promise.all([
+    salaryStructures().findOne({ org, userId }),
+    myLatestReleasedPayslipBefore(userId, period),
+  ]);
   if (!structure?.salaryTemplateCode) return null;
-  const last = await myLatestReleasedPayslipBefore(userId, period);
+  // Counted to yesterday: today is still being worked, so a day nobody has punched yet is not unpaid.
+  const today = istDayOf(new Date(now.getTime() - 86_400_000));
+  const incomeTaxWithoutEnginePaise = last ? tdsOf(last) : 0;
   let slip: Payslip | null;
   try {
-    slip = await estimatePayslip(org, period, range, {
-      userId,
-      // Counted to yesterday: today is still being worked, so a day nobody has punched yet is not unpaid.
-      today: istDayOf(new Date(now.getTime() - 86_400_000)),
-      incomeTaxWithoutEnginePaise: last ? tdsOf(last) : 0,
-    });
+    slip = await estimatePayslip(org, period, range, { userId, today, incomeTaxWithoutEnginePaise, shared });
   } catch (error) {
     if (!(error instanceof PayrollConfigError) || error.statusCode !== 409) throw error;
     const fy = fyOf(period).fy;
@@ -232,6 +240,26 @@ export async function payPeriodNotSetUp(org: string, userId: string, problem: st
     message: askHr(`Your pay can't be worked out yet: ${problem.charAt(0).toLowerCase()}${problem.slice(1)}`),
   };
   return { notSetUp };
+}
+
+/**
+ * A pay period's pay as Home shows it: the released payslip when there is
+ * one (read afresh every time, so an estimate never stands in for a released
+ * run), else the estimate, else why it can't be worked out.
+ */
+export async function payForPeriod(
+  org: string,
+  userId: string,
+  period: string,
+  range: PeriodRange | null,
+  problem: string | null,
+  now: Date,
+  shared?: Map<string, Promise<unknown>>,
+) {
+  const released = await myReleasedPayslipFor(userId, period);
+  if (released) return { salary: fromPayslip(released) };
+  if (range) return estimateFor(org, userId, period, range, now, shared);
+  return payPeriodNotSetUp(org, userId, problem ?? 'the pay period is not set up');
 }
 
 /**
@@ -300,7 +328,14 @@ export type HomeSalaryCard = { period: string; label: string } & (SalaryNotSetUp
   reimbursementsPaise: number;
 });
 
-async function salaryCard(org: string, userId: string, joined: string | undefined, period: string, now: Date): Promise<HomeSalaryCard | null> {
+async function salaryCard(
+  org: string,
+  userId: string,
+  joined: string | undefined,
+  period: string,
+  now: Date,
+  shared?: Map<string, Promise<unknown>>,
+): Promise<HomeSalaryCard | null> {
   const prev = previousPeriod(period);
   const label = monthName(prev);
   const released = await myReleasedPayslipFor(userId, prev);
@@ -317,7 +352,7 @@ async function salaryCard(org: string, userId: string, joined: string | undefine
     if (range && joined && joined > range.to) return null;
   }
   const pay = released ? { salary: fromPayslip(released) }
-    : range ? await estimateFor(org, userId, prev, range, now)
+    : range ? await estimateFor(org, userId, prev, range, now, shared)
       : await payPeriodNotSetUp(org, userId, problem);
   if (!pay) return null;
   if ('notSetUp' in pay && pay.notSetUp) return { period: prev, label, ...pay.notSetUp };
@@ -427,11 +462,15 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
   // calendar month's, as the attendance calendar they open shows them.
   const { period, range, problem } = await homePayPeriod(org, periodRaw, now);
   const punchesPeriod = period < periodOf(now) ? period : periodOf(now);
-  const released = await myReleasedPayslipFor(userId, period);
+  // This period's pay and the card's last period, side by side: the inputs
+  // they share (the structure, pay heads, templates, the person) are read once.
+  // The last period is priced only while its payslip is not released.
+  const shared = new Map<string, Promise<unknown>>();
+  const salaryCardP = salaryCard(org, userId, joinedOn(user), period, now, shared);
+  // Settled below; until then a failure is held here, not left unhandled.
+  salaryCardP.catch(() => undefined);
   const [pay, punches, split, declaration, proofs, fbp] = await Promise.all([
-    released ? Promise.resolve({ salary: fromPayslip(released) })
-      : range ? estimateFor(org, userId, period, range, now)
-        : payPeriodNotSetUp(org, userId, problem ?? 'the pay period is not set up'),
+    payForPeriod(org, userId, period, range, problem, now, shared),
     missingPunchesFor(org, userId, user.employeeId, punchesPeriod, now),
     mySplit(userId, now).catch((error) => {
       if (error instanceof EmployeePayrollError && error.statusCode === 404) return null;
@@ -454,7 +493,7 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
   const salaryNotSetUp = pay && 'notSetUp' in pay ? pay.notSetUp : null;
   // The carousel: last period's salary, this FY's tax, the flexible split.
   const [salaryCardOf, taxCardOf] = await Promise.all([
-    salaryCard(org, userId, joinedOn(user), period, now),
+    salaryCardP,
     taxCard(org, userId, period, declaration, salary
       ? { released: salary.status === 'final', taxPaise: salary.deductions.find((d) => d.key === 'income_tax')?.amountPaise ?? 0 }
       : null),

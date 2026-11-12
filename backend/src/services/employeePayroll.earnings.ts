@@ -19,8 +19,8 @@ import { ObjectId } from 'mongodb';
 import { flexibleSplits, payrollRuns, payslips, salaryStructures } from '../config/db';
 import { Payslip, PayrollRunStatus } from '../models/payrollRun.model';
 import { fyOf } from '../shared/payroll/tds';
-import { EmployeePayrollError, askHr, meOf, parseFyParam } from './employeePayroll.common';
-import { myPayrollHome } from './employeePayroll.home';
+import { EmployeePayrollError, askHr, meOf, parseFyParam, parsePeriodParam, payrollAppEnabled } from './employeePayroll.common';
+import { homePayPeriod, payForPeriod } from './employeePayroll.home';
 import { splitAmountsFor } from './employeePayroll.split';
 import { PayrollConfigError } from './payrollConfig.service';
 import { SalaryStructureError, computeStructureFor } from './salaryStructure.service';
@@ -107,19 +107,21 @@ function slipMoney(slip: Payslip): MonthMoney {
   };
 }
 
-/** Home's estimate for this pay period, as earnings (or why there is none). */
-async function currentEstimate(userId: string, now: Date) {
-  const home = await myPayrollHome(userId, undefined, now);
-  if (home.appEnabled !== true) return { period: home.period, month: null, notSetUp: null };
-  const salary = home.salary;
+/** Home's estimate for this pay period (the same helper Home uses), as earnings (or why there is none). */
+async function currentEstimate(org: string, userId: string, now: Date) {
+  if (!(await payrollAppEnabled(org))) return { period: parsePeriodParam(undefined, now), month: null, notSetUp: null };
+  const { period, range, problem } = await homePayPeriod(org, undefined, now);
+  const pay = await payForPeriod(org, userId, period, range, problem, now);
+  const salary = pay && 'salary' in pay ? pay.salary : null;
   if (!salary) {
-    const notSetUp: EarningsNotSetUp | null = home.salaryNotSetUp
-      ? { reason: home.salaryNotSetUp.reason, message: home.salaryNotSetUp.message }
+    const salaryNotSetUp = pay && 'notSetUp' in pay ? pay.notSetUp : null;
+    const notSetUp: EarningsNotSetUp | null = salaryNotSetUp
+      ? { reason: salaryNotSetUp.reason, message: salaryNotSetUp.message }
       : null;
-    return { period: home.period, month: null, notSetUp };
+    return { period, month: null, notSetUp };
   }
   // A released payslip for the month is already among the released months.
-  if (salary.status !== 'estimate') return { period: home.period, month: null, notSetUp: null };
+  if (salary.status !== 'estimate') return { period, month: null, notSetUp: null };
   let tax = 0;
   let pfPt = 0;
   let other = 0;
@@ -199,7 +201,7 @@ function payslipComponents(slips: Payslip[]): EarningsComponent[] {
 export async function myEarnings(userId: string, fyRaw: unknown, now = new Date()) {
   const { org } = await meOf(userId);
   const asked = fyRaw === undefined || fyRaw === null || fyRaw === '' ? null : parseFyParam(fyRaw, now);
-  const [slips, estimate] = await Promise.all([releasedSlips(org, userId), currentEstimate(userId, now)]);
+  const [slips, estimate] = await Promise.all([releasedSlips(org, userId), currentEstimate(org, userId, now)]);
   // The year of the pay period Home is on (a company paying 26th to 25th is in April's from 26 March).
   const currentFy = fyOf(estimate.period).fy;
   if (asked && asked > currentFy) throw new EmployeePayrollError(400, 'That financial year has not started yet');

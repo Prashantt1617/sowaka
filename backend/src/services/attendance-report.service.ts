@@ -174,9 +174,17 @@ onShiftSetupChanged((org) => {
   invalidateAttendanceReport(org);
 });
 
+type ReportListener = (org: string) => void;
+const reportListeners: ReportListener[] = [];
+/** Told whenever an org's reports are dropped (the payroll estimates built on them go too). */
+export function onAttendanceReportInvalidated(listener: ReportListener): void {
+  reportListeners.push(listener);
+}
+
 /** Drop an org's finished reports, so the next read reflects a change at once. */
 export function invalidateAttendanceReport(org: string): void {
   for (const key of reportCache.keys()) if (key.startsWith(`${org}|`)) reportCache.delete(key);
+  for (const listener of reportListeners) listener(org);
 }
 
 /** The report and the roster behind it, after a change to who someone is (a joining date). */
@@ -492,6 +500,12 @@ export async function missedPunchPeople(org: string, from: string, to: string): 
 export async function attendanceReport(
   adminUserId: string,
   input: { from?: string; to?: string },
+  /**
+   * Only these people (a payroll estimate for one person): the same grading,
+   * on the same cached org setup, but the punches, leave and HR marks are read
+   * for them alone, and the result is not cached as the org's report.
+   */
+  only?: { userIds: string[] },
 ): Promise<AttendanceReport> {
   const from = input.from ?? '';
   const to = input.to ?? '';
@@ -505,19 +519,22 @@ export async function attendanceReport(
   const org = await adminOrg(adminUserId);
 
   const cacheKey = `${org}|${from}|${to}`;
-  const cached = reportCache.get(cacheKey);
+  const cached = only ? undefined : reportCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
     console.log(`[attendance-report] ${org} ${from}..${to}: served from cache`);
     return cached.value;
   }
 
   const started = Date.now();
-  const setup = await orgSetup(org);
+  const orgWide = await orgSetup(org);
+  const wanted = only ? new Set(only.userIds) : null;
+  // Graded as in the org's report, person by person; only the roster is narrowed.
+  const setup = wanted ? { ...orgWide, roster: orgWide.roster.filter((u) => wanted.has(u.userId)) } : orgWide;
   const { roster } = setup;
   const setupMs = Date.now() - started;
   const data = await rangeData(org, setup, from, to);
 
-  console.log(`[attendance-report] ${org} ${from}..${to}: setup ${setupMs}ms, queries ${Date.now() - started - setupMs}ms, records ${data.records}`);
+  if (!only) console.log(`[attendance-report] ${org} ${from}..${to}: setup ${setupMs}ms, queries ${Date.now() - started - setupMs}ms, records ${data.records}`);
 
   const { policyOn, gradeDay } = dayGrader(setup, data);
 
@@ -531,7 +548,7 @@ export async function attendanceReport(
   const leaveTypes = new Set<string>();
   const punchFormats = new Set<string>();
   const managers = new Set<string>();
-  const nameOf = new Map(roster.map((u) => [u.userId, u.name]));
+  const nameOf = new Map(orgWide.roster.map((u) => [u.userId, u.name]));
   const first = dayOf(from).getTime();
   const last = dayOf(to).getTime();
   const now = Date.now();
@@ -586,7 +603,7 @@ export async function attendanceReport(
     offDays,
     halfDayLeave,
   };
-  reportCache.set(cacheKey, { expires: Date.now() + REPORT_TTL_MS, value: report });
+  if (!only) reportCache.set(cacheKey, { expires: Date.now() + REPORT_TTL_MS, value: report });
   return report;
 }
 

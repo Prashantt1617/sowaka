@@ -19,7 +19,9 @@ import {
 import { env } from '../config/env';
 import { PayHead } from '../models/payHead.model';
 import { createRun, myPayslip, myPayslips, recomputeRun, submitRun } from '../services/payrollRun.service';
-import { myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
+import { estimateFor, myMissingPunches, myPayrollHome } from '../services/employeePayroll.home';
+import { forgetEstimates } from '../services/payrollEstimateCache';
+import { payrollPeriodRange } from '../services/payroll-inputs.service';
 import { employeeAppSettingsForHr, setEmployeeAppSettingsForHr } from '../services/employeePayroll.settings';
 import { myEarnings } from '../services/employeePayroll.earnings';
 import { mySalarySummary } from '../services/employeePayroll.salary';
@@ -753,6 +755,79 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
       && gJuly.takeHomePaise === gSlip.netPayablePaise && gJuly.lopDays === gSlip.inputs!.lopDays, [gJuly?.deductions, gShown]);
   await payslips().deleteMany({ runId: julyRun.run.id });
   await payrollRuns().deleteOne({ period: '2026-07' });
+
+  // —— a company of 40: one person's estimate reads that person, and is still what the run pays ——
+  // Forty more people on the meal-card template, each punching July's weekdays; person k is absent
+  // on k % 4 days, leaves a punch-out off once when k is odd, and every fifth has an HR half day.
+  forgetEstimates(ORG);
+  const crowd = Array.from({ length: 40 }, (_, i) => `c${String(i + 1).padStart(2, '0')}`);
+  await users().insertMany(crowd.map((id) => person(id, `Crowd ${id}`, { joiningDate: new Date('2026-01-01T00:00:00Z') })) as never[]);
+  await salaryStructures().insertMany(crowd.map((id, i) => ({
+    org: ORG, userId: id, salaryTemplateCode: 'MEALT', annualCtcPaise: R(6_00_000 + i * 20_000), status: 'active', createdAt: now, updatedAt: now,
+  })) as never[]);
+  const crowdDays: unknown[] = [];
+  const crowdMarks: unknown[] = [];
+  crowd.forEach((id, i) => {
+    const k = i + 1;
+    let weekdays = 0;
+    for (let d = 1; d <= 31; d++) {
+      const date = `2026-07-${String(d).padStart(2, '0')}`;
+      const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+      if (weekday === 0 || weekday === 6) continue;
+      weekdays += 1;
+      if (weekdays <= k % 4) continue; // absent
+      crowdDays.push({
+        userId: id, employeeId: `E-${id.toUpperCase()}`, workDate: date, createdAt: now, updatedAt: now,
+        punchIn: new Date(`${date}T03:30:00Z`),
+        ...(k % 2 === 1 && weekdays === 10 ? {} : { punchOut: new Date(`${date}T12:40:00Z`) }),
+      });
+    }
+    if (k % 5 === 0) crowdMarks.push({ org: ORG, userId: id, workDate: '2026-07-21', status: 'half_day', setByUserId: 'hr', setAt: now });
+  });
+  await attendanceRecords().insertMany(crowdDays as never[]);
+  await attendanceOverrides().insertMany(crowdMarks as never[]);
+  const who = 'c15'; // absent 3 days, a missed punch, an HR half day
+  const ownRecords = await attendanceRecords().countDocuments({ userId: who });
+  // What the estimate reads, from the database's own profiler.
+  await db.command({ profile: 2 });
+  const crowdHome = await homeOn(who, undefined, new Date('2026-08-05T06:00:00Z'));
+  await db.command({ profile: 0 });
+  const profiled = await db.collection('system.profile').find({ ns: `${SCRATCH}.attendance_records` }).toArray();
+  const recordsRead = profiled.reduce((t, p) => t + (Number(p.nreturned) || 0), 0);
+  await db.collection('system.profile').drop().catch(() => undefined);
+  const crowdRun = await createRun('hr', { period: '2026-07' });
+  const crowdSlip = (await payslips().findOne({ runId: crowdRun.run.id, userId: who }))!;
+  const crowdCard = crowdHome.cards.salary;
+  const crowdFull = crowdSlip.earnings.reduce((t, e) => t + e.fullPaise, 0);
+  check('a company of 40: one person\'s home reads only their own punches, not everyone\'s',
+    recordsRead > 0 && recordsRead < 4 * ownRecords && crowdDays.length > 20 * ownRecords, { recordsRead, ownRecords, everyone: crowdDays.length });
+  check('a company of 40: the estimate is still what the run pays (loss of pay, gross, take-home, deductions)',
+    crowdCard !== null && !crowdCard.notConfigured && crowdCard.released === false && crowdCard.lopDays === crowdSlip.inputs!.lopDays && crowdCard.lopDays >= 3
+      && crowdCard.grossPaise === crowdFull && crowdCard.lopPaise === crowdFull - crowdSlip.earnings.reduce((t, e) => t + e.paidPaise, 0)
+      && crowdCard.takeHomePaise === crowdSlip.netPayablePaise
+      && crowdCard.deductionsPaise === crowdSlip.deductions.filter((d) => !d.hidden && d.amountPaise > 0).reduce((t, d) => t + d.amountPaise, 0),
+    [crowdCard, crowdSlip.inputs?.lopDays, crowdSlip.inputs?.attendanceDeductions, crowdSlip.netPayablePaise]);
+  // Every one of the forty: the estimate made alone equals the run's payslip.
+  forgetEstimates(ORG);
+  const runSlips = new Map((await payslips().find({ runId: crowdRun.run.id }).toArray()).map((s) => [s.userId, s]));
+  await payslips().deleteMany({ runId: crowdRun.run.id });
+  await payrollRuns().deleteOne({ period: '2026-07' });
+  const julyRange = await payrollPeriodRange(ORG, '2026-07');
+  const mismatched: string[] = [];
+  for (const id of crowd) {
+    const est = await estimateFor(ORG, id, '2026-07', julyRange, new Date('2026-08-05T06:00:00Z'));
+    const slip = runSlips.get(id);
+    const s = est && 'salary' in est ? est.salary : null;
+    if (!s || !slip || s.takeHomePaise !== slip.netPayablePaise || s.lopDays !== slip.inputs!.lopDays || s.netPaise !== slip.netPaise) mismatched.push(id);
+  }
+  check('a company of 40: each person\'s estimate equals their payslip on the run', mismatched.length === 0, mismatched);
+  // Released: the payslip, not a remembered estimate.
+  const relRun = await createRun('hr', { period: '2026-07' });
+  await submitRun('hr', relRun.run.id);
+  const relHome = await homeOn(who, undefined, new Date('2026-08-05T06:00:00Z'));
+  check('a company of 40: once July is released, the card is the payslip, never the remembered estimate',
+    relHome.cards.salary !== null && !relHome.cards.salary.notConfigured && relHome.cards.salary.released === true && relHome.cards.salary.payslipId !== null,
+    relHome.cards.salary);
 
   await db.dropDatabase();
   console.log(failed === 0 ? `\nall ${passed} payroll employee checks passed` : `\n${failed} check(s) failed, ${passed} passed`);

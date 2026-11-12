@@ -35,8 +35,15 @@ const emptyCounts = (): DeductionCounts => ({ late: 0, early: 0, absent: 0, half
 /**
  * Everyone's counts for a YYYY-MM period, keyed by userId: the calendar month,
  * or the pay dates given (a company paying 26th to 25th). A future period counts nothing.
+ * With `userIds`, only those people's (the same counts, read for them alone).
  */
-export async function attendanceCountsForPeriod(adminUserId: string, period: string, dates?: { from: string; to: string }, asOf?: string): Promise<Map<string, DeductionCounts>> {
+export async function attendanceCountsForPeriod(
+  adminUserId: string,
+  period: string,
+  dates?: { from: string; to: string },
+  asOf?: string,
+  userIds?: string[],
+): Promise<Map<string, DeductionCounts>> {
   const [year, month] = period.split('-').map(Number);
   const from = dates?.from ?? `${period}-01`;
   // Counted to today (or the day given, for an estimate worked out as of then).
@@ -45,7 +52,7 @@ export async function attendanceCountsForPeriod(adminUserId: string, period: str
   if (from > today) return counts;
   const periodEnd = dates?.to ?? new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
   const to = periodEnd < today ? periodEnd : today;
-  const report = await attendanceReport(adminUserId, { from, to });
+  const report = await attendanceReport(adminUserId, { from, to }, userIds ? { userIds } : undefined);
   const missedPunchMarks = await missedPunchMarksFor(adminUserId, report.days, from, to);
   const halfDayLeave = new Set(report.halfDayLeave);
   // Only graded working days are in the report: week offs and holidays are

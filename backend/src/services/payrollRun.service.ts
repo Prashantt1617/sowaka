@@ -43,6 +43,8 @@ import { paidDaysResolver } from './paidDaysTemplate.service';
 import { addInto, billCategories, billsByComponent, ReimbursementTax, reimbursementTax, reimbursementsPaidBefore } from './reimbursementBills.service';
 import { decryptField, fieldKeyConfigured } from './fieldCrypto';
 import { splitAmountsFor, splitsByUser } from './employeePayroll.split';
+import { attendanceCountsKey, rememberAttendanceCounts, rememberedAttendanceCounts } from './payrollEstimateCache';
+import { todayIso } from './shift.service';
 
 export class PayrollRunError extends Error {
   constructor(
@@ -185,27 +187,43 @@ async function buildRunPayslips(
   const lopOverrides = entered.lopDays;
   const otOverrides = entered.overtimePaise;
   const taxOverrides = entered.incomeTaxPaise;
-  const structures = await salaryStructures().find({ org, status: 'active', ...(scope ? { userId: scope.userId } : {}) }).toArray();
+  // What does not depend on the period, read together (and once for both of
+  // an estimate's periods when they share `scope.shared`).
+  const once = <T>(key: string, load: () => Promise<T>): Promise<T> => {
+    const memo = scope?.shared;
+    if (!memo) return load();
+    const hit = memo.get(key) as Promise<T> | undefined;
+    if (hit) return hit;
+    const made = load();
+    memo.set(key, made);
+    return made;
+  };
+  const [structures, catalog, templates, settings, paidDaysFor, billCats] = await Promise.all([
+    once('structures', () => salaryStructures().find({ org, status: 'active', ...(scope ? { userId: scope.userId } : {}) }).toArray()),
+    once('catalog', () => payHeads().find({ org }).toArray()),
+    once('templates', () => salaryTemplates().find({ org }).toArray()),
+    // One set of statutory settings for everyone.
+    once('settings', () => statutorySettingsFor(org)),
+    // Each person's Paid Days Template (else the company's Default) says how attendance becomes paid days.
+    once('paidDays', () => paidDaysResolver(org)),
+    // Fuel, Internet…: paid in full, taxed until bills; claims of a linked type are those bills, not paid again.
+    once('billCategories', () => billCategories(org)),
+  ]);
   if (structures.length === 0) {
     if (scope) return [];
     throw new PayrollRunError(409, 'No active salary structures to run payroll for');
   }
-  const catalog = await payHeads().find({ org }).toArray();
   const catalogByCode = new Map(catalog.map((h) => [h.code, h]));
-  const templates = await salaryTemplates().find({ org }).toArray();
   const templatesByCode = new Map(templates.map((t) => [t.code, t]));
   const workingDays = await computeWorkingDays(org, range);
   const ruleSetCache = new Map<string, ResolvedRuleSet>();
-  // One set of statutory settings for everyone, and who ESI already covers
-  // this contribution period.
-  const settings = await statutorySettingsFor(org);
   // The FY's national figures: no row, no run (409).
   const config = await statutoryConfigForPeriod(period);
+  // Who ESI already covers this contribution period.
   const esiCovered = await esiCoveredThisPeriod(org, period, structures.map((s) => s.userId));
   // The month's calendar, whenever a template pays by it — the report is the
-  // slow part of a run.
-  // Each person's Paid Days Template (else the company's Default) says how attendance becomes paid days.
-  const paidDaysFor = await paidDaysResolver(org);
+  // slow part of a run; an estimate reads it for its one person only.
+  const attendanceOf = scope ? [scope.userId] : undefined;
   const docksForAttendance = structures.some((s) => !(paidDaysFor(s.paidDaysTemplateCode)?.allDaysPaid ?? false));
   // Leave without pay is docked even where every day is paid, so a month with
   // any approved leave in it reads the calendar too; whether a leave is unpaid
@@ -215,33 +233,36 @@ async function buildRunPayslips(
   // days are before joining, and payroll counts those itself below.
   // (An estimate reads the setup as it is cached: it runs on every app home.)
   if (readsAttendance && !scope) invalidateAttendanceSetup(org);
-  let attendance = readsAttendance
-    ? await attendanceCountsForPeriod(adminUserId, period, range, scope?.today)
-    : new Map();
+  // An estimate's counts are remembered as briefly as the org's report is
+  // (and dropped with it): opening Home, then Earnings, grades the month once.
+  const countsKey = scope ? attendanceCountsKey(org, scope.userId, range, scope.today ?? todayIso()) : null;
+  const remembered = countsKey ? rememberedAttendanceCounts(countsKey) : undefined;
+  let attendance = !readsAttendance ? new Map()
+    : remembered ?? await attendanceCountsForPeriod(adminUserId, period, range, scope?.today, attendanceOf);
   // Not on the cached roster (just joined, or just given a structure): read it afresh, as a run would.
-  if (readsAttendance && scope && !attendance.has(scope.userId)) {
+  if (readsAttendance && scope && !remembered && !attendance.has(scope.userId)) {
     invalidateAttendanceSetup(org);
-    attendance = await attendanceCountsForPeriod(adminUserId, period, range, scope.today);
+    attendance = await attendanceCountsForPeriod(adminUserId, period, range, scope.today, attendanceOf);
   }
+  if (readsAttendance && countsKey && !remembered) rememberAttendanceCounts(countsKey, attendance);
 
-  const employees = await users()
+  const employees = await once('employees', () => users()
     .find({ userId: { $in: structures.map((s) => s.userId) } })
-    .toArray();
+    .toArray());
   // The TDS engine, when the org has switched it on: the FY's income tax rows, else 409.
   const { fy } = fyOf(period);
   const tdsConfigs = settings.tds?.enabled ? await requireTdsConfigs(fy) : new Map();
   const tdsOn = tdsConfigs.size > 0;
   const userIds = structures.map((s) => s.userId);
   const [ytd, declarations] = tdsOn ? await Promise.all([ytdFor(org, period, userIds), declarationsFor(org, fy, userIds)]) : [new Map(), new Map()];
-  // Fuel, Internet…: paid in full, taxed until bills; claims of a linked type are those bills, not paid again.
-  const billCats = await billCategories(org);
   // Claims on another run (not rejected) are that run's: never paid twice.
-  // (An estimate stands in for this period's run, so that run's own claims stay its to pay.)
+  // (An estimate stands in for this period's run, so that run's own claims stay its to pay;
+  // a claim is its claimant's, so the estimate reads only its person's payslips.)
   const otherRuns = await payrollRuns().find({ org, status: { $ne: 'rejected' }, ...(scope ? { period: { $ne: period } } : {}) } as never, { projection: { _id: 1 } }).toArray();
   const otherRunIds = otherRuns.map((r) => r._id.toHexString()).filter((id) => id !== runIdHex);
   const reservedClaimIds = new Set(
     otherRunIds.length
-      ? (await payslips().find({ org, runId: { $in: otherRunIds } }, { projection: { 'inputs.reimbursementClaimIds': 1 } }).toArray()).flatMap((s) => s.inputs?.reimbursementClaimIds ?? [])
+      ? (await payslips().find({ org, ...(scope ? { userId: scope.userId } : {}), runId: { $in: otherRunIds } }, { projection: { 'inputs.reimbursementClaimIds': 1 } }).toArray()).flatMap((s) => s.inputs?.reimbursementClaimIds ?? [])
       : [],
   );
   const [reimbPaidBefore, bills] = tdsOn
@@ -249,7 +270,7 @@ async function buildRunPayslips(
     : [new Map<string, Map<string, number>>(), new Map<string, Map<string, number>>()];
   const employeeById = new Map(employees.map((e) => [e.userId, e]));
   // Each person's flexible split (app › Payroll), month by month, over their structure's own values.
-  const splits = await splitsByUser(org, userIds);
+  const splits = await once('splits', () => splitsByUser(org, userIds));
 
   const now = new Date();
   const slips: Payslip[] = [];
@@ -463,6 +484,12 @@ export interface EstimateScope {
   today?: string;
   /** The month's income tax when the org has no TDS engine on (HR types it on the run). */
   incomeTaxWithoutEnginePaise?: number;
+  /**
+   * The period-free inputs (structure, pay heads, templates, settings, the
+   * person, their split) shared by estimates of the same person made
+   * together (Home's two periods): read once. Use one map per request.
+   */
+  shared?: Map<string, Promise<unknown>>;
 }
 
 /**
