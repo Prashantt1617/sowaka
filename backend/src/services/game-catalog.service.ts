@@ -109,11 +109,13 @@ function toPublic(entry: GameCatalogEntry & { hasPage: boolean }): PublicGame {
 
 /** The viewer's company's games, active ones only, in order. Without their pages. */
 export async function catalogFor(viewer: GameViewer): Promise<PublicGame[]> {
-  const keys = await gamesForOrg(viewer.org);
-  if (keys.length === 0) return [];
-  const rows = await gameCatalog()
-    .aggregate<GameCatalogEntry & { hasPage: boolean }>([
-      { $match: { key: { $in: keys }, active: true } },
+  if (!viewer.org) return [];
+  // The company's list and the catalog in one round trip: every active entry
+  // (a few dozen, without their pages) and the company row after them, then
+  // narrowed here to the company's games, in the same order.
+  const all = await gameCatalog()
+    .aggregate<(GameCatalogEntry & { hasPage: boolean }) | ({ company: true } & Pick<Company, 'enabledTabs' | 'enabledGames'>)>([
+      { $match: { active: true } },
       { $sort: { order: 1, name: 1 } },
       {
         $addFields: {
@@ -127,8 +129,18 @@ export async function catalogFor(viewer: GameViewer): Promise<PublicGame[]> {
         },
       },
       { $project: { _id: 0, html: 0 } },
+      {
+        $unionWith: {
+          coll: 'companies',
+          pipeline: [{ $match: { id: viewer.org } }, { $limit: 1 }, { $project: { _id: 0, enabledTabs: 1, enabledGames: 1, company: { $literal: true } } }],
+        },
+      },
     ])
     .toArray();
+  const company = all.find((row): row is { company: true } & Pick<Company, 'enabledTabs' | 'enabledGames'> => 'company' in row && row.company === true);
+  const keys = new Set(enabledGamesOf(company ?? null));
+  if (keys.size === 0) return [];
+  const rows = all.filter((row): row is GameCatalogEntry & { hasPage: boolean } => !('company' in row && row.company === true) && keys.has((row as GameCatalogEntry).key));
   // A web game with nowhere to open it would be a card that does nothing.
   return rows.filter((row) => row.kind === 'native' || row.hasPage || !!row.hostedUrl).map(toPublic);
 }

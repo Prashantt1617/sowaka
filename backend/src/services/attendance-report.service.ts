@@ -3,7 +3,7 @@ import { requestViewer } from '../middleware/request-viewer';
 import { AttendanceOverride, AttendanceRecord, HrDayStatus } from '../models/attendance.model';
 import type { Holiday } from '../models/holiday.model';
 import { Leave } from '../models/leave.model';
-import { DayMark, OrgShiftPolicy, PunchFormat, ShiftTemplate, isUnpaidLeaveType } from '../models/shift.model';
+import { DayMark, OrgShiftPolicy, PunchFormat, ShiftAssignment, ShiftTemplate, isUnpaidLeaveType } from '../models/shift.model';
 import { User } from '../models/user.model';
 import { getOrgShiftPolicy, isWeekOffDay, onShiftSetupChanged } from './shift.service';
 import { SHIFT_UTC_OFFSET, markForDay, minutesAfterShiftStart, minutesBeforeShiftEnd, normalisePunches } from './attendance.service';
@@ -220,15 +220,32 @@ async function orgSetup(org: string): Promise<OrgSetup> {
     // shift that covered it rather than the one they are on today.
     shiftAssignments().find({ org }).sort({ effectiveFrom: -1 }).batchSize(BATCH).toArray(),
   ]);
+  const value = setupOf({ roster, templates, orgPolicy, assignments });
+  setupCache.set(org, { expires: Date.now() + SETUP_TTL_MS, value });
+  return value;
+}
+
+/**
+ * What `orgSetup` reads, for a caller that has already read it for its own
+ * use (App usage reads the roster, templates and assignments anyway): the
+ * org's people not offboarded, every template, the org policy, and the org's
+ * assignment rows newest first.
+ */
+export type AttendanceSetupRows = {
+  roster: Person[];
+  templates: ShiftTemplate[];
+  orgPolicy: Omit<OrgShiftPolicy, 'org' | '_id'>;
+  assignments: Pick<ShiftAssignment, 'userId' | 'effectiveFrom' | 'templateId'>[];
+};
+
+function setupOf({ roster, templates, orgPolicy, assignments }: AttendanceSetupRows): OrgSetup {
   const timelines = new Map<string, Timeline>();
   for (const row of assignments) {
     const list = timelines.get(row.userId) ?? [];
     list.push({ from: row.effectiveFrom, templateId: row.templateId ? row.templateId.toHexString() : null });
     timelines.set(row.userId, list);
   }
-  const value = { roster, templates, orgPolicy, timelines };
-  setupCache.set(org, { expires: Date.now() + SETUP_TTL_MS, value });
-  return value;
+  return { roster, templates, orgPolicy, timelines };
 }
 
 
@@ -310,7 +327,7 @@ type RangeData = {
 /** Only what grading reads off a punch row: the rest (locations, face checks, notes) is never looked at. */
 const PUNCH_FIELDS = { _id: 0, userId: 1, employeeId: 1, workDate: 1, punchIn: 1, punchOut: 1, dayType: 1, source: 1 };
 
-async function rangeData(org: string, { roster }: OrgSetup, from: string, to: string): Promise<RangeData> {
+async function rangeData(org: string, { roster }: Pick<OrgSetup, 'roster'>, from: string, to: string): Promise<RangeData> {
   const userIds = roster.map((u) => u.userId);
   // Imported rows are keyed by employee id, app punches by user id — and an
   // employee id is only unique within an org, so both sides are scoped to this
@@ -465,12 +482,26 @@ function dayGrader(setup: OrgSetup, { punchesBy, approvedLeaves, holidayRows, ma
  * Attendance shows, from the same grading, without building the report. A day
  * whose shift is still running is not counted: its punch can still come.
  */
-export async function missedPunchPeople(org: string, from: string, to: string): Promise<Set<string>> {
+export async function missedPunchPeople(
+  org: string,
+  from: string,
+  to: string,
+  /**
+   * The setup's rows, already read by the caller. The range's punches only
+   * need the roster, so they are read while the assignments still load.
+   */
+  preloaded?: Omit<AttendanceSetupRows, 'assignments'> & { assignments: Promise<AttendanceSetupRows['assignments']> },
+): Promise<Set<string>> {
   if (!DATE.test(from) || !DATE.test(to)) throw new ReportError(400, 'from and to must be YYYY-MM-DD');
   const out = new Set<string>();
   if (from > to) return out;
-  const setup = await orgSetup(org);
-  const { gradeDay } = dayGrader(setup, await rangeData(org, setup, from, to));
+  const [setup, data] = preloaded
+    ? await Promise.all([
+      preloaded.assignments.then((assignments) => setupOf({ ...preloaded, assignments })),
+      rangeData(org, preloaded, from, to),
+    ])
+    : await orgSetup(org).then(async (s) => [s, await rangeData(org, s, from, to)] as const);
+  const { gradeDay } = dayGrader(setup, data);
   const first = dayOf(from).getTime();
   const last = dayOf(to).getTime();
   const now = Date.now();
