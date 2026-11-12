@@ -5259,8 +5259,7 @@ class _CancelLeaveSheetState extends State<_CancelLeaveSheet> {
             if (widget.requestOnly) ...[
               const SizedBox(height: 6),
               const Text(
-                'This leave is approved, so your manager decides. It stays '
-                'approved until they do.',
+                'Leave is cancelled once the manager approves the cancellation request.',
                 style: TextStyle(
                   color: Color(0xFF6A6A6A),
                   fontSize: 12.5,

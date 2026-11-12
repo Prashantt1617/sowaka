@@ -313,7 +313,7 @@ void main() {
       await settle();
       // The sheet: its title and its button, over the page's own button.
       expect(find.text('Request cancellation'), findsNWidgets(3));
-      expect(find.textContaining('your manager decides'), findsOneWidget);
+      expect(find.textContaining('cancelled once the manager approves'), findsOneWidget);
       expect(find.text('Add a note for your manager...'), findsOneWidget);
       await tester.enterText(find.byType(TextField).last, 'Plans changed');
       await tester.tap(find.text('Request cancellation').last);
