@@ -104,6 +104,23 @@ export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { ques
   const question = typed || (attachment?.image ? 'Have a look at the attached image.' : attachment ? 'Have a look at the attached spreadsheet.' : '');
   if (!question) throw new SuwiLlmError(400, 'Ask Suwi a question');
   const page = typeof input.page === 'string' ? input.page.slice(0, 40) : '';
+  // Every question is kept, with what Suwi answered and whether it worked; a failure too.
+  try {
+    return await answer(user, question, page, attachment, input);
+  } catch (e) {
+    await auditCol().insertOne({
+      org: user.org!, userId: user.userId, kind: 'question', at: new Date(), page, question, status: 'failed',
+      error: (e as Error).message?.slice(0, 1000) || 'Something went wrong',
+      ...(attachment ? { attachment: { name: attachment.name, kind: attachment.image ? 'image' : 'spreadsheet' } } : {}),
+    }).catch(() => undefined);
+    throw e;
+  }
+}
+
+async function answer(
+  user: Omit<User, 'profilePhotoUrl'>, question: string, page: string,
+  attachment: ReturnType<typeof attachmentOf>, input: { history?: unknown },
+): Promise<SuwiAnswer> {
   const settings = await settingsFor(user.org!);
   if (!settings.enabled) throw new SuwiLlmError(403, 'Suwi is turned off for this company. An admin can turn it on in Settings → Suwi.');
   const spent = await spentThisMonthUsd(user.org!);
@@ -141,6 +158,7 @@ export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { ques
   let total = 0;
   const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   let text = '';
+  let incomplete = false;
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const reply = await callModel({ system: instructions(ctx, company?.name ?? ctx.org, page, { spentUsd: spent, monthlyUsd: settings.monthlyBudgetUsd }), tools: tools.map(asLlmTool), messages });
@@ -171,7 +189,7 @@ export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { ques
       }
     }));
     messages.push({ role: 'user', content: results });
-    if (round === MAX_ROUNDS - 1) text = text || 'That needed more steps than I can take at once. Try a narrower question.';
+    if (round === MAX_ROUNDS - 1) { incomplete = true; text = text || 'That needed more steps than I can take at once. Try a narrower question.'; }
   }
 
   // One card per change: if the model prepared the same change more than once, only the last one stays; the others are cancelled.
@@ -180,7 +198,10 @@ export async function askSuwi(user: Omit<User, 'profilePhotoUrl'>, input: { ques
   const proposals = prepared.filter((p) => lastOf.get(`${p.kind}|${p.title}`) === p.id);
   await Promise.all(prepared.filter((p) => !proposals.includes(p)).map((p) => cancelProposal(ctx.userId, ctx.org, p.id)));
   await auditCol().insertOne({
-    org: ctx.org, userId: ctx.userId, kind: 'question', at: new Date(), page, question, answer: text.slice(0, 4000),
+    org: ctx.org, userId: ctx.userId, kind: 'question', at: new Date(), page, question,
+    answer: (text || "I couldn't find an answer to that.").slice(0, 50_000),
+    status: incomplete ? 'incomplete' : 'answered',
+    ...(proposals.length ? { proposalIds: proposals.map((p) => p.id) } : {}),
     ...(attachment ? { attachment: { name: attachment.name, kind: attachment.image ? 'image' : 'spreadsheet' } } : {}),
     tools: toolLog, model: SUWI_MODEL, costUsd: total, tokens,
   });

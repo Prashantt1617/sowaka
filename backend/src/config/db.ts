@@ -731,6 +731,8 @@ export async function proposedHeavyPageIndexes(database: Db): Promise<void> {
   await database.collection('employee_payment_details').createIndex({ org: 1, userId: 1 });
   await database.collection('tax_declarations').createIndex({ org: 1, fy: 1, userId: 1 });
   await database.collection('suwi_digests').createIndex({ org: 1, userId: 1, date: 1 });
+  // Suwi's prompt history, newest first, per company (and per person for non-admins).
+  await database.collection('suwi_audit').createIndex({ org: 1, kind: 1, at: -1 });
 }
 
 export async function closeDb(): Promise<void> {
