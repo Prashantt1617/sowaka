@@ -28,7 +28,7 @@ import { missedPunchPeople } from './attendance-report.service';
 import { cachedEngagement } from './engagement-cache';
 import { getCompanyConfig } from './company-settings.service';
 import { notifiesOrg, notifyUsers } from './notification.service';
-import { getOrgShiftPolicy, policiesForPeople, resolvePolicies, type ResolvedShiftPolicy } from './shift.service';
+import { getOrgShiftPolicy, orgPolicySetup, resolvePolicies, type ResolvedShiftPolicy } from './shift.service';
 
 export type UsageGroup = 'app' | 'bio' | 'present';
 
@@ -150,11 +150,9 @@ const ROSTER_FIELDS = {
 
 /** Everyone on the roll in the org: not offboarded, not a service account. */
 async function rosterOf(org: string): Promise<RosterRow[]> {
+  // A find on the org index with a projection (expressions allowed), in one batch.
   return users()
-    .aggregate<RosterRow>([
-      { $match: { org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] }, hiddenFromDirectory: { $ne: true } } },
-      { $project: ROSTER_FIELDS },
-    ], ONE_BATCH)
+    .find<RosterRow>({ org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] }, hiddenFromDirectory: { $ne: true } }, { projection: ROSTER_FIELDS, ...ONE_BATCH })
     .toArray();
 }
 
@@ -165,10 +163,10 @@ async function rosterOf(org: string): Promise<RosterRow[]> {
  */
 function everyoneOf(org: string): Promise<EveryoneRow[]> {
   return users()
-    .aggregate<EveryoneRow>([
-      { $match: { org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } },
-      { $project: { ...ROSTER_FIELDS, state: 1, joiningDate: 1, hidden: { $eq: ['$hiddenFromDirectory', true] } } },
-    ], ONE_BATCH)
+    .find<EveryoneRow>(
+      { org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } },
+      { projection: { ...ROSTER_FIELDS, state: 1, joiningDate: 1, hidden: { $eq: ['$hiddenFromDirectory', true] } }, ...ONE_BATCH },
+    )
     .toArray();
 }
 
@@ -214,13 +212,16 @@ async function buildUsageSummary(org: string, from: string, to: string, today: s
   // order Reports › Attendance reads them (the same query and sort), feed the
   // missed-punch grading; with the roll's rows written under another org they
   // feed the policies, as `policiesForPeople` reads them (by person).
-  const assignments = shiftAssignments()
-    .aggregate<ShiftAssignment & { elsewhere?: true }>([
-      { $match: { org } },
-      { $sort: { effectiveFrom: -1 } },
-      { $unionWith: { coll: 'shift_assignments', pipeline: [{ $match: { userId: { $in: ids }, org: { $ne: org } } }, { $set: { elsewhere: true } }] } },
-    ], ONE_BATCH)
-    .toArray();
+  // Two plain finds side by side, each on its own index ({org, effectiveFrom}
+  // and {userId, effectiveFrom}) with only the fields used; a $unionWith of the
+  // second into the first ran them one after the other inside the cluster.
+  const ASSIGNMENT_FIELDS = { projection: { _id: 0, org: 1, userId: 1, templateId: 1, effectiveFrom: 1, createdAt: 1 }, ...ONE_BATCH };
+  const ownRows = shiftAssignments().find({ org }, ASSIGNMENT_FIELDS).sort({ effectiveFrom: -1 }).toArray();
+  const otherRows = ids.length
+    ? shiftAssignments().find({ userId: { $in: ids }, org: { $ne: org } }, ASSIGNMENT_FIELDS).toArray()
+    : Promise.resolve([] as ShiftAssignment[]);
+  const assignments: Promise<(ShiftAssignment & { elsewhere?: true })[]> = Promise.all([ownRows, otherRows])
+    .then(([own, other]) => [...own, ...other.map((r) => ({ ...r, elsewhere: true as const }))]);
   const [assigned, missedUsers, asked, did] = await Promise.all([
     assignments,
     // The report's own grading, asked only who had a missed punch or an
@@ -470,10 +471,24 @@ async function requestsIn(
 async function filteredPeople(org: string, input: { dept?: unknown; loc?: unknown }, asOf: string) {
   const dept = typeof input.dept === 'string' && input.dept !== 'All' ? input.dept : '';
   const loc = typeof input.loc === 'string' && input.loc !== 'All' ? input.loc : '';
-  const roster = (await rosterOf(org)).filter(
+  // `policiesForPeople`'s answer, with what needs only the org (its policy,
+  // templates and own assignment rows) read alongside the roster rather than
+  // after it; only the roll's rows written under another org wait for the ids.
+  const fields = { projection: { _id: 0, org: 1, userId: 1, templateId: 1, effectiveFrom: 1, createdAt: 1 }, ...ONE_BATCH };
+  const [everyone, setup, own] = await Promise.all([
+    rosterOf(org),
+    orgPolicySetup([org]),
+    shiftAssignments().find({ org, effectiveFrom: { $lte: asOf } }, fields).toArray(),
+  ]);
+  const roster = everyone.filter(
     (u) => (!dept || (u.department?.trim() || '—') === dept) && (!loc || ((u.location ?? u.branch)?.trim() || '—') === loc),
   );
-  const policies = await policiesForPeople(roster.map((u) => ({ userId: u.userId, org: u.org })), asOf);
+  if (!roster.length) return [];
+  const ids = roster.map((u) => u.userId);
+  const onRoll = new Set(ids);
+  const other = await shiftAssignments().find({ userId: { $in: ids }, org: { $ne: org }, effectiveFrom: { $lte: asOf } }, fields).toArray();
+  const rows = [...own.filter((r) => onRoll.has(r.userId)), ...other].sort(newestFirst);
+  const policies = resolvePolicies(roster.map((u) => ({ userId: u.userId, org: u.org })), setup, rows);
   return roster.map((u) => ({ id: u.userId, group: groupOf(policies.get(u.userId)?.correction?.punchFormat) }));
 }
 
