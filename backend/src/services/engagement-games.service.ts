@@ -180,64 +180,59 @@ interface Play {
 /** Rows per cursor round trip: the default of a hundred turns a company's plays into dozens of trips. */
 const ONE_BATCH = { batchSize: 10_000 };
 
-/** Another collection's rows, as a branch of the aggregation that starts on the ledger, tagged with what they are. */
-const branch = (coll: string, k: string, pipeline: Document[]): Document => ({ $unionWith: { coll, pipeline: [...pipeline, { $set: { k } }] } });
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Row = Record<string, any> & { k: string };
+type Row = Record<string, any>;
 
 /**
- * Everything the Games page reads of the company's games, in one aggregation:
- * the plays of every kind (see the top of the file), the tournaments of every
- * kind with their state, and the points games paid each person. Each branch
- * keeps its own order, so the rows read exactly as separate queries read them.
+ * Everything the Games page reads of the company's games, as separate reads
+ * side by side (one wave, nothing waits on anything): the plays of every kind
+ * (see the top of the file), the tournaments of every kind with their state,
+ * and the points games paid each person. Each is a plain query on the org with
+ * only the fields used. One aggregation with a $unionWith per collection (#159)
+ * ran its fifteen branches one after another inside the cluster, and took
+ * longer than all of these side by side.
  */
 async function gameRowsOf(org: string): Promise<Map<string, Row[]>> {
-  const rows = await pointEvents().aggregate<Row>([
-    { $match: { org, reason: 'game', gameKey: { $exists: true } } },
-    { $sort: { createdAt: -1 } },
-    { $limit: MAX_PLAYS },
-    { $project: { _id: 0, userId: 1, gameKey: 1, createdAt: 1 } },
-    { $set: { k: 'ledger' } },
-    branch('game_scores', 'best', [{ $match: { org, gameId: /^catalog:/ } }, { $project: { _id: 0, gameId: 1, userId: 1, achievedAt: 1 } }]),
-    branch('game_launch_scores', 'launch', [{ $match: { org } }, { $project: { _id: 0, gameKey: 1, userId: 1, achievedAt: 1 } }]),
-    branch('game_challenges', 'challenge', [{ $match: { org } }, { $sort: { createdAt: -1 } }, { $limit: MAX_PLAYS }, { $project: { _id: 0, gameKey: 1, scores: 1 } }]),
-    branch('cup_events', 'cup', [{ $match: { org } }, { $project: { _id: 0, id: 1, gameKey: 1, phase: 1 } }]),
-    branch('cup_matches', 'cupMatch', [{ $match: { org } }, { $project: { _id: 0, eventId: 1, finals: 1 } }]),
-    branch('poker_results', 'poker', [{ $match: { org, voided: { $ne: true } } }, { $limit: MAX_PLAYS }, { $project: { _id: 0, eventId: 1, userId: 1, at: 1 } }]),
-    branch('poker_events', 'pokerEvent', [{ $match: { org } }, { $project: { _id: 0, id: 1, catalogKey: 1, status: 1 } }]),
-    branch('secret_squad_payouts', 'payout', [{ $match: { org } }, { $project: { _id: 0, points: 1, paidAt: 1 } }]),
-    branch('secret_squad_sessions', 'squad', [{ $match: { org, status: { $ne: 'cancelled' } } }, { $project: { _id: 0, startsAt: 1 } }]),
-    branch('relay_events', 'relay', [{ $match: { org } }, { $project: { _id: 0, id: 1, status: 1 } }]),
-    // Hint Relay presence has no org: it is the org's events' presence.
-    branch('relay_events', 'presence', [
+  const db = getDb();
+  const read = (coll: string, filter: Document, projection: Document, sort?: Document, limit?: number): Promise<Row[]> => {
+    let cursor = db.collection(coll).find(filter, { projection: { _id: 0, ...projection }, ...ONE_BATCH });
+    if (sort) cursor = cursor.sort(sort);
+    if (limit) cursor = cursor.limit(limit);
+    return cursor.toArray();
+  };
+  const reads: [string, Promise<Row[]>][] = [
+    ['ledger', read('point_events', { org, reason: 'game', gameKey: { $exists: true } }, { userId: 1, gameKey: 1, createdAt: 1 }, { createdAt: -1 }, MAX_PLAYS)],
+    ['best', read('game_scores', { org, gameId: /^catalog:/ }, { gameId: 1, userId: 1, achievedAt: 1 })],
+    ['launch', read('game_launch_scores', { org }, { gameKey: 1, userId: 1, achievedAt: 1 })],
+    ['challenge', read('game_challenges', { org }, { gameKey: 1, scores: 1 }, { createdAt: -1 }, MAX_PLAYS)],
+    ['cup', read('cup_events', { org }, { id: 1, gameKey: 1, phase: 1 })],
+    ['cupMatch', read('cup_matches', { org }, { eventId: 1, finals: 1 })],
+    ['poker', read('poker_results', { org, voided: { $ne: true } }, { eventId: 1, userId: 1, at: 1 }, undefined, MAX_PLAYS)],
+    ['pokerEvent', read('poker_events', { org }, { id: 1, catalogKey: 1, status: 1 })],
+    ['payout', read('secret_squad_payouts', { org }, { points: 1, paidAt: 1 })],
+    ['squad', read('secret_squad_sessions', { org, status: { $ne: 'cancelled' } }, { startsAt: 1 })],
+    ['relay', read('relay_events', { org }, { id: 1, status: 1 })],
+    // Hint Relay presence has no org: it is the org's events' presence, joined
+    // on its indexed eventId in the same call rather than in a second one.
+    ['presence', relayEvents().aggregate<Row>([
       { $match: { org } },
       { $project: { _id: 0, id: 1 } },
-      {
-        $lookup: {
-          from: 'relay_presence',
-          let: { id: '$id' },
-          pipeline: [{ $match: { $expr: { $eq: ['$eventId', '$$id'] } } }, { $project: { _id: 0, userId: 1, lastSeenAt: 1 } }],
-          as: 'p',
-        },
-      },
+      { $lookup: { from: 'relay_presence', localField: 'id', foreignField: 'eventId', pipeline: [{ $project: { _id: 0, userId: 1, lastSeenAt: 1 } }], as: 'p' } },
       { $unwind: '$p' },
       { $replaceRoot: { newRoot: '$p' } },
-    ]),
+    ], ONE_BATCH).toArray()],
     // What games paid each person: the ledger's game rows and Hint Relay's answers, and Speed Poker's own results.
-    branch('point_events', 'ledgerPoints', [
+    ['ledgerPoints', pointEvents().aggregate<Row>([
       { $match: { org, $or: [{ reason: 'game' }, { source: 'hint_relay' }] } },
       { $group: { _id: '$userId', points: { $sum: '$delta' } } },
-    ]),
-    branch('poker_results', 'pokerPoints', [{ $match: { org, voided: { $ne: true } } }, { $group: { _id: '$userId', points: { $sum: '$points' } } }]),
-  ], ONE_BATCH).toArray();
-  const by = new Map<string, Row[]>();
-  for (const r of rows) {
-    const list = by.get(r.k);
-    if (list) list.push(r);
-    else by.set(r.k, [r]);
-  }
-  return by;
+    ]).toArray()],
+    ['pokerPoints', pokerResults().aggregate<Row>([
+      { $match: { org, voided: { $ne: true } } },
+      { $group: { _id: '$userId', points: { $sum: '$points' } } },
+    ]).toArray()],
+  ];
+  const results = await Promise.all(reads.map(([, rows]) => rows));
+  return new Map(reads.map(([k], i) => [k, results[i]]));
 }
 
 /** Every play the server kept at the company (see the top of the file), one per person per game per minute. */

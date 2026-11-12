@@ -15,6 +15,7 @@ import { closeRedis } from './config/redis';
 import { startCareScheduler, stopCareScheduler } from './services/care.service';
 import { startGameChallengeSweeper, stopGameChallengeSweeper } from './services/game-challenge.service';
 import { startCupRunner, stopCupRunner } from './services/cup.service';
+import { startEngagementWarmup, stopEngagementWarmup } from './services/engagement-warmup.service';
 
 async function start(): Promise<void> {
   await connectDb();
@@ -26,6 +27,8 @@ async function start(): Promise<void> {
   startGameChallengeSweeper();
   // Moves switched-on Diwali Cup events along (only CUP_RUNNER_ORGS' outside production).
   startCupRunner();
+  // Works out each company's Engagement pages ahead of HR, every four minutes.
+  startEngagementWarmup();
 
 
 logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v1.cloudfront.net'})
@@ -74,6 +77,7 @@ logger.info('CORS Origins:', {cors: env.corsOrigins, path: 'https://dikcsyvq9i7v
     stopCareScheduler();
     stopGameChallengeSweeper();
     stopCupRunner();
+    await stopEngagementWarmup();
     await closeRedis();
     await closeDb();
     process.exit(0);
