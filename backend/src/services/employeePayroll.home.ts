@@ -21,6 +21,7 @@ import {
 import { myDeclaration, myProofs } from './employeePayroll.declaration';
 import { myFbp } from './employeePayroll.fbp';
 import { mySplit } from './employeePayroll.split';
+import { payrollSetupFor } from './employeePayroll.setup';
 import { PayrollConfigError, tdsMissing } from './payrollConfig.service';
 import { PayrollInputsError, PeriodRange, payrollPeriodHolding, payrollPeriodRange } from './payroll-inputs.service';
 import { estimatePayslip, myLatestReleasedPayslipBefore, myReleasedPayslipFor } from './payrollRun.service';
@@ -480,6 +481,15 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
   const splitFy = split?.window.effectiveFrom ? fyOf(split.window.effectiveFrom).fy : fy;
   const splitThisYear = split?.available ? await flexibleSplits().countDocuments({ org, userId, fy: splitFy }) : 0;
 
+  // "Set up your payroll": bank, PAN, regime, FBP, UAN — done or not (presence only, never the numbers).
+  const setup = await payrollSetupFor(org, userId, {
+    declaration,
+    split,
+    splitThisYear,
+    payPeriodEnd: range?.to ?? null,
+    beforeFirstPayroll: !released && !(await myLatestReleasedPayslipBefore(userId, period)),
+  });
+
   // A to-do whose deadline HR has not set says so (notConfigured, dueOn null) rather than carry a made-up date.
   const notSet = (missing: string[]) => (missing.length > 0 ? { notConfigured: true, reason: 'payroll_not_configured', missing } : { notConfigured: false });
   const todo: Record<string, unknown>[] = [];
@@ -521,6 +531,7 @@ export async function myPayrollHome(userId: string, periodRaw: unknown, now = ne
     // Set (and salary null) when the pay cannot be worked out until HR sets something up.
     salaryNotSetUp,
     todo,
+    setup,
     cards,
     missingPunches: { period: punchesPeriod, count: punches.count, fixBy: punches.fixBy, locked: punches.locked },
     split: splitSummary,
