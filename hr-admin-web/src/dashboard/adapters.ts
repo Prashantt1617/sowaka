@@ -72,6 +72,7 @@ export function adaptLeave(dto: LeaveDTO, managerName: string): Leave {
     eRemark: dto.reason,
     mRemark: dto.managerNote || '',
     refISO: dto.startDate,
+    endISO: dto.endDate,
     submitterId: dto.userId,
     byAdmin,
   };

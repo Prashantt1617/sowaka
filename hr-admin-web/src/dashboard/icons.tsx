@@ -431,6 +431,11 @@ export const IconChevronRight = ({ size = 17, stroke = 'var(--ink-4)' }: IconPro
     <path d="M9 6l6 6-6 6" />
   </svg>
 );
+export const IconChevronLeft = ({ size = 17, stroke = 'var(--ink-4)' }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M15 6l-6 6 6 6" />
+  </svg>
+);
 
 export const IconChevronDown = ({ size = 14, stroke = 'var(--ink-4)', style }: IconProps) => (
   <svg style={style} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">

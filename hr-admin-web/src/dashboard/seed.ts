@@ -18,6 +18,8 @@ export type Leave = {
   eRemark: string;
   mRemark: string;
   refISO: string; // canonical date for range filtering (leave start date)
+  /** Last day of the leave, YYYY-MM-DD…; the start date when absent. */
+  endISO?: string;
   submitterId?: string;
   byAdmin?: boolean;
 };
