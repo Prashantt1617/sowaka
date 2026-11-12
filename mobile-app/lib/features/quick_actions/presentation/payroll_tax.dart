@@ -2,11 +2,12 @@ part of 'quick_actions_screen.dart';
 
 // ---------------------------------------------------------------- tax
 
-/// Payroll › Tax (R 3 / R 3b): the year's income tax as the TDS engine sees
-/// it now — what has been paid, the figure a month from here, each month of
-/// the year — and the regime, with the declaration and its proofs on the old
-/// one. The regime is saved through the declaration, so it follows the
-/// declaration's last date and lock.
+/// Payroll › Tax (Figma 4484:72847, 4484:72988, 4484:73196): the year's
+/// income tax as the TDS engine sees it now — what has been paid, the figure
+/// a month from here, each month of the year — and the regime, with the
+/// declaration and its proofs on the old one, and Form 16. A regime is picked
+/// on its card and kept with "Save tax regime"; it is saved through the
+/// declaration, so it follows the declaration's last date and lock.
 class _TaxSummaryPage extends StatefulWidget {
   const _TaxSummaryPage();
 
@@ -40,8 +41,11 @@ class _TaxSummaryPageState extends State<_TaxSummaryPage> {
   bool _monthsOpen = false;
   bool _regimeOpen = false;
 
-  /// The regime being saved, shown picked while the save is on its way.
-  String? _saving;
+  /// The regime picked on the card and not saved yet.
+  String? _picked;
+
+  /// "Save tax regime" is on its way.
+  bool _saving = false;
 
   /// The last pick was saved.
   bool _saved = false;
@@ -71,12 +75,25 @@ class _TaxSummaryPageState extends State<_TaxSummaryPage> {
     if (mounted) unawaited(_load());
   }
 
-  Future<void> _pick(String regime) async {
+  void _pick(String regime) {
     final tax = _tax;
-    if (tax == null || _saving != null || !tax.canChangeRegime) return;
-    if (regime == tax.regime && tax.chosen) return;
+    if (tax == null || _saving || !tax.canChangeRegime) return;
     setState(() {
-      _saving = regime;
+      _picked = regime == tax.regime ? null : regime;
+      _saved = false;
+    });
+  }
+
+  /// There is a pick to keep: a change, or a first choice of the default.
+  bool _canSave(TaxSummary tax) =>
+      tax.canChangeRegime && (_picked != null || !tax.chosen);
+
+  Future<void> _save() async {
+    final tax = _tax;
+    if (tax == null || _saving || !_canSave(tax)) return;
+    final regime = _picked ?? tax.regime;
+    setState(() {
+      _saving = true;
       _saved = false;
     });
     final api = _PayrollScope.of(context).api;
@@ -92,12 +109,13 @@ class _TaxSummaryPageState extends State<_TaxSummaryPage> {
       if (!mounted) return;
       setState(() {
         _tax = fresh;
-        _saving = null;
+        _picked = null;
+        _saving = false;
         _saved = true;
       });
     } catch (error) {
       if (!mounted) return;
-      setState(() => _saving = null);
+      setState(() => _saving = false);
       showAppToast(context, payrollErrorText(error));
     }
   }
@@ -105,10 +123,28 @@ class _TaxSummaryPageState extends State<_TaxSummaryPage> {
   @override
   Widget build(BuildContext context) {
     final tax = _tax;
+    final showSave = tax != null && _regimeOpen && _canSave(tax);
     return _payrollPage(
       context,
       key: const ValueKey('payroll-tax'),
       title: 'Tax',
+      footer: showSave
+          ? ColoredBox(
+              color: const Color(0xFFF7F7F9),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: _ProofFilledButton(
+                    key: const ValueKey('tax-regime-save'),
+                    label: 'Save tax regime',
+                    busy: _saving,
+                    onPressed: _save,
+                  ),
+                ),
+              ),
+            )
+          : null,
       children: [
         if (tax == null && _error == null)
           const _PrLoading()
@@ -124,38 +160,56 @@ class _TaxSummaryPageState extends State<_TaxSummaryPage> {
               onToggle: () => setState(() => _monthsOpen = !_monthsOpen),
             ),
           const SizedBox(height: 24),
-          const _HomeSectionLabel('Manage'),
+          Text('MANAGE', style: _taxLabel),
           const SizedBox(height: 12),
           _manage(tax),
-          if ((_saving ?? tax.regime) != 'old') ...[
-            const SizedBox(height: 8),
-            const Padding(
-              key: ValueKey('tax-new-regime-note'),
-              padding: EdgeInsets.symmetric(horizontal: 2),
+          if ((_picked ?? tax.regime) != 'old')
+            Padding(
+              key: const ValueKey('tax-new-regime-note'),
+              padding: const EdgeInsets.fromLTRB(2, 8, 2, 0),
               child: Text(
                 'On the new regime you don\'t need to declare investments '
                 'or upload proofs.',
-                style: TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontSize: 12.5,
-                  height: 1.4,
-                  fontWeight: FontWeight.w500,
+                style: _proofType(
+                  12.5,
+                  color: const Color(0xFF6B6B72),
+                  height: 17.5 / 12.5,
                 ),
               ),
             ),
-          ],
+          const SizedBox(height: 12),
+          _TaxCard(
+            child: _TaxManageRow(
+              key: const ValueKey('tax-form16'),
+              picture: ClipRect(
+                child: Image.asset(
+                  'assets/icons/payroll_tax_form16.png',
+                  width: 25,
+                  height: 25,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              title: 'Download Form 16',
+              subtitle: 'You need Form 16 to file your income tax return',
+              trailing: const _TaxChevron(),
+              onTap: () => _pushPayroll<void>(
+                context,
+                const _DownloadsPage(startTab: 'form16'),
+              ),
+            ),
+          ),
         ],
       ],
     );
   }
 
   Widget _manage(TaxSummary tax) {
-    final regime = _saving ?? tax.regime;
-    final old = regime == 'old';
+    final regime = _picked ?? tax.regime;
+    final old = tax.regime == 'old';
     final due = tax.regimeDueOn;
     final regimeName = [
       old ? 'Old regime' : 'New regime',
-      if (regime == tax.defaultRegime) ' (default)',
+      if (tax.regime == tax.defaultRegime) ' (default)',
     ].join();
     final when = due == null
         ? 'last date not set'
@@ -164,67 +218,69 @@ class _TaxSummaryPageState extends State<_TaxSummaryPage> {
         : tax.canChangeRegime
         ? 'change by ${_short(due)}'
         : 'can\'t be changed yet';
-    const divider = Divider(height: 1, thickness: 1, color: Color(0xFFF3F4F6));
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .04),
-            blurRadius: 2,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
+    // On the new regime there is nothing to declare or prove: the rows stay,
+    // greyed, and say so.
+    const notNeeded = 'Not needed on the new regime';
+    return _TaxCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _TaxManageRow(
             key: const ValueKey('tax-regime'),
-            asset: 'assets/icons/action_card_reimbursement_rupee.png',
+            picture: const _TaxPicture(),
             title: 'Tax regime',
             subtitle: '$regimeName · $when',
             trailing: AnimatedRotation(
               turns: _regimeOpen ? .5 : 0,
               duration: const Duration(milliseconds: 150),
-              child: const Icon(
-                Icons.keyboard_arrow_down_rounded,
-                size: 20,
-                color: Color(0xFF9CA3AF),
+              child: SvgPicture.asset(
+                'assets/icons/payroll_tax_chevron_down.svg',
+                width: 18,
+                height: 18,
               ),
             ),
             expanded: _regimeOpen,
             onTap: () => setState(() => _regimeOpen = !_regimeOpen),
           ),
           if (_regimeOpen) _regimePicker(tax, regime),
-          if (old) ...[
-            divider,
-            _TaxManageRow(
-              key: const ValueKey('tax-declaration'),
-              asset: 'assets/icons/action_card_policies_pencil.png',
-              title: 'Investment declaration',
-              subtitle: due == null
-                  ? 'Declare your investments'
-                  : tax.locked
-                  ? 'Closed ${_short(due)}'
-                  : 'By ${_short(due)}',
-              trailing: const _PrChevron(),
-              onTap: () => _open(const _DeclarationPage()),
+          _TaxManageRow(
+            key: const ValueKey('tax-declaration'),
+            divided: true,
+            picture: Image.asset(
+              'assets/icons/action_card_policies_pencil.png',
+              width: 24,
+              height: 24,
+              fit: BoxFit.cover,
             ),
-            divider,
-            _TaxManageRow(
-              key: const ValueKey('tax-proofs'),
-              asset: 'assets/icons/leave_year_approved_badge.png',
-              title: 'Investment proofs',
-              subtitle: tax.proofsDueOn == null
-                  ? 'Upload a proof for each investment'
-                  : 'Due ${_short(tax.proofsDueOn!)}',
-              trailing: const _PrChevron(),
-              onTap: () => _open(const _ProofsPage()),
+            title: 'Investment declaration',
+            subtitle: !old
+                ? notNeeded
+                : due == null
+                ? 'Declare your investments'
+                : tax.locked
+                ? 'Closed ${_short(due)}'
+                : 'By ${_short(due)}',
+            trailing: const _TaxChevron(),
+            onTap: old ? () => _open(const _DeclarationPage()) : null,
+          ),
+          _TaxManageRow(
+            key: const ValueKey('tax-proofs'),
+            divided: true,
+            picture: Image.asset(
+              'assets/icons/payroll_tax_checklist.png',
+              width: 24,
+              height: 24,
+              fit: BoxFit.cover,
             ),
-          ],
+            title: 'Investment proofs',
+            subtitle: !old
+                ? notNeeded
+                : tax.proofsDueOn == null
+                ? 'Upload a proof for each investment'
+                : 'Due ${_short(tax.proofsDueOn!)}',
+            trailing: const _TaxChevron(),
+            onTap: old ? () => _open(const _ProofsPage()) : null,
+          ),
         ],
       ),
     );
@@ -249,43 +305,78 @@ class _TaxSummaryPageState extends State<_TaxSummaryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final (key, label) in const [
-            ('old', 'Old regime'),
-            ('new', 'New regime'),
-          ]) ...[
-            _RegimeOption(
-              key: ValueKey('tax-regime-$key'),
-              label: label,
-              on: regime == key,
-              isDefault: tax.defaultRegime == key,
-              enabled: tax.canChangeRegime && _saving == null,
-              onTap: () => _pick(key),
-            ),
+          _RegimeOption(
+            key: const ValueKey('tax-regime-old'),
+            label: 'Old regime',
+            on: regime == 'old',
+            isDefault: tax.defaultRegime == 'old',
+            enabled: tax.canChangeRegime && !_saving,
+            onTap: () => _pick('old'),
+          ),
+          const SizedBox(height: 8),
+          _RegimeOption(
+            key: const ValueKey('tax-regime-new'),
+            label: 'New regime',
+            on: regime == 'new',
+            isDefault: tax.defaultRegime == 'new',
+            enabled: tax.canChangeRegime && !_saving,
+            onTap: () => _pick('new'),
+          ),
+          if (closed != null) ...[
             const SizedBox(height: 8),
-          ],
-          if (_saving != null)
-            const Text('Saving…', style: _PrText.sub)
-          else if (closed != null) ...[
             Text(
               closed,
               key: const ValueKey('tax-regime-closed'),
               style: _PrText.sub,
             ),
             if (mentionsHrOrSupport(closed)) RaiseTicketLink(about: closed),
-          ] else if (_saved && due != null)
+          ] else if (_saved && _picked == null && due != null) ...[
+            const SizedBox(height: 8),
             Text(
               'Saved · last date to change ${_short(due)}',
               key: const ValueKey('tax-regime-saved'),
-              style: const TextStyle(
-                color: Color(0xFF15803D),
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-              ),
+              style: _proofType(12.5, color: const Color(0xFF15803D)),
             ),
+          ],
         ],
       ),
     );
   }
+}
+
+/// "TAX · FY 2026–27", "MANAGE": the hub's small capitals.
+final _taxLabel = _proofType(
+  13,
+  color: const Color(0xFF8E8E95),
+  letterSpacing: 0.8,
+);
+
+/// A white card of the Tax page's lists, 16 in and rounded 18.
+class _TaxCard extends StatelessWidget {
+  const _TaxCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: child,
+  );
+}
+
+class _TaxChevron extends StatelessWidget {
+  const _TaxChevron();
+
+  @override
+  Widget build(BuildContext context) => SvgPicture.asset(
+    'assets/icons/payroll_proofs_chevron.svg',
+    width: 18,
+    height: 18,
+  );
 }
 
 /// The year's tax: the figure, what has been paid and the month's figure
@@ -305,91 +396,98 @@ class _TaxYearCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final through = tax.paidThroughMonth;
     final monthly = tax.monthlyNowPaise;
-    const line = Divider(height: 1, thickness: 1, color: Color(0xFFF3F4F6));
-    return _FormCard(
-      children: [
-        _TaxCardHead(
-          fy: tax.fy,
-          pill: tax.estimate
-              ? const _PrPill('Estimate', color: _prBlue, tint: _prBlueTint)
-              : const _PrPill('Final', color: _prGreen, tint: _prGreenTint),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          _rupees(tax.annualTaxPaise ?? 0),
-          key: const ValueKey('tax-annual'),
-          style: const TextStyle(
-            fontFamily: 'Sora',
-            fontFamilyFallback: _soraFallback,
-            color: Color(0xFF111827),
-            fontSize: 34,
-            height: 1.1,
-            letterSpacing: -0.6,
-            fontWeight: FontWeight.w700,
+    const line = BorderSide(color: Color(0xFFF1F1F4));
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _TaxCardHead(
+            fy: tax.fy,
+            pill: _TaxTag(tax.isOld ? 'Old regime' : 'New regime'),
           ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'Your tax for the year · ${tax.isOld ? 'old' : 'new'} regime',
-          style: _PrText.sub.copyWith(
-            fontSize: 13,
-            color: const Color(0xFF4B5563),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: _TaxStat(
-                value: _rupees(tax.paidSoFarPaise),
-                label: through == null
-                    ? 'Paid so far'
-                    : 'Paid till ${_shortMonthName(through.month)}',
-              ),
+          const SizedBox(height: 10),
+          Text(
+            _rupees(tax.annualTaxPaise ?? 0),
+            key: const ValueKey('tax-annual'),
+            style: _proofType(
+              34,
+              weight: FontWeight.w800,
+              height: 37.4 / 34,
+              letterSpacing: -0.6,
             ),
-            if (monthly != null) ...[
-              const SizedBox(width: 8),
-              Expanded(
-                child: _TaxStat(value: _rupees(monthly), label: 'A month now'),
-              ),
-            ],
-          ],
-        ),
-        const SizedBox(height: 14),
-        line,
-        InkWell(
-          key: const ValueKey('tax-months'),
-          onTap: onToggle,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 44),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Your tax for the year · ${tax.estimate ? 'estimate' : 'final'}',
+            style: _proofType(13, color: _proofMuted),
+          ),
+          const SizedBox(height: 16),
+          IntrinsicHeight(
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
-                  child: Text(
-                    'Month by month',
-                    style: _PrText.link.copyWith(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                  child: _TaxStat(
+                    value: _rupees(tax.paidSoFarPaise),
+                    label: through == null
+                        ? 'Paid so far'
+                        : 'Paid till ${_shortMonthName(through.month)}',
+                  ),
+                ),
+                if (monthly != null) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _TaxStat(
+                      value: _rupees(monthly),
+                      label: 'A month now',
                     ),
                   ),
-                ),
-                AnimatedRotation(
-                  turns: open ? .5 : 0,
-                  duration: const Duration(milliseconds: 150),
-                  child: const Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    size: 20,
-                    color: _prBlue,
-                  ),
-                ),
+                ],
               ],
             ),
           ),
-        ),
-        if (open)
-          for (final month in tax.months) ...[line, _TaxMonthRow(month: month)],
-      ],
+          const SizedBox(height: 14),
+          Semantics(
+            button: true,
+            expanded: open,
+            child: InkWell(
+              key: const ValueKey('tax-months'),
+              onTap: onToggle,
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 44),
+                decoration: const BoxDecoration(border: Border(top: line)),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Month by month',
+                        style: _proofType(14.5, color: _prBlue),
+                      ),
+                    ),
+                    AnimatedRotation(
+                      turns: open ? .5 : 0,
+                      duration: const Duration(milliseconds: 150),
+                      child: SvgPicture.asset(
+                        'assets/icons/payroll_tax_chevron_down_blue.svg',
+                        width: 18,
+                        height: 18,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (open)
+            for (final (i, month) in tax.months.indexed)
+              _TaxMonthRow(month: month, first: i == 0),
+        ],
+      ),
     );
   }
 }
@@ -405,13 +503,30 @@ class _TaxCardHead extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     children: [
       Expanded(
-        child: Text(
-          'TAX · FY ${fy.replaceFirst('-', '–')}',
-          style: _PrText.label,
-        ),
+        child: Text('TAX · FY ${fy.replaceFirst('-', '–')}', style: _taxLabel),
       ),
       pill,
     ],
+  );
+}
+
+/// The card's tag: brand blue on its pale tint, "New regime".
+class _TaxTag extends StatelessWidget {
+  const _TaxTag(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: const Color(0xFFE8F2F8),
+      borderRadius: BorderRadius.circular(12.5),
+    ),
+    child: Text(
+      text,
+      style: _proofType(12, weight: FontWeight.w700, color: _prBlue),
+    ),
   );
 }
 
@@ -431,47 +546,51 @@ class _TaxStat extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(value, style: _PrText.amount.copyWith(fontSize: 16)),
+        Text(value, style: _proofType(16, weight: FontWeight.w800)),
         const SizedBox(height: 2),
-        Text(label, style: _PrText.sub.copyWith(fontWeight: FontWeight.w600)),
+        Text(label, style: _proofType(12, color: const Color(0xFF6B6B72))),
       ],
     ),
   );
 }
 
+/// The ink of a month already paid, and of one still to come.
+const _taxPaidInk = Color(0xFF222222);
+const _taxComingInk = Color(0xFF9CA3AF);
+
 /// A month of the year: dark with what was deducted once paid, grey with
 /// the figure a run would take for the months to come.
 class _TaxMonthRow extends StatelessWidget {
-  const _TaxMonthRow({required this.month});
+  const _TaxMonthRow({required this.month, required this.first});
 
   final TaxMonth month;
+
+  /// The first row sits a little further from "Month by month".
+  final bool first;
 
   @override
   Widget build(BuildContext context) {
     final paid = month.isPaid;
     final amount = month.amountPaise;
-    final color = paid ? const Color(0xFF111827) : const Color(0xFF9CA3AF);
-    return ConstrainedBox(
+    final style = _proofType(
+      14.5,
+      color: paid ? _taxPaidInk : _taxComingInk,
+    ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
+    return Container(
       key: ValueKey('tax-month-${month.period}'),
-      constraints: const BoxConstraints(minHeight: 40),
+      padding: EdgeInsets.only(top: first ? 12 : 8, bottom: 4),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFF1F1F4))),
+      ),
       child: Row(
         children: [
           Expanded(
             child: Text(
               month.label.isEmpty ? _periodLabel(month.period) : month.label,
-              style: _PrText.row.copyWith(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
+              style: style,
             ),
           ),
-          Text(
-            amount == null ? '—' : _rupees(amount),
-            style: _PrText.amount.copyWith(
-              color: color,
-              fontWeight: paid ? FontWeight.w700 : FontWeight.w600,
-            ),
-          ),
+          Text(amount == null ? '—' : _rupees(amount), style: style),
         ],
       ),
     );
@@ -508,70 +627,82 @@ class _TaxNotSetUpCard extends StatelessWidget {
   }
 }
 
-/// A row of the Manage list: the picture, what it is, where it stands.
+/// A row of the Manage list: the picture on its tile, what it is, where it
+/// stands. A row with nothing to open (the declaration on the new regime) is
+/// greyed.
 class _TaxManageRow extends StatelessWidget {
   const _TaxManageRow({
     super.key,
-    required this.asset,
+    required this.picture,
     required this.title,
     required this.subtitle,
     required this.trailing,
     required this.onTap,
     this.expanded,
+    this.divided = false,
   });
 
-  final String asset;
+  final Widget picture;
   final String title;
   final String subtitle;
   final Widget trailing;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   /// For a row that opens in place: whether it is open.
   final bool? expanded;
 
+  /// A hairline above: every row after the first.
+  final bool divided;
+
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    expanded: expanded,
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Row(
-          children: [
-            _IllustrationTile(asset: asset),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: _PrText.title.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 2),
-                  // The app's face, as the declaration's own rows set it:
-                  // "New regime (default) · change by 30 Nov" on one line.
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: Color(0xFF6B7280),
-                      fontSize: 12,
-                      height: 1.35,
-                      fontWeight: FontWeight.w500,
+  Widget build(BuildContext context) {
+    final live = onTap != null;
+    final muted = live ? null : const Color(0xFF717171);
+    return Semantics(
+      button: live,
+      enabled: live,
+      expanded: expanded,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: EdgeInsets.only(top: divided ? 15 : 14, bottom: 14),
+          decoration: divided
+              ? const BoxDecoration(
+                  border: Border(top: BorderSide(color: Color(0xFFF1F1F4))),
+                )
+              : null,
+          child: Row(
+            children: [
+              _ProofsIconTile(child: picture),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: _proofType(
+                        15,
+                        weight: FontWeight.w700,
+                        color: muted ?? _proofInk,
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: _proofType(12.5, color: muted ?? _proofMuted),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 4),
-            trailing,
-          ],
+              const SizedBox(width: 12),
+              trailing,
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// One regime to pick: a radio, its name, and "Default" on the company's
@@ -600,13 +731,10 @@ class _RegimeOption extends StatelessWidget {
     child: Opacity(
       opacity: enabled || on ? 1 : .6,
       child: Material(
-        color: on ? const Color(0xFFF0F8FC) : Colors.white,
+        color: on ? const Color(0xFFF1F7FE) : Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
-          side: BorderSide(
-            color: on ? _prBlue : const Color(0xFFE5E7EB),
-            width: 1.5,
-          ),
+          side: BorderSide(color: on ? _prBlue : const Color(0xFFE4E4E8)),
         ),
         child: InkWell(
           onTap: enabled ? onTap : null,
@@ -614,7 +742,7 @@ class _RegimeOption extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 52),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 15),
               child: Row(
                 children: [
                   Container(
@@ -643,17 +771,27 @@ class _RegimeOption extends StatelessWidget {
                   Expanded(
                     child: Text(
                       label,
-                      style: _PrText.title.copyWith(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: _proofType(15, weight: FontWeight.w700),
                     ),
                   ),
                   if (isDefault)
-                    const _PrPill(
-                      'Default',
-                      color: Color(0xFF4B5563),
-                      tint: Color(0xFFF3F4F6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEDEDF0),
+                        borderRadius: BorderRadius.circular(10.5),
+                      ),
+                      child: Text(
+                        'Default',
+                        style: _proofType(
+                          12,
+                          weight: FontWeight.w700,
+                          color: _proofMuted,
+                        ),
+                      ),
                     ),
                 ],
               ),

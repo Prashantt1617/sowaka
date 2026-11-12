@@ -109,6 +109,16 @@ async function declarationView(org: string, userId: string, fy: string, now: Dat
   const regime: TaxRegime = row?.regime ?? settings.tds?.defaultRegime ?? 'new';
   const flags = flagsOf(row);
   const dueOn = declarationDueOn(fy, deadlines);
+  const locked = dueOn !== null && dayOf(now) > dueOn;
+  const sections = declarationSections({
+    regime,
+    items: itemsOf(row),
+    flags,
+    limits,
+    epfYearPaise: epfYear,
+  });
+  // What the person declared themselves (payroll's PF is not theirs to declare).
+  const declaredItems = sections.flatMap((s) => s.items).filter((i) => !i.readOnly && i.amountPaise > 0);
   return {
     fy,
     regime,
@@ -117,20 +127,26 @@ async function declarationView(org: string, userId: string, fy: string, now: Dat
     // HR has not set the declaration due date: shown, not open to change (dueOn null).
     notConfigured: dueOn === null,
     missing: dueOn === null ? ['declarationDue'] : [],
-    locked: dueOn !== null && dayOf(now) > dueOn,
+    locked,
     dueOn,
     proofsDueOn: proofsDueOn(fy, deadlines),
     submittedAt: row?.submittedAt ? row.submittedAt.toISOString() : null,
+    // Past the due date: when it closed, what was declared, and where the rest can
+    // still go (HR can reopen it; the tax return takes what was missed).
+    closed: locked
+      ? {
+        closedOn: dueOn,
+        itemsDeclared: declaredItems.length,
+        declaredPaise: sections.reduce((t, s) => t + s.declaredPaise, 0) - sections[0].items.filter((i) => i.readOnly).reduce((t, i) => t + i.amountPaise, 0),
+        countedPaise: regime === 'old' ? sections.reduce((t, s) => t + s.countedPaise, 0) : 0,
+        lastPayPeriod: fyLastPeriod(fy),
+        itrDueOn: itrDueOn(fy),
+      }
+      : null,
     metro: Boolean(flags.metro),
     selfSenior: Boolean(flags.selfSenior),
     parentsSenior: Boolean(flags.parentsSenior),
-    sections: declarationSections({
-      regime,
-      items: itemsOf(row),
-      flags,
-      limits,
-      epfYearPaise: epfYear,
-    }),
+    sections,
     regimes: [...configs.values()].map((c) => ({ regime: c.regime, configStatus: c.status })),
   };
 }

@@ -474,7 +474,9 @@ class _PrError extends StatelessWidget {
 }
 
 /// The one-off "done" page after the split or the declaration is sent: the
-/// success summary every request in the app ends on.
+/// success summary every request in the app ends on. The declaration now
+/// ends on its "Declaration saved" sheet instead.
+// ignore: unused_element
 class _PayrollDonePage extends StatelessWidget {
   const _PayrollDonePage({required this.summary});
 
@@ -1307,8 +1309,12 @@ class _PayslipRow extends StatelessWidget {
 
 // ---------------------------------------------------------------- declaration
 
-/// Investment declaration: the regime, and on the old one what was invested
-/// under each section, against the section's cap.
+/// Investment declaration (Figma 4484:73124): on the old regime, what was
+/// invested under each section against the section's cap, kept with "Save
+/// declaration" and a sheet saying when the proofs are due (Figma 4506:23669).
+/// The regime itself is picked on the Tax page. Past the last date the page
+/// is the closed state (Figma 4484:73528): what was declared by then, and
+/// what can still be done.
 class _DeclarationPage extends StatefulWidget {
   const _DeclarationPage();
 
@@ -1319,7 +1325,6 @@ class _DeclarationPage extends StatefulWidget {
 class _DeclarationPageState extends State<_DeclarationPage> {
   TaxDeclaration? _declaration;
   String? _error;
-  String _regime = 'new';
   final Map<String, TextEditingController> _fields = {};
   bool _busy = false;
   bool _started = false;
@@ -1343,12 +1348,12 @@ class _DeclarationPageState extends State<_DeclarationPage> {
   Future<void> _load() async {
     setState(() => _error = null);
     try {
-      final declaration = await _PayrollScope.of(context).api
-          .fetchDeclaration();
+      final declaration = await _PayrollScope.of(
+        context,
+      ).api.fetchDeclaration();
       if (!mounted) return;
       setState(() {
         _declaration = declaration;
-        _regime = declaration.regime;
         for (final section in declaration.sections) {
           for (final item in section.items.where((item) => !item.readOnly)) {
             final rupees = (item.amountPaise / 100).round();
@@ -1378,7 +1383,7 @@ class _DeclarationPageState extends State<_DeclarationPage> {
     setState(() => _busy = true);
     try {
       final saved = await _PayrollScope.of(context).api.saveDeclaration(
-        regime: _regime,
+        regime: declaration.regime,
         items: {
           for (final section in declaration.sections)
             for (final item in section.items)
@@ -1388,30 +1393,26 @@ class _DeclarationPageState extends State<_DeclarationPage> {
         fy: declaration.fy,
       );
       if (!mounted) return;
+      setState(() {
+        _declaration = saved;
+        _busy = false;
+      });
       final proofsBy = saved.proofsDueOn;
-      await Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => _PayrollDonePage(
-            summary: RequestSummary(
-              screenTitle: 'Tax',
-              successTitle: 'Declaration submitted',
-              successBody: saved.isOld
-                  ? 'Your tax is worked out with these from the next payroll.'
-                        '${proofsBy == null ? '' : ' Upload the proofs by ${_short(proofsBy)}.'}'
-                  : 'Your tax is worked out on the new regime from the next '
-                        'payroll.',
-              rows: [
-                SummaryRow('Financial year', 'FY ${saved.fy}'),
-                SummaryRow('Regime', saved.isOld ? 'Old regime' : 'New regime'),
-                if (saved.isOld)
-                  for (final section in saved.sections)
-                    if (section.declaredPaise > 0)
-                      SummaryRow(section.label, _rupees(section.countedPaise)),
-              ],
-            ),
-          ),
+      await showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        barrierColor: const Color(0x73000000),
+        builder: (sheetContext) => _DeclarationSavedSheet(
+          text: !saved.isOld
+              ? 'Your tax is worked out on the new regime from the next '
+                    'payroll.'
+              : proofsBy == null
+              ? 'Your tax is worked out with these from the next payroll.'
+              : 'Make sure you upload the proofs by ${_short(proofsBy)}.',
+          onDone: () => Navigator.of(sheetContext).pop(),
         ),
       );
+      if (mounted) unawaited(Navigator.of(context).maybePop());
     } catch (error) {
       if (!mounted) return;
       setState(() => _busy = false);
@@ -1419,83 +1420,93 @@ class _DeclarationPageState extends State<_DeclarationPage> {
     }
   }
 
+  /// "Missed it for a reason?": a Support Desk ticket to HR, already saying
+  /// what it is about.
+  void _askHr(TaxDeclaration declaration, TaxDeclarationClosed closed) {
+    final about =
+        'My investment declaration for FY ${declaration.fy} closed'
+        '${closed.closedOn == null ? '' : ' on ${_short(closed.closedOn!)}'}. '
+        'Can it be reopened?';
+    if (!raiseSupportTicket(about: about)) {
+      _PayrollScope.of(context).onRaiseTicket?.call();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final declaration = _declaration;
+    final closed = declaration?.closed;
     final locked = declaration?.locked ?? false;
-    final old = _regime == 'old';
+    final scope = _PayrollScope.of(context);
     return _payrollPage(
       context,
       key: const ValueKey('payroll-declaration'),
       title: 'Investment declaration',
-      footer: declaration == null
-          ? null
-          : _FormSubmitBar(
-              label: 'Submit declaration',
-              enabled: !locked,
-              busy: _busy,
-              onTap: _submit,
-            ),
       children: [
         if (declaration == null && _error == null)
           const _PrLoading()
         else if (declaration == null)
           _PrError(_error!, onRetry: _load)
-        else ...[
-          Text(
-            [
-              'FY ${declaration.fy}',
-              if (locked)
-                'closed'
-              else if (declaration.dueOn != null)
-                'by ${_short(declaration.dueOn!)}',
-              '${old ? 'old' : 'new'} regime',
-            ].join(' · '),
-            style: _PrText.caption,
+        else if (locked) ...[
+          _DeclarationClosedCard(
+            closedOn: closed?.closedOn ?? declaration.dueOn,
+            closed: closed,
+          ),
+          const _ProofsReceiptEdge(),
+          const _ProofsSectionLabel('What you can still do'),
+          _ProofsAskHrCard(
+            inkKey: const ValueKey('declaration-ask-hr'),
+            title: 'Missed it for a reason?',
+            subtitle: 'Ask HR to reopen your declaration',
+            lastPayPeriod: closed?.lastPayPeriod,
+            onTap:
+                closed != null &&
+                    (canRaiseSupportTicket || scope.onRaiseTicket != null)
+                ? () => _askHr(declaration, closed)
+                : null,
           ),
           const SizedBox(height: 8),
-          IgnorePointer(
-            ignoring: locked,
-            child: LeaveViewSwitch(
-              key: const ValueKey('regime-switch'),
-              history: !old,
-              firstLabel: 'Old regime',
-              secondLabel: 'New regime',
-              onChanged: (isNew) =>
-                  setState(() => _regime = isNew ? 'new' : 'old'),
-            ),
+          _ProofsClaimBackCard(
+            cardKey: const ValueKey('declaration-claim-back'),
+            itrDueOn: closed?.itrDueOn,
+            body:
+                'The extra tax cut now isn’t lost. Add these investments '
+                'when you file your income tax return'
+                '${closed?.itrDueOn == null ? '' : ' by ${_longDate(closed!.itrDueOn!)}'}'
+                ', and you’ll get the extra back as a refund.',
+          ),
+        ] else ...[
+          Text(
+            [
+              if (declaration.dueOn != null) 'By ${_short(declaration.dueOn!)}',
+              '${declaration.isOld ? 'old' : 'new'} regime',
+            ].join(' · '),
+            key: const ValueKey('declaration-caption'),
+            style: _proofType(13.5, color: _proofMuted),
           ),
           const SizedBox(height: 12),
-          if (locked) ...[
-            _PrNote(
-              'The last date to change your declaration has passed'
-              '${declaration.dueOn == null ? '' : ' (${_short(declaration.dueOn!)})'}.',
-            ),
-            const SizedBox(height: 12),
-          ],
-          if (!old)
+          if (!declaration.isOld)
             const _PrNote(
               'On the new regime your investments don\'t lower your tax, so '
-              'there is nothing to declare. What you enter on the old regime '
-              'is kept in case you switch back.',
+              'there is nothing to declare. Pick the old regime under Tax to '
+              'declare them.',
             )
           else ...[
             for (final section in declaration.sections) ...[
               _DeclarationSectionCard(
                 section: section,
                 fields: _fields,
-                enabled: !locked,
+                enabled: !_busy,
                 amountOf: _paiseOf,
               ),
               const SizedBox(height: 12),
             ],
-            _PolicyRow(
-              key: const ValueKey('declaration-proofs'),
-              label: 'Investment proofs',
-              subtitle: declaration.proofsDueOn == null
-                  ? 'Upload a proof for each investment'
-                  : 'Upload by ${_short(declaration.proofsDueOn!)}',
-              onTap: () => _pushPayroll<void>(context, const _ProofsPage()),
+            const SizedBox(height: 8),
+            _ProofFilledButton(
+              key: const ValueKey('declaration-save'),
+              label: 'Save declaration',
+              busy: _busy,
+              onPressed: _submit,
             ),
           ],
         ],
@@ -1504,6 +1515,124 @@ class _DeclarationPageState extends State<_DeclarationPage> {
   }
 }
 
+/// "Declaration saved · Make sure you upload the proofs by 31 Jan. · Done".
+class _DeclarationSavedSheet extends StatelessWidget {
+  const _DeclarationSavedSheet({required this.text, required this.onDone});
+
+  final String text;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    key: const ValueKey('declaration-saved'),
+    decoration: const BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    child: SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE4E4E8),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Declaration saved',
+              textAlign: TextAlign.center,
+              style: _proofType(18, weight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              text,
+              textAlign: TextAlign.center,
+              style: _proofType(12.5, color: _proofMuted, height: 1.4),
+            ),
+            const SizedBox(height: 20),
+            _ProofFilledButton(
+              key: const ValueKey('declaration-saved-done'),
+              label: 'Done',
+              onPressed: onDone,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// "Declaration closed on 30 Nov · You declared ₹1,28,400 in 4 items ·
+/// Closed".
+class _DeclarationClosedCard extends StatelessWidget {
+  const _DeclarationClosedCard({required this.closedOn, required this.closed});
+
+  final DateTime? closedOn;
+  final TaxDeclarationClosed? closed;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = closed?.itemsDeclared ?? 0;
+    final line = items == 0
+        ? 'You didn’t declare any investments'
+        : 'You declared ${_rupees(closed!.declaredPaise)} in $items '
+              '${items == 1 ? 'item' : 'items'}';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        key: const ValueKey('declaration-closed'),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          children: [
+            _ProofsIconTile(
+              child: Image.asset(
+                'assets/icons/payroll_proofs_lock.png',
+                width: 25,
+                height: 25,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    closedOn == null
+                        ? 'Declaration closed'
+                        : 'Declaration closed on ${_short(closedOn!)}',
+                    style: _proofType(15, weight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(line, style: _proofType(12.5, color: _proofMuted)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            const _ProofChip.quiet('Closed'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A section of the declaration (Figma "sec"): its title and cap, then a
+/// line per item with its rupee field.
 class _DeclarationSectionCard extends StatelessWidget {
   const _DeclarationSectionCard({
     required this.section,
@@ -1518,11 +1647,21 @@ class _DeclarationSectionCard extends StatelessWidget {
   final int Function(TaxDeclarationItem) amountOf;
 
   static String _title(TaxDeclarationSection section) => switch (section.key) {
+    '80C' => '80C investments',
     '80CCD1B' => 'NPS (80CCD 1B)',
     '80D' => '80D health insurance',
     'HRA' => 'Rent (HRA)',
     '24B' => 'Home loan interest',
     _ => section.label,
+  };
+
+  static String _itemLabel(TaxDeclarationItem item) => switch (item.key) {
+    'rentMonthly' => 'Rent a month',
+    'nps' => 'Your own contribution',
+    'healthSelf' => 'Self and family',
+    'healthParents' => 'Parents',
+    'homeLoanInterest' => 'Interest this year',
+    _ => item.label,
   };
 
   @override
@@ -1533,78 +1672,90 @@ class _DeclarationSectionCard extends StatelessWidget {
       (sum, item) => sum + amountOf(item),
     );
     final over = cap != null && declared > cap;
-    return _FormCard(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                _title(section),
-                style: _PrText.title.copyWith(fontWeight: FontWeight.w700),
-              ),
-            ),
-            if (cap != null) Text('Max ${_rupees(cap)}', style: _PrText.sub),
-          ],
-        ),
-        for (final item in section.items) ...[
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  item.key == 'rentMonthly' ? 'Rent a month' : item.label,
-                  style: const TextStyle(
-                    color: Color(0xFF222222),
-                    fontSize: 13.5,
-                    height: 1.35,
-                    fontWeight: FontWeight.w500,
+    return Container(
+      key: ValueKey('declaration-section-${section.key}'),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Expanded(
+                  child: Text(
+                    _title(section),
+                    style: _proofType(15, weight: FontWeight.w700),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 132,
-                child: item.readOnly
-                    ? Container(
-                        height: 42,
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF7F7F9),
-                          border: Border.all(color: const Color(0xFFE5E7EB)),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _rupees(item.amountPaise),
-                          style: const TextStyle(
-                            color: Color(0xFF6B7280),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      )
-                    : _AmountField(
-                        key: ValueKey('declare-${item.key}'),
-                        controller: fields[item.key]!,
-                        enabled: enabled,
-                      ),
-              ),
-            ],
-          ),
-        ],
-        if (over) ...[
-          const SizedBox(height: 10),
-          Text(
-            '${_rupees(declared)} declared — only ${_rupees(cap)} counts.',
-            key: ValueKey('cap-${section.key}'),
-            style: const TextStyle(
-              color: _prError,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
+                if (cap != null)
+                  Text(
+                    'Max ${_rupees(cap)}',
+                    style: _proofType(12.5, color: const Color(0xFF6B6B72)),
+                  ),
+              ],
             ),
           ),
+          for (final item in section.items)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _itemLabel(item),
+                      style: _proofType(14, color: const Color(0xFF3A3A3F)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 130,
+                    child: item.readOnly
+                        ? Container(
+                            height: 42,
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.symmetric(horizontal: 13),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF7F7F9),
+                              border: Border.all(
+                                color: const Color(0xFFEDEDF0),
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              _rupees(item.amountPaise),
+                              style: _proofType(
+                                14.5,
+                                color: const Color(0xFF6B6B72),
+                              ),
+                            ),
+                          )
+                        : _AmountField(
+                            key: ValueKey('declare-${item.key}'),
+                            controller: fields[item.key]!,
+                            enabled: enabled,
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          if (over)
+            Padding(
+              padding: const EdgeInsets.only(top: 2, bottom: 8),
+              child: Text(
+                '${_rupees(declared)} declared — only ${_rupees(cap)} counts.',
+                key: ValueKey('cap-${section.key}'),
+                style: _proofType(12.5, color: _prError),
+              ),
+            ),
         ],
-      ],
+      ),
     );
   }
 }
@@ -1625,7 +1776,7 @@ class _AmountField extends StatelessWidget {
     height: 42,
     decoration: BoxDecoration(
       color: enabled ? Colors.white : const Color(0xFFF7F7F9),
-      border: Border.all(color: const Color(0xFFE5E7EB)),
+      border: Border.all(color: const Color(0xFFE4E4E8)),
       borderRadius: BorderRadius.circular(12),
     ),
     alignment: Alignment.center,
@@ -1635,15 +1786,11 @@ class _AmountField extends StatelessWidget {
       keyboardType: TextInputType.number,
       inputFormatters: const [_RupeeInputFormatter()],
       textAlign: TextAlign.right,
-      style: const TextStyle(
-        fontSize: 14,
-        color: Color(0xFF111827),
-        fontWeight: FontWeight.w600,
-      ),
-      decoration: const InputDecoration(
+      style: _proofType(14.5),
+      decoration: InputDecoration(
         isDense: true,
         hintText: '₹0',
-        hintStyle: TextStyle(color: Color(0x80111827)),
+        hintStyle: _proofType(14.5, color: const Color(0x801F1F22)),
         filled: false,
         border: InputBorder.none,
         enabledBorder: InputBorder.none,
@@ -1651,7 +1798,10 @@ class _AmountField extends StatelessWidget {
         disabledBorder: InputBorder.none,
         errorBorder: InputBorder.none,
         focusedErrorBorder: InputBorder.none,
-        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 13,
+          vertical: 11,
+        ),
       ),
     ),
   );
