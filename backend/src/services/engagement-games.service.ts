@@ -32,6 +32,7 @@ import {
 import type { GameScore } from '../models/game.model';
 import type { User } from '../models/user.model';
 import { catalogFor, type PublicGame } from './game-catalog.service';
+import { cachedEngagement } from './engagement-cache';
 import { pointEvents } from './points-ledger.service';
 import { cupEvents, cupMatches } from './cup.service';
 import { pokerEvents, pokerResults } from './poker-db';
@@ -277,7 +278,12 @@ async function gamePointsOf(org: string): Promise<Map<string, number>> {
  * [game, person, seconds since 1970] by their places in those lists, so the
  * page can draw any range and any grouping without asking again.
  */
-export async function gamesOverview(org: string) {
+export function gamesOverview(org: string) {
+  // Every play on record is seconds of reads; a new play shows within the cache's five minutes.
+  return cachedEngagement(org, 'games', null, () => buildGamesOverview(org));
+}
+
+async function buildGamesOverview(org: string) {
   const [games, plays, counts, points] = await Promise.all([lineUpFor(org), playsOf(org), tournamentCounts(org), gamePointsOf(org)]);
   const keys = new Map(games.map((g, i) => [g.key, i]));
   const mine = plays.filter((p) => keys.has(p.key));

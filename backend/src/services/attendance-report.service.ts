@@ -1,6 +1,7 @@
 import { attendanceOverrides, attendanceRecords, holidays, leaves, shiftAssignments, shiftTemplates, users } from '../config/db';
 import { requestViewer } from '../middleware/request-viewer';
-import { AttendanceOverride, HrDayStatus } from '../models/attendance.model';
+import { AttendanceOverride, AttendanceRecord, HrDayStatus } from '../models/attendance.model';
+import type { Holiday } from '../models/holiday.model';
 import { Leave } from '../models/leave.model';
 import { DayMark, OrgShiftPolicy, PunchFormat, ShiftTemplate, isUnpaidLeaveType } from '../models/shift.model';
 import { User } from '../models/user.model';
@@ -294,6 +295,200 @@ function dayPolicyResolver({ templates, orgPolicy, timelines }: OrgSetup) {
     };
 }
 
+/** What grading a range reads besides the org's setup: punches, approved leave, holidays and HR's marks. */
+type PunchRow = Pick<AttendanceRecord, 'userId' | 'employeeId' | 'workDate' | 'punchIn' | 'punchOut' | 'dayType' | 'source'>;
+type RangeData = {
+  /** Punch rows by `userId|date` and `employeeId|date`. */
+  punchesBy: Map<string, PunchRow>;
+  approvedLeaves: Leave[];
+  holidayRows: Holiday[];
+  marks: Map<string, AttendanceOverride>;
+  /** How many punch rows were read, for the log. */
+  records: number;
+};
+
+/** Only what grading reads off a punch row: the rest (locations, face checks, notes) is never looked at. */
+const PUNCH_FIELDS = { _id: 0, userId: 1, employeeId: 1, workDate: 1, punchIn: 1, punchOut: 1, dayType: 1, source: 1 };
+
+async function rangeData(org: string, { roster }: OrgSetup, from: string, to: string): Promise<RangeData> {
+  const userIds = roster.map((u) => u.userId);
+  // Imported rows are keyed by employee id, app punches by user id — and an
+  // employee id is only unique within an org, so both sides are scoped to this
+  // roster rather than to the date alone. Only the fields grading reads come
+  // back: on a slow link the bytes of every row's locations and face checks
+  // were most of the wait.
+  const employeeIds = roster.map((u) => u.employeeId).filter((id): id is string => !!id);
+  const [records, approvedLeaves, holidayRows, marks] = await Promise.all([
+    attendanceRecords()
+      .find(
+        { workDate: { $gte: from, $lte: to }, $or: [{ userId: { $in: userIds } }, { employeeId: { $in: employeeIds } }] },
+        { projection: PUNCH_FIELDS },
+      )
+      .batchSize(BATCH)
+      .toArray() as Promise<PunchRow[]>,
+    leaves()
+      .find({ userId: { $in: userIds }, status: 'approved', startDate: { $lte: dayOf(to) }, endDate: { $gte: dayOf(from) } })
+      .batchSize(BATCH)
+      .toArray(),
+    holidays().find({ org, date: { $gte: dayOf(from), $lte: dayOf(to) } }).toArray(),
+    hrMarks(userIds, from, to),
+  ]);
+  const punchesBy: RangeData['punchesBy'] = new Map();
+  for (const record of records) {
+    if (record.userId) punchesBy.set(`${record.userId}|${record.workDate}`, record);
+    if (record.employeeId) punchesBy.set(`${record.employeeId}|${record.workDate}`, record);
+  }
+  return { punchesBy, approvedLeaves, holidayRows, marks, records: records.length };
+}
+
+/** One employee-day, graded: off (not owed) or a graded day. Null before they joined. */
+type GradedDay =
+  | { key: string; off: 'week_off' | 'holiday' }
+  | { key: string; day: ReportDay; halfDayLeave: boolean };
+
+/**
+ * How every employee-day in a range grades, given the org's setup and the
+ * range's rows. The one place a day is graded for the org report, so a
+ * narrower question of the same days (who had a missed punch) gets the
+ * report's answer without building the report.
+ */
+function dayGrader(setup: OrgSetup, { punchesBy, approvedLeaves, holidayRows, marks }: RangeData) {
+  const policyOn = dayPolicyResolver(setup);
+
+  // ── holidays, by the people who observe them ──────────────────────────
+  // Each person's days off come from the rule their own calendar uses
+  // (holidayAppliesTo), so a holiday keyed to their work location is a
+  // holiday here too, and payroll, which reads this report, does not dock it.
+  const holidayDatesOf = new Map<string, Set<string>>();
+  for (const user of setup.roster) {
+    const observed = holidayRows.filter((holiday) => holidayAppliesTo(holiday, user));
+    holidayDatesOf.set(user.userId, new Set(observed.map((holiday) => keyOf(holiday.date))));
+  }
+  const isHoliday = (user: Person, key: string) => holidayDatesOf.get(user.userId)?.has(key) ?? false;
+
+  // ── leave, indexed by person ──────────────────────────────────────────
+  const leavesBy = new Map<string, Leave[]>();
+  for (const leave of approvedLeaves) {
+    leavesBy.set(leave.userId, [...(leavesBy.get(leave.userId) ?? []), leave]);
+  }
+  const leaveOn = (userId: string, day: Date): Leave | undefined =>
+    (leavesBy.get(userId) ?? []).find((l) => l.startDate <= day && l.endDate >= day);
+
+  const gradeDay = (user: Person, day: Date, now: number): GradedDay | null => {
+    const key = keyOf(day);
+    // Before someone joined there is nothing to grade: not an absence, and
+    // not loss of pay (payroll counts those days on its own).
+    const joined = joinedOn(user);
+    if (joined && key < joined) return null;
+    // The shift that covered this day, which is not always today's.
+    const onDay = policyOn(user, key);
+    // HR's mark on the day outranks everything below it.
+    const hrMark = marks.get(`${user.userId}|${key}`);
+    if (hrMark) {
+      if (hrMark.status === 'week_off' || hrMark.status === 'holiday') return { key, off: hrMark.status };
+      if (hrMark.status === 'on_leave') {
+        return { key, day: [user.userId, key, 'on_leave', 0, null, null, 'Marked by HR', 'hr', 0], halfDayLeave: false };
+      }
+      return { key, day: [user.userId, key, hrMark.status, 0, null, null, null, 'hr', 0], halfDayLeave: false };
+    }
+    // Not a day they owed us, so not a day to grade.
+    if (isHoliday(user, key)) return { key, off: 'holiday' };
+    if (isWeekOffDay(day, onDay.weeklyOff)) return { key, off: 'week_off' };
+
+    const leave = leaveOn(user.userId, day);
+    if (leave) {
+      // The shift covering the day says whether its type is paid.
+      const status: DayStatus = isUnpaidLeaveType(onDay.leave?.types, leave.type) ? 'unpaid_leave' : 'on_leave';
+      return { key, day: [user.userId, key, status, 0, null, null, leave.type, null, 0], halfDayLeave: Boolean(leave.halfDay) };
+    }
+
+    // Present by default: nobody punches, so a working day is a present day.
+    if (onDay.correction.punchFormat === 'Present by default (Auto Punch)') {
+      return { key, day: [user.userId, key, 'present', 0, null, null, null, null, 0], halfDayLeave: false };
+    }
+
+    const record = punchesBy.get(`${user.userId}|${key}`) ?? punchesBy.get(`${user.employeeId ?? ''}|${key}`);
+    // A correction approved as leave carries no punches by design; it is a
+    // leave day, not an absence (payroll reads this report).
+    if (record?.dayType === 'leave') {
+      return { key, day: [user.userId, key, 'on_leave', 0, null, null, 'Leave (regularised)', record.source ?? null, 0], halfDayLeave: false };
+    }
+    // Read as they should be, not as the device filed them: a reversed pair
+    // is a morning shift, and one tap recorded twice is one punch.
+    const { punchIn, punchOut } = normalisePunches(
+      onDay,
+      record?.punchIn ? new Date(record.punchIn) : null,
+      record?.punchOut ? new Date(record.punchOut) : null,
+    );
+    const singlePunch = onDay.correction.punchMode === 'Single punch';
+    const missing = singlePunch ? !punchIn : !punchIn || !punchOut;
+    // Nothing at all on a working day is an absence; half a record is a gap
+    // in the record, which is a different conversation and a different fix.
+    const nothing = !punchIn && !punchOut;
+    const mark = markForDay(onDay, punchIn, punchOut);
+    // Late and early are each a switch first: off, nobody on the shift is marked.
+    const over = punchIn && onDay.lateMarkingEnabled !== false ? lateBy(punchIn, onDay.startTime, onDay.lateGraceMinutes) : 0;
+    // A single-punch shift has no punch-out to leave early on.
+    const short = punchOut && !singlePunch && onDay.earlyMarkingEnabled !== false ? earlyBy(punchOut, onDay.startTime, onDay.endTime, onDay.earlyOutGraceMinutes) : 0;
+    const status: DayStatus = nothing
+      ? 'absent'
+      : missing
+        ? 'missed_punch'
+        : mark === 'Present'
+          ? 'present'
+          : mark === 'Half Day'
+            ? 'half_day'
+            : 'absent';
+
+    const graded: ReportDay = [
+      user.userId, key, status, over,
+      punchIn ? punchIn.toISOString() : null,
+      punchOut ? punchOut.toISOString() : null,
+      null,
+      record?.source ?? null,
+      short,
+    ];
+    // A punch that is missing only because the shift is not over yet. Only a
+    // day from yesterday on can still be under way (an overnight shift that
+    // started yesterday); older days are settled and skip the check.
+    if ((status === 'absent' || status === 'missed_punch') && key >= keyOf(new Date(now - 2 * DAY_MS))
+      && shiftStillRunning(key, onDay.startTime, onDay.endTime, now)) graded.push(1);
+    return { key, day: graded, halfDayLeave: false };
+  };
+
+  return { policyOn, gradeDay };
+}
+
+/**
+ * Everyone in the org with a missed punch in the range, or a working day with
+ * no punches (or too few hours) that HR did not mark: what Reports ›
+ * Attendance shows, from the same grading, without building the report. A day
+ * whose shift is still running is not counted: its punch can still come.
+ */
+export async function missedPunchPeople(org: string, from: string, to: string): Promise<Set<string>> {
+  if (!DATE.test(from) || !DATE.test(to)) throw new ReportError(400, 'from and to must be YYYY-MM-DD');
+  const out = new Set<string>();
+  if (from > to) return out;
+  const setup = await orgSetup(org);
+  const { gradeDay } = dayGrader(setup, await rangeData(org, setup, from, to));
+  const first = dayOf(from).getTime();
+  const last = dayOf(to).getTime();
+  const now = Date.now();
+  for (const user of setup.roster) {
+    for (let t = first; t <= last; t += DAY_MS) {
+      const graded = gradeDay(user, new Date(t), now);
+      if (!graded || 'off' in graded) continue;
+      const [, , status, , , , , source, , running] = graded.day;
+      if (running) continue;
+      if (status === 'missed_punch' || (status === 'absent' && source !== 'hr')) {
+        out.add(user.userId);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 export async function attendanceReport(
   adminUserId: string,
   input: { from?: string; to?: string },
@@ -317,58 +512,14 @@ export async function attendanceReport(
   }
 
   const started = Date.now();
-  const { roster, templates, orgPolicy, timelines } = await orgSetup(org);
+  const setup = await orgSetup(org);
+  const { roster } = setup;
   const setupMs = Date.now() - started;
-  const userIds = roster.map((u) => u.userId);
-  // Imported rows are keyed by employee id, app punches by user id — and an
-  // employee id is only unique within an org, so both sides are scoped to this
-  // roster rather than to the date alone.
-  const employeeIds = roster.map((u) => u.employeeId).filter((id): id is string => !!id);
+  const data = await rangeData(org, setup, from, to);
 
-  const [records, approvedLeaves, holidayRows, marks] = await Promise.all([
-    attendanceRecords()
-      .find({
-        workDate: { $gte: from, $lte: to },
-        $or: [{ userId: { $in: userIds } }, { employeeId: { $in: employeeIds } }],
-      })
-      .batchSize(BATCH)
-      .toArray(),
-    leaves()
-      .find({ userId: { $in: userIds }, status: 'approved', startDate: { $lte: dayOf(to) }, endDate: { $gte: dayOf(from) } })
-      .batchSize(BATCH)
-      .toArray(),
-    holidays().find({ org, date: { $gte: dayOf(from), $lte: dayOf(to) } }).toArray(),
-    hrMarks(userIds, from, to),
-  ]);
+  console.log(`[attendance-report] ${org} ${from}..${to}: setup ${setupMs}ms, queries ${Date.now() - started - setupMs}ms, records ${data.records}`);
 
-  console.log(`[attendance-report] ${org} ${from}..${to}: setup ${setupMs}ms, queries ${Date.now() - started - setupMs}ms, records ${records.length}`);
-
-  const policyOn = dayPolicyResolver({ roster, templates, orgPolicy, timelines });
-
-  // ── holidays, by the people who observe them ──────────────────────────
-  // Each person's days off come from the rule their own calendar uses
-  // (holidayAppliesTo), so a holiday keyed to their work location is a
-  // holiday here too, and payroll, which reads this report, does not dock it.
-  const holidayDatesOf = new Map<string, Set<string>>();
-  for (const user of roster) {
-    const observed = holidayRows.filter((holiday) => holidayAppliesTo(holiday, user));
-    holidayDatesOf.set(user.userId, new Set(observed.map((holiday) => keyOf(holiday.date))));
-  }
-  const isHoliday = (user: Person, key: string) => holidayDatesOf.get(user.userId)?.has(key) ?? false;
-
-  // ── punches and leave, indexed by person and day ──────────────────────
-  const punchKey = (id: string, date: string) => `${id}|${date}`;
-  const punchesBy = new Map<string, (typeof records)[number]>();
-  for (const record of records) {
-    if (record.userId) punchesBy.set(punchKey(record.userId, record.workDate), record);
-    if (record.employeeId) punchesBy.set(punchKey(record.employeeId, record.workDate), record);
-  }
-  const leavesBy = new Map<string, Leave[]>();
-  for (const leave of approvedLeaves) {
-    leavesBy.set(leave.userId, [...(leavesBy.get(leave.userId) ?? []), leave]);
-  }
-  const leaveOn = (userId: string, day: Date): Leave | undefined =>
-    (leavesBy.get(userId) ?? []).find((l) => l.startDate <= day && l.endDate >= day);
+  const { policyOn, gradeDay } = dayGrader(setup, data);
 
   // ── grade every working day ───────────────────────────────────────────
   const people: Record<string, ReportPerson> = {};
@@ -383,10 +534,7 @@ export async function attendanceReport(
   const nameOf = new Map(roster.map((u) => [u.userId, u.name]));
   const first = dayOf(from).getTime();
   const last = dayOf(to).getTime();
-  // Only a day from yesterday on can still be under way (an overnight shift
-  // that started yesterday); older days are settled and skip the check.
   const now = Date.now();
-  const recentDay = keyOf(new Date(now - 2 * DAY_MS));
 
   for (const user of roster) {
     // The row that names the person describes where they stand at the end of
@@ -411,103 +559,17 @@ export async function attendanceReport(
       lateGraceMinutes: policy.lateMarkingEnabled === false ? null : policy.lateGraceMinutes,
     };
 
-    const joined = joinedOn(user);
     for (let t = first; t <= last; t += DAY_MS) {
-      const day = new Date(t);
-      const key = keyOf(day);
-      // Before someone joined there is nothing to grade: not an absence, and
-      // not loss of pay (payroll counts those days on its own).
-      if (joined && key < joined) continue;
-      // The shift that covered this day, which is not always today's.
-      const onDay = policyOn(user, key);
-      // HR's mark on the day outranks everything below it.
-      const hrMark = marks.get(`${user.userId}|${key}`);
-      if (hrMark) {
-        if (hrMark.status === 'week_off' || hrMark.status === 'holiday') {
-          offDays.push([user.userId, key, hrMark.status]);
-          continue;
-        }
-        if (hrMark.status === 'on_leave') {
-          leaveTypes.add('Marked by HR');
-          days.push([user.userId, key, 'on_leave', 0, null, null, 'Marked by HR', 'hr', 0]);
-        } else {
-          days.push([user.userId, key, hrMark.status, 0, null, null, null, 'hr', 0]);
-        }
+      const graded = gradeDay(user, new Date(t), now);
+      if (!graded) continue;
+      if ('off' in graded) {
+        offDays.push([user.userId, graded.key, graded.off]);
         continue;
       }
-      // Not a day they owed us, so not a day to grade.
-      if (isHoliday(user, key)) {
-        offDays.push([user.userId, key, 'holiday']);
-        continue;
-      }
-      if (isWeekOffDay(day, onDay.weeklyOff)) {
-        offDays.push([user.userId, key, 'week_off']);
-        continue;
-      }
-
-      const leave = leaveOn(user.userId, day);
-      if (leave) {
-        leaveTypes.add(leave.type);
-        // The shift covering the day says whether its type is paid.
-        const status: DayStatus = isUnpaidLeaveType(onDay.leave?.types, leave.type) ? 'unpaid_leave' : 'on_leave';
-        days.push([user.userId, key, status, 0, null, null, leave.type, null, 0]);
-        if (leave.halfDay) halfDayLeave.push(`${user.userId}|${key}`);
-        continue;
-      }
-
-      // Present by default: nobody punches, so a working day is a present day.
-      if (onDay.correction.punchFormat === 'Present by default (Auto Punch)') {
-        days.push([user.userId, key, 'present', 0, null, null, null, null, 0]);
-        continue;
-      }
-
-      const record = punchesBy.get(punchKey(user.userId, key)) ?? punchesBy.get(punchKey(user.employeeId ?? '', key));
-      // A correction approved as leave carries no punches by design; it is a
-      // leave day, not an absence (payroll reads this report).
-      if (record?.dayType === 'leave') {
-        leaveTypes.add('Leave (regularised)');
-        days.push([user.userId, key, 'on_leave', 0, null, null, 'Leave (regularised)', record.source ?? null, 0]);
-        continue;
-      }
-      // Read as they should be, not as the device filed them: a reversed pair
-      // is a morning shift, and one tap recorded twice is one punch.
-      const { punchIn, punchOut } = normalisePunches(
-        onDay,
-        record?.punchIn ? new Date(record.punchIn) : null,
-        record?.punchOut ? new Date(record.punchOut) : null,
-      );
-      const singlePunch = onDay.correction.punchMode === 'Single punch';
-      const missing = singlePunch ? !punchIn : !punchIn || !punchOut;
-      // Nothing at all on a working day is an absence; half a record is a gap
-      // in the record, which is a different conversation and a different fix.
-      const nothing = !punchIn && !punchOut;
-      const mark = markForDay(onDay, punchIn, punchOut);
-      // Late and early are each a switch first: off, nobody on the shift is marked.
-      const over = punchIn && onDay.lateMarkingEnabled !== false ? lateBy(punchIn, onDay.startTime, onDay.lateGraceMinutes) : 0;
-      // A single-punch shift has no punch-out to leave early on.
-      const short = punchOut && !singlePunch && onDay.earlyMarkingEnabled !== false ? earlyBy(punchOut, onDay.startTime, onDay.endTime, onDay.earlyOutGraceMinutes) : 0;
-      const status: DayStatus = nothing
-        ? 'absent'
-        : missing
-          ? 'missed_punch'
-          : mark === 'Present'
-            ? 'present'
-            : mark === 'Half Day'
-              ? 'half_day'
-              : 'absent';
-
-      const graded: ReportDay = [
-        user.userId, key, status, over,
-        punchIn ? punchIn.toISOString() : null,
-        punchOut ? punchOut.toISOString() : null,
-        null,
-        record?.source ?? null,
-        short,
-      ];
-      // A punch that is missing only because the shift is not over yet.
-      if ((status === 'absent' || status === 'missed_punch') && key >= recentDay
-        && shiftStillRunning(key, onDay.startTime, onDay.endTime, now)) graded.push(1);
-      days.push(graded);
+      // Every leave day names its type; no other day carries one.
+      if (graded.day[6]) leaveTypes.add(graded.day[6]);
+      days.push(graded.day);
+      if (graded.halfDayLeave) halfDayLeave.push(`${user.userId}|${graded.key}`);
     }
   }
 

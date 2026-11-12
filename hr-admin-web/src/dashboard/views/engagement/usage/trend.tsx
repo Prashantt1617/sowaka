@@ -2,7 +2,9 @@
 // Both come from the server's daily app activity log, which only starts on
 // the day it shipped: days before are drawn hatched as "not tracked".
 import { useState } from 'react';
-import { getUsageTrend, getUsageWhen } from '../../../../services/engagement-usage';
+import { getUsageTrend } from '../../../../services/engagement-usage';
+import type { UsageWhenDTO } from '../../../../services/engagement-usage';
+import type { LoadState } from '../../../ui';
 import { useLoad } from '../../../useLoad';
 import { DateRange, LoadError, SkeletonLines, StatusTabs } from '../../../ui';
 import * as L from '../../look';
@@ -12,9 +14,12 @@ import { GROUPS, GROUP_COLOR, GROUP_SHORT, addDays, istToday, pct, plural, range
 const HOUR = (h: number) => `${h % 12 || 12}${h < 12 ? 'a' : 'p'}`;
 const WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+/** The "when" answer, loaded by the page alongside the summary rather than after it. */
+export type WhenLoad = { data: UsageWhenDTO | null | undefined; state: LoadState; retry: () => void };
+
 /** "When people open the app": hours of the day and weekdays, for the dates and filters picked. */
-export function WhenPanel({ from, to, dept, loc }: { from: string; to: string; dept: string; loc: string }) {
-  const { data, state, retry } = useLoad(() => getUsageWhen(from, to, dept, loc), [from, to, dept, loc]);
+export function WhenPanel({ from, to, load }: { from: string; to: string; load: WhenLoad }) {
+  const { data, state, retry } = load;
   return (
     <div className="ua-panel">
       <div className="ua-card-h" style={{ marginBottom: 6 }}>

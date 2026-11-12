@@ -11,6 +11,7 @@ import { Card, Kpis, LastOpened, PeopleList, RemindButton } from './parts';
 import { GROUP_SHORT, addDays, pct, rangeLabel, sd } from './format';
 import type { Col, Person } from './parts';
 import { WhenPanel } from './trend';
+import type { WhenLoad } from './trend';
 
 export type TabCtx = {
   summary: UsageSummaryDTO;
@@ -24,6 +25,8 @@ export type TabCtx = {
   /** The whole range is before app activity was tracked (or nothing is tracked yet). */
   untracked: boolean;
   onRemind: (people: Person[]) => void;
+  /** "When people open the app", requested by the page at the same time as the summary. */
+  when: WhenLoad;
 };
 
 const lastCol = (today: string): Col => ['Last opened', (p) => <LastOpened p={p} today={today} />];
@@ -150,7 +153,7 @@ export function StatusTab({ c }: { c: TabCtx }) {
         ]} />
         {tracked && tracked > addDays(today, -29) && <p className="ua-note" style={{ marginTop: -4 }}>Tracking since {sd(tracked)}: the 7- and 30-day counts only cover the days since.</p>}
       </div>
-      <WhenPanel from={c.summary.from} to={c.summary.to} dept={c.dept} loc={c.loc} />
+      <WhenPanel from={c.summary.from} to={c.summary.to} load={c.when} />
       <div className="ua-sec">
         <h4>
           By group

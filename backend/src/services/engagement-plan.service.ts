@@ -17,6 +17,7 @@ import { cupEvents } from './cup.service';
 import { pokerEvents, pokerResults } from './poker-db';
 import { squadPayouts, squadSchedules } from './secret-squad.service';
 import { CONTEST_TYPES, contestName, contestSummary } from './engagement-contests.service';
+import { cachedEngagement, forgetEngagement } from './engagement-cache';
 
 export type PlanKind = 'contest' | 'poll' | 'tournament' | 'game';
 export type PlanState = 'done' | 'running' | 'planned';
@@ -381,7 +382,11 @@ function planItemEntry(item: EngagementPlanItem, now: number): PlanEntry {
 }
 
 /** The whole list, from this financial year's start (1 April, IST) on. */
-export async function planFor(org: string) {
+export function planFor(org: string) {
+  return cachedEngagement(org, 'plan', null, () => buildPlan(org));
+}
+
+async function buildPlan(org: string) {
   const now = Date.now();
   const today = new Date(now + 330 * 60_000);
   const fyStartYear = today.getUTCMonth() >= 3 ? today.getUTCFullYear() : today.getUTCFullYear() - 1;
@@ -437,6 +442,7 @@ export async function addPlanItem(org: string, createdBy: string, input: Record<
   const now = new Date();
   const item: EngagementPlanItem = { id: randomUUID(), org, ...cleanItem(input), createdBy, createdAt: now, updatedAt: now };
   await engagementPlanItems().insertOne({ ...item });
+  forgetEngagement(org, 'plan');
   return item;
 }
 
@@ -446,11 +452,13 @@ export async function updatePlanItem(org: string, id: string, input: Record<stri
     { $set: { ...cleanItem(input), updatedAt: new Date() } },
     { returnDocument: 'after', projection: { _id: 0 } },
   );
+  forgetEngagement(org, 'plan');
   if (!res) throw new PlanItemError(404, 'That planned date is gone');
   return res;
 }
 
 export async function deletePlanItem(org: string, id: string) {
   const res = await engagementPlanItems().deleteOne({ org, id });
+  forgetEngagement(org, 'plan');
   if (!res.deletedCount) throw new PlanItemError(404, 'That planned date is gone');
 }

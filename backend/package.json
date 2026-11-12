@@ -42,6 +42,7 @@
     "profile-posts:check": "tsx src/scripts/profile-posts-check.ts",
     "colleague-search:check": "tsx src/scripts/colleague-search-check.ts",
     "contest-entries:check": "tsx src/scripts/contest-entries-check.ts",
+    "engagement-speed:check": "MONGODB_DB=engagement_speed_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/engagement-speed-check.ts",
     "grow-chain:check": "tsx src/scripts/grow-chain-check.ts",
     "feedback-note:check": "tsx src/scripts/feedback-note-check.ts",
     "feedback-period:check": "tsx src/scripts/feedback-period-check.ts",

@@ -7,7 +7,7 @@
 // usage over time ask the server on their own. Opening the app is only known
 // from the day tracking began; dates before it read "not tracked".
 import { useMemo, useState } from 'react';
-import { getUsageSummary, remindPeople } from '../../../services/engagement-usage';
+import { getUsageSummary, getUsageWhen, remindPeople } from '../../../services/engagement-usage';
 import { ApiError } from '../../../services/http';
 import { useLoad } from '../../useLoad';
 import { useStore } from '../../store';
@@ -39,6 +39,10 @@ export function AppUsage() {
   const [sending, setSending] = useState(false);
   const [from, to] = range;
   const { data, state, retry } = useLoad(() => getUsageSummary(from, to), [from, to]);
+  // The status tab's "when" panel, asked for alongside the summary from the
+  // page's own range rather than once the summary has arrived.
+  const onStatus = tab === 'status';
+  const when = useLoad(() => (onStatus ? getUsageWhen(from, to, dept, loc) : Promise.resolve(null)), [onStatus, from, to, dept, loc]);
 
   const people = useMemo(
     () => (data?.people ?? []).filter((p) => (dept === 'All' || p.dept === dept) && (loc === 'All' || p.loc === loc)),
@@ -80,7 +84,7 @@ export function AppUsage() {
   };
 
   const ctx: TabCtx | null = data
-    ? { summary: data, people, dept, loc, nameOf, open, toggle: (id) => setOpen((o) => (o === id ? '' : id)), untracked, onRemind: setConfirm }
+    ? { summary: data, people, dept, loc, nameOf, open, toggle: (id) => setOpen((o) => (o === id ? '' : id)), untracked, onRemind: setConfirm, when }
     : null;
 
   return (
