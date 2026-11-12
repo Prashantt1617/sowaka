@@ -1396,7 +1396,7 @@ void main() {
         'Earnings',
         'Annual',
         'Downloads',
-        'Payslips, Form 16',
+        'Payslips, F-16',
         'EPF',
         'PF balance',
         'Support desk',
@@ -1420,6 +1420,146 @@ void main() {
         lessThan(top(card('payroll-raise-ticket'))),
       );
       expect(top(card('payroll-qa-earnings')), top(card('payroll-qa-epf')));
+    });
+
+    group('Set up your payroll (Figma 4471:66940)', () {
+      final opened = <String?>[];
+      void opener({String? about}) => opened.add(about);
+      setUp(() {
+        opened.clear();
+        registerSupportTicketOpener(opener);
+      });
+      tearDown(() => unregisterSupportTicketOpener(opener));
+
+      Map<String, dynamic> newJoiner() => {
+        'items': [
+          {
+            'key': 'bank',
+            'done': false,
+            'dueOn': '2026-10-28',
+            'required': true,
+          },
+          {
+            'key': 'pan',
+            'done': false,
+            'dueOn': '2026-10-28',
+            'required': true,
+          },
+          {
+            'key': 'regime',
+            'done': false,
+            'dueOn': '2026-11-30',
+            'required': false,
+          },
+          {
+            'key': 'fbp',
+            'done': false,
+            'dueOn': '2026-11-15',
+            'required': false,
+          },
+          {
+            'key': 'uan',
+            'done': true,
+            'dueOn': '2026-10-28',
+            'required': false,
+          },
+        ],
+        'done': 1,
+        'total': 5,
+        'beforeFirstPayroll': true,
+      };
+
+      testWidgets('the checklist: progress, a row each, dates, the done tick', (
+        tester,
+      ) async {
+        await pumpPayroll(
+          tester,
+          server: FakePayrollServer()..setup = newJoiner(),
+        );
+        tester.view.physicalSize = const Size(390 * 2, 1600 * 2);
+        await tester.pump();
+        expect(find.text('SET UP YOUR PAYROLL'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: card('payroll-setup-count'),
+            matching: find.text('4'),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('1 of 5 done'), findsOneWidget);
+        expect(find.text('Before your first payroll'), findsOneWidget);
+        for (final text in [
+          'Add bank account',
+          'Needed to pay your salary',
+          'Add PAN',
+          'Tax is cut at 20% without it',
+          'Choose tax regime',
+          'New regime applies if you skip',
+          'Declare your FBP',
+          'Save tax on ₹6,000 a month',
+          'Link PF account (UAN)',
+        ]) {
+          expect(find.text(text), findsOneWidget, reason: text);
+        }
+        expect(find.text('28 Oct'), findsNWidgets(2));
+        expect(find.text('30 Nov'), findsOneWidget);
+        expect(find.text('15 Nov'), findsOneWidget);
+        // UAN is done: struck through, a tick, no date or line under it.
+        expect(
+          find.descendant(
+            of: card('payroll-setup-uan'),
+            matching: find.byKey(const ValueKey('payroll-setup-done')),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('So your PF reaches your account'), findsNothing);
+        final uan = tester.widget<Text>(find.text('Link PF account (UAN)'));
+        expect(uan.style?.decoration, TextDecoration.lineThrough);
+        // The regime and the split are rows of the checklist, not to-dos too;
+        // the other to-dos still show.
+        expect(card('payroll-todo-tax_regime'), findsNothing);
+        expect(card('payroll-todo-flexible_split'), findsNothing);
+        expect(card('payroll-todo-missing_punches'), findsOneWidget);
+        double top(Finder f) => tester.getTopLeft(f).dy;
+        expect(
+          top(card('payroll-setup')),
+          lessThan(top(card('payroll-todo-missing_punches'))),
+        );
+        expect(
+          top(card('payroll-todo-missing_punches')),
+          lessThan(top(card('payroll-qa-earnings'))),
+        );
+        await capture(tester, payroll(), 'payroll_home_setup');
+      });
+
+      testWidgets('bank and PAN ask HR in a ticket; the regime opens the tax '
+          'declaration', (tester) async {
+        await pumpPayroll(
+          tester,
+          server: FakePayrollServer()..setup = newJoiner(),
+        );
+        await tap(tester, card('payroll-setup-bank'));
+        await tap(tester, card('payroll-setup-pan'));
+        expect(opened, [
+          'Please add my bank account for payroll so my salary can be paid.',
+          'Please add my PAN for payroll.',
+        ]);
+        await tap(tester, card('payroll-setup-regime'));
+        expect(find.byKey(const ValueKey('payroll-home')), findsNothing);
+      });
+
+      testWidgets('all done: no checklist, the to-dos as before', (
+        tester,
+      ) async {
+        final all = newJoiner();
+        for (final item in all['items'] as List) {
+          (item as Map)['done'] = true;
+        }
+        all['done'] = 5;
+        await pumpPayroll(tester, server: FakePayrollServer()..setup = all);
+        expect(find.text('SET UP YOUR PAYROLL'), findsNothing);
+        expect(card('payroll-todo-tax_regime'), findsOneWidget);
+      });
     });
 
     testWidgets('a released payslip has no Estimate tag', (tester) async {

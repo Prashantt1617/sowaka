@@ -688,6 +688,35 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   const dEpf = await myEpf('dev', nov30);
   check('EPF: no salary structure: not enrolled, nothing saved', !dEpf.enrolled && dEpf.notEnrolledReason === 'no_salary_structure' && dEpf.savedThroughSowaka.months === 0, dEpf);
 
+  // —— Home: "Set up your payroll" (presence only, never a number) ——
+  {
+    const keys = (x: { items: { key: string }[] }) => x.items.map((i) => i.key).join();
+    const item = (x: { items: { key: string; done: boolean }[] }, key: string) => x.items.find((i) => i.key === key);
+    const aSetup = (await homeOn('asha', undefined, nov30)).setup;
+    check('setup: Asha (PF on, UAN on record, no bank or PAN): bank and PAN to do, UAN done',
+      item(aSetup, 'bank')?.done === false && item(aSetup, 'pan')?.done === false && item(aSetup, 'uan')?.done === true
+        && aSetup.items.filter((i) => i.key === 'bank' || i.key === 'pan').every((i) => (i as { required: boolean }).required), aSetup);
+    check('setup: counts add up', aSetup.total === aSetup.items.length && aSetup.done === aSetup.items.filter((i) => i.done).length, aSetup);
+    check('setup: no identifier leaves the server, not even its last four', !/1012|7890|uanLast4|accountNumber/.test(JSON.stringify(aSetup)), aSetup);
+    check('setup: a released payslip: not before the first payroll', aSetup.beforeFirstPayroll === false, aSetup);
+    const cSetup = (await homeOn('chetan', undefined, nov30)).setup;
+    check('setup: PF switched off for Chetan: no UAN row', !keys(cSetup).includes('uan'), cSetup);
+    await employeePaymentDetails().insertOne({
+      org: ORG, userId: 'bala', payMode: 'bank_transfer', accountNumber: encryptField('123456789012'), accountLast4: '9012',
+      pan: encryptField('ABCDE1234F'), panLast4: '234F', updatedAt: now, updatedByUserId: 'hr',
+    });
+    const bSetup = (await homeOn('bala', undefined, nov30)).setup;
+    check('setup: Bala with a bank account and PAN on record: both done', item(bSetup, 'bank')?.done === true && item(bSetup, 'pan')?.done === true, bSetup);
+    await employeePaymentDetails().insertOne({ org: ORG, userId: 'dev', payMode: 'cash', updatedAt: now, updatedByUserId: 'hr' });
+    const dSetup = (await homeOn('dev', undefined, nov30)).setup;
+    check('setup: paid in cash: no bank row; no salary structure: no UAN or FBP row', !/bank|uan|fbp/.test(keys(dSetup)) && keys(dSetup).includes('pan'), dSetup);
+    const regime = item(aSetup, 'regime') as { done: boolean; dueOn: string | null } | undefined;
+    const aDecl = (await homeOn('asha', undefined, nov30)).declaration;
+    check('setup: the regime row is the declaration\'s chosen flag and due date',
+      regime === undefined ? aDecl.locked && !aDecl.chosen : regime.done === aDecl.chosen && regime.dueOn === aDecl.dueOn, [regime, aDecl]);
+    await employeePaymentDetails().deleteMany({ userId: { $in: ['bala', 'dev'] } });
+  }
+
   const withBal = await setMyEpfBalance('asha', { balancePaise: R(230000), asOn: '2026-09-30' }, nov30);
   const novTotal = novPf.employeePaise + novPf.employerEpfPaise;
   check('EPF balance: ₹2,30,000 as on 30 Sep plus the PF payroll put in after it (November)',
