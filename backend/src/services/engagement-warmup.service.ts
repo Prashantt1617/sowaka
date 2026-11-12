@@ -33,8 +33,8 @@ const BETWEEN_ORGS_MS = 2_000;
 const IST_OFFSET_MS = 330 * 60_000;
 const DAY_MS = 86_400_000;
 
-/** Test and demo companies nobody needs warmed; `ENGAGEMENT_WARM_SKIP_ORGS` (comma-separated) replaces the list. */
-const DEFAULT_SKIP = ['sowaka', 'halcyon', 'toyota'];
+/** Companies not to warm (none by default: Sowaka and Sowaka Demo are opened in demos); `ENGAGEMENT_WARM_SKIP_ORGS` (comma-separated) sets the list. */
+const DEFAULT_SKIP: string[] = [];
 const skipOrgs = (): Set<string> => {
   const raw = process.env.ENGAGEMENT_WARM_SKIP_ORGS;
   const list = raw === undefined ? DEFAULT_SKIP : raw.split(',').map((s) => s.trim()).filter(Boolean);
