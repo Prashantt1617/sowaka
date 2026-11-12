@@ -29,6 +29,7 @@ import {
   relayTeams,
   users,
 } from '../config/db';
+import type { Document } from 'mongodb';
 import type { GameScore } from '../models/game.model';
 import type { User } from '../models/user.model';
 import { catalogFor, type PublicGame } from './game-catalog.service';
@@ -114,10 +115,13 @@ function lineOf(game: PublicGame): GameLine {
 }
 
 /** The company's games in the app's order (its catalog), and Hint Relay when it has run one without an entry. */
-async function lineUpFor(org: string): Promise<GameLine[]> {
-  const catalog = await catalogFor({ userId: '', name: '', org });
+async function lineUpFor(org: string, ranRelay?: Promise<boolean>): Promise<GameLine[]> {
+  const [catalog, relays] = await Promise.all([
+    catalogFor({ userId: '', name: '', org }),
+    ranRelay ? ranRelay.then((ran) => (ran ? 1 : 0)) : relayEvents().countDocuments({ org }, { limit: 1 }),
+  ]);
   const lines = catalog.filter((g) => g.key !== TOURNAMENT_PAGE).map(lineOf);
-  if (!lines.some((g) => g.key === RELAY_KEY) && (await relayEvents().countDocuments({ org }, { limit: 1 })) > 0) {
+  if (!lines.some((g) => g.key === RELAY_KEY) && relays > 0) {
     lines.push({
       key: RELAY_KEY,
       name: 'Hint Relay',
@@ -135,17 +139,24 @@ async function lineUpFor(org: string): Promise<GameLine[]> {
   return lines;
 }
 
-/** Everyone at the company with what the tables group by; people who have left only when asked for by id. */
-async function peopleOf(org: string, alsoIds: Set<string> = new Set()): Promise<GamePerson[]> {
-  const rows = await users()
+type PersonRow = Pick<User, 'userId' | 'name' | 'department' | 'location' | 'managerUserId' | 'lifecycleStatus'> & { isCounsellor?: boolean; hiddenFromDirectory?: boolean };
+
+/** Everyone at the company, as `peopleOf` reads them: read alongside the plays, since it does not depend on them. */
+function peopleRowsOf(org: string): Promise<PersonRow[]> {
+  return users()
     .find(
       { org },
       { projection: { _id: 0, userId: 1, name: 1, department: 1, location: 1, managerUserId: 1, lifecycleStatus: 1, isCounsellor: 1, hiddenFromDirectory: 1 } },
     )
-    .toArray();
+    .batchSize(ONE_BATCH.batchSize)
+    .toArray() as Promise<PersonRow[]>;
+}
+
+/** Everyone at the company with what the tables group by; people who have left only when asked for by id. */
+function peopleOf(rows: PersonRow[], alsoIds: Set<string> = new Set()): GamePerson[] {
   const names = new Map(rows.map((u) => [u.userId, u.name]));
   const out: GamePerson[] = [];
-  for (const u of rows as (User & { isCounsellor?: boolean; hiddenFromDirectory?: boolean })[]) {
+  for (const u of rows) {
     const gone = INACTIVE.includes(u.lifecycleStatus) || u.isCounsellor === true || u.hiddenFromDirectory === true;
     if (gone && !alsoIds.has(u.userId)) continue;
     out.push({
@@ -166,40 +177,72 @@ interface Play {
   at: Date;
 }
 
-/** Every play the server kept at the company (see the top of the file), one per person per game per minute. */
-async function playsOf(org: string): Promise<Play[]> {
-  const launchScores = getDb().collection<{ org: string; gameKey: string; userId: string; achievedAt: Date }>('game_launch_scores');
-  const [ledger, bests, launches, challenges, cupRows, cupMatchRows, pokerRows, pokerEventRows, payouts, relayRows] = await Promise.all([
-    pointEvents()
-      .find({ org, reason: 'game', gameKey: { $exists: true } }, { projection: { _id: 0, userId: 1, gameKey: 1, createdAt: 1 } })
-      .sort({ createdAt: -1 })
-      .limit(MAX_PLAYS)
-      .toArray(),
-    gameScores()
-      .find({ org, gameId: /^catalog:/ }, { projection: { _id: 0, gameId: 1, userId: 1, achievedAt: 1 } })
-      .toArray(),
-    launchScores.find({ org }, { projection: { _id: 0, gameKey: 1, userId: 1, achievedAt: 1 } }).toArray(),
-    gameChallenges()
-      .find({ org }, { projection: { _id: 0, gameKey: 1, scores: 1 } })
-      .sort({ createdAt: -1 })
-      .limit(MAX_PLAYS)
-      .toArray(),
-    cupEvents().find({ org }, { projection: { _id: 0, id: 1, gameKey: 1 } }).toArray(),
-    cupMatches().find({ org }, { projection: { _id: 0, eventId: 1, finals: 1 } }).toArray(),
-    pokerResults()
-      .find({ org, voided: { $ne: true } }, { projection: { _id: 0, eventId: 1, userId: 1, at: 1 } })
-      .limit(MAX_PLAYS)
-      .toArray(),
-    pokerEvents().find({ org }, { projection: { _id: 0, id: 1, catalogKey: 1 } }).toArray(),
-    squadPayouts().find({ org }, { projection: { _id: 0, points: 1, paidAt: 1 } }).toArray(),
-    relayEvents().find({ org }, { projection: { _id: 0, id: 1 } }).toArray(),
-  ]);
-  const presence = relayRows.length
-    ? await relayPresence()
-        .find({ eventId: { $in: relayRows.map((e) => e.id) } }, { projection: { _id: 0, userId: 1, lastSeenAt: 1 } })
-        .toArray()
-    : [];
+/** Rows per cursor round trip: the default of a hundred turns a company's plays into dozens of trips. */
+const ONE_BATCH = { batchSize: 10_000 };
 
+/** Another collection's rows, as a branch of the aggregation that starts on the ledger, tagged with what they are. */
+const branch = (coll: string, k: string, pipeline: Document[]): Document => ({ $unionWith: { coll, pipeline: [...pipeline, { $set: { k } }] } });
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = Record<string, any> & { k: string };
+
+/**
+ * Everything the Games page reads of the company's games, in one aggregation:
+ * the plays of every kind (see the top of the file), the tournaments of every
+ * kind with their state, and the points games paid each person. Each branch
+ * keeps its own order, so the rows read exactly as separate queries read them.
+ */
+async function gameRowsOf(org: string): Promise<Map<string, Row[]>> {
+  const rows = await pointEvents().aggregate<Row>([
+    { $match: { org, reason: 'game', gameKey: { $exists: true } } },
+    { $sort: { createdAt: -1 } },
+    { $limit: MAX_PLAYS },
+    { $project: { _id: 0, userId: 1, gameKey: 1, createdAt: 1 } },
+    { $set: { k: 'ledger' } },
+    branch('game_scores', 'best', [{ $match: { org, gameId: /^catalog:/ } }, { $project: { _id: 0, gameId: 1, userId: 1, achievedAt: 1 } }]),
+    branch('game_launch_scores', 'launch', [{ $match: { org } }, { $project: { _id: 0, gameKey: 1, userId: 1, achievedAt: 1 } }]),
+    branch('game_challenges', 'challenge', [{ $match: { org } }, { $sort: { createdAt: -1 } }, { $limit: MAX_PLAYS }, { $project: { _id: 0, gameKey: 1, scores: 1 } }]),
+    branch('cup_events', 'cup', [{ $match: { org } }, { $project: { _id: 0, id: 1, gameKey: 1, phase: 1 } }]),
+    branch('cup_matches', 'cupMatch', [{ $match: { org } }, { $project: { _id: 0, eventId: 1, finals: 1 } }]),
+    branch('poker_results', 'poker', [{ $match: { org, voided: { $ne: true } } }, { $limit: MAX_PLAYS }, { $project: { _id: 0, eventId: 1, userId: 1, at: 1 } }]),
+    branch('poker_events', 'pokerEvent', [{ $match: { org } }, { $project: { _id: 0, id: 1, catalogKey: 1, status: 1 } }]),
+    branch('secret_squad_payouts', 'payout', [{ $match: { org } }, { $project: { _id: 0, points: 1, paidAt: 1 } }]),
+    branch('secret_squad_sessions', 'squad', [{ $match: { org, status: { $ne: 'cancelled' } } }, { $project: { _id: 0, startsAt: 1 } }]),
+    branch('relay_events', 'relay', [{ $match: { org } }, { $project: { _id: 0, id: 1, status: 1 } }]),
+    // Hint Relay presence has no org: it is the org's events' presence.
+    branch('relay_events', 'presence', [
+      { $match: { org } },
+      { $project: { _id: 0, id: 1 } },
+      {
+        $lookup: {
+          from: 'relay_presence',
+          let: { id: '$id' },
+          pipeline: [{ $match: { $expr: { $eq: ['$eventId', '$$id'] } } }, { $project: { _id: 0, userId: 1, lastSeenAt: 1 } }],
+          as: 'p',
+        },
+      },
+      { $unwind: '$p' },
+      { $replaceRoot: { newRoot: '$p' } },
+    ]),
+    // What games paid each person: the ledger's game rows and Hint Relay's answers, and Speed Poker's own results.
+    branch('point_events', 'ledgerPoints', [
+      { $match: { org, $or: [{ reason: 'game' }, { source: 'hint_relay' }] } },
+      { $group: { _id: '$userId', points: { $sum: '$delta' } } },
+    ]),
+    branch('poker_results', 'pokerPoints', [{ $match: { org, voided: { $ne: true } } }, { $group: { _id: '$userId', points: { $sum: '$points' } } }]),
+  ], ONE_BATCH).toArray();
+  const by = new Map<string, Row[]>();
+  for (const r of rows) {
+    const list = by.get(r.k);
+    if (list) list.push(r);
+    else by.set(r.k, [r]);
+  }
+  return by;
+}
+
+/** Every play the server kept at the company (see the top of the file), one per person per game per minute. */
+function playsFrom(rows: Map<string, Row[]>): Play[] {
+  const of = (k: string) => rows.get(k) ?? [];
   const plays: Play[] = [];
   const seen = new Set<string>();
   const add = (key: unknown, userId: unknown, at: unknown) => {
@@ -210,28 +253,28 @@ async function playsOf(org: string): Promise<Play[]> {
     seen.add(id);
     plays.push({ key, userId, at: when });
   };
-  for (const r of ledger) add(r.gameKey, r.userId, r.createdAt);
-  for (const r of bests) add(r.gameId.slice('catalog:'.length), r.userId, r.achievedAt);
-  for (const r of launches) add(r.gameKey, r.userId, r.achievedAt);
-  for (const c of challenges) for (const [uid, s] of Object.entries(c.scores ?? {})) add(c.gameKey, uid, s?.finishedAt);
-  const cupGame = new Map(cupRows.map((e) => [e.id, e.gameKey]));
-  for (const m of cupMatchRows) for (const [uid, s] of Object.entries(m.finals ?? {})) add(cupGame.get(m.eventId), uid, s?.at);
-  const pokerGame = new Map(pokerEventRows.map((e) => [e.id, e.catalogKey || POKER_KEY]));
-  for (const r of pokerRows) add(pokerGame.get(r.eventId) ?? POKER_KEY, r.userId, r.at);
-  for (const p of payouts) for (const uid of Object.keys(p.points ?? {})) add(SQUAD_KEY, uid, p.paidAt);
-  for (const p of presence) add(RELAY_KEY, p.userId, p.lastSeenAt);
+  for (const r of of('ledger')) add(r.gameKey, r.userId, r.createdAt);
+  for (const r of of('best')) add(String(r.gameId).slice('catalog:'.length), r.userId, r.achievedAt);
+  for (const r of of('launch')) add(r.gameKey, r.userId, r.achievedAt);
+  for (const c of of('challenge')) for (const [uid, s] of Object.entries((c.scores ?? {}) as Record<string, { finishedAt?: unknown } | null>)) add(c.gameKey, uid, s?.finishedAt);
+  const cupGame = new Map(of('cup').map((e) => [e.id, e.gameKey]));
+  for (const m of of('cupMatch')) for (const [uid, s] of Object.entries((m.finals ?? {}) as Record<string, { at?: unknown } | null>)) add(cupGame.get(m.eventId), uid, s?.at);
+  const pokerGame = new Map(of('pokerEvent').map((e) => [e.id, e.catalogKey || POKER_KEY]));
+  for (const r of of('poker')) add(pokerGame.get(r.eventId) ?? POKER_KEY, r.userId, r.at);
+  for (const p of of('payout')) for (const uid of Object.keys(p.points ?? {})) add(SQUAD_KEY, uid, p.paidAt);
+  for (const p of of('presence')) add(RELAY_KEY, p.userId, p.lastSeenAt);
   plays.sort((a, b) => a.at.getTime() - b.at.getTime());
   return plays.length > MAX_PLAYS ? plays.slice(plays.length - MAX_PLAYS) : plays;
 }
 
+/** Every play the server kept at the company, for one game's page. */
+async function playsOf(org: string): Promise<Play[]> {
+  return playsFrom(await gameRowsOf(org));
+}
+
 /** Tournaments of every kind at the company, counted per game: [total, still to come or on]. */
-async function tournamentCounts(org: string): Promise<Map<string, [number, number]>> {
-  const [cups, pokers, relays, squads] = await Promise.all([
-    cupEvents().find({ org }, { projection: { _id: 0, gameKey: 1, phase: 1 } }).toArray(),
-    pokerEvents().find({ org, status: { $ne: 'draft' } }, { projection: { _id: 0, catalogKey: 1, status: 1 } }).toArray(),
-    relayEvents().find({ org }, { projection: { _id: 0, status: 1 } }).toArray(),
-    squadSchedules().find({ org, status: { $ne: 'cancelled' } }, { projection: { _id: 0, startsAt: 1 } }).toArray(),
-  ]);
+function tournamentCounts(rows: Map<string, Row[]>): Map<string, [number, number]> {
+  const of = (k: string) => rows.get(k) ?? [];
   const counts = new Map<string, [number, number]>();
   const bump = (key: string, open: boolean) => {
     const c = counts.get(key) ?? [0, 0];
@@ -239,11 +282,11 @@ async function tournamentCounts(org: string): Promise<Map<string, [number, numbe
     if (open) c[1] += 1;
     counts.set(key, c);
   };
-  for (const e of cups) bump(e.gameKey, e.phase !== 'done');
-  for (const e of pokers) bump(e.catalogKey || POKER_KEY, e.status !== 'over');
-  for (const e of relays) bump(RELAY_KEY, e.status !== 'finished');
+  for (const e of of('cup')) bump(e.gameKey, e.phase !== 'done');
+  for (const e of of('pokerEvent')) if (e.status !== 'draft') bump(e.catalogKey || POKER_KEY, e.status !== 'over');
+  for (const e of of('relay')) bump(RELAY_KEY, e.status !== 'finished');
   const now = Date.now();
-  for (const s of squads) bump(SQUAD_KEY, s.startsAt.getTime() > now);
+  for (const s of of('squad')) bump(SQUAD_KEY, s.startsAt.getTime() > now);
   return counts;
 }
 
@@ -253,23 +296,11 @@ async function tournamentCounts(org: string): Promise<Map<string, [number, numbe
  * tables, which pay through their own results. The ledger starts on the day
  * it was added; nothing before then was written back.
  */
-async function gamePointsOf(org: string): Promise<Map<string, number>> {
-  const [ledger, poker] = await Promise.all([
-    pointEvents()
-      .aggregate<{ _id: string; points: number }>([
-        { $match: { org, $or: [{ reason: 'game' }, { source: 'hint_relay' }] } },
-        { $group: { _id: '$userId', points: { $sum: '$delta' } } },
-      ])
-      .toArray(),
-    pokerResults()
-      .aggregate<{ _id: string; points: number }>([
-        { $match: { org, voided: { $ne: true } } },
-        { $group: { _id: '$userId', points: { $sum: '$points' } } },
-      ])
-      .toArray(),
-  ]);
+function gamePointsOf(rows: Map<string, Row[]>): Map<string, number> {
   const out = new Map<string, number>();
-  for (const r of [...ledger, ...poker]) out.set(r._id, (out.get(r._id) ?? 0) + (Number.isFinite(r.points) ? r.points : 0));
+  for (const r of [...(rows.get('ledgerPoints') ?? []), ...(rows.get('pokerPoints') ?? [])]) {
+    out.set(r._id, (out.get(r._id) ?? 0) + (Number.isFinite(r.points) ? r.points : 0));
+  }
   return out;
 }
 
@@ -283,11 +314,20 @@ export function gamesOverview(org: string) {
   return cachedEngagement(org, 'games', null, () => buildGamesOverview(org));
 }
 
+/** Three reads side by side: the catalog, the people, and one aggregation of everything games kept. */
 async function buildGamesOverview(org: string) {
-  const [games, plays, counts, points] = await Promise.all([lineUpFor(org), playsOf(org), tournamentCounts(org), gamePointsOf(org)]);
+  const reading = gameRowsOf(org);
+  const [games, read, personRows] = await Promise.all([
+    lineUpFor(org, reading.then((r) => (r.get('relay')?.length ?? 0) > 0)),
+    reading,
+    peopleRowsOf(org),
+  ]);
+  const plays = playsFrom(read);
+  const counts = tournamentCounts(read);
+  const points = gamePointsOf(read);
   const keys = new Map(games.map((g, i) => [g.key, i]));
   const mine = plays.filter((p) => keys.has(p.key));
-  const people = await peopleOf(org, new Set(mine.map((p) => p.userId)));
+  const people = peopleOf(personRows, new Set(mine.map((p) => p.userId)));
   const index = new Map(people.map((p, i) => [p.id, i]));
   const rows: [number, number, number][] = [];
   for (const p of mine) {

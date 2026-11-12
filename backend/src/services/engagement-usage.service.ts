@@ -13,35 +13,22 @@
  */
 import type { Document } from 'mongodb';
 import {
-  attendanceRecords,
-  attendanceRegularizations,
   connectPosts,
-  feedbackRecords,
-  gameChallenges,
-  gameScores,
-  getDb,
-  investmentProofs,
   leaves,
   notifications,
-  overtimeRequests,
-  reimbursementClaims,
-  relayEvents,
-  relayPresence,
+  shiftAssignments,
+  shiftTemplates,
   users,
 } from '../config/db';
 import type { User } from '../models/user.model';
-import type { PunchFormat } from '../models/shift.model';
+import type { PunchFormat, ShiftAssignment } from '../models/shift.model';
 import { AdminError } from './admin.service';
 import { appActivity } from './app-activity.service';
 import { missedPunchPeople } from './attendance-report.service';
 import { cachedEngagement } from './engagement-cache';
 import { getCompanyConfig } from './company-settings.service';
-import { cupMatches } from './cup.service';
 import { notifiesOrg, notifyUsers } from './notification.service';
-import { pointEvents } from './points-ledger.service';
-import { pokerResults } from './poker-db';
-import { policiesForPeople } from './shift.service';
-import { squadPayouts } from './secret-squad.service';
+import { getOrgShiftPolicy, policiesForPeople, resolvePolicies, type ResolvedShiftPolicy } from './shift.service';
 
 export type UsageGroup = 'app' | 'bio' | 'present';
 
@@ -147,28 +134,42 @@ type RosterRow = Pick<
   'userId' | 'name' | 'org' | 'department' | 'location' | 'branch' | 'managerUserId' | 'lastLoginAt' | 'profilePhotoKey' | 'interests' | 'faceId' | 'overtimeEligible' | 'employeeId'
 > & { hasLegacyPhoto?: boolean };
 
+/** A roster row with what grading attendance also reads, and whether the person is hidden from the directory. */
+type EveryoneRow = RosterRow & Pick<User, 'state' | 'joiningDate'> & { hidden: boolean };
+
+/** Rows per cursor round trip: the default of a hundred turns a big roster into several trips. */
+const ONE_BATCH = { batchSize: 10_000 };
+
+const ROSTER_FIELDS = {
+  _id: 0, userId: 1, name: 1, org: 1, department: 1, location: 1, branch: 1, managerUserId: 1, lastLoginAt: 1,
+  profilePhotoKey: 1, interests: 1, overtimeEligible: 1, employeeId: 1,
+  faceId: { $cond: [{ $ifNull: ['$faceId.faceId', false] }, { faceId: '$faceId.faceId' }, '$$REMOVE'] },
+  // The legacy photo is an inline data URI hundreds of KB long: ask only whether it is there.
+  hasLegacyPhoto: { $gt: [{ $strLenBytes: { $ifNull: ['$profilePhotoUrl', ''] } }, 0] },
+};
+
 /** Everyone on the roll in the org: not offboarded, not a service account. */
 async function rosterOf(org: string): Promise<RosterRow[]> {
-  // The legacy photo is an inline data URI hundreds of KB long: ask only whether it is there.
   return users()
     .aggregate<RosterRow>([
       { $match: { org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] }, hiddenFromDirectory: { $ne: true } } },
-      {
-        $project: {
-          _id: 0, userId: 1, name: 1, org: 1, department: 1, location: 1, branch: 1, managerUserId: 1, lastLoginAt: 1,
-          profilePhotoKey: 1, interests: 1, overtimeEligible: 1, employeeId: 1,
-          faceId: { $cond: [{ $ifNull: ['$faceId.faceId', false] }, { faceId: '$faceId.faceId' }, '$$REMOVE'] },
-          hasLegacyPhoto: { $gt: [{ $strLenBytes: { $ifNull: ['$profilePhotoUrl', ''] } }, 0] },
-        },
-      },
-    ])
+      { $project: ROSTER_FIELDS },
+    ], ONE_BATCH)
     .toArray();
 }
 
-/** Distinct values of `field` over the rows `match` finds. */
-async function distinctOf(col: { aggregate: (p: Document[]) => { toArray: () => Promise<Document[]> } }, match: Document, field = '$userId'): Promise<Set<string>> {
-  const rows = await col.aggregate([{ $match: match }, { $group: { _id: field } }]).toArray();
-  return new Set(rows.map((r) => String(r._id)).filter(Boolean));
+/**
+ * `rosterOf` and Reports › Attendance's roster in one read: everyone not
+ * offboarded, service accounts included (attendance grades them too), each
+ * saying whether they are hidden from the directory.
+ */
+function everyoneOf(org: string): Promise<EveryoneRow[]> {
+  return users()
+    .aggregate<EveryoneRow>([
+      { $match: { org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } } },
+      { $project: { ...ROSTER_FIELDS, state: 1, joiningDate: 1, hidden: { $eq: ['$hiddenFromDirectory', true] } } },
+    ], ONE_BATCH)
+    .toArray();
 }
 
 /** The App usage page for a range, remembered for a few minutes (see engagement-cache). */
@@ -178,59 +179,75 @@ export async function usageSummary(caller: { userId: string; org: string }, inpu
   return cachedEngagement(caller.org, 'usage-summary', { from, to, today }, () => buildUsageSummary(caller.org, from, to, today));
 }
 
+/** Newest first, as `policiesForPeople` reads assignments: `effectiveFrom`, then `createdAt`, both descending. */
+function newestFirst(a: ShiftAssignment, b: ShiftAssignment): number {
+  if (a.effectiveFrom !== b.effectiveFrom) return a.effectiveFrom < b.effectiveFrom ? 1 : -1;
+  const t = (row: ShiftAssignment) => (row.createdAt ? new Date(row.createdAt).getTime() : Number.NEGATIVE_INFINITY);
+  const ta = t(a);
+  const tb = t(b);
+  return ta === tb ? 0 : ta < tb ? 1 : -1;
+}
+
+/**
+ * Two waves of reads. First what needs only the org (the roster, the shift
+ * setup, the company, app opens), then what needs the roster's ids: shift
+ * assignments, the missed-punch grading's punches, and one aggregation each
+ * for "requests" and "what people did", which answer every distinct-person
+ * question their collections feed. The roster, templates and assignments are
+ * read once, for the policies and for the missed-punch grading alike.
+ */
 async function buildUsageSummary(org: string, from: string, to: string, today: string): Promise<UsageSummary> {
   const { start, end } = istSpan(from, to);
-  const roster = await rosterOf(org);
-  const ids = roster.map((u) => u.userId);
-  const inRoster = { $in: ids };
-
-  const activity = appActivity();
-  const [
-    policies, company, firstDay, lastOpenRows, openedRows,
-    punchers, fixers, leaveBy, otBy, reimbBy, reviewers, proofers, posters,
-    approvals, missedUsers, played, contested, toured,
-  ] = await Promise.all([
-    policiesForPeople(roster.map((u) => ({ userId: u.userId, org: u.org })), to < today ? to : today),
+  const asOf = to < today ? to : today;
+  const [everyone, company, openings, orgPolicy, templates] = await Promise.all([
+    everyoneOf(org),
     getCompanyConfig(org),
-    activity.find({ org }, { projection: { _id: 0, day: 1 } }).sort({ day: 1 }).limit(1).toArray(),
-    activity.aggregate<{ _id: string; last: string }>([
-      { $match: { org, day: { $lte: today } } },
-      { $group: { _id: '$userId', last: { $max: '$day' } } },
-    ]).toArray(),
-    activity.aggregate<{ _id: string; did: string[][] }>([
-      { $match: { org, day: { $gte: from, $lte: to } } },
-      { $group: { _id: '$userId', did: { $addToSet: '$did' } } },
-    ]).toArray(),
-    // An app punch carries the device's location; imported and auto days do not.
-    distinctOf(attendanceRecords(), { userId: inRoster, workDate: { $gte: from, $lte: to }, punchInLocation: { $exists: true } }),
-    // Rows written before out-of-location requests existed have no kind: corrections.
-    distinctOf(attendanceRegularizations(), { userId: inRoster, createdAt: { $gte: start, $lte: end }, $or: [{ kind: 'correction' }, { kind: { $exists: false } }] }),
-    // Leave stamps createdAt as epoch milliseconds; a Date is accepted too.
-    distinctOf(leaves(), { userId: inRoster, $or: [{ createdAt: { $gte: start.getTime(), $lte: end.getTime() } }, { createdAt: { $gte: start, $lte: end } }] }),
-    distinctOf(overtimeRequests(), { userId: inRoster, createdAt: { $gte: start, $lte: end } }),
-    distinctOf(reimbursementClaims(), { userId: inRoster, createdAt: { $gte: start, $lte: end } }),
-    reviewersIn(ids, start, end),
-    proofUploadersIn(org, ids, start, end),
-    postersIn(org, ids, start, end),
-    approvalsIn(roster, start, end),
-    missedPunchUsers(org, from, to < today ? to : today),
-    gamePlayersIn(org, ids, start, end),
-    contestantsIn(org, ids, start, end),
-    tournamentPlayersIn(org, ids, start, end),
+    openingsIn(org, from, to, today),
+    getOrgShiftPolicy(org),
+    shiftTemplates().find({ org }).toArray(),
   ]);
+  const roster: RosterRow[] = everyone.filter((u) => !u.hidden);
+  const ids = roster.map((u) => u.userId);
+  const onRoll = new Set(ids);
 
-  const lastOpen = new Map(lastOpenRows.map((r) => [r._id, r.last]));
-  const opened = new Map(openedRows.map((r) => [r._id, new Set(r.did.flat())]));
+  // One read of the assignments for both their users. The org's rows, in the
+  // order Reports › Attendance reads them (the same query and sort), feed the
+  // missed-punch grading; with the roll's rows written under another org they
+  // feed the policies, as `policiesForPeople` reads them (by person).
+  const assignments = shiftAssignments()
+    .aggregate<ShiftAssignment & { elsewhere?: true }>([
+      { $match: { org } },
+      { $sort: { effectiveFrom: -1 } },
+      { $unionWith: { coll: 'shift_assignments', pipeline: [{ $match: { userId: { $in: ids }, org: { $ne: org } } }, { $set: { elsewhere: true } }] } },
+    ], ONE_BATCH)
+    .toArray();
+  const [assigned, missedUsers, asked, did] = await Promise.all([
+    assignments,
+    // The report's own grading, asked only who had a missed punch or an
+    // unmarked absence: no report is built, and punch rows are read lean.
+    missedPunchPeople(org, from, asOf, { roster: everyone, templates, orgPolicy, assignments: assignments.then((rows) => rows.filter((r) => !r.elsewhere)) })
+      .catch(() => null),
+    requestsIn(org, roster, start, end, from, to),
+    doneIn(org, ids, start, end),
+  ]);
+  const policies = roster.length
+    ? resolvePolicies(
+      roster.map((u) => ({ userId: u.userId, org: u.org })),
+      { policyByOrg: new Map([[org, orgPolicy]]), templates },
+      assigned.filter((r) => onRoll.has(r.userId) && typeof r.effectiveFrom === 'string' && r.effectiveFrom <= asOf).sort(newestFirst),
+    )
+    : new Map<string, ResolvedShiftPolicy>();
+
   const reports = new Map<string, number>();
   for (const u of roster) if (u.managerUserId) reports.set(u.managerUserId, (reports.get(u.managerUserId) ?? 0) + 1);
-  const onRoll = new Set(ids);
   const disabledDepts = new Set(company.overtimeDisabledDepartments);
+  const has = (set: Set<string> | undefined, id: string) => set?.has(id) ?? false;
 
   const people: UsagePerson[] = roster.map((u) => {
     const policy = policies.get(u.userId);
-    const did = opened.get(u.userId);
+    const opened = openings.did.get(u.userId);
     const hasManager = Boolean(u.managerUserId && onRoll.has(u.managerUserId));
-    const raisedFix = fixers.has(u.userId);
+    const raisedFix = has(asked.sets.fix, u.userId);
     return {
       id: u.userId,
       name: u.name || u.employeeId || 'Unnamed',
@@ -239,18 +256,18 @@ async function buildUsageSummary(org: string, from: string, to: string, today: s
       mgr: u.managerUserId ?? '',
       group: groupOf(policy?.correction?.punchFormat),
       reports: reports.get(u.userId) ?? 0,
-      loggedIn: Boolean(u.lastLoginAt) || lastOpen.has(u.userId),
+      loggedIn: Boolean(u.lastLoginAt) || openings.lastOpen.has(u.userId),
       lastLoginAt: u.lastLoginAt ? new Date(u.lastLoginAt).toISOString() : null,
       photo: Boolean(u.profilePhotoKey) || Boolean(u.hasLegacyPhoto),
       interests: Array.isArray(u.interests) && u.interests.length > 0,
       face: Boolean(u.faceId?.faceId),
-      lastOpen: lastOpen.get(u.userId) ?? null,
-      opened: Boolean(did),
-      game: played.has(u.userId),
-      post: posters.has(u.userId),
-      contest: contested.has(u.userId),
-      tour: toured.has(u.userId),
-      appPunch: punchers.has(u.userId),
+      lastOpen: openings.lastOpen.get(u.userId) ?? null,
+      opened: Boolean(opened),
+      game: has(did.game, u.userId),
+      post: has(did.post, u.userId),
+      contest: has(did.contest, u.userId),
+      tour: has(did.tour, u.userId),
+      appPunch: has(asked.sets.punch, u.userId),
       missed: (missedUsers?.has(u.userId) ?? false) || raisedFix,
       fixed: raisedFix,
       hasManager,
@@ -259,14 +276,14 @@ async function buildUsageSummary(org: string, from: string, to: string, today: s
         policy?.overtime?.eligible !== false &&
         u.overtimeEligible !== false &&
         !disabledDepts.has((u.department ?? '').trim()),
-      leave: leaveBy.has(u.userId),
-      ot: otBy.has(u.userId),
-      reimb: reimbBy.has(u.userId),
-      decidedOnApp: approvals.decidedOnApp.has(u.userId),
-      review: reviewers.has(u.userId),
-      payslips: did?.has('payslips') ?? false,
-      payroll: did?.has('payroll') ?? false,
-      proofs: proofers.has(u.userId),
+      leave: has(asked.sets.leave, u.userId),
+      ot: has(asked.sets.ot, u.userId),
+      reimb: has(asked.sets.reimb, u.userId),
+      decidedOnApp: has(asked.sets.decided, u.userId),
+      review: has(asked.sets.review, u.userId),
+      payslips: opened?.has('payslips') ?? false,
+      payroll: opened?.has('payroll') ?? false,
+      proofs: has(asked.sets.proof, u.userId),
     };
   });
 
@@ -274,76 +291,177 @@ async function buildUsageSummary(org: string, from: string, to: string, today: s
     from,
     to,
     today,
-    trackingSince: firstDay[0]?.day ?? null,
+    trackingSince: openings.first,
     missedKnown: missedUsers !== null,
     people,
-    managers: approvals.managers,
+    managers: asked.managers,
     departments: [...new Set(people.map((p) => p.dept))].sort(),
     locations: [...new Set(people.map((p) => p.loc))].sort(),
   };
 }
 
-// ── period questions, one distinct set each ───────────────────────────────
+// ── period questions, one aggregation per family ──────────────────────────
 
-/** Anyone with a missed punch in the range, as Reports › Attendance grades it. Null if it could not be graded. */
-async function missedPunchUsers(org: string, from: string, to: string): Promise<Set<string> | null> {
-  // The report's own grading, asked only who had a missed punch or an
-  // unmarked absence: no report is built, and punch rows are read lean.
-  return missedPunchPeople(org, from, to).catch(() => null);
+/**
+ * App opens in one pass over the org's `appActivity`: the day tracking began,
+ * each person's latest day (up to today), and what they did on days in the range.
+ */
+async function openingsIn(org: string, from: string, to: string, today: string) {
+  const inRange = { $and: [{ $gte: ['$day', from] }, { $lte: ['$day', to] }] };
+  const rows = await appActivity().aggregate<{ _id: string; first: string | null; last: string | null; n: number; did: unknown[] }>([
+    { $match: { org } },
+    {
+      $group: {
+        _id: '$userId',
+        first: { $min: '$day' },
+        last: { $max: { $cond: [{ $lte: ['$day', today] }, '$day', null] } },
+        n: { $sum: { $cond: [inRange, 1, 0] } },
+        did: { $addToSet: { $cond: [inRange, '$did', '$$REMOVE'] } },
+      },
+    },
+  ], ONE_BATCH).toArray();
+  let first: string | null = null;
+  const lastOpen = new Map<string, string>();
+  const did = new Map<string, Set<unknown>>();
+  for (const r of rows) {
+    if (r.first != null && (first === null || r.first < first)) first = r.first;
+    if (r.last != null) lastOpen.set(r._id, r.last);
+    if (r.n > 0) did.set(r._id, new Set(r.did.flat()));
+  }
+  return { first, lastOpen, did };
 }
 
 /**
- * Approvals: each manager's team requests raised in the range (leave,
- * overtime, attendance fixes) and where they were settled. A manager decides
- * from the app ('manager'); 'admin' is a decision on the web dashboard, by HR
- * or by anyone with dashboard access. Reimbursements are left out: they are
- * only ever decided on the dashboard, so they say nothing about the app.
+ * Several questions of one collection in one pass: a `$facet` of
+ * `$group`-by-person pipelines, unwound to one row per answer, tagged `k`
+ * with the question. `$facet` keeps only the groups, never the rows behind them.
  */
-async function approvalsIn(roster: RosterRow[], start: Date, end: Date): Promise<{ managers: UsageManager[]; decidedOnApp: Set<string> }> {
-  const ids = roster.map((u) => u.userId);
-  const managerOf = new Map(roster.map((u) => [u.userId, u.managerUserId ?? '']));
-  const facet = (managerField: string | null) => [
-    {
-      $group: {
-        _id: managerField ?? '$userId',
-        got: { $sum: 1 },
-        app: { $sum: { $cond: [{ $eq: ['$decidedByRole', 'manager'] }, 1, 0] } },
-        web: { $sum: { $cond: [{ $eq: ['$decidedByRole', 'admin'] }, 1, 0] } },
-        wait: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
-      },
-    },
+function facetRows(questions: Record<string, Document[]>): Document[] {
+  return [
+    { $facet: questions },
+    { $project: { rows: { $concatArrays: Object.keys(questions).map((k) => ({ $map: { input: `$${k}`, in: { $mergeObjects: ['$$this', { k }] } } })) } } },
+    { $unwind: '$rows' },
+    { $replaceRoot: { newRoot: '$rows' } },
   ];
-  type Row = { _id: string; got: number; app: number; web: number; wait: number };
-  const decidedMatch = { decidedByRole: 'manager', decidedAt: { $gte: start, $lte: end } };
-  const [leaveRows, otRows, fixRows, deciders] = await Promise.all([
-    // A leave has no approver field: its approver is the requester's manager.
-    leaves().aggregate<Row>([
-      { $match: { userId: { $in: ids }, status: { $ne: 'cancelled' }, $or: [{ createdAt: { $gte: start.getTime(), $lte: end.getTime() } }, { createdAt: { $gte: start, $lte: end } }] } },
-      ...facet(null),
-    ]).toArray(),
-    overtimeRequests().aggregate<Row>([{ $match: { userId: { $in: ids }, createdAt: { $gte: start, $lte: end } } }, ...facet('$managerUserId')]).toArray(),
-    attendanceRegularizations().aggregate<Row>([{ $match: { userId: { $in: ids }, createdAt: { $gte: start, $lte: end } } }, ...facet('$managerUserId')]).toArray(),
-    Promise.all([
-      distinctOf(leaves(), { userId: { $in: ids }, ...decidedMatch }, '$decidedByUserId'),
-      distinctOf(overtimeRequests(), { userId: { $in: ids }, ...decidedMatch }, '$decidedByUserId'),
-      distinctOf(attendanceRegularizations(), { userId: { $in: ids }, ...decidedMatch }, '$decidedByUserId'),
+}
+
+/** Another collection's question, as a branch of an aggregation that starts on one collection. */
+const branch = (coll: string, pipeline: Document[]): Document => ({ $unionWith: { coll, pipeline } });
+const tagged = (k: string): Document => ({ $set: { k } });
+
+type Answer = { _id: unknown; k: string; got?: number; app?: number; web?: number; wait?: number };
+
+/** Distinct people per question, keyed as `distinctOf` keys them (the `String` of the group's id). */
+function setsOf(rows: Answer[]): Record<string, Set<string>> {
+  const out: Record<string, Set<string>> = {};
+  for (const r of rows) {
+    const id = String(r._id);
+    if (id) (out[r.k] ??= new Set()).add(id);
+  }
+  return out;
+}
+
+/**
+ * Requests and what was done about them, in one aggregation over leave,
+ * overtime, attendance fixes, reimbursements, reviews, proofs and app punches:
+ * who asked for each, who decided their team's on the app, and per manager
+ * their team's leave, overtime and attendance-fix requests raised in the range
+ * and where they were settled. A manager decides from the app ('manager');
+ * 'admin' is a decision on the web dashboard, by HR or by anyone with
+ * dashboard access. Reimbursements are left out of that: they are only ever
+ * decided on the dashboard, so they say nothing about the app.
+ */
+async function requestsIn(
+  org: string,
+  roster: RosterRow[],
+  start: Date,
+  end: Date,
+  from: string,
+  to: string,
+): Promise<{ sets: Record<string, Set<string>>; managers: UsageManager[] }> {
+  const inIds = { $in: roster.map((u) => u.userId) };
+  const created = { createdAt: { $gte: start, $lte: end } };
+  // Leave stamps createdAt as epoch milliseconds; a Date is accepted too.
+  const leaveCreated = [{ createdAt: { $gte: start.getTime(), $lte: end.getTime() } }, created];
+  const decided = { decidedByRole: 'manager', decidedAt: { $gte: start, $lte: end } };
+  const team = (by: string) => ({
+    $group: {
+      _id: by,
+      got: { $sum: 1 },
+      app: { $sum: { $cond: [{ $eq: ['$decidedByRole', 'manager'] }, 1, 0] } },
+      web: { $sum: { $cond: [{ $eq: ['$decidedByRole', 'admin'] }, 1, 0] } },
+      wait: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
+    },
+  });
+  const deciders = [{ $match: decided }, { $group: { _id: '$decidedByUserId' } }];
+  const rows = await leaves().aggregate<Answer>([
+    { $match: { userId: inIds, $or: [...leaveCreated, decided] } },
+    ...facetRows({
+      leave: [{ $match: { $or: leaveCreated } }, { $group: { _id: '$userId' } }],
+      // A leave has no approver field: its approver is the requester's manager.
+      leaveTeam: [{ $match: { status: { $ne: 'cancelled' }, $or: leaveCreated } }, team('$userId')],
+      decided: deciders,
+    }),
+    branch('overtime_requests', [
+      { $match: { userId: inIds, $or: [created, decided] } },
+      ...facetRows({
+        ot: [{ $match: created }, { $group: { _id: '$userId' } }],
+        team: [{ $match: created }, team('$managerUserId')],
+        decided: deciders,
+      }),
     ]),
-  ]);
+    branch('attendance_regularizations', [
+      { $match: { userId: inIds, $or: [created, decided] } },
+      ...facetRows({
+        // Rows written before out-of-location requests existed have no kind: corrections.
+        fix: [{ $match: { ...created, $or: [{ kind: 'correction' }, { kind: { $exists: false } }] } }, { $group: { _id: '$userId' } }],
+        team: [{ $match: created }, team('$managerUserId')],
+        decided: deciders,
+      }),
+    ]),
+    branch('reimbursement_claims', [{ $match: { userId: inIds, ...created } }, { $group: { _id: '$userId' } }, tagged('reimb')]),
+    // Managers who sent a feedback review in the range (older reviews without sentAt read their last update).
+    branch('feedback_records', [
+      {
+        $match: {
+          managerUserId: inIds,
+          status: 'sent',
+          $or: [{ sentAt: { $gte: start, $lte: end } }, { sentAt: { $exists: false }, updatedAt: { $gte: start, $lte: end } }],
+        },
+      },
+      { $group: { _id: '$managerUserId' } },
+      tagged('review'),
+    ]),
+    // Uploaded an investment proof in the range (a re-upload keeps only its latest time).
+    branch('investment_proofs', [{ $match: { org, userId: inIds, uploadedAt: { $gte: start, $lte: end } } }, { $group: { _id: '$userId' } }, tagged('proof')]),
+    // An app punch carries the device's location; imported and auto days do not.
+    branch('attendance_records', [
+      { $match: { userId: inIds, workDate: { $gte: from, $lte: to }, punchInLocation: { $exists: true } } },
+      { $group: { _id: '$userId' } },
+      tagged('punch'),
+    ]),
+  ], ONE_BATCH).toArray();
+
+  const managerOf = new Map(roster.map((u) => [u.userId, u.managerUserId ?? '']));
   const by = new Map<string, UsageManager>();
-  const add = (managerId: string, r: Row) => {
+  const add = (managerId: string, r: Answer) => {
     if (!managerId) return;
     const m = by.get(managerId) ?? { id: managerId, got: 0, app: 0, web: 0, wait: 0 };
-    m.got += r.got;
-    m.app += r.app;
-    m.web += r.web;
-    m.wait += r.wait;
+    m.got += r.got ?? 0;
+    m.app += r.app ?? 0;
+    m.web += r.web ?? 0;
+    m.wait += r.wait ?? 0;
     by.set(managerId, m);
   };
-  for (const r of leaveRows) add(managerOf.get(r._id) ?? '', r);
-  for (const r of [...otRows, ...fixRows]) add(r._id, r);
-  const decidedOnApp = new Set<string>();
-  for (const set of deciders) for (const id of set) decidedOnApp.add(id);
-  return { managers: [...by.values()].sort((a, b) => b.got - a.got), decidedOnApp };
+  for (const r of rows) {
+    if (r.k === 'leaveTeam') add(managerOf.get(String(r._id)) ?? '', r);
+    else if (r.k === 'team' && typeof r._id === 'string') add(r._id, r);
+  }
+  return {
+    sets: setsOf(rows.filter((r) => r.k !== 'leaveTeam' && r.k !== 'team')),
+    // Most requests first; a tie in manager id order (it was the order Mongo grouped them in).
+    managers: [...by.values()].sort((a, b) => b.got - a.got || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+  };
 }
 
 // ── when and how often the app is opened ──────────────────────────────────
@@ -520,113 +638,112 @@ function addMonths(ym: string, n: number): string {
   return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
 }
 
-// ── what people did: feed, contests, games, tournaments, team, payroll ────
+// ── what people did: feed, contests, games, tournaments ───────────────────
 
 const CONTEST_TYPES = ['caption_challenge', 'photo_story_challenge', 'most_likely'];
 /** Posts the server writes on its own (celebrations, game and tournament cards). */
 const AUTO_TYPES = ['birthday', 'anniversary', 'new_joinee', 'game_launch', 'live_game', 'relay_game', 'secret_squad'];
 
-const union = (...sets: Set<string>[]) => {
-  const out = new Set<string>();
-  for (const set of sets) for (const id of set) out.add(id);
-  return out;
-};
+/** The keys of an object field, as rows `{ k, v }`; nothing for anything else. */
+const entriesOf = (field: string) => ({ $cond: [{ $eq: [{ $type: field }, 'object'] }, { $objectToArray: field }, []] });
 
-/** People who wrote a post themselves in the range. Contests count under contests, not here. */
-function postersIn(org: string, ids: string[], start: Date, end: Date): Promise<Set<string>> {
-  return distinctOf(connectPosts(), {
-    org,
-    'author.userId': { $in: ids },
-    createdAt: { $gte: start, $lte: end },
+/**
+ * What people did in the range, in one aggregation:
+ *   - post: wrote a post themselves (contests count under contests, not here);
+ *   - contest: entered, voted or nominated in a contest. An entry (a Most
+ *     Likely nomination is one) carries its own time; a vote does not, so
+ *     voters count for contests that went out in the range;
+ *   - game: played any game. There is no one log of plays: the points ledger
+ *     has a row per finished Tile Up, Scribble, Pool and challenge game; a
+ *     hosted or catalogue game only shows when it set a new best (its score
+ *     row keeps the best alone); a timed launch keeps each player's best in
+ *     it; a challenge someone started but has not finished is still a game;
+ *   - tour: played in a tournament: joined a Cup match, sat at a Poker table,
+ *     showed up for a Hint Relay, or played a Secret Squad round (everyone a
+ *     round paid points to).
+ */
+async function doneIn(org: string, ids: string[], start: Date, end: Date): Promise<Record<string, Set<string>>> {
+  const inIds = { $in: ids };
+  const range = { $gte: start, $lte: end };
+  const own = {
+    'author.userId': inIds,
+    createdAt: range,
     systemKey: { $exists: false },
     type: { $nin: [...AUTO_TYPES, ...CONTEST_TYPES] },
     'author.designation': { $not: /^Auto/ },
-  }, '$author.userId');
-}
-
-/**
- * Entered, voted or nominated in a contest. An entry (a Most Likely
- * nomination is one) carries its own time; a vote does not, so voters count
- * for contests that went out in the range.
- */
-async function contestantsIn(org: string, ids: string[], start: Date, end: Date): Promise<Set<string>> {
-  const [entrants, voters] = await Promise.all([
-    connectPosts().aggregate<{ _id: string }>([
-      { $match: { org, type: { $in: CONTEST_TYPES }, 'captionEntries.createdAt': { $gte: start, $lte: end } } },
-      { $unwind: '$captionEntries' },
-      { $match: { 'captionEntries.createdAt': { $gte: start, $lte: end }, 'captionEntries.userId': { $in: ids } } },
-      { $group: { _id: '$captionEntries.userId' } },
-    ]).toArray(),
-    connectPosts().aggregate<{ _id: string }>([
-      { $match: { org, type: { $in: CONTEST_TYPES }, publishedAt: { $gte: start, $lte: end }, captionVotes: { $exists: true } } },
-      { $project: { v: { $objectToArray: '$captionVotes' } } },
-      { $unwind: '$v' },
-      { $match: { 'v.k': { $in: ids } } },
-      { $group: { _id: '$v.k' } },
-    ]).toArray(),
-  ]);
-  return new Set([...entrants, ...voters].map((r) => r._id));
-}
-
-/**
- * Played any game in the range. There is no one log of plays: the points
- * ledger has a row per finished Tile Up, Scribble, Pool and challenge game;
- * a hosted or catalogue game only shows when it set a new best (its score
- * row keeps the best alone); a timed launch keeps each player's best in it.
- */
-async function gamePlayersIn(org: string, ids: string[], start: Date, end: Date): Promise<Set<string>> {
-  const inIds = { $in: ids };
-  const sets = await Promise.all([
-    distinctOf(pointEvents(), { org, userId: inIds, reason: 'game', createdAt: { $gte: start, $lte: end } }),
-    distinctOf(gameScores(), { org, userId: inIds, achievedAt: { $gte: start, $lte: end } }),
-    distinctOf(getDb().collection('game_launch_scores'), { org, userId: inIds, achievedAt: { $gte: start, $lte: end } }),
-    // A challenge someone started but has not finished is still a game played.
-    gameChallenges().aggregate<{ _id: string }>([
+  };
+  const entered = { type: { $in: CONTEST_TYPES }, 'captionEntries.createdAt': range };
+  const voted = { type: { $in: CONTEST_TYPES }, publishedAt: range, captionVotes: { $exists: true } };
+  const people = (field: string, k: string) => [{ $group: { _id: field } }, tagged(k)];
+  const rows = await connectPosts().aggregate<Answer>([
+    { $match: { org, $or: [own, entered, voted] } },
+    // Only what the questions read: a post's comments and media stay on the server.
+    {
+      $project: {
+        _id: 0, type: 1, 'author.userId': 1, 'author.designation': 1, createdAt: 1, systemKey: 1, publishedAt: 1, captionVotes: 1,
+        'captionEntries.userId': 1, 'captionEntries.createdAt': 1,
+      },
+    },
+    ...facetRows({
+      post: [{ $match: own }, { $group: { _id: '$author.userId' } }],
+      contest: [
+        { $match: entered },
+        { $unwind: '$captionEntries' },
+        { $match: { 'captionEntries.createdAt': range, 'captionEntries.userId': inIds } },
+        { $group: { _id: '$captionEntries.userId' } },
+      ],
+      voters: [
+        { $match: voted },
+        { $project: { v: { $objectToArray: '$captionVotes' } } },
+        { $unwind: '$v' },
+        { $match: { 'v.k': inIds } },
+        { $group: { _id: '$v.k' } },
+      ],
+    }),
+    branch('point_events', [{ $match: { org, userId: inIds, reason: 'game', createdAt: range } }, ...people('$userId', 'game')]),
+    branch('game_scores', [{ $match: { org, userId: inIds, achievedAt: range } }, ...people('$userId', 'game')]),
+    branch('game_launch_scores', [{ $match: { org, userId: inIds, achievedAt: range } }, ...people('$userId', 'game')]),
+    branch('game_challenges', [
       { $match: { org, started: { $exists: true }, createdAt: { $lte: end } } },
       { $project: { s: { $objectToArray: { $ifNull: ['$started', {}] } } } },
       { $unwind: '$s' },
-      { $match: { 's.v': { $gte: start, $lte: end }, 's.k': inIds } },
-      { $group: { _id: '$s.k' } },
-    ]).toArray().then((rows) => new Set(rows.map((r) => r._id))),
-  ]);
-  return union(...sets);
-}
-
-/** Played in a tournament: joined a Cup match, sat at a Poker table, showed up for a Hint Relay, or played a Secret Squad round. */
-async function tournamentPlayersIn(org: string, ids: string[], start: Date, end: Date): Promise<Set<string>> {
-  const inIds = { $in: ids };
-  const relayIds = (await relayEvents().find({ org }, { projection: { _id: 0, id: 1 } }).toArray()).map((e) => e.id);
-  const sets = await Promise.all([
-    cupMatches().aggregate<{ _id: string }>([
+      { $match: { 's.v': range, 's.k': inIds } },
+      ...people('$s.k', 'game'),
+    ]),
+    branch('cup_matches', [
       { $match: { org } },
       { $project: { j: { $objectToArray: { $ifNull: ['$joined', {}] } } } },
       { $unwind: '$j' },
-      { $match: { 'j.v': { $gte: start, $lte: end }, 'j.k': inIds } },
-      { $group: { _id: '$j.k' } },
-    ]).toArray().then((rows) => new Set(rows.map((r) => r._id))),
-    distinctOf(pokerResults(), { org, userId: inIds, voided: { $ne: true }, at: { $gte: start, $lte: end } }),
-    relayIds.length
-      ? distinctOf(relayPresence(), { eventId: { $in: relayIds }, userId: inIds, lastSeenAt: { $gte: start, $lte: end } })
-      : Promise.resolve(new Set<string>()),
-    // Secret Squad: everyone a round paid points to.
-    squadPayouts().find({ org, paidAt: { $gte: start, $lte: end } }, { projection: { _id: 0, points: 1 } }).toArray()
-      .then((rows) => new Set(rows.flatMap((r) => Object.keys(r.points ?? {})).filter((id) => ids.includes(id)))),
-  ]);
-  return union(...sets);
-}
-
-/** Managers who sent a feedback review in the range (older reviews without sentAt read their last update). */
-function reviewersIn(ids: string[], start: Date, end: Date): Promise<Set<string>> {
-  return distinctOf(feedbackRecords(), {
-    managerUserId: { $in: ids },
-    status: 'sent',
-    $or: [{ sentAt: { $gte: start, $lte: end } }, { sentAt: { $exists: false }, updatedAt: { $gte: start, $lte: end } }],
-  }, '$managerUserId');
-}
-
-/** Uploaded an investment proof in the range (a re-upload keeps only its latest time). */
-function proofUploadersIn(org: string, ids: string[], start: Date, end: Date): Promise<Set<string>> {
-  return distinctOf(investmentProofs(), { org, userId: { $in: ids }, uploadedAt: { $gte: start, $lte: end } });
+      { $match: { 'j.v': range, 'j.k': inIds } },
+      ...people('$j.k', 'tour'),
+    ]),
+    branch('poker_results', [{ $match: { org, userId: inIds, voided: { $ne: true }, at: range } }, ...people('$userId', 'tour')]),
+    // Hint Relay presence has no org: it is the org's events' presence.
+    branch('relay_events', [
+      { $match: { org } },
+      { $project: { _id: 0, id: 1 } },
+      {
+        $lookup: {
+          from: 'relay_presence',
+          let: { id: '$id' },
+          pipeline: [{ $match: { $expr: { $eq: ['$eventId', '$$id'] }, userId: inIds, lastSeenAt: range } }, { $project: { _id: 0, userId: 1 } }],
+          as: 'p',
+        },
+      },
+      { $unwind: '$p' },
+      ...people('$p.userId', 'tour'),
+    ]),
+    branch('secret_squad_payouts', [
+      { $match: { org, paidAt: range } },
+      { $project: { p: entriesOf('$points') } },
+      { $unwind: '$p' },
+      { $match: { 'p.k': inIds } },
+      ...people('$p.k', 'tour'),
+    ]),
+  ], ONE_BATCH).toArray();
+  const sets = setsOf(rows);
+  for (const id of sets.voters ?? []) (sets.contest ??= new Set()).add(id);
+  return sets;
 }
 
 // ── a push to people who have gone quiet ──────────────────────────────────

@@ -40,26 +40,48 @@ export type FeedAs = 'all' | 'company' | 'team' | 'list' | `person:${string}`;
 export async function feedSummary(admin: Admin) {
   const org = orgForUser(admin);
   const now = new Date();
-  const [total, pinned, openTargets, people] = await Promise.all([
-    connectPosts().countDocuments({ org }),
-    connectPosts().countDocuments({ org, pinnedUntil: { $gt: now } }),
-    contentReports()
-      .aggregate<{ _id: unknown }>([
-        { $match: { org, status: 'open' } },
-        { $group: { _id: { postId: '$postId', commentId: '$commentId' } } },
+  // The two counts and the open reports in one round trip, beside the people.
+  const [counts, people] = await Promise.all([
+    connectPosts()
+      .aggregate<{ k: 'posts'; total: number; pinned: number } | { k: 'reports'; n: number }>([
+        { $match: { org } },
+        { $project: { _id: 0, pinnedUntil: 1 } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            // As `pinnedUntil: { $gt: now }` matches: a date after now.
+            pinned: { $sum: { $cond: [{ $and: [{ $eq: [{ $type: '$pinnedUntil' }, 'date'] }, { $gt: ['$pinnedUntil', now] }] }, 1, 0] } },
+          },
+        },
+        { $set: { k: 'posts' } },
+        {
+          $unionWith: {
+            coll: 'content_reports',
+            pipeline: [
+              { $match: { org, status: 'open' } },
+              { $group: { _id: { postId: '$postId', commentId: '$commentId' } } },
+              { $count: 'n' },
+              { $set: { k: 'reports' } },
+            ],
+          },
+        },
       ])
       .toArray(),
     users()
       .find({ org, lifecycleStatus: { $nin: PEOPLE_GONE as never } })
       .project<{ userId: string; name: string; department?: string }>({ _id: 0, userId: 1, name: 1, department: 1 })
       .sort({ name: 1 })
+      .batchSize(10_000)
       .toArray(),
   ]);
+  const posts = counts.find((c) => c.k === 'posts') as { total: number; pinned: number } | undefined;
+  const reports = counts.find((c) => c.k === 'reports') as { n: number } | undefined;
   return {
-    total,
-    pinned,
+    total: posts?.total ?? 0,
+    pinned: posts?.pinned ?? 0,
     pinMax: FEED_MAX_PINNED,
-    reportsOpen: openTargets.length,
+    reportsOpen: reports?.n ?? 0,
     // For "See the feed as" one person.
     people: people.map((p) => ({ userId: p.userId, name: p.name, department: p.department ?? '' })),
   };
@@ -125,16 +147,32 @@ export async function feedPage(admin: Admin, options: { as?: string; cursor?: st
     : null;
   const sort = { publishedAt: -1, createdAt: -1, _id: -1 } as const;
 
-  const [pinned, rows] = await Promise.all([
-    after
-      ? Promise.resolve([] as ConnectPost[])
-      : connectPosts().find({ ...base, pinnedUntil: { $gt: now } }).sort(sort).limit(FEED_MAX_PINNED).toArray(),
-    connectPosts()
-      .find(older ? { org, $and: [audience, older] } : base)
-      .sort(sort)
-      .limit(PAGE + 1 + FEED_MAX_PINNED)
-      .toArray(),
-  ]);
+  // The page and, on the first page, the live pins, in one round trip: the
+  // pins come after the page, marked, and are told apart here.
+  const PIN = '__leadingPin';
+  const both = await connectPosts()
+    .aggregate<ConnectPost & { [PIN]?: true }>([
+      { $match: older ? { org, $and: [audience, older] } : base },
+      { $sort: sort },
+      { $limit: PAGE + 1 + FEED_MAX_PINNED },
+      ...(after
+        ? []
+        : [{
+          $unionWith: {
+            coll: 'connect_posts',
+            pipeline: [{ $match: { ...base, pinnedUntil: { $gt: now } } }, { $sort: sort }, { $limit: FEED_MAX_PINNED }, { $set: { [PIN]: true } }],
+          },
+        }]),
+    ])
+    .toArray();
+  const pinned: ConnectPost[] = [];
+  const rows: ConnectPost[] = [];
+  for (const post of both) {
+    if (post[PIN]) {
+      delete post[PIN];
+      pinned.push(post);
+    } else rows.push(post);
+  }
   const shownPinned = after ? after.pinnedIds : pinned.map((post) => post.id);
   const page = rows.filter((post) => !shownPinned.includes(post.id)).slice(0, PAGE + 1);
   const hasMore = page.length > PAGE;
