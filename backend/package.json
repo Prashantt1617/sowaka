@@ -31,6 +31,8 @@
     "hot-paths:check": "tsx src/scripts/hot-paths-check.ts",
     "image-fit:check": "tsx src/scripts/image-fit-check.ts",
     "media:backfill": "tsx src/scripts/media-copies-backfill.ts",
+    "app-opens:backfill": "tsx src/scripts/app-opens-backfill.ts",
+    "app-opens-backfill:check": "MONGODB_DB=scratch_appopens NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/app-opens-backfill-check.ts",
     "employee-details:check": "tsx src/scripts/employee-details-check.ts",
     "leave-without-pay:check": "tsx src/scripts/leave-without-pay-check.ts",
     "leave-cancel:check": "tsx src/scripts/leave-cancel-check.ts",
