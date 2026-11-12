@@ -1205,15 +1205,21 @@ export interface ConnectPostInput {
   removeMedia?: boolean;
 }
 
+/// What one poll option shows: a picture or a video, uploaded through the
+/// same `pollOptionImages` field (and so the same limits and storage) either
+/// way. The field keeps its old name so app builds from before video still
+/// send their pictures in it.
+type PollOptionMedia = { objectKey: string; contentType: string };
+
 function sparsePollImageKeys(
   uploaded: UploadedMedia[],
   indexes: number[] | undefined,
-): (string | undefined)[] {
+): (PollOptionMedia | undefined)[] {
   if (uploaded.length === 0) return [];
-  const keys: (string | undefined)[] = [];
+  const keys: (PollOptionMedia | undefined)[] = [];
   uploaded.forEach((media, i) => {
     const optionIndex = indexes?.[i] ?? i;
-    keys[optionIndex] = media.objectKey;
+    keys[optionIndex] = { objectKey: media.objectKey, contentType: media.contentType };
   });
   return keys;
 }
@@ -1688,14 +1694,26 @@ async function viewPost(
           label: string;
           votes: number;
           imageObjectKey?: string;
+          videoObjectKey?: string;
         }>
       ).map(async (option) => {
         const liveVotes =
           option.votes + Object.values(pollVotes).filter((vote) => vote === option.id).length;
-        const imageUrl = option.imageObjectKey
-          ? await presignConnectMedia(option.imageObjectKey).catch(() => undefined)
-          : undefined;
-        return { ...option, votes: liveVotes, imageUrl };
+        const [imageUrl, videoUrl] = await Promise.all([
+          option.imageObjectKey
+            ? presignConnectMedia(option.imageObjectKey).catch(() => undefined)
+            : undefined,
+          // Served whole, as a video post's is: no width to ask for.
+          option.videoObjectKey
+            ? presignConnectMedia(option.videoObjectKey).catch(() => undefined)
+            : undefined,
+        ]);
+        return {
+          ...option,
+          votes: liveVotes,
+          imageUrl,
+          ...(option.videoObjectKey ? { videoUrl, mediaKind: 'video' } : {}),
+        };
       }),
     );
     body.options = options;
@@ -2009,7 +2027,7 @@ export function parsePostTypeList(value: unknown): ConnectPostType[] {
 function normalizePostBody(
   type: ConnectPostType,
   input: Record<string, unknown>,
-  pollOptionImageKeys: (string | undefined)[] = [],
+  pollOptionImageKeys: (PollOptionMedia | undefined)[] = [],
 ) {
   switch (type) {
     case 'leadership':
@@ -2237,13 +2255,28 @@ function mediaFromBody(body: Record<string, unknown>): UploadedMedia[] {
   }));
 }
 
-function existingPollImageKeys(body: Record<string, unknown>): (string | undefined)[] {
+/// The picture or video each option already has, kept when an edit uploads
+/// nothing new (an edit from any app build, which never sends them back).
+function existingPollImageKeys(body: Record<string, unknown>): (PollOptionMedia | undefined)[] {
   const options = Array.isArray(body.options) ? body.options : [];
-  return options.map((option) =>
-    option && typeof option === 'object' && typeof (option as { imageObjectKey?: unknown }).imageObjectKey === 'string'
-      ? ((option as { imageObjectKey?: string }).imageObjectKey as string)
-      : undefined,
-  );
+  return options.map((option) => {
+    if (!option || typeof option !== 'object') return undefined;
+    const { imageObjectKey, videoObjectKey, videoContentType } = option as {
+      imageObjectKey?: unknown;
+      videoObjectKey?: unknown;
+      videoContentType?: unknown;
+    };
+    if (typeof videoObjectKey === 'string' && videoObjectKey) {
+      return {
+        objectKey: videoObjectKey,
+        contentType: typeof videoContentType === 'string' && videoContentType ? videoContentType : 'video/mp4',
+      };
+    }
+    if (typeof imageObjectKey === 'string' && imageObjectKey) {
+      return { objectKey: imageObjectKey, contentType: 'image/jpeg' };
+    }
+    return undefined;
+  });
 }
 
 function normalizeText(value: unknown, fallback: string, maxLength: number) {
@@ -2529,7 +2562,7 @@ async function withLinkPreview(
   };
 }
 
-function normalizePollOptions(value: unknown, imageKeys: (string | undefined)[] = []) {
+function normalizePollOptions(value: unknown, imageKeys: (PollOptionMedia | undefined)[] = []) {
   const raw = Array.isArray(value) ? value : [];
   const labels = raw
     .map((item) => {
@@ -2546,8 +2579,21 @@ function normalizePollOptions(value: unknown, imageKeys: (string | undefined)[] 
     id: randomUUID(),
     label: label.slice(0, 80),
     votes: 0,
-    ...(imageKeys[index] ? { imageObjectKey: imageKeys[index] } : {}),
+    ...pollOptionMediaFields(imageKeys[index]),
   }));
+}
+
+/// A picture stays `imageObjectKey`, exactly as before video. A video is
+/// `videoObjectKey` instead, never `imageObjectKey`: app builds from before
+/// video draw whatever `imageUrl` names as a picture, so a video's address
+/// there would be a broken image — without one they show the option as they
+/// show any option with no picture, and it is still voted on.
+function pollOptionMediaFields(media: PollOptionMedia | undefined) {
+  if (!media) return {};
+  if (media.contentType.startsWith('video/')) {
+    return { videoObjectKey: media.objectKey, videoContentType: media.contentType };
+  }
+  return { imageObjectKey: media.objectKey };
 }
 
 function postMeta(type: ConnectPostType) {

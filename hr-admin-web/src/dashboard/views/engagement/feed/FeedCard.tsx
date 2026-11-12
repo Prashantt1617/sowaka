@@ -116,7 +116,23 @@ export function FeedCard({ post }: { post: FeedCardDTO }) {
           {b.options!.map((o) => (
             <div key={o.id} className="af-opt">
               <i style={{ width: total ? `${(o.votes / total) * 100}%` : 0 }} />
-              {o.imageUrl && <img src={mediaUrl(o.imageUrl)} alt="" loading="lazy" />}
+              {o.videoUrl ? (
+                // The clip's first frame, opening the video itself on a click.
+                <a
+                  className="af-optvid"
+                  href={mediaUrl(o.videoUrl)}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Play video"
+                  aria-label={`Play the video for ${o.label}`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <video src={mediaUrl(o.videoUrl)} preload="metadata" muted playsInline />
+                  <PlayGlyph />
+                </a>
+              ) : (
+                o.imageUrl && <img src={mediaUrl(o.imageUrl)} alt="" loading="lazy" />
+              )}
               <span>{o.label}</span>
               <span className="v">
                 {o.votes} · {total ? Math.round((o.votes / total) * 100) : 0}%
@@ -155,6 +171,14 @@ function gameWhen(game: NonNullable<FeedCardDTO['body']['game']>) {
   if (game.startsAt && new Date(game.startsAt).getTime() > now) return `Starts ${shortDate(game.startsAt)}`;
   if (game.endsAt) return `Open until ${shortDate(game.endsAt)}`;
   return 'Open now';
+}
+
+function PlayGlyph() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M8 5v14l11-7z" />
+    </svg>
+  );
 }
 
 export function PinGlyph({ size = 14 }: { size?: number }) {

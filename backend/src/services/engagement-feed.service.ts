@@ -270,14 +270,22 @@ async function cardOf(
   const options =
     post.type === 'survey' && Array.isArray(body.options)
       ? await Promise.all(
-          (body.options as Array<{ id: string; label: string; votes?: number; imageObjectKey?: string }>).map(
-            async (option) => ({
-              id: option.id,
-              label: option.label,
-              votes: (option.votes ?? 0) + Object.values(pollVotes).filter((v) => v === option.id).length,
-              imageUrl: option.imageObjectKey ? await presignConnectMedia(option.imageObjectKey, 360) : undefined,
-            }),
-          ),
+          (
+            body.options as Array<{
+              id: string;
+              label: string;
+              votes?: number;
+              imageObjectKey?: string;
+              videoObjectKey?: string;
+            }>
+          ).map(async (option) => ({
+            id: option.id,
+            label: option.label,
+            votes: (option.votes ?? 0) + Object.values(pollVotes).filter((v) => v === option.id).length,
+            imageUrl: option.imageObjectKey ? await presignConnectMedia(option.imageObjectKey, 360) : undefined,
+            // A video option's own clip, served whole; nothing added for any other.
+            ...(option.videoObjectKey ? { videoUrl: await presignConnectMedia(option.videoObjectKey) } : {}),
+          })),
         )
       : undefined;
   const personId = str(body, 'personUserId');

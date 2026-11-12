@@ -2,7 +2,7 @@ part of 'connect_feed_screen.dart';
 
 // The poll card (instance 3572:27926, component 2028:51565): the author row,
 // the POLL pill, the question, the options — two to a row with their
-// pictures when they have them — the tally, the like and comment bar, the
+// pictures (or videos) when they have them — the tally, the like and comment bar, the
 // two latest comments and the comment box, all on one padded column.
 
 const _pollInk = Color(0xFF222222);
@@ -151,7 +151,8 @@ class _PollPostCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final options = post.pollOptions;
-    final withImages = options.any((o) => (o.imageUrl ?? '').isNotEmpty);
+    // A picture or a video on any option sets them out as tiles.
+    final withImages = options.any((o) => o.hasMedia);
     return Container(
       padding: const EdgeInsets.all(21),
       decoration: BoxDecoration(
@@ -436,6 +437,13 @@ class _PollBadge extends StatelessWidget {
 /// their pick is outlined in brand blue with its words in light blue (node
 /// 4604:23303). The picture being looked at is outlined too while its viewer
 /// is up (node 4607:23534).
+///
+/// An option posted with a video (the editor's Media option) is a tile like
+/// any other, with the video playing in it muted by the feed's own rules —
+/// once most of it is on screen, one video at a time — and a small video
+/// mark in its corner. A tap opens it, as a picture does, to watch with
+/// sound and vote. While a viewer is up the tiles' videos stand still, so
+/// the one opened is the one that plays.
 class _PollOptionGrid extends StatefulWidget {
   const _PollOptionGrid({
     required this.post,
@@ -484,12 +492,15 @@ class _PollOptionGridState extends State<_PollOptionGrid> {
       final outlined = selected || _openId == option.id;
       final ink = selected ? const Color(0xFF83CFF4) : Colors.white;
       final image = option.imageUrl ?? '';
+      final video = option.videoUrl ?? '';
       final pct = ((option.votes / total) * 100).round();
       return Semantics(
         button: true,
         selected: selected,
         label: option.label,
-        hint: 'Opens the picture to vote',
+        hint: video.isNotEmpty
+            ? 'Opens the video to vote'
+            : 'Opens the picture to vote',
         child: _PollPressable(
           key: ValueKey('poll-option-open-${option.id}'),
           onTap: () => _open(option),
@@ -511,7 +522,20 @@ class _PollOptionGridState extends State<_PollOptionGrid> {
                 children: [
                   SizedBox.expand(
                     key: ValueKey('poll-option-image-${option.id}'),
-                    child: image.isEmpty
+                    child: video.isNotEmpty
+                        // The tap is the tile's (it opens the viewer), so
+                        // the video has no tap, sound or buttons of its own.
+                        ? IgnorePointer(
+                            child: TickerMode(
+                              enabled: _openId == null,
+                              child: FeedVideo(
+                                key: ValueKey('poll-option-video-${option.id}'),
+                                url: video,
+                                controls: false,
+                              ),
+                            ),
+                          )
+                        : image.isEmpty
                         // An option posted without a picture keeps its place
                         // in the grid on a flat grey the white words read on.
                         ? const ColoredBox(color: _pollIcons)
@@ -535,6 +559,8 @@ class _PollOptionGridState extends State<_PollOptionGrid> {
                       ),
                     ),
                   ),
+                  if (video.isNotEmpty)
+                    const Positioned(top: 8, right: 8, child: _PollVideoMark()),
                   Positioned(
                     left: 8,
                     right: 8,
@@ -610,9 +636,33 @@ class _PollOptionGridState extends State<_PollOptionGrid> {
   }
 }
 
+/// The small mark in a video tile's corner, so it reads as a video before
+/// it plays.
+class _PollVideoMark extends StatelessWidget {
+  const _PollVideoMark();
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    child: Container(
+      key: const ValueKey('poll-option-video-mark'),
+      width: 24,
+      height: 24,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        color: Color(0x8C000000),
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(Icons.videocam_rounded, size: 14, color: Colors.white),
+    ),
+  );
+}
+
 /// One picture option opened over the feed (node 4607:23605): the picture,
 /// its name and how many votes it has, and the Vote button — a picture poll
-/// is voted on from here, never from the card. The close button on the
+/// is voted on from here, never from the card. A video option opens the same
+/// way, its video playing where the picture would be — on the feed's player,
+/// muted until a tap on it, with its sound and full-screen buttons — and is
+/// voted on from the same Vote button. The close button on the
 /// picture, a tap outside or Back puts it away.
 ///
 /// It draws the post exactly as [bloc] holds it, read by [postId] on every
@@ -685,6 +735,7 @@ class _PollOptionViewerState extends State<_PollOptionViewer> {
         }
         final voted = post.selectedPollOptionId == option.id;
         final image = option.imageUrl ?? '';
+        final video = option.videoUrl ?? '';
         return Center(
           child: Padding(
             // Clear of the screen's edges, so on a short screen the picture
@@ -719,7 +770,17 @@ class _PollOptionViewerState extends State<_PollOptionViewer> {
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
-                                if (image.isEmpty)
+                                if (video.isNotEmpty)
+                                  Semantics(
+                                    label: option.label,
+                                    child: FeedVideo(
+                                      key: ValueKey(
+                                        'poll-option-viewer-video-${option.id}',
+                                      ),
+                                      url: video,
+                                    ),
+                                  )
+                                else if (image.isEmpty)
                                   const ColoredBox(color: _pollIcons)
                                 else
                                   Semantics(

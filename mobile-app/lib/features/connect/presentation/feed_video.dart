@@ -81,11 +81,16 @@ class _NoVideoCache extends FeedVideoCache {
 /// posted it over the top of the video on a shade that keeps it legible, and
 /// the sound toggle in the bottom corner, in the feed and full screen alike.
 class FeedVideo extends StatefulWidget {
-  const FeedVideo({super.key, required String this.url, this.header, this.surfaceWrapper})
-      : filePath = null;
+  const FeedVideo({
+    super.key,
+    required String this.url,
+    this.header,
+    this.surfaceWrapper,
+    this.controls = true,
+  }) : filePath = null;
 
   /// A file on this phone: the composer's preview of what is about to go up.
-  const FeedVideo.file({super.key, required String path})
+  const FeedVideo.file({super.key, required String path, this.controls = true})
       : url = null,
         filePath = path,
         header = null,
@@ -104,6 +109,12 @@ class FeedVideo extends StatefulWidget {
   final Widget Function(Widget surface)? surfaceWrapper;
 
   Widget _wrap(Widget surface) => surfaceWrapper?.call(surface) ?? surface;
+
+  /// False for a video drawn small inside something that is itself the
+  /// thing to tap — a poll option's tile: it plays and stops by the same
+  /// rules, always muted, with no buttons, clock or progress of its own and
+  /// no tap of its own, so a tap reaches what holds it.
+  final bool controls;
 
   /// Back to muted, as the app opens: each test starts where a person would.
   @visibleForTesting
@@ -237,7 +248,7 @@ class _FeedVideoState extends State<FeedVideo> {
     controller.initialize().then((_) {
       if (!mounted || !identical(_controller, controller)) return;
       controller.setLooping(!_streaming);
-      controller.setVolume(_soundOn ? 1 : 0);
+      controller.setVolume(_muted ? 0 : 1);
       setState(() {});
       _followSightSoon();
     }).catchError((Object _) {
@@ -320,7 +331,7 @@ class _FeedVideoState extends State<FeedVideo> {
     final other = _playing;
     if (other != null && !identical(other, this)) other._pause();
     _playing = this;
-    controller.setVolume(_soundOn ? 1 : 0);
+    controller.setVolume(_muted ? 0 : 1);
     controller.play();
     // Watched, not scrolled past: worth keeping on the phone for the loop.
     if (_streaming) FeedVideo.cache.keep(_url);
@@ -330,6 +341,10 @@ class _FeedVideoState extends State<FeedVideo> {
     _controller?.pause();
     if (identical(_playing, this)) _playing = null;
   }
+
+  /// Without [FeedVideo.controls] there is no way to turn the sound on, so
+  /// it never is.
+  bool get _muted => !widget.controls || !_soundOn;
 
   /// A tap: the sound on or off, here and for every video after.
   void _toggleSound() {
@@ -446,7 +461,7 @@ class _FeedVideoState extends State<FeedVideo> {
       // image of a video yet, so the frame is plain.)
       return _VideoFrame(
         aspectRatio: 4 / 5,
-        onTap: () => unawaited(_open()),
+        onTap: widget.controls ? () => unawaited(_open()) : null,
         child: _withHeader(
           const Center(
             child: Icon(Icons.movie_outlined, size: 32, color: Color(0x99FFFFFF)),
@@ -455,6 +470,16 @@ class _FeedVideoState extends State<FeedVideo> {
       );
     }
     if (_failed || controller == null) {
+      if (!widget.controls) {
+        // Too small for words, and the tap is not its own: it tries again
+        // when the network is back.
+        return const _VideoFrame(
+          aspectRatio: 4 / 5,
+          child: Center(
+            child: Icon(Icons.videocam_off_outlined, size: 24, color: Color(0x99FFFFFF)),
+          ),
+        );
+      }
       return _VideoFrame(
         aspectRatio: 4 / 5,
         onTap: _reopen,
@@ -473,7 +498,7 @@ class _FeedVideoState extends State<FeedVideo> {
         if (!value.isInitialized) {
           return _VideoFrame(
             aspectRatio: 4 / 5,
-            onTap: _toggleSound,
+            onTap: widget.controls ? _toggleSound : null,
             child: _withHeader(
               const Center(
                 child: SizedBox(
@@ -491,11 +516,12 @@ class _FeedVideoState extends State<FeedVideo> {
         // 16:9 is trimmed to fit.
         final ratio = value.aspectRatio.clamp(9 / 16, 16 / 9);
         void toggleSound() => _toggleSound();
+        final controls = widget.controls;
         return _VideoFrame(
           aspectRatio: ratio,
-          onTap: _toggleSound,
-          onHold: _hold,
-          onLetGo: _letGo,
+          onTap: controls ? _toggleSound : null,
+          onHold: controls ? _hold : null,
+          onLetGo: controls ? _letGo : null,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -519,7 +545,9 @@ class _FeedVideoState extends State<FeedVideo> {
               ),
               if (value.isPlaying && value.isBuffering)
                 const Center(child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white)),
-              if (header == null) ...[
+              if (!controls)
+                const SizedBox.shrink()
+              else if (header == null) ...[
                 Positioned(
                   left: 12,
                   bottom: 12,
@@ -568,7 +596,7 @@ class _FeedVideoState extends State<FeedVideo> {
                   ),
                 ),
               ],
-              if (value.position > Duration.zero)
+              if (controls && value.position > Duration.zero)
                 Positioned(
                   left: 0,
                   right: 0,
@@ -795,14 +823,16 @@ String _clock(Duration duration) {
 class _VideoFrame extends StatelessWidget {
   const _VideoFrame({
     required this.aspectRatio,
-    required this.onTap,
+    this.onTap,
     this.onHold,
     this.onLetGo,
     required this.child,
   });
 
   final double aspectRatio;
-  final VoidCallback onTap;
+
+  /// Null leaves a tap to whatever holds the video.
+  final VoidCallback? onTap;
 
   /// A finger held down, and lifted again.
   final VoidCallback? onHold;
