@@ -107,9 +107,10 @@
 .ua-col.off .st { background: repeating-linear-gradient(45deg, var(--line) 0 3px, transparent 3px 7px); min-height: 100%; opacity: .7; }
 .ua-col.part .st { opacity: .6; }
 /* Estimated from app activity (punches, requests, posts…), not tracked: drawn lighter. */
-.ua-col.est .st { opacity: .5; }
 .ua-col:hover .st { filter: brightness(1.08); }
 .ua-tip { position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); background: var(--sel); color: var(--on-sel); font-size: 11.5px; padding: 6px 9px; border-radius: 8px; white-space: nowrap; pointer-events: none; z-index: 2; line-height: 1.45; }
+.ua-tip.start { left: 0; transform: none; }
+.ua-tip.end { left: auto; right: 0; transform: none; }
 .ua-when { display: grid; grid-template-columns: minmax(0, 2.4fr) minmax(0, 1fr); gap: 20px; }
 @media (max-width: 860px) { .ua-when { grid-template-columns: minmax(0, 1fr); } }
 .ua-panel { border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; margin-top: 16px; }
