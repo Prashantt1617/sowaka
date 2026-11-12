@@ -6,13 +6,15 @@ import {
   OvertimeRequest,
   OvertimeStatus,
   overtimeDurationOf,
+  preferredCompensationOf,
+  sameCompensation,
 } from '../models/overtime.model';
 import { User } from '../models/user.model';
 import { orgUsersWithRows, sortLikeMongo } from './admin-scope';
 import { requestUserFor } from './request-user';
 import { getCompanyConfig } from './company-settings.service';
 import { COMP_OFF_CREDIT, type OvertimeDuration, type ShiftAssignment, type ShiftPolicyRules } from '../models/shift.model';
-import { fullDayHoursFor, orgPolicySetup, policiesForPeople, policyForUser, resolvePolicies, todayIso } from './shift.service';
+import { orgPolicySetup, policiesForPeople, policyForUser, resolvePolicies, todayIso } from './shift.service';
 import { notifyOvertimeDecided, notifyOvertimeSubmitted } from './request-notifications.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
 import { requestViewerWithPhoto } from '../middleware/request-viewer';
@@ -70,7 +72,7 @@ export async function createOvertimeRequest(
   // The hours worked set the ceiling: a claim may be for less than what was
   // put in, never more. Without this the duration is simply taken on trust,
   // and a modified client could claim a full day's comp-off for a minute.
-  const earned = overtimeDurationOf({ hours }, await fullDayHoursFor(userId));
+  const earned = overtimeDurationOf({ hours }, policy.minFullDayHours);
   if (chosen === 'full_day' && earned === 'half_day') {
     throw new OvertimeError(400, 'A full day needs a full day of hours');
   }
@@ -136,21 +138,23 @@ export async function createOvertimeRequest(
     compensation: compensationLabel(compensation),
     reason: note ?? '',
   });
-  return await toView({ ...request, _id: result.insertedId }, employee, await fullDayHoursFor(userId));
+  return await toView({ ...request, _id: result.insertedId }, employee, policy.minFullDayHours, compOffSetUp(policy));
 }
 
 export async function getMyOvertimeRequests(userId: string) {
   // The person, their requests and their full-day hours depend only on who
   // they are, so they are read together rather than one after another.
-  const hours = fullDayHoursFor(userId);
-  hours.catch(() => undefined);
+  const policyLookup = policyForUser(userId);
+  policyLookup.catch(() => undefined);
   const [employee, requests] = await Promise.all([
     requestViewerWithPhoto(userId) ?? users().findOne({ userId }, { projection: OVERTIME_VIEW_EMPLOYEE }),
     overtimeRequests().find({ userId }).sort({ createdAt: -1 }).toArray(),
   ]);
   if (!employee) throw new OvertimeError(404, 'Employee not found');
-  const fullDayHours = await hours;
-  return await Promise.all(requests.map((request) => toView(request, employee as User, fullDayHours)));
+  const policy = await policyLookup;
+  return await Promise.all(
+    requests.map((request) => toView(request, employee as User, policy.minFullDayHours, compOffSetUp(policy))),
+  );
 }
 
 /** The fields of a person an overtime view shows, and their org for the policy lookup. */
@@ -180,11 +184,14 @@ export async function getManagerOvertimeInbox(managerUserId: string) {
   const employees = [...new Map(rows.flatMap((row) => row.employee).map((e) => [e.userId, e])).values()];
   const employeeIds = [...new Set(requests.map((request) => request.userId))];
   const employeeById = new Map(employees.map((employee) => [employee.userId, employee]));
-  const hoursByUser = await fullDayHoursByUser(employeeIds, employees);
+  const policyByUser = await policiesByUser(employeeIds, employees);
   return await Promise.all(
     requests.flatMap((request) => {
       const employee = employeeById.get(request.userId);
-      return employee ? [toView(request, employee, hoursByUser.get(request.userId) ?? 8)] : [];
+      const policy = policyByUser.get(request.userId);
+      return employee
+        ? [toView(request, employee, policy?.minFullDayHours ?? 8, policy ? compOffSetUp(policy) : false)]
+        : [];
     }),
   );
 }
@@ -192,7 +199,16 @@ export async function getManagerOvertimeInbox(managerUserId: string) {
 export async function decideOvertime(
   managerUserId: string,
   requestIdInput: string,
-  input: { decision: string; managerNote?: string },
+  input: {
+    decision: string;
+    managerNote?: string;
+    /**
+     * On approval, the manager's final call: `{ kind: 'pay' }` or
+     * `{ kind: 'comp_off', days: 1 | 0.5 }`. Absent (an older app, or no
+     * change made): the employee's preference stands. Ignored on decline.
+     */
+    compensation?: unknown;
+  },
 ) {
   if (!ObjectId.isValid(requestIdInput)) throw new OvertimeError(400, 'Invalid overtime ID');
   const decision = input.decision.trim().toLowerCase() as OvertimeStatus;
@@ -215,17 +231,55 @@ export async function decideOvertime(
   if (managerNote && managerNote.length > 500) {
     throw new OvertimeError(400, 'Manager note cannot exceed 500 characters');
   }
+  return await recordDecision(request, decision, managerNote, input.compensation, managerUserId, 'manager');
+}
+
+/**
+ * Writes an approval or decline, shared by the manager's inbox and HR's
+ * dashboard. On approval the approver's choice of overtime pay or comp-off —
+ * checked as the form's is: a known kind, no more comp-off than the duration
+ * claimed, and only where Comp-off is set up for the person — becomes the
+ * request's `compensation`, which payroll and the Comp-off balance read; the
+ * person's own choice is kept as `preferredCompensation`. No choice sent: the
+ * preference stands. A decline changes neither.
+ */
+async function recordDecision(
+  request: OvertimeRequest & { _id: ObjectId },
+  decision: OvertimeStatus,
+  managerNote: string | undefined,
+  rawCompensation: unknown,
+  decidedByUserId: string,
+  decidedByRole: 'manager' | 'admin',
+) {
   const employee = await users().findOne({ userId: request.userId });
   if (!employee) throw new OvertimeError(409, 'Overtime request has an invalid employee');
+  const policy = await policyForUser(request.userId);
+  const preferred = preferredCompensationOf(request);
+  let compensation = request.compensation;
+  if (decision === 'approved') {
+    const decided = parseCompensation(rawCompensation, 'Decision');
+    if (decided?.kind === 'comp_off') {
+      if (!compOffSetUp(policy)) {
+        throw new OvertimeError(409, `Comp-off isn't set up for ${employee.name ?? 'this employee'} — choose overtime pay, or ask HR`);
+      }
+      if (decided.days > COMP_OFF_CREDIT[overtimeDurationOf(request, policy.minFullDayHours)]) {
+        throw new OvertimeError(400, 'A full day of comp-off needs a full day of overtime');
+      }
+    }
+    if (decided) compensation = decided;
+  }
   const now = new Date();
   const updated = await overtimeRequests().findOneAndUpdate(
-    { _id: requestId, status: 'pending' },
+    { _id: request._id, status: 'pending' },
     {
       $set: {
         status: decision,
         ...(managerNote ? { managerNote } : {}),
-        decidedByUserId: managerUserId,
-        decidedByRole: 'manager',
+        ...(decision === 'approved'
+          ? { preferredCompensation: preferred, ...(compensation ? { compensation } : {}) }
+          : {}),
+        decidedByUserId,
+        decidedByRole,
         decidedAt: now,
         updatedAt: now,
       },
@@ -236,24 +290,20 @@ export async function decideOvertime(
   await notifyOvertimeDecided({
     employeeUserId: request.userId,
     workDate: request.workDate,
-    duration: await durationLabel(request),
-    compensation: compensationLabel(request.compensation),
+    duration: labelOf(overtimeDurationOf(request, policy.minFullDayHours)),
+    compensation: compensationLabel(updated.compensation),
+    preferred: sameCompensation(preferred, updated.compensation) ? undefined : compensationLabel(preferred),
     approved: decision === 'approved',
     comment: managerNote ?? '',
     decidedByUserId: updated.decidedByUserId,
     requestId: String(updated._id),
   });
-  return await toView(updated, employee, await fullDayHoursFor(request.userId));
+  return await toView(updated, employee, policy.minFullDayHours, compOffSetUp(policy));
 }
 
 /** "Full day" or "Half day", for the notification copy. */
 function labelOf(duration: OvertimeDuration): string {
   return duration === 'full_day' ? 'Full day' : 'Half day';
-}
-
-/** The duration a stored request was for, in the notification's words. */
-async function durationLabel(request: Pick<OvertimeRequest, 'userId' | 'duration' | 'hours'>): Promise<string> {
-  return labelOf(overtimeDurationOf(request, await fullDayHoursFor(request.userId)));
 }
 
 /** Org-wide list of every overtime request, for the HR dashboard. */
@@ -299,7 +349,10 @@ export async function listAllOvertimeForAdmin(adminUserId: string) {
   return await Promise.all(
     requests.flatMap((request) => {
       const employee = employeeById.get(request.userId);
-      return employee ? [toView(request, employee, policies.get(request.userId)?.minFullDayHours ?? 8)] : [];
+      const policy = policies.get(request.userId);
+      return employee
+        ? [toView(request, employee, policy?.minFullDayHours ?? 8, policy ? compOffSetUp(policy) : false)]
+        : [];
     }),
   );
 }
@@ -308,7 +361,12 @@ export async function listAllOvertimeForAdmin(adminUserId: string) {
 export async function adminDecideOvertime(
   adminUserId: string,
   requestIdInput: string,
-  input: { decision: string; managerNote?: string },
+  input: {
+    decision: string;
+    managerNote?: string;
+    /** HR's final call on approval, as the manager's; absent, the preference stands. */
+    compensation?: unknown;
+  },
 ) {
   if (!ObjectId.isValid(requestIdInput)) throw new OvertimeError(400, 'Invalid overtime ID');
   const decision = input.decision.trim().toLowerCase() as OvertimeStatus;
@@ -328,55 +386,31 @@ export async function adminDecideOvertime(
   if (managerNote && managerNote.length > 500) {
     throw new OvertimeError(400, 'Note cannot exceed 500 characters');
   }
-  const employee = await users().findOne({ userId: request.userId });
-  if (!employee) throw new OvertimeError(409, 'Overtime request has an invalid employee');
-  const now = new Date();
-  const updated = await overtimeRequests().findOneAndUpdate(
-    { _id: requestId, status: 'pending' },
-    {
-      $set: {
-        status: decision,
-        ...(managerNote ? { managerNote } : {}),
-        decidedByUserId: adminUserId,
-        decidedByRole: 'admin',
-        decidedAt: now,
-        updatedAt: now,
-      },
-    },
-    { returnDocument: 'after' },
-  );
-  if (!updated) throw new OvertimeError(409, 'Overtime request has already been decided');
-  await notifyOvertimeDecided({
-    employeeUserId: request.userId,
-    workDate: request.workDate,
-    duration: await durationLabel(request),
-    compensation: compensationLabel(request.compensation),
-    approved: decision === 'approved',
-    comment: managerNote ?? '',
-    decidedByUserId: updated.decidedByUserId,
-    requestId: String(updated._id),
-  });
-  return await toView(updated, employee, await fullDayHoursFor(request.userId));
+  return await recordDecision(request, decision, managerNote, input.compensation, adminUserId, 'admin');
 }
 
 /**
- * The full-day threshold for each of several people, looked up once per
- * person rather than once per request when shaping a list.
+ * Each of several people's policy (full-day threshold, leave types), looked
+ * up once per person rather than once per request when shaping a list.
  */
-async function fullDayHoursByUser(
+async function policiesByUser(
   userIds: string[],
   /** Their user records, when in hand: then every policy is one batch. */
   people?: { userId: string; org?: string }[],
-): Promise<Map<string, number>> {
+): Promise<Map<string, Pick<ShiftPolicyRules, 'minFullDayHours' | 'leave'>>> {
   const unique = [...new Set(userIds)];
   const batch = people?.length ? await policiesForPeople(people).catch(() => null) : null;
-  const hours = await Promise.all(
-    unique.map((userId) => batch?.get(userId)?.minFullDayHours ?? fullDayHoursFor(userId)),
-  );
-  return new Map(unique.map((userId, index) => [userId, hours[index]]));
+  const policies = await Promise.all(unique.map((userId) => batch?.get(userId) ?? policyForUser(userId)));
+  return new Map(unique.map((userId, index) => [userId, policies[index]]));
 }
 
-async function toView(request: OvertimeRequest & { _id: ObjectId }, employee: User, fullDayHours: number) {
+async function toView(
+  request: OvertimeRequest & { _id: ObjectId },
+  employee: User,
+  fullDayHours: number,
+  /** Whether comp-off can be credited to this person, for the approver's decision. */
+  compOffAvailable: boolean,
+) {
   return {
     id: request._id.toHexString(),
     userId: request.userId,
@@ -393,9 +427,15 @@ async function toView(request: OvertimeRequest & { _id: ObjectId }, employee: Us
     // The half or full day that was claimed, which is what the comp-off is
     // credited as; an older record is graded by its hours.
     duration: overtimeDurationOf(request, fullDayHours),
-    // Overtime pay or comp-off (with its days), as chosen — what the manager
-    // sees when deciding. Null on a request from before the choice existed.
+    // Overtime pay or comp-off (with its days): the employee's preference
+    // while pending, the approver's decision once approved. Older app builds
+    // read only this. Null on a request from before the choice existed.
     compensation: request.compensation ?? null,
+    // What the employee asked for, whatever was decided.
+    preferredCompensation: preferredCompensationOf(request),
+    // Whether the approver may choose comp-off (HR has a Comp-off leave type
+    // for this person); otherwise only overtime pay can be decided.
+    compOffAvailable,
     note: request.note,
     managerNote: request.managerNote,
     status: request.status,
@@ -419,14 +459,14 @@ async function requireEmployeeWithManager(userId: string) {
 }
 
 /**
- * The compensation the form sent: `{ kind: 'pay' }` or
+ * The compensation the form (or the approver) sent: `{ kind: 'pay' }` or
  * `{ kind: 'comp_off', days: 1 | 0.5 }`. Nothing sent is undefined — an app
  * build from before the choice — and is handled as before.
  */
-function parseCompensation(raw: unknown): OvertimeCompensation | undefined {
+function parseCompensation(raw: unknown, what = 'Preference'): OvertimeCompensation | undefined {
   if (raw === undefined || raw === null) return undefined;
   if (typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new OvertimeError(400, 'Compensation must be overtime pay or comp-off');
+    throw new OvertimeError(400, `${what} must be overtime pay or comp-off`);
   }
   const { kind, days } = raw as { kind?: unknown; days?: unknown };
   if (kind === 'pay') return { kind: 'pay' };
@@ -434,7 +474,7 @@ function parseCompensation(raw: unknown): OvertimeCompensation | undefined {
     if (days === 1 || days === 0.5) return { kind: 'comp_off', days };
     throw new OvertimeError(400, 'Comp-off must be a full day (1) or a half day (0.5)');
   }
-  throw new OvertimeError(400, 'Compensation must be overtime pay or comp-off');
+  throw new OvertimeError(400, `${what} must be overtime pay or comp-off`);
 }
 
 /**

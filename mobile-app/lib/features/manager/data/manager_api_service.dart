@@ -692,15 +692,23 @@ class ManagerApiService {
     return OvertimeRequest.fromJson(json['overtime'] as Map<String, dynamic>);
   }
 
+  /// [compensation] is the manager's final call on approval — overtime pay
+  /// or comp-off; null leaves the employee's preference as it is.
   Future<OvertimeRequest> decideOvertimeRequest(
     String overtimeId,
     LeaveDecision decision,
-    String managerNote,
-  ) async {
+    String managerNote, {
+    Map<String, Object>? compensation,
+  }) async {
     final json = await _request(
       'PATCH',
       '/overtime/$overtimeId/decision',
-      body: {'decision': decision.name, 'managerNote': managerNote},
+      body: {
+        'decision': decision.name,
+        'managerNote': managerNote,
+        if (decision == LeaveDecision.approved && compensation != null)
+          'compensation': compensation,
+      },
     );
     return OvertimeRequest.fromJson(json['overtime'] as Map<String, dynamic>);
   }
