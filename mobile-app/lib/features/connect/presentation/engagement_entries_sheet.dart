@@ -931,6 +931,26 @@ class _SheetHero extends StatelessWidget {
     final question = _bodyString(post, 'question');
     final mediaUrl = _bodyString(post, 'mediaUrl');
     final points = _pointsPerVote(post);
+    final heading = title.isEmpty
+        ? (isCaption ? 'Caption this!' : 'Most Likely')
+        : title;
+    const headingStyle = TextStyle(
+      fontSize: 26,
+      height: 28 / 26,
+      fontWeight: FontWeight.w700,
+      color: Colors.white,
+    );
+    // Beside the caption's picture the title has 130 wide; one that needs
+    // more than three lines there goes full width under the picture instead,
+    // so it is shown whole without a column of one-word lines.
+    final longCaption = isCaption &&
+        (TextPainter(
+              text: TextSpan(text: heading, style: headingStyle),
+              textDirection: TextDirection.ltr,
+              textScaler: MediaQuery.textScalerOf(context),
+              maxLines: 3,
+            )..layout(maxWidth: 130))
+            .didExceedMaxLines;
     final column = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -954,22 +974,12 @@ class _SheetHero extends StatelessWidget {
               ),
             ),
           )
-        else
+        else if (!longCaption)
+          // The whole title, as long as it is: the card may cut it, this page
+          // never does.
           SizedBox(
             width: isCaption ? 130 : null,
-            child: Text(
-              title.isEmpty
-                  ? (isCaption ? 'Caption this!' : 'Most Likely')
-                  : title,
-              maxLines: isCaption ? 3 : 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 26,
-                height: 28 / 26,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
+            child: Text(heading, style: headingStyle),
           ),
         if (post.type == ConnectPostType.mostLikely) ...[
           const SizedBox(height: 8),
@@ -1014,7 +1024,7 @@ class _SheetHero extends StatelessWidget {
         ),
       ],
     );
-    return Container(
+    final card = Container(
       width: double.infinity,
       constraints: BoxConstraints(minHeight: isCaption ? 149 : 0),
       clipBehavior: Clip.antiAlias,
@@ -1056,6 +1066,26 @@ class _SheetHero extends StatelessWidget {
                 ? const EdgeInsets.fromLTRB(16, 22, 16, 16)
                 : const EdgeInsets.all(16),
             child: column,
+          ),
+        ],
+      ),
+    );
+    if (!longCaption) return card;
+    return Container(
+      width: double.infinity,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: const Color(0xFFA387F7),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          card,
+          Padding(
+            key: const ValueKey('contest-full-title'),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Text(heading, style: headingStyle),
           ),
         ],
       ),
@@ -2027,8 +2057,12 @@ class _PeopleSheetFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
+    // heightFactor 1: the sheet is as tall as its content. Filling the
+    // screen, it took the taps on the dimmed page above it, which then
+    // never closed it.
     return Align(
       alignment: Alignment.bottomCenter,
+      heightFactor: 1,
       child: Container(
         constraints: BoxConstraints(
           maxWidth: 420,

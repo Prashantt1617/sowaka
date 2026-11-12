@@ -2056,17 +2056,29 @@ class _EngagementBodyState extends State<_EngagementBody>
           onEdit: widget.onEdit,
           onDelete: widget.onDelete,
         ),
-        Padding(
-          // 14 top, 18 bottom, 22 each side (node 3248:23516).
-          padding: const EdgeInsets.fromLTRB(22, 14, 22, 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              ..._heading(),
-              if (_isCaption) ..._captionContent(),
-              if (_isPhoto) ..._photoContent(),
-              if (_isTag) ..._tagContent(),
-            ],
+        // A tap anywhere on the card opens its entries, where the full
+        // title is; the card's own buttons, votes and the answer field keep
+        // their taps (the innermost one wins). Not while an answer is being
+        // written, so a stray tap doesn't leave it.
+        GestureDetector(
+          key: const ValueKey('contest-card-open-entries'),
+          behavior: HitTestBehavior.opaque,
+          onTap: _answering ? null : _openEntries,
+          // A finger resting on the card (holding the entries carousel, say)
+          // is a hold, not a tap: it opens nothing when lifted.
+          onLongPress: () {},
+          child: Padding(
+            // 14 top, 18 bottom, 22 each side (node 3248:23516).
+            padding: const EdgeInsets.fromLTRB(22, 14, 22, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ..._heading(),
+                if (_isCaption) ..._captionContent(),
+                if (_isPhoto) ..._photoContent(),
+                if (_isTag) ..._tagContent(),
+              ],
+            ),
           ),
         ),
       ],

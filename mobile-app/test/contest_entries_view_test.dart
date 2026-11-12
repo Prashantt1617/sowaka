@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -257,6 +258,28 @@ double _zoomScale(WidgetTester tester) => tester
 
 void main() {
   setUpAll(_loadFonts);
+
+  testWidgets('a tap anywhere on the card opens its entries, and the page '
+      'shows a 100-character title whole', (tester) async {
+    const long = 'Caption this picture from the Diwali party with the funniest line you'
+        ' can think of for the team!!!!!';
+    expect(long.length, 100);
+    await _pumpFeed(tester, _contest([_entry('a', votes: 3)], title: long));
+    // The card's title (cut to fit there) opens the entries page, not only
+    // "View Entries".
+    final cardTitle = find.textContaining('Caption this picture').first;
+    await tester.ensureVisible(cardTitle);
+    await tester.pump();
+    await tester.tap(cardTitle);
+    await _pageTransition(tester);
+    expect(find.text('Leaderboard'), findsOneWidget);
+    // On the page the title is all there, never "…".
+    final full = find.text(long);
+    expect(full, findsWidgets);
+    final paragraph = tester.renderObject<RenderParagraph>(full.last);
+    expect(paragraph.didExceedMaxLines, isFalse);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('a tap on an entry opens it full screen; the cross, the '
       'backdrop and a swipe down put it away', (tester) async {

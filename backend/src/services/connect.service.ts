@@ -2054,7 +2054,7 @@ function normalizePostBody(
       // their own endpoints, so editing the brief cannot quietly rewrite who
       // captioned what or how the voting stands.
       return {
-        title: normalizeText(input.title, 'Caption this', 80),
+        title: normalizeText(input.title, 'Caption this', 100),
         // One description, not a bold line and a paragraph under it. Two
         // fields asked whoever was writing the brief to split a single
         // thought in two, and the card ran them together anyway.
@@ -2067,7 +2067,7 @@ function normalizePostBody(
       // Entries and votes are written by their own endpoints, never taken from
       // the client, so editing the brief cannot rewrite who caught what.
       return {
-        title: normalizeText(input.title, 'Caught red handed', 80),
+        title: normalizeText(input.title, 'Caught red handed', 100),
         task: normalizeText(input.task, '', 400),
         pointsPerVote: normalizePoints(input.pointsPerVote),
         closesAt: normalizeClosesAt(input.closesAt),
@@ -2081,7 +2081,7 @@ function normalizePostBody(
       // the card carries them and nobody is asked to retype them. Only the
       // question itself and its label change.
       return {
-        title: normalizeText(input.title, 'Most Likely', 80),
+        title: normalizeText(input.title, 'Most Likely', 100),
         label: normalizeText(input.label, '', 40),
         question: normalizeText(input.question, '', 160),
         pointsPerVote: normalizePoints(input.pointsPerVote),
