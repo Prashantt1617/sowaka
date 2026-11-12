@@ -159,24 +159,6 @@ class _DownloadsPageState extends State<_DownloadsPage> {
     'Could not prepare the payslip. Try again.',
   );
 
-  void _downloadYear(
-    String fy,
-    List<Payslip> slips,
-    PayslipCompany company,
-  ) => _prepare(
-    'fy:$fy',
-    () async => (
-      await buildPayslipsPdf(
-        // Oldest first, as a year reads.
-        slips: slips.reversed.toList(),
-        company: company,
-        title: 'Payslips · ${slips.first.employeeName} · ${payrollFyLabel(fy)}',
-      ),
-      'payslips-FY$fy.pdf',
-    ),
-    'Could not prepare the payslips. Try again.',
-  );
-
   void _downloadForm16(Form16Document document) => _prepare(
     document.id,
     () => _api.downloadForm16(document),
@@ -321,16 +303,6 @@ class _DownloadsPageState extends State<_DownloadsPage> {
                   ),
                 ],
               ],
-            ),
-            const SizedBox(height: 14),
-            _DownloadAllButton(
-              key: ValueKey('download-all-$fy'),
-              // The newest year is "all"; an older one names itself.
-              label: index == 0
-                  ? 'Download all as one PDF'
-                  : 'Download ${payrollFyLabel(fy)} as one PDF',
-              busy: _busy == 'fy:$fy',
-              onPressed: () => _downloadYear(fy, years[fy]!, company),
             ),
           ],
         ],
@@ -557,47 +529,3 @@ class _DownloadRow extends StatelessWidget {
   );
 }
 
-/// "Download all as one PDF": an outlined button under a year's payslips.
-class _DownloadAllButton extends StatelessWidget {
-  const _DownloadAllButton({
-    super.key,
-    required this.label,
-    required this.onPressed,
-    this.busy = false,
-  });
-
-  final String label;
-  final VoidCallback onPressed;
-  final bool busy;
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 46,
-    child: OutlinedButton.icon(
-      onPressed: busy ? null : onPressed,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: _prBlue,
-        backgroundColor: Colors.white,
-        side: const BorderSide(color: _prBlue, width: 1.5),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      icon: busy
-          ? const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2, color: _prBlue),
-            )
-          : const Icon(Icons.download_rounded, size: 20),
-      label: Text(
-        busy ? 'Preparing…' : label,
-        style: const TextStyle(
-          fontFamily: 'Sora',
-          fontFamilyFallback: _soraFallback,
-          fontSize: 14,
-          height: 20 / 14,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    ),
-  );
-}
