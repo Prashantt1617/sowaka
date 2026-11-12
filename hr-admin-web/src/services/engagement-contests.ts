@@ -1,6 +1,7 @@
 // Dashboard › Engagement › Contests and Engagement plan: the client calls and
 // their shapes. Starting and deleting a contest stay on /connect/posts
 // (publishCaptionChallenge / deleteEngagementPost in hrms.ts).
+import { mediaUrl } from './api';
 import { api } from './http';
 
 export type ContestType = 'caption_challenge' | 'photo_story_challenge' | 'most_likely';
@@ -64,8 +65,19 @@ export function getContests(): Promise<ContestListDTO> {
   return api<ContestListDTO>('/admin/engagement/contests');
 }
 
-export function getContest(id: string): Promise<ContestDetailDTO> {
-  return api<ContestDetailDTO>(`/admin/engagement/contests/${encodeURIComponent(id)}`);
+/**
+ * One contest. Its pictures come back as `/media/...` paths on the API, which
+ * only load from the API's own host: on the dashboard's host the same path is
+ * answered with the page itself, and every entry showed as a broken image. So
+ * they are made absolute here, once, for every view that draws them.
+ */
+export async function getContest(id: string): Promise<ContestDetailDTO> {
+  const detail = await api<ContestDetailDTO>(`/admin/engagement/contests/${encodeURIComponent(id)}`);
+  return {
+    ...detail,
+    contest: { ...detail.contest, mediaUrl: detail.contest.mediaUrl ? mediaUrl(detail.contest.mediaUrl) : null },
+    entries: detail.entries.map((e) => ({ ...e, photoUrl: e.photoUrl ? mediaUrl(e.photoUrl) : null })),
+  };
 }
 
 // ---- Engagement plan ----
