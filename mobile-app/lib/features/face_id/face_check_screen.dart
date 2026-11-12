@@ -406,6 +406,12 @@ class _FaceCheckScreenState extends State<FaceCheckScreen> with WidgetsBindingOb
       return;
     }
     unawaited(FaceSounds.failed());
+    if (reason == 'slow_connection') {
+      // The selfie got no answer: the connection, not the face, and not
+      // one of the day's tries.
+      _say(slowConnectionHeadline, slowConnectionLine);
+      return;
+    }
     if (face is Map && face['fallback'] == true) {
       setState(() => _openFallback(FaceCheckResult(passed: false, reason: reason ?? 'unavailable', message: error.message)));
       return;

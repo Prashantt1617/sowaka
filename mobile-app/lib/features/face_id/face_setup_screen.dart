@@ -73,6 +73,10 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
   final List<FaceBurst> _photos = [];
 
   bool _sending = false;
+
+  /// The share of the setup's upload sent, 0 to 1, while it goes; null
+  /// before the first byte and once it has all gone.
+  double? _sent;
   (String, String?)? _answer;
   bool _fallbackOpen = false;
   String? _fallbackLine;
@@ -180,7 +184,10 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
   Future<void> _enrol() async {
     final consent = _consent;
     if (consent == null || _photos.length < 3) return;
-    setState(() => _sending = true);
+    setState(() {
+      _sending = true;
+      _sent = null;
+    });
     try {
       final challengeId = await (_challenge ?? Future<String?>.value()).timeout(const Duration(seconds: 6), onTimeout: () => null);
       final token = await widget.api.enrolFace(
@@ -188,6 +195,13 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
         turned: _photos.sublist(1, 3),
         consentVersion: consent.version,
         challengeId: challengeId,
+        onProgress: (sent) {
+          if (!mounted) return;
+          final next = sent >= 1 ? null : sent;
+          // A step of a whole percent or more, so the bar moves without a
+          // rebuild for every chunk.
+          if (next == null || _sent == null || (next - _sent!).abs() >= 0.01) setState(() => _sent = next);
+        },
       );
       FaceCheckOutcome.enrolledThisRun = true;
       _token = token;
@@ -218,7 +232,12 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
     } catch (_) {
       _again("The face check can't be set up right now", 'Try again in a few minutes.');
     } finally {
-      if (mounted) setState(() => _sending = false);
+      if (mounted) {
+        setState(() {
+          _sending = false;
+          _sent = null;
+        });
+      }
     }
   }
 
@@ -246,6 +265,12 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
       return;
     }
     unawaited(FaceSounds.failed());
+    if (reason == 'slow_connection') {
+      // The upload got no answer: the connection, not the face, and not
+      // one of the day's tries.
+      _again(slowConnectionHeadline, slowConnectionLine);
+      return;
+    }
     if (face is Map && face['fallback'] == true && !widget.onboarding) {
       setState(() => _openFallback(reason));
       return;
@@ -403,7 +428,11 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
       FacePose.turnB => _camera.firstTurnSign == -1 ? FaceArrowSide.left : FaceArrowSide.right,
       FacePose.front => null,
     };
-    if (_sending) {
+    final uploading = _sending ? _sent : null;
+    if (uploading != null) {
+      headline = 'Uploading…';
+      line = 'It can take a minute on a slow connection.';
+    } else if (_sending) {
       headline = 'Checking…';
     } else if (_answer case (final h, final l)) {
       headline = h;
@@ -430,6 +459,8 @@ class _FaceSetupScreenState extends State<FaceSetupScreen> with WidgetsBindingOb
       arrowPulse: _camera.turnSlow,
       steps: (taken, taken.clamp(0, 2)),
       setup: true,
+      progress: uploading,
+      dim: uploading != null,
     );
   }
 }

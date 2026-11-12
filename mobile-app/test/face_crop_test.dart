@@ -31,9 +31,10 @@ void main() {
     expect(cropToFace(_picture(720, 1280), const Rect.fromLTWH(60, 300, 600, 700)), isNull);
   });
 
-  test('a large picture is brought down to 800 across', () {
+  test('a large picture is brought down to 480 across, for a slow connection', () {
     final out = cropToFace(_picture(2000, 3000), const Rect.fromLTWH(600, 900, 500, 600));
-    expect(_read(out!).width, 800);
+    expect(_read(out!).width, 480);
+    expect(selfieSide, 480);
   });
 
   test('the size a face must reach is about a fifth of the frame', () {
