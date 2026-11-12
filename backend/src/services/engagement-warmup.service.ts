@@ -24,6 +24,10 @@ import { listContests } from './engagement-contests.service';
 import { gamesOverview } from './engagement-games.service';
 import { planFor } from './engagement-plan.service';
 import { usageSummary, usageTrend, usageWhen } from './engagement-usage.service';
+import { attendanceReport } from './attendance-report.service';
+import { listOutOfLocationForAdmin } from './attendance.service';
+import { payCycleForAdmin, warmPunchLog } from './punch-log.service';
+import { refreshSwr } from './swr-cache';
 
 const ROUND_MS = 4 * 60_000;
 /** After the server starts, so boot is not slowed by it. */
@@ -98,6 +102,48 @@ export async function warmOrg(org: string): Promise<Record<string, number | stri
   return took;
 }
 
+/**
+ * The Time office pages an org's HR opens, worked out again so they answer at once:
+ * Punch log (today, this month, this pay cycle), the attendance report behind it and
+ * the Company calendar (the same ranges), and this month's out-of-location list.
+ * Run as one of the org's dashboard users who sees everyone; skipped without one.
+ */
+export async function warmTimeOffice(org: string): Promise<Record<string, number | string>> {
+  const viewer = await users().findOne(
+    { org, dashboardAccess: true, lifecycleStatus: { $nin: ['offboarded', 'terminated'] }, $or: [{ dashboardAdmin: true }, { dashboardTabs: { $exists: false } }] },
+    { projection: { _id: 0, userId: 1 } },
+  );
+  const took: Record<string, number | string> = {};
+  if (!viewer) return took;
+  const who = viewer.userId;
+  const today = istToday();
+  const month = { from: `${today.slice(0, 8)}01`, to: today };
+  const ranges: Record<string, { from: string; to: string }> = { today: { from: today, to: today }, month };
+  try {
+    const cycle = (await payCycleForAdmin(who, today)).current;
+    if (cycle && (cycle.from !== month.from || (cycle.to < today ? cycle.to : today) !== today)) {
+      ranges.cycle = { from: cycle.from, to: cycle.to < today ? cycle.to : today };
+    }
+  } catch { /* no usable pay cycle: today and the month only */ }
+  const steps: [string, () => Promise<unknown>][] = [];
+  for (const [name, r] of Object.entries(ranges)) {
+    steps.push([`punches-${name}`, () => warmPunchLog(who, org, r.from, r.to)]);
+    steps.push([`report-${name}`, () => attendanceReport(who, r, { refresh: true })]);
+  }
+  steps.push(['ool-month', () => refreshSwr(org, 'ool', month, () => listOutOfLocationForAdmin(who, month.from, month.to))]);
+  for (const [name, ask] of steps) {
+    if (stopping) break;
+    const t0 = Date.now();
+    try {
+      await ask();
+      took[name] = Date.now() - t0;
+    } catch (error) {
+      took[name] = `failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 200);
+    }
+  }
+  return took;
+}
+
 async function round(): Promise<void> {
   const t0 = Date.now();
   const orgs = await orgsToWarm();
@@ -105,7 +151,7 @@ async function round(): Promise<void> {
   for (const [i, org] of orgs.entries()) {
     if (stopping) break;
     if (i > 0) await pause(BETWEEN_ORGS_MS);
-    perOrg[org] = await warmOrg(org);
+    perOrg[org] = { ...(await warmOrg(org)), ...(await warmTimeOffice(org)) };
   }
   logger.info('Engagement warm-up', { orgs: orgs.length, ms: Date.now() - t0, perOrg });
 }

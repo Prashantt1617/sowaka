@@ -15,6 +15,7 @@ import { placeLabel } from './geofence.service';
 import { outsideLocationView } from './attendance.service';
 import { payrollPeriodHolding } from './payroll-inputs.service';
 import { requireOrg } from './shift.service';
+import { cachedSwr, refreshSwr } from './swr-cache';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 86_400_000;
@@ -47,33 +48,49 @@ export async function punchLogForAdmin(adminUserId: string, from: string, to: st
   if (!DATE.test(from) || !DATE.test(to)) throw new PunchLogError(400, 'from and to must be YYYY-MM-DD');
   if (from > to) throw new PunchLogError(400, 'from must not be after to');
   if ((Date.parse(to) - Date.parse(from)) / DAY_MS > 92) throw new PunchLogError(400, 'Pick at most three months');
+  const org = await requireOrg(adminUserId);
+  // The punches are the slow part (a month of them is seconds on this database tier): kept per
+  // org and range, answered at once and refreshed behind the reader (swr-cache).
+  const rows = await cachedSwr(org, 'punch-log', { from, to }, () => punchRows(adminUserId, from, to));
+  if (!opts.faceChecks) return rows.map(({ facePassed: _facePassed, ...row }) => ({ ...row, face: null }));
+  // Face check results only for a viewer with Face ID access, and only passed or failed:
+  // a punch the face check refused went to a request instead, so that day's check failed.
+  const userIds = [...new Set(rows.map((r) => r.userId))];
+  const refused = userIds.length
+    ? await attendanceRegularizations()
+        .find({ userId: { $in: userIds }, workDate: { $gte: from, $lte: to }, kind: 'face_check' })
+        .project<{ userId: string; workDate: string }>({ _id: 0, userId: 1, workDate: 1 })
+        .toArray()
+    : [];
+  const faceRefused = new Set(refused.map((q) => `${q.userId}|${q.workDate}`));
+  return rows.map(({ facePassed, ...row }) => ({
+    ...row,
+    face: (facePassed ? 'passed' : faceRefused.has(`${row.userId}|${row.workDate}`) ? 'failed' : null) as 'passed' | 'failed' | null,
+  }));
+}
+
+/** Works the range out again now and keeps it (the background warm-up's way in). */
+export function warmPunchLog(adminUserId: string, org: string, from: string, to: string) {
+  return refreshSwr(org, 'punch-log', { from, to }, () => punchRows(adminUserId, from, to));
+}
+
+/** Everyone's punches in the range (and out-of-location punches still waiting), newest first. */
+async function punchRows(adminUserId: string, from: string, to: string) {
   const people = await orgUsers(adminUserId, ['userId', 'name', 'employeeId', 'department', 'managerUserId']);
   if (!people.length) return [];
   const byId = new Map(people.map((p) => [p.userId, p]));
   const userIds = people.map((p) => p.userId);
-  const [records, waiting, faceRequests] = await Promise.all([
+  const [records, waiting] = await Promise.all([
     attendanceRecords()
       .find({ userId: { $in: userIds }, workDate: { $gte: from, $lte: to }, $or: [{ punchIn: { $exists: true } }, { punchOut: { $exists: true } }, { outsideLocation: { $exists: true } }] })
-      .project({ userId: 1, workDate: 1, punchIn: 1, punchOut: 1, punchInLocation: 1, punchOutLocation: 1, outsideLocation: 1, punchInFace: 1, dayType: 1 })
+      // Only what a row shows: of the face check, just whether there was one.
+      .project({ userId: 1, workDate: 1, punchIn: 1, punchOut: 1, punchInLocation: 1, punchOutLocation: 1, outsideLocation: 1, 'punchInFace.at': 1, dayType: 1 })
       .toArray(),
     attendanceRegularizations()
       .find({ userId: { $in: userIds }, workDate: { $gte: from, $lte: to }, kind: 'out_of_location', status: 'pending' })
+      .project({ userId: 1, workDate: 1, outsideLocation: 1 })
       .toArray(),
-    // A punch the face check refused went to a request instead: that day's check failed.
-    opts.faceChecks
-      ? attendanceRegularizations()
-          .find({ userId: { $in: userIds }, workDate: { $gte: from, $lte: to }, kind: 'face_check' })
-          .project<{ userId: string; workDate: string }>({ _id: 0, userId: 1, workDate: 1 })
-          .toArray()
-      : Promise.resolve([] as { userId: string; workDate: string }[]),
   ]);
-  const faceRefused = new Set(faceRequests.map((q) => `${q.userId}|${q.workDate}`));
-  /** Passed or failed, and only for a viewer with Face ID access; nothing else of the check. */
-  const faceOf = (userId: string, workDate: string, passed: boolean): 'passed' | 'failed' | null => {
-    if (!opts.faceChecks) return null;
-    if (passed) return 'passed';
-    return faceRefused.has(`${userId}|${workDate}`) ? 'failed' : null;
-  };
   const who = (userId: string) => {
     const p = byId.get(userId);
     return { userId, name: p?.name ?? 'Employee', employeeCode: p?.employeeId ?? '', department: p?.department ?? '', manager: byId.get(p?.managerUserId ?? '')?.name ?? '' };
@@ -83,7 +100,7 @@ export async function punchLogForAdmin(adminUserId: string, from: string, to: st
     userId: string; name: string; employeeCode: string; department: string; manager: string;
     workDate: string; punchIn: string | null; punchOut: string | null;
     inLocation: ReturnType<typeof where>; outLocation: ReturnType<typeof where>;
-    outside: ReturnType<typeof outsideLocationView> | null; face: 'passed' | 'failed' | null; dayType: string | null; waiting: boolean;
+    outside: ReturnType<typeof outsideLocationView> | null; facePassed: boolean; dayType: string | null; waiting: boolean;
   }[] = records.map((r) => {
     seen.add(`${r.userId}|${r.workDate}`);
     return {
@@ -94,7 +111,7 @@ export async function punchLogForAdmin(adminUserId: string, from: string, to: st
       inLocation: where(r.punchInLocation as PunchLocation | undefined),
       outLocation: where(r.punchOutLocation as PunchLocation | undefined),
       outside: outsideLocationView(r.outsideLocation) ?? null,
-      face: faceOf(String(r.userId ?? ''), String(r.workDate), Boolean(r.punchInFace)),
+      facePassed: Boolean(r.punchInFace),
       dayType: r.dayType ?? null,
       waiting: false,
     };
@@ -103,14 +120,14 @@ export async function punchLogForAdmin(adminUserId: string, from: string, to: st
     if (seen.has(`${q.userId}|${q.workDate}`)) continue;
     const outside = outsideLocationView(q.outsideLocation) ?? null;
     rows.push({
-      ...who(q.userId),
-      workDate: q.workDate,
+      ...who(String(q.userId)),
+      workDate: String(q.workDate),
       punchIn: outside && outside.punchType === 'in' ? outside.at : null,
       punchOut: outside && outside.punchType === 'out' ? outside.at : null,
       inLocation: null,
       outLocation: null,
       outside,
-      face: faceOf(q.userId, q.workDate, false),
+      facePassed: false,
       dayType: null,
       waiting: true,
     });

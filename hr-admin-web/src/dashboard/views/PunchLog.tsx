@@ -47,6 +47,10 @@ const mapUrl = (p: { latitude: number; longitude: number }) => `https://www.goog
 /** One person's day as the table reads it. */
 type Row = PunchDayDTO & { key: string; ool: boolean; where: string; whereSub: string; counted: Counted; why: string; report?: ReportRow };
 
+/** What this session has already loaded, per range: a revisit shows it at once. */
+const punchMemo = new Map<string, PunchDayDTO[]>();
+const reportMemo = new Map<string, ReportRow[]>();
+
 export function PunchLog() {
   const s = useStore();
   const { user } = useAuth();
@@ -92,15 +96,17 @@ export function PunchLog() {
   useEffect(() => {
     if (!range.from || (period === 'cycle' && !cycle)) return;
     let live = true;
-    setPunches(null);
-    setReport(null);
+    const key = `${range.from}|${range.to}`;
+    // A range seen before shows at once from memory while the fresh answer comes in.
+    setPunches(punchMemo.get(key) ?? null);
+    setReport(reportMemo.get(key) ?? null);
     setError('');
     getPunchLog(range.from, range.to)
-      .then((p) => { if (live) setPunches(p); })
-      .catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load punches'); });
+      .then((p) => { punchMemo.set(key, p); if (live) setPunches(p); })
+      .catch((e) => { if (live && !punchMemo.has(key)) setError(e instanceof Error ? e.message : 'Could not load punches'); });
     // How each day counts comes from the attendance report; without it the column says "—".
     if (canOpen(user, 'attendancereport')) {
-      getAttendanceReport(range).then((r) => { if (live) setReport(expandReport(r)); }).catch(() => { if (live) setReport([]); });
+      getAttendanceReport(range).then((r) => { const rows = expandReport(r); reportMemo.set(key, rows); if (live) setReport(rows); }).catch(() => { if (live && !reportMemo.has(key)) setReport([]); });
     } else setReport([]);
     return () => { live = false; };
   }, [range.from, range.to, attempt, cycle === null]); // eslint-disable-line react-hooks/exhaustive-deps
