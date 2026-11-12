@@ -6385,12 +6385,27 @@ class _PostComposerPageState extends State<_PostComposerPage> {
                       poll.options[i].imagePath != null) ...[
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.file(
-                        File(poll.options[i].imagePath!),
-                        width: 32,
-                        height: 32,
-                        fit: BoxFit.cover,
-                      ),
+                      child: _isVideoPath(poll.options[i].imagePath!)
+                          // A video has no picture to draw here: its mark,
+                          // on the dark a video stands on.
+                          ? Container(
+                              key: ValueKey('poll-summary-video-$i'),
+                              width: 32,
+                              height: 32,
+                              color: const Color(0xFF15140F),
+                              alignment: Alignment.center,
+                              child: const Icon(
+                                Icons.videocam_rounded,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Image.file(
+                              File(poll.options[i].imagePath!),
+                              width: 32,
+                              height: 32,
+                              fit: BoxFit.cover,
+                            ),
                     ),
                     const SizedBox(width: 10),
                   ],
@@ -6584,9 +6599,11 @@ class _PostComposerPageState extends State<_PostComposerPage> {
     );
   }
 
-  /// Local file paths picked in the poll editor, turned into attachments the
-  /// same way `_pickMedia` builds one — only when the poll is actually in
-  /// image mode, parallel to `_pollDraft.options` by index.
+  /// Local file paths picked in the poll editor — a photo or a video each —
+  /// turned into attachments the same way `_pickMedia` builds one, only when
+  /// the poll is actually in media mode, parallel to `_pollDraft.options` by
+  /// index. They go up in the same field whichever they are; the server tells
+  /// a video by its bytes.
   List<ConnectMediaAttachment?> _pollOptionImagesForSubmit() {
     final poll = _pollDraft;
     if (poll == null) return const [];
@@ -9459,13 +9476,22 @@ class _PollOptionEntry {
   });
 
   final String text;
+
+  /// The editor's Media mode (named for the pictures it once took only).
   final bool isImage;
+
+  /// The photo or video picked for it, on this phone.
   final String? imagePath;
 }
 
+/// Whether a file picked for a post is a video, by its name.
+bool _isVideoPath(String path) =>
+    _mimeTypeFor(path.split('.').last).startsWith('video/');
+
 /// Dedicated poll editor sub-screen (item 7, Step A). Authors a question and
-/// up to 10 options (text or, cosmetically only, image) and pops the result
-/// back to the main composer without submitting anything to the backend.
+/// up to 10 options — words only, or Media: each option with a photo or a
+/// video, picked and limited as a feed post's are — and pops the result back
+/// to the main composer without submitting anything to the backend.
 class _PollEditorPage extends StatefulWidget {
   const _PollEditorPage({this.initial});
 
@@ -9536,13 +9562,25 @@ class _PollEditorPageState extends State<_PollEditorPage> {
     });
   }
 
+  /// A photo or a video for option [index], from the same pickers and under
+  /// the same 50 MB limit as a feed post's: a photo is cropped square for its
+  /// tile, a video goes in as it is.
   Future<void> _pickOptionImage(int index) async {
     final picked = await pickImageFrom(
       context,
-      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
+      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov'],
+      allowVideo: true,
     );
     final path = picked?.path;
-    if (path == null || path.isEmpty || !mounted) return;
+    if (picked == null || path == null || path.isEmpty || !mounted) return;
+    if (picked.size > _maxPostMediaBytes) {
+      showAppToast(context, 'That file is over 50 MB, so it was left out.');
+      return;
+    }
+    if (_isVideoFile(picked)) {
+      setState(() => _optionImages[index] = path);
+      return;
+    }
     final cropped = await cropImageFile(
       context,
       path: path,
@@ -9602,10 +9640,21 @@ class _PollEditorPageState extends State<_PollEditorPage> {
                         const SizedBox(height: 4),
                         _ChipChoice(
                           value: _optionMode,
-                          values: const [('text', 'Text'), ('image', 'Image')],
+                          values: const [('text', 'Text'), ('image', 'Media')],
                           onChanged: (value) =>
                               setState(() => _optionMode = value),
                         ),
+                        if (_optionMode == 'image') ...[
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Add a photo or a video to each option.',
+                            key: ValueKey('poll-media-hint'),
+                            style: TextStyle(
+                              color: Color(0xFF717171),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 14),
                         for (var i = 0; i < _optionControllers.length; i++) ...[
                           if (i > 0) const SizedBox(height: 10),
@@ -9743,25 +9792,54 @@ class _PollImageOptionRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: onPick,
-            child: Container(
-              width: 48,
-              height: 48,
-              alignment: Alignment.center,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF7F7F9),
-                borderRadius: BorderRadius.circular(8),
+          Semantics(
+            button: true,
+            label: imagePath == null
+                ? 'Add a photo or video'
+                : 'Replace the photo or video',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: onPick,
+              child: Container(
+                width: 48,
+                height: 48,
+                alignment: Alignment.center,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F7F9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: imagePath == null
+                    ? const Icon(
+                        Icons.add_photo_alternate_rounded,
+                        color: _ConnectColors.blue,
+                        size: 22,
+                      )
+                    : _isVideoPath(imagePath!)
+                    // The picked clip itself, playing muted, with its mark;
+                    // a tap still picks another in its place.
+                    ? IgnorePointer(
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            FeedVideo.file(
+                              key: ValueKey(imagePath),
+                              path: imagePath!,
+                              controls: false,
+                            ),
+                            const Center(
+                              child: Icon(
+                                Icons.videocam_rounded,
+                                key: ValueKey('poll-option-video-preview'),
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : Image.file(File(imagePath!), fit: BoxFit.cover),
               ),
-              child: imagePath == null
-                  ? const Icon(
-                      Icons.add_photo_alternate_rounded,
-                      color: _ConnectColors.blue,
-                      size: 22,
-                    )
-                  : Image.file(File(imagePath!), fit: BoxFit.cover),
             ),
           ),
           const SizedBox(width: 10),

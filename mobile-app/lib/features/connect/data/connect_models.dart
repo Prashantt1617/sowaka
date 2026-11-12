@@ -266,6 +266,7 @@ class ConnectPollOption {
     required this.label,
     required this.votes,
     this.imageUrl,
+    this.videoUrl,
   });
 
   final String id;
@@ -273,12 +274,23 @@ class ConnectPollOption {
   final int votes;
   final String? imageUrl;
 
+  /// The option's video, when it was posted with one rather than a picture
+  /// (the poll editor's Media option). Never in [imageUrl]: builds from
+  /// before video would draw it as a picture.
+  final String? videoUrl;
+
+  bool get hasVideo => (videoUrl ?? '').isNotEmpty;
+
+  /// A picture or a video to show for it.
+  bool get hasMedia => hasVideo || (imageUrl ?? '').isNotEmpty;
+
   factory ConnectPollOption.fromJson(Map<String, dynamic> json) {
     return ConnectPollOption(
       id: json['id'] as String? ?? '',
       label: json['label'] as String? ?? '',
       votes: (json['votes'] as num?)?.toInt() ?? 0,
       imageUrl: json['imageUrl'] as String?,
+      videoUrl: json['videoUrl'] as String?,
     );
   }
 }

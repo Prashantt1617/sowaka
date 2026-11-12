@@ -5,7 +5,8 @@ import { api } from './http';
 export type FeedAs = 'all' | 'company' | 'team' | 'list' | `person:${string}`;
 
 export type FeedMedia = { url: string; video: boolean };
-export type FeedPollOption = { id: string; label: string; votes: number; imageUrl?: string };
+// An option shows a picture or, from the app's Media option, a video.
+export type FeedPollOption = { id: string; label: string; votes: number; imageUrl?: string; videoUrl?: string };
 
 export type FeedCardDTO = {
   id: string;
