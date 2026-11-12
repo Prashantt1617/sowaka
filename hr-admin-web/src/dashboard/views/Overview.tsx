@@ -32,7 +32,7 @@ export function Overview() {
   // Everyone still at the company: offboarded and terminated people are left out.
   const activeEmployees = s.empRaw.filter((e) => e.lifecycleStatus !== 'offboarded' && e.lifecycleStatus !== 'terminated').length;
   const empState = s.listState('employees');
-  const leavesPending = s.leaves.filter((l) => l.status === 'Pending').length;
+  const leavesPending = s.leaves.filter((l) => l.status === 'Pending' || l.cancelRequest?.status === 'Pending').length;
   const claims = s.rbs.filter((r) => r.status === 'Pending').length;
   const reviewsPending = s.fbMgrs.reduce((a, m) => a + (m.total - m.done), 0);
 

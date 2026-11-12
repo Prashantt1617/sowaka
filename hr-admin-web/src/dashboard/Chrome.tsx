@@ -270,7 +270,8 @@ export function Sidebar() {
   // Only the tabs People › Accesses gives this person.
   const orgOpen = canOpen(user, 'organisation');
   const sections = SECTIONS.map((s) => ({ ...s, items: s.items.filter((item) => canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
-  const leavesPending = leaves.filter((l) => l.status === 'Pending').length;
+  // A cancellation request on an approved leave waits on HR's decision too.
+  const leavesPending = leaves.filter((l) => l.status === 'Pending' || l.cancelRequest?.status === 'Pending').length;
   const otPending = ots.filter((o) => o.status === 'Pending').length;
   const claims = rbs.filter((r) => r.status === 'Pending').length;
   const corrPending = corrs.filter((c) => c.status === 'Pending').length;

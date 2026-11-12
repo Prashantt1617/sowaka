@@ -255,11 +255,19 @@ class DecideLeave extends ManagerEvent {
   final String managerNote;
 }
 
-/// Takes back a leave of your own before it begins, with a note for the
-/// manager.
+/// Takes back a leave of your own, with a note for the manager: a pending one
+/// is withdrawn; an approved one becomes a cancellation request.
 class CancelLeave extends ManagerEvent {
   const CancelLeave(this.leaveId, {this.note = ''});
   final String leaveId;
+  final String note;
+}
+
+/// The manager answers a report's request to cancel an approved leave.
+class DecideLeaveCancellation extends ManagerEvent {
+  const DecideLeaveCancellation(this.leaveId, this.decision, {this.note = ''});
+  final String leaveId;
+  final LeaveDecision decision;
   final String note;
 }
 
@@ -468,6 +476,8 @@ class ManagerBloc {
     DecideLeave(:final leaveId, :final decision) =>
       'leave:decide:$leaveId:${decision.name}',
     CancelLeave(:final leaveId) => 'leave:cancel:$leaveId',
+    DecideLeaveCancellation(:final leaveId, :final decision) =>
+      'leave:cancellation:$leaveId:${decision.name}',
     DecideOvertime(:final overtimeId, :final decision) =>
       'overtime:decide:$overtimeId:${decision.name}',
     DecideAttendanceRegularization(:final id, :final decision) =>
@@ -859,14 +869,17 @@ class ManagerBloc {
           final cancelled = await _service.cancelLeave(leaveId, note);
           final data = _state.dashboard;
           if (data == null) return false;
-          // Only an approved leave had counted: its days come back, so the
-          // balance is re-read as after a decision (a failure there does not
-          // undo the cancel). A pending one never touched it.
+          // Only an approved leave had counted, and the server now answers
+          // that with a cancellation request: it stays approved until the
+          // manager agrees. Should a leave come back cancelled from approved,
+          // its days are back, so the balance is re-read as after a decision
+          // (a failure there does not undo the cancel).
           final wasApproved = data.myLeaves.any(
             (leave) =>
                 leave.id == leaveId && leave.decision == LeaveDecision.approved,
           );
-          final refreshedBalance = wasApproved
+          final refreshedBalance =
+              wasApproved && cancelled.decision == LeaveDecision.cancelled
               ? await _service.fetchLeaveBalance().catchError(
                   (_) => data.leaveBalance,
                 )
@@ -880,6 +893,31 @@ class ManagerBloc {
                 ],
                 leaveBalance: refreshedBalance,
               ),
+            ),
+          );
+        case DecideLeaveCancellation(
+          :final leaveId,
+          :final decision,
+          :final note,
+        ):
+          final updated = await _service.decideLeaveCancellation(
+            leaveId,
+            decision,
+            note,
+          );
+          final data = _state.dashboard;
+          if (data == null) return false;
+          _emit(
+            _state.copyWith(
+              dashboard: data.copyWith(
+                leaves: [
+                  for (final leave in data.leaves)
+                    leave.id == leaveId ? updated : leave,
+                ],
+              ),
+              message: decision == LeaveDecision.approved
+                  ? 'Cancellation approved'
+                  : 'Cancellation declined',
             ),
           );
         case DecideOvertime(

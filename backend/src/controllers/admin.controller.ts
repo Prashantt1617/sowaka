@@ -14,7 +14,7 @@ import {
 } from '../services/attendance.service';
 import { deleteOffice, listOffices, officeView, saveOffice } from '../services/geofence.service';
 import { requireOrg } from '../services/shift.service';
-import { adminDecideLeave, listAllLeavesForAdmin } from '../services/leave.service';
+import { adminDecideLeave, decideLeaveCancellation, listAllLeavesForAdmin } from '../services/leave.service';
 import { adminDecideOvertime, listAllOvertimeForAdmin } from '../services/overtime.service';
 import {
   adminDecideReimbursement,
@@ -381,6 +381,19 @@ export async function decideLeave(req: Request, res: Response, next: NextFunctio
       decision: String(req.body.decision ?? ''),
       managerNote: req.body.managerNote == null ? undefined : String(req.body.managerNote),
     });
+    res.status(200).json({ success: true, leave });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** HR answers an employee's request to cancel an approved leave, as an override where the policy allows. */
+export async function decideLeaveCancellationHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const leave = await decideLeaveCancellation(adminUserId(req), String(req.params.leaveId ?? ''), {
+      decision: String(req.body?.decision ?? ''),
+      note: req.body?.note == null ? undefined : String(req.body.note),
+    }, 'admin');
     res.status(200).json({ success: true, leave });
   } catch (error) {
     next(error);

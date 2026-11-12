@@ -53,8 +53,19 @@ export function ratingWord(score: number): string {
   return 'Needs work';
 }
 
+/**
+ * A cancelled leave's label says what it had been. Older servers send no `cancelledFrom`: a
+ * cancellation request approved, or a decision on record before the cancel, means it was approved.
+ */
+export function leaveStatusLabel(dto: Pick<LeaveDTO, 'status' | 'cancelledFrom' | 'cancelRequest' | 'decidedAt'>): string {
+  if (dto.status !== 'cancelled') return cap(dto.status);
+  const from = dto.cancelledFrom ?? (dto.cancelRequest?.status === 'approved' || (!dto.cancelRequest && dto.decidedAt) ? 'approved' : 'pending');
+  return from === 'approved' ? 'Cancelled approved leave' : 'Cancelled pending leave';
+}
+
 export function adaptLeave(dto: LeaveDTO, managerName: string): Leave {
   const byAdmin = dto.decidedByRole === 'admin';
+  const request = dto.cancelRequest;
   return {
     id: dto.id,
     name: dto.employee.name,
@@ -74,6 +85,16 @@ export function adaptLeave(dto: LeaveDTO, managerName: string): Leave {
     refISO: dto.startDate,
     submitterId: dto.userId,
     byAdmin,
+    statusLabel: leaveStatusLabel(dto),
+    cancelNote: dto.cancelNote || request?.note || '',
+    cancelledOn: dto.cancelledAt ? fmtDay(dto.cancelledAt) : undefined,
+    cancelRequest: request && {
+      status: cap(request.status) as 'Pending' | 'Approved' | 'Declined',
+      requested: fmtDay(request.requestedAt),
+      note: request.note || '',
+      decisionNote: request.decisionNote || '',
+      byAdmin: request.decidedByRole === 'admin',
+    },
   };
 }
 

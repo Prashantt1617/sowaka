@@ -21,6 +21,20 @@ export type LeaveDTO = {
   createdAt: string;
   decidedAt?: string;
   decidedByRole?: DecidedByRole;
+  /** Set once cancelled; the note is what the employee told their manager. */
+  cancelledAt?: string;
+  cancelNote?: string;
+  /** The employee asked to cancel this leave after it was approved, and what became of that. */
+  cancelRequest?: {
+    requestedAt: string;
+    note?: string;
+    status: 'pending' | 'approved' | 'declined';
+    decidedAt?: string;
+    decidedByRole?: DecidedByRole;
+    decisionNote?: string;
+  };
+  /** On a cancelled leave: withdrawn while pending, or cancelled once approved. Older servers omit it. */
+  cancelledFrom?: 'pending' | 'approved';
 };
 
 export type OvertimeDTO = {
@@ -120,6 +134,13 @@ export const decideLeave = (id: string, decision: 'approved' | 'declined', manag
   api<{ leave: LeaveDTO }>(`/admin/leaves/${id}/decision`, {
     method: 'PATCH',
     body: { decision, ...(managerNote ? { managerNote } : {}) },
+  }).then((r) => r.leave);
+
+// An employee's request to cancel an approved leave: approving cancels the leave, declining keeps it.
+export const decideLeaveCancellation = (id: string, decision: 'approved' | 'declined', note?: string) =>
+  api<{ leave: LeaveDTO }>(`/admin/leaves/${id}/cancellation`, {
+    method: 'PATCH',
+    body: { decision, ...(note ? { note } : {}) },
   }).then((r) => r.leave);
 
 // ---- Overtime (org-wide) ----

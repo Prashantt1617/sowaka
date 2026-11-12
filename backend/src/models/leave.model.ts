@@ -1,4 +1,9 @@
-/** `cancelled`: the employee took it back before it began (see `cancelLeave`); every reader that counts leave asks for pending or approved rows by name, so a cancelled row counts nowhere. */
+/**
+ * `cancelled`: taken back (see `cancelLeave`) — a pending one by the employee at once, an approved one
+ * once its approver agreed to the employee's cancellation request. Every reader that counts leave asks
+ * for pending or approved rows by name, so a cancelled row counts nowhere; an approved leave with a
+ * cancellation request still waiting is approved, and counts.
+ */
 export type LeaveStatus = 'pending' | 'approved' | 'declined' | 'cancelled';
 
 export interface Leave {
@@ -30,6 +35,24 @@ export interface Leave {
   /** When the employee cancelled it, and what they told their manager, if anything. */
   cancelledAt?: Date;
   cancelNote?: string;
+  /**
+   * The employee asked to cancel this leave after it was approved. Until the approver decides, the
+   * leave stays approved; approving it cancels the leave, declining it leaves it approved.
+   */
+  cancelRequest?: LeaveCancelRequest;
   createdAt?: number;
   updatedAt?: Date;
+}
+
+/** An employee's request to cancel a leave that was already approved, and what became of it. */
+export interface LeaveCancelRequest {
+  requestedAt: Date;
+  /** What the employee told their manager, if anything. */
+  note?: string;
+  status: 'pending' | 'approved' | 'declined';
+  decidedAt?: Date;
+  decidedByUserId?: string; // -> User.userId
+  decidedByRole?: 'manager' | 'admin';
+  /** The approver's note with the decision (a reason for declining, mostly). */
+  decisionNote?: string;
 }

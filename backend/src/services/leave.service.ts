@@ -1,9 +1,11 @@
 import { ObjectId } from 'mongodb';
 import { attendanceRecords, leaves, overtimeRequests, users } from '../config/db';
-import { Leave, LeaveStatus } from '../models/leave.model';
+import { Leave, LeaveCancelRequest, LeaveStatus } from '../models/leave.model';
 import { User } from '../models/user.model';
 import { orgUsersWithRows, sortLikeMongo } from './admin-scope';
-import { notifyLeaveCancelled, notifyLeaveDecided, notifyLeaveSubmitted } from './request-notifications.service';
+import {
+  notifyLeaveCancellationDecided, notifyLeaveCancellationRequested, notifyLeaveCancelled, notifyLeaveDecided, notifyLeaveSubmitted,
+} from './request-notifications.service';
 import { holidayDatesForUser } from './holiday.service';
 import { presignReceiptDownload, uploadLeaveDocument } from './s3-receipt.service';
 import { resolveProfilePhoto } from './s3-connect-media.service';
@@ -50,6 +52,23 @@ export interface LeaveView {
   /** Set once the employee cancelled it; the note is what they told their manager. */
   cancelledAt?: string;
   cancelNote?: string;
+  /**
+   * The employee's request to cancel this leave once it was approved, and what became of it.
+   */
+  cancelRequest?: {
+    requestedAt: string;
+    note?: string;
+    status: 'pending' | 'approved' | 'declined';
+    decidedAt?: string;
+    decidedByRole?: 'manager' | 'admin';
+    decisionNote?: string;
+  };
+  /**
+   * On a cancelled leave, what it was when it was cancelled: 'pending' — withdrawn before anyone
+   * decided ("Cancelled pending leave"); 'approved' — cancelled once approved, through a
+   * cancellation request the approver agreed to ("Cancelled approved leave").
+   */
+  cancelledFrom?: 'pending' | 'approved';
 }
 
 export async function applyForLeave(
@@ -746,12 +765,13 @@ export async function decideLeave(
 }
 
 /**
- * The employee takes back a leave that has not begun (its first day still
- * counts) — one still with the manager, or one already approved. The row stays, marked cancelled, so the
- * history keeps it; the balance, the calendar, payroll and the reminders all
- * ask for pending or approved rows by name, so from here on it counts
- * nowhere. A leave that has started is HR's to undo, not the employee's. The
- * approvers hear about it, with whatever note the employee left them.
+ * The employee takes back a leave. One still with the manager is withdrawn at once; one already
+ * approved becomes a cancellation request and stays approved (counting in the balance, the
+ * calendar and payroll) until its approver agrees (see `decideLeaveCancellation`). Either way the
+ * row stays, so the history keeps it; the balance, the calendar, payroll and the reminders all ask
+ * for pending or approved rows by name, so once cancelled it counts nowhere. How far back is the
+ * leave type's to say (see `assertCancellableNow`). The approvers hear about it, with whatever
+ * note the employee left them.
  */
 export async function cancelLeave(userId: string, leaveIdInput: string, input: { note?: string } = {}): Promise<LeaveView> {
   if (!ObjectId.isValid(leaveIdInput)) {
@@ -768,32 +788,10 @@ export async function cancelLeave(userId: string, leaveIdInput: string, input: {
   if (leave.status === 'declined') {
     throw new LeaveError(409, 'A declined leave has nothing to cancel');
   }
-  // Dates are stored as UTC midnight of the calendar day; today is the day it is in India, where
-  // every org works, so at 02:00 IST a leave starting that day has begun, as the app sees it.
-  const istDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-  const today = new Date(`${istDay}T00:00:00.000Z`);
-  // A leave can be cancelled as far back as its type lets it be applied for: today and later
-  // always (its own first day too: plans change in the morning), an earlier start only within
-  // the type's backdating window (allowBackdated + backdatedDays, the window applyLeave uses).
-  const daysAgo = Math.round((today.getTime() - leave.startDate.getTime()) / 86_400_000);
-  if (daysAgo > 0) {
-    const rule = (await leaveTypeRulesFor(userId)).find((item) => item.key === leave.type);
-    if (!rule?.allowBackdated || daysAgo > rule.backdatedDays) {
-      throw new LeaveError(
-        409,
-        rule?.allowBackdated
-          ? `${rule.name} can be cancelled up to ${rule.backdatedDays} days back. Ask HR.`
-          : `${rule?.name ?? 'This leave'} can't be cancelled once it has started. Ask HR.`,
-      );
-    }
-    // Never under a payroll that has already been run for the month it started in.
-    const { lockedPeriods } = await import('./employeePayroll.common');
-    const period = leave.startDate.toISOString().slice(0, 7);
-    const org = (await users().findOne({ userId }, { projection: { _id: 0, org: 1 } }))?.org ?? '';
-    if ((await lockedPeriods(org, period, period)).has(period)) {
-      throw new LeaveError(409, 'Payroll for that month has already been run, so this leave can\'t be cancelled here. Ask HR.');
-    }
+  if (leave.status === 'approved' && leave.cancelRequest?.status === 'pending') {
+    throw new LeaveError(409, 'Your cancellation request is already with your manager');
   }
+  await assertCancellableNow(leave);
   const note = input.note?.trim() ?? '';
   if (note.length > 500) {
     throw new LeaveError(400, 'Note cannot exceed 500 characters');
@@ -802,11 +800,37 @@ export async function cancelLeave(userId: string, leaveIdInput: string, input: {
   if (!employee) {
     throw new LeaveError(404, 'Employee not found');
   }
+  const now = new Date();
+  const days = leave.days ?? inclusiveDays(leave.startDate, leave.endDate);
 
-  const cancelledAt = new Date();
+  if (leave.status === 'approved') {
+    // Approved: the approver signs off on taking it back. A request declined before may be asked
+    // again; one still waiting may not.
+    const cancelRequest: LeaveCancelRequest = { requestedAt: now, status: 'pending', ...(note ? { note } : {}) };
+    const updated = await leaves().findOneAndUpdate(
+      { _id: leaveId, status: 'approved', 'cancelRequest.status': { $ne: 'pending' } },
+      { $set: { cancelRequest, updatedAt: now } },
+      { returnDocument: 'after' },
+    );
+    if (!updated) {
+      throw new LeaveError(409, 'This leave has changed. Refresh and try again.');
+    }
+    await notifyLeaveCancellationRequested({
+      employeeUserId: userId,
+      requestId: String(leaveId),
+      type: leave.type,
+      startDate: leave.startDate,
+      endDate: leave.endDate,
+      days,
+      note,
+    });
+    return await toLeaveView(updated, employee);
+  }
+
+  // Still pending: withdrawn, there is nothing to approve.
   const updated = await leaves().findOneAndUpdate(
-    { _id: leaveId, status: { $in: ['pending', 'approved'] } },
-    { $set: { status: 'cancelled', cancelledAt, updatedAt: cancelledAt, ...(note ? { cancelNote: note } : {}) } },
+    { _id: leaveId, status: 'pending' },
+    { $set: { status: 'cancelled', cancelledAt: now, updatedAt: now, ...(note ? { cancelNote: note } : {}) } },
     { returnDocument: 'after' },
   );
   if (!updated) {
@@ -819,9 +843,144 @@ export async function cancelLeave(userId: string, leaveIdInput: string, input: {
     type: leave.type,
     startDate: leave.startDate,
     endDate: leave.endDate,
-    days: leave.days ?? inclusiveDays(leave.startDate, leave.endDate),
-    wasApproved: leave.status === 'approved',
+    days,
+    wasApproved: false,
     note,
+  });
+
+  return await toLeaveView(updated, employee);
+}
+
+/**
+ * Whether a leave can be taken back today. A leave can be cancelled as far back as its type lets
+ * it be applied for: today and later always (its own first day too: plans change in the
+ * morning), an earlier start only within the type's backdating window (allowBackdated +
+ * backdatedDays, the window applyLeave uses), and never under a payroll already run for the month
+ * it started in. Checked when the employee asks, and again when an approver agrees to a
+ * cancellation request, since days may have passed in between.
+ */
+async function assertCancellableNow(leave: Leave): Promise<void> {
+  // Dates are stored as UTC midnight of the calendar day; today is the day it is in India, where
+  // every org works, so at 02:00 IST a leave starting that day has begun, as the app sees it.
+  const istDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const today = new Date(`${istDay}T00:00:00.000Z`);
+  const daysAgo = Math.round((today.getTime() - leave.startDate.getTime()) / 86_400_000);
+  if (daysAgo <= 0) return;
+  const rule = (await leaveTypeRulesFor(leave.userId)).find((item) => item.key === leave.type);
+  if (!rule?.allowBackdated || daysAgo > rule.backdatedDays) {
+    throw new LeaveError(
+      409,
+      rule?.allowBackdated
+        ? `${rule.name} can be cancelled up to ${rule.backdatedDays} days back. Ask HR.`
+        : `${rule?.name ?? 'This leave'} can't be cancelled once it has started. Ask HR.`,
+    );
+  }
+  const { lockedPeriods } = await import('./employeePayroll.common');
+  const period = leave.startDate.toISOString().slice(0, 7);
+  const org = (await users().findOne({ userId: leave.userId }, { projection: { _id: 0, org: 1 } }))?.org ?? '';
+  if ((await lockedPeriods(org, period, period)).has(period)) {
+    throw new LeaveError(409, 'Payroll for that month has already been run, so this leave can\'t be cancelled here. Ask HR.');
+  }
+}
+
+/**
+ * The approver answers an employee's request to cancel an approved leave. Approved, the leave is
+ * cancelled (its days come back, it leaves the calendar and payroll) with the employee's note
+ * kept; declined, it stays approved and the employee hears why. Whoever decides the leave decides
+ * this: `as: 'manager'` is the reporting manager when the policy names them; `as: 'admin'` is HR
+ * from the dashboard, as an override where the policy allows one. The cancellation window and the
+ * payroll lock are checked again before approving.
+ */
+export async function decideLeaveCancellation(
+  deciderUserId: string,
+  leaveIdInput: string,
+  input: { decision: string; note?: string },
+  as: 'manager' | 'admin',
+): Promise<LeaveView> {
+  if (!ObjectId.isValid(leaveIdInput)) {
+    throw new LeaveError(400, 'Invalid leave ID');
+  }
+  const decision = input.decision.trim().toLowerCase();
+  if (decision !== 'approved' && decision !== 'declined') {
+    throw new LeaveError(400, 'Decision must be approved or declined');
+  }
+  const leaveId = new ObjectId(leaveIdInput);
+  const leave = await leaves().findOne({ _id: leaveId });
+  if (!leave) {
+    throw new LeaveError(404, 'Leave request not found');
+  }
+  const employee = await users().findOne({ userId: leave.userId });
+  if (!employee) {
+    throw new LeaveError(409, 'Leave has an invalid employee reference');
+  }
+  const rules = await approvalRulesFor(leave.userId, 'leave');
+  if (as === 'manager') {
+    if (!managerMayDecide(rules.approver)) {
+      throw new LeaveError(403, `Leave is approved by ${rules.approver}, not by the reporting manager`);
+    }
+    if (employee.managerUserId !== deciderUserId) {
+      throw new LeaveError(403, 'Only the employee’s current manager can decide this cancellation');
+    }
+  } else {
+    if (leave.userId === deciderUserId) {
+      throw new LeaveError(403, 'You cannot override your own request');
+    }
+    const admin = await users().findOne({ userId: deciderUserId }, { projection: { _id: 0, org: 1 } });
+    if (!admin?.org || admin.org !== employee.org) {
+      throw new LeaveError(404, 'Leave request not found');
+    }
+    if (!hrMayDecide(rules.approver, rules.hrOverride)) {
+      throw new LeaveError(403, 'HR override is switched off for leave in this organisation');
+    }
+  }
+  if (leave.status !== 'approved' || leave.cancelRequest?.status !== 'pending') {
+    throw new LeaveError(
+      409,
+      leave.status === 'cancelled' ? 'This leave has already been cancelled' : 'There is no cancellation request waiting on this leave',
+    );
+  }
+  const note = input.note?.trim() ?? '';
+  if (note.length > 500) {
+    throw new LeaveError(400, 'Note cannot exceed 500 characters');
+  }
+  if (decision === 'approved') {
+    await assertCancellableNow(leave);
+  }
+
+  const now = new Date();
+  const decided: Record<string, unknown> = {
+    'cancelRequest.status': decision,
+    'cancelRequest.decidedAt': now,
+    'cancelRequest.decidedByUserId': deciderUserId,
+    'cancelRequest.decidedByRole': as,
+    updatedAt: now,
+  };
+  if (note) decided['cancelRequest.decisionNote'] = note;
+  if (decision === 'approved') {
+    decided.status = 'cancelled';
+    decided.cancelledAt = now;
+    const requestNote = leave.cancelRequest.note?.trim() ?? '';
+    if (requestNote) decided.cancelNote = requestNote;
+  }
+  const updated = await leaves().findOneAndUpdate(
+    { _id: leaveId, status: 'approved', 'cancelRequest.status': 'pending' },
+    { $set: decided },
+    { returnDocument: 'after' },
+  );
+  if (!updated) {
+    throw new LeaveError(409, 'This cancellation request has already been decided');
+  }
+
+  await notifyLeaveCancellationDecided({
+    employeeUserId: employee.userId,
+    requestId: String(leaveId),
+    type: leave.type,
+    startDate: leave.startDate,
+    endDate: leave.endDate,
+    days: leave.days ?? inclusiveDays(leave.startDate, leave.endDate),
+    approved: decision === 'approved',
+    comment: note,
+    decidedByUserId: deciderUserId,
   });
 
   return await toLeaveView(updated, employee);
@@ -1040,7 +1199,27 @@ async function toLeaveView(leave: Leave & { _id: ObjectId }, employee: User, typ
     decidedByRole: leave.decidedByRole,
     cancelledAt: leave.cancelledAt?.toISOString(),
     cancelNote: leave.cancelNote,
+    cancelRequest: leave.cancelRequest && {
+      requestedAt: new Date(leave.cancelRequest.requestedAt).toISOString(),
+      note: leave.cancelRequest.note,
+      status: leave.cancelRequest.status,
+      decidedAt: leave.cancelRequest.decidedAt?.toISOString(),
+      decidedByRole: leave.cancelRequest.decidedByRole,
+      decisionNote: leave.cancelRequest.decisionNote,
+    },
+    cancelledFrom: leave.status === 'cancelled' ? cancelledFrom(leave) : undefined,
   };
+}
+
+/**
+ * What a cancelled leave had been. One cancelled through an approved cancellation request was
+ * approved. Rows cancelled before requests existed have none: a decision is only ever recorded on
+ * a pending leave (approved or declined) and a declined one cannot be cancelled, so `decidedAt`
+ * there means it had been approved; without it, it was withdrawn while pending.
+ */
+function cancelledFrom(leave: Leave): 'pending' | 'approved' {
+  if (leave.cancelRequest) return leave.cancelRequest.status === 'approved' ? 'approved' : 'pending';
+  return leave.decidedAt ? 'approved' : 'pending';
 }
 
 export class LeaveError extends Error {

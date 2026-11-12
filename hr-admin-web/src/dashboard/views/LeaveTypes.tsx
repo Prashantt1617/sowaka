@@ -207,6 +207,8 @@ export function LeaveTypeCard({ row, onChange, onRemove }: { row: LeaveTypeRule;
             <Suffixed value={String(row.backdatedDays)} onChange={(v) => onChange({ backdatedDays: Number(v) || 0 })} suffix="days back" width={170} />
           )}
         </div>
+        {/* The server uses the same window for how far back a leave of this type can be cancelled. */}
+        <div style={helperText}>The cancellation period for this leave type will be the same.</div>
 
         {/* Not a question: whatever carry-forward and encashment don't take, lapses. */}
         {!unpaid && (
@@ -271,6 +273,7 @@ const addButton: CSSProperties = { padding: '9px 16px', fontSize: 13, fontWeight
 const removeButton: CSSProperties = { padding: 0, fontSize: 13, fontWeight: 500, border: 'none', background: 'none', color: 'var(--bad)', cursor: 'pointer', fontFamily: 'inherit' };
 const input: CSSProperties = { padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 9, fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--ink)' };
 const fieldLabel: CSSProperties = { fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' };
+const helperText: CSSProperties = { marginTop: 6, fontSize: 12.5, color: 'var(--ink-3)', lineHeight: 1.5 };
 const annualPill: CSSProperties = { marginLeft: 'auto', fontSize: 12.5, fontWeight: 500, color: 'var(--t-sky-i)', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 'var(--r-lg)', padding: '3px 11px' };
 const note: CSSProperties = { fontSize: 12.5, color: 'var(--ink-2)', background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', borderRadius: 10, padding: '11px 14px', lineHeight: 1.55 };
 const lapseRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, fontSize: 13, color: 'var(--ink-3)' };

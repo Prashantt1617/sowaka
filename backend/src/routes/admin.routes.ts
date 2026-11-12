@@ -7,6 +7,7 @@ import {
   accountLimit,
   createEmployee,
   decideLeave,
+  decideLeaveCancellationHandler,
   decideOvertime,
   decideRegularization,
   decideReimbursement,
@@ -176,6 +177,7 @@ adminRouter.get('/reports/attendance', attendanceReportHandler);
 
 // Overrides / dashboard-only decisions (rules 3, 6, 7, 8)
 adminRouter.patch('/leaves/:leaveId/decision', decideLeave);
+adminRouter.patch('/leaves/:leaveId/cancellation', decideLeaveCancellationHandler);
 adminRouter.patch('/overtime/:overtimeId/decision', decideOvertime);
 adminRouter.patch('/reimbursements/:claimId/decision', decideReimbursement);
 adminRouter.patch('/regularizations/:regularizationId/decision', decideRegularization);

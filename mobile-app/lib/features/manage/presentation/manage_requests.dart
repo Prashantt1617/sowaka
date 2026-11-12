@@ -243,20 +243,29 @@ class _LeaveRequestDetailPage extends StatelessWidget {
     required this.leave,
     required this.bloc,
     this.photoUrl,
+    this.cancellation = false,
   });
 
   final LeaveRequest leave;
   final ManagerBloc bloc;
   final String? photoUrl;
 
+  /// The page is about the employee's request to cancel this approved leave:
+  /// its note, where it stands, and Approve / Decline while it waits.
+  final bool cancellation;
+
   @override
   Widget build(BuildContext context) {
+    final request = cancellation ? leave.cancelRequest : null;
+    final waiting = cancellation
+        ? leave.cancellationPending
+        : leave.decision == LeaveDecision.pending;
     return Scaffold(
       backgroundColor: MColors.bg,
       body: Column(
         children: [
           _TopBar(
-            title: 'Leave',
+            title: cancellation ? 'Leave cancellation' : 'Leave',
             sub: '${leave.who} · ${leave.team}',
             onBack: () => Navigator.of(context).pop(),
           ),
@@ -284,7 +293,17 @@ class _LeaveRequestDetailPage extends StatelessWidget {
                                   '${leave.days == 1 ? '' : 's'}',
                       ),
                       SummaryRow('Applied On', _summaryDate(leave.requestedOn)),
-                      SummaryRow('Status', _statusLabel(leave.decision)),
+                      if (request != null) ...[
+                        SummaryRow(
+                          'Cancellation Asked',
+                          _summaryDate(request.requestedAt.toLocal()),
+                        ),
+                        SummaryRow(
+                          'Cancellation',
+                          _cancellationLabel(request.status),
+                        ),
+                      ],
+                      SummaryRow('Status', _leaveStatusLabel(leave)),
                       if (leave.decision == LeaveDecision.cancelled &&
                           leave.cancelledAt != null)
                         SummaryRow(
@@ -298,24 +317,33 @@ class _LeaveRequestDetailPage extends StatelessWidget {
                   ),
                   showSuccess: false,
                 ),
-                if (leave.managerNote.isNotEmpty) ...[
+                if (!cancellation && leave.managerNote.isNotEmpty) ...[
                   const SizedBox(height: 18),
                   const _LeaveSectionLabel('YOUR NOTE'),
                   const SizedBox(height: 7),
                   _ReviewedDeclineNote(note: leave.managerNote),
                 ],
-                // The employee's reason for taking the leave back.
-                if (leave.decision == LeaveDecision.cancelled &&
-                    leave.cancelNote.isNotEmpty) ...[
+                // The employee's reason for taking the leave back, or for
+                // asking to.
+                if (_cancelNoteOf(leave) case final note?
+                    when note.isNotEmpty &&
+                        (cancellation ||
+                            leave.decision == LeaveDecision.cancelled)) ...[
                   const SizedBox(height: 18),
                   const _LeaveSectionLabel('CANCELLATION NOTE'),
                   const SizedBox(height: 7),
-                  _CancelNote(note: leave.cancelNote),
+                  _CancelNote(note: note),
+                ],
+                if (request != null && request.decisionNote.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  const _LeaveSectionLabel('YOUR NOTE'),
+                  const SizedBox(height: 7),
+                  _ReviewedDeclineNote(note: request.decisionNote),
                 ],
               ],
             ),
           ),
-          if (leave.decision == LeaveDecision.pending)
+          if (waiting)
             Container(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               decoration: const BoxDecoration(
@@ -357,19 +385,43 @@ class _LeaveRequestDetailPage extends StatelessWidget {
   static String _days(double value) =>
       value == value.roundToDouble() ? value.toStringAsFixed(0) : '$value';
 
-  static String _statusLabel(LeaveDecision decision) => switch (decision) {
-    LeaveDecision.approved => 'Approved',
-    LeaveDecision.declined => 'Declined',
-    LeaveDecision.cancelled => 'Cancelled',
-    LeaveDecision.pending => 'Pending',
-  };
-
   Future<void> _decide(BuildContext context, LeaveDecision decision) async {
-    final result = await _showLeaveDecisionSheet(context, leave, decision);
+    final result = await _showLeaveDecisionSheet(
+      context,
+      leave,
+      decision,
+      cancellation: cancellation,
+    );
     if (result == null || !context.mounted) return;
-    bloc.add(DecideLeave(leave.id, decision, managerNote: result.managerNote));
+    if (cancellation) {
+      bloc.add(
+        DecideLeaveCancellation(leave.id, decision, note: result.managerNote),
+      );
+    } else {
+      bloc.add(
+        DecideLeave(leave.id, decision, managerNote: result.managerNote),
+      );
+    }
   }
 }
+
+/// A leave's status in words. A cancelled one says what it had been: a
+/// pending leave the employee withdrew, or an approved one whose cancellation
+/// was agreed to.
+String _leaveStatusLabel(LeaveRequest leave) =>
+    leave.cancelledLabel ?? _decisionText(leave.decision);
+
+/// Where a request to cancel an approved leave stands.
+String _cancellationLabel(LeaveDecision status) => switch (status) {
+  LeaveDecision.approved => 'Approved',
+  LeaveDecision.declined => 'Declined',
+  _ => 'Waiting on you',
+};
+
+/// The employee's note with the cancellation: on the request while it is
+/// one, kept on the leave once cancelled.
+String? _cancelNoteOf(LeaveRequest leave) =>
+    leave.cancelNote.isNotEmpty ? leave.cancelNote : leave.cancelRequest?.note;
 
 /// The frame every manager request detail shares: the summary the employee
 /// sent, their own note once decided, and the two decision buttons pinned to
@@ -608,23 +660,38 @@ class _DecisionSheetResult {
   final String managerNote;
 }
 
-Future<_DecisionSheetResult?> _showLeaveDecisionSheet(
+/// The same sheet for an employee's request to cancel an approved leave:
+/// approving cancels the leave, declining keeps it, and a note is optional.
+Future<_DecisionSheetResult?> _showLeaveCancellationDecisionSheet(
   BuildContext context,
   LeaveRequest leave,
   LeaveDecision decision,
-) async {
+) => _showLeaveDecisionSheet(context, leave, decision, cancellation: true);
+
+Future<_DecisionSheetResult?> _showLeaveDecisionSheet(
+  BuildContext context,
+  LeaveRequest leave,
+  LeaveDecision decision, {
+  bool cancellation = false,
+}) async {
   final approve = decision == LeaveDecision.approved;
+  // Declining a leave needs a reason; declining a cancellation keeps the
+  // leave, and a note is the manager's choice.
+  final noteRequired = !approve && !cancellation;
   // The colours the Approve and Reject buttons wear on the card this sheet
   // was opened from, so confirming looks like what was tapped.
   final accent = approve ? MColors.approveTint : MColors.rejectTint;
   final accentInk = approve ? MColors.approveInk : MColors.rejectInk;
-  final noteController = TextEditingController();
-  try {
-    return await showModalBottomSheet<_DecisionSheetResult>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (sheetContext) => StatefulBuilder(
+  return showModalBottomSheet<_DecisionSheetResult>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    // The note's controller lives as long as the sheet does: disposed when
+    // the sheet's own route is gone, not when its future completes (the
+    // sheet is still animating out then, and rebuilds as the keyboard
+    // goes).
+    builder: (sheetContext) => _OwnedTextController(
+      builder: (noteController) => StatefulBuilder(
         builder: (context, setSheetState) => Padding(
           padding: EdgeInsets.only(
             bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
@@ -653,7 +720,11 @@ Future<_DecisionSheetResult?> _showLeaveDecisionSheet(
                   ),
                   const SizedBox(height: 18),
                   Text(
-                    approve ? 'Approve leave' : 'Decline leave',
+                    cancellation
+                        ? (approve
+                              ? 'Approve cancellation'
+                              : 'Decline cancellation')
+                        : (approve ? 'Approve leave' : 'Decline leave'),
                     style: const TextStyle(
                       color: MColors.ink,
                       fontSize: 20,
@@ -724,14 +795,35 @@ Future<_DecisionSheetResult?> _showLeaveDecisionSheet(
                   const SizedBox(height: 10),
                   _LeaveDetailRow(
                     icon: Icons.schedule_rounded,
-                    label: 'Applied',
-                    value: _requestTimestamp(leave.requestedOn),
+                    label: cancellation ? 'Cancellation asked' : 'Applied',
+                    value: _requestTimestamp(
+                      cancellation
+                          ? leave.cancelRequest?.requestedAt ??
+                                leave.requestedOn
+                          : leave.requestedOn,
+                    ),
                   ),
+                  if (cancellation) ...[
+                    Text(
+                      approve
+                          ? 'The leave will be cancelled and the days go '
+                                'back to ${leave.who.split(' ').first}’s '
+                                'balance.'
+                          : 'The leave stays approved.',
+                      style: const TextStyle(
+                        color: MColors.inkSoft,
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 18),
                   if (!approve) ...[
-                    const Text(
-                      'Reason for declining',
-                      style: TextStyle(
+                    Text(
+                      cancellation
+                          ? 'Note for ${leave.who.split(' ').first} (optional)'
+                          : 'Reason for declining',
+                      style: const TextStyle(
                         color: MColors.ink,
                         fontSize: 13.5,
                         fontWeight: FontWeight.w800,
@@ -745,7 +837,9 @@ Future<_DecisionSheetResult?> _showLeaveDecisionSheet(
                       maxLines: 3,
                       onChanged: (_) => setSheetState(() {}),
                       decoration: _fieldDecoration(
-                        'Explain why this leave request is being declined…',
+                        cancellation
+                            ? 'Why the leave is staying approved…'
+                            : 'Explain why this leave request is being declined…',
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -771,14 +865,15 @@ Future<_DecisionSheetResult?> _showLeaveDecisionSheet(
                               : 'Confirm decline',
                           icon: approve ? Icons.check_rounded : null,
                           background:
-                              !approve && noteController.text.trim().isEmpty
+                              noteRequired && noteController.text.trim().isEmpty
                               ? MColors.line
                               : accent,
                           foreground:
-                              !approve && noteController.text.trim().isEmpty
+                              noteRequired && noteController.text.trim().isEmpty
                               ? MColors.inkFaint
                               : accentInk,
-                          onTap: !approve && noteController.text.trim().isEmpty
+                          onTap:
+                              noteRequired && noteController.text.trim().isEmpty
                               ? null
                               : () => Navigator.pop(
                                   sheetContext,
@@ -796,10 +891,32 @@ Future<_DecisionSheetResult?> _showLeaveDecisionSheet(
           ),
         ),
       ),
-    );
-  } finally {
-    noteController.dispose();
+    ),
+  );
+}
+
+/// A TextEditingController owned by the widget tree, for a sheet built in a
+/// function: it is disposed with the sheet, after its exit animation.
+class _OwnedTextController extends StatefulWidget {
+  const _OwnedTextController({required this.builder});
+
+  final Widget Function(TextEditingController controller) builder;
+
+  @override
+  State<_OwnedTextController> createState() => _OwnedTextControllerState();
+}
+
+class _OwnedTextControllerState extends State<_OwnedTextController> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(_controller);
 }
 
 String _leaveDateRange(LeaveRequest leave) {

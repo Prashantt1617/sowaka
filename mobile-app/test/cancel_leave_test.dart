@@ -1,8 +1,10 @@
 // Taking a leave back from the attendance calendar (Figma 2112:69787 and
-// 2112:69226): a leave still to come wears its tag and offers "Cancel Leave"
-// under the punch card; the sheet takes a note for the manager; once the
-// server agrees the day is plain again and a toast says so. A cancelled leave
-// leaves no mark on the calendar.
+// 2112:69226) or its detail page: a pending leave offers "Cancel Leave"; the
+// sheet takes a note for the manager; once the server agrees the day is plain
+// again and a toast says so. An approved leave offers "Request cancellation"
+// instead: the manager decides, and it stays approved until they do. Either
+// can be taken back as far back as its type can be applied for. A cancelled
+// leave leaves no mark on the calendar.
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -93,7 +95,7 @@ void main() {
   );
 
   testWidgets(
-    'from the leave\'s detail page: approved can be cancelled, a past one cannot',
+    'from the leave\'s detail page: approved asks the manager; the window is the type\'s',
     (tester) async {
       tester.view.physicalSize = const Size(390 * 3, 844 * 3);
       tester.view.devicePixelRatio = 3;
@@ -116,12 +118,27 @@ void main() {
         'status': 'approved',
         'createdAt': '2026-09-01T09:00:00.000Z',
       };
+      // Past the type's 90 days back: nothing to undo here.
       final pastJson = <String, dynamic>{
         ...leaveJson,
         'id': 'lv0',
-        'startDate': ymd(DateTime(now.year, now.month, now.day - 30)),
-        'endDate': ymd(DateTime(now.year, now.month, now.day - 30)),
+        'startDate': ymd(DateTime(now.year, now.month, now.day - 120)),
+        'endDate': ymd(DateTime(now.year, now.month, now.day - 120)),
         'reason': 'Bank and property paperwork',
+      };
+      // Ten days back, inside the window: its cancellation was declined, and
+      // it may be asked again.
+      final keptJson = <String, dynamic>{
+        ...leaveJson,
+        'id': 'lv2',
+        'startDate': ymd(DateTime(now.year, now.month, now.day - 10)),
+        'endDate': ymd(DateTime(now.year, now.month, now.day - 10)),
+        'reason': 'Dentist',
+        'cancelRequest': {
+          'requestedAt': '2026-09-02T09:00:00.000Z',
+          'status': 'declined',
+          'decisionNote': 'Already paid out',
+        },
       };
       String? cancelPath;
       String? cancelNote;
@@ -169,17 +186,47 @@ void main() {
           cancelNote =
               (jsonDecode(request.body) as Map<String, dynamic>)['note']
                   as String?;
+          // Approved: it stays approved, the request with the manager.
           return ok({
             'leave': {
               ...leaveJson,
-              'status': 'cancelled',
-              'cancelNote': cancelNote,
-              'cancelledAt': '2026-09-02T09:00:00.000Z',
+              'cancelRequest': {
+                'requestedAt': '2026-09-02T09:00:00.000Z',
+                'status': 'pending',
+                'note': cancelNote,
+              },
             },
           });
         }
         return ok({
-          'leaves': [leaveJson, pastJson],
+          'leaves': [
+            leaveJson,
+            pastJson,
+            keptJson,
+            // Two cancelled ones, each saying what it had been.
+            {
+              ...leaveJson,
+              'id': 'lv3',
+              'startDate': ymd(DateTime(now.year, now.month, now.day - 5)),
+              'endDate': ymd(DateTime(now.year, now.month, now.day - 5)),
+              'status': 'cancelled',
+              'cancelledFrom': 'approved',
+              'cancelNote': 'Not needed',
+              'cancelRequest': {
+                'requestedAt': '2026-09-02T09:00:00.000Z',
+                'status': 'approved',
+                'note': 'Not needed',
+              },
+            },
+            {
+              ...leaveJson,
+              'id': 'lv4',
+              'startDate': ymd(DateTime(now.year, now.month, now.day - 6)),
+              'endDate': ymd(DateTime(now.year, now.month, now.day - 6)),
+              'status': 'cancelled',
+              'cancelledFrom': 'pending',
+            },
+          ],
           'overtime': <dynamic>[],
           'regularizations': <dynamic>[],
           'claims': <dynamic>[],
@@ -253,30 +300,71 @@ void main() {
       Finder leaveCard() => find.byWidgetPredicate(
         (w) => w.runtimeType.toString() == '_LeaveRequestCard',
       );
-      // Upcoming: the approved leave a week away; its detail offers Cancel Leave.
+      // Upcoming: the approved leave a week away; its detail asks the manager.
       await tester.tap(leaveCard().first);
       await settle();
       expect(find.text('Trip'), findsOneWidget);
       expect(find.text('Approved'), findsWidgets);
       final cancel = find.byKey(const ValueKey('leave-detail-cancel'));
       expect(cancel, findsOneWidget);
+      expect(find.text('Cancel Leave'), findsNothing);
       await tester.ensureVisible(cancel);
-      await tester.tap(find.text('Cancel Leave'));
+      await tester.tap(find.text('Request cancellation'));
       await settle();
+      // The sheet: its title and its button, over the page's own button.
+      expect(find.text('Request cancellation'), findsNWidgets(3));
+      expect(find.textContaining('your manager decides'), findsOneWidget);
       expect(find.text('Add a note for your manager...'), findsOneWidget);
       await tester.enterText(find.byType(TextField).last, 'Plans changed');
-      await tester.tap(find.text('Cancel Leave').last);
+      await tester.tap(find.text('Request cancellation').last);
       await settle();
       expect(cancelPath, endsWith('/leaves/lv1/cancel'));
       expect(cancelNote, 'Plans changed');
-      expect(find.text('Leave successfully canceled'), findsOneWidget);
-      // Back on the list the detail was opened from.
+      expect(find.text('Cancellation sent to your manager'), findsOneWidget);
+      expect(find.text('Leave successfully canceled'), findsNothing);
+      // Back on the list: still approved, its cancellation with the manager.
       expect(find.byKey(const ValueKey('leave-detail-cancel')), findsNothing);
+      expect(find.text('Cancellation requested'), findsOneWidget);
+      // Its detail says so, and offers nothing more.
+      await tester.tap(leaveCard().first);
+      await settle();
+      expect(
+        find.byKey(const ValueKey('leave-cancellation-status')),
+        findsOneWidget,
+      );
+      expect(find.text('Cancellation requested'), findsOneWidget);
+      expect(find.byKey(const ValueKey('leave-detail-cancel')), findsNothing);
+      controller.handleBack();
+      await settle();
 
-      // History: the approved leave a month ago; nothing to undo on its detail.
+      // History, newest first. The cancelled ones say what they had been.
       await tester.tap(find.text('History').first);
       await settle();
+      expect(find.text('Cancelled approved leave'), findsOneWidget);
+      expect(find.text('Cancelled pending leave'), findsOneWidget);
+      expect(find.text('Cancelled'), findsNothing);
       await tester.tap(leaveCard().first);
+      await settle();
+      expect(find.text('Cancelled approved leave'), findsOneWidget);
+      expect(find.text('Not needed'), findsOneWidget);
+      controller.handleBack();
+      await settle();
+      // Ten days back, inside Casual's 90 days: the manager's decline, and
+      // the button to ask again.
+      await tester.ensureVisible(leaveCard().at(2));
+      await tester.pump();
+      await tester.tap(leaveCard().at(2));
+      await settle();
+      expect(find.text('Dentist'), findsOneWidget);
+      expect(find.text('Cancellation declined'), findsOneWidget);
+      expect(find.text('Already paid out'), findsOneWidget);
+      expect(find.text('Request cancellation'), findsOneWidget);
+      controller.handleBack();
+      await settle();
+      // 120 days back, past the window: nothing to undo on its detail.
+      await tester.ensureVisible(leaveCard().at(3));
+      await tester.pump();
+      await tester.tap(leaveCard().at(3));
       await settle();
       expect(find.text('Bank and property paperwork'), findsOneWidget);
       expect(find.byKey(const ValueKey('leave-detail-cancel')), findsNothing);
