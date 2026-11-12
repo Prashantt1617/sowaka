@@ -1,3 +1,4 @@
+import { ObjectId } from 'mongodb';
 /**
  * /suwi: ask a question, confirm / cancel / undo a prepared action, and the
  * company's Suwi settings and activity. Dashboard users only; what each person
@@ -11,7 +12,7 @@ import { users } from '../config/db';
 import { logger } from '../utils/logger';
 import { askSuwi } from './agent';
 import { cancelProposal, confirmProposal, undoProposal } from './proposals';
-import { auditCol, LEVEL_LABEL, saveSettings, settingsFor, spentThisMonthUsd } from './store';
+import { auditCol, proposalsCol, LEVEL_LABEL, saveSettings, settingsFor, spentThisMonthUsd } from './store';
 import { llmConfigured, SUWI_MODEL, SUWI_PROVIDER } from './llm';
 import { SUWI_AREAS } from './tools';
 import { INSIGHT_KINDS, INSIGHT_ROUTE, InsightKind, insightFor, mayRead } from './insight';
@@ -124,20 +125,42 @@ suwiRouter.put('/settings', async (req, res, next) => {
   } catch (e) { fail(res, e, next); }
 });
 
-/** Recent Suwi activity: actions and settings changes for everyone; questions only your own (admins see all). */
+/**
+ * Suwi's prompt history: every question someone asked (not the morning digest or the import
+ * summary, which nobody typed), newest first, with the full answer, whether it worked, the
+ * checks it ran and what became of each action it prepared. Admins see everyone's, others
+ * their own. Paged: `before` (an ISO time from the last row) and `limit` (up to 100).
+ */
 suwiRouter.get('/activity', async (req, res, next) => {
   try {
     const u = me(req);
-    const filter = u.dashboardAdmin === true ? { org: u.org } : { org: u.org, $or: [{ kind: { $ne: 'question' } }, { userId: u.userId }] };
-    const rows = await auditCol().find(filter as never).sort({ at: -1 }).limit(50).toArray();
-    const names = new Map((await users().find({ userId: { $in: [...new Set(rows.map((r) => r.userId))] } }, { projection: { _id: 0, userId: 1, name: 1 } }).toArray()).map((x) => [x.userId, x.name]));
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+    const before = typeof req.query.before === 'string' && !Number.isNaN(Date.parse(req.query.before)) ? new Date(req.query.before) : null;
+    const filter: Record<string, unknown> = {
+      org: u.org, kind: 'question', page: { $nin: ['digest'] }, question: { $ne: 'Import risk summary' },
+      ...(u.dashboardAdmin === true ? {} : { userId: u.userId }),
+      ...(before ? { at: { $lt: before } } : {}),
+    };
+    const rows = await auditCol().find(filter as never).sort({ at: -1 }).limit(limit + 1).toArray();
+    const page = rows.slice(0, limit);
+    const names = new Map((await users().find({ userId: { $in: [...new Set(page.map((r) => r.userId))] } }, { projection: { _id: 0, userId: 1, name: 1 } }).toArray()).map((x) => [x.userId, x.name]));
+    const ids = page.flatMap((r) => r.proposalIds ?? []).filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
+    const props = new Map((ids.length ? await proposalsCol().find({ _id: { $in: ids } }, { projection: { title: 1, status: 1, message: 1 } }).toArray() : [])
+      .map((p) => [String(p._id), { title: p.title, status: p.status, message: p.message ?? null }]));
     res.json({
       success: true,
-      activity: rows.map((r) => ({
-        at: r.at.toISOString(), who: names.get(r.userId) ?? 'Someone', kind: r.kind,
-        text: r.kind === 'question' ? r.question : r.kind === 'action' ? `${r.action?.title}: ${r.action?.result}${r.action?.message ? ` (${r.action.message})` : ''}` : r.answer,
-        tools: r.tools?.map((t) => t.label), costUsd: r.costUsd,
+      activity: page.map((r) => ({
+        id: String(r._id), at: r.at.toISOString(), who: names.get(r.userId) ?? 'Someone', kind: r.kind, page: r.page ?? null,
+        // Answers were kept to their first 4,000 characters before 12 Nov 2026.
+        prompt: r.question ?? '', response: r.answer ?? null,
+        // Rows from before statuses were kept were all answered (failures were not recorded then).
+        status: r.status ?? (r.answer ? 'answered' : 'failed'), error: r.error ?? null,
+        attachment: r.attachment?.name ?? null,
+        checks: (r.tools ?? []).map((t) => ({ label: t.label, ok: t.ok })),
+        actions: (r.proposalIds ?? []).map((id) => props.get(id)).filter(Boolean),
+        costUsd: r.costUsd ?? null,
       })),
+      nextBefore: rows.length > limit ? page[page.length - 1].at.toISOString() : null,
     });
   } catch (e) { fail(res, e, next); }
 });

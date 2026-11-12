@@ -27,6 +27,12 @@ export interface SuwiAuditEntry {
   question?: string;
   answer?: string;
   tools?: { name: string; label: string; ms: number; ok: boolean }[];
+  /** For a question: answered, cut short (too many steps) or failed (an error, Suwi off, budget used up). */
+  status?: 'answered' | 'incomplete' | 'failed';
+  /** Why a question failed, as the person was told. */
+  error?: string;
+  /** Actions Suwi prepared for this question; their outcome is on the proposal (done, failed, undone…). */
+  proposalIds?: string[];
   /** The file sent with the question (its name only; the file itself is not kept). */
   attachment?: { name: string; kind: 'image' | 'spreadsheet' };
   /** A confirmed or undone action, recorded as "via Suwi". */

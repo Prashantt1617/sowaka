@@ -51,5 +51,15 @@ export type SuwiSettingsDTO = {
 export const getSuwiSettings = () => api<SuwiSettingsDTO>('/suwi/settings');
 export const saveSuwiSettings = (patch: { enabled?: boolean; monthlyBudgetUsd?: number; levels?: Record<string, SuwiLevel> }) =>
   api<{ settings: SuwiSettingsDTO['settings'] }>('/suwi/settings', { method: 'PUT', body: patch }).then((r) => r.settings);
-export type SuwiActivityRow = { at: string; who: string; kind: 'question' | 'action' | 'settings'; text?: string; tools?: string[]; costUsd?: number };
-export const getSuwiActivity = () => api<{ activity: SuwiActivityRow[] }>('/suwi/activity').then((r) => r.activity);
+/** One prompt in Suwi's history: what was asked, what Suwi answered, whether it worked, and its actions' outcome. */
+export type SuwiActivityRow = {
+  id: string; at: string; who: string; page: string | null;
+  prompt: string; response: string | null;
+  status: 'answered' | 'incomplete' | 'failed'; error: string | null;
+  attachment: string | null;
+  checks: { label: string; ok: boolean }[];
+  actions: { title: string; status: 'pending' | 'done' | 'failed' | 'cancelled' | 'undone' | 'expired'; message: string | null }[];
+  costUsd: number | null;
+};
+export const getSuwiActivity = (before?: string) =>
+  api<{ activity: SuwiActivityRow[]; nextBefore: string | null }>(`/suwi/activity${before ? `?before=${encodeURIComponent(before)}` : ''}`);

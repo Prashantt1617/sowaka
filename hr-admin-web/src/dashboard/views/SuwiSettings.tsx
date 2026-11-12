@@ -22,13 +22,26 @@ export function SuwiSettings() {
   const s = useStore();
   const [data, setData] = useState<SuwiSettingsDTO | null>(null);
   const [activity, setActivity] = useState<SuwiActivityRow[] | null>(null);
+  const [nextBefore, setNextBefore] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const loadMore = async () => {
+    if (!nextBefore || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const r = await getSuwiActivity(nextBefore);
+      setActivity((a) => [...(a ?? []), ...r.activity]);
+      setNextBefore(r.nextBefore);
+    } catch { /* keep what is shown */ } finally { setLoadingMore(false); }
+  };
+  const toggle = (id: string) => setOpenIds((o) => { const n = new Set(o); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [failed, setFailed] = useState(false);
   const [budget, setBudget] = useState('');
   const [saving, setSaving] = useState(false);
   const load = () => {
     setFailed(false);
     getSuwiSettings().then((d) => { setData(d); setBudget(String(d.settings.monthlyBudgetUsd)); }).catch((e) => { setFailed(true); s.flash(e instanceof ApiError ? e.message : 'Could not load Suwi settings', 'error'); });
-    getSuwiActivity().then(setActivity).catch(() => setActivity((a) => a ?? []));
+    getSuwiActivity().then((r) => { setActivity(r.activity); setNextBefore(r.nextBefore); }).catch(() => setActivity((a) => a ?? []));
   };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -39,7 +52,7 @@ export function SuwiSettings() {
       const settings = await saveSuwiSettings(patch);
       setData((d) => (d ? { ...d, settings: { ...d.settings, ...settings } } : d));
       s.flash(done);
-      getSuwiActivity().then(setActivity).catch(() => undefined);
+      getSuwiActivity().then((r) => { setActivity(r.activity); setNextBefore(r.nextBefore); }).catch(() => undefined);
     } catch (e) {
       s.flash(e instanceof ApiError ? e.message : 'Could not save', 'error');
     } finally {
@@ -123,22 +136,47 @@ export function SuwiSettings() {
         </Card>
         <Card>
           <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)' }}>
-            <div style={{ fontSize: 15, fontWeight: 600 }}>Recent Suwi activity</div>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>{canEdit ? "Everyone's questions, confirmed actions and settings changes." : 'Your questions, plus every confirmed action and settings change.'}</div>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>Suwi prompt history</div>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>{canEdit ? 'Every question asked to Suwi, with its answer and whether it worked.' : 'Every question you asked Suwi, with its answer and whether it worked.'} Morning digests are not listed.</div>
           </div>
           {activity === null ? <SkeletonRows rows={3} cols={3} avatar={false} rowHeight={46} /> : activity.length === 0 ? <div style={{ padding: 22, color: 'var(--ink-3)', fontSize: 13 }}>Nothing yet. Ask Suwi something.</div> : (
-            <div style={{ maxHeight: 420, overflowY: 'auto' }}>
-              {activity.map((r, i) => (
-                <div key={i} style={{ padding: '10px 18px', borderBottom: '1px solid var(--line)', fontSize: 13 }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 600 }}>{r.who}</span>
-                    <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: r.kind === 'action' ? 'var(--hi)' : 'var(--ink-3)' }}>{r.kind === 'question' ? 'asked' : r.kind === 'action' ? 'via Suwi' : 'settings'}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--ink-3)' }}>{new Date(r.at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+            <div style={{ maxHeight: 640, overflowY: 'auto' }}>
+              {activity.map((r) => {
+                const open = openIds.has(r.id);
+                const tone = STATUS_TONE[r.status];
+                return (
+                  <div key={r.id} style={{ padding: '12px 18px', borderBottom: '1px solid var(--line)', fontSize: 13 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 600 }}>{r.who}</span>
+                      <span style={{ ...pill, color: tone.fg, background: tone.bg }}>{tone.label}</span>
+                      {r.page && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>on {r.page}</span>}
+                      <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--ink-3)' }}>{new Date(r.at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                    <div style={{ marginTop: 6, color: 'var(--ink)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{r.prompt}{r.attachment && <span style={{ color: 'var(--ink-3)' }}> · attached {r.attachment}</span>}</div>
+                    {r.status === 'failed' && r.error && <div style={{ marginTop: 6, fontSize: 12.5, color: 'var(--bad)' }}>{r.error}</div>}
+                    {r.actions.length > 0 && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                        {r.actions.map((a, i) => {
+                          const t = ACTION_TONE[a.status];
+                          return <span key={i} title={a.message ?? undefined} style={{ ...pill, color: t.fg, background: t.bg }}>{a.title}: {t.label}</span>;
+                        })}
+                      </div>
+                    )}
+                    {r.checks.length > 0 && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6 }}>Checked: {r.checks.map((c) => (c.ok ? c.label : `${c.label} (failed)`)).join(' · ')}{typeof r.costUsd === 'number' ? ` · $${r.costUsd.toFixed(4)}` : ''}</div>}
+                    {r.response && (
+                      <>
+                        <button type="button" onClick={() => toggle(r.id)} style={{ ...link, marginTop: 6 }}>{open ? 'Hide response' : 'Show response'}</button>
+                        {open && <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 12, background: 'var(--surface-2)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--ink)' }}>{r.response}</div>}
+                      </>
+                    )}
                   </div>
-                  <div style={{ marginTop: 2, color: 'var(--ink)' }}>{r.text}</div>
-                  {r.tools && r.tools.length > 0 && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>Checked: {r.tools.join(' · ')}{typeof r.costUsd === 'number' ? ` · $${r.costUsd.toFixed(4)}` : ''}</div>}
+                );
+              })}
+              {nextBefore && (
+                <div style={{ padding: 12, textAlign: 'center' }}>
+                  <button type="button" onClick={() => void loadMore()} disabled={loadingMore} style={ghost}>{loadingMore ? 'Loading…' : 'Load older prompts'}</button>
                 </div>
-              ))}
+              )}
             </div>
           )}
         </Card>
@@ -147,6 +185,21 @@ export function SuwiSettings() {
   );
 }
 
+const STATUS_TONE: Record<SuwiActivityRow['status'], { label: string; fg: string; bg: string }> = {
+  answered: { label: 'Done', fg: 'var(--ok, #15803D)', bg: 'var(--ok-bg, #E7F8EC)' },
+  incomplete: { label: 'Cut short', fg: 'var(--warn, #92400E)', bg: 'var(--warn-bg, #FEF3C7)' },
+  failed: { label: 'Failed', fg: 'var(--bad, #B42318)', bg: 'var(--bad-bg, #FDECEC)' },
+};
+const ACTION_TONE: Record<SuwiActivityRow['actions'][number]['status'], { label: string; fg: string; bg: string }> = {
+  done: { label: 'done', fg: 'var(--ok, #15803D)', bg: 'var(--ok-bg, #E7F8EC)' },
+  failed: { label: 'failed', fg: 'var(--bad, #B42318)', bg: 'var(--bad-bg, #FDECEC)' },
+  undone: { label: 'undone', fg: 'var(--ink-2)', bg: 'var(--surface-2)' },
+  pending: { label: 'waiting for confirm', fg: 'var(--warn, #92400E)', bg: 'var(--warn-bg, #FEF3C7)' },
+  cancelled: { label: 'cancelled', fg: 'var(--ink-3)', bg: 'var(--surface-2)' },
+  expired: { label: 'expired', fg: 'var(--ink-3)', bg: 'var(--surface-2)' },
+};
+const pill: CSSProperties = { fontSize: 11.5, fontWeight: 600, borderRadius: 999, padding: '2px 8px' };
+const link: CSSProperties = { border: 'none', background: 'none', padding: 0, color: 'var(--accent)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', font: 'inherit' };
 const tile: CSSProperties = { background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 16, padding: '12px 14px' };
 const label: CSSProperties = { fontSize: 11.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: 8 };
 const th: CSSProperties = { textAlign: 'left', fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)', padding: '10px 18px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)' };
