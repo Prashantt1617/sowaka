@@ -109,8 +109,15 @@ class _SupportDeskScreenState extends State<SupportDeskScreen> {
         if (mounted) _openTicket(ticketId);
       });
     } else if (widget.raiseOnOpen) {
+      // Opened only to raise a ticket (from Payroll, a toast, a face check):
+      // the desk is not somewhere they asked to go, so leaving the form (or
+      // the new ticket's thread) leaves the desk too — one Back, straight to
+      // where they were.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(_raise(about: widget.raiseAbout));
+        if (!mounted) return;
+        unawaited(_raise(about: widget.raiseAbout).then((_) {
+          if (mounted) Navigator.of(context).maybePop();
+        }));
       });
     }
   }

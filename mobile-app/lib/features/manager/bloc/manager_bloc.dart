@@ -960,7 +960,14 @@ class ManagerBloc {
           final data = _state.dashboard;
           _emit(
             _state.copyWith(
-              dashboard: data?.copyWith(myLeaves: [leave, ...data.myLeaves]),
+              // A refresh that ran while this was being sent may already have
+              // brought the new leave back from the server: add it once.
+              dashboard: data?.copyWith(
+                myLeaves: [
+                  leave,
+                  ...data.myLeaves.where((item) => item.id != leave.id),
+                ],
+              ),
               applyLeaveSent: true,
             ),
           );
@@ -982,7 +989,10 @@ class ManagerBloc {
           _emit(
             _state.copyWith(
               dashboard: data?.copyWith(
-                myOvertime: [request, ...data.myOvertime],
+                myOvertime: [
+                  request,
+                  ...data.myOvertime.where((item) => item.id != request.id),
+                ],
               ),
             ),
           );
