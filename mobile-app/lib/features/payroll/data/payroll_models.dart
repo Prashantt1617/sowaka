@@ -1572,6 +1572,7 @@ class TaxDeclaration {
     this.metro = false,
     this.selfSenior = false,
     this.parentsSenior = false,
+    this.closed,
   });
 
   final String fy;
@@ -1579,6 +1580,9 @@ class TaxDeclaration {
   /// "new" | "old".
   final String regime;
   final bool chosen;
+
+  /// Past the due date: when it closed and what was declared by then.
+  final TaxDeclarationClosed? closed;
 
   /// "not_started" | "saved" | "submitted".
   final String status;
@@ -1605,10 +1609,53 @@ class TaxDeclaration {
     metro: _bool(json['metro']),
     selfSenior: _bool(json['selfSenior']),
     parentsSenior: _bool(json['parentsSenior']),
-    sections: _list(json['sections'])
-        .map(TaxDeclarationSection.fromJson)
-        .toList(),
+    closed: json['closed'] is Map<String, dynamic>
+        ? TaxDeclarationClosed.fromJson(json['closed'])
+        : null,
+    sections: _list(
+      json['sections'],
+    ).map(TaxDeclarationSection.fromJson).toList(),
   );
+}
+
+/// A declaration past its last date: "Declaration closed on 30 Nov · You
+/// declared ₹1,28,400 in 4 items", and where the rest can still go.
+class TaxDeclarationClosed {
+  const TaxDeclarationClosed({
+    required this.itemsDeclared,
+    required this.declaredPaise,
+    required this.countedPaise,
+    this.closedOn,
+    this.lastPayPeriod,
+    this.itrDueOn,
+  });
+
+  final DateTime? closedOn;
+
+  /// Items the person declared above zero (payroll's PF is not one).
+  final int itemsDeclared;
+
+  /// The year's declared total, PF from payroll left out.
+  final int declaredPaise;
+
+  /// What counts against the caps on the old regime (0 on the new).
+  final int countedPaise;
+
+  /// The FY's last pay month (March).
+  final DateTime? lastPayPeriod;
+
+  /// The FY's income tax return due date (31 July after it ends).
+  final DateTime? itrDueOn;
+
+  factory TaxDeclarationClosed.fromJson(Map<String, dynamic> json) =>
+      TaxDeclarationClosed(
+        closedOn: payrollDate(json['closedOn']),
+        itemsDeclared: _int(json['itemsDeclared']),
+        declaredPaise: _int(json['declaredPaise']),
+        countedPaise: _int(json['countedPaise']),
+        lastPayPeriod: payrollMonth(json['lastPayPeriod']),
+        itrDueOn: payrollDate(json['itrDueOn']),
+      );
 }
 
 // ---------------------------------------------------------------- tax summary

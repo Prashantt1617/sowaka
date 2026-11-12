@@ -170,14 +170,14 @@ class _ProofsPageState extends State<_ProofsPage> {
           if (closed.notSubmitted > 0) ...[
             const SizedBox(height: 8),
             const _ProofsSectionLabel('What you can still do'),
-            _ProofsClaimBackCard(itrDueOn: closed.itrDueOn),
-            const SizedBox(height: 28),
             _ProofsAskHrCard(
               lastPayPeriod: closed.lastPayPeriod,
               onTap: canRaiseSupportTicket || scope.onRaiseTicket != null
                   ? () => _askHr(proofs, closed)
                   : null,
             ),
+            const SizedBox(height: 8),
+            _ProofsClaimBackCard(itrDueOn: closed.itrDueOn),
           ],
         ] else ...[
           if (proofs.notConfigured || proofs.dueOn == null) ...[
@@ -901,10 +901,21 @@ class _ProofsCountedCard extends StatelessWidget {
 /// "Have the proofs now? Ask HR if they can still accept them for March
 /// pay ›": a Support Desk ticket.
 class _ProofsAskHrCard extends StatelessWidget {
-  const _ProofsAskHrCard({required this.lastPayPeriod, required this.onTap});
+  const _ProofsAskHrCard({
+    required this.lastPayPeriod,
+    required this.onTap,
+    this.inkKey = const ValueKey('proofs-ask-hr'),
+    this.title = 'Have the proofs now?',
+    this.subtitle,
+  });
 
   final DateTime? lastPayPeriod;
   final VoidCallback? onTap;
+  final Key inkKey;
+  final String title;
+
+  /// In place of "Ask HR if they can still accept them for March pay".
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -913,7 +924,7 @@ class _ProofsAskHrCard extends StatelessWidget {
       color: Colors.white,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
-        key: const ValueKey('proofs-ask-hr'),
+        key: inkKey,
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
         child: Padding(
@@ -940,16 +951,14 @@ class _ProofsAskHrCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Have the proofs now?',
-                      style: _proofType(15, weight: FontWeight.w700),
-                    ),
+                    Text(title, style: _proofType(15, weight: FontWeight.w700)),
                     const SizedBox(height: 3),
                     Text(
-                      month == null
-                          ? 'Ask HR if they can still accept them'
-                          : 'Ask HR if they can still accept them for '
-                                '${_monthName(month.month)} pay',
+                      subtitle ??
+                          (month == null
+                              ? 'Ask HR if they can still accept them'
+                              : 'Ask HR if they can still accept them for '
+                                    '${_monthName(month.month)} pay'),
                       style: _proofType(12.5, color: _proofMuted),
                     ),
                   ],
@@ -973,15 +982,23 @@ class _ProofsAskHrCard extends StatelessWidget {
 
 /// "Claim it back when you file": the tax return still takes them.
 class _ProofsClaimBackCard extends StatelessWidget {
-  const _ProofsClaimBackCard({required this.itrDueOn});
+  const _ProofsClaimBackCard({
+    required this.itrDueOn,
+    this.cardKey = const ValueKey('proofs-claim-back'),
+    this.body,
+  });
 
   final DateTime? itrDueOn;
+  final Key cardKey;
+
+  /// In place of the proofs' own words.
+  final String? body;
 
   @override
   Widget build(BuildContext context) {
     final due = itrDueOn;
     return Container(
-      key: const ValueKey('proofs-claim-back'),
+      key: cardKey,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -990,27 +1007,7 @@ class _ProofsClaimBackCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _ProofsIconTile(
-            // Figma crops the picture to 120% of its box, nudged up and left.
-            child: SizedBox(
-              width: 24,
-              height: 24,
-              child: ClipRect(
-                child: OverflowBox(
-                  maxWidth: 28.8,
-                  maxHeight: 28.8,
-                  // 28.8 in 24: left −9.69%, top −11.84% of the box.
-                  alignment: const Alignment(-0.031, 0.184),
-                  child: Image.asset(
-                    'assets/icons/payroll_proofs_tax.png',
-                    width: 28.8,
-                    height: 28.8,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ),
-            ),
-          ),
+          const _ProofsIconTile(child: _TaxPicture()),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1022,10 +1019,11 @@ class _ProofsClaimBackCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'The extra tax isn’t lost. Claim these in your return'
-                  '${due == null ? '' : ' by ${_longDate(due)}'} with the '
-                  'same documents, and get it back as a refund. Your Form 16 '
-                  'will show only the proved items.',
+                  body ??
+                      'The extra tax isn’t lost. Claim these in your return'
+                          '${due == null ? '' : ' by ${_longDate(due)}'} with '
+                          'the same documents, and get it back as a refund. '
+                          'Your Form 16 will show only the proved items.',
                   style: _proofType(
                     12.5,
                     color: _proofMuted,
@@ -1039,6 +1037,32 @@ class _ProofsClaimBackCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The tax calendar picture (Figma "image 96"), cropped as Figma crops it:
+/// to 120% of its 24-point box, nudged up and left.
+class _TaxPicture extends StatelessWidget {
+  const _TaxPicture();
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 24,
+    height: 24,
+    child: ClipRect(
+      child: OverflowBox(
+        maxWidth: 28.8,
+        maxHeight: 28.8,
+        // 28.8 in 24: left −9.69%, top −11.84% of the box.
+        alignment: const Alignment(-0.031, 0.184),
+        child: Image.asset(
+          'assets/icons/payroll_proofs_tax.png',
+          width: 28.8,
+          height: 28.8,
+          fit: BoxFit.cover,
+        ),
+      ),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------- sheets

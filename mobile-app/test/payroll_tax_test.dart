@@ -268,9 +268,10 @@ void main() {
     expect(find.byKey(const ValueKey('payroll-tax')), findsOneWidget);
     expect(find.text('Tax'), findsOneWidget);
     expect(find.text('TAX · FY 2026–27'), findsOneWidget);
-    expect(find.text('Estimate'), findsOneWidget);
+    // The regime on the tag (Figma 4562:25092), the estimate in the line.
+    expect(find.text('New regime'), findsOneWidget);
     expect(find.text('₹96,400'), findsOneWidget);
-    expect(find.text('Your tax for the year · new regime'), findsOneWidget);
+    expect(find.text('Your tax for the year · estimate'), findsOneWidget);
     expect(find.text('₹50,802'), findsOneWidget);
     expect(find.text('Paid till Sep'), findsOneWidget);
     expect(find.text('₹7,600'), findsOneWidget);
@@ -289,8 +290,15 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Investment declaration'), findsNothing);
-    expect(find.text('Investment proofs'), findsNothing);
+    // On the new regime the rows stay, greyed, and open nothing.
+    expect(find.text('Investment declaration'), findsOneWidget);
+    expect(find.text('Investment proofs'), findsOneWidget);
+    expect(find.text('Not needed on the new regime'), findsNWidgets(2));
+    await tap(tester, find.byKey(const ValueKey('tax-declaration')));
+    expect(find.byKey(const ValueKey('payroll-declaration')), findsNothing);
+    // Form 16 is a row of its own, opening Downloads on its tab.
+    expect(find.text('Download Form 16'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tax-regime-save')), findsNothing);
     // The months stay closed until asked for.
     expect(find.text('April 2026'), findsNothing);
     await capture(tester, 'payroll_tax_new');
@@ -324,7 +332,7 @@ void main() {
     expect(find.text('₹7,600'), findsNWidgets(7));
     final paid = colorOf(tester, 'September 2026');
     final coming = colorOf(tester, 'October 2026');
-    expect(paid, const Color(0xFF111827));
+    expect(paid, const Color(0xFF222222));
     expect(coming, const Color(0xFF9CA3AF));
     await capture(tester, 'payroll_tax_months');
 
@@ -332,17 +340,22 @@ void main() {
     expect(find.text('April 2026'), findsNothing);
   });
 
-  testWidgets('Picking the old regime saves it through the declaration', (
+  testWidgets('Picking the old regime and Save tax regime keep it', (
     tester,
   ) async {
     final server = await pumpTax(tester);
     await tap(tester, find.byKey(const ValueKey('tax-regime')));
     expect(find.text('Old regime'), findsOneWidget);
-    expect(find.text('New regime'), findsOneWidget);
+    // The option, and the card's tag.
+    expect(find.text('New regime'), findsNWidgets(2));
     expect(find.text('Default'), findsOneWidget);
     expect(find.byKey(const ValueKey('tax-regime-saved')), findsNothing);
+    // Never chosen: the default can be kept as it is.
+    expect(find.byKey(const ValueKey('tax-regime-save')), findsOneWidget);
 
     await tap(tester, find.byKey(const ValueKey('tax-regime-old')));
+    expect(server.bodies, isEmpty, reason: 'a pick is not saved by itself');
+    await tap(tester, find.byKey(const ValueKey('tax-regime-save')));
     final body = server.bodies['/payroll/tax-declaration']!;
     expect(body['regime'], 'old');
     expect(body['items'], isEmpty, reason: 'declared amounts are kept');
@@ -354,7 +367,7 @@ void main() {
     );
     expect(find.text('Saved · last date to change 30 Nov'), findsOneWidget);
     expect(find.text('Old regime · change by 30 Nov'), findsOneWidget);
-    expect(find.text('Your tax for the year · old regime'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tax-regime-save')), findsNothing);
     expect(find.text('₹83,200'), findsOneWidget);
     expect(find.text('Investment declaration'), findsOneWidget);
     expect(find.text('By 30 Nov'), findsOneWidget);
@@ -365,9 +378,10 @@ void main() {
 
     // Back to the new regime: sent as done, nothing more to declare.
     await tap(tester, find.byKey(const ValueKey('tax-regime-new')));
+    await tap(tester, find.byKey(const ValueKey('tax-regime-save')));
     expect(server.bodies['/payroll/tax-declaration']!['regime'], 'new');
     expect(server.bodies['/payroll/tax-declaration']!['submit'], true);
-    expect(find.text('Investment declaration'), findsNothing);
+    expect(find.text('Not needed on the new regime'), findsNWidgets(2));
     expect(find.byKey(const ValueKey('tax-new-regime-note')), findsOneWidget);
   });
 
@@ -410,6 +424,7 @@ void main() {
     await tap(tester, find.byKey(const ValueKey('tax-regime')));
     expect(find.byKey(const ValueKey('tax-regime-closed')), findsOneWidget);
     await tap(tester, find.byKey(const ValueKey('tax-regime-old')));
+    expect(find.byKey(const ValueKey('tax-regime-save')), findsNothing);
     expect(server.bodies, isEmpty);
     expect(find.text('Old regime · closed 30 Nov'), findsNothing);
   });
@@ -428,7 +443,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('tax-annual')), findsNothing);
-    expect(find.text('Estimate'), findsNothing);
+    expect(find.text('New regime'), findsNothing);
     expect(find.text('Month by month'), findsNothing);
     expect(find.text('Tax regime'), findsOneWidget);
     expect(
@@ -439,6 +454,7 @@ void main() {
 
     await tap(tester, find.byKey(const ValueKey('tax-regime')));
     await tap(tester, find.byKey(const ValueKey('tax-regime-old')));
+    expect(find.byKey(const ValueKey('tax-regime-save')), findsNothing);
     expect(server.bodies, isEmpty);
   });
 }

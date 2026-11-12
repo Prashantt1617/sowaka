@@ -755,73 +755,145 @@ void main() {
     });
   });
 
-  testWidgets('declaration: caps, the regime switch, submit', (tester) async {
-    final server = await pumpPayroll(tester);
-    await tap(tester, find.byKey(const ValueKey('payroll-todo-tax_regime')));
-    expect(find.byKey(const ValueKey('payroll-declaration')), findsOneWidget);
-    expect(find.text('80C investments'), findsOneWidget);
-    expect(find.text('Max ₹1,50,000'), findsOneWidget);
-    expect(find.text('₹21,600'), findsOneWidget); // PF, read only
-    expect(find.text('Provident fund (from payroll)'), findsOneWidget);
-    await capture(tester, payroll(), 'declaration_old');
+  group(
+    'Investment declaration (Figma 4484:73124, 4484:73528, 4506:23669)',
+    () {
+      final opened = <String?>[];
+      void opener({String? about}) => opened.add(about);
+      setUp(opened.clear);
+      tearDown(() => unregisterSupportTicketOpener(opener));
 
-    // Over the 80C cap: said, and the declared amount still kept.
-    expect(find.byKey(const ValueKey('cap-80C')), findsNothing);
-    await tester.enterText(
-      find.descendant(
-        of: find.byKey(const ValueKey('declare-other80C')),
-        matching: find.byType(TextField),
-      ),
-      '30000',
-    );
-    await tester.pump();
-    expect(
-      find.text('₹1,80,000 declared — only ₹1,50,000 counts.'),
-      findsOneWidget,
-    );
-    await capture(tester, payroll(), 'declaration_over_cap');
+      testWidgets('caps, the saved sheet, then back', (tester) async {
+        final server = await pumpPayroll(tester);
+        await tap(
+          tester,
+          find.byKey(const ValueKey('payroll-todo-tax_regime')),
+        );
+        expect(
+          find.byKey(const ValueKey('payroll-declaration')),
+          findsOneWidget,
+        );
+        expect(find.text('By 30 Nov · old regime'), findsOneWidget);
+        // The regime is picked under Tax, not here.
+        expect(find.byKey(const ValueKey('regime-switch')), findsNothing);
+        expect(find.text('80C investments'), findsOneWidget);
+        expect(find.text('Max ₹1,50,000'), findsOneWidget);
+        expect(find.text('₹21,600'), findsOneWidget); // PF, read only
+        expect(find.text('Provident fund (from payroll)'), findsOneWidget);
+        await capture(tester, payroll(), 'declaration_old');
 
-    await tester.drag(find.byType(ListView).first, const Offset(0, -900));
-    await settle(tester);
-    expect(find.text('Home loan interest'), findsOneWidget);
-    expect(find.text('Investment proofs'), findsOneWidget);
-    await capture(tester, payroll(), 'declaration_old_scrolled');
+        // Over the 80C cap: said, and the declared amount still kept.
+        expect(find.byKey(const ValueKey('cap-80C')), findsNothing);
+        await tester.enterText(
+          find.descendant(
+            of: find.byKey(const ValueKey('declare-other80C')),
+            matching: find.byType(TextField),
+          ),
+          '30000',
+        );
+        await tester.pump();
+        expect(
+          find.text('₹1,80,000 declared — only ₹1,50,000 counts.'),
+          findsOneWidget,
+        );
+        await capture(tester, payroll(), 'declaration_over_cap');
 
-    // The new regime asks for nothing.
-    await tester.drag(find.byType(ListView).first, const Offset(0, 1500));
-    await settle(tester);
-    await tap(tester, find.text('New regime'));
-    expect(find.textContaining('nothing to declare'), findsOneWidget);
-    expect(find.text('80C investments'), findsNothing);
-    await capture(tester, payroll(), 'declaration_new');
+        await tester.drag(find.byType(ListView).first, const Offset(0, -900));
+        await settle(tester);
+        expect(find.text('Home loan interest'), findsOneWidget);
+        expect(find.text('Interest this year'), findsOneWidget);
+        await capture(tester, payroll(), 'declaration_old_scrolled');
 
-    // Back to old, and submit.
-    await tap(tester, find.text('Old regime'));
-    expect(find.text('80C investments'), findsOneWidget);
-    await tap(tester, find.text('Submit declaration'));
-    final body = server.bodies['/payroll/tax-declaration']!;
-    expect(body['regime'], 'old');
-    expect(body['submit'], isTrue);
-    final items = body['items'] as Map<String, dynamic>;
-    expect(items['other80C'], 3000000);
-    expect(items['ppf'], 5000000);
-    expect(items.containsKey('epf'), isFalse);
-    expect(find.text('Declaration submitted'), findsOneWidget);
-    expect(find.text('Old regime'), findsOneWidget);
-    await capture(tester, payroll(), 'declaration_submitted');
-  });
+        await tap(tester, find.byKey(const ValueKey('declaration-save')));
+        final body = server.bodies['/payroll/tax-declaration']!;
+        expect(body['regime'], 'old');
+        expect(body['submit'], isTrue);
+        final items = body['items'] as Map<String, dynamic>;
+        expect(items['other80C'], 3000000);
+        expect(items['ppf'], 5000000);
+        expect(items.containsKey('epf'), isFalse);
+        expect(find.text('Declaration saved'), findsOneWidget);
+        expect(
+          find.text('Make sure you upload the proofs by 31 Jan.'),
+          findsOneWidget,
+        );
+        await capture(tester, payroll(), 'declaration_saved');
 
-  testWidgets('declaration on the new regime sends just the regime', (
-    tester,
-  ) async {
-    final server = await pumpPayroll(tester);
-    await tap(tester, find.byKey(const ValueKey('payroll-todo-tax_regime')));
-    await tap(tester, find.text('New regime'));
-    await tap(tester, find.text('Submit declaration'));
-    expect(server.bodies['/payroll/tax-declaration']!['regime'], 'new');
-    expect(server.regime, 'new');
-    expect(find.text('Declaration submitted'), findsOneWidget);
-  });
+        await tap(tester, find.byKey(const ValueKey('declaration-saved-done')));
+        expect(find.byKey(const ValueKey('payroll-declaration')), findsNothing);
+      });
+
+      testWidgets('on the new regime there is nothing to declare', (
+        tester,
+      ) async {
+        final server = FakePayrollServer()..regime = 'new';
+        await pumpPayroll(tester, server: server);
+        await tap(
+          tester,
+          find.byKey(const ValueKey('payroll-todo-tax_regime')),
+        );
+        expect(find.text('By 30 Nov · new regime'), findsOneWidget);
+        expect(find.textContaining('nothing to declare'), findsOneWidget);
+        expect(find.text('80C investments'), findsNothing);
+        expect(find.byKey(const ValueKey('declaration-save')), findsNothing);
+        await capture(tester, payroll(), 'declaration_new');
+      });
+
+      testWidgets('closed: what was declared, ask HR, claim it back', (
+        tester,
+      ) async {
+        registerSupportTicketOpener(opener);
+        final server = FakePayrollServer()..declarationClosed = true;
+        await pumpPayroll(tester, server: server);
+        await tap(
+          tester,
+          find.byKey(const ValueKey('payroll-todo-tax_regime')),
+        );
+        expect(find.text('Declaration closed on 30 Nov'), findsOneWidget);
+        expect(find.text('You declared ₹3,33,400 in 5 items'), findsOneWidget);
+        expect(find.text('Closed'), findsOneWidget);
+        // Nothing can be typed or saved any more.
+        expect(find.byType(TextField), findsNothing);
+        expect(find.byKey(const ValueKey('declaration-save')), findsNothing);
+        expect(find.text('WHAT YOU CAN STILL DO'), findsOneWidget);
+        expect(find.text('Missed it for a reason?'), findsOneWidget);
+        expect(find.text('Ask HR to reopen your declaration'), findsOneWidget);
+        expect(find.text('Claim it back when you file'), findsOneWidget);
+        expect(
+          find.text(
+            'The extra tax cut now isn’t lost. Add these investments when you '
+            'file your income tax return by 31 Jul 2027, and you’ll get the '
+            'extra back as a refund.',
+          ),
+          findsOneWidget,
+        );
+        // HR first, then the claim (Figma 4484:73628).
+        expect(
+          tester.getTopLeft(find.text('Missed it for a reason?')).dy,
+          lessThan(
+            tester.getTopLeft(find.text('Claim it back when you file')).dy,
+          ),
+        );
+        await capture(tester, payroll(), 'declaration_closed');
+
+        await tap(tester, find.byKey(const ValueKey('declaration-ask-hr')));
+        expect(opened, hasLength(1));
+        expect(opened.single, contains('FY 2026-27'));
+        expect(opened.single, contains('closed on 30 Nov'));
+      });
+
+      testWidgets('closed with nothing declared says so', (tester) async {
+        final server = FakePayrollServer()..declarationClosed = true;
+        server.items.updateAll((_, _) => 0);
+        await pumpPayroll(tester, server: server);
+        await tap(
+          tester,
+          find.byKey(const ValueKey('payroll-todo-tax_regime')),
+        );
+        expect(find.text('You didn’t declare any investments'), findsOneWidget);
+      });
+    },
+  );
 
   group('Investment proofs (Figma 4484:73360, 4484:73735, 4567:25245)', () {
     final opened = <String?>[];
@@ -1072,10 +1144,12 @@ void main() {
         find.text('Ask HR if they can still accept them for March pay'),
         findsOneWidget,
       );
-      // The claim comes first, then HR.
+      // HR first, then the claim (Figma 4484:73877).
       expect(
-        tester.getTopLeft(find.text('Claim it back when you file')).dy,
-        lessThan(tester.getTopLeft(find.text('Have the proofs now?')).dy),
+        tester.getTopLeft(find.text('Have the proofs now?')).dy,
+        lessThan(
+          tester.getTopLeft(find.text('Claim it back when you file')).dy,
+        ),
       );
       await capture(tester, payroll(), 'proofs_closed_scrolled');
 

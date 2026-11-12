@@ -151,6 +151,9 @@ class FakePayrollServer {
   /// Past the proofs due date: the closed state, uploads refused.
   bool proofsClosed = false;
 
+  /// Past the declaration's due date: the closed state, saves refused.
+  bool declarationClosed = false;
+
   /// False: HR has not set the proofs due date (dueOn null, not set up).
   bool proofsDueSet = true;
 
@@ -568,10 +571,23 @@ class FakePayrollServer {
       'regime': regime,
       'chosen': true,
       'status': status,
-      'locked': false,
+      'locked': declarationClosed,
       'dueOn': '2026-11-30',
       'proofsDueOn': '2027-01-31',
       'submittedAt': null,
+      'closed': declarationClosed
+          ? {
+              'closedOn': '2026-11-30',
+              'itemsDeclared': items.values.where((v) => v > 0).length,
+              'declaredPaise': [
+                for (final MapEntry(:key, :value) in items.entries)
+                  key == 'rentMonthly' ? value * 12 : value,
+              ].fold<int>(0, (a, b) => a + b),
+              'countedPaise': 0,
+              'lastPayPeriod': '2027-03',
+              'itrDueOn': '2027-07-31',
+            }
+          : null,
       'metro': false,
       'selfSenior': false,
       'parentsSenior': false,
