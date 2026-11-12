@@ -719,6 +719,14 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   /// 'Full day' or 'Half day' — the only two durations overtime is claimed as,
   /// matching what HR configured. The hours behind them come from the shift.
   String? _overtimeDuration;
+
+  /// How the overtime is to be compensated (Figma 3205:39887): 'pay' through
+  /// payroll, or 'comp_off' leave. Null until chosen — it has to be, to apply.
+  String? _overtimeCompensation;
+
+  /// The comp-off asked for (Figma 4453:64935): 1 for a full day, 0.5 for a
+  /// half. Only meaningful when [_overtimeCompensation] is 'comp_off'.
+  double _overtimeCompOffDays = 0;
   final _overtimeNote = TextEditingController();
   bool _reimbursementHistoryView = false;
   DateTime? _reimbursementDate;
@@ -2079,6 +2087,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     rows: [
                       SummaryRow('Work Date', _summaryDate(request.workDate)),
                       SummaryRow('Duration', request.hoursLabel),
+                      // Overtime pay or comp-off, as chosen; nothing on a
+                      // request from before there was a choice.
+                      if (request.compensationLabel.isNotEmpty)
+                        SummaryRow('Compensation', request.compensationDetail),
                       SummaryRow('Time', request.timeRangeLabel),
                       SummaryRow(
                         'Applied On',
@@ -2102,6 +2114,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     setState(() {
       _overtimeDate = null;
       _overtimeDuration = null;
+      _overtimeCompensation = null;
+      _overtimeCompOffDays = 0;
       _overtimeNote.clear();
       _page = _QuickPage.applyOvertime;
     });
@@ -2118,7 +2132,8 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       onQuickCreate: _showQuickCreateComingSoon,
       footer: _FormSubmitBar(
         label: 'Apply Overtime',
-        // Off until the date and duration are both valid for the policy.
+        // Off until the date and duration are both valid for the policy and
+        // the compensation has been chosen.
         enabled: _overtimeFormComplete && !_submitting,
         busy: _submitting,
         onTap: _submitOvertimeApplication,
@@ -2142,12 +2157,26 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
               filled: _overtimeDuration != null,
               onTap: _pickOvertimeDuration,
             ),
-            if (_overtimeDuration != null) ...[
+            const SizedBox(height: 16),
+            _LeaveFieldLabel('Reason'),
+            _FormTextArea(controller: _overtimeNote, height: 85.6),
+            const SizedBox(height: 16),
+            // Overtime pay or comp-off (Figma 3205:39887, 4453:64935).
+            _LeaveFieldLabel('Compensation'),
+            _LeaveDropdownField(
+              key: const ValueKey('overtime-compensation'),
+              value: _overtimeCompensationLabel ?? 'Select compensation',
+              filled: _overtimeCompensation != null,
+              onTap: _pickOvertimeCompensation,
+            ),
+            if (_overtimeCompensation != null) ...[
               const SizedBox(height: 8),
               Text(
-                _overtimeDuration == 'Full day'
-                    ? 'A full day of overtime earns 1 comp-off day.'
-                    : 'A half day of overtime earns 0.5 comp-off days.',
+                _overtimeCompensation == 'pay'
+                    ? 'Once approved, it is paid with your salary.'
+                    : 'Once approved, ${formatDays(_overtimeCompOffDays)} '
+                          '${_overtimeCompOffDays == 1 ? 'day is' : 'days are'} '
+                          'added to your comp-off balance.',
                 style: const TextStyle(
                   color: Color(0xFF717171),
                   fontSize: 13,
@@ -2155,14 +2184,20 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                 ),
               ),
             ],
-            const SizedBox(height: 16),
-            _LeaveFieldLabel('Reason'),
-            _FormTextArea(controller: _overtimeNote, height: 85.6),
           ],
         ),
       ],
     );
   }
+
+  /// The compensation as the field reads it: "Overtime Pay", or
+  /// "Leave (Comp-off) · Full day". Null until one is chosen.
+  String? get _overtimeCompensationLabel => switch (_overtimeCompensation) {
+    'pay' => 'Overtime Pay',
+    'comp_off' =>
+      'Leave (Comp-off) · ${_overtimeCompOffDays == 1 ? 'Full day' : 'Half day'}',
+    _ => null,
+  };
 
   Future<void> _pickOvertimeDuration() async {
     final picked = await showModalBottomSheet<String>(
@@ -2174,10 +2209,6 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       builder: (sheetContext) => _LeavePickerSheet(
         options: const ['Full day', 'Half day'],
         selected: _overtimeDuration,
-        trailingLabels: const {
-          'Full day': 'comp-off +1',
-          'Half day': 'comp-off +0.5',
-        },
       ),
     );
     if (picked == null || !mounted) return;
@@ -2188,6 +2219,74 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       final date = _overtimeDate;
       if (date != null && !_canSelectOvertimeFormDay(date))
         _overtimeDate = null;
+      // Half a day of overtime cannot earn a full day of comp-off, so that
+      // choice is asked again rather than quietly halved.
+      if (picked == 'Half day' &&
+          _overtimeCompensation == 'comp_off' &&
+          _overtimeCompOffDays == 1) {
+        _overtimeCompensation = null;
+        _overtimeCompOffDays = 0;
+      }
+    });
+  }
+
+  /// Overtime pay or comp-off (Figma 3205:39887); comp-off then asks for a
+  /// full or a half day (Figma 4453:64935). Comp-off is greyed out, with the
+  /// reason, where HR has no Comp-off leave type for this employee — the
+  /// server would refuse it.
+  Future<void> _pickOvertimeCompensation() async {
+    const compOff = 'Leave (Comp-off)';
+    const pay = 'Overtime Pay';
+    final sheetShape = const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    );
+    final kind = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: sheetShape,
+      builder: (sheetContext) => _LeavePickerSheet(
+        options: const [compOff, pay],
+        selected: switch (_overtimeCompensation) {
+          'comp_off' => compOff,
+          'pay' => pay,
+          _ => null,
+        },
+        unavailable: widget.dashboard.shift.compOffSetUp
+            ? const {}
+            : const {compOff: "Comp-off isn't set up — ask HR"},
+      ),
+    );
+    if (kind == null || !mounted) return;
+    if (kind == pay) {
+      setState(() {
+        _overtimeCompensation = 'pay';
+        _overtimeCompOffDays = 0;
+      });
+      return;
+    }
+    final days = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: sheetShape,
+      builder: (sheetContext) => _LeavePickerSheet(
+        options: const ['Full day', 'Half day'],
+        selected: _overtimeCompensation == 'comp_off'
+            ? (_overtimeCompOffDays == 1 ? 'Full day' : 'Half day')
+            : null,
+        trailingLabels: const {
+          'Full day': '+1 Comp-off',
+          'Half day': '+0.5 Comp-off',
+        },
+        // As much comp-off as the overtime claimed, never more.
+        unavailable: _overtimeDuration == 'Half day'
+            ? const {'Full day': 'Needs a full day of overtime'}
+            : const {},
+      ),
+    );
+    if (days == null || !mounted) return;
+    setState(() {
+      _overtimeCompensation = 'comp_off';
+      _overtimeCompOffDays = days == 'Full day' ? 1 : 0.5;
     });
   }
 
@@ -2222,10 +2321,11 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
   }
 
   /// Whether the overtime form holds something the server would accept: a
-  /// duration, and a date inside the backdating window.
+  /// duration, a date inside the backdating window, and a compensation.
   bool get _overtimeFormComplete {
     final date = _overtimeDate;
     if (date == null || _overtimeDuration == null) return false;
+    if (_overtimeCompensation == null) return false;
     return _canSelectOvertimeFormDay(date);
   }
 
@@ -2237,8 +2337,16 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     try {
       final date = _overtimeDate;
       final duration = _overtimeDuration;
-      if (date == null || duration == null) {
-        showAppToast(context, 'Pick a date and a duration to continue.');
+      final compensation = _overtimeCompensation;
+      final compensationLabel = _overtimeCompensationLabel;
+      if (date == null ||
+          duration == null ||
+          compensation == null ||
+          compensationLabel == null) {
+        showAppToast(
+          context,
+          'Pick a date, a duration and a compensation to continue.',
+        );
         return;
       }
       // The claim is the half or full day they picked. The times sent with it
@@ -2259,6 +2367,9 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
           endTime: startDateTime.add(worked),
           duration: duration == 'Full day' ? 'full_day' : 'half_day',
           note: _overtimeNote.text.trim(),
+          compensation: compensation == 'comp_off'
+              ? {'kind': 'comp_off', 'days': _overtimeCompOffDays}
+              : const {'kind': 'pay'},
         ),
       );
       if (!mounted || !sent) return;
@@ -2271,6 +2382,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
             SummaryRow('Date', _summaryDate(date)),
             SummaryRow('Start Time', _summaryClock(startDateTime)),
             SummaryRow('End Time', _summaryClock(startDateTime.add(worked))),
+            SummaryRow('Compensation', compensationLabel),
           ],
           reason: _overtimeNote.text.trim(),
         ),
@@ -2821,9 +2933,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
     return [
       'Overtime is claimed as a full day or a half day, and needs your '
           "manager's approval.",
-      'A full day is ${formatDays(shift.minFullDayHours)} hours and credits 1 '
-          'day of comp-off. A half day is '
-          '${formatDays(shift.minHalfDayHours)} hours and credits 0.5.',
+      'A full day is ${formatDays(shift.minFullDayHours)} hours and a half '
+          'day ${formatDays(shift.minHalfDayHours)}.',
+      'You choose how it is compensated: overtime pay with your salary, or '
+          'comp-off leave — 1 day for a full day, 0.5 for a half day.',
       'Claims reach back up to ${shift.overtimeBackdateDays} days.',
     ].join('\n\n');
   }
@@ -8737,7 +8850,7 @@ const _policiesData = <_Policy>[
     Icons.schedule_rounded,
     _Q.sage,
     _Q.sageTint,
-    'Overtime needs prior manager approval and is claimed as a full day or a half day. Approved overtime earns comp-off — a full day adds 1 day to your comp-off balance, a half day adds 0.5.',
+    'Overtime needs prior manager approval and is claimed as a full day or a half day. You choose how approved overtime is compensated: overtime pay with your salary, or comp-off — a full day adds 1 day to your comp-off balance, a half day adds 0.5.',
   ),
 ];
 

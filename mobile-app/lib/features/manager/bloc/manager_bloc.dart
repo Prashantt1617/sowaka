@@ -323,6 +323,7 @@ class SubmitOvertimeApplication extends ManagerEvent {
     required this.endTime,
     required this.duration,
     required this.note,
+    this.compensation,
   });
   final DateTime workDate;
   final DateTime startTime;
@@ -330,6 +331,10 @@ class SubmitOvertimeApplication extends ManagerEvent {
 
   /// 'half_day' or 'full_day', as picked on the form.
   final String duration;
+
+  /// How the overtime is to be compensated, as the server takes it:
+  /// `{kind: pay}` or `{kind: comp_off, days: 1 | 0.5}`.
+  final Map<String, Object>? compensation;
   final String note;
 }
 
@@ -977,6 +982,7 @@ class ManagerBloc {
           :final endTime,
           :final duration,
           :final note,
+          :final compensation,
         ):
           final request = await _service.submitOvertime(
             workDate: workDate,
@@ -984,6 +990,7 @@ class ManagerBloc {
             endTime: endTime,
             duration: duration,
             note: note,
+            compensation: compensation,
           );
           final data = _state.dashboard;
           _emit(

@@ -843,6 +843,10 @@ class _OvertimeRequestDetailPage extends StatelessWidget {
         // are derived from the shift policy, not chosen by anyone, so showing
         // them as "6:30 PM – 9:30 PM" invented a detail.
         SummaryRow('Duration', request.hoursLabel),
+        // Overtime pay, or comp-off and what approving adds to their balance.
+        // A request from before there was a choice has none to show.
+        if (request.compensationLabel.isNotEmpty)
+          SummaryRow('Compensation', request.compensationDetail),
         SummaryRow('Applied On', _summaryDate(request.requestedOn)),
         SummaryRow('Status', _decisionText(request.decision)),
       ],
@@ -863,7 +867,12 @@ class _OvertimeRequestDetailPage extends StatelessWidget {
       chipBackground: MColors.goldTint,
       icon: Icons.schedule_rounded,
       value: _managerDate(request.workDate),
-      trailing: request.hoursLabel,
+      // What approving gives them: comp-off days, or overtime pay.
+      trailing: switch (request.compensationKind) {
+        'comp_off' => '+${formatDays(request.compOffDays)} Comp-off',
+        'pay' => 'Overtime Pay',
+        _ => request.hoursLabel,
+      },
     );
     if (result == null || !context.mounted) return;
     bloc.add(

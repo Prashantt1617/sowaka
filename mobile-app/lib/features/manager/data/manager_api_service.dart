@@ -672,6 +672,7 @@ class ManagerApiService {
     required DateTime endTime,
     required String duration,
     required String note,
+    Map<String, Object>? compensation,
   }) async {
     final json = await _request(
       'POST',
@@ -684,6 +685,8 @@ class ManagerApiService {
         // what the day is worth on this shift, kept for the record.
         'duration': duration,
         'note': note,
+        // Overtime pay or comp-off, as chosen on the form.
+        'compensation': ?compensation,
       },
     );
     return OvertimeRequest.fromJson(json['overtime'] as Map<String, dynamic>);

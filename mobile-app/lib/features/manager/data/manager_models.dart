@@ -825,6 +825,8 @@ class OvertimeRequest {
     required this.managerNote,
     this.decidedByRole = '',
     this.duration = '',
+    this.compensationKind = '',
+    this.compOffDays = 0,
   });
 
   final String id;
@@ -848,6 +850,30 @@ class OvertimeRequest {
 
   /// 'half_day' or 'full_day' from the server; empty from an older one.
   final String duration;
+
+  /// How the person asked to be compensated: 'pay' (paid in payroll) or
+  /// 'comp_off' (added to their Comp-off balance). Empty on a request from
+  /// before the choice existed, or from an older server.
+  final String compensationKind;
+
+  /// The comp-off days asked for — 1 or 0.5 — when [compensationKind] is
+  /// 'comp_off'; 0 otherwise.
+  final double compOffDays;
+
+  /// The choice in the form's words: "Overtime Pay" or
+  /// "Leave (Comp-off) · Full day". Empty when none was made.
+  String get compensationLabel => switch (compensationKind) {
+    'pay' => 'Overtime Pay',
+    'comp_off' =>
+      'Leave (Comp-off) · ${compOffDays >= 1 ? 'Full day' : 'Half day'}',
+    _ => '',
+  };
+
+  /// The choice with what it adds, for a manager deciding:
+  /// "Leave (Comp-off) · Full day, +1 Comp-off" or "Overtime Pay".
+  String get compensationDetail => compensationKind == 'comp_off'
+      ? '$compensationLabel, +${formatDays(compOffDays)} Comp-off'
+      : compensationLabel;
 
   bool get decidedByAdmin => decidedByRole == 'admin';
 
@@ -896,6 +922,15 @@ class OvertimeRequest {
       managerNote: json['managerNote'] as String? ?? '',
       decidedByRole: json['decidedByRole'] as String? ?? '',
       duration: json['duration'] as String? ?? '',
+      compensationKind: switch (json['compensation']) {
+        {'kind': final String kind} when kind == 'pay' || kind == 'comp_off' =>
+          kind,
+        _ => '',
+      },
+      compOffDays: switch (json['compensation']) {
+        {'kind': 'comp_off', 'days': final num days} => days.toDouble(),
+        _ => 0,
+      },
     );
   }
 
@@ -913,6 +948,8 @@ class OvertimeRequest {
       endTime: endTime,
       hours: hours,
       duration: duration,
+      compensationKind: compensationKind,
+      compOffDays: compOffDays,
       note: note,
       requestedOn: requestedOn,
       decision: decision ?? this.decision,
@@ -1651,6 +1688,14 @@ class ShiftPolicy {
   /// and a reason rather than a type, and shows what has been applied for
   /// instead of what is left.
   final bool leaveBalanceTracked;
+
+  /// Whether overtime can be taken as comp-off: HR keeps a Comp-off leave type
+  /// on this employee's template and their leave is counted from a balance.
+  /// Without it the server refuses comp-off, so the form greys it out. An
+  /// older server that sends no leave types answers as it always did.
+  bool get compOffSetUp =>
+      leaveBalanceTracked &&
+      (leaveTypes.isEmpty || leaveTypes.any((type) => type.key == 'comp_off'));
 
   /// Whether this employee is marked present without punching at all.
   ///

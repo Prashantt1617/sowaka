@@ -4,6 +4,7 @@
 // page. Suwi never approves or rejects here.
 import { listAllLeavesForAdmin } from '../../services/leave.service';
 import { listAllOvertimeForAdmin } from '../../services/overtime.service';
+import { compensationLabel } from '../../models/overtime.model';
 import { listAllRegularizationsForAdmin } from '../../services/attendance.service';
 import { listAllReimbursementsForAdmin } from '../../services/reimbursement.service';
 import { defineTools, num, str } from '../tools';
@@ -57,7 +58,7 @@ export async function pendingRows(
   }
   if (otList) {
     for (const o of otList.filter((x) => x.status === 'pending')) {
-      out.push({ type: 'overtime', id: o.id, userId: o.userId, name: o.employee.name, department: o.employee.department, what: `${o.hours} h overtime (${o.duration === 'full_day' ? 'full day' : 'half day'})`, dates: o.workDate, submitted: day(o.createdAt), daysWaiting: daysWaiting(o.createdAt, ctx.today) });
+      out.push({ type: 'overtime', id: o.id, userId: o.userId, name: o.employee.name, department: o.employee.department, what: `${o.hours} h overtime (${o.duration === 'full_day' ? 'full day' : 'half day'})${o.compensation ? `, as ${compensationLabel(o.compensation)}` : ''}`, dates: o.workDate, submitted: day(o.createdAt), daysWaiting: daysWaiting(o.createdAt, ctx.today) });
     }
   }
   if (regList) {

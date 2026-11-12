@@ -141,7 +141,12 @@ function OvertimeDrawer() {
           cells={[
             { label: 'OVERTIME DATE', value: d.otDate },
             { label: 'DAY', value: d.day },
-            { label: 'DURATION', value: d.duration, wide: true },
+            { label: 'DURATION', value: d.duration },
+            // Overtime pay, or comp-off and what it adds to their balance.
+            {
+              label: 'COMPENSATION',
+              value: d.compensation ? `${d.compensation}${d.compOffCredit ? `, ${d.compOffCredit}` : ''}` : 'Not chosen (older app)',
+            },
           ]}
         />
         <RemarkBlock label="EMPLOYEE NOTE" text={d.eRemark || 'No note provided.'} filled={!!d.eRemark} marginBottom={16} />
@@ -385,7 +390,7 @@ function OvertimeConfirmModal() {
     <ConfirmOverrideModal
       action={c.action}
       title={approve ? 'Approve this overtime?' : 'Decline this overtime?'}
-      summary={<>You’re {approve ? 'approving' : 'declining'} <b>{d.name}</b>’s {d.duration.toLowerCase()} overtime on {d.otDate} as an admin override.</>}
+      summary={<>You’re {approve ? 'approving' : 'declining'} <b>{d.name}</b>’s {d.duration.toLowerCase()} overtime on {d.otDate} as an admin override.{approve && d.compensation ? <> They asked for <b>{d.compensation}</b>{d.compOffCredit ? <> — approving adds <b>{d.compOffCredit}</b> to their balance instead of overtime pay</> : <> — it is paid in payroll</>}.</> : null}</>}
       note={s.otNote}
       onNote={s.setOtNote}
       onCancel={s.otCloseConfirm}

@@ -1248,6 +1248,9 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
                   ('Type:', 'Overtime'),
                   ('Date:', _managerDate(request.workDate)),
                   ('Overtime hrs:', request.hoursLabel),
+                  // What they asked for: overtime pay or comp-off.
+                  if (request.compensationLabel.isNotEmpty)
+                    ('Compensation:', request.compensationDetail),
                   (
                     'Comment:',
                     request.note.isEmpty
