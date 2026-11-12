@@ -293,12 +293,26 @@ void main() {
     expect(find.text('TAX · FY 2026–27'), findsOneWidget);
     // The regime on the tag (Figma 4562:25092), the estimate in the line.
     expect(find.text('New regime'), findsOneWidget);
-    expect(find.text('₹96,400'), findsOneWidget);
-    expect(find.text('Your tax for the year · estimate'), findsOneWidget);
+    // Figma 4506:23826: what payslips deducted, the months, the latest two.
     expect(find.text('₹50,802'), findsOneWidget);
-    expect(find.text('Paid till Sep'), findsOneWidget);
-    expect(find.text('₹7,600'), findsOneWidget);
-    expect(find.text('A month now'), findsOneWidget);
+    expect(find.text('paid so far'), findsOneWidget);
+    expect(find.text('April to September'), findsOneWidget);
+    Finder inRow(String period, String text) => find.descendant(
+      of: find.byKey(ValueKey('tax-recent-$period')),
+      matching: find.text(text),
+    );
+    expect(inRow('2026-09', 'September'), findsOneWidget);
+    expect(inRow('2026-09', '₹8,467'), findsOneWidget);
+    expect(inRow('2026-08', 'August'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('tax-recent-2026-09'))).dy,
+      lessThan(
+        tester.getTopLeft(find.byKey(const ValueKey('tax-recent-2026-08'))).dy,
+      ),
+    );
+    // The year's estimate and the two boxes are gone.
+    expect(find.text('Your tax for the year · estimate'), findsNothing);
+    expect(find.text('A month now'), findsNothing);
     expect(find.text('Month by month'), findsOneWidget);
     expect(find.text('MANAGE'), findsOneWidget);
     expect(find.text('Tax regime'), findsOneWidget);
@@ -350,9 +364,10 @@ void main() {
     }
     expect(find.byKey(const ValueKey('tax-month-2026-04')), findsOneWidget);
     expect(find.byKey(const ValueKey('tax-month-2027-03')), findsOneWidget);
-    expect(find.text('₹8,467'), findsNWidgets(6));
-    // Six coming months, and the tile.
-    expect(find.text('₹7,600'), findsNWidgets(7));
+    // Six paid months in the list, and the card's latest two.
+    expect(find.text('₹8,467'), findsNWidgets(8));
+    // Six coming months (the card no longer has a month-now tile).
+    expect(find.text('₹7,600'), findsNWidgets(6));
     final paid = colorOf(tester, 'September 2026');
     final coming = colorOf(tester, 'October 2026');
     expect(paid, const Color(0xFF222222));
@@ -391,7 +406,8 @@ void main() {
     expect(find.text('Saved · last date to change 30 Nov'), findsOneWidget);
     expect(find.text('Old regime · change by 30 Nov'), findsOneWidget);
     expect(find.byKey(const ValueKey('tax-regime-save')), findsNothing);
-    expect(find.text('₹83,200'), findsOneWidget);
+    // The card shows what has been deducted, the same on either regime.
+    expect(find.text('₹50,802'), findsOneWidget);
     expect(find.text('Investment declaration'), findsOneWidget);
     expect(find.text('By 30 Nov'), findsOneWidget);
     expect(find.text('Investment proofs'), findsOneWidget);
@@ -416,8 +432,8 @@ void main() {
       ..chosen = true;
     await pumpTax(tester, server);
     expect(find.text('Old regime · change by 30 Nov'), findsOneWidget);
-    expect(find.text('₹83,200'), findsOneWidget);
-    expect(find.text('₹5,400'), findsOneWidget);
+    expect(find.text('Old regime'), findsWidgets);
+    expect(find.text('₹50,802'), findsOneWidget);
     expect(find.byKey(const ValueKey('tax-new-regime-note')), findsNothing);
     await capture(tester, 'payroll_tax_old');
 
@@ -465,7 +481,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('tax-annual')), findsNothing);
+    expect(find.byKey(const ValueKey('tax-paid-so-far')), findsNothing);
     expect(find.text('New regime'), findsNothing);
     expect(find.text('Month by month'), findsNothing);
     expect(find.text('Tax regime'), findsOneWidget);

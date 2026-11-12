@@ -397,8 +397,21 @@ class _TaxYearCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final through = tax.paidThroughMonth;
-    final monthly = tax.monthlyNowPaise;
+    // Figma 4506:23826, as on Payroll home: what payslips have deducted this
+    // FY, the months it covers, and the latest two of those months; the full
+    // list stays a tap away under "Month by month".
+    final paid = [
+      for (final month in tax.months)
+        if (month.isPaid && month.amountPaise != null) month,
+    ]..sort((a, b) => a.period.compareTo(b.period));
+    final recent = paid.reversed.take(2).toList();
+    String monthOf(String period) =>
+        _monthName(int.tryParse(period.split('-').last) ?? 1);
+    final span = paid.isEmpty
+        ? 'No tax deducted yet this year'
+        : paid.length == 1
+        ? monthOf(paid.first.period)
+        : '${monthOf(paid.first.period)} to ${monthOf(paid.last.period)}';
     const line = BorderSide(color: Color(0xFFF1F1F4));
     return Container(
       padding: const EdgeInsets.all(20),
@@ -414,46 +427,62 @@ class _TaxYearCard extends StatelessWidget {
             pill: _TaxTag(tax.isOld ? 'Old regime' : 'New regime'),
           ),
           const SizedBox(height: 10),
-          Text(
-            _rupees(tax.annualTaxPaise ?? 0),
-            key: const ValueKey('tax-annual'),
-            style: _proofType(
-              34,
-              weight: FontWeight.w800,
-              height: 37.4 / 34,
-              letterSpacing: -0.6,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _rupees(tax.paidSoFarPaise),
+                    key: const ValueKey('tax-paid-so-far'),
+                    style: _proofType(
+                      32,
+                      weight: FontWeight.w800,
+                      height: 1.1,
+                      letterSpacing: -0.6,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'paid so far',
+                style: _proofType(
+                  14,
+                  color: _proofMuted,
+                  weight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 6),
           Text(
-            'Your tax for the year · ${tax.estimate ? 'estimate' : 'final'}',
+            span,
+            key: const ValueKey('tax-paid-span'),
             style: _proofType(13, color: _proofMuted),
           ),
-          const SizedBox(height: 16),
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+          if (recent.isNotEmpty) const SizedBox(height: 14),
+          for (final (i, month) in recent.indexed) ...[
+            if (i > 0) const SizedBox(height: 9),
+            Row(
+              key: ValueKey('tax-recent-${month.period}'),
               children: [
                 Expanded(
-                  child: _TaxStat(
-                    value: _rupees(tax.paidSoFarPaise),
-                    label: through == null
-                        ? 'Paid so far'
-                        : 'Paid till ${_shortMonthName(through.month)}',
+                  child: Text(
+                    monthOf(month.period),
+                    style: _proofType(13, color: _proofMuted),
                   ),
                 ),
-                if (monthly != null) ...[
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _TaxStat(
-                      value: _rupees(monthly),
-                      label: 'A month now',
-                    ),
-                  ),
-                ],
+                Text(
+                  _rupees(month.amountPaise!),
+                  style: _proofType(13, weight: FontWeight.w600),
+                ),
               ],
             ),
-          ),
+          ],
           const SizedBox(height: 14),
           Semantics(
             button: true,
@@ -529,30 +558,6 @@ class _TaxTag extends StatelessWidget {
     child: Text(
       text,
       style: _proofType(12, weight: FontWeight.w700, color: _prBlue),
-    ),
-  );
-}
-
-class _TaxStat extends StatelessWidget {
-  const _TaxStat({required this.value, required this.label});
-
-  final String value;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-    decoration: BoxDecoration(
-      color: const Color(0xFFF7F7F9),
-      borderRadius: BorderRadius.circular(14),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(value, style: _proofType(16, weight: FontWeight.w800)),
-        const SizedBox(height: 2),
-        Text(label, style: _proofType(12, color: const Color(0xFF6B6B72))),
-      ],
     ),
   );
 }
