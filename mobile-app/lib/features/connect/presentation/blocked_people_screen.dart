@@ -56,7 +56,10 @@ class _BlockedPeopleScreenState extends State<BlockedPeopleScreen> {
         _blocked = blocked;
         _busyUserId = null;
       });
-      showAppToast(context, "You'll see ${person.name}'s posts in Connect again.");
+      showAppToast(
+        context,
+        "You'll see ${person.name}'s posts in Connect again.",
+      );
     } catch (error) {
       if (!mounted) return;
       setState(() => _busyUserId = null);

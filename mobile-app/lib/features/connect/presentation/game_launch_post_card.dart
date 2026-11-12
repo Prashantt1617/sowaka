@@ -32,7 +32,8 @@ class GameLaunchPostCard extends StatefulWidget {
   final GamesApiService? service;
 
   /// For tests: what opening the game does. The game's own screen otherwise.
-  final Future<void> Function(BuildContext context, GameCatalogEntry game)? openGame;
+  final Future<void> Function(BuildContext context, GameCatalogEntry game)?
+  openGame;
 
   /// For tests: the clock the timer reads.
   final DateTime Function()? now;
@@ -54,17 +55,23 @@ class _LaunchTheme {
   _LaunchTheme(Map<String, dynamic> raw, {required Color accent})
     : card = parseHexColor(raw['card']) ?? Colors.white,
       gradient = (raw['cardGradient'] is List)
-          ? [for (final stop in raw['cardGradient'] as List) ?parseHexColor(stop)]
+          ? [
+              for (final stop in raw['cardGradient'] as List)
+                ?parseHexColor(stop),
+            ]
           : const [],
       border = parseHexColor(raw['border']) ?? _ConnectColors.cardBorder,
       text = parseHexColor(raw['text']) ?? _ConnectColors.ink,
       muted = parseHexColor(raw['muted']) ?? _ConnectColors.faint,
-      timerBackground = parseHexColor(raw['timerBackground']) ?? const Color(0xFFE8F3FA),
+      timerBackground =
+          parseHexColor(raw['timerBackground']) ?? const Color(0xFFE8F3FA),
       timerText = parseHexColor(raw['timerText']) ?? _ConnectColors.blue,
       timerLabel = parseHexColor(raw['timerLabel']) ?? const Color(0xFF717171),
       live = parseHexColor(raw['live']) ?? _ConnectColors.live,
       button = parseHexColor(raw['button']) ?? accent,
-      buttonText = parseHexColor(raw['buttonText']) ?? _onAccent(parseHexColor(raw['button']) ?? accent);
+      buttonText =
+          parseHexColor(raw['buttonText']) ??
+          _onAccent(parseHexColor(raw['button']) ?? accent);
 
   final Color card;
   final List<Color> gradient;
@@ -96,7 +103,8 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
   Map<String, dynamic> get _body => widget.post.body;
   String get _gameKey => _bodyString(widget.post, 'gameKey');
   DateTime _now() => (widget.now ?? DateTime.now)();
-  DateTime? _at(String key) => DateTime.tryParse(_bodyString(widget.post, key))?.toLocal();
+  DateTime? _at(String key) =>
+      DateTime.tryParse(_bodyString(widget.post, key))?.toLocal();
   DateTime? get _startsAt => _at('startsAt');
   DateTime? get _endsAt => _at('endsAt');
 
@@ -165,20 +173,28 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
   /// podium comes without a pull to refresh.
   void _fetchResultsLater() {
     if (_refetches.isNotEmpty || _hasResults) return;
-    for (final wait in const [Duration(seconds: 5), Duration(minutes: 2, seconds: 30)]) {
+    for (final wait in const [
+      Duration(seconds: 5),
+      Duration(minutes: 2, seconds: 30),
+    ]) {
       _refetches.add(Timer(wait, _refetch));
     }
   }
 
-  bool get _hasResults => (parseSquadStandings(_lateResults ?? _body['results']) ?? const []).isNotEmpty;
+  bool get _hasResults =>
+      (parseSquadStandings(_lateResults ?? _body['results']) ?? const [])
+          .isNotEmpty;
 
   Future<void> _refetch() async {
     if (!mounted || _hasResults) return;
     try {
-      final fetch = widget.fetchPost ?? (id) => ConnectApiService(session: widget.session).fetchPost(id);
+      final fetch =
+          widget.fetchPost ??
+          (id) => ConnectApiService(session: widget.session).fetchPost(id);
       final post = await fetch(widget.post.id);
       final results = post.body['results'];
-      if (mounted && results is List && results.isNotEmpty) setState(() => _lateResults = results);
+      if (mounted && results is List && results.isNotEmpty)
+        setState(() => _lateResults = results);
     } catch (_) {
       // The next feed read carries them.
     }
@@ -225,7 +241,8 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
   Future<GameCatalogEntry?> _findGame() async {
     final service = widget.service ?? GamesApiService(session: widget.session);
     bool mine(GameCatalogEntry game) =>
-        game.key == _gameKey && (game.hasWebPage || game.kind == GameKind.native);
+        game.key == _gameKey &&
+        (game.hasWebPage || game.kind == GameKind.native);
     try {
       return (await service.catalog()).where(mine).firstOrNull;
     } catch (_) {
@@ -256,13 +273,18 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
     final title = _bodyString(post, 'title').trim();
     final caption = _bodyString(post, 'text').trim();
     final label = _bodyString(post, 'actionLabel').trim();
-    final accent = parseHexColor(_bodyString(post, 'accentColor')) ?? _ConnectColors.blue;
+    final accent =
+        parseHexColor(_bodyString(post, 'accentColor')) ?? _ConnectColors.blue;
     final theme = _LaunchTheme(
-      _body['theme'] is Map ? Map<String, dynamic>.from(_body['theme'] as Map) : const {},
+      _body['theme'] is Map
+          ? Map<String, dynamic>.from(_body['theme'] as Map)
+          : const {},
       accent: accent,
     );
     final phase = _phase;
-    final results = parseSquadStandings(_lateResults ?? _body['results']) ?? const <SquadStanding>[];
+    final results =
+        parseSquadStandings(_lateResults ?? _body['results']) ??
+        const <SquadStanding>[];
     final showBoard = phase == GameLaunchPhase.ended && results.isNotEmpty;
     final locked =
         (phase == GameLaunchPhase.ended && !showBoard) ||
@@ -304,20 +326,31 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          post.author.name.isEmpty ? 'Sowaka Engagements' : post.author.name,
+                          post.author.name.isEmpty
+                              ? 'Sowaka Engagements'
+                              : post.author.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: theme.text, fontSize: 15, fontWeight: FontWeight.w700),
+                          style: TextStyle(
+                            color: theme.text,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           '${post.tag.isEmpty ? 'Games' : post.tag} · ${_timeAgo(post.publishedAt)}',
-                          style: TextStyle(color: theme.muted, fontSize: 12, fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            color: theme.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  if (_timed && phase == GameLaunchPhase.live) _LaunchLivePill(color: theme.live),
+                  if (_timed && phase == GameLaunchPhase.live)
+                    _LaunchLivePill(color: theme.live),
                 ],
               ),
             ),
@@ -356,7 +389,12 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                 child: Text(
                   title,
-                  style: TextStyle(color: theme.text, fontSize: 18, fontWeight: FontWeight.w800, height: 24 / 18),
+                  style: TextStyle(
+                    color: theme.text,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    height: 24 / 18,
+                  ),
                 ),
               ),
             if (caption.isNotEmpty)
@@ -366,7 +404,12 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
                   style: TextStyle(color: theme.text),
                   child: LinkifiedText(
                     caption,
-                    style: TextStyle(color: theme.text, fontSize: 16, height: 22 / 16, letterSpacing: 0.4),
+                    style: TextStyle(
+                      color: theme.text,
+                      fontSize: 16,
+                      height: 22 / 16,
+                      letterSpacing: 0.4,
+                    ),
                   ),
                 ),
               ),
@@ -392,11 +435,20 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
                             ? SizedBox(
                                 width: 22,
                                 height: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2.2, color: theme.buttonText),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.2,
+                                  color: theme.buttonText,
+                                ),
                               )
                             : Text(
-                                showBoard ? 'View leaderboard' : _buttonLabel(phase, label, locked),
-                                style: TextStyle(color: theme.buttonText, fontSize: 15, fontWeight: FontWeight.w800),
+                                showBoard
+                                    ? 'View leaderboard'
+                                    : _buttonLabel(phase, label, locked),
+                                style: TextStyle(
+                                  color: theme.buttonText,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                       ),
                     ),
@@ -411,13 +463,18 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
   }
 
   /// Everyone's places in the game's window, best first, the viewer marked.
-  Future<void> _showLeaderboard(List<SquadStanding> results, _LaunchTheme theme) {
+  Future<void> _showLeaderboard(
+    List<SquadStanding> results,
+    _LaunchTheme theme,
+  ) {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (context) => _LaunchLeaderboardSheet(
         title: '${_gameName()} leaderboard',
         results: results,
@@ -430,16 +487,23 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
   String _timerLabel(GameLaunchPhase phase) {
     final custom = _bodyString(widget.post, 'timerLabel').trim();
     return switch (phase) {
-      GameLaunchPhase.upcoming => custom.isEmpty ? '${_gameName()} starts in' : custom,
-      GameLaunchPhase.live => _endsAt == null ? '${_gameName()} is on' : 'Ends in',
+      GameLaunchPhase.upcoming =>
+        custom.isEmpty ? '${_gameName()} starts in' : custom,
+      GameLaunchPhase.live =>
+        _endsAt == null ? '${_gameName()} is on' : 'Ends in',
       GameLaunchPhase.ended => 'This game has ended',
     };
   }
 
   String _timerValue(GameLaunchPhase phase, DateTime now) {
     return switch (phase) {
-      GameLaunchPhase.upcoming => relayCountdown(_startsAt!.difference(now).inSeconds),
-      GameLaunchPhase.live => _endsAt == null ? 'Live now' : relayCountdown(_endsAt!.difference(now).inSeconds),
+      GameLaunchPhase.upcoming => relayCountdown(
+        _startsAt!.difference(now).inSeconds,
+      ),
+      GameLaunchPhase.live =>
+        _endsAt == null
+            ? 'Live now'
+            : relayCountdown(_endsAt!.difference(now).inSeconds),
       GameLaunchPhase.ended => 'Thanks for playing',
     };
   }
@@ -449,10 +513,25 @@ class _GameLaunchPostCardState extends State<GameLaunchPostCard> {
     if (locked) {
       final at = _startsAt!;
       final hour = at.hour % 12 == 0 ? 12 : at.hour % 12;
-      final time = '$hour:${at.minute.toString().padLeft(2, '0')} ${at.hour < 12 ? 'AM' : 'PM'}';
+      final time =
+          '$hour:${at.minute.toString().padLeft(2, '0')} ${at.hour < 12 ? 'AM' : 'PM'}';
       final now = _now();
-      if (at.year == now.year && at.month == now.month && at.day == now.day) return 'Opens at $time';
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      if (at.year == now.year && at.month == now.month && at.day == now.day)
+        return 'Opens at $time';
+      const months = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ];
       return 'Opens ${at.day} ${months[at.month - 1]}, $time';
     }
     return label.isEmpty ? 'Play ${_gameName()}' : label;
@@ -535,9 +614,21 @@ class _LaunchLivePill extends StatelessWidget {
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
         const SizedBox(width: 6),
-        Text('LIVE', style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.4)),
+        Text(
+          'LIVE',
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.4,
+          ),
+        ),
       ],
     ),
   );
@@ -571,13 +662,24 @@ class _LaunchLeaderboardSheet extends StatelessWidget {
       builder: (context, scroll) => Column(
         children: [
           const SizedBox(height: 10),
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: const Color(0xFFDDDDDD), borderRadius: BorderRadius.circular(2))),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: const Color(0xFFDDDDDD),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
             child: Text(
               title,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: _ConnectColors.ink, fontSize: 18, fontWeight: FontWeight.w800),
+              style: const TextStyle(
+                color: _ConnectColors.ink,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
           Expanded(
@@ -591,28 +693,56 @@ class _LaunchLeaderboardSheet extends StatelessWidget {
                 final row = results[index];
                 final me = row.userId == viewerId;
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
-                    color: me ? accent.withValues(alpha: 0.12) : const Color(0xFFF7F7F9),
+                    color: me
+                        ? accent.withValues(alpha: 0.12)
+                        : const Color(0xFFF7F7F9),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Row(
                     children: [
                       SizedBox(
                         width: 34,
-                        child: Text('#${row.rank}', style: const TextStyle(color: _ConnectColors.ink, fontSize: 14, fontWeight: FontWeight.w800)),
+                        child: Text(
+                          '#${row.rank}',
+                          style: const TextStyle(
+                            color: _ConnectColors.ink,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                       ),
-                      _InitialAvatar(initials: row.initials, color: _ConnectColors.blue, size: 32, photoUrl: row.photoUrl ?? ''),
+                      _InitialAvatar(
+                        initials: row.initials,
+                        color: _ConnectColors.blue,
+                        size: 32,
+                        photoUrl: row.photoUrl ?? '',
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           me ? '${row.name} (You)' : row.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: _ConnectColors.ink, fontSize: 14, fontWeight: me ? FontWeight.w800 : FontWeight.w600),
+                          style: TextStyle(
+                            color: _ConnectColors.ink,
+                            fontSize: 14,
+                            fontWeight: me ? FontWeight.w800 : FontWeight.w600,
+                          ),
                         ),
                       ),
-                      Text('${row.points}', style: const TextStyle(color: _ConnectColors.ink, fontSize: 14, fontWeight: FontWeight.w800)),
+                      Text(
+                        '${row.points}',
+                        style: const TextStyle(
+                          color: _ConnectColors.ink,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ],
                   ),
                 );
@@ -624,4 +754,3 @@ class _LaunchLeaderboardSheet extends StatelessWidget {
     );
   }
 }
-

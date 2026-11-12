@@ -47,7 +47,8 @@ class _PersonPostsTabState extends State<PersonPostsTab>
   AuthSession get _session => widget.session;
 
   @override
-  List<ConnectTeammate> get _taggablePeople => widget.feed?._feedPeople ?? const [];
+  List<ConnectTeammate> get _taggablePeople =>
+      widget.feed?._feedPeople ?? const [];
 
   @override
   ValueChanged<String>? get _onOpenPerson => widget.onOpenPerson;
@@ -117,6 +118,7 @@ class _PersonPostsTabState extends State<PersonPostsTab>
           bloc: _bloc,
           people: _taggablePeople,
           viewerUserId: _session.user.id,
+          viewerPhotoUrl: _session.user.profilePhotoUrl,
           onOpenPerson: _onOpenPerson,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,

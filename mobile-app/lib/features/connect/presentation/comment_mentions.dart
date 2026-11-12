@@ -263,7 +263,9 @@ Widget _mentionedText(
         alignment: PlaceholderAlignment.baseline,
         baseline: TextBaseline.alphabetic,
         child: GestureDetector(
-          onTap: onOpenPerson == null ? null : () => onOpenPerson(tagged.userId),
+          onTap: onOpenPerson == null
+              ? null
+              : () => onOpenPerson(tagged.userId),
           child: Text(
             '@${tagged.name}',
             style: style.copyWith(

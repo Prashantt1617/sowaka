@@ -94,6 +94,7 @@ Future<void> _openEntriesSheet(
         initialPost: post,
         people: scope?.people ?? const [],
         viewerUserId: scope?.viewerUserId ?? '',
+        viewerPhotoUrl: scope?.viewerPhotoUrl,
         onOpenPerson: scope?.onOpenPerson,
         onAddEntry: onAddEntry,
       ),
@@ -111,7 +112,12 @@ class _EntriesSheet extends StatefulWidget {
     required this.onOpenPerson,
     required this.onAddEntry,
     this.viewerUserId = '',
+    this.viewerPhotoUrl,
   });
+
+  /// The viewer's own photo, for their own entries (the directory leaves the
+  /// viewer out).
+  final String? viewerPhotoUrl;
 
   /// Null only where there is no live feed behind the sheet; it then shows
   /// the post as it was opened and takes no votes.
@@ -136,6 +142,8 @@ class _EntriesSheetState extends State<_EntriesSheet> {
   final _keys = <String, GlobalKey>{};
 
   late final Map<String, String> _photos = {
+    if ((widget.viewerPhotoUrl ?? '').isNotEmpty)
+      widget.viewerUserId: widget.viewerPhotoUrl!,
     for (final person in widget.people)
       if ((person.photoUrl ?? '').isNotEmpty) person.userId: person.photoUrl!,
   };
@@ -1381,7 +1389,9 @@ class _EntryVoteButton extends StatelessWidget {
           padding: const EdgeInsets.only(top: 5, bottom: 4),
           alignment: Alignment.center,
           decoration: decoration,
-          child: body,
+          // The arrow, count and "votes" fill the box's 43 exactly; a font a
+          // touch taller (or larger text) shrinks them instead of spilling.
+          child: FittedBox(fit: BoxFit.scaleDown, child: body),
         ),
       ),
     );

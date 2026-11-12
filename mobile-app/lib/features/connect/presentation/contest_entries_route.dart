@@ -66,7 +66,9 @@ Future<void> openContestEntries(
       addEntry = false;
       entries = showEntries(first: false);
       await navigator.push<void>(
-        MaterialPageRoute(builder: (_) => _ContestCardPage(flow: flow, compose: true)),
+        MaterialPageRoute(
+          builder: (_) => _ContestCardPage(flow: flow, compose: true),
+        ),
       );
       // Whatever came of it, the page shows the contest as the server has
       // it now; the bloc already holds the entry that was just sent.
@@ -86,7 +88,8 @@ class _EntriesPageRoute extends MaterialPageRoute<void> {
   final bool instant;
 
   @override
-  Duration get transitionDuration => instant ? Duration.zero : super.transitionDuration;
+  Duration get transitionDuration =>
+      instant ? Duration.zero : super.transitionDuration;
 
   @override
   Duration get reverseTransitionDuration => super.transitionDuration;
@@ -107,7 +110,8 @@ class _ContestFlow {
     final feedBloc = live?._bloc;
     // The feed's bloc only when the contest is already in the feed: one
     // further down than it has loaded would otherwise be put on top of it.
-    if (feedBloc != null && feedBloc.state.posts.any((post) => post.id == postId)) {
+    if (feedBloc != null &&
+        feedBloc.state.posts.any((post) => post.id == postId)) {
       bloc = feedBloc;
       ownsBloc = false;
     } else {
@@ -141,7 +145,10 @@ class _ContestFlow {
   /// no list to lend.
   Future<void> _loadPeople() async {
     try {
-      final result = await AuthApiService().fetchTeammates(session.token, limit: 500);
+      final result = await AuthApiService().fetchTeammates(
+        session.token,
+        limit: 500,
+      );
       if (_disposed) return;
       people.value = [
         for (final person in result.teammates)
@@ -210,7 +217,8 @@ class _ContestEntriesPage extends StatefulWidget {
   State<_ContestEntriesPage> createState() => _ContestEntriesPageState();
 }
 
-class _ContestEntriesPageState extends State<_ContestEntriesPage> with _FlowMessages {
+class _ContestEntriesPageState extends State<_ContestEntriesPage>
+    with _FlowMessages {
   @override
   _ContestFlow get flow => widget.flow;
 
@@ -251,12 +259,14 @@ class _ContestEntriesPageState extends State<_ContestEntriesPage> with _FlowMess
           bloc: flow.bloc,
           people: people,
           viewerUserId: flow.session.user.id,
+          viewerPhotoUrl: flow.session.user.profilePhotoUrl,
           onOpenPerson: flow.onOpenPerson,
           child: _EntriesSheet(
             bloc: flow.bloc,
             initialPost: post,
             people: people,
             viewerUserId: flow.session.user.id,
+            viewerPhotoUrl: flow.session.user.profilePhotoUrl,
             onOpenPerson: flow.onOpenPerson,
             onAddEntry: widget.onAddEntry,
           ),
@@ -276,17 +286,27 @@ class _ContestEntriesPageState extends State<_ContestEntriesPage> with _FlowMess
                     ? const SizedBox(
                         width: 28,
                         height: 28,
-                        child: CircularProgressIndicator(strokeWidth: 2.5, color: _sheetPurple),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: _sheetPurple,
+                        ),
                       )
                     : Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Text(
                             "Couldn't load this contest.",
-                            style: TextStyle(color: _sheetMuted, fontSize: 14, fontWeight: FontWeight.w600),
+                            style: TextStyle(
+                              color: _sheetMuted,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                           const SizedBox(height: 8),
-                          TextButton(onPressed: _load, child: const Text('Retry')),
+                          TextButton(
+                            onPressed: _load,
+                            child: const Text('Retry'),
+                          ),
                         ],
                       ),
               ),
@@ -397,7 +417,8 @@ class _ContestCardPageState extends State<_ContestCardPage> with _FlowMessages {
       barrierColor: const Color(0x76000000),
       builder: (_) => _DeletePostSheet(
         title: 'Delete post?',
-        body: 'This will remove your ${post.tag.toLowerCase()} post from the company feed.',
+        body:
+            'This will remove your ${post.tag.toLowerCase()} post from the company feed.',
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -431,9 +452,15 @@ class _ContestCardPageState extends State<_ContestCardPage> with _FlowMessages {
                             bloc: flow.bloc,
                             people: people,
                             viewerUserId: flow.session.user.id,
+                            viewerPhotoUrl: flow.session.user.profilePhotoUrl,
                             onOpenPerson: flow.onOpenPerson,
                             child: ListView(
-                              padding: const EdgeInsets.fromLTRB(20.5, 24, 20.5, 24),
+                              padding: const EdgeInsets.fromLTRB(
+                                20.5,
+                                24,
+                                20.5,
+                                24,
+                              ),
                               children: [_card(post)],
                             ),
                           ),
@@ -449,7 +476,9 @@ class _ContestCardPageState extends State<_ContestCardPage> with _FlowMessages {
 
   /// The card as the feed draws a contest: violet, rounded, no border.
   Widget _card(ConnectPost post) {
-    final canManage = post.author.userId.isNotEmpty && post.author.userId == flow.session.user.id;
+    final canManage =
+        post.author.userId.isNotEmpty &&
+        post.author.userId == flow.session.user.id;
     return DecoratedBox(
       key: _cardKey,
       decoration: BoxDecoration(
@@ -465,7 +494,13 @@ class _ContestCardPageState extends State<_ContestCardPage> with _FlowMessages {
           onEdit: () => _edit(post),
           onDelete: () => _delete(post),
           onSubmitCaption: (text, photoPath, taggedUserId, mentionedUserIds) =>
-              _submitEntry(post, text, photoPath, taggedUserId, mentionedUserIds),
+              _submitEntry(
+                post,
+                text,
+                photoPath,
+                taggedUserId,
+                mentionedUserIds,
+              ),
           onDeleteCaption: (entryId) =>
               flow.bloc.deleteCaption(post.id, entryId: entryId),
           onVoteCaption: (entryId) => flow.bloc.voteCaption(post.id, entryId),
@@ -500,7 +535,9 @@ class _ContestPageBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6), width: 1.114)),
+        border: Border(
+          bottom: BorderSide(color: Color(0xFFF3F4F6), width: 1.114),
+        ),
       ),
       child: Row(
         children: [
@@ -514,8 +551,15 @@ class _ContestPageBar extends StatelessWidget {
                 width: 36,
                 height: 36,
                 alignment: Alignment.center,
-                decoration: const BoxDecoration(color: Color(0xFFF7F7F9), shape: BoxShape.circle),
-                child: SvgPicture.asset('assets/icons/chevron_left_small.svg', width: 17.983, height: 17.983),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF7F7F9),
+                  shape: BoxShape.circle,
+                ),
+                child: SvgPicture.asset(
+                  'assets/icons/chevron_left_small.svg',
+                  width: 17.983,
+                  height: 17.983,
+                ),
               ),
             ),
           ),

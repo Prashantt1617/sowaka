@@ -186,7 +186,11 @@ class _WishesSheetState extends State<_WishesSheet> {
                 value: _PostMenuAction.delete,
                 child: Row(
                   children: [
-                    Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFE5484D)),
+                    Icon(
+                      Icons.delete_outline_rounded,
+                      size: 18,
+                      color: Color(0xFFE5484D),
+                    ),
                     SizedBox(width: 10),
                     Text('Delete', style: TextStyle(color: Color(0xFFE5484D))),
                   ],
@@ -194,32 +198,32 @@ class _WishesSheetState extends State<_WishesSheet> {
               ),
             ]
           : [
-        const PopupMenuItem(
-          value: _PostMenuAction.report,
-          child: Row(
-            children: [
-              Icon(Icons.flag_outlined, size: 18),
-              SizedBox(width: 10),
-              Text('Report wish'),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          value: _PostMenuAction.block,
-          child: Row(
-            children: [
-              const Icon(Icons.block_rounded, size: 18),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Text(
-                  'Block ${comment.name.split(' ').first}',
-                  overflow: TextOverflow.ellipsis,
+              const PopupMenuItem(
+                value: _PostMenuAction.report,
+                child: Row(
+                  children: [
+                    Icon(Icons.flag_outlined, size: 18),
+                    SizedBox(width: 10),
+                    Text('Report wish'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: _PostMenuAction.block,
+                child: Row(
+                  children: [
+                    const Icon(Icons.block_rounded, size: 18),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Text(
+                        'Block ${comment.name.split(' ').first}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
-          ),
-        ),
-      ],
     );
     if (!mounted) return;
     if (action == _PostMenuAction.delete) {

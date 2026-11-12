@@ -19,7 +19,7 @@ class ConnectApiService {
     String? baseUrl,
     http.Client? client,
   }) : _baseUrl = baseUrl ?? ApiConfig.baseUrl,
-        _client = client ?? testClient ?? ApiClient.shared;
+       _client = client ?? testClient ?? ApiClient.shared;
 
   /// Answers the requests of a service built without a client, in tests: a
   /// profile's Post tab makes its own, as the feed does.
@@ -46,7 +46,11 @@ class ConnectApiService {
     // The top of the feed is kept on the device, so the next launch opens on
     // it while the live page is fetched.
     if (cursor == null) {
-      unawaited(DashboardCache.write(_feedCacheKey, {'feed': json}, startedAt: startedAt));
+      unawaited(
+        DashboardCache.write(_feedCacheKey, {
+          'feed': json,
+        }, startedAt: startedAt),
+      );
     }
     return _feedPage(json);
   }
@@ -55,7 +59,8 @@ class ConnectApiService {
 
   /// The top of the feed as this person last saw it, from the device. Null
   /// when there is none. Never touches the network.
-  Future<({List<ConnectPost> posts, String? nextCursor})?> fetchFeedFromCache() async {
+  Future<({List<ConnectPost> posts, String? nextCursor})?>
+  fetchFeedFromCache() async {
     final kept = await DashboardCache.read(_feedCacheKey);
     final json = kept?['feed'];
     if (json == null) return null;
@@ -66,7 +71,9 @@ class ConnectApiService {
     }
   }
 
-  static ({List<ConnectPost> posts, String? nextCursor}) _feedPage(Map<String, dynamic> json) {
+  static ({List<ConnectPost> posts, String? nextCursor}) _feedPage(
+    Map<String, dynamic> json,
+  ) {
     final values = json['posts'] as List<dynamic>? ?? const [];
     return (
       posts: values
@@ -342,7 +349,8 @@ class ConnectApiService {
       response = await http.Response.fromStream(streamed);
     } catch (error) {
       // An upload is not sent twice; it is reported in plain words.
-      if (NetworkStatus.isNetworkError(error)) throw const ConnectOfflineException();
+      if (NetworkStatus.isNetworkError(error))
+        throw const ConnectOfflineException();
       rethrow;
     }
     final decoded = _decodeResponse(response);
@@ -441,6 +449,7 @@ class ConnectApiService {
         throw const ConnectTimeoutException();
       }
     }
+
     http.Response response;
     try {
       response = await send();
@@ -456,7 +465,10 @@ class ConnectApiService {
         response = await send();
       } catch (again) {
         if (NetworkStatus.isNetworkError(again)) {
-          NetworkStatus.reportFailure(again, probe: Uri.parse('$_baseUrl/health'));
+          NetworkStatus.reportFailure(
+            again,
+            probe: Uri.parse('$_baseUrl/health'),
+          );
           throw const ConnectOfflineException();
         }
         rethrow;
@@ -523,7 +535,8 @@ class ConnectApiService {
       response = await http.Response.fromStream(streamed);
     } catch (error) {
       // An upload is not sent twice; it is reported in plain words.
-      if (NetworkStatus.isNetworkError(error)) throw const ConnectOfflineException();
+      if (NetworkStatus.isNetworkError(error))
+        throw const ConnectOfflineException();
       rethrow;
     }
     final decoded = _decodeResponse(response);
@@ -629,7 +642,14 @@ AudiencePerson audiencePersonFromJson(Map<String, dynamic> json) {
 /// The colour an initials avatar wears, as the server picks it for authors
 /// (`avatarColorFor` in connect.service.ts), so a face matches the feed's.
 String audienceAvatarColor(String seed) {
-  const palette = ['#BE5A36', '#C98A2E', '#4C5840', '#4F8C89', '#8A6AA0', '#C26B8A'];
+  const palette = [
+    '#BE5A36',
+    '#C98A2E',
+    '#4C5840',
+    '#4F8C89',
+    '#8A6AA0',
+    '#C26B8A',
+  ];
   final sum = seed.codeUnits.fold<int>(0, (total, unit) => total + unit);
   return palette[sum % palette.length];
 }

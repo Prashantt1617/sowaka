@@ -62,6 +62,7 @@ class _FeedScope extends InheritedWidget {
     required this.people,
     required this.viewerUserId,
     required this.onOpenPerson,
+    this.viewerPhotoUrl,
     required super.child,
   });
 
@@ -75,7 +76,12 @@ class _FeedScope extends InheritedWidget {
   /// Opens a person's profile. Null where the host cannot navigate.
   final ValueChanged<String>? onOpenPerson;
 
+  /// The viewer's own photo: the directory leaves the viewer out, so without
+  /// it their own entries showed initials where everyone else's had a face.
+  final String? viewerPhotoUrl;
+
   late final Map<String, String> _photos = {
+    if ((viewerPhotoUrl ?? '').isNotEmpty) viewerUserId: viewerPhotoUrl!,
     for (final person in people)
       if ((person.photoUrl ?? '').isNotEmpty) person.userId: person.photoUrl!,
   };
@@ -1439,12 +1445,13 @@ class _SmallEngagementButton extends StatelessWidget {
 /// Sends a contest entry: its words, the picture on a photo entry, the
 /// colleague named on a Most Likely one, and the colleagues tagged with "@"
 /// in the words. False when it did not go.
-typedef _SubmitEntry = Future<bool> Function(
-  String text,
-  String? photoPath,
-  String? taggedUserId,
-  List<String> mentionedUserIds,
-);
+typedef _SubmitEntry =
+    Future<bool> Function(
+      String text,
+      String? photoPath,
+      String? taggedUserId,
+      List<String> mentionedUserIds,
+    );
 
 /// Asks before an entry comes down: it may already hold votes, and deleting
 /// gives those up with the points they earned. [onDelete] is given the

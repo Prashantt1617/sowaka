@@ -174,13 +174,19 @@ class _PostLikesSheetState extends State<_PostLikesSheet> {
       expand: false,
       builder: (context, scrollController) {
         return Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(context).bottom,
+          ),
           child: Container(
             decoration: const BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
               boxShadow: [
-                BoxShadow(color: Color(0x1F000000), blurRadius: 16, offset: Offset(0, -4)),
+                BoxShadow(
+                  color: Color(0x1F000000),
+                  blurRadius: 16,
+                  offset: Offset(0, -4),
+                ),
               ],
             ),
             child: Column(
@@ -202,9 +208,14 @@ class _PostLikesSheetState extends State<_PostLikesSheet> {
                 ),
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
                   decoration: const BoxDecoration(
-                    border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
+                    border: Border(
+                      bottom: BorderSide(color: Color(0xFFF3F4F6)),
+                    ),
                   ),
                   child: Text(
                     _votes ? 'Voted by' : 'Likes',
@@ -304,7 +315,10 @@ class _LikeRow extends StatelessWidget {
                       department,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Color(0xFF717171), fontSize: 13),
+                      style: const TextStyle(
+                        color: Color(0xFF717171),
+                        fontSize: 13,
+                      ),
                     ),
                   ),
               ],
@@ -319,7 +333,11 @@ class _LikeRow extends StatelessWidget {
 /// A line in place of the list — nothing to show, or it did not load — that
 /// still drags the sheet like the list would.
 class _LikesMessage extends StatelessWidget {
-  const _LikesMessage({required this.controller, required this.text, this.action});
+  const _LikesMessage({
+    required this.controller,
+    required this.text,
+    this.action,
+  });
 
   final ScrollController controller;
   final String text;
@@ -348,7 +366,10 @@ class _LikesMessage extends StatelessWidget {
 
 /// Grey rows that pulse where the people will be, while the list loads.
 class _LikesSkeleton extends StatefulWidget {
-  const _LikesSkeleton({required this.controller, this.label = 'Loading likes'});
+  const _LikesSkeleton({
+    required this.controller,
+    this.label = 'Loading likes',
+  });
 
   final ScrollController controller;
   final String label;
@@ -357,7 +378,8 @@ class _LikesSkeleton extends StatefulWidget {
   State<_LikesSkeleton> createState() => _LikesSkeletonState();
 }
 
-class _LikesSkeletonState extends State<_LikesSkeleton> with SingleTickerProviderStateMixin {
+class _LikesSkeletonState extends State<_LikesSkeleton>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _pulse = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
@@ -376,11 +398,18 @@ class _LikesSkeletonState extends State<_LikesSkeleton> with SingleTickerProvide
       child: AnimatedBuilder(
         animation: _pulse,
         builder: (context, _) {
-          final shade = Color.lerp(const Color(0xFFF0F0F3), const Color(0xFFE4E4EA), _pulse.value)!;
+          final shade = Color.lerp(
+            const Color(0xFFF0F0F3),
+            const Color(0xFFE4E4EA),
+            _pulse.value,
+          )!;
           Widget bar(double width) => Container(
             width: width,
             height: 10,
-            decoration: BoxDecoration(color: shade, borderRadius: BorderRadius.circular(99)),
+            decoration: BoxDecoration(
+              color: shade,
+              borderRadius: BorderRadius.circular(99),
+            ),
           );
           return ListView.builder(
             controller: widget.controller,
@@ -394,7 +423,10 @@ class _LikesSkeletonState extends State<_LikesSkeleton> with SingleTickerProvide
                   Container(
                     width: 44,
                     height: 44,
-                    decoration: BoxDecoration(color: shade, shape: BoxShape.circle),
+                    decoration: BoxDecoration(
+                      color: shade,
+                      shape: BoxShape.circle,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Column(
