@@ -7,10 +7,12 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart' as image_picker;
 
 import '../../support/support_launcher.dart';
+
 import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart' show LaunchMode, launchUrl;
 
 import '../data/payslip_pdf.dart';
+
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../attendance/presentation/punch_screen.dart';
@@ -2219,19 +2221,17 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       final date = _overtimeDate;
       if (date != null && !_canSelectOvertimeFormDay(date))
         _overtimeDate = null;
-      // Half a day of overtime cannot earn a full day of comp-off, so that
-      // choice is asked again rather than quietly halved.
-      if (picked == 'Half day' &&
-          _overtimeCompensation == 'comp_off' &&
-          _overtimeCompOffDays == 1) {
-        _overtimeCompensation = null;
-        _overtimeCompOffDays = 0;
+      // Comp-off follows the duration claimed: a full day of overtime earns
+      // a full day off, a half day half.
+      if (_overtimeCompensation == 'comp_off') {
+        _overtimeCompOffDays = picked == 'Full day' ? 1 : 0.5;
       }
     });
   }
 
-  /// Overtime pay or comp-off (Figma 3205:39887); comp-off then asks for a
-  /// full or a half day (Figma 4453:64935). Comp-off is greyed out, with the
+  /// Overtime pay or comp-off (Figma 3205:39887); comp-off then takes its
+  /// days from the duration chosen, and asks for a full or a half day (Figma
+  /// 4453:64935) only when no duration is chosen yet. Comp-off is greyed out, with the
   /// reason, where HR has no Comp-off leave type for this employee — the
   /// server would refuse it.
   Future<void> _pickOvertimeCompensation() async {
@@ -2261,6 +2261,16 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       setState(() {
         _overtimeCompensation = 'pay';
         _overtimeCompOffDays = 0;
+      });
+      return;
+    }
+    // The duration already says how much: a full day of overtime is +1
+    // comp-off, a half day +0.5, without asking again.
+    final duration = _overtimeDuration;
+    if (duration != null) {
+      setState(() {
+        _overtimeCompensation = 'comp_off';
+        _overtimeCompOffDays = duration == 'Full day' ? 1 : 0.5;
       });
       return;
     }
@@ -5172,13 +5182,12 @@ class _CancelLeaveSheetState extends State<_CancelLeaveSheet> {
               minLines: 3,
               maxLines: 3,
               maxLength: 500,
-              buildCounter:
-                  (
-                    _, {
-                    required currentLength,
-                    required isFocused,
-                    maxLength,
-                  }) => null,
+              buildCounter: (
+                _, {
+                required currentLength,
+                required isFocused,
+                maxLength,
+              }) => null,
               style: const TextStyle(fontSize: 13, color: Color(0xFF2A2A2A)),
               decoration: InputDecoration(
                 hintText: 'Add a note for your manager...',

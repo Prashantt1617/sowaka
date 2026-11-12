@@ -1,7 +1,7 @@
 // Overtime is compensated as the person chooses (Figma 3205:39887 and
 // 4453:64935): the form's COMPENSATION field opens a sheet with
-// "Leave (Comp-off)" and "Overtime Pay"; comp-off then asks for a full day
-// (+1 Comp-off) or a half day (+0.5). The field reads the choice, Apply stays
+// "Leave (Comp-off)" and "Overtime Pay"; comp-off then takes its days from
+// the duration (full +1, half +0.5), asking only when no duration is chosen. The field reads the choice, Apply stays
 // off until there is one, and the request carries it to the server. Where HR
 // has no Comp-off leave type, comp-off is greyed out with the reason. The
 // manager sees the choice on the request card and in its detail.
@@ -203,7 +203,7 @@ Future<void> _tapApply(WidgetTester tester) async {
 
 void main() {
   testWidgets(
-    'comp-off: both sheets, the field reads the choice, and it is sent',
+    'comp-off with a duration chosen: no second sheet, the days follow it',
     (tester) async {
       final (_, posted) = await _openForm(tester);
       expect(find.text('COMPENSATION'), findsOneWidget);
@@ -224,12 +224,9 @@ void main() {
       await tester.tap(find.text('Leave (Comp-off)'));
       await _settle(tester);
 
-      // Second sheet (4453:64935): how much comp-off.
-      expect(find.text('+1 Comp-off'), findsOneWidget);
-      expect(find.text('+0.5 Comp-off'), findsOneWidget);
-      await tester.tap(find.text('+1 Comp-off'));
-      await _settle(tester);
-
+      // The duration already says a full day: the full/half sheet is not shown.
+      expect(find.text('+1 Comp-off'), findsNothing);
+      expect(find.text('+0.5 Comp-off'), findsNothing);
       expect(find.text('Leave (Comp-off) · Full day'), findsOneWidget);
       expect(
         find.text('Once approved, 1 day is added to your comp-off balance.'),
@@ -245,22 +242,7 @@ void main() {
     },
   );
 
-  testWidgets('a half day of comp-off sends 0.5', (tester) async {
-    final (_, posted) = await _openForm(tester);
-    await _pickDateAndDuration(tester, 'Full day');
-    await tester.ensureVisible(find.text('Select compensation'));
-    await tester.tap(find.text('Select compensation'));
-    await _settle(tester);
-    await tester.tap(find.text('Leave (Comp-off)'));
-    await _settle(tester);
-    await tester.tap(find.text('+0.5 Comp-off'));
-    await _settle(tester);
-    expect(find.text('Leave (Comp-off) · Half day'), findsOneWidget);
-    await _tapApply(tester);
-    expect(posted.single['compensation'], {'kind': 'comp_off', 'days': 0.5});
-  });
-
-  testWidgets('half a day of overtime cannot be a full day of comp-off', (
+  testWidgets('a half-day duration gives 0.5 comp-off, no sheet', (
     tester,
   ) async {
     final (_, posted) = await _openForm(tester);
@@ -270,18 +252,36 @@ void main() {
     await _settle(tester);
     await tester.tap(find.text('Leave (Comp-off)'));
     await _settle(tester);
-    expect(find.text('Needs a full day of overtime'), findsOneWidget);
-    // Greyed: a tap does nothing, the sheet stays.
-    await tester.tap(find.text('+1 Comp-off'));
-    await _settle(tester);
-    expect(find.text('+1 Comp-off'), findsOneWidget);
-    await tester.tap(find.text('+0.5 Comp-off'));
-    await _settle(tester);
+    expect(find.text('+0.5 Comp-off'), findsNothing);
     expect(find.text('Leave (Comp-off) · Half day'), findsOneWidget);
     await _tapApply(tester);
     expect(posted.single['duration'], 'half_day');
     expect(posted.single['compensation'], {'kind': 'comp_off', 'days': 0.5});
   });
+
+  testWidgets(
+    'comp-off before a duration asks full or half; the duration then sets it',
+    (tester) async {
+      final (_, posted) = await _openForm(tester);
+      await tester.ensureVisible(find.text('Select compensation'));
+      await tester.tap(find.text('Select compensation'));
+      await _settle(tester);
+      await tester.tap(find.text('Leave (Comp-off)'));
+      await _settle(tester);
+      // No duration yet: the second sheet (4453:64935) asks how much.
+      expect(find.text('+1 Comp-off'), findsOneWidget);
+      expect(find.text('+0.5 Comp-off'), findsOneWidget);
+      await tester.tap(find.text('+1 Comp-off'));
+      await _settle(tester);
+      expect(find.text('Leave (Comp-off) · Full day'), findsOneWidget);
+      // A half-day duration afterwards brings the comp-off down to match.
+      await _pickDateAndDuration(tester, 'Half day');
+      expect(find.text('Leave (Comp-off) · Half day'), findsOneWidget);
+      await _tapApply(tester);
+      expect(posted.single['duration'], 'half_day');
+      expect(posted.single['compensation'], {'kind': 'comp_off', 'days': 0.5});
+    },
+  );
 
   testWidgets(
     'no Comp-off leave type: comp-off is greyed with the reason; overtime pay is sent',
