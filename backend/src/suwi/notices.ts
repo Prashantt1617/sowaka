@@ -11,6 +11,7 @@ import { peopleTasks } from '../services/peopleTasks.service';
 import { SuwiContext } from './tools';
 import { leaveSafety } from './insight';
 import { pendingRows, sharedAdminLists } from './tools/requests';
+import { attendanceReport } from '../services/attendance-report.service';
 
 /** Days a request may wait before Suwi calls it overdue (Sowaka has no escalation setting of its own). */
 export const ESCALATION_DAYS = 3;
@@ -29,6 +30,10 @@ export interface SuwiNotice {
 }
 
 const DAY = 86_400_000;
+/** Minutes past midnight, IST. */
+const istMinutes = (d: Date) => { const t = new Date(d.getTime() + 330 * 60_000); return t.getUTCHours() * 60 + t.getUTCMinutes(); };
+/** "09:30" → 570; null when unreadable. */
+const hhmm = (v: string) => { const m = /^(\d{1,2}):(\d{2})/.exec(v ?? ''); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** The same check the tools make: may this person read this dashboard API? */
@@ -73,14 +78,43 @@ async function computeNotices(ctx: SuwiContext): Promise<SuwiNotice[]> {
   const leaveSafe = quietly(() => pendingRows(ctx, 'leave', lists)).then((rows) => (rows ? quietly(() => leaveSafety(ctx.org, ctx.userId, today, rows)) : null));
   // Every list at once: each is a few round trips to the database.
   // The waiting pile is the same rows pending_requests and review_requests read, so the counts agree.
-  const [pending, claims, types, tasks, relay, recent] = await Promise.all([
+  const [pending, claims, types, tasks, relay, recent, todayReport] = await Promise.all([
     quietly(() => pendingRows(ctx, '', lists)),
     may(ctx, '/admin/reimbursements') ? quietly(() => lists.claims(ctx.userId)) : null,
     may(ctx, '/admin/reimbursements') ? quietly(() => reimbursementTypes().find({ org: ctx.org }).project<{ name: string; maxLimit: number }>({ name: 1, maxLimit: 1 }).toArray()) : null,
     seesPeople ? quietly(() => peopleTasks(ctx.userId)) : null,
     may(ctx, '/admin/relay') ? quietly(() => relayEvents().countDocuments({ org: ctx.org, status: { $in: ['scheduled', 'live'] } })) : null,
     may(ctx, '/admin/relay') ? quietly(() => connectPosts().countDocuments({ org: ctx.org, systemKey: { $exists: false }, type: { $in: ['relay_game', 'live_game', 'survey', 'event', 'caption_challenge'] }, publishedAt: { $gte: new Date(Date.now() - 14 * DAY) } })) : null,
+    may(ctx, '/admin/reports/attendance') ? quietly(() => attendanceReport(ctx.userId, { from: today, to: today })) : null,
   ]);
+
+  // Today: who is on leave, and who should have punched in by now and hasn't.
+  // Count 0: these are for reading, not a badge on the sidebar.
+  if (todayReport) {
+    const nowMin = istMinutes(new Date());
+    const onLeave = todayReport.days.filter((d) => d[1] === today && (d[2] === 'on_leave' || d[2] === 'unpaid_leave')).length;
+    // A working day graded absent with no punch at all, on a shift that punches
+    // (not Auto Punch), once the shift's start and grace have gone by.
+    const notIn = todayReport.days.filter((d) => {
+      if (d[1] !== today || d[2] !== 'absent' || d[4] || d[5]) return false;
+      const p = todayReport.people[d[0]];
+      if (!p || /Auto Punch/.test(p.punchFormat)) return false;
+      const start = hhmm(p.shiftStart);
+      return start !== null && nowMin >= start + (p.lateGraceMinutes ?? 0);
+    }).length;
+    out.push({
+      key: 'today_leave', icon: 'calendar', view: 'attendancereport', count: 0,
+      title: onLeave ? `${plural(onLeave, 'person is', 'people are')} on leave today` : 'Nobody is on leave today',
+      why: 'Approved leave for today, paid or unpaid.',
+      ask: 'Who is on leave today?',
+    });
+    out.push({
+      key: 'today_not_punched', icon: 'clock', view: 'attendancereport', count: 0,
+      title: notIn ? `${plural(notIn, 'person has', 'people have')} not punched in today` : 'Everyone due has punched in today',
+      why: 'Working today, not on leave, and their shift started (with its grace time) but there is no punch-in yet. Auto Punch shifts are left out.',
+      ask: 'Who has not punched in today?',
+    });
+  }
 
   // Requests waiting past the limit (every type this person can see, claims included), and leave that looks fine to approve.
   if (pending) {

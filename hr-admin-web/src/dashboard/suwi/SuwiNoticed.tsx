@@ -1,12 +1,10 @@
-// "Suwi noticed" and "Suwi's morning digest": two small Overview cards, and
-// the counts the sidebar shows next to the pages a notice is about. Notices
-// are worked out on the server without any model call; the digest is built
-// once a day. Both stay hidden when Suwi is off or there is nothing to say.
+// "Suwi noticed": a small Overview card, and the counts the sidebar shows next
+// to the pages a notice is about. Notices are worked out on the server without
+// any model call, and stay hidden when Suwi is off or there is nothing to say.
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from '../store';
 import { api } from '../../services/http';
-import { Markdown } from './markdown';
 import { SuwiOrb } from './SuwiPanel';
 
 export type SuwiNotice = { key: string; icon: 'clock' | 'check' | 'rupee' | 'receipt' | 'spark' | 'calendar'; title: string; why: string; ask: string; view: string; count: number };
@@ -84,38 +82,13 @@ function SuwiNoticedCard({ notices }: { notices: SuwiNotice[] }) {
   );
 }
 
-/** The Overview card: today's digest, built overnight (or now, the first time today). */
-function SuwiDigestCard({ digest }: { digest: { date: string; text: string } }) {
-  const s = useStore();
-  return (
-    <section className="sora-card">
-      <div className="sora-card-h">
-        <SuwiOrb />
-        <div style={{ minWidth: 0 }}>
-          <h3>Suwi's morning digest</h3>
-          <small>{new Date(`${digest.date}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</small>
-        </div>
-      </div>
-      <div style={{ fontSize: 13.5, lineHeight: 1.5 }}><Markdown text={digest.text} onPerson={(id) => s.openProfile(id)} /></div>
-    </section>
-  );
-}
-
-/** Both cards for the Overview, side by side; nothing at all when Suwi is off or has nothing to say. */
+/** The Overview card; nothing at all when Suwi is off or has nothing to say. */
 export function SuwiOverviewCards() {
   const { enabled, notices } = useSuwiNotices();
-  const [digest, setDigest] = useState<{ date: string; text: string } | null>(null);
-  useEffect(() => {
-    let live = true;
-    api<{ digest: { date: string; text: string } | null }>('/suwi/digest').then((r) => { if (live) setDigest(r.digest); }).catch(() => undefined);
-    return () => { live = false; };
-  }, []);
-  const showNotices = enabled && notices.length > 0;
-  if (!showNotices && !digest) return null;
+  if (!enabled || notices.length === 0) return null;
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 18, alignItems: 'start', marginBottom: 22 }}>
-      {showNotices && <SuwiNoticedCard notices={notices} />}
-      {digest && <SuwiDigestCard digest={digest} />}
+    <div style={{ marginBottom: 22 }}>
+      <SuwiNoticedCard notices={notices} />
     </div>
   );
 }

@@ -137,7 +137,7 @@ export function SuwiSettings() {
         <Card>
           <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)' }}>
             <div style={{ fontSize: 15, fontWeight: 600 }}>Suwi prompt history</div>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>{canEdit ? 'Every question asked to Suwi, with its answer and whether it worked.' : 'Every question you asked Suwi, with its answer and whether it worked.'} Morning digests are not listed.</div>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>{canEdit ? 'Every question asked to Suwi, with its answer and whether it worked.' : 'Every question you asked Suwi, with its answer and whether it worked.'}</div>
           </div>
           {activity === null ? <SkeletonRows rows={3} cols={3} avatar={false} rowHeight={46} /> : activity.length === 0 ? <div style={{ padding: 22, color: 'var(--ink-3)', fontSize: 13 }}>Nothing yet. Ask Suwi something.</div> : (
             <div style={{ maxHeight: 640, overflowY: 'auto' }}>

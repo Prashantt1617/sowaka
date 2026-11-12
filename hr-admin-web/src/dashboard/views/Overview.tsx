@@ -72,7 +72,7 @@ export function Overview() {
         <StatCard value={<LoadingFigure state={fbState} w={36} h={28}>{reviewsPending}</LoadingFigure>} label="Feedbacks pending" onClick={() => s.setView('feedback')} />
       </div>
 
-      {/* Suwi: what it noticed, and today's digest; hidden when there is nothing (or Suwi is off). */}
+      {/* Suwi: what it noticed; hidden when there is nothing (or Suwi is off). */}
       <SuwiOverviewCards />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 20, alignItems: 'start' }}>
