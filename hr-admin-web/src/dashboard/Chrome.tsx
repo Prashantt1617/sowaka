@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import type { View } from './theme';
 import { prefetchView } from './viewChunks';
 import { TITLES } from './theme';
-import { IconBell, IconCheck, IconLogout, Logo, navIcon } from './icons';
+import { IconBell, IconCheck, IconLogout, navIcon } from './icons';
 import { useStore } from './store';
 import type { StoreList } from './store';
 import { PersonAvatar } from './PersonAvatar';
@@ -396,20 +396,11 @@ export function Sidebar() {
 
       {/* Platform mark — bottom-left. The HRMS this workspace runs on. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', borderTop: '1px solid var(--line)' }}>
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 10,
-            background: 'var(--t-lilac)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
-          <Logo stroke="var(--t-lilac-i)" size={15} />
-        </div>
+        <img
+          src={SOWAKA_MARK}
+          alt=""
+          style={{ width: 32, height: 32, borderRadius: 10, objectFit: 'cover', flexShrink: 0, boxShadow: '0 2px 6px rgba(178,53,0,.28)' }}
+        />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.5 }}>{PLATFORM_NAME}</div>
           <div style={{ fontSize: 11.5, fontWeight: 400, lineHeight: 1.5, color: 'var(--ink-3)' }}>HRMS platform</div>
