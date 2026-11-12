@@ -304,6 +304,7 @@ class ConnectCaptionEntry {
     required this.initials,
     required this.text,
     this.photoUrl,
+    this.authorPhotoUrl,
     required this.votes,
     required this.points,
     required this.votedByViewer,
@@ -326,6 +327,11 @@ class ConnectCaptionEntry {
 
   /// The picture on a photo-story entry. Null on a caption entry.
   final String? photoUrl;
+
+  /// The entrant's own profile photo, as the server resolves it (their face
+  /// even when they are not in the viewer's directory, the viewer included).
+  /// Null from an older server or for someone without one.
+  final String? authorPhotoUrl;
   final int votes;
   final int points;
   final bool votedByViewer;
@@ -351,6 +357,10 @@ class ConnectCaptionEntry {
       initials: json['initials'] as String? ?? '?',
       text: json['text'] as String? ?? '',
       photoUrl: json['photoUrl'] as String?,
+      authorPhotoUrl:
+          (json['authorPhotoUrl'] as String?)?.trim().isEmpty ?? true
+          ? null
+          : json['authorPhotoUrl'] as String,
       votes: (json['votes'] as num?)?.toInt() ?? 0,
       points: (json['points'] as num?)?.toInt() ?? 0,
       votedByViewer: json['votedByViewer'] as bool? ?? false,
@@ -524,7 +534,8 @@ class ConnectPost {
         if (value is Map)
           {
             ...Map<String, dynamic>.from(value),
-            'votes': ((value['votes'] as num?)?.toInt() ?? 0) +
+            'votes':
+                ((value['votes'] as num?)?.toInt() ?? 0) +
                 (value['id'] == optionId ? 1 : 0) -
                 (previous != null && value['id'] == previous ? 1 : 0),
           },
@@ -587,6 +598,7 @@ class ConnectPost {
     final one = myCaptionEntryId;
     return one == null ? const [] : [one];
   }
+
   String? get myCaptionVoteEntryId => body['myVoteEntryId'] as String?;
 
   factory ConnectPost.fromJson(Map<String, dynamic> json) {

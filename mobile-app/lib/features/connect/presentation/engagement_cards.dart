@@ -1439,13 +1439,12 @@ class _SmallEngagementButton extends StatelessWidget {
 /// Sends a contest entry: its words, the picture on a photo entry, the
 /// colleague named on a Most Likely one, and the colleagues tagged with "@"
 /// in the words. False when it did not go.
-typedef _SubmitEntry =
-    Future<bool> Function(
-      String text,
-      String? photoPath,
-      String? taggedUserId,
-      List<String> mentionedUserIds,
-    );
+typedef _SubmitEntry = Future<bool> Function(
+  String text,
+  String? photoPath,
+  String? taggedUserId,
+  List<String> mentionedUserIds,
+);
 
 /// Asks before an entry comes down: it may already hold votes, and deleting
 /// gives those up with the points they earned. [onDelete] is given the
@@ -2382,6 +2381,7 @@ class _EngagementBodyState extends State<_EngagementBody>
     child: _EngagementAvatar(
       userId: entry.userId,
       initials: entry.initials,
+      photoUrl: entry.authorPhotoUrl,
       size: 48,
       borderColor: _EngagementColors.border,
       fontSize: 18,
@@ -2556,6 +2556,7 @@ class _EngagementBodyState extends State<_EngagementBody>
                 child: _EngagementAvatar(
                   userId: entry.userId,
                   initials: entry.initials,
+                  photoUrl: entry.authorPhotoUrl,
                   size: 32,
                   fontSize: 13,
                 ),
@@ -3253,6 +3254,7 @@ class _TagBar extends StatelessWidget {
                   child: _EngagementAvatar(
                     userId: row.userId,
                     initials: row.initials,
+                    photoUrl: row.authorPhotoUrl,
                     size: 33,
                     fontSize: 13,
                   ),

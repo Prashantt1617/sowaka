@@ -1733,6 +1733,9 @@ async function viewPost(
       tally.set(entryId, (tally.get(entryId) ?? 0) + 1);
     }
     const pointsPerVote = normalizePoints(body.pointsPerVote);
+    // Each entrant's profile photo, read once for the lot (the feed's author
+    // photos first), so every place an entry is drawn shows their face.
+    const entrantPhotos = await commentPhotoUrls(post.captionEntries ?? [], authorPhotoUrls);
     const entries = await Promise.all(
       (post.captionEntries ?? [])
         // A blocked colleague's entry goes the way of their posts and comments.
@@ -1744,6 +1747,7 @@ async function viewPost(
             userId: entry.userId,
             name: entry.name,
             initials: entry.initials,
+            authorPhotoUrl: entrantPhotos.get(entry.userId),
             text: entry.text,
             photoUrl: entry.photoObjectKey
               ? await presignConnectMedia(entry.photoObjectKey).catch(() => undefined)
