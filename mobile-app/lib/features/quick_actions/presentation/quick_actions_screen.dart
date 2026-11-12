@@ -648,6 +648,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   /// What the summary screen is showing, and where closing it returns to.
   RequestSummary? _submittedSummary;
+
+  /// The leave a detail page shows, when it shows one: it offers Cancel
+  /// Leave while the leave can still be taken back.
+  String? _submittedLeaveId;
   _QuickPage _submittedReturnPage = _QuickPage.home;
 
   /// False when the summary is being looked at later rather than just sent.
@@ -1427,6 +1431,7 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
                     documentName: request.documentName,
                     documentUrl: request.documentUrl,
                   ),
+                  leaveId: request.id,
                 ),
               ),
             ),
@@ -4027,13 +4032,55 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
       backgroundColor: const Color(0xFFF7F7F9),
       children: [
         RequestSummaryBody(summary: summary, showSuccess: _submittedSuccess),
+        // A leave looked at later can be taken back here too, pending or
+        // approved, from its first day on — as from its calendar day.
+        if (!_submittedSuccess)
+          if (_submittedLeave case final leave?
+              when _leaveCancellable(leave)) ...[
+            const SizedBox(height: 24),
+            _AttendanceDayActionButton(
+              key: const ValueKey('leave-detail-cancel'),
+              action: AttendanceDayAction(
+                label: 'Cancel Leave',
+                onTap: () => _cancelLeaveFromDetail(leave),
+              ),
+            ),
+          ],
       ],
     );
+  }
+
+  /// The leave on the detail page as it stands now (it may have changed).
+  LeaveRequest? get _submittedLeave {
+    final id = _submittedLeaveId;
+    if (id == null) return null;
+    for (final leave in widget.dashboard.myLeaves) {
+      if (leave.id == id) return leave;
+    }
+    return null;
+  }
+
+  /// The calendar's Cancel Leave, from a leave's detail page: the note sheet,
+  /// the request, a toast, and back to the list it was opened from.
+  Future<void> _cancelLeaveFromDetail(LeaveRequest leave) async {
+    final done = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => _CancelLeaveSheet(
+        day: _dateOnly(leave.start),
+        onSubmit: (note) => widget.bloc.add(CancelLeave(leave.id, note: note)),
+      ),
+    );
+    if (!mounted || done != true) return;
+    showAppToast(context, 'Leave successfully canceled');
+    _back();
   }
 
   void _showSubmitted(RequestSummary summary, _QuickPage returnTo) {
     setState(() {
       _submittedSummary = summary;
+      _submittedLeaveId = null;
       _submittedReturnPage = returnTo;
       _submittedSuccess = true;
       _page = _QuickPage.submitted;
@@ -4043,9 +4090,10 @@ class _QuickActionsScreenState extends State<QuickActionsScreen> {
 
   /// A request that was sent earlier, on the same screen it was sent from —
   /// minus the success header, which belongs to the moment it was submitted.
-  void _showRequestDetail(RequestSummary summary) {
+  void _showRequestDetail(RequestSummary summary, {String? leaveId}) {
     setState(() {
       _submittedSummary = summary;
+      _submittedLeaveId = leaveId;
       _submittedReturnPage = _page;
       _submittedSuccess = false;
       _page = _QuickPage.submitted;
@@ -5171,12 +5219,13 @@ class _CancelLeaveSheetState extends State<_CancelLeaveSheet> {
               minLines: 3,
               maxLines: 3,
               maxLength: 500,
-              buildCounter: (
-                _, {
-                required currentLength,
-                required isFocused,
-                maxLength,
-              }) => null,
+              buildCounter:
+                  (
+                    _, {
+                    required currentLength,
+                    required isFocused,
+                    maxLength,
+                  }) => null,
               style: const TextStyle(fontSize: 13, color: Color(0xFF2A2A2A)),
               decoration: InputDecoration(
                 hintText: 'Add a note for your manager...',
@@ -5767,7 +5816,7 @@ class AttendanceDayDetail extends StatelessWidget {
 }
 
 class _AttendanceDayActionButton extends StatelessWidget {
-  const _AttendanceDayActionButton({required this.action});
+  const _AttendanceDayActionButton({super.key, required this.action});
 
   final AttendanceDayAction action;
 

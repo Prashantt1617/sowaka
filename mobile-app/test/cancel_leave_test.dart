@@ -92,6 +92,197 @@ void main() {
     },
   );
 
+  testWidgets(
+    'from the leave\'s detail page: approved can be cancelled, a past one cannot',
+    (tester) async {
+      tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final now = DateTime.now();
+      // A weekday a week or so away: still to come, so it can be taken back.
+      var target = DateTime(now.year, now.month, now.day + 7);
+      while (target.weekday >= DateTime.saturday) {
+        target = DateTime(target.year, target.month, target.day + 1);
+      }
+      final leaveJson = <String, dynamic>{
+        'id': 'lv1',
+        'userId': 'tanvi',
+        'type': 'casual',
+        'typeName': 'Casual Leave',
+        'startDate': ymd(target),
+        'endDate': ymd(target),
+        'days': 1,
+        'reason': 'Trip',
+        'status': 'approved',
+        'createdAt': '2026-09-01T09:00:00.000Z',
+      };
+      final pastJson = <String, dynamic>{
+        ...leaveJson,
+        'id': 'lv0',
+        'startDate': ymd(DateTime(now.year, now.month, now.day - 30)),
+        'endDate': ymd(DateTime(now.year, now.month, now.day - 30)),
+        'reason': 'Bank and property paperwork',
+      };
+      String? cancelPath;
+      String? cancelNote;
+      http.Response ok(Map<String, dynamic> body) => http.Response(
+        jsonEncode({'success': true, ...body}),
+        200,
+        headers: {'content-type': 'application/json'},
+      );
+      final client = MockClient((request) async {
+        if (request.url.path.endsWith('/manager/workspace')) {
+          return ok({
+            'team': <dynamic>[],
+            'holidays': <dynamic>[],
+            'shift': {
+              'name': 'Default',
+              'startTime': '09:30',
+              'endTime': '18:30',
+              'minHalfDayHours': 4,
+              'minFullDayHours': 8,
+              'leaveTypes': [
+                {
+                  'key': 'casual',
+                  'name': 'Casual Leave',
+                  'advanceDays': 30,
+                  'allowBackdated': true,
+                  'backdatedDays': 90,
+                  'unpaid': false,
+                },
+              ],
+              'correction': {
+                'triggers': [
+                  'Missing punch-in',
+                  'Missing punch-out',
+                  'Both punches missing',
+                ],
+                'backdateDays': 90,
+                'punchFormat': 'In-app punch in',
+                'punchMode': 'Both punches',
+              },
+            },
+          });
+        }
+        if (request.method == 'POST' && request.url.path.endsWith('/cancel')) {
+          cancelPath = request.url.path;
+          cancelNote =
+              (jsonDecode(request.body) as Map<String, dynamic>)['note']
+                  as String?;
+          return ok({
+            'leave': {
+              ...leaveJson,
+              'status': 'cancelled',
+              'cancelNote': cancelNote,
+              'cancelledAt': '2026-09-02T09:00:00.000Z',
+            },
+          });
+        }
+        return ok({
+          'leaves': [leaveJson, pastJson],
+          'overtime': <dynamic>[],
+          'regularizations': <dynamic>[],
+          'claims': <dynamic>[],
+          'types': <dynamic>[],
+          'records': <dynamic>[],
+          // Days to spend, so the plain day offers leave again afterwards.
+          'balance': {
+            'year': now.year,
+            'casual': {'total': 12, 'used': 0, 'remaining': 12},
+          },
+        });
+      });
+      final session = AuthSession(
+        token: 'token',
+        user: AuthUser(
+          id: 'tanvi',
+          email: 'tanvi@sowaka.test',
+          name: 'Tanvi Arora',
+          role: 'employee',
+          company: 'Sowaka',
+          org: 'sowaka',
+          joiningDate: '2025-01-01',
+        ),
+      );
+      final bloc = ManagerBloc(
+        session: session,
+        service: ManagerApiService(
+          session: session,
+          baseUrl: 'https://example.test',
+          client: client,
+        ),
+      );
+      final controller = QuickActionsController();
+      addTearDown(() {
+        bloc.dispose();
+        controller.dispose();
+      });
+      await tester.runAsync(() => bloc.add(const LoadManagerDashboard()));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StreamBuilder<ManagerState>(
+              stream: bloc.stream,
+              initialData: bloc.state,
+              builder: (context, snapshot) => QuickActionsScreen(
+                bloc: bloc,
+                dashboard: (snapshot.data ?? bloc.state).dashboard!,
+                controller: controller,
+                profileAction: const SizedBox(width: 30, height: 30),
+                onNotifications: () {},
+                onOpenComposer: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+      Future<void> settle() async {
+        for (var i = 0; i < 4; i++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 30)),
+          );
+          await tester.pump(const Duration(milliseconds: 300));
+        }
+      }
+
+      await settle();
+      await tester.tap(find.text('Leave').first);
+      await settle();
+
+      // The request cards on the Leave page (not the balance strip above them).
+      Finder leaveCard() => find.byWidgetPredicate(
+        (w) => w.runtimeType.toString() == '_LeaveRequestCard',
+      );
+      // Upcoming: the approved leave a week away; its detail offers Cancel Leave.
+      await tester.tap(leaveCard().first);
+      await settle();
+      expect(find.text('Trip'), findsOneWidget);
+      expect(find.text('Approved'), findsWidgets);
+      final cancel = find.byKey(const ValueKey('leave-detail-cancel'));
+      expect(cancel, findsOneWidget);
+      await tester.ensureVisible(cancel);
+      await tester.tap(find.text('Cancel Leave'));
+      await settle();
+      expect(find.text('Add a note for your manager...'), findsOneWidget);
+      await tester.enterText(find.byType(TextField).last, 'Plans changed');
+      await tester.tap(find.text('Cancel Leave').last);
+      await settle();
+      expect(cancelPath, endsWith('/leaves/lv1/cancel'));
+      expect(cancelNote, 'Plans changed');
+      expect(find.text('Leave successfully canceled'), findsOneWidget);
+      // Back on the list the detail was opened from.
+      expect(find.byKey(const ValueKey('leave-detail-cancel')), findsNothing);
+
+      // History: the approved leave a month ago; nothing to undo on its detail.
+      await tester.tap(find.text('History').first);
+      await settle();
+      await tester.tap(leaveCard().first);
+      await settle();
+      expect(find.text('Bank and property paperwork'), findsOneWidget);
+      expect(find.byKey(const ValueKey('leave-detail-cancel')), findsNothing);
+    },
+  );
+
   testWidgets('from the calendar: the sheet, the note, the server, the toast', (
     tester,
   ) async {

@@ -54,6 +54,12 @@ const day = (offset: number) => { const d = new Date(Date.now() + offset * 86_40
         types: [{
           key: 'casual', name: 'Casual Leave', perMonth: 1, resetOn: 'calendar_year', carryForwardDays: 0, encashment: 'none',
           encashLimitDays: 0, advanceDays: 60, allowBackdated: true, backdatedDays: 120,
+        }, {
+          key: 'earned', name: 'Earned Leave', perMonth: 1, resetOn: 'calendar_year', carryForwardDays: 0, encashment: 'none',
+          encashLimitDays: 0, advanceDays: 60, allowBackdated: true, backdatedDays: 10,
+        }, {
+          key: 'sick', name: 'Sick Leave', perMonth: 1, resetOn: 'calendar_year', carryForwardDays: 0, encashment: 'none',
+          encashLimitDays: 0, advanceDays: 60, allowBackdated: false, backdatedDays: 0,
         }],
       },
     },
@@ -97,9 +103,17 @@ const day = (offset: number) => { const d = new Date(Date.now() + offset * 86_40
   const todays = weekend ? null : await applyForLeave('emp', { type: 'casual', startDate: istToday, endDate: istToday, reason: 'Today' });
   if (todays) ok('a leave for today can still be taken back on the day', (await cancelLeave('emp', todays.id)).status === 'cancelled');
   else console.log('  (skipped: today is a weekend)');
+  // As far back as the type lets you apply: Casual Leave reaches 120 days back.
   const started = await applyForLeave('emp', { type: 'casual', startDate: day(-7), endDate: day(-7), reason: 'Last week' });
-  const r1 = await refused(() => cancelLeave('emp', started.id));
-  ok('a leave that has begun: ask HR', r1.status === 409 && /Ask HR/.test(r1.message), r1);
+  ok('a leave that began a week ago, inside its type\'s 120-day window: cancelled', (await cancelLeave('emp', started.id)).status === 'cancelled');
+  // Earned Leave reaches 10 days back: one that began 20 days ago is past it.
+  const old = await leaves().insertOne({ userId: 'emp', employeeName: 'Emp', type: 'earned', startDate: new Date(`${day(-20)}T00:00:00Z`), endDate: new Date(`${day(-20)}T00:00:00Z`), days: 1, reason: 'Old', status: 'approved', createdAt: new Date(), updatedAt: new Date() } as never);
+  const r1 = await refused(() => cancelLeave('emp', old.insertedId.toHexString()));
+  ok('past its type\'s backdating window (10 days): refused, with the window', r1.status === 409 && /up to 10 days back/.test(r1.message), r1);
+  // Sick Leave can't be backdated, so once it has started it can't be cancelled here.
+  const sick = await leaves().insertOne({ userId: 'emp', employeeName: 'Emp', type: 'sick', startDate: new Date(`${day(-2)}T00:00:00Z`), endDate: new Date(`${day(-2)}T00:00:00Z`), days: 1, reason: 'Fever', status: 'approved', createdAt: new Date(), updatedAt: new Date() } as never);
+  const rSick = await refused(() => cancelLeave('emp', sick.insertedId.toHexString()));
+  ok('a type with no backdating, once started: refused', rSick.status === 409 && /once it has started/.test(rSick.message), rSick);
   const theirs = await applyForLeave('other', { type: 'casual', startDate: day(15), endDate: day(15), reason: 'Mine' });
   ok('someone else\'s: not found', (await refused(() => cancelLeave('emp', theirs.id))).status === 404);
   const declined = await applyForLeave('emp', { type: 'casual', startDate: day(30), endDate: day(30), reason: 'No' });
@@ -111,7 +125,7 @@ const day = (offset: number) => { const d = new Date(Date.now() + offset * 86_40
   ok('a note over 500 characters is refused', r2.status === 400 && /500/.test(r2.message), r2);
   const r3 = await refused(() => decideLeave('mgr', pending.id, { decision: 'approved' }));
   ok('deciding a cancelled leave says the employee cancelled it', r3.status === 409 && /cancelled/.test(r3.message), r3);
-  ok('the rows all kept', (await leaves().countDocuments({ userId: 'emp' })) === (todays ? 6 : 5)
+  ok('the rows all kept', (await leaves().countDocuments({ userId: 'emp' })) === (todays ? 8 : 7)
     && (await leaves().countDocuments({ userId: 'emp', status: 'cancelled' })) === (todays ? 3 : 2));
 
   await db.dropDatabase();

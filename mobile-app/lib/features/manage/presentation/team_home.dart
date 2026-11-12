@@ -1202,7 +1202,11 @@ class _TeamRequestsViewState extends State<_TeamRequestsView> {
                   ('Comment:', leave.reason),
                 ],
                 decision: leave.decision,
-                responseNote: leave.managerNote,
+                // A cancelled leave reports the employee's reason for taking
+                // it back; a decided one the manager's note.
+                responseNote: leave.decision == LeaveDecision.cancelled
+                    ? leave.cancelNote
+                    : leave.managerNote,
                 approving: bloc.isBusy(
                   DecideLeave(leave.id, LeaveDecision.approved),
                 ),

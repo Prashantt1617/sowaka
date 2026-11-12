@@ -285,6 +285,12 @@ class _LeaveRequestDetailPage extends StatelessWidget {
                       ),
                       SummaryRow('Applied On', _summaryDate(leave.requestedOn)),
                       SummaryRow('Status', _statusLabel(leave.decision)),
+                      if (leave.decision == LeaveDecision.cancelled &&
+                          leave.cancelledAt != null)
+                        SummaryRow(
+                          'Cancelled On',
+                          _summaryDate(leave.cancelledAt!.toLocal()),
+                        ),
                     ],
                     reason: leave.reason,
                     documentName: leave.documentName,
@@ -297,6 +303,14 @@ class _LeaveRequestDetailPage extends StatelessWidget {
                   const _LeaveSectionLabel('YOUR NOTE'),
                   const SizedBox(height: 7),
                   _ReviewedDeclineNote(note: leave.managerNote),
+                ],
+                // The employee's reason for taking the leave back.
+                if (leave.decision == LeaveDecision.cancelled &&
+                    leave.cancelNote.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  const _LeaveSectionLabel('CANCELLATION NOTE'),
+                  const SizedBox(height: 7),
+                  _CancelNote(note: leave.cancelNote),
                 ],
               ],
             ),
@@ -463,6 +477,33 @@ String _decisionText(LeaveDecision decision) => switch (decision) {
 String _summaryDate(DateTime value) =>
     '${_fullWeekday(value)}, ${value.day} '
     '${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][value.month - 1]}';
+
+/// The employee's note when they cancelled a leave, in the neutral grey a
+/// cancelled request wears.
+class _CancelNote extends StatelessWidget {
+  const _CancelNote({required this.note});
+
+  final String note;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    key: const ValueKey('leave-cancel-note'),
+    width: double.infinity,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFEDEDF0),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Text(
+      note,
+      style: const TextStyle(
+        color: Color(0xFF4E4E56),
+        fontSize: 13,
+        height: 1.4,
+      ),
+    ),
+  );
+}
 
 class _ReviewedDeclineNote extends StatelessWidget {
   const _ReviewedDeclineNote({required this.note});

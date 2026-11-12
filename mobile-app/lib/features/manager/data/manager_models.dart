@@ -630,6 +630,8 @@ class LeaveRequest {
     required this.decision,
     required this.managerNote,
     this.decidedByRole = '',
+    this.cancelNote = '',
+    this.cancelledAt,
     this.halfDay = false,
     this.documentName,
     this.documentUrl,
@@ -663,6 +665,10 @@ class LeaveRequest {
   final LeaveDecision decision;
   final String managerNote;
   final String decidedByRole; // 'admin' = overridden from the HR dashboard
+
+  /// Why the employee took the leave back, when they said (empty otherwise).
+  final String cancelNote;
+  final DateTime? cancelledAt;
 
   /// Half a day off — only ever true on a single-date request.
   final bool halfDay;
@@ -722,6 +728,8 @@ class LeaveRequest {
       },
       managerNote: json['managerNote'] as String? ?? '',
       decidedByRole: json['decidedByRole'] as String? ?? '',
+      cancelNote: (json['cancelNote'] as String? ?? '').trim(),
+      cancelledAt: DateTime.tryParse('${json['cancelledAt'] ?? ''}'),
     );
   }
 
@@ -744,6 +752,8 @@ class LeaveRequest {
       decision: decision ?? this.decision,
       managerNote: managerNote ?? this.managerNote,
       decidedByRole: decidedByRole,
+      cancelNote: cancelNote,
+      cancelledAt: cancelledAt,
       halfDay: halfDay,
       documentName: documentName,
       documentUrl: documentUrl,
@@ -999,8 +1009,7 @@ class ReimbursementClaim {
   final String note;
   final String status;
   final DateTime createdAt;
-  final String
-  decidedByRole; // reimbursements are always decided from the dashboard ('admin')
+  final String decidedByRole; // reimbursements are always decided from the dashboard ('admin')
 
   /// The note left with the decision, so the manager and the employee can both
   /// read why a claim went the way it did.
@@ -2021,9 +2030,8 @@ class AttendanceRecord {
         workDate: DateTime.parse(json['workDate'] as String),
         officeName: json['office'] as String?,
         punchIn: DateTime.tryParse(json['punchIn'] as String? ?? '')?.toLocal(),
-        punchOut: DateTime.tryParse(
-          json['punchOut'] as String? ?? '',
-        )?.toLocal(),
+        punchOut: DateTime.tryParse(json['punchOut'] as String? ?? '')
+            ?.toLocal(),
         dayType: json['dayType'] as String? ?? '',
         outsideLocation: OutsideLocationNote.fromJson(
           json['outsideLocation'] as Map<String, dynamic>?,

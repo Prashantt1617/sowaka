@@ -772,10 +772,27 @@ export async function cancelLeave(userId: string, leaveIdInput: string, input: {
   // every org works, so at 02:00 IST a leave starting that day has begun, as the app sees it.
   const istDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   const today = new Date(`${istDay}T00:00:00.000Z`);
-  // Its own first day still counts as not begun: plans change in the morning. A leave that
-  // began on an earlier day is HR's to undo.
-  if (leave.startDate.getTime() < today.getTime()) {
-    throw new LeaveError(409, 'Leave that has already started cannot be cancelled here. Ask HR.');
+  // A leave can be cancelled as far back as its type lets it be applied for: today and later
+  // always (its own first day too: plans change in the morning), an earlier start only within
+  // the type's backdating window (allowBackdated + backdatedDays, the window applyLeave uses).
+  const daysAgo = Math.round((today.getTime() - leave.startDate.getTime()) / 86_400_000);
+  if (daysAgo > 0) {
+    const rule = (await leaveTypeRulesFor(userId)).find((item) => item.key === leave.type);
+    if (!rule?.allowBackdated || daysAgo > rule.backdatedDays) {
+      throw new LeaveError(
+        409,
+        rule?.allowBackdated
+          ? `${rule.name} can be cancelled up to ${rule.backdatedDays} days back. Ask HR.`
+          : `${rule?.name ?? 'This leave'} can't be cancelled once it has started. Ask HR.`,
+      );
+    }
+    // Never under a payroll that has already been run for the month it started in.
+    const { lockedPeriods } = await import('./employeePayroll.common');
+    const period = leave.startDate.toISOString().slice(0, 7);
+    const org = (await users().findOne({ userId }, { projection: { _id: 0, org: 1 } }))?.org ?? '';
+    if ((await lockedPeriods(org, period, period)).has(period)) {
+      throw new LeaveError(409, 'Payroll for that month has already been run, so this leave can\'t be cancelled here. Ask HR.');
+    }
   }
   const note = input.note?.trim() ?? '';
   if (note.length > 500) {
