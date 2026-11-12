@@ -257,14 +257,18 @@ void main() {
     // Employee ₹10,800 + employer EPF ₹3,300 over six payslips.
     expect(text(tester, 'epf-hero'), '₹14,100');
     expect(text(tester, 'epf-uan'), 'UAN 1012 3456 7890');
+    // The way to add a balance sits under the card, not in it.
+    expect(find.byKey(const ValueKey('epf-add-balance')), findsOneWidget);
     expect(
-      find.text(
-        'Your full balance, with interest and past employers, is on '
-        'EPFO.',
-      ),
+      find.text('Add your balance from the EPFO passbook ›'),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('epf-add-balance')), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('epf-add-balance'))).dy,
+      greaterThanOrEqualTo(
+        tester.getBottomLeft(find.byKey(const ValueKey('epf-uan'))).dy + 20,
+      ),
+    );
     expect(find.text('EVERY MONTH'), findsOneWidget);
     expect(find.text('You put in'), findsOneWidget);
     expect(text(tester, 'epf-monthly-0'), '₹1,800');
@@ -303,10 +307,38 @@ void main() {
       text(tester, 'epf-added-since'),
       '+ ₹2,350 added through payroll since 30 Sep 2025',
     );
-    expect(find.textContaining('added by HR'), findsOneWidget);
-    expect(find.byKey(const ValueKey('epf-update-balance')), findsOneWidget);
+    // One line under the card; nothing else about the balance on the page.
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('epf-added-since'))).dy,
+      greaterThanOrEqualTo(
+        tester.getBottomLeft(find.byKey(const ValueKey('epf-uan'))).dy + 20,
+      ),
+    );
+    expect(find.byKey(const ValueKey('epf-add-balance')), findsNothing);
     expect(find.text('PF SAVED THROUGH SOWAKA'), findsNothing);
     await capture(tester, 'epf-balance');
+  });
+
+  testWidgets('the Figma frame: a balance as on 30 Sep, nothing added since', (
+    tester,
+  ) async {
+    await pumpEpf(
+      tester,
+      _FakeEpfServer()
+        ..balance = (
+          rupees: 230000,
+          asOn: '${DateTime.now().year}-09-30',
+          source: 'employee',
+        ),
+    );
+    expect(find.text('PF BALANCE'), findsOneWidget);
+    expect(find.text('As on 30 Sep'), findsOneWidget);
+    expect(text(tester, 'epf-hero'), '₹2,30,000');
+    expect(text(tester, 'epf-uan'), 'UAN 1012 3456 7890');
+    expect(find.byKey(const ValueKey('epf-added-since')), findsNothing);
+    expect(find.byKey(const ValueKey('epf-add-balance')), findsNothing);
+    expect(find.text('Passbook'), findsOneWidget);
+    await capture(tester, 'epf-figma-balance');
   });
 
   testWidgets('adding the balance from the card', (tester) async {
@@ -406,6 +438,7 @@ void main() {
     );
     expect(find.text('You put in'), findsNothing);
     expect(text(tester, 'epf-hero'), '₹14,100');
+    await capture(tester, 'epf-not-set-up');
   });
 
   testWidgets('not enrolled: PF isn\'t deducted from your salary', (
