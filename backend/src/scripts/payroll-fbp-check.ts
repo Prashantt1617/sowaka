@@ -21,7 +21,8 @@ import { ReimbursementClaim } from '../models/reimbursement.model';
 import { FbpBillStorage, myFbp, myFbpBillFile, myFbpHead, setFbpBillStorageForTests, uploadMyFbpBill } from '../services/employeePayroll.fbp';
 import { myPayrollHome } from '../services/employeePayroll.home';
 import { mySplit, reviewSplit } from '../services/employeePayroll.split';
-import { adminDecideReimbursement, listAllReimbursementsForAdmin } from '../services/reimbursement.service';
+import { decideFbpRequest, fbpRequestsForAdmin } from '../services/fbpAdmin.service';
+import { listAllReimbursementsForAdmin } from '../services/reimbursement.service';
 
 const SCRATCH = 'payroll_fbp_scratch';
 const ORG = 'sowaka';
@@ -225,15 +226,17 @@ const SETTINGS = { appEnabled: true, splitCutoffDay: 15, declarationDue: '11-30'
   check('now nothing of Fuel to send: 2 to upload (Telephone), 0 to re-upload, 3 in review',
     f2.summary.toUpload === 2 && f2.summary.toReupload === 0 && f2.summary.inReview === 3 && f2.heads.find((x) => x.code === 'FUEL')!.needsAction === 0, f2.summary);
 
-  // —— HR on the dashboard, as with any claim ——
+  // —— HR on the dashboard's FBP requests (not Reimbursement requests) ——
   const listed = await listAllReimbursementsForAdmin('hr');
-  check('the bill is on the dashboard\'s reimbursement list', listed.some((c) => c.id === oct.bill!.id && c.category === 'fuel' && c.status === 'pending'), listed.length);
+  check('the bill is not on the dashboard\'s reimbursement list (only the Travel claim is)', !listed.some((c) => c.id === oct.bill!.id) && listed.every((c) => c.category === 'travel'), listed.map((c) => c.category));
+  const fbpListed = await fbpRequestsForAdmin('hr', '2026-27', oct20);
+  check('…it is on FBP requests, pending', fbpListed.requests.some((r) => r.id === oct.bill!.id && r.headCode === 'FUEL' && r.status === 'pending' && r.period === '2026-10'), fbpListed.counts);
   const NEW_REASON = 'This is a hotel bill, not fuel.';
-  await adminDecideReimbursement('hr', oct.bill!.id, 'declined', NEW_REASON);
+  await decideFbpRequest('hr', oct.bill!.id, { decision: 'reject', reason: NEW_REASON });
   const afterReject = (await myFbpHead('asha', 'FUEL', oct20)).months.find((x) => x.period === '2026-10')!;
   check('HR rejects it with a note: the app shows it rejected with that reason, open to re-upload',
     afterReject.status === 'rejected' && afterReject.bill?.reason === NEW_REASON && afterReject.canUpload, afterReject);
-  await adminDecideReimbursement('hr', aug.bill!.id, 'approved');
+  await decideFbpRequest('hr', aug.bill!.id, { decision: 'approve' });
   const afterApprove = (await myFbpHead('asha', 'FUEL', oct20)).months.find((x) => x.period === '2026-08')!;
   check('HR approves August: approved, no reason', afterApprove.status === 'approved' && afterApprove.bill?.reason === null && !afterApprove.canUpload, afterApprove);
   check('the split\'s own bill counts see the same bills', (await mySplit('asha', oct20)).components.find((c) => c.code === 'FUEL')?.bills.approved === 5);

@@ -199,7 +199,7 @@ export async function seedMore(): Promise<void> {
   ] as never[]);
   await db.collection('cup_events').insertMany([{ id: 'cup1', org: ORG, gameKey: 'pool', phase: 'running', name: 'Cup', rounds: [], entrants: [] }, { id: 'cup2', org: ORG, gameKey: 'pool', phase: 'done', name: 'Cup 2', rounds: [], entrants: [] }]);
   await db.collection('cup_matches').insertMany([{ org: ORG, eventId: 'cup1', joined: { [ids[32]]: at(addDays(today, -1)), [ids[33]]: at(addDays(today, -1)) }, finals: { [ids[32]]: { at: at(addDays(today, -1), 9) } } }]);
-  await db.collection('poker_events').insertMany([{ id: 'pk1', org: ORG, catalogKey: '', status: 'over' }, { id: 'pk2', org: ORG, status: 'draft' }]);
+  await db.collection('poker_events').insertMany([{ id: 'pk1', org: ORG, catalogKey: '', status: 'over', config: {} }, { id: 'pk2', org: ORG, status: 'draft', config: {} }]);
   await db.collection('poker_results').insertMany([
     { org: ORG, eventId: 'pk1', userId: ids[34], at: at(addDays(today, -3)), points: 40 },
     { org: ORG, eventId: 'pk1', userId: ids[35], at: at(addDays(today, -3)), points: 10, voided: true },
@@ -238,6 +238,8 @@ function compare(label: string, oldValue: unknown, newValue: unknown): void {
 
 type Lib = {
   usageSummary: (c: { userId: string; org: string }, i: { from: string; to: string }) => Promise<Record<string, unknown> & { people: { id: string }[]; managers: { id: string }[] }>;
+  usageWhen: (org: string, i: { from: string; to: string; dept?: string; loc?: string }) => Promise<unknown>;
+  usageTrend: (org: string, i: { from: string; to: string; gran: string; dept?: string; loc?: string }) => Promise<unknown>;
   gamesOverview: (org: string) => Promise<{ board: [number, number][] } & Record<string, unknown>>;
   feedSummary: (admin: unknown) => Promise<unknown>;
   feedPage: (admin: unknown, o: { as?: string; cursor?: string }) => Promise<{ nextCursor: string | null } & Record<string, unknown>>;
@@ -291,6 +293,12 @@ if (require.main === module) {
       ['before anything', '2024-01-01', '2024-01-31'],
     ] as const) {
       await both(`usage summary, ${label}`, (lib) => lib.usageSummary(caller, { from, to }), usageNorm);
+    }
+    for (const [dept, loc] of [['All', 'All'], ['Design', 'All']]) {
+      await both(`usage when, ${dept}/${loc}`, (lib) => lib.usageWhen(ORG, { from: addDays(today, -29), to: today, dept, loc }));
+      for (const gran of ['date', 'week', 'month']) {
+        await both(`usage trend, ${gran}, ${dept}/${loc}`, (lib) => lib.usageTrend(ORG, { from: addDays(today, -29), to: today, gran, dept, loc }));
+      }
     }
     await both('games overview', (lib) => lib.gamesOverview(ORG), (g) => ({ ...g, board: [...g.board].sort((a, b) => a[0] - b[0]) }));
     await both('feed summary', (lib) => lib.feedSummary(admin));

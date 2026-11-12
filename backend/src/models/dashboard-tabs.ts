@@ -15,6 +15,8 @@ export const DASHBOARD_TABS = [
   'kpi', 'kpitemplates', 'kpibulk', 'feedback', 'cycle',
   'attendancereport',
   'payschedule', 'taxdetails', 'payheads', 'statutorycomponents', 'templates', 'paiddays', 'payruns', 'payrolldash', 'payrollreports', 'payrollbulk',
+  // FBP requests and FBP splits come with payroll access (Payroll Runs or Salary details); they can be given on their own too.
+  'fbprequests', 'fbpsplits',
   'reimbursements', 'reimbursementtypes',
   // Engagement. Replaced Connect's engagementposts, relaygame and contentreports
   // (scripts/engagement-tabs-migrate.ts moved stored lists over).
@@ -61,6 +63,9 @@ const RULES: Rule[] = [
   { path: /^\/admin\/payroll\/form16/, read: ['salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
   // One person's flexible split, and the app's payroll switch and deadlines: payroll access only.
   { path: /^\/admin\/payroll\/employees\/[^/]+\/flexible-split/, read: ['salarydetails', 'payruns'] },
+  // FBP bills and everyone's splits: payroll access, or the page itself.
+  { path: /^\/admin\/payroll\/fbp\/requests/, read: ['fbprequests', 'salarydetails', 'payruns'], write: ['fbprequests', 'salarydetails', 'payruns'] },
+  { path: /^\/admin\/payroll\/fbp\/splits/, read: ['fbpsplits', 'salarydetails', 'payruns'] },
   { path: /^\/admin\/payroll\/employee-app-settings/, read: ['salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },
   // An employee's EPF passbook balance: payroll access only.
   { path: /^\/admin\/payroll\/employees\/[^/]+\/epf-balance/, read: ['salarydetails', 'payruns'], write: ['salarydetails', 'payruns'] },

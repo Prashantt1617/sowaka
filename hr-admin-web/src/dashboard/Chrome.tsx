@@ -13,6 +13,7 @@ import { PersonAvatar } from './PersonAvatar';
 import { ORG_DISPLAY_NAME, PLATFORM_NAME } from './org';
 import { canOpen } from './access';
 import { useSupportBadge } from './supportBadge';
+import { useFbpBadge } from './fbpBadge';
 import type { ThemeMode } from './themeMode';
 import { applyThemeMode, readThemeMode } from './themeMode';
 import { SuwiOrb } from './suwi/SuwiPanel';
@@ -72,6 +73,9 @@ const PAYROLL: NavItem[] = [
   { key: 'paiddays', label: 'Paid Days Templates' },
   { key: 'payruns', label: 'Payroll Runs' },
   { key: 'investmentproofs', label: 'Investment proofs' },
+  // FBP is part of salary, not a claim: its bills and splits sit with payroll.
+  { key: 'fbprequests', label: 'FBP requests' },
+  { key: 'fbpsplits', label: 'FBP splits' },
   { key: 'payrollreports', label: 'Payroll Reports' },
   { key: 'payrollbulk', label: 'Bulk Assign' },
 ];
@@ -273,6 +277,8 @@ export function Sidebar() {
   const reviewsPending = fbMgrs.reduce((s, m) => s + (m.total - m.done), 0);
   // New tickets plus unread for a Support head; their own unread for staff.
   const supportCount = useSupportBadge(canOpen(user, 'support') ? user?.supportRole : null);
+  // FBP bills waiting for HR: counted under FBP requests, not under reimbursements.
+  const fbpPending = useFbpBadge(canOpen(user, 'fbprequests'));
   // What Suwi noticed: requests waiting past the limit turn the Requests counts red (Claims already are).
   const overdue = useSuwiNotices().notices.some((n) => n.key === 'requests_overdue');
 
@@ -294,6 +300,8 @@ export function Sidebar() {
         return <CountBadge value={claims} danger />;
       case 'support':
         return <CountBadge value={supportCount} danger={supportCount > 0} />;
+      case 'fbprequests':
+        return fbpPending === null ? null : <CountBadge value={fbpPending} danger={fbpPending > 0} />;
       default:
         return SOON[key] ? <SoonBadge /> : null;
     }

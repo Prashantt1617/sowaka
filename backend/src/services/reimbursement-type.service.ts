@@ -127,6 +127,16 @@ export async function listReimbursementTypes(callerId: string) {
   return (await typesForOrg(org)).map(view);
 }
 
+/**
+ * The app's claim picker: what a person can raise an expense claim against.
+ * A type linked to an FBP head is left out: its bills are sent from the app's
+ * FBP page, a month at a time against the split, never as an expense claim.
+ */
+export async function listClaimableReimbursementTypes(callerId: string) {
+  const org = await requireOrg(callerId);
+  return (await typesForOrg(org)).filter((type) => !type.payHeadCode).map(view);
+}
+
 export async function createReimbursementType(
   callerId: string,
   input: { name?: unknown; description?: unknown; maxLimit?: unknown; backdateDays?: unknown; active?: unknown; payHeadCode?: unknown },

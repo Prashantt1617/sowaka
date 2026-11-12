@@ -8,6 +8,7 @@ import { ObjectId } from 'mongodb';
 import { employeeCalendar } from '../../services/attendance-report.service';
 import { epfCeilingForPeriod } from '../../shared/payroll/statutory-config';
 import { statutoryConfigForPeriod } from '../../services/payrollConfig.service';
+import { notFbpBillFilter } from '../../services/reimbursementBills.service';
 import { defineTools, rupees, str, SuwiContext } from '../tools';
 import { allRuns, bestByPeriod, daysInMonth, delta, lastDayOf, monthLabel, pct, showLines, slipLines, slipsOfRun, STATUS_LABEL, StoredRun, StoredSlip, taxSource } from './payroll-common';
 import { payslips } from '../../config/db';
@@ -264,7 +265,8 @@ defineTools(
       const held = slipsNow.flatMap((s) => s.deductions.filter((d) => heads.get(d.key)?.componentType === 'hold_amount' && d.amountPaise > 0).map((d) => ({ userId: s.userId, name: s.employeeName, amount: rupees(d.amountPaise) })));
       const ids = (await users().find({ org: ctx.org, ...ACTIVE } as never, { projection: { _id: 0, userId: 1 } }).toArray()).map((u) => u.userId);
       const onRuns = new Set((await payslips().find({ org: ctx.org }, { projection: { 'inputs.reimbursementClaimIds': 1 } }).toArray()).flatMap((s) => s.inputs?.reimbursementClaimIds ?? []));
-      const waiting = await reimbursementClaims().find({ userId: { $in: ids }, status: { $in: ['pending', 'approved'] } }).toArray();
+      // Expense claims only: FBP bills are never paid out, so none is "waiting" for a run.
+      const waiting = await reimbursementClaims().find({ userId: { $in: ids }, status: { $in: ['pending', 'approved'] }, ...(await notFbpBillFilter(ctx.org)) }).toArray();
       const pending = waiting.filter((c) => c.status === 'pending');
       const approvedNotOnRun = waiting.filter((c) => c.status === 'approved' && !onRuns.has((c as { _id?: ObjectId })._id?.toHexString() ?? ''));
       const paise = (list: typeof waiting) => list.reduce((t, c) => t + Math.round((c.amount ?? 0) * 100), 0);
