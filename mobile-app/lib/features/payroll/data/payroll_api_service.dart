@@ -272,10 +272,19 @@ class PayrollApiService {
 
   /// One pay period's salary as a receipt, each line explained: the
   /// previous pay period unless [period] ("2026-10") is given.
-  Future<PayrollSalarySummary> fetchSalarySummary({String? period}) async {
+  /// One pay period's salary: [period] ("2026-10") when given, else the
+  /// previous pay period, or with [current] the one running now (its
+  /// estimate: `?view=current`).
+  Future<PayrollSalarySummary> fetchSalarySummary({
+    String? period,
+    bool current = false,
+  }) async {
     final json = await _json(
       'GET',
-      _path('/payroll/me/salary', {'period': period}),
+      _path('/payroll/me/salary', {
+        'period': period,
+        if (current && period == null) 'view': 'current',
+      }),
     );
     return PayrollSalarySummary.fromJson(_object(json['salary']));
   }
