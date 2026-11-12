@@ -45,6 +45,8 @@ export function appActivity(): Collection<AppActivityDay> {
     indexed = Promise.all([
       col.createIndex({ userId: 1, day: 1 }, { unique: true }),
       col.createIndex({ org: 1, day: 1 }),
+      // Engagement › App usage: an org's days for a set of people (a department, a location).
+      col.createIndex({ org: 1, day: 1, userId: 1 }),
     ]).catch((error) => {
       indexed = null;
       logger.warn('appActivity indexes not created', { error: String(error) });

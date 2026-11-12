@@ -12,6 +12,7 @@ import {
   notifyPostPublished,
 } from './connect-notifications.service';
 import { emitConnectChange, type ConnectChangeAction } from './connect-realtime.service';
+import { forgetEngagement } from './engagement-cache';
 import { logger } from '../utils/logger';
 import { optional } from '../utils/optional';
 import { blockedUserIdsFor } from './connect-blocks.service';
@@ -100,11 +101,16 @@ function inBackground(what: string, job: () => Promise<unknown>): void {
  * Tells every other client in the post's audience that it changed. Fire-and-
  * forget: a realtime hiccup must never fail the write that already succeeded.
  */
+/** Posts the Engagement pages list (contests and polls): a change to one has to show there at once. */
+const ENGAGEMENT_TYPES = new Set<string>(['caption_challenge', 'photo_story_challenge', 'most_likely', 'survey']);
+
 function announceChange(
-  post: Pick<ConnectPost, 'id' | 'org' | 'audience'>,
+  post: Pick<ConnectPost, 'id' | 'org' | 'audience'> & { type?: string },
   action: ConnectChangeAction,
   actorUserId?: string,
 ): void {
+  // A contest or poll posted, edited, entered or taken down shows on Engagement at once.
+  if (post.type && ENGAGEMENT_TYPES.has(post.type)) forgetEngagement(post.org, 'contests', 'plan');
   emitConnectChange({
     postId: post.id,
     action,

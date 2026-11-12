@@ -39,6 +39,7 @@ import { appUpdateRouter } from './app-update.routes';
 import { suwiRouter } from '../suwi/routes';
 import { suwiPeopleRouter } from '../suwi/routes.people';
 import { suwiNoticesRouter } from '../suwi/routes.notices';
+import { forgetEngagement } from '../services/engagement-cache';
 
 export const router = Router();
 
@@ -49,6 +50,17 @@ router.use('/suwi', suwiPeopleRouter);
 router.use('/suwi', suwiNoticesRouter);
 router.use('/health', healthRouter);
 router.use('/holidays', holidayRouter);
+// Engagement answers are remembered for minutes; whatever HR changes on the
+// dashboard (a plan date, a tournament, a game) shows on the next read.
+router.use('/admin', (req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+    res.on('finish', () => {
+      const org = req.auth?.user?.org;
+      if (org && res.statusCode < 400) forgetEngagement(org, 'plan', 'contests', 'games');
+    });
+  }
+  next();
+});
 // Before `/admin`: the Support desk is gated by a Support role, not by a
 // dashboard tab, and has its own auth chain.
 router.use('/admin/support', supportAdminRouter);

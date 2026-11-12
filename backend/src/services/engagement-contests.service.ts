@@ -12,6 +12,7 @@ import type { ConnectPost } from '../models/connect.model';
 import type { User } from '../models/user.model';
 import { audienceAllows } from './audience-list-rules';
 import { presignConnectMedia } from './s3-connect-media.service';
+import { cachedEngagement } from './engagement-cache';
 
 export const CONTEST_TYPES = ['caption_challenge', 'photo_story_challenge', 'most_likely'] as const;
 export type ContestType = (typeof CONTEST_TYPES)[number];
@@ -136,7 +137,11 @@ export function contestSummary(post: ConnectPost) {
 export type ContestSummary = ReturnType<typeof contestSummary>;
 
 /** Every contest, newest first, plus who took part in the ones started in the last 30 days. */
-export async function listContests(org: string) {
+export function listContests(org: string) {
+  return cachedEngagement(org, 'contests', null, () => buildContestList(org));
+}
+
+async function buildContestList(org: string) {
   const posts = await connectPosts()
     .find({ org, type: { $in: [...CONTEST_TYPES] } }, { projection: { _id: 0, comments: 0, likedBy: 0, wishesSeenAt: 0 } })
     .sort({ publishedAt: -1 })

@@ -33,7 +33,8 @@ import type { User } from '../models/user.model';
 import type { PunchFormat } from '../models/shift.model';
 import { AdminError } from './admin.service';
 import { appActivity } from './app-activity.service';
-import { attendanceReport } from './attendance-report.service';
+import { missedPunchPeople } from './attendance-report.service';
+import { cachedEngagement } from './engagement-cache';
 import { getCompanyConfig } from './company-settings.service';
 import { cupMatches } from './cup.service';
 import { notifiesOrg, notifyUsers } from './notification.service';
@@ -170,10 +171,14 @@ async function distinctOf(col: { aggregate: (p: Document[]) => { toArray: () => 
   return new Set(rows.map((r) => String(r._id)).filter(Boolean));
 }
 
+/** The App usage page for a range, remembered for a few minutes (see engagement-cache). */
 export async function usageSummary(caller: { userId: string; org: string }, input: { from?: unknown; to?: unknown }): Promise<UsageSummary> {
-  const { org } = caller;
   const { from, to } = readRange(input);
   const today = istToday();
+  return cachedEngagement(caller.org, 'usage-summary', { from, to, today }, () => buildUsageSummary(caller.org, from, to, today));
+}
+
+async function buildUsageSummary(org: string, from: string, to: string, today: string): Promise<UsageSummary> {
   const { start, end } = istSpan(from, to);
   const roster = await rosterOf(org);
   const ids = roster.map((u) => u.userId);
@@ -208,7 +213,7 @@ export async function usageSummary(caller: { userId: string; org: string }, inpu
     proofUploadersIn(org, ids, start, end),
     postersIn(org, ids, start, end),
     approvalsIn(roster, start, end),
-    missedPunchUsers(caller.userId, from, to < today ? to : today),
+    missedPunchUsers(org, from, to < today ? to : today),
     gamePlayersIn(org, ids, start, end),
     contestantsIn(org, ids, start, end),
     tournamentPlayersIn(org, ids, start, end),
@@ -281,21 +286,10 @@ export async function usageSummary(caller: { userId: string; org: string }, inpu
 // ── period questions, one distinct set each ───────────────────────────────
 
 /** Anyone with a missed punch in the range, as Reports › Attendance grades it. Null if it could not be graded. */
-async function missedPunchUsers(callerId: string, from: string, to: string): Promise<Set<string> | null> {
-  if (from > to) return new Set();
-  try {
-    // The same graded days Reports › Attendance shows (and caches) for this org.
-    const report = await attendanceReport(callerId, { from, to });
-    const out = new Set<string>();
-    for (const [userId, , status, , , , , source, , running] of report.days) {
-      if (running) continue;
-      // A day with no punches that HR did not mark is a missed punch on the report too.
-      if (status === 'missed_punch' || (status === 'absent' && source !== 'hr')) out.add(userId);
-    }
-    return out;
-  } catch {
-    return null;
-  }
+async function missedPunchUsers(org: string, from: string, to: string): Promise<Set<string> | null> {
+  // The report's own grading, asked only who had a missed punch or an
+  // unmarked absence: no report is built, and punch rows are read lean.
+  return missedPunchPeople(org, from, to).catch(() => null);
 }
 
 /**
@@ -380,6 +374,12 @@ export type UsageWhen = {
 export async function usageWhen(org: string, input: { from?: unknown; to?: unknown; dept?: unknown; loc?: unknown }): Promise<UsageWhen> {
   const { from, to } = readRange(input);
   const today = istToday();
+  const params = { from, to, today, dept: input.dept ?? '', loc: input.loc ?? '' };
+  return cachedEngagement(org, 'usage-when', params, () => buildUsageWhen(org, { ...input, from, to }, today));
+}
+
+async function buildUsageWhen(org: string, input: { from: string; to: string; dept?: unknown; loc?: unknown }, today: string): Promise<UsageWhen> {
+  const { from, to } = input;
   const [people, firstDay] = await Promise.all([
     filteredPeople(org, input, to < today ? to : today),
     appActivity().find({ org }, { projection: { _id: 0, day: 1 } }).sort({ day: 1 }).limit(1).toArray(),
@@ -447,7 +447,17 @@ export async function usageTrend(
   const range = gran === 'month'
     ? { from: `${addMonths(today.slice(0, 7), -6)}-01`, to: today }
     : readRange(input);
-  const { from, to } = range;
+  const params = { ...range, gran, today, dept: input.dept ?? '', loc: input.loc ?? '' };
+  return cachedEngagement(org, 'usage-trend', params, () => buildUsageTrend(org, input, gran, range, today));
+}
+
+async function buildUsageTrend(
+  org: string,
+  input: { dept?: unknown; loc?: unknown },
+  gran: 'date' | 'week' | 'month',
+  { from, to }: { from: string; to: string },
+  today: string,
+): Promise<UsageTrend> {
   const [people, firstDay] = await Promise.all([
     filteredPeople(org, input, to < today ? to : today),
     appActivity().find({ org }, { projection: { _id: 0, day: 1 } }).sort({ day: 1 }).limit(1).toArray(),
