@@ -508,7 +508,7 @@ export function SalaryTemplates() {
           ) : (
             <table className="lk-t" style={tableStyle}>
               <thead>
-                <tr><Th>Template Name</Th><Th>Description</Th><Th>Employees</Th><Th>Status</Th></tr>
+                <tr><Th>Template Name</Th><Th>Description</Th><Th>Employees</Th><Th>Status</Th><Th>{''}</Th></tr>
               </thead>
               <tbody>
                 {templates.map((t) => (
@@ -520,6 +520,16 @@ export function SalaryTemplates() {
                       <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>{t.employeeCount === 1 ? ' employee' : ' employees'}</span>
                     </Td>
                     <Td><StatusText on={t.active} /></Td>
+                    <td style={{ ...L.td, textAlign: 'right' }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); void exportEmployees(t); }}
+                        disabled={!t.employeeCount}
+                        title={t.employeeCount ? 'Export the people on it' : 'Nobody is on this template yet'}
+                        className="pd-btn sm"
+                      >
+                        Export
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -9,6 +9,7 @@ import {
   createPaidDaysTemplate,
   deletePaidDaysTemplate,
   listPaidDaysTemplates,
+  listSalaryStructures,
   makeDefaultPaidDaysTemplate,
   updatePaidDaysTemplate,
   type PaidDaysTemplateDTO,
@@ -18,6 +19,9 @@ import { Card, EmptyRow, ListPending } from '../ui';
 import type { LoadState } from '../ui';
 import { IconPlus } from '../icons';
 import { DEDUCTION_TRIGGER_LABELS } from '../../services/payroll';
+import { getAllEmployees } from '../../services/hrms';
+import type { EmployeeDTO } from '../../services/hrms';
+import { downloadCsv } from '../export';
 import { dangerLink, Field, ghostBtn, input, primaryBtn, ruleText, RulesCard, tableStyle, Td, Th } from './SalaryTemplates';
 import * as L from './look';
 
@@ -38,6 +42,33 @@ export function paidDaysSummary(t: Pick<PaidDaysTemplateDTO, 'allDaysPaid' | 'de
 
 export function PaidDaysTemplates() {
   const { flash } = useStore();
+
+  // The people a template applies to, as its count does: those given it, and for the Default
+  // everyone with a salary who isn't given another (existing) template.
+  const exportTemplate = async (t: PaidDaysTemplateDTO) => {
+    try {
+      const [structures, people] = await Promise.all([listSalaryStructures(), getAllEmployees()]);
+      const codes = new Set(templates.map((x) => x.code));
+      const byId = new Map(people.map((e) => [e.userId, e]));
+      const rows = structures
+        .filter((r) => (r.paidDaysTemplateCode && codes.has(r.paidDaysTemplateCode) ? r.paidDaysTemplateCode === t.code : t.isDefault))
+        .map((r) => ({ r, e: byId.get(r.userId) }))
+        .sort((a, b) => (a.e?.name ?? a.r.employeeName ?? '').localeCompare(b.e?.name ?? b.r.employeeName ?? ''));
+      if (rows.length === 0) { flash('Nobody is on this template yet'); return; }
+      type Row = { r: (typeof structures)[number]; e: EmployeeDTO | undefined };
+      downloadCsv<Row>(`${t.name.replace(/\s+/g, '-').toLowerCase()}-employees`, [
+        { header: 'Employee ID', value: (x) => x.e?.employeeId ?? '' },
+        { header: 'Name', value: (x) => x.e?.name ?? x.r.employeeName ?? x.r.userId },
+        { header: 'Department', value: (x) => x.e?.department ?? '' },
+        { header: 'Designation', value: (x) => x.e?.designation ?? '' },
+        { header: 'Location', value: (x) => x.e?.location ?? '' },
+        { header: 'Reports to', value: (x) => x.e?.managerName ?? '' },
+        { header: 'Paid days template', value: () => t.name + (t.isDefault ? ' (Default)' : '') },
+        { header: 'Paid days', value: () => paidDaysSummary(t) },
+        { header: 'Given this template', value: (x) => (x.r.paidDaysTemplateCode === t.code ? 'Yes' : 'By default') },
+      ], rows);
+    } catch (e) { flash(e instanceof ApiError ? e.message : 'Could not export', 'error'); }
+  };
   const [templates, setTemplates] = useState<PaidDaysTemplateDTO[]>([]);
   // Skeleton until the first load; a refresh after a save keeps the table up.
   const [state, setState] = useState<LoadState>('loading');
@@ -167,7 +198,7 @@ export function PaidDaysTemplates() {
         ) : (
           <table className="lk-t" style={tableStyle}>
             <thead>
-              <tr><Th>Template</Th><Th>Paid days</Th><Th>People</Th></tr>
+              <tr><Th>Template</Th><Th>Paid days</Th><Th>People</Th><Th>{''}</Th></tr>
             </thead>
             <tbody>
               {templates.map((t) => (
@@ -181,6 +212,16 @@ export function PaidDaysTemplates() {
                   </Td>
                   <Td muted>{paidDaysSummary(t)}</Td>
                   <Td>{t.people}</Td>
+                  <td style={{ ...L.td, textAlign: 'right' }}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); void exportTemplate(t); }}
+                      disabled={!t.people}
+                      title={t.people ? 'Export the people on it' : 'Nobody is on this template yet'}
+                      className="pd-btn sm"
+                    >
+                      Export
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
