@@ -2342,171 +2342,67 @@ class _EngagementBodyState extends State<_EngagementBody>
   /// speech bubble on its hard dark shadow, and the vote arrow
   /// (node 3684:41643).
   Widget _captionBubble(ConnectCaptionEntry entry) {
-    final canVote = !entry.isMine && !_closed && widget.onVoteCaption != null;
     return Row(
       children: [
-        _PersonTap(
-          userId: entry.userId,
-          child: _EngagementAvatar(
-            userId: entry.userId,
-            initials: entry.initials,
-            size: 48,
-            borderColor: _EngagementColors.border,
-            fontSize: 18,
-          ),
-        ),
+        _bubbleFace(entry),
         const SizedBox(width: 8),
-        GestureDetector(
-          // Your own caption cannot be voted for; holding it offers to take
-          // it down, which is the only way to rewrite it.
-          onLongPress: entry.isMine
-              ? () => _confirmDeleteEntry(
-                  context,
-                  entry,
-                  widget.onDeleteCaption,
-                  noun: 'caption',
-                )
-              : null,
-          // The caption takes the 252 left of the row after the face; the
-          // 249.583 bubble sits in the middle of it, and the words keep to
-          // the caption's own 40 and 20 insets (node 3684:41645).
-          child: SizedBox(
-            width: 252,
-            height: 80,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // The design's drop shadow is solid, 4 straight down, and
-                // follows the bubble's outline, tail and all, rather than its
-                // bounding box.
-                Positioned(
-                  left: (252 - 249.583) / 2,
-                  top: 4,
-                  child: SvgPicture.asset(
-                    '$_engagementIcons/caption_bubble.svg',
-                    width: 249.583,
-                    height: 80,
-                    colorFilter: const ColorFilter.mode(
-                      _EngagementColors.band,
-                      BlendMode.srcIn,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: (252 - 249.583) / 2,
-                  top: 0,
-                  child: SvgPicture.asset(
-                    '$_engagementIcons/caption_bubble.svg',
-                    width: 249.583,
-                    height: 80,
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(40, 12, 20, 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        // Set 150 wide (node 3684:41651), and narrower only
-                        // where a long vote count needs the room.
-                        child: Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: SizedBox(
-                            width: 150,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (entry.isMine) ...[
-                                  const Text(
-                                    'YOU',
-                                    style: TextStyle(
-                                      fontFamily: _soraFont,
-                                      fontSize: 10,
-                                      height: 16.2 / 10,
-                                      fontWeight: FontWeight.w600,
-                                      letterSpacing: -0.16,
-                                      color: _EngagementColors.you,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                ],
-                                Text(
-                                  '“${entry.text}',
-                                  maxLines: entry.isMine ? 2 : 3,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontFamily: _soraFont,
-                                    fontSize: 12,
-                                    height: 16.2 / 12,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: -0.16,
-                                    color: _EngagementColors.ink,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Semantics(
-                        button: canVote,
-                        label: entry.votedByViewer ? 'Voted' : 'Vote',
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: canVote ? () => _vote(entry.id) : null,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 2),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                SvgPicture.asset(
-                                  '$_engagementIcons/arrow_up_thick.svg',
-                                  width: 18,
-                                  height: 18,
-                                ),
-                                Text(
-                                  '${entry.votes} vote${entry.votes == 1 ? '' : 's'}',
-                                  style: TextStyle(
-                                    fontFamily: _soraFont,
-                                    fontSize: 10,
-                                    height: 16.2 / 10,
-                                    fontWeight: entry.votedByViewer
-                                        ? FontWeight.w700
-                                        : FontWeight.w400,
-                                    letterSpacing: -0.16,
-                                    color: entry.votedByViewer
-                                        ? _EngagementColors.you
-                                        : _EngagementColors.inkTertiary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+        // The caption takes the 252 left of the row after the face; the
+        // 249.583 bubble sits in the middle of it, and the words keep to
+        // the caption's own 40 and 20 insets (node 3684:41645), set 150
+        // wide (node 3684:41651).
+        SizedBox(
+          width: 252,
+          child: _EntryBubble(
+            entry: entry,
+            sideInset: (252 - 249.583) / 2,
+            wordsWidth: 150,
+            onVote: _canVoteFor(entry) ? () => _vote(entry.id) : null,
+            // Your own caption cannot be voted for; holding it offers to
+            // take it down, which is the only way to rewrite it.
+            onLongPress: entry.isMine
+                ? () => _confirmDeleteEntry(
+                    context,
+                    entry,
+                    widget.onDeleteCaption,
+                    noun: 'caption',
+                  )
+                : null,
           ),
         ),
       ],
     );
   }
 
+  bool _canVoteFor(ConnectCaptionEntry entry) =>
+      !entry.isMine && !_closed && widget.onVoteCaption != null;
+
+  /// The entrant's face beside their words, 48 across in its grey ring.
+  Widget _bubbleFace(ConnectCaptionEntry entry) => _PersonTap(
+    userId: entry.userId,
+    child: _EngagementAvatar(
+      userId: entry.userId,
+      initials: entry.initials,
+      size: 48,
+      borderColor: _EngagementColors.border,
+      fontSize: 18,
+    ),
+  );
+
   // ---- Photo contest ----------------------------------------------------
 
   List<Widget> _photoContent() {
     final entries = _post.captionEntries;
     final mine = _post.myCaptionEntryId != null;
+    // The row under the photo: 32 for who sent it and the Vote button, or
+    // the 80 of the story's bubble (node 4680:30325) once any entry in the
+    // carousel has a story, so the card keeps one height as it turns.
+    final storyRoom = entries.any(_hasStory) ? 80.0 - 32 : 0.0;
     final card = _EngagementInnerCard(
       label: 'Team’s snap',
       child: entries.isEmpty
           ? const _EmptySnap()
           : SizedBox(
-              height: 201 + 13 + 32,
+              height: 201 + 13 + 32 + storyRoom,
               child: _carousel(
                 itemCount: entries.length,
                 itemBuilder: (context, index) => _snapPage(entries[index]),
@@ -2530,10 +2426,11 @@ class _EngagementBodyState extends State<_EngagementBody>
           // card's edge (node 3684:42130): 85.39% + 0.8 across the card's
           // 305.7 inside and 15.56% - 0.78 up its 304 (the design's
           // percentages). Held from the card's foot, so it stays on the
-          // picture's corner whatever the card holds.
+          // picture's corner whatever the card holds, the story's taller
+          // row included.
           Positioned(
             left: _innerCardBorder + 261.87,
-            bottom: _innerCardBorder + 46.52,
+            bottom: _innerCardBorder + 46.52 + storyRoom,
             child: _CameraSticker(loop: _loop!),
           ),
         ],
@@ -2617,55 +2514,90 @@ class _EngagementBodyState extends State<_EngagementBody>
           ),
         ),
         const SizedBox(height: 13),
-        Row(
-          children: [
-            _PersonTap(
-              userId: entry.userId,
-              child: _EngagementAvatar(
-                userId: entry.userId,
-                initials: entry.initials,
-                size: 32,
-                fontSize: 13,
+        // With a story, the caption card's bubble: their face, the story
+        // quoted, and the vote arrow (node 4680:30325). Set at the design's
+        // 274 and scaled down on a narrower card, as the caption well is,
+        // so the words wrap where the design wraps them.
+        if (_hasStory(entry))
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: SizedBox(
+              width: 274,
+              child: Row(
+                children: [
+                  _bubbleFace(entry),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _EntryBubble(
+                      entry: entry,
+                      hardShadow: false,
+                      centered: true,
+                      onVote: canVote ? () => _vote(entry.id) : null,
+                      // Holding your own photo offers to take it down.
+                      onLongPress: entry.isMine && !closed
+                          ? () => _confirmDeleteEntry(
+                              context,
+                              entry,
+                              widget.onDeleteCaption,
+                              noun: 'photo',
+                            )
+                          : null,
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              // The count opens who voted, as a like count opens the likes.
-              child: _VoteCountTap(
-                post: _post,
-                entry: entry,
-                child: Text(
-                  '${entry.votes} vote${entry.votes == 1 ? '' : 's'}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: _soraFont,
-                    fontSize: 14,
-                    height: 16.2 / 14,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.16,
-                    color: _EngagementColors.inkTertiary,
+          )
+        else
+          Row(
+            children: [
+              _PersonTap(
+                userId: entry.userId,
+                child: _EngagementAvatar(
+                  userId: entry.userId,
+                  initials: entry.initials,
+                  size: 32,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                // The count opens who voted, as a like count opens the likes.
+                child: _VoteCountTap(
+                  post: _post,
+                  entry: entry,
+                  child: Text(
+                    '${entry.votes} vote${entry.votes == 1 ? '' : 's'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: _soraFont,
+                      fontSize: 14,
+                      height: 16.2 / 14,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.16,
+                      color: _EngagementColors.inkTertiary,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            _SmallEngagementButton(
-              label: label,
-              filled: canVote && !entry.votedByViewer,
-              onTap: canVote ? () => _vote(entry.id) : null,
-              // Holding your own photo offers to take it down.
-              onLongPress: entry.isMine && !closed
-                  ? () => _confirmDeleteEntry(
-                      context,
-                      entry,
-                      widget.onDeleteCaption,
-                      noun: 'photo',
-                    )
-                  : null,
-            ),
-          ],
-        ),
+              const SizedBox(width: 8),
+              _SmallEngagementButton(
+                label: label,
+                filled: canVote && !entry.votedByViewer,
+                onTap: canVote ? () => _vote(entry.id) : null,
+                // Holding your own photo offers to take it down.
+                onLongPress: entry.isMine && !closed
+                    ? () => _confirmDeleteEntry(
+                        context,
+                        entry,
+                        widget.onDeleteCaption,
+                        noun: 'photo',
+                      )
+                    : null,
+              ),
+            ],
+          ),
       ],
     );
   }
@@ -2921,6 +2853,190 @@ class _EngagementBodyState extends State<_EngagementBody>
       ),
     );
   }
+}
+
+/// Whether a photo entry carries a story under its picture; a photo needs
+/// none, so many go in without one.
+bool _hasStory(ConnectCaptionEntry entry) => entry.text.trim().isNotEmpty;
+
+/// An entry's words in the pink speech bubble whose tail points at the face
+/// beside it, with the vote arrow and the count on its right: a caption
+/// riding on the caption contest's picture (node 3684:41643) and a photo
+/// entry's story under the photo (node 4680:30325). 80 tall; it takes the
+/// width it is given, the bubble drawn [sideInset] in from either side.
+class _EntryBubble extends StatelessWidget {
+  const _EntryBubble({
+    required this.entry,
+    required this.onVote,
+    this.onLongPress,
+    this.sideInset = 0,
+    this.wordsWidth,
+    this.hardShadow = true,
+    this.centered = false,
+  });
+
+  final ConnectCaptionEntry entry;
+
+  /// Null where the entry cannot be voted for: your own, or a closed
+  /// contest.
+  final VoidCallback? onVote;
+  final VoidCallback? onLongPress;
+  final double sideInset;
+
+  /// The words' own width, kept to even where the bubble has more room;
+  /// null lets them take all of it.
+  final double? wordsWidth;
+
+  /// The caption contest's solid dark shadow, 4 straight down. Without it
+  /// the bubble has the photo story's soft pink one (node 4680:30327).
+  final bool hardShadow;
+
+  /// The words and the vote held in the middle of the bubble's height, as
+  /// the photo story sets them (node 4680:30331), rather than from its top
+  /// inset as a caption rides.
+  final bool centered;
+
+  static const _asset = '$_engagementIcons/caption_bubble.svg';
+
+  @override
+  Widget build(BuildContext context) {
+    final canVote = onVote != null;
+    final content = Padding(
+      padding: const EdgeInsets.fromLTRB(40, 12, 20, 12),
+      child: Row(
+        children: [
+          Expanded(
+            // Narrower than [wordsWidth] only where a long vote count needs
+            // the room.
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: wordsWidth == null
+                  ? _words
+                  : SizedBox(width: wordsWidth, child: _words),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Semantics(
+            button: canVote,
+            label: entry.votedByViewer ? 'Voted' : 'Vote',
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onVote,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SvgPicture.asset(
+                      '$_engagementIcons/arrow_up_thick.svg',
+                      width: 18,
+                      height: 18,
+                    ),
+                    Text(
+                      '${entry.votes} vote${entry.votes == 1 ? '' : 's'}',
+                      style: TextStyle(
+                        fontFamily: _soraFont,
+                        fontSize: 10,
+                        height: 16.2 / 10,
+                        fontWeight: entry.votedByViewer
+                            ? FontWeight.w700
+                            : FontWeight.w400,
+                        letterSpacing: -0.16,
+                        color: entry.votedByViewer
+                            ? _EngagementColors.you
+                            : _EngagementColors.inkTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return GestureDetector(
+      onLongPress: onLongPress,
+      child: SizedBox(
+        height: 80,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // Both shadows follow the bubble's outline, tail and all, rather
+            // than its bounding box.
+            Positioned(
+              left: sideInset,
+              right: sideInset,
+              top: 4,
+              height: 80,
+              child: hardShadow
+                  ? SvgPicture.asset(
+                      _asset,
+                      fit: BoxFit.fill,
+                      colorFilter: const ColorFilter.mode(
+                        _EngagementColors.band,
+                        BlendMode.srcIn,
+                      ),
+                    )
+                  : ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 1, sigmaY: 1),
+                      child: SvgPicture.asset(
+                        _asset,
+                        fit: BoxFit.fill,
+                        colorFilter: const ColorFilter.mode(
+                          Color(0x40FDDCFF),
+                          BlendMode.srcIn,
+                        ),
+                      ),
+                    ),
+            ),
+            Positioned(
+              left: sideInset,
+              right: sideInset,
+              top: 0,
+              height: 80,
+              child: SvgPicture.asset(_asset, fit: BoxFit.fill),
+            ),
+            if (centered) Positioned.fill(child: content) else content,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget get _words => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      if (entry.isMine) ...[
+        const Text(
+          'YOU',
+          style: TextStyle(
+            fontFamily: _soraFont,
+            fontSize: 10,
+            height: 16.2 / 10,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.16,
+            color: _EngagementColors.you,
+          ),
+        ),
+        const SizedBox(height: 4),
+      ],
+      Text(
+        '“${entry.text}',
+        maxLines: entry.isMine ? 2 : 3,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontFamily: _soraFont,
+          fontSize: 12,
+          height: 16.2 / 12,
+          fontWeight: FontWeight.w600,
+          letterSpacing: -0.16,
+          color: _EngagementColors.ink,
+        ),
+      ),
+    ],
+  );
 }
 
 /// The scribble burst at the caption picture's top-left corner.

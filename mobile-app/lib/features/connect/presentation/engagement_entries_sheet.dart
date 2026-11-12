@@ -2515,6 +2515,7 @@ class _GalleryEntryCard extends StatelessWidget {
     final rank = entry.rank ?? 0;
     final leader = rank == 1;
     final ink = leader ? Colors.white : _galleryInk;
+    final story = _hasStory(entry);
     return _PollPressable(
       onTap: onOpen,
       child: Container(
@@ -2568,7 +2569,8 @@ class _GalleryEntryCard extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 12),
+              // 8 above a story, as the design spaces the footer's rows.
+              padding: EdgeInsets.fromLTRB(9, 12, 9, story ? 8 : 12),
               child: Row(
                 children: [
                   Expanded(
@@ -2626,6 +2628,24 @@ class _GalleryEntryCard extends StatelessWidget {
                 ],
               ),
             ),
+            // The story, one line under the name and points (node
+            // 4680:30340); the whole of it is on the entry opened.
+            if (story)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(9, 0, 9, 12),
+                child: Text(
+                  entry.text.trim(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: _soraFont,
+                    fontSize: 10,
+                    height: 16.2 / 10,
+                    letterSpacing: -0.16,
+                    color: ink,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -4098,21 +4118,32 @@ class _PhotoEntryFull extends StatelessWidget {
               ],
             ),
           ),
-          // The story under the picture, with whoever it tags.
-          if (entry.text.trim().isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 14, 10),
-              child: _entryWords(
-                entry,
-                style: TextStyle(
-                  fontSize: 14,
-                  height: 20 / 14,
-                  fontWeight: FontWeight.w500,
-                  color: ink,
+          // The story under the picture, whole, with whoever it tags. One too
+          // long for the room scrolls in its place, held to 30% of the
+          // screen's height, and the picture takes what is left.
+          if (_hasStory(entry))
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: math.max(
+                  120,
+                  MediaQuery.sizeOf(context).height * 0.3,
                 ),
-                linkColor: leader ? Colors.white : _sheetPurple,
-                onOpenTagged: onOpenTagged,
-                maxLines: 4,
+              ),
+              child: SingleChildScrollView(
+                key: const ValueKey('entry-story'),
+                primary: false,
+                padding: const EdgeInsets.fromLTRB(16, 0, 14, 10),
+                child: _entryWords(
+                  entry,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 20 / 14,
+                    fontWeight: FontWeight.w500,
+                    color: ink,
+                  ),
+                  linkColor: leader ? Colors.white : _sheetPurple,
+                  onOpenTagged: onOpenTagged,
+                ),
               ),
             ),
           if (footer case final footer?)
