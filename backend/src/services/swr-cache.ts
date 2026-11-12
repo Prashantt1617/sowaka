@@ -14,7 +14,7 @@
  * A change HR makes on these pages calls `forgetSwr(org)` so it shows at once;
  * what employees do (a punch) shows within the minute.
  */
-export type SwrKind = 'punch-log' | 'ool' ;
+export type SwrKind = 'ool';
 
 const FRESH_MS = 60_000;
 const MAX_STALE_MS = 15 * 60_000;
@@ -86,8 +86,15 @@ export function refreshSwr<T>(org: string, kind: SwrKind, params: unknown, load:
   return start(org, key, load);
 }
 
+const forgetListeners: ((org: string) => void)[] = [];
+/** Other kept answers (the Punch log's) that a forget must drop too. */
+export function onForgetSwr(listener: (org: string) => void): void {
+  forgetListeners.push(listener);
+}
+
 /** Drop an org's kept answers (of these kinds, or all), so the next read reflects a change at once. */
 export function forgetSwr(org: string, ...kinds: SwrKind[]): void {
+  for (const listener of forgetListeners) listener(org);
   generation.set(org, (generation.get(org) ?? 0) + 1);
   const prefixes = kinds.length ? kinds.map((k) => `${org}\u0000${k}\u0000`) : [`${org}\u0000`];
   for (const key of kept.keys()) if (prefixes.some((p) => key.startsWith(p))) kept.delete(key);

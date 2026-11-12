@@ -979,7 +979,8 @@ async function applyRegularizationDecision(
     await attendanceRecords().updateOne(
       { employeeId: result.employeeId, workDate: result.workDate },
       {
-        $set: { employeeId: result.employeeId, userId: result.userId, workDate: result.workDate, ...punchUpdate, ...outside },
+        // updatedAt too: the Punch log reloads only the rows changed since its last read.
+        $set: { employeeId: result.employeeId, userId: result.userId, workDate: result.workDate, ...punchUpdate, ...outside, updatedAt: decidedAt },
         $setOnInsert: {
           source: 'manual',
           sourceKey: `regularization|${result.employeeId}|${result.workDate}`,
