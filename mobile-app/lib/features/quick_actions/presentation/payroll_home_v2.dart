@@ -149,12 +149,14 @@ extension _PayrollHomeV2 on _PayrollHomePageState {
           ),
           const SizedBox(width: 10),
           Expanded(
+            // Tax in EPF's place: EPF is hidden for now (its page stays,
+            // with no way in, until it is picked up again).
             child: _PrQuickTile(
-              key: const ValueKey('payroll-qa-epf'),
-              asset: 'assets/icons/payroll_qa_epf.png',
-              title: 'EPF',
-              subtitle: 'PF balance',
-              onTap: () => _open(const _EpfPage()),
+              key: const ValueKey('payroll-qa-tax'),
+              asset: 'assets/icons/payroll_proofs_tax.png',
+              title: 'Tax',
+              subtitle: 'Tax details',
+              onTap: () => _open(const _TaxSummaryPage()),
             ),
           ),
         ],
@@ -974,19 +976,26 @@ class _PrTaxSummaryCard extends StatelessWidget {
         ],
       );
     }
-    final thisMonth = card.thisMonth;
-    final thisPaise = card.thisMonthPaise;
-    final before = card.paidBeforeThisMonthPaise;
-    final from = card.fromMonth;
-    // The months before this one, when this one is not the FY's first.
-    final hasBefore =
-        from != null &&
-        thisMonth != null &&
-        (thisMonth.year * 12 + thisMonth.month) > (from.year * 12 + from.month);
-    final beforeLabel = hasBefore
-        ? _monthsLabel(from, DateTime(thisMonth.year, thisMonth.month - 1))
-        : '';
-    const thisShade = _prDeductionsBlue;
+    // Figma 4506:23826: what has been deducted so far (released payslips), the
+    // months it covers, and the latest two of those months. An older server
+    // sends no released figures: its total (which counts this month) is used.
+    final paid = card.releasedPaidPaise ?? card.paidSoFarPaise;
+    final from = card.releasedPaidPaise == null
+        ? card.fromMonth
+        : card.releasedFromMonth;
+    final to = card.releasedPaidPaise == null
+        ? card.toMonth
+        : card.releasedToMonth;
+    final span = from == null || to == null
+        ? 'No tax deducted yet this year'
+        : _monthsLabel(from, to);
+    const soft = TextStyle(
+      fontFamily: 'Sora',
+      color: _prInkSoft,
+      fontSize: 13,
+      height: 17 / 13,
+      fontWeight: FontWeight.w500,
+    );
     return _PrSummaryFrame(
       key: const ValueKey('payroll-card-tax'),
       title: title,
@@ -1007,7 +1016,7 @@ class _PrTaxSummaryCard extends StatelessWidget {
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  _rupees(card.paidSoFarPaise),
+                  _rupees(paid),
                   style: const TextStyle(
                     fontFamily: 'Sora',
                     fontFamilyFallback: _soraFallback,
@@ -1034,66 +1043,33 @@ class _PrTaxSummaryCard extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-        Text(
-          _monthsLabel(card.fromMonth, card.toMonth),
-          style: const TextStyle(
-            fontFamily: 'Sora',
-            color: _prInkSoft,
-            fontSize: 13,
-            height: 17 / 13,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Semantics(
-          image: true,
-          label:
-              'Tax paid so far ${_rupees(card.paidSoFarPaise)}'
-              '${hasBefore ? ': ${_rupees(before)} from $beforeLabel' : ''}'
-              '${thisPaise != null ? ' and ${_rupees(thisPaise)} this month' : ''}',
-          child: SizedBox(
-            height: 12,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (card.paidSoFarPaise <= 0)
-                  Expanded(child: _barPiece(_prDonutGrey))
-                else ...[
-                  if (before > 0)
-                    Expanded(flex: before, child: _barPiece(_prBlue)),
-                  if (before > 0 && (thisPaise ?? 0) > 0)
-                    const SizedBox(width: 3),
-                  if ((thisPaise ?? 0) > 0)
-                    Expanded(flex: thisPaise!, child: _barPiece(thisShade)),
-                ],
-              ],
+        Text(span, key: const ValueKey('payroll-tax-span'), style: soft),
+        if (card.recentMonths.isNotEmpty) const SizedBox(height: 14),
+        for (final (i, row) in card.recentMonths.indexed) ...[
+          if (i > 0) const SizedBox(height: 9),
+          Row(
+            key: ValueKey(
+              'payroll-tax-month-${row.month.year}-${row.month.month}',
             ),
+            children: [
+              Expanded(child: Text(_monthName(row.month.month), style: soft)),
+              Text(
+                _rupees(row.taxPaise),
+                style: const TextStyle(
+                  fontFamily: 'Sora',
+                  color: _prInk,
+                  fontSize: 13,
+                  height: 17 / 13,
+                  fontWeight: FontWeight.w600,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: 14),
-        if (hasBefore)
-          _PrLegendRow(
-            color: _prBlue,
-            label: beforeLabel,
-            value: _rupees(before),
-          ),
-        if (hasBefore && thisPaise != null) const SizedBox(height: 9),
-        if (thisPaise != null && thisMonth != null)
-          _PrLegendRow(
-            color: thisShade,
-            label: 'This month (${_monthName(thisMonth.month)})',
-            value: _rupees(thisPaise),
-          ),
+        ],
       ],
     );
   }
-
-  static Widget _barPiece(Color color) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: color,
-      borderRadius: BorderRadius.circular(4),
-    ),
-  );
 }
 
 /// Card 3: the monthly flexible pool, head by head, and what is not

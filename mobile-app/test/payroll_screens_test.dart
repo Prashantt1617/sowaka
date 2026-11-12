@@ -1369,10 +1369,28 @@ void main() {
       expect(find.text('₹58,400'), findsOneWidget);
       expect(find.text('paid so far'), findsOneWidget);
       expect(find.text('April to October'), findsOneWidget);
-      expect(find.text('April to September'), findsOneWidget);
-      expect(find.text('₹50,800'), findsOneWidget);
-      expect(find.text('This month (October)'), findsOneWidget);
-      expect(find.text('₹7,600'), findsOneWidget);
+      // The latest paid months, newest first (Figma 4506:23826).
+      Finder inMonth(String key, String text) => find.descendant(
+        of: find.byKey(ValueKey(key)),
+        matching: find.text(text),
+      );
+      expect(inMonth('payroll-tax-month-2026-10', 'October'), findsOneWidget);
+      expect(inMonth('payroll-tax-month-2026-10', '₹7,600'), findsOneWidget);
+      expect(inMonth('payroll-tax-month-2026-9', 'September'), findsOneWidget);
+      expect(inMonth('payroll-tax-month-2026-9', '₹7,800'), findsOneWidget);
+      expect(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('payroll-tax-month-2026-10')))
+            .dy,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(const ValueKey('payroll-tax-month-2026-9')),
+              )
+              .dy,
+        ),
+      );
+      expect(find.text('This month (October)'), findsNothing);
       expect(find.text('See tax details'), findsOneWidget);
       // 3 · the split by head, and what is not assigned.
       expect(find.text('FBP'), findsOneWidget);
@@ -1406,8 +1424,8 @@ void main() {
         'Downloads',
         // Form 16 hidden: the home sends no switch.
         'Payslips',
-        'EPF',
-        'PF balance',
+        // Tax in EPF's place; EPF is hidden for now.
+        'Tax details',
         'Support desk',
         'Ask about pay, tax or FBP',
         'Raise a ticket',
@@ -1428,7 +1446,9 @@ void main() {
         top(card('payroll-qa-earnings')),
         lessThan(top(card('payroll-raise-ticket'))),
       );
-      expect(top(card('payroll-qa-earnings')), top(card('payroll-qa-epf')));
+      expect(top(card('payroll-qa-earnings')), top(card('payroll-qa-tax')));
+      expect(find.byKey(const ValueKey('payroll-qa-epf')), findsNothing);
+      expect(find.text('PF balance'), findsNothing);
     });
 
     group('Set up your payroll (Figma 4471:66940)', () {
@@ -1690,7 +1710,7 @@ void main() {
       await opens(card('payroll-todo-flexible_split'), 'payroll-split');
       await opens(card('payroll-qa-earnings'), 'payroll-earnings');
       await opens(card('payroll-qa-downloads'), 'payroll-downloads');
-      await opens(card('payroll-qa-epf'), 'payroll-epf');
+      await opens(card('payroll-qa-tax'), 'payroll-tax');
       await opens(
         card('payroll-todo-missing_punches'),
         'payroll-missed-punches',
