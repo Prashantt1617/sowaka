@@ -539,6 +539,10 @@ class PayrollTaxCard {
     this.fromMonth,
     this.toMonth,
     this.thisMonth,
+    this.releasedPaidPaise,
+    this.releasedFromMonth,
+    this.releasedToMonth,
+    this.recentMonths = const [],
   });
 
   final String fy;
@@ -560,6 +564,15 @@ class PayrollTaxCard {
   final DateTime? toMonth;
   final DateTime? thisMonth;
 
+  /// What has actually been deducted this FY: released payslips only. Null
+  /// from an older server (the card then falls back to [paidSoFarPaise]).
+  final int? releasedPaidPaise;
+  final DateTime? releasedFromMonth;
+  final DateTime? releasedToMonth;
+
+  /// The latest paid months, newest first, with their tax.
+  final List<({DateTime month, int taxPaise})> recentMonths;
+
   factory PayrollTaxCard.fromJson(Map<String, dynamic> json) => PayrollTaxCard(
     fy: _string(json['fy']),
     notConfigured: _bool(json['notConfigured']),
@@ -573,6 +586,14 @@ class PayrollTaxCard {
     fromMonth: payrollMonth(json['fromMonth']),
     toMonth: payrollMonth(json['toMonth']),
     thisMonth: payrollMonth(json['thisMonth']),
+    releasedPaidPaise: _paiseOrNull(json['releasedPaidPaise']),
+    releasedFromMonth: payrollMonth(json['releasedFromMonth']),
+    releasedToMonth: payrollMonth(json['releasedToMonth']),
+    recentMonths: [
+      for (final row in _list(json['recentMonths']))
+        if (payrollMonth(row['month']) case final month?)
+          (month: month, taxPaise: _paise(row['taxPaise'])),
+    ],
   );
 }
 
