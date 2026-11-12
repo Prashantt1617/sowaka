@@ -11,9 +11,10 @@ typedef PayrollFilePicker = Future<PayrollUpload?> Function(BuildContext);
 /// same hub header (back button on grey, Sora title) as Leave or
 /// Reimbursement.
 ///
-/// Missing punches are not rebuilt here: [onFixMissingPunches] opens the
-/// Attendance list on its "Missed punch" heading, where a day is corrected
-/// through the same sheet and request as anywhere else in the app.
+/// Missed punches have a page of their own ([_MissedPunchesPage]), but a
+/// day is not corrected there: [onFixPunchDay] opens the correction the
+/// Attendance list gives that day, the same sheet and request as anywhere
+/// else in the app.
 class PayrollScreen extends StatefulWidget {
   const PayrollScreen({
     super.key,
@@ -22,7 +23,7 @@ class PayrollScreen extends StatefulWidget {
     required this.profileAction,
     required this.onNotifications,
     required this.onQuickCreate,
-    required this.onFixMissingPunches,
+    required this.onFixPunchDay,
     this.onRaiseTicket,
     this.pickFile,
   });
@@ -34,7 +35,10 @@ class PayrollScreen extends StatefulWidget {
   final Widget profileAction;
   final VoidCallback onNotifications;
   final VoidCallback onQuickCreate;
-  final ValueChanged<PayrollMissingPunches?> onFixMissingPunches;
+
+  /// Opens the correction for one day of the Missed punches page, and
+  /// completes once it is closed (sent or not), when the page reads again.
+  final FutureOr<void> Function(MissingPunchDay day) onFixPunchDay;
 
   /// "Can't find a payslip?" when no signed-in shell can raise a Support
   /// Desk ticket itself ([raiseSupportTicket]): the desk.
@@ -548,7 +552,7 @@ class _PayrollHomePageState extends State<_PayrollHomePage> {
   }
 
   void _fixPunches() =>
-      _PayrollScope.of(context).onFixMissingPunches(_home?.missingPunches);
+      _open(_MissedPunchesPage(period: _home?.missingPunches?.period));
 
   @override
   Widget build(BuildContext context) {
@@ -579,9 +583,11 @@ class _PayrollHomePageState extends State<_PayrollHomePage> {
       VoidCallback onTap,
     ) = switch (todo.kind) {
       'missing_punches' => (
-        'assets/icons/attendance_review_clock.png',
-        'Fix ${todo.count} unpaid ${plural(todo.count, 'day', 'days')}',
-        'Missed punches and absences are unpaid until fixed',
+        'assets/icons/action_card_leave_calendar.png',
+        // The days that can still be fixed, not the days of pay lost: two
+        // half-day punches are one day's pay, but two days to fix.
+        'Fix ${todo.count} missing ${plural(todo.count, 'punch', 'punches')}',
+        'To avoid loss of pay',
         _fixPunches,
       ),
       'flexible_split' => (

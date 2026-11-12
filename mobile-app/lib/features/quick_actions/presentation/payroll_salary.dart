@@ -407,9 +407,10 @@ class _SalarySummaryPageState extends State<_SalarySummaryPage> {
               maxHeight: 44,
               child: InkWell(
                 key: const ValueKey('payroll-salary-unpaid-days'),
-                onTap: () => _PayrollScope.of(
+                onTap: () => _pushPayroll<void>(
                   context,
-                ).onFixMissingPunches(_summary?.unpaidDays),
+                  _MissedPunchesPage(period: _summary?.unpaidDays.period),
+                ),
                 borderRadius: BorderRadius.circular(8),
                 child: SizedBox(
                   height: 44,

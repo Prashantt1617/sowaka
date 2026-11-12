@@ -1005,24 +1005,48 @@ class PayrollSalarySummary {
 
 // ---------------------------------------------------------------- missing punches
 
-/// A past working day with a punch missing.
+/// A past working day with a punch missing, or graded absent.
 class MissingPunchDay {
   const MissingPunchDay({
     required this.date,
     required this.trigger,
     required this.status,
     required this.label,
+    this.weekday = '',
     this.punchIn,
     this.punchOut,
+    this.countsAs,
+    this.fixBy,
+    this.canFix = true,
+    this.closedReason,
+    this.closedMessage,
     this.requestStatus,
   });
 
   final DateTime date;
+
+  /// "Thu", as the server names the day.
+  final String weekday;
   final DateTime? punchIn;
   final DateTime? punchOut;
   final String trigger;
+
+  /// "missed_punch" | "absent".
   final String status;
   final String label;
+
+  /// For a missed punch: what it counts as ("Absent", "Half Day" …).
+  final String? countsAs;
+
+  /// The last day this day can be fixed; null when it cannot be.
+  final DateTime? fixBy;
+
+  /// False: shown, but not something to fix ([closedMessage] says why).
+  final bool canFix;
+
+  /// "window_closed" | "payroll_locked" | "corrections_off".
+  final String? closedReason;
+  final String? closedMessage;
 
   /// "pending" | "approved" | "declined", once a correction was asked for.
   final String? requestStatus;
@@ -1030,11 +1054,18 @@ class MissingPunchDay {
   factory MissingPunchDay.fromJson(Map<String, dynamic> json) =>
       MissingPunchDay(
         date: payrollDate(json['date']) ?? DateTime(1970),
+        weekday: _string(json['weekday']),
         punchIn: _moment(json['punchIn']),
         punchOut: _moment(json['punchOut']),
         trigger: _string(json['trigger']),
         status: _string(json['status']),
         label: _string(json['label']),
+        countsAs: _stringOrNull(json['countsAs']),
+        fixBy: payrollDate(json['fixBy']),
+        // An older server sends no canFix: every day it lists is fixable.
+        canFix: json['canFix'] is bool ? json['canFix'] as bool : true,
+        closedReason: _stringOrNull(json['closedReason']),
+        closedMessage: _stringOrNull(json['closedMessage']),
         requestStatus: _stringOrNull(_map(json['request'])['status']),
       );
 }
