@@ -36,7 +36,8 @@ const titleCase = (t: string) => t.charAt(0) + t.slice(1).toLowerCase();
 // or it would read as given to everyone.
 // Placements' Clients and Candidates come with its one tab, `placements`.
 // Investment proofs, Statutory & tax settings, FBP requests and FBP splits are not tabs of their own here: they come with Payroll Runs or Salary details.
-const RIDES_ALONG = new Set<AccessKey>([...PLACEMENT_VIEWS.filter((v) => v !== 'placements'), 'investmentproofs', 'payrollconfig', 'fbprequests', 'fbpsplits']);
+// Reports › Company calendar and Punch log come with the Attendance report (Punch log with Attendance and OOL check-ins too), as access.ts and the server decide it.
+const RIDES_ALONG = new Set<AccessKey>([...PLACEMENT_VIEWS.filter((v) => v !== 'placements'), 'investmentproofs', 'payrollconfig', 'fbprequests', 'fbpsplits', 'companycalendar', 'punchlog']);
 const SECTION_UNITS: Unit[] = SECTIONS.flatMap((s) => {
   const items = s.items.filter((i) => i.key !== 'usersroles' && i.key !== 'support' && i.key !== 'cuptv');
   if (items.length === 0) return [];
@@ -61,7 +62,7 @@ type Role = { name: string; admin?: boolean; tabs: AccessKey[]; desc: string };
 const ROLES: Role[] = [
   { name: 'Admin', admin: true, tabs: ALL_TABS, desc: 'Everything, and People › Accesses: decides who sees what.' },
   { name: 'Operations Manager', tabs: ALL_TABS.filter((t) => t !== 'organisation'), desc: 'Everything except organisation settings and accesses.' },
-  { name: 'Time Reviewer', tabs: tabsOf('Overview', 'Requests', 'Reports'), desc: 'Leave, overtime, attendance corrections, OOL check-ins and the attendance report. No pay.' },
+  { name: 'Time Reviewer', tabs: tabsOf('Overview', 'Requests', 'Reports'), desc: 'Leave, overtime, attendance corrections, OOL check-ins, the attendance report, company calendar and punch log. No pay.' },
   { name: 'Money Reviewer', tabs: tabsOf('Overview', 'Payroll', 'Claims', 'Salary details'), desc: 'Payroll, claims and what each employee earns. No leave or attendance.' },
 ];
 

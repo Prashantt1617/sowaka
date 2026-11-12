@@ -14,7 +14,7 @@ import {
   managerMayDecide, policiesForPeople, weekOffGridFor,
 } from './shift.service';
 import { OvertimeRequest, compOffDaysOf } from '../models/overtime.model';
-import { LEAVE_KEY_PATTERN, LEAVE_TYPE_KEYS, LeaveTypeKey, LeaveTypeRule, leaveTypeLabel, processYearEnd } from '../models/shift.model';
+import { LEAVE_KEY_PATTERN, LEAVE_TYPE_KEYS, LeaveTypeKey, LeaveTypeRule, isUnpaidLeaveType, leaveTypeLabel, processYearEnd } from '../models/shift.model';
 import { carriedFromRuns as carriedFromYearEndRuns } from './leave-year-end.service';
 import { requestViewer, requestViewerWithPhoto } from '../middleware/request-viewer';
 
@@ -987,7 +987,7 @@ export async function decideLeaveCancellation(
 }
 
 /** Org-wide list of every leave, for the HR dashboard. */
-export async function listAllLeavesForAdmin(adminUserId: string): Promise<LeaveView[]> {
+export async function listAllLeavesForAdmin(adminUserId: string): Promise<(LeaveView & { unpaid?: true })[]> {
   // The roster and its leaves in one round trip, each person trimmed to what
   // the card shows.
   const { employees, rows } = await orgUsersWithRows(adminUserId, leaves(), {
@@ -997,19 +997,16 @@ export async function listAllLeavesForAdmin(adminUserId: string): Promise<LeaveV
   if (employees.length === 0) return [];
   const employeeById = new Map(employees.map((e) => [e.userId, e]));
   const documents = sortLikeMongo(rows, [['status', -1], ['createdAt', -1]]);
-  // A type HR added is named by each person's own policy. Looked up for all
-  // of them at once, rather than a policy read per leave.
-  const custom = documents.filter((leave) => !LEAVE_TYPE_KEYS.includes(leave.type));
-  const policies = custom.length
-    ? await policiesForPeople(
-        employees.filter((e) => custom.some((leave) => leave.userId === e.userId)),
-      ).catch(() => null)
-    : null;
+  // Each person's leave types, read for all of them at once rather than a
+  // policy read per leave: they name a type HR added, and say whether a type
+  // is leave without pay (any type can be, built-in ones included).
+  const policies = documents.length ? await policiesForPeople(employees).catch(() => null) : null;
   return Promise.all(
     documents.flatMap((leave) => {
       const employee = employeeById.get(leave.userId);
       const types = policies?.get(leave.userId)?.leave.types;
-      return employee ? [toLeaveView(leave, employee, types)] : [];
+      if (!employee) return [];
+      return [toLeaveView(leave, employee, types).then((view) => (isUnpaidLeaveType(types, leave.type) ? { ...view, unpaid: true as const } : view))];
     }),
   );
 }

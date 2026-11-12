@@ -13,7 +13,10 @@ import {
   listOutOfLocationForAdmin,
 } from '../services/attendance.service';
 import { deleteOffice, listOffices, officeView, saveOffice } from '../services/geofence.service';
-import { requireOrg } from '../services/shift.service';
+import { requireOrg, todayIso } from '../services/shift.service';
+import { payCycleForAdmin, PunchLogError, punchLogForAdmin } from '../services/punch-log.service';
+import { PayrollInputsError } from '../services/payroll-inputs.service';
+import { hasAllDashboardTabs } from '../middleware/admin.middleware';
 import { adminDecideLeave, decideLeaveCancellation, listAllLeavesForAdmin } from '../services/leave.service';
 import { adminDecideOvertime, listAllOvertimeForAdmin } from '../services/overtime.service';
 import {
@@ -77,6 +80,33 @@ export async function listOutOfLocation(req: Request, res: Response, next: NextF
     const to = String(req.query.to ?? today);
     res.status(200).json({ success: true, checkIns: await listOutOfLocationForAdmin(adminUserId(req), from, to) });
   } catch (error) {
+    next(error);
+  }
+}
+
+/** Punch log: every day someone punched in a range, with where each punch was taken. */
+export async function punchLogHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const today = todayIso();
+    const from = String(req.query.from ?? `${today.slice(0, 8)}01`);
+    const to = String(req.query.to ?? today);
+    // Face check results are biometric records: only for someone who can open Face ID.
+    const user = req.auth?.user;
+    const faceChecks = hasAllDashboardTabs(user) || (user?.dashboardTabs ?? []).includes('faceid');
+    res.status(200).json({ success: true, punches: await punchLogForAdmin(adminUserId(req), from, to, { faceChecks }) });
+  } catch (error) {
+    if (error instanceof PunchLogError) { res.status(error.status).json({ success: false, message: error.message }); return; }
+    next(error);
+  }
+}
+
+/** This pay cycle and the last, for the pages that count against payroll; `current: null` when none is set. */
+export async function payCycleHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json({ success: true, cycle: await payCycleForAdmin(adminUserId(req), todayIso()) });
+  } catch (error) {
+    // A pay cycle setting that makes no sense is HR's to fix, not a server fault.
+    if (error instanceof PayrollInputsError) { res.status(error.statusCode).json({ success: false, message: error.message }); return; }
     next(error);
   }
 }
