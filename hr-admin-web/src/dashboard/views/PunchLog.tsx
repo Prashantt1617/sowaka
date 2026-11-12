@@ -75,6 +75,9 @@ export function PunchLog() {
   }, []);
 
   const weekFrom = addDays(today, -((dateOf(today).getDay() + 6) % 7));
+  // No pay cycle set: the button says This month and reads the calendar month, never calling it a cycle.
+  const hasCycle = Boolean(cycle?.current);
+  const cycleWord = cycle && !hasCycle ? 'This month' : 'This cycle';
   const cycleRange = cycle?.current ?? { from: `${today.slice(0, 8)}01`, to: today };
   const range = period === 'today' ? { from: today, to: today }
     : period === 'week' ? { from: weekFrom, to: today }
@@ -82,7 +85,7 @@ export function PunchLog() {
         : applied;
   const title = period === 'today' ? `Today · ${dayLabel(today)}`
     : period === 'week' ? `This week · ${dayLabel(range.from)} – ${dayLabel(range.to)}`
-      : period === 'cycle' ? `This cycle · ${dateOf(cycleRange.from).getDate()} ${MON[dateOf(cycleRange.from).getMonth()]} – ${dateOf(cycleRange.to).getDate()} ${MON[dateOf(cycleRange.to).getMonth()]}`
+      : period === 'cycle' ? `${cycleWord} · ${dateOf(cycleRange.from).getDate()} ${MON[dateOf(cycleRange.from).getMonth()]} – ${dateOf(cycleRange.to).getDate()} ${MON[dateOf(cycleRange.to).getMonth()]}`
         : applied.from ? (applied.from === applied.to ? dayLabel(applied.from) : `${dayLabel(applied.from)} – ${dayLabel(applied.to)}`) : 'Custom range';
   const waitingForDates = period === 'custom' && !applied.from;
 
@@ -214,7 +217,7 @@ export function PunchLog() {
               <h2 id="punch-period" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{title}</h2>
               <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>One row per person per day. Open a row to see every punch and where it was made. Approvals happen in Attendance corrections.</span>
             </div>
-            <PeriodButtons periods={[['today', 'Today'], ['week', 'This week'], ['cycle', 'This cycle'], ['custom', 'Custom']]} period={period} onPeriod={setPeriod} />
+            <PeriodButtons periods={[['today', 'Today'], ['week', 'This week'], ['cycle', cycleWord], ['custom', 'Custom']]} period={period} onPeriod={setPeriod} />
           </div>
 
           {period === 'custom' && (
@@ -348,7 +351,8 @@ export function PunchLog() {
 /** One person's day: how it counts, why, and each punch with where it was taken. */
 function PunchDrawer({ r, onClose, onCorrections }: { r: Row; onClose: () => void; onCorrections?: () => void }) {
   const c = COUNTED[r.counted];
-  const face = r.face ? (r.face.liveness === 'none' ? 'Face check skipped' : `Face check passed${r.face.similarity ? ` · ${Math.round(r.face.similarity)}% match` : ''}`) : null;
+  // Sent only to someone with Face ID access, and only as passed or failed: never the match score.
+  const face = r.face === 'passed' ? 'Face check passed' : r.face === 'failed' ? 'Face check failed' : null;
   const punch = (kind: string, at: string | null, loc: PunchPlaceDTO | null, extra?: string | null) => ({ kind, at, loc, extra });
   const list = [
     punch('Punch in', r.punchIn, r.inLocation, face),

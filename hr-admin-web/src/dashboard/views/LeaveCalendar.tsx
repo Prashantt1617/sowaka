@@ -17,10 +17,11 @@ const who = (l: Leave) => l.submitterId || l.name;
 const BUSY = 0.25;
 const TOO_MANY = 0.4;
 
-export function LeaveCalendar({ state, initialDay, onPending, onOpenDay }: {
+export function LeaveCalendar({ state, initialDay, onPending, onCancellations, onOpenDay }: {
   state: LoadState;
   initialDay: string | null;
   onPending: () => void;
+  onCancellations: () => void;
   onOpenDay: (iso: string) => void;
 }) {
   const s = useStore();
@@ -95,7 +96,8 @@ export function LeaveCalendar({ state, initialDay, onPending, onOpenDay }: {
         { header: 'Days', value: (r) => r.dayN },
         { header: 'Reason', value: (r) => r.eRemark },
         { header: 'Manager', value: (r) => r.manager },
-        { header: 'Status', value: (r) => r.status },
+        { header: 'Status', value: (r) => r.statusLabel },
+        { header: 'Cancellation request', value: (r) => (r.cancelRequest ? `${r.cancelRequest.status}${r.cancelRequest.byAdmin ? ' (admin)' : ''}` : '') },
         { header: 'Applied', value: (r) => r.applied },
       ],
       dayRows,
@@ -106,14 +108,16 @@ export function LeaveCalendar({ state, initialDay, onPending, onOpenDay }: {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {na.pending.length > 0 && (
-        <button type="button" onClick={onPending} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '14px 20px', background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 16, cursor: 'pointer', font: 'inherit', color: 'var(--ink)', textAlign: 'left' }}>
+      {na.all.length > 0 && (
+        <button type="button" onClick={na.pending.length ? onPending : onCancellations} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '14px 20px', background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 16, cursor: 'pointer', font: 'inherit', color: 'var(--ink)', textAlign: 'left' }}>
           <span style={{ fontSize: 14 }}>
-            <span style={{ fontWeight: 600 }}>Needs action:</span> {na.pending.length} pending
+            <span style={{ fontWeight: 600 }}>Needs action:</span> {na.all.length} waiting
+            {na.pending.length > 0 && na.cancellations.length > 0 && ` (${na.pending.length} pending, ${na.cancellations.length} cancellation ${na.cancellations.length === 1 ? 'request' : 'requests'})`}
+            {na.pending.length === 0 && ` · ${na.cancellations.length === 1 ? 'a cancellation request' : 'cancellation requests'}`}
             {na.passed > 0 && ` · ${na.passed} ${na.passed === 1 ? 'date' : 'dates'} already passed`}
             {na.soon > 0 && ` · ${na.soon} start within 7 days`}
           </span>
-          <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--warn)' }}>Review pending</span>
+          <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--warn)' }}>{na.pending.length ? 'Review pending' : 'Review cancellation requests'}</span>
         </button>
       )}
 
@@ -143,6 +147,7 @@ export function LeaveCalendar({ state, initialDay, onPending, onOpenDay }: {
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Swatch kind="pending" />Pending (tentative)</span>
                 {festByDay.size > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Swatch kind="holiday" />Holiday</span>}
                 <span style={{ color: 'var(--ink-3)' }}>Click a day to see who is off</span>
+                <span style={{ color: 'var(--ink-3)' }} title="By leave dates; when a leave counts fewer days than its span, Saturday and Sunday are taken out. Week offs per shift are not applied.">Days off are approx.</span>
               </div>
               <LoadingFigure state={state} w="100%" h={190}>
                 <DayBars days={days} totals={totals} today={today} selected={day} onPick={(d) => { setDay(d); setDept(null); }} height={140} />

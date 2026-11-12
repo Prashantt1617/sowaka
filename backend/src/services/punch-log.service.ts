@@ -6,8 +6,9 @@
  *
  * Also the company's pay cycle (this one and the one before), which the
  * Attendance Corrections page closes its "Before payroll" count against.
+ * None when HR has not set one.
  */
-import { attendanceRecords, attendanceRegularizations } from '../config/db';
+import { attendanceRecords, attendanceRegularizations, payrollPeriods } from '../config/db';
 import type { PunchLocation } from '../models/office.model';
 import { orgUsers } from './admin-scope';
 import { placeLabel } from './geofence.service';
@@ -37,7 +38,12 @@ function where(loc?: PunchLocation) {
   };
 }
 
-export async function punchLogForAdmin(adminUserId: string, from: string, to: string) {
+/**
+ * `faceChecks`: whether the viewer may see face check results (the Face ID
+ * tab). Without it no face data is sent at all; with it only passed or failed,
+ * never the match score.
+ */
+export async function punchLogForAdmin(adminUserId: string, from: string, to: string, opts: { faceChecks?: boolean } = {}) {
   if (!DATE.test(from) || !DATE.test(to)) throw new PunchLogError(400, 'from and to must be YYYY-MM-DD');
   if (from > to) throw new PunchLogError(400, 'from must not be after to');
   if ((Date.parse(to) - Date.parse(from)) / DAY_MS > 92) throw new PunchLogError(400, 'Pick at most three months');
@@ -45,7 +51,7 @@ export async function punchLogForAdmin(adminUserId: string, from: string, to: st
   if (!people.length) return [];
   const byId = new Map(people.map((p) => [p.userId, p]));
   const userIds = people.map((p) => p.userId);
-  const [records, waiting] = await Promise.all([
+  const [records, waiting, faceRequests] = await Promise.all([
     attendanceRecords()
       .find({ userId: { $in: userIds }, workDate: { $gte: from, $lte: to }, $or: [{ punchIn: { $exists: true } }, { punchOut: { $exists: true } }, { outsideLocation: { $exists: true } }] })
       .project({ userId: 1, workDate: 1, punchIn: 1, punchOut: 1, punchInLocation: 1, punchOutLocation: 1, outsideLocation: 1, punchInFace: 1, dayType: 1 })
@@ -53,13 +59,32 @@ export async function punchLogForAdmin(adminUserId: string, from: string, to: st
     attendanceRegularizations()
       .find({ userId: { $in: userIds }, workDate: { $gte: from, $lte: to }, kind: 'out_of_location', status: 'pending' })
       .toArray(),
+    // A punch the face check refused went to a request instead: that day's check failed.
+    opts.faceChecks
+      ? attendanceRegularizations()
+          .find({ userId: { $in: userIds }, workDate: { $gte: from, $lte: to }, kind: 'face_check' })
+          .project<{ userId: string; workDate: string }>({ _id: 0, userId: 1, workDate: 1 })
+          .toArray()
+      : Promise.resolve([] as { userId: string; workDate: string }[]),
   ]);
+  const faceRefused = new Set(faceRequests.map((q) => `${q.userId}|${q.workDate}`));
+  /** Passed or failed, and only for a viewer with Face ID access; nothing else of the check. */
+  const faceOf = (userId: string, workDate: string, passed: boolean): 'passed' | 'failed' | null => {
+    if (!opts.faceChecks) return null;
+    if (passed) return 'passed';
+    return faceRefused.has(`${userId}|${workDate}`) ? 'failed' : null;
+  };
   const who = (userId: string) => {
     const p = byId.get(userId);
     return { userId, name: p?.name ?? 'Employee', employeeCode: p?.employeeId ?? '', department: p?.department ?? '', manager: byId.get(p?.managerUserId ?? '')?.name ?? '' };
   };
   const seen = new Set<string>();
-  const rows = records.map((r) => {
+  const rows: {
+    userId: string; name: string; employeeCode: string; department: string; manager: string;
+    workDate: string; punchIn: string | null; punchOut: string | null;
+    inLocation: ReturnType<typeof where>; outLocation: ReturnType<typeof where>;
+    outside: ReturnType<typeof outsideLocationView> | null; face: 'passed' | 'failed' | null; dayType: string | null; waiting: boolean;
+  }[] = records.map((r) => {
     seen.add(`${r.userId}|${r.workDate}`);
     return {
       ...who(String(r.userId ?? '')),
@@ -69,7 +94,7 @@ export async function punchLogForAdmin(adminUserId: string, from: string, to: st
       inLocation: where(r.punchInLocation as PunchLocation | undefined),
       outLocation: where(r.punchOutLocation as PunchLocation | undefined),
       outside: outsideLocationView(r.outsideLocation) ?? null,
-      face: r.punchInFace ? { similarity: r.punchInFace.similarity ?? null, liveness: r.punchInFace.liveness } : null,
+      face: faceOf(String(r.userId ?? ''), String(r.workDate), Boolean(r.punchInFace)),
       dayType: r.dayType ?? null,
       waiting: false,
     };
@@ -85,7 +110,7 @@ export async function punchLogForAdmin(adminUserId: string, from: string, to: st
       inLocation: null,
       outLocation: null,
       outside,
-      face: null,
+      face: faceOf(q.userId, q.workDate, false),
       dayType: null,
       waiting: true,
     });
@@ -93,9 +118,15 @@ export async function punchLogForAdmin(adminUserId: string, from: string, to: st
   return rows.sort((a, b) => (a.workDate === b.workDate ? (b.punchIn ?? '').localeCompare(a.punchIn ?? '') : b.workDate.localeCompare(a.workDate)));
 }
 
-/** This pay cycle and the one before, as payroll reads them (a 26th–25th cycle, or the month). */
+/**
+ * This pay cycle and the one before, as payroll reads them. `current` is null
+ * when the company has set no pay cycle: no calendar month stands in for one.
+ * A setting that does not make sense throws payroll's own 409.
+ */
 export async function payCycleForAdmin(adminUserId: string, today: string) {
   const org = await requireOrg(adminUserId);
+  const set = await payrollPeriods().countDocuments({ org }, { limit: 1 });
+  if (!set) return { current: null, previous: null };
   const current = await payrollPeriodHolding(org, today);
   if (!current) return { current: null, previous: null };
   const dayBefore = new Date(Date.parse(`${current.from}T00:00:00Z`) - DAY_MS).toISOString().slice(0, 10);

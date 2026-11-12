@@ -1,7 +1,7 @@
 // Map backend DTOs to the dashboard's view-model types.
 import type { EmpType, FeedbackStatus, LeaveType, OtDuration, ReqStatus } from './theme';
 import { mediaUrl } from '../services/api';
-import type { Correction, Emp, FbEmp, Feedback, FbMgr, Leave, OtChoice, Overtime, Reimb } from './seed';
+import type { Correction, CorrectionKind, Emp, FbEmp, Feedback, FbMgr, Leave, OtChoice, Overtime, Reimb } from './seed';
 import type { AuthUser } from '../services/auth';
 import type {
   ClaimDTO,
@@ -88,11 +88,13 @@ export function adaptLeave(dto: LeaveDTO, managerName: string): Leave {
     submitterId: dto.userId,
     byAdmin,
     statusLabel: leaveStatusLabel(dto),
+    unpaid: dto.unpaid === true,
     cancelNote: dto.cancelNote || request?.note || '',
     cancelledOn: dto.cancelledAt ? fmtDay(dto.cancelledAt) : undefined,
     cancelRequest: request && {
       status: cap(request.status) as 'Pending' | 'Approved' | 'Declined',
       requested: fmtDay(request.requestedAt),
+      requestedOrd: ts(request.requestedAt),
       note: request.note || '',
       decisionNote: request.decisionNote || '',
       byAdmin: request.decidedByRole === 'admin',
@@ -129,7 +131,7 @@ export function adaptOvertime(dto: OvertimeDTO, managerName: string): Overtime {
  */
 function otCompensation(
   dto: OvertimeDTO,
-): Pick<Overtime, 'preference' | 'preferenceCredit' | 'preferredChoice' | 'decision' | 'decisionCredit' | 'decisionDiffers' | 'compOffAvailable'> {
+): Pick<Overtime, 'preference' | 'preferenceCredit' | 'preferredChoice' | 'decision' | 'decisionCredit' | 'decisionDiffers' | 'compOffAvailable' | 'compOffDays' | 'paidInPayroll'> {
   // A server from before the approver's decision sends only `compensation`,
   // which is then the preference.
   const preferred = dto.preferredCompensation !== undefined ? dto.preferredCompensation : dto.compensation ?? null;
@@ -144,7 +146,23 @@ function otCompensation(
     decisionCredit: decided ? compOffCreditOf(decided) : undefined,
     decisionDiffers: Boolean(decidedChoice && preferredChoice && decidedChoice !== preferredChoice),
     compOffAvailable: dto.compOffAvailable ?? true,
+    ...otOutcome(dto),
   };
+}
+
+/**
+ * What an approved request adds, as the server counts it (compOffDaysOf and
+ * OVERTIME_PAID_IN_PAYROLL in backend models/overtime.model.ts): comp-off
+ * decided credits its days and is not paid; pay decided credits nothing and
+ * is paid; a request with no choice (from before it existed) credits the half
+ * or full day claimed and is paid as it always was. Nothing until approved.
+ */
+function otOutcome(dto: OvertimeDTO): Pick<Overtime, 'compOffDays' | 'paidInPayroll'> {
+  if (dto.status !== 'approved') return { compOffDays: 0, paidInPayroll: false };
+  const c = dto.compensation;
+  if (c?.kind === 'comp_off') return { compOffDays: c.days, paidInPayroll: false };
+  if (c?.kind === 'pay') return { compOffDays: 0, paidInPayroll: true };
+  return { compOffDays: dto.duration === 'full_day' ? 1 : 0.5, paidInPayroll: true };
 }
 
 /** How each choice reads, in the app form's words. */
@@ -184,6 +202,31 @@ const DAY_TYPE: Record<string, string> = {
   leave: 'Leave',
 };
 
+/**
+ * What a request is, from the request itself: its kind and what it asks for.
+ * Never from the day's punches, which a decision changes afterwards.
+ */
+export function correctionKindOf(dto: Pick<RegularizationDTO, 'kind' | 'requestedDayType' | 'requestedPunchIn' | 'requestedPunchOut'>): CorrectionKind {
+  if (dto.kind === 'out_of_location') return 'ool';
+  if (dto.kind === 'face_check') return 'face';
+  switch (dto.requestedDayType) {
+    case 'full_day': return 'full';
+    case 'half_day': return 'half';
+    case 'wfh': return 'wfh';
+    case 'client_visit':
+    case 'office_visit': return 'visit';
+    case 'leave': return 'leave';
+    default: return dto.requestedPunchIn || dto.requestedPunchOut ? 'times' : 'other';
+  }
+}
+
+/** A face check request asks for the punch it held: "Punch-in at 09:42 am". */
+function faceCheckAsk(dto: RegularizationDTO, clock: (iso?: string) => string): string {
+  const out = dto.faceCheck?.punchType === 'out';
+  const at = clock(out ? dto.requestedPunchOut : dto.requestedPunchIn);
+  return `${out ? 'Punch-out' : 'Punch-in'}${at ? ` at ${at}` : ''}`;
+}
+
 export function adaptCorrection(dto: RegularizationDTO, managerName: string): Correction {
   const clock = (iso?: string) =>
     (iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '');
@@ -211,8 +254,12 @@ export function adaptCorrection(dto: RegularizationDTO, managerName: string): Co
     refISO: dto.workDate,
     submitterId: dto.userId,
     byAdmin: dto.decidedByRole === 'admin',
-    kind: dto.kind === 'out_of_location' ? 'ool' : !dto.punchIn && !dto.punchOut ? 'both' : !dto.punchOut ? 'out' : !dto.punchIn ? 'in' : 'day',
-    askedFor: dto.kind === 'out_of_location' ? 'Full day' : DAY_TYPE[dto.requestedDayType ?? ''] ?? 'Correction',
+    kind: correctionKindOf(dto),
+    askedFor: dto.kind === 'out_of_location'
+      ? 'Full day'
+      : dto.kind === 'face_check'
+        ? faceCheckAsk(dto, clock)
+        : DAY_TYPE[dto.requestedDayType ?? ''] ?? (dto.requestedPunchIn || dto.requestedPunchOut ? `${clock(dto.requestedPunchIn) || '—'} → ${clock(dto.requestedPunchOut) || '—'}` : 'Correction'),
     punchInISO: dto.punchIn,
     punchOutISO: dto.punchOut,
     ool: dto.outsideLocation

@@ -11,7 +11,7 @@ import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { STAT } from '../theme';
 import type { ReqStatus } from '../theme';
-import type { Correction } from '../seed';
+import type { Correction, CorrectionKind } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
 import { getPayCycle } from '../../services/hrms';
@@ -27,18 +27,33 @@ import type { PeriodId } from './leaveDays';
 import { CustomRange, Key, LinkButton, PendingChip, PeriodButtons, StackBars, StatTile } from './leaveParts';
 
 const COLS = '36px 1.6fr 1fr 1.2fr 1fr .8fr 1.4fr 1.1fr 1.1fr';
-type Kind = NonNullable<Correction['kind']>;
+type Kind = CorrectionKind;
+/**
+ * What each request is, from the request itself (adapters' correctionKindOf):
+ * a correction by the day type it asks for, an older one's punch times, an
+ * out-of-location punch, or a punch the face check refused.
+ */
 const KIND: Record<Kind, { label: string; color: string; bg: string; fg: string }> = {
-  out: { label: 'Punch-out missed', color: 'color-mix(in srgb, var(--accent) 40%, var(--surface))', bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
-  in: { label: 'Punch-in missed', color: 'var(--warn)', bg: 'var(--warn-bg)', fg: 'var(--warn)' },
-  both: { label: 'Both missed', color: 'var(--accent)', bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' },
+  full: { label: 'Full day asked', color: 'var(--accent)', bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
+  half: { label: 'Half day asked', color: 'var(--warn)', bg: 'var(--warn-bg)', fg: 'var(--warn)' },
+  wfh: { label: 'Work from home', color: 'var(--t-lilac-i)', bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' },
+  visit: { label: 'Client visit', color: 'var(--t-plum-i)', bg: 'var(--t-plum)', fg: 'var(--t-plum-i)' },
+  leave: { label: 'Leave asked', color: 'color-mix(in srgb, var(--accent) 40%, var(--surface))', bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
+  times: { label: 'Punch times', color: 'var(--ink-3)', bg: 'var(--mute-bg)', fg: 'var(--ink-2)' },
+  other: { label: 'Correction', color: 'var(--ink-4)', bg: 'var(--mute-bg)', fg: 'var(--ink-2)' },
   ool: { label: 'Out of location', color: 'var(--t-sky-i)', bg: 'var(--t-sky)', fg: 'var(--t-sky-i)' },
-  day: { label: 'Day correction', color: 'var(--ink-4)', bg: 'var(--mute-bg)', fg: 'var(--ink-2)' },
+  face: { label: 'Face check', color: 'var(--ok)', bg: 'var(--ok-bg)', fg: 'var(--ok)' },
 };
-const KINDS: Kind[] = ['out', 'in', 'both', 'ool', 'day'];
-const kindOf = (r: Correction): Kind => r.kind ?? 'day';
-/** Until it is decided the day counts as absent or a missed punch, which costs pay. */
-const affectsPay = (r: Correction) => r.status === 'Pending' && kindOf(r) !== 'day';
+const KINDS: Kind[] = ['full', 'half', 'wfh', 'visit', 'leave', 'times', 'other', 'ool', 'face'];
+const kindOf = (r: Correction): Kind => r.kind ?? 'other';
+/**
+ * Until it is decided the day counts as recorded (absent, a half day, a missed
+ * punch) while the request asks for it to count otherwise, so it can change
+ * pay: every pending correction and out-of-location request, a disputed half
+ * day included. A face check request only holds a punch for a decision and is
+ * not counted here.
+ */
+const affectsPay = (r: Correction) => r.status === 'Pending' && kindOf(r) !== 'face';
 const workDay = (r: Correction) => (r.refISO || '').slice(0, 10);
 const clock = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : '—');
 const span = (r: { from: string; to: string }) => {
@@ -53,6 +68,7 @@ export function AttendanceCorrections() {
   const st = s.listState('corrections');
   const today = todayISO();
   const [cycle, setCycle] = useState<PayCycleDTO | null>(null);
+  const [cycleError, setCycleError] = useState('');
   const [period, setPeriod] = useState<PeriodId>('cycle');
   const [draftFrom, setDraftFrom] = useState(s.corrFrom);
   const [draftTo, setDraftTo] = useState(s.corrTo);
@@ -65,7 +81,14 @@ export function AttendanceCorrections() {
 
   useEffect(() => {
     let live = true;
-    getPayCycle().then((c) => live && setCycle(c)).catch(() => live && setCycle({ current: null, previous: null }));
+    getPayCycle()
+      .then((c) => live && setCycle(c))
+      .catch((e) => {
+        if (!live) return;
+        // A pay cycle setting payroll refuses (409) is HR's to fix: say so rather than guess.
+        setCycleError(e instanceof Error ? e.message : 'Could not read the pay cycle');
+        setCycle({ current: null, previous: null });
+      });
     return () => { live = false; };
   }, []);
 
@@ -108,7 +131,7 @@ export function AttendanceCorrections() {
       const i = ix.get(workDay(r));
       if (i !== undefined) out[KINDS.indexOf(kindOf(r))].values[i]++;
     }
-    return out.filter((x) => x.values.some(Boolean) || x.label !== KIND.day.label);
+    return out.filter((x) => x.values.some(Boolean));
   }, [inPeriod, chartDays.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = useMemo(() => {
@@ -246,7 +269,7 @@ export function AttendanceCorrections() {
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <h2 id="corr-period" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{title}</h2>
-              <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>By work date. {cycle?.current ? 'Cycle dates come from payroll settings.' : 'No pay cycle is set, so a cycle is the calendar month.'}</span>
+              <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>By work date. {cycle?.current ? 'Cycle dates come from payroll settings.' : cycleError ? `The pay cycle could not be read (${cycleError}), so a cycle is the calendar month.` : 'No pay cycle is set, so a cycle is the calendar month.'}</span>
             </div>
             <PeriodButtons periods={[['cycle', 'This cycle'], ['lastcycle', 'Last cycle'], ['custom', 'Custom']]} period={period} onPeriod={(p) => { setPeriod(p); setSelected(new Set()); }} />
           </div>
@@ -296,7 +319,7 @@ export function AttendanceCorrections() {
                   counts={st === 'ready' ? statusCounts : undefined}
                 />
                 <div role="group" aria-label="Type" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {(['all', 'pay', 'out', 'in', 'both', 'ool'] as Filter[]).map((f) => (
+                  {(['all', 'pay', ...KINDS.filter((k) => k === filter || inPeriod.some((r) => kindOf(r) === k))] as Filter[]).map((f) => (
                     <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)} style={chip(filter === f)}>
                       {f === 'all' ? 'All types' : f === 'pay' ? 'Affects pay' : KIND[f].label}
                     </button>

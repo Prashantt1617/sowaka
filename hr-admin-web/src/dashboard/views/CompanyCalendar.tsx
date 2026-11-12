@@ -147,7 +147,8 @@ export function CompanyCalendar() {
     // Leave ahead of today, and pending leave on any day, from the leave requests.
     for (const l of s.leaves) {
       if (l.status !== 'Approved' && l.status !== 'Pending' || !l.submitterId) continue;
-      const unpaid = /without pay|unpaid|lwp/i.test(l.type);
+      // HR's unpaid flag on the person's leave type, sent with the leave list; never guessed from the name.
+      const unpaid = l.unpaid === true;
       for (const d of leaveDates(l)) {
         if (d < first || d > last) continue;
         if (l.status === 'Approved' && d <= upTo && report) continue; // the report already counts it
@@ -281,6 +282,7 @@ export function CompanyCalendar() {
           })}
         </div>
         {!AHEAD[metric] && <div className="pd-subnote" style={{ marginTop: 12 }}>Punches count only once a day has happened; leave shows ahead, pending included.</div>}
+        {AHEAD[metric] && <div className="pd-subnote" style={{ marginTop: 12 }}>Approved leave up to today is as the attendance report counts it. Pending leave, and leave still to come, is approx.: by its dates, with Saturday and Sunday taken out when it counts fewer days than its span (week offs per shift and holidays are not applied).</div>}
       </section>
 
       <section className="pd-card">

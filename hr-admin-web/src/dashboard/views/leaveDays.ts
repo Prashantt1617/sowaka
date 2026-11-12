@@ -40,8 +40,11 @@ export const endOf = (l: Leave) => ((l.endISO || l.refISO || '').slice(0, 10) ||
 
 const daysCache = new WeakMap<Leave, string[]>();
 /**
- * The days a leave keeps someone off. When the span is longer than the days it
- * counts (a Friday to Monday leave of two days), the weekend is taken out.
+ * The days a leave keeps someone off, approximately. When the span is longer
+ * than the days it counts (a Friday to Monday leave of two days), Saturday and
+ * Sunday are taken out. The dashboard has no one's week offs or holidays at
+ * hand here (they are per shift template and location), so a day-by-day count
+ * built on this is approximate; the total of a leave (`dayN`) is the server's.
  */
 export function leaveDates(l: Leave): string[] {
   const hit = daysCache.get(l);
@@ -89,21 +92,34 @@ export const APPROVED_FILL = 'var(--accent)';
 /** A request waiting more than this many days is called out. */
 export const SLOW_DAYS = 2;
 
-/** A pending leave as Needs action sees it: how soon it starts and how long it has waited. */
+/** A pending cancellation request on an approved leave: it waits on a decision too. */
+export const cancelPending = (l: Leave) => l.cancelRequest?.status === 'Pending';
+/** What waits on HR, as the sidebar badge and Overview count it: a pending leave or a pending cancellation. */
+export const needsDecision = (l: Leave) => l.status === 'Pending' || cancelPending(l);
+
+/**
+ * A request waiting as Needs action sees it: how soon the leave starts and how
+ * long the request has waited (a cancellation request, since it was asked).
+ */
 export function pendingFacts(l: Leave, today = todayISO()) {
   const toStart = daysBetween(today, startOf(l));
-  const waited = daysSince(l.ord);
+  const waited = daysSince(l.status !== 'Pending' && l.cancelRequest ? l.cancelRequest.requestedOrd : l.ord);
   return { toStart, waited, passed: toStart < 0, soon: toStart >= 0 && toStart <= 7, slow: waited > SLOW_DAYS };
 }
 
 export function needsActionSummary(leaves: Leave[]) {
-  const pending = leaves.filter((l) => l.status === 'Pending');
+  const all = leaves.filter(needsDecision);
+  const pending = all.filter((l) => l.status === 'Pending');
+  const cancellations = all.filter((l) => l.status !== 'Pending');
+  // A cancellation's dates passing is not a problem the way an undecided leave's are.
   const facts = pending.map((l) => pendingFacts(l));
   return {
+    all,
     pending,
+    cancellations,
     passed: facts.filter((f) => f.passed).length,
     soon: facts.filter((f) => f.soon).length,
-    slow: facts.filter((f) => f.slow).length,
+    slow: all.filter((l) => pendingFacts(l).slow).length,
   };
 }
 

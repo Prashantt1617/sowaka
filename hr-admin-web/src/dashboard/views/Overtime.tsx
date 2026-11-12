@@ -19,8 +19,6 @@ const COLS = '1.6fr 1fr .8fr 1.1fr 1.1fr 1.5fr 1fr .8fr .8fr';
 /** "Leave (Comp-off) · Full day (+1 Comp-off)", for the CSV and a cell's tooltip. */
 const withCredit = (label?: string, credit?: string) => (label ? `${label}${credit ? ` (${credit})` : ''}` : '');
 const PERIODS: [PeriodId, string][] = [['week', 'This week'], ['month', 'This month'], ['last', 'Last month'], ['all', 'All dates'], ['custom', 'Custom']];
-/** Comp-off an approved overtime credits, as the server credits it. */
-const CREDIT: Record<OvertimeRow['duration'], number> = { 'Half day': 0.5, 'Full day': 1 };
 const workDay = (r: OvertimeRow) => (r.refISO || '').slice(0, 10);
 const worked = (r: OvertimeRow) => (workDay(r) ? dayLabel(workDay(r)) : r.otDate);
 
@@ -46,7 +44,13 @@ function NeedsAction({ state }: { state: LoadState }) {
               <span style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark}>{r.team}{r.eRemark ? ` · ${r.eRemark}` : ''}</span>
             </div>
           </div>
-          <span style={{ fontSize: 13.5 }}>{worked(r)} · {r.duration}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+            <span style={{ fontSize: 13.5 }}>{worked(r)} · {r.duration}</span>
+            {/* Asked for: the employee's preference; "Give as" is decided in the drawer. */}
+            <span style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.preference ? withCredit(r.preference, r.preferenceCredit) : 'Not chosen — a request from before the choice'}>
+              Asked for {r.preference ? otShortLabel(r.preference, r.preferenceCredit) : 'nothing chosen'}
+            </span>
+          </div>
           <Waiting days={daysSince(r.ord)} slow={SLOW_DAYS} />
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <PendingChip dot onClick={() => s.setOtDrawerId(r.id)} label={`Review ${r.name}'s overtime request`} />
@@ -95,7 +99,13 @@ export function Overtime() {
       approved: approved.length,
       declined: inPeriod.filter((r) => r.status === 'Declined').length,
       pending: inPeriod.filter((r) => r.status === 'Pending').length,
-      compOff: approved.reduce((a, r) => a + (CREDIT[r.duration] ?? 0), 0),
+      // From the final decision, as the server credits and pays it (see otOutcome in adapters.ts).
+      compOff: Math.round(approved.reduce((a, r) => a + r.compOffDays, 0) * 10) / 10,
+      toPay: approved.filter((r) => r.paidInPayroll).length,
+      toPayHours: Math.round(approved.filter((r) => r.paidInPayroll).reduce((a, r) => a + (r.hours || 0), 0) * 10) / 10,
+      toPayLegacy: approved.filter((r) => r.paidInPayroll && !r.decision).length,
+      // A request from before the choice credits its comp-off and is paid too, as it always was.
+      compOffLegacy: approved.filter((r) => r.compOffDays > 0 && !r.decision).length,
       busiest: best >= 0 ? { d: chartDays[best], n: totals[best].a + totals[best].p } : null,
     };
   }, [inPeriod, totals]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -177,7 +187,14 @@ export function Overtime() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
               <StatTile state={st} label="Overtime requests" value={stats.requests} sub={`${stats.approved} approved · ${stats.declined} declined`} />
               <StatTile state={st} label="Pending" value={stats.pending} sub="Waiting for a decision" warn />
-              <StatTile state={st} label="Comp-off credited" value={stats.compOff} unit={stats.compOff === 1 ? 'day' : 'days'} sub="Added to leave balances" />
+              <StatTile state={st} label="Comp-off credited" value={stats.compOff} unit={stats.compOff === 1 ? 'day' : 'days'} sub={`Added to leave balances${stats.compOffLegacy ? ` · ${stats.compOffLegacy} from before the choice` : ''}`} />
+              <StatTile
+                state={st}
+                label="To pay in payroll"
+                value={stats.toPay}
+                unit={stats.toPay === 1 ? 'request' : 'requests'}
+                sub={`${stats.toPayHours} h · approved as overtime pay${stats.toPayLegacy ? `, ${stats.toPayLegacy} from before the choice` : ''}`}
+              />
               <StatTile
                 state={st}
                 label="Most overtime in a day"
