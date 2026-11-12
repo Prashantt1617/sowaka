@@ -18,6 +18,8 @@ export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boo
   if (view === 'suwi') return true;
   // Investment proofs and Statutory & tax settings go with payroll access, as the server decides it: Payroll Runs or Salary details.
   if (view === 'investmentproofs' || view === 'payrollconfig') return canOpen(user, 'payruns') || canOpen(user, SALARY_DETAILS);
+  // FBP requests and FBP splits come with the same payroll access, or can be given on their own.
+  if ((view === 'fbprequests' || view === 'fbpsplits') && (canOpen(user, 'payruns') || canOpen(user, SALARY_DETAILS))) return true;
   // People › Tasks goes with Employees.
   if (view === 'peopletasks') return canOpen(user, 'employees');
   // The Diwali Cup TV (and its void) is HR's: an admin, or someone never limited to some tabs.

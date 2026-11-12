@@ -755,73 +755,145 @@ void main() {
     });
   });
 
-  testWidgets('declaration: caps, the regime switch, submit', (tester) async {
-    final server = await pumpPayroll(tester);
-    await tap(tester, find.byKey(const ValueKey('payroll-todo-tax_regime')));
-    expect(find.byKey(const ValueKey('payroll-declaration')), findsOneWidget);
-    expect(find.text('80C investments'), findsOneWidget);
-    expect(find.text('Max ₹1,50,000'), findsOneWidget);
-    expect(find.text('₹21,600'), findsOneWidget); // PF, read only
-    expect(find.text('Provident fund (from payroll)'), findsOneWidget);
-    await capture(tester, payroll(), 'declaration_old');
+  group(
+    'Investment declaration (Figma 4484:73124, 4484:73528, 4506:23669)',
+    () {
+      final opened = <String?>[];
+      void opener({String? about}) => opened.add(about);
+      setUp(opened.clear);
+      tearDown(() => unregisterSupportTicketOpener(opener));
 
-    // Over the 80C cap: said, and the declared amount still kept.
-    expect(find.byKey(const ValueKey('cap-80C')), findsNothing);
-    await tester.enterText(
-      find.descendant(
-        of: find.byKey(const ValueKey('declare-other80C')),
-        matching: find.byType(TextField),
-      ),
-      '30000',
-    );
-    await tester.pump();
-    expect(
-      find.text('₹1,80,000 declared — only ₹1,50,000 counts.'),
-      findsOneWidget,
-    );
-    await capture(tester, payroll(), 'declaration_over_cap');
+      testWidgets('caps, the saved sheet, then back', (tester) async {
+        final server = await pumpPayroll(tester);
+        await tap(
+          tester,
+          find.byKey(const ValueKey('payroll-todo-tax_regime')),
+        );
+        expect(
+          find.byKey(const ValueKey('payroll-declaration')),
+          findsOneWidget,
+        );
+        expect(find.text('By 30 Nov · old regime'), findsOneWidget);
+        // The regime is picked under Tax, not here.
+        expect(find.byKey(const ValueKey('regime-switch')), findsNothing);
+        expect(find.text('80C investments'), findsOneWidget);
+        expect(find.text('Max ₹1,50,000'), findsOneWidget);
+        expect(find.text('₹21,600'), findsOneWidget); // PF, read only
+        expect(find.text('Provident fund (from payroll)'), findsOneWidget);
+        await capture(tester, payroll(), 'declaration_old');
 
-    await tester.drag(find.byType(ListView).first, const Offset(0, -900));
-    await settle(tester);
-    expect(find.text('Home loan interest'), findsOneWidget);
-    expect(find.text('Investment proofs'), findsOneWidget);
-    await capture(tester, payroll(), 'declaration_old_scrolled');
+        // Over the 80C cap: said, and the declared amount still kept.
+        expect(find.byKey(const ValueKey('cap-80C')), findsNothing);
+        await tester.enterText(
+          find.descendant(
+            of: find.byKey(const ValueKey('declare-other80C')),
+            matching: find.byType(TextField),
+          ),
+          '30000',
+        );
+        await tester.pump();
+        expect(
+          find.text('₹1,80,000 declared — only ₹1,50,000 counts.'),
+          findsOneWidget,
+        );
+        await capture(tester, payroll(), 'declaration_over_cap');
 
-    // The new regime asks for nothing.
-    await tester.drag(find.byType(ListView).first, const Offset(0, 1500));
-    await settle(tester);
-    await tap(tester, find.text('New regime'));
-    expect(find.textContaining('nothing to declare'), findsOneWidget);
-    expect(find.text('80C investments'), findsNothing);
-    await capture(tester, payroll(), 'declaration_new');
+        await tester.drag(find.byType(ListView).first, const Offset(0, -900));
+        await settle(tester);
+        expect(find.text('Home loan interest'), findsOneWidget);
+        expect(find.text('Interest this year'), findsOneWidget);
+        await capture(tester, payroll(), 'declaration_old_scrolled');
 
-    // Back to old, and submit.
-    await tap(tester, find.text('Old regime'));
-    expect(find.text('80C investments'), findsOneWidget);
-    await tap(tester, find.text('Submit declaration'));
-    final body = server.bodies['/payroll/tax-declaration']!;
-    expect(body['regime'], 'old');
-    expect(body['submit'], isTrue);
-    final items = body['items'] as Map<String, dynamic>;
-    expect(items['other80C'], 3000000);
-    expect(items['ppf'], 5000000);
-    expect(items.containsKey('epf'), isFalse);
-    expect(find.text('Declaration submitted'), findsOneWidget);
-    expect(find.text('Old regime'), findsOneWidget);
-    await capture(tester, payroll(), 'declaration_submitted');
-  });
+        await tap(tester, find.byKey(const ValueKey('declaration-save')));
+        final body = server.bodies['/payroll/tax-declaration']!;
+        expect(body['regime'], 'old');
+        expect(body['submit'], isTrue);
+        final items = body['items'] as Map<String, dynamic>;
+        expect(items['other80C'], 3000000);
+        expect(items['ppf'], 5000000);
+        expect(items.containsKey('epf'), isFalse);
+        expect(find.text('Declaration saved'), findsOneWidget);
+        expect(
+          find.text('Make sure you upload the proofs by 31 Jan.'),
+          findsOneWidget,
+        );
+        await capture(tester, payroll(), 'declaration_saved');
 
-  testWidgets('declaration on the new regime sends just the regime', (
-    tester,
-  ) async {
-    final server = await pumpPayroll(tester);
-    await tap(tester, find.byKey(const ValueKey('payroll-todo-tax_regime')));
-    await tap(tester, find.text('New regime'));
-    await tap(tester, find.text('Submit declaration'));
-    expect(server.bodies['/payroll/tax-declaration']!['regime'], 'new');
-    expect(server.regime, 'new');
-    expect(find.text('Declaration submitted'), findsOneWidget);
-  });
+        await tap(tester, find.byKey(const ValueKey('declaration-saved-done')));
+        expect(find.byKey(const ValueKey('payroll-declaration')), findsNothing);
+      });
+
+      testWidgets('on the new regime there is nothing to declare', (
+        tester,
+      ) async {
+        final server = FakePayrollServer()..regime = 'new';
+        await pumpPayroll(tester, server: server);
+        await tap(
+          tester,
+          find.byKey(const ValueKey('payroll-todo-tax_regime')),
+        );
+        expect(find.text('By 30 Nov · new regime'), findsOneWidget);
+        expect(find.textContaining('nothing to declare'), findsOneWidget);
+        expect(find.text('80C investments'), findsNothing);
+        expect(find.byKey(const ValueKey('declaration-save')), findsNothing);
+        await capture(tester, payroll(), 'declaration_new');
+      });
+
+      testWidgets('closed: what was declared, ask HR, claim it back', (
+        tester,
+      ) async {
+        registerSupportTicketOpener(opener);
+        final server = FakePayrollServer()..declarationClosed = true;
+        await pumpPayroll(tester, server: server);
+        await tap(
+          tester,
+          find.byKey(const ValueKey('payroll-todo-tax_regime')),
+        );
+        expect(find.text('Declaration closed on 30 Nov'), findsOneWidget);
+        expect(find.text('You declared ₹3,33,400 in 5 items'), findsOneWidget);
+        expect(find.text('Closed'), findsOneWidget);
+        // Nothing can be typed or saved any more.
+        expect(find.byType(TextField), findsNothing);
+        expect(find.byKey(const ValueKey('declaration-save')), findsNothing);
+        expect(find.text('WHAT YOU CAN STILL DO'), findsOneWidget);
+        expect(find.text('Missed it for a reason?'), findsOneWidget);
+        expect(find.text('Ask HR to reopen your declaration'), findsOneWidget);
+        expect(find.text('Claim it back when you file'), findsOneWidget);
+        expect(
+          find.text(
+            'The extra tax cut now isn’t lost. Add these investments when you '
+            'file your income tax return by 31 Jul 2027, and you’ll get the '
+            'extra back as a refund.',
+          ),
+          findsOneWidget,
+        );
+        // HR first, then the claim (Figma 4484:73628).
+        expect(
+          tester.getTopLeft(find.text('Missed it for a reason?')).dy,
+          lessThan(
+            tester.getTopLeft(find.text('Claim it back when you file')).dy,
+          ),
+        );
+        await capture(tester, payroll(), 'declaration_closed');
+
+        await tap(tester, find.byKey(const ValueKey('declaration-ask-hr')));
+        expect(opened, hasLength(1));
+        expect(opened.single, contains('FY 2026-27'));
+        expect(opened.single, contains('closed on 30 Nov'));
+      });
+
+      testWidgets('closed with nothing declared says so', (tester) async {
+        final server = FakePayrollServer()..declarationClosed = true;
+        server.items.updateAll((_, _) => 0);
+        await pumpPayroll(tester, server: server);
+        await tap(
+          tester,
+          find.byKey(const ValueKey('payroll-todo-tax_regime')),
+        );
+        expect(find.text('You didn’t declare any investments'), findsOneWidget);
+      });
+    },
+  );
 
   group('Investment proofs (Figma 4484:73360, 4484:73735, 4567:25245)', () {
     final opened = <String?>[];
@@ -1072,10 +1144,12 @@ void main() {
         find.text('Ask HR if they can still accept them for March pay'),
         findsOneWidget,
       );
-      // The claim comes first, then HR.
+      // HR first, then the claim (Figma 4484:73877).
       expect(
-        tester.getTopLeft(find.text('Claim it back when you file')).dy,
-        lessThan(tester.getTopLeft(find.text('Have the proofs now?')).dy),
+        tester.getTopLeft(find.text('Have the proofs now?')).dy,
+        lessThan(
+          tester.getTopLeft(find.text('Claim it back when you file')).dy,
+        ),
       );
       await capture(tester, payroll(), 'proofs_closed_scrolled');
 
@@ -1322,7 +1396,7 @@ void main() {
         'Earnings',
         'Annual',
         'Downloads',
-        'Payslips, Form 16',
+        'Payslips, F-16',
         'EPF',
         'PF balance',
         'Support desk',
@@ -1346,6 +1420,146 @@ void main() {
         lessThan(top(card('payroll-raise-ticket'))),
       );
       expect(top(card('payroll-qa-earnings')), top(card('payroll-qa-epf')));
+    });
+
+    group('Set up your payroll (Figma 4471:66940)', () {
+      final opened = <String?>[];
+      void opener({String? about}) => opened.add(about);
+      setUp(() {
+        opened.clear();
+        registerSupportTicketOpener(opener);
+      });
+      tearDown(() => unregisterSupportTicketOpener(opener));
+
+      Map<String, dynamic> newJoiner() => {
+        'items': [
+          {
+            'key': 'bank',
+            'done': false,
+            'dueOn': '2026-10-28',
+            'required': true,
+          },
+          {
+            'key': 'pan',
+            'done': false,
+            'dueOn': '2026-10-28',
+            'required': true,
+          },
+          {
+            'key': 'regime',
+            'done': false,
+            'dueOn': '2026-11-30',
+            'required': false,
+          },
+          {
+            'key': 'fbp',
+            'done': false,
+            'dueOn': '2026-11-15',
+            'required': false,
+          },
+          {
+            'key': 'uan',
+            'done': true,
+            'dueOn': '2026-10-28',
+            'required': false,
+          },
+        ],
+        'done': 1,
+        'total': 5,
+        'beforeFirstPayroll': true,
+      };
+
+      testWidgets('the checklist: progress, a row each, dates, the done tick', (
+        tester,
+      ) async {
+        await pumpPayroll(
+          tester,
+          server: FakePayrollServer()..setup = newJoiner(),
+        );
+        tester.view.physicalSize = const Size(390 * 2, 1600 * 2);
+        await tester.pump();
+        expect(find.text('SET UP YOUR PAYROLL'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: card('payroll-setup-count'),
+            matching: find.text('4'),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('1 of 5 done'), findsOneWidget);
+        expect(find.text('Before your first payroll'), findsOneWidget);
+        for (final text in [
+          'Add bank account',
+          'Needed to pay your salary',
+          'Add PAN',
+          'Tax is cut at 20% without it',
+          'Choose tax regime',
+          'New regime applies if you skip',
+          'Declare your FBP',
+          'Save tax on ₹6,000 a month',
+          'Link PF account (UAN)',
+        ]) {
+          expect(find.text(text), findsOneWidget, reason: text);
+        }
+        expect(find.text('28 Oct'), findsNWidgets(2));
+        expect(find.text('30 Nov'), findsOneWidget);
+        expect(find.text('15 Nov'), findsOneWidget);
+        // UAN is done: struck through, a tick, no date or line under it.
+        expect(
+          find.descendant(
+            of: card('payroll-setup-uan'),
+            matching: find.byKey(const ValueKey('payroll-setup-done')),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('So your PF reaches your account'), findsNothing);
+        final uan = tester.widget<Text>(find.text('Link PF account (UAN)'));
+        expect(uan.style?.decoration, TextDecoration.lineThrough);
+        // The regime and the split are rows of the checklist, not to-dos too;
+        // the other to-dos still show.
+        expect(card('payroll-todo-tax_regime'), findsNothing);
+        expect(card('payroll-todo-flexible_split'), findsNothing);
+        expect(card('payroll-todo-missing_punches'), findsOneWidget);
+        double top(Finder f) => tester.getTopLeft(f).dy;
+        expect(
+          top(card('payroll-setup')),
+          lessThan(top(card('payroll-todo-missing_punches'))),
+        );
+        expect(
+          top(card('payroll-todo-missing_punches')),
+          lessThan(top(card('payroll-qa-earnings'))),
+        );
+        await capture(tester, payroll(), 'payroll_home_setup');
+      });
+
+      testWidgets('bank and PAN ask HR in a ticket; the regime opens the tax '
+          'declaration', (tester) async {
+        await pumpPayroll(
+          tester,
+          server: FakePayrollServer()..setup = newJoiner(),
+        );
+        await tap(tester, card('payroll-setup-bank'));
+        await tap(tester, card('payroll-setup-pan'));
+        expect(opened, [
+          'Please add my bank account for payroll so my salary can be paid.',
+          'Please add my PAN for payroll.',
+        ]);
+        await tap(tester, card('payroll-setup-regime'));
+        expect(find.byKey(const ValueKey('payroll-home')), findsNothing);
+      });
+
+      testWidgets('all done: no checklist, the to-dos as before', (
+        tester,
+      ) async {
+        final all = newJoiner();
+        for (final item in all['items'] as List) {
+          (item as Map)['done'] = true;
+        }
+        all['done'] = 5;
+        await pumpPayroll(tester, server: FakePayrollServer()..setup = all);
+        expect(find.text('SET UP YOUR PAYROLL'), findsNothing);
+        expect(card('payroll-todo-tax_regime'), findsOneWidget);
+      });
     });
 
     testWidgets('a released payslip has no Estimate tag', (tester) async {

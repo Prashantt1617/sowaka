@@ -616,11 +616,10 @@ input[type='number']::-webkit-outer-spin-button {
 .ds-me:hover {
   background: var(--surface-2) !important;
 }
-/* Ask Suwi in the top bar: a sky-tinted pill. */
-.ds-suwi-btn:hover,
-.ds-suwi-btn[aria-expanded='true'] {
-  background: var(--sky-soft) !important;
-  border-color: var(--hi) !important;
+/* Ask Suwi in the top bar: a copper-tinted pill (open state in suwi/suwi.css). */
+.ds-suwi-btn:hover {
+  background: var(--suwi-soft) !important;
+  border-color: var(--suwi) !important;
 }
 
 @keyframes pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }

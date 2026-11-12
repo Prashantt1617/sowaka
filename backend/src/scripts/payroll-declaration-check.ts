@@ -166,7 +166,12 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   const dec1 = new Date('2026-12-01T06:00:00Z');
   const late = await refusal(() => saveMyDeclaration('asha', FY, { regime: 'new' }, dec1));
   check('after 30 Nov the declaration is locked (409), saying when it closed and to ask HR', late?.status === 409 && /closed on 30 Nov 2026/.test(late.message ?? '') && /ask HR\.$/.test(late.message ?? ''), late);
-  check('…and reads back locked', (await myDeclaration('asha', FY, dec1)).locked === true);
+  const lockedView = await myDeclaration('asha', FY, dec1);
+  check('…and reads back locked', lockedView.locked === true);
+  check('closed: when, how many items were declared and for how much, the last pay month and the ITR due date',
+    lockedView.closed?.closedOn === '2026-11-30' && lockedView.closed.itemsDeclared === submitted.sections.flatMap((s) => s.items).filter((i) => !i.readOnly && i.amountPaise > 0).length
+      && lockedView.closed.itemsDeclared > 0 && lockedView.closed.declaredPaise > 0 && lockedView.closed.lastPayPeriod === '2027-03' && lockedView.closed.itrDueOn === '2027-07-31', lockedView.closed);
+  check('not closed before the due date', submitted.closed === null, submitted.closed);
 
   // —— the new regime ——
   await saveMyDeclaration('bala', FY, { regime: 'new', items: { ppf: R(10_000) } }, oct);

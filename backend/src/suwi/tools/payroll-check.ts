@@ -7,6 +7,7 @@
 import { ObjectId } from 'mongodb';
 import { employeePaymentDetails, payslips, reimbursementClaims, salaryStructures, users } from '../../config/db';
 import { peopleTasks } from '../../services/peopleTasks.service';
+import { notFbpBillFilter } from '../../services/reimbursementBills.service';
 import { statutorySettingsFor } from '../../services/statutorySettings.service';
 import { tdsConfigsFor } from '../../services/tds.service';
 import { defineTools, rupees } from '../tools';
@@ -88,7 +89,8 @@ defineTools({
       if (stale) blockers.push({ what: `${stale} reimbursement claim${stale === 1 ? '' : 's'} on this run ${stale === 1 ? 'was' : 'were'} paid or changed since it was calculated; submitting will refuse`, fix: 'Recalculate the run, then submit' });
     }
     const onAnyRun = new Set((await payslips().find({ org: ctx.org }, { projection: { 'inputs.reimbursementClaimIds': 1 } }).toArray()).flatMap((s) => s.inputs?.reimbursementClaimIds ?? []));
-    const approvedLeft = (await reimbursementClaims().find({ userId: { $in: [...onRun] }, status: 'approved' }).toArray()).filter((c) => !onAnyRun.has((c as { _id?: ObjectId })._id?.toHexString() ?? ''));
+    // FBP bills are never on a run (the head was paid as salary; the bill only makes it tax-free).
+    const approvedLeft = (await reimbursementClaims().find({ userId: { $in: [...onRun] }, status: 'approved', ...(await notFbpBillFilter(ctx.org)) }).toArray()).filter((c) => !onAnyRun.has((c as { _id?: ObjectId })._id?.toHexString() ?? ''));
     if (approvedLeft.length) flags.push({ what: `${approvedLeft.length} approved claim${approvedLeft.length === 1 ? '' : 's'} not on any run yet`, numbers: rupees(approvedLeft.reduce((t, c) => t + Math.round((c.amount ?? 0) * 100), 0)), fix: 'Recalculate the run to include them' });
     if (settings.tds?.enabled) {
       const cfg = await tdsConfigsFor(fyOfPeriod(period));

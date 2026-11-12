@@ -217,6 +217,67 @@ class PayrollTodo {
   );
 }
 
+/// One row of "Set up your payroll": something done once so payroll can pay
+/// the person right. Presence only — the server never sends the numbers.
+class PayrollSetupItem {
+  const PayrollSetupItem({
+    required this.key,
+    required this.done,
+    required this.required,
+    this.dueOn,
+  });
+
+  /// "bank" | "pan" | "regime" | "fbp" | "uan".
+  final String key;
+  final bool done;
+
+  /// Pay can't go out right without it (bank, PAN); the rest have a default.
+  final bool required;
+
+  /// The date it is needed by; null when HR has not set it.
+  final DateTime? dueOn;
+
+  factory PayrollSetupItem.fromJson(Map<String, dynamic> json) =>
+      PayrollSetupItem(
+        key: _string(json['key']),
+        done: _bool(json['done']),
+        required: _bool(json['required']),
+        dueOn: payrollDate(json['dueOn']),
+      );
+}
+
+/// "Set up your payroll" (`setup` on GET /payroll/home).
+class PayrollSetup {
+  const PayrollSetup({
+    required this.items,
+    required this.done,
+    required this.total,
+    this.beforeFirstPayroll = false,
+  });
+
+  final List<PayrollSetupItem> items;
+  final int done;
+  final int total;
+
+  /// No payslip has been released to them yet.
+  final bool beforeFirstPayroll;
+
+  /// Something is still to do: the home shows the checklist.
+  bool get pending => total > 0 && done < total;
+
+  factory PayrollSetup.fromJson(Map<String, dynamic> json) {
+    final items = _list(json['items']).map(PayrollSetupItem.fromJson).toList();
+    return PayrollSetup(
+      items: items,
+      done: json['done'] is num
+          ? _int(json['done'])
+          : items.where((i) => i.done).length,
+      total: json['total'] is num ? _int(json['total']) : items.length,
+      beforeFirstPayroll: _bool(json['beforeFirstPayroll']),
+    );
+  }
+}
+
 /// The month's days with a punch missing: how many, and the last day to fix
 /// them.
 class PayrollMissingPunches {
@@ -289,7 +350,11 @@ class PayrollHome {
     this.hasSplit = false,
     this.proofs,
     this.cards = PayrollHomeCards.none,
+    this.setup,
   });
+
+  /// "Set up your payroll"; null from a server without it.
+  final PayrollSetup? setup;
 
   /// The summary carousel: last pay period's salary, this FY's tax and the
   /// flexible split, each null when there is nothing to show.
@@ -320,7 +385,11 @@ class PayrollHome {
     final missing = json['missingPunches'];
     final declaration = json['declaration'];
     final proofs = json['proofs'];
+    final setup = json['setup'];
     return PayrollHome(
+      setup: setup is Map<String, dynamic>
+          ? PayrollSetup.fromJson(setup)
+          : null,
       cards: PayrollHomeCards.fromJson(_map(json['cards'])),
       hasSplit: json['split'] is Map,
       proofs: proofs is Map<String, dynamic>
@@ -819,11 +888,21 @@ class PayrollSalarySummary {
     this.payslipsFrom,
     this.payslipsTo,
     this.notSetUp,
+    this.view,
+    this.currentPeriod,
+    this.previousPeriod,
   });
 
   /// "2026-10"; [label] "October 2026".
   final String period;
   final String label;
+
+  /// The side of the Previous Month | Current Month switch this is
+  /// ("previous" or "current"), or null when a month was asked for; and the
+  /// two pay periods the switch flips between ("2026-11", "2026-10").
+  final String? view;
+  final String? currentPeriod;
+  final String? previousPeriod;
 
   /// The payslip is out: the figures are final.
   final bool released;
@@ -880,8 +959,21 @@ class PayrollSalarySummary {
       notSetUp: notSetUp is Map<String, dynamic>
           ? PayrollSalaryNotSetUp.fromJson(notSetUp)
           : null,
+      view: _stringOrNull(json['view']),
+      currentPeriod: _stringOrNull(json['currentPeriod']),
+      previousPeriod: _stringOrNull(json['previousPeriod']),
     );
   }
+
+  /// What the deduction lines (PF, tax, PT…) take, loss of pay apart.
+  int get deductionsPaise => lines
+      .where((line) => !line.isEarning && !line.isLop)
+      .fold(0, (sum, line) => sum + line.amountPaise);
+
+  /// The loss-of-pay line's amount, or 0.
+  int get lopPaise => lines
+      .where((line) => line.isLop)
+      .fold(0, (sum, line) => sum + line.amountPaise);
 }
 
 // ---------------------------------------------------------------- missing punches
@@ -1549,6 +1641,7 @@ class TaxDeclaration {
     this.metro = false,
     this.selfSenior = false,
     this.parentsSenior = false,
+    this.closed,
   });
 
   final String fy;
@@ -1556,6 +1649,9 @@ class TaxDeclaration {
   /// "new" | "old".
   final String regime;
   final bool chosen;
+
+  /// Past the due date: when it closed and what was declared by then.
+  final TaxDeclarationClosed? closed;
 
   /// "not_started" | "saved" | "submitted".
   final String status;
@@ -1582,10 +1678,53 @@ class TaxDeclaration {
     metro: _bool(json['metro']),
     selfSenior: _bool(json['selfSenior']),
     parentsSenior: _bool(json['parentsSenior']),
+    closed: json['closed'] is Map<String, dynamic>
+        ? TaxDeclarationClosed.fromJson(json['closed'])
+        : null,
     sections: _list(
       json['sections'],
     ).map(TaxDeclarationSection.fromJson).toList(),
   );
+}
+
+/// A declaration past its last date: "Declaration closed on 30 Nov · You
+/// declared ₹1,28,400 in 4 items", and where the rest can still go.
+class TaxDeclarationClosed {
+  const TaxDeclarationClosed({
+    required this.itemsDeclared,
+    required this.declaredPaise,
+    required this.countedPaise,
+    this.closedOn,
+    this.lastPayPeriod,
+    this.itrDueOn,
+  });
+
+  final DateTime? closedOn;
+
+  /// Items the person declared above zero (payroll's PF is not one).
+  final int itemsDeclared;
+
+  /// The year's declared total, PF from payroll left out.
+  final int declaredPaise;
+
+  /// What counts against the caps on the old regime (0 on the new).
+  final int countedPaise;
+
+  /// The FY's last pay month (March).
+  final DateTime? lastPayPeriod;
+
+  /// The FY's income tax return due date (31 July after it ends).
+  final DateTime? itrDueOn;
+
+  factory TaxDeclarationClosed.fromJson(Map<String, dynamic> json) =>
+      TaxDeclarationClosed(
+        closedOn: payrollDate(json['closedOn']),
+        itemsDeclared: _int(json['itemsDeclared']),
+        declaredPaise: _int(json['declaredPaise']),
+        countedPaise: _int(json['countedPaise']),
+        lastPayPeriod: payrollMonth(json['lastPayPeriod']),
+        itrDueOn: payrollDate(json['itrDueOn']),
+      );
 }
 
 // ---------------------------------------------------------------- tax summary

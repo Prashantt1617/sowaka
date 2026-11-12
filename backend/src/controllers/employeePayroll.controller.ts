@@ -11,6 +11,7 @@ import {
 } from '../services/employeePayroll.declaration';
 import { myFbp, myFbpBillFile, myFbpHead, uploadMyFbpBill } from '../services/employeePayroll.fbp';
 import { myTaxSummary } from '../services/employeePayroll.tax';
+import { decideFbpRequest, fbpPendingCount, fbpRequestsForAdmin, fbpSplitsForAdmin } from '../services/fbpAdmin.service';
 
 const callerId = (req: Request) => String(req.auth?.userId ?? '');
 const body = (req: Request) => (req.body ?? {}) as Record<string, unknown>;
@@ -43,7 +44,7 @@ const mine = (fn: Handler) => handle(async (req) => {
 // —— the signed-in employee's own payroll ——
 export const payrollHomeHandler = mine(async (req) => myPayrollHome(callerId(req), req.query.period));
 export const missingPunchesHandler = mine(async (req) => myMissingPunches(callerId(req), req.query.period));
-export const salarySummaryHandler = mine(async (req) => ({ salary: await mySalarySummary(callerId(req), req.query.period) }));
+export const salarySummaryHandler = mine(async (req) => ({ salary: await mySalarySummary(callerId(req), req.query.period, new Date(), req.query.view) }));
 export const getSplitHandler = mine(async (req) => ({ split: await mySplit(callerId(req)) }));
 export const reviewSplitHandler = mine(async (req) => ({ review: await reviewSplit(callerId(req), body(req)) }));
 export const saveSplitHandler = mine(async (req) => ({ split: await saveSplit(callerId(req), body(req)) }));
@@ -71,6 +72,11 @@ export const hrListProofsHandler = handle(async (req) =>
 export const hrProofFileHandler = handle(async (req) => ({ url: await proofFileForHr(callerId(req), String(req.params.proofId ?? '')) }));
 export const hrDecideProofHandler = handle(async (req) => ({ proof: await decideProofForHr(callerId(req), String(req.params.proofId ?? ''), body(req)) }));
 export const hrSplitHandler = handle(async (req) => ({ split: await splitForHr(callerId(req), String(req.params.userId ?? ''), req.query.fy) }));
+// Payroll › FBP requests and FBP splits (dashboard).
+export const hrFbpRequestsHandler = handle(async (req) => fbpRequestsForAdmin(callerId(req), req.query.fy));
+export const hrFbpPendingCountHandler = handle(async (req) => ({ pending: await fbpPendingCount(callerId(req)) }));
+export const hrFbpDecideHandler = handle(async (req) => ({ request: await decideFbpRequest(callerId(req), String(req.params.billId ?? ''), body(req)) }));
+export const hrFbpSplitsHandler = handle(async (req) => fbpSplitsForAdmin(callerId(req), req.query.fy));
 export const hrEpfBalanceHandler = handle(async (req) => epfBalanceForHr(callerId(req), String(req.params.userId ?? '')));
 export const hrSetEpfBalanceHandler = handle(async (req) => setEpfBalanceForHr(callerId(req), String(req.params.userId ?? ''), body(req)));
 export const hrGetAppSettingsHandler = handle(async (req) => employeeAppSettingsForHr(callerId(req), req.query.fy));

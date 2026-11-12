@@ -844,7 +844,10 @@ class ManagerApiService {
 
   /// Setup: the front photo and the two turned ones, with the consented
   /// line's version, the challenge it answers and the front burst's face
-  /// crops (the server re-reads them). Answers with the punch token the setup
+  /// crops (the server re-reads them; it judges the front burst alone, so
+  /// the turned bursts send only their readings). [onProgress] hears the
+  /// share of the upload sent, 0 to 1; a slow connection has [enrolLimit]
+  /// to carry it. Answers with the punch token the setup
   /// earns (it is that punch's face check). Throws with the server's reason
   /// (too dark, more than one face, …), the tries left and whether the
   /// manager fallback is open, in `details['face']`.
@@ -853,6 +856,7 @@ class ManagerApiService {
     List<FaceBurst> turned = const [],
     required String consentVersion,
     String? challengeId,
+    void Function(double sent)? onProgress,
   }) async {
     final request =
         http.MultipartRequest('POST', Uri.parse('$_baseUrl/face/enrol'))
@@ -876,7 +880,11 @@ class ManagerApiService {
       );
     }
     _attachBurst(request, front, challengeId, more: turned);
-    final json = await _face(request);
+    final json = await _face(
+      onProgress == null ? request : ProgressRequest(request, onProgress),
+      limit: enrolLimit,
+      upload: true,
+    );
     return json['token'] as String?;
   }
 
@@ -909,12 +917,22 @@ class ManagerApiService {
     if (livenessSessionId != null)
       request.fields['livenessSessionId'] = livenessSessionId;
     if (burst != null) _attachBurst(request, burst, challengeId);
-    return FaceCheckResult.fromJson(await _face(request));
+    return FaceCheckResult.fromJson(
+      await _face(request, limit: verifyLimit, upload: true),
+    );
   }
+
+  /// How long a setup's upload (three photos and eight crops, some 150 KB)
+  /// and a check's (one photo and eight crops) may take before the phone
+  /// gives up: long enough for a connection of a few KB a second.
+  static const enrolLimit = Duration(seconds: 120);
+  static const verifyLimit = Duration(seconds: 45);
 
   /// The challenge's id, the burst's face crops as `crop0`…, and the phone's
   /// own readings, which the server logs (the crops are what it judges). At
-  /// setup the turned photos' crops follow the front's, from `crop8`.
+  /// setup the turned photos add their readings to `challenge`, not their
+  /// crops: the server judges the front burst only, and on a slow
+  /// connection sixteen more crops were what kept setup from finishing.
   void _attachBurst(
     http.MultipartRequest request,
     FaceBurst burst,
@@ -932,18 +950,14 @@ class ManagerApiService {
       request.fields['motionMean'] = burst.motionMean!.toStringAsFixed(2);
     if (burst.motionRigid != null)
       request.fields['motionRigid'] = burst.motionRigid!.toStringAsFixed(2);
-    var at = 0;
-    for (final (index, b) in [burst, ...more].indexed) {
-      at = index * 8;
-      for (var i = 0; i < b.crops.length && i < 8; i++) {
-        request.files.add(
-          http.MultipartFile.fromBytes(
-            'crop${at + i}',
-            b.crops[i],
-            filename: 'crop${at + i}.jpg',
-          ),
-        );
-      }
+    for (var i = 0; i < burst.crops.length && i < 8; i++) {
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'crop$i',
+          burst.crops[i],
+          filename: 'crop$i.jpg',
+        ),
+      );
     }
   }
 
@@ -980,18 +994,46 @@ class ManagerApiService {
     return request;
   }
 
-  /// A face call never hangs the punch: past the limit it fails as the face
-  /// service being unavailable, which the screen offers the fallback for.
-  Future<Map<String, dynamic>> _face(http.BaseRequest request) =>
-      _send(request).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () => throw const ManagerApiException(
-          "Face check isn't available right now. Try again in a minute.",
-          details: {
-            'face': {'reason': 'unavailable'},
-          },
-        ),
-      );
+  /// A face call never hangs the punch: past [limit] it gives up. An
+  /// [upload] (a setup or a check) that got no answer, past the limit or
+  /// with the connection dropped, fails as `slow_connection`: the phone's
+  /// connection, not the face service (a 503 from the server is
+  /// `unavailable`), and not one of the day's tries. Anything else past the
+  /// limit is the face service being unavailable.
+  Future<Map<String, dynamic>> _face(
+    http.BaseRequest request, {
+    Duration limit = const Duration(seconds: 30),
+    bool upload = false,
+  }) async {
+    try {
+      return await _send(request).timeout(limit);
+    } on TimeoutException {
+      throw upload ? slowConnection : _faceUnavailable;
+    } on ManagerApiException catch (error) {
+      if (upload && error.offline) {
+        throw slowConnection;
+      }
+      rethrow;
+    } catch (error) {
+      if (upload) throw slowConnection;
+      rethrow;
+    }
+  }
+
+  static const _faceUnavailable = ManagerApiException(
+    "Face check isn't available right now. Try again in a minute.",
+    details: {
+      'face': {'reason': 'unavailable'},
+    },
+  );
+
+  /// A face upload that got no answer from the server.
+  static const slowConnection = ManagerApiException(
+    'Your connection is slow. Try again on Wi-Fi or a stronger signal.',
+    details: {
+      'face': {'reason': 'slow_connection'},
+    },
+  );
 
   Future<Map<String, dynamic>> _request(
     String method,

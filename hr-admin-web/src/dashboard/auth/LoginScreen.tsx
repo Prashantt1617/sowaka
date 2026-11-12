@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useBrand } from '../brand';
+import { SOWAKA_MARK, useBrand } from '../brand';
 import type { FormEvent } from 'react';
 import { requestOtp, verifyOtp } from '../../services/auth';
 import { ApiError } from '../../services/http';
@@ -127,9 +127,7 @@ export function LoginScreen() {
           </div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 22 }}>
-            <div style={{ width: 38, height: 38, borderRadius: 12, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,136,255,.28)' }}>
-              <Logo />
-            </div>
+            <img src={SOWAKA_MARK} alt="" style={{ width: 38, height: 38, borderRadius: 12, objectFit: 'cover', boxShadow: '0 2px 6px rgba(178,53,0,.28)', flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-.3px', lineHeight: 1 }}>Sowaka</div>
               <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-3)', marginTop: 3 }}>HR Admin</div>

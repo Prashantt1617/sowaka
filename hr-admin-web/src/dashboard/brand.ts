@@ -149,3 +149,6 @@ export function useBrandDocument() {
     target.href = brand.icon;
   }, [brand.name, brand.icon]);
 }
+
+/** Sowaka's own logo (the reddish-brown "sowaka" tile the app wears), for every company without one of its own. */
+export const SOWAKA_MARK = '/brand/sowaka-icon.png';

@@ -18,7 +18,7 @@ import { User } from '../models/user.model';
 import { StatutoryConfig, ratePercentLabel } from '../shared/payroll/statutory-config';
 import { fyOf } from '../shared/payroll/tds';
 import { employeeDayStatuses } from './attendance-report.service';
-import { dayOf, meOf, periodOf } from './employeePayroll.common';
+import { dayOf, EmployeePayrollError, meOf, periodOf } from './employeePayroll.common';
 import { estimateFor, fromPayslip, homePayPeriod, missingPunchesFor, payPeriodNotSetUp } from './employeePayroll.home';
 import { splitAmountsFor } from './employeePayroll.split';
 import { PayrollConfigError, statutoryConfigForPeriod } from './payrollConfig.service';
@@ -262,12 +262,24 @@ async function releasedPeriods(userId: string): Promise<string[]> {
 const DEDUCTION_ORDER = ['epf', 'esi', 'income_tax', 'pt', 'lwf'];
 const orderOf = (key: string) => (DEDUCTION_ORDER.includes(key) ? DEDUCTION_ORDER.indexOf(key) : DEDUCTION_ORDER.length);
 
-export async function mySalarySummary(userId: string, periodRaw: unknown, now = new Date()) {
+/**
+ * `view` (app › Salary's Previous Month | Current Month switch): "previous"
+ * (the default) is the pay period most recently over, "current" the one
+ * running now — its estimate, worked out as a run would (estimateFor). A
+ * `period` asked for wins over either.
+ */
+export type SalaryView = 'previous' | 'current';
+
+export async function mySalarySummary(userId: string, periodRaw: unknown, now = new Date(), viewRaw?: unknown) {
   const { org, user } = await meOf(userId);
   const asked = periodRaw !== undefined && periodRaw !== null && periodRaw !== '';
+  if (viewRaw !== undefined && viewRaw !== null && viewRaw !== '' && viewRaw !== 'previous' && viewRaw !== 'current') {
+    throw new EmployeePayrollError(400, 'view is previous or current');
+  }
   // The pay period most recently over by default; a month asked for is checked as Home checks it.
   const current = asked ? null : await homePayPeriod(org, undefined, now);
-  const { period, range, problem } = await homePayPeriod(org, asked ? periodRaw : previousPeriod(current!.period), now);
+  const view: SalaryView | null = asked ? null : viewRaw === 'current' ? 'current' : 'previous';
+  const { period, range, problem } = await homePayPeriod(org, asked ? periodRaw : view === 'current' ? current!.period : previousPeriod(current!.period), now);
 
   const [released, periods, punches] = await Promise.all([
     myReleasedPayslipFor(userId, period),
@@ -278,6 +290,10 @@ export async function mySalarySummary(userId: string, periodRaw: unknown, now = 
   const base = {
     period,
     label: periodLabel(period),
+    /** Which side of the switch this is (null when a period was asked for), and the two periods it flips between. */
+    view,
+    currentPeriod: current?.period ?? null,
+    previousPeriod: current ? previousPeriod(current.period) : null,
     unpaidDays: { period: punches.period, count: punches.count, fixBy: punches.fixBy, locked: punches.locked },
     payslips: { count: periods.length, from: periods[0] ?? null, to: periods[periods.length - 1] ?? null },
   };

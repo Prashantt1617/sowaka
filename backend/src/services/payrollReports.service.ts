@@ -15,6 +15,7 @@ import { PayrollRunError, requireAdminOrg } from './payrollRun.service';
 import { workStateOf } from './statutorySettings.service';
 import { decryptField, fieldKeyConfigured } from './fieldCrypto';
 import { payrollAccessOf } from './payrollAccess.service';
+import { billCategories } from './reimbursementBills.service';
 
 type Opts = { includeDrafts?: boolean };
 type StoredRun = PayrollRun & { _id: ObjectId };
@@ -395,9 +396,12 @@ export async function payrollDashboard(viewer: string, rangeIn: unknown, opts: O
   const idSet = new Set(ids);
 
   // The payslips behind both, and the claims count, in a second trip.
-  const [slipsAll, pendingClaims] = await Promise.all([
+  // Reimbursement requests and FBP bills (claims of a type linked to an FBP head) are counted apart: they are two pages.
+  const fbpCategories = [...(await billCategories(org)).keys()];
+  const [slipsAll, pendingClaims, pendingFbpBills] = await Promise.all([
     slipsOf(org, [...new Map([...runs, ...duesRuns].map((r) => [r._id.toHexString(), r])).values()]),
-    reimbursementClaims().countDocuments({ userId: { $in: ids }, status: 'pending' }),
+    reimbursementClaims().countDocuments({ userId: { $in: ids }, status: 'pending', ...(fbpCategories.length ? { category: { $nin: fbpCategories } } : {}) }),
+    fbpCategories.length ? reimbursementClaims().countDocuments({ userId: { $in: ids }, status: 'pending', category: { $in: fbpCategories } }) : 0,
   ]);
   const slipsFor = (list: StoredRun[]) => {
     const wanted = new Set(list.map((r) => r._id.toHexString()));
@@ -439,5 +443,5 @@ export async function payrollDashboard(viewer: string, rangeIn: unknown, opts: O
   // To do.
   const awaitingApproval = all.filter((r) => r.status === 'pending_approval').length;
 
-  return { currentRun, dues, people, cost: { range, label, months: cost }, todo: { pendingClaims, runsAwaitingApproval: awaitingApproval } };
+  return { currentRun, dues, people, cost: { range, label, months: cost }, todo: { pendingClaims, pendingFbpBills, runsAwaitingApproval: awaitingApproval } };
 }

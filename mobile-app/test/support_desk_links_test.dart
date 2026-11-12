@@ -1,3 +1,4 @@
+import 'dart:async';
 // "Ask HR", "contact support" anywhere in the app goes to the Support Desk:
 // which messages count, the toast's Raise ticket, the link under a "speak to
 // HR" line, and the desk opening straight on a new ticket with the message
@@ -80,23 +81,25 @@ void main() {
       if (request.url.path.endsWith('/support/topics')) return supportOk({'topics': supportTopics});
       return supportOk({'tickets': []});
     });
-    await tester.pumpWidget(
-      supportApp(
-        SupportDeskScreen(
-          shell: supportShell(client, realtime: FakeSupportRealtime()),
-          raiseOnOpen: true,
-          raiseAbout: 'Please assign KPI parameters for Asha for this review cycle.',
-        ),
+    // Opened from somewhere (Payroll, say) on top of that screen.
+    await tester.pumpWidget(supportApp(const Text('payroll-home')));
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    unawaited(navigator.push(MaterialPageRoute<void>(
+      builder: (_) => SupportDeskScreen(
+        shell: supportShell(client, realtime: FakeSupportRealtime()),
+        raiseOnOpen: true,
+        raiseAbout: 'Please assign KPI parameters for Asha for this review cycle.',
       ),
-    );
+    )));
     await tester.pumpAndSettle();
     expect(find.byType(SupportRequestScreen), findsOneWidget);
     final field = tester.widget<TextField>(find.byType(TextField).first);
     expect(field.controller?.text, startsWith('Please assign KPI parameters for Asha for this review cycle.'));
-    // Back lands on the desk itself.
-    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    // One Back goes straight back to where it was raised from, not the desk.
+    navigator.pop();
     await tester.pumpAndSettle();
     expect(find.byType(SupportRequestScreen), findsNothing);
-    expect(find.byType(SupportDeskScreen), findsOneWidget);
+    expect(find.byType(SupportDeskScreen), findsNothing);
+    expect(find.text('payroll-home'), findsOneWidget);
   });
 }

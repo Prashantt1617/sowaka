@@ -51,6 +51,9 @@ class _FakeSalaryServer {
   /// The first call answers 500, once.
   bool failOnce = false;
 
+  /// No payslip released yet: /payslips/mine is empty.
+  bool noPayslips = false;
+
   final calls = <String>[];
 
   static const lopInfo =
@@ -61,9 +64,67 @@ class _FakeSalaryServer {
       'worked out on the ₹15,000 ceiling), saved in your PF account for '
       'retirement.';
 
+  /// The current pay period's estimate (`?view=current`): November so far.
+  Map<String, dynamic> _current() => {
+    ..._salary(),
+    'period': '2026-11',
+    'label': 'November 2026',
+    'view': 'current',
+    'released': false,
+    'payslipId': null,
+    'periodFrom': '2026-11-01',
+    'periodTo': '2026-11-30',
+    'daysPaid': 30,
+    'daysInPeriod': 30,
+    'baseDays': 30,
+    'grossPaise': 12400000,
+    'takeHomePaise': 11640000,
+    'lines': [
+      {
+        'key': 'gross',
+        'label': 'Gross salary',
+        'amountPaise': 12400000,
+        'kind': 'earning',
+        'explanation': 'Your fixed monthly pay before any deductions.',
+      },
+      {
+        'key': 'epf',
+        'label': 'Provident fund',
+        'amountPaise': 180000,
+        'kind': 'deduction',
+        'explanation': pfInfo,
+      },
+      {
+        'key': 'income_tax',
+        'label': 'Income tax (TDS)',
+        'amountPaise': 560000,
+        'kind': 'deduction',
+        'explanation': 'Your estimated tax.',
+      },
+      {
+        'key': 'pt',
+        'label': 'Professional tax',
+        'amountPaise': 20000,
+        'kind': 'deduction',
+        'explanation': 'A tax set by Karnataka.',
+      },
+    ],
+    'lop': {'days': 0, 'perDayPaise': 413333},
+    'unpaidDays': {
+      'period': '2026-11',
+      'count': 1,
+      'fixBy': '2026-11-20',
+      'locked': false,
+    },
+    'notSetUp': null,
+  };
+
   Map<String, dynamic> _salary() => {
     'period': '2026-10',
     'label': 'October 2026',
+    'view': 'previous',
+    'currentPeriod': '2026-11',
+    'previousPeriod': '2026-10',
     'released': released,
     'payslipId': released ? 'slip-2026-10' : null,
     'periodFrom': '2026-10-01',
@@ -157,31 +218,32 @@ class _FakeSalaryServer {
     'success': true,
     'company': {'name': 'Sowaka', 'address': 'Bengaluru', 'org': 'sowaka'},
     'payslips': [
-      {
-        'run': {
-          'id': 'run-2026-09',
-          'period': '2026-09',
-          'status': 'paid',
-          'paidAt': '2026-09-30T12:00:00.000Z',
+      if (!noPayslips)
+        {
+          'run': {
+            'id': 'run-2026-09',
+            'period': '2026-09',
+            'status': 'paid',
+            'paidAt': '2026-09-30T12:00:00.000Z',
+          },
+          'payslip': {
+            'id': 'slip-2026-09',
+            'period': '2026-09',
+            'employeeName': 'Tanvi',
+            'earnings': [
+              {
+                'code': 'BASIC',
+                'name': 'Basic',
+                'fullPaise': 6200000,
+                'paidPaise': 6200000,
+              },
+            ],
+            'deductions': <dynamic>[],
+            'netPayablePaise': 10640000,
+            'reimbursementsPaise': 0,
+            'inputs': {'workingDays': 30, 'payableDays': 30, 'lopDays': 0},
+          },
         },
-        'payslip': {
-          'id': 'slip-2026-09',
-          'period': '2026-09',
-          'employeeName': 'Tanvi',
-          'earnings': [
-            {
-              'code': 'BASIC',
-              'name': 'Basic',
-              'fullPaise': 6200000,
-              'paidPaise': 6200000,
-            },
-          ],
-          'deductions': <dynamic>[],
-          'netPayablePaise': 10640000,
-          'reimbursementsPaise': 0,
-          'inputs': {'workingDays': 30, 'payableDays': 30, 'lopDays': 0},
-        },
-      },
     ],
   };
 
@@ -195,7 +257,12 @@ class _FakeSalaryServer {
       return _json({'success': false, 'message': 'Something broke'}, 500);
     }
     return switch (request.url.path) {
-      '/payroll/me/salary' => _json({'success': true, 'salary': _salary()}),
+      '/payroll/me/salary' => _json({
+        'success': true,
+        'salary': request.url.queryParameters['view'] == 'current'
+            ? _current()
+            : _salary(),
+      }),
       '/payslips/mine' => _json(_payslips()),
       _ => _json({'success': false, 'message': 'Route not found'}, 404),
     };
@@ -289,6 +356,27 @@ void main() {
 
   Finder text(String value) => find.text(value, findRichText: true);
 
+  /// A line of the receipt (the summary donut repeats a few of them).
+  Finder line(String value) => find.descendant(
+    of: find.byKey(const ValueKey('payroll-salary-receipt')),
+    matching: text(value),
+  );
+
+  /// Scrolls the salary page until [finder] is built and on screen.
+  Future<void> reveal(WidgetTester tester, Finder finder) async {
+    await tester.scrollUntilVisible(
+      finder,
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('payroll-salary')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.pump();
+  }
+
   testWidgets('estimate: the receipt, its pill and the note it opens', (
     tester,
   ) async {
@@ -297,9 +385,9 @@ void main() {
     expect(text('October salary'), findsOneWidget);
     expect(text('OCTOBER SALARY'), findsOneWidget);
     expect(text('29 of 31 days paid'), findsOneWidget);
-    // On top and as the total.
-    expect(text('₹1,06,400'), findsNWidgets(2));
-    expect(text('Take-home'), findsOneWidget);
+    // On top, as the total and in the summary donut's legend.
+    expect(text('₹1,06,400'), findsNWidgets(3));
+    expect(text('Take-home'), findsNWidgets(2));
     for (final row in [
       'Gross salary',
       'Loss of pay · 2 days',
@@ -307,9 +395,10 @@ void main() {
       'Income tax (TDS)',
       'Professional tax',
     ]) {
-      expect(text(row), findsOneWidget, reason: row);
+      expect(line(row), findsOneWidget, reason: row);
     }
-    expect(text('₹1,24,000'), findsOneWidget);
+    // The gross line and the donut's centre.
+    expect(text('₹1,24,000'), findsNWidgets(2));
     expect(text('− ₹8,000'), findsOneWidget);
     expect(text('− ₹1,800'), findsOneWidget);
     expect(text('− ₹7,600'), findsOneWidget);
@@ -321,8 +410,7 @@ void main() {
       'Provident fund',
       'Income tax (TDS)',
       'Professional tax',
-      'Take-home',
-    ].map((t) => tester.getTopLeft(text(t)).dy).toList();
+    ].map((t) => tester.getTopLeft(line(t)).dy).toList();
     expect(tops, [...tops]..sort());
 
     const note =
@@ -345,7 +433,7 @@ void main() {
     expect(find.byKey(const ValueKey('payroll-salary-estimate')), findsNothing);
     expect(text('Estimate'), findsNothing);
     expect(text('29 of 31 days paid'), findsOneWidget);
-    expect(text('₹1,06,400'), findsNWidgets(2));
+    expect(text('₹1,06,400'), findsNWidgets(3));
     await capture(tester, 'salary-released');
   });
 
@@ -354,7 +442,7 @@ void main() {
     expect(text(_FakeSalaryServer.lopInfo), findsNothing);
     expect(text(_FakeSalaryServer.pfInfo), findsNothing);
 
-    await tester.tap(text('Loss of pay · 2 days'));
+    await tester.tap(line('Loss of pay · 2 days'));
     await tester.pumpAndSettle();
     expect(text(_FakeSalaryServer.lopInfo), findsOneWidget);
     await capture(tester, 'salary-lop-open');
@@ -385,16 +473,14 @@ void main() {
     );
   });
 
-  testWidgets('"Check unpaid days" opens the unpaid-days list', (
-    tester,
-  ) async {
+  testWidgets('"Check unpaid days" opens the unpaid-days list', (tester) async {
     final fixed = <PayrollMissingPunches?>[];
     await pumpSalary(tester, fixed: fixed);
     expect(text('Check unpaid days'), findsOneWidget);
     // It sits under the loss-of-pay line, above PF.
     expect(
       tester.getTopLeft(text('Check unpaid days')).dy,
-      greaterThan(tester.getTopLeft(text('Loss of pay · 2 days')).dy),
+      greaterThan(tester.getTopLeft(line('Loss of pay · 2 days')).dy),
     );
     expect(
       tester.getTopLeft(text('Check unpaid days')).dy,
@@ -410,12 +496,17 @@ void main() {
 
   testWidgets('Past payslips row opens the payslips list', (tester) async {
     final server = await pumpSalary(tester);
+    await reveal(tester, text('Past payslips'));
     expect(text('Past payslips'), findsOneWidget);
     expect(text('April to September 2026'), findsOneWidget);
     // Below the receipt.
     expect(
       tester.getTopLeft(text('Past payslips')).dy,
-      greaterThan(tester.getTopLeft(text('Take-home')).dy),
+      greaterThan(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('payroll-salary-total')))
+            .dy,
+      ),
     );
     await tester.tap(text('Past payslips'));
     await settle(tester);
@@ -452,6 +543,103 @@ void main() {
     await tester.tap(text('Try again'));
     await settle(tester);
     expect(server.calls, hasLength(2));
-    expect(text('₹1,06,400'), findsNWidgets(2));
+    expect(text('₹1,06,400'), findsNWidgets(3));
+  });
+
+  testWidgets('the summary donut: deductions, loss of pay, take-home', (
+    tester,
+  ) async {
+    await pumpSalary(tester);
+    final card = find.byKey(const ValueKey('payroll-salary-summary'));
+    expect(card, findsOneWidget);
+    Finder inCard(String value) =>
+        find.descendant(of: card, matching: text(value));
+    expect(inCard('SALARY SUMMARY'), findsOneWidget);
+    // PF + TDS + PT; the loss of pay apart; the receipt's own take-home.
+    expect(inCard('Deductions'), findsOneWidget);
+    expect(inCard('−₹9,600'), findsOneWidget);
+    expect(inCard('Loss of pay · 2 days'), findsOneWidget);
+    expect(inCard('−₹8,000'), findsOneWidget);
+    expect(inCard('₹1,06,400'), findsOneWidget);
+    expect(inCard('₹1,24,000'), findsOneWidget);
+    expect(inCard('gross'), findsOneWidget);
+    // An estimate says so on the card too.
+    expect(inCard('Estimate'), findsOneWidget);
+    // Above the receipt.
+    expect(
+      tester.getBottomLeft(card).dy,
+      lessThan(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('payroll-salary-receipt')))
+            .dy,
+      ),
+    );
+  });
+
+  testWidgets('Previous Month | Current Month switches the pay period', (
+    tester,
+  ) async {
+    final fixed = <PayrollMissingPunches?>[];
+    final server = await pumpSalary(tester, fixed: fixed);
+    expect(text('Previous Month'), findsOneWidget);
+    expect(text('Current Month'), findsOneWidget);
+    expect(text('October salary'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('payroll-salary-view-current')));
+    await settle(tester);
+    expect(server.calls, [
+      'GET /payroll/me/salary',
+      'GET /payroll/me/salary?view=current',
+    ]);
+    expect(text('November salary'), findsOneWidget);
+    expect(text('NOVEMBER SALARY'), findsOneWidget);
+    expect(text('30 of 30 days paid'), findsOneWidget);
+    expect(text('₹1,16,400'), findsNWidgets(3));
+    // No loss of pay this month: no line, no unpaid-days link.
+    expect(find.byKey(const ValueKey('payroll-salary-line-lop')), findsNothing);
+    expect(text('Check unpaid days'), findsNothing);
+    // The estimate on both cards, and no payslip to download.
+    expect(find.byKey(const ValueKey('payroll-salary-estimate')), findsOne);
+    expect(find.byKey(const ValueKey('payroll-salary-download')), findsNothing);
+    await capture(tester, 'salary-current');
+
+    // Back to October: read once, not again.
+    await tester.tap(
+      find.byKey(const ValueKey('payroll-salary-view-previous')),
+    );
+    await settle(tester);
+    expect(server.calls, hasLength(2));
+    expect(text('October salary'), findsOneWidget);
+    expect(text('Loss of pay · 2 days'), findsNWidgets(2));
+  });
+
+  testWidgets('a released payslip can be downloaded from the header', (
+    tester,
+  ) async {
+    await pumpSalary(tester, server: _FakeSalaryServer()..released = true);
+    expect(
+      find.byKey(const ValueKey('payroll-salary-download')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a month asked for has no switch', (tester) async {
+    await pumpSalary(tester, period: '2026-10');
+    expect(text('Previous Month'), findsNothing);
+    expect(text('October salary'), findsOneWidget);
+  });
+
+  testWidgets('no payslips yet: says when the first will come', (tester) async {
+    await pumpSalary(tester, server: _FakeSalaryServer()..noPayslips = true);
+    await reveal(tester, text('Past payslips'));
+    await tester.tap(text('Past payslips'));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('payslips-empty')), findsOneWidget);
+    expect(text('No payslips yet'), findsOneWidget);
+    expect(
+      text('Your first payslip will show here after October payroll.'),
+      findsOneWidget,
+    );
+    await capture(tester, 'payslips-empty');
   });
 }

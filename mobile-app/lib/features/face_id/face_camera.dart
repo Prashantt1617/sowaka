@@ -75,7 +75,8 @@ class FaceBurst {
   /// The selfie: the last frame of the burst, upright, framed on the face.
   final Uint8List photo;
 
-  /// The burst's face crops ([spoofCrop]), 160 px JPEGs, in order.
+  /// The burst's face crops as the server is sent them ([sentSpoofCrop]),
+  /// 96 px JPEGs, in order. The phone read the 160 px ones ([spoofCrop]).
   final List<Uint8List> crops;
 
   /// The phone's detector median, real-face probability; null without a detector.
@@ -534,7 +535,7 @@ class FaceCamera extends ChangeNotifier {
       if (spoof != null) {
         for (final crop in crops) {
           if (crop == null) continue;
-          final score = await spoof.realProbabilityOfCrop(crop);
+          final score = await spoof.realProbabilityOfCrop(crop.read);
           if (score != null) scores.add(score);
         }
       }
@@ -580,7 +581,7 @@ class FaceCamera extends ChangeNotifier {
       _endTry(report);
       onBurst?.call(FaceBurst(
         photo: photo,
-        crops: crops.whereType<Uint8List>().toList(),
+        crops: [for (final crop in crops) ?crop?.sent],
         spoofPhone: median,
         motionMean: motion?.mean,
         motionRigid: motion?.nonRigid,
@@ -626,7 +627,7 @@ class FaceCamera extends ChangeNotifier {
       final file = await camera.takePicture();
       final photo = await file.readAsBytes();
       final box = await _uprightFace(photo);
-      return box == null ? photo : await _framed(photo, box);
+      return box == null ? await _fitted(photo) : await _framed(photo, box);
     } catch (_) {
       return null;
     } finally {
@@ -636,7 +637,17 @@ class FaceCamera extends ChangeNotifier {
 
   Future<Uint8List> _framed(Uint8List jpeg, Rect face) async {
     try {
-      return await compute<(Uint8List, Rect), Uint8List?>(_cropJob, (jpeg, face)) ?? jpeg;
+      return await compute<(Uint8List, Rect), Uint8List?>(_cropJob, (jpeg, face)) ?? await _fitted(jpeg);
+    } catch (_) {
+      return _fitted(jpeg);
+    }
+  }
+
+  /// A picture that was not framed, brought down to the selfie's size all
+  /// the same ([fitSelfie]): a camera's own photo is megabytes.
+  Future<Uint8List> _fitted(Uint8List jpeg) async {
+    try {
+      return await compute(fitSelfie, jpeg);
     } catch (_) {
       return jpeg;
     }
@@ -835,7 +846,7 @@ Uint8List? _cropJob((Uint8List, Rect) job) => cropToFace(job.$1, job.$2);
 
 /// Each burst frame upright and cut to its [spoofCrop]: what the phone's
 /// detector reads and what goes to the server. Null where a frame cannot be read.
-List<Uint8List?> _cropsJob(List<(FaceFrame, Rect)> frames) => [for (final f in frames) spoofCropJob(f)];
+List<({Uint8List read, Uint8List sent})?> _cropsJob(List<(FaceFrame, Rect)> frames) => [for (final f in frames) spoofCropsJob(f)];
 
 /// How blurred the face is: the variance of a 3×3 Laplacian over the grey
 /// face, at 128 px. Sharp faces read in the hundreds, motion blur under 20.
@@ -873,9 +884,9 @@ img.Image _faceSquare(img.Image picture, Rect box, double scale) {
 
 /// [jpeg] framed on [face] (a box in the picture's own upright pixels): a
 /// square about twice the face's size, centred a little below the eyes so
-/// the chin and hair stay in, kept inside the picture, at most 800 across.
-/// Null when there is nothing to gain (the face already fills the picture)
-/// or the picture cannot be read.
+/// the chin and hair stay in, kept inside the picture, at most [selfieSide]
+/// across, JPEG quality [selfieQuality]. Null when there is nothing to gain
+/// (the face already fills the picture) or the picture cannot be read.
 @visibleForTesting
 Uint8List? cropToFace(Uint8List jpeg, Rect face) {
   final decoded = img.decodeJpg(jpeg);
@@ -890,8 +901,34 @@ Uint8List? cropToFace(Uint8List jpeg, Rect face) {
   final left = (centreX - side / 2).clamp(0.0, picture.width - side);
   final top = (centreY - side / 2).clamp(0.0, picture.height - side);
   var cropped = img.copyCrop(picture, x: left.round(), y: top.round(), width: side.round(), height: side.round());
-  if (cropped.width > 800) cropped = img.copyResize(cropped, width: 800, height: 800);
-  return Uint8List.fromList(img.encodeJpg(cropped, quality: 90));
+  if (cropped.width > selfieSide) cropped = img.copyResize(cropped, width: selfieSide, height: selfieSide, interpolation: img.Interpolation.average);
+  return Uint8List.fromList(img.encodeJpg(cropped, quality: selfieQuality));
+}
+
+/// The selfie's largest side and its JPEG quality: small enough for a slow
+/// connection (about 30 KB), and a framed face of some 240 px is far above
+/// what Rekognition needs (its faces must be about 40 px or more; the
+/// server's own floor is the face's share of the picture, not pixels).
+const selfieSide = 480;
+const selfieQuality = 80;
+
+/// [jpeg] upright, inside [selfieSide] × [selfieSide], at [selfieQuality]:
+/// the selfie when it could not be framed on the face. As it was when it
+/// cannot be read.
+Uint8List fitSelfie(Uint8List jpeg) {
+  final decoded = img.decodeJpg(jpeg);
+  if (decoded == null) return jpeg;
+  var picture = img.bakeOrientation(decoded);
+  if (picture.width > selfieSide || picture.height > selfieSide) {
+    final wide = picture.width >= picture.height;
+    picture = img.copyResize(
+      picture,
+      width: wide ? selfieSide : null,
+      height: wide ? null : selfieSide,
+      interpolation: img.Interpolation.average,
+    );
+  }
+  return Uint8List.fromList(img.encodeJpg(picture, quality: selfieQuality));
 }
 
 /// A frame as an upright JPEG, off the UI thread ([compute]). Null when the

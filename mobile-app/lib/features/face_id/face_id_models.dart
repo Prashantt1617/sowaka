@@ -133,6 +133,7 @@ class FaceCheckResult {
     'spoof' => 'Please use your face, not a photo or a screen',
     'liveness_failed' => 'Please use your face, not a photo or a screen',
     'unavailable' => 'Face check unavailable',
+    'slow_connection' => slowConnectionHeadline,
     _ => "We couldn't confirm it's you",
   };
 }
@@ -156,3 +157,9 @@ class FaceLivenessSession {
   final String region;
   final String identityPoolId;
 }
+
+/// What the camera says when a setup or a check got no answer (the upload
+/// timed out, or the connection dropped): the phone's connection, not the
+/// face service, which a real 503 reports as `unavailable`.
+const slowConnectionHeadline = 'Your connection is slow';
+const slowConnectionLine = 'Try again on Wi-Fi or a stronger signal.';

@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import {
   createReimbursementType,
   deleteReimbursementType,
+  listClaimableReimbursementTypes,
   listReimbursementTypes,
   updateReimbursementType,
 } from '../services/reimbursement-type.service';
@@ -13,6 +14,13 @@ function callerId(req: Request): string {
 export async function listReimbursementTypesHandler(req: Request, res: Response, next: NextFunction) {
   try {
     res.json({ success: true, types: await listReimbursementTypes(callerId(req)) });
+  } catch (error) { next(error); }
+}
+
+/** The app's picker: the types an expense claim can be raised against (no FBP bill types). */
+export async function listClaimableReimbursementTypesHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json({ success: true, types: await listClaimableReimbursementTypes(callerId(req)) });
   } catch (error) { next(error); }
 }
 

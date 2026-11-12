@@ -459,6 +459,16 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('salary: released payslips for the Past payslips row (October only)', aSal.payslips.count === 1 && aSal.payslips.from === '2026-10' && aSal.payslips.to === '2026-10', aSal.payslips);
   check('salary: unpaid days open on October\'s list, locked by its run', aSal.unpaidDays.period === '2026-10' && aSal.unpaidDays.locked === true, aSal.unpaidDays);
   check('salary: no not-set-up state', aSal.notSetUp === null);
+  // The switch's other side: this pay period's estimate, the run's own calculation for one person (Home's figure).
+  const aCur = await mySalarySummary('asha', undefined, nov11, 'current');
+  const aHomeNov = await homeOn('asha', '2026-11', nov11);
+  check('salary: the default view is "previous", flipping between November and October', aSal.view === 'previous' && aSal.currentPeriod === '2026-11' && aSal.previousPeriod === '2026-10', [aSal.view, aSal.currentPeriod, aSal.previousPeriod]);
+  check('salary: view=current on 11 Nov is November, an estimate', aCur.view === 'current' && aCur.period === '2026-11' && aCur.released === false && aCur.payslipId === null && aCur.notSetUp === null, [aCur.view, aCur.period, aCur.released, aCur.notSetUp]);
+  check('salary: the current estimate is Home\'s own November figure', aCur.takeHomePaise === aHomeNov.salary?.takeHomePaise && aCur.grossPaise === aHomeNov.salary?.grossPaise && aCur.lop?.days === aHomeNov.salary?.lopDays, [aCur.takeHomePaise, aHomeNov.salary]);
+  check('salary: the current estimate\'s lines add up', addsUp(aCur), aCur.lines);
+  check('salary: the current view\'s unpaid days are November\'s', aCur.unpaidDays.period === '2026-11', aCur.unpaidDays);
+  check('salary: a period asked for has no view', (await mySalarySummary('asha', '2026-10', nov11, 'current')).view === null);
+  check('salary: a view not previous/current is refused (400)', (await refusal(() => mySalarySummary('asha', undefined, nov11, 'next')))?.status === 400);
 
   // September, released with PF on Basic, the TDS engine on and 2 days of loss of pay HR typed for Asha.
   await payHeads().updateOne({ org: ORG, code: 'BASIC' }, { $set: { considerForEpf: { consider: true } } });
@@ -677,6 +687,35 @@ const person = (userId: string, name: string, extra: Record<string, unknown> = {
   check('EPF: PF switched off for Chetan: not enrolled, no monthly split', !cEpf.enrolled && cEpf.notEnrolledReason === 'pf_off_for_you' && cEpf.monthly === null, cEpf);
   const dEpf = await myEpf('dev', nov30);
   check('EPF: no salary structure: not enrolled, nothing saved', !dEpf.enrolled && dEpf.notEnrolledReason === 'no_salary_structure' && dEpf.savedThroughSowaka.months === 0, dEpf);
+
+  // —— Home: "Set up your payroll" (presence only, never a number) ——
+  {
+    const keys = (x: { items: { key: string }[] }) => x.items.map((i) => i.key).join();
+    const item = (x: { items: { key: string; done: boolean }[] }, key: string) => x.items.find((i) => i.key === key);
+    const aSetup = (await homeOn('asha', undefined, nov30)).setup;
+    check('setup: Asha (PF on, UAN on record, no bank or PAN): bank and PAN to do, UAN done',
+      item(aSetup, 'bank')?.done === false && item(aSetup, 'pan')?.done === false && item(aSetup, 'uan')?.done === true
+        && aSetup.items.filter((i) => i.key === 'bank' || i.key === 'pan').every((i) => (i as { required: boolean }).required), aSetup);
+    check('setup: counts add up', aSetup.total === aSetup.items.length && aSetup.done === aSetup.items.filter((i) => i.done).length, aSetup);
+    check('setup: no identifier leaves the server, not even its last four', !/1012|7890|uanLast4|accountNumber/.test(JSON.stringify(aSetup)), aSetup);
+    check('setup: a released payslip: not before the first payroll', aSetup.beforeFirstPayroll === false, aSetup);
+    const cSetup = (await homeOn('chetan', undefined, nov30)).setup;
+    check('setup: PF switched off for Chetan: no UAN row', !keys(cSetup).includes('uan'), cSetup);
+    await employeePaymentDetails().insertOne({
+      org: ORG, userId: 'bala', payMode: 'bank_transfer', accountNumber: encryptField('123456789012'), accountLast4: '9012',
+      pan: encryptField('ABCDE1234F'), panLast4: '234F', updatedAt: now, updatedByUserId: 'hr',
+    });
+    const bSetup = (await homeOn('bala', undefined, nov30)).setup;
+    check('setup: Bala with a bank account and PAN on record: both done', item(bSetup, 'bank')?.done === true && item(bSetup, 'pan')?.done === true, bSetup);
+    await employeePaymentDetails().insertOne({ org: ORG, userId: 'dev', payMode: 'cash', updatedAt: now, updatedByUserId: 'hr' });
+    const dSetup = (await homeOn('dev', undefined, nov30)).setup;
+    check('setup: paid in cash: no bank row; no salary structure: no UAN or FBP row', !/bank|uan|fbp/.test(keys(dSetup)) && keys(dSetup).includes('pan'), dSetup);
+    const regime = item(aSetup, 'regime') as { done: boolean; dueOn: string | null } | undefined;
+    const aDecl = (await homeOn('asha', undefined, nov30)).declaration;
+    check('setup: the regime row is the declaration\'s chosen flag and due date',
+      regime === undefined ? aDecl.locked && !aDecl.chosen : regime.done === aDecl.chosen && regime.dueOn === aDecl.dueOn, [regime, aDecl]);
+    await employeePaymentDetails().deleteMany({ userId: { $in: ['bala', 'dev'] } });
+  }
 
   const withBal = await setMyEpfBalance('asha', { balancePaise: R(230000), asOn: '2026-09-30' }, nov30);
   const novTotal = novPf.employeePaise + novPf.employerEpfPaise;

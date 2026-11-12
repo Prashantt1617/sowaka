@@ -41,6 +41,7 @@ class TimedClient extends http.BaseClient {
   static Duration limitFor(http.BaseRequest request) {
     final big = request is http.MultipartRequest ||
         request is http.StreamedRequest ||
+        request is ProgressRequest ||
         (request.contentLength ?? 0) > 256 * 1024;
     return big ? upload : answer;
   }
@@ -51,4 +52,40 @@ class TimedClient extends http.BaseClient {
 
   @override
   void close() => _inner.close();
+}
+
+/// A multipart upload that tells [onProgress] the share of its body sent,
+/// 0 to 1, as it goes: the client reads the body as the connection takes
+/// it, so the share follows the upload. An upload to [TimedClient], with its
+/// longer limit.
+class ProgressRequest extends http.BaseRequest {
+  ProgressRequest(this._inner, this.onProgress) : super(_inner.method, _inner.url) {
+    headers.addAll(_inner.headers);
+  }
+
+  final http.MultipartRequest _inner;
+  final void Function(double sent) onProgress;
+
+  @override
+  int? get contentLength => _inner.contentLength;
+
+  @override
+  set contentLength(int? value) {}
+
+  @override
+  http.ByteStream finalize() {
+    final body = _inner.finalize();
+    headers.addAll(_inner.headers);
+    super.finalize();
+    final total = _inner.contentLength;
+    var sent = 0;
+    onProgress(0);
+    return http.ByteStream(
+      body.map((chunk) {
+        sent += chunk.length;
+        if (total > 0) onProgress((sent / total).clamp(0.0, 1.0));
+        return chunk;
+      }),
+    );
+  }
 }

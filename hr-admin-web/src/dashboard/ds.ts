@@ -136,7 +136,7 @@ export const cellSub: CSSProperties = { fontSize: 11.5, fontWeight: 400, lineHei
 export const cellMuted: CSSProperties = { fontSize: 13.5, fontWeight: 400, color: 'var(--ink-3)' };
 
 /** "Employee" from "EMPLOYEE": headers and labels in sentence case, short acronyms kept. */
-const KEEP = new Set(['ID', 'HR', 'OOL', 'KPI', 'PF', 'ESI', 'PAN', 'UAN', 'IFSC', 'TDS', 'LOP', 'OT', 'CTC', 'GPS', 'PT', 'LWF', 'TAN', 'GST', 'GSTIN', 'CIN', 'URL', 'SLA', 'FY', 'IP', 'UPI', 'CSV', 'PDF', 'Q1', 'Q2', 'Q3', 'Q4']);
+const KEEP = new Set(['ID', 'HR', 'OOL', 'KPI', 'PF', 'ESI', 'PAN', 'UAN', 'IFSC', 'TDS', 'LOP', 'OT', 'CTC', 'GPS', 'PT', 'LWF', 'TAN', 'GST', 'GSTIN', 'CIN', 'URL', 'SLA', 'FY', 'IP', 'UPI', 'CSV', 'PDF', 'Q1', 'Q2', 'Q3', 'Q4', 'FBP']);
 export function sentence(s: string): string {
   if (!s || s !== s.toUpperCase()) return s;
   let first = true;

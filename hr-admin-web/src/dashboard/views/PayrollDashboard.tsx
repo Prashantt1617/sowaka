@@ -109,10 +109,11 @@ export function PayrollDashboard() {
           <Card>
             <CardHead title="To do" />
             {!data ? pending : <div style={{ padding: '0 20px 12px' }}>
-              {data.todo.pendingClaims + data.todo.runsAwaitingApproval === 0 ? <div style={{ color: 'var(--ink-3)', fontSize: 13, padding: '8px 0' }}>Nothing waiting.</div> : (
+              {data.todo.pendingClaims + (data.todo.pendingFbpBills ?? 0) + data.todo.runsAwaitingApproval === 0 ? <div style={{ color: 'var(--ink-3)', fontSize: 13, padding: '8px 0' }}>Nothing waiting.</div> : (
                 <>
                   {data.todo.runsAwaitingApproval > 0 && <Row label="Runs awaiting approval" value={data.todo.runsAwaitingApproval} onClick={() => s.setView('payruns')} />}
                   {data.todo.pendingClaims > 0 && <Row label="Reimbursement claims to review" value={data.todo.pendingClaims} onClick={() => s.setView('reimbursements')} />}
+                  {(data.todo.pendingFbpBills ?? 0) > 0 && <Row label="FBP bills to review" value={data.todo.pendingFbpBills!} onClick={() => s.setView('fbprequests')} />}
                 </>
               )}
             </div>}

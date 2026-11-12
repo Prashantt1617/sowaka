@@ -1,6 +1,6 @@
 // Sidebar, topbar and toast — the persistent shell around the views.
 import { useState } from 'react';
-import { useBrand } from './brand';
+import { SOWAKA_MARK, useBrand } from './brand';
 import { useAuth } from './auth/AuthContext';
 import type { ReactNode } from 'react';
 import type { View } from './theme';
@@ -13,6 +13,7 @@ import { PersonAvatar } from './PersonAvatar';
 import { ORG_DISPLAY_NAME, PLATFORM_NAME } from './org';
 import { canOpen } from './access';
 import { useSupportBadge } from './supportBadge';
+import { useFbpBadge } from './fbpBadge';
 import type { ThemeMode } from './themeMode';
 import { applyThemeMode, readThemeMode } from './themeMode';
 import { SuwiOrb } from './suwi/SuwiPanel';
@@ -72,6 +73,9 @@ const PAYROLL: NavItem[] = [
   { key: 'paiddays', label: 'Paid Days Templates' },
   { key: 'payruns', label: 'Payroll Runs' },
   { key: 'investmentproofs', label: 'Investment proofs' },
+  // FBP is part of salary, not a claim: its bills and splits sit with payroll.
+  { key: 'fbprequests', label: 'FBP requests' },
+  { key: 'fbpsplits', label: 'FBP splits' },
   { key: 'payrollreports', label: 'Payroll Reports' },
   { key: 'payrollbulk', label: 'Bulk Assign' },
 ];
@@ -273,6 +277,8 @@ export function Sidebar() {
   const reviewsPending = fbMgrs.reduce((s, m) => s + (m.total - m.done), 0);
   // New tickets plus unread for a Support head; their own unread for staff.
   const supportCount = useSupportBadge(canOpen(user, 'support') ? user?.supportRole : null);
+  // FBP bills waiting for HR: counted under FBP requests, not under reimbursements.
+  const fbpPending = useFbpBadge(canOpen(user, 'fbprequests'));
   // What Suwi noticed: requests waiting past the limit turn the Requests counts red (Claims already are).
   const overdue = useSuwiNotices().notices.some((n) => n.key === 'requests_overdue');
 
@@ -294,6 +300,8 @@ export function Sidebar() {
         return <CountBadge value={claims} danger />;
       case 'support':
         return <CountBadge value={supportCount} danger={supportCount > 0} />;
+      case 'fbprequests':
+        return fbpPending === null ? null : <CountBadge value={fbpPending} danger={fbpPending > 0} />;
       default:
         return SOON[key] ? <SoonBadge /> : null;
     }
@@ -340,7 +348,7 @@ export function Sidebar() {
             height: 40,
             borderRadius: 12,
             // Their app icon fills the tile; Sowaka's mark sits on the brand blue.
-            background: brand.icon ? 'var(--surface)' : 'var(--brand)',
+            background: 'var(--surface)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -349,7 +357,7 @@ export function Sidebar() {
             border: brand.icon ? '1px solid var(--line)' : undefined,
           }}
         >
-          {brand.icon ? <img src={brand.icon} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Logo />}
+          <img src={brand.icon ?? SOWAKA_MARK} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div
@@ -520,7 +528,7 @@ export function Topbar() {
         <div style={{ flex: 1 }} />
         {!suwiOff && (
           <button type="button" onClick={() => setSuwiOpen(!suwiOpen)} aria-expanded={suwiOpen} title="Ask Suwi, your HR assistant" className="ds-suwi-btn"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 40, padding: '0 14px 0 8px', borderRadius: 999, border: '1px solid color-mix(in srgb, var(--hi) 30%, var(--line))', background: 'linear-gradient(120deg, var(--surface), var(--sky-soft))', color: 'var(--hi)', fontFamily: 'inherit', fontSize: 13, fontWeight: 500, lineHeight: 1.5, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 40, padding: '0 14px 0 8px', borderRadius: 999, border: '1px solid color-mix(in srgb, var(--suwi) 30%, var(--line))', background: 'linear-gradient(120deg, var(--surface), var(--suwi-soft))', color: 'var(--suwi-ink)', fontFamily: 'inherit', fontSize: 13, fontWeight: 500, lineHeight: 1.5, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
             <SuwiOrb size={22} />Ask Suwi
           </button>
         )}
