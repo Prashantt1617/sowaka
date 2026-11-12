@@ -13,7 +13,7 @@ library;
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:image_picker/image_picker.dart';
@@ -37,8 +37,13 @@ class PickedImage {
 
 /// True where the camera and the photo library are separate things worth
 /// offering. Everywhere else the file dialog is the only real option.
-bool get _hasNativeGallery =>
-    !kIsWeb && (Platform.isIOS || Platform.isAndroid);
+bool get hasNativeGallery =>
+    debugHasNativeGallery ??
+    (!kIsWeb && (Platform.isIOS || Platform.isAndroid));
+
+/// Tests set this to true to see the sheet on the desktop host they run on.
+@visibleForTesting
+bool? debugHasNativeGallery;
 
 /// Asks where the photo should come from, then returns the chosen file.
 ///
@@ -52,51 +57,92 @@ Future<PickedImage?> pickImageFrom(
   List<String> allowedExtensions = const ['jpg', 'jpeg', 'png'],
   bool allowVideo = false,
 }) async {
-  if (!_hasNativeGallery) {
+  if (!hasNativeGallery) {
     return _pickFromFiles(allowedExtensions);
   }
 
-  final source = await _askSource(context);
+  final source = await askImageSource(context);
   if (source == null) return null;
-  if (source == _ImageSource.files) return _pickFromFiles(allowedExtensions);
+  if (source == ImageSourceChoice.files) {
+    return _pickFromFiles(allowedExtensions);
+  }
 
+  final XFile? picked;
+  if (source == ImageSourceChoice.gallery && allowVideo) {
+    try {
+      // Where the surface takes clips too, the gallery offers them alongside
+      // photos; the size limits apply to the photos only.
+      picked = await ImagePicker().pickMedia(
+        maxWidth: _maxPhotoSide,
+        maxHeight: _maxPhotoSide,
+        imageQuality: _photoQuality,
+      );
+    } on PlatformException catch (error) {
+      if (context.mounted) showPhotoPermissionToast(context, error);
+      return null;
+    }
+  } else {
+    if (!context.mounted) return null;
+    picked = await takeOrChoosePhoto(context, source);
+  }
+  if (picked == null) return null;
+  return PickedImage(
+    path: picked.path,
+    name: picked.name,
+    size: await File(picked.path).length(),
+    extension: picked.name.contains('.')
+        ? picked.name.split('.').last.toLowerCase()
+        : 'jpg',
+  );
+}
+
+/// Big enough for any surface the app shows a photo on, and small enough
+/// that a 12-megapixel phone capture does not become a 6 MB upload.
+const _maxPhotoSide = 2048.0;
+const _photoQuality = 90;
+
+/// Stands in for the camera and the photo library in tests, which have
+/// neither: handed the source asked for, it returns the "photo".
+@visibleForTesting
+Future<XFile?> Function(ImageSource source)? debugPickPhoto;
+
+/// One photo from the camera or the gallery, sized and compressed as every
+/// photo the app takes; a denied permission is said in a toast. Null when
+/// the person backs out, and for [ImageSourceChoice.files], which is each
+/// caller's own file picker.
+Future<XFile?> takeOrChoosePhoto(
+  BuildContext context,
+  ImageSourceChoice source,
+) async {
+  if (source == ImageSourceChoice.files) return null;
+  final from = source == ImageSourceChoice.camera
+      ? ImageSource.camera
+      : ImageSource.gallery;
   try {
-    final picker = ImagePicker();
-    // Big enough for any surface the app shows a photo on, and small enough
-    // that a 12-megapixel phone capture does not become a 6 MB upload. Where
-    // the surface takes clips too, the gallery offers them alongside photos;
-    // the size limits apply to the photos only.
-    final picked = source == _ImageSource.gallery && allowVideo
-        ? await picker.pickMedia(maxWidth: 2048, maxHeight: 2048, imageQuality: 90)
-        : await picker.pickImage(
-            source: source == _ImageSource.camera
-                ? ImageSource.camera
-                : ImageSource.gallery,
-            maxWidth: 2048,
-            maxHeight: 2048,
-            imageQuality: 90,
-          );
-    if (picked == null) return null;
-    return PickedImage(
-      path: picked.path,
-      name: picked.name,
-      size: await File(picked.path).length(),
-      extension: picked.name.contains('.')
-          ? picked.name.split('.').last.toLowerCase()
-          : 'jpg',
+    final override = debugPickPhoto;
+    if (override != null) return await override(from);
+    return await ImagePicker().pickImage(
+      source: from,
+      maxWidth: _maxPhotoSide,
+      maxHeight: _maxPhotoSide,
+      imageQuality: _photoQuality,
     );
   } on PlatformException catch (error) {
     // A denied camera or photo permission arrives here rather than as a crash.
-    if (context.mounted) {
-      showAppToast(
-        context,
-        error.code == 'camera_access_denied' || error.code == 'photo_access_denied'
-            ? 'Sowaka needs permission for that. Turn it on in Settings.'
-            : 'Could not open that. Try another option.',
-      );
-    }
+    if (context.mounted) showPhotoPermissionToast(context, error);
     return null;
   }
+}
+
+/// What a failed camera or gallery says: Settings for a denied permission,
+/// another option otherwise.
+void showPhotoPermissionToast(BuildContext context, PlatformException error) {
+  showAppToast(
+    context,
+    error.code == 'camera_access_denied' || error.code == 'photo_access_denied'
+        ? 'Sowaka needs permission for that. Turn it on in Settings.'
+        : 'Could not open that. Try another option.',
+  );
 }
 
 /// The same choice, for a surface that accepts several files at once.
@@ -108,43 +154,46 @@ Future<List<PickedImage>> pickImagesFrom(
   BuildContext context, {
   List<String> allowedExtensions = const ['jpg', 'jpeg', 'png'],
   bool allowVideo = false,
+
   /// The most files the gallery lets the person tick, where it can say so.
   /// Callers still trim to their own limit.
   int? limit,
 }) async {
-  if (!_hasNativeGallery) {
+  if (!hasNativeGallery) {
     return _pickManyFromFiles(allowedExtensions);
   }
   // The gallery refuses a limit under two; one file left is trimmed after.
   final galleryLimit = limit != null && limit >= 2 ? limit : null;
 
-  final source = await _askSource(context);
+  final source = await askImageSource(context);
   if (source == null) return const [];
-  if (source == _ImageSource.files) return _pickManyFromFiles(allowedExtensions);
+  if (source == ImageSourceChoice.files) {
+    return _pickManyFromFiles(allowedExtensions);
+  }
 
   try {
     final picker = ImagePicker();
     final picked = switch (source) {
-      _ImageSource.camera => [
+      ImageSourceChoice.camera => [
         ?await picker.pickImage(
           source: ImageSource.camera,
-          maxWidth: 2048,
-          maxHeight: 2048,
-          imageQuality: 90,
+          maxWidth: _maxPhotoSide,
+          maxHeight: _maxPhotoSide,
+          imageQuality: _photoQuality,
         ),
       ],
       // Photos and clips together where the surface takes both; the size
       // limits apply to the photos only.
       _ when allowVideo => await picker.pickMultipleMedia(
-        maxWidth: 2048,
-        maxHeight: 2048,
-        imageQuality: 90,
+        maxWidth: _maxPhotoSide,
+        maxHeight: _maxPhotoSide,
+        imageQuality: _photoQuality,
         limit: galleryLimit,
       ),
       _ => await picker.pickMultiImage(
-        maxWidth: 2048,
-        maxHeight: 2048,
-        imageQuality: 90,
+        maxWidth: _maxPhotoSide,
+        maxHeight: _maxPhotoSide,
+        imageQuality: _photoQuality,
         limit: galleryLimit,
       ),
     };
@@ -161,7 +210,10 @@ Future<List<PickedImage>> pickImagesFrom(
     ];
   } on PlatformException {
     if (context.mounted) {
-      showAppToast(context, 'Sowaka needs permission for that. Turn it on in Settings.');
+      showAppToast(
+        context,
+        'Sowaka needs permission for that. Turn it on in Settings.',
+      );
     }
     return const [];
   }
@@ -205,10 +257,17 @@ Future<PickedImage?> _pickFromFiles(List<String> allowedExtensions) async {
   );
 }
 
-enum _ImageSource { camera, gallery, files }
+/// The three places a photo or file can come from.
+enum ImageSourceChoice { camera, gallery, files }
 
-Future<_ImageSource?> _askSource(BuildContext context) {
-  return showModalBottomSheet<_ImageSource>(
+/// The sheet itself: Take a photo, Choose from gallery, and the file browser
+/// as [filesLabel] — left off with [offerFiles] false. Null when dismissed.
+Future<ImageSourceChoice?> askImageSource(
+  BuildContext context, {
+  bool offerFiles = true,
+  String filesLabel = 'Browse files',
+}) {
+  return showModalBottomSheet<ImageSourceChoice>(
     context: context,
     backgroundColor: Colors.white,
     shape: const RoundedRectangleBorder(
@@ -230,20 +289,24 @@ Future<_ImageSource?> _askSource(BuildContext context) {
           ),
           const SizedBox(height: 18),
           _SourceTile(
+            key: const ValueKey('image-source-camera'),
             icon: Icons.photo_camera_rounded,
             label: 'Take a photo',
-            onTap: () => Navigator.pop(sheetContext, _ImageSource.camera),
+            onTap: () => Navigator.pop(sheetContext, ImageSourceChoice.camera),
           ),
           _SourceTile(
+            key: const ValueKey('image-source-gallery'),
             icon: Icons.photo_library_rounded,
             label: 'Choose from gallery',
-            onTap: () => Navigator.pop(sheetContext, _ImageSource.gallery),
+            onTap: () => Navigator.pop(sheetContext, ImageSourceChoice.gallery),
           ),
-          _SourceTile(
-            icon: Icons.folder_outlined,
-            label: 'Browse files',
-            onTap: () => Navigator.pop(sheetContext, _ImageSource.files),
-          ),
+          if (offerFiles)
+            _SourceTile(
+              key: const ValueKey('image-source-files'),
+              icon: Icons.folder_outlined,
+              label: filesLabel,
+              onTap: () => Navigator.pop(sheetContext, ImageSourceChoice.files),
+            ),
           const SizedBox(height: 12),
         ],
       ),
@@ -253,6 +316,7 @@ Future<_ImageSource?> _askSource(BuildContext context) {
 
 class _SourceTile extends StatelessWidget {
   const _SourceTile({
+    super.key,
     required this.icon,
     required this.label,
     required this.onTap,
