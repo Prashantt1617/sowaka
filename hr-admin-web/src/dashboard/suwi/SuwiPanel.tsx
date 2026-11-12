@@ -13,9 +13,15 @@ import { BULK_GUIDES } from './bulkGuide';
 import { ATTACH_ACCEPT, AttachError, fileSize, readAttachment, type Attached, type ShownFile } from './attach';
 import './suwi.css';
 
-/** The sky orb: a small sky with a cloud drifting across it. */
+/** Suwi's orb: a glossy copper sphere with colour flowing round it and a soft aura behind. */
 export function SuwiOrb({ size = 28 }: { size?: number }) {
-  return <span aria-hidden className={size <= 22 ? 'sora-orb sm' : size >= 40 ? 'sora-orb lg' : 'sora-orb'} style={{ width: size, height: size }}><i /></span>;
+  const tier = size <= 22 ? ' sm' : size >= 40 ? ' lg' : '';
+  return (
+    <span aria-hidden className={`sora-ow${tier}`} style={{ width: size, height: size }}>
+      <span className="sora-aura"><b /><b /><b /></span>
+      <span className={`sora-orb${tier}`} style={{ width: size, height: size }}><i /></span>
+    </span>
+  );
 }
 
 type Msg = { role: 'user'; text: string; file?: ShownFile } | { role: 'assistant'; answer: SuwiAnswer; error?: boolean } | { role: 'guide'; area: SuwiBulkArea };
@@ -78,8 +84,8 @@ export function SuwiPanel() {
       void el.offsetWidth; // restart the animations even when reopened mid-sequence
       el.classList.add('intro');
     }
-    const introT = window.setTimeout(() => el.classList.remove('intro'), 2100);
-    const focusT = window.setTimeout(() => inputRef.current?.focus(), still ? 60 : 1900);
+    const introT = window.setTimeout(() => el.classList.remove('intro'), 2700);
+    const focusT = window.setTimeout(() => inputRef.current?.focus(), still ? 60 : 2400);
     return () => { window.clearTimeout(introT); window.clearTimeout(focusT); };
   }, [open]);
   useEffect(() => { bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }); }, [msgs, busy]);
@@ -336,7 +342,7 @@ function ProposalCard({ p, onChange }: { p: SuwiProposal; onChange: (p: SuwiProp
     setBusy(true);
     try { onChange(await fn()); } catch (e) { s.flash(e instanceof ApiError ? e.message : 'Could not do that', 'error'); } finally { setBusy(false); }
   };
-  const tone = p.status === 'done' ? 'var(--ok)' : p.status === 'failed' ? 'var(--bad)' : 'var(--hi)';
+  const tone = p.status === 'done' ? 'var(--ok)' : p.status === 'failed' ? 'var(--bad)' : 'var(--suwi-ink)';
   return (
     <div className="suwi-prop">
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

@@ -65,6 +65,7 @@ function SuwiNoticedCard({ notices }: { notices: SuwiNotice[] }) {
           <h3>Suwi noticed</h3>
           <small>from your data just now</small>
         </div>
+        <button type="button" onClick={() => s.setSuwiOpen(true)} className="suwi-btn ghost sora-btn2">Ask Suwi</button>
       </div>
       <div className="sora-list">
         {notices.map((n) => (
