@@ -476,6 +476,14 @@ class FakePayrollServer {
               'fromMonth': '2026-04',
               'toMonth': '2026-10',
               'thisMonth': '2026-10',
+              // What payslips deducted (Figma 4506:23826) and the latest months.
+              'releasedPaidPaise': 5840000,
+              'releasedFromMonth': '2026-04',
+              'releasedToMonth': '2026-10',
+              'recentMonths': [
+                {'month': '2026-10', 'taxPaise': 760000},
+                {'month': '2026-09', 'taxPaise': 780000},
+              ],
             },
       'fbp': !hasSplit
           ? null

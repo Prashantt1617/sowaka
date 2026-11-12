@@ -386,11 +386,22 @@ async function taxCard(
   const own = slips.get(period);
   // This period's tax: its payslip, else the estimate; unknown while its pay can't be worked out.
   const thisMonthPaise = own ? tdsOf(own) : thisMonth ? thisMonth.taxPaise : null;
+  // What has actually been deducted: released payslips only (the card's "paid so far"),
+  // with the latest two of those months listed (Figma 4506:23826). The estimate is not paid yet.
+  const paidPeriods = [...slips.keys()].filter((p) => p <= period).sort();
+  const releasedPaidPaise = paidPeriods.reduce((total, p) => total + tdsOf(slips.get(p)!), 0);
+  const recentMonths = paidPeriods.slice(-2).reverse().map((p) => ({ month: p, taxPaise: tdsOf(slips.get(p)!) }));
   return {
     fy,
     notConfigured: false as const,
     regime: declaration.regime,
     regimeChosen: declaration.chosen,
+    releasedPaidPaise,
+    /** The months releasedPaidPaise covers (null before the first payslip). */
+    releasedFromMonth: paidPeriods.length ? firstPeriod : null,
+    releasedToMonth: paidPeriods.length ? paidPeriods[paidPeriods.length - 1] : null,
+    /** The latest paid months, newest first, with their tax. */
+    recentMonths,
     paidSoFarPaise: before + (thisMonthPaise ?? 0),
     paidBeforeThisMonthPaise: before,
     thisMonthPaise,
