@@ -1,6 +1,6 @@
 // Sidebar, topbar and toast — the persistent shell around the views.
 import { useState } from 'react';
-import { useBrand } from './brand';
+import { SOWAKA_MARK, useBrand } from './brand';
 import { useAuth } from './auth/AuthContext';
 import type { ReactNode } from 'react';
 import type { View } from './theme';
@@ -340,7 +340,7 @@ export function Sidebar() {
             height: 40,
             borderRadius: 12,
             // Their app icon fills the tile; Sowaka's mark sits on the brand blue.
-            background: brand.icon ? 'var(--surface)' : 'var(--brand)',
+            background: 'var(--surface)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -349,7 +349,7 @@ export function Sidebar() {
             border: brand.icon ? '1px solid var(--line)' : undefined,
           }}
         >
-          {brand.icon ? <img src={brand.icon} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Logo />}
+          <img src={brand.icon ?? SOWAKA_MARK} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div

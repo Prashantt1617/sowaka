@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { useAuth } from '../auth/AuthContext';
-import { useBrand } from '../brand';
+import { SOWAKA_MARK, useBrand } from '../brand';
 import { Card, LoadError, PageActions, SkeletonForm } from '../ui';
 import { btn, btnClass, cardTitle, fieldLabel, inp } from '../ds';
 import { Logo } from '../icons';
@@ -175,11 +175,7 @@ export function OrganisationProfile() {
             // The organisation's own mark, the same one the sidebar and sign-in wear.
             <img src={brand.icon} alt="" style={{ ...logoTile, objectFit: 'cover', boxShadow: 'var(--shadow)', background: 'var(--surface)' }} />
           ) : (
-            <div style={logoTile}>
-              <div style={{ transform: 'scale(1.8)' }}>
-                <Logo />
-              </div>
-            </div>
+            <img src={SOWAKA_MARK} alt="" style={{ ...logoTile, objectFit: 'cover', boxShadow: 'var(--shadow)' }} />
           )}
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>Organisation logo</div>
