@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart' show RenderShiftedBox;
 import '../../shared/app_update.dart';
 import '../../shared/image_crop_sheet.dart';
 import '../../shared/image_source_sheet.dart';
+
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../auth/data/auth_api_service.dart';
@@ -6615,9 +6616,10 @@ class _PostComposerPageState extends State<_PostComposerPage> {
       },
       ConnectPostType.survey => {
         'title': _pollDraft?.question.trim() ?? '',
-        'options': (_pollDraft?.options ?? const <_PollOptionEntry>[])
+        // Words, a photo or video, or both: an option needs no words when it
+        // has media. Kept in step with _pollOptionImagesForSubmit.
+        'options': _pollOptionsToSend
             .map((option) => option.text.trim())
-            .where((value) => value.isNotEmpty)
             .toList(),
         ..._audienceFields,
       },
@@ -6670,10 +6672,22 @@ class _PostComposerPageState extends State<_PostComposerPage> {
   /// the poll is actually in media mode, parallel to `_pollDraft.options` by
   /// index. They go up in the same field whichever they are; the server tells
   /// a video by its bytes.
+  /// The poll's options that say something — words, media or both — in the
+  /// order written; an option left empty entirely is dropped from the words
+  /// and the media alike, so each option keeps its own photo or video.
+  List<_PollOptionEntry> get _pollOptionsToSend =>
+      (_pollDraft?.options ?? const <_PollOptionEntry>[])
+          .where(
+            (option) =>
+                option.text.trim().isNotEmpty ||
+                (option.isImage && option.imagePath != null),
+          )
+          .toList();
+
   List<ConnectMediaAttachment?> _pollOptionImagesForSubmit() {
     final poll = _pollDraft;
     if (poll == null) return const [];
-    return poll.options
+    return _pollOptionsToSend
         .map(
           (option) => option.isImage && option.imagePath != null
               ? ConnectMediaAttachment(
@@ -6883,8 +6897,12 @@ class _PostComposerPageState extends State<_PostComposerPage> {
     final isRecommendationWithLink =
         widget.type == ConnectPostType.recommendation &&
         (_linkUrl.text.trim().isNotEmpty || _mediaTitle.text.trim().isNotEmpty);
+    // A poll needs no question: its options (words, a photo or a video) are
+    // what is asked, and they are checked below.
+    final isPoll = widget.type == ConnectPostType.survey;
     final text = (body['text'] ?? body['title'] ?? '').toString().trim();
     if (text.isEmpty &&
+        !isPoll &&
         !isMediaKindWithAttachment &&
         !isKudosWithPerson &&
         !isRecommendationWithLink) {
@@ -6906,9 +6924,8 @@ class _PostComposerPageState extends State<_PostComposerPage> {
       return false;
     }
     if (widget.type == ConnectPostType.survey) {
-      final options = body['options'] as List<String>;
-      if (options.length < 2) {
-        warn('Add at least two poll options.');
+      if (_pollOptionsToSend.length < 2) {
+        warn('Add at least two poll options — words, a photo or a video.');
         return false;
       }
     }

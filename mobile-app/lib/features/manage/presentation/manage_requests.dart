@@ -436,6 +436,7 @@ class _RequestDetailScaffold extends StatelessWidget {
     required this.onApprove,
     required this.onDecline,
     this.declineLabel = 'Decline',
+    this.belowSummary,
   });
 
   final String title;
@@ -445,6 +446,10 @@ class _RequestDetailScaffold extends StatelessWidget {
   final RequestSummary summary;
   final VoidCallback onApprove;
   final VoidCallback onDecline;
+
+  /// Shown straight under the summary — so under its Reason, the last thing
+  /// it shows — such as overtime's decision dropdown.
+  final Widget? belowSummary;
 
   /// An out of location request is rejected, not declined — the word the
   /// card and the manager both use.
@@ -466,6 +471,7 @@ class _RequestDetailScaffold extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
               children: [
                 RequestSummaryBody(summary: summary, showSuccess: false),
+                ?belowSummary,
                 if (managerNote.isNotEmpty) ...[
                   const SizedBox(height: 18),
                   const _LeaveSectionLabel('YOUR NOTE'),
@@ -973,7 +979,47 @@ class _RequestChip extends StatelessWidget {
   );
 }
 
-class _OvertimeRequestDetailPage extends StatelessWidget {
+/// A manager's choice of how approved overtime is compensated, as the
+/// dropdown holds it.
+enum OvertimeChoice {
+  pay('pay', 0),
+  compOffFull('comp_off', 1),
+  compOffHalf('comp_off', 0.5);
+
+  const OvertimeChoice(this.kind, this.days);
+
+  final String kind;
+  final double days;
+
+  String get label => overtimeChoiceLabel(kind, days);
+
+  /// What the server takes as `compensation`.
+  Map<String, Object> get json => kind == 'pay'
+      ? const {'kind': 'pay'}
+      : {'kind': 'comp_off', 'days': days};
+
+  /// The choice a stored kind and days stand for; null for none.
+  static OvertimeChoice? of(String kind, double days) => switch (kind) {
+    'pay' => OvertimeChoice.pay,
+    'comp_off' =>
+      days >= 1 ? OvertimeChoice.compOffFull : OvertimeChoice.compOffHalf,
+    _ => null,
+  };
+
+  /// Why this can't be decided for [request], or null when it can: comp-off
+  /// needs a Comp-off leave type for the employee, and a half-day claim can't
+  /// be a full day off.
+  String? blockedFor(OvertimeRequest request) {
+    if (kind == 'pay') return null;
+    if (!request.compOffAvailable) return "Comp-off isn't set up";
+    if (this == OvertimeChoice.compOffFull && request.halfDayClaim) {
+      return 'Needs a full day of overtime';
+    }
+    return null;
+  }
+}
+
+class _OvertimeRequestDetailPage extends StatefulWidget {
   const _OvertimeRequestDetailPage({
     required this.request,
     required this.bloc,
@@ -983,6 +1029,31 @@ class _OvertimeRequestDetailPage extends StatelessWidget {
   final OvertimeRequest request;
   final ManagerBloc bloc;
   final String? photoUrl;
+
+  @override
+  State<_OvertimeRequestDetailPage> createState() =>
+      _OvertimeRequestDetailPageState();
+}
+
+class _OvertimeRequestDetailPageState
+    extends State<_OvertimeRequestDetailPage> {
+  /// The manager's final call, starting from the employee's preference (or
+  /// overtime pay, where the preference can no longer be given). Null on a
+  /// request with no preference: approving it then leaves it as it was.
+  late OvertimeChoice? _choice = _initialChoice();
+
+  OvertimeRequest get request => widget.request;
+
+  OvertimeChoice? _initialChoice() {
+    final preferred = OvertimeChoice.of(
+      request.preferredKind,
+      request.preferredCompOffDays,
+    );
+    if (preferred == null) return null;
+    return preferred.blockedFor(request) == null
+        ? preferred
+        : OvertimeChoice.pay;
+  }
 
   @override
   Widget build(BuildContext context) => _RequestDetailScaffold(
@@ -1001,23 +1072,37 @@ class _OvertimeRequestDetailPage extends StatelessWidget {
         // are derived from the shift policy, not chosen by anyone, so showing
         // them as "6:30 PM – 9:30 PM" invented a detail.
         SummaryRow('Duration', request.hoursLabel),
-        // Overtime pay, or comp-off and what approving adds to their balance.
-        // A request from before there was a choice has none to show.
-        if (request.compensationLabel.isNotEmpty)
-          SummaryRow('Compensation', request.compensationDetail),
+        // What the employee asked for: overtime pay, or comp-off and what it
+        // would add. A request from before there was a choice has none.
+        if (request.preferenceLabel.isNotEmpty)
+          SummaryRow("Employee's preference", request.preferenceDetail),
+        // Once approved, the final call — what payroll and the Comp-off
+        // balance use.
+        if (request.hasCompensationDecision)
+          SummaryRow("Manager's decision", request.decisionDetail),
         SummaryRow('Applied On', _summaryDate(request.requestedOn)),
         SummaryRow('Status', _decisionText(request.decision)),
       ],
       reason: request.note,
     ),
+    // Directly under the Reason: the manager's decision, which is final.
+    belowSummary: request.decision == LeaveDecision.pending
+        ? _OvertimeDecisionField(
+            request: request,
+            value: _choice,
+            onChanged: (choice) => setState(() => _choice = choice),
+          )
+        : null,
     onDecline: () => _decide(context, LeaveDecision.declined),
     onApprove: () => _decide(context, LeaveDecision.approved),
   );
 
   Future<void> _decide(BuildContext context, LeaveDecision decision) async {
+    final approve = decision == LeaveDecision.approved;
+    final choice = approve ? _choice : null;
     final result = await _showRequestDecisionSheet(
       context,
-      approve: decision == LeaveDecision.approved,
+      approve: approve,
       requestName: 'overtime',
       person: request.who,
       chipLabel: request.hoursLabel,
@@ -1025,18 +1110,133 @@ class _OvertimeRequestDetailPage extends StatelessWidget {
       chipBackground: MColors.goldTint,
       icon: Icons.schedule_rounded,
       value: _managerDate(request.workDate),
-      // What approving gives them: comp-off days, or overtime pay.
-      trailing: switch (request.compensationKind) {
-        'comp_off' => '+${formatDays(request.compOffDays)} Comp-off',
+      // What approving gives them, as decided: comp-off days, or overtime pay.
+      trailing: switch (choice?.kind ?? request.compensationKind) {
+        'comp_off' =>
+          '+${formatDays(choice?.days ?? request.compOffDays)} Comp-off',
         'pay' => 'Overtime Pay',
         _ => request.hoursLabel,
       },
     );
     if (result == null || !context.mounted) return;
-    bloc.add(
-      DecideOvertime(request.id, decision, managerNote: result.managerNote),
+    widget.bloc.add(
+      DecideOvertime(
+        request.id,
+        decision,
+        managerNote: result.managerNote,
+        compensation: choice?.json,
+      ),
     );
     Navigator.of(context).pop();
+  }
+}
+
+/// "Manager's decision": overtime pay, or a full or half day of comp-off,
+/// preselected to what the employee asked for. Options that can't be given
+/// are shown greyed out with the reason.
+class _OvertimeDecisionField extends StatelessWidget {
+  const _OvertimeDecisionField({
+    required this.request,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final OvertimeRequest request;
+  final OvertimeChoice? value;
+  final ValueChanged<OvertimeChoice> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final choice = value;
+    final preferred = OvertimeChoice.of(
+      request.preferredKind,
+      request.preferredCompOffDays,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(height: 1, thickness: 1, color: Color(0xFFE8E8EC)),
+        const SizedBox(height: 14),
+        const Text(
+          "Manager's decision",
+          style: TextStyle(color: Color(0xFF6A6A6A), fontSize: 13.5),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: MColors.line),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<OvertimeChoice>(
+              key: const ValueKey('overtime-manager-decision'),
+              value: choice,
+              isExpanded: true,
+              hint: const Text(
+                'As requested',
+                style: TextStyle(color: MColors.inkFaint, fontSize: 14),
+              ),
+              icon: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: MColors.inkSoft,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              items: [
+                for (final option in OvertimeChoice.values)
+                  DropdownMenuItem(
+                    value: option,
+                    enabled: option.blockedFor(request) == null,
+                    child: Text(
+                      option.blockedFor(request) == null
+                          ? option.label
+                          : '${option.label} (${option.blockedFor(request)})',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: option.blockedFor(request) == null
+                            ? MColors.ink
+                            : MColors.inkFaint,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+              onChanged: (picked) {
+                if (picked != null) onChanged(picked);
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          switch (choice) {
+            null => 'No preference was given: approving pays it and credits comp-off, as before.',
+            OvertimeChoice.pay => 'Approving pays it with their salary.',
+            _ =>
+              'Approving adds +${formatDays(choice.days)} Comp-off to their balance instead of overtime pay.',
+          },
+          style: const TextStyle(
+            color: MColors.inkSoft,
+            fontSize: 12.5,
+            height: 1.4,
+          ),
+        ),
+        if (preferred != null && choice != null && choice != preferred) ...[
+          const SizedBox(height: 4),
+          Text(
+            'This differs from their preference (${preferred.label}).',
+            style: const TextStyle(
+              color: MColors.terraDeep,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+        const SizedBox(height: 14),
+      ],
+    );
   }
 }
 

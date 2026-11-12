@@ -48,6 +48,7 @@ export async function updateOvertimeDecision(req: Request, res: Response, next: 
     const overtime = await decideOvertime(requireUserId(req), String(req.params.overtimeId ?? ''), {
       decision: String(req.body.decision ?? ''),
       managerNote: req.body.managerNote == null ? undefined : String(req.body.managerNote),
+      compensation: req.body.compensation,
     });
     res.status(200).json({ success: true, overtime });
   } catch (error) {

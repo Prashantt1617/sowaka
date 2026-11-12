@@ -1,13 +1,14 @@
 // Map backend DTOs to the dashboard's view-model types.
 import type { EmpType, FeedbackStatus, LeaveType, OtDuration, ReqStatus } from './theme';
 import { mediaUrl } from '../services/api';
-import type { Correction, Emp, FbEmp, Feedback, FbMgr, Leave, Overtime, Reimb } from './seed';
+import type { Correction, Emp, FbEmp, Feedback, FbMgr, Leave, OtChoice, Overtime, Reimb } from './seed';
 import type { AuthUser } from '../services/auth';
 import type {
   ClaimDTO,
   EmployeeDTO,
   FeedbackDTO,
   LeaveDTO,
+  OvertimeCompensation,
   OvertimeDTO,
   RegularizationDTO,
   WorkspaceDTO,
@@ -107,7 +108,7 @@ export function adaptOvertime(dto: OvertimeDTO, managerName: string): Overtime {
     appliedOn: fmtDay(dto.createdAt),
     otDate: fmtDay(dto.workDate),
     duration: (dto.duration === 'full_day' ? 'Full day' : 'Half day') as OtDuration,
-    ...otCompensation(dto.compensation),
+    ...otCompensation(dto),
     hours: dto.hours,
     day: weekday(dto.workDate),
     status: cap(dto.status) as ReqStatus,
@@ -122,16 +123,54 @@ export function adaptOvertime(dto: OvertimeDTO, managerName: string): Overtime {
 }
 
 /**
- * The compensation an overtime request asked for, in the app form's words.
- * Nothing on a request from before the choice existed.
+ * What the employee asked for and, once approved, what was decided, in the
+ * app form's words. Nothing on a request from before the choice existed.
  */
-function otCompensation(c: OvertimeDTO['compensation']): Pick<Overtime, 'compensation' | 'compOffCredit'> {
-  if (!c) return {};
-  if (c.kind === 'pay') return { compensation: 'Overtime Pay' };
+function otCompensation(
+  dto: OvertimeDTO,
+): Pick<Overtime, 'preference' | 'preferenceCredit' | 'preferredChoice' | 'decision' | 'decisionCredit' | 'decisionDiffers' | 'compOffAvailable'> {
+  // A server from before the approver's decision sends only `compensation`,
+  // which is then the preference.
+  const preferred = dto.preferredCompensation !== undefined ? dto.preferredCompensation : dto.compensation ?? null;
+  const decided = dto.status === 'approved' ? dto.compensation ?? null : null;
+  const preferredChoice = preferred ? otChoiceOf(preferred) : undefined;
+  const decidedChoice = decided ? otChoiceOf(decided) : undefined;
   return {
-    compensation: `Leave (Comp-off) · ${c.days === 1 ? 'Full day' : 'Half day'}`,
-    compOffCredit: `+${c.days} Comp-off`,
+    preference: preferredChoice && OT_CHOICE_LABEL[preferredChoice],
+    preferenceCredit: preferred ? compOffCreditOf(preferred) : undefined,
+    preferredChoice,
+    decision: decidedChoice && OT_CHOICE_LABEL[decidedChoice],
+    decisionCredit: decided ? compOffCreditOf(decided) : undefined,
+    decisionDiffers: Boolean(decidedChoice && preferredChoice && decidedChoice !== preferredChoice),
+    compOffAvailable: dto.compOffAvailable ?? true,
   };
+}
+
+/** How each choice reads, in the app form's words. */
+export const OT_CHOICE_LABEL: Record<OtChoice, string> = {
+  pay: 'Overtime Pay',
+  comp_off_1: 'Leave (Comp-off) · Full day',
+  'comp_off_0.5': 'Leave (Comp-off) · Half day',
+};
+
+export function otChoiceOf(c: OvertimeCompensation): OtChoice {
+  if (c.kind === 'pay') return 'pay';
+  return c.days === 1 ? 'comp_off_1' : 'comp_off_0.5';
+}
+
+export function otCompensationOf(choice: OtChoice): OvertimeCompensation {
+  if (choice === 'pay') return { kind: 'pay' };
+  return { kind: 'comp_off', days: choice === 'comp_off_1' ? 1 : 0.5 };
+}
+
+function compOffCreditOf(c: OvertimeCompensation): string | undefined {
+  return c.kind === 'comp_off' ? `+${c.days} Comp-off` : undefined;
+}
+
+/** "Comp-off · +1" for a narrow table cell; "Overtime Pay" as is. */
+export function otShortLabel(label: string | undefined, credit: string | undefined): string {
+  if (credit) return `Comp-off · ${credit.replace(' Comp-off', '')}`;
+  return label || '—';
 }
 
 /** How each requested day type reads in the table. */

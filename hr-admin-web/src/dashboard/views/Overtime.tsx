@@ -2,14 +2,17 @@ import { useStore } from '../store';
 import { OTDUR, STAT } from '../theme';
 import type { ReqStatus } from '../theme';
 import type { Overtime as OvertimeRow } from '../seed';
-import { inDateRange } from '../adapters';
+import { inDateRange, otShortLabel } from '../adapters';
 import { downloadCsv } from '../export';
 import { Card, DateRange, EmptyRow, ListPending, LoadingFigure, PageActions, Pill, SearchInput, StatusTabs, SummaryCard, Th } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { btn, btnClass, cellName, cellSub, TH, toolbar, TR } from '../ds';
 import { IconDownload } from '../icons';
 
-const COLS = '1.7fr 1fr 1.1fr 1fr 1.4fr .7fr 1.5fr 1.1fr';
+const COLS = '1.7fr 1fr 1.1fr 1fr 1.25fr 1.25fr .7fr 1.3fr 1.1fr';
+
+/** "Leave (Comp-off) · Full day (+1 Comp-off)", for the CSV and a cell's tooltip. */
+const withCredit = (label?: string, credit?: string) => (label ? `${label}${credit ? ` (${credit})` : ''}` : '');
 
 export function Overtime() {
   const s = useStore();
@@ -37,7 +40,8 @@ export function Overtime() {
         { header: 'Overtime date', value: (r) => r.otDate },
         { header: 'Day', value: (r) => r.day },
         { header: 'Duration', value: (r) => r.duration },
-        { header: 'Compensation', value: (r) => (r.compensation ? `${r.compensation}${r.compOffCredit ? ` (${r.compOffCredit})` : ''}` : '') },
+        { header: 'Preference', value: (r) => withCredit(r.preference, r.preferenceCredit) },
+        { header: 'Decision', value: (r) => withCredit(r.decision, r.decisionCredit) },
         { header: 'Hours', value: (r) => String(r.hours) },
         { header: 'Note', value: (r) => r.eRemark },
         { header: 'Manager', value: (r) => r.manager },
@@ -82,7 +86,8 @@ export function Overtime() {
           <Th>APPLIED ON</Th>
           <Th>OVERTIME DATE</Th>
           <Th>DURATION</Th>
-          <Th>COMPENSATION</Th>
+          <Th>PREFERENCE</Th>
+          <Th>DECISION</Th>
           <Th>DAY</Th>
           <Th>NOTE</Th>
           <Th>STATUS</Th>
@@ -108,10 +113,17 @@ export function Overtime() {
             </div>
             {/* What the employee asked for: overtime pay, or comp-off and how much. */}
             <div
-              style={{ fontWeight: 400, color: r.compensation ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-              title={r.compensation ? `${r.compensation}${r.compOffCredit ? ` (${r.compOffCredit})` : ''}` : 'Not chosen — a request from before the choice'}
+              style={{ fontWeight: 400, color: r.preference ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+              title={r.preference ? withCredit(r.preference, r.preferenceCredit) : 'Not chosen — a request from before the choice'}
             >
-              {r.compOffCredit ? `Comp-off · ${r.compOffCredit.replace(' Comp-off', '')}` : r.compensation || '—'}
+              {otShortLabel(r.preference, r.preferenceCredit)}
+            </div>
+            {/* The final call, once approved: what payroll and the Comp-off balance use. */}
+            <div
+              style={{ fontWeight: r.decisionDiffers ? 600 : 400, color: r.decision ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+              title={r.decision ? `${withCredit(r.decision, r.decisionCredit)}${r.decisionDiffers ? ' — differs from the preference' : ''}` : r.status === 'Pending' ? 'Decided on approval' : ''}
+            >
+              {r.decision ? otShortLabel(r.decision, r.decisionCredit) : '—'}
             </div>
             <div style={{ fontWeight: 400 }}>{r.day}</div>
             <div style={{ fontWeight: 400, color: r.eRemark ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
@@ -120,7 +132,7 @@ export function Overtime() {
             </div>
           </div>
         ))}
-        <ListPending state={st} onRetry={() => void s.reload()} cols={8} />
+        <ListPending state={st} onRetry={() => void s.reload()} cols={9} />
         {st === 'ready' && rows.length === 0 && <EmptyRow text="No overtime requests match your filters." />}
       </Card>
     </div>

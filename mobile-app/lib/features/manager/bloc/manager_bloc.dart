@@ -272,10 +272,20 @@ class DecideLeaveCancellation extends ManagerEvent {
 }
 
 class DecideOvertime extends ManagerEvent {
-  const DecideOvertime(this.overtimeId, this.decision, {this.managerNote = ''});
+  const DecideOvertime(
+    this.overtimeId,
+    this.decision, {
+    this.managerNote = '',
+    this.compensation,
+  });
   final String overtimeId;
   final LeaveDecision decision;
   final String managerNote;
+
+  /// On approval, the manager's final call: `{'kind': 'pay'}` or
+  /// `{'kind': 'comp_off', 'days': 1 | 0.5}`. Null: the employee's
+  /// preference stands.
+  final Map<String, Object>? compensation;
 }
 
 class OpenAwardPicker extends ManagerEvent {
@@ -924,11 +934,13 @@ class ManagerBloc {
           :final overtimeId,
           :final decision,
           :final managerNote,
+          :final compensation,
         ):
           final updated = await _service.decideOvertimeRequest(
             overtimeId,
             decision,
             managerNote,
+            compensation: compensation,
           );
           final data = _state.dashboard;
           if (data == null) return false;

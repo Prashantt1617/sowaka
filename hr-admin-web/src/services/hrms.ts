@@ -37,6 +37,9 @@ export type LeaveDTO = {
   cancelledFrom?: 'pending' | 'approved';
 };
 
+/** Overtime pay, or comp-off of a full (1) or half (0.5) day. */
+export type OvertimeCompensation = { kind: 'pay' } | { kind: 'comp_off'; days: 1 | 0.5 };
+
 export type OvertimeDTO = {
   id: string;
   userId: string;
@@ -45,10 +48,16 @@ export type OvertimeDTO = {
   /** Graded by the server against the requester's shift. */
   duration: 'half_day' | 'full_day';
   /**
-   * Overtime pay or comp-off, as the employee chose it. Null on a request
-   * from before the choice existed (and from older app builds).
+   * Overtime pay or comp-off: the employee's preference while pending, the
+   * approver's decision once approved (what payroll and the Comp-off balance
+   * use). Null on a request from before the choice existed (and from older
+   * app builds).
    */
-  compensation?: { kind: 'pay' } | { kind: 'comp_off'; days: 1 | 0.5 } | null;
+  compensation?: OvertimeCompensation | null;
+  /** What the employee asked for, whatever was decided; null when they chose nothing. */
+  preferredCompensation?: OvertimeCompensation | null;
+  /** Whether comp-off can be decided for this person (HR has a Comp-off leave type for them). */
+  compOffAvailable?: boolean;
   hours: number;
   note?: string;
   managerNote?: string;
@@ -147,10 +156,16 @@ export const decideLeaveCancellation = (id: string, decision: 'approved' | 'decl
 export const getOvertimeInbox = () =>
   api<{ overtime: OvertimeDTO[] }>('/admin/overtime').then((r) => r.overtime);
 
-export const decideOvertime = (id: string, decision: 'approved' | 'declined', managerNote?: string) =>
+export const decideOvertime = (
+  id: string,
+  decision: 'approved' | 'declined',
+  managerNote?: string,
+  /** On approval, HR's final call; absent, the employee's preference stands. */
+  compensation?: OvertimeCompensation,
+) =>
   api<{ overtime: OvertimeDTO }>(`/admin/overtime/${id}/decision`, {
     method: 'PATCH',
-    body: { decision, ...(managerNote ? { managerNote } : {}) },
+    body: { decision, ...(managerNote ? { managerNote } : {}), ...(decision === 'approved' && compensation ? { compensation } : {}) },
   }).then((r) => r.overtime);
 
 // ---- Reimbursements (org-wide, dashboard-only decisions) ----

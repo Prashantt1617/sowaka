@@ -350,8 +350,9 @@ class _TeamMemberProfilePageState extends State<_TeamMemberProfilePage> {
             rows: [
               ('Date:', _managerDate(request.workDate)),
               ('Overtime hrs:', request.hoursLabel),
-              if (request.compensationLabel.isNotEmpty)
-                ('Compensation:', request.compensationDetail),
+              // Overtime pay or comp-off: the preference while pending, the
+              // decision once approved.
+              ...request.compensationCardRows,
               (
                 'Comment:',
                 request.note.isEmpty ? request.timeRangeLabel : request.note,
@@ -1599,8 +1600,9 @@ List<(DateTime date, Widget card)> _myRequestEntries(ManagerDashboard data) {
           rows: [
             ('Date:', _managerDate(request.workDate)),
             ('Overtime hrs:', request.hoursLabel),
-            if (request.compensationLabel.isNotEmpty)
-              ('Compensation:', request.compensationDetail),
+            // Overtime pay or comp-off: the preference while pending, the
+            // decision once approved.
+            ...request.compensationCardRows,
             (
               'Comment:',
               request.note.isEmpty ? request.timeRangeLabel : request.note,

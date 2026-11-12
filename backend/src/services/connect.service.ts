@@ -2568,22 +2568,26 @@ async function withLinkPreview(
 
 function normalizePollOptions(value: unknown, imageKeys: (PollOptionMedia | undefined)[] = []) {
   const raw = Array.isArray(value) ? value : [];
-  const labels = raw
-    .map((item) => {
-      if (typeof item === 'string') return item.trim();
-      if (item && typeof item === 'object' && 'label' in item) {
-        return String((item as { label?: unknown }).label ?? '').trim();
+  // An option is its words, its photo or video, or both: a media option needs no words. Each
+  // keeps the media sent for its own position (imageKeys is indexed like the options sent),
+  // so an option without words is no longer dropped and its neighbours' media can't shift onto it.
+  const options = raw
+    .map((item, index) => {
+      let label = '';
+      if (typeof item === 'string') label = item.trim();
+      else if (item && typeof item === 'object' && 'label' in item) {
+        label = String((item as { label?: unknown }).label ?? '').trim();
       }
-      return '';
+      return { label, media: imageKeys[index] };
     })
-    .filter(Boolean)
+    .filter((option) => option.label || option.media)
     .slice(0, 4);
-  if (labels.length < 2) throw new ConnectError(400, 'Survey needs at least two options');
-  return labels.map((label, index) => ({
+  if (options.length < 2) throw new ConnectError(400, 'Survey needs at least two options');
+  return options.map(({ label, media }) => ({
     id: randomUUID(),
     label: label.slice(0, 80),
     votes: 0,
-    ...pollOptionMediaFields(imageKeys[index]),
+    ...pollOptionMediaFields(media),
   }));
 }
 

@@ -3,8 +3,9 @@ import type { ReactNode } from 'react';
 import { useStore } from '../store';
 import { getReimbReceiptUrl } from '../../services/hrms';
 import { ETYPE, OTDUR, STAT, typeColor } from '../theme';
-import type { Reimb } from '../seed';
-import { Pill, Avatar } from '../ui';
+import type { OtChoice, Overtime, Reimb } from '../seed';
+import { OT_CHOICE_LABEL } from '../adapters';
+import { Pill, Avatar, SelectBox } from '../ui';
 import { btn, btnClass, eyebrow, textareaStyle } from '../ds';
 import { IconCheck, IconDownload, IconExternal, IconFile, IconStar, IconX } from '../icons';
 import { CloseButton, DrawerHeader, DrawerShell, InfoGrid, RemarkBlock } from './shell';
@@ -162,7 +163,27 @@ function OvertimeDrawer() {
   const s = useStore();
   const d = s.ots.find((o) => o.id === s.otDrawerId);
   if (!d) return null;
+  return <OvertimeDrawerBody key={d.id} d={d} />;
+}
+
+/** Which decisions can be made on this request, and why not where one can't. */
+function otChoiceBlocked(d: Overtime, choice: OtChoice): string | null {
+  if (choice === 'pay') return null;
+  if (!d.compOffAvailable) return "Comp-off isn't set up";
+  if (choice === 'comp_off_1' && d.duration === 'Half day') return 'Half-day claim';
+  return null;
+}
+
+function OvertimeDrawerBody({ d }: { d: Overtime }) {
+  const s = useStore();
   const close = () => s.setOtDrawerId(null);
+  // HR's final call, starting from what the employee asked for (overtime pay
+  // when that can no longer be given). Empty on a request with no preference:
+  // approving it then leaves it as it always was.
+  const [choice, setChoice] = useState<OtChoice | ''>(() =>
+    d.preferredChoice ? (otChoiceBlocked(d, d.preferredChoice) ? 'pay' : d.preferredChoice) : '',
+  );
+  const preference = d.preference ? `${d.preference}${d.preferenceCredit ? `, ${d.preferenceCredit}` : ''}` : 'Not chosen (older app)';
   return (
     <DrawerShell onClose={close}>
       <DrawerHeader name={d.name} userId={d.submitterId} subtitle={`${d.team} · Applied ${d.appliedOn}`} onClose={close} />
@@ -177,18 +198,46 @@ function OvertimeDrawer() {
             { label: 'OVERTIME DATE', value: d.otDate },
             { label: 'DAY', value: d.day },
             { label: 'DURATION', value: d.duration },
-            // Overtime pay, or comp-off and what it adds to their balance.
-            {
-              label: 'COMPENSATION',
-              value: d.compensation ? `${d.compensation}${d.compOffCredit ? `, ${d.compOffCredit}` : ''}` : 'Not chosen (older app)',
-            },
+            // What the employee asked for: overtime pay, or comp-off and what it would add.
+            { label: "EMPLOYEE'S PREFERENCE", value: preference },
+            // The final call, once approved: what payroll and the Comp-off balance use.
+            ...(d.decision
+              ? [{
+                  label: 'DECISION',
+                  value: `${d.decision}${d.decisionCredit ? `, ${d.decisionCredit}` : ''}${d.decisionDiffers ? ' — differs from the preference' : ''}`,
+                }]
+              : []),
           ]}
         />
         <RemarkBlock label="EMPLOYEE NOTE" text={d.eRemark || 'No note provided.'} filled={!!d.eRemark} marginBottom={16} />
+        {d.status === 'Pending' && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginBottom: 6 }}>Decision</div>
+            <SelectBox value={choice} onChange={(v) => setChoice(v as OtChoice | '')}>
+              {!d.preferredChoice && <option value="">Not chosen — as before</option>}
+              {(Object.keys(OT_CHOICE_LABEL) as OtChoice[]).map((c) => {
+                const blocked = otChoiceBlocked(d, c);
+                return (
+                  <option key={c} value={c} disabled={Boolean(blocked)}>
+                    {OT_CHOICE_LABEL[c]}{blocked ? ` (${blocked})` : ''}
+                  </option>
+                );
+              })}
+            </SelectBox>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6 }}>
+              {choice === ''
+                ? 'Paid in payroll and credited as comp-off, as requests from before the choice always were.'
+                : choice === 'pay'
+                  ? 'Approving pays it in payroll.'
+                  : `Approving adds ${choice === 'comp_off_1' ? '+1' : '+0.5'} Comp-off to their balance instead of overtime pay.`}
+              {d.preferredChoice && choice && choice !== d.preferredChoice ? ' This differs from their preference.' : ''}
+            </div>
+          </div>
+        )}
         <RemarkBlock label="MANAGER REMARK" text={d.mRemark || 'No remark yet.'} filled={!!d.mRemark} />
       </div>
       {d.status === 'Pending' && (
-        <DecisionFooter onDecline={() => s.otAsk(d.id, 'decline')} onApprove={() => s.otAsk(d.id, 'approve')} approveLabel="Approve overtime" />
+        <DecisionFooter onDecline={() => s.otAsk(d.id, 'decline')} onApprove={() => s.otAsk(d.id, 'approve', choice || undefined)} approveLabel="Approve overtime" />
       )}
     </DrawerShell>
   );
@@ -441,7 +490,7 @@ function OvertimeConfirmModal() {
     <ConfirmOverrideModal
       action={c.action}
       title={approve ? 'Approve this overtime?' : 'Decline this overtime?'}
-      summary={<>You’re {approve ? 'approving' : 'declining'} <b>{d.name}</b>’s {d.duration.toLowerCase()} overtime on {d.otDate} as an admin override.{approve && d.compensation ? <> They asked for <b>{d.compensation}</b>{d.compOffCredit ? <> — approving adds <b>{d.compOffCredit}</b> to their balance instead of overtime pay</> : <> — it is paid in payroll</>}.</> : null}</>}
+      summary={<>You’re {approve ? 'approving' : 'declining'} <b>{d.name}</b>’s {d.duration.toLowerCase()} overtime on {d.otDate} as an admin override.{approve && c.choice ? <> Decision: <b>{OT_CHOICE_LABEL[c.choice]}</b>{c.choice === 'pay' ? <> — it is paid in payroll</> : <> — approving adds <b>{c.choice === 'comp_off_1' ? '+1' : '+0.5'} Comp-off</b> to their balance instead of overtime pay</>}{d.preference && c.choice !== d.preferredChoice ? <> (they preferred {d.preference})</> : null}.</> : null}</>}
       note={s.otNote}
       onNote={s.setOtNote}
       onCancel={s.otCloseConfirm}

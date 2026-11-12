@@ -458,6 +458,60 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a poll posts with no question and an option that is only a video',
+    (tester) async {
+      final dir = Directory.systemTemp.createTempSync('poll-no-text-test');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final clip = File('${dir.path}/clip.mp4')
+        ..writeAsBytesSync(List.filled(2048, 7));
+      const picker = MethodChannel('miguelruivo.flutter.plugins.filepicker');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(picker, (call) async {
+        return [
+          {'name': 'clip.mp4', 'path': clip.path, 'size': 2048},
+        ];
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(picker, null));
+
+      final feed = await _pumpFeed(tester, const []);
+      await _openPollEditor(tester);
+      await tester.tap(find.text('Media'));
+      await tester.pump();
+      // No question, the first option only a video, the second only words.
+      await tester.enterText(find.byType(TextField).at(2), 'Robot');
+      await tester.tap(find.bySemanticsLabel('Add a photo or video').first);
+      await _settle(tester);
+      await tester.tap(find.text('Done'));
+      await _settle(tester, 5);
+      await tester.tap(find.text('Post'));
+      for (var i = 0; i < 10; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await _settle(tester);
+
+      expect(
+        find.textContaining('Add at least two poll options'),
+        findsNothing,
+      );
+      final create = feed.requests.where(
+        (r) => r.method == 'POST' && r.url.path.endsWith('/connect/posts'),
+      );
+      expect(create, hasLength(1));
+      final sent = latin1.decode(create.single.bodyBytes);
+      // The video stays on the first option, the one it was chosen for.
+      expect(sent, contains('name="pollOptionImages"; filename="clip.mp4"'));
+      expect(sent, contains('name="pollOptionImageIndexes"'));
+      expect(sent, contains('[0]'));
+      expect(sent, contains('Robot'));
+      await _tearDown(tester, feed.bloc);
+    },
+  );
+
   testWidgets('a poll with pictures still draws them as pictures', (
     tester,
   ) async {

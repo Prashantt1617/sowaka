@@ -159,26 +159,39 @@ export function overtimeSubmittedApproverEmail(
       + `${employee.name} has submitted an overtime request.\n\n`
       + `Date: ${date}\n`
       + `Duration: ${duration}\n`
-      + (compensation ? `Compensation: ${compensation}\n` : '')
+      + (compensation ? `Employee's preference: ${compensation}\n` : '')
       + `Reason: ${reason || '—'}\n\n`
       + `Review the request in the app.\n\n`
       + link('Review Request'),
   };
 }
 
-export function overtimeApprovedEmail(employee: Party, duration: string, date: string, compensation?: string) {
+export function overtimeApprovedEmail(
+  employee: Party, duration: string, date: string,
+  /** What was decided, in words; absent on a request from an older app. */
+  compensation?: string,
+  /** What they asked for, when the decision differs from it. */
+  preferred?: string,
+) {
   return {
     subject: 'Your overtime request has been approved',
     body: `Hi ${firstName(employee.name)},\n\nYour overtime request for ${date} has been approved.\n\nApproved overtime: ${duration}`
-      + (compensation ? `\nCompensation: ${compensation}` : ''),
+      + (compensation ? `\nDecision: ${compensation}` : '')
+      + (compensation && preferred ? `\nYour preference was: ${preferred}` : ''),
   };
 }
 
-/** " · paid as overtime" or " · +1 Comp-off" after an approval; nothing for a request from an older app. */
-function compensationNote(compensation: string | undefined): string {
+/**
+ * " · paid as overtime" or " · +1 Comp-off" after an approval, and what they
+ * had asked for when the decision differs; nothing for a request from an
+ * older app.
+ */
+export function compensationNote(compensation: string | undefined, preferred?: string): string {
   if (!compensation) return '';
-  if (compensation === 'Overtime Pay') return ' · paid as overtime';
-  return compensation.endsWith('Full day') ? ' · +1 Comp-off' : ' · +0.5 Comp-off';
+  const decided = compensation === 'Overtime Pay'
+    ? ' · paid as overtime'
+    : compensation.endsWith('Full day') ? ' · +1 Comp-off' : ' · +0.5 Comp-off';
+  return preferred ? `${decided} (you preferred ${preferred})` : decided;
 }
 
 export function overtimeDeclinedEmail(employee: Party, date: string, comment: string) {
@@ -368,7 +381,7 @@ export async function notifyLeaveDecided(input: {
 /** Row 65 for the employee (inbox only), row 10 for whoever approves. `duration` is "Full day" or "Half day". */
 export async function notifyOvertimeSubmitted(input: {
   employeeUserId: string; requestId?: string; workDate: Date; duration: string; reason: string;
-  /** The compensation chosen, in words; absent on a request from an older app. */
+  /** The employee's preference, in words; absent on a request from an older app. */
   compensation?: string;
 }) {
   const employee = await users().findOne({ userId: input.employeeUserId });
@@ -388,7 +401,7 @@ export async function notifyOvertimeSubmitted(input: {
     await deliver([approver.userId], {
       scenario: 'overtime_requested',
       title: `${employee.name} · Overtime`,
-      body: `${input.duration} on ${date}${input.compensation ? ` · ${input.compensation}` : ''}`,
+      body: `${input.duration} on ${date}${input.compensation ? ` · prefers ${input.compensation}` : ''}`,
       data: { type: 'overtime', view: 'inbox', requestId },
       email: overtimeSubmittedApproverEmail(approver, employee, input.duration, longDate(input.workDate), input.reason, input.compensation),
     });
@@ -399,8 +412,10 @@ export async function notifyOvertimeSubmitted(input: {
 export async function notifyOvertimeDecided(input: {
   employeeUserId: string; requestId?: string; workDate: Date; duration: string; approved: boolean; comment: string;
   decidedByUserId?: string;
-  /** The compensation chosen, in words; absent on a request from an older app. */
+  /** What was decided (the preference, unless the approver chose otherwise), in words; absent on a request from an older app. */
   compensation?: string;
+  /** The employee's preference, in words, only when the decision differs from it. */
+  preferred?: string;
 }) {
   const employee = await users().findOne({ userId: input.employeeUserId });
   if (!employee) return;
@@ -410,11 +425,11 @@ export async function notifyOvertimeDecided(input: {
     scenario: 'overtime_decided',
     title: input.approved ? 'Overtime approved ✓' : 'Overtime not approved',
     body: input.approved
-      ? `${approver} approved your ${input.duration.toLowerCase().replace(' ', '-')} overtime on ${date}${compensationNote(input.compensation)}`
+      ? `${approver} approved your ${input.duration.toLowerCase().replace(' ', '-')} overtime on ${date}${compensationNote(input.compensation, input.preferred)}`
       : quoted(approver, input.comment) || `${approver} didn't approve your overtime on ${date}`,
     data: { type: 'overtime', view: 'mine', requestId: input.requestId ?? '', from: decidedBy(employee, input.decidedByUserId) },
     email: input.approved
-      ? overtimeApprovedEmail(employee, input.duration, longDate(input.workDate), input.compensation)
+      ? overtimeApprovedEmail(employee, input.duration, longDate(input.workDate), input.compensation, input.preferred)
       : overtimeDeclinedEmail(employee, longDate(input.workDate), input.comment),
   });
 }
