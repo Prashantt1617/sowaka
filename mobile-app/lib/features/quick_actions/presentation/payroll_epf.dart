@@ -144,19 +144,22 @@ class _EpfPageState extends State<_EpfPage> {
         else if (!epf.enrolled)
           ..._notEnrolled(epf)
         else ...[
-          _EpfBalanceCard(epf: epf, onEditBalance: _editBalance),
-          const SizedBox(height: 20),
-          const _HomeSectionLabel('Every month'),
-          const SizedBox(height: 12),
+          _EpfBalanceCard(epf: epf),
+          ..._underBalance(epf),
+          const _EpfSection('Every month'),
           if (epf.monthly case final monthly?) ...[
             _EpfMonthlyCard(monthly: monthly),
-            const SizedBox(height: 8),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
+              padding: const EdgeInsets.fromLTRB(2, 8, 2, 0),
               child: Text(
                 _monthlyNote(monthly),
                 key: const ValueKey('epf-monthly-note'),
-                style: _PrText.caption,
+                style: _Er._sora.copyWith(
+                  color: const Color(0xFF6B6B72),
+                  fontSize: 12.5,
+                  height: 17.5 / 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ] else ...[
@@ -166,39 +169,100 @@ class _EpfPageState extends State<_EpfPage> {
             ),
             RaiseTicketLink(about: epf.notSetUpMessage),
           ],
-          const SizedBox(height: 20),
-          const _HomeSectionLabel('Manage on EPFO'),
-          const SizedBox(height: 12),
-          _FormCard(
+          const _EpfSection('Manage on EPFO'),
+          _EarningsCard(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            radius: 18,
             children: [
               for (final (index, link) in _EpfoLink.values.indexed) ...[
-                if (index > 0)
-                  const Divider(
-                    height: 1,
-                    thickness: 1,
-                    color: Color(0xFFF3F4F6),
-                  ),
+                if (index > 0) const _EpfHairline(),
                 _EpfoRow(link: link, onTap: () => _openEpfo(link)),
               ],
             ],
           ),
         ],
-        if (epf != null && canRaise) ...[
-          const SizedBox(height: 16),
-          Center(
-            child: InkWell(
-              key: const ValueKey('epf-raise-ticket'),
-              onTap: _raiseTicket,
-              borderRadius: BorderRadius.circular(8),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-                child: Text('PF question? Raise a ticket', style: _PrText.link),
+        if (epf != null && canRaise)
+          Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: Center(
+              child: InkWell(
+                key: const ValueKey('epf-raise-ticket'),
+                onTap: _raiseTicket,
+                borderRadius: BorderRadius.circular(8),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 44),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Center(
+                      widthFactor: 1,
+                      child: Text(
+                        'PF question? Raise a ticket',
+                        style: _Er._sora.copyWith(
+                          color: _Er.link,
+                          fontSize: 13.5,
+                          height: 1.26,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
-        ],
       ],
     );
+  }
+
+  /// What sits under the balance card, outside it: the PF payroll added
+  /// since the passbook's date, or, until there is a balance, the way to add
+  /// one.
+  List<Widget> _underBalance(EpfSummary epf) {
+    final balance = epf.balance;
+    final small = _Er._sora.copyWith(
+      fontSize: 12.5,
+      height: 17.5 / 12.5,
+      fontWeight: FontWeight.w600,
+    );
+    if (balance != null) {
+      if (balance.addedSincePaise <= 0) return const [];
+      return [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 8, 2, 0),
+          child: Text(
+            '+ ${_rupees(balance.addedSincePaise)} added through payroll '
+            'since ${_epfDay(balance.asOn)}',
+            key: const ValueKey('epf-added-since'),
+            style: small.copyWith(color: _prGreen),
+          ),
+        ),
+      ];
+    }
+    return [
+      if (epf.saved.months == 0)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 8, 2, 0),
+          child: Text(
+            'PF from your payslips shows here after your first salary.',
+            style: small.copyWith(color: const Color(0xFF6B6B72)),
+          ),
+        ),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: InkWell(
+          key: const ValueKey('epf-add-balance'),
+          onTap: _editBalance,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(2, 10, 2, 4),
+            child: Text(
+              'Add your balance from the EPFO passbook ›',
+              style: small.copyWith(color: _Er.link),
+            ),
+          ),
+        ),
+      ),
+    ];
   }
 
   /// "12% of ₹15,000 from you. Your employer's 12% is split between PF and
@@ -238,13 +302,59 @@ class _EpfPageState extends State<_EpfPage> {
   }
 }
 
-/// The top card: the passbook balance with what payroll added since, or the
-/// PF put in through Sowaka until a balance is added.
+/// "EVERY MONTH", "MANAGE ON EPFO": 24 above, 12 below.
+class _EpfSection extends StatelessWidget {
+  const _EpfSection(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 24, bottom: 12),
+    child: Text(text.toUpperCase(), style: _Er.section),
+  );
+}
+
+class _EpfHairline extends StatelessWidget {
+  const _EpfHairline();
+
+  @override
+  Widget build(BuildContext context) =>
+      const Divider(height: 1, thickness: 1, color: _Er.hairline);
+}
+
+/// "As on 30 Sep", "Since Apr 2026": the grey tag on the balance card.
+class _EpfTag extends StatelessWidget {
+  const _EpfTag(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: const Color(0xFFEDEDF0),
+      borderRadius: BorderRadius.circular(12.5),
+    ),
+    child: Text(
+      text,
+      style: _Er._sora.copyWith(
+        color: _Er.muted,
+        fontSize: 12,
+        height: 1.26,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
+}
+
+/// The top card (Figma 4506:23390): the passbook balance with what payroll
+/// added since, or the PF put in through Sowaka until a balance is added,
+/// and the UAN. Nothing else: the rest sits under the card.
 class _EpfBalanceCard extends StatelessWidget {
-  const _EpfBalanceCard({required this.epf, required this.onEditBalance});
+  const _EpfBalanceCard({required this.epf});
 
   final EpfSummary epf;
-  final VoidCallback onEditBalance;
 
   @override
   Widget build(BuildContext context) {
@@ -252,16 +362,14 @@ class _EpfBalanceCard extends StatelessWidget {
     final saved = epf.saved;
     final since = saved.sincePeriod;
     final uan = epf.uan;
-    final heroStyle = const TextStyle(
-      fontFamily: 'Sora',
-      fontFamilyFallback: _soraFallback,
-      color: Color(0xFF111827),
-      fontSize: 26,
-      height: 34 / 26,
-      letterSpacing: -0.4,
-      fontWeight: FontWeight.w700,
-    );
-    return _FormCard(
+    final tag = balance != null
+        ? 'As on ${_epfDay(balance.asOn)}'
+        : since != null
+        ? 'Since ${_epfMonth(since)}'
+        : null;
+    return _EarningsCard(
+      padding: const EdgeInsets.all(20),
+      radius: 22,
       children: [
         Row(
           children: [
@@ -269,38 +377,23 @@ class _EpfBalanceCard extends StatelessWidget {
               child: Text(
                 (balance == null ? 'PF saved through Sowaka' : 'PF balance')
                     .toUpperCase(),
-                style: _PrText.label,
+                style: _Er.section,
               ),
             ),
-            if (balance != null)
-              _PrPill(
-                'As on ${_epfDay(balance.asOn)}',
-                color: const Color(0xFF4B5563),
-                tint: const Color(0xFFF3F4F6),
-              )
-            else if (since != null)
-              _PrPill(
-                'Since ${_epfMonth(since)}',
-                color: _prBlue,
-                tint: _prBlueTint,
-              ),
+            if (tag != null) ...[const SizedBox(width: 8), _EpfTag(tag)],
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 10),
         Text(
           _rupees(balance?.totalPaise ?? saved.totalPaise),
           key: const ValueKey('epf-hero'),
-          style: heroStyle,
-        ),
-        if (balance != null && balance.addedSincePaise > 0) ...[
-          const SizedBox(height: 2),
-          Text(
-            '+ ${_rupees(balance.addedSincePaise)} added through payroll '
-            'since ${_epfDay(balance.asOn)}',
-            key: const ValueKey('epf-added-since'),
-            style: _PrText.sub.copyWith(color: _prGreen),
+          style: _Er._sora.copyWith(
+            fontSize: 34,
+            height: 37.4 / 34,
+            letterSpacing: -0.6,
+            fontWeight: FontWeight.w800,
           ),
-        ],
+        ),
         const SizedBox(height: 6),
         Text(
           uan != null
@@ -309,41 +402,11 @@ class _EpfBalanceCard extends StatelessWidget {
               ? 'UAN ending ${epf.uanLast4}'
               : 'UAN not on record yet. Ask HR to add it.',
           key: const ValueKey('epf-uan'),
-          style: _PrText.sub.copyWith(
-            color: const Color(0xFF4B5563),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 12),
-        const Divider(height: 1, thickness: 1, color: Color(0xFFEBEBEB)),
-        const SizedBox(height: 10),
-        Text(
-          balance == null
-              ? saved.months == 0
-                    ? 'PF from your payslips shows here after your first '
-                          'salary. Your full balance, with interest and past '
-                          'employers, is on EPFO.'
-                    : 'Your full balance, with interest and past employers, '
-                          'is on EPFO.'
-              : 'From your EPFO passbook${balance.source == 'hr' ? ', added by HR' : ''}. '
-                    'Interest shows on EPFO when it is credited.',
-          style: _PrText.caption,
-        ),
-        const SizedBox(height: 4),
-        InkWell(
-          key: ValueKey(
-            balance == null ? 'epf-add-balance' : 'epf-update-balance',
-          ),
-          onTap: onEditBalance,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              balance == null
-                  ? 'Add your balance from the EPFO passbook ›'
-                  : 'Update balance ›',
-              style: _PrText.link.copyWith(fontSize: 13),
-            ),
+          style: _Er._sora.copyWith(
+            color: _Er.muted,
+            fontSize: 13,
+            height: 1.26,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ],
@@ -351,7 +414,8 @@ class _EpfBalanceCard extends StatelessWidget {
   }
 }
 
-/// You put in / Employer puts in / Employer to pension (EPS).
+/// You put in / Employer puts in / Employer to pension (EPS) (Figma
+/// 4506:23401).
 class _EpfMonthlyCard extends StatelessWidget {
   const _EpfMonthlyCard({required this.monthly});
 
@@ -365,20 +429,22 @@ class _EpfMonthlyCard extends StatelessWidget {
       if (monthly.employerEpsPaise > 0)
         ('Employer to pension (EPS)', monthly.employerEpsPaise),
     ];
-    return _FormCard(
+    return _EarningsCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      radius: 18,
       children: [
         for (final (index, (label, paise)) in rows.indexed) ...[
-          if (index > 0)
-            const Divider(height: 1, thickness: 1, color: Color(0xFFF3F4F6)),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
+          if (index > 0) const _EpfHairline(),
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 46),
             child: Row(
               children: [
-                Expanded(child: Text(label, style: _PrText.row)),
+                Expanded(child: Text(label, style: _Er.lineLabel)),
+                const SizedBox(width: 12),
                 Text(
                   _rupees(paise),
                   key: ValueKey('epf-monthly-$index'),
-                  style: _PrText.amount,
+                  style: _Er.lineValue,
                 ),
               ],
             ),
@@ -391,21 +457,18 @@ class _EpfMonthlyCard extends StatelessWidget {
 
 enum _EpfoLink {
   passbook(
-    icon: Icons.menu_book_rounded,
     name: 'Passbook',
     sub: 'See every PF credit and interest',
     title: 'Open EPFO passbook',
     url: _epfoPassbook,
   ),
   nominee(
-    icon: Icons.family_restroom_rounded,
     name: 'Nominee',
     sub: 'Add or change who gets your PF',
     title: 'Update nominee on EPFO',
     url: _epfoMemberPortal,
   ),
   transfer(
-    icon: Icons.sync_alt_rounded,
     name: 'Transfer an old PF account',
     sub: 'Move PF from a previous employer',
     title: 'Transfer PF on EPFO',
@@ -413,20 +476,20 @@ enum _EpfoLink {
   );
 
   const _EpfoLink({
-    required this.icon,
     required this.name,
     required this.sub,
     required this.title,
     required this.url,
   });
 
-  final IconData icon;
   final String name;
   final String sub;
   final String title;
   final String url;
 }
 
+/// A "Manage on EPFO" row (Figma 4506:23416): title, grey line, and the
+/// external-link mark.
 class _EpfoRow extends StatelessWidget {
   const _EpfoRow({required this.link, required this.onTap});
 
@@ -437,41 +500,26 @@ class _EpfoRow extends StatelessWidget {
   Widget build(BuildContext context) => InkWell(
     key: ValueKey('epf-link-${link.name}'),
     onTap: onTap,
-    borderRadius: BorderRadius.circular(12),
     child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 14),
       child: Row(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x14000000),
-                  blurRadius: 1.5,
-                  offset: Offset(0, 1),
-                ),
-              ],
-            ),
-            child: Icon(link.icon, size: 20, color: _prBlue),
-          ),
-          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(link.name, style: _PrText.title),
-                const SizedBox(height: 2),
-                Text(link.sub, style: _PrText.sub),
+                Text(link.name, style: _Er.monthTitle),
+                const SizedBox(height: 3),
+                Text(link.sub, style: _Er.monthSub),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          const Icon(Icons.open_in_new_rounded, size: 18, color: _prBlue),
+          const SizedBox(width: 12),
+          SvgPicture.asset(
+            'assets/icons/payroll_epf_external.svg',
+            width: 18,
+            height: 18,
+          ),
         ],
       ),
     ),
