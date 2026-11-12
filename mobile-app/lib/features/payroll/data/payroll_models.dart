@@ -132,9 +132,9 @@ class PayrollSalary {
     lopDays: _number(json['lopDays']),
     lopPaise: _paise(json['lopPaise']),
     overtimePaise: _paise(json['overtimePaise']),
-    deductions: _list(json['deductions'])
-        .map(PayrollDeduction.fromJson)
-        .toList(),
+    deductions: _list(
+      json['deductions'],
+    ).map(PayrollDeduction.fromJson).toList(),
     netPaise: _paise(json['netPaise']),
     reimbursementsPaise: _paise(json['reimbursementsPaise']),
     takeHomePaise: _paise(json['takeHomePaise']),
@@ -1363,9 +1363,9 @@ class PayrollEarnings {
         reimbursementsPaise: _paise(json['reimbursementsPaise']),
         takeHomePaise: _paise(json['takeHomePaise']),
         fromStructure: json['componentsSource'] != 'payslips',
-        components: _list(json['components'])
-            .map(EarningsComponent.fromJson)
-            .toList(),
+        components: _list(
+          json['components'],
+        ).map(EarningsComponent.fromJson).toList(),
         annualTotalPaise: _paise(json['annualTotalPaise']),
         months: _list(json['months']).map(EarningsMonth.fromJson).toList(),
         componentsNotSetUp: EarningsNotSetUp.fromJson(
@@ -1982,9 +1982,9 @@ class InvestmentProofsCounted {
 
   factory InvestmentProofsCounted.fromJson(Map<String, dynamic> json) =>
       InvestmentProofsCounted(
-        rows: _list(json['rows'])
-            .map(InvestmentProofCountedRow.fromJson)
-            .toList(),
+        rows: _list(
+          json['rows'],
+        ).map(InvestmentProofCountedRow.fromJson).toList(),
         provedPaise: _paise(json['provedPaise']),
         notProvedPaise: _paise(json['notProvedPaise']),
         pfPaise: _paise(json['pfPaise']),

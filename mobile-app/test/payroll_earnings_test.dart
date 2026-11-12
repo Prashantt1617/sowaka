@@ -404,7 +404,7 @@ void main() {
     );
     expect(inPage(find.text('₹1,01,533')), findsOneWidget);
     await reveal(tester, find.byKey(const ValueKey('earnings-month-2026-04')));
-    expect(inPage(find.text('April 2026')), findsOneWidget);
+    expect(inPage(find.text('April salary')), findsOneWidget);
     expect(inPage(find.text('Gross ₹1,24,000')), findsWidgets);
     expect(tester.takeException(), isNull);
   });
@@ -475,7 +475,7 @@ void main() {
     await tap(tester, find.byKey(const ValueKey('earnings-month-2026-04')));
     expect(server.calls.last, 'GET /payslips/slip-2026-04');
     expect(find.byKey(const ValueKey('payslip-slip-2026-04')), findsOneWidget);
-    expect(find.text('April 2026'), findsWidgets);
+    expect(find.text('April salary'), findsWidgets);
     expect(find.text('₹1,13,533'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
