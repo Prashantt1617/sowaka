@@ -189,7 +189,7 @@ export function Columns({
   cols,
   height = 170,
 }: {
-  cols: { key: string; label: string; parts: { v: number; color: string }[]; tip: string; off?: boolean; part?: boolean }[];
+  cols: { key: string; label: string; parts: { v: number; color: string }[]; tip: string; off?: boolean; part?: boolean; est?: boolean }[];
   height?: number;
 }) {
   const [hover, setHover] = useState<string | null>(null);
@@ -200,7 +200,7 @@ export function Columns({
       {cols.map((c, i) => {
         const total = c.parts.reduce((s, p) => s + p.v, 0);
         return (
-          <div key={c.key} className={`ua-col${c.off ? ' off' : ''}${c.part ? ' part' : ''}`} onMouseEnter={() => setHover(c.key)} aria-label={c.tip}>
+          <div key={c.key} className={`ua-col${c.off ? ' off' : ''}${c.part ? ' part' : ''}${c.est ? ' est' : ''}`} onMouseEnter={() => setHover(c.key)} aria-label={c.tip}>
             {hover === c.key && <span className="ua-tip">{c.tip}</span>}
             <div className="st" style={c.off ? undefined : { height: `${Math.round((total / max) * 100)}%` }}>
               {!c.off && c.parts.map((p, j) => (p.v ? <i key={j} style={{ flex: p.v, background: p.color }} /> : null))}

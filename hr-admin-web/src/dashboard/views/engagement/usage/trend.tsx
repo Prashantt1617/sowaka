@@ -1,6 +1,8 @@
 // App usage over time, and when in the day and week people open the app.
 // Both come from the server's daily app activity log, which only starts on
-// the day it shipped: days before are drawn hatched as "not tracked".
+// the day it shipped: days before are drawn hatched as "not tracked", unless
+// they were estimated from app activity (punches, requests, posts, games…),
+// which the chart draws lighter. "When" uses tracked days only.
 import { useState } from 'react';
 import { getUsageTrend } from '../../../../services/engagement-usage';
 import type { UsageWhenDTO } from '../../../../services/engagement-usage';
@@ -81,6 +83,9 @@ export function TrendTab({ dept, loc }: { dept: string; loc: string }) {
     setRanges((r) => ({ ...r, [gran]: [a, b] }));
   };
   const unit = gran === 'date' ? 'day' : gran === 'week' ? 'week' : 'month';
+  const estUntil = data?.estimatedUntil ?? null;
+  const anyEst = Boolean(data?.buckets.some((b) => b.estimated));
+  const anyOff = Boolean(data?.buckets.some((b) => b.untracked && (!data.trackingSince || b.to < data.trackingSince)));
   const tracked = data?.buckets.filter((b) => !b.untracked) ?? [];
   const totals = tracked.map((b) => b.app + b.bio + b.present);
   const first = totals[0] ?? 0;
@@ -126,12 +131,13 @@ export function TrendTab({ dept, loc }: { dept: string; loc: string }) {
                 const when = b.from === b.to ? sdw(b.from) : rangeLabel(b.from, b.to);
                 const tip = b.untracked
                   ? `${when}: not tracked`
-                  : `${when}: ${total}${split ? ` (${GROUPS.map((g) => `${GROUP_SHORT[g]} ${b[g]}`).join(', ')})` : ''}${b.partial ? ' · tracked part of it' : ''}`;
+                  : `${when}: ${total}${split ? ` (${GROUPS.map((g) => `${GROUP_SHORT[g]} ${b[g]}`).join(', ')})` : ''}${b.partial ? ' · tracked part of it' : ''}${b.estimated ? (estUntil && b.to > estUntil ? ' · partly estimated' : ' · estimated') : ''}`;
                 return {
                   key: b.from,
                   label: label(b.from),
                   off: b.untracked,
                   part: b.partial,
+                  est: b.estimated,
                   tip,
                   parts: split ? GROUPS.map((g) => ({ v: b[g], color: GROUP_COLOR[g] })) : [{ v: total, color: 'var(--accent)' }],
                 };
@@ -139,10 +145,14 @@ export function TrendTab({ dept, loc }: { dept: string; loc: string }) {
             />
             {split && <GroupLegend counts={data.groups} />}
             <p className="ua-note">
-              {data.trackingSince
-                ? `App opens are tracked from ${sd(data.trackingSince)}; earlier ${unit}s are hatched (not tracked, not zero). A person counts once per ${unit}.`
-                : 'App opens are not tracked yet: they start counting from the first time someone opens the app.'}
-              {data.trackingSince && ` ${pct(totals.length, data.buckets.length)} of these ${unit}s are tracked.`}
+              {anyEst && estUntil ? (
+                <>
+                  <span className="ua-est-key" aria-hidden />
+                  {`Up to ${sd(estUntil)}, estimated from what people did in the app (punches, requests, posts, games…), so they may undercount; app opens are counted from ${sd(addDays(estUntil, 1))}. `}
+                </>
+              ) : data.trackingSince ? `App opens are tracked from ${sd(data.trackingSince)}. ` : 'App opens are not tracked yet: they start counting from the first time someone opens the app.'}
+              {data.trackingSince && anyOff && `Hatched ${unit}s are not tracked (not zero). `}
+              {data.trackingSince && `A person counts once per ${unit}.`}
             </p>
           </>
         )}

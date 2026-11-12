@@ -45,6 +45,8 @@ export type UsageSummaryDTO = {
   to: string;
   today: string;
   trackingSince: string | null;
+  /** Last day whose app opens are estimated from app activity rather than tracked; null when none are. */
+  estimatedUntil: string | null;
   missedKnown: boolean;
   people: UsagePersonDTO[];
   managers: UsageManagerDTO[];
@@ -69,11 +71,14 @@ export type UsageTrendBucketDTO = {
   present: number;
   untracked: boolean;
   partial: boolean;
+  /** Some or all of its days are estimated from app activity rather than tracked. */
+  estimated?: boolean;
 };
 
 export type UsageTrendDTO = {
   gran: 'date' | 'week' | 'month';
   trackingSince: string | null;
+  estimatedUntil?: string | null;
   buckets: UsageTrendBucketDTO[];
   groups: Record<UsageGroup, number>;
 };

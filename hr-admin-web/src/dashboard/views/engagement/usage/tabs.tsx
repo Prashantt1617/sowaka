@@ -152,6 +152,7 @@ export function StatusTab({ c }: { c: TabCtx }) {
           ['Come back daily', pct(d1, d30), `${sd(today)} ÷ ${rangeLabel(addDays(today, -29), today)}`],
         ]} />
         {tracked && tracked > addDays(today, -29) && <p className="ua-note" style={{ marginTop: -4 }}>Tracking since {sd(tracked)}: the 7- and 30-day counts only cover the days since.</p>}
+        {c.summary.estimatedUntil && c.summary.estimatedUntil >= addDays(today, -29) && <p className="ua-note" style={{ marginTop: -4 }}>Days up to {sd(c.summary.estimatedUntil)} are estimated from what people did in the app (punches, requests, posts, games…).</p>}
       </div>
       <WhenPanel from={c.summary.from} to={c.summary.to} load={c.when} />
       <div className="ua-sec">
@@ -208,6 +209,8 @@ type UseRow = {
   na?: Partial<Record<UsageGroup, string>>;
   /** Built from app activity. */
   tracked?: boolean;
+  /** A screen opened: only known on tracked days, not on days estimated from app activity. */
+  screen?: boolean;
   /** Left out of the pie: it sums rows already in it, or would drown them. */
   noPie?: boolean;
 };
@@ -227,8 +230,8 @@ const ROWS: UseRow[] = [
   { area: 'Leave & requests', label: 'Applied for reimbursement', sub: 'Logged in, with a manager', can: (p) => p.loggedIn && p.hasManager, did: (p) => p.reimb },
   { area: 'Team', label: 'Approved a request from the app', sub: 'Managers · approved or declined a team request on their phone', can: isManager, did: (p) => p.decidedOnApp },
   { area: 'Team', label: 'Sent a review', sub: 'Managers · sent a feedback review', can: isManager, did: (p) => p.review },
-  { area: 'Payroll', label: 'Opened their payslips', sub: 'Everyone', can: everyone, did: (p) => p.payslips, tracked: true },
-  { area: 'Payroll', label: 'Checked salary & tax', sub: 'Everyone', can: everyone, did: (p) => p.payroll, tracked: true },
+  { area: 'Payroll', label: 'Opened their payslips', sub: 'Everyone', can: everyone, did: (p) => p.payslips, tracked: true, screen: true },
+  { area: 'Payroll', label: 'Checked salary & tax', sub: 'Everyone', can: everyone, did: (p) => p.payroll, tracked: true, screen: true },
   { area: 'Payroll', label: 'Uploaded investment proofs', sub: 'Everyone', can: everyone, did: (p) => p.proofs },
 ];
 
@@ -287,7 +290,9 @@ function UseDonut({ rows }: { rows: { area: string; label: string; n: number }[]
 
 export function UseTab({ c }: { c: TabCtx }) {
   const P = c.people;
-  const live = (r: UseRow) => !(r.tracked && c.untracked);
+  const est = c.summary.estimatedUntil;
+  // A screen is only known from tracked days: none in a range that is all estimates.
+  const live = (r: UseRow) => !(r.tracked && c.untracked) && !(r.screen && est && c.summary.to <= est);
   const cell = (r: UseRow): ReactNode => {
     if (!live(r)) return <span className="ua-muted">Not tracked</span>;
     const den = P.filter((p) => r.can(p) || r.did(p));
@@ -328,7 +333,7 @@ export function UseTab({ c }: { c: TabCtx }) {
                 // A row opens who hasn't done it, as the old Active usage rows did.
                 out.push(
                   <tr key={r.label} className={missing.length ? 'ua-userow' : undefined} onClick={missing.length ? () => c.toggle(key) : undefined} aria-expanded={missing.length ? on : undefined}>
-                    <Td><span style={{ ...L.cellName, display: 'block' }}>{missing.length > 0 && <span className={`ua-chev${on ? ' on' : ''}`} aria-hidden>›</span>}{r.label}</span><span style={{ ...L.cellSub, display: 'block' }}>{r.sub}</span></Td>
+                    <Td><span style={{ ...L.cellName, display: 'block' }}>{missing.length > 0 && <span className={`ua-chev${on ? ' on' : ''}`} aria-hidden>›</span>}{r.label}</span><span style={{ ...L.cellSub, display: 'block' }}>{r.sub}{r.screen && est && c.summary.from <= est && c.summary.to > est ? ` · counted from ${sd(addDays(est, 1))}` : ''}</span></Td>
                     <Td>{cell(r)}</Td>
                   </tr>,
                 );

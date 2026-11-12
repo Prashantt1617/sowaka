@@ -10,6 +10,10 @@
  * Opening the app is only known from `appActivity`, which started filling on
  * the day it shipped: days before the org's first row are "not tracked", never
  * zero, and the answer says when tracking started so the page can say so.
+ * Days before it shipped can be filled with estimates (`inferred` rows, from
+ * scripts/app-opens-backfill: punches, requests, posts, games…); they count
+ * as app opens like any row, and the answers say up to which day
+ * (`estimatedUntil`) so the page can mark them.
  */
 import type { Document } from 'mongodb';
 import {
@@ -87,6 +91,8 @@ export type UsageSummary = {
   today: string;
   /** Earliest day the org has app activity for; null when nothing is recorded yet. */
   trackingSince: string | null;
+  /** Last day whose app opens are estimated rather than tracked; null when none are. */
+  estimatedUntil: string | null;
   /** False when the missed-punch count could not be graded for this range. */
   missedKnown: boolean;
   people: UsagePerson[];
@@ -203,12 +209,13 @@ function newestFirst(a: ShiftAssignment, b: ShiftAssignment): number {
 async function buildUsageSummary(org: string, from: string, to: string, today: string): Promise<UsageSummary> {
   const { start, end } = istSpan(from, to);
   const asOf = to < today ? to : today;
-  const [everyone, company, openings, orgPolicy, templates] = await Promise.all([
+  const [everyone, company, openings, orgPolicy, templates, estimatedUntil] = await Promise.all([
     everyoneOf(org),
     getCompanyConfig(org),
     openingsIn(org, from, to, today),
     getOrgShiftPolicy(org),
     shiftTemplates().find({ org }).toArray(),
+    estimatedUntilOf(org),
   ]);
   const roster: RosterRow[] = everyone.filter((u) => !u.hidden);
   const ids = roster.map((u) => u.userId);
@@ -299,6 +306,7 @@ async function buildUsageSummary(org: string, from: string, to: string, today: s
     to,
     today,
     trackingSince: openings.first,
+    estimatedUntil,
     missedKnown: missedUsers !== null,
     people,
     managers: asked.managers,
@@ -308,6 +316,12 @@ async function buildUsageSummary(org: string, from: string, to: string, today: s
 }
 
 // ── period questions, one aggregation per family ──────────────────────────
+
+/** The org's last day of estimated app opens (scripts/app-opens-backfill), or null. */
+async function estimatedUntilOf(org: string): Promise<string | null> {
+  const [last] = await appActivity().find({ org, inferred: true }, { projection: { _id: 0, day: 1 } }).sort({ day: -1 }).limit(1).toArray();
+  return last?.day ?? null;
+}
 
 /**
  * App opens in one pass over the org's `appActivity`: the day tracking began,
@@ -498,6 +512,11 @@ async function filteredPeople(org: string, input: { dept?: unknown; loc?: unknow
   return roster.map((u) => ({ id: u.userId, group: groupOf(policies.get(u.userId)?.correction?.punchFormat) }));
 }
 
+/**
+ * Hours and weekdays come from tracked days only: an estimated day's hours
+ * are those of the person's punches and posts, not of every time they opened
+ * the app, so `trackingSince` here is the first really tracked day.
+ */
 export type UsageWhen = {
   from: string;
   to: string;
@@ -521,10 +540,11 @@ async function buildUsageWhen(org: string, input: { from: string; to: string; de
   const { from, to } = input;
   const [people, firstDay] = await Promise.all([
     filteredPeople(org, input, to < today ? to : today),
-    appActivity().find({ org }, { projection: { _id: 0, day: 1 } }).sort({ day: 1 }).limit(1).toArray(),
+    // Tracked rows only (estimated ones carry `inferred`), on the {org, inferred, day} index.
+    appActivity().find({ org, inferred: { $exists: false } }, { projection: { _id: 0, day: 1 } }).sort({ day: 1 }).limit(1).toArray(),
   ]);
   const trackingSince = firstDay[0]?.day ?? null;
-  const match = { org, day: { $gte: from, $lte: to }, userId: { $in: people.map((p) => p.id) } };
+  const match = { org, day: { $gte: from, $lte: to }, userId: { $in: people.map((p) => p.id) }, inferred: { $ne: true as const } };
   const [hourRows, dayRows] = await Promise.all([
     appActivity().aggregate<{ _id: number; n: number }>([
       { $match: match },
@@ -561,11 +581,14 @@ export type UsageTrendBucket = {
   untracked: boolean;
   /** Tracking began part-way through the bucket. */
   partial: boolean;
+  /** Some or all of the bucket's days are estimated from app activity rather than tracked. */
+  estimated: boolean;
 };
 
 export type UsageTrend = {
   gran: 'date' | 'week' | 'month';
   trackingSince: string | null;
+  estimatedUntil: string | null;
   buckets: UsageTrendBucket[];
   groups: Record<UsageGroup, number>;
 };
@@ -597,9 +620,10 @@ async function buildUsageTrend(
   { from, to }: { from: string; to: string },
   today: string,
 ): Promise<UsageTrend> {
-  const [people, firstDay] = await Promise.all([
+  const [people, firstDay, estimatedUntil] = await Promise.all([
     filteredPeople(org, input, to < today ? to : today),
     appActivity().find({ org }, { projection: { _id: 0, day: 1 } }).sort({ day: 1 }).limit(1).toArray(),
+    estimatedUntilOf(org),
   ]);
   const trackingSince = firstDay[0]?.day ?? null;
   const groupOfId = new Map(people.map((p) => [p.id, p.group]));
@@ -607,11 +631,15 @@ async function buildUsageTrend(
   for (const p of people) groups[p.group] += 1;
 
   const buckets: UsageTrendBucket[] = [];
-  const mk = (a: string, b: string): UsageTrendBucket => ({
-    from: a, to: b, app: 0, bio: 0, present: 0,
-    untracked: !trackingSince || b < trackingSince || a > today,
-    partial: Boolean(trackingSince && a < trackingSince && b >= trackingSince),
-  });
+  const mk = (a: string, b: string): UsageTrendBucket => {
+    const untracked = !trackingSince || b < trackingSince || a > today;
+    return {
+      from: a, to: b, app: 0, bio: 0, present: 0,
+      untracked,
+      partial: Boolean(trackingSince && a < trackingSince && b >= trackingSince),
+      estimated: Boolean(!untracked && estimatedUntil && a <= estimatedUntil),
+    };
+  };
   if (gran === 'date') for (let d = from; d <= to; d = addDays(d, 1)) buckets.push(mk(d, d));
   else if (gran === 'week') {
     for (let w = mondayOf(from); w <= to; w = addDays(w, 7)) {
@@ -650,7 +678,7 @@ async function buildUsageTrend(
     const g = groupOfId.get(r._id.u);
     if (b && g) b[g] += 1;
   }
-  return { gran, trackingSince, buckets, groups };
+  return { gran, trackingSince, estimatedUntil, buckets, groups };
 }
 
 function addMonths(ym: string, n: number): string {
