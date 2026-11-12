@@ -530,28 +530,17 @@ class _WebGameScreenState extends State<WebGameScreen> {
             ? SystemUiOverlayStyle.light
             : SystemUiOverlayStyle.dark,
         leading: const BackButton(),
-        // The Sowaka GAMES lockup beside the back arrow, then the game's
-        // name; the pages draw the same lockup top right until this build is
-        // everyone's, then theirs goes.
         titleSpacing: 0,
-        title: Row(
-          children: [
-            const SowakaGamesBadge(key: ValueKey('game-header-logo')),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(
-                widget.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: _foreground,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.2,
-                ),
-              ),
-            ),
-          ],
+        title: Text(
+          widget.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: _foreground,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.2,
+          ),
         ),
         actions: [
           if (explains)
@@ -568,6 +557,14 @@ class _WebGameScreenState extends State<WebGameScreen> {
               tooltip: 'Reload',
               icon: const Icon(Icons.refresh_rounded),
             ),
+          // The Sowaka GAMES lockup in the top-right corner, where the pages
+          // draw it too, until this build is everyone's and theirs goes.
+          const Padding(
+            padding: EdgeInsets.only(left: 2, right: 14),
+            child: Center(
+              child: SowakaGamesBadge(key: ValueKey('game-header-logo')),
+            ),
+          ),
         ],
       ),
       // Under the bar the page has the screen to itself, clear of the home
