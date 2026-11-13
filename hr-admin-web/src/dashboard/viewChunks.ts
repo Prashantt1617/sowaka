@@ -10,6 +10,8 @@ const LOADERS: Partial<Record<View, Loader>> = {
   organisation: () => import('./views/Organisation').then((m) => ({ default: m.Organisation })),
   overview: () => import('./views/Overview').then((m) => ({ default: m.Overview })),
   setup: () => import('./views/Setup').then((m) => ({ default: m.Setup })),
+  // The reimbursement types list for FBP bills, on its own Setup page.
+  fbpbilltypes: () => import('./views/ReimbursementTypes').then((m) => ({ default: m.FbpBillTypes })),
   bulkassign: () => import('./views/Setup').then((m) => ({ default: m.BulkAssign })),
   leave: () => import('./views/LeaveRequests').then((m) => ({ default: m.LeaveRequests })),
   overtime: () => import('./views/Overtime').then((m) => ({ default: m.Overtime })),

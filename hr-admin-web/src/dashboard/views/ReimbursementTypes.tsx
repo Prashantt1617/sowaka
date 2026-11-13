@@ -1,6 +1,6 @@
 // Claims › Reimbursement Types — what an employee may claim against, and what
 // each is capped at. FBP bill types (a type linked to an FBP head) are not
-// claims: the same list, with kind="fbp", sits on Payroll › FBP splits, and
+// claims: the same list, with kind="fbp", sits on Setup › FBP bill types, and
 // this page leaves them out.
 //
 // These used to be four values baked into the app. HR owns the list now, and
@@ -328,3 +328,8 @@ const checkRow: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10
 // A side sheet from the right, as the prototype opens its forms.
 const overlay: CSSProperties = { position: 'fixed', inset: 0, background: 'var(--scrim)', display: 'flex', justifyContent: 'flex-end', zIndex: 60, animation: 'ovl .2s ease both' };
 const modalCard: CSSProperties = { width: 440, maxWidth: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--surface)', borderRadius: '24px 0 0 24px', boxShadow: 'var(--shadow-drawer)', animation: 'drwIn .25s ease both' }
+
+// Setup › Reimbursements › FBP bill types: the same list, for FBP bills.
+export function FbpBillTypes() {
+  return <ReimbursementTypes kind="fbp" />;
+}

@@ -405,6 +405,12 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M2 10h20M6 15h4" />
     </svg>
   ),
+  fbpbilltypes: (
+    <svg {...base(18, 'currentColor')}>
+      <rect x="2" y="6" width="20" height="13" rx="2" />
+      <path d="M2 10h20M6 15h4" />
+    </svg>
+  ),
   cycle: (
     <svg {...base(18, 'currentColor')}>
       <circle cx="12" cy="12" r="3" />

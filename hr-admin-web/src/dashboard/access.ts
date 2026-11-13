@@ -18,6 +18,8 @@ export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boo
   // Setup is a page of links: open to whoever may open any of the pages on it.
   if (view === 'setup') return SETUP_VIEWS.some((v) => canOpen(user, v));
   if (view === 'bulkassign') return BULK_VIEWS.some((v) => canOpen(user, v));
+  // FBP bill types: the same reimbursement types API, for whoever had it on FBP splits or has Reimbursement Types.
+  if (view === 'fbpbilltypes') return canOpen(user, 'fbpsplits') || canOpen(user, 'reimbursementtypes');
   // Suwi is for everyone with dashboard access; what it can reach is decided per question.
   if (view === 'suwi') return true;
   // Investment proofs and Statutory & tax settings go with payroll access, as the server decides it: Payroll Runs or Salary details.

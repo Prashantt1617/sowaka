@@ -28,6 +28,7 @@ export const SETUP_GROUPS: SetupGroup[] = [
   ] },
   { key: 'reimbursements', title: 'Reimbursements', icon: 'reimbursementtypes', items: [
     { view: 'reimbursementtypes', label: 'Reimbursement types' },
+    { view: 'fbpbilltypes', label: 'FBP bill types' },
   ] },
   { key: 'organisation', title: 'Organisation details', icon: 'organisation', items: [
     { view: 'organisation', label: 'Organisation profile' },
