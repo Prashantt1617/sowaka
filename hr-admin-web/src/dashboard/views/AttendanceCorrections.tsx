@@ -35,7 +35,7 @@ type Kind = CorrectionKind;
 const KIND: Record<Kind, { label: string; color: string; bg: string; fg: string }> = {
   full: { label: 'Full day asked', color: 'var(--accent)', bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
   half: { label: 'Half day asked', color: 'var(--t-peach-i)', bg: 'var(--t-peach)', fg: 'var(--t-peach-i)' },
-  wfh: { label: 'Work from home', color: 'var(--t-lilac-i)', bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' },
+  wfh: { label: 'Working from home', color: 'var(--t-lilac-i)', bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' },
   visit: { label: 'Client visit', color: 'var(--t-plum-i)', bg: 'var(--t-plum)', fg: 'var(--t-plum-i)' },
   leave: { label: 'Leave asked', color: 'color-mix(in srgb, var(--accent) 40%, var(--surface))', bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
   times: { label: 'Punch times', color: 'var(--ink-3)', bg: 'var(--mute-bg)', fg: 'var(--ink-2)' },

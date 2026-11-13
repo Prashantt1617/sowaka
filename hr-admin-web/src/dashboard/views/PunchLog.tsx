@@ -85,7 +85,7 @@ export function PunchLog() {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const filters = useFilterDraft(
     { where, reason, counted, dept },
-    (v) => { setWhere(v.where as typeof where); setReason(v.where === 'ool' ? v.reason : 'all'); setCounted(v.counted as typeof counted); setDept(v.dept); },
+    (v) => { setWhere(v.where as typeof where); setReason(v.reason); setCounted(v.counted as typeof counted); setDept(v.dept); },
     { where: 'all', reason: 'all', counted: 'all', dept: 'all' },
   );
 
@@ -186,18 +186,19 @@ export function PunchLog() {
   }, [punches, s.corrs, range.from, range.to]);
 
   const departments = useMemo(() => [...new Set(rows.map((r) => r.department || 'Team'))].sort(), [rows]);
-  const reasons = useMemo(() => [...new Set(rows.filter((r) => r.ool && r.outside).map((r) => r.outside!.reason))].sort(), [rows]);
+  const reasons = useMemo(() => [...new Set(rows.filter((r) => r.ool).map((r) => r.outside?.reason || 'Out of location'))].sort(), [rows]);
 
   const shown = useMemo(() => {
     let out = rows;
     if (where === 'office') out = out.filter((r) => !r.ool);
     if (where === 'ool') out = out.filter((r) => r.ool);
     if (where === 'waiting') out = [...out.filter((r) => r.counted === 'waiting' || r.counted === 'corr'), ...noPunchCorr];
-    if (where === 'ool' && reason !== 'all') out = out.filter((r) => r.outside?.reason === reason);
+    // Remark: the reason given for an out-of-office punch.
+    if (reason !== 'all') out = out.filter((r) => r.ool && (r.outside?.reason || 'Out of location') === reason);
     if (counted !== 'all') out = out.filter((r) => (counted === 'late' ? r.counted === 'late' || r.counted === 'lateopen' : counted === 'present' ? r.counted === 'present' || r.counted === 'open' : r.counted === counted));
     if (dept !== 'all') out = out.filter((r) => (r.department || 'Team') === dept);
     const q = search.trim().toLowerCase();
-    if (q) out = out.filter((r) => r.name.toLowerCase().includes(q) || r.employeeCode.toLowerCase().includes(q) || r.where.toLowerCase().includes(q) || r.whereSub.toLowerCase().includes(q));
+    if (q) out = out.filter((r) => r.name.toLowerCase().includes(q) || r.employeeCode.toLowerCase().includes(q) || (r.ool && r.where.toLowerCase().includes(q)));
     return out;
   }, [rows, noPunchCorr, where, reason, counted, dept, search]);
   const paged = usePaged(shown, `${where}|${reason}|${counted}|${dept}|${search}|${rows.length}|${noPunchCorr.length}`);
@@ -322,7 +323,7 @@ export function PunchLog() {
             <div>
               <div style={toolbar}>
                 <div style={{ flex: 1, minWidth: 240, display: 'flex' }}>
-                  <SearchInput value={search} onChange={setSearch} placeholder="Search employee or office…" width="100%" />
+                  <SearchInput value={search} onChange={setSearch} placeholder="Search employee or remark…" width="100%" />
                 </div>
                 <FiltersButton open={filters.open} active={filters.active} onClick={filters.toggle} />
                 <button onClick={exportRows} disabled={shown.length === 0} className={btnClass()} style={btn()}>
@@ -333,8 +334,8 @@ export function PunchLog() {
                 <FiltersPanel active={filters.active} dirty={filters.dirty} onApply={filters.apply} onClear={filters.clear}>
                   <LabeledSelect label="Punch type" value={filters.draft.where} onChange={(v) => filters.set('where', v)}
                     options={[['all', 'All punches'], ['office', 'In office'], ['ool', 'Out of office'], ['waiting', 'Waiting for approval']]} />
-                  {filters.draft.where === 'ool' && reasons.length > 0 && (
-                    <LabeledSelect label="Reason" value={filters.draft.reason} onChange={(v) => filters.set('reason', v)} options={[['all', 'All reasons'], ...reasons.map((x): [string, string] => [x, x])]} />
+                  {reasons.length > 0 && (
+                    <LabeledSelect label="Remark" value={filters.draft.reason} onChange={(v) => filters.set('reason', v)} options={[['all', 'All remarks'], ...reasons.map((x): [string, string] => [x, x])]} />
                   )}
                   <LabeledSelect label="Counted as" value={filters.draft.counted} onChange={(v) => filters.set('counted', v)}
                     options={[['all', 'Any'], ['present', 'Present'], ['late', 'Late'], ['early', 'Left early'], ['half', 'Half day']]} />
@@ -350,7 +351,7 @@ export function PunchLog() {
                     <Th>IN</Th>
                     <Th>OUT</Th>
                     <Th>HOURS</Th>
-                    <Th>WHERE</Th>
+                    <Th>REMARK</Th>
                     <Th>COUNTED AS</Th>
                     <Th align="right"> </Th>
                   </div>
@@ -369,11 +370,18 @@ export function PunchLog() {
                         <div style={{ whiteSpace: 'nowrap', color: r.punchIn ? 'var(--ink)' : 'var(--ink-3)' }}>{clock(r.punchIn)}</div>
                         <div style={{ whiteSpace: 'nowrap', color: r.punchOut ? 'var(--ink)' : 'var(--ink-3)' }}>{clock(r.punchOut)}</div>
                         <div style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{hoursOf(r.punchIn, r.punchOut)}</div>
+                        {/* No location here (the drawer has it): only an out-of-office punch's remark. */}
                         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: r.ool ? OOL_FILL : OFFICE_FILL, flexShrink: 0 }} />{r.where}
-                          </span>
-                          {r.whereSub && <span style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.whereSub}</span>}
+                          {r.ool ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: OOL_FILL, flexShrink: 0 }} />{r.where}
+                            </span>
+                          ) : r.where === 'No punch' ? (
+                            <>
+                              <span style={{ whiteSpace: 'nowrap', color: 'var(--ink-2)' }}>No punch</span>
+                              {r.whereSub && <span style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.whereSub}</span>}
+                            </>
+                          ) : <span style={{ color: 'var(--ink-3)' }}>—</span>}
                         </div>
                         <div>{report ? <Pill label={c.label} tone={{ bg: c.bg, fg: c.fg }} /> : <span style={{ color: 'var(--ink-3)' }}>…</span>}</div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>

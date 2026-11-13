@@ -197,7 +197,7 @@ export function otShortLabel(label: string | undefined, credit: string | undefin
 const DAY_TYPE: Record<string, string> = {
   full_day: 'Full day',
   half_day: 'Half day',
-  wfh: 'Work from home',
+  wfh: 'Working from home',
   client_visit: 'Client visit',
   office_visit: 'Client visit',
   leave: 'Leave',

@@ -625,7 +625,7 @@ class _TeamMemberRow extends StatelessWidget {
         : 0;
     final upcomingLeave = _upcomingLeaveFor(data, member.userId);
     final birthdaySoon = _isBirthdaySoon(member.birthday);
-    // Working away says where from — "Work from home", "Client visit", in
+    // Working away says where from — "Working from home", "Client visit", in
     // HR's words — in the same green as the time beside it.
     final away = member.todayAway;
     final status = away != null

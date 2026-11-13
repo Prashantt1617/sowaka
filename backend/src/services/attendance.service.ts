@@ -438,7 +438,7 @@ async function requestOutOfLocation(
 
 /** The remark as the app and the dashboard show it, with the pin and a readable place. */
 /** What an outside punch with no reason given reads as, everywhere it shows. */
-export const DEFAULT_AWAY_REASON = 'Work from home';
+export const DEFAULT_AWAY_REASON = 'Working from home';
 
 export function outsideLocationView(note?: OutsideLocationNote) {
   if (!note) return undefined;
@@ -484,7 +484,7 @@ const DAY_TYPE_LABELS: Record<string, string> = {
   full_day: 'Full day',
   half_day: 'Half day',
   leave: 'Leave',
-  wfh: 'Work from home',
+  wfh: 'Working from home',
   client_visit: 'Client visit',
   office_visit: 'Client visit',
 };
