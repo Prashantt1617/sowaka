@@ -85,7 +85,10 @@ export function TrendTab({ dept, loc }: { dept: string; loc: string }) {
   const unit = gran === 'date' ? 'day' : gran === 'week' ? 'week' : 'month';
   const anyEst = Boolean(data?.buckets.some((b) => b.estimated));
   const anyOff = Boolean(data?.buckets.some((b) => b.untracked && (!data.trackingSince || b.to < data.trackingSince)));
-  const tracked = data?.buckets.filter((b) => !b.untracked) ?? [];
+  const seen = data?.buckets.filter((b) => !b.untracked) ?? [];
+  // The figures leave out the day, week or month still under way (it would read as a drop), unless it is all there is.
+  const done = seen.filter((b) => b.to < today);
+  const tracked = done.length ? done : seen;
   const totals = tracked.map((b) => b.app + b.bio + b.present);
   const first = totals[0] ?? 0;
   const last = totals[totals.length - 1] ?? 0;
