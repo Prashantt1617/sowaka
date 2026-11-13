@@ -102,6 +102,8 @@ export function LeaveRequests() {
   const s = useStore();
   const st = s.listState('leaves');
   const [view, setView] = useState<'list' | 'calendar'>('list');
+  // People on leave picked: the list shows their approved and pending requests (not declined or cancelled).
+  const [onLeave, setOnLeave] = useState(false);
   // A week or a month, stepped back and forward with the arrows by the title.
   const [unit, setUnit] = useState<'week' | 'month'>('month');
   const [offset, setOffset] = useState(0);
@@ -116,14 +118,14 @@ export function LeaveRequests() {
 
   const stats = useMemo(() => {
     const off = inPeriod.filter((l) => l.status === 'Approved' || l.status === 'Pending');
-    // Exact, from the database: each approved leave counts the days saved on it (holidays and week offs
-    // already out), in the period it starts in, so a leave is never split or estimated.
-    const startsIn = (l: Leave) => { const d = startOf(l); return (!range.from || d >= range.from) && (!range.to || d <= range.to); };
-    const days = inPeriod.filter((l) => l.status === 'Approved' && startsIn(l)).reduce((a, l) => a + (l.dayN || 0), 0);
+    // Exact, from the database, and the same requests the Approved tab lists: each approved leave in the
+    // period counts the days saved on it (holidays and week offs already out).
+    const days = inPeriod.filter((l) => l.status === 'Approved').reduce((a, l) => a + (l.dayN || 0), 0);
     let best = -1;
     totals.forEach((t, i) => { if (t.a + t.p > 0 && (best < 0 || t.a + t.p > totals[best].a + totals[best].p)) best = i; });
     return {
       people: new Set(off.map((l) => l.submitterId || l.name)).size,
+      offRequests: off.length,
       days: Math.round(days * 10) / 10,
       pending: inPeriod.filter((l) => l.status === 'Pending').length,
       approved: inPeriod.filter((l) => l.status === 'Approved').length,
@@ -139,7 +141,8 @@ export function LeaveRequests() {
     let out = s.leaveStatus === 'Cancellation' ? cancellations.slice() : inPeriod.slice();
     const q = s.leaveSearch.trim().toLowerCase();
     if (q) out = out.filter((r) => r.name.toLowerCase().includes(q));
-    if (s.leaveStatus !== 'all' && s.leaveStatus !== 'Cancellation') out = out.filter((r) => r.status === s.leaveStatus);
+    if (onLeave) out = out.filter((r) => r.status === 'Approved' || r.status === 'Pending');
+    else if (s.leaveStatus !== 'all' && s.leaveStatus !== 'Cancellation') out = out.filter((r) => r.status === s.leaveStatus);
     if (s.leaveType !== 'all') out = out.filter((r) => r.type === s.leaveType);
     if (dept !== 'all') out = out.filter((r) => r.team === dept);
     const sort = s.leaveSort;
@@ -149,7 +152,7 @@ export function LeaveRequests() {
     else if (sort === 'name') out.sort((a, b) => a.name.localeCompare(b.name));
     else if (sort === 'days') out.sort((a, b) => b.dayN - a.dayN);
     return out;
-  }, [inPeriod, cancellations, s.leaveSearch, s.leaveStatus, s.leaveType, s.leaveSort, dept]);
+  }, [inPeriod, cancellations, onLeave, s.leaveSearch, s.leaveStatus, s.leaveType, s.leaveSort, dept]);
   const paged = usePaged(rows, `${rows.length}|${rows[0]?.id ?? ''}`);
 
   const statusCounts = useMemo(() => {
@@ -254,19 +257,19 @@ export function LeaveRequests() {
           {!waitingForDates && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
               {/* Each tile filters the list below to what it counts, and brings the list into view. */}
-              <StatTile state={st} label="People on leave" value={stats.people}
-                onPick={() => { s.setLeaveStatus('all'); toList(); }} picked={s.leaveStatus === 'all'} />
+              <StatTile state={st} label="People on leave" value={stats.people} sub={`${stats.offRequests} ${stats.offRequests === 1 ? 'request' : 'requests'}, approved or pending`}
+                onPick={() => { setOnLeave(true); s.setLeaveStatus('all'); toList(); }} picked={onLeave} />
               <StatTile
                 state={st}
                 label="Leave days approved"
                 value={stats.days}
                 sub={`${stats.approved} ${stats.approved === 1 ? 'request' : 'requests'}`}
-                onPick={() => { s.setLeaveStatus('Approved'); toList(); }} picked={s.leaveStatus === 'Approved'} color="var(--p-green)"
+                onPick={() => { setOnLeave(false); s.setLeaveStatus('Approved'); toList(); }} picked={!onLeave && s.leaveStatus === 'Approved'} color="var(--p-green)"
               />
-              <StatTile state={st} label="Pending" value={stats.pending} attn={s.leaveStatus !== 'Pending'}
-                onPick={() => { s.setLeaveStatus('Pending'); toList(); }} picked={s.leaveStatus === 'Pending'} color="var(--p-yellow)" />
+              <StatTile state={st} label="Pending" value={stats.pending} attn={stats.pending > 0 && (onLeave || s.leaveStatus !== 'Pending')}
+                onPick={() => { setOnLeave(false); s.setLeaveStatus('Pending'); toList(); }} picked={!onLeave && s.leaveStatus === 'Pending'} color="var(--p-yellow)" />
               <StatTile state={st} label="Declined" value={stats.declined}
-                onPick={() => { s.setLeaveStatus('Declined'); toList(); }} picked={s.leaveStatus === 'Declined'} color="var(--p-red)" />
+                onPick={() => { setOnLeave(false); s.setLeaveStatus('Declined'); toList(); }} picked={!onLeave && s.leaveStatus === 'Declined'} color="var(--p-red)" />
             </div>
           )}
 
@@ -277,8 +280,8 @@ export function LeaveRequests() {
                 <StatusTabs<ReqStatus | 'all' | 'Cancellation'>
                   options={['all', 'Pending', 'Approved', 'Declined', 'Cancelled', 'Cancellation']}
                   labels={{ Cancellation: 'Cancellation requests' }}
-                  active={s.leaveStatus}
-                  onSelect={s.setLeaveStatus}
+                  active={onLeave ? ('' as ReqStatus) : s.leaveStatus}
+                  onSelect={(v) => { setOnLeave(false); s.setLeaveStatus(v); }}
                   counts={st === 'ready' ? statusCounts : undefined}
                 />
               </div>

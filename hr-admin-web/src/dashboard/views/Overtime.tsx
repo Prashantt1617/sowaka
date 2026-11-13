@@ -194,7 +194,7 @@ export function Overtime() {
               {/* Each tile filters the list below to what it counts, and brings the list into view. */}
               <StatTile state={st} label="Overtime requests" value={stats.requests} sub={`${stats.approved} approved`}
                 onPick={() => { s.setOtStatus('all'); setGiven('all'); toList(); }} picked={s.otStatus === 'all' && given === 'all'} />
-              <StatTile state={st} label="Pending" value={stats.pending} attn={s.otStatus !== 'Pending'}
+              <StatTile state={st} label="Pending" value={stats.pending} attn={stats.pending > 0 && s.otStatus !== 'Pending'}
                 onPick={() => { s.setOtStatus('Pending'); setGiven('all'); toList(); }} picked={s.otStatus === 'Pending'} color="var(--p-yellow)" />
               <StatTile state={st} label="Declined" value={stats.declined}
                 onPick={() => { s.setOtStatus('Declined'); setGiven('all'); toList(); }} picked={s.otStatus === 'Declined'} color="var(--p-red)" />
