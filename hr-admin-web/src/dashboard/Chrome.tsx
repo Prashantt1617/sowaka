@@ -463,7 +463,7 @@ function ThemeSwitch() {
 }
 
 export function Topbar() {
-  const { view, user, signOut, suwiOpen, setSuwiOpen } = useStore();
+  const { view, setView, user, signOut, suwiOpen, setSuwiOpen } = useStore();
   const [title, fixedMeta] = TITLES[view];
   // A company with Suwi turned off sees no Ask Suwi button (Settings › Suwi can turn it on).
   const suwiOff = useSuwiNotices().enabled === false;
@@ -540,7 +540,16 @@ export function Topbar() {
             {meta && <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--hi)', boxShadow: '0 0 0 3px var(--hi-soft)', flexShrink: 0 }} />}
             {meta}
           </div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1.2, margin: '4px 0' }}>{title}</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* A settings page opened from Setup has its way back beside the title. */}
+            {SETUP_VIEWS.includes(view) && canOpen(user, 'setup') && (
+              <button type="button" onClick={() => setView('setup')} aria-label="Back to Setup" title="Back to Setup"
+                style={{ width: 34, height: 34, borderRadius: '50%', border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="m15 6-6 6 6 6" /></svg>
+              </button>
+            )}
+            <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1.2, margin: '4px 0' }}>{title}</h1>
+          </div>
         </div>
         {/* A view's own buttons land here (ui.tsx PageActions). */}
         <div id={PAGE_ACTIONS_ID} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }} />
