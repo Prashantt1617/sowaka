@@ -3,7 +3,7 @@
 // in Attendance corrections. Open a row to see each punch and where it was made.
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store';
-import { expandReport, getAttendanceReport, getPayCycle, getPunchLog } from '../../services/hrms';
+import { expandReport, getAttendanceReport, getPayCycle, getPunchLog, getShifts, DEFAULT_OUTSIDE_LOCATION } from '../../services/hrms';
 import type { PayCycleDTO, PunchDayDTO, PunchPlaceDTO, ReportRow } from '../../services/hrms';
 import { downloadCsv } from '../export';
 import { Card, EmptyRow, ListPending, LoadError, Pill, SearchInput, Th } from '../ui';
@@ -83,6 +83,16 @@ export function PunchLog() {
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [openKey, setOpenKey] = useState<string | null>(null);
+  // Every reason the company offers for an out-of-office punch (its shift templates), so the
+  // Remark filter lists them all, not only the ones seen in these dates.
+  const [offered, setOffered] = useState<string[]>(DEFAULT_OUTSIDE_LOCATION.reasons);
+  useEffect(() => {
+    let live = true;
+    getShifts()
+      .then((shifts) => { const all = shifts.flatMap((x) => x.policy?.correction?.outsideLocation?.reasons ?? []); if (live && all.length) setOffered(all); })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, []);
   const filters = useFilterDraft(
     { where, reason, counted, dept },
     (v) => { setWhere(v.where as typeof where); setReason(v.reason); setCounted(v.counted as typeof counted); setDept(v.dept); },
@@ -186,7 +196,7 @@ export function PunchLog() {
   }, [punches, s.corrs, range.from, range.to]);
 
   const departments = useMemo(() => [...new Set(rows.map((r) => r.department || 'Team'))].sort(), [rows]);
-  const reasons = useMemo(() => [...new Set(rows.filter((r) => r.ool).map((r) => r.outside?.reason || 'Out of location'))].sort(), [rows]);
+  const reasons = useMemo(() => [...new Set([...offered, ...rows.filter((r) => r.ool).map((r) => r.outside?.reason || 'Out of location')])].sort(), [rows, offered]);
 
   const shown = useMemo(() => {
     let out = rows;
