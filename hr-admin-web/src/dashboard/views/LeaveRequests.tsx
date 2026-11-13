@@ -24,7 +24,7 @@ const startsIn = (n: number) => (n === 0 ? 'Starts today' : n === 1 ? 'Starts to
 
 /** Needs action's tags: all of it, or one kind. Picking one shows exactly those requests in the list below. */
 type NeedsPick = 'all' | 'passed' | 'soon' | 'slow' | 'cancel';
-const NEEDS_LABEL: Record<NeedsPick, string> = { all: 'All needing action', passed: 'Date already passed', soon: 'Start within 7 days', slow: `Waiting over ${SLOW_DAYS} days`, cancel: 'Cancellation requests' };
+const NEEDS_LABEL: Record<Exclude<NeedsPick, 'all'>, string> = { passed: 'Date already passed', soon: 'Start within 7 days', slow: `Waiting over ${SLOW_DAYS} days`, cancel: 'Cancellation requests' };
 function fitsNeeds(l: Leave, k: NeedsPick, today: string): boolean {
   if (k === 'all') return true;
   if (k === 'cancel') return l.status !== 'Pending';
@@ -33,16 +33,21 @@ function fitsNeeds(l: Leave, k: NeedsPick, today: string): boolean {
   return l.status === 'Pending' && (k === 'passed' ? f.passed : f.soon);
 }
 
-function NeedsAction({ state, pick, onPick }: { state: LoadState; pick: NeedsPick | null; onPick: (k: NeedsPick) => void }) {
+function NeedsAction({ state }: { state: LoadState }) {
   const s = useStore();
   const sum = needsActionSummary(s.leaves);
   const today = todayISO();
   // The most urgent first: dates already gone, then the soonest to start. Cancellation requests too,
   // so the count matches the sidebar badge and Overview.
   const everything = sum.all.slice().sort((a, b) => startOf(a).localeCompare(startOf(b)));
+  // The tags filter this table only (the list below stays as it is): none picked shows the first few,
+  // a tag shows every request of its kind here, a page at a time.
+  const [pick, setPick] = useState<NeedsPick | null>(null);
+  const matching = everything.filter((l) => fitsNeeds(l, pick ?? 'all', today));
+  const paged = usePaged(matching, pick);
   if (state === 'ready' && everything.length === 0) return null;
-  const list = everything.filter((l) => fitsNeeds(l, pick ?? 'all', today));
-  const tag = (k: NeedsPick, tone: 'bad' | 'attn' | 'mute', text: string, count: number) => ({ tone, text, count, picked: pick === k, onPick: () => onPick(k) });
+  const list = pick ? paged.rows : matching.slice(0, NEEDS_ACTION_SHOWN);
+  const tag = (k: NeedsPick, tone: 'bad' | 'attn' | 'mute', text: string, count: number) => ({ tone, text, count, picked: pick === k, onPick: () => setPick(pick === k ? null : k) });
   const chips = [
     tag('all', 'mute', 'All', everything.length),
     ...(sum.passed ? [tag('passed', 'bad', NEEDS_LABEL.passed, sum.passed)] : []),
@@ -60,7 +65,7 @@ function NeedsAction({ state, pick, onPick }: { state: LoadState; pick: NeedsPic
       summary={summary}
       chips={chips}
     >
-      {list.slice(0, NEEDS_ACTION_SHOWN).map((l) => {
+      {list.map((l) => {
         const f = pendingFacts(l, today);
         const cancel = l.status !== 'Pending';
         return (
@@ -90,6 +95,7 @@ function NeedsAction({ state, pick, onPick }: { state: LoadState; pick: NeedsPic
         );
       })}
       <ListPending state={state} onRetry={() => void s.reload()} rows={3} cols={5} />
+      {pick && <div style={{ padding: '0 18px 12px' }}><Pager p={paged} /></div>}
     </NeedsActionShell>
   );
 }
@@ -108,8 +114,6 @@ export function LeaveRequests() {
   const range = periodRange(period, s.leaveFrom, s.leaveTo);
   const waitingForDates = period === 'custom' && !s.leaveFrom;
   const inPeriod = useMemo(() => s.leaves.filter((l) => overlaps(l, range.from, range.to)), [s.leaves, range.from, range.to]);
-  // A Needs action tag picked: the list shows exactly those requests, every date, until a tab, period or tile is chosen.
-  const [needs, setNeeds] = useState<NeedsPick | null>(null);
 
   const chartDays = chartDaysOf(range);
   const totals = useMemo(() => peopleTotals(perDay(inPeriod, chartDays)), [inPeriod, chartDays.join()]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -146,15 +150,6 @@ export function LeaveRequests() {
   // A cancellation request waits on HR whatever its leave's dates, so its tab reads every date.
   const cancellations = useMemo(() => s.leaves.filter((r) => r.cancelRequest?.status === 'Pending'), [s.leaves]);
   const rows = useMemo(() => {
-    if (needs) {
-      const today = todayISO();
-      let picked = needsActionSummary(s.leaves).all.filter((l) => fitsNeeds(l, needs, today));
-      const q0 = s.leaveSearch.trim().toLowerCase();
-      if (q0) picked = picked.filter((r) => r.name.toLowerCase().includes(q0));
-      if (s.leaveType !== 'all') picked = picked.filter((r) => r.type === s.leaveType);
-      if (dept !== 'all') picked = picked.filter((r) => r.team === dept);
-      return picked.sort((a, b) => startOf(a).localeCompare(startOf(b)));
-    }
     let out = s.leaveStatus === 'Cancellation' ? cancellations.slice() : inPeriod.slice();
     const q = s.leaveSearch.trim().toLowerCase();
     if (q) out = out.filter((r) => r.name.toLowerCase().includes(q));
@@ -168,8 +163,8 @@ export function LeaveRequests() {
     else if (sort === 'name') out.sort((a, b) => a.name.localeCompare(b.name));
     else if (sort === 'days') out.sort((a, b) => b.dayN - a.dayN);
     return out;
-  }, [inPeriod, cancellations, s.leaves, needs, s.leaveSearch, s.leaveStatus, s.leaveType, s.leaveSort, dept]);
-  const paged = usePaged(rows, `${needs}|${rows.length}|${rows[0]?.id ?? ''}`);
+  }, [inPeriod, cancellations, s.leaveSearch, s.leaveStatus, s.leaveType, s.leaveSort, dept]);
+  const paged = usePaged(rows, `${rows.length}|${rows[0]?.id ?? ''}`);
 
   const statusCounts = useMemo(() => {
     const c: Partial<Record<ReqStatus | 'all' | 'Cancellation', number>> = { all: inPeriod.length };
@@ -278,7 +273,7 @@ export function LeaveRequests() {
         {viewToggle}
       </PageActions>
 
-      <NeedsAction state={st} pick={needs} onPick={(k) => { setNeeds(k); setView('list'); toList(); }} />
+      <NeedsAction state={st} />
 
       <Card padded>
         <section aria-labelledby="leave-period" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -287,7 +282,7 @@ export function LeaveRequests() {
               <h2 id="leave-period" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{range.title}</h2>
               <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>By the dates people are on leave. A leave that overlaps the period is included.</span>
             </div>
-            <PeriodButtons periods={PERIODS} period={period} onPeriod={(p) => { setNeeds(null); setPeriod(p); }} />
+            <PeriodButtons periods={PERIODS} period={period} onPeriod={setPeriod} />
           </div>
 
           {period === 'custom' && (
@@ -307,18 +302,18 @@ export function LeaveRequests() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
               {/* Each tile filters the list below to what it counts, and brings the list into view. */}
               <StatTile state={st} label="People on leave" value={stats.people}
-                onPick={() => { setNeeds(null); s.setLeaveStatus('all'); toList(); }} picked={s.leaveStatus === 'all'} />
+                onPick={() => { s.setLeaveStatus('all'); toList(); }} picked={s.leaveStatus === 'all'} />
               <StatTile
                 state={st}
                 label="Leave days approved"
                 value={stats.approx ? <>≈ {stats.days}</> : stats.days}
-                onPick={() => { setNeeds(null); s.setLeaveStatus('Approved'); toList(); }} picked={s.leaveStatus === 'Approved'} color="var(--p-green)"
+                onPick={() => { s.setLeaveStatus('Approved'); toList(); }} picked={s.leaveStatus === 'Approved'} color="var(--p-green)"
               />
               <StatTile state={st} label="Pending" value={stats.pending} attn={s.leaveStatus !== 'Pending'}
-                onPick={() => { setNeeds(null); s.setLeaveStatus('Pending'); toList(); }} picked={s.leaveStatus === 'Pending'} color="var(--p-yellow)" />
+                onPick={() => { s.setLeaveStatus('Pending'); toList(); }} picked={s.leaveStatus === 'Pending'} color="var(--p-yellow)" />
               <StatTile state={st} label="Approved · Declined"
-                value={<>{stats.approved} <button type="button" onClick={(e) => { e.stopPropagation(); setNeeds(null); s.setLeaveStatus('Declined'); toList(); }} aria-label="Show declined" style={{ border: 0, background: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontSize: 17, color: s.leaveStatus === 'Declined' ? 'var(--bad)' : 'var(--ink-3)', textDecoration: 'underline dotted' }}>· {stats.declined}</button></>}
-                onPick={() => { setNeeds(null); s.setLeaveStatus('Approved'); toList(); }} picked={s.leaveStatus === 'Declined'} color="var(--p-red)" />
+                value={<>{stats.approved} <button type="button" onClick={(e) => { e.stopPropagation(); s.setLeaveStatus('Declined'); toList(); }} aria-label="Show declined" style={{ border: 0, background: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontSize: 17, color: s.leaveStatus === 'Declined' ? 'var(--bad)' : 'var(--ink-3)', textDecoration: 'underline dotted' }}>· {stats.declined}</button></>}
+                onPick={() => { s.setLeaveStatus('Approved'); toList(); }} picked={s.leaveStatus === 'Declined'} color="var(--p-red)" />
               <StatTile
                 state={st}
                 label="Most people off"
@@ -338,17 +333,11 @@ export function LeaveRequests() {
                 <StatusTabs<ReqStatus | 'all' | 'Cancellation'>
                   options={['all', 'Pending', 'Approved', 'Declined', 'Cancelled', 'Cancellation']}
                   labels={{ Cancellation: 'Cancellation requests' }}
-                  active={needs ? ('' as ReqStatus) : s.leaveStatus}
-                  onSelect={(v) => { setNeeds(null); s.setLeaveStatus(v); }}
+                  active={s.leaveStatus}
+                  onSelect={s.setLeaveStatus}
                   counts={st === 'ready' ? statusCounts : undefined}
                 />
               </div>
-              {needs && (
-                <div style={{ ...toolbar, gap: 10, fontSize: 13.5 }}>
-                  <span>Showing <b style={{ fontWeight: 600 }}>{NEEDS_LABEL[needs]}</b> · {plural(rows.length, 'request')} · all dates</span>
-                  <button type="button" onClick={() => setNeeds(null)} className="pd-btn" style={{ height: 30, padding: '0 12px', fontSize: 12.5 }}>Show the full list</button>
-                </div>
-              )}
               <div style={toolbar}>
                 <div style={{ flex: 1, minWidth: 240, display: 'flex' }}>
                   <SearchInput value={s.leaveSearch} onChange={s.setLeaveSearch} placeholder="Search by employee…" width="100%" />
