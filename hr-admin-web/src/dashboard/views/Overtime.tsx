@@ -29,22 +29,31 @@ const givenAs = (r: OvertimeRow): { pay: boolean; comp: boolean } =>
 
 /** "Leave (Comp-off) · Full day (+1 Comp-off)", for the CSV and a cell's tooltip. */
 const withCredit = (label?: string, credit?: string) => (label ? `${label}${credit ? ` (${credit})` : ''}` : '');
-const PERIODS: [PeriodId, string][] = [['week', 'This week'], ['month', 'This month'], ['last', 'Last month'], ['all', 'All dates'], ['custom', 'Custom']];
+const PERIODS: [PeriodId, string][] = [['week', 'This week'], ['month', 'This month'], ['last', 'Last month'], ['custom', 'Custom']];
+const NEEDS_ACTION_SHOWN = 3;
 const workDay = (r: OvertimeRow) => (r.refISO || '').slice(0, 10);
 const worked = (r: OvertimeRow) => (workDay(r) ? dayLabel(workDay(r)) : r.otDate);
 
 function NeedsAction({ state }: { state: LoadState }) {
   const s = useStore();
   // The longest wait first.
-  const list = s.ots.filter((r) => r.status === 'Pending').sort((a, b) => a.ord - b.ord);
-  if (state === 'ready' && list.length === 0) return null;
-  const slow = list.filter((r) => daysSince(r.ord) > SLOW_DAYS).length;
+  const everything = s.ots.filter((r) => r.status === 'Pending').sort((a, b) => a.ord - b.ord);
+  // As on Leave requests: the tags filter this table only; none picked shows the first few,
+  // a tag shows every request of its kind here, a page at a time.
+  const [pick, setPick] = useState<'all' | 'slow' | null>(null);
+  const isSlow = (r: OvertimeRow) => daysSince(r.ord) > SLOW_DAYS;
+  const matching = pick === 'slow' ? everything.filter(isSlow) : everything;
+  const paged = usePaged(matching, pick);
+  if (state === 'ready' && everything.length === 0) return null;
+  const slow = everything.filter(isSlow).length;
+  const list = pick ? paged.rows : matching.slice(0, NEEDS_ACTION_SHOWN);
+  const tag = (k: 'all' | 'slow', tone: 'bad' | 'mute', text: string, count: number) => ({ tone, text, count, picked: pick === k, onPick: () => setPick(pick === k ? null : k) });
   return (
     <NeedsActionShell
       id="ot-needs-action"
       state={state}
-      summary={`${plural(list.length, 'request')} waiting for a decision · all dates`}
-      chips={slow ? [{ tone: 'bad', text: `${slow} waiting over ${SLOW_DAYS} days` }] : []}
+      summary={`${plural(everything.length, 'request')} waiting for a decision · all dates`}
+      chips={[tag('all', 'mute', 'All', everything.length), ...(slow ? [tag('slow', 'bad', `Waiting over ${SLOW_DAYS} days`, slow)] : [])]}
     >
       {list.map((r) => (
         <div key={r.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(220px,1.6fr) minmax(190px,1.3fr) minmax(110px,.7fr) minmax(120px,1fr)', alignItems: 'center', gap: 16, padding: '12px 22px', borderTop: '1px solid var(--line)' }}>
@@ -64,11 +73,12 @@ function NeedsAction({ state }: { state: LoadState }) {
           </div>
           <Waiting days={daysSince(r.ord)} slow={SLOW_DAYS} />
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <PendingChip dot onClick={() => s.setOtDrawerId(r.id)} label={`Review ${r.name}'s overtime request`} />
+            <PendingChip onClick={() => s.setOtDrawerId(r.id)} label={`Review ${r.name}'s overtime request`} />
           </div>
         </div>
       ))}
       <ListPending state={state} onRetry={() => void s.reload()} rows={3} cols={4} />
+      {pick && <div style={{ padding: '0 18px 12px' }}><Pager p={paged} /></div>}
     </NeedsActionShell>
   );
 }
@@ -163,6 +173,16 @@ export function Overtime() {
       rows,
     );
 
+  /** Brings the request list to the top of the screen, once it is there. */
+  const toList = () => {
+    let tries = 0;
+    const go = () => {
+      const el = document.getElementById('ot-list');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      else if (tries++ < 20) setTimeout(go, 50);
+    };
+    setTimeout(go, 50);
+  };
   const applyCustom = () => {
     const problem = rangeProblem(draftFrom, draftTo);
     setRangeError(problem);
@@ -201,23 +221,23 @@ export function Overtime() {
 
           {!waitingForDates && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
-              <StatTile state={st} label="Overtime requests" value={stats.requests} sub={`${stats.approved} approved · ${stats.declined} declined`} />
-              <StatTile state={st} label="Pending" value={stats.pending} sub="Waiting for a decision" attn />
+              {/* Each tile filters the list below to what it counts, and brings the list into view. */}
+              <StatTile state={st} label="Overtime requests" value={stats.requests} sub={`${stats.approved} approved`}
+                onPick={() => { s.setOtStatus('all'); setGiven('all'); toList(); }} picked={s.otStatus === 'all' && given === 'all'} />
+              <StatTile state={st} label="Pending" value={stats.pending} attn={s.otStatus !== 'Pending'}
+                onPick={() => { s.setOtStatus('Pending'); setGiven('all'); toList(); }} picked={s.otStatus === 'Pending'} color="var(--p-yellow)" />
+              <StatTile state={st} label="Declined" value={stats.declined}
+                onPick={() => { s.setOtStatus('Declined'); setGiven('all'); toList(); }} picked={s.otStatus === 'Declined'} color="var(--p-red)" />
               <StatTile
                 state={st}
                 label="To pay in payroll"
                 value={stats.toPay}
                 unit={stats.toPay === 1 ? 'request' : 'requests'}
-                sub={`${stats.toPayHours} h · approved as overtime pay${stats.toPayLegacy ? `, ${stats.toPayLegacy} from before the choice` : ''}`}
+                sub={`${stats.toPayHours} h`}
+                onPick={() => { s.setOtStatus('Approved'); setGiven('pay'); toList(); }} picked={s.otStatus === 'Approved' && given === 'pay'} color="var(--p-green)"
               />
-              <StatTile state={st} label="Comp-off credited" value={stats.compOff} unit={stats.compOff === 1 ? 'day' : 'days'} sub={`Added to leave balances${stats.compOffLegacy ? ` · ${stats.compOffLegacy} from before the choice` : ''}`} />
-              <StatTile
-                state={st}
-                label="Most overtime in a day"
-                value={stats.busiest ? stats.busiest.n : '—'}
-                unit={stats.busiest ? 'worked' : undefined}
-                sub={stats.busiest ? <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{dayLabel(stats.busiest.d)}</span> : chartDays.length ? 'No overtime' : 'Pick a shorter period'}
-              />
+              <StatTile state={st} label="Comp-off credited" value={stats.compOff} unit={stats.compOff === 1 ? 'day' : 'days'}
+                onPick={() => { s.setOtStatus('Approved'); setGiven('comp'); toList(); }} picked={s.otStatus === 'Approved' && given === 'comp'} color="var(--p-blue)" />
             </div>
           )}
 
@@ -236,7 +256,7 @@ export function Overtime() {
           )}
 
           {!waitingForDates && (
-            <div>
+            <div id="ot-list" style={{ scrollMarginTop: 96 }}>
               <div style={toolbar}>
                 <StatusTabs<ReqStatus | 'all'>
                   options={['all', 'Pending', 'Approved', 'Declined']}
