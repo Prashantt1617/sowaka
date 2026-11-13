@@ -300,7 +300,8 @@ export function LeaveRow({ r, last, onOpen }: { r: Leave; last: boolean; onOpen:
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
         {pend
           ? <PendingChip onClick={onOpen} label={`Review ${r.name}'s leave request`} />
-          : <Pill label={r.byAdmin && r.status !== 'Cancelled' ? `${r.statusLabel} · by admin` : r.statusLabel} tone={TO_STAT[r.status]} />}
+          : <Pill label={r.statusLabel} tone={TO_STAT[r.status]} />}
+        {!pend && r.byAdmin && r.status !== 'Cancelled' && <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>by admin</span>}
         {cancelAsked && <Pill label="Cancellation requested" tone={TO_STAT.Pending} />}
       </div>
       <div style={{ textAlign: 'right', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{r.applied}</div>

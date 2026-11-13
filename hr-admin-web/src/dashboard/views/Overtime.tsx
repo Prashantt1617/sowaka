@@ -298,7 +298,7 @@ export function Overtime() {
                           {/* Who decided it, as the design's "Given as" has it under the decision. */}
                           {!pend && <span style={cellSub}>{r.status === 'Declined' ? 'Declined ' : ''}by {r.byAdmin ? 'HR' : 'manager'}</span>}
                         </div>
-                        <div>{pend ? <PendingChip onClick={open} label={`Review ${r.name}'s overtime request`} /> : <Pill label={r.status} tone={TO_STAT[r.status]} />}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>{pend ? <PendingChip onClick={open} label={`Review ${r.name}'s overtime request`} /> : <Pill label={r.status} tone={TO_STAT[r.status]} />}{!pend && r.byAdmin && <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>by admin</span>}</div>
                         <div style={{ textAlign: 'right', color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{r.appliedOn}</div>
                       </div>
                     );
