@@ -203,7 +203,6 @@ export function Overtime() {
                 state={st}
                 label="To pay in payroll"
                 value={stats.toPay}
-                unit={stats.toPay === 1 ? 'request' : 'requests'}
                 sub={`${stats.toPayHours} h`}
                 onPick={() => { s.setOtStatus('Approved'); setGiven('pay'); toList(); }} picked={s.otStatus === 'Approved' && given === 'pay'} color="var(--p-green)"
               />
