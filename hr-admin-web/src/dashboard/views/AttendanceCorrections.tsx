@@ -24,7 +24,7 @@ import { PendingChip, PeriodStepper, StatTile } from './leaveParts';
 import type { PeriodUnit } from './leaveParts';
 import { Pager, usePaged } from './Pager';
 
-const COLS = '32px 1.5fr .95fr 1.15fr 1.3fr .9fr 1.2fr 1fr 1.1fr';
+const COLS = '32px 1.5fr .95fr .8fr .8fr 1.1fr 1.3fr 1fr 1fr';
 type Kind = CorrectionKind;
 /**
  * What each request is, from the request itself (adapters' correctionKindOf):
@@ -54,12 +54,11 @@ const affectsPay = (r: Correction) => r.status === 'Pending' && kindOf(r) !== 'f
 const workDay = (r: Correction) => (r.refISO || '').slice(0, 10);
 const clock = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : '—');
 
-type Filter = 'all' | 'pay' | 'in' | 'out' | 'both' | 'ool';
+type Filter = 'all' | 'in' | 'out' | 'both' | 'ool';
 /** The design's filters: what the day is missing, by what was punched, or out of location. */
-const FILTERS: [Filter, string][] = [['all', 'All'], ['pay', 'Affects pay'], ['in', 'Punch-in missed'], ['out', 'Punch-out missed'], ['both', 'Both missed'], ['ool', 'Out of location']];
+const FILTERS: [Filter, string][] = [['all', 'All'], ['in', 'Punch-in missed'], ['out', 'Punch-out missed'], ['both', 'Both missed'], ['ool', 'Out of location']];
 const fitsFilter = (r: Correction, f: Filter): boolean => {
   if (f === 'all') return true;
-  if (f === 'pay') return affectsPay(r);
   if (f === 'ool') return kindOf(r) === 'ool';
   if (kindOf(r) === 'ool' || kindOf(r) === 'face') return false;
   const inAt = Boolean(r.punchInISO), outAt = Boolean(r.punchOutISO);
@@ -150,7 +149,6 @@ export function AttendanceCorrections() {
         { header: 'Reason', value: (r) => r.eRemark },
         { header: 'Manager', value: (r) => r.manager },
         { header: 'Status', value: (r) => r.status },
-        { header: 'Affects pay', value: (r) => (affectsPay(r) ? 'yes' : '') },
         { header: 'Decision note', value: (r) => r.mRemark },
         { header: 'Decided by', value: (r) => (r.status === 'Pending' ? '' : r.byAdmin ? 'admin' : 'manager') },
       ],
@@ -201,12 +199,12 @@ export function AttendanceCorrections() {
                 </div>
                 <div style={{ overflowX: 'auto' }}>
                   <div style={{ minWidth: 760 }}>
-                    <div style={TH('1.8fr .8fr .8fr .8fr .8fr .8fr 1.2fr')}>
-                      <Th>EMPLOYEE</Th><Th>CORRECTIONS</Th><Th>PENDING</Th><Th>APPROVED</Th><Th>DECLINED</Th><Th>AFFECT PAY</Th><Th>MANAGER</Th>
+                    <div style={TH('1.8fr .8fr .8fr .8fr .8fr 1.2fr')}>
+                      <Th>EMPLOYEE</Th><Th>CORRECTIONS</Th><Th>PENDING</Th><Th>APPROVED</Th><Th>DECLINED</Th><Th>MANAGER</Th>
                     </div>
                     {pagedPeople.rows.map((e, i) => (
                       <div key={e.id} className="dc-row" onClick={() => { setPerson(e.id); setByPerson(false); s.setCorrStatus('all'); setFilter('all'); }}
-                        style={{ ...TR('1.8fr .8fr .8fr .8fr .8fr .8fr 1.2fr', i === pagedPeople.rows.length - 1), cursor: 'pointer' }}>
+                        style={{ ...TR('1.8fr .8fr .8fr .8fr .8fr 1.2fr', i === pagedPeople.rows.length - 1), cursor: 'pointer' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                           <PersonAvatar name={e.name} userId={e.submitterId} />
                           <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -218,7 +216,6 @@ export function AttendanceCorrections() {
                         <div>{e.pending || '—'}</div>
                         <div>{e.approved || '—'}</div>
                         <div>{e.declined || '—'}</div>
-                        <div style={{ color: e.pay ? 'var(--bad)' : undefined, fontWeight: e.pay ? 600 : 400 }}>{e.pay || '—'}</div>
                         <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={e.manager}>{e.manager || '—'}</div>
                       </div>
                     ))}
@@ -259,7 +256,7 @@ export function AttendanceCorrections() {
 
               {picked.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 14px', borderRadius: 14, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', marginBottom: 12 }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--accent-ink)' }}>{plural(picked.length, 'correction')} selected{picked.some(affectsPay) ? ` · ${picked.filter(affectsPay).length} affect pay` : ''}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--accent-ink)' }}>{plural(picked.length, 'correction')} selected</span>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button type="button" onClick={() => setSelected(new Set())} className={btnClass('ghost')} style={btn('ghost', 'sm')}>Clear</button>
                     <button type="button" onClick={() => setBulk('decline')} className={btnClass('no')} style={btn('no', 'sm')}>Decline</button>
@@ -274,16 +271,15 @@ export function AttendanceCorrections() {
                     <div><input type="checkbox" aria-label="Select all pending rows" checked={allPicked} disabled={pendingRows.length === 0} onChange={() => setSelected(allPicked ? new Set() : new Set(pendingRows.map((r) => r.id)))} /></div>
                     <Th>EMPLOYEE</Th>
                     <Th>WORK DATE</Th>
-                    <Th>TYPE</Th>
-                    <Th>PUNCHED</Th>
-                    <Th>ASKED FOR</Th>
+                    <Th>PUNCHED IN</Th>
+                    <Th>PUNCHED OUT</Th>
+                    <Th>REQUESTED FOR</Th>
                     <Th>REASON</Th>
                     <Th>MANAGER</Th>
                     <Th>STATUS</Th>
                   </div>
                   {paged.rows.map((r, i) => {
                     const pend = r.status === 'Pending';
-                    const k = KIND[kindOf(r)];
                     return (
                       <div key={r.id} className="dc-row" onClick={() => setOpenId(r.id)} style={{ ...TR(COLS, i === paged.rows.length - 1), cursor: 'pointer', ...(pend ? PENDING_ROW : null), ...(selected.has(r.id) && pend ? { background: 'color-mix(in srgb, var(--accent) 14%, var(--surface))' } : null) }}>
                         <div onClick={(e) => e.stopPropagation()}>
@@ -300,18 +296,14 @@ export function AttendanceCorrections() {
                           <span>{r.day} {r.workDate}</span>
                           <span style={cellSub}>raised {r.appliedOn}</span>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                          <span style={{ alignSelf: 'flex-start', fontSize: 11.5, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: k.bg, color: k.fg, whiteSpace: 'nowrap' }}>{k.label}</span>
-                          {r.ool && <span style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.ool.reason}</span>}
-                        </div>
-                        <div style={{ fontSize: 13, color: r.recorded === 'No punch' ? 'var(--ink-3)' : 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.recorded}>{r.recorded === 'No punch' ? '— → —' : r.recorded}</div>
-                        <div>{r.askedFor ?? r.dayType}</div>
+                        <div style={{ fontSize: 13, color: r.punchInISO ? 'var(--ink)' : 'var(--ink-3)' }}>{r.punchInISO ? clock(r.punchInISO) : '—'}</div>
+                        <div style={{ fontSize: 13, color: r.punchOutISO ? 'var(--ink)' : 'var(--ink-3)' }}>{r.punchOutISO ? clock(r.punchOutISO) : '—'}</div>
+                        <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.askedFor ?? r.dayType}>{r.askedFor ?? r.dayType}</div>
                         <div style={{ color: r.eRemark ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
                         <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.manager}>{r.manager || '—'}</div>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
                           {pend ? <PendingChip onClick={() => setOpenId(r.id)} label={`Review ${r.name}'s correction`} /> : <Pill label={r.status} tone={TO_STAT[r.status]} />}
                           {!pend && r.byAdmin && <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>by admin</span>}
-                          {affectsPay(r) && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--bad)' }}>Affects pay</span>}
                         </div>
                       </div>
                     );
@@ -349,7 +341,6 @@ function CorrectionDrawer({ r, onClose }: { r: Correction; onClose: () => void }
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
           <Pill label={r.byAdmin ? `${r.status} · by admin` : r.status} tone={TO_STAT[r.status]} />
           <Pill label={k.label} tone={{ bg: k.bg, fg: k.fg }} />
-          {affectsPay(r) && <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--bad)' }}>Affects pay until decided</span>}
         </div>
         <InfoGrid
           cells={[
