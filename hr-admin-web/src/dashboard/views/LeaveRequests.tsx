@@ -302,13 +302,13 @@ export function LeaveRequests() {
                 state={st}
                 label="Leave days approved"
                 value={stats.approx ? <>≈ {stats.days}</> : stats.days}
+                sub={`${stats.approved} ${stats.approved === 1 ? 'request' : 'requests'}`}
                 onPick={() => { s.setLeaveStatus('Approved'); toList(); }} picked={s.leaveStatus === 'Approved'} color="var(--p-green)"
               />
               <StatTile state={st} label="Pending" value={stats.pending} attn={s.leaveStatus !== 'Pending'}
                 onPick={() => { s.setLeaveStatus('Pending'); toList(); }} picked={s.leaveStatus === 'Pending'} color="var(--p-yellow)" />
-              <StatTile state={st} label="Approved · Declined"
-                value={<>{stats.approved} <button type="button" onClick={(e) => { e.stopPropagation(); s.setLeaveStatus('Declined'); toList(); }} aria-label="Show declined" style={{ border: 0, background: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontSize: 17, color: s.leaveStatus === 'Declined' ? 'var(--bad)' : 'var(--ink-3)', textDecoration: 'underline dotted' }}>· {stats.declined}</button></>}
-                onPick={() => { s.setLeaveStatus('Approved'); toList(); }} picked={s.leaveStatus === 'Declined'} color="var(--p-red)" />
+              <StatTile state={st} label="Declined" value={stats.declined}
+                onPick={() => { s.setLeaveStatus('Declined'); toList(); }} picked={s.leaveStatus === 'Declined'} color="var(--p-red)" />
             </div>
           )}
 
