@@ -2,6 +2,7 @@
 // in, and the dialog that picks what a day was. The same look and flow as the
 // employee's Calendar tab (EmployeeProfile keeps its own copy, unchanged).
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { CalendarDayDTO, CalendarDayStatus, HrDayStatus } from '../../services/hrms';
 import './people.css';
 
@@ -30,7 +31,9 @@ export function MarkDay({ day, saving, onClose, onSave }: { day: CalendarDayDTO;
   const [note, setNote] = useState(day.hr?.note ?? '');
   const recorded = day.hr ? CAL_TONE[day.hr.previousStatus] : CAL_TONE[day.status];
   const when = new Date(`${day.date}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
-  return (
+  // On the page body, not inside the calendar: the page fades in with a transform, which would pin a
+  // fixed overlay to the top of the page instead of the screen.
+  return createPortal(
     <div className="pd-scrim">
       <div className="bg" onClick={onClose} />
       <div className="pd-modal" style={{ width: 'min(440px, 100%)' }}>
@@ -65,7 +68,8 @@ export function MarkDay({ day, saving, onClose, onSave }: { day: CalendarDayDTO;
           <button type="button" disabled={saving} onClick={() => onSave(status, note)} className="pd-btn primary">{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
