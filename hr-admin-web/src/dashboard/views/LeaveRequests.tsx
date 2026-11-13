@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import type { ReqStatus } from '../theme';
 import type { Leave } from '../seed';
@@ -6,7 +7,7 @@ import { downloadCsv } from '../export';
 import { Card, EmptyRow, ListPending, PageActions, SearchInput, SelectBox, StatusTabs, Th } from '../ui';
 import type { LoadState } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
-import { btn, btnClass, cellName, cellSub, SEG, segBtn, TH, toolbar } from '../ds';
+import { btn, btnClass, cellName, cellSub, TH, toolbar } from '../ds';
 import { IconDownload } from '../icons';
 import { LeaveCalendar } from './LeaveCalendar';
 import {
@@ -14,38 +15,40 @@ import {
   LEAVE_COLS, rangeProblem, SLOW_DAYS, startOf, todayISO,
 } from './leaveDays';
 import type { PeriodId } from './leaveDays';
-import { CustomRange, DayBars, Flag, LeaveRow, LinkButton, NeedsActionShell, PendingChip, PeriodButtons, StatTile, Swatch, Waiting } from './leaveParts';
+import { CustomRange, Flag, LeaveRow, LinkButton, NeedsActionShell, PendingChip, PeriodButtons, StatTile, Waiting } from './leaveParts';
 import { Pager, usePaged } from './Pager';
 
 const NEEDS_ACTION_SHOWN = 3;
 const PERIODS: [PeriodId, string][] = [['last', 'Last month'], ['week', 'This week'], ['month', 'This month'], ['next', 'Next month'], ['all', 'All dates'], ['custom', 'Custom']];
 const startsIn = (n: number) => (n === 0 ? 'Starts today' : n === 1 ? 'Starts tomorrow' : `Starts in ${n} days`);
 
-function NeedsAction({ state, onAll, onCancellations }: { state: LoadState; onAll: () => void; onCancellations: () => void }) {
+/** Needs action's tags: all of it, or one kind. Picking one shows exactly those requests in the list below. */
+type NeedsPick = 'all' | 'passed' | 'soon' | 'slow' | 'cancel';
+const NEEDS_LABEL: Record<NeedsPick, string> = { all: 'All needing action', passed: 'Date already passed', soon: 'Start within 7 days', slow: `Waiting over ${SLOW_DAYS} days`, cancel: 'Cancellation requests' };
+function fitsNeeds(l: Leave, k: NeedsPick, today: string): boolean {
+  if (k === 'all') return true;
+  if (k === 'cancel') return l.status !== 'Pending';
+  const f = pendingFacts(l, today);
+  if (k === 'slow') return f.slow;
+  return l.status === 'Pending' && (k === 'passed' ? f.passed : f.soon);
+}
+
+function NeedsAction({ state, pick, onPick }: { state: LoadState; pick: NeedsPick | null; onPick: (k: NeedsPick) => void }) {
   const s = useStore();
   const sum = needsActionSummary(s.leaves);
   const today = todayISO();
   // The most urgent first: dates already gone, then the soonest to start. Cancellation requests too,
   // so the count matches the sidebar badge and Overview.
-  const [pick, setPick] = useState<'all' | 'passed' | 'soon' | 'slow' | 'cancel'>('all');
   const everything = sum.all.slice().sort((a, b) => startOf(a).localeCompare(startOf(b)));
   if (state === 'ready' && everything.length === 0) return null;
-  // The tags filter the list: dates passed, starting within 7 days, waiting long, or cancellation requests.
-  const fits = (l: Leave, k: typeof pick) => {
-    if (k === 'all') return true;
-    if (k === 'cancel') return l.status !== 'Pending';
-    const f = pendingFacts(l, today);
-    if (k === 'slow') return f.slow;
-    return l.status === 'Pending' && (k === 'passed' ? f.passed : f.soon);
-  };
-  const list = everything.filter((l) => fits(l, pick));
-  const tag = (k: typeof pick, tone: 'bad' | 'attn' | 'mute', text: string, count: number) => ({ tone, text, count, picked: pick === k, onPick: () => setPick(k) });
+  const list = everything.filter((l) => fitsNeeds(l, pick ?? 'all', today));
+  const tag = (k: NeedsPick, tone: 'bad' | 'attn' | 'mute', text: string, count: number) => ({ tone, text, count, picked: pick === k, onPick: () => onPick(k) });
   const chips = [
     tag('all', 'mute', 'All', everything.length),
-    ...(sum.passed ? [tag('passed', 'bad', 'Date already passed', sum.passed)] : []),
-    ...(sum.soon ? [tag('soon', 'attn', 'Start within 7 days', sum.soon)] : []),
-    ...(sum.slow ? [tag('slow', 'mute', `Waiting over ${SLOW_DAYS} days`, sum.slow)] : []),
-    ...(sum.cancellations.length ? [tag('cancel', 'attn', 'Cancellation requests', sum.cancellations.length)] : []),
+    ...(sum.passed ? [tag('passed', 'bad', NEEDS_LABEL.passed, sum.passed)] : []),
+    ...(sum.soon ? [tag('soon', 'attn', NEEDS_LABEL.soon, sum.soon)] : []),
+    ...(sum.slow ? [tag('slow', 'mute', NEEDS_LABEL.slow, sum.slow)] : []),
+    ...(sum.cancellations.length ? [tag('cancel', 'attn', NEEDS_LABEL.cancel, sum.cancellations.length)] : []),
   ];
   const summary = sum.cancellations.length
     ? `${plural(sum.pending.length, 'request')} waiting for approval, ${plural(sum.cancellations.length, 'cancellation request')} · all dates`
@@ -56,13 +59,6 @@ function NeedsAction({ state, onAll, onCancellations }: { state: LoadState; onAl
       state={state}
       summary={summary}
       chips={chips}
-      // As the design has it, the footer always leads to the full list, filtered.
-      more={everything.length > 0 ? (
-        <div style={{ display: 'flex', gap: 18 }}>
-          {sum.cancellations.length > 0 && <LinkButton onClick={onCancellations}>View {plural(sum.cancellations.length, 'cancellation request')}</LinkButton>}
-          {sum.pending.length > 0 && <LinkButton onClick={onAll}>View all {sum.pending.length} pending</LinkButton>}
-        </div>
-      ) : undefined}
     >
       {list.slice(0, NEEDS_ACTION_SHOWN).map((l) => {
         const f = pendingFacts(l, today);
@@ -108,11 +104,12 @@ export function LeaveRequests() {
   const [draftTo, setDraftTo] = useState(s.leaveTo);
   const [rangeError, setRangeError] = useState('');
   const [dept, setDept] = useState('all');
-  const today = todayISO();
 
   const range = periodRange(period, s.leaveFrom, s.leaveTo);
   const waitingForDates = period === 'custom' && !s.leaveFrom;
   const inPeriod = useMemo(() => s.leaves.filter((l) => overlaps(l, range.from, range.to)), [s.leaves, range.from, range.to]);
+  // A Needs action tag picked: the list shows exactly those requests, every date, until a tab, period or tile is chosen.
+  const [needs, setNeeds] = useState<NeedsPick | null>(null);
 
   const chartDays = chartDaysOf(range);
   const totals = useMemo(() => peopleTotals(perDay(inPeriod, chartDays)), [inPeriod, chartDays.join()]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -149,6 +146,15 @@ export function LeaveRequests() {
   // A cancellation request waits on HR whatever its leave's dates, so its tab reads every date.
   const cancellations = useMemo(() => s.leaves.filter((r) => r.cancelRequest?.status === 'Pending'), [s.leaves]);
   const rows = useMemo(() => {
+    if (needs) {
+      const today = todayISO();
+      let picked = needsActionSummary(s.leaves).all.filter((l) => fitsNeeds(l, needs, today));
+      const q0 = s.leaveSearch.trim().toLowerCase();
+      if (q0) picked = picked.filter((r) => r.name.toLowerCase().includes(q0));
+      if (s.leaveType !== 'all') picked = picked.filter((r) => r.type === s.leaveType);
+      if (dept !== 'all') picked = picked.filter((r) => r.team === dept);
+      return picked.sort((a, b) => startOf(a).localeCompare(startOf(b)));
+    }
     let out = s.leaveStatus === 'Cancellation' ? cancellations.slice() : inPeriod.slice();
     const q = s.leaveSearch.trim().toLowerCase();
     if (q) out = out.filter((r) => r.name.toLowerCase().includes(q));
@@ -162,8 +168,8 @@ export function LeaveRequests() {
     else if (sort === 'name') out.sort((a, b) => a.name.localeCompare(b.name));
     else if (sort === 'days') out.sort((a, b) => b.dayN - a.dayN);
     return out;
-  }, [inPeriod, cancellations, s.leaveSearch, s.leaveStatus, s.leaveType, s.leaveSort, dept]);
-  const paged = usePaged(rows, `${rows.length}|${rows[0]?.id ?? ''}`);
+  }, [inPeriod, cancellations, s.leaves, needs, s.leaveSearch, s.leaveStatus, s.leaveType, s.leaveSort, dept]);
+  const paged = usePaged(rows, `${needs}|${rows.length}|${rows[0]?.id ?? ''}`);
 
   const statusCounts = useMemo(() => {
     const c: Partial<Record<ReqStatus | 'all' | 'Cancellation', number>> = { all: inPeriod.length };
@@ -202,7 +208,15 @@ export function LeaveRequests() {
     s.setLeaveTo(draftTo);
   };
   /** Brings the request list (its status tabs) to the top of the screen, once it has rendered. */
-  const toList = () => setTimeout(() => document.getElementById('leave-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  const toList = () => {
+    let tries = 0;
+    const go = () => {
+      const el = document.getElementById('leave-list');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      else if (tries++ < 20) setTimeout(go, 50);
+    };
+    setTimeout(go, 50);
+  };
   /** Pending, every date: where Needs action's "View all" and the calendar's banner lead. */
   const showAllPending = () => {
     setView('list');
@@ -230,10 +244,22 @@ export function LeaveRequests() {
     setView('calendar');
   };
 
+  const toggleBtn = (on: boolean): CSSProperties => ({
+    display: 'inline-flex', alignItems: 'center', gap: 8, height: 38, padding: '0 18px', borderRadius: 999, border: 0, cursor: 'pointer',
+    font: 'inherit', fontSize: 14, fontWeight: 600, transition: 'background .15s, color .15s',
+    background: on ? 'var(--accent)' : 'transparent', color: on ? 'var(--on-accent)' : 'var(--accent-ink)',
+    boxShadow: on ? '0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent)' : undefined,
+  });
   const viewToggle = (
-    <div role="group" aria-label="View" style={SEG}>
-      <button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')} style={segBtn(view === 'list')}>List</button>
-      <button type="button" aria-pressed={view === 'calendar'} onClick={() => setView('calendar')} style={segBtn(view === 'calendar')}>Calendar</button>
+    <div role="group" aria-label="View" style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 999, background: 'var(--accent-soft)', border: '1.5px solid color-mix(in srgb, var(--accent) 45%, transparent)' }}>
+      <button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')} style={toggleBtn(view === 'list')}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
+        List
+      </button>
+      <button type="button" aria-pressed={view === 'calendar'} onClick={() => setView('calendar')} style={toggleBtn(view === 'calendar')}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
+        Calendar
+      </button>
     </div>
   );
 
@@ -252,7 +278,7 @@ export function LeaveRequests() {
         {viewToggle}
       </PageActions>
 
-      <NeedsAction state={st} onAll={showAllPending} onCancellations={showCancellations} />
+      <NeedsAction state={st} pick={needs} onPick={(k) => { setNeeds(k); setView('list'); toList(); }} />
 
       <Card padded>
         <section aria-labelledby="leave-period" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -261,7 +287,7 @@ export function LeaveRequests() {
               <h2 id="leave-period" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{range.title}</h2>
               <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>By the dates people are on leave. A leave that overlaps the period is included.</span>
             </div>
-            <PeriodButtons periods={PERIODS} period={period} onPeriod={setPeriod} />
+            <PeriodButtons periods={PERIODS} period={period} onPeriod={(p) => { setNeeds(null); setPeriod(p); }} />
           </div>
 
           {period === 'custom' && (
@@ -281,18 +307,18 @@ export function LeaveRequests() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
               {/* Each tile filters the list below to what it counts, and brings the list into view. */}
               <StatTile state={st} label="People on leave" value={stats.people}
-                onPick={() => { s.setLeaveStatus('all'); toList(); }} picked={s.leaveStatus === 'all'} />
+                onPick={() => { setNeeds(null); s.setLeaveStatus('all'); toList(); }} picked={s.leaveStatus === 'all'} />
               <StatTile
                 state={st}
                 label="Leave days approved"
                 value={stats.approx ? <>≈ {stats.days}</> : stats.days}
-                onPick={() => { s.setLeaveStatus('Approved'); toList(); }} picked={s.leaveStatus === 'Approved'} color="var(--p-green)"
+                onPick={() => { setNeeds(null); s.setLeaveStatus('Approved'); toList(); }} picked={s.leaveStatus === 'Approved'} color="var(--p-green)"
               />
               <StatTile state={st} label="Pending" value={stats.pending} attn={s.leaveStatus !== 'Pending'}
-                onPick={() => { s.setLeaveStatus('Pending'); toList(); }} picked={s.leaveStatus === 'Pending'} color="var(--p-yellow)" />
+                onPick={() => { setNeeds(null); s.setLeaveStatus('Pending'); toList(); }} picked={s.leaveStatus === 'Pending'} color="var(--p-yellow)" />
               <StatTile state={st} label="Approved · Declined"
-                value={<>{stats.approved} <button type="button" onClick={(e) => { e.stopPropagation(); s.setLeaveStatus('Declined'); toList(); }} aria-label="Show declined" style={{ border: 0, background: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontSize: 17, color: s.leaveStatus === 'Declined' ? 'var(--bad)' : 'var(--ink-3)', textDecoration: 'underline dotted' }}>· {stats.declined}</button></>}
-                onPick={() => { s.setLeaveStatus('Approved'); toList(); }} picked={s.leaveStatus === 'Declined'} color="var(--p-red)" />
+                value={<>{stats.approved} <button type="button" onClick={(e) => { e.stopPropagation(); setNeeds(null); s.setLeaveStatus('Declined'); toList(); }} aria-label="Show declined" style={{ border: 0, background: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontSize: 17, color: s.leaveStatus === 'Declined' ? 'var(--bad)' : 'var(--ink-3)', textDecoration: 'underline dotted' }}>· {stats.declined}</button></>}
+                onPick={() => { setNeeds(null); s.setLeaveStatus('Approved'); toList(); }} picked={s.leaveStatus === 'Declined'} color="var(--p-red)" />
               <StatTile
                 state={st}
                 label="Most people off"
@@ -305,19 +331,6 @@ export function LeaveRequests() {
             </div>
           )}
 
-          {!waitingForDates && chartDays.length > 1 && (
-            <div style={{ border: '1px solid var(--line)', borderRadius: 16, padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 600 }}>People on leave, day by day <span title="By leave dates; when a leave counts fewer days than its span, Saturday and Sunday are taken out. Week offs and holidays per shift are not applied." style={{ fontSize: 12, fontWeight: 400, color: 'var(--ink-3)' }}>approx.</span></h3>
-                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, fontSize: 12.5, color: 'var(--ink-2)' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Swatch kind="approved" />Approved</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Swatch kind="pending" />Pending</span>
-                  <LinkButton onClick={() => openCalendar(null)}>Open calendar</LinkButton>
-                </div>
-              </div>
-              <DayBars days={chartDays} totals={totals} today={today} />
-            </div>
-          )}
 
           {!waitingForDates && (
             <div id="leave-list" style={{ scrollMarginTop: 96 }}>
@@ -325,11 +338,17 @@ export function LeaveRequests() {
                 <StatusTabs<ReqStatus | 'all' | 'Cancellation'>
                   options={['all', 'Pending', 'Approved', 'Declined', 'Cancelled', 'Cancellation']}
                   labels={{ Cancellation: 'Cancellation requests' }}
-                  active={s.leaveStatus}
-                  onSelect={s.setLeaveStatus}
+                  active={needs ? ('' as ReqStatus) : s.leaveStatus}
+                  onSelect={(v) => { setNeeds(null); s.setLeaveStatus(v); }}
                   counts={st === 'ready' ? statusCounts : undefined}
                 />
               </div>
+              {needs && (
+                <div style={{ ...toolbar, gap: 10, fontSize: 13.5 }}>
+                  <span>Showing <b style={{ fontWeight: 600 }}>{NEEDS_LABEL[needs]}</b> · {plural(rows.length, 'request')} · all dates</span>
+                  <button type="button" onClick={() => setNeeds(null)} className="pd-btn" style={{ height: 30, padding: '0 12px', fontSize: 12.5 }}>Show the full list</button>
+                </div>
+              )}
               <div style={toolbar}>
                 <div style={{ flex: 1, minWidth: 240, display: 'flex' }}>
                   <SearchInput value={s.leaveSearch} onChange={s.setLeaveSearch} placeholder="Search by employee…" width="100%" />
