@@ -325,9 +325,10 @@ export function CompanyCalendar() {
             const on = d === day;
             // Drawn the way the employee's Calendar tab draws a day: a soft tint by what it was.
             const tone = off ? (fest ? CAL_TONE.holiday : CAL_TONE.week_off) : v ? { bg: mdef.bg, fg: mdef.fg } : { bg: 'var(--surface)', fg: 'var(--ink-3)' };
-            const pending = v && metric === 'leave' && (hits.get(`leave|${d}`) ?? []).some((h) => h.detail.endsWith('pending'));
+            // Leave asked for but not yet approved counts too; how many of them, on its own line.
+            const pending = v && metric === 'leave' ? (hits.get(`leave|${d}`) ?? []).filter((h) => h.detail.endsWith('pending')).length : 0;
             const line1 = off ? (fest ? 'Holiday' : 'Week off') : '';
-            const line2 = off ? (fest ?? 'Week off') : future ? '' : v ? `${v} ${v === 1 ? 'person' : 'people'}${pending ? ' · incl. pending' : ''}` : 'None';
+            const line2 = off ? (fest ?? 'Week off') : future ? '' : v ? `${v} ${v === 1 ? 'person' : 'people'}` : 'None';
             return (
               <button
                 key={d}
@@ -343,6 +344,7 @@ export function CompanyCalendar() {
                 </div>
                 {line1 && <div style={{ fontSize: 11, fontWeight: 400 }}>{line1}</div>}
                 {line2 && <div style={{ fontSize: off ? 11 : 12.5, fontWeight: off || !v ? 400 : 700, opacity: off || !v ? 0.85 : 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={line2}>{line2}</div>}
+                {pending > 0 && <div style={{ fontSize: 11, opacity: 0.85 }}>{pending} awaiting approval</div>}
               </button>
             );
           })}
