@@ -15,7 +15,7 @@ import { IconDownload, IconEye } from '../icons';
 import { DrawerHeader, DrawerShell } from '../drawers/shell';
 import { canOpen } from '../access';
 import { useAuth } from '../auth/AuthContext';
-import { addDays, chartDaysOf, dateOf, dayLabel, daysBetween, MON, plural, rangeProblem, todayISO } from './leaveDays';
+import { addDays, chartDaysOf, dateOf, dayLabel, daysBetween, MON, rangeProblem, todayISO } from './leaveDays';
 import type { PeriodId } from './leaveDays';
 import { CustomRange, Key, LinkButton, PeriodButtons, StackBars, StatTile } from './leaveParts';
 
@@ -234,6 +234,7 @@ export function PunchLog() {
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <h2 id="punch-period" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{title}</h2>
+
             </div>
             <PeriodButtons periods={[['today', 'Today'], ['week', 'This week'], ['cycle', cycleWord], ['custom', 'Custom']]} period={period} onPeriod={setPeriod} />
           </div>
@@ -255,14 +256,12 @@ export function PunchLog() {
           {error && <LoadError compact text={error} onRetry={() => setAttempt((n) => n + 1)} />}
 
           {!waitingForDates && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
-              {/* Today: people; a longer period: person-days, with how they counted (from the attendance report). */}
-              {period === 'today'
-                ? <StatTile state={state} label="Punched in today" value={stats.people} sub={report && report.length ? `${stats.late} late so far` : 'Today'} />
-                : <StatTile state={state} label="Person-days punched in" value={stats.personDays} sub={report && report.length ? `${stats.late} late · ${stats.early} left early · ${stats.half} half day` : `${plural(stats.people, 'person', 'people')}`} />}
-              <StatTile state={state} label="In office" value={stats.office} unit={stats.office === 1 ? 'day' : 'days'} sub="At an office or on its device" />
-              <StatTile state={state} label="Out of location" value={stats.ool} sub={stats.ool ? `${stats.reasons}${stats.oolWaiting ? ` · ${stats.oolWaiting} waiting` : ''}` : 'None in this period'} />
-              <StatTile state={state} label="Waiting in corrections" value={stats.waitingCorr} sub="Not counted as present yet" attn={stats.waitingCorr > 0}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+              {/* Three counts: where the punches were made, and what still waits on a decision. */}
+              <StatTile state={state} label="In office punches" value={stats.office} sub="At an office or on its device" />
+              <StatTile state={state} label="Out of office punches" value={stats.ool} sub={stats.ool ? stats.reasons : 'None in this period'} />
+              <StatTile state={state} label="Punches waiting for approval" value={stats.oolWaiting + stats.waitingCorr}
+                sub={`${stats.oolWaiting} out of office · ${stats.waitingCorr} ${stats.waitingCorr === 1 ? 'correction' : 'corrections'}`} attn={stats.oolWaiting + stats.waitingCorr > 0}
                 action={canOpen(user, 'attendance') ? <LinkButton onClick={() => s.setView('attendance')}>Open</LinkButton> : undefined} />
             </div>
           )}
