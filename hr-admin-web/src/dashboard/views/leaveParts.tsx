@@ -51,9 +51,9 @@ export function PendingChip({ onClick, label, dot = false }: { onClick: () => vo
       type="button"
       aria-label={label}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: dot ? 32 : 26, padding: dot ? '0 12px' : '0 10px', borderRadius: 999, border: '1px solid var(--attn-line)', background: 'var(--attn-bg)', color: 'var(--attn)', fontSize: dot ? 13 : 12, fontWeight: 600, cursor: 'pointer', font: 'inherit', whiteSpace: 'nowrap' }}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: dot ? 32 : 26, padding: dot ? '0 12px' : '0 10px', borderRadius: 999, border: '1px solid transparent', background: 'var(--p-yellow)', color: 'var(--p-yellow-ink)', fontSize: dot ? 13 : 12, fontWeight: 600, cursor: 'pointer', font: 'inherit', whiteSpace: 'nowrap' }}
     >
-      {dot && <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--attn)' }} />}
+      {dot && <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--p-yellow-ink)' }} />}
       Pending
       <svg aria-hidden width={dot ? 14 : 12} height={dot ? 14 : 12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
     </button>

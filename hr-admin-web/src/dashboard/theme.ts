@@ -116,7 +116,8 @@ export const STAT: Record<ReqStatus, Pill> = {
 /** Time office's "waiting on a decision": a calm blue tint, not the yellow pill. */
 export const ATTN_PILL: Pill = { bg: 'var(--attn-bg)', fg: 'var(--attn)' };
 /** STAT as the Time office pages show it: Pending in the attention blue, the rest as everywhere. */
-export const TO_STAT: Record<ReqStatus, Pill> = { ...STAT, Pending: ATTN_PILL };
+// Pending is the live dashboard's yellow on the Time office pages too, as on the Company calendar.
+export const TO_STAT: Record<ReqStatus, Pill> = { ...STAT };
 
 export const FSTAT: Record<FeedbackStatus, Pill> = {
   Acknowledged: SOLID.ok,
