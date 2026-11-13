@@ -82,7 +82,6 @@ function CorrNeedsAction({ state, onOpen }: { state: LoadState; onOpen: (id: str
   const paged = usePaged(matching, pick);
   if (state === 'ready' && everything.length === 0) return null;
   const list = pick ? paged.rows : matching.slice(0, NEEDS_ACTION_SHOWN);
-  const pay = everything.filter(affectsPay).length;
   const slow = everything.filter(isSlow).length;
   const tag = (k: CorrPick, text: string, count: number) => ({ tone: 'mute' as const, text, count, picked: pick === k, onPick: () => setPick(pick === k ? null : k) });
   return (
@@ -90,7 +89,7 @@ function CorrNeedsAction({ state, onOpen }: { state: LoadState; onOpen: (id: str
       id="corr-needs-action"
       state={state}
       summary={`${plural(everything.length, 'request')} waiting for approval · all dates`}
-      chips={[...(pay ? [tag('pay', 'Affect pay', pay)] : []), ...(slow ? [tag('slow', `Waiting over ${SLOW_DAYS} days`, slow)] : []), tag('all', 'All', everything.length)]}
+      chips={[...(slow ? [tag('slow', `Waiting over ${SLOW_DAYS} days`, slow)] : []), tag('all', 'All', everything.length)]}
     >
       {list.map((r) => {
         const k = KIND[kindOf(r)];
@@ -114,7 +113,6 @@ function CorrNeedsAction({ state, onOpen }: { state: LoadState; onOpen: (id: str
             <Waiting days={daysSince(r.ord)} slow={SLOW_DAYS} />
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
               <PendingChip onClick={() => onOpen(r.id)} label={`Review ${r.name}'s correction`} />
-              {affectsPay(r) && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--bad)' }}>Affects pay</span>}
             </div>
           </div>
         );
