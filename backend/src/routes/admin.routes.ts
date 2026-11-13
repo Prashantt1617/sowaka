@@ -8,6 +8,7 @@ import {
   createEmployee,
   decideLeave,
   decideLeaveCancellationHandler,
+  adminCancelLeaveHandler,
   decideOvertime,
   decideRegularization,
   decideReimbursement,
@@ -20,6 +21,7 @@ import {
   employeeCalendarHandler,
   employeeLeaveBalanceHandler,
   setCalendarDayHandler,
+  setMarkRemovedHandler,
   clearCalendarDayHandler,
   listAccessesHandler,
   setAccessHandler,
@@ -123,6 +125,7 @@ adminRouter.get('/employees/:userId/leave-balance', employeeLeaveBalanceHandler)
 // HR marks a day of the current month; it outranks punches, leave and holidays everywhere.
 adminRouter.put('/employees/:userId/calendar/:date', setCalendarDayHandler);
 adminRouter.delete('/employees/:userId/calendar/:date', clearCalendarDayHandler);
+adminRouter.put('/employees/:userId/calendar/:date/marks', setMarkRemovedHandler);
 // Every payslip a payroll run has produced for them.
 adminRouter.get('/employees/:userId/payslips', employeePayslipsHandler);
 // Documents filed against an employee — offer letter, ID proof and the like.
@@ -182,6 +185,7 @@ adminRouter.get('/reports/attendance', attendanceReportHandler);
 // Overrides / dashboard-only decisions (rules 3, 6, 7, 8)
 adminRouter.patch('/leaves/:leaveId/decision', decideLeave);
 adminRouter.patch('/leaves/:leaveId/cancellation', decideLeaveCancellationHandler);
+adminRouter.post('/leaves/:leaveId/cancel', adminCancelLeaveHandler);
 adminRouter.patch('/overtime/:overtimeId/decision', decideOvertime);
 adminRouter.patch('/reimbursements/:claimId/decision', decideReimbursement);
 adminRouter.patch('/regularizations/:regularizationId/decision', decideRegularization);

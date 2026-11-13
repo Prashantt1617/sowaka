@@ -80,6 +80,7 @@ const inr = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { min
     person('chitra', { employeeId: 'E3' }),
     person('dev', { employeeId: 'E4' }),
     person('farah', { employeeId: 'E5' }),
+    person('gita', { employeeId: 'E9' }),
   ]);
   // A 26th-to-25th cycle: September is 26 Aug – 25 Sep, 31 base days.
   await payrollPeriods().insertOne({ org: ORG, period: 'default', startDay: 26, updatedAt: now } as never);
@@ -87,21 +88,26 @@ const inr = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { min
   await salaryTemplates().insertOne({ ...ZOHO_TEMPLATES[CODE], org: ORG });
   // Every day paid: what is checked here is overtime, not attendance.
   await paidDaysTemplates().insertOne({ org: ORG, code: 'DEFAULT', name: 'All days', allDaysPaid: true, deductionRules: [], monthlyPaidLeaveDays: 0, isDefault: true, createdAt: now, updatedAt: now } as never);
-  await salaryStructures().insertMany(['asha', 'bala', 'chitra'].map((userId) => ({
+  await salaryStructures().insertMany(['asha', 'bala', 'chitra', 'gita'].map((userId) => ({
     org: ORG, userId, salaryTemplateCode: CODE, annualCtcPaise: 6_00_000_00, status: 'active' as const, createdAt: now, updatedAt: now,
   })));
   // Asha's overtime: 3 h + 2 h approved inside the cycle (27 Aug, and 25 Sep
   // its last day); approved hours just outside it (25 Aug is August's, 26 Sep
   // October's), and a pending and a declined claim inside it, none paid.
   await overtimeRequests().insertMany([
-    ot('2026-08-27', 3, 'approved'),
-    ot('2026-09-25', 2, 'approved'),
-    ot('2026-08-25', 5, 'approved'),
-    ot('2026-09-26', 4, 'approved'),
-    ot('2026-09-10', 6, 'pending'),
-    ot('2026-09-11', 7, 'declined'),
-    // Chitra chose how each claim is compensated (Asha's above are from
-    // before the choice): 4 h as overtime pay, a full day and a half day as
+    ot('2026-08-27', 3, 'approved', { compensation: { kind: 'pay' } }),
+    ot('2026-09-25', 2, 'approved', { compensation: { kind: 'pay' } }),
+    ot('2026-08-25', 5, 'approved', { compensation: { kind: 'pay' } }),
+    ot('2026-09-26', 4, 'approved', { compensation: { kind: 'pay' } }),
+    ot('2026-09-10', 6, 'pending', { compensation: { kind: 'pay' } }),
+    ot('2026-09-11', 7, 'declined', { compensation: { kind: 'pay' } }),
+    // Gita's are from before the choice existed: overtime was comp-off then, so four approved
+    // half days credit 2 days of comp-off and pay nothing.
+    ot('2026-09-01', 4, 'approved', { userId: 'gita' }),
+    ot('2026-09-02', 4, 'approved', { userId: 'gita' }),
+    ot('2026-09-03', 4, 'approved', { userId: 'gita' }),
+    ot('2026-09-04', 4, 'approved', { userId: 'gita' }),
+    // Chitra chose how each claim is compensated: 4 h as overtime pay, a full day and a half day as
     // comp-off, and a declined comp-off — only the 4 h are paid.
     ot('2026-09-01', 4, 'approved', { userId: 'chitra', compensation: { kind: 'pay' } }),
     ot('2026-09-02', 8, 'approved', { userId: 'chitra', duration: 'full_day', compensation: { kind: 'comp_off', days: 1 } }),
@@ -132,7 +138,8 @@ const inr = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { min
   ok(`5 approved hours in the cycle at 2× Basic ÷ (31 × 8): ${inr(byBasic)}`, asha.inputs.overtimePaise === byBasic && !asha.inputs.overtimeEnteredByHr, { got: asha.inputs.overtimePaise, want: byBasic });
   ok('overtime is in gross, on top of the earnings (not prorated)', asha.grossPaise === earnedPaid(asha) + byBasic, { gross: asha.grossPaise, earned: earnedPaid(asha) });
   ok('someone with no overtime: none', (await slip('bala')).inputs.overtimePaise === 0);
-  ok('requests from before the compensation choice (Asha\'s) are paid as before', !(await overtimeRequests().findOne({ userId: 'asha', compensation: { $exists: true } })) && asha.inputs.overtimePaise === byBasic);
+  const gita = await slip('gita');
+  ok('requests from before the choice (Gita\'s) are comp-off only: no hours paid', gita.inputs.overtimePaise === 0 && gita.inputs.approvedOtHours === 0, gita.inputs);
   const chitraByBasic = Math.round((basicFull / (BASE_DAYS * 8)) * 2 * CHITRA_PAID_HOURS);
   let chitra = await slip('chitra');
   ok(`overtime pay chosen: its 4 h paid as before, ${inr(chitraByBasic)}; the comp-off claims add no pay`, chitra.inputs.overtimePaise === chitraByBasic && chitra.inputs.approvedOtHours === CHITRA_PAID_HOURS, { got: chitra.inputs, want: chitraByBasic });
@@ -197,8 +204,8 @@ const inr = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { min
     (await getMyLeaveBalance(userId, year, new Date(`${year}-12-31T06:00:00Z`))).comp_off;
   ok('a full day credits 1 and a half day 0.5; overtime pay and a declined claim credit nothing: 1.5',
     (await compOff('chitra')).total === 1.5, await compOff('chitra'));
-  ok('requests from before the choice credit as they always did (four approved half days: 2)',
-    (await compOff('asha')).total === 2, await compOff('asha'));
+  ok('requests from before the choice credit comp-off as they always did (four approved half days: 2)',
+    (await compOff('gita')).total === 2, await compOff('gita'));
 
   console.log('the form: what the server accepts');
   const daysAgo = (n: number) => ymd(new Date(Date.now() - n * 86_400_000));

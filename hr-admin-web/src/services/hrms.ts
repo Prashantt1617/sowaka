@@ -35,6 +35,8 @@ export type LeaveDTO = {
   };
   /** On a cancelled leave: withdrawn while pending, or cancelled once approved. Older servers omit it. */
   cancelledFrom?: 'pending' | 'approved';
+  /** The admin list only: the person's leave type is leave without pay (HR's unpaid flag). */
+  unpaid?: boolean;
 };
 
 /** Overtime pay, or comp-off of a full (1) or half (0.5) day. */
@@ -77,8 +79,16 @@ export type RegularizationDTO = {
   manager?: string;
   employee: { name: string; department?: string };
   workDate: string;
-  /** A correction disputes the day's grade; out of location is a punch away from every office. */
-  kind?: 'correction' | 'out_of_location';
+  /**
+   * A correction disputes the day's grade; out of location is a punch away from every office;
+   * face check is a punch the face check refused, sent for a decision instead.
+   */
+  kind?: 'correction' | 'out_of_location' | 'face_check';
+  /** Face check only: which punch the check refused (absent on the first rows: a punch-in). */
+  faceCheck?: { punchType?: 'in' | 'out'; reason?: string; attempts?: number };
+  /** Older corrections only: the punch times the employee asked for, from before day types. */
+  requestedPunchIn?: string;
+  requestedPunchOut?: string;
   /** The heading everyone sees — "Out of location request (Client visit)" or "Attendance correction". */
   title?: string;
   /** Out of location only: why, where, and how far from the nearest office. */
@@ -151,6 +161,10 @@ export const decideLeaveCancellation = (id: string, decision: 'approved' | 'decl
     method: 'PATCH',
     body: { decision, ...(note ? { note } : {}) },
   }).then((r) => r.leave);
+
+// HR cancels a leave (approved or pending) from the dashboard: its days go back on the balance.
+export const adminCancelLeave = (id: string, note?: string) =>
+  api<{ leave: LeaveDTO }>(`/admin/leaves/${id}/cancel`, { method: 'POST', body: note ? { note } : {} }).then((r) => r.leave);
 
 // ---- Overtime (org-wide) ----
 export const getOvertimeInbox = () =>
@@ -352,6 +366,10 @@ export const setCalendarDay = (userId: string, date: string, status: HrDayStatus
 /** Take HR's mark off a day; it goes back to what the record says. */
 export const clearCalendarDay = (userId: string, date: string) =>
   api(`/admin/employees/${userId}/calendar/${date}`, { method: 'DELETE' });
+
+// HR takes the late or left-early mark off one day (or puts it back with removed: false); the day stays as punched.
+export const setDayMarkRemoved = (userId: string, date: string, mark: 'late' | 'early', removed = true) =>
+  api<{ removed: boolean }>(`/admin/employees/${userId}/calendar/${date}/marks`, { method: 'PUT', body: { mark, removed } });
 
 /** What HR may file against an employee. Mirrors the server's list. */
 export const EMPLOYEE_DOCUMENT_TYPES = ['Offer letter', 'ID proof', 'Address proof', 'Experience letter', 'Resume'] as const;
@@ -740,6 +758,43 @@ export type OutOfLocationDTO = OutsideLocationDTO & {
   managerNote: string;
 };
 
+/** Where one punch was taken, as the device reported it. */
+export type PunchPlaceDTO = {
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  officeName: string | null;
+  distanceMeters: number | null;
+  inOffice: boolean;
+  mocked: boolean;
+  place: string;
+};
+/** One person's one day in the punch log. */
+export type PunchDayDTO = {
+  userId: string;
+  name: string;
+  employeeCode: string;
+  department: string;
+  manager: string;
+  workDate: string;
+  punchIn: string | null;
+  punchOut: string | null;
+  inLocation: PunchPlaceDTO | null;
+  outLocation: PunchPlaceDTO | null;
+  outside: OutsideLocationDTO | null;
+  /** The punch-in's face check, only for a viewer with Face ID access; null otherwise. */
+  face: 'passed' | 'failed' | null;
+  dayType: string | null;
+  /** An out-of-location punch still waiting on the manager (no record yet). */
+  waiting: boolean;
+};
+export const getPunchLog = (from: string, to: string) =>
+  api<{ punches: PunchDayDTO[] }>(`/admin/punch-log?from=${from}&to=${to}`).then((r) => r.punches);
+
+export type PayCycleDTO = { current: { from: string; to: string } | null; previous: { from: string; to: string } | null };
+/** This pay cycle and the last, as payroll reads them. */
+export const getPayCycle = () => api<{ cycle: PayCycleDTO }>('/admin/pay-cycle').then((r) => r.cycle);
+
 export const getOutOfLocation = (from: string, to: string) =>
   api<{ checkIns: OutOfLocationDTO[] }>(`/admin/out-of-location?from=${from}&to=${to}`).then((r) => r.checkIns);
 
@@ -1024,6 +1079,8 @@ export type ReportRow = ReportPersonDTO & {
   /** An overlay on a day that has a punch-in, not a status of its own. */
   late: boolean;
   lateByMinutes: number;
+  /** Minutes before the shift's end they punched out; 0 when not early. */
+  earlyByMinutes: number;
   punchIn: string | null;
   punchOut: string | null;
   leaveType: string | null;

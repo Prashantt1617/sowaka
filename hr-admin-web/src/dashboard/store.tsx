@@ -10,7 +10,7 @@ import {
 } from './adapters';
 import {
   decideLeave,
-  decideLeaveCancellation,
+  decideLeaveCancellation, adminCancelLeave,
   decideOvertime,
   decideRegularization,
   decideReimb,
@@ -87,7 +87,8 @@ function useProvideStore() {
   // leave
   const [leaves, setLeaves] = useState<Leave[]>([]);
   const [leaveSearch, setLeaveSearch] = useState('');
-  const [leaveStatus, setLeaveStatus] = useState<LeaveTabFilter>('all');
+  // Leave requests and Attendance corrections open on what is waiting.
+  const [leaveStatus, setLeaveStatus] = useState<LeaveTabFilter>('Pending');
   const [leaveType, setLeaveType] = useState('all');
   const [leaveSort, setLeaveSort] = useState('recent');
   const [leaveFrom, setLeaveFrom] = useState('');
@@ -97,7 +98,7 @@ function useProvideStore() {
   const [declineText, setDeclineText] = useState('');
   // leave override confirm modal (approve/decline + note); `cancellation` answers the employee's
   // request to cancel an approved leave rather than the leave itself.
-  const [lvConfirm, setLvConfirm] = useState<{ id: string; action: 'approve' | 'decline'; cancellation?: boolean } | null>(null);
+  const [lvConfirm, setLvConfirm] = useState<{ id: string; action: 'approve' | 'decline' | 'cancel'; cancellation?: boolean } | null>(null);
   const [lvNote, setLvNote] = useState('');
 
   // feedback
@@ -183,7 +184,7 @@ function useProvideStore() {
   // attendance corrections
   const [corrs, setCorrs] = useState<Correction[]>([]);
   const [corrSearch, setCorrSearch] = useState('');
-  const [corrStatus, setCorrStatus] = useState<LeaveStatusFilter>('all');
+  const [corrStatus, setCorrStatus] = useState<LeaveStatusFilter>('Pending');
   const [corrFrom, setCorrFrom] = useState('');
   const [corrTo, setCorrTo] = useState('');
   const [corrConfirm, setCorrConfirm] = useState<{ id: string; action: 'approve' | 'decline' } | null>(null);
@@ -382,7 +383,7 @@ function useProvideStore() {
 
   // Confirm modal for leave overrides — captures an optional note for why the
   // request was overridden, on BOTH approve and decline.
-  const lvAsk = (id: string, action: 'approve' | 'decline', cancellation = false) => {
+  const lvAsk = (id: string, action: 'approve' | 'decline' | 'cancel', cancellation = false) => {
     const r = leaves.find((l) => l.id === id);
     if (blockSelfOverride(r?.submitterId)) return;
     setLvNote('');
@@ -401,6 +402,13 @@ function useProvideStore() {
     setLvConfirm(null);
     setDrawerId(null);
     try {
+      if (action === 'cancel') {
+        // HR cancels the leave outright: the days go back and it comes off attendance and payroll.
+        const updated = await adminCancelLeave(id, note || undefined);
+        setLeaves((s) => s.map((l) => (l.id === id ? adaptLeave(updated, r?.manager ?? managerName) : l)));
+        flash(`${r ? first(r.name) : 'Leave'}’s leave cancelled`);
+        return;
+      }
       const decision = action === 'approve' ? 'approved' : 'declined';
       const updated = cancellation
         ? await decideLeaveCancellation(id, decision, note || undefined)
@@ -580,6 +588,26 @@ function useProvideStore() {
     }
   };
 
+  /** Several pending corrections decided at once, with one note; each is its own override. */
+  const corrDecideMany = async (ids: string[], action: 'approve' | 'decline', note: string) => {
+    const mine = ids.filter((id) => !blockSelfOverride(corrs.find((x) => x.id === id)?.submitterId));
+    let done = 0;
+    const failed: string[] = [];
+    for (const id of mine) {
+      const r = corrs.find((x) => x.id === id);
+      try {
+        const updated = await decideRegularization(id, action === 'approve' ? 'approved' : 'declined', note.trim() || undefined);
+        setCorrs((s) => s.map((x) => (x.id === id ? adaptCorrection(updated, r?.manager ?? managerName) : x)));
+        done++;
+      } catch {
+        failed.push(r ? first(r.name) : id);
+      }
+    }
+    if (done) flash(`${done} correction${done === 1 ? '' : 's'} ${action === 'approve' ? 'approved' : 'declined'}`);
+    if (failed.length) flash(`Could not decide ${failed.join(', ')}`, 'error');
+    return done;
+  };
+
   // ---- employees ----
   const setFormField = (k: keyof UserForm, v: string) => setForm((s) => ({ ...s, [k]: v }));
   const saveUser = async () => {
@@ -646,7 +674,7 @@ function useProvideStore() {
     // attendance corrections
     corrs, corrSearch, setCorrSearch, corrStatus, setCorrStatus,
     corrFrom, setCorrFrom, corrTo, setCorrTo,
-    corrConfirm, corrNote, setCorrNote, corrAsk, corrCloseConfirm, corrDecide,
+    corrConfirm, corrNote, setCorrNote, corrAsk, corrCloseConfirm, corrDecide, corrDecideMany,
     // overtime
     ots, otSearch, setOtSearch, otStatus, setOtStatus, otDrawerId, setOtDrawerId,
     otDeclineId, otDeclineText, setOtDeclineText,

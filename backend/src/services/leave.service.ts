@@ -14,7 +14,7 @@ import {
   managerMayDecide, policiesForPeople, weekOffGridFor,
 } from './shift.service';
 import { OvertimeRequest, compOffDaysOf } from '../models/overtime.model';
-import { LEAVE_KEY_PATTERN, LEAVE_TYPE_KEYS, LeaveTypeKey, LeaveTypeRule, isUnpaidLeaveType, leaveTypeLabel, processYearEnd } from '../models/shift.model';
+import { LEAVE_KEY_PATTERN, LEAVE_TYPE_KEYS, LeaveTypeKey, LeaveTypeRule, isUnpaidLeaveType, leaveTypeLabel, monthsCredited, processYearEnd } from '../models/shift.model';
 import { carriedFromRuns as carriedFromYearEndRuns } from './leave-year-end.service';
 import { requestViewer, requestViewerWithPhoto } from '../middleware/request-viewer';
 
@@ -180,7 +180,10 @@ export async function applyForLeave(
   const windows = tracksBalance ? balanceWindows(startDate, endDate, rule.resetOn === 'monthly') : [];
   const pending = await leaves().find({ userId, type, status: 'pending' }).toArray();
   for (const window of windows) {
-    const balance = await getMyLeaveBalance(userId, window.start.getUTCFullYear(), window.start);
+    // Leave is credited monthly, so a yearly window counts what will have been credited by the time the
+    // leave starts (or by today, for a backdated one): a December day may use December's credit.
+    const creditedBy = rule.resetOn === 'monthly' ? window.start : startDate > new Date() ? startDate : new Date();
+    const balance = await getMyLeaveBalance(userId, window.start.getUTCFullYear(), creditedBy);
     const forType = balance.types.find((item) => item.key === type);
     if (!forType) continue;
     const daysInWindow = windows.length === 1
@@ -291,6 +294,21 @@ export async function getMyLeaves(userId: string): Promise<LeaveView[]> {
   return Promise.all(documents.map((leave) => toLeaveView(leave, employee as User, typeRules)));
 }
 
+/**
+ * A leave changed state: the attendance report (calendar, punch log, payroll)
+ * and the Time office's kept answers for its company start over, so every page
+ * shows what the database now says. Never fails the change it follows.
+ */
+function leaveChanged(userId: string): void {
+  void (async () => {
+    const org = (await users().findOne({ userId }, { projection: { _id: 0, org: 1 } }))?.org;
+    if (!org) return;
+    const [{ invalidateAttendanceReport }, { forgetSwr }] = await Promise.all([import('./attendance-report.service'), import('./swr-cache')]);
+    invalidateAttendanceReport(org);
+    forgetSwr(org);
+  })().catch(() => undefined);
+}
+
 /** The fields of a person a leave view shows. */
 const LEAVE_VIEW_EMPLOYEE = {
   _id: 0, userId: 1, org: 1, name: 1, email: 1, department: 1, designation: 1, profilePhotoKey: 1, profilePhotoUrl: 1,
@@ -358,12 +376,13 @@ async function leaveBalanceOf(userId: string, year: number, asOf: Date) {
   const month = asOf.getUTCFullYear() === year ? asOf.getUTCMonth() + 1 : asOf.getUTCFullYear() > year ? 12 : 1;
   // What carried in and each monthly type's walk are independent reads.
   const [openingFor, monthlyRows] = await Promise.all([
-    openingBalances(year, rules, reads),
+    openingBalances(year, rules, reads, employee.joiningDate),
     Promise.all(monthlyRules.map((rule) => monthlyBalance(employee, rule, year, month, reads))),
   ]);
   const entitlement = (key: Leave['type']) => {
     const rule = rules.find((item) => item.key === key);
-    const accrued = key === 'comp_off' ? compOffEarned : (rule?.perMonth ?? 0) * 12;
+    // Credited month by month at the template's rate: the months of the year so far (from joining, if later).
+    const accrued = key === 'comp_off' ? compOffEarned : (rule?.perMonth ?? 0) * monthsCredited(yearStart, yearEnd, asOf, employee.joiningDate);
     return round(accrued + (openingFor[key] ?? 0));
   };
 
@@ -530,6 +549,7 @@ async function openingBalances(
   year: number,
   rules: LeaveTypeRule[],
   reads: BalanceReads,
+  joined?: Date | null,
 ): Promise<Partial<Record<Leave['type'], number>>> {
   const recorded: Partial<Record<Leave['type'], number>> = {};
   const missing: LeaveTypeRule[] = [];
@@ -549,7 +569,7 @@ async function openingBalances(
   // that figure, and one that has not is still derived. Short-circuiting on
   // the first recorded type left every other type opening at zero — a
   // financial-year type looked emptied the moment a calendar-year one closed.
-  const derived = await carriedForwardInto(year, missing, lastYear);
+  const derived = await carriedForwardInto(year, missing, lastYear, joined);
   return { ...derived, ...recorded };
 }
 
@@ -574,6 +594,7 @@ async function carriedForwardInto(
   year: number,
   rules: LeaveTypeRule[],
   reads: ReturnType<typeof priorYearReads>,
+  joined?: Date | null,
 ): Promise<Partial<Record<Leave['type'], number>>> {
   const priorStart = new Date(Date.UTC(year - 1, 0, 1));
   const priorEnd = new Date(Date.UTC(year - 1, 11, 31));
@@ -592,7 +613,8 @@ async function carriedForwardInto(
 
   const opening: Partial<Record<Leave['type'], number>> = {};
   for (const rule of rules) {
-    const accrued = rule.key === 'comp_off' ? priorCompOff : rule.perMonth * 12;
+    // Last year is over: every month of it from joining was credited.
+    const accrued = rule.key === 'comp_off' ? priorCompOff : rule.perMonth * monthsCredited(priorStart, priorEnd, priorEnd, joined);
     const closing = accrued - (usedLastYear[rule.key] ?? 0);
     opening[rule.key as Leave['type']] = round(processYearEnd(closing, rule).carried);
   }
@@ -748,6 +770,7 @@ export async function decideLeave(
   if (!updated) {
     throw new LeaveError(409, 'Leave request has already been decided');
   }
+  leaveChanged(updated.userId);
 
   await notifyLeaveDecided({
     employeeUserId: employee.userId,
@@ -815,6 +838,7 @@ export async function cancelLeave(userId: string, leaveIdInput: string, input: {
     if (!updated) {
       throw new LeaveError(409, 'This leave has changed. Refresh and try again.');
     }
+    leaveChanged(updated.userId);
     await notifyLeaveCancellationRequested({
       employeeUserId: userId,
       requestId: String(leaveId),
@@ -836,6 +860,7 @@ export async function cancelLeave(userId: string, leaveIdInput: string, input: {
   if (!updated) {
     throw new LeaveError(409, 'This leave has already been decided');
   }
+  leaveChanged(updated.userId);
 
   await notifyLeaveCancelled({
     employeeUserId: userId,
@@ -970,6 +995,7 @@ export async function decideLeaveCancellation(
   if (!updated) {
     throw new LeaveError(409, 'This cancellation request has already been decided');
   }
+  leaveChanged(updated.userId);
 
   await notifyLeaveCancellationDecided({
     employeeUserId: employee.userId,
@@ -983,6 +1009,56 @@ export async function decideLeaveCancellation(
     decidedByUserId: deciderUserId,
   });
 
+  return await toLeaveView(updated, employee);
+}
+
+/**
+ * HR cancels a leave from the dashboard: an approved one (its days go back on
+ * the balance and it leaves the calendar and payroll) or a pending one. An
+ * override, so the employee's cancellation window does not apply, but a month
+ * whose payroll has run cannot change, and HR never cancels their own.
+ */
+export async function adminCancelLeave(adminUserId: string, leaveIdInput: string, input: { note?: string } = {}): Promise<LeaveView> {
+  if (!ObjectId.isValid(leaveIdInput)) throw new LeaveError(400, 'Invalid leave ID');
+  const leaveId = new ObjectId(leaveIdInput);
+  const leave = await leaves().findOne({ _id: leaveId });
+  if (!leave) throw new LeaveError(404, 'Leave request not found');
+  if (leave.userId === adminUserId) throw new LeaveError(403, 'You cannot override your own request');
+  const [admin, employee] = await Promise.all([
+    users().findOne({ userId: adminUserId }, { projection: { _id: 0, org: 1 } }),
+    users().findOne({ userId: leave.userId }),
+  ]);
+  if (!employee || !admin?.org || admin.org !== employee.org) throw new LeaveError(404, 'Leave request not found');
+  const rules = await approvalRulesFor(leave.userId, 'leave');
+  if (!hrMayDecide(rules.approver, rules.hrOverride)) throw new LeaveError(403, 'HR override is switched off for leave in this organisation');
+  if (leave.status !== 'approved' && leave.status !== 'pending') {
+    throw new LeaveError(409, leave.status === 'cancelled' ? 'This leave has already been cancelled' : 'A declined leave has nothing to cancel');
+  }
+  const { lockedPeriods } = await import('./employeePayroll.common');
+  const period = leave.startDate.toISOString().slice(0, 7);
+  if ((await lockedPeriods(employee.org ?? '', period, period)).has(period)) {
+    throw new LeaveError(409, 'Payroll for that month has already been run, so this leave can no longer be cancelled');
+  }
+  const note = input.note?.trim() ?? '';
+  if (note.length > 500) throw new LeaveError(400, 'Note cannot exceed 500 characters');
+  const now = new Date();
+  const updated = await leaves().findOneAndUpdate(
+    { _id: leaveId, status: leave.status },
+    { $set: { status: 'cancelled', cancelledAt: now, cancelledByUserId: adminUserId, cancelledByRole: 'admin', updatedAt: now, ...(note ? { cancelNote: note } : {}) } },
+    { returnDocument: 'after' },
+  );
+  if (!updated) throw new LeaveError(409, 'This leave has changed. Refresh and try again.');
+  leaveChanged(updated.userId);
+  await notifyLeaveCancelled({
+    employeeUserId: employee.userId,
+    requestId: String(leaveId),
+    type: leave.type,
+    startDate: leave.startDate,
+    endDate: leave.endDate,
+    days: leave.days ?? inclusiveDays(leave.startDate, leave.endDate),
+    wasApproved: leave.status === 'approved',
+    note,
+  });
   return await toLeaveView(updated, employee);
 }
 
@@ -1065,6 +1141,7 @@ export async function adminDecideLeave(
     { returnDocument: 'after' },
   );
   if (!updated) throw new LeaveError(409, 'Leave request has already been decided');
+  leaveChanged(updated.userId);
   await notifyLeaveDecided({
     employeeUserId: employee.userId,
     requestId: String(leaveId),

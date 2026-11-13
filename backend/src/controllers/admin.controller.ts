@@ -4,7 +4,7 @@ import { users } from '../config/db';
 import { NextFunction, Request, Response } from 'express';
 import { applyImport, cancelImport, importTemplate, previewImport } from '../services/employeeImport.service';
 import { attendanceReport, employeeCalendar } from '../services/attendance-report.service';
-import { clearAttendanceOverride, markableDates, setAttendanceOverride } from '../services/attendance-override.service';
+import { clearAttendanceOverride, markableDates, setAttendanceOverride, setMarkRemoved } from '../services/attendance-override.service';
 import { listDashboardAccesses, setDashboardAccess } from '../services/dashboard-access.service';
 import {
   AttendanceError,
@@ -18,7 +18,7 @@ import { payCycleForAdmin, PunchLogError, punchLogForAdmin } from '../services/p
 import { cachedSwr } from '../services/swr-cache';
 import { PayrollInputsError } from '../services/payroll-inputs.service';
 import { hasAllDashboardTabs } from '../middleware/admin.middleware';
-import { adminDecideLeave, decideLeaveCancellation, listAllLeavesForAdmin } from '../services/leave.service';
+import { adminCancelLeave, adminDecideLeave, decideLeaveCancellation, listAllLeavesForAdmin } from '../services/leave.service';
 import { adminDecideOvertime, listAllOvertimeForAdmin } from '../services/overtime.service';
 import {
   adminDecideReimbursement,
@@ -323,6 +323,13 @@ export async function setCalendarDayHandler(req: Request, res: Response, next: N
   } catch (error) { next(error); }
 }
 
+/** HR takes a late or left-early mark off one day ({ mark: 'late' | 'early', removed: false } puts it back). */
+export async function setMarkRemovedHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(200).json({ success: true, ...(await setMarkRemoved(adminUserId(req), String(req.params.userId ?? ''), String(req.params.date ?? ''), (req.body ?? {}) as { mark?: unknown; removed?: unknown })) });
+  } catch (error) { next(error); }
+}
+
 /** HR takes their mark off a day; the day goes back to what the record says. */
 export async function clearCalendarDayHandler(req: Request, res: Response, next: NextFunction) {
   try {
@@ -423,6 +430,16 @@ export async function decideLeave(req: Request, res: Response, next: NextFunctio
 }
 
 /** HR answers an employee's request to cancel an approved leave, as an override where the policy allows. */
+/** HR cancels a leave (approved or pending) from the dashboard. */
+export async function adminCancelLeaveHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const leave = await adminCancelLeave(adminUserId(req), String(req.params.leaveId ?? ''), { note: req.body?.note == null ? undefined : String(req.body.note) });
+    res.status(200).json({ success: true, leave });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function decideLeaveCancellationHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const leave = await decideLeaveCancellation(adminUserId(req), String(req.params.leaveId ?? ''), {

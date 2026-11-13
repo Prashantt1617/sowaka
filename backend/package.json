@@ -36,6 +36,8 @@
     "employee-details:check": "tsx src/scripts/employee-details-check.ts",
     "leave-without-pay:check": "tsx src/scripts/leave-without-pay-check.ts",
     "leave-cancel:check": "tsx src/scripts/leave-cancel-check.ts",
+    "leave-monthly-credit:check": "tsx src/scripts/leave-monthly-credit-check.ts",
+    "time-office-actions:check": "NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch tsx src/scripts/time-office-actions-check.ts",
     "location-holidays:check": "MONGODB_DB=location_holiday_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/location-holidays-check.ts",
     "game-voice:check": "tsx src/scripts/game-voice-check.ts",
     "employee-activity:check": "tsx src/scripts/employee-activity-check.ts",

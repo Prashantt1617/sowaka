@@ -20,6 +20,14 @@ export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boo
   if (view === 'investmentproofs' || view === 'payrollconfig') return canOpen(user, 'payruns') || canOpen(user, SALARY_DETAILS);
   // FBP requests and FBP splits come with the same payroll access, or can be given on their own.
   if ((view === 'fbprequests' || view === 'fbpsplits') && (canOpen(user, 'payruns') || canOpen(user, SALARY_DETAILS))) return true;
+  // Time office › Company calendar reads the attendance report and the leave list: it opens
+  // for whoever may read both (Attendance and Leave requests, as Requests gives) or the
+  // attendance report as before.
+  if (view === 'companycalendar') {
+    return canOpen(user, 'attendancereport') || (canOpen(user, 'attendance') && canOpen(user, 'leave'));
+  }
+  // Time office › Punch log goes with any of the attendance pages, as the server allows it.
+  if (view === 'punchlog') return canOpen(user, 'attendancereport') || canOpen(user, 'attendance') || canOpen(user, 'oolcheckins');
   // People › Tasks goes with Employees.
   if (view === 'peopletasks') return canOpen(user, 'employees');
   // The Diwali Cup TV (and its void) is HR's: an admin, or someone never limited to some tabs.

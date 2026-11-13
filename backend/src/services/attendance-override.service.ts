@@ -5,7 +5,7 @@
  * grades a day reads these first (see `overridesFor`), and the org report's
  * cache is dropped on every write so payroll and the report see it at once.
  */
-import { attendanceOverrides, payrollRuns, users } from '../config/db';
+import { attendanceMarkRemovals, attendanceOverrides, payrollRuns, users } from '../config/db';
 import { AttendanceOverride, HR_DAY_STATUSES, HrDayStatus } from '../models/attendance.model';
 import { invalidateAttendanceReport, joinedOn } from './attendance-report.service';
 import { payrollPeriodHolding } from './payroll-inputs.service';
@@ -143,4 +143,30 @@ export async function clearAttendanceOverride(adminUserId: string, userId: strin
   const result = await attendanceOverrides().deleteOne({ org, userId, workDate });
   invalidateAttendanceReport(org);
   return { removed: result.deletedCount === 1 };
+}
+
+/**
+ * HR takes the late or left-early mark off one day (or puts it back), keeping
+ * the day as the punches grade it. Same rules as a day mark: another admin,
+ * same company, an open month or pay period, not before joining.
+ */
+export async function setMarkRemoved(adminUserId: string, userId: string, workDate: string, input: { mark?: unknown; removed?: unknown }) {
+  const mark = input.mark === 'late' || input.mark === 'early' ? input.mark : null;
+  if (!mark) throw new AttendanceOverrideError(400, 'Say which mark: late or early');
+  const removed = input.removed !== false;
+  const { org, adminName, joined } = await adminAndEmployee(adminUserId, userId);
+  await checkDate(workDate, org);
+  if (joined && workDate < joined) throw new AttendanceOverrideError(400, `They joined on ${joined}: days before that cannot be changed`);
+  if (removed) {
+    await attendanceMarkRemovals().updateOne(
+      { org, userId, workDate },
+      { $set: { [mark]: true, setByUserId: adminUserId, ...(adminName ? { setByName: adminName } : {}), setAt: new Date() } },
+      { upsert: true },
+    );
+  } else {
+    await attendanceMarkRemovals().updateOne({ org, userId, workDate }, { $unset: { [mark]: '' } });
+    await attendanceMarkRemovals().deleteOne({ org, userId, workDate, late: { $exists: false }, early: { $exists: false } });
+  }
+  invalidateAttendanceReport(org);
+  return { userId, workDate, mark, removed };
 }

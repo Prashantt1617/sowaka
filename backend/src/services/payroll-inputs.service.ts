@@ -175,9 +175,9 @@ async function countApprovedLeaveDays(userId: string, range: PeriodRange): Promi
 }
 
 async function sumApprovedOtHours(userId: string, range: PeriodRange): Promise<number> {
-  // Overtime taken as comp-off is leave, not pay: it is credited to the
-  // Comp-off balance instead. Overtime pay, and every request from before the
-  // choice existed, is paid as it always was.
+  // Only overtime given as pay is paid. Comp-off is leave, credited to the
+  // Comp-off balance, and so is every request from before the choice existed:
+  // overtime was always comp-off until then.
   const rows = await overtimeRequests()
     .find({ userId, status: 'approved', workDate: { $gte: range.start, $lte: range.end }, ...OVERTIME_PAID_IN_PAYROLL })
     .toArray();

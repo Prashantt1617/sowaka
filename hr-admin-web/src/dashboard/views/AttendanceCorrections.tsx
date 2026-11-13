@@ -1,47 +1,141 @@
-// Requests › Attendance — corrections employees raised against a day.
+// Requests › Attendance: corrections employees raised against a day, and
+// out-of-location punches waiting on a manager.
 //
 // The same queue a manager sees in the app, but org-wide: HR is asking what is
 // outstanding anywhere, not what is waiting on them, so every row names the
-// manager it actually belongs to. Deciding from here is an override, which is
-// why it goes through the confirm modal the overtime queue uses.
+// manager it actually belongs to.
+// Deciding from here is an override, so it goes through a confirm with a note.
+import { useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { useStore } from '../store';
-import { STAT } from '../theme';
+import { TO_STAT } from '../theme';
 import type { ReqStatus } from '../theme';
-import type { Correction } from '../seed';
+import type { Correction, CorrectionKind } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
-import { Card, DateRange, EmptyRow, ListPending, LoadingFigure, PageActions, Pill, SearchInput, StatusTabs, SummaryCard, Th } from '../ui';
+import { Card, EmptyRow, ListPending, Pill, SearchInput, Th } from '../ui';
+import { LabeledSelect } from './LabeledSelect';
 import { PersonAvatar } from '../PersonAvatar';
 import { btn, btnClass, cellName, cellSub, textareaStyle, TH, toolbar, TR } from '../ds';
 import { IconDownload } from '../icons';
 import { SuwiInsight } from '../suwi/SuwiInsight';
+import { DrawerHeader, DrawerShell, InfoGrid, RemarkBlock } from '../drawers/shell';
+import { PENDING_ROW, periodRange, plural, stepRange } from './leaveDays';
+import { PendingChip, PeriodStepper, StatTile } from './leaveParts';
+import type { PeriodUnit } from './leaveParts';
+import { Pager, usePaged } from './Pager';
 
-const COLS = '1.8fr .9fr .9fr 1fr 1fr 1.6fr 1fr 1.3fr';
+const COLS = '32px 1.5fr .95fr .8fr .8fr 1.1fr 1.3fr 1fr 1fr';
+type Kind = CorrectionKind;
+/**
+ * What each request is, from the request itself (adapters' correctionKindOf):
+ * a correction by the day type it asks for, an older one's punch times, an
+ * out-of-location punch, or a punch the face check refused.
+ */
+const KIND: Record<Kind, { label: string; color: string; bg: string; fg: string }> = {
+  full: { label: 'Full day asked', color: 'var(--accent)', bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
+  half: { label: 'Half day asked', color: 'var(--t-peach-i)', bg: 'var(--t-peach)', fg: 'var(--t-peach-i)' },
+  wfh: { label: 'Work from home', color: 'var(--t-lilac-i)', bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)' },
+  visit: { label: 'Client visit', color: 'var(--t-plum-i)', bg: 'var(--t-plum)', fg: 'var(--t-plum-i)' },
+  leave: { label: 'Leave asked', color: 'color-mix(in srgb, var(--accent) 40%, var(--surface))', bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
+  times: { label: 'Punch times', color: 'var(--ink-3)', bg: 'var(--mute-bg)', fg: 'var(--ink-2)' },
+  other: { label: 'Correction', color: 'var(--ink-4)', bg: 'var(--mute-bg)', fg: 'var(--ink-2)' },
+  ool: { label: 'Out of location', color: 'var(--t-sky-i)', bg: 'var(--t-sky)', fg: 'var(--t-sky-i)' },
+  face: { label: 'Face check', color: 'var(--ok)', bg: 'var(--ok-bg)', fg: 'var(--ok)' },
+};
+const kindOf = (r: Correction): Kind => r.kind ?? 'other';
+/**
+ * Until it is decided the day counts as recorded (absent, a half day, a missed
+ * punch) while the request asks for it to count otherwise, so it can change
+ * pay: every pending correction and out-of-location request, a disputed half
+ * day included. A face check request only holds a punch for a decision and is
+ * not counted here.
+ */
+const affectsPay = (r: Correction) => r.status === 'Pending' && kindOf(r) !== 'face';
+const workDay = (r: Correction) => (r.refISO || '').slice(0, 10);
+const clock = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : '—');
 
-const DAY_TONE = { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' };
+type Filter = 'all' | 'in' | 'out' | 'both' | 'ool';
+/** The design's filters: what the day is missing, by what was punched, or out of location. */
+const FILTERS: [Filter, string][] = [['all', 'All'], ['in', 'Punch-in missed'], ['out', 'Punch-out missed'], ['both', 'Both missed'], ['ool', 'Out of location']];
+const fitsFilter = (r: Correction, f: Filter): boolean => {
+  if (f === 'all') return true;
+  if (f === 'ool') return kindOf(r) === 'ool';
+  if (kindOf(r) === 'ool' || kindOf(r) === 'face') return false;
+  const inAt = Boolean(r.punchInISO), outAt = Boolean(r.punchOutISO);
+  return f === 'in' ? !inAt && outAt : f === 'out' ? inAt && !outAt : !inAt && !outAt;
+};
 
 export function AttendanceCorrections() {
   const s = useStore();
   const st = s.listState('corrections');
-  const ranged = s.corrs.filter((r) => inDateRange(r.refISO, s.corrFrom, s.corrTo));
-  const summary = {
-    total: ranged.length,
-    pending: ranged.filter((r) => r.status === 'Pending').length,
-    approved: ranged.filter((r) => r.status === 'Approved').length,
-    declined: ranged.filter((r) => r.status === 'Declined').length,
-  };
+  // A week or a month, stepped back and forward with the arrows by the title.
+  const [unit, setUnit] = useState<PeriodUnit>('month');
+  const [offset, setOffset] = useState(0);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState<'approve' | 'decline' | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  // Employees tile: the list becomes one row per person with how many corrections they raised;
+  // picking a person shows only theirs.
+  // Status and Correction type sit behind the Filters button; picks count once applied.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draft, setDraft] = useState<{ status: ReqStatus | 'all'; type: Filter }>({ status: 'Pending', type: 'all' });
+  const [byPerson, setByPerson] = useState(false);
+  const [person, setPerson] = useState<string | null>(null);
 
-  let rows = ranged.slice();
-  const q = s.corrSearch.trim().toLowerCase();
-  if (q) {
-    rows = rows.filter(
-      (r) => r.name.toLowerCase().includes(q)
-        || r.employeeCode.toLowerCase().includes(q)
-        || r.manager.toLowerCase().includes(q),
-    );
-  }
-  if (s.corrStatus !== 'all') rows = rows.filter((r) => r.status === s.corrStatus);
-  rows.sort((a, b) => b.ord - a.ord);
+  // Custom: the dates applied (kept in the store), from the period on screen when first picked.
+  const range = unit === 'custom' && s.corrFrom ? periodRange('custom', s.corrFrom, s.corrTo) : stepRange(unit === 'week' ? 'week' : 'month', offset);
+  const inPeriod = useMemo(() => s.corrs.filter((r) => inDateRange(r.refISO, range.from, range.to)), [s.corrs, range.from, range.to]);
+
+  const stats = useMemo(() => ({
+    total: inPeriod.length,
+    employees: new Set(inPeriod.map((r) => r.submitterId || r.name)).size,
+    pending: inPeriod.filter((r) => r.status === 'Pending').length,
+    approved: inPeriod.filter((r) => r.status === 'Approved').length,
+    declined: inPeriod.filter((r) => r.status === 'Declined').length,
+  }), [inPeriod]);
+
+  const rows = useMemo(() => {
+    let out = inPeriod.slice();
+    const q = s.corrSearch.trim().toLowerCase();
+    if (q) out = out.filter((r) => r.name.toLowerCase().includes(q) || r.employeeCode.toLowerCase().includes(q) || r.manager.toLowerCase().includes(q));
+    if (person) out = out.filter((r) => (r.submitterId || r.name) === person);
+    if (s.corrStatus !== 'all') out = out.filter((r) => r.status === s.corrStatus);
+    out = out.filter((r) => fitsFilter(r, filter));
+    // Pending that costs pay first, then other pending, then the decided; newest raised within each.
+    const rank = (r: Correction) => (r.status === 'Pending' ? (affectsPay(r) ? 0 : 1) : 2);
+    return out.sort((a, b) => rank(a) - rank(b) || b.ord - a.ord);
+  }, [inPeriod, s.corrSearch, s.corrStatus, filter, person]);
+
+  // One row per person in the period: how many corrections they raised, most first.
+  const perPerson = useMemo(() => {
+    const m = new Map<string, { id: string; name: string; code: string; team: string; manager: string; submitterId?: string; total: number; pending: number; approved: number; declined: number; pay: number }>();
+    for (const r of inPeriod) {
+      const id = r.submitterId || r.name;
+      const e = m.get(id) ?? { id, name: r.name, code: r.employeeCode, team: r.team, manager: r.manager, submitterId: r.submitterId, total: 0, pending: 0, approved: 0, declined: 0, pay: 0 };
+      e.total++;
+      if (r.status === 'Pending') e.pending++;
+      else if (r.status === 'Approved') e.approved++;
+      else if (r.status === 'Declined') e.declined++;
+      if (affectsPay(r)) e.pay++;
+      m.set(id, e);
+    }
+    const q = s.corrSearch.trim().toLowerCase();
+    return [...m.values()].filter((e) => !q || e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q)).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  }, [inPeriod, s.corrSearch]);
+  const pagedPeople = usePaged(perPerson, `${perPerson.length}|${byPerson}`);
+  const paged = usePaged(rows, `${rows.length}|${rows[0]?.id ?? ''}`);
+  const pendingRows = rows.filter((r) => r.status === 'Pending');
+  const picked = pendingRows.filter((r) => selected.has(r.id));
+  const allPicked = pendingRows.length > 0 && picked.length === pendingRows.length;
+  const toggle = (id: string) => setSelected((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+
+  const statusCounts = useMemo(() => {
+    const c: Partial<Record<ReqStatus | 'all', number>> = { all: inPeriod.length };
+    for (const r of inPeriod) c[r.status] = (c[r.status] ?? 0) + 1;
+    return c;
+  }, [inPeriod]);
 
   const exportRows = () =>
     downloadCsv<Correction>(
@@ -53,116 +147,266 @@ export function AttendanceCorrections() {
         { header: 'Raised on', value: (r) => r.appliedOn },
         { header: 'Work date', value: (r) => r.workDate },
         { header: 'Day', value: (r) => r.day },
-        { header: 'Requested as', value: (r) => r.dayType },
+        { header: 'Type', value: (r) => KIND[kindOf(r)].label },
+        { header: 'Asked for', value: (r) => r.askedFor ?? r.dayType },
         { header: 'Recorded punches', value: (r) => r.recorded },
         { header: 'Reason', value: (r) => r.eRemark },
         { header: 'Manager', value: (r) => r.manager },
         { header: 'Status', value: (r) => r.status },
         { header: 'Decision note', value: (r) => r.mRemark },
-        { header: 'Decided by', value: (r) => (r.byAdmin ? 'admin' : 'manager') },
+        { header: 'Decided by', value: (r) => (r.status === 'Pending' ? '' : r.byAdmin ? 'admin' : 'manager') },
       ],
       rows,
     );
 
+  /** Brings the list to the top of the screen, once it is there. */
+  const toList = () => {
+    let tries = 0;
+    const go = () => {
+      const el = document.getElementById('corr-list');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      else if (tries++ < 20) setTimeout(go, 50);
+    };
+    setTimeout(go, 50);
+  };
+  const activeFilters = Number(s.corrStatus !== 'all') + Number(filter !== 'all');
+  const pickStatus = (v: ReqStatus | 'all') => { setByPerson(false); s.setCorrStatus(v); setSelected(new Set()); toList(); };
+
+  const open = openId ? s.corrs.find((r) => r.id === openId) ?? null : null;
+  const chip = (on: boolean): CSSProperties => ({ height: 32, padding: '0 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', font: 'inherit', border: `1px solid ${on ? 'var(--sel)' : 'var(--line-2)'}`, background: on ? 'var(--sel)' : 'var(--surface)', color: on ? 'var(--on-sel)' : 'var(--ink)' });
+
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 20 }}>
-        <SummaryCard label="Total corrections" value={<LoadingFigure state={st}>{summary.total}</LoadingFigure>} />
-        <SummaryCard label="Pending" value={<LoadingFigure state={st}>{summary.pending}</LoadingFigure>} color="var(--warn)" />
-        <SummaryCard label="Approved" value={<LoadingFigure state={st}>{summary.approved}</LoadingFigure>} color="var(--ok)" />
-        <SummaryCard label="Declined" value={<LoadingFigure state={st}>{summary.declined}</LoadingFigure>} color="var(--bad)" />
-      </div>
-
-      <PageActions>
-        <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
-          <IconDownload stroke="currentColor" /> Export
-        </button>
-      </PageActions>
-
       <Card padded>
-      <div style={toolbar}>
-        <StatusTabs<ReqStatus | 'all'>
-          options={['all', 'Pending', 'Approved', 'Declined']}
-          active={s.corrStatus}
-          onSelect={s.setCorrStatus}
-        />
-      </div>
-      <div style={toolbar}>
-        <div style={{ flex: 1, minWidth: 262, display: 'flex' }}>
-          <SearchInput value={s.corrSearch} onChange={s.setCorrSearch} placeholder="Search employee or manager…" width="100%" />
-        </div>
-        <DateRange from={s.corrFrom} to={s.corrTo} onFrom={s.setCorrFrom} onTo={s.setCorrTo} />
-      </div>
+        <section aria-labelledby="corr-period" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <PeriodStepper id="corr-period" title={range.title} unit={unit}
+            custom={{ from: s.corrFrom, to: s.corrTo, onApply: (f, t) => { s.setCorrFrom(f); s.setCorrTo(t); setSelected(new Set()); } }}
+            onUnit={(u) => { if (u === 'custom') { s.setCorrFrom(range.from); s.setCorrTo(range.to); } setUnit(u); setOffset(0); setSelected(new Set()); }} onStep={(by) => { setOffset((o) => o + by); setSelected(new Set()); }}
+            hasPrev={s.corrs.some((r) => workDay(r) && workDay(r) < range.from)} hasNext={s.corrs.some((r) => workDay(r) > range.to)} />
 
-        <div style={TH(COLS)}>
-          <Th>EMPLOYEE</Th>
-          <Th>RAISED ON</Th>
-          <Th>WORK DATE</Th>
-          <Th>REQUESTED AS</Th>
-          <Th>RECORDED</Th>
-          <Th>REASON</Th>
-          <Th>MANAGER</Th>
-          <Th>STATUS</Th>
-        </div>
-        {rows.map((r, i) => (
-          <div
-            key={r.id}
-            style={{ ...TR(COLS, i === rows.length - 1) }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-              <PersonAvatar name={r.name} userId={r.submitterId} />
-              <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <div style={{ ...cellName, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                <div style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {r.employeeCode} · {r.team}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
+            {/* Each tile filters the list below to what it counts, and brings the list into view. */}
+            <StatTile state={st} label="Corrections" value={stats.total} onPick={() => pickStatus('all')} picked={!byPerson && s.corrStatus === 'all'} />
+            <StatTile state={st} label="Employees" value={stats.employees} onPick={() => { setByPerson(true); setPerson(null); setSelected(new Set()); toList(); }} picked={byPerson} color="var(--accent)" />
+            <StatTile state={st} label="Pending" value={stats.pending} onPick={() => pickStatus('Pending')} picked={!byPerson && s.corrStatus === 'Pending'} color="var(--p-yellow)"
+              action={stats.pending > 0 && (byPerson || s.corrStatus !== 'Pending') ? <Pill label="Needs action" tone={TO_STAT.Pending} fontSize={11} padding="2px 8px" /> : undefined} />
+            <StatTile state={st} label="Approved" value={stats.approved} onPick={() => pickStatus('Approved')} picked={!byPerson && s.corrStatus === 'Approved'} color="var(--p-green)" />
+            <StatTile state={st} label="Declined" value={stats.declined} onPick={() => pickStatus('Declined')} picked={!byPerson && s.corrStatus === 'Declined'} color="var(--p-red)" />
+          </div>
+
+          <div id="corr-list" style={{ scrollMarginTop: 96 }}>
+            {byPerson ? (
+              <div>
+                <div style={{ ...toolbar, alignItems: 'center' }}>
+                  <div style={{ flex: '1 1 220px', maxWidth: 320, display: 'flex' }}>
+                    <SearchInput value={s.corrSearch} onChange={s.setCorrSearch} placeholder="Search employee" width="100%" />
+                  </div>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <div style={{ minWidth: 760 }}>
+                    <div style={TH('1.8fr .8fr .8fr .8fr .8fr 1.2fr')}>
+                      <Th>EMPLOYEE</Th><Th>CORRECTIONS</Th><Th>PENDING</Th><Th>APPROVED</Th><Th>DECLINED</Th><Th>MANAGER</Th>
+                    </div>
+                    {pagedPeople.rows.map((e, i) => (
+                      <div key={e.id} className="dc-row" onClick={() => { setPerson(e.id); setByPerson(false); s.setCorrStatus('all'); setFilter('all'); }}
+                        style={{ ...TR('1.8fr .8fr .8fr .8fr .8fr 1.2fr', i === pagedPeople.rows.length - 1), cursor: 'pointer' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                          <PersonAvatar name={e.name} userId={e.submitterId} />
+                          <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <div style={{ ...cellName, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.name}</div>
+                            <div style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.code} · {e.team}</div>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 16, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{e.total}</div>
+                        <div>{e.pending || '—'}</div>
+                        <div>{e.approved || '—'}</div>
+                        <div>{e.declined || '—'}</div>
+                        <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={e.manager}>{e.manager || '—'}</div>
+                      </div>
+                    ))}
+                    {st === 'ready' && perPerson.length === 0 && <EmptyRow text="Nobody raised a correction in this period." />}
+                  </div>
+                  <Pager p={pagedPeople} />
                 </div>
               </div>
-            </div>
-            <div style={{ fontWeight: 400 }}>{r.appliedOn}</div>
-            <div style={{ fontWeight: 400 }}>
-              {r.workDate}
-              <div style={cellSub}>{r.day}</div>
-            </div>
-            <div><Pill label={r.dayType} tone={DAY_TONE} /></div>
-            <div style={{ fontSize: 13, fontWeight: 400, color: r.recorded === 'No punch' ? 'var(--warn)' : 'var(--ink-2)' }}>{r.recorded}</div>
-            <div style={{ fontWeight: 400, color: r.eRemark ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>
-              {r.eRemark || '—'}
-            </div>
-            <div style={{ fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.manager}>
-              {r.manager || '—'}
-            </div>
-            {r.status === 'Pending' ? (
-              <div style={{ display: 'flex', gap: 6 }}>
-                <DecideButton label="Approve" tone="approve" onClick={() => s.corrAsk(r.id, 'approve')} />
-                <DecideButton label="Decline" tone="decline" onClick={() => s.corrAsk(r.id, 'decline')} />
-              </div>
             ) : (
-              <div title={r.mRemark || ''}>
-                <Pill label={r.byAdmin ? `${r.status} · by admin` : r.status} tone={STAT[r.status]} />
+            <>
+              {person && (
+                <div style={{ ...toolbar, gap: 8, fontSize: 13 }}>
+                  <button type="button" onClick={() => setPerson(null)} aria-label="Show everyone again" style={{ ...chip(true), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    {perPerson.find((e) => e.id === person)?.name ?? 'Employee'} <span aria-hidden>×</span>
+                  </button>
+                  <button type="button" onClick={() => { setPerson(null); setByPerson(true); }} className="pd-btn ghost" style={{ height: 32, fontSize: 12.5 }}>Back to employees</button>
+                </div>
+              )}
+              {/* As on the Company calendar: Status and Correction type behind a Filters button, applied together. */}
+              <div style={{ ...toolbar, alignItems: 'center' }}>
+                <div style={{ flex: '1 1 220px', maxWidth: 360, display: 'flex' }}>
+                  <SearchInput value={s.corrSearch} onChange={s.setCorrSearch} placeholder="Search employee or manager" width="100%" />
+                </div>
+                <button type="button" onClick={() => { setDraft({ status: s.corrStatus, type: filter }); setFiltersOpen((o) => !o); }} aria-expanded={filtersOpen} className={btnClass()}
+                  style={{ ...btn(), marginLeft: 'auto', gap: 8, background: activeFilters ? 'var(--accent-soft)' : undefined, color: activeFilters ? 'var(--accent-ink)' : undefined }}>
+                  Filters{activeFilters ? ` · ${activeFilters}` : ''}
+                  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden style={{ transform: filtersOpen ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }}><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </button>
+                <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
+                  <IconDownload stroke="currentColor" /> Export
+                </button>
               </div>
+              {filtersOpen && (
+                <div className="ar-filters compact" style={{ marginBottom: 14 }}>
+                  <LabeledSelect label="Status" value={draft.status} onChange={(v) => setDraft((d) => ({ ...d, status: v as ReqStatus | 'all' }))}
+                    options={(['all', 'Pending', 'Approved', 'Declined'] as const).map((k): [string, string] => [k, `${k === 'all' ? 'All' : k}${st === 'ready' && statusCounts[k] != null ? ` · ${statusCounts[k]}` : ''}`])} />
+                  <LabeledSelect label="Correction type" value={draft.type} onChange={(v) => setDraft((d) => ({ ...d, type: v as Filter }))}
+                    options={FILTERS.map(([k, label]): [string, string] => [k, label])} />
+                  <button type="button" onClick={() => { s.setCorrStatus(draft.status); setFilter(draft.type); setSelected(new Set()); setFiltersOpen(false); }} className="pd-btn primary">Apply</button>
+                  {activeFilters > 0 && <button type="button" onClick={() => { s.setCorrStatus('all'); setFilter('all'); setSelected(new Set()); setFiltersOpen(false); }} className="pd-btn ghost">Clear</button>}
+                </div>
+              )}
+
+              {picked.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 14px', borderRadius: 14, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', marginBottom: 12 }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--accent-ink)' }}>{plural(picked.length, 'correction')} selected</span>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" onClick={() => setSelected(new Set())} className={btnClass('ghost')} style={btn('ghost', 'sm')}>Clear</button>
+                    <button type="button" onClick={() => setBulk('decline')} className={btnClass('no')} style={btn('no', 'sm')}>Decline</button>
+                    <button type="button" onClick={() => setBulk('approve')} className={btnClass('primary')} style={btn('primary', 'sm')}>Approve selected</button>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ overflowX: 'auto' }}>
+                <div style={{ minWidth: 1040 }}>
+                  <div style={TH(COLS)}>
+                    <div><input type="checkbox" aria-label="Select all pending rows" checked={allPicked} disabled={pendingRows.length === 0} onChange={() => setSelected(allPicked ? new Set() : new Set(pendingRows.map((r) => r.id)))} /></div>
+                    <Th>EMPLOYEE</Th>
+                    <Th>WORK DATE</Th>
+                    <Th>PUNCHED IN</Th>
+                    <Th>PUNCHED OUT</Th>
+                    <Th>REQUESTED FOR</Th>
+                    <Th>REASON</Th>
+                    <Th>MANAGER</Th>
+                    <Th>STATUS</Th>
+                  </div>
+                  {paged.rows.map((r, i) => {
+                    const pend = r.status === 'Pending';
+                    return (
+                      <div key={r.id} className="dc-row" onClick={() => setOpenId(r.id)} style={{ ...TR(COLS, i === paged.rows.length - 1), cursor: 'pointer', ...(pend ? PENDING_ROW : null), ...(selected.has(r.id) && pend ? { background: 'color-mix(in srgb, var(--accent) 14%, var(--surface))' } : null) }}>
+                        <div onClick={(e) => e.stopPropagation()}>
+                          {pend && <input type="checkbox" aria-label={`Select ${r.name}, ${r.workDate}`} checked={selected.has(r.id)} onChange={() => toggle(r.id)} />}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                          <PersonAvatar name={r.name} userId={r.submitterId} />
+                          <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <div style={{ ...cellName, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
+                            <div style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.employeeCode} · {r.team}</div>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span>{r.day} {r.workDate}</span>
+                          <span style={cellSub}>raised {r.appliedOn}</span>
+                        </div>
+                        <div style={{ fontSize: 13, color: r.punchInISO ? 'var(--ink)' : 'var(--ink-3)' }}>{r.punchInISO ? clock(r.punchInISO) : '—'}</div>
+                        <div style={{ fontSize: 13, color: r.punchOutISO ? 'var(--ink)' : 'var(--ink-3)' }}>{r.punchOutISO ? clock(r.punchOutISO) : '—'}</div>
+                        <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.askedFor ?? r.dayType}>{r.askedFor ?? r.dayType}</div>
+                        <div style={{ color: r.eRemark ? 'var(--ink)' : 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.eRemark || ''}>{r.eRemark || '—'}</div>
+                        <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.manager}>{r.manager || '—'}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                          {pend ? <PendingChip onClick={() => setOpenId(r.id)} label={`Review ${r.name}'s correction`} /> : <Pill label={r.status} tone={TO_STAT[r.status]} />}
+                          {!pend && r.byAdmin && <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>by admin</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <ListPending state={st} onRetry={() => void s.reload()} cols={8} />
+                  {st === 'ready' && rows.length === 0 && <EmptyRow text="No attendance corrections match your filters." />}
+                </div>
+                <Pager p={paged} />
+              </div>
+            </>
             )}
           </div>
-        ))}
-        <ListPending state={st} onRetry={() => void s.reload()} cols={7} />
-        {st === 'ready' && rows.length === 0 && <EmptyRow text="No attendance corrections match your filters." />}
+        </section>
       </Card>
 
+      {open && <CorrectionDrawer r={open} onClose={() => setOpenId(null)} />}
       {s.corrConfirm && <ConfirmOverride />}
+      {bulk && <BulkConfirm action={bulk} rows={picked} onClose={() => setBulk(null)} onDone={() => { setBulk(null); setSelected(new Set()); }} />}
     </div>
   );
 }
 
-function DecideButton({ label, tone, onClick }: { label: string; tone: 'approve' | 'decline'; onClick: () => void }) {
-  const approve = tone === 'approve';
+
+/** One correction: Suwi's checks, what was punched and asked, where, and the decision. */
+function CorrectionDrawer({ r, onClose }: { r: Correction; onClose: () => void }) {
+  const s = useStore();
+  const k = KIND[kindOf(r)];
+  const pend = r.status === 'Pending';
+  const map = r.ool ? `https://www.google.com/maps?q=${r.ool.latitude},${r.ool.longitude}` : '';
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={btnClass(approve ? 'ok' : 'no')}
-      style={btn(approve ? 'ok' : 'no', 'sm')}
-    >
-      {label}
-    </button>
+    <DrawerShell onClose={onClose}>
+      <DrawerHeader name={r.name} userId={r.submitterId} subtitle={`${r.employeeCode} · ${r.team} · Raised ${r.appliedOn}`} onClose={onClose} />
+      <div style={{ padding: 20 }}>
+        <SuwiInsight kind="correction" id={r.id} pending={pend} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+          <Pill label={r.byAdmin ? `${r.status} · by admin` : r.status} tone={TO_STAT[r.status]} />
+          <Pill label={k.label} tone={{ bg: k.bg, fg: k.fg }} />
+        </div>
+        <InfoGrid
+          cells={[
+            { label: 'WORK DATE', value: `${r.day} ${r.workDate}` },
+            { label: 'TYPE', value: k.label },
+            { label: 'PUNCHED', value: r.punchInISO || r.punchOutISO ? `${clock(r.punchInISO)} → ${clock(r.punchOutISO)}` : r.ool ? `Checked ${r.ool.at ? clock(r.ool.at) : ''}` : 'No punch' },
+            { label: 'ASKED FOR', value: r.askedFor ?? r.dayType },
+            { label: 'MANAGER', value: r.manager || '—', wide: true },
+          ]}
+        />
+        {r.ool && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.06em', color: 'var(--ink-3)', marginBottom: 8 }}>LOCATION</div>
+            <div style={{ padding: '12px 14px', borderRadius: 12, background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ fontSize: 14, fontWeight: 500 }}>{r.ool.place}</span>
+              <a href={map} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: 'var(--accent-ink)' }}>{r.ool.latitude.toFixed(5)}, {r.ool.longitude.toFixed(5)} · Open in map</a>
+            </div>
+          </div>
+        )}
+        <RemarkBlock label="EMPLOYEE REASON" text={r.eRemark || 'No reason given.'} filled={!!r.eRemark} marginBottom={16} />
+        <RemarkBlock label="MANAGER REMARK" text={r.mRemark || 'No remark yet.'} filled={!!r.mRemark} marginBottom={8} />
+      </div>
+      {pend && (
+        <div style={{ position: 'sticky', bottom: 0, marginTop: 'auto', background: 'var(--surface)', borderTop: '1px solid var(--line)', padding: '16px 20px', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={() => { onClose(); s.corrAsk(r.id, 'decline'); }} className={btnClass('no')} style={btn('no')}>Decline</button>
+          <button onClick={() => { onClose(); s.corrAsk(r.id, 'approve'); }} className={btnClass('primary')} style={btn('primary')}>Approve correction</button>
+        </div>
+      )}
+    </DrawerShell>
+  );
+}
+
+/** Approve or decline the selected ones together: one note, each its own override. */
+function BulkConfirm({ action, rows, onClose, onDone }: { action: 'approve' | 'decline'; rows: Correction[]; onClose: () => void; onDone: () => void }) {
+  const s = useStore();
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const approve = action === 'approve';
+  const managers = [...new Set(rows.map((r) => r.manager).filter(Boolean))];
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, animation: 'ovl .2s ease both' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(520px, calc(100% - 32px))', background: 'var(--surface)', borderRadius: 'var(--r-lg)', padding: 20, boxShadow: 'var(--shadow-drawer)', animation: 'pop .2s ease both' }}>
+        <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.5, marginBottom: 4 }}>{approve ? 'Approve' : 'Decline'} {plural(rows.length, 'correction')}?</div>
+        <div style={{ fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.55, marginBottom: 16 }}>
+          {approve ? 'Each day will count as asked.' : 'Each day stays as it was recorded.'}
+          {managers.length ? ` This overrides ${managers.length <= 2 ? managers.join(' and ') : `${managers.length} managers`}.` : ''}
+        </div>
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note for the employees (optional)" rows={3} className="ds-inp" style={{ ...textareaStyle, marginBottom: 20 }} />
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onClose} className={btnClass()} style={btn()}>Cancel</button>
+          <button type="button" disabled={busy} onClick={async () => { setBusy(true); await s.corrDecideMany(rows.map((r) => r.id), action, note); setBusy(false); onDone(); }} className={btnClass(approve ? 'primary' : 'danger')} style={btn(approve ? 'primary' : 'danger')}>
+            {busy ? 'Saving…' : approve ? `Approve ${rows.length}` : `Decline ${rows.length}`}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -174,48 +418,16 @@ function ConfirmOverride() {
   const row = s.corrs.find((r) => r.id === id);
   const approve = action === 'approve';
   return (
-    <div
-      onClick={s.corrCloseConfirm}
-      style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, animation: 'ovl .2s ease both' }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(520px, calc(100% - 32px))', background: 'var(--surface)', borderRadius: 'var(--r-lg)', padding: 20, boxShadow: 'var(--shadow-drawer)', animation: 'pop .2s ease both' }}
-      >
-        <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.5, marginBottom: 4 }}>
-          {approve ? 'Approve' : 'Decline'} this correction?
-        </div>
+    <div onClick={s.corrCloseConfirm} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, animation: 'ovl .2s ease both' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(520px, calc(100% - 32px))', background: 'var(--surface)', borderRadius: 'var(--r-lg)', padding: 20, boxShadow: 'var(--shadow-drawer)', animation: 'pop .2s ease both' }}>
+        <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.5, marginBottom: 4 }}>{approve ? 'Approve' : 'Decline'} this correction?</div>
         <div style={{ fontSize: 13.5, color: 'var(--ink-2)', fontWeight: 400, lineHeight: 1.55, marginBottom: 16 }}>
-          {row
-            ? `${row.name}’s ${row.workDate} will be ${approve ? `recorded as ${row.dayType.toLowerCase()}` : 'left as it is'}. ${row.manager ? `${row.manager} is the approver — this overrides them.` : ''}`
-            : ''}
+          {row ? `${row.name}’s ${row.workDate} will be ${approve ? `recorded as ${(row.askedFor ?? row.dayType).toLowerCase()}` : 'left as it is'}. ${row.manager ? `${row.manager} is the approver — this overrides them.` : ''}` : ''}
         </div>
-        {row && <SuwiInsight kind="correction" id={row.id} pending={row.status === 'Pending'} />}
-        <textarea
-          value={s.corrNote}
-          onChange={(e) => s.setCorrNote(e.target.value)}
-          placeholder="Add a note for the employee (optional)"
-          rows={3}
-          className="ds-inp"
-          style={{ ...textareaStyle, marginBottom: 20 }}
-        />
+        <textarea value={s.corrNote} onChange={(e) => s.setCorrNote(e.target.value)} placeholder="Add a note for the employee (optional)" rows={3} className="ds-inp" style={{ ...textareaStyle, marginBottom: 20 }} />
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button
-            type="button"
-            onClick={s.corrCloseConfirm}
-            className={btnClass()}
-            style={btn()}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={s.corrDecide}
-            className={btnClass(approve ? 'primary' : 'danger')}
-            style={btn(approve ? 'primary' : 'danger')}
-          >
-            {approve ? 'Approve' : 'Decline'}
-          </button>
+          <button type="button" onClick={s.corrCloseConfirm} className={btnClass()} style={btn()}>Cancel</button>
+          <button type="button" onClick={s.corrDecide} className={btnClass(approve ? 'primary' : 'danger')} style={btn(approve ? 'primary' : 'danger')}>{approve ? 'Approve' : 'Decline'}</button>
         </div>
       </div>
     </div>

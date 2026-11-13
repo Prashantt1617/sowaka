@@ -45,6 +45,8 @@ export type View =
   | 'peopletasks'
   | 'orgchart'
   | 'attendancereport'
+  | 'companycalendar'
+  | 'punchlog'
   | 'usersroles'
   | 'cycle'
   | 'reimbursementtypes'
@@ -111,6 +113,12 @@ export const STAT: Record<ReqStatus, Pill> = {
   Cancelled: SOLID.mute,
 };
 
+/** Time office's "waiting on a decision": a calm blue tint, not the yellow pill. */
+export const ATTN_PILL: Pill = { bg: 'var(--attn-bg)', fg: 'var(--attn)' };
+/** STAT as the Time office pages show it: Pending in the attention blue, the rest as everywhere. */
+// Pending is the live dashboard's yellow on the Time office pages too, as on the Company calendar.
+export const TO_STAT: Record<ReqStatus, Pill> = { ...STAT };
+
 export const FSTAT: Record<FeedbackStatus, Pill> = {
   Acknowledged: SOLID.ok,
   Submitted: SOLID.info,
@@ -144,9 +152,9 @@ export function initials(name: string): string {
 export const TITLES: Record<View, [string, string]> = {
   organisation: ['Organisation', 'Company profile, identity & contact details'],
   overview: ['HR control room', ''], // the date is filled in by Topbar
-  leave: ['Leave requests', 'Tracking time off · approved by reporting managers'],
-  overtime: ['Overtime', 'Tracking overtime · approved by reporting managers'],
-  attendance: ['Attendance corrections', 'Requests · days employees asked to have corrected'],
+  leave: ['Leave requests', 'Time office'],
+  overtime: ['Overtime', 'Time office'],
+  attendance: ['Attendance corrections', 'Time office'],
   feedback: ['Performance Reviews', 'Performance · manager reviews & recognition'],
   kpi: ['KPI Parameters', 'Performance · define measurable KPIs'],
   kpitemplates: ['Templates', 'Performance · weighted sets of KPI parameters'],
@@ -154,7 +162,7 @@ export const TITLES: Record<View, [string, string]> = {
   shifttypes: ['Templates', 'Shifts · timings, breaks, segmentation & grace rules'],
   holidaybank: ['Holiday Bank', 'Shifts · master list of holidays, applied by location'],
   offices: ['Offices', 'Shifts · where a geotagged punch may be taken from'],
-  oolcheckins: ['OOL check-ins', 'Requests · punches taken away from every office'],
+  oolcheckins: ['OOL check-ins', 'Time office'],
   faceid: ['Face check', 'Shifts · the selfie that confirms who is punching in'],
   support: ['Support desk', 'Support · tickets employees raised from the app'],
   roster: ['Roster', 'Shifts · schedule employees onto shifts'],
@@ -184,6 +192,8 @@ export const TITLES: Record<View, [string, string]> = {
   peopletasks: ['Tasks', 'People · who still needs a template, salary, bank details or basic details'],
   orgchart: ['Org chart', 'People'],
   attendancereport: ['Attendance report', 'Reports'],
+  companycalendar: ['Company calendar', 'Time office'],
+  punchlog: ['Punch log', 'Time office'],
   usersroles: ['Accesses', 'People · users, roles and permissions'],
   cycle: ['Cycle', 'Performance · the monthly review cycle'],
   reimbursementtypes: ['Reimbursement Types', 'Claims · what can be claimed, and the cap on each'],
