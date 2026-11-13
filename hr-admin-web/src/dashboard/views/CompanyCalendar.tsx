@@ -1,6 +1,6 @@
 // Reports › Company calendar: one month for the whole company (or a department,
 // or a manager's team), day by day, counting one thing at a time: present,
-// late, left early, half day, missed punch, out of location, absent, on leave
+// late, left early, half day, missed punch, out of location, on leave
 // or leave without pay. It is laid out like the calendar on an employee's
 // profile; click a date to see who.
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -22,16 +22,15 @@ import { useAuth } from '../auth/AuthContext';
 import { dateOf, dayLabel, daysIn, isoOf, leaveDates, todayISO } from './leaveDays';
 import './people.css';
 
-type Metric = 'present' | 'late' | 'early' | 'half' | 'missed' | 'ool' | 'absent' | 'leave';
+type Metric = 'present' | 'late' | 'early' | 'half' | 'missed' | 'ool' | 'leave';
 /** One colour per thing counted; none of them the amber the Time office pages dropped. */
 const METRICS: { key: Metric; label: string; phrase: string; bg: string; fg: string; look: [string, View]; head: string }[] = [
-  { key: 'present', label: 'Present', phrase: 'present', bg: 'var(--ok-bg)', fg: 'var(--ok)', look: ['Punch log', 'punchlog'], head: 'Punched in' },
-  { key: 'late', label: 'Late', phrase: 'late', bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)', look: ['Punch log', 'punchlog'], head: 'Punched in' },
-  { key: 'early', label: 'Left early', phrase: 'left early', bg: 'var(--t-peach)', fg: 'var(--t-peach-i)', look: ['Punch log', 'punchlog'], head: 'Punched out' },
+  { key: 'present', label: 'Present', phrase: 'present', bg: 'var(--ok-bg)', fg: 'var(--ok)', look: ['Punch log', 'punchlog'], head: '' },
+  { key: 'late', label: 'Late', phrase: 'late', bg: 'var(--t-lilac)', fg: 'var(--t-lilac-i)', look: ['Punch log', 'punchlog'], head: 'Late by' },
+  { key: 'early', label: 'Left early', phrase: 'left early', bg: 'var(--t-peach)', fg: 'var(--t-peach-i)', look: ['Punch log', 'punchlog'], head: 'Left early by' },
   { key: 'half', label: 'Half day', phrase: 'on a half day', bg: 'var(--t-olive)', fg: 'var(--t-olive-i)', look: ['Punch log', 'punchlog'], head: 'Worked' },
   { key: 'missed', label: 'Missed punch', phrase: 'with a missed punch', bg: 'var(--mute-bg)', fg: 'var(--ink-2)', look: ['Attendance corrections', 'attendance'], head: 'What’s missing' },
   { key: 'ool', label: 'Out of location', phrase: 'out of location', bg: 'var(--t-sky)', fg: 'var(--t-sky-i)', look: ['OOL check-ins', 'oolcheckins'], head: 'Reason' },
-  { key: 'absent', label: 'Absent', phrase: 'absent', bg: 'var(--bad-bg)', fg: 'var(--bad)', look: ['Attendance corrections', 'attendance'], head: 'What we have' },
   { key: 'leave', label: 'On leave', phrase: 'on leave', bg: 'var(--accent-soft)', fg: 'var(--accent-ink)', look: ['Leave requests', 'leave'], head: 'Leave' },
 ];
 const META = Object.fromEntries(METRICS.map((m) => [m.key, m])) as Record<Metric, (typeof METRICS)[number]>;
@@ -45,7 +44,7 @@ const shiftMonth = (month: string, by: number) => {
 };
 
 /** One person counted on one day for one thing, with the line that says why. */
-type Hit = { userId: string; name: string; code: string; dept: string; manager: string; detail: string; leaveId?: string; leaveStatus?: 'Approved' | 'Pending'; miss?: MissKind };
+type Hit = { userId: string; name: string; code: string; dept: string; manager: string; detail: string; inAt?: string | null; outAt?: string | null; leaveId?: string; leaveStatus?: 'Approved' | 'Pending'; miss?: MissKind };
 /** Which punch a missed-punch day is missing. */
 type MissKind = 'in' | 'out' | 'both';
 const MISS_KINDS: [MissKind | 'all', string][] = [['all', 'All'], ['in', 'Missing punch-in'], ['out', 'Missing punch-out'], ['both', 'Both punches missing']];
@@ -178,19 +177,23 @@ export function CompanyCalendar() {
     // The leave request behind a leave day, so its row can open it.
     const leaveOn = (userId: string, date: string) => s.leaves.find((l) => l.submitterId === userId && l.status === 'Approved' && leaveDates(l).includes(date));
     const rows: ReportRow[] = report ? expandReport(report) : [];
+    const punchesOf = new Map(rows.map((r) => [`${r.userId}|${r.date}`, { inAt: r.punchIn, outAt: r.punchOut }]));
+    const worked = (a: string | null, b: string | null) => {
+      if (!a || !b) return '—';
+      const m = Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60_000);
+      return `${Math.floor(m / 60)}h ${m % 60}m worked`;
+    };
     for (const r of rows) {
       const late = r.lateByMinutes > 0, early = r.earlyByMinutes > 0;
-      if (r.status === 'present') add('present', r.date, r.userId, `In at ${clock(r.punchIn)}`);
-      if (late) add('late', r.date, r.userId, `In at ${clock(r.punchIn)} · ${r.lateByMinutes} min late`);
-      if (early) add('early', r.date, r.userId, `Out at ${clock(r.punchOut)} · ${r.earlyByMinutes} min early`);
-      if (r.status === 'half_day') add('half', r.date, r.userId, `${clock(r.punchIn)} – ${clock(r.punchOut)}`);
-      // As the Attendance report words it: which punch is missing, or both. A day with no punch at all is
-      // listed under Missed punch (payroll still counts it as absent); Absent is what HR marked, or too few hours.
-      if (r.status === 'missed_punch' && !r.shiftRunning) add('missed', r.date, r.userId, !r.punchIn ? 'Missing punch-in' : `Missing punch-out${late ? ' · came in late' : ''}`, { miss: !r.punchIn ? 'in' : 'out' });
-      if (r.status === 'absent' && !r.shiftRunning) {
-        if (!r.punchIn && !r.punchOut && r.source !== 'hr') add('missed', r.date, r.userId, 'Both punches missing', { miss: 'both' });
-        else add('absent', r.date, r.userId, r.source === 'hr' ? 'Marked absent by HR' : `${clock(r.punchIn)} – ${clock(r.punchOut)} · too few hours`);
-      }
+      const punches = { inAt: r.punchIn, outAt: r.punchOut };
+      if (r.status === 'present') add('present', r.date, r.userId, '', punches);
+      if (late) add('late', r.date, r.userId, `${r.lateByMinutes} min`, punches);
+      if (early) add('early', r.date, r.userId, `${r.earlyByMinutes} min`, punches);
+      if (r.status === 'half_day') add('half', r.date, r.userId, worked(r.punchIn, r.punchOut), punches);
+      // As the Attendance report words it: which punch is missing, or both (a day with no punch at all;
+      // payroll still counts it as absent). Days HR marked absent are on the person's own calendar.
+      if (r.status === 'missed_punch' && !r.shiftRunning) add('missed', r.date, r.userId, !r.punchIn ? 'Missing punch-in' : `Missing punch-out${late ? ' · came in late' : ''}`, { ...punches, miss: !r.punchIn ? 'in' : 'out' });
+      if (r.status === 'absent' && !r.shiftRunning && !r.punchIn && !r.punchOut && r.source !== 'hr') add('missed', r.date, r.userId, 'Both punches missing', { ...punches, miss: 'both' });
       if (r.status === 'on_leave' || r.status === 'unpaid_leave') {
         const l = leaveOn(r.userId, r.date);
         // Paid and unpaid leave are one count; an unpaid type says so on its row.
@@ -200,7 +203,7 @@ export function CompanyCalendar() {
     }
     for (const o of ool) {
       const reason = (o as { reason?: string }).reason;
-      add('ool', o.workDate.slice(0, 10), o.userId, reason ? String(reason) : o.outcome === 'present' ? 'Marked present' : `Request · ${o.status}`);
+      add('ool', o.workDate.slice(0, 10), o.userId, reason ? String(reason) : o.outcome === 'present' ? 'Marked present' : `Request · ${o.status}`, punchesOf.get(`${o.userId}|${o.workDate.slice(0, 10)}`));
     }
     // Leave ahead of today, and pending leave on any day, from the leave requests.
     for (const l of s.leaves) {
@@ -254,7 +257,9 @@ export function CompanyCalendar() {
         { header: 'Employee', value: (h) => h.name },
         { header: 'Employee ID', value: (h) => h.code },
         { header: 'Department', value: (h) => h.dept },
-        { header: mdef.head, value: (h) => h.detail },
+        { header: 'Punch in', value: (h) => (h.inAt ? clock(h.inAt) : '') },
+        { header: 'Punch out', value: (h) => (h.outAt ? clock(h.outAt) : '') },
+        { header: mdef.head || 'Detail', value: (h) => h.detail },
         { header: 'Manager', value: (h) => h.manager },
       ],
       selected,
@@ -448,7 +453,7 @@ export function CompanyCalendar() {
         ) : (
           <div className="pd-tbl-wrap">
             <table className="pd-t">
-              <thead><tr><th>Employee</th><th>{mdef.head}</th><th>Manager</th>{metric === 'leave' && <th>Status</th>}{metric !== 'present' && <th aria-label="Action" />}</tr></thead>
+              <thead><tr><th>Employee</th>{metric !== 'leave' && <><th>Punch in</th><th>Punch out</th></>}{metric !== 'present' && <th>{mdef.head}</th>}<th>Manager</th>{metric === 'leave' && <th>Status</th>}{metric !== 'present' && <th aria-label="Action" />}</tr></thead>
               <tbody>
                 {selected.slice().sort((a, b) => a.name.localeCompare(b.name)).map((h) => (
                   <tr key={h.userId}>
@@ -461,7 +466,8 @@ export function CompanyCalendar() {
                         </div>
                       </div>
                     </td>
-                    <td>{h.detail}</td>
+                    {metric !== 'leave' && <><td>{h.inAt ? clock(h.inAt) : '—'}</td><td>{h.outAt ? clock(h.outAt) : '—'}</td></>}
+                    {metric !== 'present' && <td>{h.detail}</td>}
                     <td>{h.manager || '—'}</td>
                     {metric === 'leave' && <td>{h.leaveStatus ? <Pill label={h.leaveStatus} tone={STAT[h.leaveStatus]} /> : '—'}</td>}
                     {metric !== 'present' && (
