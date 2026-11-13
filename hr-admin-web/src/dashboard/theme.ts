@@ -45,8 +45,6 @@ export type View =
   | 'peopletasks'
   | 'orgchart'
   | 'attendancereport'
-  | 'companycalendar'
-  | 'punchlog'
   | 'usersroles'
   | 'cycle'
   | 'reimbursementtypes'
@@ -148,7 +146,7 @@ export const TITLES: Record<View, [string, string]> = {
   overview: ['HR control room', ''], // the date is filled in by Topbar
   leave: ['Leave requests', 'Tracking time off · approved by reporting managers'],
   overtime: ['Overtime', 'Tracking overtime · approved by reporting managers'],
-  attendance: ['Attendance corrections', 'Time office · days employees asked to have corrected'],
+  attendance: ['Attendance corrections', 'Requests · days employees asked to have corrected'],
   feedback: ['Performance Reviews', 'Performance · manager reviews & recognition'],
   kpi: ['KPI Parameters', 'Performance · define measurable KPIs'],
   kpitemplates: ['Templates', 'Performance · weighted sets of KPI parameters'],
@@ -156,7 +154,7 @@ export const TITLES: Record<View, [string, string]> = {
   shifttypes: ['Templates', 'Shifts · timings, breaks, segmentation & grace rules'],
   holidaybank: ['Holiday Bank', 'Shifts · master list of holidays, applied by location'],
   offices: ['Offices', 'Shifts · where a geotagged punch may be taken from'],
-  oolcheckins: ['OOL check-ins', 'Time office · punches taken away from every office'],
+  oolcheckins: ['OOL check-ins', 'Requests · punches taken away from every office'],
   faceid: ['Face check', 'Shifts · the selfie that confirms who is punching in'],
   support: ['Support desk', 'Support · tickets employees raised from the app'],
   roster: ['Roster', 'Shifts · schedule employees onto shifts'],
@@ -186,8 +184,6 @@ export const TITLES: Record<View, [string, string]> = {
   peopletasks: ['Tasks', 'People · who still needs a template, salary, bank details or basic details'],
   orgchart: ['Org chart', 'People'],
   attendancereport: ['Attendance report', 'Reports'],
-  companycalendar: ['Company calendar', 'Time office · who is in, away or off on any day'],
-  punchlog: ['Punch log', 'Time office · every punch, in office and out of location'],
   usersroles: ['Accesses', 'People · users, roles and permissions'],
   cycle: ['Cycle', 'Performance · the monthly review cycle'],
   reimbursementtypes: ['Reimbursement Types', 'Claims · what can be claimed, and the cap on each'],

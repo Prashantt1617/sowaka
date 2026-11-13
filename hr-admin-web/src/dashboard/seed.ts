@@ -18,8 +18,6 @@ export type Leave = {
   eRemark: string;
   mRemark: string;
   refISO: string; // canonical date for range filtering (leave start date)
-  /** Last day of the leave, YYYY-MM-DD…; the start date when absent. */
-  endISO?: string;
   submitterId?: string;
   byAdmin?: boolean;
   /**
@@ -27,8 +25,6 @@ export type Leave = {
    * been ("Cancelled pending leave" / "Cancelled approved leave").
    */
   statusLabel: string;
-  /** The leave type is leave without pay, by HR's unpaid flag on the type (not its name). */
-  unpaid?: boolean;
   /** The employee's note when they cancelled it (or asked to). */
   cancelNote: string;
   cancelledOn?: string;
@@ -36,8 +32,6 @@ export type Leave = {
   cancelRequest?: {
     status: 'Pending' | 'Approved' | 'Declined';
     requested: string;
-    /** When it was asked, ms: how long it has waited. */
-    requestedOrd: number;
     note: string;
     decisionNote: string;
     byAdmin: boolean;
@@ -68,10 +62,6 @@ export type Overtime = {
   decisionDiffers?: boolean;
   /** Whether comp-off can be decided for this person (HR has a Comp-off leave type for them). */
   compOffAvailable: boolean;
-  /** Comp-off days the approved request credits (0 until approved), as the server credits them. */
-  compOffDays: number;
-  /** Approved and paid as overtime in payroll: decided as pay, or an older request with no choice. */
-  paidInPayroll: boolean;
   hours: number;
   day: string;
   status: ReqStatus;
@@ -83,13 +73,6 @@ export type Overtime = {
   submitterId?: string;
   byAdmin?: boolean;
 };
-
-/**
- * What an attendance request is: a correction by the day type it asks for
- * (older ones asked for punch times), an out-of-location punch, or a punch the
- * face check refused.
- */
-export type CorrectionKind = 'full' | 'half' | 'wfh' | 'visit' | 'leave' | 'times' | 'other' | 'ool' | 'face';
 
 /** An attendance correction as the dashboard table reads it. */
 export type Correction = {
@@ -111,15 +94,6 @@ export type Correction = {
   refISO: string;
   submitterId?: string;
   byAdmin?: boolean;
-  /** What the request is, from the request itself (see correctionKindOf). */
-  kind?: CorrectionKind;
-  /** What they asked the day to count as: "Full day", "Half day", "Work from home"… */
-  askedFor?: string;
-  /** Raw punch times, ISO, for the detail panel. */
-  punchInISO?: string;
-  punchOutISO?: string;
-  /** Out of location only. */
-  ool?: { reason: string; place: string; latitude: number; longitude: number; at: string };
 };
 
 export type FbMgr = {
