@@ -313,7 +313,7 @@ export function CompanyCalendar() {
         <div className="pd-cal">
           {Array.from({ length: lead }, (_, i) => <div key={`lead-${i}`} className="pd-cd empty" />)}
           {loading && days.map((d) => (
-            <div key={`sk-${d}`} className="sk-delay" aria-hidden style={{ height: 104, padding: 10, borderRadius: 12, border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div key={`sk-${d}`} className="sk-delay" aria-hidden style={{ height: 68, padding: 8, borderRadius: 12, border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 6 }}>
               <Skeleton w={18} h={12} />
               <Skeleton w="50%" h={18} style={{ opacity: 0.7 }} />
             </div>
@@ -339,7 +339,7 @@ export function CompanyCalendar() {
                 onClick={() => setDay(d)}
                 aria-pressed={on}
                 aria-label={`${dayLabel(d)}: ${future ? 'not yet' : `${v} ${mdef.phrase}`}`}
-                style={{ height: 104, borderRadius: 12, padding: 10, display: 'block', textAlign: 'left', font: 'inherit', cursor: 'pointer', minWidth: 0, background: bg, color: fg,
+                style={{ height: 68, borderRadius: 12, padding: 8, display: 'block', textAlign: 'left', font: 'inherit', cursor: 'pointer', minWidth: 0, background: bg, color: fg,
                   border: on ? '2px solid var(--accent)' : d === today ? '2px dashed var(--ink-2)' : '2px solid transparent' }}
               >
                 <div style={{ display: 'grid', gridTemplateRows: 'auto 1fr auto', height: '100%', width: '100%', gap: 2 }}>
@@ -347,8 +347,8 @@ export function CompanyCalendar() {
                     <span style={{ fontSize: 13, lineHeight: 1.2, fontWeight: d === today ? 700 : 500 }}>{Number(d.slice(8))}</span>
                     {fest && <span title={fest} style={{ fontSize: 11, fontWeight: 500, lineHeight: 1.2, opacity: 0.85, textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{fest}</span>}
                   </div>
-                  <span style={{ alignSelf: 'end', fontSize: 26, fontWeight: 600, lineHeight: 1, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{off || future ? '' : v}</span>
-                  <span style={{ fontSize: 12, lineHeight: 1.2, opacity: 0.85, minHeight: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{note}</span>
+                  <span style={{ alignSelf: 'end', fontSize: 17, fontWeight: 600, lineHeight: 1, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{off || future ? '' : v}</span>
+                  <span style={{ fontSize: 11, lineHeight: 1.2, opacity: 0.85, minHeight: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{note}</span>
                 </div>
               </button>
             );
