@@ -31,7 +31,7 @@ import {
   RelayTeamProgress,
 } from '../models/relay.model';
 import { AppNotification, DeviceToken } from '../models/notification.model';
-import { AttendanceOverride, AttendanceRecord, AttendanceRegularization } from '../models/attendance.model';
+import { AttendanceMarkRemoval, AttendanceOverride, AttendanceRecord, AttendanceRegularization } from '../models/attendance.model';
 import { PayHead } from '../models/payHead.model';
 import { StateStatutoryRule } from '../models/statutoryRule.model';
 import { StatutoryConfigRow } from '../models/statutoryConfig.model';
@@ -286,6 +286,11 @@ export function attendanceOverrides(): Collection<AttendanceOverride> {
   return getDb().collection<AttendanceOverride>('attendance_overrides');
 }
 
+/** Late or left-early marks HR took off a day. */
+export function attendanceMarkRemovals(): Collection<AttendanceMarkRemoval> {
+  return getDb().collection<AttendanceMarkRemoval>('attendance_mark_removals');
+}
+
 export function statutoryRules(): Collection<StateStatutoryRule> {
   return getDb().collection<StateStatutoryRule>('statutory_rules');
 }
@@ -436,6 +441,8 @@ async function ensureIndexes(database: Db): Promise<void> {
   await database.collection('secret_squad_offices').createIndex({ org: 1, userId: 1 });
   // One HR mark per person per day; the calendars read them by person and range.
   await database.collection('attendance_overrides').createIndex({ org: 1, userId: 1, workDate: 1 }, { unique: true });
+  await database.collection('attendance_mark_removals').createIndex({ org: 1, userId: 1, workDate: 1 }, { unique: true });
+  await database.collection('attendance_mark_removals').createIndex({ userId: 1, workDate: 1 });
   await database.collection('paid_days_templates').createIndex({ org: 1, code: 1 }, { unique: true });
   // One national statutory row per financial year.
   await database.collection('payroll_statutory_configs').createIndex({ fy: 1 }, { unique: true });

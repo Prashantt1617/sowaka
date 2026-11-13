@@ -162,6 +162,10 @@ export const decideLeaveCancellation = (id: string, decision: 'approved' | 'decl
     body: { decision, ...(note ? { note } : {}) },
   }).then((r) => r.leave);
 
+// HR cancels a leave (approved or pending) from the dashboard: its days go back on the balance.
+export const adminCancelLeave = (id: string, note?: string) =>
+  api<{ leave: LeaveDTO }>(`/admin/leaves/${id}/cancel`, { method: 'POST', body: note ? { note } : {} }).then((r) => r.leave);
+
 // ---- Overtime (org-wide) ----
 export const getOvertimeInbox = () =>
   api<{ overtime: OvertimeDTO[] }>('/admin/overtime').then((r) => r.overtime);
@@ -362,6 +366,10 @@ export const setCalendarDay = (userId: string, date: string, status: HrDayStatus
 /** Take HR's mark off a day; it goes back to what the record says. */
 export const clearCalendarDay = (userId: string, date: string) =>
   api(`/admin/employees/${userId}/calendar/${date}`, { method: 'DELETE' });
+
+// HR takes the late or left-early mark off one day (or puts it back with removed: false); the day stays as punched.
+export const setDayMarkRemoved = (userId: string, date: string, mark: 'late' | 'early', removed = true) =>
+  api<{ removed: boolean }>(`/admin/employees/${userId}/calendar/${date}/marks`, { method: 'PUT', body: { mark, removed } });
 
 /** What HR may file against an employee. Mirrors the server's list. */
 export const EMPLOYEE_DOCUMENT_TYPES = ['Offer letter', 'ID proof', 'Address proof', 'Experience letter', 'Resume'] as const;

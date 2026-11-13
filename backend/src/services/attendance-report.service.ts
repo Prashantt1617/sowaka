@@ -1,6 +1,6 @@
-import { attendanceOverrides, attendanceRecords, holidays, leaves, shiftAssignments, shiftTemplates, users } from '../config/db';
+import { attendanceMarkRemovals, attendanceOverrides, attendanceRecords, holidays, leaves, shiftAssignments, shiftTemplates, users } from '../config/db';
 import { requestViewer } from '../middleware/request-viewer';
-import { AttendanceOverride, AttendanceRecord, HrDayStatus } from '../models/attendance.model';
+import { AttendanceMarkRemoval, AttendanceOverride, AttendanceRecord, HrDayStatus } from '../models/attendance.model';
 import type { Holiday } from '../models/holiday.model';
 import { Leave } from '../models/leave.model';
 import { DayMark, OrgShiftPolicy, PunchFormat, ShiftAssignment, ShiftTemplate, isUnpaidLeaveType } from '../models/shift.model';
@@ -197,6 +197,15 @@ async function hrMarks(userIds: string[], from: string, to: string): Promise<Map
   return new Map(rows.map((row) => [`${row.userId}|${row.workDate}`, row]));
 }
 
+/** Late or left-early marks HR took off, keyed `userId|YYYY-MM-DD`. */
+async function markRemovals(userIds: string[], from: string, to: string): Promise<Map<string, AttendanceMarkRemoval>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await attendanceMarkRemovals()
+    .find({ userId: { $in: userIds }, workDate: { $gte: from, $lte: to } }, { projection: { _id: 0 } })
+    .toArray();
+  return new Map(rows.map((row) => [`${row.userId}|${row.workDate}`, row]));
+}
+
 /** The calendar's words for an HR mark. */
 const HR_STATUS_LABEL: Record<HrDayStatus, string> = {
   present: 'Present', half_day: 'Half day', absent: 'Absent', on_leave: 'Leave', week_off: 'Week off', holiday: 'Holiday',
@@ -323,6 +332,7 @@ type RangeData = {
   approvedLeaves: Leave[];
   holidayRows: Holiday[];
   marks: Map<string, AttendanceOverride>;
+  removals: Map<string, AttendanceMarkRemoval>;
   /** How many punch rows were read, for the log. */
   records: number;
 };
@@ -338,7 +348,7 @@ async function rangeData(org: string, { roster }: Pick<OrgSetup, 'roster'>, from
   // back: on a slow link the bytes of every row's locations and face checks
   // were most of the wait.
   const employeeIds = roster.map((u) => u.employeeId).filter((id): id is string => !!id);
-  const [records, approvedLeaves, holidayRows, marks] = await Promise.all([
+  const [records, approvedLeaves, holidayRows, marks, removals] = await Promise.all([
     attendanceRecords()
       .find(
         { workDate: { $gte: from, $lte: to }, $or: [{ userId: { $in: userIds } }, { employeeId: { $in: employeeIds } }] },
@@ -352,13 +362,14 @@ async function rangeData(org: string, { roster }: Pick<OrgSetup, 'roster'>, from
       .toArray(),
     holidays().find({ org, date: { $gte: dayOf(from), $lte: dayOf(to) } }).toArray(),
     hrMarks(userIds, from, to),
+    markRemovals(userIds, from, to),
   ]);
   const punchesBy: RangeData['punchesBy'] = new Map();
   for (const record of records) {
     if (record.userId) punchesBy.set(`${record.userId}|${record.workDate}`, record);
     if (record.employeeId) punchesBy.set(`${record.employeeId}|${record.workDate}`, record);
   }
-  return { punchesBy, approvedLeaves, holidayRows, marks, records: records.length };
+  return { punchesBy, approvedLeaves, holidayRows, marks, removals, records: records.length };
 }
 
 /** One employee-day, graded: off (not owed) or a graded day. Null before they joined. */
@@ -372,7 +383,7 @@ type GradedDay =
  * narrower question of the same days (who had a missed punch) gets the
  * report's answer without building the report.
  */
-function dayGrader(setup: OrgSetup, { punchesBy, approvedLeaves, holidayRows, marks }: RangeData) {
+function dayGrader(setup: OrgSetup, { punchesBy, approvedLeaves, holidayRows, marks, removals }: RangeData) {
   const policyOn = dayPolicyResolver(setup);
 
   // ── holidays, by the people who observe them ──────────────────────────
@@ -446,10 +457,11 @@ function dayGrader(setup: OrgSetup, { punchesBy, approvedLeaves, holidayRows, ma
     // in the record, which is a different conversation and a different fix.
     const nothing = !punchIn && !punchOut;
     const mark = markForDay(onDay, punchIn, punchOut);
-    // Late and early are each a switch first: off, nobody on the shift is marked.
-    const over = punchIn && onDay.lateMarkingEnabled !== false ? lateBy(punchIn, onDay.startTime, onDay.lateGraceMinutes) : 0;
+    // Late and early are each a switch first: off, nobody on the shift is marked. HR may also take either off one day.
+    const removed = removals.get(`${user.userId}|${key}`);
+    const over = punchIn && onDay.lateMarkingEnabled !== false && !removed?.late ? lateBy(punchIn, onDay.startTime, onDay.lateGraceMinutes) : 0;
     // A single-punch shift has no punch-out to leave early on.
-    const short = punchOut && !singlePunch && onDay.earlyMarkingEnabled !== false ? earlyBy(punchOut, onDay.startTime, onDay.endTime, onDay.earlyOutGraceMinutes) : 0;
+    const short = punchOut && !singlePunch && onDay.earlyMarkingEnabled !== false && !removed?.early ? earlyBy(punchOut, onDay.startTime, onDay.endTime, onDay.earlyOutGraceMinutes) : 0;
     const status: DayStatus = nothing
       ? 'absent'
       : missing
@@ -685,7 +697,7 @@ export interface EmployeeCalendar {
  */
 async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, from: string, to: string): Promise<CalendarDay[]> {
   const policyOn = dayPolicyResolver(setup);
-  const [records, approvedLeaves, holidayRows, marks] = await Promise.all([
+  const [records, approvedLeaves, holidayRows, marks, removals] = await Promise.all([
     attendanceRecords()
       .find({
         workDate: { $gte: from, $lte: to },
@@ -698,6 +710,7 @@ async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, fro
     // The roster row carries no org, and without one the lookup returns nothing.
     holidaysForUser({ ...user, org }, { from: dayOf(from), to: dayOf(to) }),
     hrMarks([user.userId], from, to),
+    markRemovals([user.userId], from, to),
   ]);
   const punchByDate = new Map(records.map((r) => [r.workDate, r]));
   const holidayByDate = new Map(holidayRows.map((h) => [keyOf(h.date), h.name]));
@@ -768,8 +781,9 @@ async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, fro
     const missing = singlePunch ? !punchIn : !punchIn || !punchOut;
     const nothing = !punchIn && !punchOut;
     const mark = markForDay(onDay, punchIn, punchOut);
-    const late = punchIn && onDay.lateMarkingEnabled !== false ? Math.max(0, lateBy(punchIn, onDay.startTime, onDay.lateGraceMinutes)) : 0;
-    const short = punchOut && !singlePunch && onDay.earlyMarkingEnabled !== false ? earlyBy(punchOut, onDay.startTime, onDay.endTime, onDay.earlyOutGraceMinutes) : 0;
+    const removed = removals.get(`${user.userId}|${key}`);
+    const late = punchIn && onDay.lateMarkingEnabled !== false && !removed?.late ? Math.max(0, lateBy(punchIn, onDay.startTime, onDay.lateGraceMinutes)) : 0;
+    const short = punchOut && !singlePunch && onDay.earlyMarkingEnabled !== false && !removed?.early ? earlyBy(punchOut, onDay.startTime, onDay.endTime, onDay.earlyOutGraceMinutes) : 0;
     const status: DayStatus = nothing
       ? 'absent'
       : missing

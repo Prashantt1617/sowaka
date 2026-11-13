@@ -177,5 +177,22 @@ export interface AttendanceOverride {
   setAt: Date;
 }
 
+/**
+ * HR taking a late or left-early mark off one day, keeping everything else the
+ * punches say (present, the times). Every page reads the day through the same
+ * grading (calendar, punch log, reports, payroll), so the mark goes everywhere.
+ */
+export interface AttendanceMarkRemoval {
+  org: string;
+  userId: string;
+  /** YYYY-MM-DD, the employee's local working day. */
+  workDate: string;
+  late?: true;
+  early?: true;
+  setByUserId: string;
+  setByName?: string;
+  setAt: Date;
+}
+
 /** How long after punching in a punch-out is accepted (app punches and the face-check fallback alike). The app hides the slider until then. */
 export const PUNCH_OUT_MIN_GAP_MINUTES = 30;

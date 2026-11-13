@@ -155,6 +155,11 @@ function LeaveDrawer() {
           declineLabel="Keep leave"
         />
       )}
+      {d.status === 'Approved' && d.cancelRequest?.status !== 'Pending' && (
+        <div style={{ position: 'sticky', bottom: 0, marginTop: 'auto', background: 'var(--surface)', borderTop: '1px solid var(--line)', padding: '16px 20px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button type="button" onClick={() => s.lvAsk(d.id, 'cancel')} className={btnClass('no')} style={btn('no')}>Cancel leave</button>
+        </div>
+      )}
     </DrawerShell>
   );
 }
@@ -450,6 +455,20 @@ function LeaveConfirmModal() {
   const d = c ? s.leaves.find((l) => l.id === c.id) : null;
   if (!c || !d) return null;
   const approve = c.action === 'approve';
+  if (c.action === 'cancel') {
+    return (
+      <ConfirmOverrideModal
+        action="decline"
+        title="Cancel this leave?"
+        summary={<>You’re cancelling <b>{d.name}</b>’s {d.type.toLowerCase()} leave ({d.days}) as an admin override. {d.status === 'Approved' ? 'The days go back to their balance and come off attendance and payroll.' : 'The request is withdrawn.'}</>}
+        note={s.lvNote}
+        onNote={s.setLvNote}
+        onCancel={s.lvCloseConfirm}
+        onConfirm={s.lvDecide}
+        confirmLabel="Cancel leave"
+      />
+    );
+  }
   if (c.cancellation) {
     return (
       <ConfirmOverrideModal

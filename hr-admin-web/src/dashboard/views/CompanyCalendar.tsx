@@ -4,17 +4,19 @@
 // or leave without pay. It is laid out like the calendar on an employee's
 // profile; click a date to see who.
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore } from '../store';
-import { clearCalendarDay, expandReport, getAttendanceReport, getEmployeeCalendar, getHolidays, getOutOfLocation, setCalendarDay } from '../../services/hrms';
+import { clearCalendarDay, expandReport, getAttendanceReport, getEmployeeCalendar, getHolidays, getOutOfLocation, setCalendarDay, setDayMarkRemoved } from '../../services/hrms';
 import type { AttendanceReportDTO, CalendarDayDTO, HolidayDTO, HrDayStatus, OutOfLocationDTO, ReportRow } from '../../services/hrms';
 import { CAL_TONE, MarkDay } from './MarkDay';
-import { LoadError, Skeleton, SkeletonRows } from '../ui';
+import { LoadError, Pill, Skeleton, SkeletonRows } from '../ui';
 import { LabeledSelect } from './LabeledSelect';
 import { PersonAvatar } from '../PersonAvatar';
 import { btn, btnClass } from '../ds';
 import { IconDownload } from '../icons';
 import { downloadCsv } from '../export';
 import { canOpen } from '../access';
+import { TO_STAT } from '../theme';
 import type { View } from '../theme';
 import { useAuth } from '../auth/AuthContext';
 import { dateOf, dayLabel, daysIn, isoOf, leaveDates, todayISO } from './leaveDays';
@@ -44,7 +46,7 @@ const shiftMonth = (month: string, by: number) => {
 };
 
 /** One person counted on one day for one thing, with the line that says why. */
-type Hit = { userId: string; name: string; code: string; dept: string; manager: string; detail: string };
+type Hit = { userId: string; name: string; code: string; dept: string; manager: string; detail: string; leaveId?: string; leaveStatus?: 'Approved' | 'Pending' };
 
 /** What this session has already loaded, per month: a revisit shows it at once. */
 const calendarMemo = new Map<string, AttendanceReportDTO>();
@@ -76,6 +78,8 @@ export function CompanyCalendar() {
   const [fixing, setFixing] = useState<{ userId: string; name: string; day: CalendarDayDTO } | null>(null);
   const [opening, setOpening] = useState('');
   const [saving, setSaving] = useState(false);
+  // Removing a late / left-early mark is asked first.
+  const [confirmRemove, setConfirmRemove] = useState<{ hit: Hit; which: 'late' | 'early' } | null>(null);
   const [day, setDay] = useState(today);
   // The day's list shows only for a date picked in the month on screen; moving to another month clears it.
   const dayShown = day.startsWith(month);
@@ -107,6 +111,15 @@ export function CompanyCalendar() {
     if (canOpen(user, 'oolcheckins')) getOutOfLocation(first, upTo).then((r) => { oolMemo.set(key, r); if (live) setOol(r); }).catch(() => undefined);
     return () => { live = false; };
   }, [month, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A leave approved or cancelled (in the side drawer, or anywhere) changes the days: read the month again.
+  const leavesSeen = useRef(s.leaves);
+  useEffect(() => {
+    if (leavesSeen.current === s.leaves) return;
+    leavesSeen.current = s.leaves;
+    calendarMemo.delete(`${first}|${upTo}`);
+    setAttempt((n) => n + 1);
+  }, [s.leaves]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let live = true;
@@ -149,15 +162,17 @@ export function CompanyCalendar() {
   // Every hit, by metric and day, for the chosen scope.
   const hits = useMemo(() => {
     const out = new Map<string, Hit[]>(); // `${metric}|${date}`
-    const add = (m: Metric, date: string, userId: string, detail: string) => {
+    const add = (m: Metric, date: string, userId: string, detail: string, leave?: { leaveId?: string; leaveStatus?: 'Approved' | 'Pending' }) => {
       if (!inScope(userId)) return;
       const p = people.get(userId);
       const k = `${m}|${date}`;
       const list = out.get(k) ?? [];
       if (list.some((h) => h.userId === userId)) return;
-      list.push({ userId, name: p?.name ?? '—', code: p?.code ?? '', dept: p?.dept ?? '', manager: p?.manager ?? '', detail });
+      list.push({ userId, name: p?.name ?? '—', code: p?.code ?? '', dept: p?.dept ?? '', manager: p?.manager ?? '', detail, ...leave });
       out.set(k, list);
     };
+    // The leave request behind a leave day, so its row can open it.
+    const leaveOn = (userId: string, date: string) => s.leaves.find((l) => l.submitterId === userId && l.status === 'Approved' && leaveDates(l).includes(date));
     const rows: ReportRow[] = report ? expandReport(report) : [];
     for (const r of rows) {
       const late = r.lateByMinutes > 0, early = r.earlyByMinutes > 0;
@@ -167,8 +182,10 @@ export function CompanyCalendar() {
       if (r.status === 'half_day') add('half', r.date, r.userId, `${clock(r.punchIn)} – ${clock(r.punchOut)}`);
       if (r.status === 'missed_punch' && !r.shiftRunning) add('missed', r.date, r.userId, !r.punchIn && !r.punchOut ? 'Both punches missed' : !r.punchOut ? `Punch-out missed · in at ${clock(r.punchIn)}` : 'Punch-in missed');
       if (r.status === 'absent' && !r.shiftRunning) add('absent', r.date, r.userId, 'No punch, no leave');
-      if (r.status === 'on_leave') add('leave', r.date, r.userId, `${r.leaveType ?? 'Leave'} · approved`);
-      if (r.status === 'unpaid_leave') add('lwp', r.date, r.userId, 'Leave without pay · approved');
+      if (r.status === 'on_leave' || r.status === 'unpaid_leave') {
+        const l = leaveOn(r.userId, r.date);
+        add(r.status === 'on_leave' ? 'leave' : 'lwp', r.date, r.userId, l?.type ?? (r.status === 'on_leave' ? (r.leaveType ?? 'Leave') : 'Leave without pay'), { leaveId: l?.id, leaveStatus: 'Approved' });
+      }
     }
     for (const o of ool) {
       const reason = (o as { reason?: string }).reason;
@@ -182,7 +199,7 @@ export function CompanyCalendar() {
       for (const d of leaveDates(l)) {
         if (d < first || d > last) continue;
         if (l.status === 'Approved' && d <= upTo && report) continue; // the report already counts it
-        add(unpaid ? 'lwp' : 'leave', d, l.submitterId, `${l.type} · ${l.status === 'Pending' ? 'pending' : 'approved'}`);
+        add(unpaid ? 'lwp' : 'leave', d, l.submitterId, l.type, { leaveId: l.id, leaveStatus: l.status === 'Pending' ? 'Pending' : 'Approved' });
       }
     }
     return out;
@@ -236,6 +253,20 @@ export function CompanyCalendar() {
       setFixing({ userId: h.userId, name: h.name, day: d });
     } catch (e) {
       s.flash(e instanceof Error ? e.message : 'Could not open the day', 'error');
+    } finally {
+      setOpening('');
+    }
+  };
+  // Remove late / early: only that mark comes off the day; the day stays as punched, everywhere.
+  const removeMark = async (h: Hit, which: 'late' | 'early') => {
+    setOpening(h.userId);
+    try {
+      await setDayMarkRemoved(h.userId, day, which);
+      s.flash(`${h.name} · ${dayLabel(day)}: ${which === 'late' ? 'late' : 'left-early'} mark removed`);
+      calendarMemo.delete(`${first}|${upTo}`);
+      setAttempt((n) => n + 1);
+    } catch (e) {
+      s.flash(e instanceof Error ? e.message : 'Could not remove the mark', 'error');
     } finally {
       setOpening('');
     }
@@ -303,9 +334,6 @@ export function CompanyCalendar() {
           })}
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
-          <span className="pd-subnote">Darker means more people. Click a date to see who, and correct a day from there.</span>
-        </div>
 
         <div className="pd-cal" style={{ marginBottom: 6 }}>
           {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => <div key={d} className="pd-cdh">{d.toUpperCase()}</div>)}
@@ -330,7 +358,7 @@ export function CompanyCalendar() {
             const bg = off ? 'var(--surface-2)' : future || !v ? 'var(--surface)' : `color-mix(in srgb, ${mdef.fg} ${Math.round((0.06 + t * 0.3) * 100)}%, var(--surface))`;
             const fg = off || future ? 'var(--ink-3)' : v ? mdef.fg : 'var(--ink-2)';
             // Leave asked for but not yet approved counts too; the note says how many.
-            const pending = v && metric === 'leave' ? (hits.get(`leave|${d}`) ?? []).filter((h) => h.detail.endsWith('pending')).length : 0;
+            const pending = v && metric === 'leave' ? (hits.get(`leave|${d}`) ?? []).filter((h) => h.leaveStatus === 'Pending').length : 0;
             const note = off ? (fest ? 'Holiday' : 'Week off') : future ? 'Not yet' : pending ? `${pending} awaiting approval` : '';
             return (
               <button
@@ -354,8 +382,6 @@ export function CompanyCalendar() {
             );
           })}
         </div>
-        {!AHEAD[metric] && <div className="pd-subnote" style={{ marginTop: 12 }}>Punches count only once a day has happened; leave shows ahead, pending included.</div>}
-        {AHEAD[metric] && <div className="pd-subnote" style={{ marginTop: 12 }}>Approved leave up to today is as the attendance report counts it. Pending leave, and leave still to come, is approx.: by its dates, with Saturday and Sunday taken out when it counts fewer days than its span (week offs per shift and holidays are not applied).</div>}
       </section>
 
       {dayShown && (
@@ -384,11 +410,11 @@ export function CompanyCalendar() {
         </div>
 
         {loading ? <SkeletonRows rows={4} cols={4} /> : selected.length === 0 ? (
-          <div className="pd-empty">{selCount === null ? 'Punches for this day show once it happens. Leave is already counted.' : `Nobody ${mdef.phrase} on this day.`}</div>
+          <div className="pd-empty">{selCount === null ? 'Not yet' : `Nobody ${mdef.phrase}`}</div>
         ) : (
           <div className="pd-tbl-wrap">
             <table className="pd-t">
-              <thead><tr><th>Employee</th><th>{mdef.head}</th><th>Manager</th><th aria-label="Correct" /></tr></thead>
+              <thead><tr><th>Employee</th><th>{mdef.head}</th><th>Manager</th>{metric !== 'present' && <th aria-label="Action" />}</tr></thead>
               <tbody>
                 {selected.slice().sort((a, b) => a.name.localeCompare(b.name)).map((h) => (
                   <tr key={h.userId}>
@@ -401,15 +427,27 @@ export function CompanyCalendar() {
                         </div>
                       </div>
                     </td>
-                    <td>{h.detail}</td>
-                    <td>{h.manager || '—'}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      {day <= today && (
-                        <button type="button" disabled={opening === h.userId} onClick={() => void openFix(h)} className="pd-btn" style={{ height: 34, padding: '0 14px', fontSize: 13 }}>
-                          {opening === h.userId ? 'Opening…' : 'Correct'}
-                        </button>
-                      )}
+                    <td>
+                      {h.leaveStatus
+                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>{h.detail} <Pill label={h.leaveStatus} tone={TO_STAT[h.leaveStatus]} /></span>
+                        : h.detail}
                     </td>
+                    <td>{h.manager || '—'}</td>
+                    {metric !== 'present' && (
+                      <td style={{ textAlign: 'right' }}>
+                        {(metric === 'leave' || metric === 'lwp') ? (
+                          h.leaveId && <button type="button" onClick={() => s.setDrawerId(h.leaveId!)} className="pd-btn" style={{ height: 34, padding: '0 14px', fontSize: 13 }}>Review</button>
+                        ) : (metric === 'late' || metric === 'early') ? (
+                          <button type="button" disabled={opening === h.userId} onClick={() => setConfirmRemove({ hit: h, which: metric })} className="pd-btn" style={{ height: 34, padding: '0 14px', fontSize: 13 }}>
+                            {opening === h.userId ? 'Removing…' : metric === 'late' ? 'Remove late mark' : 'Remove early mark'}
+                          </button>
+                        ) : day <= today && (
+                          <button type="button" disabled={opening === h.userId} onClick={() => void openFix(h)} className="pd-btn" style={{ height: 34, padding: '0 14px', fontSize: 13 }}>
+                            {opening === h.userId ? 'Opening…' : 'Correct'}
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -417,6 +455,31 @@ export function CompanyCalendar() {
           </div>
         )}
       </section>
+      )}
+      {confirmRemove && createPortal(
+        <div className="pd-scrim">
+          <div className="bg" onClick={() => setConfirmRemove(null)} />
+          <div className="pd-modal" role="dialog" aria-modal="true" aria-labelledby="remove-mark-title" style={{ width: 'min(440px, 100%)' }}>
+            <div className="pd-md-h">
+              <div>
+                <h3 id="remove-mark-title">Remove {confirmRemove.which === 'late' ? 'late' : 'left-early'} mark?</h3>
+                <div className="pd-md-sub">{confirmRemove.hit.name} · {dayLabel(day)} · {confirmRemove.hit.detail}</div>
+              </div>
+            </div>
+            <div className="pd-md-b">
+              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>
+                The day stays as punched. The {confirmRemove.which === 'late' ? 'late' : 'left-early'} mark comes off the calendar, punch log, reports and payroll.
+              </p>
+            </div>
+            <div className="pd-md-f">
+              <button type="button" onClick={() => setConfirmRemove(null)} className="pd-btn" style={{ marginLeft: 'auto' }}>Cancel</button>
+              <button type="button" onClick={() => { const c = confirmRemove; setConfirmRemove(null); void removeMark(c.hit, c.which); }} className="pd-btn primary">
+                Remove {confirmRemove.which === 'late' ? 'late' : 'early'} mark
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
       {fixing && <MarkDay day={fixing.day} saving={saving} onClose={() => setFixing(null)} onSave={(status, note) => void saveFix(status, note)} />}
     </div>

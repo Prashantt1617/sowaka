@@ -10,7 +10,7 @@ import {
 } from './adapters';
 import {
   decideLeave,
-  decideLeaveCancellation,
+  decideLeaveCancellation, adminCancelLeave,
   decideOvertime,
   decideRegularization,
   decideReimb,
@@ -97,7 +97,7 @@ function useProvideStore() {
   const [declineText, setDeclineText] = useState('');
   // leave override confirm modal (approve/decline + note); `cancellation` answers the employee's
   // request to cancel an approved leave rather than the leave itself.
-  const [lvConfirm, setLvConfirm] = useState<{ id: string; action: 'approve' | 'decline'; cancellation?: boolean } | null>(null);
+  const [lvConfirm, setLvConfirm] = useState<{ id: string; action: 'approve' | 'decline' | 'cancel'; cancellation?: boolean } | null>(null);
   const [lvNote, setLvNote] = useState('');
 
   // feedback
@@ -382,7 +382,7 @@ function useProvideStore() {
 
   // Confirm modal for leave overrides — captures an optional note for why the
   // request was overridden, on BOTH approve and decline.
-  const lvAsk = (id: string, action: 'approve' | 'decline', cancellation = false) => {
+  const lvAsk = (id: string, action: 'approve' | 'decline' | 'cancel', cancellation = false) => {
     const r = leaves.find((l) => l.id === id);
     if (blockSelfOverride(r?.submitterId)) return;
     setLvNote('');
@@ -401,6 +401,13 @@ function useProvideStore() {
     setLvConfirm(null);
     setDrawerId(null);
     try {
+      if (action === 'cancel') {
+        // HR cancels the leave outright: the days go back and it comes off attendance and payroll.
+        const updated = await adminCancelLeave(id, note || undefined);
+        setLeaves((s) => s.map((l) => (l.id === id ? adaptLeave(updated, r?.manager ?? managerName) : l)));
+        flash(`${r ? first(r.name) : 'Leave'}’s leave cancelled`);
+        return;
+      }
       const decision = action === 'approve' ? 'approved' : 'declined';
       const updated = cancellation
         ? await decideLeaveCancellation(id, decision, note || undefined)
