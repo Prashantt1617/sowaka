@@ -22,6 +22,8 @@ const FLAG: Record<'bad' | 'attn' | 'mute', CSSProperties> = {
   mute: { background: 'var(--mute-bg)', color: 'var(--ink-2)' },
 };
 type FlagTone = keyof typeof FLAG;
+/** Filter tags in the dashboard's solid status-pill colours: red passed, yellow waiting, grey the rest. */
+const TAG_TONE: Record<FlagTone, { bg: string; fg: string }> = { bad: TO_STAT.Declined, attn: TO_STAT.Pending, mute: TO_STAT.Cancelled };
 /** A small coloured label: the header counts (round) or a row's flag (small, squarer). */
 const chip = (tone: FlagTone, small = false): CSSProperties => ({
   ...FLAG[tone],
@@ -71,20 +73,28 @@ export function NeedsActionShell({ id, state, summary, chips, children, more }: 
   more?: ReactNode;
 }) {
   return (
-    <section aria-labelledby={id} style={{ ...TILE, padding: 0, overflow: 'hidden', border: '1px solid var(--attn-line)', marginBottom: 20 }}>
+    <section id={id} aria-labelledby={`${id}-h`} style={{ ...TILE, padding: 0, overflow: 'hidden', border: '1px solid var(--attn-line)', marginBottom: 20, scrollMarginTop: 96 }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 22px', background: 'var(--attn-bg)' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 12 }}>
-          <h2 id={id} style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Needs action</h2>
+          <h2 id={`${id}-h`} style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Needs action</h2>
           <span style={{ fontSize: 13.5, color: 'var(--ink-2)' }}><LoadingFigure state={state} w={140} h={14}>{summary}</LoadingFigure></span>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {chips.map((c) => (c.onPick ? (
-            <button key={c.text} type="button" aria-pressed={c.picked} onClick={c.onPick}
-              style={{ ...chip(c.tone), display: 'inline-flex', alignItems: 'center', gap: 7, cursor: 'pointer', font: 'inherit', fontSize: 12.5, fontWeight: c.picked ? 600 : 500, border: `1.5px solid ${c.picked ? 'currentColor' : 'transparent'}` }}>
-              {c.text}
-              {c.count != null && <span style={{ minWidth: 20, padding: '0 6px', borderRadius: 999, background: 'var(--surface)', color: 'inherit', fontWeight: 700, fontSize: 11.5, lineHeight: '18px', textAlign: 'center' }}>{c.count}</span>}
-            </button>
-          ) : <span key={c.text} style={chip(c.tone)}>{c.text}</span>))}
+          {chips.map((c) => {
+            if (!c.onPick) return <span key={c.text} style={chip(c.tone)}>{c.text}</span>;
+            // A filter tag, drawn as the dashboard's status pills: solid, a dot, its count in a badge.
+            const tone = TAG_TONE[c.tone];
+            return (
+              <button key={c.text} type="button" aria-pressed={c.picked}
+                onClick={() => { c.onPick?.(); setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 500, padding: '3px 4px 3px 10px', borderRadius: 99, border: 0, cursor: 'pointer', font: 'inherit', lineHeight: 1.5, whiteSpace: 'nowrap',
+                  background: tone.bg, color: tone.fg, boxShadow: c.picked ? `0 0 0 2px var(--surface), 0 0 0 3.5px ${tone.bg}` : undefined }}>
+                <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', opacity: 0.85 }} />
+                {c.text}
+                {c.count != null && <span style={{ minWidth: 20, padding: '0 6px', borderRadius: 999, background: 'var(--surface)', color: 'var(--ink)', fontWeight: 700, fontSize: 11.5, lineHeight: '18px', textAlign: 'center' }}>{c.count}</span>}
+              </button>
+            );
+          })}
         </div>
       </div>
       <div style={{ overflowX: 'auto' }}>
