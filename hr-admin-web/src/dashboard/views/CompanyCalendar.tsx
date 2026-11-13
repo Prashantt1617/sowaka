@@ -206,6 +206,7 @@ export function CompanyCalendar() {
   const loading = !report && !error;
   const totals = Object.fromEntries(METRICS.map((m) => [m.key, days.reduce((a, d) => a + (offDay(d) ? 0 : countOn(m.key, d) ?? 0), 0)])) as Record<Metric, number>;
   const lead = (dateOf(first).getDay() + 6) % 7;
+  const gradeMax = Math.max(1, ...days.map((d) => (offDay(d) ? 0 : countOn(metric, d) ?? 0)));
 
   const selected = hits.get(`${metric}|${day}`) ?? [];
   const selCount = countOn(metric, day);
@@ -303,7 +304,7 @@ export function CompanyCalendar() {
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
-          <span className="pd-subnote">Click a date to see who, and correct a day from there.</span>
+          <span className="pd-subnote">Darker means more people. Click a date to see who, and correct a day from there.</span>
         </div>
 
         <div className="pd-cal" style={{ marginBottom: 6 }}>
@@ -312,7 +313,7 @@ export function CompanyCalendar() {
         <div className="pd-cal">
           {Array.from({ length: lead }, (_, i) => <div key={`lead-${i}`} className="pd-cd empty" />)}
           {loading && days.map((d) => (
-            <div key={`sk-${d}`} className="sk-delay" aria-hidden style={{ minHeight: 68, padding: 8, borderRadius: 12, border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div key={`sk-${d}`} className="sk-delay" aria-hidden style={{ height: 104, padding: 10, borderRadius: 12, border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 6 }}>
               <Skeleton w={18} h={12} />
               <Skeleton w="50%" h={18} style={{ opacity: 0.7 }} />
             </div>
@@ -323,12 +324,14 @@ export function CompanyCalendar() {
             const fest = festOn.get(d);
             const future = v === null;
             const on = d === day;
-            // Drawn the way the employee's Calendar tab draws a day: a soft tint by what it was.
-            const tone = off ? (fest ? CAL_TONE.holiday : CAL_TONE.week_off) : v ? { bg: mdef.bg, fg: mdef.fg } : { bg: 'var(--surface)', fg: 'var(--ink-3)' };
-            // Leave asked for but not yet approved counts too; how many of them, on its own line.
+            // As the design draws a day: its count large in the middle, tinted in the metric's colour,
+            // deeper the more people (6% to 36%, never fainter than 12% of the month's highest).
+            const t = v ? Math.max(0.12, v / gradeMax) : 0;
+            const bg = off ? 'var(--surface-2)' : future || !v ? 'var(--surface)' : `color-mix(in srgb, ${mdef.fg} ${Math.round((0.06 + t * 0.3) * 100)}%, var(--surface))`;
+            const fg = off || future ? 'var(--ink-3)' : v ? mdef.fg : 'var(--ink-2)';
+            // Leave asked for but not yet approved counts too; the note says how many.
             const pending = v && metric === 'leave' ? (hits.get(`leave|${d}`) ?? []).filter((h) => h.detail.endsWith('pending')).length : 0;
-            const line1 = off ? (fest ? 'Holiday' : 'Week off') : '';
-            const line2 = off ? (fest ?? 'Week off') : future ? '' : v ? `${v} ${v === 1 ? 'person' : 'people'}` : 'None';
+            const note = off ? (fest ? 'Holiday' : 'Week off') : future ? 'Not yet' : pending ? `${pending} awaiting approval` : '';
             return (
               <button
                 key={d}
@@ -336,15 +339,17 @@ export function CompanyCalendar() {
                 onClick={() => setDay(d)}
                 aria-pressed={on}
                 aria-label={`${dayLabel(d)}: ${future ? 'not yet' : `${v} ${mdef.phrase}`}`}
-                className={future ? 'pd-cd future' : 'pd-cd'}
-                style={{ textAlign: 'left', font: 'inherit', cursor: 'pointer', background: future ? undefined : tone.bg, color: future ? undefined : tone.fg, borderColor: off && !fest ? 'var(--line)' : !future && !v && !off ? 'var(--line)' : undefined, boxShadow: on ? 'inset 0 0 0 2px var(--ink)' : d === today ? 'inset 0 0 0 1.5px var(--accent)' : undefined }}
+                style={{ height: 104, borderRadius: 12, padding: 10, display: 'block', textAlign: 'left', font: 'inherit', cursor: 'pointer', minWidth: 0, background: bg, color: fg,
+                  border: on ? '2px solid var(--accent)' : d === today ? '2px dashed var(--ink-2)' : '2px solid transparent' }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 4 }}>
-                  <b style={{ fontWeight: d === today ? 700 : 500 }}>{Number(d.slice(8))}</b>
+                <div style={{ display: 'grid', gridTemplateRows: 'auto 1fr auto', height: '100%', width: '100%', gap: 2 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, minWidth: 0 }}>
+                    <span style={{ fontSize: 13, lineHeight: 1.2, fontWeight: d === today ? 700 : 500 }}>{Number(d.slice(8))}</span>
+                    {fest && <span title={fest} style={{ fontSize: 11, fontWeight: 500, lineHeight: 1.2, opacity: 0.85, textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{fest}</span>}
+                  </div>
+                  <span style={{ alignSelf: 'end', fontSize: 26, fontWeight: 600, lineHeight: 1, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{off || future ? '' : v}</span>
+                  <span style={{ fontSize: 12, lineHeight: 1.2, opacity: 0.85, minHeight: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{note}</span>
                 </div>
-                {line1 && <div style={{ fontSize: 11, fontWeight: 400 }}>{line1}</div>}
-                {line2 && <div style={{ fontSize: off ? 11 : 12.5, fontWeight: off || !v ? 400 : 700, opacity: off || !v ? 0.85 : 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={line2}>{line2}</div>}
-                {pending > 0 && <div style={{ fontSize: 11, opacity: 0.85 }}>{pending} awaiting approval</div>}
               </button>
             );
           })}
