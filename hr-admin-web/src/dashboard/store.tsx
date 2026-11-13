@@ -580,26 +580,6 @@ function useProvideStore() {
     }
   };
 
-  /** Several pending corrections decided at once, with one note; each is its own override. */
-  const corrDecideMany = async (ids: string[], action: 'approve' | 'decline', note: string) => {
-    const mine = ids.filter((id) => !blockSelfOverride(corrs.find((x) => x.id === id)?.submitterId));
-    let done = 0;
-    const failed: string[] = [];
-    for (const id of mine) {
-      const r = corrs.find((x) => x.id === id);
-      try {
-        const updated = await decideRegularization(id, action === 'approve' ? 'approved' : 'declined', note.trim() || undefined);
-        setCorrs((s) => s.map((x) => (x.id === id ? adaptCorrection(updated, r?.manager ?? managerName) : x)));
-        done++;
-      } catch {
-        failed.push(r ? first(r.name) : id);
-      }
-    }
-    if (done) flash(`${done} correction${done === 1 ? '' : 's'} ${action === 'approve' ? 'approved' : 'declined'}`);
-    if (failed.length) flash(`Could not decide ${failed.join(', ')}`, 'error');
-    return done;
-  };
-
   // ---- employees ----
   const setFormField = (k: keyof UserForm, v: string) => setForm((s) => ({ ...s, [k]: v }));
   const saveUser = async () => {
@@ -666,7 +646,7 @@ function useProvideStore() {
     // attendance corrections
     corrs, corrSearch, setCorrSearch, corrStatus, setCorrStatus,
     corrFrom, setCorrFrom, corrTo, setCorrTo,
-    corrConfirm, corrNote, setCorrNote, corrAsk, corrCloseConfirm, corrDecide, corrDecideMany,
+    corrConfirm, corrNote, setCorrNote, corrAsk, corrCloseConfirm, corrDecide,
     // overtime
     ots, otSearch, setOtSearch, otStatus, setOtStatus, otDrawerId, setOtDrawerId,
     otDeclineId, otDeclineText, setOtDeclineText,

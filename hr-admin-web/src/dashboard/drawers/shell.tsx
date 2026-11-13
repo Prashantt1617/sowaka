@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { createPortal } from 'react-dom';
 import { PersonAvatar } from '../PersonAvatar';
 import { btn, btnClass, eyebrow, iconBtn, sentence, textareaStyle } from '../ds';
 import { IconClose, IconInfo, IconOverride } from '../icons';
@@ -13,17 +12,13 @@ export function DrawerShell({
   onClose: () => void;
   children: ReactNode;
 }) {
-  // Drawn on the page body, not where it is used: a page that opens one from inside its own
-  // (animated, transformed) view would otherwise pin it to that view, so on a scrolled list it
-  // opened far up the page, off screen.
-  return createPortal(
+  return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', justifyContent: 'flex-end' }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', animation: 'ovl .2s ease both' }} />
       <div className="scry" style={{ position: 'relative', width, maxWidth: '100%', height: '100%', background: 'var(--surface)', borderRadius: '24px 0 0 24px', boxShadow: 'var(--shadow-drawer)', overflowY: 'auto', display: 'flex', flexDirection: 'column', animation: 'drwIn .25s ease both' }}>
         {children}
       </div>
-    </div>,
-    document.body,
+    </div>
   );
 }
 
