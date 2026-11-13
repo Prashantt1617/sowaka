@@ -130,6 +130,30 @@ export function needsActionSummary(leaves: Leave[]) {
 export type PeriodId = 'last' | 'week' | 'month' | 'next' | 'all' | 'custom' | 'cycle' | 'lastcycle' | 'today';
 
 /** The bounds of a period, and its heading. Empty bounds are open. */
+/**
+ * A week (Monday to Sunday) or a calendar month, `offset` steps from the current one: the period the
+ * Time office lists step through with their ‹ › arrows.
+ */
+export function stepRange(unit: 'week' | 'month', offset: number): { from: string; to: string; title: string } {
+  const now = new Date();
+  if (unit === 'month') {
+    const first = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    return { from: isoOf(first), to: isoOf(new Date(first.getFullYear(), first.getMonth() + 1, 0)), title: `${MONTH[first.getMonth()]} ${first.getFullYear()}` };
+  }
+  const back = (now.getDay() + 6) % 7; // Monday starts the week
+  const from = addDays(todayISO(), -back + offset * 7);
+  const to = addDays(from, 6);
+  const f = dateOf(from), t = dateOf(to);
+  const span = f.getMonth() === t.getMonth() ? `${f.getDate()}–${t.getDate()} ${MON[t.getMonth()]}` : `${f.getDate()} ${MON[f.getMonth()]} – ${t.getDate()} ${MON[t.getMonth()]}`;
+  return { from, to, title: `${offset === 0 ? 'This week' : 'Week'} · ${span} ${t.getFullYear()}` };
+}
+
+/** How many weeks `iso` is from the current week (0 this week, -1 last week). */
+export function weekOffsetOf(iso: string): number {
+  const monday = (d: string) => addDays(d, -((dateOf(d).getDay() + 6) % 7));
+  return Math.round((dateOf(monday(iso)).getTime() - dateOf(monday(todayISO())).getTime()) / (7 * 86_400_000));
+}
+
 export function periodRange(id: PeriodId, customFrom: string, customTo: string): { from: string; to: string; title: string } {
   const now = new Date();
   const y = now.getFullYear();

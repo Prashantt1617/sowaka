@@ -10,9 +10,8 @@ import type { LoadState } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { btn, btnClass, cellName, cellSub, TH, toolbar, TR } from '../ds';
 import { IconDownload } from '../icons';
-import { chartDaysOf, dayLabel, daysSince, PENDING_ROW, periodRange, plural, rangeProblem, SLOW_DAYS, todayISO } from './leaveDays';
-import type { PeriodId } from './leaveDays';
-import { CustomRange, DayBars, NeedsActionShell, PendingChip, PeriodButtons, StatTile, Swatch, Waiting } from './leaveParts';
+import { chartDaysOf, dayLabel, daysSince, PENDING_ROW, plural, SLOW_DAYS, stepRange, todayISO } from './leaveDays';
+import { DayBars, NeedsActionShell, PendingChip, PeriodStepper, StatTile, Swatch, Waiting } from './leaveParts';
 import { Pager, usePaged } from './Pager';
 
 const COLS = '1.5fr .95fr .9fr 1.35fr 1.15fr 1.25fr 1fr .75fr';
@@ -29,7 +28,6 @@ const givenAs = (r: OvertimeRow): { pay: boolean; comp: boolean } =>
 
 /** "Leave (Comp-off) · Full day (+1 Comp-off)", for the CSV and a cell's tooltip. */
 const withCredit = (label?: string, credit?: string) => (label ? `${label}${credit ? ` (${credit})` : ''}` : '');
-const PERIODS: [PeriodId, string][] = [['week', 'This week'], ['month', 'This month'], ['last', 'Last month'], ['custom', 'Custom']];
 const NEEDS_ACTION_SHOWN = 3;
 const workDay = (r: OvertimeRow) => (r.refISO || '').slice(0, 10);
 const worked = (r: OvertimeRow) => (workDay(r) ? dayLabel(workDay(r)) : r.otDate);
@@ -86,16 +84,15 @@ function NeedsAction({ state }: { state: LoadState }) {
 export function Overtime() {
   const s = useStore();
   const st = s.listState('overtime');
-  const [period, setPeriod] = useState<PeriodId>('month');
-  const [draftFrom, setDraftFrom] = useState(s.otFrom);
-  const [draftTo, setDraftTo] = useState(s.otTo);
-  const [rangeError, setRangeError] = useState('');
+  // A week or a month, stepped back and forward with the arrows by the title.
+  const [unit, setUnit] = useState<'week' | 'month'>('month');
+  const [offset, setOffset] = useState(0);
   const [dept, setDept] = useState('all');
   const [given, setGiven] = useState<Given>('all');
   const today = todayISO();
 
-  const range = periodRange(period, s.otFrom, s.otTo);
-  const waitingForDates = period === 'custom' && !s.otFrom;
+  const range = stepRange(unit, offset);
+  const waitingForDates = false;
   // By the day the overtime was worked.
   const inPeriod = useMemo(() => s.ots.filter((r) => inDateRange(r.refISO, range.from, range.to)), [s.ots, range.from, range.to]);
 
@@ -183,13 +180,6 @@ export function Overtime() {
     };
     setTimeout(go, 50);
   };
-  const applyCustom = () => {
-    const problem = rangeProblem(draftFrom, draftTo);
-    setRangeError(problem);
-    if (problem) return;
-    s.setOtFrom(draftFrom);
-    s.setOtTo(draftTo);
-  };
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
@@ -197,27 +187,7 @@ export function Overtime() {
 
       <Card padded>
         <section aria-labelledby="ot-period" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <h2 id="ot-period" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{range.title}</h2>
-              <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>By the date the overtime was worked.</span>
-            </div>
-            <PeriodButtons periods={PERIODS} period={period} onPeriod={setPeriod} />
-          </div>
-
-          {period === 'custom' && (
-            <CustomRange
-              applied={!!s.otFrom}
-              draftFrom={draftFrom}
-              draftTo={draftTo}
-              onDraftFrom={(v) => { setDraftFrom(v); setRangeError(''); }}
-              onDraftTo={(v) => { setDraftTo(v); setRangeError(''); }}
-              onApply={applyCustom}
-              error={rangeError}
-              hint="Pick a date range to see overtime worked in it."
-              max={today}
-            />
-          )}
+          <PeriodStepper id="ot-period" title={range.title} unit={unit} onUnit={(u) => { setUnit(u); setOffset(0); }} onStep={(by) => setOffset((o) => o + by)} />
 
           {!waitingForDates && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>

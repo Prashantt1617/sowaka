@@ -11,15 +11,13 @@ import { btn, btnClass, cellName, cellSub, TH, toolbar } from '../ds';
 import { IconDownload } from '../icons';
 import { LeaveCalendar } from './LeaveCalendar';
 import {
-  chartDaysOf, needsActionSummary, overlaps, peopleTotals, pendingFacts, perDay, periodRange, plural,
-  LEAVE_COLS, rangeProblem, SLOW_DAYS, startOf, todayISO,
+  chartDaysOf, needsActionSummary, overlaps, peopleTotals, pendingFacts, perDay, plural, stepRange, weekOffsetOf,
+  LEAVE_COLS, SLOW_DAYS, startOf, todayISO,
 } from './leaveDays';
-import type { PeriodId } from './leaveDays';
-import { CustomRange, Flag, LeaveRow, NeedsActionShell, PendingChip, PeriodButtons, StatTile, Waiting } from './leaveParts';
+import { Flag, LeaveRow, NeedsActionShell, PendingChip, PeriodStepper, StatTile, Waiting } from './leaveParts';
 import { Pager, usePaged } from './Pager';
 
 const NEEDS_ACTION_SHOWN = 3;
-const PERIODS: [PeriodId, string][] = [['last', 'Last month'], ['week', 'This week'], ['month', 'This month'], ['next', 'Next month'], ['custom', 'Custom']];
 const startsIn = (n: number) => (n === 0 ? 'Starts today' : n === 1 ? 'Starts tomorrow' : `Starts in ${n} days`);
 
 /** Needs action's tags: all of it, or one kind. Picking one shows exactly those requests in the list below. */
@@ -104,14 +102,13 @@ export function LeaveRequests() {
   const s = useStore();
   const st = s.listState('leaves');
   const [view, setView] = useState<'list' | 'calendar'>('list');
-  const [period, setPeriod] = useState<PeriodId>('month');
-  const [draftFrom, setDraftFrom] = useState(s.leaveFrom);
-  const [draftTo, setDraftTo] = useState(s.leaveTo);
-  const [rangeError, setRangeError] = useState('');
+  // A week or a month, stepped back and forward with the arrows by the title.
+  const [unit, setUnit] = useState<'week' | 'month'>('month');
+  const [offset, setOffset] = useState(0);
   const [dept, setDept] = useState('all');
 
-  const range = periodRange(period, s.leaveFrom, s.leaveTo);
-  const waitingForDates = period === 'custom' && !s.leaveFrom;
+  const range = stepRange(unit, offset);
+  const waitingForDates = false;
   const inPeriod = useMemo(() => s.leaves.filter((l) => overlaps(l, range.from, range.to)), [s.leaves, range.from, range.to]);
 
   const chartDays = chartDaysOf(range);
@@ -184,13 +181,6 @@ export function LeaveRequests() {
       rows,
     );
 
-  const applyCustom = () => {
-    const problem = rangeProblem(draftFrom, draftTo);
-    setRangeError(problem);
-    if (problem) return;
-    s.setLeaveFrom(draftFrom);
-    s.setLeaveTo(draftTo);
-  };
   /** Brings the request list (its status tabs) to the top of the screen, once it has rendered. */
   const toList = () => {
     let tries = 0;
@@ -204,7 +194,8 @@ export function LeaveRequests() {
   /** Pending, every date: where Needs action's "View all" and the calendar's banner lead. */
   const showAllPending = () => {
     setView('list');
-    setPeriod('all');
+    setUnit('month');
+    setOffset(0);
     s.setLeaveStatus('Pending');
     toList();
   };
@@ -217,11 +208,8 @@ export function LeaveRequests() {
   /** One day in the list: from the calendar's "Open in list view". */
   const showDay = (iso: string) => {
     setView('list');
-    setPeriod('custom');
-    setDraftFrom(iso);
-    setDraftTo(iso);
-    s.setLeaveFrom(iso);
-    s.setLeaveTo(iso);
+    setUnit('week');
+    setOffset(weekOffsetOf(iso));
   };
 
   const toggleBtn = (on: boolean): CSSProperties => ({
@@ -261,26 +249,7 @@ export function LeaveRequests() {
 
       <Card padded>
         <section aria-labelledby="leave-period" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <h2 id="leave-period" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{range.title}</h2>
-              
-            </div>
-            <PeriodButtons periods={PERIODS} period={period} onPeriod={setPeriod} />
-          </div>
-
-          {period === 'custom' && (
-            <CustomRange
-              applied={!!s.leaveFrom}
-              draftFrom={draftFrom}
-              draftTo={draftTo}
-              onDraftFrom={(v) => { setDraftFrom(v); setRangeError(''); }}
-              onDraftTo={(v) => { setDraftTo(v); setRangeError(''); }}
-              onApply={applyCustom}
-              error={rangeError}
-              hint="Pick a date range to see who is on leave in it."
-            />
-          )}
+          <PeriodStepper id="leave-period" title={range.title} unit={unit} onUnit={(u) => { setUnit(u); setOffset(0); }} onStep={(by) => setOffset((o) => o + by)} />
 
           {!waitingForDates && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>

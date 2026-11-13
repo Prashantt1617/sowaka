@@ -116,6 +116,21 @@ export function Waiting({ days, slow }: { days: number; slow: number }) {
   );
 }
 
+/** A period header: ‹ title › to step back and forward, and This week / This month to pick the size. */
+export function PeriodStepper({ id, title, unit, onUnit, onStep }: { id: string; title: string; unit: 'week' | 'month'; onUnit: (u: 'week' | 'month') => void; onStep: (by: -1 | 1) => void }) {
+  const arrow: CSSProperties = { width: 36, height: 36, borderRadius: '50%', border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer', font: 'inherit', fontSize: 18, lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button type="button" aria-label={`Previous ${unit}`} onClick={() => onStep(-1)} style={arrow}>‹</button>
+        <h2 id={id} style={{ margin: 0, fontSize: 16, fontWeight: 600, minWidth: 150, textAlign: 'center' }}>{title}</h2>
+        <button type="button" aria-label={`Next ${unit}`} onClick={() => onStep(1)} style={arrow}>›</button>
+      </div>
+      <PeriodButtons periods={[['week', 'This week'], ['month', 'This month']]} period={unit} onPeriod={(p) => onUnit(p === 'week' ? 'week' : 'month')} />
+    </div>
+  );
+}
+
 /** The period buttons. */
 export function PeriodButtons({ periods, period, onPeriod }: { periods: [PeriodId, string][]; period: PeriodId; onPeriod: (p: PeriodId) => void }) {
   return (
