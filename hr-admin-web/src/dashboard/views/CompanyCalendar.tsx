@@ -5,8 +5,9 @@
 // profile; click a date to see who.
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store';
-import { expandReport, getAttendanceReport, getHolidays, getOutOfLocation } from '../../services/hrms';
-import type { AttendanceReportDTO, HolidayDTO, OutOfLocationDTO, ReportRow } from '../../services/hrms';
+import { clearCalendarDay, expandReport, getAttendanceReport, getEmployeeCalendar, getHolidays, getOutOfLocation, setCalendarDay } from '../../services/hrms';
+import type { AttendanceReportDTO, CalendarDayDTO, HolidayDTO, HrDayStatus, OutOfLocationDTO, ReportRow } from '../../services/hrms';
+import { CAL_TONE, MarkDay } from './MarkDay';
 import { LoadError, Skeleton, SkeletonRows } from '../ui';
 import { LabeledSelect } from './LabeledSelect';
 import { PersonAvatar } from '../PersonAvatar';
@@ -60,6 +61,16 @@ export function CompanyCalendar() {
   const [mgr, setMgr] = useState('all');
   const [loc, setLoc] = useState('all');
   const [source, setSource] = useState('all');
+  // The filters open in one line under the header; picks only count once applied.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draft, setDraft] = useState({ dept: 'all', mgr: 'all', loc: 'all', source: 'all' });
+  const openFilters = () => { setDraft({ dept, mgr, loc, source }); setFiltersOpen((o) => !o); };
+  const applyFilters = () => { setDept(draft.dept); setMgr(draft.mgr); setLoc(draft.loc); setSource(draft.source); setFiltersOpen(false); };
+  const clearFilters = () => { setDraft({ dept: 'all', mgr: 'all', loc: 'all', source: 'all' }); setDept('all'); setMgr('all'); setLoc('all'); setSource('all'); setFiltersOpen(false); };
+  // Correct: the person whose day HR is marking, with that day as their calendar has it.
+  const [fixing, setFixing] = useState<{ userId: string; name: string; day: CalendarDayDTO } | null>(null);
+  const [opening, setOpening] = useState('');
+  const [saving, setSaving] = useState(false);
   const [day, setDay] = useState(today);
   const [report, setReport] = useState<AttendanceReportDTO | null>(null);
   const [error, setError] = useState('');
@@ -122,6 +133,7 @@ export function CompanyCalendar() {
     if (!p) return false;
     return (dept === 'all' || p.dept === dept) && (mgr === 'all' || p.manager === mgr) && (loc === 'all' || p.loc === loc) && (source === 'all' || p.source === source);
   };
+  const activeFilters = [dept, mgr, loc, source].filter((v) => v !== 'all').length;
   const scopeSize = filtered ? [...people.keys()].filter(inScope).length : people.size;
   const scopeName = filtered
     ? [dept !== 'all' && dept, mgr !== 'all' && `${mgr}’s team`, loc !== 'all' && loc, source !== 'all' && source].filter(Boolean).join(' · ')
@@ -185,7 +197,6 @@ export function CompanyCalendar() {
   const countOn = (m: Metric, d: string): number | null => (d > today && !AHEAD[m] ? null : (hits.get(`${m}|${d}`)?.length ?? 0));
   const mdef = META[metric];
   const loading = !report && !error;
-  const monthMax = Math.max(1, ...days.map((d) => countOn(metric, d) ?? 0));
   const totals = Object.fromEntries(METRICS.map((m) => [m.key, days.reduce((a, d) => a + (offDay(d) ? 0 : countOn(m.key, d) ?? 0), 0)])) as Record<Metric, number>;
   const best = days.reduce<[string, number] | null>((b, d) => { const v = countOn(metric, d) ?? 0; return v > (b?.[1] ?? 0) ? [d, v] : b; }, null);
   const lead = (dateOf(first).getDay() + 6) % 7;
@@ -206,6 +217,39 @@ export function CompanyCalendar() {
       selected,
     );
 
+  // Correct: open the person's own day, as their calendar has it, in the same dialog as their Calendar tab.
+  const openFix = async (h: Hit) => {
+    setOpening(h.userId);
+    try {
+      const cal = await getEmployeeCalendar(h.userId, day.slice(0, 7));
+      const d = cal.days.find((x) => x.date === day);
+      if (!d || d.status === 'before_joining') { s.flash(`${h.name} had not joined yet on ${dayLabel(day)}`, 'error'); return; }
+      // The server says which days are still open (the current pay period); an older server, this month only.
+      if (!(d.canMark ?? day.slice(0, 7) === today.slice(0, 7))) { s.flash(`${dayLabel(day)} is outside the open pay period, so it can no longer be marked`, 'error'); return; }
+      setFixing({ userId: h.userId, name: h.name, day: d });
+    } catch (e) {
+      s.flash(e instanceof Error ? e.message : 'Could not open the day', 'error');
+    } finally {
+      setOpening('');
+    }
+  };
+  const saveFix = async (status: HrDayStatus | null, note: string) => {
+    if (!fixing) return;
+    setSaving(true);
+    try {
+      if (status) await setCalendarDay(fixing.userId, fixing.day.date, status, note.trim() || undefined);
+      else await clearCalendarDay(fixing.userId, fixing.day.date);
+      s.flash(status ? `${fixing.name} · ${dayLabel(fixing.day.date)} marked ${CAL_TONE[status].label.toLowerCase()}` : `${fixing.name} · ${dayLabel(fixing.day.date)} back to what was recorded`);
+      setFixing(null);
+      calendarMemo.delete(`${first}|${upTo}`);
+      setAttempt((n) => n + 1);
+    } catch (e) {
+      s.flash(e instanceof Error ? e.message : 'Could not save', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div style={{ animation: 'fade .3s ease both', display: 'flex', flexDirection: 'column', gap: 20 }}>
       <section className="pd-card">
@@ -215,14 +259,23 @@ export function CompanyCalendar() {
             <input type="month" aria-label="Month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} className="pd-inp" style={{ height: 42, borderRadius: 999, fontSize: 14, fontWeight: 500, padding: '0 14px' }} />
             <button type="button" aria-label="Next month" onClick={() => setMonth(shiftMonth(month, 1))} className="pd-round">›</button>
           </div>
+          <button type="button" onClick={openFilters} aria-expanded={filtersOpen} className={btnClass()}
+            style={{ ...btn(), marginLeft: 'auto', gap: 8, background: filtered ? 'var(--accent-soft)' : undefined, color: filtered ? 'var(--accent-ink)' : undefined }}>
+            Filters{activeFilters ? ` · ${activeFilters}` : ''}
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden style={{ transform: filtersOpen ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }}><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
         </div>
 
-        <div className="ar-filters">
-          <LabeledSelect label="Department" value={dept} onChange={setDept} options={[['all', 'All departments'], ...choices.dept.map((d): [string, string] => [d, d])]} />
-          <LabeledSelect label="Manager" value={mgr} onChange={setMgr} options={[['all', 'All managers'], ...choices.mgr.map((m): [string, string] => [m, m])]} />
-          <LabeledSelect label="Location" value={loc} onChange={setLoc} options={[['all', 'All locations'], ...choices.loc.map((l): [string, string] => [l, l])]} />
-          <LabeledSelect label="Attendance source" value={source} onChange={setSource} options={[['all', 'All sources'], ...choices.source.map((f): [string, string] => [f, f])]} />
-        </div>
+        {filtersOpen && (
+          <div className="ar-filters" style={{ flexWrap: 'nowrap', overflowX: 'auto', alignItems: 'center', paddingBottom: 4 }}>
+            <LabeledSelect label="Department" value={draft.dept} onChange={(v) => setDraft((d) => ({ ...d, dept: v }))} options={[['all', 'All departments'], ...choices.dept.map((d): [string, string] => [d, d])]} />
+            <LabeledSelect label="Manager" value={draft.mgr} onChange={(v) => setDraft((d) => ({ ...d, mgr: v }))} options={[['all', 'All managers'], ...choices.mgr.map((m): [string, string] => [m, m])]} />
+            <LabeledSelect label="Location" value={draft.loc} onChange={(v) => setDraft((d) => ({ ...d, loc: v }))} options={[['all', 'All locations'], ...choices.loc.map((l): [string, string] => [l, l])]} />
+            <LabeledSelect label="Attendance source" value={draft.source} onChange={(v) => setDraft((d) => ({ ...d, source: v }))} options={[['all', 'All sources'], ...choices.source.map((f): [string, string] => [f, f])]} />
+            <button type="button" onClick={applyFilters} className="pd-btn primary" style={{ flexShrink: 0 }}>Apply</button>
+            {(filtered || Object.values(draft).some((v) => v !== 'all')) && <button type="button" onClick={clearFilters} className="pd-btn ghost" style={{ flexShrink: 0 }}>Clear</button>}
+          </div>
+        )}
 
         {error && <LoadError compact text={error} onRetry={() => setAttempt((n) => n + 1)} />}
 
@@ -231,8 +284,8 @@ export function CompanyCalendar() {
             const on = metric === m.key;
             return (
               <button key={m.key} type="button" role="tab" aria-selected={on} onClick={() => setMetric(m.key)}
-                style={{ display: 'inline-flex', alignItems: 'center', height: 32, padding: '0 12px', borderRadius: 999, border: `1.5px solid ${on ? m.fg : 'transparent'}`, background: on ? m.bg : 'transparent', color: 'var(--ink-2)', font: 'inherit', fontSize: 12.5, cursor: 'pointer' }}>
-                <i style={{ background: m.fg }} />{m.label} <span style={{ color: 'var(--ink-3)', marginLeft: 5 }}>{loading ? '…' : totals[m.key]}</span>
+                style={{ display: 'inline-flex', alignItems: 'center', padding: on ? '3px 10px' : '3px 0', borderRadius: 999, border: 0, background: on ? m.bg : 'transparent', color: on ? m.fg : 'var(--ink-2)', font: 'inherit', fontSize: 12.5, fontWeight: on ? 500 : 400, cursor: 'pointer' }}>
+                <i style={{ background: m.fg }} />{m.label} <span style={{ color: on ? m.fg : 'var(--ink-3)', marginLeft: 5, opacity: on ? 0.8 : 1 }}>{loading ? '…' : totals[m.key]}</span>
               </button>
             );
           })}
@@ -244,7 +297,7 @@ export function CompanyCalendar() {
             {filtered && <span style={{ color: 'var(--ink-3)' }}> ({scopeSize} {scopeSize === 1 ? 'person' : 'people'})</span>}
             {best && <span style={{ color: 'var(--ink-3)' }}> · highest on {dayLabel(best[0])} with {best[1]}</span>}
           </span>
-          <span className="pd-subnote">People counted on each day. Darker means more. Click a date to see who.</span>
+          <span className="pd-subnote">Click a date to see who, and correct a day from there.</span>
         </div>
 
         <div className="pd-cal" style={{ marginBottom: 6 }}>
@@ -253,7 +306,7 @@ export function CompanyCalendar() {
         <div className="pd-cal">
           {Array.from({ length: lead }, (_, i) => <div key={`lead-${i}`} className="pd-cd empty" />)}
           {loading && days.map((d) => (
-            <div key={`sk-${d}`} className="sk-delay" aria-hidden style={{ minHeight: 84, padding: 10, borderRadius: 12, border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div key={`sk-${d}`} className="sk-delay" aria-hidden style={{ minHeight: 68, padding: 8, borderRadius: 12, border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 6 }}>
               <Skeleton w={18} h={12} />
               <Skeleton w="50%" h={18} style={{ opacity: 0.7 }} />
             </div>
@@ -264,9 +317,11 @@ export function CompanyCalendar() {
             const fest = festOn.get(d);
             const future = v === null;
             const on = d === day;
-            const share = v ? 12 + Math.round((v / monthMax) * 38) : 0;
-            const bg = off ? 'var(--surface-2)' : future ? undefined : v ? `color-mix(in srgb, ${mdef.fg} ${share}%, var(--surface))` : 'var(--surface)';
-            const note = off ? (fest ?? 'Week off') : future ? 'Not yet' : v && metric === 'leave' && (hits.get(`leave|${d}`) ?? []).some((h) => h.detail.endsWith('pending')) ? 'incl. pending' : mdef.label;
+            // Drawn the way the employee's Calendar tab draws a day: a soft tint by what it was.
+            const tone = off ? (fest ? CAL_TONE.holiday : CAL_TONE.week_off) : v ? { bg: mdef.bg, fg: mdef.fg } : { bg: 'var(--surface)', fg: 'var(--ink-3)' };
+            const pending = v && metric === 'leave' && (hits.get(`leave|${d}`) ?? []).some((h) => h.detail.endsWith('pending'));
+            const line1 = off ? (fest ? 'Holiday' : 'Week off') : future ? '' : mdef.label;
+            const line2 = off ? (fest ?? 'Week off') : future ? '' : v ? `${v} ${v === 1 ? 'person' : 'people'}${pending ? ' · incl. pending' : ''}` : 'None';
             return (
               <button
                 key={d}
@@ -275,14 +330,13 @@ export function CompanyCalendar() {
                 aria-pressed={on}
                 aria-label={`${dayLabel(d)}: ${future ? 'not yet' : `${v} ${mdef.phrase}`}`}
                 className={future ? 'pd-cd future' : 'pd-cd'}
-                style={{ minHeight: 84, textAlign: 'left', font: 'inherit', cursor: 'pointer', background: bg, color: off ? 'var(--ink-4)' : 'var(--ink)', borderColor: off ? 'var(--line)' : v ? 'transparent' : 'var(--line)', boxShadow: on ? 'inset 0 0 0 2px var(--ink)' : d === today ? 'inset 0 0 0 1.5px var(--accent)' : undefined }}
+                style={{ textAlign: 'left', font: 'inherit', cursor: 'pointer', background: future ? undefined : tone.bg, color: future ? undefined : tone.fg, borderColor: off && !fest ? 'var(--line)' : !future && !v && !off ? 'var(--line)' : undefined, boxShadow: on ? 'inset 0 0 0 2px var(--ink)' : d === today ? 'inset 0 0 0 1.5px var(--accent)' : undefined }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 4, minWidth: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 4 }}>
                   <b style={{ fontWeight: d === today ? 700 : 500 }}>{Number(d.slice(8))}</b>
-                  {fest && <span style={{ fontSize: 10.5, fontWeight: 500, color: 'var(--t-lilac-i)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={fest}>{fest}</span>}
                 </div>
-                {!off && !future && <div style={{ fontSize: 22, fontWeight: 500, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums', color: v ? 'var(--ink)' : 'var(--ink-4)' }}>{v}</div>}
-                <div style={{ fontSize: 11, opacity: 0.85, marginTop: 'auto', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: v && !off ? mdef.fg : undefined }}>{note}</div>
+                {line1 && <div style={{ fontSize: 11, fontWeight: 400 }}>{line1}</div>}
+                {line2 && <div style={{ fontSize: 11, opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={line2}>{line2}</div>}
               </button>
             );
           })}
@@ -319,7 +373,7 @@ export function CompanyCalendar() {
         ) : (
           <div className="pd-tbl-wrap">
             <table className="pd-t">
-              <thead><tr><th>Employee</th><th>{mdef.head}</th><th>Manager</th><th>Where to look</th></tr></thead>
+              <thead><tr><th>Employee</th><th>{mdef.head}</th><th>Manager</th><th aria-label="Correct" /></tr></thead>
               <tbody>
                 {selected.slice().sort((a, b) => a.name.localeCompare(b.name)).map((h) => (
                   <tr key={h.userId}>
@@ -334,10 +388,12 @@ export function CompanyCalendar() {
                     </td>
                     <td>{h.detail}</td>
                     <td>{h.manager || '—'}</td>
-                    <td>
-                      {canOpen(user, mdef.look[1])
-                        ? <button type="button" onClick={() => s.setView(mdef.look[1])} style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontWeight: 500, color: 'var(--accent-ink)' }}>{mdef.look[0]}</button>
-                        : <span className="muted">—</span>}
+                    <td style={{ textAlign: 'right' }}>
+                      {day <= today && (
+                        <button type="button" disabled={opening === h.userId} onClick={() => void openFix(h)} className="pd-btn" style={{ height: 34, padding: '0 14px', fontSize: 13 }}>
+                          {opening === h.userId ? 'Opening…' : 'Correct'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -346,6 +402,7 @@ export function CompanyCalendar() {
           </div>
         )}
       </section>
+      {fixing && <MarkDay day={fixing.day} saving={saving} onClose={() => setFixing(null)} onSave={(status, note) => void saveFix(status, note)} />}
     </div>
   );
 }
