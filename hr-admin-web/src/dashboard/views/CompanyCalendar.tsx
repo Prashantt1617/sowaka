@@ -16,7 +16,7 @@ import { btn, btnClass, iconBtn } from '../ds';
 import { IconDownload, IconEye } from '../icons';
 import { downloadCsv } from '../export';
 import { canOpen } from '../access';
-import { TO_STAT } from '../theme';
+import { STAT } from '../theme';
 import type { View } from '../theme';
 import { useAuth } from '../auth/AuthContext';
 import { dateOf, dayLabel, daysIn, isoOf, leaveDates, todayISO } from './leaveDays';
@@ -415,7 +415,7 @@ export function CompanyCalendar() {
         ) : (
           <div className="pd-tbl-wrap">
             <table className="pd-t">
-              <thead><tr><th>Employee</th><th>{mdef.head}</th>{metric === 'leave' && <th>Status</th>}<th>Manager</th>{metric !== 'present' && <th aria-label="Action" />}</tr></thead>
+              <thead><tr><th>Employee</th><th>{mdef.head}</th><th>Manager</th>{metric === 'leave' && <th>Status</th>}{metric !== 'present' && <th aria-label="Action" />}</tr></thead>
               <tbody>
                 {selected.slice().sort((a, b) => a.name.localeCompare(b.name)).map((h) => (
                   <tr key={h.userId}>
@@ -429,8 +429,8 @@ export function CompanyCalendar() {
                       </div>
                     </td>
                     <td>{h.detail}</td>
-                    {metric === 'leave' && <td>{h.leaveStatus ? <Pill label={h.leaveStatus} tone={TO_STAT[h.leaveStatus]} /> : '—'}</td>}
                     <td>{h.manager || '—'}</td>
+                    {metric === 'leave' && <td>{h.leaveStatus ? <Pill label={h.leaveStatus} tone={STAT[h.leaveStatus]} /> : '—'}</td>}
                     {metric !== 'present' && (
                       <td style={{ textAlign: 'right' }}>
                         {metric === 'leave' ? (
