@@ -169,8 +169,6 @@ function SoonBadge() {
   );
 }
 
-const SEL_BG = 'linear-gradient(120deg, var(--suwi-soft, #FBEDE6), color-mix(in srgb, var(--suwi, #B23500) 22%, var(--suwi-soft, #FBEDE6)))';
-const SEL_EDGE = 'inset 0 0 0 1px color-mix(in srgb, var(--suwi, #B23500) 22%, transparent)';
 function NavButton({ item, badge, sub }: { item: NavItem; badge?: ReactNode; sub?: boolean }) {
   const { view, setView } = useStore();
   // Setup stays lit on the settings pages it leads to.
@@ -196,11 +194,9 @@ function NavButton({ item, badge, sub }: { item: NavItem; badge?: ReactNode; sub
         lineHeight: 1.5,
         textAlign: 'left',
         transition: 'background .15s, color .15s',
-        // Selected: Suwi's copper, a soft gradient with its darker shade for the text, in bold.
-        background: active ? SEL_BG : 'transparent',
-        boxShadow: active ? SEL_EDGE : undefined,
-        color: active ? 'var(--suwi-ink, #8F2A00)' : soon ? 'var(--ink-4)' : 'var(--ink-2)',
-        fontWeight: active ? 700 : 400,
+        background: active ? 'var(--sel)' : 'transparent',
+        color: active ? 'var(--on-sel)' : soon ? 'var(--ink-4)' : 'var(--ink-2)',
+        fontWeight: active ? 500 : 400,
       }}
     >
       <span style={{ display: 'inline-flex', flexShrink: 0, width: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}>{navIcon[item.key]}</span>
