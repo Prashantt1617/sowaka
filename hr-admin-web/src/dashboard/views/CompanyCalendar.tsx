@@ -362,8 +362,8 @@ export function CompanyCalendar() {
             return (
               <button key={m.key} type="button" aria-pressed={on} onClick={() => setMetric(m.key)}
                 style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '8px 10px', minWidth: 0, borderRadius: 12, cursor: 'pointer', textAlign: 'left', font: 'inherit', background: on ? m.bg : 'var(--surface)', border: on ? `1.5px solid ${m.fg}` : '1px solid var(--line)', color: 'var(--ink)' }}>
-                <span title={m.label} style={{ fontSize: 11.5, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{m.label}</span>
-                <span style={{ fontSize: 20, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{loading ? '…' : v === null ? '—' : v}</span>
+                <span style={{ fontSize: 11.5, lineHeight: 1.3, color: 'var(--ink-3)' }}>{m.label}</span>
+                <span style={{ fontSize: 20, fontWeight: 500, fontVariantNumeric: 'tabular-nums', marginTop: 'auto' }}>{loading ? '…' : v === null ? '—' : v}</span>
               </button>
             );
           })}
