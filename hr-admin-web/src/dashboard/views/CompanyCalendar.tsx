@@ -134,7 +134,6 @@ export function CompanyCalendar() {
     return (dept === 'all' || p.dept === dept) && (mgr === 'all' || p.manager === mgr) && (loc === 'all' || p.loc === loc) && (source === 'all' || p.source === source);
   };
   const activeFilters = [dept, mgr, loc, source].filter((v) => v !== 'all').length;
-  const scopeSize = filtered ? [...people.keys()].filter(inScope).length : people.size;
   const scopeName = filtered
     ? [dept !== 'all' && dept, mgr !== 'all' && `${mgr}’s team`, loc !== 'all' && loc, source !== 'all' && source].filter(Boolean).join(' · ')
     : 'Whole company';
@@ -198,7 +197,6 @@ export function CompanyCalendar() {
   const mdef = META[metric];
   const loading = !report && !error;
   const totals = Object.fromEntries(METRICS.map((m) => [m.key, days.reduce((a, d) => a + (offDay(d) ? 0 : countOn(m.key, d) ?? 0), 0)])) as Record<Metric, number>;
-  const best = days.reduce<[string, number] | null>((b, d) => { const v = countOn(metric, d) ?? 0; return v > (b?.[1] ?? 0) ? [d, v] : b; }, null);
   const lead = (dateOf(first).getDay() + 6) % 7;
 
   const selected = hits.get(`${metric}|${day}`) ?? [];
@@ -292,11 +290,6 @@ export function CompanyCalendar() {
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
-          <span style={{ fontSize: 14 }}>
-            <b style={{ fontWeight: 600 }}>{mdef.label} · {scopeName}</b>
-            {filtered && <span style={{ color: 'var(--ink-3)' }}> ({scopeSize} {scopeSize === 1 ? 'person' : 'people'})</span>}
-            {best && <span style={{ color: 'var(--ink-3)' }}> · highest on {dayLabel(best[0])} with {best[1]}</span>}
-          </span>
           <span className="pd-subnote">Click a date to see who, and correct a day from there.</span>
         </div>
 
