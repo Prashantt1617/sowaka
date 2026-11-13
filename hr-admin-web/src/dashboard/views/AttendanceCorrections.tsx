@@ -3,10 +3,10 @@
 //
 // The same queue a manager sees in the app, but org-wide: HR is asking what is
 // outstanding anywhere, not what is waiting on them, so every row names the
-// manager it actually belongs to. "Before payroll" puts this pay cycle first:
-// what is still pending, which of it costs pay, and whose desk it sits on.
+// manager it actually belongs to. Needs action puts what is pending first,
+// what costs pay ahead of the rest.
 // Deciding from here is an override, so it goes through a confirm with a note.
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { TO_STAT } from '../theme';
@@ -14,17 +14,15 @@ import type { ReqStatus } from '../theme';
 import type { Correction, CorrectionKind } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
-import { getPayCycle } from '../../services/hrms';
-import type { PayCycleDTO } from '../../services/hrms';
 import { Card, EmptyRow, ListPending, Pill, SearchInput, StatusTabs, Th } from '../ui';
+import type { LoadState } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
-import { btn, btnClass, cellName, cellSub, textareaStyle, TH, TILE, toolbar, TR } from '../ds';
-import { IconDownload, IconX } from '../icons';
+import { btn, btnClass, cellName, cellSub, textareaStyle, TH, toolbar, TR } from '../ds';
+import { IconDownload } from '../icons';
 import { SuwiInsight } from '../suwi/SuwiInsight';
 import { DrawerHeader, DrawerShell, InfoGrid, RemarkBlock } from '../drawers/shell';
-import { chartDaysOf, dateOf, dayLabel, daysBetween, daysSince, MON, PENDING_ROW, plural, rangeProblem, todayISO } from './leaveDays';
-import type { PeriodId } from './leaveDays';
-import { CustomRange, Key, LinkButton, PendingChip, PeriodButtons, StackBars, StatTile } from './leaveParts';
+import { daysSince, PENDING_ROW, plural, SLOW_DAYS, stepRange } from './leaveDays';
+import { NeedsActionShell, PendingChip, PeriodStepper, StatTile, Waiting } from './leaveParts';
 import { Pager, usePaged } from './Pager';
 
 const COLS = '32px 1.5fr .95fr 1.15fr 1.3fr .9fr 1.2fr 1fr 1.1fr';
@@ -57,97 +55,87 @@ const kindOf = (r: Correction): Kind => r.kind ?? 'other';
 const affectsPay = (r: Correction) => r.status === 'Pending' && kindOf(r) !== 'face';
 const workDay = (r: Correction) => (r.refISO || '').slice(0, 10);
 const clock = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : '—');
-const span = (r: { from: string; to: string }) => {
-  const f = dateOf(r.from), t = dateOf(r.to);
-  return `${f.getDate()} ${MON[f.getMonth()]} – ${t.getDate()} ${MON[t.getMonth()]} ${t.getFullYear()}`;
-};
 
 type Filter = 'all' | 'pay' | Kind;
+const NEEDS_ACTION_SHOWN = 3;
+type CorrPick = 'pay' | 'slow' | 'all';
+
+/** Needs action, as on Leave requests: the most urgent few; its tags filter this table only. */
+function CorrNeedsAction({ state, onOpen }: { state: LoadState; onOpen: (id: string) => void }) {
+  const s = useStore();
+  // What costs pay first, then the longest wait.
+  const everything = s.corrs.filter((r) => r.status === 'Pending')
+    .sort((a, b) => Number(affectsPay(b)) - Number(affectsPay(a)) || a.ord - b.ord);
+  const [pick, setPick] = useState<CorrPick | null>(null);
+  const isSlow = (r: Correction) => daysSince(r.ord) > SLOW_DAYS;
+  const fits = (r: Correction, k: CorrPick) => (k === 'all' ? true : k === 'pay' ? affectsPay(r) : isSlow(r));
+  const matching = everything.filter((r) => fits(r, pick ?? 'all'));
+  const paged = usePaged(matching, pick);
+  if (state === 'ready' && everything.length === 0) return null;
+  const list = pick ? paged.rows : matching.slice(0, NEEDS_ACTION_SHOWN);
+  const pay = everything.filter(affectsPay).length;
+  const slow = everything.filter(isSlow).length;
+  const tag = (k: CorrPick, text: string, count: number) => ({ tone: 'mute' as const, text, count, picked: pick === k, onPick: () => setPick(pick === k ? null : k) });
+  return (
+    <NeedsActionShell
+      id="corr-needs-action"
+      state={state}
+      summary={`${plural(everything.length, 'request')} waiting for approval · all dates`}
+      chips={[...(pay ? [tag('pay', 'Affect pay', pay)] : []), ...(slow ? [tag('slow', `Waiting over ${SLOW_DAYS} days`, slow)] : []), tag('all', 'All', everything.length)]}
+    >
+      {list.map((r) => {
+        const k = KIND[kindOf(r)];
+        return (
+          <div key={r.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(220px,1.5fr) minmax(170px,1.2fr) minmax(150px,1.1fr) minmax(100px,.7fr) minmax(120px,auto)', alignItems: 'center', gap: 16, padding: '12px 22px', borderTop: '1px solid var(--line)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+              <PersonAvatar name={r.name} userId={r.submitterId} />
+              <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span style={{ ...cellName, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
+                <span style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.employeeCode} · {r.team}</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ fontSize: 13.5 }}>{r.day} {r.workDate}</span>
+              <span style={{ alignSelf: 'flex-start', fontSize: 11.5, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: k.bg, color: k.fg, whiteSpace: 'nowrap' }}>{k.label}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <span style={cellSub}>Manager</span>
+              <span style={{ fontSize: 13.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.manager || '—'}</span>
+            </div>
+            <Waiting days={daysSince(r.ord)} slow={SLOW_DAYS} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+              <PendingChip onClick={() => onOpen(r.id)} label={`Review ${r.name}'s correction`} />
+              {affectsPay(r) && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--bad)' }}>Affects pay</span>}
+            </div>
+          </div>
+        );
+      })}
+      <ListPending state={state} onRetry={() => void s.reload()} rows={3} cols={4} />
+      {pick && <div style={{ padding: '0 18px 12px' }}><Pager p={paged} /></div>}
+    </NeedsActionShell>
+  );
+}
 
 export function AttendanceCorrections() {
   const s = useStore();
   const st = s.listState('corrections');
-  const today = todayISO();
-  const [cycle, setCycle] = useState<PayCycleDTO | null>(null);
-  const [cycleError, setCycleError] = useState('');
-  const [period, setPeriod] = useState<PeriodId>('cycle');
-  const [draftFrom, setDraftFrom] = useState(s.corrFrom);
-  const [draftTo, setDraftTo] = useState(s.corrTo);
-  const [rangeError, setRangeError] = useState('');
+  // A week or a month, stepped back and forward with the arrows by the title.
+  const [unit, setUnit] = useState<'week' | 'month'>('month');
+  const [offset, setOffset] = useState(0);
   const [filter, setFilter] = useState<Filter>('all');
-  const [mgr, setMgr] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<'approve' | 'decline' | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let live = true;
-    getPayCycle()
-      .then((c) => live && setCycle(c))
-      .catch((e) => {
-        if (!live) return;
-        // A pay cycle setting payroll refuses (409) is HR's to fix: say so rather than guess.
-        setCycleError(e instanceof Error ? e.message : 'Could not read the pay cycle');
-        setCycle({ current: null, previous: null });
-      });
-    return () => { live = false; };
-  }, []);
-
-  // The month stands in for the cycle until payroll's own dates arrive (or when there are none).
-  const monthRange = (k: number) => {
-    const d = new Date(); const f = new Date(d.getFullYear(), d.getMonth() + k, 1);
-    const t = new Date(f.getFullYear(), f.getMonth() + 1, 0);
-    const iso = (x: Date) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
-    return { from: iso(f), to: iso(t) };
-  };
-  const thisCycle = cycle?.current ?? monthRange(0);
-  const lastCycle = cycle?.previous ?? monthRange(-1);
-  const range = period === 'cycle' ? thisCycle : period === 'lastcycle' ? lastCycle : { from: s.corrFrom, to: s.corrTo };
-  const title = period === 'cycle' ? `This cycle · ${span(thisCycle)}` : period === 'lastcycle' ? `Last cycle · ${span(lastCycle)}` : s.corrFrom ? (s.corrFrom === s.corrTo ? dayLabel(s.corrFrom) : `${dayLabel(s.corrFrom)} – ${dayLabel(s.corrTo)}`) : 'Custom range';
-  const waitingForDates = period === 'custom' && !s.corrFrom;
-
-  // Before payroll: this cycle's pending, by whose desk it is on.
-  const inCycle = s.corrs.filter((r) => r.status === 'Pending' && inDateRange(r.refISO, thisCycle.from, thisCycle.to));
-  const earlier = s.corrs.filter((r) => r.status === 'Pending' && workDay(r) < thisCycle.from).length;
-  const managers = useMemo(() => {
-    const m = new Map<string, { pending: number; pay: number; oldest: number }>();
-    for (const r of inCycle) {
-      const k = r.manager || 'No manager';
-      const e = m.get(k) ?? { pending: 0, pay: 0, oldest: 0 };
-      e.pending++;
-      if (affectsPay(r)) e.pay++;
-      e.oldest = Math.max(e.oldest, daysSince(r.ord));
-      m.set(k, e);
-    }
-    return [...m.entries()].sort((a, b) => b[1].pay - a[1].pay || b[1].pending - a[1].pending);
-  }, [inCycle]);
-  const closesIn = daysBetween(today, thisCycle.to);
-
+  const range = stepRange(unit, offset);
   const inPeriod = useMemo(() => s.corrs.filter((r) => inDateRange(r.refISO, range.from, range.to)), [s.corrs, range.from, range.to]);
-  const chartDays = chartDaysOf(range);
-  const series = useMemo(() => {
-    const ix = new Map(chartDays.map((d, i) => [d, i]));
-    const out = KINDS.map((k) => ({ label: KIND[k].label, color: KIND[k].color, values: chartDays.map(() => 0) }));
-    for (const r of inPeriod) {
-      const i = ix.get(workDay(r));
-      if (i !== undefined) out[KINDS.indexOf(kindOf(r))].values[i]++;
-    }
-    return out.filter((x) => x.values.some(Boolean));
-  }, [inPeriod, chartDays.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const stats = useMemo(() => {
-    const byDay = new Map<string, number>();
-    for (const r of inPeriod) byDay.set(workDay(r), (byDay.get(workDay(r)) ?? 0) + 1);
-    const top = [...byDay.entries()].sort((a, b) => b[1] - a[1])[0];
-    return {
-      total: inPeriod.length,
-      pending: inPeriod.filter((r) => r.status === 'Pending').length,
-      pay: inPeriod.filter(affectsPay).length,
-      approved: inPeriod.filter((r) => r.status === 'Approved').length,
-      declined: inPeriod.filter((r) => r.status === 'Declined').length,
-      top,
-    };
-  }, [inPeriod]);
+  const stats = useMemo(() => ({
+    total: inPeriod.length,
+    pending: inPeriod.filter((r) => r.status === 'Pending').length,
+    approved: inPeriod.filter((r) => r.status === 'Approved').length,
+    declined: inPeriod.filter((r) => r.status === 'Declined').length,
+  }), [inPeriod]);
 
   const rows = useMemo(() => {
     let out = inPeriod.slice();
@@ -156,11 +144,10 @@ export function AttendanceCorrections() {
     if (s.corrStatus !== 'all') out = out.filter((r) => r.status === s.corrStatus);
     if (filter === 'pay') out = out.filter(affectsPay);
     else if (filter !== 'all') out = out.filter((r) => kindOf(r) === filter);
-    if (mgr) out = out.filter((r) => (r.manager || 'No manager') === mgr);
     // Pending that costs pay first, then other pending, then the decided; newest raised within each.
     const rank = (r: Correction) => (r.status === 'Pending' ? (affectsPay(r) ? 0 : 1) : 2);
     return out.sort((a, b) => rank(a) - rank(b) || b.ord - a.ord);
-  }, [inPeriod, s.corrSearch, s.corrStatus, filter, mgr]);
+  }, [inPeriod, s.corrSearch, s.corrStatus, filter]);
   const paged = usePaged(rows, `${rows.length}|${rows[0]?.id ?? ''}`);
   const pendingRows = rows.filter((r) => r.status === 'Pending');
   const picked = pendingRows.filter((r) => selected.has(r.id));
@@ -196,123 +183,40 @@ export function AttendanceCorrections() {
       rows,
     );
 
-  const applyCustom = () => {
-    const problem = rangeProblem(draftFrom, draftTo);
-    setRangeError(problem);
-    if (problem) return;
-    s.setCorrFrom(draftFrom);
-    s.setCorrTo(draftTo);
+  /** Brings the list to the top of the screen, once it is there. */
+  const toList = () => {
+    let tries = 0;
+    const go = () => {
+      const el = document.getElementById('corr-list');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      else if (tries++ < 20) setTimeout(go, 50);
+    };
+    setTimeout(go, 50);
   };
-  const seeManager = (name: string) => {
-    setPeriod('cycle');
-    s.setCorrStatus('Pending');
-    setFilter('all');
-    setMgr(name);
-    setSelected(new Set());
-  };
-  const seeEarlier = () => {
-    setPeriod('custom');
-    const from = '2000-01-01', to = isoBefore(thisCycle.from);
-    setDraftFrom(''); setDraftTo(to);
-    s.setCorrFrom(from); s.setCorrTo(to);
-    s.setCorrStatus('Pending');
-    setMgr(null);
-  };
+  const pickStatus = (v: ReqStatus | 'all') => { s.setCorrStatus(v); setSelected(new Set()); toList(); };
 
   const open = openId ? s.corrs.find((r) => r.id === openId) ?? null : null;
   const chip = (on: boolean): CSSProperties => ({ height: 32, padding: '0 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', font: 'inherit', border: `1px solid ${on ? 'var(--sel)' : 'var(--line-2)'}`, background: on ? 'var(--sel)' : 'var(--surface)', color: on ? 'var(--on-sel)' : 'var(--ink)' });
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
-      {(st !== 'ready' || inCycle.length > 0 || earlier > 0) && (
-        <section aria-labelledby="corr-before-payroll" style={{ ...TILE, padding: 0, overflow: 'hidden', border: '1px solid var(--attn-line)', marginBottom: 20 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 22px', background: 'var(--attn-bg)' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <h2 id="corr-before-payroll" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Before payroll</h2>
-              <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>
-                This cycle closes {dayLabel(thisCycle.to)}{closesIn >= 0 ? ` · ${closesIn === 0 ? 'today' : plural(closesIn, 'day') + ' left'}` : ''}
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: 24 }}>
-              <div style={{ display: 'flex', flexDirection: 'column' }}><span style={{ fontSize: 24, fontVariantNumeric: 'tabular-nums' }}>{inCycle.length}</span><span style={{ ...cellSub, color: 'var(--ink-2)' }}>pending this cycle</span></div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}><span style={{ fontSize: 24, fontVariantNumeric: 'tabular-nums', color: 'var(--bad)' }}>{inCycle.filter(affectsPay).length}</span><span style={{ ...cellSub, color: 'var(--ink-2)' }}>affect pay</span></div>
-            </div>
-          </div>
-          {managers.length > 0 && (
-            <div style={{ overflowX: 'auto' }}>
-              <div style={{ minWidth: 620 }}>
-                <div style={{ ...TH('1.6fr .7fr .7fr .7fr auto'), margin: 0, borderRadius: 0 }}>
-                  <Th>WAITING ON</Th><Th>PENDING</Th><Th>AFFECT PAY</Th><Th>OLDEST</Th><Th> </Th>
-                </div>
-                {managers.map(([name, m], i) => (
-                  <div key={name} style={{ ...TR('1.6fr .7fr .7fr .7fr auto', i === managers.length - 1), padding: '10px 22px' }}>
-                    <span style={cellName}>{name}</span>
-                    <span>{m.pending}</span>
-                    <span style={{ fontWeight: m.pay ? 600 : 400, color: m.pay ? 'var(--bad)' : 'var(--ink)' }}>{m.pay}</span>
-                    <span style={{ fontWeight: m.oldest > 2 ? 600 : 400, color: m.oldest > 2 ? 'var(--bad)' : 'var(--ink)' }}>{m.oldest === 0 ? 'Today' : plural(m.oldest, 'day')}</span>
-                    <LinkButton onClick={() => seeManager(name)}>See requests</LinkButton>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {earlier > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 22px', borderTop: '1px solid var(--line)' }}>
-              <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>{plural(earlier, 'more pending', 'more pending')} from earlier cycles. They don’t block this payroll but need fixing.</span>
-              <LinkButton onClick={seeEarlier}>See earlier cycles</LinkButton>
-            </div>
-          )}
-          <ListPending state={st} onRetry={() => void s.reload()} rows={3} cols={4} avatar={false} />
-        </section>
-      )}
+      <CorrNeedsAction state={st} onOpen={setOpenId} />
 
       <Card padded>
         <section aria-labelledby="corr-period" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <h2 id="corr-period" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{title}</h2>
-              <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>By work date. {cycle?.current ? 'Cycle dates come from payroll settings.' : cycleError ? `The pay cycle could not be read (${cycleError}), so a cycle is the calendar month.` : 'No pay cycle is set, so a cycle is the calendar month.'}</span>
-            </div>
-            <PeriodButtons periods={[['cycle', 'This cycle'], ['lastcycle', 'Last cycle'], ['custom', 'Custom']]} period={period} onPeriod={(p) => { setPeriod(p); setSelected(new Set()); }} />
+          <PeriodStepper id="corr-period" title={range.title} unit={unit} onUnit={(u) => { setUnit(u); setOffset(0); setSelected(new Set()); }} onStep={(by) => { setOffset((o) => o + by); setSelected(new Set()); }}
+            hasPrev={s.corrs.some((r) => workDay(r) && workDay(r) < range.from)} hasNext={s.corrs.some((r) => workDay(r) > range.to)} />
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
+            {/* Each tile filters the list below to what it counts, and brings the list into view. */}
+            <StatTile state={st} label="Corrections" value={stats.total} onPick={() => pickStatus('all')} picked={s.corrStatus === 'all'} />
+            <StatTile state={st} label="Pending" value={stats.pending} onPick={() => pickStatus('Pending')} picked={s.corrStatus === 'Pending'} color="var(--p-yellow)"
+              action={stats.pending > 0 && s.corrStatus !== 'Pending' ? <Pill label="Needs action" tone={TO_STAT.Pending} fontSize={11} padding="2px 8px" /> : undefined} />
+            <StatTile state={st} label="Approved" value={stats.approved} onPick={() => pickStatus('Approved')} picked={s.corrStatus === 'Approved'} color="var(--p-green)" />
+            <StatTile state={st} label="Declined" value={stats.declined} onPick={() => pickStatus('Declined')} picked={s.corrStatus === 'Declined'} color="var(--p-red)" />
           </div>
 
-          {period === 'custom' && (
-            <CustomRange
-              applied={!!s.corrFrom}
-              draftFrom={draftFrom}
-              draftTo={draftTo}
-              onDraftFrom={(v) => { setDraftFrom(v); setRangeError(''); }}
-              onDraftTo={(v) => { setDraftTo(v); setRangeError(''); }}
-              onApply={applyCustom}
-              error={rangeError}
-              hint="Pick a date range to see corrections for work days in it."
-              max={today}
-            />
-          )}
-
-          {!waitingForDates && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
-              <StatTile state={st} label="Corrections" value={stats.total} />
-              <StatTile state={st} label="Pending" value={stats.pending} sub={`${stats.pay} affect pay`} attn />
-              <StatTile state={st} label="Approved · Declined" value={<>{stats.approved} <span style={{ fontSize: 17, color: 'var(--ink-3)' }}>· {stats.declined}</span></>} />
-              <StatTile state={st} label="Most corrections in a day" value={stats.top ? stats.top[1] : '—'} sub={stats.top ? <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{dayLabel(stats.top[0])}</span> : 'No corrections'} />
-            </div>
-          )}
-
-          {!waitingForDates && chartDays.length > 1 && (
-            <div style={{ border: '1px solid var(--line)', borderRadius: 16, padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 600 }}>Corrections by work date</h3>
-                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, fontSize: 12.5, color: 'var(--ink-2)' }}>
-                  {series.map((x) => <Key key={x.label} color={x.color}>{x.label}</Key>)}
-                </div>
-              </div>
-              <StackBars days={chartDays} series={series} today={today} />
-            </div>
-          )}
-
-          {!waitingForDates && (
-            <div>
+          <div id="corr-list" style={{ scrollMarginTop: 96 }}>
               <div style={toolbar}>
                 <StatusTabs<ReqStatus | 'all'>
                   options={['all', 'Pending', 'Approved', 'Declined']}
@@ -336,15 +240,6 @@ export function AttendanceCorrections() {
                   <IconDownload stroke="currentColor" /> Export
                 </button>
               </div>
-
-              {mgr && (
-                <div style={{ ...toolbar, fontSize: 12.5, color: 'var(--ink-3)' }}>
-                  Showing
-                  <button type="button" onClick={() => setMgr(null)} aria-label={`Stop filtering by ${mgr}`} style={{ ...chip(true), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    Waiting on {mgr} <IconX size={12} />
-                  </button>
-                </div>
-              )}
 
               {picked.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 14px', borderRadius: 14, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', marginBottom: 12 }}>
@@ -410,8 +305,7 @@ export function AttendanceCorrections() {
                 </div>
                 <Pager p={paged} />
               </div>
-            </div>
-          )}
+          </div>
         </section>
       </Card>
 
@@ -422,10 +316,6 @@ export function AttendanceCorrections() {
   );
 }
 
-const isoBefore = (iso: string) => {
-  const d = dateOf(iso); d.setDate(d.getDate() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
 
 /** One correction: Suwi's checks, what was punched and asked, where, and the decision. */
 function CorrectionDrawer({ r, onClose }: { r: Correction; onClose: () => void }) {
