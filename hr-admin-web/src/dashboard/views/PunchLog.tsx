@@ -234,7 +234,6 @@ export function PunchLog() {
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <h2 id="punch-period" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{title}</h2>
-              <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>One row per person per day. Open a row to see every punch and where it was made. Approvals happen in Attendance corrections.</span>
             </div>
             <PeriodButtons periods={[['today', 'Today'], ['week', 'This week'], ['cycle', cycleWord], ['custom', 'Custom']]} period={period} onPeriod={setPeriod} />
           </div>
