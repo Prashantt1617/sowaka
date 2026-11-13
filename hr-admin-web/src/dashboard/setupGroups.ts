@@ -5,6 +5,11 @@ import type { View } from './theme';
 export type SetupGroup = { key: string; title: string; icon: View; items: { view: View; label: string }[] };
 
 export const SETUP_GROUPS: SetupGroup[] = [
+  { key: 'organisation', title: 'Organisation details', icon: 'organisation', items: [
+    { view: 'organisation', label: 'Organisation profile' },
+    { view: 'departments', label: 'Departments' },
+    { view: 'designations', label: 'Designations' },
+  ] },
   { key: 'attendance', title: 'Attendance', icon: 'shifttypes', items: [
     { view: 'shifttypes', label: 'Shift templates' },
     { view: 'holidaybank', label: 'Holiday bank' },
@@ -13,13 +18,12 @@ export const SETUP_GROUPS: SetupGroup[] = [
   { key: 'payroll', title: 'Payroll', icon: 'payruns', items: [
     { view: 'payschedule', label: 'Pay schedule' },
     { view: 'payheads', label: 'Salary components' },
-    { view: 'statutorycomponents', label: 'Statutory components' },
     { view: 'templates', label: 'Salary templates' },
     { view: 'paiddays', label: 'Paid days templates' },
   ] },
   { key: 'tax', title: 'Tax', icon: 'taxdetails', items: [
     { view: 'taxdetails', label: 'Tax details' },
-    { view: 'payrollconfig', label: 'Statutory & tax settings' },
+    { view: 'statutorycomponents', label: 'Statutory & tax' },
   ] },
   { key: 'performance', title: 'Performance', icon: 'kpi', items: [
     { view: 'kpi', label: 'KPI parameters' },
@@ -28,11 +32,6 @@ export const SETUP_GROUPS: SetupGroup[] = [
   ] },
   { key: 'reimbursements', title: 'Reimbursements', icon: 'reimbursementtypes', items: [
     { view: 'reimbursementtypes', label: 'Reimbursement types' },
-  ] },
-  { key: 'organisation', title: 'Organisation details', icon: 'organisation', items: [
-    { view: 'organisation', label: 'Organisation profile' },
-    { view: 'departments', label: 'Departments' },
-    { view: 'designations', label: 'Designations' },
   ] },
 ];
 

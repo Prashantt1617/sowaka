@@ -1,13 +1,16 @@
-// Payroll › Statutory Components — EPF / ESI / Professional Tax / Labour Welfare
-// Fund / Statutory Bonus. One set of settings for the whole company, read and
-// saved through /admin/payroll/statutory-settings; every payroll run applies it
-// to each person by their pay and work state.
-import { useEffect, useState } from 'react';
+// Setup › Statutory & tax — EPF / ESI / Professional Tax / Labour Welfare Fund /
+// Statutory Bonus / Income tax. Each tab shows the company's own choices on top
+// (one set for the whole company, /admin/payroll/statutory-settings; every
+// payroll run applies them to each person by their pay and work state) and
+// the law's figures for the year below (LawFigures, read only for HR). Every
+// rate and ceiling shown comes from the database, none from this file.
+import { createContext, useContext, useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
 import { ApiError } from '../../services/http';
-import { getStatutorySettings, updateStatutorySettings, upsertStatutoryRule } from '../../services/payroll';
-import type { BonusSettings, EpfSettings, EsiSettings, LwfRule, PtRule, PtSlab, StatutoryOverview, StatutorySettingsInput } from '../../services/payroll';
+import { getStatutoryConfig, getStatutorySettings, listStatutoryRules, updateStatutorySettings, upsertStatutoryRule } from '../../services/payroll';
+import type { BonusSettings, EpfSettings, EsiSettings, LwfRule, PtRule, PtSlab, StatutoryConfig, StatutoryOverview, StatutorySettingsInput } from '../../services/payroll';
+import { LawFigures, type LawSection } from './PayrollConfig';
 import { Card, LoadError, SkeletonForm } from '../ui';
 import { CloseButton } from '../drawers/shell';
 import * as L from './look';
@@ -23,6 +26,20 @@ const TABS: { key: StatTab; label: string }[] = [
   { key: 'tds', label: 'Income Tax (TDS)' },
 ];
 
+/** This year's law row (rates and ceilings), for the figures the company tabs quote. */
+type Law = { epf: StatutoryConfig['epf']; esi: StatutoryConfig['esi']; bonus: StatutoryConfig['bonus']; ceiling: number } | null;
+const LawCtx = createContext<Law>(null);
+const useLaw = () => useContext(LawCtx);
+/** "12%" from 0.12; "…" while the row loads. */
+const pct = (f: number | undefined) => (f === undefined ? '…' : `${+(f * 100).toFixed(2)}%`);
+const inr = (n: number | undefined) => (n === undefined ? '…' : `₹${Math.round(n).toLocaleString('en-IN')}`);
+function fyNow(): string {
+  const d = new Date();
+  const start = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+  return `${start}-${String((start + 1) % 100).padStart(2, '0')}`;
+}
+const LAW_OF: Record<StatTab, LawSection> = { epf: 'epf', esi: 'esi', pt: 'pt', lwf: 'lwf', bonus: 'bonus', tds: 'tax' };
+
 /** What every tab gets: the org's settings and a way to save part of them. */
 type TabProps = { overview: StatutoryOverview; apply: (input: StatutorySettingsInput, done: string) => Promise<boolean>; saving: boolean };
 
@@ -33,6 +50,17 @@ export function StatutoryComponents() {
   const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [lawRow, setLawRow] = useState<StatutoryConfig | null>(null);
+  // States with the company's own PT / LWF rule (the rest use the national default).
+  const [own, setOwn] = useState<{ pt: Set<string>; lwf: Set<string> } | null>(null);
+  const loadOwn = () => listStatutoryRules()
+    .then((rules) => setOwn({ pt: new Set(rules.filter((x) => x.pt).map((x) => x.state.toLowerCase())), lwf: new Set(rules.filter((x) => x.lwf).map((x) => x.state.toLowerCase())) }))
+    .catch(() => setOwn(null));
+
+  useEffect(() => {
+    getStatutoryConfig(fyNow()).then((x) => setLawRow(x.config)).catch(() => setLawRow(null));
+    void loadOwn();
+  }, [attempt]);
 
   useEffect(() => {
     setFailed(false);
@@ -58,7 +86,9 @@ export function StatutoryComponents() {
     }
   };
 
+  const law: Law = lawRow && overview ? { epf: lawRow.epf, esi: lawRow.esi, bonus: lawRow.bonus, ceiling: overview.ceilingPaise / 100 } : null;
   return (
+    <LawCtx.Provider value={law}>
     <div>
       <div style={tabBar}>
         {TABS.map((t) => {
@@ -77,23 +107,41 @@ export function StatutoryComponents() {
           : <Card style={{ padding: 22 }}><SkeletonForm fields={6} /></Card>
       ) : tab === 'epf' ? <EpfTab overview={overview} apply={apply} saving={saving} />
         : tab === 'esi' ? <EsiTab overview={overview} apply={apply} saving={saving} />
-        : tab === 'pt' ? <PtTab overview={overview} onSaved={() => getStatutorySettings().then(setOverview)} />
-        : tab === 'lwf' ? <LwfTab overview={overview} apply={apply} saving={saving} />
+        : tab === 'pt' ? <PtTab overview={overview} own={own?.pt ?? null} onSaved={() => Promise.all([getStatutorySettings().then(setOverview), loadOwn()])} />
+        : tab === 'lwf' ? <LwfTab overview={overview} own={own?.lwf ?? null} apply={apply} saving={saving} />
         : tab === 'tds' ? <TdsTab overview={overview} apply={apply} saving={saving} />
         : <BonusTab overview={overview} apply={apply} saving={saving} />}
+      <div style={{ marginTop: 28 }}>
+        <LawFigures key={tab} section={LAW_OF[tab]} />
+      </div>
     </div>
+    </LawCtx.Provider>
   );
+}
+
+/** Whether a state's PT / LWF is the company's own rule or the national default. */
+function SourceTag({ own, state }: { own: Set<string> | null; state: string }) {
+  if (!own) return null;
+  const mine = own.has(state.toLowerCase());
+  return <span style={L.pill(mine ? 'warn' : 'ok')}><span aria-hidden style={L.pillDot} />{mine ? 'Company rule' : 'National default'}</span>;
 }
 
 /** "1,500" from paise. */
 const rupees = (paise: number) => (paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
 // —— EPF ————————————————————————————————————————————————————————————————
-const EPF_RATES = ['12% of Actual PF Wage', 'Restrict Contribution to ₹25,000 of PF Wage'];
+type RateMode = EpfSettings['employeeRate'];
+const RATE_MODES: RateMode[] = ['actual', 'restricted'];
+/** "12% of Actual PF Wage" / "Restrict Contribution to ₹15,000 of PF Wage", from the law row. */
+function rateLabel(mode: RateMode, law: Law, who: 'employee' | 'employer'): string {
+  return mode === 'actual'
+    ? `${pct(who === 'employee' ? law?.epf.employeeRate : law?.epf.employerRate)} of Actual PF Wage`
+    : `Restrict Contribution to ${inr(law?.ceiling)} of PF Wage`;
+}
 type EpfConfig = {
   epfNumber: string;
-  employeeRate: string;
-  employerRate: string;
+  employeeRate: RateMode;
+  employerRate: RateMode;
   includeEmployer: boolean;
   includeEDLI: boolean;
   includeAdmin: boolean;
@@ -101,13 +149,11 @@ type EpfConfig = {
   proRateRestricted: boolean;
   considerLOP: boolean;
 };
-const RATE_TEXT: Record<EpfSettings['employeeRate'], string> = { actual: EPF_RATES[0], restricted: EPF_RATES[1] };
-const rateMode = (text: string): EpfSettings['employeeRate'] => (text === EPF_RATES[0] ? 'actual' : 'restricted');
 function toEpfConfig(s: EpfSettings): EpfConfig {
   return {
     epfNumber: s.epfNumber ?? '',
-    employeeRate: RATE_TEXT[s.employeeRate],
-    employerRate: RATE_TEXT[s.employerRate],
+    employeeRate: s.employeeRate,
+    employerRate: s.employerRate,
     includeEmployer: s.includeEmployer,
     includeEDLI: s.includeEDLI,
     includeAdmin: s.includeAdmin,
@@ -120,8 +166,8 @@ function fromEpfConfig(c: EpfConfig): Partial<EpfSettings> {
   return {
     enabled: true,
     epfNumber: c.epfNumber.trim(),
-    employeeRate: rateMode(c.employeeRate),
-    employerRate: rateMode(c.employerRate),
+    employeeRate: c.employeeRate,
+    employerRate: c.employerRate,
     includeEmployer: c.includeEmployer,
     includeEDLI: c.includeEDLI,
     includeAdmin: c.includeAdmin,
@@ -190,17 +236,18 @@ function ptSlabText(rule: PtRule): string[] {
     return `${range}: ₹${rupees(slab.amountPaise)} / month${extra}`;
   });
 }
-function PtTab({ overview, onSaved }: { overview: StatutoryOverview; onSaved: () => Promise<unknown> }) {
+function PtTab({ overview, own, onSaved }: { overview: StatutoryOverview; own: Set<string> | null; onSaved: () => Promise<unknown> }) {
   const [editing, setEditing] = useState<string | null>(null);
   return (
     <div>
-      <SectionHead title="Professional Tax" sub="This tax is levied on an employee’s income by the State Government. Tax slabs differ in each state." />
+      <SectionHead title="Professional Tax" sub="Each work state uses the national slabs below unless the company sets its own here." />
       {overview.pt.length === 0 && <EmptyStates />}
       <div style={cardGrid}>
         {overview.pt.map((l) => (
           <div key={l.location} style={stateCard}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
               <div style={{ flex: 1, ...L.cardTitle }}>{l.location}</div>
+              {l.pt && <SourceTag own={own} state={l.state} />}
               {editing !== l.location && (
                 <button type="button" onClick={() => setEditing(l.location)} className="lk-btn" style={L.btnSm}>✎ Edit slabs</button>
               )}
@@ -318,15 +365,18 @@ function lwfEmployerText(rule: LwfRule): string {
   if (e.mode === 'multiple_of_employee') return `${e.factor} * Employees' Contribution`;
   return `${e.percent}% of Gross Pay${e.capPaise !== undefined ? ` (Max Limit : ₹ ${rupees(e.capPaise)})` : ''}`;
 }
-function LwfTab({ overview, apply, saving }: TabProps) {
+function LwfTab({ overview, own, apply, saving }: TabProps & { own: Set<string> | null }) {
   return (
     <div>
-      <SectionHead title="Labour Welfare Fund" sub="Labour Welfare Fund act ensures social security and improves working conditions for employees." />
+      <SectionHead title="Labour Welfare Fund" sub="Each work state uses the national rule below unless the company has its own; switch it off for a state here." />
       {overview.lwf.length === 0 && <EmptyStates />}
       <div style={cardGrid}>
         {overview.lwf.map((s) => (
           <div key={s.state} style={stateCard}>
-            <div style={{ ...L.cardTitle, marginBottom: 12 }}>{s.state}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{ ...L.cardTitle, flex: 1 }}>{s.state}</div>
+              {s.rule && <SourceTag own={own} state={s.state} />}
+            </div>
             {s.rule ? (
               <>
                 <LwfRow label="Employees' Contribution" value={(() => { const t = lwfEmployeeText(s.rule); return <span>{t.main}{t.sub && <><br /><span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>({t.sub})</span></>}</span>; })()} />
@@ -409,14 +459,12 @@ function TdsTab({ overview, apply, saving }: TabProps) {
           </select>
         </label>
       </div>
-      <div style={{ marginTop: 16, background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 14, padding: '12px 14px', fontSize: 13, color: 'var(--warn)', lineHeight: 1.5 }}>
-        FY 2026-27 slabs and limits are confirmed: Budget 2026 left them as they were in FY 2025-26. Meal cards are tax-free up to ₹200 a meal (₹8,800 a month). The rules are re-checked on the 1st of every month. A figure typed on a run always wins over the engine.
-      </div>
     </Card>
   );
 }
 
 function BonusTab({ overview, apply, saving }: TabProps) {
+  const law = useLaw();
   const cfg = toBonusConfig(overview.settings.bonus, overview.states);
   const enabled = overview.settings.bonus.enabled;
   const [draft, setDraft] = useState<BonusConfig>(cfg);
@@ -452,7 +500,7 @@ function BonusTab({ overview, apply, saving }: TabProps) {
             <span style={{ fontSize: 13.5, color: 'var(--ink-3)' }}>of salary or minimum wage earned this year</span>
           </div>
           <div style={{ fontSize: 12.5, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
-            <span style={{ color: 'var(--ink-3)' }}>ⓘ</span> Statutory Bonus rate should be in-between <strong>8.33%</strong> and <strong>20%</strong>, based on the Statutory Bonus Act.
+            <span style={{ color: 'var(--ink-3)' }}>ⓘ</span> Statutory Bonus rate should be in-between <strong>{pct(law?.bonus.minRate)}</strong> and <strong>{pct(law?.bonus.maxRate)}</strong>, based on the Statutory Bonus Act.
           </div>
 
           <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 14, padding: '13px 16px', margin: '0 0 24px', maxWidth: 780 }}>
@@ -571,6 +619,7 @@ type EsiConfig = { esiNumber: string; includeEmployer: boolean };
 const toEsiConfig = (s: EsiSettings): EsiConfig => ({ esiNumber: s.esiNumber ?? '', includeEmployer: s.includeEmployer });
 
 function EsiTab({ overview, apply, saving }: TabProps) {
+  const law = useLaw();
   const cfg = toEsiConfig(overview.settings.esi);
   const enabled = overview.settings.esi.enabled;
   const [draft, setDraft] = useState<EsiConfig>(cfg);
@@ -599,20 +648,20 @@ function EsiTab({ overview, apply, saving }: TabProps) {
           </div>
           <Field label="Employees' Contribution">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <input value="0.75%" disabled style={{ ...inputStyle, background: 'var(--surface-2)', color: 'var(--ink-3)', maxWidth: 200 }} />
+              <input value={pct(law?.esi.employeeRate)} disabled style={{ ...inputStyle, background: 'var(--surface-2)', color: 'var(--ink-3)', maxWidth: 200 }} />
               <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>of Gross Pay</span>
             </div>
           </Field>
           <Field label="Employer's Contribution">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <input value="3.25%" disabled style={{ ...inputStyle, background: 'var(--surface-2)', color: 'var(--ink-3)', maxWidth: 200 }} />
+              <input value={pct(law?.esi.employerRate)} disabled style={{ ...inputStyle, background: 'var(--surface-2)', color: 'var(--ink-3)', maxWidth: 200 }} />
               <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>of Gross Pay</span>
             </div>
           </Field>
           <Check checked={draft.includeEmployer} onChange={(v) => set('includeEmployer', v)} label="Include employer's contribution in employee’s salary structure." />
 
           <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 14, padding: '13px 15px', fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.55, margin: '16px 0', maxWidth: 780 }}>
-            <strong>Note:</strong> ESI deductions will be made only if the employee’s monthly salary is less than or equal to ₹21,000. If the employee gets a salary revision which increases their monthly salary above ₹21,000, they would have to continue making ESI contributions till the end of the contribution period in which the salary was revised (April–September or October–March).
+            <strong>Note:</strong> ESI deductions will be made only if the employee’s monthly salary is less than or equal to {inr(law ? law.esi.grossCeilingPaise / 100 : undefined)}. If the employee gets a salary revision which increases their monthly salary above {inr(law ? law.esi.grossCeilingPaise / 100 : undefined)}, they would have to continue making ESI contributions till the end of the contribution period in which the salary was revised (April–September or October–March).
           </div>
 
           <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
@@ -624,8 +673,8 @@ function EsiTab({ overview, apply, saving }: TabProps) {
         <div>
           <Row label="ESI Number" value={cfg.esiNumber || '—'} />
           <Row label="Deduction Cycle" value="Monthly" />
-          <Row label="Employees' Contribution" value="0.75% of Gross Pay" />
-          <Row label="Employer's Contribution" value="3.25% of Gross Pay" />
+          <Row label="Employees' Contribution" value={`${pct(law?.esi.employeeRate)} of Gross Pay`} />
+          <Row label="Employer's Contribution" value={`${pct(law?.esi.employerRate)} of Gross Pay`} />
           <Row label="Other Details" value={cfg.includeEmployer ? "Employer's contribution is included in employee’s salary structure." : "Employer's contribution is not included in employee’s salary structure."} last />
           <button disabled={saving} onClick={() => void apply({ esi: { enabled: false } }, 'ESI disabled')} style={disableBtn}>🗑 Disable ESI</button>
         </div>
@@ -636,12 +685,13 @@ function EsiTab({ overview, apply, saving }: TabProps) {
 
 // —— EPF read view ——————————————————————————————————————————————————————
 function EpfReadView({ cfg, onDisable }: { cfg: EpfConfig; onDisable: () => void }) {
+  const law = useLaw();
   return (
     <div>
       <Row label="EPF Number" value={cfg.epfNumber || '—'} />
       <Row label="Deduction Cycle" value="Monthly" />
-      <Row label="Employee Contribution Rate" value={cfg.employeeRate} />
-      <Row label="Employer Contribution Rate" value={<span>{cfg.employerRate} <Splitup /></span>} />
+      <Row label="Employee Contribution Rate" value={rateLabel(cfg.employeeRate, law, 'employee')} />
+      <Row label="Employer Contribution Rate" value={<span>{rateLabel(cfg.employerRate, law, 'employer')} <Splitup /></span>} />
       <Row label={<span>Contribution Preferences<br /><span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>(Included in Salary Structure)</span></span>}
         value={
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -652,7 +702,7 @@ function EpfReadView({ cfg, onDisable }: { cfg: EpfConfig; onDisable: () => void
         } />
       <Row label="Allow Employee level Override" value={cfg.overrideAtEmployee ? 'Yes' : 'No'} />
       <Row label="Pro-rate Restricted PF Wage" value={cfg.proRateRestricted ? 'Yes' : 'No'} />
-      <Row label="Consider applicable salary components based on LOP" value={cfg.considerLOP ? 'Yes (when PF wage is less than ₹25,000)' : 'No'} />
+      <Row label="Consider applicable salary components based on LOP" value={cfg.considerLOP ? `Yes (when PF wage is less than ${inr(law?.ceiling)})` : 'No'} />
       <Row label="Eligible for ABRY Scheme" value="No" last />
       <button onClick={onDisable} style={disableBtn}>🗑 Disable EPF</button>
     </div>
@@ -678,6 +728,7 @@ function Pref({ on, text }: { on: boolean; text: string }) {
 // —— View Splitup popover ————————————————————————————————————————————————
 function Splitup() {
   const [open, setOpen] = useState(false);
+  const law = useLaw();
   return (
     <span style={{ position: 'relative', display: 'inline-block' }}>
       <button onClick={() => setOpen((o) => !o)} style={{ background: 'none', border: 'none', color: 'var(--accent-ink)', fontWeight: 500, fontSize: 14, cursor: 'pointer', padding: 0, marginLeft: 4, textDecoration: 'underline', textUnderlineOffset: 3 }}>View Splitup</button>
@@ -691,9 +742,9 @@ function Splitup() {
             <div style={splitHead}>SUB COMPONENTS</div>
             <div style={{ ...splitHead, textAlign: 'right' }}>EMPLOYER'S CONTRIBUTION</div>
             <div style={splitCell}>Employees' Provident Fund (EPF)</div>
-            <div style={{ ...splitCell, textAlign: 'right' }}>3.67% of PF Wage</div>
+            <div style={{ ...splitCell, textAlign: 'right' }}>{pct(law ? law.epf.employerRate - law.epf.epsRate : undefined)} of PF Wage</div>
             <div style={splitCell}>Employees' Pension Scheme</div>
-            <div style={{ ...splitCell, textAlign: 'right' }}>8.33% of PF Wage <Info text="Maximum Employer Contribution for EPS is ₹ 2,083." /></div>
+            <div style={{ ...splitCell, textAlign: 'right' }}>{pct(law?.epf.epsRate)} of PF Wage <Info text={`Maximum Employer Contribution for EPS is ${inr(law ? law.epf.epsRate * law.ceiling : undefined)}.`} /></div>
           </div>
         </div>
       )}
@@ -703,6 +754,7 @@ function Splitup() {
 
 // —— EPF edit form ——————————————————————————————————————————————————————
 function EpfEditForm({ draft, setDraft, onSave, onCancel, saving }: { draft: EpfConfig; setDraft: (c: EpfConfig) => void; onSave: () => void; onCancel: () => void; saving: boolean }) {
+  const law = useLaw();
   const set = <K extends keyof EpfConfig>(k: K, v: EpfConfig[K]) => setDraft({ ...draft, [k]: v });
   return (
     <div>
@@ -716,8 +768,8 @@ function EpfEditForm({ draft, setDraft, onSave, onCancel, saving }: { draft: Epf
       </div>
 
       <Field label="Employee Contribution Rate">
-        <select value={draft.employeeRate} onChange={(e) => set('employeeRate', e.target.value)} style={{ ...inputStyle, maxWidth: 380 }}>
-          {EPF_RATES.map((r) => <option key={r} value={r}>{r}</option>)}
+        <select value={draft.employeeRate} onChange={(e) => set('employeeRate', e.target.value as RateMode)} style={{ ...inputStyle, maxWidth: 380 }}>
+          {RATE_MODES.map((m) => <option key={m} value={m}>{rateLabel(m, law, 'employee')}</option>)}
         </select>
       </Field>
 
@@ -725,15 +777,15 @@ function EpfEditForm({ draft, setDraft, onSave, onCancel, saving }: { draft: Epf
         <label style={fieldLabel}>Employer Contribution Rate</label>
         <Splitup />
       </div>
-      <select value={draft.employerRate} onChange={(e) => set('employerRate', e.target.value)} style={{ ...inputStyle, maxWidth: 380, marginTop: 6, marginBottom: 14 }}>
-        {EPF_RATES.map((r) => <option key={r} value={r}>{r}</option>)}
+      <select value={draft.employerRate} onChange={(e) => set('employerRate', e.target.value as RateMode)} style={{ ...inputStyle, maxWidth: 380, marginTop: 6, marginBottom: 14 }}>
+        {RATE_MODES.map((m) => <option key={m} value={m}>{rateLabel(m, law, 'employer')}</option>)}
       </select>
 
       <Check checked={draft.includeEmployer} onChange={(v) => set('includeEmployer', v)} label="Include employer's contribution in employee’s salary structure." />
       {draft.includeEmployer && (
         <div style={{ marginLeft: 26 }}>
-          <Check checked={draft.includeEDLI} onChange={(v) => set('includeEDLI', v)} label="Include employer's EDLI contribution in employee’s salary structure." info="Employees' Deposit Linked Insurance — a life-cover benefit. The employer contributes 0.50% of the PF wage." />
-          <Check checked={draft.includeAdmin} onChange={(v) => set('includeAdmin', v)} label="Include admin charges in employee’s salary structure." info="EPF administrative charges paid by the employer — 0.50% of the PF wage (minimum ₹500)." />
+          <Check checked={draft.includeEDLI} onChange={(v) => set('includeEDLI', v)} label="Include employer's EDLI contribution in employee’s salary structure." info={`Employees' Deposit Linked Insurance — a life-cover benefit. The employer contributes ${pct(law?.epf.edliRate)} of the PF wage.`} />
+          <Check checked={draft.includeAdmin} onChange={(v) => set('includeAdmin', v)} label="Include admin charges in employee’s salary structure." info={`EPF administrative charges paid by the employer — ${pct(law?.epf.adminRate)} of the PF wage.`} />
         </div>
       )}
       <Check checked={draft.overrideAtEmployee} onChange={(v) => set('overrideAtEmployee', v)} label="Override PF contribution rate at employee level" />
@@ -741,7 +793,7 @@ function EpfEditForm({ draft, setDraft, onSave, onCancel, saving }: { draft: Epf
       <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', margin: '18px 0 8px' }}>PF Configuration when LOP Applied</div>
       <Check checked={draft.proRateRestricted} onChange={(v) => set('proRateRestricted', v)} label="Pro-rate Restricted PF Wage"
         sub="PF contribution will be pro-rated based on the number of days worked by the employee." />
-      <Check checked={draft.considerLOP} onChange={(v) => set('considerLOP', v)} label="Consider all applicable salary components if PF wage is less than ₹25,000 after Loss of Pay"
+      <Check checked={draft.considerLOP} onChange={(v) => set('considerLOP', v)} label={`Consider all applicable salary components if PF wage is less than ${inr(law?.ceiling)} after Loss of Pay`}
         sub="PF wage will be computed using the salary earned in that particular month (based on LOP) rather than the actual amount mentioned in the salary structure." />
 
       <div style={{ display: 'flex', gap: 10, marginTop: 22, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
@@ -753,31 +805,37 @@ function EpfEditForm({ draft, setDraft, onSave, onCancel, saving }: { draft: Epf
 }
 
 // —— Sample EPF Calculation panel ————————————————————————————————————————
-function epfSample(cfg: EpfConfig) {
-  // PF wage ₹30,000, above the ₹25,000 ceiling.
-  const empEPF = 3000; // 12% of 25,000
-  const eps = 2083; // 8.33% of 25,000, capped
-  const emprEPF = 917; // 12% of 25,000 − EPS
-  const edli = cfg.includeEDLI ? 125 : 0; // 0.50% of 25,000
-  const admin = cfg.includeAdmin ? 125 : 0; // 0.50% of 25,000
-  return { empEPF, eps, emprEPF, edli, admin, total: emprEPF + eps + edli + admin };
+/** A PF wage above the ceiling, worked through with this year's rates. */
+function epfSample(cfg: EpfConfig, law: NonNullable<Law>) {
+  const ceiling = law.ceiling;
+  const wage = ceiling + 5000;
+  const base = ceiling; // the restricted wage: the ceiling, as the wage is above it
+  const empEPF = Math.round(law.epf.employeeRate * base);
+  const eps = Math.round(law.epf.epsRate * ceiling);
+  const emprEPF = Math.round(law.epf.employerRate * base) - eps;
+  const edli = cfg.includeEDLI ? Math.round(law.epf.edliRate * ceiling) : 0;
+  const admin = cfg.includeAdmin ? Math.round(law.epf.adminRate * base) : 0;
+  return { wage, base, empEPF, eps, emprEPF, edli, admin, total: emprEPF + eps + edli + admin };
 }
 function EpfSamplePanel({ cfg, onPreview }: { cfg: EpfConfig; onPreview: () => void }) {
-  const s = epfSample(cfg);
+  const law = useLaw();
+  if (!law) return <div style={{ ...tabCard, position: 'sticky', top: 8 }}><div style={L.cardTitle}>Sample EPF Calculation</div><div style={{ ...L.cardNote, marginTop: 6 }}>Shows once this year&rsquo;s PF rates are set up.</div></div>;
+  const s = epfSample(cfg, law);
+  const b = s.base.toLocaleString('en-IN');
   return (
     <div style={{ ...tabCard, position: 'sticky', top: 8 }}>
       <div style={L.cardTitle}>Sample EPF Calculation</div>
-      <div style={{ ...L.cardNote, marginTop: 2, lineHeight: 1.5 }}>Let's assume the PF wage is ₹ 30,000. The breakup of contribution will be:</div>
+      <div style={{ ...L.cardNote, marginTop: 2, lineHeight: 1.5 }}>Let's assume the PF wage is {inr(s.wage)}. The breakup of contribution will be:</div>
 
       <div style={{ marginTop: 16 }}>
         <div style={{ ...L.eyebrow, fontSize: 12, letterSpacing: 0, textTransform: 'none', fontWeight: 500 }}>Employee's Contribution</div>
-        <CalcLine label="EPF (12% of 25000)" value={s.empEPF} />
+        <CalcLine label={`EPF (${pct(law.epf.employeeRate)} of ${b})`} value={s.empEPF} />
         <div style={{ height: 1, background: 'var(--line)', margin: '12px 0' }} />
         <div style={{ ...L.eyebrow, fontSize: 12, letterSpacing: 0, textTransform: 'none', fontWeight: 500 }}>Employer's Contribution</div>
-        <CalcLine label="EPS (8.33% of 25000 (Max of ₹ 25,000))" value={s.eps} />
-        <CalcLine label="EPF (12% of 25000 - EPS)" value={s.emprEPF} />
-        {cfg.includeEDLI && <CalcLine label="EDLI Contribution (0.50% of 25000)" value={s.edli} />}
-        {cfg.includeAdmin && <CalcLine label="Admin Charges (0.50% of 25000)" value={s.admin} />}
+        <CalcLine label={`EPS (${pct(law.epf.epsRate)} of ${b} (Max of ${inr(law.ceiling)}))`} value={s.eps} />
+        <CalcLine label={`EPF (${pct(law.epf.employerRate)} of ${b} - EPS)`} value={s.emprEPF} />
+        {cfg.includeEDLI && <CalcLine label={`EDLI Contribution (${pct(law.epf.edliRate)} of ${b})`} value={s.edli} />}
+        {cfg.includeAdmin && <CalcLine label={`Admin Charges (${pct(law.epf.adminRate)} of ${b})`} value={s.admin} />}
         <div style={{ height: 1, background: 'var(--line)', margin: '12px 0' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>
           <span>Total</span><span>₹ {s.total}</span>
@@ -810,8 +868,10 @@ const PKGS: Pkg[] = [
   { basic: 9000, transport: 1000, telephone: 1500 },
   { basic: 6000, transport: 750, telephone: 500 },
 ];
-const pkgEpf = (p: Pkg) => Math.round(0.12 * Math.min(25000, p.basic + p.transport + p.telephone));
 function EpfPreviewModal({ cfg, onClose }: { cfg: EpfConfig; onClose: () => void }) {
+  const law = useLaw();
+  const ceiling = law?.ceiling ?? 0;
+  const rate = law?.epf.employeeRate ?? 0;
   const [withLOP, setWithLOP] = useState(true);
   const [showCfg, setShowCfg] = useState(false);
   return (
@@ -829,7 +889,7 @@ function EpfPreviewModal({ cfg, onClose }: { cfg: EpfConfig; onClose: () => void
           </button>
           {showCfg && (
             <div style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 10, padding: '12px 14px', margin: '10px 0 4px', fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.6 }}>
-              Employee rate: {cfg.employeeRate}<br />Employer rate: {cfg.employerRate}<br />
+              Employee rate: {rateLabel(cfg.employeeRate, law, 'employee')}<br />Employer rate: {rateLabel(cfg.employerRate, law, 'employer')}<br />
               EDLI: {cfg.includeEDLI ? 'Included' : 'Not included'} · Admin charges: {cfg.includeAdmin ? 'Included' : 'Not included'}<br />
               Consider salary components based on LOP: {cfg.considerLOP ? 'Yes' : 'No'}
             </div>
@@ -850,16 +910,16 @@ function EpfPreviewModal({ cfg, onClose }: { cfg: EpfConfig; onClose: () => void
               <div style={{ textAlign: 'right' }}>PACKAGE 3</div>
             </div>
             <PkgRow name="Basic" note="Always considered for EPF" values={PKGS.map((p) => p.basic)} />
-            <PkgRow name="Transport Allowance" note="Considered for EPF only when PF wage < ₹ 25,000" values={PKGS.map((p) => p.transport)} />
-            <PkgRow name="Telephone Allowance" note="Considered for EPF only when PF wage < ₹ 25,000" values={PKGS.map((p) => p.telephone)} last />
+            <PkgRow name="Transport Allowance" note={`Considered for EPF only when PF wage < ${inr(law?.ceiling)}`} values={PKGS.map((p) => p.transport)} />
+            <PkgRow name="Telephone Allowance" note={`Considered for EPF only when PF wage < ${inr(law?.ceiling)}`} values={PKGS.map((p) => p.telephone)} last />
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', background: 'var(--surface-2)', padding: '16px', alignItems: 'center' }}>
               <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>EPF Contribution {withLOP && <Badge>WITH 15 DAYS LOP</Badge>}</div>
               {PKGS.map((p, i) => {
-                const wage = Math.min(25000, p.basic + p.transport + p.telephone);
+                const wage = Math.min(ceiling, p.basic + p.transport + p.telephone);
                 return (
                   <div key={i} style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>₹ {pkgEpf(p)}</div>
-                    <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>12% of {wage}</div>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>₹ {Math.round(rate * wage)}</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{pct(law?.epf.employeeRate)} of {wage}</div>
                   </div>
                 );
               })}
