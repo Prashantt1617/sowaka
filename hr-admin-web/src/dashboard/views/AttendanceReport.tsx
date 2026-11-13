@@ -31,6 +31,7 @@ import { PdEdit, PdLock } from './pdIcons';
 import * as L from './look';
 import './look.css';
 import './attendance-report.css';
+import { LabeledSelect } from './LabeledSelect';
 
 const cacheKey = (userId: string, from: string, to: string) => `sowaka.report.v3.${userId}.${from}.${to}`;
 const readCached = (key: string): { at: string; report: AttendanceReportDTO } | null => {
@@ -570,17 +571,6 @@ function Who({ p, sub }: { p: Person; sub: string }) {
 
 function Chip({ code, title }: { code: Code; title?: string }) {
   return <span className="ar-chip" title={title} style={{ background: TONE[code].bg, color: TONE[code].fg }}>{code}</span>;
-}
-
-function LabeledSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: [string, string][] }) {
-  return (
-    <label className="ar-sel">
-      <span>{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)}>
-        {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-      </select>
-    </label>
-  );
 }
 
 /** A person's basic details beside the report, with the profile's one Edit. */

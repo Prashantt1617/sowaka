@@ -1,0 +1,6 @@
+.ar-filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.ar-sel { position: relative; display: inline-flex; align-items: center; gap: 10px; height: 46px; padding: 0 40px 0 16px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); }
+.ar-sel span { font-size: 13px; color: var(--ink-3); white-space: nowrap; }
+.ar-sel select { appearance: none; border: 0; background: none; font: inherit; font-size: 15px; font-weight: 500; color: var(--ink); cursor: pointer; padding: 0; outline: none; max-width: 260px; }
+.ar-sel::after { content: ''; position: absolute; right: 18px; top: 50%; width: 7px; height: 7px; border-right: 1.6px solid var(--ink-2); border-bottom: 1.6px solid var(--ink-2); transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+.ar-sel:focus-within { border-color: var(--accent); }

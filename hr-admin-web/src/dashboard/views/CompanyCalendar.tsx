@@ -7,7 +7,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { expandReport, getAttendanceReport, getHolidays, getOutOfLocation } from '../../services/hrms';
 import type { AttendanceReportDTO, HolidayDTO, OutOfLocationDTO, ReportRow } from '../../services/hrms';
-import { LoadError, SelectBox, Skeleton, SkeletonRows } from '../ui';
+import { LoadError, Skeleton, SkeletonRows } from '../ui';
+import { LabeledSelect } from './LabeledSelect';
 import { PersonAvatar } from '../PersonAvatar';
 import { btn, btnClass } from '../ds';
 import { IconDownload } from '../icons';
@@ -54,7 +55,11 @@ export function CompanyCalendar() {
   const today = todayISO();
   const [month, setMonth] = useState(today.slice(0, 7));
   const [metric, setMetric] = useState<Metric>('leave');
-  const [scope, setScope] = useState('company');
+  // Filters, as on the Attendance report: each narrows the people counted; 'all' leaves it open.
+  const [dept, setDept] = useState('all');
+  const [mgr, setMgr] = useState('all');
+  const [loc, setLoc] = useState('all');
+  const [source, setSource] = useState('all');
   const [day, setDay] = useState(today);
   const [report, setReport] = useState<AttendanceReportDTO | null>(null);
   const [error, setError] = useState('');
@@ -90,37 +95,37 @@ export function CompanyCalendar() {
     return () => { live = false; };
   }, []);
 
-  // Everyone still at the company, with their department and manager.
+  // Everyone still at the company, with their department, manager, location and how they punch.
   const people = useMemo(() => {
-    const byId = new Map<string, { name: string; code: string; dept: string; manager: string }>();
+    const byId = new Map<string, { name: string; code: string; dept: string; manager: string; loc: string; source: string }>();
     for (const e of s.empRaw) {
       if (e.lifecycleStatus === 'offboarded' || e.lifecycleStatus === 'terminated') continue;
-      byId.set(e.userId, { name: e.name, code: e.employeeId ?? '', dept: e.department || 'Team', manager: e.managerName ?? '' });
+      const r = report?.people[e.userId];
+      byId.set(e.userId, { name: e.name, code: e.employeeId ?? '', dept: e.department || 'Team', manager: e.managerName ?? '', loc: e.location || r?.location || '', source: r?.punchFormat ?? '' });
     }
     for (const [id, p] of Object.entries(report?.people ?? {})) {
-      if (!byId.has(id)) byId.set(id, { name: p.name, code: p.employeeId, dept: p.department || 'Team', manager: p.manager });
+      if (!byId.has(id)) byId.set(id, { name: p.name, code: p.employeeId, dept: p.department || 'Team', manager: p.manager, loc: p.location || '', source: p.punchFormat || '' });
     }
     return byId;
   }, [s.empRaw, report]);
 
-  const groups = useMemo(() => {
-    const dept = new Map<string, number>(), mgr = new Map<string, number>();
-    for (const p of people.values()) {
-      dept.set(p.dept, (dept.get(p.dept) ?? 0) + 1);
-      if (p.manager) mgr.set(p.manager, (mgr.get(p.manager) ?? 0) + 1);
-    }
-    const sort = (m: Map<string, number>) => [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-    return { dept: sort(dept), mgr: sort(mgr) };
+  // Each filter's choices: the values people have, A to Z.
+  const choices = useMemo(() => {
+    const of = (k: 'dept' | 'manager' | 'loc' | 'source') => [...new Set([...people.values()].map((p) => p[k]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    return { dept: of('dept'), mgr: of('manager'), loc: of('loc'), source: of('source') };
   }, [people]);
 
+  const filtered = dept !== 'all' || mgr !== 'all' || loc !== 'all' || source !== 'all';
   const inScope = (userId: string) => {
-    if (scope === 'company') return true;
+    if (!filtered) return true;
     const p = people.get(userId);
     if (!p) return false;
-    return scope.startsWith('dept:') ? p.dept === scope.slice(5) : p.manager === scope.slice(4);
+    return (dept === 'all' || p.dept === dept) && (mgr === 'all' || p.manager === mgr) && (loc === 'all' || p.loc === loc) && (source === 'all' || p.source === source);
   };
-  const scopeSize = scope === 'company' ? people.size : (scope.startsWith('dept:') ? groups.dept : groups.mgr).find(([n]) => n === scope.slice(scope.indexOf(':') + 1))?.[1] ?? 0;
-  const scopeName = scope === 'company' ? 'Whole company' : scope.startsWith('dept:') ? scope.slice(5) : `${scope.slice(4)}’s team`;
+  const scopeSize = filtered ? [...people.keys()].filter(inScope).length : people.size;
+  const scopeName = filtered
+    ? [dept !== 'all' && dept, mgr !== 'all' && `${mgr}’s team`, loc !== 'all' && loc, source !== 'all' && source].filter(Boolean).join(' · ')
+    : 'Whole company';
 
   // Every hit, by metric and day, for the chosen scope.
   const hits = useMemo(() => {
@@ -162,7 +167,7 @@ export function CompanyCalendar() {
       }
     }
     return out;
-  }, [report, ool, s.leaves, people, scope, first, last, upTo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [report, ool, s.leaves, people, dept, mgr, loc, source, first, last, upTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A day most people had off is the company's week off (or a holiday).
   const offDay = useMemo(() => {
@@ -210,18 +215,13 @@ export function CompanyCalendar() {
             <input type="month" aria-label="Month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} className="pd-inp" style={{ height: 42, borderRadius: 999, fontSize: 14, fontWeight: 500, padding: '0 14px' }} />
             <button type="button" aria-label="Next month" onClick={() => setMonth(shiftMonth(month, 1))} className="pd-round">›</button>
           </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink-2)' }}>
-            Showing
-            <SelectBox value={scope} onChange={(v) => { setScope(v); }}>
-              <option value="company">Whole company · {people.size} people</option>
-              <optgroup label="Department">
-                {groups.dept.map(([n, c]) => <option key={n} value={`dept:${n}`}>{n} · {c} {c === 1 ? 'person' : 'people'}</option>)}
-              </optgroup>
-              <optgroup label="Manager’s team">
-                {groups.mgr.map(([n, c]) => <option key={n} value={`mgr:${n}`}>{n} · {c} {c === 1 ? 'person' : 'people'}</option>)}
-              </optgroup>
-            </SelectBox>
-          </div>
+        </div>
+
+        <div className="ar-filters">
+          <LabeledSelect label="Department" value={dept} onChange={setDept} options={[['all', 'All departments'], ...choices.dept.map((d): [string, string] => [d, d])]} />
+          <LabeledSelect label="Manager" value={mgr} onChange={setMgr} options={[['all', 'All managers'], ...choices.mgr.map((m): [string, string] => [m, m])]} />
+          <LabeledSelect label="Location" value={loc} onChange={setLoc} options={[['all', 'All locations'], ...choices.loc.map((l): [string, string] => [l, l])]} />
+          <LabeledSelect label="Attendance source" value={source} onChange={setSource} options={[['all', 'All sources'], ...choices.source.map((f): [string, string] => [f, f])]} />
         </div>
 
         {error && <LoadError compact text={error} onRetry={() => setAttempt((n) => n + 1)} />}
@@ -241,7 +241,7 @@ export function CompanyCalendar() {
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
           <span style={{ fontSize: 14 }}>
             <b style={{ fontWeight: 600 }}>{mdef.label} · {scopeName}</b>
-            {scope !== 'company' && <span style={{ color: 'var(--ink-3)' }}> ({scopeSize} {scopeSize === 1 ? 'person' : 'people'})</span>}
+            {filtered && <span style={{ color: 'var(--ink-3)' }}> ({scopeSize} {scopeSize === 1 ? 'person' : 'people'})</span>}
             {best && <span style={{ color: 'var(--ink-3)' }}> · highest on {dayLabel(best[0])} with {best[1]}</span>}
           </span>
           <span className="pd-subnote">People counted on each day. Darker means more. Click a date to see who.</span>
