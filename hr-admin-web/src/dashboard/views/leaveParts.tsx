@@ -87,7 +87,7 @@ export function NeedsActionShell({ id, state, summary, chips, children, more }: 
               <button key={c.text} type="button" aria-pressed={c.picked}
                 onClick={() => c.onPick?.()}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 500, padding: '3px 4px 3px 10px', borderRadius: 99, border: 0, cursor: 'pointer', font: 'inherit', lineHeight: 1.5, whiteSpace: 'nowrap',
-                  background: `color-mix(in srgb, ${tone.bg} 28%, var(--surface))`, color: 'var(--ink)', boxShadow: c.picked ? `inset 0 0 0 1.5px ${tone.bg}` : undefined }}>
+                  background: 'var(--surface)', color: 'var(--ink)', boxShadow: c.picked ? `inset 0 0 0 1.5px ${tone.bg}` : undefined }}>
                 <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: tone.bg }} />
                 {c.text}
                 {c.count != null && <span style={{ minWidth: 20, padding: '0 6px', borderRadius: 999, background: tone.bg, color: tone.fg, fontWeight: 700, fontSize: 11.5, lineHeight: '18px', textAlign: 'center' }}>{c.count}</span>}
