@@ -5,7 +5,7 @@ import { TO_STAT } from '../theme';
 import type { ReqStatus } from '../theme';
 import type { Leave } from '../seed';
 import { downloadCsv } from '../export';
-import { Card, EmptyRow, ListPending, Pill, SearchInput, StatusTabs, Th } from '../ui';
+import { Card, EmptyRow, ListPending, Pill, SearchInput, Th } from '../ui';
 import { FiltersButton, FiltersPanel, LabeledSelect } from './LabeledSelect';
 import { useFilterDraft } from './useFilterDraft';
 import type { LoadState } from '../ui';
@@ -113,9 +113,13 @@ export function LeaveRequests() {
   const [offset, setOffset] = useState(0);
   const [dept, setDept] = useState('all');
   const filters = useFilterDraft(
-    { dept, type: s.leaveType, sort: s.leaveSort },
-    (v) => { setDept(v.dept); s.setLeaveType(v.type); s.setLeaveSort(v.sort); },
-    { dept: 'all', type: 'all', sort: 'recent' },
+    { status: s.leaveStatus, dept, type: s.leaveType, sort: s.leaveSort },
+    (v) => {
+      // The On leave tile shows every status; picking one here leaves it.
+      if (v.status !== s.leaveStatus || !onLeave) setOnLeave(false);
+      s.setLeaveStatus(v.status as typeof s.leaveStatus); setDept(v.dept); s.setLeaveType(v.type); s.setLeaveSort(v.sort);
+    },
+    { status: 'all', dept: 'all', type: 'all', sort: 'recent' },
   );
 
   // Custom: the dates applied (kept in the store), from the period on screen when first picked.
@@ -292,15 +296,6 @@ export function LeaveRequests() {
           {!waitingForDates && (
             <div id="leave-list" style={{ scrollMarginTop: 96 }}>
               <div style={toolbar}>
-                <StatusTabs<ReqStatus | 'all' | 'Cancellation'>
-                  options={['all', 'Pending', 'Approved', 'Declined', 'Cancelled', 'Cancellation']}
-                  labels={{ Cancellation: 'Cancellation requests' }}
-                  active={onLeave ? ('' as ReqStatus) : s.leaveStatus}
-                  onSelect={(v) => { setOnLeave(false); s.setLeaveStatus(v); }}
-                  counts={st === 'ready' ? statusCounts : undefined}
-                />
-              </div>
-              <div style={toolbar}>
                 <div style={{ flex: 1, minWidth: 240, display: 'flex' }}>
                   <SearchInput value={s.leaveSearch} onChange={s.setLeaveSearch} placeholder="Search by employee…" width="100%" />
                 </div>
@@ -311,6 +306,8 @@ export function LeaveRequests() {
               </div>
               {filters.open && (
                 <FiltersPanel active={filters.active} dirty={filters.dirty} onApply={filters.apply} onClear={filters.clear}>
+                  <LabeledSelect label="Status" value={filters.draft.status} onChange={(v) => filters.set('status', v)}
+                    options={(['all', 'Pending', 'Approved', 'Declined', 'Cancelled', 'Cancellation'] as const).map((k): [string, string] => [k, `${k === 'all' ? 'All' : k === 'Cancellation' ? 'Cancellation requests' : k}${st === 'ready' && statusCounts[k] != null ? ` · ${statusCounts[k]}` : ''}`])} />
                   <LabeledSelect label="Department" value={filters.draft.dept} onChange={(v) => filters.set('dept', v)} options={[['all', 'All departments'], ...departments.map((d): [string, string] => [d, d])]} />
                   {/* The types that actually appear, so one HR adds shows up here too. */}
                   <LabeledSelect label="Leave type" value={filters.draft.type} onChange={(v) => filters.set('type', v)} options={[['all', 'All types'], ...[...new Set(s.leaves.map((x) => x.type))].sort().map((t): [string, string] => [t, t])]} />

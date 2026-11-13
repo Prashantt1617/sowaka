@@ -5,7 +5,7 @@ import type { ReqStatus } from '../theme';
 import type { Overtime as OvertimeRow } from '../seed';
 import { inDateRange, otShortLabel } from '../adapters';
 import { downloadCsv } from '../export';
-import { Card, EmptyRow, ListPending, Pill, SearchInput, StatusTabs, Th } from '../ui';
+import { Card, EmptyRow, ListPending, Pill, SearchInput, Th } from '../ui';
 import { FiltersButton, FiltersPanel, LabeledSelect } from './LabeledSelect';
 import { useFilterDraft } from './useFilterDraft';
 import type { LoadState } from '../ui';
@@ -95,9 +95,9 @@ export function Overtime() {
   const [dept, setDept] = useState('all');
   const [given, setGiven] = useState<Given>('all');
   const filters = useFilterDraft(
-    { dept, given },
-    (v) => { setDept(v.dept); setGiven(v.given as Given); },
-    { dept: 'all', given: 'all' },
+    { status: s.otStatus, dept, given },
+    (v) => { s.setOtStatus(v.status as typeof s.otStatus); setDept(v.dept); setGiven(v.given as Given); },
+    { status: 'all', dept: 'all', given: 'all' },
   );
   const today = todayISO();
 
@@ -241,14 +241,6 @@ export function Overtime() {
           {!waitingForDates && (
             <div id="ot-list" style={{ scrollMarginTop: 96 }}>
               <div style={toolbar}>
-                <StatusTabs<ReqStatus | 'all'>
-                  options={['all', 'Pending', 'Approved', 'Declined']}
-                  active={s.otStatus}
-                  onSelect={s.setOtStatus}
-                  counts={st === 'ready' ? statusCounts : undefined}
-                />
-              </div>
-              <div style={toolbar}>
                 <div style={{ flex: 1, minWidth: 240, display: 'flex' }}>
                   <SearchInput value={s.otSearch} onChange={s.setOtSearch} placeholder="Search by employee…" width="100%" />
                 </div>
@@ -259,6 +251,8 @@ export function Overtime() {
               </div>
               {filters.open && (
                 <FiltersPanel active={filters.active} dirty={filters.dirty} onApply={filters.apply} onClear={filters.clear}>
+                  <LabeledSelect label="Status" value={filters.draft.status} onChange={(v) => filters.set('status', v)}
+                    options={(['all', 'Pending', 'Approved', 'Declined'] as const).map((k): [string, string] => [k, `${k === 'all' ? 'All' : k}${st === 'ready' && statusCounts[k] != null ? ` · ${statusCounts[k]}` : ''}`])} />
                   <LabeledSelect label="Department" value={filters.draft.dept} onChange={(v) => filters.set('dept', v)} options={[['all', 'All departments'], ...departments.map((d): [string, string] => [d, d])]} />
                   <LabeledSelect label="Given as" value={filters.draft.given} onChange={(v) => filters.set('given', v)} options={[['all', 'Pay and comp-off'], ['pay', 'Pay'], ['comp', 'Comp-off']]} />
                 </FiltersPanel>
