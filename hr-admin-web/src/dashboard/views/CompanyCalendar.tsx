@@ -179,8 +179,13 @@ export function CompanyCalendar() {
       if (late) add('late', r.date, r.userId, `In at ${clock(r.punchIn)} · ${r.lateByMinutes} min late`);
       if (early) add('early', r.date, r.userId, `Out at ${clock(r.punchOut)} · ${r.earlyByMinutes} min early`);
       if (r.status === 'half_day') add('half', r.date, r.userId, `${clock(r.punchIn)} – ${clock(r.punchOut)}`);
-      if (r.status === 'missed_punch' && !r.shiftRunning) add('missed', r.date, r.userId, !r.punchIn && !r.punchOut ? 'Both punches missed' : !r.punchOut ? `Punch-out missed · in at ${clock(r.punchIn)}` : 'Punch-in missed');
-      if (r.status === 'absent' && !r.shiftRunning) add('absent', r.date, r.userId, 'No punch, no leave');
+      // As the Attendance report words it: which punch is missing, or both. A day with no punch at all is
+      // listed under Missed punch (payroll still counts it as absent); Absent is what HR marked, or too few hours.
+      if (r.status === 'missed_punch' && !r.shiftRunning) add('missed', r.date, r.userId, !r.punchIn ? 'Missing punch-in' : `Missing punch-out${late ? ' · came in late' : ''}`);
+      if (r.status === 'absent' && !r.shiftRunning) {
+        if (!r.punchIn && !r.punchOut && r.source !== 'hr') add('missed', r.date, r.userId, 'Both punches missing');
+        else add('absent', r.date, r.userId, r.source === 'hr' ? 'Marked absent by HR' : `${clock(r.punchIn)} – ${clock(r.punchOut)} · too few hours`);
+      }
       if (r.status === 'on_leave' || r.status === 'unpaid_leave') {
         const l = leaveOn(r.userId, r.date);
         // Paid and unpaid leave are one count; an unpaid type says so on its row.
