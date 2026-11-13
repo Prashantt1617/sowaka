@@ -12,8 +12,8 @@ import { CAL_TONE, MarkDay } from './MarkDay';
 import { LoadError, Pill, Skeleton, SkeletonRows } from '../ui';
 import { LabeledSelect } from './LabeledSelect';
 import { PersonAvatar } from '../PersonAvatar';
-import { btn, btnClass } from '../ds';
-import { IconDownload } from '../icons';
+import { btn, btnClass, iconBtn } from '../ds';
+import { IconDownload, IconEye } from '../icons';
 import { downloadCsv } from '../export';
 import { canOpen } from '../access';
 import { TO_STAT } from '../theme';
@@ -437,7 +437,7 @@ export function CompanyCalendar() {
                     {metric !== 'present' && (
                       <td style={{ textAlign: 'right' }}>
                         {metric === 'leave' ? (
-                          h.leaveId && <button type="button" onClick={() => s.setDrawerId(h.leaveId!)} className="pd-btn" style={{ height: 34, padding: '0 14px', fontSize: 13 }}>Review</button>
+                          h.leaveId && <button type="button" onClick={() => s.setDrawerId(h.leaveId!)} aria-label={`Open ${h.name}'s leave`} className="ds-icon-btn" style={{ ...iconBtn(34), marginLeft: 'auto' }}><IconEye stroke="currentColor" /></button>
                         ) : (metric === 'late' || metric === 'early') ? (
                           <button type="button" disabled={opening === h.userId} onClick={() => setConfirmRemove({ hit: h, which: metric })} className="pd-btn" style={{ height: 34, padding: '0 14px', fontSize: 13 }}>
                             {opening === h.userId ? 'Removing…' : metric === 'late' ? 'Remove late mark' : 'Remove early mark'}
