@@ -15,6 +15,7 @@ import {
 } from './leaveDays';
 import type { PeriodId } from './leaveDays';
 import { CustomRange, DayBars, Flag, LeaveRow, LinkButton, NeedsActionShell, PendingChip, PeriodButtons, StatTile, Swatch, Waiting } from './leaveParts';
+import { Pager, usePaged } from './Pager';
 
 const NEEDS_ACTION_SHOWN = 3;
 const PERIODS: [PeriodId, string][] = [['last', 'Last month'], ['week', 'This week'], ['month', 'This month'], ['next', 'Next month'], ['all', 'All dates'], ['custom', 'Custom']];
@@ -162,6 +163,7 @@ export function LeaveRequests() {
     else if (sort === 'days') out.sort((a, b) => b.dayN - a.dayN);
     return out;
   }, [inPeriod, cancellations, s.leaveSearch, s.leaveStatus, s.leaveType, s.leaveSort, dept]);
+  const paged = usePaged(rows, `${rows.length}|${rows[0]?.id ?? ''}`);
 
   const statusCounts = useMemo(() => {
     const c: Partial<Record<ReqStatus | 'all' | 'Cancellation', number>> = { all: inPeriod.length };
@@ -361,10 +363,11 @@ export function LeaveRequests() {
                     <Th>STATUS</Th>
                     <Th align="right">APPLIED</Th>
                   </div>
-                  {rows.map((r, i) => <LeaveRow key={r.id} r={r} last={i === rows.length - 1} onOpen={() => s.setDrawerId(r.id)} />)}
+                  {paged.rows.map((r, i) => <LeaveRow key={r.id} r={r} last={i === paged.rows.length - 1} onOpen={() => s.setDrawerId(r.id)} />)}
                   <ListPending state={st} onRetry={() => void s.reload()} cols={8} />
                   {st === 'ready' && rows.length === 0 && <EmptyRow text="No requests match your filters." />}
                 </div>
+                <Pager p={paged} />
               </div>
             </div>
           )}

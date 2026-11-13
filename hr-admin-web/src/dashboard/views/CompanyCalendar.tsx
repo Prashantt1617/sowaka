@@ -21,6 +21,7 @@ import type { View } from '../theme';
 import { useAuth } from '../auth/AuthContext';
 import { dateOf, dayLabel, daysIn, isoOf, leaveDates, todayISO } from './leaveDays';
 import './people.css';
+import { Pager, usePaged } from './Pager';
 
 type Metric = 'present' | 'late' | 'early' | 'half' | 'missed' | 'ool' | 'leave';
 /** One colour per thing counted; none of them the amber the Time office pages dropped. */
@@ -248,6 +249,7 @@ export function CompanyCalendar() {
   const gradeMax = Math.max(1, ...days.map((d) => (offDay(d) ? 0 : countOn(metric, d) ?? 0)));
 
   const selected = listOf(metric, day);
+  const paged = usePaged(selected.slice().sort((a, b) => a.name.localeCompare(b.name)), `${metric}|${day}|${missKind}|${dept}|${mgr}|${loc}|${source}`);
   const selCount = countOn(metric, day);
 
   const exportDay = () =>
@@ -451,11 +453,12 @@ export function CompanyCalendar() {
         {loading ? <SkeletonRows rows={4} cols={4} /> : selected.length === 0 ? (
           <div className="pd-empty">{selCount === null ? 'Not yet' : `Nobody ${mdef.phrase}`}</div>
         ) : (
+          <>
           <div className="pd-tbl-wrap">
             <table className="pd-t">
               <thead><tr><th>Employee</th>{metric !== 'leave' && <><th>Punch in</th><th>Punch out</th></>}{metric !== 'present' && <th>{mdef.head}</th>}<th>Manager</th>{metric === 'leave' && <th>Status</th>}{metric !== 'present' && <th aria-label="Action" />}</tr></thead>
               <tbody>
-                {selected.slice().sort((a, b) => a.name.localeCompare(b.name)).map((h) => (
+                {paged.rows.map((h) => (
                   <tr key={h.userId}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -490,6 +493,8 @@ export function CompanyCalendar() {
               </tbody>
             </table>
           </div>
+          <Pager p={paged} />
+          </>
         )}
       </section>
       )}

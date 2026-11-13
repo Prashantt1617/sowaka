@@ -18,6 +18,7 @@ import { useAuth } from '../auth/AuthContext';
 import { addDays, chartDaysOf, dateOf, dayLabel, daysBetween, MON, rangeProblem, todayISO } from './leaveDays';
 import type { PeriodId } from './leaveDays';
 import { CustomRange, Key, LinkButton, PeriodButtons, StackBars, StatTile } from './leaveParts';
+import { Pager, usePaged } from './Pager';
 
 const COLS = '1.7fr 1fr .8fr .8fr .7fr 1.6fr 1.2fr 48px';
 type Counted = 'present' | 'late' | 'early' | 'half' | 'open' | 'lateopen' | 'waiting' | 'corr' | 'missed' | 'absent' | 'leave' | 'none';
@@ -173,6 +174,7 @@ export function PunchLog() {
     if (q) out = out.filter((r) => r.name.toLowerCase().includes(q) || r.employeeCode.toLowerCase().includes(q) || r.where.toLowerCase().includes(q) || r.whereSub.toLowerCase().includes(q));
     return out;
   }, [rows, where, reason, counted, dept, search]);
+  const paged = usePaged(shown, `${where}|${reason}|${counted}|${dept}|${search}|${rows.length}`);
 
   const chartDays = chartDaysOf(range);
   const series = useMemo(() => {
@@ -337,10 +339,10 @@ export function PunchLog() {
                     <Th>COUNTED AS</Th>
                     <Th align="right"> </Th>
                   </div>
-                  {shown.map((r, i) => {
+                  {paged.rows.map((r, i) => {
                     const c = COUNTED[r.counted];
                     return (
-                      <div key={r.key} className="dc-row" onClick={() => setOpenKey(r.key)} style={{ ...TR(COLS, i === shown.length - 1), cursor: 'pointer' }}>
+                      <div key={r.key} className="dc-row" onClick={() => setOpenKey(r.key)} style={{ ...TR(COLS, i === paged.rows.length - 1), cursor: 'pointer' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                           <PersonAvatar name={r.name} userId={r.userId} />
                           <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -368,6 +370,7 @@ export function PunchLog() {
                   {state === 'loading' && <ListPending state="loading" cols={8} />}
                   {state === 'ready' && shown.length === 0 && <EmptyRow text={rows.length ? 'No punches match your filters.' : 'No punches in this period yet.'} />}
                 </div>
+                <Pager p={paged} />
               </div>
             </div>
           )}

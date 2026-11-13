@@ -13,6 +13,7 @@ import { IconDownload } from '../icons';
 import { chartDaysOf, dayLabel, daysSince, PENDING_ROW, periodRange, plural, rangeProblem, SLOW_DAYS, todayISO } from './leaveDays';
 import type { PeriodId } from './leaveDays';
 import { CustomRange, DayBars, NeedsActionShell, PendingChip, PeriodButtons, StatTile, Swatch, Waiting } from './leaveParts';
+import { Pager, usePaged } from './Pager';
 
 const COLS = '1.5fr .95fr .9fr 1.35fr 1.15fr 1.25fr 1fr .75fr';
 type Given = 'all' | 'pay' | 'comp';
@@ -133,6 +134,7 @@ export function Overtime() {
     if (given !== 'all') out = out.filter((r) => givenAs(r)[given]);
     return out.sort((a, b) => b.ord - a.ord);
   }, [inPeriod, s.otSearch, s.otStatus, dept, given]);
+  const paged = usePaged(rows, `${rows.length}|${rows[0]?.id ?? ''}`);
 
   const statusCounts = useMemo(() => {
     const c: Partial<Record<ReqStatus | 'all', number>> = { all: inPeriod.length };
@@ -273,11 +275,11 @@ export function Overtime() {
                     <Th>STATUS</Th>
                     <Th align="right">APPLIED</Th>
                   </div>
-                  {rows.map((r, i) => {
+                  {paged.rows.map((r, i) => {
                     const pend = r.status === 'Pending';
                     const open = () => s.setOtDrawerId(r.id);
                     return (
-                      <div key={r.id} className="dc-row" onClick={open} style={{ ...TR(COLS, i === rows.length - 1), cursor: 'pointer', ...(pend ? PENDING_ROW : null) }}>
+                      <div key={r.id} className="dc-row" onClick={open} style={{ ...TR(COLS, i === paged.rows.length - 1), cursor: 'pointer', ...(pend ? PENDING_ROW : null) }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                           <PersonAvatar name={r.name} userId={r.submitterId} />
                           <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -314,6 +316,7 @@ export function Overtime() {
                   <ListPending state={st} onRetry={() => void s.reload()} cols={8} />
                   {st === 'ready' && rows.length === 0 && <EmptyRow text="No overtime requests match your filters." />}
                 </div>
+                <Pager p={paged} />
               </div>
             </div>
           )}

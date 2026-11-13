@@ -25,6 +25,7 @@ import { DrawerHeader, DrawerShell, InfoGrid, RemarkBlock } from '../drawers/she
 import { chartDaysOf, dateOf, dayLabel, daysBetween, daysSince, MON, PENDING_ROW, plural, rangeProblem, todayISO } from './leaveDays';
 import type { PeriodId } from './leaveDays';
 import { CustomRange, Key, LinkButton, PendingChip, PeriodButtons, StackBars, StatTile } from './leaveParts';
+import { Pager, usePaged } from './Pager';
 
 const COLS = '32px 1.5fr .95fr 1.15fr 1.3fr .9fr 1.2fr 1fr 1.1fr';
 type Kind = CorrectionKind;
@@ -160,6 +161,7 @@ export function AttendanceCorrections() {
     const rank = (r: Correction) => (r.status === 'Pending' ? (affectsPay(r) ? 0 : 1) : 2);
     return out.sort((a, b) => rank(a) - rank(b) || b.ord - a.ord);
   }, [inPeriod, s.corrSearch, s.corrStatus, filter, mgr]);
+  const paged = usePaged(rows, `${rows.length}|${rows[0]?.id ?? ''}`);
   const pendingRows = rows.filter((r) => r.status === 'Pending');
   const picked = pendingRows.filter((r) => selected.has(r.id));
   const allPicked = pendingRows.length > 0 && picked.length === pendingRows.length;
@@ -368,11 +370,11 @@ export function AttendanceCorrections() {
                     <Th>MANAGER</Th>
                     <Th>STATUS</Th>
                   </div>
-                  {rows.map((r, i) => {
+                  {paged.rows.map((r, i) => {
                     const pend = r.status === 'Pending';
                     const k = KIND[kindOf(r)];
                     return (
-                      <div key={r.id} className="dc-row" onClick={() => setOpenId(r.id)} style={{ ...TR(COLS, i === rows.length - 1), cursor: 'pointer', ...(pend ? PENDING_ROW : null), ...(selected.has(r.id) && pend ? { background: 'color-mix(in srgb, var(--accent) 14%, var(--surface))' } : null) }}>
+                      <div key={r.id} className="dc-row" onClick={() => setOpenId(r.id)} style={{ ...TR(COLS, i === paged.rows.length - 1), cursor: 'pointer', ...(pend ? PENDING_ROW : null), ...(selected.has(r.id) && pend ? { background: 'color-mix(in srgb, var(--accent) 14%, var(--surface))' } : null) }}>
                         <div onClick={(e) => e.stopPropagation()}>
                           {pend && <input type="checkbox" aria-label={`Select ${r.name}, ${r.workDate}`} checked={selected.has(r.id)} onChange={() => toggle(r.id)} />}
                         </div>
@@ -405,6 +407,7 @@ export function AttendanceCorrections() {
                   <ListPending state={st} onRetry={() => void s.reload()} cols={8} />
                   {st === 'ready' && rows.length === 0 && <EmptyRow text="No attendance corrections match your filters." />}
                 </div>
+                <Pager p={paged} />
               </div>
             </div>
           )}
