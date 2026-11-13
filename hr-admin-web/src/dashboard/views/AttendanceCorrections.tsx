@@ -13,7 +13,8 @@ import type { ReqStatus } from '../theme';
 import type { Correction, CorrectionKind } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
-import { Card, EmptyRow, ListPending, Pill, SearchInput, StatusTabs, Th } from '../ui';
+import { Card, EmptyRow, ListPending, Pill, SearchInput, Th } from '../ui';
+import { LabeledSelect } from './LabeledSelect';
 import { PersonAvatar } from '../PersonAvatar';
 import { btn, btnClass, cellName, cellSub, textareaStyle, TH, toolbar, TR } from '../ds';
 import { IconDownload } from '../icons';
@@ -77,6 +78,9 @@ export function AttendanceCorrections() {
   const [openId, setOpenId] = useState<string | null>(null);
   // Employees tile: the list becomes one row per person with how many corrections they raised;
   // picking a person shows only theirs.
+  // Status and Correction type sit behind the Filters button; picks count once applied.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [draft, setDraft] = useState<{ status: ReqStatus | 'all'; type: Filter }>({ status: 'Pending', type: 'all' });
   const [byPerson, setByPerson] = useState(false);
   const [person, setPerson] = useState<string | null>(null);
 
@@ -165,6 +169,7 @@ export function AttendanceCorrections() {
     };
     setTimeout(go, 50);
   };
+  const activeFilters = Number(s.corrStatus !== 'all') + Number(filter !== 'all');
   const pickStatus = (v: ReqStatus | 'all') => { setByPerson(false); s.setCorrStatus(v); setSelected(new Set()); toList(); };
 
   const open = openId ? s.corrs.find((r) => r.id === openId) ?? null : null;
@@ -234,25 +239,30 @@ export function AttendanceCorrections() {
                   <button type="button" onClick={() => { setPerson(null); setByPerson(true); }} className="pd-btn ghost" style={{ height: 32, fontSize: 12.5 }}>Back to employees</button>
                 </div>
               )}
-              <div style={{ ...toolbar, flexWrap: 'wrap', alignItems: 'center' }}>
-                <StatusTabs<ReqStatus | 'all'>
-                  options={['all', 'Pending', 'Approved', 'Declined']}
-                  active={s.corrStatus}
-                  onSelect={(v) => { s.setCorrStatus(v); setSelected(new Set()); }}
-                  counts={st === 'ready' ? statusCounts : undefined}
-                />
-                <div role="group" aria-label="Filter" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {FILTERS.map(([f, label]) => (
-                    <button key={f} type="button" aria-pressed={filter === f} onClick={() => { setFilter(f); setSelected(new Set()); }} style={chip(filter === f)}>{label}</button>
-                  ))}
-                </div>
-                <div style={{ flex: '1 1 220px', maxWidth: 320, display: 'flex', marginLeft: 'auto' }}>
+              {/* As on the Company calendar: Status and Correction type behind a Filters button, applied together. */}
+              <div style={{ ...toolbar, alignItems: 'center' }}>
+                <div style={{ flex: '1 1 220px', maxWidth: 360, display: 'flex' }}>
                   <SearchInput value={s.corrSearch} onChange={s.setCorrSearch} placeholder="Search employee or manager" width="100%" />
                 </div>
+                <button type="button" onClick={() => { setDraft({ status: s.corrStatus, type: filter }); setFiltersOpen((o) => !o); }} aria-expanded={filtersOpen} className={btnClass()}
+                  style={{ ...btn(), marginLeft: 'auto', gap: 8, background: activeFilters ? 'var(--accent-soft)' : undefined, color: activeFilters ? 'var(--accent-ink)' : undefined }}>
+                  Filters{activeFilters ? ` · ${activeFilters}` : ''}
+                  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden style={{ transform: filtersOpen ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }}><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </button>
                 <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
                   <IconDownload stroke="currentColor" /> Export
                 </button>
               </div>
+              {filtersOpen && (
+                <div className="ar-filters compact" style={{ marginBottom: 14 }}>
+                  <LabeledSelect label="Status" value={draft.status} onChange={(v) => setDraft((d) => ({ ...d, status: v as ReqStatus | 'all' }))}
+                    options={(['all', 'Pending', 'Approved', 'Declined'] as const).map((k): [string, string] => [k, `${k === 'all' ? 'All' : k}${st === 'ready' && statusCounts[k] != null ? ` · ${statusCounts[k]}` : ''}`])} />
+                  <LabeledSelect label="Correction type" value={draft.type} onChange={(v) => setDraft((d) => ({ ...d, type: v as Filter }))}
+                    options={FILTERS.map(([k, label]): [string, string] => [k, label])} />
+                  <button type="button" onClick={() => { s.setCorrStatus(draft.status); setFilter(draft.type); setSelected(new Set()); setFiltersOpen(false); }} className="pd-btn primary">Apply</button>
+                  {activeFilters > 0 && <button type="button" onClick={() => { s.setCorrStatus('all'); setFilter('all'); setSelected(new Set()); setFiltersOpen(false); }} className="pd-btn ghost">Clear</button>}
+                </div>
+              )}
 
               {picked.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 14px', borderRadius: 14, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', marginBottom: 12 }}>
