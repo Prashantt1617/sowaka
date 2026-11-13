@@ -139,7 +139,7 @@ const statTile: CSSProperties = { border: '1px solid var(--line)', borderRadius:
 const statNum: CSSProperties = { fontSize: 26, fontWeight: 400, letterSpacing: '-.02em', fontVariantNumeric: 'tabular-nums' };
 /** One figure in a period's summary; `attn` is the Pending tile, in the attention tint. */
 export function StatTile({ label, value, unit, sub, state, attn, action }: {
-  label: string;
+  label: ReactNode;
   value: ReactNode;
   unit?: string;
   sub?: ReactNode;

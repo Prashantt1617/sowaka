@@ -36,8 +36,10 @@ const COUNTED: Record<Counted, { label: string; bg: string; fg: string }> = {
   leave: { label: 'On leave', bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' },
   none: { label: '—', bg: 'var(--mute-bg)', fg: 'var(--ink-3)' },
 };
-// Teal, as the design has it: apart from the accent blue of In office.
-const OOL_COLOR = 'var(--t-mint-i)';
+// In office green, out of office yellow.
+const OFFICE_COLOR = 'var(--p-green)';
+const OOL_COLOR = 'var(--p-yellow)';
+const Dot = ({ color }: { color: string }) => <span aria-hidden style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: color, marginRight: 6, verticalAlign: 0 }} />;
 const clock = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : '—');
 const hoursOf = (a: string | null, b: string | null) => {
   if (!a || !b) return '—';
@@ -177,7 +179,7 @@ export function PunchLog() {
       if (i === undefined || !r.punchIn && !r.outside) continue;
       (r.ool ? away : office)[i]++;
     }
-    return [{ label: 'In office', color: 'var(--accent)', values: office }, { label: 'Out of location', color: OOL_COLOR, values: away }];
+    return [{ label: 'In office', color: OFFICE_COLOR, values: office }, { label: 'Out of location', color: OOL_COLOR, values: away }];
   }, [rows, chartDays.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = useMemo(() => {
@@ -258,8 +260,8 @@ export function PunchLog() {
           {!waitingForDates && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
               {/* Three counts: where the punches were made, and what still waits on a decision. */}
-              <StatTile state={state} label="In office punches" value={stats.office} sub="At an office or on its device" />
-              <StatTile state={state} label="Out of office punches" value={stats.ool} sub={stats.ool ? stats.reasons : 'None in this period'} />
+              <StatTile state={state} label={<><Dot color={OFFICE_COLOR} />In office punches</>} value={stats.office} sub="At an office or on its device" />
+              <StatTile state={state} label={<><Dot color={OOL_COLOR} />Out of office punches</>} value={stats.ool} sub={stats.ool ? stats.reasons : 'None in this period'} />
               <StatTile state={state} label="Punches waiting for approval" value={stats.oolWaiting + stats.waitingCorr}
                 sub={`${stats.oolWaiting} out of office · ${stats.waitingCorr} ${stats.waitingCorr === 1 ? 'correction' : 'corrections'}`} attn={stats.oolWaiting + stats.waitingCorr > 0}
                 action={canOpen(user, 'attendance') ? <LinkButton onClick={() => s.setView('attendance')}>Open</LinkButton> : undefined} />
@@ -271,7 +273,7 @@ export function PunchLog() {
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                 <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 600 }}>People punched in, day by day</h3>
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, fontSize: 12.5, color: 'var(--ink-2)' }}>
-                  <Key color="var(--accent)">In office</Key>
+                  <Key color={OFFICE_COLOR}>In office</Key>
                   <Key color={OOL_COLOR}>Out of location</Key>
                 </div>
               </div>
@@ -343,7 +345,7 @@ export function PunchLog() {
                         <div style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{hoursOf(r.punchIn, r.punchOut)}</div>
                         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {r.ool && <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: OOL_COLOR, flexShrink: 0 }} />}{r.where}
+                            <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: r.ool ? OOL_COLOR : OFFICE_COLOR, flexShrink: 0 }} />{r.where}
                           </span>
                           {r.whereSub && <span style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.whereSub}</span>}
                         </div>
