@@ -9,6 +9,8 @@ type Loader = () => Promise<{ default: ComponentType }>;
 const LOADERS: Partial<Record<View, Loader>> = {
   organisation: () => import('./views/Organisation').then((m) => ({ default: m.Organisation })),
   overview: () => import('./views/Overview').then((m) => ({ default: m.Overview })),
+  setup: () => import('./views/Setup').then((m) => ({ default: m.Setup })),
+  bulkassign: () => import('./views/Setup').then((m) => ({ default: m.BulkAssign })),
   leave: () => import('./views/LeaveRequests').then((m) => ({ default: m.LeaveRequests })),
   overtime: () => import('./views/Overtime').then((m) => ({ default: m.Overtime })),
   attendance: () => import('./views/AttendanceCorrections').then((m) => ({ default: m.AttendanceCorrections })),
@@ -43,7 +45,8 @@ const LOADERS: Partial<Record<View, Loader>> = {
   payrollreports: () => import('./views/PayrollReports').then((m) => ({ default: m.PayrollReports })),
   statutorycomponents: () => import('./views/StatutoryComponents').then((m) => ({ default: m.StatutoryComponents })),
   payruns: () => import('./views/PayrollRuns').then((m) => ({ default: m.PayrollRuns })),
-  payrollconfig: () => import('./views/PayrollConfig').then((m) => ({ default: m.PayrollConfig })),
+  // Merged into Statutory & tax; the old view opens it.
+  payrollconfig: () => import('./views/StatutoryComponents').then((m) => ({ default: m.StatutoryComponents })),
   investmentproofs: () => import('./views/InvestmentProofs').then((m) => ({ default: m.InvestmentProofs })),
   fbprequests: () => import('./views/FbpRequests').then((m) => ({ default: m.FbpRequests })),
   fbpsplits: () => import('./views/FbpSplits').then((m) => ({ default: m.FbpSplits })),

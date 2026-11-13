@@ -5,6 +5,8 @@ export type Pill = { bg: string; fg: string };
 export type View =
   | 'organisation'
   | 'overview'
+  | 'setup'
+  | 'bulkassign'
   | 'leave'
   | 'overtime'
   | 'attendance'
@@ -152,6 +154,8 @@ export function initials(name: string): string {
 export const TITLES: Record<View, [string, string]> = {
   organisation: ['Organisation', 'Company profile, identity & contact details'],
   overview: ['HR control room', ''], // the date is filled in by Topbar
+  setup: ['Setup', ''],
+  bulkassign: ['Bulk assign', ''],
   leave: ['Leave requests', 'Time office'],
   overtime: ['Overtime', 'Time office'],
   attendance: ['Attendance corrections', 'Time office'],
@@ -179,9 +183,9 @@ export const TITLES: Record<View, [string, string]> = {
   payrolldash: ['Payroll Dashboard', 'Payroll · the month at a glance'],
   payrollbulk: ['Bulk Assign', 'Payroll · through Suwi'],
   payrollreports: ['Payroll Reports', 'Payroll · summaries, registers and statutory reports'],
-  statutorycomponents: ['Statutory Components', 'Payroll · EPF, ESI, PT, LWF & more'],
+  statutorycomponents: ['Statutory & tax', 'Setup · the company’s choices and the law’s figures'],
   payruns: ['Payroll Runs', 'Payroll · monthly runs and payslips'],
-  payrollconfig: ['Statutory & tax settings', 'Payroll · every statutory and income tax figure, per financial year'],
+  payrollconfig: ['Statutory & tax', 'Setup · the company’s choices and the law’s figures'],
   investmentproofs: ['Investment proofs', 'Payroll · the proofs employees upload for their tax declaration'],
   fbprequests: ['FBP requests', 'Payroll · the FBP bills employees upload: approved bills make that much of the head tax-free'],
   fbpsplits: ['FBP splits', 'Payroll · how each employee splits their flexible benefit pool this FY'],

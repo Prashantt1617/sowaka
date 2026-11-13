@@ -1,5 +1,6 @@
 // Payroll › Salary Components — the org's reusable component catalog, split across
-// four category tabs (Earnings / Deductions / Benefits / Reimbursements). Columns
+// four category tabs (Earnings / Deductions / Benefits / Reimbursements), then
+// FBP bill types (the bills people upload against each FBP head). Columns
 // mirror the Zoho Payroll salary-components screens.
 //
 // Every tab is live through /admin/payroll/pay-heads, per org: earnings
@@ -9,6 +10,8 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useStore } from '../store';
+import { ReimbursementTypes } from './ReimbursementTypes';
+import { OPEN_TAB_KEY } from '../setupGroups';
 import { ApiError } from '../../services/http';
 import { createPayHead, deletePayHead, listPayHeads, listSalaryTemplates, rupeesToPaise, updatePayHead } from '../../services/payroll';
 import type { CalculationBasis, PayHeadDTO, PayHeadInput } from '../../services/payroll';
@@ -20,14 +23,26 @@ import * as L from './look';
 import './look.css';
 
 type Cat = 'earning' | 'deduction' | 'benefit' | 'reimbursement';
+type Tab = Cat | 'fbpbills';
 type Status = 'Active' | 'Inactive';
 
-const CATEGORIES: { key: Cat; label: string }[] = [
+const CATEGORIES: { key: Tab; label: string }[] = [
   { key: 'earning', label: 'Earnings' },
   { key: 'deduction', label: 'Deductions' },
   { key: 'benefit', label: 'Benefits' },
   { key: 'reimbursement', label: 'Reimbursements' },
+  { key: 'fbpbills', label: 'FBP bill types' },
 ];
+
+// FBP splits' "Add a bill type" link opens this page on the FBP bill types tab.
+function firstTab(): Tab {
+  try {
+    const t = sessionStorage.getItem(OPEN_TAB_KEY);
+    sessionStorage.removeItem(OPEN_TAB_KEY);
+    if (t === 'fbpbills') return t;
+  } catch { /* no storage: start on Earnings */ }
+  return 'earning';
+}
 
 // —— Rows, all from the server ————————————————————————————————————————
 // Every component on every tab is a real pay head, read from and saved to
@@ -390,7 +405,8 @@ export function PayHeadMaster() {
   const benefits = catalog.filter((h) => h.category === 'benefit').map(rowFromBenefitHead);
   const reimbursements = catalog.filter((h) => h.category === 'reimbursement').map(rowFromReimbHead);
   const COUNTS: Record<Cat, number> = { earning: earnings.length, deduction: deductions.length, benefit: benefits.length, reimbursement: reimbursements.length };
-  const [tab, setTab] = useState<Cat>('earning');
+  const [tab, setTab] = useState<Tab>(firstTab);
+  const [fbpBills, setFbpBills] = useState<number | null>(null);
   const [form, setForm] = useState<EForm | null>(null);
   const [dForm, setDForm] = useState<DForm | null>(null);
   const [bForm, setBForm] = useState<BForm | null>(null);
@@ -400,7 +416,7 @@ export function PayHeadMaster() {
     if (tab === 'earning') setForm(blankEarning(ADD_TYPES.find((t) => !takenTypes.has(t)) ?? 'Custom Allowance'));
     else if (tab === 'deduction') setDForm(blankDeduction());
     else if (tab === 'benefit') setBForm(blankBenefit());
-    else setRForm(blankReimbursement());
+    else if (tab === 'reimbursement') setRForm(blankReimbursement());
   };
   /** Create or update one pay head, then reload. */
   const persist = async (id: string | undefined, input: PayHeadInput, isNew: boolean, label: string, what: string, close: () => void) => {
@@ -478,11 +494,13 @@ export function PayHeadMaster() {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 20 }}>
-        <button onClick={onAdd} className="lk-btn-p" style={primaryBtn}>
-          <IconPlus size={15} /> Add Component
-        </button>
-      </div>
+      {tab !== 'fbpbills' && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 20 }}>
+          <button onClick={onAdd} className="lk-btn-p" style={primaryBtn}>
+            <IconPlus size={15} /> Add Component
+          </button>
+        </div>
+      )}
 
       {tab === 'reimbursement' && (
         <div style={{ display: 'flex', gap: 12, background: 'var(--warn-bg)', border: '1px solid var(--warn-line)', borderRadius: 14, padding: '12px 14px', marginBottom: 20 }}>
@@ -503,11 +521,18 @@ export function PayHeadMaster() {
                 onClick={() => setTab(c.key)}
                 style={L.segBtn(on)}
               >
-                {c.label} <span style={{ ...L.segCount, color: on ? 'inherit' : 'var(--ink-3)' }}>· <LoadingFigure state={state} w={12} h={11}>{COUNTS[c.key]}</LoadingFigure></span>
+                {c.label} <span style={{ ...L.segCount, color: on ? 'inherit' : 'var(--ink-3)' }}>· {c.key === 'fbpbills'
+                  ? <LoadingFigure state={fbpBills === null ? 'loading' : 'ready'} w={12} h={11}>{fbpBills ?? 0}</LoadingFigure>
+                  : <LoadingFigure state={state} w={12} h={11}>{COUNTS[c.key]}</LoadingFigure>}</span>
               </button>
             );
           })}
         </div>
+        {/* Mounted always (hidden off its tab) so the tab's count is known up front. */}
+        <div style={{ display: tab === 'fbpbills' ? 'block' : 'none' }}>
+          <ReimbursementTypes kind="fbp" embedded onCount={setFbpBills} />
+        </div>
+        {tab !== 'fbpbills' && (
         <table className="lk-t" style={L.table}>
           <thead>
             <tr>
@@ -562,6 +587,7 @@ export function PayHeadMaster() {
             )}
           </tbody>
         </table>
+        )}
       </Card>
 
       {form && <EarningModal form={form} setForm={setForm} onClose={() => setForm(null)} onSave={() => void saveForm()} saving={saving} takenTypes={takenTypes}

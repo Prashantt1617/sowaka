@@ -1,6 +1,6 @@
 // Claims › Reimbursement Types — what an employee may claim against, and what
 // each is capped at. FBP bill types (a type linked to an FBP head) are not
-// claims: the same list, with kind="fbp", sits on Payroll › FBP splits, and
+// claims: the same list, with kind="fbp", is the FBP bill types tab of Salary components, and
 // this page leaves them out.
 //
 // These used to be four values baked into the app. HR owns the list now, and
@@ -23,9 +23,9 @@ import { listPayHeads, type PayHeadDTO } from '../../services/payroll';
 const rupees = (value: number) =>
   value > 0 ? `₹${value.toLocaleString('en-IN')}` : 'No cap';
 
-export function ReimbursementTypes({ kind = 'claim' }: { kind?: 'claim' | 'fbp' } = {}) {
+export function ReimbursementTypes({ kind = 'claim', embedded = false, onCount }: { kind?: 'claim' | 'fbp'; embedded?: boolean; onCount?: (n: number) => void } = {}) {
   const fbp = kind === 'fbp';
-  // On FBP splits the buttons sit with the section, not in the page header.
+  // Inside Salary components the buttons sit with the tab, not in the page header.
   const Actions = fbp ? InlineActions : PageActions;
   const { flash } = useStore();
   const [allTypes, setTypes] = useState<ReimbursementTypeDTO[]>([]);
@@ -42,6 +42,7 @@ export function ReimbursementTypes({ kind = 'claim' }: { kind?: 'claim' | 'fbp' 
   const headName = (code: string) => headNames.get(code) ?? code.toLowerCase().replace(/_/g, ' ');
   // Claim types here; the types linked to an FBP head only on FBP splits.
   const types = allTypes.filter((t) => (fbp ? !!t.payHeadCode : !t.payHeadCode));
+  useEffect(() => { if (!loading) onCount?.(types.length); }, [loading, types.length, onCount]);
 
   const reload = () =>
     getReimbursementTypes()
@@ -134,7 +135,7 @@ export function ReimbursementTypes({ kind = 'claim' }: { kind?: 'claim' | 'fbp' 
               An employee picks one of these when raising a claim; an approved claim is paid on top of
               salary in the next payroll run. A type that is switched off stays on old claims but
               disappears from the app's list, which is how to retire one people have already used.
-              FBP bill types are set on Payroll › FBP splits.
+              FBP bill types are set in Setup › Salary components.
             </>
           )}
         </div>
@@ -143,7 +144,7 @@ export function ReimbursementTypes({ kind = 'claim' }: { kind?: 'claim' | 'fbp' 
         </div>
       </div>
 
-      <Card padded>
+      <Frame embedded={embedded}>
         <table style={tableStyle}>
           <thead className="ds-thead">
             <tr>
@@ -165,9 +166,14 @@ export function ReimbursementTypes({ kind = 'claim' }: { kind?: 'claim' | 'fbp' 
             )}
           </tbody>
         </table>
-      </Card>
+      </Frame>
     </div>
   );
+}
+
+/** Its own card on a page; bare inside another card. */
+function Frame({ embedded, children }: { embedded: boolean; children: ReactNode }) {
+  return embedded ? <>{children}</> : <Card padded>{children}</Card>;
 }
 
 function TypeModal({ fbp, initial, onClose, onSaved }: {
