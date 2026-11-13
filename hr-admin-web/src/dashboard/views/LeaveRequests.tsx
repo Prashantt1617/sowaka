@@ -11,15 +11,15 @@ import { btn, btnClass, cellName, cellSub, TH, toolbar } from '../ds';
 import { IconDownload } from '../icons';
 import { LeaveCalendar } from './LeaveCalendar';
 import {
-  chartDaysOf, dayLabel, leaveDates, needsActionSummary, overlaps, peopleTotals, pendingFacts, perDay, periodRange, plural,
+  chartDaysOf, leaveDates, needsActionSummary, overlaps, peopleTotals, pendingFacts, perDay, periodRange, plural,
   LEAVE_COLS, rangeProblem, SLOW_DAYS, startOf, todayISO,
 } from './leaveDays';
 import type { PeriodId } from './leaveDays';
-import { CustomRange, Flag, LeaveRow, LinkButton, NeedsActionShell, PendingChip, PeriodButtons, StatTile, Waiting } from './leaveParts';
+import { CustomRange, Flag, LeaveRow, NeedsActionShell, PendingChip, PeriodButtons, StatTile, Waiting } from './leaveParts';
 import { Pager, usePaged } from './Pager';
 
 const NEEDS_ACTION_SHOWN = 3;
-const PERIODS: [PeriodId, string][] = [['last', 'Last month'], ['week', 'This week'], ['month', 'This month'], ['next', 'Next month'], ['all', 'All dates'], ['custom', 'Custom']];
+const PERIODS: [PeriodId, string][] = [['last', 'Last month'], ['week', 'This week'], ['month', 'This month'], ['next', 'Next month'], ['custom', 'Custom']];
 const startsIn = (n: number) => (n === 0 ? 'Starts today' : n === 1 ? 'Starts tomorrow' : `Starts in ${n} days`);
 
 /** Needs action's tags: all of it, or one kind. Picking one shows exactly those requests in the list below. */
@@ -104,7 +104,6 @@ export function LeaveRequests() {
   const s = useStore();
   const st = s.listState('leaves');
   const [view, setView] = useState<'list' | 'calendar'>('list');
-  const [calDay, setCalDay] = useState<string | null>(null);
   const [period, setPeriod] = useState<PeriodId>('month');
   const [draftFrom, setDraftFrom] = useState(s.leaveFrom);
   const [draftTo, setDraftTo] = useState(s.leaveTo);
@@ -234,10 +233,6 @@ export function LeaveRequests() {
     s.setLeaveFrom(iso);
     s.setLeaveTo(iso);
   };
-  const openCalendar = (day: string | null) => {
-    setCalDay(day);
-    setView('calendar');
-  };
 
   const toggleBtn = (on: boolean): CSSProperties => ({
     display: 'inline-flex', alignItems: 'center', gap: 8, height: 38, padding: '0 18px', borderRadius: 999, border: 0, cursor: 'pointer',
@@ -262,7 +257,7 @@ export function LeaveRequests() {
     return (
       <div style={{ animation: 'fade .3s ease both' }}>
         <PageActions>{viewToggle}</PageActions>
-        <LeaveCalendar state={st} initialDay={calDay} onPending={showAllPending} onCancellations={showCancellations} onOpenDay={showDay} />
+        <LeaveCalendar state={st} initialDay={null} onPending={showAllPending} onCancellations={showCancellations} onOpenDay={showDay} />
       </div>
     );
   }
@@ -314,15 +309,6 @@ export function LeaveRequests() {
               <StatTile state={st} label="Approved · Declined"
                 value={<>{stats.approved} <button type="button" onClick={(e) => { e.stopPropagation(); s.setLeaveStatus('Declined'); toList(); }} aria-label="Show declined" style={{ border: 0, background: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontSize: 17, color: s.leaveStatus === 'Declined' ? 'var(--bad)' : 'var(--ink-3)', textDecoration: 'underline dotted' }}>· {stats.declined}</button></>}
                 onPick={() => { s.setLeaveStatus('Approved'); toList(); }} picked={s.leaveStatus === 'Declined'} color="var(--p-red)" />
-              <StatTile
-                state={st}
-                label="Most people off"
-                value={stats.busiest ? stats.busiest.n : '—'}
-                unit={stats.busiest ? 'off' : undefined}
-                sub={stats.busiest ? <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{dayLabel(stats.busiest.d)}</span> : chartDays.length ? 'Nobody off' : 'Pick a shorter period'}
-                onPick={stats.busiest ? () => openCalendar(stats.busiest!.d) : undefined}
-                action={stats.busiest ? <span onClick={(e) => e.stopPropagation()}><LinkButton onClick={() => openCalendar(stats.busiest!.d)}>See on calendar</LinkButton></span> : undefined}
-              />
             </div>
           )}
 
