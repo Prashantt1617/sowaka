@@ -251,13 +251,13 @@ export interface LeaveYearEnd {
   lapsed: number;
   processedAt: Date;
   /**
-   * Monthly credits added on top, one per month. Only on a balance HR matched
-   * to another system mid-year (Convrse's Zoho figures, 8 Oct 2026): its
-   * `carried` was worked back so that a year's credit plus it equalled that
-   * day's balance, so the months after the match are credited here, by
-   * `leave-monthly-credit.service`, as they come.
+   * A one-off top-up recorded on a balance matched to another system mid-year
+   * (Convrse's Zoho figures, 8 Oct 2026), from before leave was credited
+   * monthly: November 2026's credit, added by hand.
    */
   monthlyCredits?: { month: string; days: number; at: Date; note?: string }[];
+  /** Set when `carried` was moved to monthly crediting (the full year it was worked back against, less the months then credited). */
+  accrualConverted?: { at: Date; months: number; added: number };
 }
 
 /**
@@ -289,6 +289,21 @@ export const DEFAULT_LEAVE_TYPES: LeaveTypeRule[] = [
  * balance of 8 carries 8 and encashes 0; a closing balance of 20 carries 15
  * and encashes 5.
  */
+/**
+ * How many months of a leave year have been credited by `asOf`.
+ *
+ * Leave is credited monthly, at the rate on the person's template, on the 1st
+ * of each month: from the year's first month, or the month they joined if that
+ * is later, through the month `asOf` falls in. A year that has ended counts
+ * all its months; one not yet begun (or before joining), none.
+ */
+export function monthsCredited(start: Date, end: Date, asOf: Date, joined?: Date | null): number {
+  const index = (d: Date) => d.getUTCFullYear() * 12 + d.getUTCMonth();
+  const first = Math.max(index(start), joined ? index(joined) : -Infinity);
+  const last = Math.min(index(end), index(asOf));
+  return Math.max(0, last - first + 1);
+}
+
 export function processYearEnd(closing: number, rule: LeaveTypeRule) {
   const balance = Math.max(0, closing);
   const carried = Math.min(balance, Math.max(0, rule.carryForwardDays));

@@ -12,7 +12,7 @@
  * a restart or a second pass on the same day changes nothing.
  */
 import { leaves, leaveYearEnds, users } from '../config/db';
-import { LeaveTypeKey, LeaveTypeRule, LeaveYearEnd, processYearEnd } from '../models/shift.model';
+import { LeaveTypeKey, LeaveTypeRule, LeaveYearEnd, monthsCredited, processYearEnd } from '../models/shift.model';
 import { logger } from '../utils/logger';
 import { leaveTypeRulesFor } from './shift.service';
 
@@ -101,7 +101,8 @@ export async function closeYearForUser(
     const { start, end } = yearWindow(rule, year);
     const accrued = rule.key === 'comp_off'
       ? await compOffEarned(userId, start, end)
-      : rule.perMonth * 12;
+      // Credited monthly: every month of the closing year from joining.
+      : rule.perMonth * monthsCredited(start, end, end, user.joiningDate);
     const opening = (await carriedFromRun(userId, rule.key, year)) ?? 0;
     const closing = accrued + opening - (await usedIn(userId, rule.key, start, end));
     const split = processYearEnd(closing, rule);

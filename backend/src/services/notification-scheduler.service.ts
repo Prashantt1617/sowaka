@@ -5,7 +5,6 @@ import { runFeedbackCycleMessages } from './feedback-cycle-scheduler.service';
 import { sendLatePunchInReminders } from './punch-reminder.service';
 import { flushGroupedNotifications } from './notification-groups.service';
 import { istParts } from './notification-time';
-import { creditMatchedBalances } from './leave-monthly-credit.service';
 import { logger } from '../utils/logger';
 
 /**
@@ -30,8 +29,6 @@ export function msToNextIstHour(now: Date): number {
 /** The jobs for one IST hour. The spec's times are all IST. */
 export async function runHourlyJobs(now = new Date()): Promise<void> {
   const { hour, weekday } = istParts(now);
-  // Every hour, so a month that turned while the server was down is still credited; a no-op once done.
-  await run('creditMatchedBalances', () => creditMatchedBalances(now));
   if (hour === 10) {
     await run('sendNewJoinerNotifications', () => sendNewJoinerNotifications(now));
     // Cycle open, the Friday reminder and the last day, to managers only.
