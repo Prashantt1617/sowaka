@@ -4,14 +4,14 @@ import { useStore } from '../store';
 import type { ReqStatus } from '../theme';
 import type { Leave } from '../seed';
 import { downloadCsv } from '../export';
-import { Card, EmptyRow, ListPending, PageActions, SearchInput, SelectBox, StatusTabs, Th } from '../ui';
+import { Card, EmptyRow, ListPending, SearchInput, SelectBox, StatusTabs, Th } from '../ui';
 import type { LoadState } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { btn, btnClass, cellName, cellSub, TH, toolbar } from '../ds';
 import { IconDownload } from '../icons';
 import { LeaveCalendar } from './LeaveCalendar';
 import {
-  chartDaysOf, leaveDates, needsActionSummary, overlaps, peopleTotals, pendingFacts, perDay, periodRange, plural,
+  chartDaysOf, needsActionSummary, overlaps, peopleTotals, pendingFacts, perDay, periodRange, plural,
   LEAVE_COLS, rangeProblem, SLOW_DAYS, startOf, todayISO,
 } from './leaveDays';
 import type { PeriodId } from './leaveDays';
@@ -119,25 +119,15 @@ export function LeaveRequests() {
 
   const stats = useMemo(() => {
     const off = inPeriod.filter((l) => l.status === 'Approved' || l.status === 'Pending');
-    const inside = (d: string) => (!range.from || d >= range.from) && (!range.to || d <= range.to);
-    let days = 0;
-    // A leave wholly inside the period counts the server's days. One that runs past either end is cut
-    // by its dates with Saturday and Sunday taken out: nobody's week offs or holidays are at hand here,
-    // so that figure is approximate, and the tile says so.
-    let approx = false;
-    for (const l of inPeriod) {
-      if (l.status !== 'Approved') continue;
-      const dates = leaveDates(l);
-      const kept = dates.filter(inside).length;
-      if (kept < dates.length) approx = true;
-      days += kept < dates.length ? Math.min(l.dayN || 0, kept) : l.dayN || 0;
-    }
+    // Exact, from the database: each approved leave counts the days saved on it (holidays and week offs
+    // already out), in the period it starts in, so a leave is never split or estimated.
+    const startsIn = (l: Leave) => { const d = startOf(l); return (!range.from || d >= range.from) && (!range.to || d <= range.to); };
+    const days = inPeriod.filter((l) => l.status === 'Approved' && startsIn(l)).reduce((a, l) => a + (l.dayN || 0), 0);
     let best = -1;
     totals.forEach((t, i) => { if (t.a + t.p > 0 && (best < 0 || t.a + t.p > totals[best].a + totals[best].p)) best = i; });
     return {
       people: new Set(off.map((l) => l.submitterId || l.name)).size,
       days: Math.round(days * 10) / 10,
-      approx,
       pending: inPeriod.filter((l) => l.status === 'Pending').length,
       approved: inPeriod.filter((l) => l.status === 'Approved').length,
       declined: inPeriod.filter((l) => l.status === 'Declined').length,
@@ -256,7 +246,7 @@ export function LeaveRequests() {
   if (view === 'calendar') {
     return (
       <div style={{ animation: 'fade .3s ease both' }}>
-        <PageActions>{viewToggle}</PageActions>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '0 0 16px' }}>{viewToggle}</div>
         <LeaveCalendar state={st} initialDay={null} onPending={showAllPending} onCancellations={showCancellations} onOpenDay={showDay} />
       </div>
     );
@@ -264,18 +254,17 @@ export function LeaveRequests() {
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
-      <PageActions>
-        {viewToggle}
-      </PageActions>
 
       <NeedsAction state={st} />
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '0 0 16px' }}>{viewToggle}</div>
 
       <Card padded>
         <section aria-labelledby="leave-period" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <h2 id="leave-period" style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{range.title}</h2>
-              <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>By the dates people are on leave. A leave that overlaps the period is included.</span>
+              
             </div>
             <PeriodButtons periods={PERIODS} period={period} onPeriod={setPeriod} />
           </div>
@@ -301,7 +290,7 @@ export function LeaveRequests() {
               <StatTile
                 state={st}
                 label="Leave days approved"
-                value={stats.approx ? <>≈ {stats.days}</> : stats.days}
+                value={stats.days}
                 sub={`${stats.approved} ${stats.approved === 1 ? 'request' : 'requests'}`}
                 onPick={() => { s.setLeaveStatus('Approved'); toList(); }} picked={s.leaveStatus === 'Approved'} color="var(--p-green)"
               />
