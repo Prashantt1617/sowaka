@@ -8,6 +8,7 @@
 // split and bill rules), with links to where each is set.
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store';
+import { OPEN_TAB_KEY } from '../setupGroups';
 import { ApiError } from '../../services/http';
 import { listFbpSplits } from '../../services/payroll';
 import type { FbpSplitRowDTO, FbpSplitsDTO } from '../../services/payroll';
@@ -155,7 +156,7 @@ function SplitRow({ row: r, last, open }: { row: FbpSplitRowDTO; last: boolean; 
   );
 }
 
-function SetupNote({ data, go }: { data: FbpSplitsDTO; go: (v: 'payheads' | 'templates' | 'payrolldash' | 'fbpbilltypes') => void }) {
+function SetupNote({ data, go }: { data: FbpSplitsDTO; go: (v: 'payheads' | 'templates' | 'payrolldash') => void }) {
   const { headsWithoutBillType, templatesWithoutPool, rules } = data.setup;
   const rulesMissing = [
     rules.splitStepPaise === null ? 'the split step' : '',
@@ -169,7 +170,7 @@ function SetupNote({ data, go }: { data: FbpSplitsDTO; go: (v: 'payheads' | 'tem
     notes.push(
       <span key="heads">
         No bill type is linked to {headsWithoutBillType.map((h) => h.name).join(', ')}, so bills can't be uploaded for {headsWithoutBillType.length === 1 ? 'it' : 'them'} and {headsWithoutBillType.length === 1 ? 'it stays' : 'they stay'} taxable.{' '}
-        <LinkButton onClick={() => go('fbpbilltypes')}>Add a bill type in Setup</LinkButton>
+        <LinkButton onClick={() => { try { sessionStorage.setItem(OPEN_TAB_KEY, 'fbpbills'); } catch { /* opens on Earnings */ } go('payheads'); }}>Add a bill type in Salary components</LinkButton>
       </span>,
     );
   }

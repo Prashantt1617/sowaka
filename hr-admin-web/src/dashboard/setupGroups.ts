@@ -28,7 +28,6 @@ export const SETUP_GROUPS: SetupGroup[] = [
   ] },
   { key: 'reimbursements', title: 'Reimbursements', icon: 'reimbursementtypes', items: [
     { view: 'reimbursementtypes', label: 'Reimbursement types' },
-    { view: 'fbpbilltypes', label: 'FBP bill types' },
   ] },
   { key: 'organisation', title: 'Organisation details', icon: 'organisation', items: [
     { view: 'organisation', label: 'Organisation profile' },
@@ -47,3 +46,6 @@ export const BULK_GROUPS: SetupGroup[] = [
 ];
 
 export const BULK_VIEWS: View[] = BULK_GROUPS.flatMap((g) => g.items.map((i) => i.view));
+
+/** Salary components opens on the tab named here once (FBP splits sets it to 'fbpbills'). */
+export const OPEN_TAB_KEY = 'sowaka.payheads.tab';
