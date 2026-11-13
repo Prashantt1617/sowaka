@@ -16,7 +16,7 @@ import {
 import type { PeriodId } from './leaveDays';
 import { CustomRange, DayBars, Flag, LeaveRow, LinkButton, NeedsActionShell, PendingChip, PeriodButtons, StatTile, Swatch, Waiting } from './leaveParts';
 
-const NEEDS_ACTION_SHOWN = 5;
+const NEEDS_ACTION_SHOWN = 3;
 const PERIODS: [PeriodId, string][] = [['last', 'Last month'], ['week', 'This week'], ['month', 'This month'], ['next', 'Next month'], ['all', 'All dates'], ['custom', 'Custom']];
 const startsIn = (n: number) => (n === 0 ? 'Starts today' : n === 1 ? 'Starts tomorrow' : `Starts in ${n} days`);
 
@@ -26,17 +26,29 @@ function NeedsAction({ state, onAll, onCancellations }: { state: LoadState; onAl
   const today = todayISO();
   // The most urgent first: dates already gone, then the soonest to start. Cancellation requests too,
   // so the count matches the sidebar badge and Overview.
-  const list = sum.all.slice().sort((a, b) => startOf(a).localeCompare(startOf(b)));
-  if (state === 'ready' && list.length === 0) return null;
+  const [pick, setPick] = useState<'all' | 'passed' | 'soon' | 'slow' | 'cancel'>('all');
+  const everything = sum.all.slice().sort((a, b) => startOf(a).localeCompare(startOf(b)));
+  if (state === 'ready' && everything.length === 0) return null;
+  // The tags filter the list: dates passed, starting within 7 days, waiting long, or cancellation requests.
+  const fits = (l: Leave, k: typeof pick) => {
+    if (k === 'all') return true;
+    if (k === 'cancel') return l.status !== 'Pending';
+    const f = pendingFacts(l, today);
+    if (k === 'slow') return f.slow;
+    return l.status === 'Pending' && (k === 'passed' ? f.passed : f.soon);
+  };
+  const list = everything.filter((l) => fits(l, pick));
+  const tag = (k: typeof pick, tone: 'bad' | 'attn' | 'mute', text: string, count: number) => ({ tone, text, count, picked: pick === k, onPick: () => setPick(k) });
   const chips = [
-    ...(sum.passed ? [{ tone: 'bad' as const, text: `${sum.passed} ${sum.passed === 1 ? 'date' : 'dates'} already passed` }] : []),
-    ...(sum.soon ? [{ tone: 'attn' as const, text: `${sum.soon} start within 7 days` }] : []),
-    ...(sum.slow ? [{ tone: 'mute' as const, text: `${sum.slow} waiting over ${SLOW_DAYS} days` }] : []),
-    ...(sum.cancellations.length ? [{ tone: 'attn' as const, text: plural(sum.cancellations.length, 'cancellation request') }] : []),
+    tag('all', 'mute', 'All', everything.length),
+    ...(sum.passed ? [tag('passed', 'bad', 'Date already passed', sum.passed)] : []),
+    ...(sum.soon ? [tag('soon', 'attn', 'Start within 7 days', sum.soon)] : []),
+    ...(sum.slow ? [tag('slow', 'mute', `Waiting over ${SLOW_DAYS} days`, sum.slow)] : []),
+    ...(sum.cancellations.length ? [tag('cancel', 'attn', 'Cancellation requests', sum.cancellations.length)] : []),
   ];
   const summary = sum.cancellations.length
     ? `${plural(sum.pending.length, 'request')} waiting for approval, ${plural(sum.cancellations.length, 'cancellation request')} · all dates`
-    : `${plural(list.length, 'request')} waiting for approval · all dates`;
+    : `${plural(everything.length, 'request')} waiting for approval · all dates`;
   return (
     <NeedsActionShell
       id="leave-needs-action"
@@ -44,7 +56,7 @@ function NeedsAction({ state, onAll, onCancellations }: { state: LoadState; onAl
       summary={summary}
       chips={chips}
       // As the design has it, the footer always leads to the full list, filtered.
-      more={list.length > 0 ? (
+      more={everything.length > 0 ? (
         <div style={{ display: 'flex', gap: 18 }}>
           {sum.cancellations.length > 0 && <LinkButton onClick={onCancellations}>View {plural(sum.cancellations.length, 'cancellation request')}</LinkButton>}
           {sum.pending.length > 0 && <LinkButton onClick={onAll}>View all {sum.pending.length} pending</LinkButton>}
@@ -187,16 +199,20 @@ export function LeaveRequests() {
     s.setLeaveFrom(draftFrom);
     s.setLeaveTo(draftTo);
   };
+  /** Brings the request list (its status tabs) to the top of the screen, once it has rendered. */
+  const toList = () => setTimeout(() => document.getElementById('leave-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   /** Pending, every date: where Needs action's "View all" and the calendar's banner lead. */
   const showAllPending = () => {
     setView('list');
     setPeriod('all');
     s.setLeaveStatus('Pending');
+    toList();
   };
   /** Cancellation requests, which read every date whatever the period. */
   const showCancellations = () => {
     setView('list');
     s.setLeaveStatus('Cancellation');
+    toList();
   };
   /** One day in the list: from the calendar's "Open in list view". */
   const showDay = (iso: string) => {
@@ -296,7 +312,7 @@ export function LeaveRequests() {
           )}
 
           {!waitingForDates && (
-            <div>
+            <div id="leave-list" style={{ scrollMarginTop: 96 }}>
               <div style={toolbar}>
                 <StatusTabs<ReqStatus | 'all' | 'Cancellation'>
                   options={['all', 'Pending', 'Approved', 'Declined', 'Cancelled', 'Cancellation']}

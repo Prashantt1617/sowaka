@@ -65,7 +65,8 @@ export function NeedsActionShell({ id, state, summary, chips, children, more }: 
   id: string;
   state: LoadState;
   summary: ReactNode;
-  chips: { tone: FlagTone; text: string }[];
+  /** A chip with `onPick` is a filter on the list: its count sits in a badge, the one on is outlined. */
+  chips: { tone: FlagTone; text: string; count?: number; onPick?: () => void; picked?: boolean }[];
   children: ReactNode;
   more?: ReactNode;
 }) {
@@ -77,7 +78,13 @@ export function NeedsActionShell({ id, state, summary, chips, children, more }: 
           <span style={{ fontSize: 13.5, color: 'var(--ink-2)' }}><LoadingFigure state={state} w={140} h={14}>{summary}</LoadingFigure></span>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {chips.map((c) => <span key={c.text} style={chip(c.tone)}>{c.text}</span>)}
+          {chips.map((c) => (c.onPick ? (
+            <button key={c.text} type="button" aria-pressed={c.picked} onClick={c.onPick}
+              style={{ ...chip(c.tone), display: 'inline-flex', alignItems: 'center', gap: 7, cursor: 'pointer', font: 'inherit', fontSize: 12.5, fontWeight: c.picked ? 600 : 500, border: `1.5px solid ${c.picked ? 'currentColor' : 'transparent'}` }}>
+              {c.text}
+              {c.count != null && <span style={{ minWidth: 20, padding: '0 6px', borderRadius: 999, background: 'var(--surface)', color: 'inherit', fontWeight: 700, fontSize: 11.5, lineHeight: '18px', textAlign: 'center' }}>{c.count}</span>}
+            </button>
+          ) : <span key={c.text} style={chip(c.tone)}>{c.text}</span>))}
         </div>
       </div>
       <div style={{ overflowX: 'auto' }}>
