@@ -72,8 +72,8 @@ export function NeedsActionShell({ id, state, summary, chips, children, more }: 
   more?: ReactNode;
 }) {
   return (
-    <section id={id} aria-labelledby={`${id}-h`} style={{ ...TILE, padding: 0, gap: 0, minHeight: 0, overflow: 'hidden', border: '1px solid var(--attn-line)', marginBottom: 20, scrollMarginTop: 96 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 22px', background: 'var(--attn-bg)' }}>
+    <section id={id} aria-labelledby={`${id}-h`} style={{ ...TILE, padding: 0, gap: 0, minHeight: 0, overflow: 'hidden', marginBottom: 20, scrollMarginTop: 96 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 22px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 12 }}>
           <h2 id={`${id}-h`} style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Needs action</h2>
           <span style={{ fontSize: 13.5, color: 'var(--ink-2)' }}><LoadingFigure state={state} w={140} h={14}>{summary}</LoadingFigure></span>
