@@ -354,14 +354,15 @@ export function CompanyCalendar() {
           <button type="button" disabled={selected.length === 0} onClick={exportDay} className={btnClass()} style={btn()}><IconDownload stroke="currentColor" /> Export</button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: 16 }}>
+        {/* One line of tiles, one per count; on a narrow screen the line scrolls sideways instead of wrapping. */}
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${METRICS.length}, minmax(92px, 1fr))`, gap: 8, marginBottom: 16, overflowX: 'auto' }}>
           {METRICS.map((m) => {
             const v = countOn(m.key, day);
             const on = metric === m.key;
             return (
               <button key={m.key} type="button" aria-pressed={on} onClick={() => setMetric(m.key)}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '10px 12px', borderRadius: 12, cursor: 'pointer', textAlign: 'left', font: 'inherit', background: on ? m.bg : 'var(--surface)', border: on ? `1.5px solid ${m.fg}` : '1px solid var(--line)', color: 'var(--ink)' }}>
-                <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>{m.label}</span>
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '8px 10px', minWidth: 0, borderRadius: 12, cursor: 'pointer', textAlign: 'left', font: 'inherit', background: on ? m.bg : 'var(--surface)', border: on ? `1.5px solid ${m.fg}` : '1px solid var(--line)', color: 'var(--ink)' }}>
+                <span title={m.label} style={{ fontSize: 11.5, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{m.label}</span>
                 <span style={{ fontSize: 20, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{loading ? '…' : v === null ? '—' : v}</span>
               </button>
             );
