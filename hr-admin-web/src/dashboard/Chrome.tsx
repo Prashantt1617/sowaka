@@ -79,12 +79,15 @@ const PAYROLL: NavItem[] = [
   { key: 'templates', label: 'Salary Templates', hidden: true },
   { key: 'paiddays', label: 'Paid Days Templates', hidden: true },
   { key: 'payruns', label: 'Payroll Runs' },
-  { key: 'investmentproofs', label: 'Investment proofs' },
-  // FBP is part of salary, not a claim: its bills and splits sit with payroll.
-  { key: 'fbprequests', label: 'FBP requests' },
-  { key: 'fbpsplits', label: 'FBP splits' },
   { key: 'payrollreports', label: 'Payroll Reports' },
   { key: 'payrollbulk', label: 'Bulk Assign', hidden: true },
+];
+// What employees upload for tax: FBP bills and splits, and investment proofs. Its own
+// section in the sidebar, but given with Payroll Runs or Salary details (access.ts).
+const TAX_UPLOADS: NavItem[] = [
+  { key: 'fbprequests', label: 'FBP requests' },
+  { key: 'fbpsplits', label: 'FBP splits' },
+  { key: 'investmentproofs', label: 'Investment proofs' },
 ];
 
 // Claims sits below Payroll: the claims people raise and what can be claimed,
@@ -118,6 +121,7 @@ export const SECTIONS: { title: string; items: NavItem[] }[] = [
   { title: 'SHIFTS', items: SHIFTS },
   { title: 'PERFORMANCE', items: PERFORMANCE },
   { title: 'PAYROLL', items: PAYROLL },
+  { title: 'TAX UPLOADS', items: TAX_UPLOADS },
   { title: 'CLAIMS', items: CLAIMS },
   { title: 'ENGAGEMENT', items: ENGAGEMENT },
   { title: 'SUWI', items: [{ key: 'suwi', label: 'Settings & activity' }] },

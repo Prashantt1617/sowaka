@@ -5,7 +5,9 @@ import type { ReqStatus } from '../theme';
 import type { Overtime as OvertimeRow } from '../seed';
 import { inDateRange, otShortLabel } from '../adapters';
 import { downloadCsv } from '../export';
-import { Card, EmptyRow, ListPending, Pill, SearchInput, SelectBox, StatusTabs, Th } from '../ui';
+import { Card, EmptyRow, ListPending, Pill, SearchInput, StatusTabs, Th } from '../ui';
+import { FiltersButton, FiltersPanel, LabeledSelect } from './LabeledSelect';
+import { useFilterDraft } from './useFilterDraft';
 import type { LoadState } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { btn, btnClass, cellName, cellSub, TH, toolbar, TR } from '../ds';
@@ -89,6 +91,11 @@ export function Overtime() {
   const [offset, setOffset] = useState(0);
   const [dept, setDept] = useState('all');
   const [given, setGiven] = useState<Given>('all');
+  const filters = useFilterDraft(
+    { dept, given },
+    (v) => { setDept(v.dept); setGiven(v.given as Given); },
+    { dept: 'all', given: 'all' },
+  );
   const today = todayISO();
 
   const range = stepRange(unit, offset);
@@ -240,19 +247,17 @@ export function Overtime() {
                 <div style={{ flex: 1, minWidth: 240, display: 'flex' }}>
                   <SearchInput value={s.otSearch} onChange={s.setOtSearch} placeholder="Search by employee…" width="100%" />
                 </div>
-                <SelectBox value={dept} onChange={setDept}>
-                  <option value="all">All departments</option>
-                  {departments.map((d) => <option key={d} value={d}>{d}</option>)}
-                </SelectBox>
-                <SelectBox value={given} onChange={(v) => setGiven(v as Given)}>
-                  <option value="all">Pay and comp-off</option>
-                  <option value="pay">Pay</option>
-                  <option value="comp">Comp-off</option>
-                </SelectBox>
+                <FiltersButton open={filters.open} active={filters.active} onClick={filters.toggle} />
                 <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
                   <IconDownload stroke="currentColor" /> Export
                 </button>
               </div>
+              {filters.open && (
+                <FiltersPanel active={filters.active} dirty={filters.dirty} onApply={filters.apply} onClear={filters.clear}>
+                  <LabeledSelect label="Department" value={filters.draft.dept} onChange={(v) => filters.set('dept', v)} options={[['all', 'All departments'], ...departments.map((d): [string, string] => [d, d])]} />
+                  <LabeledSelect label="Given as" value={filters.draft.given} onChange={(v) => filters.set('given', v)} options={[['all', 'Pay and comp-off'], ['pay', 'Pay'], ['comp', 'Comp-off']]} />
+                </FiltersPanel>
+              )}
 
               <div style={{ overflowX: 'auto' }}>
                 <div style={{ minWidth: 1040 }}>

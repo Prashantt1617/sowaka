@@ -40,8 +40,11 @@ const titleCase = (t: string) => t.charAt(0) + t.slice(1).toLowerCase();
 const RIDES_ALONG = new Set<AccessKey>([...PLACEMENT_VIEWS.filter((v) => v !== 'placements'), 'investmentproofs', 'payrollconfig', 'fbprequests', 'fbpsplits', 'companycalendar', 'punchlog']);
 const SECTION_UNITS: Unit[] = SECTIONS.flatMap((s) => {
   const items = s.items.filter((i) => i.key !== 'usersroles' && i.key !== 'support' && i.key !== 'cuptv');
-  if (items.length === 0) return [];
-  return [{ key: s.title, title: titleCase(s.title), tabs: items.filter((i) => !RIDES_ALONG.has(i.key)).map((i) => i.key), hint: items.map((i) => i.label).join(' · ') }];
+  const tabs = items.filter((i) => !RIDES_ALONG.has(i.key)).map((i) => i.key);
+  // A section all of whose pages come with another (Tax uploads, with Payroll) is not given on its own.
+  if (items.length === 0 || tabs.length === 0) return [];
+  const along = s.title === 'PAYROLL' ? SECTIONS.find((x) => x.title === 'TAX UPLOADS')?.items ?? [] : [];
+  return [{ key: s.title, title: titleCase(s.title), tabs, hint: [...items, ...along].map((i) => i.label).join(' · ') }];
 });
 const UNITS: Unit[] = [
   { key: 'overview', title: OVERVIEW_ITEM.label, tabs: ['overview'], hint: 'Pending requests at a glance' },

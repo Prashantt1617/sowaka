@@ -413,7 +413,7 @@ export function CompanyCalendar() {
               >
                 <div style={{ display: 'grid', gridTemplateRows: 'auto 1fr auto', height: '100%', width: '100%', gap: 2 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, minWidth: 0 }}>
-                    <span style={{ fontSize: 13, lineHeight: 1.2, fontWeight: d === today ? 700 : 500, whiteSpace: 'nowrap' }}>{MONTH[Number(d.slice(5, 7)) - 1]} {Number(d.slice(8))}</span>
+                    <span style={{ fontSize: 13, lineHeight: 1.2, fontWeight: d === today ? 700 : 500, whiteSpace: 'nowrap' }}>{Number(d.slice(8))} {MONTH[Number(d.slice(5, 7)) - 1].slice(0, 3)}</span>
                     {fest && <span title={fest} style={{ fontSize: 11, fontWeight: 500, lineHeight: 1.2, opacity: 0.85, textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{fest}</span>}
                   </div>
                   <span style={{ alignSelf: 'end', fontSize: 17, fontWeight: 600, lineHeight: 1, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{off || future ? '' : v}</span>

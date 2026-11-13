@@ -2,15 +2,16 @@
 // location, one row per person per day. It only reads; deciding a day happens
 // in Attendance corrections. Open a row to see each punch and where it was made.
 import { useEffect, useMemo, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { expandReport, getAttendanceReport, getPayCycle, getPunchLog } from '../../services/hrms';
 import type { PayCycleDTO, PunchDayDTO, PunchPlaceDTO, ReportRow } from '../../services/hrms';
 import { downloadCsv } from '../export';
-import { Card, EmptyRow, ListPending, LoadError, Pill, SearchInput, SelectBox, Th } from '../ui';
+import { Card, EmptyRow, ListPending, LoadError, Pill, SearchInput, Th } from '../ui';
+import { FiltersButton, FiltersPanel, LabeledSelect } from './LabeledSelect';
+import { useFilterDraft } from './useFilterDraft';
 import type { LoadState } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
-import { btn, btnClass, cellName, cellSub, iconBtn, SEG, segBtn, TH, toolbar, TR } from '../ds';
+import { btn, btnClass, cellName, cellSub, iconBtn, TH, toolbar, TR } from '../ds';
 import { IconDownload, IconEye } from '../icons';
 import { DrawerHeader, DrawerShell } from '../drawers/shell';
 import { canOpen } from '../access';
@@ -82,6 +83,11 @@ export function PunchLog() {
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const filters = useFilterDraft(
+    { where, reason, counted, dept },
+    (v) => { setWhere(v.where as typeof where); setReason(v.where === 'ool' ? v.reason : 'all'); setCounted(v.counted as typeof counted); setDept(v.dept); },
+    { where: 'all', reason: 'all', counted: 'all', dept: 'all' },
+  );
 
   useEffect(() => {
     let live = true;
@@ -159,6 +165,26 @@ export function PunchLog() {
     });
   }, [punches, report, s.corrs, today]);
 
+  // A correction for a day with no punch at all ("mark me present for Tuesday"): no punch row
+  // carries it, so it gets its own row, listed under Waiting for approval only.
+  const noPunchCorr = useMemo<Row[]>(() => {
+    if (!punches) return [];
+    const punched = new Set(punches.map((p) => `${p.userId}|${p.workDate}`));
+    const out = new Map<string, Row>();
+    for (const c of s.corrs) {
+      const date = (c.refISO || '').slice(0, 10);
+      if (c.status !== 'Pending' || c.kind === 'ool' || !c.submitterId || date < range.from || date > range.to) continue;
+      const key = `${c.submitterId}|${date}`;
+      if (punched.has(key) || out.has(key)) continue;
+      out.set(key, {
+        userId: c.submitterId, name: c.name, employeeCode: c.employeeCode, department: c.team, manager: c.manager, workDate: date,
+        punchIn: null, punchOut: null, inLocation: null, outLocation: null, outside: null, face: null, dayType: null, waiting: false,
+        key, ool: false, where: 'No punch', whereSub: c.askedFor ? `Asked for ${c.askedFor.toLowerCase()}` : '', counted: 'corr', why: 'A correction is pending for this day, which has no punch.',
+      });
+    }
+    return [...out.values()].sort((a, b) => b.workDate.localeCompare(a.workDate));
+  }, [punches, s.corrs, range.from, range.to]);
+
   const departments = useMemo(() => [...new Set(rows.map((r) => r.department || 'Team'))].sort(), [rows]);
   const reasons = useMemo(() => [...new Set(rows.filter((r) => r.ool && r.outside).map((r) => r.outside!.reason))].sort(), [rows]);
 
@@ -166,15 +192,15 @@ export function PunchLog() {
     let out = rows;
     if (where === 'office') out = out.filter((r) => !r.ool);
     if (where === 'ool') out = out.filter((r) => r.ool);
-    if (where === 'waiting') out = out.filter((r) => r.counted === 'waiting' || r.counted === 'corr');
+    if (where === 'waiting') out = [...out.filter((r) => r.counted === 'waiting' || r.counted === 'corr'), ...noPunchCorr];
     if (where === 'ool' && reason !== 'all') out = out.filter((r) => r.outside?.reason === reason);
     if (counted !== 'all') out = out.filter((r) => (counted === 'late' ? r.counted === 'late' || r.counted === 'lateopen' : counted === 'present' ? r.counted === 'present' || r.counted === 'open' : r.counted === counted));
     if (dept !== 'all') out = out.filter((r) => (r.department || 'Team') === dept);
     const q = search.trim().toLowerCase();
     if (q) out = out.filter((r) => r.name.toLowerCase().includes(q) || r.employeeCode.toLowerCase().includes(q) || r.where.toLowerCase().includes(q) || r.whereSub.toLowerCase().includes(q));
     return out;
-  }, [rows, where, reason, counted, dept, search]);
-  const paged = usePaged(shown, `${where}|${reason}|${counted}|${dept}|${search}|${rows.length}`);
+  }, [rows, noPunchCorr, where, reason, counted, dept, search]);
+  const paged = usePaged(shown, `${where}|${reason}|${counted}|${dept}|${search}|${rows.length}|${noPunchCorr.length}`);
 
   const chartDays = chartDaysOf(range);
   const series = useMemo(() => {
@@ -191,7 +217,8 @@ export function PunchLog() {
   const stats = useMemo(() => {
     const people = new Set(rows.filter((r) => r.punchIn || r.outside).map((r) => r.userId)).size;
     const ool = rows.filter((r) => r.ool);
-    const waitingCorr = s.corrs.filter((c) => c.status === 'Pending' && (c.refISO || '').slice(0, 10) >= range.from && (c.refISO || '').slice(0, 10) <= range.to).length;
+    // Exactly what Waiting for approval lists: each request once (an out-of-location one is not a correction too).
+    const waitingCorr = rows.filter((r) => r.counted === 'corr').length + noPunchCorr.length;
     const punched = rows.filter((r) => r.punchIn || r.outside);
     // Out of location by the reason given ("11 WFH · 2 client visit"), the commonest first.
     const why = new Map<string, number>();
@@ -204,7 +231,7 @@ export function PunchLog() {
       half: rows.filter((r) => r.counted === 'half').length,
       reasons: [...why.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => `${n} ${k}`).join(' · '),
     };
-  }, [rows, s.corrs, range.from, range.to]);
+  }, [rows, noPunchCorr]);
 
   const exportRows = () =>
     downloadCsv<Row>(
@@ -232,7 +259,6 @@ export function PunchLog() {
     if (!problem) setApplied({ from: draftFrom, to: draftTo });
   };
 
-  const chip = (on: boolean): CSSProperties => ({ height: 32, padding: '0 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', font: 'inherit', border: `1px solid ${on ? 'var(--sel)' : 'var(--line-2)'}`, background: on ? 'var(--sel)' : 'var(--surface)', color: on ? 'var(--on-sel)' : 'var(--ink)' });
   const open = openKey ? rows.find((r) => r.key === openKey) ?? null : null;
 
   return (
@@ -295,37 +321,26 @@ export function PunchLog() {
           {!waitingForDates && (
             <div>
               <div style={toolbar}>
-                <div role="tablist" aria-label="Where" style={SEG}>
-                  {([['all', 'All punches'], ['office', 'In office'], ['ool', 'Out of office'], ['waiting', 'Waiting for approval']] as const).map(([k, label]) => (
-                    <button key={k} type="button" role="tab" aria-selected={where === k} onClick={() => { setWhere(k); setReason('all'); }} style={segBtn(where === k)}>{label}</button>
-                  ))}
-                </div>
-                <div role="group" aria-label="Counted as" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12.5, color: 'var(--ink-3)', marginRight: 2 }}>Counted as</span>
-                  {([['all', 'Any'], ['present', 'Present'], ['late', 'Late'], ['early', 'Left early'], ['half', 'Half day']] as const).map(([k, label]) => (
-                    <button key={k} type="button" aria-pressed={counted === k} onClick={() => setCounted(k)} style={chip(counted === k)}>{label}</button>
-                  ))}
-                </div>
-              </div>
-              {where === 'ool' && reasons.length > 0 && (
-                <div role="group" aria-label="Reason" style={{ ...toolbar, gap: 6 }}>
-                  {['all', ...reasons].map((r) => (
-                    <button key={r} type="button" aria-pressed={reason === r} onClick={() => setReason(r)} style={chip(reason === r)}>{r === 'all' ? 'All reasons' : r}</button>
-                  ))}
-                </div>
-              )}
-              <div style={toolbar}>
                 <div style={{ flex: 1, minWidth: 240, display: 'flex' }}>
                   <SearchInput value={search} onChange={setSearch} placeholder="Search employee or office…" width="100%" />
                 </div>
-                <SelectBox value={dept} onChange={setDept}>
-                  <option value="all">All departments</option>
-                  {departments.map((d) => <option key={d} value={d}>{d}</option>)}
-                </SelectBox>
+                <FiltersButton open={filters.open} active={filters.active} onClick={filters.toggle} />
                 <button onClick={exportRows} disabled={shown.length === 0} className={btnClass()} style={btn()}>
                   <IconDownload stroke="currentColor" /> Export
                 </button>
               </div>
+              {filters.open && (
+                <FiltersPanel active={filters.active} dirty={filters.dirty} onApply={filters.apply} onClear={filters.clear}>
+                  <LabeledSelect label="Punch type" value={filters.draft.where} onChange={(v) => filters.set('where', v)}
+                    options={[['all', 'All punches'], ['office', 'In office'], ['ool', 'Out of office'], ['waiting', 'Waiting for approval']]} />
+                  {filters.draft.where === 'ool' && reasons.length > 0 && (
+                    <LabeledSelect label="Reason" value={filters.draft.reason} onChange={(v) => filters.set('reason', v)} options={[['all', 'All reasons'], ...reasons.map((x): [string, string] => [x, x])]} />
+                  )}
+                  <LabeledSelect label="Counted as" value={filters.draft.counted} onChange={(v) => filters.set('counted', v)}
+                    options={[['all', 'Any'], ['present', 'Present'], ['late', 'Late'], ['early', 'Left early'], ['half', 'Half day']]} />
+                  <LabeledSelect label="Department" value={filters.draft.dept} onChange={(v) => filters.set('dept', v)} options={[['all', 'All departments'], ...departments.map((d): [string, string] => [d, d])]} />
+                </FiltersPanel>
+              )}
 
               <div style={{ overflowX: 'auto' }}>
                 <div style={{ minWidth: 1000 }}>
