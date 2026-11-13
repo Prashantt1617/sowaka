@@ -279,22 +279,28 @@ export function LeaveRequests() {
 
           {!waitingForDates && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
-              <StatTile state={st} label="People on leave" value={stats.people} />
+              {/* Each tile filters the list below to what it counts, and brings the list into view. */}
+              <StatTile state={st} label="People on leave" value={stats.people}
+                onPick={() => { s.setLeaveStatus('all'); toList(); }} picked={s.leaveStatus === 'all'} />
               <StatTile
                 state={st}
                 label="Leave days approved"
                 value={stats.approx ? <>≈ {stats.days}</> : stats.days}
-                sub={stats.approx ? 'approx. · leaves running past the period are cut by date, weekends taken out' : undefined}
+                onPick={() => { s.setLeaveStatus('Approved'); toList(); }} picked={s.leaveStatus === 'Approved'} color="var(--p-green)"
               />
-              <StatTile state={st} label="Pending" value={stats.pending} attn />
-              <StatTile state={st} label="Approved · Declined" value={<>{stats.approved} <span style={{ fontSize: 17, color: 'var(--ink-3)' }}>· {stats.declined}</span></>} />
+              <StatTile state={st} label="Pending" value={stats.pending} attn={s.leaveStatus !== 'Pending'}
+                onPick={() => { s.setLeaveStatus('Pending'); toList(); }} picked={s.leaveStatus === 'Pending'} color="var(--p-yellow)" />
+              <StatTile state={st} label="Approved · Declined"
+                value={<>{stats.approved} <button type="button" onClick={(e) => { e.stopPropagation(); s.setLeaveStatus('Declined'); toList(); }} aria-label="Show declined" style={{ border: 0, background: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontSize: 17, color: s.leaveStatus === 'Declined' ? 'var(--bad)' : 'var(--ink-3)', textDecoration: 'underline dotted' }}>· {stats.declined}</button></>}
+                onPick={() => { s.setLeaveStatus('Approved'); toList(); }} picked={s.leaveStatus === 'Declined'} color="var(--p-red)" />
               <StatTile
                 state={st}
                 label="Most people off"
                 value={stats.busiest ? stats.busiest.n : '—'}
                 unit={stats.busiest ? 'off' : undefined}
                 sub={stats.busiest ? <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{dayLabel(stats.busiest.d)}</span> : chartDays.length ? 'Nobody off' : 'Pick a shorter period'}
-                action={stats.busiest ? <LinkButton onClick={() => openCalendar(stats.busiest!.d)}>See on calendar</LinkButton> : undefined}
+                onPick={stats.busiest ? () => openCalendar(stats.busiest!.d) : undefined}
+                action={stats.busiest ? <span onClick={(e) => e.stopPropagation()}><LinkButton onClick={() => openCalendar(stats.busiest!.d)}>See on calendar</LinkButton></span> : undefined}
               />
             </div>
           )}
