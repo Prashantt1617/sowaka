@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useStore } from '../store';
+import { TO_STAT } from '../theme';
 import type { ReqStatus } from '../theme';
 import type { Leave } from '../seed';
 import { downloadCsv } from '../export';
-import { Card, EmptyRow, ListPending, SearchInput, SelectBox, StatusTabs, Th } from '../ui';
+import { Card, EmptyRow, ListPending, Pill, SearchInput, SelectBox, StatusTabs, Th } from '../ui';
 import type { LoadState } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { btn, btnClass, cellName, cellSub, TH, toolbar } from '../ds';
@@ -266,7 +267,8 @@ export function LeaveRequests() {
                 sub={`${stats.approved} ${stats.approved === 1 ? 'request' : 'requests'}`}
                 onPick={() => { setOnLeave(false); s.setLeaveStatus('Approved'); toList(); }} picked={!onLeave && s.leaveStatus === 'Approved'} color="var(--p-green)"
               />
-              <StatTile state={st} label="Pending" value={stats.pending} attn={stats.pending > 0 && (onLeave || s.leaveStatus !== 'Pending')}
+              <StatTile state={st} label="Pending" value={stats.pending}
+                action={stats.pending > 0 && (onLeave || s.leaveStatus !== 'Pending') ? <Pill label="Needs action" tone={TO_STAT.Pending} fontSize={11} padding="2px 8px" /> : undefined}
                 onPick={() => { setOnLeave(false); s.setLeaveStatus('Pending'); toList(); }} picked={!onLeave && s.leaveStatus === 'Pending'} color="var(--p-yellow)" />
               <StatTile state={st} label="Declined" value={stats.declined}
                 onPick={() => { setOnLeave(false); s.setLeaveStatus('Declined'); toList(); }} picked={!onLeave && s.leaveStatus === 'Declined'} color="var(--p-red)" />
