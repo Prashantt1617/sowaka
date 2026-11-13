@@ -43,7 +43,6 @@ const KIND: Record<Kind, { label: string; color: string; bg: string; fg: string 
   ool: { label: 'Out of location', color: 'var(--t-sky-i)', bg: 'var(--t-sky)', fg: 'var(--t-sky-i)' },
   face: { label: 'Face check', color: 'var(--ok)', bg: 'var(--ok-bg)', fg: 'var(--ok)' },
 };
-const KINDS: Kind[] = ['full', 'half', 'wfh', 'visit', 'leave', 'times', 'other', 'ool', 'face'];
 const kindOf = (r: Correction): Kind => r.kind ?? 'other';
 /**
  * Until it is decided the day counts as recorded (absent, a half day, a missed
@@ -56,7 +55,17 @@ const affectsPay = (r: Correction) => r.status === 'Pending' && kindOf(r) !== 'f
 const workDay = (r: Correction) => (r.refISO || '').slice(0, 10);
 const clock = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : '—');
 
-type Filter = 'all' | 'pay' | Kind;
+type Filter = 'all' | 'pay' | 'in' | 'out' | 'both' | 'ool';
+/** The design's filters: what the day is missing, by what was punched, or out of location. */
+const FILTERS: [Filter, string][] = [['all', 'All'], ['pay', 'Affects pay'], ['in', 'Punch-in missed'], ['out', 'Punch-out missed'], ['both', 'Both missed'], ['ool', 'Out of location']];
+const fitsFilter = (r: Correction, f: Filter): boolean => {
+  if (f === 'all') return true;
+  if (f === 'pay') return affectsPay(r);
+  if (f === 'ool') return kindOf(r) === 'ool';
+  if (kindOf(r) === 'ool' || kindOf(r) === 'face') return false;
+  const inAt = Boolean(r.punchInISO), outAt = Boolean(r.punchOutISO);
+  return f === 'in' ? !inAt && outAt : f === 'out' ? inAt && !outAt : !inAt && !outAt;
+};
 const NEEDS_ACTION_SHOWN = 3;
 type CorrPick = 'pay' | 'slow' | 'all';
 
@@ -142,8 +151,7 @@ export function AttendanceCorrections() {
     const q = s.corrSearch.trim().toLowerCase();
     if (q) out = out.filter((r) => r.name.toLowerCase().includes(q) || r.employeeCode.toLowerCase().includes(q) || r.manager.toLowerCase().includes(q));
     if (s.corrStatus !== 'all') out = out.filter((r) => r.status === s.corrStatus);
-    if (filter === 'pay') out = out.filter(affectsPay);
-    else if (filter !== 'all') out = out.filter((r) => kindOf(r) === filter);
+    out = out.filter((r) => fitsFilter(r, filter));
     // Pending that costs pay first, then other pending, then the decided; newest raised within each.
     const rank = (r: Correction) => (r.status === 'Pending' ? (affectsPay(r) ? 0 : 1) : 2);
     return out.sort((a, b) => rank(a) - rank(b) || b.ord - a.ord);
@@ -217,24 +225,20 @@ export function AttendanceCorrections() {
           </div>
 
           <div id="corr-list" style={{ scrollMarginTop: 96 }}>
-              <div style={toolbar}>
+              <div style={{ ...toolbar, flexWrap: 'wrap', alignItems: 'center' }}>
                 <StatusTabs<ReqStatus | 'all'>
                   options={['all', 'Pending', 'Approved', 'Declined']}
                   active={s.corrStatus}
                   onSelect={(v) => { s.setCorrStatus(v); setSelected(new Set()); }}
                   counts={st === 'ready' ? statusCounts : undefined}
                 />
-                <div role="group" aria-label="Type" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {(['all', 'pay', ...KINDS.filter((k) => k === filter || inPeriod.some((r) => kindOf(r) === k))] as Filter[]).map((f) => (
-                    <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)} style={chip(filter === f)}>
-                      {f === 'all' ? 'All types' : f === 'pay' ? 'Affects pay' : KIND[f].label}
-                    </button>
+                <div role="group" aria-label="Filter" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {FILTERS.map(([f, label]) => (
+                    <button key={f} type="button" aria-pressed={filter === f} onClick={() => { setFilter(f); setSelected(new Set()); }} style={chip(filter === f)}>{label}</button>
                   ))}
                 </div>
-              </div>
-              <div style={toolbar}>
-                <div style={{ flex: 1, minWidth: 240, display: 'flex' }}>
-                  <SearchInput value={s.corrSearch} onChange={s.setCorrSearch} placeholder="Search employee or manager…" width="100%" />
+                <div style={{ flex: '1 1 220px', maxWidth: 320, display: 'flex', marginLeft: 'auto' }}>
+                  <SearchInput value={s.corrSearch} onChange={s.setCorrSearch} placeholder="Search employee or manager" width="100%" />
                 </div>
                 <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
                   <IconDownload stroke="currentColor" /> Export
