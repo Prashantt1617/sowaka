@@ -75,6 +75,8 @@ export function LeaveCalendar({ state, initialDay, onPending, onCancellations, o
   }, [s.empRaw, leaves]);
 
   const offIn = (i: number, name: string) => new Set([...counts[i].approved, ...counts[i].pending].filter((l) => l.team === name).map(who)).size;
+  // Only the departments with somebody off this month; the rest would be empty rows.
+  const deptsOff = depts.filter((dp) => days.some((_, i) => offIn(i, dp.name) > 0));
 
   const di = days.indexOf(day);
   const sel = di >= 0 ? counts[di] : { approved: [], pending: [] };
@@ -184,7 +186,8 @@ export function LeaveCalendar({ state, initialDay, onPending, onCancellations, o
                       </span>
                     ))}
                   </div>
-                  {depts.map((dp) => (
+                  {deptsOff.length === 0 && <div style={{ padding: '18px 0', fontSize: 13.5, color: 'var(--ink-3)' }}>Nobody is off this month.</div>}
+                  {deptsOff.map((dp) => (
                     <div key={dp.name} style={{ display: 'grid', gridTemplateColumns: `160px repeat(${days.length}, minmax(0, 1fr))`, gap: 4, alignItems: 'center' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', paddingRight: 8, minWidth: 0 }}>
                         <span style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={dp.name}>{dp.name}</span>
