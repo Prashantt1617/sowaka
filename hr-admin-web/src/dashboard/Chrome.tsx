@@ -61,7 +61,8 @@ const SHIFTS: NavItem[] = [
   { key: 'shifttypes', label: 'Templates' },
   { key: 'shiftbulk', label: 'Bulk Assign' },
   { key: 'offices', label: 'Offices' },
-  { key: 'faceid', label: 'Face check' },
+  // Hidden from the Shifts menu for now (still granted with Shifts / its own tab).
+  { key: 'faceid', label: 'Face check', hidden: true },
 ];
 const PAYROLL: NavItem[] = [
   { key: 'payrolldash', label: 'Payroll Dashboard' },
