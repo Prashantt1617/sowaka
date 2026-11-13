@@ -5,7 +5,9 @@ import { TO_STAT } from '../theme';
 import type { ReqStatus } from '../theme';
 import type { Leave } from '../seed';
 import { downloadCsv } from '../export';
-import { Card, EmptyRow, ListPending, Pill, SearchInput, SelectBox, StatusTabs, Th } from '../ui';
+import { Card, EmptyRow, ListPending, Pill, SearchInput, StatusTabs, Th } from '../ui';
+import { FiltersButton, FiltersPanel, LabeledSelect } from './LabeledSelect';
+import { useFilterDraft } from './useFilterDraft';
 import type { LoadState } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { btn, btnClass, cellName, cellSub, TH, toolbar } from '../ds';
@@ -110,6 +112,11 @@ export function LeaveRequests() {
   const [unit, setUnit] = useState<PeriodUnit>('month');
   const [offset, setOffset] = useState(0);
   const [dept, setDept] = useState('all');
+  const filters = useFilterDraft(
+    { dept, type: s.leaveType, sort: s.leaveSort },
+    (v) => { setDept(v.dept); s.setLeaveType(v.type); s.setLeaveSort(v.sort); },
+    { dept: 'all', type: 'all', sort: 'recent' },
+  );
 
   // Custom: the dates applied (kept in the store), from the period on screen when first picked.
   const range = unit === 'custom' && s.leaveFrom ? periodRange('custom', s.leaveFrom, s.leaveTo) : stepRange(unit === 'week' ? 'week' : 'month', offset);
@@ -297,28 +304,20 @@ export function LeaveRequests() {
                 <div style={{ flex: 1, minWidth: 240, display: 'flex' }}>
                   <SearchInput value={s.leaveSearch} onChange={s.setLeaveSearch} placeholder="Search by employee…" width="100%" />
                 </div>
-                <SelectBox value={dept} onChange={setDept}>
-                  <option value="all">All departments</option>
-                  {departments.map((d) => <option key={d} value={d}>{d}</option>)}
-                </SelectBox>
-                <SelectBox value={s.leaveType} onChange={s.setLeaveType}>
-                  <option value="all">All types</option>
-                  {/* The types that actually appear, so one HR adds shows up here too. */}
-                  {[...new Set(s.leaves.map((r) => r.type))].sort().map((type) => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </SelectBox>
-                <SelectBox value={s.leaveSort} onChange={s.setLeaveSort}>
-                  <option value="recent">Applied, newest</option>
-                  <option value="oldest">Applied, oldest</option>
-                  <option value="date">Leave date</option>
-                  <option value="name">Name A–Z</option>
-                  <option value="days">Most days</option>
-                </SelectBox>
+                <FiltersButton open={filters.open} active={filters.active} onClick={filters.toggle} />
                 <button onClick={exportRows} disabled={rows.length === 0} className={btnClass()} style={btn()}>
                   <IconDownload stroke="currentColor" /> Export
                 </button>
               </div>
+              {filters.open && (
+                <FiltersPanel active={filters.active} dirty={filters.dirty} onApply={filters.apply} onClear={filters.clear}>
+                  <LabeledSelect label="Department" value={filters.draft.dept} onChange={(v) => filters.set('dept', v)} options={[['all', 'All departments'], ...departments.map((d): [string, string] => [d, d])]} />
+                  {/* The types that actually appear, so one HR adds shows up here too. */}
+                  <LabeledSelect label="Leave type" value={filters.draft.type} onChange={(v) => filters.set('type', v)} options={[['all', 'All types'], ...[...new Set(s.leaves.map((x) => x.type))].sort().map((t): [string, string] => [t, t])]} />
+                  <LabeledSelect label="Sort" value={filters.draft.sort} onChange={(v) => filters.set('sort', v)}
+                    options={[['recent', 'Applied, newest'], ['oldest', 'Applied, oldest'], ['date', 'Leave date'], ['name', 'Name A–Z'], ['days', 'Most days']]} />
+                </FiltersPanel>
+              )}
 
               <div style={{ overflowX: 'auto' }}>
                 <div style={{ minWidth: 980 }}>
