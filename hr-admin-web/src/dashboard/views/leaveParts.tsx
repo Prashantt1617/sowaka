@@ -47,17 +47,16 @@ export function LinkButton({ onClick, children }: { onClick: () => void; childre
 }
 
 /** "Pending ›": a pending request's status, which opens it to decide. */
-export function PendingChip({ onClick, label, dot = false }: { onClick: () => void; label: string; dot?: boolean }) {
+export function PendingChip({ onClick, label }: { onClick: () => void; label: string; dot?: boolean }) {
+  // The live dashboard's Pending pill exactly (the shared Pill: solid yellow, a dot, 11.5px), clickable.
   return (
     <button
       type="button"
       aria-label={label}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: dot ? 32 : 26, padding: dot ? '0 12px' : '0 10px', borderRadius: 999, border: '1px solid transparent', background: 'var(--p-yellow)', color: 'var(--p-yellow-ink)', fontSize: dot ? 13 : 12, fontWeight: 600, cursor: 'pointer', font: 'inherit', whiteSpace: 'nowrap' }}
+      style={{ border: 0, padding: 0, background: 'none', cursor: 'pointer', font: 'inherit', lineHeight: 0 }}
     >
-      {dot && <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--p-yellow-ink)' }} />}
-      Pending
-      <svg aria-hidden width={dot ? 14 : 12} height={dot ? 14 : 12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+      <Pill label="Pending" tone={TO_STAT.Pending} />
     </button>
   );
 }
