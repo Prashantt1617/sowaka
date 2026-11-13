@@ -19,11 +19,14 @@ import { applyThemeMode, readThemeMode } from './themeMode';
 import { SuwiOrb } from './suwi/SuwiPanel';
 import { useSuwiNotices } from './suwi/SuwiNoticed';
 import { PAGE_ACTIONS_ID } from './ds';
+import { SETUP_VIEWS } from './setupGroups';
 
 /** `hidden`: not shown in the sidebar, but still part of its section's access (Accesses grants it). */
 export type NavItem = { key: View; label: string; hidden?: boolean };
 
 export const OVERVIEW_ITEM: NavItem = { key: 'overview', label: 'Overview' };
+// Every settings page, by area (setupGroups.ts); those pages are hidden in their own sections.
+export const SETUP_ITEM: NavItem = { key: 'setup', label: 'Setup' };
 // In the redesign's order: who is in or off and every punch first, then the
 // requests that change them. OOL check-ins stays reachable (granted with Time
 // office) but off the sidebar: the Punch log shows those punches.
@@ -41,8 +44,8 @@ const SUPPORT: NavItem[] = [
   { key: 'support', label: 'Tickets' },
 ];
 const PEOPLE: NavItem[] = [
-  { key: 'departments', label: 'Departments' },
-  { key: 'designations', label: 'Designations' },
+  { key: 'departments', label: 'Departments', hidden: true },
+  { key: 'designations', label: 'Designations', hidden: true },
   { key: 'employees', label: 'Employees' },
   { key: 'employeeimport', label: 'Import' },
   { key: 'peopletasks', label: 'Tasks' },
@@ -50,29 +53,29 @@ const PEOPLE: NavItem[] = [
   { key: 'usersroles', label: 'Accesses' },
 ];
 const PERFORMANCE: NavItem[] = [
-  { key: 'kpi', label: 'KPI Parameters' },
-  { key: 'kpitemplates', label: 'Templates' },
+  { key: 'kpi', label: 'KPI Parameters', hidden: true },
+  { key: 'kpitemplates', label: 'Templates', hidden: true },
   { key: 'kpibulk', label: 'Bulk Assign' },
   { key: 'feedback', label: 'Performance Reviews' },
-  { key: 'cycle', label: 'Cycle' },
+  { key: 'cycle', label: 'Cycle', hidden: true },
 ];
 const SHIFTS: NavItem[] = [
-  { key: 'holidaybank', label: 'Holiday Bank' },
-  { key: 'shifttypes', label: 'Templates' },
+  { key: 'holidaybank', label: 'Holiday Bank', hidden: true },
+  { key: 'shifttypes', label: 'Templates', hidden: true },
   { key: 'shiftbulk', label: 'Bulk Assign' },
-  { key: 'offices', label: 'Offices' },
+  { key: 'offices', label: 'Offices', hidden: true },
   // Hidden from the Shifts menu for now (still granted with Shifts / its own tab).
   { key: 'faceid', label: 'Face check', hidden: true },
 ];
 const PAYROLL: NavItem[] = [
   { key: 'payrolldash', label: 'Payroll Dashboard' },
-  { key: 'payschedule', label: 'Pay schedule' },
-  { key: 'taxdetails', label: 'Tax details' },
-  { key: 'payheads', label: 'Salary Components' },
-  { key: 'statutorycomponents', label: 'Statutory Components' },
-  { key: 'payrollconfig', label: 'Statutory & tax settings' },
-  { key: 'templates', label: 'Salary Templates' },
-  { key: 'paiddays', label: 'Paid Days Templates' },
+  { key: 'payschedule', label: 'Pay schedule', hidden: true },
+  { key: 'taxdetails', label: 'Tax details', hidden: true },
+  { key: 'payheads', label: 'Salary Components', hidden: true },
+  { key: 'statutorycomponents', label: 'Statutory Components', hidden: true },
+  { key: 'payrollconfig', label: 'Statutory & tax settings', hidden: true },
+  { key: 'templates', label: 'Salary Templates', hidden: true },
+  { key: 'paiddays', label: 'Paid Days Templates', hidden: true },
   { key: 'payruns', label: 'Payroll Runs' },
   { key: 'investmentproofs', label: 'Investment proofs' },
   // FBP is part of salary, not a claim: its bills and splits sit with payroll.
@@ -86,7 +89,7 @@ const PAYROLL: NavItem[] = [
 // together, so money questions are one section to give someone.
 const CLAIMS: NavItem[] = [
   { key: 'reimbursements', label: 'Reimbursement requests' },
-  { key: 'reimbursementtypes', label: 'Reimbursement Types' },
+  { key: 'reimbursementtypes', label: 'Reimbursement Types', hidden: true },
 ];
 // Engagement: how people use the app, the feed (reported posts included, so
 // moderation sits where the posts are), the plan, contests and games. Tournament
@@ -162,7 +165,8 @@ function SoonBadge() {
 
 function NavButton({ item, badge, sub }: { item: NavItem; badge?: ReactNode; sub?: boolean }) {
   const { view, setView } = useStore();
-  const active = view === item.key;
+  // Setup stays lit on the settings pages it leads to.
+  const active = view === item.key || (item.key === 'setup' && SETUP_VIEWS.includes(view));
   const soon = SOON[item.key];
   return (
     <button
@@ -385,6 +389,7 @@ export function Sidebar() {
       </button>
 
       <div className="scry" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '0 12px 16px' }}>
+        {canOpen(user, SETUP_ITEM.key) && <NavButton item={SETUP_ITEM} />}
         {canOpen(user, OVERVIEW_ITEM.key) && <NavButton item={OVERVIEW_ITEM} badge={badgeFor(OVERVIEW_ITEM.key)} />}
         {sections.map((section) => (
           <NavSection
@@ -546,7 +551,7 @@ export function Topbar() {
       <div style={{ padding: '28px 4px 0', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 500, lineHeight: '18px', color: 'var(--hi)', letterSpacing: '.02em' }}>
-            <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--hi)', boxShadow: '0 0 0 3px var(--hi-soft)', flexShrink: 0 }} />
+            {meta && <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--hi)', boxShadow: '0 0 0 3px var(--hi-soft)', flexShrink: 0 }} />}
             {meta}
           </div>
           <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1.2, margin: '4px 0' }}>{title}</h1>

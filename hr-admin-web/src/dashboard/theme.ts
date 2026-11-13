@@ -5,6 +5,7 @@ export type Pill = { bg: string; fg: string };
 export type View =
   | 'organisation'
   | 'overview'
+  | 'setup'
   | 'leave'
   | 'overtime'
   | 'attendance'
@@ -152,6 +153,7 @@ export function initials(name: string): string {
 export const TITLES: Record<View, [string, string]> = {
   organisation: ['Organisation', 'Company profile, identity & contact details'],
   overview: ['HR control room', ''], // the date is filled in by Topbar
+  setup: ['Setup', ''],
   leave: ['Leave requests', 'Time office'],
   overtime: ['Overtime', 'Time office'],
   attendance: ['Attendance corrections', 'Time office'],
