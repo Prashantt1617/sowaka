@@ -329,7 +329,7 @@ export function CompanyCalendar() {
                   border: `1.5px solid ${on ? m.fg : `color-mix(in srgb, ${m.fg} 28%, transparent)`}`,
                   color: on ? m.fg : 'var(--ink-2)', fontWeight: on ? 600 : 500 }}>
                 <i style={{ background: m.fg, flexShrink: 0, margin: 0 }} />
-                <span style={{ minWidth: 0 }}>{m.label} <span style={{ color: m.fg, fontWeight: 600, whiteSpace: 'nowrap' }}>{loading ? '…' : totals[m.key]}</span></span>
+                <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>{m.label}<span style={{ color: m.fg, fontWeight: 600, whiteSpace: 'nowrap' }}>{loading ? '…' : totals[m.key]}</span></span>
               </button>
             );
           })}
@@ -415,7 +415,7 @@ export function CompanyCalendar() {
         ) : (
           <div className="pd-tbl-wrap">
             <table className="pd-t">
-              <thead><tr><th>Employee</th><th>{mdef.head}</th><th>Manager</th>{metric !== 'present' && <th aria-label="Action" />}</tr></thead>
+              <thead><tr><th>Employee</th><th>{mdef.head}</th>{metric === 'leave' && <th>Status</th>}<th>Manager</th>{metric !== 'present' && <th aria-label="Action" />}</tr></thead>
               <tbody>
                 {selected.slice().sort((a, b) => a.name.localeCompare(b.name)).map((h) => (
                   <tr key={h.userId}>
@@ -428,11 +428,8 @@ export function CompanyCalendar() {
                         </div>
                       </div>
                     </td>
-                    <td>
-                      {h.leaveStatus
-                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>{h.detail} <Pill label={h.leaveStatus} tone={TO_STAT[h.leaveStatus]} /></span>
-                        : h.detail}
-                    </td>
+                    <td>{h.detail}</td>
+                    {metric === 'leave' && <td>{h.leaveStatus ? <Pill label={h.leaveStatus} tone={TO_STAT[h.leaveStatus]} /> : '—'}</td>}
                     <td>{h.manager || '—'}</td>
                     {metric !== 'present' && (
                       <td style={{ textAlign: 'right' }}>
