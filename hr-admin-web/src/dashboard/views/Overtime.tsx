@@ -19,7 +19,7 @@ type Given = 'all' | 'pay' | 'comp';
 /**
  * Pay, comp-off or both, as the "Pay and comp-off" filter reads a request: an
  * approved one by what it was given as (a request from before the choice is
- * paid and credited, so it is both), any other by what was asked for.
+ * comp-off, as overtime always was then), any other by what was asked for.
  */
 const givenAs = (r: OvertimeRow): { pay: boolean; comp: boolean } =>
   r.status === 'Approved'
@@ -99,7 +99,7 @@ export function Overtime() {
   const chartDays = chartDaysOf(range);
   const totals = useMemo(() => {
     const ix = new Map(chartDays.map((d, i) => [d, i]));
-    // a: approved as pay (a request from before the choice is paid, so it counts here), c: as comp-off.
+    // a: approved as pay, c: as comp-off (a request from before the choice is comp-off).
     const t = chartDays.map(() => ({ a: 0, p: 0, c: 0 }));
     for (const r of inPeriod) {
       const i = ix.get(workDay(r));
@@ -125,7 +125,7 @@ export function Overtime() {
       toPay: approved.filter((r) => r.paidInPayroll).length,
       toPayHours: Math.round(approved.filter((r) => r.paidInPayroll).reduce((a, r) => a + (r.hours || 0), 0) * 10) / 10,
       toPayLegacy: approved.filter((r) => r.paidInPayroll && !r.decision).length,
-      // A request from before the choice credits its comp-off and is paid too, as it always was.
+      // A request from before the choice is comp-off only, as overtime always was then.
       compOffLegacy: approved.filter((r) => r.compOffDays > 0 && !r.decision).length,
       busiest: best >= 0 ? { d: chartDays[best], n: sum(totals[best]) } : null,
     };

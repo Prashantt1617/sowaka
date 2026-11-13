@@ -162,7 +162,8 @@ function otOutcome(dto: OvertimeDTO): Pick<Overtime, 'compOffDays' | 'paidInPayr
   const c = dto.compensation;
   if (c?.kind === 'comp_off') return { compOffDays: c.days, paidInPayroll: false };
   if (c?.kind === 'pay') return { compOffDays: 0, paidInPayroll: true };
-  return { compOffDays: dto.duration === 'full_day' ? 1 : 0.5, paidInPayroll: true };
+  // From before the choice existed: overtime was comp-off then, never pay.
+  return { compOffDays: dto.duration === 'full_day' ? 1 : 0.5, paidInPayroll: false };
 }
 
 /** How each choice reads, in the app form's words. */
