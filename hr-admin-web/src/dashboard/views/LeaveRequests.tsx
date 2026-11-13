@@ -13,7 +13,7 @@ import { IconDownload } from '../icons';
 import { LeaveCalendar } from './LeaveCalendar';
 import {
   chartDaysOf, needsActionSummary, overlaps, peopleTotals, pendingFacts, perDay, plural, stepRange, weekOffsetOf,
-  LEAVE_COLS, SLOW_DAYS, startOf, todayISO,
+  endOf, LEAVE_COLS, SLOW_DAYS, startOf, todayISO,
 } from './leaveDays';
 import { Flag, LeaveRow, NeedsActionShell, PendingChip, PeriodStepper, StatTile, Waiting } from './leaveParts';
 import { Pager, usePaged } from './Pager';
@@ -253,7 +253,8 @@ export function LeaveRequests() {
 
       <Card padded>
         <section aria-labelledby="leave-period" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <PeriodStepper id="leave-period" title={range.title} unit={unit} onUnit={(u) => { setUnit(u); setOffset(0); }} onStep={(by) => setOffset((o) => o + by)} />
+          <PeriodStepper id="leave-period" title={range.title} unit={unit} onUnit={(u) => { setUnit(u); setOffset(0); }} onStep={(by) => setOffset((o) => o + by)}
+            hasPrev={s.leaves.some((l) => startOf(l) < range.from)} hasNext={s.leaves.some((l) => endOf(l) > range.to)} />
 
           {!waitingForDates && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
