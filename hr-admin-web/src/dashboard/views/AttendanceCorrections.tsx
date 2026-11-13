@@ -3,8 +3,7 @@
 //
 // The same queue a manager sees in the app, but org-wide: HR is asking what is
 // outstanding anywhere, not what is waiting on them, so every row names the
-// manager it actually belongs to. Needs action puts what is pending first,
-// what costs pay ahead of the rest.
+// manager it actually belongs to.
 // Deciding from here is an override, so it goes through a confirm with a note.
 import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
@@ -15,14 +14,13 @@ import type { Correction, CorrectionKind } from '../seed';
 import { inDateRange } from '../adapters';
 import { downloadCsv } from '../export';
 import { Card, EmptyRow, ListPending, Pill, SearchInput, StatusTabs, Th } from '../ui';
-import type { LoadState } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { btn, btnClass, cellName, cellSub, textareaStyle, TH, toolbar, TR } from '../ds';
 import { IconDownload } from '../icons';
 import { SuwiInsight } from '../suwi/SuwiInsight';
 import { DrawerHeader, DrawerShell, InfoGrid, RemarkBlock } from '../drawers/shell';
-import { daysSince, PENDING_ROW, periodRange, plural, SLOW_DAYS, stepRange } from './leaveDays';
-import { NeedsActionShell, PendingChip, PeriodStepper, StatTile, Waiting } from './leaveParts';
+import { PENDING_ROW, periodRange, plural, stepRange } from './leaveDays';
+import { PendingChip, PeriodStepper, StatTile } from './leaveParts';
 import type { PeriodUnit } from './leaveParts';
 import { Pager, usePaged } from './Pager';
 
@@ -67,62 +65,6 @@ const fitsFilter = (r: Correction, f: Filter): boolean => {
   const inAt = Boolean(r.punchInISO), outAt = Boolean(r.punchOutISO);
   return f === 'in' ? !inAt && outAt : f === 'out' ? inAt && !outAt : !inAt && !outAt;
 };
-const NEEDS_ACTION_SHOWN = 3;
-type CorrPick = 'pay' | 'slow' | 'all';
-
-/** Needs action, as on Leave requests: the most urgent few; its tags filter this table only. */
-function CorrNeedsAction({ state, onOpen }: { state: LoadState; onOpen: (id: string) => void }) {
-  const s = useStore();
-  // What costs pay first, then the longest wait.
-  const everything = s.corrs.filter((r) => r.status === 'Pending')
-    .sort((a, b) => Number(affectsPay(b)) - Number(affectsPay(a)) || a.ord - b.ord);
-  const [pick, setPick] = useState<CorrPick | null>(null);
-  const isSlow = (r: Correction) => daysSince(r.ord) > SLOW_DAYS;
-  const fits = (r: Correction, k: CorrPick) => (k === 'all' ? true : k === 'pay' ? affectsPay(r) : isSlow(r));
-  const matching = everything.filter((r) => fits(r, pick ?? 'all'));
-  const paged = usePaged(matching, pick);
-  if (state === 'ready' && everything.length === 0) return null;
-  const list = pick ? paged.rows : matching.slice(0, NEEDS_ACTION_SHOWN);
-  const slow = everything.filter(isSlow).length;
-  const tag = (k: CorrPick, text: string, count: number) => ({ tone: 'mute' as const, text, count, picked: pick === k, onPick: () => setPick(pick === k ? null : k) });
-  return (
-    <NeedsActionShell
-      id="corr-needs-action"
-      state={state}
-      summary={`${plural(everything.length, 'request')} waiting for approval · all dates`}
-      chips={[...(slow ? [tag('slow', `Waiting over ${SLOW_DAYS} days`, slow)] : []), tag('all', 'All', everything.length)]}
-    >
-      {list.map((r) => {
-        const k = KIND[kindOf(r)];
-        return (
-          <div key={r.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(220px,1.5fr) minmax(170px,1.2fr) minmax(150px,1.1fr) minmax(100px,.7fr) minmax(120px,auto)', alignItems: 'center', gap: 16, padding: '12px 22px', borderTop: '1px solid var(--line)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-              <PersonAvatar name={r.name} userId={r.submitterId} />
-              <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <span style={{ ...cellName, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
-                <span style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.employeeCode} · {r.team}</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ fontSize: 13.5 }}>{r.day} {r.workDate}</span>
-              <span style={{ alignSelf: 'flex-start', fontSize: 11.5, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: k.bg, color: k.fg, whiteSpace: 'nowrap' }}>{k.label}</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-              <span style={cellSub}>Manager</span>
-              <span style={{ fontSize: 13.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.manager || '—'}</span>
-            </div>
-            <Waiting days={daysSince(r.ord)} slow={SLOW_DAYS} />
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-              <PendingChip onClick={() => onOpen(r.id)} label={`Review ${r.name}'s correction`} />
-            </div>
-          </div>
-        );
-      })}
-      <ListPending state={state} onRetry={() => void s.reload()} rows={3} cols={4} />
-      {pick && <div style={{ padding: '0 18px 12px' }}><Pager p={paged} /></div>}
-    </NeedsActionShell>
-  );
-}
 
 export function AttendanceCorrections() {
   const s = useStore();
@@ -134,6 +76,10 @@ export function AttendanceCorrections() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<'approve' | 'decline' | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  // Employees tile: the list becomes one row per person with how many corrections they raised;
+  // picking a person shows only theirs.
+  const [byPerson, setByPerson] = useState(false);
+  const [person, setPerson] = useState<string | null>(null);
 
   // Custom: the dates applied (kept in the store), from the period on screen when first picked.
   const range = unit === 'custom' && s.corrFrom ? periodRange('custom', s.corrFrom, s.corrTo) : stepRange(unit === 'week' ? 'week' : 'month', offset);
@@ -141,6 +87,7 @@ export function AttendanceCorrections() {
 
   const stats = useMemo(() => ({
     total: inPeriod.length,
+    employees: new Set(inPeriod.map((r) => r.submitterId || r.name)).size,
     pending: inPeriod.filter((r) => r.status === 'Pending').length,
     approved: inPeriod.filter((r) => r.status === 'Approved').length,
     declined: inPeriod.filter((r) => r.status === 'Declined').length,
@@ -150,12 +97,31 @@ export function AttendanceCorrections() {
     let out = inPeriod.slice();
     const q = s.corrSearch.trim().toLowerCase();
     if (q) out = out.filter((r) => r.name.toLowerCase().includes(q) || r.employeeCode.toLowerCase().includes(q) || r.manager.toLowerCase().includes(q));
+    if (person) out = out.filter((r) => (r.submitterId || r.name) === person);
     if (s.corrStatus !== 'all') out = out.filter((r) => r.status === s.corrStatus);
     out = out.filter((r) => fitsFilter(r, filter));
     // Pending that costs pay first, then other pending, then the decided; newest raised within each.
     const rank = (r: Correction) => (r.status === 'Pending' ? (affectsPay(r) ? 0 : 1) : 2);
     return out.sort((a, b) => rank(a) - rank(b) || b.ord - a.ord);
-  }, [inPeriod, s.corrSearch, s.corrStatus, filter]);
+  }, [inPeriod, s.corrSearch, s.corrStatus, filter, person]);
+
+  // One row per person in the period: how many corrections they raised, most first.
+  const perPerson = useMemo(() => {
+    const m = new Map<string, { id: string; name: string; code: string; team: string; manager: string; submitterId?: string; total: number; pending: number; approved: number; declined: number; pay: number }>();
+    for (const r of inPeriod) {
+      const id = r.submitterId || r.name;
+      const e = m.get(id) ?? { id, name: r.name, code: r.employeeCode, team: r.team, manager: r.manager, submitterId: r.submitterId, total: 0, pending: 0, approved: 0, declined: 0, pay: 0 };
+      e.total++;
+      if (r.status === 'Pending') e.pending++;
+      else if (r.status === 'Approved') e.approved++;
+      else if (r.status === 'Declined') e.declined++;
+      if (affectsPay(r)) e.pay++;
+      m.set(id, e);
+    }
+    const q = s.corrSearch.trim().toLowerCase();
+    return [...m.values()].filter((e) => !q || e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q)).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  }, [inPeriod, s.corrSearch]);
+  const pagedPeople = usePaged(perPerson, `${perPerson.length}|${byPerson}`);
   const paged = usePaged(rows, `${rows.length}|${rows[0]?.id ?? ''}`);
   const pendingRows = rows.filter((r) => r.status === 'Pending');
   const picked = pendingRows.filter((r) => selected.has(r.id));
@@ -201,15 +167,13 @@ export function AttendanceCorrections() {
     };
     setTimeout(go, 50);
   };
-  const pickStatus = (v: ReqStatus | 'all') => { s.setCorrStatus(v); setSelected(new Set()); toList(); };
+  const pickStatus = (v: ReqStatus | 'all') => { setByPerson(false); s.setCorrStatus(v); setSelected(new Set()); toList(); };
 
   const open = openId ? s.corrs.find((r) => r.id === openId) ?? null : null;
   const chip = (on: boolean): CSSProperties => ({ height: 32, padding: '0 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', font: 'inherit', border: `1px solid ${on ? 'var(--sel)' : 'var(--line-2)'}`, background: on ? 'var(--sel)' : 'var(--surface)', color: on ? 'var(--on-sel)' : 'var(--ink)' });
 
   return (
     <div style={{ animation: 'fade .3s ease both' }}>
-      <CorrNeedsAction state={st} onOpen={setOpenId} />
-
       <Card padded>
         <section aria-labelledby="corr-period" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <PeriodStepper id="corr-period" title={range.title} unit={unit}
@@ -219,14 +183,60 @@ export function AttendanceCorrections() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
             {/* Each tile filters the list below to what it counts, and brings the list into view. */}
-            <StatTile state={st} label="Corrections" value={stats.total} onPick={() => pickStatus('all')} picked={s.corrStatus === 'all'} />
-            <StatTile state={st} label="Pending" value={stats.pending} onPick={() => pickStatus('Pending')} picked={s.corrStatus === 'Pending'} color="var(--p-yellow)"
-              action={stats.pending > 0 && s.corrStatus !== 'Pending' ? <Pill label="Needs action" tone={TO_STAT.Pending} fontSize={11} padding="2px 8px" /> : undefined} />
-            <StatTile state={st} label="Approved" value={stats.approved} onPick={() => pickStatus('Approved')} picked={s.corrStatus === 'Approved'} color="var(--p-green)" />
-            <StatTile state={st} label="Declined" value={stats.declined} onPick={() => pickStatus('Declined')} picked={s.corrStatus === 'Declined'} color="var(--p-red)" />
+            <StatTile state={st} label="Corrections" value={stats.total} onPick={() => pickStatus('all')} picked={!byPerson && s.corrStatus === 'all'} />
+            <StatTile state={st} label="Employees" value={stats.employees} onPick={() => { setByPerson(true); setPerson(null); setSelected(new Set()); toList(); }} picked={byPerson} color="var(--accent)" />
+            <StatTile state={st} label="Pending" value={stats.pending} onPick={() => pickStatus('Pending')} picked={!byPerson && s.corrStatus === 'Pending'} color="var(--p-yellow)"
+              action={stats.pending > 0 && (byPerson || s.corrStatus !== 'Pending') ? <Pill label="Needs action" tone={TO_STAT.Pending} fontSize={11} padding="2px 8px" /> : undefined} />
+            <StatTile state={st} label="Approved" value={stats.approved} onPick={() => pickStatus('Approved')} picked={!byPerson && s.corrStatus === 'Approved'} color="var(--p-green)" />
+            <StatTile state={st} label="Declined" value={stats.declined} onPick={() => pickStatus('Declined')} picked={!byPerson && s.corrStatus === 'Declined'} color="var(--p-red)" />
           </div>
 
           <div id="corr-list" style={{ scrollMarginTop: 96 }}>
+            {byPerson ? (
+              <div>
+                <div style={{ ...toolbar, alignItems: 'center' }}>
+                  <div style={{ flex: '1 1 220px', maxWidth: 320, display: 'flex' }}>
+                    <SearchInput value={s.corrSearch} onChange={s.setCorrSearch} placeholder="Search employee" width="100%" />
+                  </div>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <div style={{ minWidth: 760 }}>
+                    <div style={TH('1.8fr .8fr .8fr .8fr .8fr .8fr 1.2fr')}>
+                      <Th>EMPLOYEE</Th><Th>CORRECTIONS</Th><Th>PENDING</Th><Th>APPROVED</Th><Th>DECLINED</Th><Th>AFFECT PAY</Th><Th>MANAGER</Th>
+                    </div>
+                    {pagedPeople.rows.map((e, i) => (
+                      <div key={e.id} className="dc-row" onClick={() => { setPerson(e.id); setByPerson(false); s.setCorrStatus('all'); setFilter('all'); }}
+                        style={{ ...TR('1.8fr .8fr .8fr .8fr .8fr .8fr 1.2fr', i === pagedPeople.rows.length - 1), cursor: 'pointer' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                          <PersonAvatar name={e.name} userId={e.submitterId} />
+                          <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <div style={{ ...cellName, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.name}</div>
+                            <div style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.code} · {e.team}</div>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 16, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{e.total}</div>
+                        <div>{e.pending || '—'}</div>
+                        <div>{e.approved || '—'}</div>
+                        <div>{e.declined || '—'}</div>
+                        <div style={{ color: e.pay ? 'var(--bad)' : undefined, fontWeight: e.pay ? 600 : 400 }}>{e.pay || '—'}</div>
+                        <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={e.manager}>{e.manager || '—'}</div>
+                      </div>
+                    ))}
+                    {st === 'ready' && perPerson.length === 0 && <EmptyRow text="Nobody raised a correction in this period." />}
+                  </div>
+                  <Pager p={pagedPeople} />
+                </div>
+              </div>
+            ) : (
+            <>
+              {person && (
+                <div style={{ ...toolbar, gap: 8, fontSize: 13 }}>
+                  <button type="button" onClick={() => setPerson(null)} aria-label="Show everyone again" style={{ ...chip(true), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    {perPerson.find((e) => e.id === person)?.name ?? 'Employee'} <span aria-hidden>×</span>
+                  </button>
+                  <button type="button" onClick={() => { setPerson(null); setByPerson(true); }} className="pd-btn ghost" style={{ height: 32, fontSize: 12.5 }}>Back to employees</button>
+                </div>
+              )}
               <div style={{ ...toolbar, flexWrap: 'wrap', alignItems: 'center' }}>
                 <StatusTabs<ReqStatus | 'all'>
                   options={['all', 'Pending', 'Approved', 'Declined']}
@@ -311,6 +321,8 @@ export function AttendanceCorrections() {
                 </div>
                 <Pager p={paged} />
               </div>
+            </>
+            )}
           </div>
         </section>
       </Card>
