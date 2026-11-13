@@ -10,6 +10,7 @@ const LOADERS: Partial<Record<View, Loader>> = {
   organisation: () => import('./views/Organisation').then((m) => ({ default: m.Organisation })),
   overview: () => import('./views/Overview').then((m) => ({ default: m.Overview })),
   setup: () => import('./views/Setup').then((m) => ({ default: m.Setup })),
+  bulkassign: () => import('./views/Setup').then((m) => ({ default: m.BulkAssign })),
   leave: () => import('./views/LeaveRequests').then((m) => ({ default: m.LeaveRequests })),
   overtime: () => import('./views/Overtime').then((m) => ({ default: m.Overtime })),
   attendance: () => import('./views/AttendanceCorrections').then((m) => ({ default: m.AttendanceCorrections })),

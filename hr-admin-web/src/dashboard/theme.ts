@@ -6,6 +6,7 @@ export type View =
   | 'organisation'
   | 'overview'
   | 'setup'
+  | 'bulkassign'
   | 'leave'
   | 'overtime'
   | 'attendance'
@@ -154,6 +155,7 @@ export const TITLES: Record<View, [string, string]> = {
   organisation: ['Organisation', 'Company profile, identity & contact details'],
   overview: ['HR control room', ''], // the date is filled in by Topbar
   setup: ['Setup', ''],
+  bulkassign: ['Bulk assign', ''],
   leave: ['Leave requests', 'Time office'],
   overtime: ['Overtime', 'Time office'],
   attendance: ['Attendance corrections', 'Time office'],

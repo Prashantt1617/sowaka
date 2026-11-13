@@ -19,7 +19,7 @@ import { applyThemeMode, readThemeMode } from './themeMode';
 import { SuwiOrb } from './suwi/SuwiPanel';
 import { useSuwiNotices } from './suwi/SuwiNoticed';
 import { PAGE_ACTIONS_ID } from './ds';
-import { SETUP_VIEWS } from './setupGroups';
+import { BULK_VIEWS, SETUP_VIEWS } from './setupGroups';
 
 /** `hidden`: not shown in the sidebar, but still part of its section's access (Accesses grants it). */
 export type NavItem = { key: View; label: string; hidden?: boolean };
@@ -27,6 +27,8 @@ export type NavItem = { key: View; label: string; hidden?: boolean };
 export const OVERVIEW_ITEM: NavItem = { key: 'overview', label: 'Overview' };
 // Every settings page, by area (setupGroups.ts); those pages are hidden in their own sections.
 export const SETUP_ITEM: NavItem = { key: 'setup', label: 'Setup' };
+// Every bulk assignment (setupGroups.ts), likewise hidden in their own sections.
+export const BULK_ITEM: NavItem = { key: 'bulkassign', label: 'Bulk assign' };
 // In the redesign's order: who is in or off and every punch first, then the
 // requests that change them. OOL check-ins stays reachable (granted with Time
 // office) but off the sidebar: the Punch log shows those punches.
@@ -55,14 +57,14 @@ const PEOPLE: NavItem[] = [
 const PERFORMANCE: NavItem[] = [
   { key: 'kpi', label: 'KPI Parameters', hidden: true },
   { key: 'kpitemplates', label: 'Templates', hidden: true },
-  { key: 'kpibulk', label: 'Bulk Assign' },
+  { key: 'kpibulk', label: 'Bulk Assign', hidden: true },
   { key: 'feedback', label: 'Performance Reviews' },
   { key: 'cycle', label: 'Cycle', hidden: true },
 ];
 const SHIFTS: NavItem[] = [
   { key: 'holidaybank', label: 'Holiday Bank', hidden: true },
   { key: 'shifttypes', label: 'Templates', hidden: true },
-  { key: 'shiftbulk', label: 'Bulk Assign' },
+  { key: 'shiftbulk', label: 'Bulk Assign', hidden: true },
   { key: 'offices', label: 'Offices', hidden: true },
   // Hidden from the Shifts menu for now (still granted with Shifts / its own tab).
   { key: 'faceid', label: 'Face check', hidden: true },
@@ -82,7 +84,7 @@ const PAYROLL: NavItem[] = [
   { key: 'fbprequests', label: 'FBP requests' },
   { key: 'fbpsplits', label: 'FBP splits' },
   { key: 'payrollreports', label: 'Payroll Reports' },
-  { key: 'payrollbulk', label: 'Bulk Assign' },
+  { key: 'payrollbulk', label: 'Bulk Assign', hidden: true },
 ];
 
 // Claims sits below Payroll: the claims people raise and what can be claimed,
@@ -166,7 +168,7 @@ function SoonBadge() {
 function NavButton({ item, badge, sub }: { item: NavItem; badge?: ReactNode; sub?: boolean }) {
   const { view, setView } = useStore();
   // Setup stays lit on the settings pages it leads to.
-  const active = view === item.key || (item.key === 'setup' && SETUP_VIEWS.includes(view));
+  const active = view === item.key || (item.key === 'setup' && SETUP_VIEWS.includes(view)) || (item.key === 'bulkassign' && BULK_VIEWS.includes(view));
   const soon = SOON[item.key];
   return (
     <button
@@ -376,6 +378,7 @@ export function Sidebar() {
 
       <div className="scry" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '0 12px 16px' }}>
         {canOpen(user, SETUP_ITEM.key) && <NavButton item={SETUP_ITEM} />}
+        {canOpen(user, BULK_ITEM.key) && <NavButton item={BULK_ITEM} />}
         {canOpen(user, OVERVIEW_ITEM.key) && <NavButton item={OVERVIEW_ITEM} badge={badgeFor(OVERVIEW_ITEM.key)} />}
         {sections.map((section) => (
           <NavSection
@@ -541,9 +544,9 @@ export function Topbar() {
             {meta}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {/* A settings page opened from Setup has its way back beside the title. */}
-            {SETUP_VIEWS.includes(view) && canOpen(user, 'setup') && (
-              <button type="button" onClick={() => setView('setup')} aria-label="Back to Setup" title="Back to Setup"
+            {/* A page opened from Setup or Bulk assign has its way back beside the title. */}
+            {((SETUP_VIEWS.includes(view) && canOpen(user, 'setup')) || (BULK_VIEWS.includes(view) && canOpen(user, 'bulkassign'))) && (
+              <button type="button" onClick={() => setView(BULK_VIEWS.includes(view) ? 'bulkassign' : 'setup')} aria-label={BULK_VIEWS.includes(view) ? 'Back to Bulk assign' : 'Back to Setup'} title={BULK_VIEWS.includes(view) ? 'Back to Bulk assign' : 'Back to Setup'}
                 style={{ width: 34, height: 34, borderRadius: '50%', border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="m15 6-6 6 6 6" /></svg>
               </button>

@@ -37,3 +37,12 @@ export const SETUP_GROUPS: SetupGroup[] = [
 ];
 
 export const SETUP_VIEWS: View[] = SETUP_GROUPS.flatMap((g) => g.items.map((i) => i.view));
+
+/** The Bulk assign page's cards: every bulk assignment, off its old section (hidden there) like Setup's pages. */
+export const BULK_GROUPS: SetupGroup[] = [
+  { key: 'shifts', title: 'Shifts', icon: 'shifttypes', items: [{ view: 'shiftbulk', label: 'Assign shift templates' }] },
+  { key: 'payroll', title: 'Payroll', icon: 'payruns', items: [{ view: 'payrollbulk', label: 'Assign salary templates' }] },
+  { key: 'performance', title: 'Performance', icon: 'kpi', items: [{ view: 'kpibulk', label: 'Assign KPI templates' }] },
+];
+
+export const BULK_VIEWS: View[] = BULK_GROUPS.flatMap((g) => g.items.map((i) => i.view));

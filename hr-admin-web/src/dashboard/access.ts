@@ -2,7 +2,7 @@
 // on the APIs behind each tab; this only decides what the sidebar shows.
 import type { AuthUser } from '../services/auth';
 import type { View } from './theme';
-import { SETUP_VIEWS } from './setupGroups';
+import { BULK_VIEWS, SETUP_VIEWS } from './setupGroups';
 
 /** Not a sidebar tab: the Salary details tab on an employee's profile. */
 export const SALARY_DETAILS = 'salarydetails';
@@ -17,6 +17,7 @@ export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boo
   if (view === 'usersroles' || view === 'employeeimport') return user.dashboardAdmin === true;
   // Setup is a page of links: open to whoever may open any of the pages on it.
   if (view === 'setup') return SETUP_VIEWS.some((v) => canOpen(user, v));
+  if (view === 'bulkassign') return BULK_VIEWS.some((v) => canOpen(user, v));
   // Suwi is for everyone with dashboard access; what it can reach is decided per question.
   if (view === 'suwi') return true;
   // Investment proofs and Statutory & tax settings go with payroll access, as the server decides it: Payroll Runs or Salary details.

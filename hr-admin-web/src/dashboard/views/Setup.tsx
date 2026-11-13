@@ -4,12 +4,22 @@ import { useAuth } from '../auth/AuthContext';
 import { canOpen } from '../access';
 import { navIcon } from '../icons';
 import { prefetchView } from '../viewChunks';
-import { SETUP_GROUPS } from '../setupGroups';
+import { BULK_GROUPS, SETUP_GROUPS } from '../setupGroups';
+import type { SetupGroup } from '../setupGroups';
 
 export function Setup() {
+  return <Hub groups={SETUP_GROUPS} />;
+}
+
+/** Bulk assign: every bulk assignment, a card per area. */
+export function BulkAssign() {
+  return <Hub groups={BULK_GROUPS} />;
+}
+
+function Hub({ groups: all }: { groups: SetupGroup[] }) {
   const s = useStore();
   const { user } = useAuth();
-  const groups = SETUP_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => canOpen(user, i.view)) })).filter((g) => g.items.length > 0);
+  const groups = all.map((g) => ({ ...g, items: g.items.filter((i) => canOpen(user, i.view)) })).filter((g) => g.items.length > 0);
   return (
     <div style={{ animation: 'fade .3s ease both', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
       {groups.map((g) => (

@@ -125,6 +125,12 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M18 8.5l1.4 1.4L22 7.3" />
     </svg>
   ),
+  bulkassign: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M4 6h10M4 12h10M4 18h7" />
+      <path d="m15 16 2 2 4-4" />
+    </svg>
+  ),
   setup: (
     <svg {...base(18, 'currentColor')}>
       <circle cx="12" cy="12" r="3" />
