@@ -39,6 +39,9 @@ const COUNTED: Record<Counted, { label: string; bg: string; fg: string }> = {
 // In office green, out of office yellow.
 const OFFICE_COLOR = 'var(--p-green)';
 const OOL_COLOR = 'var(--p-yellow)';
+// The same two colours as a light-to-deep gradient, for the bars, the key and the dots.
+const OFFICE_FILL = 'linear-gradient(180deg, color-mix(in srgb, var(--p-green) 55%, var(--surface)), var(--ok))';
+const OOL_FILL = 'linear-gradient(180deg, color-mix(in srgb, var(--p-yellow) 60%, var(--surface)), color-mix(in srgb, var(--p-yellow) 65%, var(--warn)))';
 const Dot = ({ color }: { color: string }) => <span aria-hidden style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: color, marginRight: 6, verticalAlign: 0 }} />;
 const clock = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : '—');
 const hoursOf = (a: string | null, b: string | null) => {
@@ -68,7 +71,7 @@ export function PunchLog() {
   const [draftFrom, setDraftFrom] = useState('');
   const [draftTo, setDraftTo] = useState('');
   const [rangeError, setRangeError] = useState('');
-  const [where, setWhere] = useState<'all' | 'office' | 'ool'>('all');
+  const [where, setWhere] = useState<'all' | 'office' | 'ool' | 'waiting'>('all');
   const [counted, setCounted] = useState<'all' | 'present' | 'late' | 'early' | 'half'>('all');
   const [reason, setReason] = useState('all');
   const [search, setSearch] = useState('');
@@ -162,6 +165,7 @@ export function PunchLog() {
     let out = rows;
     if (where === 'office') out = out.filter((r) => !r.ool);
     if (where === 'ool') out = out.filter((r) => r.ool);
+    if (where === 'waiting') out = out.filter((r) => r.counted === 'waiting' || r.counted === 'corr');
     if (where === 'ool' && reason !== 'all') out = out.filter((r) => r.outside?.reason === reason);
     if (counted !== 'all') out = out.filter((r) => (counted === 'late' ? r.counted === 'late' || r.counted === 'lateopen' : counted === 'present' ? r.counted === 'present' || r.counted === 'open' : r.counted === counted));
     if (dept !== 'all') out = out.filter((r) => (r.department || 'Team') === dept);
@@ -179,7 +183,7 @@ export function PunchLog() {
       if (i === undefined || !r.punchIn && !r.outside) continue;
       (r.ool ? away : office)[i]++;
     }
-    return [{ label: 'In office', color: OFFICE_COLOR, values: office }, { label: 'Out of location', color: OOL_COLOR, values: away }];
+    return [{ label: 'In office', color: OFFICE_FILL, values: office }, { label: 'Out of location', color: OOL_FILL, values: away }];
   }, [rows, chartDays.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = useMemo(() => {
@@ -258,13 +262,18 @@ export function PunchLog() {
           {error && <LoadError compact text={error} onRetry={() => setAttempt((n) => n + 1)} />}
 
           {!waitingForDates && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-              {/* Three counts: where the punches were made, and what still waits on a decision. */}
-              <StatTile state={state} label={<><Dot color={OFFICE_COLOR} />In office punches</>} value={stats.office} sub="At an office or on its device" />
-              <StatTile state={state} label={<><Dot color={OOL_COLOR} />Out of office punches</>} value={stats.ool} sub={stats.ool ? stats.reasons : 'None in this period'} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+              {/* Every punch, where they were made, and what still waits on a decision; each tile filters the list. */}
+              <StatTile state={state} label="Total punches" value={stats.days} sub={`${stats.people} ${stats.people === 1 ? 'person' : 'people'}`}
+                onPick={() => { setWhere('all'); setReason('all'); }} picked={where === 'all'} />
+              <StatTile state={state} label={<><Dot color={OFFICE_FILL} />In office punches</>} value={stats.office} sub="At an office or on its device"
+                onPick={() => { setWhere('office'); setReason('all'); }} picked={where === 'office'} color={OFFICE_COLOR} />
+              <StatTile state={state} label={<><Dot color={OOL_FILL} />Out of office punches</>} value={stats.ool} sub={stats.ool ? stats.reasons : 'None in this period'}
+                onPick={() => { setWhere('ool'); setReason('all'); }} picked={where === 'ool'} color={OOL_COLOR} />
               <StatTile state={state} label="Punches waiting for approval" value={stats.oolWaiting + stats.waitingCorr}
-                sub={`${stats.oolWaiting} out of office · ${stats.waitingCorr} ${stats.waitingCorr === 1 ? 'correction' : 'corrections'}`} attn={stats.oolWaiting + stats.waitingCorr > 0}
-                action={canOpen(user, 'attendance') ? <LinkButton onClick={() => s.setView('attendance')}>Open</LinkButton> : undefined} />
+                sub={`${stats.oolWaiting} out of office · ${stats.waitingCorr} ${stats.waitingCorr === 1 ? 'correction' : 'corrections'}`} attn={stats.oolWaiting + stats.waitingCorr > 0 && where !== 'waiting'}
+                onPick={() => { setWhere('waiting'); setReason('all'); }} picked={where === 'waiting'} color="var(--attn)"
+                action={canOpen(user, 'attendance') ? <span onClick={(e) => e.stopPropagation()}><LinkButton onClick={() => s.setView('attendance')}>Open</LinkButton></span> : undefined} />
             </div>
           )}
 
@@ -273,8 +282,8 @@ export function PunchLog() {
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                 <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 600 }}>People punched in, day by day</h3>
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, fontSize: 12.5, color: 'var(--ink-2)' }}>
-                  <Key color={OFFICE_COLOR}>In office</Key>
-                  <Key color={OOL_COLOR}>Out of location</Key>
+                  <Key color={OFFICE_FILL}>In office</Key>
+                  <Key color={OOL_FILL}>Out of office</Key>
                 </div>
               </div>
               <StackBars days={chartDays} series={series} today={today} />
@@ -285,7 +294,7 @@ export function PunchLog() {
             <div>
               <div style={toolbar}>
                 <div role="tablist" aria-label="Where" style={SEG}>
-                  {([['all', 'All punches'], ['office', 'In office'], ['ool', 'Out of location']] as const).map(([k, label]) => (
+                  {([['all', 'All punches'], ['office', 'In office'], ['ool', 'Out of office'], ['waiting', 'Waiting for approval']] as const).map(([k, label]) => (
                     <button key={k} type="button" role="tab" aria-selected={where === k} onClick={() => { setWhere(k); setReason('all'); }} style={segBtn(where === k)}>{label}</button>
                   ))}
                 </div>
@@ -345,7 +354,7 @@ export function PunchLog() {
                         <div style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{hoursOf(r.punchIn, r.punchOut)}</div>
                         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: r.ool ? OOL_COLOR : OFFICE_COLOR, flexShrink: 0 }} />{r.where}
+                            <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: r.ool ? OOL_FILL : OFFICE_FILL, flexShrink: 0 }} />{r.where}
                           </span>
                           {r.whereSub && <span style={{ ...cellSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.whereSub}</span>}
                         </div>

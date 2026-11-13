@@ -1,6 +1,6 @@
 // Pieces the Leave requests and Overtime pages share: the day-by-day bars, the
 // period picker, the Needs action panel, the Pending chip and the stat tiles.
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { LoadingFigure, Pill } from '../ui';
 import { TO_STAT, typeColor } from '../theme';
 import type { Leave } from '../seed';
@@ -138,7 +138,7 @@ export function CustomRange({ applied, draftFrom, draftTo, onDraftFrom, onDraftT
 const statTile: CSSProperties = { border: '1px solid var(--line)', borderRadius: 16, padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 };
 const statNum: CSSProperties = { fontSize: 26, fontWeight: 400, letterSpacing: '-.02em', fontVariantNumeric: 'tabular-nums' };
 /** One figure in a period's summary; `attn` is the Pending tile, in the attention tint. */
-export function StatTile({ label, value, unit, sub, state, attn, action }: {
+export function StatTile({ label, value, unit, sub, state, attn, action, onPick, picked, color }: {
   label: ReactNode;
   value: ReactNode;
   unit?: string;
@@ -146,9 +146,22 @@ export function StatTile({ label, value, unit, sub, state, attn, action }: {
   state: LoadState;
   attn?: boolean;
   action?: ReactNode;
+  /** A tile that filters the list below it, as the Company calendar's chips do; `picked` when it is the filter on. */
+  onPick?: () => void;
+  picked?: boolean;
+  /** The tile's own colour, for its border and tint when picked. */
+  color?: string;
 }) {
+  const tone = color ?? 'var(--ink-2)';
   return (
-    <div style={{ ...statTile, ...(attn ? { background: 'var(--attn-bg)', border: '1px solid var(--attn-line)' } : null) }}>
+    <div
+      {...(onPick ? { role: 'button', tabIndex: 0, 'aria-pressed': picked, onClick: onPick, onKeyDown: (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(); } } } : {})}
+      style={{
+        ...statTile,
+        ...(attn ? { background: 'var(--attn-bg)', border: '1px solid var(--attn-line)' } : null),
+        ...(onPick ? { cursor: 'pointer' } : null),
+        ...(picked ? { border: `1.5px solid ${tone}`, background: `linear-gradient(135deg, color-mix(in srgb, ${tone} 22%, var(--surface)), color-mix(in srgb, ${tone} 5%, var(--surface)))` } : null),
+      }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
         <span style={{ ...cellSub, fontSize: 12.5, color: attn ? 'var(--attn)' : 'var(--ink-3)' }}>{label}</span>
         {action}
