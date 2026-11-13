@@ -87,7 +87,8 @@ function useProvideStore() {
   // leave
   const [leaves, setLeaves] = useState<Leave[]>([]);
   const [leaveSearch, setLeaveSearch] = useState('');
-  const [leaveStatus, setLeaveStatus] = useState<LeaveTabFilter>('all');
+  // Leave requests and Attendance corrections open on what is waiting.
+  const [leaveStatus, setLeaveStatus] = useState<LeaveTabFilter>('Pending');
   const [leaveType, setLeaveType] = useState('all');
   const [leaveSort, setLeaveSort] = useState('recent');
   const [leaveFrom, setLeaveFrom] = useState('');
@@ -183,7 +184,7 @@ function useProvideStore() {
   // attendance corrections
   const [corrs, setCorrs] = useState<Correction[]>([]);
   const [corrSearch, setCorrSearch] = useState('');
-  const [corrStatus, setCorrStatus] = useState<LeaveStatusFilter>('all');
+  const [corrStatus, setCorrStatus] = useState<LeaveStatusFilter>('Pending');
   const [corrFrom, setCorrFrom] = useState('');
   const [corrTo, setCorrTo] = useState('');
   const [corrConfirm, setCorrConfirm] = useState<{ id: string; action: 'approve' | 'decline' } | null>(null);

@@ -1,5 +1,6 @@
 // Pieces the Leave requests and Overtime pages share: the day-by-day bars, the
 // period picker, the Needs action panel, the Pending chip and the stat tiles.
+import { useEffect, useState } from 'react';
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { LoadingFigure, Pill } from '../ui';
 import { TO_STAT, typeColor } from '../theme';
@@ -116,17 +117,51 @@ export function Waiting({ days, slow }: { days: number; slow: number }) {
   );
 }
 
-/** A period header: ‹ title › to step back and forward, and This week / This month to pick the size. */
-export function PeriodStepper({ id, title, unit, onUnit, onStep, hasPrev = true, hasNext = true }: { id: string; title: string; unit: 'week' | 'month'; onUnit: (u: 'week' | 'month') => void; onStep: (by: -1 | 1) => void; hasPrev?: boolean; hasNext?: boolean }) {
+/**
+ * A period header: ‹ title › to step back and forward, and This week / This month / Custom to pick it.
+ * Custom shows a From–To pair inline, starting from the period on screen.
+ */
+export type PeriodUnit = 'week' | 'month' | 'custom';
+export function PeriodStepper({ id, title, unit, onUnit, onStep, hasPrev = true, hasNext = true, custom }: {
+  id: string;
+  title: string;
+  unit: PeriodUnit;
+  onUnit: (u: PeriodUnit) => void;
+  onStep: (by: -1 | 1) => void;
+  hasPrev?: boolean;
+  hasNext?: boolean;
+  /** The applied custom range and how to apply a new one; without it there is no Custom button. */
+  custom?: { from: string; to: string; onApply: (from: string, to: string) => void };
+}) {
   const arrow: CSSProperties = { width: 36, height: 36, borderRadius: '50%', border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer', font: 'inherit', fontSize: 18, lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
+  const stepping = unit !== 'custom';
+  const [from, setFrom] = useState(custom?.from ?? '');
+  const [to, setTo] = useState(custom?.to ?? '');
+  useEffect(() => { if (custom) { setFrom(custom.from); setTo(custom.to); } }, [custom?.from, custom?.to]); // eslint-disable-line react-hooks/exhaustive-deps
+  const bad = !from || !to || from > to;
+  const input: CSSProperties = { height: 36, padding: '0 10px', border: '1px solid var(--line-2)', borderRadius: 10, font: 'inherit', fontSize: 13.5, background: 'var(--surface)', color: 'var(--ink)' };
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <button type="button" aria-label={`Previous ${unit}`} onClick={() => onStep(-1)} disabled={!hasPrev} aria-hidden={!hasPrev} style={{ ...arrow, visibility: hasPrev ? 'visible' : 'hidden' }}>‹</button>
-        <h2 id={id} style={{ margin: 0, fontSize: 16, fontWeight: 600, minWidth: 150, textAlign: 'center' }}>{title}</h2>
-        <button type="button" aria-label={`Next ${unit}`} onClick={() => onStep(1)} disabled={!hasNext} aria-hidden={!hasNext} style={{ ...arrow, visibility: hasNext ? 'visible' : 'hidden' }}>›</button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button type="button" aria-label={`Previous ${unit}`} onClick={() => onStep(-1)} disabled={!stepping || !hasPrev} aria-hidden={!stepping || !hasPrev} style={{ ...arrow, visibility: stepping && hasPrev ? 'visible' : 'hidden' }}>‹</button>
+          <h2 id={id} style={{ margin: 0, fontSize: 16, fontWeight: 600, minWidth: 150, textAlign: 'center' }}>{title}</h2>
+          <button type="button" aria-label={`Next ${unit}`} onClick={() => onStep(1)} disabled={!stepping || !hasNext} aria-hidden={!stepping || !hasNext} style={{ ...arrow, visibility: stepping && hasNext ? 'visible' : 'hidden' }}>›</button>
+        </div>
+        <PeriodButtons
+          periods={custom ? [['week', 'This week'], ['month', 'This month'], ['custom', 'Custom']] : [['week', 'This week'], ['month', 'This month']]}
+          period={unit}
+          onPeriod={(p) => onUnit(p === 'week' ? 'week' : p === 'custom' ? 'custom' : 'month')}
+        />
       </div>
-      <PeriodButtons periods={[['week', 'This week'], ['month', 'This month']]} period={unit} onPeriod={(p) => onUnit(p === 'week' ? 'week' : 'month')} />
+      {unit === 'custom' && custom && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
+          <input type="date" aria-label="From" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} style={input} />
+          <span style={{ color: 'var(--ink-3)' }}>–</span>
+          <input type="date" aria-label="To" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} style={input} />
+          <button type="button" disabled={bad || (from === custom.from && to === custom.to)} onClick={() => custom.onApply(from, to)} className={btnClass('primary')} style={btn('primary', 'sm')}>Apply</button>
+        </div>
+      )}
     </div>
   );
 }

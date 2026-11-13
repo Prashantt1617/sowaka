@@ -12,10 +12,11 @@ import { btn, btnClass, cellName, cellSub, TH, toolbar } from '../ds';
 import { IconDownload } from '../icons';
 import { LeaveCalendar } from './LeaveCalendar';
 import {
-  chartDaysOf, needsActionSummary, overlaps, peopleTotals, pendingFacts, perDay, plural, stepRange, weekOffsetOf,
+  chartDaysOf, needsActionSummary, overlaps, peopleTotals, pendingFacts, perDay, periodRange, plural, stepRange, weekOffsetOf,
   endOf, LEAVE_COLS, SLOW_DAYS, startOf, todayISO,
 } from './leaveDays';
 import { Flag, LeaveRow, NeedsActionShell, PendingChip, PeriodStepper, StatTile, Waiting } from './leaveParts';
+import type { PeriodUnit } from './leaveParts';
 import { Pager, usePaged } from './Pager';
 
 const NEEDS_ACTION_SHOWN = 3;
@@ -106,11 +107,12 @@ export function LeaveRequests() {
   // People on leave picked: the list shows their approved and pending requests (not declined or cancelled).
   const [onLeave, setOnLeave] = useState(false);
   // A week or a month, stepped back and forward with the arrows by the title.
-  const [unit, setUnit] = useState<'week' | 'month'>('month');
+  const [unit, setUnit] = useState<PeriodUnit>('month');
   const [offset, setOffset] = useState(0);
   const [dept, setDept] = useState('all');
 
-  const range = stepRange(unit, offset);
+  // Custom: the dates applied (kept in the store), from the period on screen when first picked.
+  const range = unit === 'custom' && s.leaveFrom ? periodRange('custom', s.leaveFrom, s.leaveTo) : stepRange(unit === 'week' ? 'week' : 'month', offset);
   const waitingForDates = false;
   const inPeriod = useMemo(() => s.leaves.filter((l) => overlaps(l, range.from, range.to)), [s.leaves, range.from, range.to]);
 
@@ -253,7 +255,10 @@ export function LeaveRequests() {
 
       <Card padded>
         <section aria-labelledby="leave-period" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <PeriodStepper id="leave-period" title={range.title} unit={unit} onUnit={(u) => { setUnit(u); setOffset(0); }} onStep={(by) => setOffset((o) => o + by)}
+          <PeriodStepper id="leave-period" title={range.title} unit={unit}
+            onUnit={(u) => { if (u === 'custom') { s.setLeaveFrom(range.from); s.setLeaveTo(range.to); } setUnit(u); setOffset(0); }}
+            onStep={(by) => setOffset((o) => o + by)}
+            custom={{ from: s.leaveFrom, to: s.leaveTo, onApply: (f, t) => { s.setLeaveFrom(f); s.setLeaveTo(t); } }}
             hasPrev={s.leaves.some((l) => startOf(l) < range.from)} hasNext={s.leaves.some((l) => endOf(l) > range.to)} />
 
           {!waitingForDates && (

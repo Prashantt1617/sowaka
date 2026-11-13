@@ -21,8 +21,9 @@ import { btn, btnClass, cellName, cellSub, textareaStyle, TH, toolbar, TR } from
 import { IconDownload } from '../icons';
 import { SuwiInsight } from '../suwi/SuwiInsight';
 import { DrawerHeader, DrawerShell, InfoGrid, RemarkBlock } from '../drawers/shell';
-import { daysSince, PENDING_ROW, plural, SLOW_DAYS, stepRange } from './leaveDays';
+import { daysSince, PENDING_ROW, periodRange, plural, SLOW_DAYS, stepRange } from './leaveDays';
 import { NeedsActionShell, PendingChip, PeriodStepper, StatTile, Waiting } from './leaveParts';
+import type { PeriodUnit } from './leaveParts';
 import { Pager, usePaged } from './Pager';
 
 const COLS = '32px 1.5fr .95fr 1.15fr 1.3fr .9fr 1.2fr 1fr 1.1fr';
@@ -127,14 +128,15 @@ export function AttendanceCorrections() {
   const s = useStore();
   const st = s.listState('corrections');
   // A week or a month, stepped back and forward with the arrows by the title.
-  const [unit, setUnit] = useState<'week' | 'month'>('month');
+  const [unit, setUnit] = useState<PeriodUnit>('month');
   const [offset, setOffset] = useState(0);
   const [filter, setFilter] = useState<Filter>('all');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<'approve' | 'decline' | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const range = stepRange(unit, offset);
+  // Custom: the dates applied (kept in the store), from the period on screen when first picked.
+  const range = unit === 'custom' && s.corrFrom ? periodRange('custom', s.corrFrom, s.corrTo) : stepRange(unit === 'week' ? 'week' : 'month', offset);
   const inPeriod = useMemo(() => s.corrs.filter((r) => inDateRange(r.refISO, range.from, range.to)), [s.corrs, range.from, range.to]);
 
   const stats = useMemo(() => ({
@@ -210,7 +212,9 @@ export function AttendanceCorrections() {
 
       <Card padded>
         <section aria-labelledby="corr-period" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <PeriodStepper id="corr-period" title={range.title} unit={unit} onUnit={(u) => { setUnit(u); setOffset(0); setSelected(new Set()); }} onStep={(by) => { setOffset((o) => o + by); setSelected(new Set()); }}
+          <PeriodStepper id="corr-period" title={range.title} unit={unit}
+            custom={{ from: s.corrFrom, to: s.corrTo, onApply: (f, t) => { s.setCorrFrom(f); s.setCorrTo(t); setSelected(new Set()); } }}
+            onUnit={(u) => { if (u === 'custom') { s.setCorrFrom(range.from); s.setCorrTo(range.to); } setUnit(u); setOffset(0); setSelected(new Set()); }} onStep={(by) => { setOffset((o) => o + by); setSelected(new Set()); }}
             hasPrev={s.corrs.some((r) => workDay(r) && workDay(r) < range.from)} hasNext={s.corrs.some((r) => workDay(r) > range.to)} />
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
