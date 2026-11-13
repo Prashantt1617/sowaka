@@ -267,13 +267,13 @@ export function CompanyCalendar() {
         </div>
 
         {filtersOpen && (
-          <div className="ar-filters" style={{ flexWrap: 'nowrap', overflowX: 'auto', alignItems: 'center', paddingBottom: 4 }}>
+          <div className="ar-filters compact">
             <LabeledSelect label="Department" value={draft.dept} onChange={(v) => setDraft((d) => ({ ...d, dept: v }))} options={[['all', 'All departments'], ...choices.dept.map((d): [string, string] => [d, d])]} />
             <LabeledSelect label="Manager" value={draft.mgr} onChange={(v) => setDraft((d) => ({ ...d, mgr: v }))} options={[['all', 'All managers'], ...choices.mgr.map((m): [string, string] => [m, m])]} />
             <LabeledSelect label="Location" value={draft.loc} onChange={(v) => setDraft((d) => ({ ...d, loc: v }))} options={[['all', 'All locations'], ...choices.loc.map((l): [string, string] => [l, l])]} />
             <LabeledSelect label="Attendance source" value={draft.source} onChange={(v) => setDraft((d) => ({ ...d, source: v }))} options={[['all', 'All sources'], ...choices.source.map((f): [string, string] => [f, f])]} />
-            <button type="button" onClick={applyFilters} className="pd-btn primary" style={{ flexShrink: 0 }}>Apply</button>
-            {(filtered || Object.values(draft).some((v) => v !== 'all')) && <button type="button" onClick={clearFilters} className="pd-btn ghost" style={{ flexShrink: 0 }}>Clear</button>}
+            <button type="button" onClick={applyFilters} className="pd-btn primary">Apply</button>
+            {(filtered || Object.values(draft).some((v) => v !== 'all')) && <button type="button" onClick={clearFilters} className="pd-btn ghost">Clear</button>}
           </div>
         )}
 
