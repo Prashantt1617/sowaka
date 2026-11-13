@@ -113,7 +113,7 @@ export type Correction = {
   byAdmin?: boolean;
   /** What the request is, from the request itself (see correctionKindOf). */
   kind?: CorrectionKind;
-  /** What they asked the day to count as: "Full day", "Half day", "Work from home"… */
+  /** What they asked the day to count as: "Full day", "Half day", "Working from home"… */
   askedFor?: string;
   /** Raw punch times, ISO, for the detail panel. */
   punchInISO?: string;

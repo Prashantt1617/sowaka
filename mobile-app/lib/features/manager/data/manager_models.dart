@@ -2181,7 +2181,7 @@ class AttendanceRecord {
   String get dayTypeLabel => switch (dayType) {
     'full_day' => 'Full Day',
     'half_day' => 'Half Day',
-    'wfh' => 'Work from home',
+    'wfh' => 'Working from home',
     'client_visit' || 'office_visit' => 'Client visit',
     'leave' => 'Leave',
     _ => '',
@@ -2326,7 +2326,7 @@ class AttendanceRegularization {
   String get dayTypeLabel => switch (requestedDayType) {
     'full_day' => 'Full Day',
     'half_day' => 'Half Day',
-    'wfh' => 'Work from home',
+    'wfh' => 'Working from home',
     'client_visit' || 'office_visit' => 'Client visit',
     'leave' => 'Leave',
     _ => '',
