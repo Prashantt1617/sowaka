@@ -9,7 +9,6 @@ export const SETUP_GROUPS: SetupGroup[] = [
     { view: 'shifttypes', label: 'Shift templates' },
     { view: 'holidaybank', label: 'Holiday bank' },
     { view: 'offices', label: 'Offices' },
-    { view: 'faceid', label: 'Face check' },
   ] },
   { key: 'payroll', title: 'Payroll', icon: 'payruns', items: [
     { view: 'payschedule', label: 'Pay schedule' },

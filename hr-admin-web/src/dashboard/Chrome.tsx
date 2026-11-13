@@ -270,10 +270,7 @@ export function Sidebar() {
   const { user } = useAuth();
   // The company's real name, not a constant baked in at build time.
   const companyName = brand.name ?? user?.company ?? ORG_DISPLAY_NAME;
-  const { leaves, ots, rbs, corrs, fbMgrs, view, setView, listState } = useStore();
-  const orgActive = view === 'organisation';
-  // Only the tabs People › Accesses gives this person.
-  const orgOpen = canOpen(user, 'organisation');
+  const { leaves, ots, rbs, corrs, fbMgrs, listState } = useStore();
   const sections = SECTIONS.map((s) => ({ ...s, items: s.items.filter((item) => !item.hidden && canOpen(user, item.key)) })).filter((s) => s.items.length > 0);
   // A cancellation request on an approved leave waits on HR's decision too.
   const leavesPending = leaves.filter((l) => l.status === 'Pending' || l.cancelRequest?.status === 'Pending').length;
@@ -327,12 +324,8 @@ export function Sidebar() {
         overflow: 'hidden',
       }}
     >
-      {/* Company display name + logo — top-left. Clicking opens Organisation details. */}
-      <button
-        onClick={() => { if (orgOpen) setView('organisation'); }}
-        onMouseEnter={() => { if (orgOpen) prefetchView('organisation'); }}
-        title={orgOpen ? 'Organisation details' : undefined}
-        className="ds-brand"
+      {/* Company display name + logo — top-left. Organisation details is opened from Setup. */}
+      <div
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -340,12 +333,10 @@ export function Sidebar() {
           width: 'calc(100% - 24px)',
           margin: '12px 12px 8px',
           padding: '10px 12px',
-          border: orgActive ? '1px solid transparent' : '1px solid var(--line)',
+          border: '1px solid var(--line)',
           borderRadius: 'var(--r)',
-          cursor: orgOpen ? 'pointer' : 'default',
           textAlign: 'left',
-          background: orgActive ? 'var(--accent-soft)' : 'var(--surface)',
-          transition: 'background .15s, border-color .15s',
+          background: 'var(--surface)',
         }}
       >
         <div
@@ -381,12 +372,7 @@ export function Sidebar() {
             {brand.wordmark?.text ?? companyName}
           </div>
         </div>
-        {orgOpen && (
-          <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink-3)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-            <path d="m9 6 6 6-6 6" />
-          </svg>
-        )}
-      </button>
+      </div>
 
       <div className="scry" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '0 12px 16px' }}>
         {canOpen(user, SETUP_ITEM.key) && <NavButton item={SETUP_ITEM} />}
