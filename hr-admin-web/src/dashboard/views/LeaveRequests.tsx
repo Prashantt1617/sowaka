@@ -49,11 +49,11 @@ function NeedsAction({ state }: { state: LoadState }) {
   const list = pick ? paged.rows : matching.slice(0, NEEDS_ACTION_SHOWN);
   const tag = (k: NeedsPick, tone: 'bad' | 'attn' | 'mute', text: string, count: number) => ({ tone, text, count, picked: pick === k, onPick: () => setPick(pick === k ? null : k) });
   const chips = [
-    tag('all', 'mute', 'All', everything.length),
     ...(sum.passed ? [tag('passed', 'bad', NEEDS_LABEL.passed, sum.passed)] : []),
     ...(sum.soon ? [tag('soon', 'attn', NEEDS_LABEL.soon, sum.soon)] : []),
     ...(sum.slow ? [tag('slow', 'mute', NEEDS_LABEL.slow, sum.slow)] : []),
     ...(sum.cancellations.length ? [tag('cancel', 'attn', NEEDS_LABEL.cancel, sum.cancellations.length)] : []),
+    tag('all', 'mute', 'All', everything.length),
   ];
   const summary = sum.cancellations.length
     ? `${plural(sum.pending.length, 'request')} waiting for approval, ${plural(sum.cancellations.length, 'cancellation request')} · all dates`

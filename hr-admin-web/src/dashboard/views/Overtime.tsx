@@ -53,7 +53,7 @@ function NeedsAction({ state }: { state: LoadState }) {
       id="ot-needs-action"
       state={state}
       summary={`${plural(everything.length, 'request')} waiting for a decision · all dates`}
-      chips={[tag('all', 'mute', 'All', everything.length), ...(slow ? [tag('slow', 'bad', `Waiting over ${SLOW_DAYS} days`, slow)] : [])]}
+      chips={[...(slow ? [tag('slow', 'bad', `Waiting over ${SLOW_DAYS} days`, slow)] : []), tag('all', 'mute', 'All', everything.length)]}
     >
       {list.map((r) => (
         <div key={r.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(220px,1.6fr) minmax(190px,1.3fr) minmax(110px,.7fr) minmax(120px,1fr)', alignItems: 'center', gap: 16, padding: '12px 22px', borderTop: '1px solid var(--line)' }}>

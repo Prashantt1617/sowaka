@@ -82,12 +82,12 @@ export function NeedsActionShell({ id, state, summary, chips, children, more }: 
           {chips.map((c) => {
             if (!c.onPick) return <span key={c.text} style={chip(c.tone)}>{c.text}</span>;
             // A filter tag, drawn as the dashboard's status pills: solid, a dot, its count in a badge.
-            const tone = TAG_TONE[c.tone];
+            const tone = TAG_TONE.mute;
             return (
               <button key={c.text} type="button" aria-pressed={c.picked}
                 onClick={() => c.onPick?.()}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 500, padding: '3px 4px 3px 10px', borderRadius: 99, border: '1px solid var(--line)', cursor: 'pointer', font: 'inherit', lineHeight: 1.5, whiteSpace: 'nowrap',
-                  background: 'var(--surface)', color: 'var(--ink)', boxShadow: c.picked ? `inset 0 0 0 1.5px ${tone.bg}` : undefined }}>
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '3px 4px 3px 10px', borderRadius: 99, border: '1px solid var(--line)', cursor: 'pointer', font: 'inherit', lineHeight: 1.5, whiteSpace: 'nowrap',
+                  background: 'var(--surface)', color: 'var(--ink)', boxShadow: c.picked ? 'inset 0 0 0 1.5px var(--ink-2)' : undefined, fontWeight: c.picked ? 600 : 500 }}>
                 <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: tone.bg }} />
                 {c.text}
                 {c.count != null && <span style={{ minWidth: 20, padding: '0 6px', borderRadius: 999, background: tone.bg, color: tone.fg, fontWeight: 700, fontSize: 11.5, lineHeight: '18px', textAlign: 'center' }}>{c.count}</span>}
