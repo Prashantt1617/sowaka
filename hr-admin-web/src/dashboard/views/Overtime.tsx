@@ -12,8 +12,9 @@ import type { LoadState } from '../ui';
 import { PersonAvatar } from '../PersonAvatar';
 import { btn, btnClass, cellName, cellSub, TH, toolbar, TR } from '../ds';
 import { IconDownload } from '../icons';
-import { chartDaysOf, dayLabel, daysSince, PENDING_ROW, plural, SLOW_DAYS, stepRange, todayISO } from './leaveDays';
+import { chartDaysOf, dayLabel, daysSince, PENDING_ROW, periodRange, plural, SLOW_DAYS, stepRange, todayISO } from './leaveDays';
 import { DayBars, NeedsActionShell, PendingChip, PeriodStepper, StatTile, Swatch, Waiting } from './leaveParts';
+import type { PeriodUnit } from './leaveParts';
 import { Pager, usePaged } from './Pager';
 
 const COLS = '1.5fr .95fr .9fr 1.35fr 1.15fr 1.25fr 1fr .75fr';
@@ -86,9 +87,11 @@ function NeedsAction({ state }: { state: LoadState }) {
 export function Overtime() {
   const s = useStore();
   const st = s.listState('overtime');
-  // A week or a month, stepped back and forward with the arrows by the title.
-  const [unit, setUnit] = useState<'week' | 'month'>('month');
+  // A week or a month, stepped back and forward with the arrows by the title, or Custom dates.
+  const [unit, setUnit] = useState<PeriodUnit>('month');
   const [offset, setOffset] = useState(0);
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [dept, setDept] = useState('all');
   const [given, setGiven] = useState<Given>('all');
   const filters = useFilterDraft(
@@ -98,7 +101,7 @@ export function Overtime() {
   );
   const today = todayISO();
 
-  const range = stepRange(unit, offset);
+  const range = unit === 'custom' && from ? periodRange('custom', from, to) : stepRange(unit === 'week' ? 'week' : 'month', offset);
   const waitingForDates = false;
   // By the day the overtime was worked.
   const inPeriod = useMemo(() => s.ots.filter((r) => inDateRange(r.refISO, range.from, range.to)), [s.ots, range.from, range.to]);
@@ -194,7 +197,9 @@ export function Overtime() {
 
       <Card padded>
         <section aria-labelledby="ot-period" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <PeriodStepper id="ot-period" title={range.title} unit={unit} onUnit={(u) => { setUnit(u === 'week' ? 'week' : 'month'); setOffset(0); }} onStep={(by) => setOffset((o) => o + by)}
+          <PeriodStepper id="ot-period" title={range.title} unit={unit}
+            custom={{ from, to, onApply: (f, t) => { setFrom(f); setTo(t); } }}
+            onUnit={(u) => { if (u === 'custom') { setFrom(range.from); setTo(range.to); } setUnit(u); setOffset(0); }} onStep={(by) => setOffset((o) => o + by)}
             hasPrev={s.ots.some((r) => workDay(r) && workDay(r) < range.from)} hasNext={s.ots.some((r) => workDay(r) > range.to)} />
 
           {!waitingForDates && (
