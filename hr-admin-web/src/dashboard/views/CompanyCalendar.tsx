@@ -77,6 +77,9 @@ export function CompanyCalendar() {
   const [opening, setOpening] = useState('');
   const [saving, setSaving] = useState(false);
   const [day, setDay] = useState(today);
+  // The day's list shows only for a date picked in the month on screen; moving to another month clears it.
+  const dayShown = day.startsWith(month);
+  useEffect(() => { if (!day.startsWith(month)) setDay(''); }, [month]); // eslint-disable-line react-hooks/exhaustive-deps
   const [report, setReport] = useState<AttendanceReportDTO | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -348,6 +351,7 @@ export function CompanyCalendar() {
         {AHEAD[metric] && <div className="pd-subnote" style={{ marginTop: 12 }}>Approved leave up to today is as the attendance report counts it. Pending leave, and leave still to come, is approx.: by its dates, with Saturday and Sunday taken out when it counts fewer days than its span (week offs per shift and holidays are not applied).</div>}
       </section>
 
+      {dayShown && (
       <section className="pd-card">
         <div className="pd-card-h" style={{ alignItems: 'flex-start' }}>
           <div>
@@ -406,6 +410,7 @@ export function CompanyCalendar() {
           </div>
         )}
       </section>
+      )}
       {fixing && <MarkDay day={fixing.day} saving={saving} onClose={() => setFixing(null)} onSave={(status, note) => void saveFix(status, note)} />}
     </div>
   );
