@@ -22,7 +22,7 @@ import { useAuth } from '../auth/AuthContext';
 import { dateOf, dayLabel, daysIn, isoOf, leaveDates, todayISO } from './leaveDays';
 import './people.css';
 
-type Metric = 'present' | 'late' | 'early' | 'half' | 'missed' | 'ool' | 'absent' | 'leave' | 'lwp';
+type Metric = 'present' | 'late' | 'early' | 'half' | 'missed' | 'ool' | 'absent' | 'leave';
 /** One colour per thing counted; none of them the amber the Time office pages dropped. */
 const METRICS: { key: Metric; label: string; phrase: string; bg: string; fg: string; look: [string, View]; head: string }[] = [
   { key: 'present', label: 'Present', phrase: 'present', bg: 'var(--ok-bg)', fg: 'var(--ok)', look: ['Punch log', 'punchlog'], head: 'Punched in' },
@@ -33,11 +33,10 @@ const METRICS: { key: Metric; label: string; phrase: string; bg: string; fg: str
   { key: 'ool', label: 'Out of location', phrase: 'out of location', bg: 'var(--t-sky)', fg: 'var(--t-sky-i)', look: ['OOL check-ins', 'oolcheckins'], head: 'Reason' },
   { key: 'absent', label: 'Absent', phrase: 'absent', bg: 'var(--bad-bg)', fg: 'var(--bad)', look: ['Attendance corrections', 'attendance'], head: 'What we have' },
   { key: 'leave', label: 'On leave', phrase: 'on leave', bg: 'var(--accent-soft)', fg: 'var(--accent-ink)', look: ['Leave requests', 'leave'], head: 'Leave' },
-  { key: 'lwp', label: 'Leave without pay', phrase: 'on leave without pay', bg: 'var(--t-plum)', fg: 'var(--t-plum-i)', look: ['Leave requests', 'leave'], head: 'Leave' },
 ];
 const META = Object.fromEntries(METRICS.map((m) => [m.key, m])) as Record<Metric, (typeof METRICS)[number]>;
 /** Counted from the day's punches, so a day still to come has none. Leave is known ahead. */
-const AHEAD: Partial<Record<Metric, true>> = { leave: true, lwp: true };
+const AHEAD: Partial<Record<Metric, true>> = { leave: true };
 
 const clock = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : '—');
 const shiftMonth = (month: string, by: number) => {
@@ -184,7 +183,9 @@ export function CompanyCalendar() {
       if (r.status === 'absent' && !r.shiftRunning) add('absent', r.date, r.userId, 'No punch, no leave');
       if (r.status === 'on_leave' || r.status === 'unpaid_leave') {
         const l = leaveOn(r.userId, r.date);
-        add(r.status === 'on_leave' ? 'leave' : 'lwp', r.date, r.userId, l?.type ?? (r.status === 'on_leave' ? (r.leaveType ?? 'Leave') : 'Leave without pay'), { leaveId: l?.id, leaveStatus: 'Approved' });
+        // Paid and unpaid leave are one count; an unpaid type says so on its row.
+        const name = l?.type ?? (r.status === 'on_leave' ? (r.leaveType ?? 'Leave') : 'Leave without pay');
+        add('leave', r.date, r.userId, r.status === 'unpaid_leave' && !/without pay/i.test(name) ? `${name} (without pay)` : name, { leaveId: l?.id, leaveStatus: 'Approved' });
       }
     }
     for (const o of ool) {
@@ -199,7 +200,7 @@ export function CompanyCalendar() {
       for (const d of leaveDates(l)) {
         if (d < first || d > last) continue;
         if (l.status === 'Approved' && d <= upTo && report) continue; // the report already counts it
-        add(unpaid ? 'lwp' : 'leave', d, l.submitterId, l.type, { leaveId: l.id, leaveStatus: l.status === 'Pending' ? 'Pending' : 'Approved' });
+        add('leave', d, l.submitterId, unpaid && !/without pay/i.test(l.type) ? `${l.type} (without pay)` : l.type, { leaveId: l.id, leaveStatus: l.status === 'Pending' ? 'Pending' : 'Approved' });
       }
     }
     return out;
@@ -435,7 +436,7 @@ export function CompanyCalendar() {
                     <td>{h.manager || '—'}</td>
                     {metric !== 'present' && (
                       <td style={{ textAlign: 'right' }}>
-                        {(metric === 'leave' || metric === 'lwp') ? (
+                        {metric === 'leave' ? (
                           h.leaveId && <button type="button" onClick={() => s.setDrawerId(h.leaveId!)} className="pd-btn" style={{ height: 34, padding: '0 14px', fontSize: 13 }}>Review</button>
                         ) : (metric === 'late' || metric === 'early') ? (
                           <button type="button" disabled={opening === h.userId} onClick={() => setConfirmRemove({ hit: h, which: metric })} className="pd-btn" style={{ height: 34, padding: '0 14px', fontSize: 13 }}>
