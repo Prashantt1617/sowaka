@@ -250,6 +250,14 @@ export interface LeaveYearEnd {
   encashed: number;
   lapsed: number;
   processedAt: Date;
+  /**
+   * Monthly credits added on top, one per month. Only on a balance HR matched
+   * to another system mid-year (Convrse's Zoho figures, 8 Oct 2026): its
+   * `carried` was worked back so that a year's credit plus it equalled that
+   * day's balance, so the months after the match are credited here, by
+   * `leave-monthly-credit.service`, as they come.
+   */
+  monthlyCredits?: { month: string; days: number; at: Date; note?: string }[];
 }
 
 /**
