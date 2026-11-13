@@ -3,7 +3,7 @@
 // late, left early, half day, missed punch, out of location, absent, on leave
 // or leave without pay. It is laid out like the calendar on an employee's
 // profile; click a date to see who.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store';
 import { clearCalendarDay, expandReport, getAttendanceReport, getEmployeeCalendar, getHolidays, getOutOfLocation, setCalendarDay } from '../../services/hrms';
 import type { AttendanceReportDTO, CalendarDayDTO, HolidayDTO, HrDayStatus, OutOfLocationDTO, ReportRow } from '../../services/hrms';
@@ -61,11 +61,16 @@ export function CompanyCalendar() {
   const [mgr, setMgr] = useState('all');
   const [loc, setLoc] = useState('all');
   const [source, setSource] = useState('all');
+  // Picking what to count (or applying filters) brings the calendar to the top of the page,
+  // so the chosen day's list, with its Correct buttons, peeks in below it.
+  const calTop = useRef<HTMLDivElement>(null);
+  const toCalendar = () => requestAnimationFrame(() => calTop.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  const pickMetric = (m: Metric) => { setMetric(m); toCalendar(); };
   // The filters open in one line under the header; picks only count once applied.
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draft, setDraft] = useState({ dept: 'all', mgr: 'all', loc: 'all', source: 'all' });
   const openFilters = () => { setDraft({ dept, mgr, loc, source }); setFiltersOpen((o) => !o); };
-  const applyFilters = () => { setDept(draft.dept); setMgr(draft.mgr); setLoc(draft.loc); setSource(draft.source); setFiltersOpen(false); };
+  const applyFilters = () => { setDept(draft.dept); setMgr(draft.mgr); setLoc(draft.loc); setSource(draft.source); setFiltersOpen(false); toCalendar(); };
   const clearFilters = () => { setDraft({ dept: 'all', mgr: 'all', loc: 'all', source: 'all' }); setDept('all'); setMgr('all'); setLoc('all'); setSource('all'); setFiltersOpen(false); };
   // Correct: the person whose day HR is marking, with that day as their calendar has it.
   const [fixing, setFixing] = useState<{ userId: string; name: string; day: CalendarDayDTO } | null>(null);
@@ -277,13 +282,17 @@ export function CompanyCalendar() {
 
         {error && <LoadError compact text={error} onRetry={() => setAttempt((n) => n + 1)} />}
 
-        <div role="tablist" aria-label="What to count" className="pd-legend">
+        <div ref={calTop} role="tablist" aria-label="What to count" className="pd-legend" style={{ scrollMarginTop: 96, gap: 8 }}>
           {METRICS.map((m) => {
             const on = metric === m.key;
+            // Each a chip in its own colour; the chosen one in a deeper shade of it.
             return (
-              <button key={m.key} type="button" role="tab" aria-selected={on} onClick={() => setMetric(m.key)}
-                style={{ display: 'inline-flex', alignItems: 'center', padding: on ? '3px 10px' : '3px 0', borderRadius: 999, border: 0, background: on ? m.bg : 'transparent', color: on ? m.fg : 'var(--ink-2)', font: 'inherit', fontSize: 12.5, fontWeight: on ? 500 : 400, cursor: 'pointer' }}>
-                <i style={{ background: m.fg }} />{m.label} <span style={{ color: on ? m.fg : 'var(--ink-3)', marginLeft: 5, opacity: on ? 0.8 : 1 }}>{loading ? '…' : totals[m.key]}</span>
+              <button key={m.key} type="button" role="tab" aria-selected={on} onClick={() => pickMetric(m.key)}
+                style={{ display: 'inline-flex', alignItems: 'center', height: 32, padding: '0 12px', borderRadius: 999, cursor: 'pointer', font: 'inherit', fontSize: 12.5,
+                  background: on ? `color-mix(in srgb, ${m.fg} 22%, ${m.bg})` : m.bg,
+                  border: `1.5px solid ${on ? m.fg : `color-mix(in srgb, ${m.fg} 28%, transparent)`}`,
+                  color: on ? m.fg : 'var(--ink-2)', fontWeight: on ? 600 : 500 }}>
+                <i style={{ background: m.fg }} />{m.label} <span style={{ color: m.fg, marginLeft: 6, fontWeight: 600 }}>{loading ? '…' : totals[m.key]}</span>
               </button>
             );
           })}
@@ -313,7 +322,7 @@ export function CompanyCalendar() {
             // Drawn the way the employee's Calendar tab draws a day: a soft tint by what it was.
             const tone = off ? (fest ? CAL_TONE.holiday : CAL_TONE.week_off) : v ? { bg: mdef.bg, fg: mdef.fg } : { bg: 'var(--surface)', fg: 'var(--ink-3)' };
             const pending = v && metric === 'leave' && (hits.get(`leave|${d}`) ?? []).some((h) => h.detail.endsWith('pending'));
-            const line1 = off ? (fest ? 'Holiday' : 'Week off') : future ? '' : mdef.label;
+            const line1 = off ? (fest ? 'Holiday' : 'Week off') : '';
             const line2 = off ? (fest ?? 'Week off') : future ? '' : v ? `${v} ${v === 1 ? 'person' : 'people'}${pending ? ' · incl. pending' : ''}` : 'None';
             return (
               <button
@@ -329,7 +338,7 @@ export function CompanyCalendar() {
                   <b style={{ fontWeight: d === today ? 700 : 500 }}>{Number(d.slice(8))}</b>
                 </div>
                 {line1 && <div style={{ fontSize: 11, fontWeight: 400 }}>{line1}</div>}
-                {line2 && <div style={{ fontSize: 11, opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={line2}>{line2}</div>}
+                {line2 && <div style={{ fontSize: off ? 11 : 12.5, fontWeight: off || !v ? 400 : 700, opacity: off || !v ? 0.85 : 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={line2}>{line2}</div>}
               </button>
             );
           })}
@@ -353,7 +362,7 @@ export function CompanyCalendar() {
             const v = countOn(m.key, day);
             const on = metric === m.key;
             return (
-              <button key={m.key} type="button" aria-pressed={on} onClick={() => setMetric(m.key)}
+              <button key={m.key} type="button" aria-pressed={on} onClick={() => pickMetric(m.key)}
                 style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '8px 10px', minWidth: 0, borderRadius: 12, cursor: 'pointer', textAlign: 'left', font: 'inherit', background: on ? m.bg : 'var(--surface)', border: on ? `1.5px solid ${m.fg}` : '1px solid var(--line)', color: 'var(--ink)' }}>
                 <span style={{ fontSize: 11.5, lineHeight: 1.3, color: 'var(--ink-3)' }}>{m.label}</span>
                 <span style={{ fontSize: 20, fontWeight: 500, fontVariantNumeric: 'tabular-nums', marginTop: 'auto' }}>{loading ? '…' : v === null ? '—' : v}</span>
