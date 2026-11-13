@@ -89,7 +89,7 @@ export const PENDING_FILL: CSSProperties = {
 };
 export const APPROVED_FILL = 'var(--accent)';
 /** A row waiting on a decision: the attention tint with a bar down its left edge. */
-export const PENDING_ROW: CSSProperties = { background: 'var(--attn-bg)', boxShadow: 'inset 3px 0 0 var(--attn)' };
+export const PENDING_ROW: CSSProperties = {};
 /** A second decided kind stacked on the first: overtime given as comp-off. */
 export const SECOND_FILL = 'color-mix(in srgb, var(--t-mint-i) 55%, var(--surface))';
 
