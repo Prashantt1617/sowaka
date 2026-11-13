@@ -45,7 +45,10 @@ const shiftMonth = (month: string, by: number) => {
 };
 
 /** One person counted on one day for one thing, with the line that says why. */
-type Hit = { userId: string; name: string; code: string; dept: string; manager: string; detail: string; leaveId?: string; leaveStatus?: 'Approved' | 'Pending' };
+type Hit = { userId: string; name: string; code: string; dept: string; manager: string; detail: string; leaveId?: string; leaveStatus?: 'Approved' | 'Pending'; miss?: MissKind };
+/** Which punch a missed-punch day is missing. */
+type MissKind = 'in' | 'out' | 'both';
+const MISS_KINDS: [MissKind | 'all', string][] = [['all', 'All'], ['in', 'Missing punch-in'], ['out', 'Missing punch-out'], ['both', 'Both punches missing']];
 
 /** What this session has already loaded, per month: a revisit shows it at once. */
 const calendarMemo = new Map<string, AttendanceReportDTO>();
@@ -66,7 +69,9 @@ export function CompanyCalendar() {
   // so the chosen day's list, with its Correct buttons, peeks in below it.
   const calTop = useRef<HTMLDivElement>(null);
   const toCalendar = () => requestAnimationFrame(() => calTop.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-  const pickMetric = (m: Metric) => { setMetric(m); toCalendar(); };
+  // Missed punches can be narrowed to one kind (punch-in, punch-out, both); a new metric starts on all of them.
+  const [missKind, setMissKind] = useState<MissKind | 'all'>('all');
+  const pickMetric = (m: Metric) => { setMetric(m); setMissKind('all'); toCalendar(); };
   // The filters open in one line under the header; picks only count once applied.
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draft, setDraft] = useState({ dept: 'all', mgr: 'all', loc: 'all', source: 'all' });
@@ -161,7 +166,7 @@ export function CompanyCalendar() {
   // Every hit, by metric and day, for the chosen scope.
   const hits = useMemo(() => {
     const out = new Map<string, Hit[]>(); // `${metric}|${date}`
-    const add = (m: Metric, date: string, userId: string, detail: string, leave?: { leaveId?: string; leaveStatus?: 'Approved' | 'Pending' }) => {
+    const add = (m: Metric, date: string, userId: string, detail: string, leave?: Partial<Hit>) => {
       if (!inScope(userId)) return;
       const p = people.get(userId);
       const k = `${m}|${date}`;
@@ -181,9 +186,9 @@ export function CompanyCalendar() {
       if (r.status === 'half_day') add('half', r.date, r.userId, `${clock(r.punchIn)} – ${clock(r.punchOut)}`);
       // As the Attendance report words it: which punch is missing, or both. A day with no punch at all is
       // listed under Missed punch (payroll still counts it as absent); Absent is what HR marked, or too few hours.
-      if (r.status === 'missed_punch' && !r.shiftRunning) add('missed', r.date, r.userId, !r.punchIn ? 'Missing punch-in' : `Missing punch-out${late ? ' · came in late' : ''}`);
+      if (r.status === 'missed_punch' && !r.shiftRunning) add('missed', r.date, r.userId, !r.punchIn ? 'Missing punch-in' : `Missing punch-out${late ? ' · came in late' : ''}`, { miss: !r.punchIn ? 'in' : 'out' });
       if (r.status === 'absent' && !r.shiftRunning) {
-        if (!r.punchIn && !r.punchOut && r.source !== 'hr') add('missed', r.date, r.userId, 'Both punches missing');
+        if (!r.punchIn && !r.punchOut && r.source !== 'hr') add('missed', r.date, r.userId, 'Both punches missing', { miss: 'both' });
         else add('absent', r.date, r.userId, r.source === 'hr' ? 'Marked absent by HR' : `${clock(r.punchIn)} – ${clock(r.punchOut)} · too few hours`);
       }
       if (r.status === 'on_leave' || r.status === 'unpaid_leave') {
@@ -224,14 +229,22 @@ export function CompanyCalendar() {
     return m;
   }, [holidays, month]);
 
-  const countOn = (m: Metric, d: string): number | null => (d > today && !AHEAD[m] ? null : (hits.get(`${m}|${d}`)?.length ?? 0));
+  // A metric's people on a day; for missed punches, only the kind picked.
+  const listOf = (m: Metric, d: string): Hit[] => {
+    const all = hits.get(`${m}|${d}`) ?? [];
+    return m === 'missed' && missKind !== 'all' ? all.filter((h) => h.miss === missKind) : all;
+  };
+  const countOn = (m: Metric, d: string): number | null => (d > today && !AHEAD[m] ? null : listOf(m, d).length);
+  // The chips' totals count every kind; the kind tabs say how many of each.
+  const rawCountOn = (m: Metric, d: string): number => (d > today && !AHEAD[m] ? 0 : (hits.get(`${m}|${d}`)?.length ?? 0));
   const mdef = META[metric];
   const loading = !report && !error;
-  const totals = Object.fromEntries(METRICS.map((m) => [m.key, days.reduce((a, d) => a + (offDay(d) ? 0 : countOn(m.key, d) ?? 0), 0)])) as Record<Metric, number>;
+  const totals = Object.fromEntries(METRICS.map((m) => [m.key, days.reduce((a, d) => a + (offDay(d) ? 0 : rawCountOn(m.key, d)), 0)])) as Record<Metric, number>;
+  const missTotals = Object.fromEntries(MISS_KINDS.map(([k]) => [k, days.reduce((a, d) => a + (offDay(d) || d > today ? 0 : (hits.get(`missed|${d}`) ?? []).filter((h) => k === 'all' || h.miss === k).length), 0)])) as Record<MissKind | 'all', number>;
   const lead = (dateOf(first).getDay() + 6) % 7;
   const gradeMax = Math.max(1, ...days.map((d) => (offDay(d) ? 0 : countOn(metric, d) ?? 0)));
 
-  const selected = hits.get(`${metric}|${day}`) ?? [];
+  const selected = listOf(metric, day);
   const selCount = countOn(metric, day);
 
   const exportDay = () =>
@@ -339,6 +352,21 @@ export function CompanyCalendar() {
             );
           })}
         </div>
+
+        {metric === 'missed' && (
+          <div role="tablist" aria-label="Which punch is missing" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '-4px 0 14px' }}>
+            {MISS_KINDS.map(([k, label]) => {
+              const on = missKind === k;
+              return (
+                <button key={k} type="button" role="tab" aria-selected={on} onClick={() => setMissKind(k)}
+                  style={{ height: 32, padding: '0 12px', borderRadius: 999, cursor: 'pointer', font: 'inherit', fontSize: 12.5, fontWeight: on ? 600 : 500,
+                    border: `1.5px solid ${on ? 'var(--ink-2)' : 'var(--line)'}`, background: on ? 'var(--mute-bg)' : 'var(--surface)', color: on ? 'var(--ink)' : 'var(--ink-2)' }}>
+                  {label} <span style={{ fontWeight: 600, marginLeft: 4 }}>{loading ? '…' : missTotals[k]}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
 
         <div className="pd-cal" style={{ marginBottom: 6 }}>
