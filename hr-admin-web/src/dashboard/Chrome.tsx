@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import type { View } from './theme';
 import { prefetchView } from './viewChunks';
 import { TITLES } from './theme';
-import { IconBell, IconCheck, IconLogout, navIcon } from './icons';
+import { IconCheck, IconLogout, navIcon } from './icons';
 import { useStore } from './store';
 import type { StoreList } from './store';
 import { PersonAvatar } from './PersonAvatar';
@@ -513,10 +513,6 @@ export function Topbar() {
           </button>
         )}
         <ThemeSwitch />
-        <button className="ds-icon-btn" style={iconBtn}>
-          <IconBell stroke="currentColor" />
-          <span style={{ position: 'absolute', top: 9, right: 10, width: 8, height: 8, background: '#E5533D', borderRadius: '50%', border: '2px solid var(--surface)' }} />
-        </button>
 
         {/* Logged-in HR — top-right. */}
         <div className="ds-me" style={{ display: 'flex', alignItems: 'center', gap: 10, height: 42, padding: '0 14px 0 4px', borderRadius: 12, border: '1px solid var(--line)', background: 'var(--surface)', flexShrink: 0 }}>
