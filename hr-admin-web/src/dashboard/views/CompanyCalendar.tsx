@@ -282,17 +282,18 @@ export function CompanyCalendar() {
 
         {error && <LoadError compact text={error} onRetry={() => setAttempt((n) => n + 1)} />}
 
-        <div ref={calTop} role="tablist" aria-label="What to count" className="pd-legend" style={{ scrollMarginTop: 96, gap: 8 }}>
+        <div ref={calTop} role="tablist" aria-label="What to count" className="pd-legend" style={{ scrollMarginTop: 96, gap: 6, flexWrap: 'nowrap', alignItems: 'stretch' }}>
           {METRICS.map((m) => {
             const on = metric === m.key;
             // Each a chip in its own colour; the chosen one in a deeper shade of it.
             return (
               <button key={m.key} type="button" role="tab" aria-selected={on} onClick={() => pickMetric(m.key)}
-                style={{ display: 'inline-flex', alignItems: 'center', height: 32, padding: '0 12px', borderRadius: 999, cursor: 'pointer', font: 'inherit', fontSize: 12.5,
+                style={{ flex: '1 1 0', minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, minHeight: 34, padding: '5px 10px', borderRadius: 12, cursor: 'pointer', font: 'inherit', fontSize: 12.5, lineHeight: 1.25, textAlign: 'left',
                   background: on ? `color-mix(in srgb, ${m.fg} 22%, ${m.bg})` : m.bg,
                   border: `1.5px solid ${on ? m.fg : `color-mix(in srgb, ${m.fg} 28%, transparent)`}`,
                   color: on ? m.fg : 'var(--ink-2)', fontWeight: on ? 600 : 500 }}>
-                <i style={{ background: m.fg }} />{m.label} <span style={{ color: m.fg, marginLeft: 6, fontWeight: 600 }}>{loading ? '…' : totals[m.key]}</span>
+                <i style={{ background: m.fg, flexShrink: 0, margin: 0 }} />
+                <span style={{ minWidth: 0 }}>{m.label} <span style={{ color: m.fg, fontWeight: 600, whiteSpace: 'nowrap' }}>{loading ? '…' : totals[m.key]}</span></span>
               </button>
             );
           })}
