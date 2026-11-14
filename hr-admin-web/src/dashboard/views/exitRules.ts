@@ -1,4 +1,4 @@
-// Labels for the exit rules (Setup › Payroll › Exit settings and the Record exit dialog).
+// Labels and plain-words explanations for the exit rules (Setup › Payroll › Exit settings and Record exit).
 import type { ExitRuleKind, ExitRules } from '../../services/hrms';
 
 export const RULE_KIND_LABEL: Record<ExitRuleKind, string> = {
@@ -6,14 +6,16 @@ export const RULE_KIND_LABEL: Record<ExitRuleKind, string> = {
 };
 export const RULE_KINDS: ExitRuleKind[] = ['resigned', 'terminated', 'absconded', 'consultant', 'retired', 'other'];
 
-type Choices<K extends keyof ExitRules> = { key: K; label: string; hint: string; options: [ExitRules[K], string][] };
-export const RULE_ROWS: [Choices<'holdPay'>, Choices<'access'>, Choices<'leaveEncashment'>, Choices<'gratuity'>, Choices<'noticePay'>, Choices<'noticeRecovery'>] = [
-  { key: 'holdPay', label: 'Pay from notice', hint: 'Held pay is paid with the final settlement', options: [[true, 'Hold'], [false, 'Pay as usual']] },
-  { key: 'access', label: 'App access ends', hint: 'At once, or the day after the last working day', options: [['day_after', 'Next day'], ['at_once', 'At once'], ['never', 'Never']] },
-  { key: 'leaveEncashment', label: 'Leave encashment', hint: 'Leave balance paid out in the settlement', options: [['pay', 'Pay'], ['hr_decides', 'HR decides'], ['none', 'Don’t pay']] },
-  { key: 'gratuity', label: 'Gratuity', hint: 'After 5 years of service', options: [['pay', 'Pay'], ['hr_decides', 'HR decides'], ['none', 'Don’t pay']] },
-  { key: 'noticePay', label: 'Notice pay', hint: 'Paid instead of notice when the company ends the job', options: [['none', 'No'], ['hr_chooses', 'If HR chooses'], ['pay', 'Pay']] },
-  { key: 'noticeRecovery', label: 'Notice shortfall', hint: 'Recovered when they leave without serving notice', options: [['none', 'Don’t recover'], ['days_not_served', 'Unserved days'], ['whole_notice', 'Whole notice']] },
+/** What the two notice rules mean, in one line each: the (i) beside them, here and on Record exit. */
+export const NOTICE_PAY_INFO = 'When the company ends someone’s job before their notice is over, it pays them for the days they won’t work. Used when letting someone go early. It is taxed like salary; no PF is taken.';
+export const NOTICE_SHORTFALL_INFO = 'When someone leaves before finishing their notice, the pay for the days they didn’t give is taken from their final settlement. You can turn it off for one person, for example when you let them go early.';
+
+type Choices<K extends keyof ExitRules> = { key: K; label: string; hint: string; info?: string; options: [ExitRules[K], string][] };
+export const RULE_ROWS: [Choices<'holdPay'>, Choices<'access'>, Choices<'noticePay'>, Choices<'noticeRecovery'>] = [
+  { key: 'holdPay', label: 'Salary during notice', hint: 'Held salary is paid with the final settlement', options: [[true, 'Hold'], [false, 'Pay as usual']] },
+  { key: 'access', label: 'App turns off', hint: 'They can’t sign in from then on', options: [['day_after', 'Day after last day'], ['at_once', 'Right away'], ['never', 'Never']] },
+  { key: 'noticePay', label: 'Notice pay', hint: 'Paid for notice they won’t work', info: NOTICE_PAY_INFO, options: [['none', 'No'], ['hr_chooses', 'HR decides'], ['pay', 'Yes']] },
+  { key: 'noticeRecovery', label: 'Notice shortfall', hint: 'Taken back for notice they didn’t give', info: NOTICE_SHORTFALL_INFO, options: [['none', 'No'], ['days_not_served', 'Days not given'], ['whole_notice', 'Whole notice']] },
 ];
 /** A rule's value as a select's string, and back. */
 export const asText = (v: ExitRules[keyof ExitRules]) => String(v);

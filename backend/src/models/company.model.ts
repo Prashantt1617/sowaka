@@ -130,6 +130,8 @@ export interface Company {
   updatedAt?: Date;
   /** Exit rules per kind of exit, as HR set them (Setup › Payroll › Exit settings); missing kinds use DEFAULT_EXIT_RULES. */
   exitRules?: Partial<Record<import('./user.model').ExitRuleKind, import('./user.model').ExitRules>>;
+  /** The notice period an exit starts from, in days (Exit settings); each exit can change it. */
+  exitNoticeDays?: number;
 }
 
 /**
@@ -140,6 +142,8 @@ export interface Company {
 export interface CompanyFeatures {
   /** Placements: clients, candidates and placements, for an HR placement agency. */
   placements?: boolean;
+  /** Exits: recording exits, Exit settings and People › Exits. Tried at sowaka first; off everywhere else. */
+  exits?: boolean;
   /**
    * Speed Poker's big tables: eight seats, a 1,000 buy-in, table chat, watching
    * a full table, sounds and the newer table. Off: six seats and 1,500, as before.

@@ -341,6 +341,7 @@ export function adaptEmployees(dtos: EmployeeDTO[]): Emp[] {
     gender: e.gender || '',
     phone: e.phone || '',
     isDirector: e.isDirector === true,
+    exit: e.exit ?? null,
     documents: (e.documents ?? []).map((doc) => ({
       id: doc.id,
       name: doc.name,

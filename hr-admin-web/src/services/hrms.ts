@@ -298,6 +298,8 @@ export type EmployeeDTO = {
   managerUserId?: string;
   managerName?: string;
   lifecycleStatus?: string;
+  /** An exit HR recorded (companies with Exits on): on notice until lastWorkingDay, then left. */
+  exit?: { lastWorkingDay: string; kind: string; left: boolean } | null;
   employeeId?: string;
   location?: string;
   branch?: string;
@@ -469,15 +471,13 @@ export type ExitRuleKind = ExitKind | 'consultant';
 export type ExitRules = {
   holdPay: boolean;
   access: 'day_after' | 'at_once' | 'never';
-  leaveEncashment: 'pay' | 'hr_decides' | 'none';
-  gratuity: 'pay' | 'hr_decides' | 'none';
   noticePay: 'none' | 'hr_chooses' | 'pay';
   noticeRecovery: 'none' | 'days_not_served' | 'whole_notice';
 };
-export type ExitSettingsDTO = { kinds: { kind: ExitRuleKind; rules: ExitRules; isDefault: boolean }[]; defaults: Record<ExitRuleKind, ExitRules> };
+export type ExitSettingsDTO = { kinds: { kind: ExitRuleKind; rules: ExitRules; isDefault: boolean }[]; defaults: Record<ExitRuleKind, ExitRules>; noticeDays: number | null };
 export const getExitSettings = () => api<ExitSettingsDTO>('/admin/exit-settings');
-export const saveExitSettings = (kinds: Partial<Record<ExitRuleKind, Partial<ExitRules> | null>>) =>
-  api<ExitSettingsDTO>('/admin/exit-settings', { method: 'PUT', body: { kinds } });
+export const saveExitSettings = (kinds: Partial<Record<ExitRuleKind, Partial<ExitRules> | null>>, noticeDays?: number | null) =>
+  api<ExitSettingsDTO>('/admin/exit-settings', { method: 'PUT', body: { kinds, ...(noticeDays !== undefined ? { noticeDays } : {}) } });
 export type ExitDTO = {
   userId: string; name: string; employeeId: string; department: string; designation: string; joiningDate: string | null;
   kind: ExitKind; kindLabel: string; noticeFrom: string | null; lastWorkingDay: string; noticeDays: number | null; note: string;

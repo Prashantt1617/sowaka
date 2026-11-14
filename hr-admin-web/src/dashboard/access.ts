@@ -14,7 +14,9 @@ export const PLACEMENT_VIEWS: AccessKey[] = ['placements', 'placementclients', '
 /** Every tab, unless HR limited them. People › Accesses is an admin's alone; Support desk needs a Support role. */
 export function canOpen(user: AuthUser | null | undefined, view: AccessKey): boolean {
   if (!user?.dashboardAccess) return false;
-  if (view === 'usersroles' || view === 'employeeimport' || view === 'exits' || view === 'exitsettings') return user.dashboardAdmin === true;
+  if (view === 'usersroles' || view === 'employeeimport') return user.dashboardAdmin === true;
+  // Exits is a company feature (on at sowaka only for now), then a dashboard admin's.
+  if (view === 'exits' || view === 'exitsettings') return user.features?.exits === true && user.dashboardAdmin === true;
   // Setup is a page of links: open to whoever may open any of the pages on it.
   if (view === 'setup') return SETUP_VIEWS.some((v) => canOpen(user, v));
   if (view === 'bulkassign') return BULK_VIEWS.some((v) => canOpen(user, v));

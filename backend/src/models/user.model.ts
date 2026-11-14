@@ -21,15 +21,15 @@ export const EXIT_RULE_KINDS: ExitRuleKind[] = ['resigned', 'terminated', 'absco
 /**
  * What an exit does, per kind: the company's defaults (Setup › Payroll › Exit settings),
  * copied onto each exit when it is recorded and changeable for that one person.
- * holdPay and access act now; the rest are read by the final settlement.
+ * holdPay and access act now; the notice lines are read by the final settlement.
+ * Gratuity (the law: 5 years or more) and leave encashment (each leave type's own
+ * encashment rule) are not exit settings.
  */
 export interface ExitRules {
   /** Hold their pay from the day notice begins, paid with the settlement. */
   holdPay: boolean;
   /** When app access ends. */
   access: 'day_after' | 'at_once' | 'never';
-  leaveEncashment: 'pay' | 'hr_decides' | 'none';
-  gratuity: 'pay' | 'hr_decides' | 'none';
   /** Paid instead of notice (the company ends the job early). */
   noticePay: 'none' | 'hr_chooses' | 'pay';
   /** Recovered when the employee leaves without serving the notice. */
@@ -38,19 +38,17 @@ export interface ExitRules {
 export const EXIT_RULE_CHOICES: { [K in keyof ExitRules]: ExitRules[K][] } = {
   holdPay: [true, false],
   access: ['day_after', 'at_once', 'never'],
-  leaveEncashment: ['pay', 'hr_decides', 'none'],
-  gratuity: ['pay', 'hr_decides', 'none'],
   noticePay: ['none', 'hr_chooses', 'pay'],
   noticeRecovery: ['none', 'days_not_served', 'whole_notice'],
 };
 /** The starting point for every company until HR changes it (the plan's table). */
 export const DEFAULT_EXIT_RULES: Record<ExitRuleKind, ExitRules> = {
-  resigned: { holdPay: true, access: 'day_after', leaveEncashment: 'pay', gratuity: 'pay', noticePay: 'none', noticeRecovery: 'days_not_served' },
-  terminated: { holdPay: true, access: 'at_once', leaveEncashment: 'pay', gratuity: 'pay', noticePay: 'hr_chooses', noticeRecovery: 'none' },
-  absconded: { holdPay: true, access: 'at_once', leaveEncashment: 'hr_decides', gratuity: 'hr_decides', noticePay: 'none', noticeRecovery: 'whole_notice' },
-  consultant: { holdPay: false, access: 'never', leaveEncashment: 'pay', gratuity: 'pay', noticePay: 'none', noticeRecovery: 'none' },
-  retired: { holdPay: true, access: 'day_after', leaveEncashment: 'pay', gratuity: 'pay', noticePay: 'none', noticeRecovery: 'none' },
-  other: { holdPay: true, access: 'day_after', leaveEncashment: 'pay', gratuity: 'pay', noticePay: 'none', noticeRecovery: 'none' },
+  resigned: { holdPay: true, access: 'day_after', noticePay: 'none', noticeRecovery: 'days_not_served' },
+  terminated: { holdPay: true, access: 'at_once', noticePay: 'hr_chooses', noticeRecovery: 'none' },
+  absconded: { holdPay: true, access: 'at_once', noticePay: 'none', noticeRecovery: 'whole_notice' },
+  consultant: { holdPay: false, access: 'never', noticePay: 'none', noticeRecovery: 'none' },
+  retired: { holdPay: true, access: 'day_after', noticePay: 'none', noticeRecovery: 'none' },
+  other: { holdPay: true, access: 'day_after', noticePay: 'none', noticeRecovery: 'none' },
 };
 
 /**

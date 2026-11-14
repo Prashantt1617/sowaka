@@ -243,12 +243,12 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
 
   return (
     <div className="pd-prof" style={{ animation: 'fade .3s ease both' }}>
-      <ExitLoader userId={emp.id} enabled={user?.dashboardAdmin === true} tick={exitTick} onLoaded={setExitRow} />
+      <ExitLoader userId={emp.id} enabled={user?.dashboardAdmin === true && user?.features?.exits === true} tick={exitTick} onLoaded={setExitRow} />
       <div className="pd-prof-top">
         <button onClick={onBack} className="pd-btn ghost sm" style={{ marginLeft: -12 }}>{backLabel}</button>
         {user?.dashboardAdmin === true && user.id !== emp.id && (
           <span style={{ display: 'inline-flex', gap: 8 }}>
-            {exitRow?.state !== 'left' && <button type="button" onClick={() => setExiting(true)} className="pd-btn sm">{exitRow ? 'Change exit' : 'Record exit'}</button>}
+            {user.features?.exits === true && exitRow?.state !== 'left' && <button type="button" onClick={() => setExiting(true)} className="pd-btn sm">{exitRow ? 'Change exit' : 'Record exit'}</button>}
             <button type="button" onClick={() => setDeleting(true)} className="pd-btn sm" style={{ color: 'var(--bad)' }}><PdTrash /> Delete employee</button>
           </span>
         )}

@@ -55,7 +55,7 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   await connectDb();
   await statutoryConfigs().insertMany(STATUTORY_SEED.map((c) => ({ ...structuredClone(c), createdAt: new Date(), updatedAt: new Date(), updatedByUserId: null })));
 
-  await companies().insertOne({ id: ORG, name: 'Exit Check' } as never);
+  await companies().insertOne({ id: ORG, name: 'Exit Check', features: { exits: true } } as never);
   await users().insertMany([
     person('hr', { name: 'Hema HR', dashboardAccess: true, dashboardAdmin: true, employeeId: 'H1', managerUserId: undefined }),
     person('mgr', { name: 'Manoj', dashboardAccess: true, employeeId: 'M1' }),
@@ -72,6 +72,9 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
 
   console.log('recording an exit');
   const sept10 = ist('2026-09-10T11:00:00');
+  await companies().updateOne({ id: ORG }, { $set: { 'features.exits': false } });
+  ok('off for a company without the feature', /not switched on/.test((await refusal(() => listExits('hr', sept10))).message));
+  await companies().updateOne({ id: ORG }, { $set: { 'features.exits': true } });
   ok('only a dashboard admin', (await refusal(() => recordExit('mgr', 'leaver', { kind: 'resigned', lastWorkingDay: '2026-09-20' }, sept10))).status === 403);
   ok('not their own', (await refusal(() => recordExit('hr', 'hr', { kind: 'resigned', lastWorkingDay: '2026-09-20' }, sept10))).status === 400);
   ok('a known kind', (await refusal(() => recordExit('hr', 'leaver', { kind: 'vanished', lastWorkingDay: '2026-09-20' }, sept10))).status === 400);
@@ -113,7 +116,7 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   // Absconded: the default rule ends access as it is recorded.
   const ran = await recordExit('hr', 'runner', { kind: 'absconded', lastWorkingDay: '2026-09-12' }, sept10);
   ok('absconded: access ends at once (the default rule)', ran.state === 'left' && ran.rules.access === 'at_once' && (await users().findOne({ userId: 'runner' }))?.lifecycleStatus === 'terminated', ran);
-  ok('…and its other defaults are copied onto the exit', ran.rules.noticeRecovery === 'whole_notice' && ran.rules.gratuity === 'hr_decides', ran.rules);
+  ok('…and its other defaults are copied onto the exit', ran.rules.noticeRecovery === 'whole_notice' && ran.rules.noticePay === 'none', ran.rules);
   // End access now, for an exit whose rule waits for the day after.
   await recordExit('hr', 'stayer', { kind: 'resigned', lastWorkingDay: '2026-09-28' }, sept10);
   const ended = await endAccessNow('hr', 'stayer', sept10);
@@ -130,13 +133,14 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   ok('defaults until HR changes them', resignedRules?.isDefault === true && resignedRules.rules.holdPay === true && resignedRules.rules.access === 'day_after', resignedRules);
   ok('only a dashboard admin may change them', (await refusal(() => setExitSettings('mgr', { kinds: { resigned: { holdPay: false } } }))).status === 403);
   ok('a choice that is not on the list is refused', (await refusal(() => setExitSettings('hr', { kinds: { resigned: { noticeRecovery: 'double' } } }))).status === 400);
-  const saved = await setExitSettings('hr', { kinds: { retired: { holdPay: false, leaveEncashment: 'hr_decides' } } });
+  const saved = await setExitSettings('hr', { kinds: { retired: { holdPay: false, noticeRecovery: 'days_not_served' } }, noticeDays: 30 });
   const retired = saved.kinds.find((k) => k.kind === 'retired');
-  ok('the company changes a kind: saved, the rest of that kind kept', retired?.isDefault === false && retired.rules.holdPay === false && retired.rules.leaveEncashment === 'hr_decides' && retired.rules.gratuity === 'pay', retired);
+  ok('the company changes a kind: saved, the rest of that kind kept', retired?.isDefault === false && retired.rules.holdPay === false && retired.rules.noticeRecovery === 'days_not_served' && retired.rules.noticePay === 'none' && saved.noticeDays === 30, retired);
   const lead = (await listExits('hr', sept10)).find((x) => x.userId === 'lead');
   ok('an exit already recorded keeps its own rules', lead?.rules.holdPay === true, lead?.rules);
   ok('one exit can change its rules: no hold for this person', (await recordExit('hr', 'fresh', { kind: 'resigned', lastWorkingDay: '2026-09-29', rules: { holdPay: false } }, sept10)).rules.holdPay === false);
   ok('an exit can never keep access for good', (await refusal(() => recordExit('hr', 'e1', { kind: 'other', lastWorkingDay: '2026-09-29', rules: { access: 'never' } }, sept10))).status === 400);
+  ok('a notice period out of range is refused', (await refusal(() => setExitSettings('hr', { noticeDays: 400 }))).status === 400);
   await setExitSettings('hr', { kinds: { retired: null } });
   ok('a kind sent as null goes back to the default', (await exitSettings('hr')).kinds.find((k) => k.kind === 'retired')?.isDefault === true);
 

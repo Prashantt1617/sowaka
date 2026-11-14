@@ -38,6 +38,9 @@ async function requireExitAdmin(adminUserId: string) {
   const admin = await users().findOne({ userId: adminUserId }, { projection: { _id: 0, userId: 1, org: 1, name: 1, dashboardAdmin: 1 } });
   if (!admin?.org) throw new ExitError(403, 'No organisation on this account');
   if (admin.dashboardAdmin !== true) throw new ExitError(403, 'Only a dashboard admin can record or change an exit');
+  // A company feature: off unless Sowaka switched it on for this company (companies.features.exits).
+  const company = await companies().findOne({ id: admin.org }, { projection: { _id: 0, features: 1 } });
+  if (company?.features?.exits !== true) throw new ExitError(403, 'Exits are not switched on for this company');
   return admin as Pick<User, 'userId' | 'org' | 'name' | 'dashboardAdmin'> & { org: string };
 }
 
@@ -63,29 +66,46 @@ function readRules(raw: unknown, base: ExitRules, label: string): ExitRules {
 async function companyRules(org: string) {
   const company = await companies().findOne({ id: org }, { projection: { _id: 0, exitRules: 1 } });
   const saved = company?.exitRules ?? {};
-  return EXIT_RULE_KINDS.map((kind) => ({ kind, rules: { ...DEFAULT_EXIT_RULES[kind], ...(saved[kind] ?? {}) }, isDefault: !saved[kind] }));
+  // Only the rules that still exist (older saves may carry ones since removed).
+  const known = (r: Partial<ExitRules> | undefined) => Object.fromEntries(RULE_KEYS.filter((k) => r?.[k] !== undefined).map((k) => [k, r![k]]));
+  return EXIT_RULE_KINDS.map((kind) => ({ kind, rules: { ...DEFAULT_EXIT_RULES[kind], ...known(saved[kind]) } as ExitRules, isDefault: !saved[kind] }));
+}
+
+async function companyNoticeDays(org: string): Promise<number | null> {
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, exitNoticeDays: 1 } });
+  return typeof company?.exitNoticeDays === 'number' ? company.exitNoticeDays : null;
 }
 
 export async function exitSettings(adminUserId: string) {
   const admin = await requireExitAdmin(adminUserId);
-  return { kinds: await companyRules(admin.org), defaults: DEFAULT_EXIT_RULES };
+  return { kinds: await companyRules(admin.org), defaults: DEFAULT_EXIT_RULES, noticeDays: await companyNoticeDays(admin.org) };
 }
 
 /** Save the company's rules. Body: { kinds: { resigned: {...}, … } }; a kind sent as null goes back to the default. */
 export async function setExitSettings(adminUserId: string, body: Record<string, unknown>) {
   const admin = await requireExitAdmin(adminUserId);
-  const raw = body.kinds;
-  if (!raw || typeof raw !== 'object') throw new ExitError(400, 'kinds must be an object of rules per kind of exit');
+  const raw = body.kinds ?? {};
+  if (typeof raw !== 'object') throw new ExitError(400, 'kinds must be an object of rules per kind of exit');
   const $set: Record<string, unknown> = {};
   const $unset: Record<string, ''> = {};
+  // The notice period exits start from: whole days, 0 to 365; null clears it.
+  if (body.noticeDays !== undefined) {
+    if (body.noticeDays === null || body.noticeDays === '') $unset.exitNoticeDays = '';
+    else {
+      const n = Number(body.noticeDays);
+      if (!Number.isInteger(n) || n < 0 || n > 365) throw new ExitError(400, 'Notice period is whole days, 0 to 365');
+      $set.exitNoticeDays = n;
+    }
+  }
   for (const [kind, rules] of Object.entries(raw as Record<string, unknown>)) {
     if (!EXIT_RULE_KINDS.includes(kind as ExitRuleKind)) throw new ExitError(400, `Unknown kind of exit: ${kind}`);
     if (rules === null) { $unset[`exitRules.${kind}`] = ''; continue; }
     $set[`exitRules.${kind}`] = readRules(rules, DEFAULT_EXIT_RULES[kind as ExitRuleKind], kind);
   }
+  if (!Object.keys($set).length && !Object.keys($unset).length) return { kinds: await companyRules(admin.org), defaults: DEFAULT_EXIT_RULES, noticeDays: await companyNoticeDays(admin.org) };
   const done = await companies().updateOne({ id: admin.org }, { ...(Object.keys($set).length ? { $set } : {}), ...(Object.keys($unset).length ? { $unset } : {}) });
   if (done.matchedCount === 0) throw new ExitError(404, 'Company not found');
-  return { kinds: await companyRules(admin.org), defaults: DEFAULT_EXIT_RULES };
+  return { kinds: await companyRules(admin.org), defaults: DEFAULT_EXIT_RULES, noticeDays: await companyNoticeDays(admin.org) };
 }
 
 /** How an exit reads on the dashboard. */
