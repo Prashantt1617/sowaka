@@ -462,6 +462,21 @@ export type PeopleTasksDTO = {
 /** People › Tasks: everyone whose setup is incomplete, worked out fresh each time. */
 export const getPeopleTasks = () => api<PeopleTasksDTO & { success: boolean }>('/admin/employees/tasks');
 
+/** An exit HR recorded (People › Exits). state: notice (still working), leaving (past the last day, access ends within the hour), left. */
+export type ExitKind = 'resigned' | 'terminated' | 'absconded' | 'retired' | 'other';
+export type ExitDTO = {
+  userId: string; name: string; employeeId: string; department: string; designation: string; joiningDate: string | null;
+  kind: ExitKind; kindLabel: string; noticeFrom: string | null; lastWorkingDay: string; noticeDays: number | null; note: string;
+  recordedByName: string; recordedAt: string; accessEndedAt: string | null; state: 'notice' | 'leaving' | 'left'; status: string;
+};
+export type ExitInput = { kind: ExitKind; lastWorkingDay: string; noticeFrom?: string; noticeDays?: number | null; note?: string; newManagerUserId?: string; endAccessNow?: boolean };
+export const listExits = () => api<{ exits: ExitDTO[] }>('/admin/exits').then((r) => r.exits);
+export const recordExit = (userId: string, input: ExitInput) =>
+  api<{ exit: ExitDTO }>(`/admin/employees/${userId}/exit`, { method: 'PUT', body: input }).then((r) => r.exit);
+export const withdrawExit = (userId: string) => api<{ withdrawn: boolean }>(`/admin/employees/${userId}/exit`, { method: 'DELETE' });
+export const endExitAccessNow = (userId: string) =>
+  api<{ exit: ExitDTO }>(`/admin/employees/${userId}/exit/end-access`, { method: 'POST' }).then((r) => r.exit);
+
 /** Delete an employee for good (dashboard admins); `confirmName` is their name, typed. */
 export const deleteEmployee = (userId: string, confirmName: string) =>
   api<{ deleted: boolean }>(`/admin/employees/${userId}`, { method: 'DELETE', body: { confirmName } });

@@ -50,6 +50,7 @@ const PEOPLE: NavItem[] = [
   { key: 'designations', label: 'Designations', hidden: true },
   { key: 'employees', label: 'Employees' },
   { key: 'employeeimport', label: 'Import' },
+  { key: 'exits', label: 'Exits' },
   { key: 'peopletasks', label: 'Tasks' },
   { key: 'orgchart', label: 'Org chart' },
   { key: 'usersroles', label: 'Accesses' },

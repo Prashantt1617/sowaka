@@ -22,8 +22,9 @@ import { PdBank, PdCalendar, PdChart, PdClock, PdEdit, PdFile, PdLock, PdStar, P
 import './people.css';
 import { periodLabel, periodShort } from '../period';
 import { EmployeeKpiPanel } from './KpiAssign';
-import { assignShift, clearCalendarDay, clearReportingManager, deleteEmployee, getCompanySettings, getEmployeeCalendar, getShifts, setCalendarDay, setReportingManager, updateEmployeeDetails } from '../../services/hrms';
-import type { EmployeeDetailsInput, ShiftDTO } from '../../services/hrms';
+import { assignShift, clearCalendarDay, clearReportingManager, deleteEmployee, getCompanySettings, listExits, getEmployeeCalendar, getShifts, setCalendarDay, setReportingManager, updateEmployeeDetails } from '../../services/hrms';
+import type { EmployeeDetailsInput, ExitDTO, ShiftDTO } from '../../services/hrms';
+import { ExitBanner, ExitDialog } from './ExitDialog';
 import { Field, GENDERS as GENDER_CHOICES, Select, TypeOrPick, grid2, grid3, infoCallout, infoIcon, inputStyle } from './AddEmployeeWizard';
 import { ApiError } from '../../services/http';
 import { useAuth } from '../auth/AuthContext';
@@ -200,6 +201,10 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
   // What someone earns is its own access, apart from Employees.
   const { user } = useAuth();
   const [deleting, setDeleting] = useState(false);
+  // Their exit, when HR has recorded one (admins only: the server says the same).
+  const [exitRow, setExitRow] = useState<ExitDTO | null>(null);
+  const [exiting, setExiting] = useState(false);
+  const [exitTick, setExitTick] = useState(0);
   const seesSalary = canOpen(user, SALARY_DETAILS);
   // Edit details: for someone given the right, on themselves and anyone below them.
   const [editingDetails, setEditingDetails] = useState(false);
@@ -238,13 +243,19 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
 
   return (
     <div className="pd-prof" style={{ animation: 'fade .3s ease both' }}>
+      <ExitLoader userId={emp.id} enabled={user?.dashboardAdmin === true} tick={exitTick} onLoaded={setExitRow} />
       <div className="pd-prof-top">
         <button onClick={onBack} className="pd-btn ghost sm" style={{ marginLeft: -12 }}>{backLabel}</button>
         {user?.dashboardAdmin === true && user.id !== emp.id && (
-          <button type="button" onClick={() => setDeleting(true)} className="pd-btn sm" style={{ color: 'var(--bad)' }}><PdTrash /> Delete employee</button>
+          <span style={{ display: 'inline-flex', gap: 8 }}>
+            {exitRow?.state !== 'left' && <button type="button" onClick={() => setExiting(true)} className="pd-btn sm">{exitRow ? 'Change exit' : 'Record exit'}</button>}
+            <button type="button" onClick={() => setDeleting(true)} className="pd-btn sm" style={{ color: 'var(--bad)' }}><PdTrash /> Delete employee</button>
+          </span>
         )}
       </div>
       {deleting && <DeleteEmployee emp={emp} onClose={() => setDeleting(false)} onDeleted={() => { setDeleting(false); void s.reload(); onBack(); }} />}
+      {exiting && <ExitDialog emp={emp} exit={exitRow} emps={s.emps} onClose={() => setExiting(false)} onSaved={() => { setExiting(false); setExitTick((n) => n + 1); void s.reload(); }} />}
+      {exitRow && <ExitBanner exit={exitRow} canEdit={user?.dashboardAdmin === true} onEdit={() => setExiting(true)} />}
 
       {/* Identity header */}
       <section className="pd-card pd-phead">
@@ -1125,6 +1136,17 @@ function MiniRow({ label, value }: { label: string; value: string }) {
       <span className="pv">{value}</span>
     </div>
   );
+}
+
+/** Reads the person's exit, if any, whenever they or `tick` change. */
+function ExitLoader({ userId, enabled, tick, onLoaded }: { userId: string; enabled: boolean; tick: number; onLoaded: (e: ExitDTO | null) => void }) {
+  useEffect(() => {
+    if (!enabled) { onLoaded(null); return; }
+    let live = true;
+    listExits().then((all) => { if (live) onLoaded(all.find((x) => x.userId === userId) ?? null); }).catch(() => { if (live) onLoaded(null); });
+    return () => { live = false; };
+  }, [userId, enabled, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
 }
 
 /** The editor themselves, or anyone below them in the reporting line. The server checks the same. */

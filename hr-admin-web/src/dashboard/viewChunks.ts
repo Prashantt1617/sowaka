@@ -23,6 +23,7 @@ const LOADERS: Partial<Record<View, Loader>> = {
   designations: () => import('./views/Designations').then((m) => ({ default: m.Designations })),
   employees: () => import('./views/Employees').then((m) => ({ default: m.Employees })),
   employeeimport: () => import('./views/EmployeeImport').then((m) => ({ default: m.EmployeeImport })),
+  exits: () => import('./views/Exits').then((m) => ({ default: m.Exits })),
   peopletasks: () => import('./views/PeopleTasks').then((m) => ({ default: m.PeopleTasks })),
   attendancereport: () => import('./views/AttendanceReport').then((m) => ({ default: m.AttendanceReport })),
   companycalendar: () => import('./views/CompanyCalendar').then((m) => ({ default: m.CompanyCalendar })),
