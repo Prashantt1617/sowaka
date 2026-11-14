@@ -132,6 +132,8 @@ export interface Company {
   exitRules?: Partial<Record<import('./user.model').ExitRuleKind, import('./user.model').ExitRules>>;
   /** The notice period an exit starts from, in days (Exit settings); each exit can change it. */
   exitNoticeDays?: number;
+  /** How notice pay and notice shortfall are worked out, and when the team is told (Exit settings). */
+  exitNotice?: Partial<import('./user.model').ExitNoticeSettings>;
 }
 
 /**

@@ -34,7 +34,7 @@ import { resolveRuleSet } from './statutory.service';
 import { attendanceCountsForPeriod, payrollDeductions, unpaidLeaveDeduction } from './deduction.service';
 import { payslipHtml } from './payslip-html';
 import { employeeCalendar, invalidateAttendanceSetup, joinedOn, leftOn } from './attendance-report.service';
-import { companies } from '../config/db';
+import { companies, exitSettlements } from '../config/db';
 import { declarationsFor, runTds, ytdFor } from './tds.service';
 import { requireTdsConfigs, statutoryConfigForPeriod } from './payrollConfig.service';
 import type { StatutoryConfig } from '../shared/payroll/statutory-config';
@@ -251,12 +251,19 @@ async function buildRunPayslips(
   // Each person's flexible split (app › Payroll), month by month, over their structure's own values.
   const splits = await splitsByUser(org, userIds);
 
+  // People whose final settlement already paid this period from its own working (no payslip
+  // existed when it was approved): the run leaves them out, so the month is not paid twice.
+  const settledHere = scope
+    ? new Set<string>()
+    : new Set((await exitSettlements().find({ org, status: { $in: ['approved', 'paid'] }, lines: { $elemMatch: { period, estimated: true } } }, { projection: { _id: 0, userId: 1 } }).toArray()).map((r) => r.userId));
+
   const now = new Date();
   const slips: Payslip[] = [];
 
   for (const structure of structures) {
     const employee = employeeById.get(structure.userId);
     if (!employee) continue; // structure orphaned from its user; skip defensively
+    if (settledHere.has(structure.userId)) continue;
 
     // Resolve the assigned salary template; skip employees without one (SS-3).
     const template = structure.salaryTemplateCode
@@ -293,7 +300,11 @@ async function buildRunPayslips(
     const notYetEmployedDays = employedFrom ? Math.round((Date.parse(employedFrom) - Date.parse(range.from)) / 86_400_000) : 0;
     // Notice began (an exit HR recorded; the day it was recorded when no date was given): pay is held from then.
     // (Unless this exit's rules say not to hold pay.)
-    const noticeStart = employee.exit && employee.exit.rules?.holdPay !== false ? (employee.exit.noticeFrom ?? new Date(employee.exit.recordedAt).toISOString().slice(0, 10)) : undefined;
+    // Recorded after they had already gone (an absconding found out later): held from their last working day.
+    const recordedOn = employee.exit ? new Date(employee.exit.recordedAt).toISOString().slice(0, 10) : '';
+    const noticeStart = employee.exit && employee.exit.rules?.holdPay !== false
+      ? (employee.exit.noticeFrom ?? (recordedOn < employee.exit.lastWorkingDay ? recordedOn : employee.exit.lastWorkingDay))
+      : undefined;
     // Left during it: the days after the last working day are not paid, like the days before joining.
     const leftDays = left && left < range.to ? Math.round((Date.parse(range.to) - Date.parse(left)) / 86_400_000) : 0;
     const salaryFor = (p: string, from?: string) => calculateSalaryStructure({

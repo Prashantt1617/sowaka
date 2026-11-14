@@ -83,8 +83,8 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   const teamRefused = await refusal(() => recordExit('hr', 'lead', { kind: 'resigned', lastWorkingDay: '2026-09-25' }, sept10));
   ok('a manager needs a successor first', teamRefused.status === 409 && /1 person reports to Lata Lead/.test(teamRefused.message), teamRefused);
   ok('the successor must still be here', (await refusal(() => recordExit('hr', 'lead', { kind: 'resigned', lastWorkingDay: '2026-09-25', newManagerUserId: 'nobody' }, sept10))).status === 400);
-  await recordExit('hr', 'lead', { kind: 'resigned', lastWorkingDay: '2026-09-25', newManagerUserId: 'mgr' }, sept10);
-  ok('their team moves to the new manager now', (await users().findOne({ userId: 'e1' }))?.managerUserId === 'mgr');
+  const leadView = await recordExit('hr', 'lead', { kind: 'resigned', lastWorkingDay: '2026-09-25', newManagerUserId: 'mgr' }, sept10);
+  ok('their team stays with them during notice', (await users().findOne({ userId: 'e1' }))?.managerUserId === 'lead' && leadView.team?.move === 'day_after' && leadView.team.newManagerName === 'Manoj' && leadView.team.size === 1, leadView.team);
 
   await authSessions().insertOne({ tokenHash: 'leaver-session', userId: 'leaver', createdAt: sept10, expiresAt: new Date('2027-01-01') });
   await deviceTokens().insertOne({ userId: 'leaver', token: 'leaver-phone', platform: 'android', createdAt: sept10, updatedAt: sept10 });
@@ -105,6 +105,8 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   ok('sign-in is refused', (await refusal(() => getCurrentAuthUser('leaver'))).status === 401);
   ok('running it again changes nothing', (await closeDueExits(ist('2026-09-22T00:30:00'))) === 0);
   ok('the next one goes on its own day (the lead, last day the 25th)', (await closeDueExits(ist('2026-09-26T00:30:00'))) === 1 && (await closeDueExits(ist('2026-09-26T01:30:00'))) === 0);
+  const leadAfter = await users().findOne({ userId: 'lead' });
+  ok('the team moves to the new manager the day after the last day', (await users().findOne({ userId: 'e1' }))?.managerUserId === 'mgr' && !!leadAfter?.exit?.teamMovedAt, leadAfter?.exit);
   ok('a left exit can no longer be changed', (await refusal(() => recordExit('hr', 'leaver', { kind: 'resigned', lastWorkingDay: '2026-09-30' }, sept10))).status === 409);
   ok('nor withdrawn', (await refusal(() => withdrawExit('hr', 'leaver', sept10))).status === 409);
 

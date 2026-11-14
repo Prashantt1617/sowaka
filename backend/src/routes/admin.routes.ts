@@ -43,7 +43,8 @@ import {
   employeeImportPreview,
   employeeImportApply,
   employeeImportCancel,
-  updateOvertimeEligibility, listExitsHandler, exitSettingsHandler, setExitSettingsHandler, recordExitHandler, withdrawExitHandler, endAccessNowHandler } from '../controllers/admin.controller';
+  updateOvertimeEligibility, listExitsHandler, exitSettingsHandler, setExitSettingsHandler, recordExitHandler, withdrawExitHandler, endAccessNowHandler,
+  exitDetailHandler, exitClearanceHandler, exitInterviewHandler, exitCloseCaseHandler, exitSettlementHandler } from '../controllers/admin.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { uploadEmployeeDocumentFile } from '../middleware/employee-document-upload.middleware';
 import { requireDashboardAccess, requireDashboardAdmin, requireDashboardTabs } from '../middleware/admin.middleware';
@@ -120,6 +121,11 @@ adminRouter.put('/exit-settings', setExitSettingsHandler);
 adminRouter.put('/employees/:userId/exit', recordExitHandler);
 adminRouter.delete('/employees/:userId/exit', withdrawExitHandler);
 adminRouter.post('/employees/:userId/exit/end-access', endAccessNowHandler);
+adminRouter.get('/employees/:userId/exit', exitDetailHandler);
+adminRouter.put('/employees/:userId/exit/clearance', exitClearanceHandler);
+adminRouter.put('/employees/:userId/exit/interview', exitInterviewHandler);
+adminRouter.post('/employees/:userId/exit/close-case', exitCloseCaseHandler);
+adminRouter.post('/employees/:userId/exit/settlement/:action', exitSettlementHandler);
 // Delete an employee for good (dashboard admins; their name typed to confirm).
 adminRouter.delete('/employees/:userId', deleteEmployee);
 // Who changed what on them: details, manager, shift and templates.
