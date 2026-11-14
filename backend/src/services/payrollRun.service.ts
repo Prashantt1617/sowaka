@@ -27,6 +27,7 @@ import {
   anyApprovedLeave,
   computeWorkingDays,
   getEmployeePeriodInputs,
+  parsePeriod,
   payrollPeriodRange,
 } from './payroll-inputs.service';
 import type { PeriodRange } from './payroll-inputs.service';
@@ -251,6 +252,15 @@ async function buildRunPayslips(
   // Each person's flexible split (app › Payroll), month by month, over their structure's own values.
   const splits = await splitsByUser(org, userIds);
 
+  // The pay dates of the months still to come this year, for the tax of someone who leaves in one of them.
+  const laterRanges = new Map<string, { from: string; to: string }>();
+  if (tdsOn && employees.some((e) => e.exit)) {
+    for (const p of periodsAfter(period)) {
+      try { const r = await payrollPeriodRange(org, p); laterRanges.set(p, { from: r.from, to: r.to }); }
+      catch { const r = parsePeriod(p); laterRanges.set(p, { from: r.from, to: r.to }); }
+    }
+  }
+
   // People whose final settlement already paid this period from its own working (no payslip
   // existed when it was approved): the run leaves them out, so the month is not paid twice.
   const settledHere = scope
@@ -383,9 +393,13 @@ async function buildRunPayslips(
       // their salary reimbursements count as taxable (no bills for them yet).
       const taxableReimb = (lines: { code: string; monthlyPaise: number }[]) =>
         lines.filter((l) => catalogByCode.get(l.code)?.taxable !== false).reduce((t, l) => t + l.monthlyPaise, 0);
+      // Someone leaving earns nothing after their last working day, and only part of the month it falls in:
+      // the year's tax is worked out on what they will really earn, so the months left take less (often none).
       const futureTaxablePaise = periodsAfter(period).reduce((t, p) => {
+        const share = left ? shareBeforeLeaving(laterRanges.get(p), left) : 1;
+        if (share === 0) return t;
         const later = salaryFor(p);
-        return t + projectedTaxable(later, config.mealCard.exemptMonthlyPaise) + taxableReimb(later.reimbursements ?? []);
+        return t + Math.round((projectedTaxable(later, config.mealCard.exemptMonthlyPaise) + taxableReimb(later.reimbursements ?? [])) * share);
       }, 0);
       // This year's reimbursements so far less the bills approved so far: a late bill lowers the tax from now on.
       reimbTax = reimbursementTax(addInto(new Map(reimbPaidBefore.get(structure.userId) ?? []), slip.reimbursementLines), bills.get(structure.userId), catalogByCode);
@@ -475,6 +489,15 @@ async function buildRunPayslips(
     throw new PayrollRunError(409, 'No payslips could be generated for this period');
   }
   return slips;
+}
+
+/** The part of a later month someone is still employed for: 1 until they leave, 0 after, the days up to the last one in between. */
+function shareBeforeLeaving(range: { from: string; to: string } | undefined, left: string): number {
+  if (!range) return 1;
+  if (left < range.from) return 0;
+  if (left >= range.to) return 1;
+  const day = 86_400_000;
+  return (Math.round((Date.parse(left) - Date.parse(range.from)) / day) + 1) / (Math.round((Date.parse(range.to) - Date.parse(range.from)) / day) + 1);
 }
 
 /** One person's payslip as a run made now would compute it (the app's estimate). */

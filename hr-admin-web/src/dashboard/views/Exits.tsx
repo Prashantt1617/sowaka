@@ -1,9 +1,8 @@
-// People › Exits: everyone HR has recorded an exit for, from the server (users.exit).
-// On notice until their last working day; Left once their app access has ended
-// (the day after, or when HR ended it). Open a row for their profile, where the
-// exit is changed, withdrawn or ended.
+// People › Exits: everyone HR has recorded an exit for, from the server (users.exit),
+// through the three stages of leaving: On notice (still working), Settlement due
+// (gone; the final settlement is waiting for HR) and Left (settled). Open a row
+// for that person's exit: clearance, exit interview and the settlement.
 import { useEffect, useMemo, useState } from 'react';
-import { useStore } from '../store';
 import { Card, EmptyRow, ListPending, LoadError, Pill, SearchInput, Th } from '../ui';
 import type { LoadState } from '../ui';
 import { btn, btnClass, cellName, cellSub, TH, toolbar, TR } from '../ds';
@@ -16,23 +15,33 @@ import { Pager, usePaged } from './Pager';
 import { FiltersButton, FiltersPanel, LabeledSelect } from './LabeledSelect';
 import { useFilterDraft } from './useFilterDraft';
 import { EXIT_KINDS, longDay } from './ExitDialog';
+import { ExitDetail } from './ExitDetail';
+import { inr } from '../../services/payroll';
 
-const COLS = '1.8fr 1fr 1fr 1fr 0.8fr 1.1fr 0.9fr';
-type Pick = 'all' | 'notice' | 'month' | 'left';
-const STATE_TONE = {
+const COLS = '1.8fr 0.9fr 1fr 1fr 0.7fr 1.3fr 1fr';
+type Pick = 'all' | 'notice' | 'settlement_due' | 'left';
+const STAGE_TONE = {
   notice: { label: 'On notice', tone: { bg: 'var(--warn-bg)', fg: 'var(--warn)' } },
-  leaving: { label: 'Access ending', tone: { bg: 'var(--warn-bg)', fg: 'var(--warn)' } },
+  settlement_due: { label: 'Settlement due', tone: { bg: 'var(--accent-soft)', fg: 'var(--accent-ink)' } },
   left: { label: 'Left', tone: { bg: 'var(--surface-2)', fg: 'var(--ink-2)' } },
 } as const;
+/** Where the settlement stands, in a few words, for the row. */
+const settlementText = (r: ExitDTO) => {
+  if (r.stage === 'notice') return { main: '—', sub: 'Starts after the last day' };
+  if (r.caseOpen) return { main: 'On hold', sub: 'Close the case to start it' };
+  if (!r.settlement) return { main: 'Draft', sub: 'Open to work it out' };
+  const amount = `${r.settlement.payablePaise < 0 ? 'Recover ' : ''}${inr(Math.abs(r.settlement.payablePaise))}`;
+  return { main: amount, sub: r.settlement.status === 'draft' ? (r.clearanceDone ? 'Draft · ready to approve' : 'Draft · clearance open') : r.settlement.status === 'approved' ? 'Approved · not paid yet' : 'Paid' };
+};
 
 export function Exits() {
-  const s = useStore();
   const [rows, setRows] = useState<ExitDTO[] | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [pick, setPick] = useState<Pick>('all');
   const [kind, setKind] = useState('all');
   const [search, setSearch] = useState('');
+  const [openId, setOpenId] = useState('');
   const filters = useFilterDraft({ kind }, (v) => setKind(v.kind), { kind: 'all' });
 
   useEffect(() => {
@@ -40,27 +49,24 @@ export function Exits() {
     setError('');
     listExits().then((r) => { if (live) setRows(r); }).catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load exits'); });
     return () => { live = false; };
-  }, [attempt]);
+  }, [attempt, openId]);
 
   const state: LoadState = error ? 'error' : rows ? 'ready' : 'loading';
-  const thisMonth = new Date(Date.now() + 5.5 * 3_600_000).toISOString().slice(0, 7);
   const all = useMemo(() => rows ?? [], [rows]);
   const stats = useMemo(() => ({
-    notice: all.filter((r) => r.state !== 'left').length,
-    month: all.filter((r) => r.lastWorkingDay.slice(0, 7) === thisMonth).length,
-    left: all.filter((r) => r.state === 'left').length,
-  }), [all, thisMonth]);
+    notice: all.filter((r) => r.stage === 'notice').length,
+    due: all.filter((r) => r.stage === 'settlement_due').length,
+    left: all.filter((r) => r.stage === 'left').length,
+  }), [all]);
 
   const shown = useMemo(() => {
     let out = all;
-    if (pick === 'notice') out = out.filter((r) => r.state !== 'left');
-    if (pick === 'month') out = out.filter((r) => r.lastWorkingDay.slice(0, 7) === thisMonth);
-    if (pick === 'left') out = out.filter((r) => r.state === 'left');
+    if (pick !== 'all') out = out.filter((r) => r.stage === pick);
     if (kind !== 'all') out = out.filter((r) => r.kind === kind);
     const q = search.trim().toLowerCase();
     if (q) out = out.filter((r) => r.name.toLowerCase().includes(q) || r.employeeId.toLowerCase().includes(q) || r.department.toLowerCase().includes(q));
     return out;
-  }, [all, pick, kind, search, thisMonth]);
+  }, [all, pick, kind, search]);
   const paged = usePaged(shown, `${pick}|${kind}|${search}|${all.length}`);
 
   const exportRows = () => downloadCsv<ExitDTO>('exits', [
@@ -73,19 +79,24 @@ export function Exits() {
     { header: 'Notice from', value: (r) => r.noticeFrom ?? '' },
     { header: 'Notice period (days)', value: (r) => (r.noticeDays ?? '') as string | number },
     { header: 'Last working day', value: (r) => r.lastWorkingDay },
-    { header: 'Status', value: (r) => STATE_TONE[r.state].label },
+    { header: 'Status', value: (r) => STAGE_TONE[r.stage].label },
+    { header: 'Settlement', value: (r) => (r.settlement ? r.settlement.status : r.caseOpen ? 'on hold' : '') },
+    { header: 'Settlement amount', value: (r) => (r.settlement ? Math.round(r.settlement.payablePaise / 100) : '') as string | number },
+    { header: 'Clearance', value: (r) => `${r.clearance.filter((c) => c.done).length} of ${r.clearance.length}` },
     { header: 'Recorded by', value: (r) => r.recordedByName },
     { header: 'Note', value: (r) => r.note },
   ], shown);
+
+  if (openId) return <ExitDetail userId={openId} onBack={() => setOpenId('')} />;
 
   return (
     <Card padded>
       <section style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
           <StatTile state={state} label="All exits" value={all.length} onPick={() => setPick('all')} picked={pick === 'all'} />
-          <StatTile state={state} label="On notice" value={stats.notice} sub="Still working; access ends the day after" onPick={() => setPick('notice')} picked={pick === 'notice'} color="var(--warn)" />
-          <StatTile state={state} label="Leaving this month" value={stats.month} onPick={() => setPick('month')} picked={pick === 'month'} />
-          <StatTile state={state} label="Left" value={stats.left} sub="App access has ended" onPick={() => setPick('left')} picked={pick === 'left'} />
+          <StatTile state={state} label="On notice" value={stats.notice} sub="Still working until their last day" onPick={() => setPick('notice')} picked={pick === 'notice'} color="var(--warn)" />
+          <StatTile state={state} label="Settlement due" value={stats.due} sub="Gone; check, approve and pay" onPick={() => setPick('settlement_due')} picked={pick === 'settlement_due'} color="var(--accent-ink)" attn={stats.due > 0 && pick !== 'settlement_due'} />
+          <StatTile state={state} label="Left" value={stats.left} sub="Settled and paid" onPick={() => setPick('left')} picked={pick === 'left'} />
         </div>
 
         {error && <LoadError compact text={error} onRetry={() => setAttempt((n) => n + 1)} />}
@@ -114,7 +125,7 @@ export function Exits() {
                 <Th>NOTICE FROM</Th>
                 <Th>LAST WORKING DAY</Th>
                 <Th>NOTICE</Th>
-                <Th>RECORDED BY</Th>
+                <Th>SETTLEMENT</Th>
                 <Th>STATUS</Th>
               </div>
               {state === 'loading' && <ListPending state="loading" cols={7} />}
@@ -122,7 +133,7 @@ export function Exits() {
                 <EmptyRow text={all.length === 0 ? 'No exits yet. Record one from an employee’s profile (Record exit).' : 'No exits match these filters.'} />
               )}
               {paged.rows.map((r, i) => (
-                <div key={r.userId} className="dc-row" onClick={() => s.openProfile(r.userId)} style={{ ...TR(COLS, i === paged.rows.length - 1), cursor: 'pointer' }}>
+                <div key={r.userId} id={`exit-row-${r.employeeId}`} className="dc-row" onClick={() => setOpenId(r.userId)} style={{ ...TR(COLS, i === paged.rows.length - 1), cursor: 'pointer' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={cellName}>{r.name}</div>
                     <div style={cellSub}>{[r.employeeId, r.designation || r.department].filter(Boolean).join(' · ')}</div>
@@ -131,8 +142,11 @@ export function Exits() {
                   <div style={{ color: r.noticeFrom ? 'var(--ink)' : 'var(--ink-3)' }}>{r.noticeFrom ? longDay(r.noticeFrom) : '—'}</div>
                   <div style={{ fontWeight: 500 }}>{longDay(r.lastWorkingDay)}</div>
                   <div style={{ color: r.noticeDays != null ? 'var(--ink)' : 'var(--ink-3)' }}>{r.noticeDays != null ? `${r.noticeDays} days` : '—'}</div>
-                  <div style={cellSub}>{r.recordedByName || '—'}</div>
-                  <div><Pill label={STATE_TONE[r.state].label} tone={STATE_TONE[r.state].tone} /></div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: r.settlement ? 500 : 400, color: r.settlement && r.settlement.payablePaise < 0 ? 'var(--bad)' : r.settlement ? 'var(--ink)' : 'var(--ink-3)' }}>{settlementText(r).main}</div>
+                    <div style={cellSub}>{settlementText(r).sub}</div>
+                  </div>
+                  <div><Pill label={STAGE_TONE[r.stage].label} tone={STAGE_TONE[r.stage].tone} /></div>
                 </div>
               ))}
               <Pager p={paged} />

@@ -24,7 +24,7 @@
 import { companies, exitSettlements, payrollRuns, payslips, salaryStructures, taxDeclarations, users } from '../config/db';
 import { ExitSettlement, SettlementChange, SettlementLine, SettlementTaxWorking } from '../models/exitSettlement.model';
 import { Payslip } from '../models/payrollRun.model';
-import { DEFAULT_EXIT_NOTICE, DEFAULT_EXIT_RULES, ExitNoticeSettings, User, UserExit } from '../models/user.model';
+import { DEFAULT_EXIT_CLEARANCE, DEFAULT_EXIT_NOTICE, DEFAULT_EXIT_RULES, ExitNoticeSettings, User, UserExit } from '../models/user.model';
 import { computeTds, fyOf } from '../shared/payroll/tds';
 import { AdminError } from './admin.service';
 import { getMyLeaveBalance } from './leave.service';
@@ -43,7 +43,8 @@ const GRATUITY_EXEMPT_PAISE = 20_00_000_00;
 const GRATUITY_MIN_YEARS = 5;
 
 const rupees = (paise: number) => `₹${Math.round(paise / 100).toLocaleString('en-IN')}`;
-const round = (n: number) => Math.round(n);
+/** Whole rupees, as every payslip line is. */
+const round = (n: number) => Math.round(n / 100) * 100;
 const dayMs = 86_400_000;
 const asDate = (key: string) => new Date(`${key}T00:00:00.000Z`);
 const monthLabel = (period: string) => new Date(`${period}-01T00:00:00Z`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -261,7 +262,7 @@ export async function computeSettlement(employee: User, changes: Record<string, 
   const settlementSalaryTaxable = salary.filter(({ slip }) => slip.period >= firstPeriod).reduce((t, { slip }) => {
     const line = lines.find((l) => l.key === `salary:${slip.period}`)!;
     const taxable = slip.taxablePaise ?? slip.grossPaise;
-    return t + (line.computedPaise > 0 ? round((taxable * line.amountPaise) / line.computedPaise) : 0);
+    return t + (line.computedPaise > 0 ? Math.round((taxable * line.amountPaise) / line.computedPaise) : 0);
   }, 0);
   const excess = Math.max(0, amountOf('leave_encashment') - LEAVE_ENCASHMENT_EXEMPT_PAISE) + Math.max(0, amountOf('gratuity') - GRATUITY_EXEMPT_PAISE);
   const settlementTaxable = settlementSalaryTaxable + amountOf('notice_pay');
@@ -372,7 +373,8 @@ export async function approveSettlement(org: string, employee: User, body: Recor
   const current = await settlementFor(employee, now);
   if (!current) throw new SettlementError(409, 'The settlement has not started yet');
   if (current.status !== 'draft') throw new SettlementError(409, 'This settlement is already approved');
-  const open = (employee.exit?.clearance ?? []).filter((c) => !c.done);
+  // An exit nobody has ticked yet still has the whole list open.
+  const open = (employee.exit?.clearance ?? DEFAULT_EXIT_CLEARANCE.map((c) => ({ ...c, done: false }))).filter((c) => !c.done);
   const reason = String(body.clearanceOverrideReason ?? '').trim().slice(0, 300);
   if (open.length && !reason) throw new SettlementError(409, `Clearance is not complete (${open.map((c) => c.label.toLowerCase()).join('; ')}). Tick it, or say why you are approving anyway.`);
   await exitSettlements().updateOne(

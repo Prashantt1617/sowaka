@@ -212,7 +212,14 @@ export async function exitDetail(adminUserId: string, employeeUserId: string, no
   const user = await users().findOne({ userId: employeeUserId, org: admin.org });
   if (!user?.exit) throw new ExitError(404, 'No exit recorded for this employee');
   const settlement = await settlementFor(user as User, now);
-  return { exit: await viewOf(admin.org, user as User, now), settlement: settlement ? settlementView(settlement) : null };
+  const company = await companies().findOne({ id: admin.org }, { projection: { _id: 0, name: 1, address: 1, profile: 1 } }) as { name?: string; address?: string; profile?: Record<string, string | undefined> } | null;
+  const pr = company?.profile ?? {};
+  const address = [pr.addressLine1, pr.addressLine2, pr.city, pr.state, pr.pincode].map((x) => (x ?? '').trim()).filter(Boolean).join(', ');
+  return {
+    exit: await viewOf(admin.org, user as User, now),
+    settlement: settlement ? settlementView(settlement) : null,
+    company: { name: pr.registeredName?.trim() || company?.name || admin.org, address: address || company?.address || '', org: admin.org },
+  };
 }
 
 /**

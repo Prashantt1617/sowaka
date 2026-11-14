@@ -474,17 +474,44 @@ export type ExitRules = {
   noticePay: 'none' | 'hr_chooses' | 'pay';
   noticeRecovery: 'none' | 'days_not_served' | 'whole_notice';
 };
-export type ExitSettingsDTO = { kinds: { kind: ExitRuleKind; rules: ExitRules; isDefault: boolean }[]; defaults: Record<ExitRuleKind, ExitRules>; noticeDays: number | null };
+/** How the notice lines of a settlement are worked out, and when the team is told. */
+export type ExitNoticeSettings = { recoveryBasis: 'basic_30' | 'gross_30' | 'basic_month'; noticePayBasis: 'gross_30' | 'basic_30' | 'gross_month'; leaveCoversShortfall: boolean; teamNoticeDays: number };
+export type ExitSettingsDTO = { kinds: { kind: ExitRuleKind; rules: ExitRules; isDefault: boolean }[]; defaults: Record<ExitRuleKind, ExitRules>; noticeDays: number | null; notice: ExitNoticeSettings; noticeDefaults: ExitNoticeSettings };
 export const getExitSettings = () => api<ExitSettingsDTO>('/admin/exit-settings');
-export const saveExitSettings = (kinds: Partial<Record<ExitRuleKind, Partial<ExitRules> | null>>, noticeDays?: number | null) =>
-  api<ExitSettingsDTO>('/admin/exit-settings', { method: 'PUT', body: { kinds, ...(noticeDays !== undefined ? { noticeDays } : {}) } });
+export const saveExitSettings = (kinds: Partial<Record<ExitRuleKind, Partial<ExitRules> | null>>, noticeDays?: number | null, notice?: Partial<ExitNoticeSettings>) =>
+  api<ExitSettingsDTO>('/admin/exit-settings', { method: 'PUT', body: { kinds, ...(noticeDays !== undefined ? { noticeDays } : {}), ...(notice ? { notice } : {}) } });
+export type ExitClearanceItem = { key: string; label: string; done: boolean; doneAt: string | null; doneByName: string };
+export type ExitInterviewReason = 'pay' | 'growth' | 'manager' | 'work_life' | 'relocation' | 'studies' | 'other';
+export type ExitInterview = { reason?: ExitInterviewReason; workRating?: number; managerRating?: number; comeBack?: 'yes' | 'maybe' | 'no'; change?: string; filledBy: 'employee' | 'hr'; filledByName?: string; filledAt: string };
 export type ExitDTO = {
   userId: string; name: string; employeeId: string; department: string; designation: string; joiningDate: string | null;
   kind: ExitKind; kindLabel: string; noticeFrom: string | null; lastWorkingDay: string; noticeDays: number | null; note: string;
   recordedByName: string; recordedAt: string; accessEndedAt: string | null; state: 'notice' | 'leaving' | 'left'; status: string;
+  /** notice: working their notice; settlement_due: gone, the settlement is not paid yet; left: settled. */
+  stage: 'notice' | 'settlement_due' | 'left';
   rules: ExitRules;
+  team: { newManagerUserId: string; newManagerName: string; move: 'day_after' | 'now'; movedAt: string | null; toldAt: string | null; size: number } | null;
+  clearance: ExitClearanceItem[]; clearanceDone: boolean;
+  interview: ExitInterview | null;
+  /** An absconding whose case HR has not closed yet: its settlement has not started. */
+  caseOpen: boolean; caseClosedAt: string | null;
+  settlement: { status: SettlementStatus; payablePaise: number } | null;
 };
-export type ExitInput = { kind: ExitKind; lastWorkingDay: string; noticeFrom?: string; noticeDays?: number | null; note?: string; newManagerUserId?: string; endAccessNow?: boolean; rules?: Partial<ExitRules> };
+export type SettlementStatus = 'draft' | 'approved' | 'paid';
+export type SettlementLine = { key: string; side: 'earning' | 'deduction'; label: string; note?: string; computedPaise: number; amountPaise: number; changedReason?: string; changedByName?: string; period?: string; estimated?: boolean };
+export type SettlementTax = { engine: boolean; regime?: 'new' | 'old'; fy: string; paidTaxablePaise: number; settlementTaxablePaise: number; excessExemptPaise: number; taxableIncomePaise?: number; annualTaxPaise?: number; alreadyDeductedPaise: number; duePaise: number; refundViaReturnPaise?: number };
+export type SettlementDTO = {
+  status: SettlementStatus; lines: SettlementLine[]; earningsPaise: number; deductionsPaise: number; payablePaise: number; tax: SettlementTax | null;
+  clearanceOverrideReason: string | null; approvedAt: string | null; approvedByName: string | null; paidAt: string | null; paidByName: string | null; updatedAt: string;
+};
+export type ExitDetailDTO = { exit: ExitDTO; settlement: SettlementDTO | null; company: { name: string; address: string; org?: string } };
+export type ExitInput = { kind: ExitKind; lastWorkingDay: string; noticeFrom?: string; noticeDays?: number | null; note?: string; newManagerUserId?: string; moveTeamNow?: boolean; endAccessNow?: boolean; rules?: Partial<ExitRules> };
+export const getExitDetail = (userId: string) => api<ExitDetailDTO>(`/admin/employees/${userId}/exit`);
+export const setExitClearance = (userId: string, key: string, done: boolean) => api<ExitDetailDTO>(`/admin/employees/${userId}/exit/clearance`, { method: 'PUT', body: { key, done } });
+export const saveExitInterview = (userId: string, body: Partial<ExitInterview>) => api<ExitDetailDTO>(`/admin/employees/${userId}/exit/interview`, { method: 'PUT', body });
+export const closeExitCase = (userId: string) => api<ExitDetailDTO>(`/admin/employees/${userId}/exit/close-case`, { method: 'POST' });
+export const settlementAction = (userId: string, action: 'line' | 'approve' | 'reopen' | 'paid', body: Record<string, unknown> = {}) =>
+  api<ExitDetailDTO>(`/admin/employees/${userId}/exit/settlement/${action}`, { method: 'POST', body });
 export const listExits = () => api<{ exits: ExitDTO[] }>('/admin/exits').then((r) => r.exits);
 export const recordExit = (userId: string, input: ExitInput) =>
   api<{ exit: ExitDTO }>(`/admin/employees/${userId}/exit`, { method: 'PUT', body: input }).then((r) => r.exit);
