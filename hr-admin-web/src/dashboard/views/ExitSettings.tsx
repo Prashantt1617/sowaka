@@ -10,8 +10,9 @@ import { useStore } from '../store';
 import { Card, LoadError, SkeletonForm, Th } from '../ui';
 import { TH, TR, btn, btnClass, cellName, cellSub } from '../ds';
 import { getExitSettings, saveExitSettings } from '../../services/hrms';
-import type { ExitRuleKind, ExitRules, ExitSettingsDTO } from '../../services/hrms';
-import { RULE_KIND_LABEL, RULE_KINDS, RULE_ROWS, asText, fromText } from './exitRules';
+import type { ExitNoticeSettings, ExitRuleKind, ExitRules, ExitSettingsDTO } from '../../services/hrms';
+import { NOTICE_PAY_INFO, NOTICE_SHORTFALL_INFO, RULE_KIND_LABEL, RULE_KINDS, RULE_ROWS, asText, fromText } from './exitRules';
+import './people.css';
 import { InfoTip } from './InfoTip';
 
 type Draft = Record<ExitRuleKind, ExitRules>;
@@ -26,21 +27,25 @@ export function ExitSettings() {
   const [attempt, setAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
+  // How the notice lines of a settlement are worked out, and when a leaving manager's team is told.
+  const [amounts, setAmounts] = useState<ExitNoticeSettings | null>(null);
 
   useEffect(() => {
     let live = true;
     setError('');
-    getExitSettings().then((d) => { if (live) { setData(d); setDraft(draftOf(d)); setNotice(d.noticeDays == null ? '' : String(d.noticeDays)); } }).catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load exit settings'); });
+    getExitSettings().then((d) => { if (live) { setData(d); setDraft(draftOf(d)); setNotice(d.noticeDays == null ? '' : String(d.noticeDays)); setAmounts({ ...d.notice }); } }).catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load exit settings'); });
     return () => { live = false; };
   }, [attempt]);
 
   if (error) return <Card><LoadError text={error} onRetry={() => setAttempt((n) => n + 1)} /></Card>;
-  if (!data || !draft) return <Card style={{ padding: 22 }}><SkeletonForm fields={6} /></Card>;
+  if (!data || !draft || !amounts) return <Card style={{ padding: 22 }}><SkeletonForm fields={6} /></Card>;
 
   const saved = draftOf(data);
   const changed = RULE_KINDS.filter((k) => !same(draft[k], saved[k]));
   const savedNotice = data.noticeDays == null ? '' : String(data.noticeDays);
   const noticeChanged = notice !== savedNotice;
+  const amountsChanged = JSON.stringify(amounts) !== JSON.stringify(data.notice);
+  const dirty = changed.length > 0 || noticeChanged || amountsChanged;
   const set = (kind: ExitRuleKind, key: keyof ExitRules, text: string) =>
     setDraft({ ...draft, [kind]: { ...draft[kind], [key]: fromText(key, text) } });
   const isDefault = (kind: ExitRuleKind) => same(draft[kind], data.defaults[kind]);
@@ -51,9 +56,10 @@ export function ExitSettings() {
       // A kind put back exactly as the default is stored as "the default".
       const body = Object.fromEntries(changed.map((k) => [k, isDefault(k) ? null : draft[k]]));
       if (notice !== '' && Number(notice) > 365) { flash('Notice period is 0 to 365 days', 'error'); setSaving(false); return; }
-      const next = await saveExitSettings(body, noticeChanged ? (notice === '' ? null : Number(notice)) : undefined);
+      const next = await saveExitSettings(body, noticeChanged ? (notice === '' ? null : Number(notice)) : undefined, amountsChanged ? amounts : undefined);
       setData(next);
       setDraft(draftOf(next));
+      setAmounts({ ...next.notice });
       setNotice(next.noticeDays == null ? '' : String(next.noticeDays));
       flash('Exit settings saved. New exits start from these; exits already recorded keep theirs.');
     } catch (e) {
@@ -111,9 +117,51 @@ export function ExitSettings() {
             ))}
           </div>
         </div>
+        <div style={{ display: 'grid', gap: 14, paddingTop: 18, borderTop: '1px solid var(--line)' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>Notice amounts</div>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>How a day of notice is priced on the final settlement, wherever a rule above says to pay or recover it.</div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, maxWidth: 860 }}>
+            <label className="pd-label">
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>A day of notice not given is recovered at <InfoTip label="Notice shortfall" text={NOTICE_SHORTFALL_INFO} /></span>
+              <span className="pd-pick">
+                <select id="exit-recovery-basis" value={amounts.recoveryBasis} onChange={(e) => setAmounts({ ...amounts, recoveryBasis: e.target.value as ExitNoticeSettings['recoveryBasis'] })} className="pd-inp">
+                  <option value="basic_30">Basic ÷ 30</option>
+                  <option value="gross_30">Gross ÷ 30</option>
+                  <option value="basic_month">Basic ÷ days in that month</option>
+                </select>
+              </span>
+            </label>
+            <label className="pd-label">
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>A day of notice pay is paid at <InfoTip label="Notice pay" text={NOTICE_PAY_INFO} /></span>
+              <span className="pd-pick">
+                <select id="exit-pay-basis" value={amounts.noticePayBasis} onChange={(e) => setAmounts({ ...amounts, noticePayBasis: e.target.value as ExitNoticeSettings['noticePayBasis'] })} className="pd-inp">
+                  <option value="gross_30">Gross ÷ 30</option>
+                  <option value="basic_30">Basic ÷ 30</option>
+                  <option value="gross_month">Gross ÷ days in that month</option>
+                </select>
+              </span>
+            </label>
+            <label className="pd-label">
+              <span>Tell a leaving manager’s team, days before</span>
+              <input id="exit-team-days" inputMode="numeric" value={String(amounts.teamNoticeDays)} onChange={(e) => setAmounts({ ...amounts, teamNoticeDays: Number(e.target.value.replace(/[^0-9]/g, '').slice(0, 2) || 0) })} className="pd-inp" />
+            </label>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, fontSize: 13.5, color: 'var(--ink)' }}>
+            <button type="button" id="exit-leave-covers" role="switch" aria-checked={amounts.leaveCoversShortfall} aria-label="Unused leave covers notice not given" onClick={() => setAmounts({ ...amounts, leaveCoversShortfall: !amounts.leaveCoversShortfall })}
+              style={{ width: 38, height: 22, borderRadius: 99, border: 'none', padding: 2, cursor: 'pointer', transition: 'background .15s', display: 'flex', flexShrink: 0, marginTop: 1, background: amounts.leaveCoversShortfall ? 'var(--accent)' : 'var(--line-2)', justifyContent: amounts.leaveCoversShortfall ? 'flex-end' : 'flex-start' }}>
+              <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,.2)' }} />
+            </button>
+            <div>
+              Unused leave covers notice not given first
+              <span style={{ display: 'block', fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>The days short come off their encashable leave; only what is left is recovered from pay.</span>
+            </div>
+          </div>
+        </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button type="button" disabled={saving || (changed.length === 0 && !noticeChanged)} onClick={() => void save()} className={btnClass('primary')} style={btn('primary')}>{saving ? 'Saving…' : 'Save'}</button>
-          {(changed.length > 0 || noticeChanged) && <button type="button" onClick={() => { setDraft(draftOf(data)); setNotice(savedNotice); }} className={btnClass()} style={btn()}>Undo changes</button>}
+          <button type="button" disabled={saving || !dirty} onClick={() => void save()} className={btnClass('primary')} style={btn('primary')}>{saving ? 'Saving…' : 'Save'}</button>
+          {dirty && <button type="button" onClick={() => { setDraft(draftOf(data)); setNotice(savedNotice); setAmounts({ ...data.notice }); }} className={btnClass()} style={btn()}>Undo changes</button>}
           <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>A choice in bold differs from the default.</span>
         </div>
       </div>

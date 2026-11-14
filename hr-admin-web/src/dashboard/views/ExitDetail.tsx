@@ -73,9 +73,15 @@ export function ExitDetail({ userId, onBack }: { userId: string; onBack: () => v
 
   const { exit, settlement } = data;
   const name = firstName(exit.name);
-  const stage = STAGE[exit.stage];
+  const stage = exit.caseOpen ? { label: 'Case open', tone: { bg: 'var(--surface-2)', fg: 'var(--ink-2)' } } : STAGE[exit.stage];
   const given = exit.noticeFrom ? daysBetween(exit.noticeFrom, exit.lastWorkingDay) : null;
   const short = exit.noticeDays != null && given != null ? Math.max(0, exit.noticeDays - given) : null;
+  // What the notice came to, in the words that fit how they left.
+  const noticeText = exit.noticeDays == null ? '—'
+    : exit.kind === 'terminated' ? `${exit.noticeDays} days${exit.rules.noticePay === 'none' ? '' : ', paid instead of worked'}`
+    : exit.kind === 'absconded' ? `${exit.noticeDays} days, not served`
+    : given == null ? `${exit.noticeDays} days`
+    : short ? `${given} of ${exit.noticeDays} days, ${short} short` : `${exit.noticeDays} days, all given`;
   const done = exit.clearance.filter((c) => c.done).length;
 
   return (
@@ -97,7 +103,7 @@ export function ExitDetail({ userId, onBack }: { userId: string; onBack: () => v
           <Fact label="Why they are leaving" value={exit.kindLabel} />
           <Fact label={exit.kind === 'absconded' ? 'Last seen' : exit.kind === 'terminated' ? 'Told on' : 'Told HR on'} value={exit.noticeFrom ? longDay(exit.noticeFrom) : '—'} />
           <Fact label="Last day at work" value={longDay(exit.lastWorkingDay)} />
-          <Fact label="Notice" value={exit.noticeDays == null ? '—' : given == null ? `${exit.noticeDays} days` : short ? `${given} of ${exit.noticeDays} days, ${short} short` : `${exit.noticeDays} days, all given`} />
+          <Fact label="Notice" value={noticeText} />
           <Fact label="App" value={exit.accessEndedAt ? `Off since ${dayOf(exit.accessEndedAt)}` : `Turns off ${longDay(dayAfter(exit.lastWorkingDay))}`} />
           <Fact label="Salary" value={exit.rules.holdPay ? 'Held for the final settlement' : 'Paid with each monthly run'} />
         </div>
@@ -223,7 +229,7 @@ function Statement({ exit, settlement, busy, run, userId }: { exit: ExitDTO; set
         <div style={{ ...noteBox, display: 'block' }}>
           <div style={{ fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>How the tax was worked out · {tax.fy}{tax.regime ? ` · ${tax.regime} regime` : ''}</div>
           {tax.engine
-            ? <>Salary already paid this year {inr(tax.paidTaxablePaise)} + taxed in this settlement {inr(tax.settlementTaxablePaise + tax.excessExemptPaise)} gives a taxable income of {inr(tax.taxableIncomePaise ?? 0)} after deductions. Tax for the year {inr(tax.annualTaxPaise ?? 0)}, less {inr(tax.alreadyDeductedPaise)} already taken, leaves <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>{inr(tax.duePaise)}</strong>.{tax.refundViaReturnPaise ? ` ${inr(tax.refundViaReturnPaise)} was taken too much; it shows on their Form 16 and comes back in their tax return.` : ''} Leave encashment and gratuity are tax-free within the legal limits; a notice recovery does not lower taxable salary.</>
+            ? <>Salary already paid this year {inr(tax.paidTaxablePaise)} + taxed in this settlement {inr(tax.settlementTaxablePaise + tax.excessExemptPaise)} gives a taxable income of {inr(tax.taxableIncomePaise ?? 0)} after the standard deduction and anything declared. Tax for the year {inr(tax.annualTaxPaise ?? 0)}, less {inr(tax.alreadyDeductedPaise)} already taken, leaves <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>{inr(tax.duePaise)}</strong>.{tax.refundViaReturnPaise ? ` ${inr(tax.refundViaReturnPaise)} was taken too much; it shows on their Form 16 and comes back in their tax return.` : ''} Leave encashment and gratuity are tax-free within the legal limits; a notice recovery does not lower taxable salary.</>
             : <>This company types each month’s tax by hand. Salary already paid this year {inr(tax.paidTaxablePaise)}, taxed in this settlement {inr(tax.settlementTaxablePaise + tax.excessExemptPaise)}, tax already taken {inr(tax.alreadyDeductedPaise)}. Set the Income tax line to what the year still needs (tax for the year on what they actually earned, less tax already taken, never below zero).</>}
         </div>
       )}

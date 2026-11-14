@@ -193,7 +193,7 @@ export async function computeSettlement(employee: User, changes: Record<string, 
       key: 'leave_encashment',
       side: 'earning',
       label: 'Leave encashment',
-      note: `${plural(encashDays, 'day')} × ${rupees(leaveDay)} (Basic ÷ 30)${encashParts.length ? ` · ${encashParts.join(', ')}` : ''}${covered ? ` · ${plural(covered, 'day')} used to cover notice not given` : ''}${exit.kind === 'absconded' ? ' · HR may forfeit it' : ''}`,
+      note: `${encashParts.length === 1 && !covered ? `${encashParts[0].replace(/^([\d.]+) /, '$1 days of ')}` : `${plural(encashDays, 'day')}${encashParts.length ? ` (${encashParts.join(', ')})` : ''}`} × ${rupees(leaveDay)} (Basic ÷ 30)${covered ? ` · ${plural(covered, 'day')} used to cover notice not given` : ''}${exit.kind === 'absconded' ? ' · HR may forfeit it' : ''}`,
       computedPaise: round(encashDays * leaveDay),
     });
   }

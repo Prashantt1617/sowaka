@@ -18,7 +18,7 @@ import { EXIT_KINDS, longDay } from './ExitDialog';
 import { ExitDetail } from './ExitDetail';
 import { inr } from '../../services/payroll';
 
-const COLS = '1.8fr 0.9fr 1fr 1fr 0.7fr 1.3fr 1fr';
+const COLS = '1.6fr 0.85fr 0.9fr 1fr 0.65fr 1.2fr 150px';
 type Pick = 'all' | 'notice' | 'settlement_due' | 'left';
 const STAGE_TONE = {
   notice: { label: 'On notice', tone: { bg: 'var(--warn-bg)', fg: 'var(--warn)' } },
@@ -79,7 +79,7 @@ export function Exits() {
     { header: 'Notice from', value: (r) => r.noticeFrom ?? '' },
     { header: 'Notice period (days)', value: (r) => (r.noticeDays ?? '') as string | number },
     { header: 'Last working day', value: (r) => r.lastWorkingDay },
-    { header: 'Status', value: (r) => STAGE_TONE[r.stage].label },
+    { header: 'Status', value: (r) => (r.caseOpen ? 'Case open' : STAGE_TONE[r.stage].label) },
     { header: 'Settlement', value: (r) => (r.settlement ? r.settlement.status : r.caseOpen ? 'on hold' : '') },
     { header: 'Settlement amount', value: (r) => (r.settlement ? Math.round(r.settlement.payablePaise / 100) : '') as string | number },
     { header: 'Clearance', value: (r) => `${r.clearance.filter((c) => c.done).length} of ${r.clearance.length}` },
@@ -146,7 +146,7 @@ export function Exits() {
                     <div style={{ fontWeight: r.settlement ? 500 : 400, color: r.settlement && r.settlement.payablePaise < 0 ? 'var(--bad)' : r.settlement ? 'var(--ink)' : 'var(--ink-3)' }}>{settlementText(r).main}</div>
                     <div style={cellSub}>{settlementText(r).sub}</div>
                   </div>
-                  <div><Pill label={STAGE_TONE[r.stage].label} tone={STAGE_TONE[r.stage].tone} /></div>
+                  <div>{r.caseOpen ? <Pill label="Case open" tone={{ bg: 'var(--surface-2)', fg: 'var(--ink-2)' }} /> : <Pill label={STAGE_TONE[r.stage].label} tone={STAGE_TONE[r.stage].tone} />}</div>
                 </div>
               ))}
               <Pager p={paged} />

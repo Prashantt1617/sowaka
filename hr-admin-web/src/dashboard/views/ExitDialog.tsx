@@ -24,6 +24,7 @@ const shortDay = (key: string) => new Date(`${key}T00:00:00Z`).toLocaleDateStrin
 /** Days from the first to the last, both counted. */
 const daysBetween = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1;
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
+const dayAfter = (key: string) => new Date(Date.parse(`${key}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 
 /** The line under the profile's name while an exit is recorded. */
 export function ExitBanner({ exit }: { exit: ExitDTO }) {
@@ -64,7 +65,8 @@ export function ExitDialog({ emp, exit, emps, onClose, onSaved }: { emp: Emp; ex
   const [noticeDays, setNoticeDays] = useState(exit?.noticeDays != null ? String(exit.noticeDays) : '');
   const [note, setNote] = useState(exit?.note ?? '');
   const [showNote, setShowNote] = useState(!!exit?.note);
-  const [manager, setManager] = useState(emp.managerId && emp.managerId !== emp.id ? emp.managerId : '');
+  const [manager, setManager] = useState(exit?.team?.newManagerUserId ?? (emp.managerId && emp.managerId !== emp.id ? emp.managerId : ''));
+  const [moveNow, setMoveNow] = useState(false);
   const [busy, setBusy] = useState<'' | 'save' | 'withdraw' | 'end'>('');
   const [confirm, setConfirm] = useState<'' | 'withdraw' | 'end'>('');
   // The company's starting point per reason (Exit settings); this exit's own copy once changed.
@@ -90,6 +92,8 @@ export function ExitDialog({ emp, exit, emps, onClose, onSaved }: { emp: Emp; ex
   const short = owed != null && served != null ? Math.max(0, owed - served) : null;
   const ready = !!lastDay && (team.length === 0 || !!manager) && !!rules && !(noticeFrom && lastDay && lastDay < noticeFrom);
   // Turning the shortfall back on uses the reason's own mode (the whole notice for an absconding), else the unserved days.
+  // The team moves at once when HR says so, or when the app goes off as this is saved.
+  const teamNow = moveNow || rules?.access === 'at_once' || pastDay;
   const recoveryMode: ExitRules['noticeRecovery'] = kindRules && kindRules.noticeRecovery !== 'none' ? kindRules.noticeRecovery : 'days_not_served';
 
   const act = async (what: 'save' | 'withdraw' | 'end') => {
@@ -98,7 +102,7 @@ export function ExitDialog({ emp, exit, emps, onClose, onSaved }: { emp: Emp; ex
       if (what === 'save') {
         await recordExit(emp.id, {
           kind, lastWorkingDay: lastDay, ...(noticeFrom ? { noticeFrom } : {}), noticeDays: owed,
-          note: note.trim(), ...(team.length ? { newManagerUserId: manager } : {}), ...(rules ? { rules } : {}),
+          note: note.trim(), ...(team.length ? { newManagerUserId: manager, ...(moveNow ? { moveTeamNow: true } : {}) } : {}), ...(rules ? { rules } : {}),
         });
         flash(rules?.access === 'at_once' || pastDay ? `${emp.name}'s exit is saved and their app is off` : `${emp.name}'s exit is saved`);
       } else if (what === 'withdraw') {
@@ -180,7 +184,15 @@ export function ExitDialog({ emp, exit, emps, onClose, onSaved }: { emp: Emp; ex
                       {others.map((e) => <option key={e.id} value={e.id}>{e.name}{e.employeeId && e.employeeId !== '—' ? ` · ${e.employeeId}` : ''}</option>)}
                     </select>
                   </span>
-                  <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{team.map((t) => firstName(t.name)).join(', ')} will report to them.</span>
+                  <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>
+                    {team.map((t) => firstName(t.name)).join(', ')} {team.length === 1 ? 'moves' : 'move'} {teamNow ? 'as you save' : lastDay ? `on ${shortDay(dayAfter(lastDay))}, the day after ${name}’s last day` : `the day after ${name}’s last day`}. Until then {name} still approves their requests.
+                  </span>
+                  {!(rules?.access === 'at_once' || pastDay) && (
+                    <Row control={<Switch id="exit-move-now" label="Move the team now" on={moveNow} onChange={setMoveNow} />}>
+                      Move them now
+                      <span style={hint}>For when {name} should hand the team over early.</span>
+                    </Row>
+                  )}
                 </Question>
               )}
 
