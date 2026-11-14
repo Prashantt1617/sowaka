@@ -13,6 +13,16 @@ void main() {
     expect(demo.logoAsset, isNull);
   });
 
+  test('a company with no brand here (a new one) gets Sowaka\'s face', () {
+    for (final org in ['sowakahq', 'some-new-company', 'sowaka']) {
+      final b = OrgBranding.of(org);
+      expect(b.isSowaka, isTrue, reason: org);
+      expect(b.homeLogoAsset, 'assets/images/sowaka_header_logo.png', reason: org);
+      expect(b.iosIconName, isNull, reason: org);
+      expect(b.logoAsset, isNull, reason: org);
+    }
+  });
+
   test('Convrse keeps its own face', () {
     final convrse = OrgBranding.of('convrse');
     expect(convrse.isSowaka, isFalse);
