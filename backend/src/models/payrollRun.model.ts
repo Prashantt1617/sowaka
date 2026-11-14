@@ -21,6 +21,9 @@ export interface PayrollRunTotals {
   netPaise: number;
   reimbursementsPaise: number;
   employerCostPaise: number;
+  /** Net pay held for people on notice (paid with their final settlement), and how many. */
+  heldPaise?: number;
+  heldCount?: number;
 }
 
 export interface PayrollRun {
@@ -107,6 +110,12 @@ export interface Payslip {
   employeeId?: string;
   designation?: string;
   joiningDate?: Date;
+  /**
+   * Held: worked out as usual but not paid with this run, because the person is
+   * serving notice (their pay is held from the day notice begins and paid with
+   * the final settlement). Out of the bank file; still on the run and the registers.
+   */
+  held?: { reason: 'notice'; since: string };
 
   annualCtcPaise: number;
   monthlyCtcPaise: number;

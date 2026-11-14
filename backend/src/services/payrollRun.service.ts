@@ -291,6 +291,8 @@ async function buildRunPayslips(
     if (left && left < range.from) continue;
     const employedFrom = joined && joined > range.from ? joined : undefined;
     const notYetEmployedDays = employedFrom ? Math.round((Date.parse(employedFrom) - Date.parse(range.from)) / 86_400_000) : 0;
+    // Notice began (an exit HR recorded; the day it was recorded when no date was given): pay is held from then.
+    const noticeStart = employee.exit ? (employee.exit.noticeFrom ?? new Date(employee.exit.recordedAt).toISOString().slice(0, 10)) : undefined;
     // Left during it: the days after the last working day are not paid, like the days before joining.
     const leftDays = left && left < range.to ? Math.round((Date.parse(range.to) - Date.parse(left)) / 86_400_000) : 0;
     const salaryFor = (p: string, from?: string) => calculateSalaryStructure({
@@ -407,6 +409,8 @@ async function buildRunPayslips(
       employeeId: employee.employeeId,
       designation: employee.designation,
       joiningDate: employee.joiningDate,
+      // On notice by the end of this period: the pay is held for the final settlement.
+      ...(noticeStart && noticeStart <= range.to ? { held: { reason: 'notice' as const, since: noticeStart } } : {}),
       annualCtcPaise: structure.annualCtcPaise,
       monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
       earnings: slip.earnings.map((e) => ({
@@ -847,8 +851,10 @@ function sumTotals(slips: Payslip[]): PayrollRunTotals {
       netPaise: acc.netPaise + slip.netPaise,
       reimbursementsPaise: acc.reimbursementsPaise + slip.reimbursementsPaise,
       employerCostPaise: acc.employerCostPaise + slip.employerCostPaise,
+      heldPaise: (acc.heldPaise ?? 0) + (slip.held ? slip.netPayablePaise : 0),
+      heldCount: (acc.heldCount ?? 0) + (slip.held ? 1 : 0),
     }),
-    { grossPaise: 0, employeeDeductionsPaise: 0, netPaise: 0, reimbursementsPaise: 0, employerCostPaise: 0 },
+    { grossPaise: 0, employeeDeductionsPaise: 0, netPaise: 0, reimbursementsPaise: 0, employerCostPaise: 0, heldPaise: 0, heldCount: 0 },
   );
 }
 
@@ -959,6 +965,7 @@ function payslipView(slip: Payslip & { _id?: ObjectId }) {
     designation: slip.designation,
     joiningDate: slip.joiningDate ? slip.joiningDate.toISOString().slice(0, 10) : undefined,
     period: slip.period,
+    ...(slip.held ? { held: slip.held } : {}),
     monthlyCtcPaise: slip.monthlyCtcPaise,
     earnings: slip.earnings,
     deductions: slip.deductions,

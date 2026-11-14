@@ -278,6 +278,11 @@ function ReportBody({ kind, data }: { kind: ReportKey; data: unknown }) {
       <tbody>
         {d.rows.map((r) => <tr key={r.employeeId + r.name}><td style={td}>{r.employeeId}</td><td style={td}>{r.name}</td><td style={{ ...td, color: r.paymentMode === 'Not set' ? 'var(--bad)' : undefined }}>{r.paymentMode}</td><td style={td}>{r.bankName}</td><td style={td}>{r.accountNumber}</td><td style={td}>{r.ifsc}</td><td style={num}>{money(r.netPayPaise)}</td></tr>)}
         <tr><td style={{ ...td, ...grand }} colSpan={6}>Total</td><td style={{ ...num, ...grand }}>{money(d.rows.reduce((t, r) => t + r.netPayPaise, 0))}</td></tr>
+        {(d.held ?? []).length > 0 && (
+          <tr><td style={{ ...td, color: 'var(--warn)' }} colSpan={7}>
+            Held, not in this list (on notice; paid with their final settlement): {(d.held ?? []).map((h) => `${h.name} ${h.employeeId} · ${money(h.netPayPaise)}`).join(', ')}
+          </td></tr>
+        )}
       </tbody>
     </table>
   );

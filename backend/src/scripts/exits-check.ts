@@ -16,7 +16,9 @@ import type { AttendanceRecord } from '../models/attendance.model';
 import { attendanceReport, employeeDayStatuses } from '../services/attendance-report.service';
 import { getCurrentAuthUser } from '../services/auth.service';
 import { closeDueExits, endAccessNow, listExits, recordExit, withdrawExit } from '../services/exit.service';
-import { createRun } from '../services/payrollRun.service';
+import { createRun, listRuns } from '../services/payrollRun.service';
+import { paymentDetails } from '../services/payrollReports.service';
+import { payslipHtml } from '../services/payslip-html';
 import { createShift, setDefaultShift } from '../services/shift.service';
 import { ZOHO_CATALOG, ZOHO_TEMPLATES } from './payroll-zoho-check';
 import { STATUTORY_SEED } from './payroll-config-seed-data';
@@ -42,6 +44,8 @@ const person = (userId: string, extra: Partial<User> = {}): User => ({
 } as User);
 /** A moment in IST, as the hourly job sees it. */
 const ist = (stamp: string) => new Date(`${stamp}+05:30`);
+/** The payslip as its PDF prints it. */
+const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => payslipHtml(slip, { name: 'Exit Check Pvt Ltd', address: '' } as never);
 
 (async () => {
   await connectDb();
@@ -154,6 +158,17 @@ const ist = (stamp: string) => new Date(`${stamp}+05:30`);
     [leaverSlip?.grossPaise, stayerSlip?.grossPaise]);
   ok('someone who left in August gets no September payslip', (await slip('gone')) === null);
   ok('the control is paid in full', stayerSlip?.inputs.lopDays === 0, stayerSlip?.inputs);
+
+  console.log('pay held from the notice');
+  ok('the leaver (notice from 21 Aug) is held', leaverSlip?.held?.reason === 'notice' && leaverSlip?.held?.since === '2026-08-21', leaverSlip?.held);
+  ok('the control is not held', !stayerSlip?.held);
+  const run = (await listRuns('hr')).find((r) => r.period === MONTH)!;
+  ok('the run totals the held pay', run.totals.heldCount === 1 && run.totals.heldPaise === leaverSlip?.netPayablePaise, run.totals);
+  const bank = await paymentDetails('hr', run.id);
+  ok('held pay is not in the bank list', !bank.rows.some((r) => r.employeeId === 'E2') && bank.rows.some((r) => r.employeeId === 'E4'), bank.rows.map((r) => r.employeeId));
+  ok('…it is listed apart as held', bank.held.length === 1 && bank.held[0].employeeId === 'E2', bank.held);
+  const html = await myPayslipHtmlFor({ ...leaverSlip!, joiningDate: undefined } as never);
+  ok('the payslip says it is held', /Held: paid with your final settlement/.test(html));
 
   console.log(`\n${failed ? `${failed} check(s) failed` : `all ${passed} exit checks passed`}`);
   process.exit(failed ? 1 : 0);

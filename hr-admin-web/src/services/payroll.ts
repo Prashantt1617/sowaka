@@ -523,6 +523,9 @@ export type RunTotals = {
   netPaise: number;
   reimbursementsPaise: number;
   employerCostPaise: number;
+  /** Net pay held for people on notice (paid with their final settlement), and how many. */
+  heldPaise?: number;
+  heldCount?: number;
 };
 
 export type PayrollRunDTO = {
@@ -546,6 +549,8 @@ export type PayrollRunDTO = {
 
 export type PayslipDTO = {
   id?: string;
+  /** On notice: held, paid with the final settlement rather than with this run. */
+  held?: { reason: 'notice'; since: string };
   /** This financial year up to and including this month, per earning code / deduction key. */
   ytd?: { earnings: Record<string, number>; deductions: Record<string, number>; reimbursementsPaise: number };
   /** Bank account the salary goes to (in full for payroll people). */
@@ -674,7 +679,7 @@ export type SalaryRegisterReport = {
 export type LiabilityReport = { from: string; to: string; runs: { period: string; status: RunStatus }[]; rows: { key: string; name: string; employeePaise: number; employerPaise: number; totalPaise: number }[]; totalPaise: number };
 export type PtSummaryReport = { period: string; run: { status: RunStatus } | null; rows: { employeeId: string; name: string; workLocation: string; status: string; employeeType: string; ptPaise: number }[]; totalPaise: number };
 export type PtAnnualReport = { fy: string; rows: { period: string; periodEnd: string; status: RunStatus; employees: number; ptPaise: number }[]; totalPaise: number };
-export type PaymentDetailsReport = { period: string; status: RunStatus; rows: { employeeId: string; name: string; paymentMode: string; bankName: string; accountNumber: string; ifsc: string; netPayPaise: number }[] };
+export type PaymentDetailsReport = { period: string; status: RunStatus; rows: { employeeId: string; name: string; paymentMode: string; bankName: string; accountNumber: string; ifsc: string; netPayPaise: number }[] ; /** On notice: held for the final settlement, so not in this bank list. */ held?: { employeeId: string; name: string; netPayPaise: number }[] };
 export type CostRange = 'this_year' | 'this_quarter' | 'previous_year' | 'previous_quarter';
 export type PayrollDashboardReport = {
   currentRun: { id: string | null; period: string; status: RunStatus | 'not_started'; employees: number; netPayPaise: number; payDate: string };
