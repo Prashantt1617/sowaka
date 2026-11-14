@@ -33,7 +33,7 @@ import type { PeriodRange } from './payroll-inputs.service';
 import { resolveRuleSet } from './statutory.service';
 import { attendanceCountsForPeriod, payrollDeductions, unpaidLeaveDeduction } from './deduction.service';
 import { payslipHtml } from './payslip-html';
-import { employeeCalendar, invalidateAttendanceSetup, joinedOn } from './attendance-report.service';
+import { employeeCalendar, invalidateAttendanceSetup, joinedOn, leftOn } from './attendance-report.service';
 import { companies } from '../config/db';
 import { declarationsFor, runTds, ytdFor } from './tds.service';
 import { requireTdsConfigs, statutoryConfigForPeriod } from './payrollConfig.service';
@@ -286,8 +286,13 @@ async function buildRunPayslips(
     // calendar month (joined the 27th, paid 27th to 31st in a 26th-to-25th
     // cycle) puts them on the run that way.
     if (joined && joined > range.to && (lopOverrides[structure.userId] === undefined || joined > calendarEnd(period))) continue;
+    // Left before this period began (an exit HR recorded): no payslip.
+    const left = leftOn(employee);
+    if (left && left < range.from) continue;
     const employedFrom = joined && joined > range.from ? joined : undefined;
     const notYetEmployedDays = employedFrom ? Math.round((Date.parse(employedFrom) - Date.parse(range.from)) / 86_400_000) : 0;
+    // Left during it: the days after the last working day are not paid, like the days before joining.
+    const leftDays = left && left < range.to ? Math.round((Date.parse(range.to) - Date.parse(left)) / 86_400_000) : 0;
     const salaryFor = (p: string, from?: string) => calculateSalaryStructure({
       monthlyCtcPaise: Math.round(structure.annualCtcPaise / 12),
       payHeads: resolvedComponents,
@@ -319,7 +324,7 @@ async function buildRunPayslips(
     const allowance = paidDaysOn ? paidDays?.monthlyPaidLeaveDays ?? 0 : 0;
     // Days before joining are not paid either: attendance leaves them out, so
     // they come on top of what it docks from the joining day on.
-    const attendanceLopDays = Math.min(Math.max(0, docked.days - allowance) + unpaidLeave.days + notYetEmployedDays, workingDays);
+    const attendanceLopDays = Math.min(Math.max(0, docked.days - allowance) + unpaidLeave.days + notYetEmployedDays + leftDays, workingDays);
     const lopEnteredByHr = lopOverrides[structure.userId] !== undefined;
     const lopDays = lopEnteredByHr ? clampLop(lopOverrides[structure.userId], workingDays) : attendanceLopDays;
     // Overtime: what HR typed on the run, else the template's rule applied to
@@ -437,7 +442,7 @@ async function buildRunPayslips(
         ...(tds ? { tds } : {}),
         ...(reimbTax && reimbTax.paidPaise > 0 ? { reimbursementTax: { paidPaise: reimbTax.paidPaise, exemptPaise: reimbTax.exemptPaise, taxablePaise: reimbTax.taxablePaise } } : {}),
         // The days before joining as a line of their own, so the lines add up to the loss of pay.
-        attendanceDeductions: [...docked.lines, ...unpaidLeave.lines, ...(notYetEmployedDays > 0 ? [{ label: 'Before joining', count: notYetEmployedDays, days: notYetEmployedDays, trigger: 'absent' as const, every: 1, deductDays: 1 }] : [])],
+        attendanceDeductions: [...docked.lines, ...unpaidLeave.lines, ...(notYetEmployedDays > 0 ? [{ label: 'Before joining', count: notYetEmployedDays, days: notYetEmployedDays, trigger: 'absent' as const, every: 1, deductDays: 1 }] : []), ...(leftDays > 0 ? [{ label: 'After leaving', count: leftDays, days: leftDays, trigger: 'absent' as const, every: 1, deductDays: 1 }] : [])],
         paidLeaveDaysApplied: Math.min(allowance, docked.days),
         payableDays: slip.payableDays,
         approvedLeaveDays: periodInputs.approvedLeaveDays,

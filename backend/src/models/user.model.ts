@@ -12,6 +12,35 @@ export type UserLifecycleStatus =
 
 export type OnboardingStatus = 'pending' | 'in_progress' | 'completed';
 
+/** Why someone is leaving. 'consultant' (PF employee to consultant) keeps them working and comes later. */
+export type ExitKind = 'resigned' | 'terminated' | 'absconded' | 'retired' | 'other';
+export const EXIT_KINDS: ExitKind[] = ['resigned', 'terminated', 'absconded', 'retired', 'other'];
+
+/**
+ * An exit HR has recorded. Until the last working day the person is on notice
+ * and uses the app as before; from the day after (00:00 IST, or at once when HR
+ * ends access) they are offboarded (terminated, for a termination or an
+ * absconding), their sessions and device tokens go, and payroll pays nothing
+ * after the last working day. `endDate` on the user mirrors `lastWorkingDay`.
+ */
+export interface UserExit {
+  kind: ExitKind;
+  /** 'YYYY-MM-DD': when they resigned or were told; the notice counts from it. */
+  noticeFrom?: string;
+  /** 'YYYY-MM-DD': their last day at work, paid in full. */
+  lastWorkingDay: string;
+  /** Notice the role requires, in days (as HR enters it). */
+  noticeDays?: number;
+  note?: string;
+  recordedByUserId: string;
+  recordedByName?: string;
+  recordedAt: Date;
+  /** When their access ended (the nightly job or HR's "End access now"). */
+  accessEndedAt?: Date;
+  /** Who took over their team, when they had one. */
+  newManagerUserId?: string;
+}
+
 export type NoticeStatus = 'none' | 'serving' | 'completed';
 
 /**
@@ -49,6 +78,8 @@ export interface User {
   birthday?: Date;
   joiningDate?: Date;
   endDate?: Date | null;
+  /** An exit HR has recorded (see UserExit); absent for everyone still employed. */
+  exit?: UserExit;
   documents?: EmployeeDocument[];
   lifecycleStatus: UserLifecycleStatus;
   /**
