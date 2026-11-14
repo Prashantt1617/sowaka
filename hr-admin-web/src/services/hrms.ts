@@ -464,12 +464,27 @@ export const getPeopleTasks = () => api<PeopleTasksDTO & { success: boolean }>('
 
 /** An exit HR recorded (People › Exits). state: notice (still working), leaving (past the last day, access ends within the hour), left. */
 export type ExitKind = 'resigned' | 'terminated' | 'absconded' | 'retired' | 'other';
+export type ExitRuleKind = ExitKind | 'consultant';
+/** What an exit does (Setup › Payroll › Exit settings, per kind; changeable on each exit). */
+export type ExitRules = {
+  holdPay: boolean;
+  access: 'day_after' | 'at_once' | 'never';
+  leaveEncashment: 'pay' | 'hr_decides' | 'none';
+  gratuity: 'pay' | 'hr_decides' | 'none';
+  noticePay: 'none' | 'hr_chooses' | 'pay';
+  noticeRecovery: 'none' | 'days_not_served' | 'whole_notice';
+};
+export type ExitSettingsDTO = { kinds: { kind: ExitRuleKind; rules: ExitRules; isDefault: boolean }[]; defaults: Record<ExitRuleKind, ExitRules> };
+export const getExitSettings = () => api<ExitSettingsDTO>('/admin/exit-settings');
+export const saveExitSettings = (kinds: Partial<Record<ExitRuleKind, Partial<ExitRules> | null>>) =>
+  api<ExitSettingsDTO>('/admin/exit-settings', { method: 'PUT', body: { kinds } });
 export type ExitDTO = {
   userId: string; name: string; employeeId: string; department: string; designation: string; joiningDate: string | null;
   kind: ExitKind; kindLabel: string; noticeFrom: string | null; lastWorkingDay: string; noticeDays: number | null; note: string;
   recordedByName: string; recordedAt: string; accessEndedAt: string | null; state: 'notice' | 'leaving' | 'left'; status: string;
+  rules: ExitRules;
 };
-export type ExitInput = { kind: ExitKind; lastWorkingDay: string; noticeFrom?: string; noticeDays?: number | null; note?: string; newManagerUserId?: string; endAccessNow?: boolean };
+export type ExitInput = { kind: ExitKind; lastWorkingDay: string; noticeFrom?: string; noticeDays?: number | null; note?: string; newManagerUserId?: string; endAccessNow?: boolean; rules?: Partial<ExitRules> };
 export const listExits = () => api<{ exits: ExitDTO[] }>('/admin/exits').then((r) => r.exits);
 export const recordExit = (userId: string, input: ExitInput) =>
   api<{ exit: ExitDTO }>(`/admin/employees/${userId}/exit`, { method: 'PUT', body: input }).then((r) => r.exit);

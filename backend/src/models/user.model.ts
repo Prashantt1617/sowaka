@@ -12,9 +12,46 @@ export type UserLifecycleStatus =
 
 export type OnboardingStatus = 'pending' | 'in_progress' | 'completed';
 
-/** Why someone is leaving. 'consultant' (PF employee to consultant) keeps them working and comes later. */
+/** Why someone is leaving. 'consultant' (PF employee to consultant) keeps them working; recording one comes with step 3. */
 export type ExitKind = 'resigned' | 'terminated' | 'absconded' | 'retired' | 'other';
 export const EXIT_KINDS: ExitKind[] = ['resigned', 'terminated', 'absconded', 'retired', 'other'];
+export type ExitRuleKind = ExitKind | 'consultant';
+export const EXIT_RULE_KINDS: ExitRuleKind[] = ['resigned', 'terminated', 'absconded', 'consultant', 'retired', 'other'];
+
+/**
+ * What an exit does, per kind: the company's defaults (Setup › Payroll › Exit settings),
+ * copied onto each exit when it is recorded and changeable for that one person.
+ * holdPay and access act now; the rest are read by the final settlement.
+ */
+export interface ExitRules {
+  /** Hold their pay from the day notice begins, paid with the settlement. */
+  holdPay: boolean;
+  /** When app access ends. */
+  access: 'day_after' | 'at_once' | 'never';
+  leaveEncashment: 'pay' | 'hr_decides' | 'none';
+  gratuity: 'pay' | 'hr_decides' | 'none';
+  /** Paid instead of notice (the company ends the job early). */
+  noticePay: 'none' | 'hr_chooses' | 'pay';
+  /** Recovered when the employee leaves without serving the notice. */
+  noticeRecovery: 'none' | 'days_not_served' | 'whole_notice';
+}
+export const EXIT_RULE_CHOICES: { [K in keyof ExitRules]: ExitRules[K][] } = {
+  holdPay: [true, false],
+  access: ['day_after', 'at_once', 'never'],
+  leaveEncashment: ['pay', 'hr_decides', 'none'],
+  gratuity: ['pay', 'hr_decides', 'none'],
+  noticePay: ['none', 'hr_chooses', 'pay'],
+  noticeRecovery: ['none', 'days_not_served', 'whole_notice'],
+};
+/** The starting point for every company until HR changes it (the plan's table). */
+export const DEFAULT_EXIT_RULES: Record<ExitRuleKind, ExitRules> = {
+  resigned: { holdPay: true, access: 'day_after', leaveEncashment: 'pay', gratuity: 'pay', noticePay: 'none', noticeRecovery: 'days_not_served' },
+  terminated: { holdPay: true, access: 'at_once', leaveEncashment: 'pay', gratuity: 'pay', noticePay: 'hr_chooses', noticeRecovery: 'none' },
+  absconded: { holdPay: true, access: 'at_once', leaveEncashment: 'hr_decides', gratuity: 'hr_decides', noticePay: 'none', noticeRecovery: 'whole_notice' },
+  consultant: { holdPay: false, access: 'never', leaveEncashment: 'pay', gratuity: 'pay', noticePay: 'none', noticeRecovery: 'none' },
+  retired: { holdPay: true, access: 'day_after', leaveEncashment: 'pay', gratuity: 'pay', noticePay: 'none', noticeRecovery: 'none' },
+  other: { holdPay: true, access: 'day_after', leaveEncashment: 'pay', gratuity: 'pay', noticePay: 'none', noticeRecovery: 'none' },
+};
 
 /**
  * An exit HR has recorded. Until the last working day the person is on notice
@@ -39,6 +76,8 @@ export interface UserExit {
   accessEndedAt?: Date;
   /** Who took over their team, when they had one. */
   newManagerUserId?: string;
+  /** The rules for this exit: the company's for its kind when recorded, with HR's changes. */
+  rules?: ExitRules;
 }
 
 export type NoticeStatus = 'none' | 'serving' | 'completed';

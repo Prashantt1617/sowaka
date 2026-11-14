@@ -292,7 +292,8 @@ async function buildRunPayslips(
     const employedFrom = joined && joined > range.from ? joined : undefined;
     const notYetEmployedDays = employedFrom ? Math.round((Date.parse(employedFrom) - Date.parse(range.from)) / 86_400_000) : 0;
     // Notice began (an exit HR recorded; the day it was recorded when no date was given): pay is held from then.
-    const noticeStart = employee.exit ? (employee.exit.noticeFrom ?? new Date(employee.exit.recordedAt).toISOString().slice(0, 10)) : undefined;
+    // (Unless this exit's rules say not to hold pay.)
+    const noticeStart = employee.exit && employee.exit.rules?.holdPay !== false ? (employee.exit.noticeFrom ?? new Date(employee.exit.recordedAt).toISOString().slice(0, 10)) : undefined;
     // Left during it: the days after the last working day are not paid, like the days before joining.
     const leftDays = left && left < range.to ? Math.round((Date.parse(range.to) - Date.parse(left)) / 86_400_000) : 0;
     const salaryFor = (p: string, from?: string) => calculateSalaryStructure({

@@ -1,7 +1,7 @@
 import { peopleTasks } from '../services/peopleTasks.service';
 import { getMyLeaveBalance } from '../services/leave.service';
 import { users } from '../config/db';
-import { endAccessNow, listExits, recordExit, withdrawExit } from '../services/exit.service';
+import { endAccessNow, exitSettings, listExits, recordExit, setExitSettings, withdrawExit } from '../services/exit.service';
 import { NextFunction, Request, Response } from 'express';
 import { applyImport, cancelImport, importTemplate, previewImport } from '../services/employeeImport.service';
 import { attendanceReport, employeeCalendar } from '../services/attendance-report.service';
@@ -413,6 +413,12 @@ export async function deleteEmployee(req: Request, res: Response, next: NextFunc
 // ---- Exits ----
 export async function listExitsHandler(req: Request, res: Response, next: NextFunction) {
   try { res.status(200).json({ success: true, exits: await listExits(adminUserId(req)) }); } catch (error) { next(error); }
+}
+export async function exitSettingsHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await exitSettings(adminUserId(req))) }); } catch (error) { next(error); }
+}
+export async function setExitSettingsHandler(req: Request, res: Response, next: NextFunction) {
+  try { res.status(200).json({ success: true, ...(await setExitSettings(adminUserId(req), req.body ?? {})) }); } catch (error) { next(error); }
 }
 export async function recordExitHandler(req: Request, res: Response, next: NextFunction) {
   try { res.status(200).json({ success: true, exit: await recordExit(adminUserId(req), String(req.params.userId ?? ''), req.body ?? {}) }); } catch (error) { next(error); }

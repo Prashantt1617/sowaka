@@ -12,13 +12,13 @@
  * Their records (attendance, leave, payslips, documents) all stay.
  * A recorded exit can be withdrawn while access has not ended yet.
  */
-import { authSessions, deviceTokens, users } from '../config/db';
+import { authSessions, companies, deviceTokens, users } from '../config/db';
 import { AdminError } from './admin.service';
 import { forgetAuthUser } from './auth-cache';
 import { invalidateAttendanceSetup } from './attendance-report.service';
 import { logActivity } from './employee-activity.service';
 import { istParts } from './notification-time';
-import { EXIT_KINDS, ExitKind, User, UserExit, UserLifecycleStatus } from '../models/user.model';
+import { DEFAULT_EXIT_RULES, EXIT_KINDS, EXIT_RULE_CHOICES, EXIT_RULE_KINDS, ExitKind, ExitRuleKind, ExitRules, User, UserExit, UserLifecycleStatus } from '../models/user.model';
 import { logger } from '../utils/logger';
 
 /** An AdminError, so the error handler answers with its status and message. */
@@ -39,6 +39,53 @@ async function requireExitAdmin(adminUserId: string) {
   if (!admin?.org) throw new ExitError(403, 'No organisation on this account');
   if (admin.dashboardAdmin !== true) throw new ExitError(403, 'Only a dashboard admin can record or change an exit');
   return admin as Pick<User, 'userId' | 'org' | 'name' | 'dashboardAdmin'> & { org: string };
+}
+
+// ———————————————————————————————————————————————— exit rules (Setup › Payroll › Exit settings)
+
+const RULE_KEYS = Object.keys(EXIT_RULE_CHOICES) as (keyof ExitRules)[];
+
+/** One set of rules from a body, every key checked against its choices; `base` fills what is not given. */
+function readRules(raw: unknown, base: ExitRules, label: string): ExitRules {
+  if (raw == null) return { ...base };
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new ExitError(400, `${label} must be an object`);
+  const out = { ...base } as Record<keyof ExitRules, unknown>;
+  for (const key of RULE_KEYS) {
+    const v = (raw as Record<string, unknown>)[key];
+    if (v === undefined) continue;
+    if (!(EXIT_RULE_CHOICES[key] as unknown[]).includes(v)) throw new ExitError(400, `${label}: ${key} must be one of ${EXIT_RULE_CHOICES[key].join(', ')}`);
+    out[key] = v;
+  }
+  return out as ExitRules;
+}
+
+/** The company's rules for every kind: what HR saved, else the defaults (and which is which). */
+async function companyRules(org: string) {
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, exitRules: 1 } });
+  const saved = company?.exitRules ?? {};
+  return EXIT_RULE_KINDS.map((kind) => ({ kind, rules: { ...DEFAULT_EXIT_RULES[kind], ...(saved[kind] ?? {}) }, isDefault: !saved[kind] }));
+}
+
+export async function exitSettings(adminUserId: string) {
+  const admin = await requireExitAdmin(adminUserId);
+  return { kinds: await companyRules(admin.org), defaults: DEFAULT_EXIT_RULES };
+}
+
+/** Save the company's rules. Body: { kinds: { resigned: {...}, … } }; a kind sent as null goes back to the default. */
+export async function setExitSettings(adminUserId: string, body: Record<string, unknown>) {
+  const admin = await requireExitAdmin(adminUserId);
+  const raw = body.kinds;
+  if (!raw || typeof raw !== 'object') throw new ExitError(400, 'kinds must be an object of rules per kind of exit');
+  const $set: Record<string, unknown> = {};
+  const $unset: Record<string, ''> = {};
+  for (const [kind, rules] of Object.entries(raw as Record<string, unknown>)) {
+    if (!EXIT_RULE_KINDS.includes(kind as ExitRuleKind)) throw new ExitError(400, `Unknown kind of exit: ${kind}`);
+    if (rules === null) { $unset[`exitRules.${kind}`] = ''; continue; }
+    $set[`exitRules.${kind}`] = readRules(rules, DEFAULT_EXIT_RULES[kind as ExitRuleKind], kind);
+  }
+  const done = await companies().updateOne({ id: admin.org }, { ...(Object.keys($set).length ? { $set } : {}), ...(Object.keys($unset).length ? { $unset } : {}) });
+  if (done.matchedCount === 0) throw new ExitError(404, 'Company not found');
+  return { kinds: await companyRules(admin.org), defaults: DEFAULT_EXIT_RULES };
 }
 
 /** How an exit reads on the dashboard. */
@@ -62,6 +109,8 @@ export function exitView(user: Pick<User, 'userId' | 'name' | 'employeeId' | 'de
     recordedByName: e.recordedByName ?? '',
     recordedAt: e.recordedAt.toISOString(),
     accessEndedAt: e.accessEndedAt ? e.accessEndedAt.toISOString() : null,
+    /** The rules this exit follows (exits recorded before rules existed read as their kind's default). */
+    rules: e.rules ?? DEFAULT_EXIT_RULES[e.kind],
     /** notice: still working; leaving: past the last day, access ends within the hour; left: access ended. */
     state,
     status: user.lifecycleStatus,
@@ -115,8 +164,14 @@ export async function recordExit(adminUserId: string, employeeUserId: string, bo
     if (!next) throw new ExitError(400, 'The new manager must be someone still working here');
   }
 
+  // The company's rules for this kind, with HR's changes for this person.
+  const forKind = (await companyRules(admin.org)).find((k) => k.kind === kind)!.rules;
+  const rules = readRules(body.rules, forKind, 'rules');
+  if (rules.access === 'never') throw new ExitError(400, 'Someone who leaves must lose app access: pick "the day after" or "at once"');
+
   const exit: UserExit = {
     kind,
+    rules,
     lastWorkingDay,
     ...(noticeFromRaw ? { noticeFrom: noticeFromRaw } : {}),
     ...(noticeDays !== undefined ? { noticeDays } : {}),
@@ -138,7 +193,7 @@ export async function recordExit(adminUserId: string, employeeUserId: string, bo
   void logActivity({ org: admin.org, userId: employeeUserId, byUserId: admin.userId, kind: 'details', title: `Exit recorded: ${KIND_LABEL[kind].toLowerCase()}, last working day ${lastWorkingDay}` });
 
   // Already past the last day, or HR asked to end access now.
-  if (body.endAccessNow === true || lastWorkingDay < todayIst(now)) await endAccess(employeeUserId, now);
+  if (body.endAccessNow === true || rules.access === 'at_once' || lastWorkingDay < todayIst(now)) await endAccess(employeeUserId, now);
   const after = await users().findOne({ userId: employeeUserId });
   return exitView(after as User, now);
 }
@@ -175,7 +230,7 @@ export async function endAccessNow(adminUserId: string, employeeUserId: string, 
  */
 async function endAccess(employeeUserId: string, now: Date) {
   const user = await users().findOne({ userId: employeeUserId }, { projection: { _id: 0, org: 1, exit: 1 } });
-  if (!user?.exit || user.exit.accessEndedAt) return false;
+  if (!user?.exit || user.exit.accessEndedAt || user.exit.rules?.access === 'never') return false;
   await users().updateOne(
     { userId: employeeUserId, 'exit.accessEndedAt': { $exists: false } },
     { $set: { lifecycleStatus: statusAfter(user.exit.kind), noticeStatus: 'completed', 'exit.accessEndedAt': now, updatedAt: now } },

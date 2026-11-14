@@ -255,7 +255,7 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
       </div>
       {deleting && <DeleteEmployee emp={emp} onClose={() => setDeleting(false)} onDeleted={() => { setDeleting(false); void s.reload(); onBack(); }} />}
       {exiting && <ExitDialog emp={emp} exit={exitRow} emps={s.emps} onClose={() => setExiting(false)} onSaved={() => { setExiting(false); setExitTick((n) => n + 1); void s.reload(); }} />}
-      {exitRow && <ExitBanner exit={exitRow} canEdit={user?.dashboardAdmin === true} onEdit={() => setExiting(true)} />}
+      {exitRow && <ExitBanner exit={exitRow} />}
 
       {/* Identity header */}
       <section className="pd-card pd-phead">

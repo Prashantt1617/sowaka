@@ -9,13 +9,13 @@
  *   MONGODB_DB=exits_scratch npm run exits:check
  */
 import {
-  attendanceRecords, authSessions, connectDb, deviceTokens, getDb, paidDaysTemplates, payHeads, payslips, salaryStructures, salaryTemplates, statutoryConfigs, users,
+  attendanceRecords, authSessions, companies, connectDb, deviceTokens, getDb, paidDaysTemplates, payHeads, payslips, salaryStructures, salaryTemplates, statutoryConfigs, users,
 } from '../config/db';
 import type { User } from '../models/user.model';
 import type { AttendanceRecord } from '../models/attendance.model';
 import { attendanceReport, employeeDayStatuses } from '../services/attendance-report.service';
 import { getCurrentAuthUser } from '../services/auth.service';
-import { closeDueExits, endAccessNow, listExits, recordExit, withdrawExit } from '../services/exit.service';
+import { closeDueExits, endAccessNow, exitSettings, listExits, recordExit, setExitSettings, withdrawExit } from '../services/exit.service';
 import { createRun, listRuns } from '../services/payrollRun.service';
 import { paymentDetails } from '../services/payrollReports.service';
 import { payslipHtml } from '../services/payslip-html';
@@ -55,6 +55,7 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   await connectDb();
   await statutoryConfigs().insertMany(STATUTORY_SEED.map((c) => ({ ...structuredClone(c), createdAt: new Date(), updatedAt: new Date(), updatedByUserId: null })));
 
+  await companies().insertOne({ id: ORG, name: 'Exit Check' } as never);
   await users().insertMany([
     person('hr', { name: 'Hema HR', dashboardAccess: true, dashboardAdmin: true, employeeId: 'H1', managerUserId: undefined }),
     person('mgr', { name: 'Manoj', dashboardAccess: true, employeeId: 'M1' }),
@@ -109,13 +110,35 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   await withdrawExit('hr', 'stayer', sept10);
   const stayer = await users().findOne({ userId: 'stayer' });
   ok('withdrawn: active again, no exit, no end date', stayer?.lifecycleStatus === 'active' && !stayer?.exit && !stayer?.endDate, stayer);
-  await recordExit('hr', 'runner', { kind: 'absconded', lastWorkingDay: '2026-09-12' }, sept10);
-  ok('absconded: still on notice until access ends', (await users().findOne({ userId: 'runner' }))?.lifecycleStatus === 'notice');
-  const ended = await endAccessNow('hr', 'runner', sept10);
-  ok('End access now: terminated at once', ended.state === 'left' && (await users().findOne({ userId: 'runner' }))?.lifecycleStatus === 'terminated', ended);
+  // Absconded: the default rule ends access as it is recorded.
+  const ran = await recordExit('hr', 'runner', { kind: 'absconded', lastWorkingDay: '2026-09-12' }, sept10);
+  ok('absconded: access ends at once (the default rule)', ran.state === 'left' && ran.rules.access === 'at_once' && (await users().findOne({ userId: 'runner' }))?.lifecycleStatus === 'terminated', ran);
+  ok('…and its other defaults are copied onto the exit', ran.rules.noticeRecovery === 'whole_notice' && ran.rules.gratuity === 'hr_decides', ran.rules);
+  // End access now, for an exit whose rule waits for the day after.
+  await recordExit('hr', 'stayer', { kind: 'resigned', lastWorkingDay: '2026-09-28' }, sept10);
+  const ended = await endAccessNow('hr', 'stayer', sept10);
+  ok('End access now: offboarded at once', ended.state === 'left' && (await users().findOne({ userId: 'stayer' }))?.lifecycleStatus === 'offboarded', ended);
+  // Put the control back as it was (a test shortcut: a left exit cannot be withdrawn on the dashboard).
+  await users().updateOne({ userId: 'stayer' }, { $unset: { exit: '', endDate: '' }, $set: { lifecycleStatus: 'active', noticeStatus: 'none' } });
   // A last working day already past: access ends as it is recorded.
   const goneView = await recordExit('hr', 'gone', { kind: 'retired', lastWorkingDay: '2026-08-20' }, sept10);
   ok('a past last working day ends access at once', goneView.state === 'left' && (await users().findOne({ userId: 'gone' }))?.lifecycleStatus === 'offboarded', goneView);
+
+  console.log('exit settings');
+  const settings = await exitSettings('hr');
+  const resignedRules = settings.kinds.find((k) => k.kind === 'resigned');
+  ok('defaults until HR changes them', resignedRules?.isDefault === true && resignedRules.rules.holdPay === true && resignedRules.rules.access === 'day_after', resignedRules);
+  ok('only a dashboard admin may change them', (await refusal(() => setExitSettings('mgr', { kinds: { resigned: { holdPay: false } } }))).status === 403);
+  ok('a choice that is not on the list is refused', (await refusal(() => setExitSettings('hr', { kinds: { resigned: { noticeRecovery: 'double' } } }))).status === 400);
+  const saved = await setExitSettings('hr', { kinds: { retired: { holdPay: false, leaveEncashment: 'hr_decides' } } });
+  const retired = saved.kinds.find((k) => k.kind === 'retired');
+  ok('the company changes a kind: saved, the rest of that kind kept', retired?.isDefault === false && retired.rules.holdPay === false && retired.rules.leaveEncashment === 'hr_decides' && retired.rules.gratuity === 'pay', retired);
+  const lead = (await listExits('hr', sept10)).find((x) => x.userId === 'lead');
+  ok('an exit already recorded keeps its own rules', lead?.rules.holdPay === true, lead?.rules);
+  ok('one exit can change its rules: no hold for this person', (await recordExit('hr', 'fresh', { kind: 'resigned', lastWorkingDay: '2026-09-29', rules: { holdPay: false } }, sept10)).rules.holdPay === false);
+  ok('an exit can never keep access for good', (await refusal(() => recordExit('hr', 'e1', { kind: 'other', lastWorkingDay: '2026-09-29', rules: { access: 'never' } }, sept10))).status === 400);
+  await setExitSettings('hr', { kinds: { retired: null } });
+  ok('a kind sent as null goes back to the default', (await exitSettings('hr')).kinds.find((k) => k.kind === 'retired')?.isDefault === true);
 
   console.log('calendar');
   const now = new Date();
@@ -145,7 +168,7 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   await payHeads().insertMany(ZOHO_CATALOG.map((h) => ({ ...h, org: ORG })));
   await salaryTemplates().insertOne({ ...ZOHO_TEMPLATES.BELOW_TAXABLE, org: ORG });
   await paidDaysTemplates().insertOne({ org: ORG, code: 'DEFAULT', name: 'Calendar', allDaysPaid: false, deductionRules: [], monthlyPaidLeaveDays: 0, isDefault: true, createdAt: now, updatedAt: now });
-  await salaryStructures().insertMany(['leaver', 'gone', 'stayer'].map((userId) => ({
+  await salaryStructures().insertMany(['leaver', 'gone', 'stayer', 'fresh'].map((userId) => ({
     org: ORG, userId, salaryTemplateCode: 'BELOW_TAXABLE', annualCtcPaise: 3_60_000_00, status: 'active' as const, createdAt: now, updatedAt: now,
   })));
   await createRun('hr', { period: MONTH });
@@ -162,6 +185,7 @@ const myPayslipHtmlFor = async (slip: Parameters<typeof payslipHtml>[0]) => pays
   console.log('pay held from the notice');
   ok('the leaver (notice from 21 Aug) is held', leaverSlip?.held?.reason === 'notice' && leaverSlip?.held?.since === '2026-08-21', leaverSlip?.held);
   ok('the control is not held', !stayerSlip?.held);
+  ok('an exit whose rules say not to hold: paid with the run', !(await slip('fresh'))?.held);
   const run = (await listRuns('hr')).find((r) => r.period === MONTH)!;
   ok('the run totals the held pay', run.totals.heldCount === 1 && run.totals.heldPaise === leaverSlip?.netPayablePaise, run.totals);
   const bank = await paymentDetails('hr', run.id);

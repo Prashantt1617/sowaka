@@ -43,7 +43,7 @@ import {
   employeeImportPreview,
   employeeImportApply,
   employeeImportCancel,
-  updateOvertimeEligibility, listExitsHandler, recordExitHandler, withdrawExitHandler, endAccessNowHandler } from '../controllers/admin.controller';
+  updateOvertimeEligibility, listExitsHandler, exitSettingsHandler, setExitSettingsHandler, recordExitHandler, withdrawExitHandler, endAccessNowHandler } from '../controllers/admin.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { uploadEmployeeDocumentFile } from '../middleware/employee-document-upload.middleware';
 import { requireDashboardAccess, requireDashboardAdmin, requireDashboardTabs } from '../middleware/admin.middleware';
@@ -115,6 +115,8 @@ adminRouter.patch('/employees/:userId/overtime-eligibility', updateOvertimeEligi
 adminRouter.patch('/employees/:userId', updateEmployeeDetails);
 // Exits: record (or change) one, withdraw it before it takes effect, end access at once; the company's list.
 adminRouter.get('/exits', listExitsHandler);
+adminRouter.get('/exit-settings', exitSettingsHandler);
+adminRouter.put('/exit-settings', setExitSettingsHandler);
 adminRouter.put('/employees/:userId/exit', recordExitHandler);
 adminRouter.delete('/employees/:userId/exit', withdrawExitHandler);
 adminRouter.post('/employees/:userId/exit/end-access', endAccessNowHandler);

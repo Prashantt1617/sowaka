@@ -128,6 +128,8 @@ export interface Company {
   features?: CompanyFeatures;
   createdAt?: number;
   updatedAt?: Date;
+  /** Exit rules per kind of exit, as HR set them (Setup › Payroll › Exit settings); missing kinds use DEFAULT_EXIT_RULES. */
+  exitRules?: Partial<Record<import('./user.model').ExitRuleKind, import('./user.model').ExitRules>>;
 }
 
 /**
