@@ -75,6 +75,11 @@
 }
 .pd-inp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 textarea.pd-inp { height: auto; padding: 10px 12px; min-height: 84px; line-height: 1.5; }
+/* A form dropdown: the field's own look with the app's chevron, not the browser's arrow. */
+.pd-pick { position: relative; display: block; min-width: 0; }
+.pd-pick select { appearance: none; -webkit-appearance: none; width: 100%; padding-right: 34px; cursor: pointer; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+.pd-pick::after { content: ''; position: absolute; right: 15px; top: 50%; width: 6px; height: 6px; border-right: 1.6px solid var(--ink-2); border-bottom: 1.6px solid var(--ink-2); transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+.pd-pick select:disabled { cursor: default; opacity: 0.6; }
 
 /* Segmented control */
 .pd-seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 4px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; }

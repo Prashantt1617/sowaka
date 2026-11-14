@@ -8,6 +8,7 @@
 // wired to a backend yet, so the sections stand as placeholders rather than
 // being removed.
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { CSSProperties, ReactNode } from 'react';
 import type { Emp } from '../seed';
 import { useStore } from '../store';
@@ -253,8 +254,9 @@ export function EmployeeProfile({ emp, onBack, onOpen, initialTab, focus, backLa
           </span>
         )}
       </div>
-      {deleting && <DeleteEmployee emp={emp} onClose={() => setDeleting(false)} onDeleted={() => { setDeleting(false); void s.reload(); onBack(); }} />}
-      {exiting && <ExitDialog emp={emp} exit={exitRow} emps={s.emps} onClose={() => setExiting(false)} onSaved={() => { setExiting(false); setExitTick((n) => n + 1); void s.reload(); }} />}
+      {/* On the page body: this page fades in with a transform, which would pin a fixed dialog to the page instead of the screen. */}
+      {deleting && createPortal(<DeleteEmployee emp={emp} onClose={() => setDeleting(false)} onDeleted={() => { setDeleting(false); void s.reload(); onBack(); }} />, document.body)}
+      {exiting && createPortal(<ExitDialog emp={emp} exit={exitRow} emps={s.emps} onClose={() => setExiting(false)} onSaved={() => { setExiting(false); setExitTick((n) => n + 1); void s.reload(); }} />, document.body)}
       {exitRow && <ExitBanner exit={exitRow} />}
 
       {/* Identity header */}

@@ -29,7 +29,7 @@ const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
 export function ExitBanner({ exit }: { exit: ExitDTO }) {
   const left = exit.state === 'left';
   return (
-    <div role="status" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12, background: left ? 'var(--surface-2)' : 'var(--warn-bg)', color: left ? 'var(--ink-2)' : 'var(--warn)', fontSize: 13.5 }}>
+    <div role="status" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 16, borderRadius: 12, background: left ? 'var(--surface-2)' : 'var(--warn-bg)', color: left ? 'var(--ink-2)' : 'var(--warn)', fontSize: 13.5 }}>
       <strong style={{ fontWeight: 600 }}>{left ? `Left · ${exit.kindLabel.toLowerCase()}` : `On notice · ${exit.kindLabel.toLowerCase()}`}</strong>
       <span>
         Last day at work {longDay(exit.lastWorkingDay)}.
@@ -174,10 +174,12 @@ export function ExitDialog({ emp, exit, emps, onClose, onSaved }: { emp: Emp; ex
 
               {team.length > 0 && (
                 <Question label={`${name} leads ${team.length} ${team.length === 1 ? 'person' : 'people'}. Who will they report to?`}>
-                  <select id="exit-manager" value={manager} onChange={(e) => setManager(e.target.value)} className="pd-inp">
-                    <option value="">Pick a manager</option>
-                    {others.map((e) => <option key={e.id} value={e.id}>{e.name}{e.employeeId && e.employeeId !== '—' ? ` · ${e.employeeId}` : ''}</option>)}
-                  </select>
+                  <span className="pd-pick">
+                    <select id="exit-manager" value={manager} onChange={(e) => setManager(e.target.value)} className="pd-inp">
+                      <option value="">Pick a manager</option>
+                      {others.map((e) => <option key={e.id} value={e.id}>{e.name}{e.employeeId && e.employeeId !== '—' ? ` · ${e.employeeId}` : ''}</option>)}
+                    </select>
+                  </span>
                   <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{team.map((t) => firstName(t.name)).join(', ')} will report to them.</span>
                 </Question>
               )}
