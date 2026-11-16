@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { mediaUrl } from '../api/client';
 import { portal } from '../api/portal';
 import type { MeetItem } from '../api/types';
 import { Page } from '../components/Shell';
@@ -92,7 +93,7 @@ export function Meet() {
           {isVideo ? (
             <video
               className="meet-reel__video"
-              src={item.videoUrl}
+              src={mediaUrl(item.videoUrl!)}
               controls
               playsInline
               preload="metadata"
@@ -107,8 +108,8 @@ export function Meet() {
               <p className="body">“{item.text}”</p>
               {item.authorName && (
                 <footer className="label">
-                  {item.authorName}
-                  {item.authorRole ? ` · ${item.authorRole}` : ''} · your manager
+                  {/* "Neha R. · Design lead · your manager": the role once, however the server words it. */}
+                  {[item.authorName, item.authorRole?.replace(/\s*·\s*your manager$/i, '').trim(), 'your manager'].filter(Boolean).join(' · ')}
                 </footer>
               )}
             </blockquote>

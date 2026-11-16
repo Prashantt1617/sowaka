@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { Company, HrContact } from '../api/types';
 import { Page } from '../components/Shell';
 import { Plant } from '../components/Plant';
@@ -13,6 +13,7 @@ export type ClosedState = 'declined' | 'expired' | 'replaced' | 'moved_to_app' |
 /** One template for every closed state (P3b, P3c, P3e, P16, PX). Mobile layout, centred at 430 px on desktop. */
 export function ClosedScreen({ state, company, hr, validTill }: { state: ClosedState; company: Company; hr: HrContact; validTill?: string }) {
   const h1 = useFocusHeading<HTMLHeadingElement>(state);
+  const [closeNote, setCloseNote] = useState(false);
   const subject = offerSubject(company.name);
   const emailHr = (
     <a className="btn btn--primary" href={mailto(hr.email, subject)}>
@@ -25,7 +26,15 @@ export function ClosedScreen({ state, company, hr, validTill }: { state: ClosedS
       title: 'Thanks for letting us know',
       sub: 'HR has been told. If you change your mind, reply to your offer email.',
       cta: (
-        <button type="button" className="btn btn--primary" onClick={() => window.close()}>
+        <button
+          type="button"
+          className="btn btn--primary"
+          onClick={() => {
+            // A tab the candidate opened from their email cannot be closed by the page: say so instead of doing nothing.
+            window.close();
+            window.setTimeout(() => setCloseNote(true), 150);
+          }}
+        >
           Close
         </button>
       ),
@@ -79,6 +88,11 @@ export function ClosedScreen({ state, company, hr, validTill }: { state: ClosedS
           {c.title}
         </h1>
         <p className="body sub">{c.sub}</p>
+        {closeNote && (
+          <p className="label" role="status">
+            You can close this tab now.
+          </p>
+        )}
       </section>
       <BottomBar>{c.cta}</BottomBar>
     </Page>

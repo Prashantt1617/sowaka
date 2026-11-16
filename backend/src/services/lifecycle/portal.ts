@@ -10,6 +10,7 @@
 import { candidateAccounts, companies, dateChangeRequests, journeys, letters, offers, policyDocuments, users } from '../../config/db';
 import type { AboutYou, Day1Pass, Journey, OfferFields } from '../../models/lifecycle.model';
 import { journeyDocumentsView } from './documents';
+import { addWorkingDays } from './dueRules';
 import {
   addDays, companyDisplayName, companyOf, daysBetween, fireOnce, formatDay, hrContactFor, istDate, istHour, mails, sendLifecycleEmail,
 } from './emails';
@@ -334,12 +335,6 @@ export async function portalHome(journey: Journey, now = new Date()): Promise<Po
 
 const PRE_JOIN_PORTAL: string[] = ['finalised', 'active', 'docs_approved'];
 
-function addWeekdays(day: string, n: number): string {
-  let d = day;
-  let left = n;
-  while (left > 0) { d = addDays(d, 1); const wd = new Date(`${d}T00:00:00Z`).getUTCDay(); if (wd !== 0 && wd !== 6) left -= 1; }
-  return d;
-}
 
 /**
  * The portal's timed work, idempotent (each mail claims a once-only key), for
@@ -383,7 +378,9 @@ export async function runPortalJobs(now = new Date()): Promise<{ expired: number
     if (status === 'accepted' && journey.anchors.accepted) {
       const offer = await offers().findOne({ journeyId: journey.id });
       const v = sentVersion(offer?.versions);
-      if (v?.status === 'accepted' && !v.finalisedAt && today > addWeekdays(istDate(journey.anchors.accepted), 1) && await fireOnce(`finalise_reminder:${journey.id}:v${v.version}`, journey.org)) {
+      // A working day by the company's own holidays and week-offs (CONTRACT decision 4), Sat–Sun when it has none.
+      const dueBy = v?.status === 'accepted' && !v.finalisedAt ? istDate(await addWorkingDays(journey.org, istDate(journey.anchors.accepted), 1)) : undefined;
+      if (v && dueBy && today > dueBy && await fireOnce(`finalise_reminder:${journey.id}:v${v.version}`, journey.org)) {
         const creator = await users().findOne({ userId: journey.createdByUserId, org: journey.org }, { projection: { _id: 0, email: 1 } });
         if (creator?.email) { await sendLifecycleEmail(journey.org, creator.email, `Waiting for you: finalise ${name}'s offer`, mails.hrFinaliseReminder(companyName, name)); sent += 1; }
       }

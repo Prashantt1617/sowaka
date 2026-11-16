@@ -31,9 +31,12 @@ export function setSession(token: string | null): void {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** Fields the server sent beside `error` (sign-in on a closed portal sends `closed`). */
+  details?: Record<string, unknown>;
+  constructor(status: number, message: string, details?: Record<string, unknown>) {
     super(message);
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -65,6 +68,15 @@ async function loadMock(): Promise<MockHandler> {
 export function resolveUrl(path: string): string {
   if (/^https?:\/\//.test(path) || path.startsWith('blob:') || path.startsWith('data:')) return path;
   return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
+/**
+ * A media URL for `<video src>` / `<img src>`: an API path (e.g. the signed
+ * /portal/media/… link of a manager's video note) gets the API origin, a full
+ * URL stays as it is. Mock mode serves its fixtures from the portal itself.
+ */
+export function mediaUrl(path: string): string {
+  return MOCK ? path : resolveUrl(path);
 }
 
 function onUnauthorized(auth: boolean) {
@@ -106,14 +118,17 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
 
   if (!res.ok) {
     let message = 'Something went wrong. Please try again.';
+    let details: Record<string, unknown> | undefined;
     try {
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as { error?: string } & Record<string, unknown>;
       if (data?.error) message = data.error;
+      const rest = Object.entries(data ?? {}).filter(([k]) => k !== 'error');
+      if (rest.length) details = Object.fromEntries(rest);
     } catch {
       /* not JSON */
     }
     if (res.status === 401) onUnauthorized(auth);
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, details);
   }
   if (opts.binary) return (await res.arrayBuffer()) as T;
   if (res.status === 204) return undefined as T;

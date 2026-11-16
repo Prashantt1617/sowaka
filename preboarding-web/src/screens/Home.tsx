@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { portal } from '../api/portal';
 import type { PathKey, PortalHome, TaskView } from '../api/types';
@@ -9,6 +9,7 @@ import { AskHrSheet, CopyButton, Eyebrow, Ring } from '../components/ui';
 import { addDays, daysBetween, firstName, fmtShort, fmtTime, fmtWeekday, initials, today } from '../lib/format';
 import { useFocusHeading, useWide } from '../lib/hooks';
 import { APP_LINK } from '../lib/links';
+import { homeTiles, passOpensOn, type TileIcon } from '../lib/tiles';
 import { useMe } from '../session';
 import { ClosedScreen } from './Closed';
 
@@ -34,23 +35,25 @@ function taskFor(me: PortalHome, key: PathKey): TaskView | undefined {
   return me.tasks.find((t) => t.systemKey === PATH_TASK[key]);
 }
 
-function passOpensOn(me: PortalHome): string {
-  const t = taskFor(me, 'pass');
-  return t?.opensAt ? t.opensAt.slice(0, 10) : addDays(me.tj, -7);
-}
+const stateOf = (me: PortalHome, key: PathKey) => me.path.find((p) => p.key === key)?.state;
 
 function dueLine(me: PortalHome, key: PathKey, state: string): string {
   const t = taskFor(me, key);
   if (key === 'offer' && state === 'done') return 'Accepted';
   if (key === 'pass') return fmtWeekday(me.tj);
-  if (key === 'letter' && state === 'locked') return 'After docs';
+  // Documents approved, letters not uploaded yet: HR is making them, not waiting on the candidate's documents.
+  if (key === 'letter' && state === 'locked') return stateOf(me, 'docs') === 'done' ? 'HR is preparing' : 'After docs';
   if (state === 'done') return 'Done';
   if (t?.dueAt) return `Due ${fmtShort(t.dueAt)}`;
   if (t?.dueLabel) return t.dueLabel;
   return 'Any time';
 }
 
-type Tile = { key: string; icon: ReactNode; title: string; sub: string; to?: string; askHr?: boolean };
+function TileIconView({ icon }: { icon: TileIcon }) {
+  if ('count' in icon) return <>{icon.count}</>;
+  if ('icon' in icon) return <Icon name={icon.icon} />;
+  return <>{icon.text}</>;
+}
 
 /** P7 / P7b / P11 / P13 / P15 · W7 / W15 · Home. */
 export function Home() {
@@ -132,33 +135,7 @@ export function Home() {
         }
       : undefined;
 
-  const meetSub = meetCount ? `${meetCount} short videos` : 'Short videos';
-  const askTile: Tile = { key: 'ask', icon: '@', title: 'Ask HR', sub: 'Send an email', askHr: true };
-  const tiles: Tile[] =
-    me.view === 'offer_updated'
-      ? [{ key: 'meet', icon: meetCount ?? <Icon name="play" />, title: 'Meet the team', sub: meetSub, to: '/meet' }, askTile]
-      : me.view === 'letter_ready'
-        ? [{ key: 'pass', icon: <Icon name="calendar" />, title: 'Day-1 pass', sub: `Ready on ${fmtShort(passOpensOn(me))}`, to: '/pass' }, askTile]
-        : me.view === 'pass_unlocked'
-          ? [{ key: 'letter', icon: <Icon name="check" />, title: 'Letter signed', sub: 'Saved in your documents', to: '/letters' }, askTile]
-          : openTiles();
-
-  // Tasks open: only what is still to do. Once About you and Meet the team are done, the
-  // signed letters and the Day-1 pass take their place (never a tile for something finished).
-  function openTiles(): Tile[] {
-    const done = (key: string) => me.path.find((p) => p.key === key)?.state === 'done';
-    const open: Tile[] = [
-      ...(done('about') ? [] : [{ key: 'about', icon: 2, title: 'About you', sub: '2 quick steps', to: '/about' } as Tile]),
-      ...(done('meet') ? [] : [{ key: 'meet', icon: <Icon name="play" />, title: 'Meet the team', sub: meetSub, to: '/meet' } as Tile]),
-    ];
-    if (open.length) return open;
-    return [
-      done('letter')
-        ? { key: 'letter', icon: <Icon name="check" />, title: 'Letters signed', sub: 'Saved in your documents', to: '/letters' }
-        : { key: 'pass', icon: <Icon name="calendar" />, title: 'Day-1 pass', sub: `Ready on ${fmtShort(passOpensOn(me))}`, to: '/pass' },
-      askTile,
-    ];
-  }
+  const tiles = homeTiles(me, meetCount);
 
   const heroCard = (
     <section className={`hero-card rise ${wide ? 'hero-card--web' : ''}`} aria-labelledby="hero-title">
@@ -226,7 +203,7 @@ export function Home() {
         const inner = (
           <>
             <span className="tile__icon" aria-hidden="true">
-              {t.icon}
+              <TileIconView icon={t.icon} />
             </span>
             <span className="body-strong">{t.title}</span>
             <span className="label">{t.sub}</span>
@@ -262,9 +239,15 @@ export function Home() {
           </span>
         </>
       )}
-      <Link to="/date-request" className="text-link batch__link">
-        Can’t join on {fmtShort(me.tj)}?
-      </Link>
+      {me.pendingDateRequest ? (
+        <span className="label batch__link" role="status">
+          New date asked: {fmtShort(me.pendingDateRequest.requestedTj)} · HR will reply soon
+        </span>
+      ) : (
+        <Link to="/date-request" className="text-link batch__link">
+          Can’t join on {fmtShort(me.tj)}?
+        </Link>
+      )}
     </div>
   );
 

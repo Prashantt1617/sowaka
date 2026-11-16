@@ -164,7 +164,7 @@ export function About() {
           <Field label="Emergency contact" htmlFor={nameId} error={touched ? nameErr : undefined}>
             <input id={nameId} className="input" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" required disabled={locked} />
           </Field>
-          <ChipGroup label="Relation" name="relation" options={RELATIONS} value={relation} onChange={setRelation} />
+          <ChipGroup label="Relation" name="relation" options={RELATIONS} value={relation} onChange={setRelation} disabled={locked} />
           {touched && relErr && (
             <p className="field__error" role="alert">
               {relErr}

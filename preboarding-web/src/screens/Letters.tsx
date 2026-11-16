@@ -59,6 +59,10 @@ export function Letters() {
 
   const letters = useMemo(() => (state.data?.letters ?? []).filter((l) => l.kind !== 'offer'), [state.data]);
   const active = letters.filter((l) => l.state !== 'locked');
+  // A letter HR has not uploaded yet (the server opens them as a set, but a regenerated one can lag behind).
+  const waiting = letters.filter((l) => l.state === 'locked');
+  const docsApproved = me.path.find((p) => p.key === 'docs')?.state === 'done' || me.status === 'docs_approved';
+  const pagesOf = (l: PortalLetter) => pages[l.id] ?? l.pages;
   const current = (id && active.find((l) => l.id === id)) || active.find((l) => l.state !== 'signed');
   const index = current ? active.indexOf(current) : active.length;
   const allSigned = active.length > 0 && active.every((l) => l.state === 'signed');
@@ -125,9 +129,13 @@ export function Letters() {
             <Icon name="lock" size={30} />
           </span>
           <h1 className="display" ref={h1} tabIndex={-1}>
-            Your letters aren’t ready yet
+            {docsApproved ? 'HR is preparing your letters' : 'Your letters aren’t ready yet'}
           </h1>
-          <p className="body sub">Your appointment letter and NDA open once HR approves your documents.</p>
+          <p className="body sub">
+            {docsApproved
+              ? 'Your documents are approved. We’ll email you as soon as your appointment letter and NDA are ready to sign.'
+              : 'Your appointment letter and NDA open once HR approves your documents.'}
+          </p>
         </section>
         <BottomBar>
           <PrimaryButton onClick={() => navigate('/')}>Back to home</PrimaryButton>
@@ -135,19 +143,24 @@ export function Letters() {
       </Page>
     );
 
-  // done: every letter signed
+  // done: every letter that can be signed is signed (and says so when another is still on its way)
   if (!current || (allSigned && !id)) {
+    const signedCount = active.filter((l) => l.state === 'signed').length;
     return (
       <Page header={hdr}>
-        <StoryBar total={active.length} current={active.length} />
+        <StoryBar total={letters.length} current={signedCount} done={letters.map((l) => l.state === 'signed')} />
         <section className="reel-end rise" role="status">
           <p className="display-xl pop">
-            {active.length}/{active.length}
+            {signedCount}/{letters.length}
           </p>
           <h1 className="display" ref={h1} tabIndex={-1}>
-            {active.length === 2 ? 'Both documents signed' : 'All documents signed'}
+            {waiting.length ? 'Signed so far' : letters.length === 2 ? 'Both documents signed' : 'All documents signed'}
           </h1>
-          <p className="body sub">Signed copies are saved in your documents. HR has a copy too.</p>
+          <p className="body sub">
+            {waiting.length
+              ? `Your ${waiting.map((l) => titleOf(l).toLowerCase()).join(' and ')} is still with HR. We’ll email you when it’s ready to sign. Signed copies are saved in your documents.`
+              : 'Signed copies are saved in your documents. HR has a copy too.'}
+          </p>
           <ul className="file-list">
             {active.map((l) => (
               <li key={l.id} className="file-list__item">
@@ -208,7 +221,7 @@ export function Letters() {
                     <span className="doc-row__text">
                       <span className="body-strong">{titleOf(l)}</span>
                       <span className="label">
-                        {[pagesText(pages[l.id]), l.state === 'signed' ? 'Signed' : l.state === 'opened' ? 'Opened' : 'Not opened yet'].filter(Boolean).join(' · ')}
+                        {[pagesText(pagesOf(l)), l.state === 'signed' ? 'Signed' : l.state === 'opened' ? 'Opened' : 'Not opened yet'].filter(Boolean).join(' · ')}
                       </span>
                     </span>
                     {l.state === 'signed' && <span className="tag tag--done">Signed</span>}
@@ -254,9 +267,9 @@ export function Letters() {
           <span className="file-card__text">
             <span className="body-strong">{fileOf(current)}</span>
             {opened ? (
-              <span className="label text-green">✓ Opened{pages[current.id] ? ` · ${pagesText(pages[current.id])}` : ''}</span>
+              <span className="label text-green">✓ Opened{pagesOf(current) ? ` · ${pagesText(pagesOf(current))}` : ''}</span>
             ) : (
-              <span className="label">{pages[current.id] ? `${pagesText(pages[current.id])} · ` : ''}read before signing</span>
+              <span className="label">{pagesOf(current) ? `${pagesText(pagesOf(current))} · ` : ''}read before signing</span>
             )}
           </span>
           <span className="pill-btn" aria-hidden="true">

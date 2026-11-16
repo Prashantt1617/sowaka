@@ -1,8 +1,9 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Link, Route, Routes } from 'react-router-dom';
 import { MOCK } from './api/client';
+import { portal } from './api/portal';
 import { SignedIn } from './session';
-import { Page } from './components/Shell';
+import { Page, rememberClient } from './components/Shell';
 import { OfferLink, OfferSession } from './screens/Offer';
 import { Forgot, Reset, SignIn } from './screens/Auth';
 import { Home } from './screens/Home';
@@ -30,7 +31,23 @@ function NotFound() {
   );
 }
 
+/**
+ * Every portal link in a mail carries `?c=<client token>`: on a device that never
+ * opened the offer link, sign-in / forgot / reset still show the client's logo and HR.
+ */
+function useClientFromLink() {
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get('c');
+    if (!c) return;
+    portal.client(c).then(
+      (r) => rememberClient(r.company, r.hrContact),
+      () => undefined,
+    );
+  }, []);
+}
+
 export function App() {
+  useClientFromLink();
   return (
     <BrowserRouter>
       <a className="skip-link" href="#main">

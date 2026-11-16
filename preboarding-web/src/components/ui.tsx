@@ -213,7 +213,7 @@ export function Sheet({
 }
 
 /** "Ask HR" sheet: write to HR (mailto, reply subject) with the address and Copy in case no mail app opens. */
-export function AskHrSheet({ open, onClose, name, email, subject }: { open: boolean; onClose: () => void; name: string; email: string; subject: string }) {
+export function AskHrSheet({ open, onClose, name, email, subject }: { open: boolean; onClose: () => void; name: string; email: string; subject?: string }) {
   return (
     <Sheet open={open} onClose={onClose} title="Ask HR">
       <p className="body">Write to {name} and they’ll reply by email.</p>
@@ -256,6 +256,7 @@ export function ChipGroup<T extends string>({
   onChange,
   name,
   render,
+  disabled,
 }: {
   label: string;
   options: readonly T[];
@@ -263,10 +264,11 @@ export function ChipGroup<T extends string>({
   onChange: (v: T) => void;
   name: string;
   render?: (v: T) => ReactNode;
+  disabled?: boolean;
 }) {
   const id = useId();
   return (
-    <fieldset className="chips" aria-labelledby={id}>
+    <fieldset className="chips" aria-labelledby={id} disabled={disabled}>
       <legend id={id} className="field__label">
         {label}
       </legend>
