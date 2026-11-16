@@ -74,9 +74,10 @@ function cleanText(value: unknown, max: number, label: string, required = true):
   return text;
 }
 
-function cleanRating(value: unknown): number | undefined {
+/** The joiner rates the month 1–4 (Rough · Okay · Good · Great); the manager 1–5. */
+function cleanRating(value: unknown, max = 5): number | undefined {
   if (value === undefined || value === null) return undefined;
-  if (!Number.isInteger(value) || Number(value) < 1 || Number(value) > 5) throw new LifecycleError(400, 'A rating is a whole number from 1 to 5');
+  if (!Number.isInteger(value) || Number(value) < 1 || Number(value) > max) throw new LifecycleError(400, `A rating is a whole number from 1 to ${max}`);
   return Number(value);
 }
 
@@ -133,7 +134,7 @@ export async function updateMonthByManager(journeyId: string, manager: { userId:
         await finishMonthTask(monthTask(tasks, 'monthly_goals', monthNo + 1), manager);
       }
     }
-    if (j.userId) await tell([j.userId], { scenario: 'lifecycle_monthly_review', title: `Month ${monthNo} review`, body: `${manager.name} reviewed your month ${monthNo}.`, data: { journeyId } });
+    if (j.userId) await tell([j.userId], { scenario: 'lifecycle_monthly_review', destination: 'lifecycle_probation', title: `Month ${monthNo} review`, body: `${manager.name} reviewed your month ${monthNo}.`, data: { journeyId, month: String(monthNo) } });
   }
   await saveMonth(j, row, set, tasks, manager);
   return probationOf(journeyId);
@@ -146,10 +147,10 @@ export async function checkinByJoiner(journeyId: string, joiner: { userId: strin
   const row = await monthRow(j, monthNo);
   const tasks = await tasksOf(journeyId);
   requireOpen(monthTask(tasks, 'monthly_checkin', monthNo), `The month-${monthNo} check-in`);
-  const rating = cleanRating(body.rating);
+  const rating = cleanRating(body.rating, 4);
   const set: Partial<ProbationMonth> = { checkinEmployee: { text: cleanText(body.text, 2000, 'The check-in'), ...(rating ? { rating } : {}), at: new Date() } };
   await saveMonth(j, row, set, tasks, joiner);
-  if (j.managerUserId) await tell([j.managerUserId], { scenario: 'lifecycle_checkin_sent', title: 'Check-in sent', body: `${joiner.name} sent their month-${monthNo} check-in.`, data: { journeyId } });
+  if (j.managerUserId) await tell([j.managerUserId], { scenario: 'lifecycle_checkin_sent', destination: 'lifecycle_probation_review', title: 'Check-in sent', body: `${joiner.name} sent their month-${monthNo} check-in.`, data: { journeyId, month: String(monthNo) } });
   return probationForJoiner(journeyId);
 }
 
@@ -212,7 +213,7 @@ export async function recordDecision(journeyId: string, hr: { userId: string; na
   await refreshJourney(journeyId);
   const name = (await users().findOne({ userId: j.userId }, { projection: { _id: 0, name: 1 } }))?.name ?? 'Your joiner';
   const said = outcome === 'confirm' ? 'is confirmed' : outcome === 'extend' ? `has probation extended by ${decision.extendMonths} months` : 'is not confirmed';
-  await tell([j.managerUserId], { scenario: 'lifecycle_decision', title: 'Probation decision', body: `${name} ${said}.`, data: { journeyId } });
+  await tell([j.managerUserId], { scenario: 'lifecycle_decision', destination: 'lifecycle_joiner', title: 'Probation decision', body: `${name} ${said}.`, data: { journeyId } });
   return decision;
 }
 

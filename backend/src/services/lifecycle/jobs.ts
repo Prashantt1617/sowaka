@@ -16,7 +16,7 @@ import { companies, journeys, journeyTasks, lifecycleMeetings, users } from '../
 import type { Journey, JourneyTask, SystemTaskKey } from '../../models/lifecycle.model';
 import { logger } from '../../utils/logger';
 import { addDaysKey, companyTimeZone, localHour, probationMonthEnd, probationMonthStart, todayKey, keyOfDay } from './dueRules';
-import { isJoined, refreshJourney, setJourneyStatus, taskLate, tasksOf, tell, totalProbationMonths } from './engine';
+import { isJoined, refreshJourney, type Destination, setJourneyStatus, taskLate, tasksOf, tell, totalProbationMonths } from './engine';
 
 type Job = (now: Date) => Promise<unknown>;
 const extraJobs = new Map<string, Job>();
@@ -87,10 +87,13 @@ async function meetingReminders(org: string, now: Date): Promise<number> {
     const claimed = await lifecycleMeetings().updateOne({ id: m.id, remindedAt: { $exists: false } }, { $set: { remindedAt: now } });
     if (!claimed.modifiedCount) continue;
     const mins = Math.max(1, Math.round((m.startsAt.getTime() - now.getTime()) / 60_000));
-    await tell(m.attendeeUserIds, {
-      scenario: 'lifecycle_meeting_soon', title: `${m.title} in ${mins} minutes`,
+    const joinerId = (await journeys().findOne({ id: m.journeyId }, { projection: { _id: 0, userId: 1 } }))?.userId;
+    const push = {
+      scenario: 'lifecycle_meeting_soon' as const, title: `${m.title} in ${mins} minutes`,
       body: [m.place, m.link ? 'Online' : undefined].filter(Boolean).join(' · ') || 'Tap for the details', data: { journeyId: m.journeyId, meetingId: m.id },
-    });
+    };
+    await tell(m.attendeeUserIds.filter((u) => u === joinerId), { ...push, destination: 'lifecycle_meeting' });
+    await tell(m.attendeeUserIds.filter((u) => u !== joinerId), { ...push, destination: 'lifecycle_joiner' });
     sent += 1;
   }
   return sent;
@@ -111,6 +114,7 @@ async function orgJobs(org: string, companyName: string, now: Date, result: Jobs
       const tasks = await tasksOf(id);
       if (dayJobsOn) {
         await journeyDayJobs(j, tasks, today, companyName, now, result);
+        await revealReady(j, tasks, result);
         result.reminded += await overdueReminders(j, tasks, today, now);
       }
     } catch (error) {
@@ -134,22 +138,22 @@ async function journeyDayJobs(j: Journey, tasks: JourneyTask[], today: string, c
 
   // Tj: the tile appears, the plant sprouts, the joiner shows on the manager's Team tab.
   await fire('tj_welcome', tj, async () => {
-    await tell([j.userId], { scenario: 'lifecycle_welcome', title: `Welcome to ${companyName}, ${first}`, body: 'Your onboarding is ready', data });
-    await tell([j.managerUserId], { scenario: 'lifecycle_joiner_today', title: `${name} joins today`, body: 'See their first week under Team › New joiners', data });
+    await tell([j.userId], { scenario: 'lifecycle_welcome', destination: 'lifecycle_onboarding', title: `Welcome to ${companyName}, ${first}`, body: 'Your onboarding is ready', data });
+    await tell([j.managerUserId], { scenario: 'lifecycle_joiner_today', destination: 'lifecycle_joiner', title: `${name} joins today`, body: 'See their first week under Team › New joiners', data });
   });
   if (!done(tasks, 'intro_post')) {
-    await fire('tj3_intro_nudge', addDaysKey(tj, 3), () => tell([j.userId], { scenario: 'lifecycle_intro_nudge', title: 'Say hello to your team', body: 'Your intro post takes 2 minutes', data }));
+    await fire('tj3_intro_nudge', addDaysKey(tj, 3), () => tell([j.userId], { scenario: 'lifecycle_intro_nudge', destination: 'lifecycle_intro', title: 'Say hello to your team', body: 'Your intro post takes 2 minutes', data }));
   }
   if (!done(tasks, 'week1_reels')) {
-    await fire('tj5_week1_due', addDaysKey(tj, 5), () => tell([j.userId], { scenario: 'lifecycle_week1_due', title: 'Your week-1 tasks are due today', body: 'Policies, tax regime, bank and PF, probation goals', data }));
+    await fire('tj5_week1_due', addDaysKey(tj, 5), () => tell([j.userId], { scenario: 'lifecycle_week1_due', destination: 'lifecycle_week1', title: 'Your week-1 tasks are due today', body: 'Policies, tax regime, bank and PF, probation goals', data }));
   }
   if (!done(tasks, 'day7_survey')) {
-    await fire('tj6_survey_open', addDaysKey(tj, 6), () => tell([j.userId], { scenario: 'lifecycle_survey_open', title: 'How was your first week?', body: '4 quick questions', data }));
+    await fire('tj6_survey_open', addDaysKey(tj, 6), () => tell([j.userId], { scenario: 'lifecycle_survey_open', destination: 'lifecycle_survey', title: 'How was your first week?', body: '4 quick questions', data }));
   }
   // Tj + 7: goals lock, Week 1 done, stage Settling in (refreshJourney moved the stage and plant).
   await fire('tj7_week_done', addDaysKey(tj, 7), async () => {
     await journeys().updateOne({ id: j.id, 'probation.goalsLockedAt': { $exists: false } }, { $set: { 'probation.goalsLockedAt': now } });
-    await tell([j.managerUserId], { scenario: 'lifecycle_week_done', title: `${name} finished week 1`, body: 'Their probation goals are locked. Month 1 goals next.', data });
+    await tell([j.managerUserId], { scenario: 'lifecycle_week_done', destination: 'lifecycle_joiner', title: `${name} finished week 1`, body: 'Their probation goals are locked. Month 1 goals next.', data });
   });
   // The portal closes at Tj + 7 or the end of month 1 (template); open tasks carry into the app.
   const closeOn = j.templateSnapshot.settings.portalOpenUntil === 'month_1' ? addDaysKey(probationMonthEnd(tj, 1), 1) : addDaysKey(tj, 7);
@@ -161,16 +165,44 @@ async function journeyDayJobs(j: Journey, tasks: JourneyTask[], today: string, c
   const total = totalProbationMonths(j);
   for (let m = 1; m <= total; m += 1) {
     const start = m === 1 ? addDaysKey(tj, 7) : probationMonthStart(tj, m);
-    await fire(`m${m}_goals`, start, () => tell([j.managerUserId], { scenario: 'lifecycle_goals_reminder', title: `Set ${first}'s month-${m} goals`, body: 'They check in against them at the end of the month', data }));
+    await fire(`m${m}_goals`, start, () => tell([j.managerUserId], { scenario: 'lifecycle_goals_reminder', destination: 'lifecycle_probation_review', title: `Set ${first}'s month-${m} goals`, body: 'They check in against them at the end of the month', data: { ...data, month: String(m) } }));
     const checkin = addDaysKey(probationMonthEnd(tj, m), -6);
-    await fire(`m${m}_checkin`, checkin, () => tell([j.userId, j.managerUserId], { scenario: 'lifecycle_checkin_reminder', title: `Month-${m} check-in is open`, body: 'Due at the end of the month', data }));
+    await fire(`m${m}_checkin`, checkin, async () => {
+      const push = { scenario: 'lifecycle_checkin_reminder' as const, title: `Month-${m} check-in is open`, body: 'Due at the end of the month', data: { ...data, month: String(m) } };
+      await tell([j.userId], { ...push, destination: 'lifecycle_checkin' });
+      await tell([j.managerUserId], { ...push, destination: 'lifecycle_probation_review' });
+    });
     if (m === 3 || m === 6) {
-      await fire(`m${m}_pulse`, probationMonthStart(tj, m), () => tell([j.userId], { scenario: 'lifecycle_survey_open', title: `Month-${m} pulse survey`, body: '4 quick questions', data }));
+      await fire(`m${m}_pulse`, probationMonthStart(tj, m), () => tell([j.userId], { scenario: 'lifecycle_survey_open', destination: 'lifecycle_survey', title: `Month-${m} pulse survey`, body: '4 quick questions', data }));
     }
   }
   await fire(`final_${total}`, probationMonthStart(tj, total), () => tell([j.managerUserId], {
-    scenario: 'lifecycle_confirmation_window', title: `Final month for ${first}`, body: 'Talk to HR about confirming or extending their probation', data,
+    scenario: 'lifecycle_confirmation_window', destination: 'lifecycle_joiner', title: `Final month for ${first}`, body: 'Talk to HR about confirming or extending their probation', data,
   }));
+}
+
+const JOINER_SCREENS: Partial<Record<SystemTaskKey, Destination>> = {
+  week1_reels: 'lifecycle_week1', intro_post: 'lifecycle_intro', people_to_meet: 'lifecycle_people', day7_survey: 'lifecycle_survey',
+  pulse_survey: 'lifecycle_survey', monthly_checkin: 'lifecycle_checkin',
+};
+const MANAGER_SETUP_KEYS: SystemTaskKey[] = ['manager_setup', 'probation_goals', 'assign_buddy'];
+
+function overdueDestination(task: JourneyTask, toJoiner: boolean): Destination {
+  if (toJoiner) return (task.systemKey && JOINER_SCREENS[task.systemKey]) ?? 'lifecycle_onboarding';
+  if (task.systemKey && MANAGER_SETUP_KEYS.includes(task.systemKey)) return 'lifecycle_joiner_setup';
+  if (task.month && task.systemKey?.startsWith('monthly_')) return 'lifecycle_probation_review';
+  return 'lifecycle_joiner';
+}
+
+/** The reveal is ready (letter sent, not yet seen): the joiner is told once per decision. */
+async function revealReady(j: Journey, tasks: JourneyTask[], result: JobsResult): Promise<void> {
+  const decision = j.probation?.decision;
+  if (!decision || decision.revealedAt || !j.userId) return;
+  if (!tasks.some((t) => t.systemKey === 'confirmation_letter' && t.status === 'done')) return;
+  const key = `reveal_${new Date(decision.decidedAt).getTime()}`;
+  if (!(await claim(j.id, key))) return;
+  result.fired.push(`${j.id}:${key}`);
+  await tell([j.userId], { scenario: 'lifecycle_reveal_ready', destination: 'lifecycle_reveal', title: 'Your probation outcome is here', body: 'Tap to reveal', data: { journeyId: j.id } });
 }
 
 /** An open task past its due date: its owner is told once. */
@@ -181,8 +213,8 @@ async function overdueReminders(j: Journey, tasks: JourneyTask[], today: string,
     const claimed = await journeyTasks().updateOne({ id: task.id, remindedAt: { $exists: false } }, { $set: { remindedAt: now } });
     if (!claimed.modifiedCount) continue;
     await tell([task.ownerUserId], {
-      scenario: 'lifecycle_task_overdue', title: `Overdue: ${task.title}`,
-      body: task.dueAt ? `It was due ${keyOfDay(task.dueAt) === addDaysKey(today, -1) ? 'yesterday' : keyOfDay(task.dueAt)}` : 'It is overdue', data: { journeyId: j.id, taskId: task.id },
+      scenario: 'lifecycle_task_overdue', destination: overdueDestination(task, task.ownerUserId === j.userId), title: `Overdue: ${task.title}`,
+      body: task.dueAt ? `It was due ${keyOfDay(task.dueAt) === addDaysKey(today, -1) ? 'yesterday' : keyOfDay(task.dueAt)}` : 'It is overdue', data: { journeyId: j.id, taskId: task.id, ...(task.month ? { month: String(task.month) } : {}) },
     });
     sent += 1;
   }

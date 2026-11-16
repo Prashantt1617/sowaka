@@ -324,14 +324,16 @@ async function main() {
   eq('The tour can be ticked', (await app.actOnOwnTask(ISHA, byKey(t2, 'app_tour').id, { action: 'done' })).task.status, 'done');
 
   await policyDocuments().insertOne({ org: ORG, key: 'leave', title: 'Leave', body: 'Take leave.', order: 1, active: true, createdAt: now, updatedAt: new Date('2026-10-01T00:00:00Z') } as never);
-  await app.saveWeek1Step(ISHA, { step: 'policies', value: { agreed: true } }, 'Check/1.0');
+  eq('/me: the tile’s progress', ((await app.lifecycleMe(ISHA)) as { onboarding?: { progress?: { total: number } } }).onboarding?.progress?.total! > 0, true);
+  await app.saveWeek1Step(ISHA, { step: 'policies', value: { versions: [{ id: 'leave', version: 'x' }], device: 'Check/1.0' } });
   const tax = await app.saveWeek1Step(ISHA, { step: 'tax', value: { regime: 'new' } });
   eq('Tax regime kept; payroll not set up here so not written there', [tax.taxRegime?.regime, tax.taxSavedToPayroll], ['new', false]);
-  eq('A different regime in the same FY is refused', (await refusal(async () => app.saveWeek1Step(ISHA, { step: 'tax', value: { regime: 'old' } }))).status, 409);
+  eq('A different regime in the same FY is refused (the app sends it bare)', (await refusal(async () => app.saveWeek1Step(ISHA, { step: 'tax', value: 'old' }))).status, 409);
   await app.saveWeek1Step(ISHA, { step: 'bank_pf', value: { change: { ifsc: 'HDFC0001234', accountNumber: '123456784417' } } });
   const jBank = await engine.loadJourney(J2.id);
   ok('A bank edit waits for HR (pending, only the last four in the clear)', jBank.bankPfRequest?.status === 'pending' && jBank.bankPfRequest.changes.accountLast4 === '4417' && !JSON.stringify(engine.sanitiseJourney(jBank)).includes('123456784417'));
   const w1 = await app.saveWeek1Step(ISHA, { step: 'goals', value: { read: true } });
+  eq('week1 GET: the policy list, the ack apart, steps, manager name', [w1.policies.map((p) => p.id), !!w1.policiesAckAt, w1.steps, w1.managerName], [['leave'], true, { policies: true, tax: true, bank_pf: true, goals: true }, 'Neha Rao']);
   eq('Policies stored with versions and device', [w1.policiesAck?.versions, w1.policiesAck?.device], [[{ id: 'leave', version: '2026-10-01T00:00:00.000Z' }], 'Check/1.0']);
   eq('All four reels: week-1 tasks done, a leaf', [byKey(await engine.tasksOf(J2.id), 'week1_reels').status, (await engine.loadJourney(J2.id)).plant?.leaves], ['done', 1]);
   const declined = await board.decideBankPfRequest(ORG, J2.id, { decision: 'decline', note: 'Send a cancelled cheque' }, HR);
@@ -354,6 +356,9 @@ async function main() {
   eq('Everyone met: people to meet done', byKey(await engine.tasksOf(J2.id), 'people_to_meet').status, 'done');
 
   const st = await app.assignStarterTask(MGR, J2.id, { title: 'Redesign the leave request screen', dueAt: day(2), note: 'Start with the research notes' });
+  const pushed = await notifications().findOne({ userId: 'isha', scenario: 'lifecycle_starter_task' });
+  eq('Push payload: scenario + data { destination, journeyId, starterTaskId }', pushed?.data, { journeyId: J2.id, starterTaskId: st.task.id, destination: 'lifecycle_starter_task' });
+  eq('Starter tasks carry the assigner’s name', (await app.starterTasksForJoiner(ISHA)).tasks[0].assignedByName, 'Neha Rao');
   eq('Starter task: the joiner is pushed; the step is due when the task is', [await tellCount('isha', 'lifecycle_starter_task'), rules.keyOfDay(byKey(await engine.tasksOf(J2.id), 'starter_task').dueAt!)], [1, day(2)]);
   ok('It shows in the joiner’s list', (await app.onboardingHome(ISHA)).today.some((v) => v.id === st.task.id));
   await app.starterDone(ISHA, st.task.id, { note: 'First version is in the folder' });
@@ -420,6 +425,9 @@ async function main() {
   eq('HR cannot skip a must-do', (await refusal(async () => board.actOnTaskByHr(ORG, J1.id, byKey(await engine.tasksOf(J1.id), 'mark_joined').id, { action: 'skip' }, HR))).status, 409);
   await board.updateJourneyByHr(ORG, J2.id, { day1Pass: { reportingTime: '09:30', place: 'Room 4B', agenda: [{ time: '11:00', title: 'Meet your manager', with: 'Neha' }] } });
   const meetings = await lifecycleMeetings().find({ journeyId: J2.id }).toArray();
+  const mv = await app.meetingFor(ISHA, (await lifecycleMeetings().findOne({ journeyId: J2.id }))!.id);
+  eq('Meeting: attendees with roles, what to expect, must-do', [mv.attendees.map((a) => a.role), mv.expect.length, mv.mustDo, mv.systemKey], [['joiner', 'manager'], 3, true, 'meet_manager']);
+  ok('The home links the meeting to its task', (await app.onboardingHome(ISHA)).today.some((v) => v.systemKey === 'meet_manager' && (v as { meetingId?: string }).meetingId === mv.id));
   ok('The Day-1 agenda becomes a meeting tied to “Meet your manager”', meetings.length === 1 && meetings[0].journeyTaskId === byKey(await engine.tasksOf(J2.id), 'meet_manager').id && meetings[0].attendeeUserIds.includes('mgr'));
   eq('The template can change only on a draft', (await refusal(async () => board.updateJourneyByHr(ORG, J2.id, { templateId: faculty.id }))).status, 409);
   await board.updateJourneyByHr(ORG, J1b.id, { templateId: faculty.id });
@@ -432,6 +440,7 @@ async function main() {
   let j4 = await engine.loadJourney(J4.id);
   ok('Final month: column Final month, Decide, bud', j4.boardColumn === 'final_month' && j4.flags!.includes('decide') && j4.plant?.stage === 4, [j4.boardColumn, j4.flags, j4.plant]);
   const SAMEER = me('sameer', 'Sameer Khan');
+  eq('The joiner rates a month 1–4', (await refusal(async () => app.checkinForMe(SAMEER, 1, { text: 'x', rating: 5 }))).status, 400);
   eq('The month-6 check-in is not open yet', (await refusal(async () => app.checkinForMe(SAMEER, 6, { text: 'Going well', rating: 4 }))).status, 409);
   await app.managerProbationMonth(MGR, J4.id, 1, { goals: ['Ship the first feature'] });
   await app.checkinForMe(SAMEER, 1, { text: 'Month one went fine', rating: 4 });
@@ -463,7 +472,12 @@ async function main() {
   await board.actOnTaskByHr(ORG, J5.id, byKey(await engine.tasksOf(J5.id), 'confirmation_letter').id, { action: 'done' }, HR);
   const rv = await app.revealForMe(ISHITA) as Record<string, unknown>;
   eq('Letter sent: the reveal shows the outcome, title, CTC (to them) and manager', [rv.ready, rv.outcome, rv.designation, rv.salary, rv.reportsTo], [true, 'confirm', 'Senior designer', 1_600_000, 'Neha Rao']);
-  ok('The manager’s view never carries the salary', !JSON.stringify(await app.joinerForManager(MGR, J5.id)).includes('1600000'));
+  const mgrView = await app.joinerForManager(MGR, J5.id);
+  ok('The manager’s view: probation months and the decision, never the salary', mgrView.probation.months.length === 6 && mgrView.probation.decision?.outcome === 'confirm' && !JSON.stringify(mgrView).includes('1600000'));
+  eq('Not seen yet', rv.seen, false);
+  await jobs.runLifecycleJobs(at(TODAY), { full: true, orgs: [ORG] });
+  await jobs.runLifecycleJobs(at(TODAY), { full: true, orgs: [ORG] });
+  eq('The reveal push went once, to the reveal', [await tellCount('ishita', 'lifecycle_reveal_ready'), (await notifications().findOne({ userId: 'ishita', scenario: 'lifecycle_reveal_ready' }))?.data?.destination], [1, 'lifecycle_reveal']);
   await app.revealSeenForMe(ISHITA);
   j5 = await engine.loadJourney(J5.id);
   const meIshita = await app.lifecycleMe(ISHITA) as { onboarding?: { tileVisible: boolean } };

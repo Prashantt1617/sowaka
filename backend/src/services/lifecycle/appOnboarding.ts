@@ -27,7 +27,7 @@ import {
   type TaskView,
 } from './engine';
 import { groupTasks, progressOf } from './board';
-import { cleanGoals, checkinByJoiner, markRevealSeen, probationForJoiner, revealFor, updateMonthByManager } from './probation';
+import { cleanGoals, checkinByJoiner, markRevealSeen, probationForJoiner, probationOf, revealFor, updateMonthByManager } from './probation';
 
 type Me = { userId: string; name: string; org: string };
 
@@ -68,8 +68,12 @@ export async function lifecycleMe(me: Me, now = new Date()) {
   const onboarding = await journeys().find({ userId: me.userId, kind: 'onboarding', closedAt: { $exists: false } }).sort({ createdAt: -1 }).limit(1).next();
   if (onboarding) {
     const j = strip(onboarding);
-    const derived = deriveJourney(j, await tasksOf(j.id), now);
-    out.onboarding = { journeyId: j.id, stage: derived.stage, dayLabel: derived.dayLabel, plant: derived.plant, tileVisible: tileVisible(j) };
+    const tasks = await tasksOf(j.id);
+    const derived = deriveJourney(j, tasks, now);
+    out.onboarding = {
+      journeyId: j.id, stage: derived.stage, dayLabel: derived.dayLabel, plant: derived.plant, tileVisible: tileVisible(j),
+      progress: ownProgress(tasks, derived.tab),
+    };
   }
   // MERGE (el/offboarding): replace this block with `out.offboarding = await offboardingMe(me.userId)`
   // from ./offboarding when that part lands; the lines below are the stand-in until then.
@@ -108,11 +112,35 @@ function stagesFor(j: Journey, current: OnboardingStage) {
   return list.map((s, i) => ({ ...s, state: i < at ? 'done' as const : i === at ? 'current' as const : 'todo' as const }));
 }
 
-function meetingView(m: Meeting, names: Map<string, string>) {
+/** The joiner's own steps in the current phase (the tile's "2 of 9 steps done"). */
+function ownProgress(tasks: JourneyTask[], tab: 'pre_boarding' | 'first_week' | 'probation') {
+  const phase = tasks.filter((t) => t.phase === tab && visibleTo('employee', t) && t.ownerRole !== 'automatic' && t.status !== 'cancelled' && t.systemKey !== 'new_joining_date');
+  return { done: phase.filter((t) => t.status === 'done' || t.status === 'skipped').length, total: phase.length };
+}
+
+const EXPECT: Partial<Record<SystemTaskKey, string[]>> = {
+  meet_manager: ['How your first week will go and who to meet', 'Your probation goals, and what good looks like by month 1', 'Bring any questions, nothing to prepare'],
+  meet_team: ['Who does what in the team', 'How the team works day to day', 'Nothing to prepare'],
+  welcome_induction: ['Your first morning: the office, your batch and HR', 'What happens this week', 'Bring the documents on your Day-1 pass'],
+  vision_culture: ['Where the company is going and why', 'How we work together', 'Questions are welcome'],
+};
+
+type Person = { name: string; designation?: string };
+
+async function peopleOf(ids: string[]): Promise<Map<string, Person>> {
+  const rows = ids.length ? await users().find({ userId: { $in: [...new Set(ids)] } }, { projection: { _id: 0, userId: 1, name: 1, designation: 1 } }).toArray() : [];
+  return new Map(rows.map((r) => [r.userId, { name: r.name, ...(r.designation ? { designation: r.designation } : {}) }]));
+}
+
+function meetingView(m: Meeting, people: Map<string, Person>, ctx: { joinerId?: string; managerId?: string; task?: JourneyTask } = {}) {
+  const role = (id: string) => (id === ctx.joinerId ? 'joiner' : id === ctx.managerId ? 'manager' : 'colleague');
   return {
     id: m.id, title: m.title, startsAt: m.startsAt.toISOString(), ...(m.endsAt ? { endsAt: m.endsAt.toISOString() } : {}),
     ...(m.place ? { place: m.place } : {}), ...(m.link ? { link: m.link } : {}),
-    attendees: m.attendeeUserIds.map((id) => ({ userId: id, name: names.get(id) ?? '' })),
+    attendees: m.attendeeUserIds.map((id) => ({ userId: id, name: people.get(id)?.name ?? '', ...(people.get(id)?.designation ? { designation: people.get(id)!.designation } : {}), role: role(id) })),
+    expect: (ctx.task?.systemKey && EXPECT[ctx.task.systemKey]) ?? [],
+    mustDo: ctx.task?.mustDo ?? false,
+    ...(ctx.task?.systemKey ? { systemKey: ctx.task.systemKey } : {}),
     ...(m.met ? { met: m.met } : {}), ...(m.newTime ? { newTime: m.newTime.toISOString() } : {}),
     ...(m.journeyTaskId ? { taskId: m.journeyTaskId } : {}),
   };
@@ -131,12 +159,12 @@ export function pickUpNext(open: TaskView[], meetings: Meeting[], now: Date): { 
   return { view: candidates[0] };
 }
 
-async function starterViews(j: Journey, names: Map<string, string>, now: Date): Promise<TaskView[]> {
+async function starterViews(j: Journey, names: Map<string, string>, now: Date): Promise<Array<TaskView & { assignedByName: string }>> {
   const today = todayKey(now, companyTimeZone(j.org));
   const rows = await starterTasks().find({ journeyId: j.id }, { projection: { _id: 0 } }).sort({ assignedAt: 1 }).toArray();
   return rows.map((s) => ({
     id: s.id, systemKey: 'starter_task' as const, phase: 'first_week' as const, title: s.title,
-    helper: `From ${names.get(s.assignedByUserId) ?? 'your manager'}`, ownerRole: 'employee' as const, kind: 'assign' as const, surface: 'app' as const,
+    helper: `From ${names.get(s.assignedByUserId) ?? 'your manager'}`, assignedByName: names.get(s.assignedByUserId) ?? '', ownerRole: 'employee' as const, kind: 'assign' as const, surface: 'app' as const,
     mustDo: false, status: s.doneAt ? 'done' as const : 'todo' as const, opensAt: s.assignedAt.toISOString(),
     dueAt: s.dueAt ? s.dueAt.toISOString() : null, ...(s.dueAt ? { dueLabel: humanDay(keyOfDay(s.dueAt)) } : {}),
     ...(s.doneAt ? { doneAt: s.doneAt.toISOString() } : {}), ...(s.doneNote ? { note: s.doneNote } : {}),
@@ -153,7 +181,14 @@ export async function onboardingHome(me: Me, now = new Date()) {
   const names = await namesOf([j.managerUserId, ...tasks.map((t) => t.ownerUserId)]);
   // Their own tasks; finished pre-boarding steps stay behind on the portal.
   const mine = tasks.filter((t) => visibleTo('employee', t) && (t.phase !== 'pre_boarding' || ACTIVE_STATUSES.includes(t.status)));
-  const views = mine.map((t) => taskView(t, j, names, now));
+  const meetings = (await lifecycleMeetings().find({ journeyId: j.id }, { projection: { _id: 0 } }).sort({ startsAt: 1 }).toArray()).map(strip);
+  const meetingOf = new Map(meetings.filter((m) => m.journeyTaskId).map((m) => [m.journeyTaskId!, m]));
+  const badges = await countBadges(j);
+  const views: Array<TaskView & { meetingId?: string; progress?: { done: number; total: number } }> = mine.map((t) => ({
+    ...taskView(t, j, names, now),
+    ...(meetingOf.get(t.id) ? { meetingId: meetingOf.get(t.id)!.id } : {}),
+    ...(t.systemKey && badges[t.systemKey] ? { progress: badges[t.systemKey] } : {}),
+  }));
   views.push(...(await starterViews(j, names, now)));
   const shared = await oneOnOneNotes().find({ journeyId: j.id, shared: true }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray();
   if (shared.length) {
@@ -165,28 +200,30 @@ export async function onboardingHome(me: Me, now = new Date()) {
       ...(unseen ? { dueLabel: `${unseen} new` } : {}), late: false,
     });
   }
-  const meetings = (await lifecycleMeetings().find({ journeyId: j.id }, { projection: { _id: 0 } }).sort({ startsAt: 1 }).toArray()).map(strip);
   const open = views.filter((v) => ACTIVE_STATUSES.includes(v.status));
   const isDone = (v: TaskView) => v.status === 'done' || v.status === 'skipped';
   const locked = views.filter((v) => v.status === 'locked');
   const soonLocked = locked.filter((v) => v.opensAt && v.opensAt.slice(0, 10) <= weekEnd);
   const { view, meeting } = pickUpNext(open, meetings, now);
-  const meetingNames = await namesOf(meetings.flatMap((m) => m.attendeeUserIds));
+  const meetingPeople = await peopleOf(meetings.flatMap((m) => m.attendeeUserIds));
+  const ctxOf = (m: Meeting) => ({ joinerId: j.userId, managerId: j.managerUserId, task: tasks.find((t) => t.id === m.journeyTaskId) });
   const upNext = view || meeting
     ? { ...(view ?? {
       id: meeting!.id, phase: 'first_week' as const, title: meeting!.title, ownerRole: 'employee' as const, kind: 'meeting' as const,
       surface: 'app' as const, mustDo: false, status: 'todo' as const, dueAt: meeting!.startsAt.toISOString(), late: false,
-    }), ...(meeting ? { meeting: meetingView(meeting, meetingNames) } : {}) }
+    }), ...(meeting ? { meetingId: meeting.id, meeting: meetingView(meeting, meetingPeople, ctxOf(meeting)) } : {}) }
     : undefined;
   const byDue = (a: TaskView, b: TaskView) => dueKey(a).localeCompare(dueKey(b));
   return {
     journeyId: j.id, stage: derived.stage, stageName: stageName(derived.stage), dayLabel: derived.dayLabel, tj: j.tj, plant: derived.plant,
+    ...(j.managerUserId && names.get(j.managerUserId) ? { managerName: names.get(j.managerUserId) } : {}),
+    progress: ownProgress(tasks, derived.tab),
     ...(upNext ? { upNext } : {}),
     today: [...open.sort(byDue), ...soonLocked.sort(byDue)],
     later: locked.filter((v) => !soonLocked.includes(v)).sort(byDue),
     done: views.filter(isDone).sort((a, b) => (b.doneAt ?? '').localeCompare(a.doneAt ?? '')),
     journey: stagesFor(j, derived.stage),
-    meetings: meetings.map((m) => meetingView(m, meetingNames)),
+    meetings: meetings.map((m) => meetingView(m, meetingPeople, ctxOf(m))),
     showWeekDone: !!j.tj && today >= addDaysKey(j.tj, 7) && !j.week1DoneSeenAt,
   };
 }
@@ -225,12 +262,16 @@ export async function week1View(me: Me) {
     employeePaymentDetails().findOne({ org: me.org, userId: me.userId }, { projection: { _id: 0, bankName: 1, ifsc: 1, accountLast4: 1, uanLast4: 1 } }),
   ]);
   const about = (j as Journey & { about?: AboutYou }).about;
+  const managerName = j.managerUserId ? (await namesOf([j.managerUserId])).get(j.managerUserId) : undefined;
   const uan = payment?.uanLast4 ? maskTail(payment.uanLast4) : about?.pf?.uan ? maskTail(about.pf.uan.slice(-4)) : undefined;
   return {
     ...(j.week1 ?? {}),
     policies: policies.map((p) => ({ id: p.key, title: p.title, version: p.updatedAt })),
     policiesAck: j.week1?.policies,
-    bank: { masked: payment?.accountLast4 ? maskTail(payment.accountLast4) ?? '' : '', ...(payment?.bankName ? { bankName: payment.bankName } : {}), ...(payment?.ifsc ? { ifsc: payment.ifsc } : {}) },
+    ...(j.week1?.policies?.at ? { policiesAckAt: j.week1.policies.at } : {}),
+    steps: { policies: !!j.week1?.policies, tax: !!j.week1?.taxRegime, bank_pf: !!j.week1?.bankPf, goals: !!j.week1?.goalsReadAt },
+    ...(managerName ? { managerName } : {}),
+    bank: { masked: payment?.accountLast4 ? maskTail(payment.accountLast4) ?? '' : '', ...(payment?.bankName ? { name: payment.bankName, bankName: payment.bankName } : {}), ...(payment?.ifsc ? { ifsc: payment.ifsc } : {}) },
     pf: { ...(uan ? { uan } : {}), ...(about?.pf?.firstJob ? { firstJob: true } : {}) },
     goals: j.probation?.goals ?? [],
     probationMonths: totalProbationMonths(j),
@@ -241,7 +282,9 @@ export async function week1View(me: Me) {
 
 export async function saveWeek1Step(me: Me, body: Record<string, unknown>, device?: string) {
   const j = await joinerJourney(me.userId);
-  const value = (body.value ?? {}) as Record<string, unknown>;
+  // The app sends the tax regime as a bare 'new' | 'old'; every other step as an object.
+  const raw = body.value;
+  const value = (typeof raw === 'string' ? { regime: raw } : raw ?? {}) as Record<string, unknown>;
   const now = new Date();
   const tz = companyTimeZone(j.org);
   const week1: Week1Reels = { ...(j.week1 ?? {}) };
@@ -249,9 +292,12 @@ export async function saveWeek1Step(me: Me, body: Record<string, unknown>, devic
   let taxSavedToPayroll: boolean | undefined;
   switch (body.step) {
     case 'policies': {
-      if (value.agreed !== true) throw new LifecycleError(400, 'Tick “I have read and agree” first');
+      // Agreeing: `{ agreed: true }` or the versions read (`{ versions, device }`). The versions stored are the
+      // company's current ones, so an old app cannot acknowledge a policy text that is no longer in force.
+      if (value.agreed !== true && !Array.isArray(value.versions)) throw new LifecycleError(400, 'Tick “I have read and agree” first');
       const policies = await policiesFor({ userId: me.userId, org: me.org });
-      week1.policies = { versions: policies.map((p) => ({ id: p.key, version: p.updatedAt })), at: now, ...(device ? { device: device.slice(0, 200) } : {}) };
+      const where = typeof value.device === 'string' && value.device.trim() ? value.device.trim() : device;
+      week1.policies = { versions: policies.map((p) => ({ id: p.key, version: p.updatedAt })), at: now, ...(where ? { device: where.slice(0, 200) } : {}) };
       break;
     }
     case 'tax': {
@@ -300,7 +346,7 @@ export async function saveWeek1Step(me: Me, body: Record<string, unknown>, devic
         week1.bankPf = { confirmedAt: now, changeRequested: true };
         const hr = (await users().findOne({ userId: me.userId }, { projection: { _id: 0, hrPrimaryUserId: 1 } }))?.hrPrimaryUserId;
         await tell([hr], { scenario: 'lifecycle_bank_pf_request', title: 'Bank or PF change to approve', body: `${me.name} asked to change their bank or PF details.`, data: { journeyId: j.id } });
-      } else if (value.confirm === true) {
+      } else if (value.confirm === true || value.confirmed === true) {
         week1.bankPf = { confirmedAt: now, ...(week1.bankPf?.changeRequested ? { changeRequested: true } : {}) };
       } else {
         throw new LifecycleError(400, 'Confirm the details or send a change');
@@ -329,7 +375,9 @@ function cleanIntro(body: Record<string, unknown>, current?: IntroPost): IntroPo
   const facts = body.funFacts === undefined ? current?.funFacts ?? [] : body.funFacts;
   if (!Array.isArray(facts) || facts.length > 3) throw new LifecycleError(400, 'Pick up to 3 fun facts');
   const funFacts = facts.map((f) => String(f).trim().slice(0, 40)).filter(Boolean);
-  const photoKey = typeof body.photoKey === 'string' && body.photoKey.trim() ? body.photoKey.trim() : current?.photoKey;
+  // The app sends the profile photo it has, which may be a URL: only a storage key is kept (a URL falls back to the profile photo).
+  const sent = typeof body.photoKey === 'string' ? body.photoKey.trim() : '';
+  const photoKey = sent && !/^(https?:|data:|\/)/i.test(sent) ? sent : current?.photoKey;
   return { line, funFacts, ...(photoKey ? { photoKey } : {}) };
 }
 
@@ -376,7 +424,7 @@ export async function postIntro(me: Me, body: Record<string, unknown> = {}) {
   const posted: IntroPost = { ...intro, postedAt: new Date(), ...(postId ? { connectPostId: postId } : {}) };
   await journeys().updateOne({ id: j.id }, { $set: { intro: posted, updatedAt: new Date() } });
   await completeTask(j.id, 'intro_post', { userId: me.userId, name: me.name });
-  await tell([managerId], { scenario: 'lifecycle_intro_post', title: `${name} said hello`, body: `${name} posted their intro on Connect. Say hi 👋`, data: { journeyId: j.id, ...(postId ? { postId } : {}) } });
+  await tell([managerId], { scenario: 'lifecycle_intro_post', destination: 'lifecycle_joiner', title: `${name} said hello`, body: `${name} posted their intro on Connect. Say hi 👋`, data: { journeyId: j.id, ...(postId ? { postId } : {}) } });
   return { ...(await introView(me)), ...(postId ? { connectPostId: postId } : {}) };
 }
 
@@ -417,7 +465,9 @@ export async function actOnPerson(me: Me, id: string, body: Record<string, unkno
 
 export async function starterTasksForJoiner(me: Me) {
   const j = await joinerJourney(me.userId);
-  return { tasks: (await starterTasks().find({ journeyId: j.id }, { projection: { _id: 0 } }).sort({ assignedAt: 1 }).toArray()) };
+  const rows = await starterTasks().find({ journeyId: j.id }, { projection: { _id: 0 } }).sort({ assignedAt: 1 }).toArray();
+  const names = await namesOf(rows.map((r) => r.assignedByUserId));
+  return { tasks: rows.map((r) => ({ ...r, assignedByName: names.get(r.assignedByUserId) ?? '' })) };
 }
 
 export async function starterDone(me: Me, id: string, body: Record<string, unknown>) {
@@ -427,7 +477,7 @@ export async function starterDone(me: Me, id: string, body: Record<string, unkno
   if (!row.doneAt) {
     const note = typeof body.note === 'string' ? body.note.trim().slice(0, 1000) : '';
     await starterTasks().updateOne({ id }, { $set: { doneAt: new Date(), ...(note ? { doneNote: note } : {}) } });
-    await tell([row.assignedByUserId], { scenario: 'lifecycle_starter_task_done', title: `${me.name} finished a task`, body: row.title, data: { journeyId: j.id, starterTaskId: id } });
+    await tell([row.assignedByUserId], { scenario: 'lifecycle_starter_task_done', destination: 'lifecycle_starter_task_done', title: `${me.name} finished a task`, body: row.title, data: { journeyId: j.id, starterTaskId: id } });
     const open = await starterTasks().countDocuments({ journeyId: j.id, doneAt: { $exists: false } });
     if (!open) await completeTask(j.id, 'starter_task', { userId: me.userId, name: me.name });
     else await refreshJourney(j.id);
@@ -462,7 +512,7 @@ export async function actOnNote(me: Me, id: string, body: Record<string, unknown
     const text = typeof body.text === 'string' ? body.text.trim() : '';
     if (!text || text.length > 1000) throw new LifecycleError(400, 'A reply of up to 1000 characters');
     await oneOnOneNotes().updateOne({ id }, { $push: { replies: { byUserId: me.userId, text, at: new Date() } }, $set: { seenAt: note.seenAt ?? new Date() } });
-    await tell([note.authorUserId], { scenario: 'lifecycle_note_reply', title: `${me.name} replied`, body: text.slice(0, 120), data: { journeyId: j.id, noteId: id } });
+    await tell([note.authorUserId], { scenario: 'lifecycle_note_reply', destination: 'lifecycle_joiner', title: `${me.name} replied`, body: text.slice(0, 120), data: { journeyId: j.id, noteId: id } });
   } else throw new LifecycleError(400, 'action is seen or reply');
   return notesForJoiner(me);
 }
@@ -477,8 +527,9 @@ async function myMeeting(me: Me, id: string): Promise<{ j: Journey; m: Meeting }
 }
 
 export async function meetingFor(me: Me, id: string) {
-  const { m } = await myMeeting(me, id);
-  return meetingView(m, await namesOf(m.attendeeUserIds));
+  const { j, m } = await myMeeting(me, id);
+  const task = m.journeyTaskId ? (await tasksOf(j.id)).find((t) => t.id === m.journeyTaskId) : undefined;
+  return meetingView(m, await peopleOf(m.attendeeUserIds), { joinerId: j.userId, managerId: j.managerUserId, task });
 }
 
 export async function actOnMeeting(me: Me, id: string, body: Record<string, unknown>) {
@@ -492,7 +543,7 @@ export async function actOnMeeting(me: Me, id: string, body: Record<string, unkn
     if (!at || Number.isNaN(at.getTime())) throw new LifecycleError(400, 'newTime is an ISO time');
     // Moved is not met: it is reminded and asked again at the new time.
     await lifecycleMeetings().updateOne({ id }, { $set: { met: 'moved', newTime: at, startsAt: at, endsAt: new Date(at.getTime() + 30 * 60_000) }, $unset: { remindedAt: '' } });
-    await tell(m.attendeeUserIds.filter((u) => u !== me.userId), { scenario: 'lifecycle_meeting_moved', title: `${m.title} moved`, body: `New time: ${humanDay(dateKeyOf(at))}`, data: { journeyId: j.id, meetingId: id } });
+    await tell(m.attendeeUserIds.filter((u) => u !== me.userId), { scenario: 'lifecycle_meeting_moved', destination: 'lifecycle_joiner', title: `${m.title} moved`, body: `New time: ${humanDay(dateKeyOf(at))}`, data: { journeyId: j.id, meetingId: id } });
   } else throw new LifecycleError(400, 'met is yes or moved');
   return meetingFor(me, id);
 }
@@ -574,7 +625,7 @@ export async function checkinForMe(me: Me, month: number, body: Record<string, u
 export async function revealForMe(me: Me) {
   const j = await joinerJourney(me.userId);
   const reveal = await revealFor(j.id);
-  return { ...reveal, letterUrl: undefined as string | undefined };
+  return { ...reveal, seen: 'revealedAt' in reveal && !!reveal.revealedAt, letterUrl: undefined as string | undefined };
 }
 
 export async function revealSeenForMe(me: Me) {
@@ -622,14 +673,18 @@ export async function joinerForManager(me: Me, journeyId: string, now = new Date
   const person = j.userId ? await users().findOne({ userId: j.userId }, { projection: { _id: 0, name: 1, designation: 1, department: 1, profilePhotoKey: 1 } }) : null;
   const names = await namesOf([j.userId, j.buddyUserId, ...tasks.map((t) => t.ownerUserId)]);
   const visible = tasks.filter((t) => visibleTo('manager', t));
-  const [people, starters, notes, meetings, summary] = await Promise.all([
+  const [people, starters, notes, meetings, summary, probation] = await Promise.all([
     peopleViews(j.id),
     starterTasks().find({ journeyId: j.id }, { projection: { _id: 0 } }).sort({ assignedAt: 1 }).toArray(),
     notesFor(j.id, false),
     lifecycleMeetings().find({ journeyId: j.id }, { projection: { _id: 0 } }).sort({ startsAt: 1 }).toArray(),
     surveySummaryFor(me.userId),
+    probationOf(j.id),
   ]);
-  const meetingNames = await namesOf(meetings.flatMap((m) => m.attendeeUserIds));
+  const meetingPeople = await peopleOf(meetings.flatMap((m) => m.attendeeUserIds));
+  const starterNames = await namesOf(starters.map((s) => s.assignedByUserId));
+  // Managers never see pay: the decision reaches them without the salary.
+  const decision = probation.decision ? (({ salary: _salary, ...rest }) => rest)(probation.decision) : undefined;
   const photoUrl = await photoOf(person);
   const own = tasks.filter((t) => visibleTo('employee', t));
   return {
@@ -650,8 +705,21 @@ export async function joinerForManager(me: Me, journeyId: string, now = new Date
       goals: j.probation?.goals ?? [],
       goalsLocked: goalsLocked(j, now),
     },
-    starterTasks: starters, notes, meetings: meetings.map((m) => meetingView(m, meetingNames)),
+    goalsLocked: goalsLocked(j, now),
+    probation: { months: probation.months, ...(decision ? { decision } : {}) },
+    starterTasks: starters.map((s) => ({ ...s, assignedByName: starterNames.get(s.assignedByUserId) ?? '' })), notes,
+    meetings: meetings.map((m) => meetingView(m, meetingPeople, { joinerId: j.userId, managerId: j.managerUserId, task: tasks.find((t) => t.id === m.journeyTaskId) })),
     ...(summary ? { surveySummary: summary } : {}),
+  };
+}
+
+/** Count badges ("2 of 4", "2 of 6") for the week-1 reels and people to meet. */
+async function countBadges(j: Journey): Promise<Partial<Record<SystemTaskKey, { done: number; total: number }>>> {
+  const w = j.week1 ?? {};
+  const people = await peopleToMeet().find({ journeyId: j.id }, { projection: { _id: 0, metAt: 1 } }).toArray();
+  return {
+    week1_reels: { done: [w.policies, w.taxRegime, w.bankPf, w.goalsReadAt].filter(Boolean).length, total: 4 },
+    ...(people.length ? { people_to_meet: { done: people.filter((p) => p.metAt).length, total: people.length } } : {}),
   };
 }
 
@@ -667,7 +735,7 @@ export async function saveSetup(me: Me, journeyId: string, body: Record<string, 
   if (body.people !== undefined) {
     if (!Array.isArray(body.people) || body.people.length > 6) throw new LifecycleError(400, 'Pick up to 6 people');
     const picks = body.people.map((p, i) => {
-      const x = (p ?? {}) as Record<string, unknown>;
+      const x = (typeof p === 'string' ? { userId: p } : p ?? {}) as Record<string, unknown>;
       if (typeof x.userId !== 'string' || !x.userId) throw new LifecycleError(400, `Person ${i + 1}: userId is required`);
       const why = typeof x.why === 'string' ? x.why.trim().slice(0, 200) : '';
       return { userId: x.userId, why };
@@ -740,7 +808,7 @@ export async function assignStarterTask(me: Me, journeyId: string, body: Record<
   // The journey's starter-task step is due when the earliest open one is.
   const open = await starterTasks().find({ journeyId: j.id, doneAt: { $exists: false }, dueAt: { $exists: true } }).sort({ dueAt: 1 }).limit(1).next();
   await setTaskDue(j.id, 'starter_task', open?.dueAt ?? null);
-  await tell([j.userId], { scenario: 'lifecycle_starter_task', title: `${me.name} gave you a starter task`, body: `${title}${dueAt ? ` · Due ${humanDay(keyOfDay(dueAt))}` : ''}`, data: { journeyId: j.id, starterTaskId: row.id } });
+  await tell([j.userId], { scenario: 'lifecycle_starter_task', destination: 'lifecycle_starter_task', title: `${me.name} gave you a starter task`, body: `${title}${dueAt ? ` · Due ${humanDay(keyOfDay(dueAt))}` : ''}`, data: { journeyId: j.id, starterTaskId: row.id } });
   await refreshJourney(j.id);
   return { task: row };
 }
@@ -752,7 +820,7 @@ export async function replyToStarterTask(me: Me, id: string, body: Record<string
   const text = typeof body.text === 'string' ? body.text.trim() : '';
   if (!text || text.length > 1000) throw new LifecycleError(400, 'A reply of up to 1000 characters');
   await starterTasks().updateOne({ id }, { $set: { managerReply: text } });
-  await tell([j.userId], { scenario: 'lifecycle_starter_task_reply', title: `${me.name} replied`, body: text.slice(0, 120), data: { journeyId: j.id, starterTaskId: id } });
+  await tell([j.userId], { scenario: 'lifecycle_starter_task_reply', destination: 'lifecycle_starter_task', title: `${me.name} replied`, body: text.slice(0, 120), data: { journeyId: j.id, starterTaskId: id } });
   return { task: { ...row, managerReply: text } };
 }
 
@@ -766,7 +834,7 @@ export async function addNote(me: Me, journeyId: string, body: Record<string, un
   const note = { id: randomUUID(), org: j.org, journeyId: j.id, authorUserId: me.userId, text, shared, ...(shared ? { sharedAt: now } : {}), createdAt: now };
   await oneOnOneNotes().insertOne({ ...note });
   await completeTask(j.id, 'one_on_one_notes', { userId: me.userId, name: me.name });
-  if (shared) await tell([j.userId], { scenario: 'lifecycle_note_shared', title: `${me.name} shared notes from your 1:1`, body: 'Tap to read and reply', data: { journeyId: j.id, noteId: note.id } });
+  if (shared) await tell([j.userId], { scenario: 'lifecycle_note_shared', destination: 'lifecycle_notes', title: `${me.name} shared notes from your 1:1`, body: 'Tap to read and reply', data: { journeyId: j.id, noteId: note.id } });
   return { note };
 }
 

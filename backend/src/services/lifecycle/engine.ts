@@ -279,6 +279,7 @@ async function tellDueMoved(j: Journey, dueMoved: Map<string, number>): Promise<
     const self = userId === j.userId;
     await tell([userId], {
       scenario: 'lifecycle_due_changed',
+      destination: self ? 'lifecycle_onboarding' : 'lifecycle_joiner',
       title: 'New due dates',
       body: self
         ? `${count === 1 ? 'One of your tasks has' : `${count} of your tasks have`} a new due date.`
@@ -288,12 +289,22 @@ async function tellDueMoved(j: Journey, dueMoved: Map<string, number>): Promise<
   }
 }
 
-/** Every push of the lifecycle goes through here: a delivery failure never fails the write. */
-export async function tell(userIds: Array<string | undefined>, input: { scenario: `lifecycle_${string}`; title: string; body: string; data: Record<string, string> }): Promise<void> {
+/** Where the app opens a lifecycle notification (`data.destination`; mobile-app onboarding_launcher.dart). */
+export type Destination =
+  | 'lifecycle_onboarding' | 'lifecycle_meeting' | 'lifecycle_starter_task' | 'lifecycle_notes' | 'lifecycle_week1'
+  | 'lifecycle_intro' | 'lifecycle_people' | 'lifecycle_survey' | 'lifecycle_probation' | 'lifecycle_checkin' | 'lifecycle_reveal'
+  | 'lifecycle_joiner' | 'lifecycle_joiner_setup' | 'lifecycle_starter_task_done' | 'lifecycle_probation_review';
+
+/**
+ * Every push of the lifecycle goes through here: a delivery failure never fails the write.
+ * Stored and pushed as `{ scenario, title, body, data: { destination, journeyId, …ids } }` (all data values strings).
+ */
+export async function tell(userIds: Array<string | undefined>, input: { scenario: `lifecycle_${string}`; title: string; body: string; destination?: Destination; data: Record<string, string> }): Promise<void> {
   const ids = userIds.filter((id): id is string => !!id);
   if (!ids.length) return;
+  const { destination, ...rest } = input;
   try {
-    await notifyUsers(ids, { ...input, data: { ...input.data, scenario: input.scenario } });
+    await notifyUsers(ids, { ...rest, data: { ...input.data, ...(destination ? { destination } : {}) } });
   } catch (error) {
     logger.error('Lifecycle notification failed', { scenario: input.scenario }, error);
   }

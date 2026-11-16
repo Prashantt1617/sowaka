@@ -346,7 +346,7 @@ export async function decideBankPfRequest(org: string, journeyId: string, body: 
     'bankPfRequest.decidedAt': new Date(), 'bankPfRequest.decidedByName': hr.name, ...(hrNote ? { 'bankPfRequest.hrNote': hrNote } : {}),
   } });
   await tell([j.userId], {
-    scenario: 'lifecycle_bank_pf_decided', title: body.decision === 'approve' ? 'Bank and PF details updated' : 'Bank and PF change declined',
+    scenario: 'lifecycle_bank_pf_decided', destination: 'lifecycle_week1', title: body.decision === 'approve' ? 'Bank and PF details updated' : 'Bank and PF change declined',
     body: body.decision === 'approve' ? 'HR approved the change you asked for.' : `HR did not make the change${hrNote ? `: ${hrNote}` : ''}.`, data: { journeyId },
   });
   return { journey: sanitiseJourney(await loadJourney(journeyId)) };
