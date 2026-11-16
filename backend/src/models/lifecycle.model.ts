@@ -109,6 +109,12 @@ export interface TemplateTask {
   recommended?: { why: string; added: boolean };
   /** Documents task: the list the candidate uploads. */
   documents?: Array<{ key: string; label: string; required: boolean }>;
+  /**
+   * Opens only once another task is done ('done', the default) or under way
+   * ('started': in review, sent back or done), e.g. the letters after the last
+   * document is approved. A month task waits for the same month's task.
+   */
+  after?: { key: SystemTaskKey; when?: 'done' | 'started' };
 }
 
 export interface LifecycleTemplateSettings {
@@ -217,8 +223,23 @@ export interface Journey {
   day1Pass?: Day1Pass;
   /** Meet-us content: manager note (text or video key), the company's culture video, JD cards. */
   meetUs?: { managerNote?: { kind: 'text' | 'video'; text?: string; fileId?: string; at?: Date }; seen?: string[] };
-  /** Probation (onboarding). */
-  probation?: { months: number; extendedBy?: number; decision?: ConfirmationDecision };
+  /** Probation (onboarding). `goals`: the probation goals the manager sets in week 1 (lock Tj + 7). */
+  probation?: { months: number; extendedBy?: number; decision?: ConfirmationDecision; goals?: string[]; goalsLockedAt?: Date };
+  /** Offboarding: how they leave, and whether the app's off-boarding page shows (O2 override of the template's appPageFor). */
+  exitType?: ExitType;
+  showAppPage?: boolean;
+  /** App onboarding: the week-1 reels, the intro post, a bank/PF change waiting for HR. */
+  week1?: Week1Reels;
+  intro?: IntroPost;
+  bankPfRequest?: BankPfChangeRequest;
+  /** When the joiner first saw "Week 1, done!" (A8). */
+  week1DoneSeenAt?: Date;
+  /** Timed jobs already fired for this journey (each key once). */
+  firedJobs?: string[];
+  /** Kept by refreshJourney for lists and counts; the board recomputes them on read. */
+  flags?: JourneyFlag[];
+  boardTab?: OnboardingBoardTab;
+  boardColumn?: OnboardingBoardColumn;
   /** Last time the candidate did anything on the portal (for the Quiet flag). */
   lastActivityAt?: Date;
   closedAt?: Date;
@@ -475,6 +496,18 @@ export interface Week1Reels {
   taxRegime?: { regime: 'new' | 'old'; at: Date };
   bankPf?: { confirmedAt: Date; changeRequested?: boolean };
   goalsReadAt?: Date;
+}
+
+/** A bank or PF edit from the week-1 reel: payroll keeps the old value until HR approves. */
+export interface BankPfChangeRequest {
+  status: 'pending' | 'approved' | 'declined';
+  /** Account number and UAN are encrypted (fieldCrypto); only the last four are kept in the clear. */
+  changes: { bankName?: string; ifsc?: string; accountNumberEnc?: string; accountLast4?: string; uanEnc?: string; uanLast4?: string };
+  note?: string;
+  requestedAt: Date;
+  decidedAt?: Date;
+  decidedByName?: string;
+  hrNote?: string;
 }
 
 export interface IntroPost {

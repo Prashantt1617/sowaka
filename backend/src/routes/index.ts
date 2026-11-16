@@ -36,6 +36,8 @@ import { engagementGamesRouter } from './engagement-games.routes';
 import { policiesRouter } from './policy-document.routes';
 import { appPagesRouter } from './app-page.routes';
 import { appUpdateRouter } from './app-update.routes';
+import { lifecycleAdminRouter } from './lifecycle-admin.routes';
+import { lifecycleAppRouter } from './lifecycle-app.routes';
 import { suwiRouter } from '../suwi/routes';
 import { suwiPeopleRouter } from '../suwi/routes.people';
 import { suwiNoticesRouter } from '../suwi/routes.notices';
@@ -69,6 +71,8 @@ router.use('/admin/engagement/feed', engagementFeedRouter);
 router.use('/admin/engagement/plan', engagementPlanRouter);
 router.use('/admin/engagement/contests', engagementContestsRouter);
 router.use('/admin/engagement/games', engagementGamesRouter);
+// Employee lifecycle (docs/lifecycle/CONTRACT.md): its own auth chain and the features.lifecycle switch.
+router.use('/admin/lifecycle', lifecycleAdminRouter);
 router.use('/admin', adminRouter);
 router.use('/leaves', leaveRouter);
 router.use('/payslips', payslipRouter);
@@ -116,3 +120,5 @@ router.use('/care', careRouter);
 router.use('/profile', profileRouter);
 router.use('/support', supportRouter);
 router.use('/placements', placementsRouter);
+// The app's onboarding (joiner and manager); offboarding adds its own routes beside these.
+router.use('/lifecycle', lifecycleAppRouter);

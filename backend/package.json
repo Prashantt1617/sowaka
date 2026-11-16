@@ -37,6 +37,7 @@
     "leave-without-pay:check": "tsx src/scripts/leave-without-pay-check.ts",
     "leave-cancel:check": "tsx src/scripts/leave-cancel-check.ts",
     "exits:check": "MONGODB_DB=exits_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/exits-check.ts",
+    "lifecycle:check": "MONGODB_DB=el_journey_check NOTIFY_ORGS=el-journey-check EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/lifecycle-check.ts",
     "exits:plan-check": "MONGODB_DB=exits_plan_scratch NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch AWS_S3_BUCKET= tsx src/scripts/exits-plan-check.ts",
     "leave-monthly-credit:check": "tsx src/scripts/leave-monthly-credit-check.ts",
     "time-office-actions:check": "NOTIFY_ORGS=nobody-scratch EMAIL_ORGS=nobody-scratch tsx src/scripts/time-office-actions-check.ts",
