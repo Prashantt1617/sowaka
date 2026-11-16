@@ -692,6 +692,19 @@ export async function completeTask(journeyId: string, systemKey: SystemTaskKey, 
   return (await journeyTasks().findOne({ id: done.id }, { projection: { _id: 0 } })) ?? done;
 }
 
+/**
+ * A task that does not apply to this journey (offboarding: gratuity under 5 years), skipped
+ * whether or not it has opened yet, with a note saying why. Must-do tasks are never skipped.
+ */
+export async function skipTask(journeyId: string, systemKey: SystemTaskKey, by?: { userId?: string; name?: string }, note?: string): Promise<JourneyTask | null> {
+  const task = pickOpen(await tasksOf(journeyId), systemKey);
+  if (!task || task.mustDo) return null;
+  const skipped = finish(task, 'skipped', by, note);
+  await writeTasks([skipped]);
+  await refreshJourney(journeyId);
+  return skipped;
+}
+
 /** One task by id: done or skipped (skip refused for must-do), with a note. */
 export async function finishTaskById(journeyId: string, taskId: string, action: 'done' | 'skip', by?: { userId?: string; name?: string }, note?: string): Promise<JourneyTask> {
   const task = await journeyTasks().findOne({ id: taskId, journeyId }, { projection: { _id: 0 } });

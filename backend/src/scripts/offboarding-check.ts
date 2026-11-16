@@ -16,12 +16,12 @@ import { companies, connectDb, exitSettlements, getDb, handoverItems, journeyTas
 import type { User } from '../models/user.model';
 import { closeDueExits, listExits, setClearance } from '../services/exit.service';
 import {
-  addDays, addWorkingDays, appHandoverFile, changeLastDay, closeOffboarding, emailSettlement, managerLeaver, managerLeavers, markHandoverDone, myOffboarding, offboardingBoard,
-  offboardingDetail, offboardingTaskDone, removeHandoverUpload, runOffboardingJobs, sendExitInterview, setAppPage, setHandoverChecklist, setOffboardingClearance, settlementChecks,
-  startExit, todayKey, uploadHandover,
+  addDays, addWorkingDays, appHandoverFile, changeLastDay, clearanceTeamOf, closeOffboarding, emailSettlement, managerLeaver, managerLeavers, markHandoverDone, myOffboarding, offboardingBoard,
+  offboardingCount, offboardingDetail, offboardingTaskDone, removeHandoverUpload, runOffboardingJobs, saveSettlementDraft, sendExitInterview, sendNudge, setAppPage, setClearanceTeam,
+  setHandoverChecklist, setOffboardingClearance, settlementChecks, startExit, todayKey, uploadHandover,
 } from '../services/lifecycle/offboarding';
 import { acceptResignation, managerResignationAction, managerResignations, myResignation, resign, withdrawResignation } from '../services/lifecycle/resignations';
-import { exitInsights } from '../services/lifecycle/insights';
+import { exitAnswers, exitInsights, tagExitAnswer } from '../services/lifecycle/insights';
 import { lifecycleOutbox } from '../services/lifecycle/emails';
 
 let passed = 0;
@@ -114,6 +114,8 @@ const keyOf = (d: string | null | undefined) => (d ? todayKey(new Date(d)) : nul
   ok('with HR, needs you, the early release on the card', !!pooja && pooja.flag?.key === 'needs_you' && pooja.lastDayLine.startsWith('Early release') && pooja.owner.role === 'hr', pooja);
   ok('a withdrawn resignation is not on the board', !b1.columns.some((c) => c.cards.some((x) => x.userId === 'wanda')));
   ok('the sidebar count is what waits on HR', b1.waitingOnHr === 1 && b1.counts.resignations === 1, { w: b1.waitingOnHr, c: b1.counts });
+  const count1 = await offboardingCount('hr', now);
+  ok('the sidebar badge: one needs you, none late', count1.count === 1 && count1.needsYou === 1 && count1.late === 0 && count1.viewer.kind === 'hr', count1);
   const itBoard = await offboardingBoard('it', { tab: 'resignations' }, now);
   ok('IT staff see no resignations', itBoard.counts.resignations === 0 && itBoard.viewer.kind === 'team');
   const drawer0 = await offboardingDetail('hr', 'ravi', now);
@@ -142,6 +144,20 @@ const keyOf = (d: string | null | undefined) => (d ? todayKey(new Date(d)) : nul
   const b2 = await offboardingBoard('hr', { tab: 'resignations' }, now);
   const acc = b2.columns.find((c) => c.key === 'accepted')!.cards.find((c) => c.userId === 'ravi');
   ok('the board: Accepted, the manager to share the checklist', !!acc && acc.owner.role === 'manager' && /handover checklist/.test(acc.nextStep), acc);
+  ok('…with a Remind for the manager on the card', acc?.nudge?.item === 'handover_checklist' && acc.nudge.label === 'Remind Meera' && !acc.nudge.sentToday, acc?.nudge);
+  // IT, Admin and Finance staff see an accepted exit (still under Resignations › Accepted) with their own item.
+  const itAccepted = (await offboardingBoard('it', { tab: 'resignations' }, now)).columns.find((c) => c.key === 'accepted')!.cards.find((c) => c.userId === 'ravi');
+  ok('IT staff see the accepted exit with their item, no reminders', !!itAccepted && itAccepted.owner.role === 'it' && itAccepted.nextStep === 'Laptop and accessories returned' && !itAccepted.nudge, itAccepted);
+  ok('…and the IT badge counts it', (await offboardingCount('it', now)).needsYou === 1);
+  ok('the drawer lists the reminders (manager checklist, each clearance item)', (await offboardingDetail('hr', 'ravi', now)).nudges.map((n) => n.item).join() === 'handover_checklist,clearance:handover,clearance:laptop,clearance:id_card,clearance:advances');
+  const n1 = await sendNudge('hr', 'ravi', { item: 'handover_checklist' }, now);
+  ok('Remind the manager: sent, and marked for today', n1.nudged.to === 'Meera' && n1.nudges.find((n) => n.item === 'handover_checklist')?.sentToday === true);
+  ok('…once a day per item', (await refusal(() => sendNudge('hr', 'ravi', { item: 'handover_checklist' }, now))).status === 429);
+  ok('…again the next day', (await sendNudge('hr', 'ravi', { item: 'handover_checklist' }, at(addDays(T, 1)))).nudged.item === 'handover_checklist');
+  ok('IT staff get the email reminder for their item', (await sendNudge('hr', 'ravi', { item: 'clearance:laptop' }, now)).nudged.to === 'IT');
+  ok('no Admin staff: the reminder says where to set them', /People › Accesses/.test((await refusal(() => sendNudge('hr', 'ravi', { item: 'clearance:id_card' }, now))).message));
+  ok('nothing to remind about is refused', (await refusal(() => sendNudge('hr', 'ravi', { item: 'exit_interview' }, now))).status === 409);
+  ok('only HR sends reminders', (await refusal(() => sendNudge('it', 'ravi', { item: 'clearance:laptop' }, now))).status === 403);
 
   console.log('the handover');
   ok('another manager cannot see the leaver', (await refusal(() => managerLeaver('mgr2', 'ravi', now))).status === 404);
@@ -170,6 +186,7 @@ const keyOf = (d: string | null | undefined) => (d ? todayKey(new Date(d)) : nul
   const b3 = await offboardingBoard('hr', { tab: 'notice' }, now);
   const ho = b3.columns.find((c) => c.key === 'handover')!.cards.find((c) => c.userId === 'ravi');
   ok('the board: Handover, 2 of 3 uploaded, waiting on the employee', !!ho && ho.nextStep === 'Handover: 2 of 3 items uploaded' && ho.owner.role === 'employee', ho);
+  ok('…with Remind Ravi for the uploads', ho?.nudge?.item === 'handover' && ho.nudge.label === 'Remind Ravi', ho?.nudge);
   await uploadHandover('ravi', i3.id, { url: 'https://docs.example/vendors' }, now);
   ok('every item uploaded: the upload task is done', (await statusOf('upload_handover')) === 'done');
   const b4 = await offboardingBoard('hr', { tab: 'notice' }, now);
@@ -178,6 +195,14 @@ const keyOf = (d: string | null | undefined) => (d ? todayKey(new Date(d)) : nul
   await markHandoverDone('mgr', 'ravi', now);
   const afterDone = await users().findOne({ userId: 'ravi' });
   ok('handover done: the Manager clearance item ticks, the task is done', afterDone?.exit?.clearance?.find((c) => c.key === 'handover')?.done === true && (await statusOf('mark_handover_done')) === 'done');
+
+  console.log('clearance team (People › Accesses)');
+  ok('Finance\'s team is guessed from the department', (await clearanceTeamOf('hr', 'fin')).team === null && (await clearanceTeamOf('hr', 'fin')).guess === 'finance');
+  ok('only a dashboard admin sets it', (await refusal(() => setClearanceTeam('it', 'fin', { team: 'finance' }, now))).status === 403);
+  ok('IT, Admin or Finance only', (await refusal(() => setClearanceTeam('hr', 'fin', { team: 'payroll' }, now))).status === 400);
+  await setClearanceTeam('hr', 'mgr2', { team: 'admin' }, now);
+  ok('set: kept on the person', (await users().findOne({ userId: 'mgr2' }))?.clearanceTeam === 'admin');
+  ok('cleared: back to the guess', (await setClearanceTeam('hr', 'mgr2', { team: null }, now)).team === null && !(await users().findOne({ userId: 'mgr2' }))?.clearanceTeam);
 
   console.log('clearance by team');
   const itView = await offboardingDetail('it', 'ravi', now);
@@ -261,12 +286,19 @@ const keyOf = (d: string | null | undefined) => (d ? todayKey(new Date(d)) : nul
   ok('IT staff cannot see a settlement', (await refusal(() => settlementChecks('it', 'ravi', at(due)))).status === 403);
   ok('a personal email is needed', (await refusal(() => emailSettlement('hr', 'ravi', { pdfBase64: goodPdf, to: 'nope' }, at(due)))).status === 400);
   ok('the PDF must be a PDF', (await refusal(() => emailSettlement('hr', 'ravi', { pdfBase64: Buffer.from('hello'.repeat(40)).toString('base64'), to: 'ravi.m@example.com' }, at(due)))).status === 400);
+  ok('the salary check is real: no salary line and no payroll run for the last month', !checks.salary.ok && checks.blocking.includes('Salary status from payroll') && checks.hrEmail === 'hr@offcheck.test', checks);
+  const saved = await saveSettlementDraft('hr', 'ravi', { to: 'ravi.m@example.com', subject: 'Your settlement', message: 'Dear Ravi' }, at(due));
+  ok('Save draft keeps the email as HR left it', saved.draft?.to === 'ravi.m@example.com' && saved.draft.subject === 'Your settlement' && saved.draft.byName === 'Hema HR', saved.draft);
+  ok('a draft address must be an email', (await refusal(() => saveSettlementDraft('hr', 'ravi', { to: 'nope' }, at(due)))).status === 400);
+  const blocked = await refusal(() => emailSettlement('hr', 'ravi', { pdfBase64: goodPdf, to: 'ravi.m@example.com' }, at(due)));
+  ok('a failing check stops the send', blocked.status === 409 && /Not ready to send: Salary status/.test(blocked.message), blocked);
   const outBefore = lifecycleOutbox().length;
-  await emailSettlement('hr', 'ravi', { pdfBase64: `data:application/pdf;base64,${goodPdf}`, to: 'Ravi.M@example.com' }, at(due));
+  await emailSettlement('hr', 'ravi', { pdfBase64: `data:application/pdf;base64,${goodPdf}`, to: 'Ravi.M@example.com', overrideReason: 'Salary paid off-cycle on 2 Dec' }, at(due));
   const mail = lifecycleOutbox()[outBefore];
   ok('emailed to the personal email with the PDF attached', !!mail && mail.to === 'ravi.m@example.com' && mail.attachments.length === 1 && mail.attachments[0].content.subarray(0, 5).toString() === '%PDF-' && mail.attachments[0].filename === 'Settlement_OC-1.pdf', mail && { to: mail.to, files: mail.attachments.map((a) => a.filename) });
   const afterMail = await users().findOne({ userId: 'ravi' });
-  ok('kept: the personal email, when and to whom it went', afterMail?.personalEmail === 'ravi.m@example.com' && afterMail.exit?.offboarding?.settlementEmail?.to === 'ravi.m@example.com');
+  ok('kept: the personal email, when and to whom it went, why it went anyway; the draft is gone', afterMail?.personalEmail === 'ravi.m@example.com' && afterMail.exit?.offboarding?.settlementEmail?.to === 'ravi.m@example.com'
+    && afterMail.exit.offboarding.settlementEmail.overrideReason === 'Salary paid off-cycle on 2 Dec' && !afterMail.exit.offboarding.settlementDraft, afterMail?.exit?.offboarding);
   ok('the journey: settlement sent, the settlement task done', (await journeys().findOne({ id: accepted.journeyId }))?.status === 'settlement_sent' && (await statusOf('final_settlement')) === 'done');
   const ss = (await offboardingBoard('hr', { tab: 'exit' }, at(due))).columns.find((c) => c.key === 'settlement_sent')!.cards.find((c) => c.userId === 'ravi');
   ok('Settlement sent: gratuity to pay (Finance)', !!ss && ss.nextStep === 'Gratuity to pay' && ss.owner.role === 'finance', ss);
@@ -294,6 +326,13 @@ const keyOf = (d: string | null | undefined) => (d ? todayKey(new Date(d)) : nul
   const eoc = await startExit('hr', 'ivy', { exitType: 'end_of_contract', lastWorkingDay: addDays(T, 20), noticeHandling: 'waived', tellManagerNow: false }, now);
   const ivy = await users().findOne({ userId: 'ivy' });
   ok('end of contract: recorded as "other", its type kept, the page on, no interview', ivy?.exit?.kind === 'other' && ivy.exit.offboarding?.exitType === 'end_of_contract' && ivy.exit.offboarding.showAppPage && ivy.exit.rules?.noticeRecovery === 'none' && !!eoc.journeyId);
+  const ivyTasks = await journeyTasks().find({ journeyId: eoc.journeyId }).toArray();
+  const ivyStatus = (key: string) => ivyTasks.find((t) => t.systemKey === key)?.status;
+  ok('an HR-started exit has no resignation steps open', ['send_resignation', 'manager_resignation_action', 'hr_accept_exit'].every((k) => ivyStatus(k) === 'skipped') && ivyStatus('hr_start_exit') === 'done', ivyTasks.map((t) => [t.systemKey, t.status]));
+  const ivyGratuity = ivyTasks.find((t) => t.systemKey === 'gratuity');
+  ok('under 5 years: gratuity skipped on its own, "Not eligible (2 years)"', ivyGratuity?.status === 'skipped' && ivyGratuity.note === 'Not eligible (2 years)' && ivyGratuity.doneByName === 'Automatic', ivyGratuity);
+  ok('…and the drawer says so', eoc.details.some((d) => d.label === 'Gratuity' && d.value === 'Not eligible (2 years)'), eoc.details);
+  ok('5 years and more: gratuity stays open (Ravi)', (await statusOf('gratuity')) === 'done' || (await statusOf('gratuity')) === 'locked' || (await statusOf('gratuity')) === 'todo');
   const ivyPage = await myOffboarding('ivy', now);
   ok('…its page has no exit interview', !ivyPage.interview.applies);
   ok('the board names the type', eoc.card.exitTypeLabel === 'End of contract');
@@ -309,7 +348,17 @@ const keyOf = (d: string | null | undefined) => (d ? todayKey(new Date(d)) : nul
   const design = ins.groups.find((g) => g.key === 'Design');
   const sales = ins.groups.find((g) => g.key === 'Sales');
   ok('6 answers: reasons, averages and come-back show', !ins.hidden && ins.reasons[0]?.key === 'growth' && ins.reasons[0].count === 4 && ins.workingHere?.average === 3.7 && ins.comeBack?.yes === 2, { r: ins.reasons, w: ins.workingHere, c: ins.comeBack });
-  ok('themes counted, quotes never returned', ins.themes[0]?.label === 'Clearer growth paths' && ins.themes[0].count === 2 && !/secret words|Clearer growth paths\./.test(JSON.stringify(ins)), ins.themes);
+  ok('a theme with under 5 answers is not shown, quotes never returned', ins.themes.length === 0 && ins.hiddenThemes === 1 && !/secret words|Clearer growth paths\./.test(JSON.stringify(ins)), ins.themes);
+  const tagging = await exitAnswers('hr', { from: addDays(T, -400), to: addDays(T, 400) }, at(addDays(newTl, 2)));
+  ok('HR tags answers: only the text and its theme, no department, tenure or month', tagging.answers.length === 6 && tagging.untagged === 4 && tagging.answers.every((a) => Object.keys(a).sort().join() === 'id,text,theme') && tagging.themes.includes('Workload'), tagging);
+  ok('only HR tags', (await refusal(() => exitAnswers('it', {}, now))).status === 403 && (await refusal(() => tagExitAnswer('it', 's2', { theme: 'Workload' }))).status === 403);
+  for (const a of tagging.answers.filter((x) => !x.theme).slice(0, 3)) await tagExitAnswer('hr', a.id, { theme: 'Clearer growth paths' });
+  const last = tagging.answers.filter((x) => !x.theme)[3];
+  await tagExitAnswer('hr', last.id, { theme: '  Hybrid   days ' });
+  ok('a custom theme is kept and offered again', (await exitAnswers('hr', { from: addDays(T, -400), to: addDays(T, 400) }, at(addDays(newTl, 2)))).custom.includes('Hybrid days'));
+  ok('an unknown answer is refused', (await refusal(() => tagExitAnswer('hr', 'nope', { theme: 'Workload' }))).status === 404);
+  const themed = await exitInsights('hr', { from: addDays(T, -400), to: addDays(T, 400) }, at(addDays(newTl, 2)));
+  ok('5 answers on a theme: the group shows, the custom one with 1 stays hidden', themed.themes.length === 1 && themed.themes[0].label === 'Clearer growth paths' && themed.themes[0].count === 5 && themed.hiddenThemes === 1 && themed.untaggedAnswers === 0, themed.themes);
   ok('a department with 5 answers shows ratings; one with 1 is hidden', !!design && design.answers === 5 && design.workingHere !== null && !!sales && sales.answers === 1 && sales.workingHere === null && sales.hidden, ins.groups);
   ok('people who left: resigned and HR-started', ins.left.resigned === 1 && ins.left.hrStarted >= 0, ins.left);
   const byTenure = await exitInsights('hr', { from: addDays(T, -400), to: addDays(T, 400), groupBy: 'tenure' }, at(addDays(newTl, 2)));

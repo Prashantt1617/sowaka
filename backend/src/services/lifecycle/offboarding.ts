@@ -22,7 +22,8 @@
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { companies, exitSettlements, handoverItems, journeyTasks, journeys, lifecycleFiles, lifecycleTemplates, resignations, surveyResponses, users } from '../../config/db';
+import { companies, exitSettlements, handoverItems, journeyTasks, journeys, lifecycleFiles, lifecycleTemplates, payslips, resignations, surveyResponses, users } from '../../config/db';
+import { payrollPeriodHolding } from '../payroll-inputs.service';
 import { AdminError } from '../admin.service';
 import { clearanceOf, exitView, readInterview, recordExit, tickClearanceItem } from '../exit.service';
 import { serviceYears, settlementFor } from '../exitSettlement.service';
@@ -35,7 +36,7 @@ import type { ExitSettlement } from '../../models/exitSettlement.model';
 import {
   CLEARANCE_TEAMS, DEFAULT_EXIT_CLEARANCE, ClearanceTeam, ExitKind, ExitRules, OffboardingExitType, OffboardingNoticeHandling, User, UserExit, UserExitOffboarding,
 } from '../../models/user.model';
-import { closeJourney, completeTask, createOffboardingJourney, journeyTasksView, moveTl, setJourneyStatus } from './engine';
+import { closeJourney, completeTask, createOffboardingJourney, journeyTasksView, moveTl, reopenTask, setJourneyStatus, skipTask } from './engine';
 import type { TaskView } from './engine';
 import { orgMayEmail, sendLifecycleEmail, smtpConfigured } from './emails';
 import { env } from '../../config/env';
@@ -172,18 +173,18 @@ function tenureBand(joined: Date | undefined, to: string): SurveyResponse['tenur
 
 // ———————————————————————————————————————————————— notifications
 
-async function tell(userIds: (string | undefined)[], scenario: string, title: string, body: string, data: Record<string, string> = {}) {
+async function tell(userIds: (string | undefined)[], scenario: string, title: string, body: string, data: Record<string, string> = {}, email?: { subject: string; body: string }) {
   try {
-    await notifyUsers(userIds.filter((x): x is string => !!x), { scenario, title, body, data: { type: 'lifecycle_offboarding', ...data } });
+    await notifyUsers(userIds.filter((x): x is string => !!x), { scenario, title, body, data: { type: 'lifecycle_offboarding', ...data }, ...(email ? { email } : {}) });
   } catch (error) {
     logger.warn('Offboarding: a notification could not be sent', { scenario, reason: error instanceof Error ? error.message : String(error) });
   }
 }
 
-/** The IT, Admin and Finance staff of a company: everyone limited to the offboarding tab without People. */
-async function clearanceStaff(org: string): Promise<string[]> {
-  const rows = await users().find({ org, dashboardAccess: true, dashboardAdmin: { $ne: true }, dashboardTabs: 'offboarding', lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }, { projection: { _id: 0, userId: 1, dashboardTabs: 1 } }).toArray();
-  return rows.filter((u) => !(u.dashboardTabs ?? []).includes('employees')).map((u) => u.userId);
+/** The IT, Admin and Finance staff of a company: everyone limited to the offboarding tab without People (only one team's, when asked). */
+async function clearanceStaff(org: string, team?: Exclude<ClearanceTeam, 'manager'>): Promise<string[]> {
+  const rows = await users().find({ org, dashboardAccess: true, dashboardAdmin: { $ne: true }, dashboardTabs: 'offboarding', lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }, { projection: { _id: 0, userId: 1, dashboardTabs: 1, clearanceTeam: 1, department: 1 } }).toArray();
+  return rows.filter((u) => !(u.dashboardTabs ?? []).includes('employees') && (!team || (u.clearanceTeam ?? teamOfDepartment(u.department)) === team)).map((u) => u.userId);
 }
 
 // ———————————————————————————————————————————————— starting an exit
@@ -242,6 +243,7 @@ export async function beginOffboarding(hr: Actor, employee: User, input: BeginIn
   if (!input.resignationId) await completeTask(journey.id, 'hr_start_exit', by);
   await completeTask(journey.id, 'tell_clearance_teams', by);
   if (showAppPage) await completeTask(journey.id, 'offboarding_page', by);
+  await syncGratuityTask(journey.id, employee.joiningDate, input.lastWorkingDay);
 
   const first = firstName(employee.name);
   const managerId = input.managerUserId ?? after?.managerUserId ?? employee.managerUserId;
@@ -254,6 +256,30 @@ export async function beginOffboarding(hr: Actor, employee: User, input: BeginIn
   }
   await tell(await clearanceStaff(org), 'lifecycle_clearance', `Clearance: ${employee.name}`, `Last day ${shortDay(input.lastWorkingDay)}. Your clearance item is on the Offboarding board.`, { userId: employee.userId });
   return { journeyId: journey.id, exit };
+}
+
+/** Completed years of service at the last day, from the settlement's own rule (exitSettlement.service). */
+export function completedYears(joined: Date | string | undefined | null, tl: string): number | null {
+  const key = joined ? keyOfInstant(new Date(joined)) : null;
+  return key ? serviceYears(key, tl).completed : null;
+}
+export const GRATUITY_MIN_YEARS = 5;
+const NOT_ELIGIBLE = /^Not eligible/;
+
+/**
+ * "Gratuity, if eligible" applies from 5 completed years (the settlement's rule): under that it is
+ * skipped on its own with "Not eligible (n years)"; a last day that makes them eligible opens it again.
+ */
+export async function syncGratuityTask(journeyId: string, joined: Date | undefined, tl: string): Promise<void> {
+  const years = completedYears(joined, tl);
+  if (years === null) return;
+  const task = await journeyTasks().findOne({ journeyId, systemKey: 'gratuity' }, { projection: { _id: 0, status: 1, note: 1 } });
+  if (!task) return;
+  if (years < GRATUITY_MIN_YEARS) {
+    if (task.status !== 'done' && task.status !== 'skipped' && task.status !== 'cancelled') await skipTask(journeyId, 'gratuity', { name: 'Automatic' }, `Not eligible (${years} ${years === 1 ? 'year' : 'years'})`);
+  } else if (task.status === 'skipped' && NOT_ELIGIBLE.test(task.note ?? '')) {
+    await reopenTask(journeyId, 'gratuity', '');
+  }
 }
 
 // ———————————————————————————————————————————————— the board
@@ -296,7 +322,12 @@ export interface BoardCard {
   tab: BoardTab;
   /** The next step is HR's: the sidebar counts these. */
   waitingOnHr: boolean;
+  /** HR's Remind / Nudge for the card's next step, when someone else holds it (HR viewers only). */
+  nudge?: NudgeOption;
 }
+
+/** A reminder HR can send from the board or the drawer: once per item per day. */
+export interface NudgeOption { item: string; label: string; to: string; what: string; late: boolean; sentToday: boolean }
 
 type BoardUser = Pick<User, 'userId' | 'name' | 'employeeId' | 'designation' | 'department' | 'managerUserId' | 'joiningDate' | 'exit' | 'personalEmail'>;
 interface ExitCtx {
@@ -500,7 +531,8 @@ const toCard = (key: string, base: ReturnType<typeof cardBase>, d: Derived): Boa
 
 /** IT, Admin or Finance staff: only exits still before their clearance is done, and only their item as the next step. */
 function forTeam(card: BoardCard, ctx: ExitCtx, team: Exclude<ClearanceTeam, 'manager'> | null, today: string): BoardCard | null {
-  if (!team || card.tab === 'resignations' || card.column === 'closed' || card.column === 'settlement_sent') return null;
+  // A resignation before HR accepts it is not an exit yet; an accepted one (Resignations › Accepted) already has the team's item.
+  if (!team || card.column === 'with_manager' || card.column === 'with_hr' || card.column === 'closed' || card.column === 'settlement_sent') return null;
   const item = clearanceOf(ctx.user.exit).find((c) => c.team === team);
   if (!item) return null;
   const due = dueOf(taskOf(ctx.tasks, TEAM_TASK[team])) ?? (team === 'finance' ? addDays(ctx.user.exit.lastWorkingDay, -2) : ctx.user.exit.lastWorkingDay);
@@ -553,10 +585,142 @@ async function allCards(actor: Actor, today: string): Promise<BoardCard[]> {
   const ctxs = await contexts(org, leavers as Array<BoardUser & { exit: UserExit }>);
   for (const ctx of ctxs) {
     const card = toCard(ctx.user.userId, cardBase(ctx.user), deriveExit(ctx, today));
-    if (actor.viewer.kind === 'hr') out.push(card);
+    if (actor.viewer.kind === 'hr') {
+      const nudge = cardNudge(card, nudgeOptions(ctx, today));
+      out.push(nudge ? { ...card, nudge } : card);
+    }
     else { const mine = forTeam(card, ctx, actor.viewer.team, today); if (mine) out.push(mine); }
   }
   return out;
+}
+
+// ———————————————————————————————————————————————— reminders (Nudge / Remind)
+
+const nudgeKey = (item: string, today: string) => `nudge:${item}:${today}`;
+
+/**
+ * What HR can remind someone about on an exit still before the last day: the manager's handover
+ * checklist, the leaver's handover uploads, each open clearance item (its team, or the manager), and
+ * the exit interview while it is open. Each goes once per item per day.
+ */
+export function nudgeOptions(ctx: ExitCtx, today: string): NudgeOption[] {
+  const { user, journey, tasks, handover } = ctx;
+  const e = user.exit;
+  const ob = e.offboarding;
+  if (!journey || !ob || e.accessEndedAt || e.lastWorkingDay < today) return [];
+  const fired = new Set(ob.fired ?? []);
+  const first = firstName(user.name);
+  const manager = ctx.managerName ? firstName(ctx.managerName) : 'the manager';
+  const out: NudgeOption[] = [];
+  const add = (item: string, to: string, what: string, due: string | null) => out.push({ item, label: `Remind ${to}`, to, what, late: !!due && due < today, sentToday: fired.has(nudgeKey(item, today)) });
+  const managerId = journey.managerUserId ?? user.managerUserId;
+  if (managerId && !finished(taskOf(tasks, 'handover_checklist')) && handover.length === 0) add('handover_checklist', manager, 'Share the handover checklist', dueOf(taskOf(tasks, 'handover_checklist')));
+  const uploaded = handover.filter((h) => !!h.upload).length;
+  const handoverDone = finished(taskOf(tasks, 'mark_handover_done')) || (handover.length > 0 && handover.every((h) => h.done));
+  if (ob.showAppPage && handover.length > 0 && uploaded < handover.length && !handoverDone) add('handover', first, `Upload the handover (${uploaded} of ${handover.length})`, dueOf(taskOf(tasks, 'upload_handover')) ?? addDays(e.lastWorkingDay, -7));
+  for (const c of clearanceOf(e).filter((x) => !x.done)) {
+    const team = c.team ?? 'manager';
+    if (team === 'manager' && !managerId) continue;
+    const due = dueOf(taskOf(tasks, TEAM_TASK[team])) ?? (team === 'finance' ? addDays(e.lastWorkingDay, -2) : e.lastWorkingDay);
+    add(`clearance:${c.key}`, team === 'manager' ? manager : TEAM_LABEL[team], c.label, due);
+  }
+  const opens = interviewOpensKey(e, journey);
+  if (ob.showAppPage && interviewApplies(ob) && !e.interview && !finished(taskOf(tasks, 'exit_interview')) && !!opens && opens <= today) add('exit_interview', first, 'Fill in the exit interview', e.lastWorkingDay);
+  return out;
+}
+
+/** The card's own reminder: the one for its next step. */
+function cardNudge(card: BoardCard, options: NudgeOption[]): NudgeOption | undefined {
+  if (card.column === 'accepted') return options.find((o) => o.item === 'handover_checklist');
+  if (card.column === 'handover') return options.find((o) => o.item === 'handover');
+  // The board's clearance step is the first open item, as the options list them.
+  if (card.column === 'clearance') return options.find((o) => o.item.startsWith('clearance:'));
+  if (card.column === 'exit_interview') return options.find((o) => o.item === 'exit_interview');
+  return undefined;
+}
+
+/**
+ * POST /admin/lifecycle/offboarding/:userId/nudge { item } — HR reminds whoever holds the step: a push
+ * that opens the right screen in the app (the leaver's Off-boarding page, the manager's leaver, the exit
+ * interview), and for IT, Admin and Finance staff an email too (they work from the dashboard). Once per
+ * item per day; a second try the same day is refused.
+ */
+export async function sendNudge(actorUserId: string, employeeUserId: string, body: Record<string, unknown>, now = new Date()) {
+  const actor = await dashboardActor(actorUserId);
+  requireHr(actor, 'Only HR can send a reminder');
+  const today = todayKey(now);
+  const user = await users().findOne({ userId: employeeUserId, org: actor.org }, { projection: BOARD_USER });
+  if (!user?.exit) throw new LifecycleError(404, 'No exit recorded for this employee');
+  const [ctx] = await contexts(actor.org, [user as BoardUser & { exit: UserExit }]);
+  const item = String(body.item ?? '');
+  const option = nudgeOptions(ctx, today).find((o) => o.item === item);
+  if (!option) throw new LifecycleError(409, 'There is nothing open to remind them about');
+  const e = ctx.user.exit;
+  const first = firstName(user.name);
+  const managerId = ctx.journey?.managerUserId ?? user.managerUserId;
+  const day = shortDay(e.lastWorkingDay);
+  const data = { userId: employeeUserId, journeyId: ctx.journey!.id };
+  let send: () => Promise<void>;
+  if (item === 'handover_checklist') {
+    send = () => tell([managerId], 'lifecycle_handover_checklist_nudge', `Handover for ${first}`, `HR is waiting for ${first}'s handover checklist. Last day ${day}.`, { ...data, destination: 'lifecycle_leaver' });
+  } else if (item === 'handover') {
+    send = () => tell([employeeUserId], 'lifecycle_handover_nudge', 'Your handover is waiting', `${option.what.replace('Upload the handover', 'Handover uploaded')} before your last day, ${day}. Open Action › Off-boarding.`, { journeyId: data.journeyId, destination: 'lifecycle_offboarding' });
+  } else if (item === 'exit_interview') {
+    send = () => tell([employeeUserId], 'lifecycle_exit_interview_nudge', 'Your exit interview is open', `Five short questions, all optional, until ${day}. Your answers go to HR only.`, { journeyId: data.journeyId, destination: 'lifecycle_exit_interview' });
+  } else {
+    const c = clearanceOf(e).find((x) => `clearance:${x.key}` === item)!;
+    const team = c.team ?? 'manager';
+    if (team === 'manager') {
+      send = () => tell([managerId], 'lifecycle_clearance_nudge', `Clearance for ${first}`, `${c.label} is still open. Last day ${day}.`, { ...data, destination: 'lifecycle_leaver' });
+    } else {
+      const staff = await clearanceStaff(actor.org, team);
+      if (!staff.length) throw new LifecycleError(409, `No one is set as ${TEAM_LABEL[team]} clearance staff. Set it in People › Accesses.`);
+      send = () => tell(staff, 'lifecycle_clearance_nudge', `Clearance: ${user.name}`, `${c.label} is still open. Last day ${day}.`, { userId: employeeUserId, destination: 'lifecycle_offboarding_board' },
+        { subject: `Clearance reminder: ${user.name}`, body: `Hi {firstName},\n\n${c.label} for ${user.name} is still open. Their last working day is ${longDay(e.lastWorkingDay)}.\n\nTick it on the Offboarding board in the HR dashboard once it is done.` });
+    }
+  }
+  // Once per item per day: the day's key goes on the exit atomically, so two clicks send one reminder.
+  const res = await users().updateOne({ userId: employeeUserId, org: actor.org, 'exit.offboarding.fired': { $ne: nudgeKey(item, today) } }, { $push: { 'exit.offboarding.fired': nudgeKey(item, today) } });
+  if (res.modifiedCount !== 1) throw new LifecycleError(429, `${option.to} was already reminded today. You can remind them again tomorrow.`);
+  await send();
+  return { nudged: { item, to: option.to }, ...(await offboardingDetail(actorUserId, employeeUserId, now)) };
+}
+
+/** GET /admin/lifecycle/offboarding/count — the sidebar's red badge: cards that need you, and late ones. */
+export async function offboardingCount(actorUserId: string, now = new Date()) {
+  const actor = await dashboardActor(actorUserId);
+  const today = todayKey(now);
+  const cards = (await allCards(actor, today)).filter((c) => c.column !== 'closed');
+  const needs = (c: BoardCard) => (actor.viewer.kind === 'hr' ? c.waitingOnHr : c.flag?.key !== 'all_clear');
+  const needsYou = cards.filter(needs).length;
+  const late = cards.filter((c) => c.late && !needs(c)).length;
+  return { count: needsYou + late, needsYou, late, viewer: actor.viewer };
+}
+
+// ———————————————————————————————————————————————— clearance team (People › Accesses)
+
+async function requireDashboardAdmin(actorUserId: string) {
+  const actor = await users().findOne({ userId: actorUserId }, { projection: { _id: 0, org: 1, dashboardAccess: 1, dashboardAdmin: 1 } });
+  if (!actor?.org || actor.dashboardAccess !== true || actor.dashboardAdmin !== true) throw new LifecycleError(403, 'Only a dashboard admin can set a clearance team');
+  return requireLifecycleOrg(actor.org);
+}
+
+/** GET /admin/lifecycle/offboarding/clearance-team/:userId — the team set, and the department's guess used when none is. */
+export async function clearanceTeamOf(actorUserId: string, userId: string) {
+  const org = await requireDashboardAdmin(actorUserId);
+  const u = await users().findOne({ userId, org }, { projection: { _id: 0, clearanceTeam: 1, department: 1 } });
+  if (!u) throw new LifecycleError(404, 'Employee not found');
+  return { team: u.clearanceTeam ?? null, guess: teamOfDepartment(u.department), department: u.department ?? '' };
+}
+
+/** PUT /admin/lifecycle/offboarding/clearance-team/:userId { team: 'it'|'admin'|'finance'|null } — null goes back to the department's guess. */
+export async function setClearanceTeam(actorUserId: string, userId: string, body: Record<string, unknown>, now = new Date()) {
+  const org = await requireDashboardAdmin(actorUserId);
+  const team = body.team == null || body.team === '' ? null : String(body.team);
+  if (team !== null && !['it', 'admin', 'finance'].includes(team)) throw new LifecycleError(400, 'The clearance team is IT, Admin or Finance');
+  const res = await users().updateOne({ userId, org }, team ? { $set: { clearanceTeam: team as 'it' | 'admin' | 'finance', updatedAt: now } } : { $unset: { clearanceTeam: '' }, $set: { updatedAt: now } });
+  if (!res.matchedCount) throw new LifecycleError(404, 'Employee not found');
+  return clearanceTeamOf(actorUserId, userId);
 }
 
 // ———————————————————————————————————————————————— the drawer
@@ -606,7 +770,7 @@ export async function offboardingDetail(actorUserId: string, employeeUserId: str
     return {
       viewer: actor.viewer, person: { ...person, managerName: manager?.name ?? '' }, card: toCard(`r:${r.id}`, cardBase(user), d), statusLabel: d.statusLabel,
       track: { steps: TRACK, current: d.track }, waitingOn: d.waitingOn, resignation: resignationView(r, manager?.name, now), exit: null,
-      tasks: [] as TaskView[], handover: { items: [] as HandoverItemView[], note: '' }, clearance: [], interview: null, appPage: false, settlement: null,
+      tasks: [] as TaskView[], handover: { items: [] as HandoverItemView[], note: '' }, clearance: [], interview: null, appPage: false, nudges: [] as NudgeOption[], settlement: null,
       details: [
         { label: 'Exit type', value: 'Resignation' },
         { label: 'Resigned on', value: longDay(keyOfInstant(r.submittedAt)!) },
@@ -659,7 +823,8 @@ export async function offboardingDetail(actorUserId: string, employeeUserId: str
       if (ob?.settlementEmail) details.push({ label: 'Settlement', value: `Emailed ${shortDay(keyOfInstant(ob.settlementEmail.at)!)}` });
       if (ctx.settlement?.paidAt) details.push({ label: 'Settlement paid', value: shortDay(keyOfInstant(ctx.settlement.paidAt)!) });
       const gratuity = ctx.settlement?.lines?.find((l) => l.key === 'gratuity');
-      if (gratuity || joined) details.push({ label: 'Gratuity', value: (gratuity ? gratuity.amountPaise > 0 : !!joined && serviceYears(joined, e.lastWorkingDay).completed >= 5) ? (finished(taskOf(ctx.tasks, 'gratuity')) ? 'Paid' : 'Due within 30 days') : 'Not eligible (under 5 years)' });
+      const years = joined ? serviceYears(joined, e.lastWorkingDay).completed : null;
+      if (gratuity || joined) details.push({ label: 'Gratuity', value: (gratuity ? gratuity.amountPaise > 0 : years !== null && years >= GRATUITY_MIN_YEARS) ? (taskOf(ctx.tasks, 'gratuity')?.status === 'done' ? 'Paid' : 'Due within 30 days') : `Not eligible (${years ?? 0} ${years === 1 ? 'year' : 'years'})` });
     }
     if (finished(taskOf(ctx.tasks, 'relieving_letter'))) details.push({ label: 'Relieving letter', value: 'Sent' });
   }
@@ -681,6 +846,8 @@ export async function offboardingDetail(actorUserId: string, employeeUserId: str
     interview,
     /** Whether the app shows the Off-boarding page (HR turns it on or off). */
     appPage: !!ob?.showAppPage,
+    /** HR's reminders for what is open (Remind {name}); once per item per day. */
+    nudges: hr ? nudgeOptions(ctx, today) : [],
     settlement: hr && actor.viewer.seesPay && ctx.settlement ? {
       status: ctx.settlement.status, payablePaise: ctx.settlement.payablePaise, dueOn: settlementDue,
       emailedTo: ob?.settlementEmail?.to ?? null, emailedAt: ob?.settlementEmail ? ob.settlementEmail.at.toISOString() : null,
@@ -766,7 +933,10 @@ export async function changeLastDay(actorUserId: string, employeeUserId: string,
     kind: e.kind, lastWorkingDay, ...(e.noticeFrom ? { noticeFrom: e.noticeFrom } : {}), ...(e.noticeDays != null ? { noticeDays: e.noticeDays } : {}),
     ...(e.note ? { note: e.note } : {}), rules, ...(e.newManagerUserId ? { newManagerUserId: e.newManagerUserId } : {}),
   }, now);
-  if (e.offboarding?.journeyId) await moveTl(e.offboarding.journeyId, lastWorkingDay);
+  if (e.offboarding?.journeyId) {
+    await moveTl(e.offboarding.journeyId, lastWorkingDay);
+    await syncGratuityTask(e.offboarding.journeyId, user.joiningDate, lastWorkingDay);
+  }
   if (e.offboarding?.resignationId) await resignations().updateOne({ id: e.offboarding.resignationId }, { $set: { agreedLastDay: lastWorkingDay } });
   if (lastWorkingDay !== e.lastWorkingDay) {
     const first = firstName(user.name);
@@ -842,7 +1012,7 @@ export async function emailSettlement(actorUserId: string, employeeUserId: strin
   requireHr(actor);
   if (!actor.viewer.seesPay) throw new LifecycleError(403, 'Only someone with payroll access can send a settlement');
   const user = await leaverFor(actor, employeeUserId);
-  const settlement = await exitSettlements().findOne({ org: actor.org, userId: employeeUserId }, { projection: { _id: 0, status: 1 } });
+  const settlement = await exitSettlements().findOne({ org: actor.org, userId: employeeUserId }, { projection: { _id: 0 } });
   if (!settlement || settlement.status === 'draft') throw new LifecycleError(409, 'Approve the settlement before emailing it');
   const to = String(body.to ?? user.personalEmail ?? '').trim().toLowerCase();
   if (!EMAIL.test(to)) throw new LifecycleError(400, 'Add their personal email to send the PDF to');
@@ -850,6 +1020,10 @@ export async function emailSettlement(actorUserId: string, employeeUserId: strin
   const pdf = Buffer.from(raw, 'base64');
   if (pdf.length < 100 || pdf.subarray(0, 5).toString('ascii') !== '%PDF-') throw new LifecycleError(400, 'pdfBase64 must be the settlement PDF');
   if (pdf.length > 10 * 1024 * 1024) throw new LifecycleError(413, 'The PDF must be 10 MB or smaller');
+  // The checks stop the send until they pass, unless HR says why it goes anyway.
+  const { blocking } = await checksFor(user, settlement);
+  const overrideReason = String(body.overrideReason ?? '').trim().slice(0, 300);
+  if (blocking.length && !overrideReason) throw new LifecycleError(409, `Not ready to send: ${blocking.join('; ')}. Resolve it, or say why you are sending anyway.`);
   const company = await companies().findOne({ id: actor.org }, { projection: { _id: 0, name: 1 } });
   const companyName = company?.name ?? actor.org;
   const first = firstName(user.name);
@@ -861,8 +1035,9 @@ export async function emailSettlement(actorUserId: string, employeeUserId: strin
   const sent = await sendLifecycleEmail(actor.org, to, subject, html, [{ filename: `Settlement_${user.employeeId || user.name.replace(/\s+/g, '_')}.pdf`, content: pdf, contentType: 'application/pdf' }]);
   // Without SMTP (development only) the mail is logged and kept in the outbox; anywhere else a failed send is an error.
   if (!sent && (smtpConfigured() || env.nodeEnv === 'production')) throw new LifecycleError(502, 'The email could not be sent; the PDF was not sent. Try again');
-  const settlementEmail = { to, at: now, ...(actor.name ? { byName: actor.name } : {}) };
+  const settlementEmail = { to, at: now, ...(actor.name ? { byName: actor.name } : {}), ...(blocking.length ? { overrideReason } : {}) };
   await users().updateOne({ userId: employeeUserId, org: actor.org }, {
+    ...(user.exit.offboarding?.settlementDraft ? { $unset: { 'exit.offboarding.settlementDraft': '' } } : {}),
     $set: { ...(user.exit.offboarding ? { 'exit.offboarding.settlementEmail': settlementEmail } : { 'exit.offboarding': { exitType: exitTypeOf(user.exit) ?? 'resignation', showAppPage: false, settlementEmail } }), ...(!user.personalEmail ? { personalEmail: to } : {}), updatedAt: now },
   });
   const journeyId = user.exit.offboarding?.journeyId;
@@ -1245,25 +1420,87 @@ export async function runOffboardingJobs(now = new Date()) {
   return counts;
 }
 
-/** The settlement's pre-send checks (O3): payroll run for the last month, clearance n of 4, salary status, personal email. */
+/** The company's HR address for the statement's footer: the reply-to / contact address, else the person asking. */
+async function hrEmailFor(org: string, fallback?: string): Promise<string> {
+  const company = await companies().findOne({ id: org }, { projection: { _id: 0, profile: 1 } });
+  return company?.profile?.replyToEmail?.trim() || company?.profile?.primaryContactEmail?.trim() || fallback || '';
+}
+
+type Check = { ok: boolean; label: string };
+export interface SettlementChecks {
+  attendance: Check;
+  clearance: { done: number; total: number; ok: boolean };
+  salary: Check;
+  personalEmail: { ok: boolean; value: string };
+  /** What still stops "Approve and email" (HR may send anyway, with a reason). */
+  blocking: string[];
+}
+
+/**
+ * O3's "Before you send": the last month's attendance and payroll (no estimated salary line), clearance
+ * n of 4, the salary status from payroll (the last month either on the statement or paid in a monthly
+ * run), and a personal email to send the PDF to.
+ */
+async function checksFor(user: User & { exit: UserExit; org: string }, settlement: ExitSettlement | null): Promise<SettlementChecks> {
+  const e = user.exit;
+  const estimated = settlement?.lines.filter((l) => l.estimated) ?? [];
+  const clearance = clearanceOf(e);
+  const range = await payrollPeriodHolding(user.org, e.lastWorkingDay);
+  const lastPeriod = range ? `${range.year}-${String(range.month).padStart(2, '0')}` : e.lastWorkingDay.slice(0, 7);
+  const attendance: Check = estimated.length
+    ? { ok: false, label: `${estimated.map((l) => (l.period ? monthName(l.period) : l.label)).join(', ')}: no payroll run yet, so the salary is an estimate` }
+    : { ok: !!settlement, label: settlement ? `Payroll for ${monthName(lastPeriod)} is run` : 'Starts the day after the last working day' };
+  let salary: Check;
+  const onStatement = !!settlement?.lines.some((l) => l.key === `salary:${lastPeriod}`);
+  if (!settlement) salary = { ok: false, label: 'Starts the day after the last working day' };
+  else if (onStatement) salary = { ok: true, label: e.rules?.holdPay !== false ? `${monthName(lastPeriod)}: held${e.noticeFrom ? ` from ${shortDay(e.noticeFrom)}` : ''}, paid with the settlement` : `${monthName(lastPeriod)}: on the statement` };
+  else {
+    const slip = await payslips().findOne({ org: user.org, userId: user.userId, period: lastPeriod }, { projection: { _id: 0, held: 1 } });
+    salary = slip && !slip.held ? { ok: true, label: `${monthName(lastPeriod)}: paid in the monthly run` }
+      : { ok: false, label: `${monthName(lastPeriod)}: not on the statement or a payroll run yet` };
+  }
+  const personalEmail = { ok: !!user.personalEmail, value: user.personalEmail ?? '' };
+  const done = clearance.filter((c) => c.done).length;
+  const blocking = [
+    ...(!attendance.ok ? ['Attendance and payroll for the last month'] : []),
+    ...(done < clearance.length ? [`Clearance (${done} of ${clearance.length} done)`] : []),
+    ...(!salary.ok ? ['Salary status from payroll'] : []),
+  ];
+  return { attendance, clearance: { done, total: clearance.length, ok: done === clearance.length }, salary, personalEmail, blocking };
+}
+
+/** The settlement's pre-send checks (O3), the email draft HR saved, and what the PDF's footer says. */
 export async function settlementChecks(actorUserId: string, employeeUserId: string, now = new Date()) {
   const actor = await dashboardActor(actorUserId);
   requireHr(actor);
   if (!actor.viewer.seesPay) throw new LifecycleError(403, 'Only someone with payroll access can see a settlement');
   const user = await leaverFor(actor, employeeUserId);
   const settlement = await settlementFor(user, now);
-  const estimated = settlement?.lines.filter((l) => l.estimated) ?? [];
-  const clearance = clearanceOf(user.exit);
-  const lastMonth = user.exit.lastWorkingDay.slice(0, 7);
+  const checks = await checksFor(user, settlement);
+  const draft = user.exit.offboarding?.settlementDraft;
+  const actorEmail = (await users().findOne({ userId: actor.userId }, { projection: { _id: 0, email: 1 } }))?.email;
+  const dueOn = keyOfInstant((await journeyTasks().findOne({ journeyId: user.exit.offboarding?.journeyId ?? '-', systemKey: 'final_settlement' }, { projection: { _id: 0, dueAt: 1 } }))?.dueAt ?? null) ?? addWorkingDays(user.exit.lastWorkingDay, 2);
   return {
     open: !!settlement,
-    attendance: estimated.length
-      ? { ok: false, label: `${estimated.map((l) => (l.period ? monthName(l.period) : l.label)).join(', ')}: no payroll run yet, so the salary is an estimate` }
-      : { ok: !!settlement, label: settlement ? `Payroll for ${monthName(lastMonth)} is run` : 'Starts the day after the last working day' },
-    clearance: { done: clearance.filter((c) => c.done).length, total: clearance.length, ok: clearance.every((c) => c.done) },
-    salary: { ok: true, label: user.exit.rules?.holdPay ? `Held${user.exit.noticeFrom ? ` from ${shortDay(user.exit.noticeFrom)}` : ''}, paid with the settlement` : 'Paid with each monthly run' },
-    personalEmail: { ok: !!user.personalEmail, value: user.personalEmail ?? '' },
-    dueOn: addWorkingDays(user.exit.lastWorkingDay, 2),
+    ...checks,
+    dueOn,
+    hrEmail: await hrEmailFor(actor.org, actorEmail),
+    draft: draft ? { to: draft.to, subject: draft.subject, message: draft.message, savedAt: new Date(draft.savedAt).toISOString(), byName: draft.byName ?? '' } : null,
     teams: CLEARANCE_TEAMS,
   };
+}
+
+/** PUT /admin/lifecycle/offboarding/:userId/settlement/draft { to?, subject?, message? } — O3 "Save draft" (the lines are saved on the settlement as they change). */
+export async function saveSettlementDraft(actorUserId: string, employeeUserId: string, body: Record<string, unknown>, now = new Date()) {
+  const actor = await dashboardActor(actorUserId);
+  requireHr(actor);
+  if (!actor.viewer.seesPay) throw new LifecycleError(403, 'Only someone with payroll access can see a settlement');
+  const user = await leaverFor(actor, employeeUserId);
+  const to = String(body.to ?? '').trim().toLowerCase().slice(0, 200);
+  if (to && !EMAIL.test(to)) throw new LifecycleError(400, 'The email address is not valid');
+  const draft = { to, subject: String(body.subject ?? '').trim().slice(0, 200), message: String(body.message ?? '').trim().slice(0, 4000), savedAt: now, ...(actor.name ? { byName: actor.name } : {}) };
+  await users().updateOne({ userId: employeeUserId, org: actor.org }, {
+    $set: { ...(user.exit.offboarding ? { 'exit.offboarding.settlementDraft': draft } : { 'exit.offboarding': { exitType: exitTypeOf(user.exit) ?? 'resignation', showAppPage: false, settlementDraft: draft } }), updatedAt: now },
+  });
+  return settlementChecks(actorUserId, employeeUserId, now);
 }
