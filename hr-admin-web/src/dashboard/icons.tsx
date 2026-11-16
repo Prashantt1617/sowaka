@@ -384,6 +384,18 @@ export const navIcon: Record<View, ReactElement> = {
       <path d="M16 8l4 4-4 4M20 12H10" />
     </svg>
   ),
+  // A door, for the Offboarding board.
+  offboarding: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M5 20.5h14M7 20.5V4.5A1 1 0 0 1 8 3.5h8a1 1 0 0 1 1 1v16" />
+      <circle cx="14" cy="12.5" r="0.9" />
+    </svg>
+  ),
+  exit_insights: (
+    <svg {...base(18, 'currentColor')}>
+      <path d="M4 20h16M7 16.5V11M12 16.5V6.5M17 16.5v-3.5" />
+    </svg>
+  ),
   punchlog: (
     <svg {...base(18, 'currentColor')}>
       <circle cx="12" cy="12" r="8.5" />

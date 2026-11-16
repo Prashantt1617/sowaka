@@ -605,7 +605,7 @@ export async function offboardingDetail(actorUserId: string, employeeUserId: str
     return {
       viewer: actor.viewer, person: { ...person, managerName: manager?.name ?? '' }, card: toCard(`r:${r.id}`, cardBase(user), d), statusLabel: d.statusLabel,
       track: { steps: TRACK, current: d.track }, waitingOn: d.waitingOn, resignation: resignationView(r, manager?.name, now), exit: null,
-      tasks: [] as TaskView[], handover: { items: [] as HandoverItemView[], note: '' }, clearance: [], interview: null, settlement: null,
+      tasks: [] as TaskView[], handover: { items: [] as HandoverItemView[], note: '' }, clearance: [], interview: null, appPage: false, settlement: null,
       details: [
         { label: 'Exit type', value: 'Resignation' },
         { label: 'Resigned on', value: longDay(keyOfInstant(r.submittedAt)!) },
@@ -678,6 +678,8 @@ export async function offboardingDetail(actorUserId: string, employeeUserId: str
     handover: { items: hr ? ctx.handover.map(handoverView) : [], note: hr ? ob?.handoverNote ?? '' : '' },
     clearance,
     interview,
+    /** Whether the app shows the Off-boarding page (HR turns it on or off). */
+    appPage: !!ob?.showAppPage,
     settlement: hr && actor.viewer.seesPay && ctx.settlement ? {
       status: ctx.settlement.status, payablePaise: ctx.settlement.payablePaise, dueOn: settlementDue,
       emailedTo: ob?.settlementEmail?.to ?? null, emailedAt: ob?.settlementEmail ? ob.settlementEmail.at.toISOString() : null,

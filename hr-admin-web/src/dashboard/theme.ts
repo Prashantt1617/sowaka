@@ -46,6 +46,8 @@ export type View =
   | 'employeeimport'
   | 'exits'
   | 'exitsettings'
+  | 'offboarding'
+  | 'exit_insights'
   | 'peopletasks'
   | 'orgchart'
   | 'attendancereport'
@@ -196,6 +198,8 @@ export const TITLES: Record<View, [string, string]> = {
   employees: ['Employees', 'People'],
   exits: ['Exits', 'People · who is leaving, and who has left'],
   exitsettings: ['Exit settings', 'Setup'],
+  offboarding: ['Offboarding', 'Employee lifecycle · everyone leaving, from resignation to final settlement'],
+  exit_insights: ['Exit insights', 'Employee lifecycle · why people leave, anonymised'],
   employeeimport: ['Import employees', 'People · update details from a sheet, approved before it saves'],
   peopletasks: ['Tasks', 'People · who still needs a template, salary, bank details or basic details'],
   orgchart: ['Org chart', 'People'],

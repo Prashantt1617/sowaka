@@ -2,6 +2,17 @@
 // in the browser: no print dialog, a real file named the way Zoho names them.
 
 export async function downloadHtmlAsPdf(html: string, filename: string): Promise<void> {
+  // The html2pdf worker is itself a thenable, so it travels wrapped: awaiting it bare would run it.
+  await (await pdfOf(html, filename)).worker.save();
+}
+
+/** The same PDF as base64 (no data: prefix), for a document the server emails (the final settlement). */
+export async function htmlToPdfBase64(html: string, filename: string): Promise<string> {
+  const uri = await (await pdfOf(html, filename)).worker.outputPdf('datauristring');
+  return uri.slice(uri.indexOf(',') + 1);
+}
+
+async function pdfOf(html: string, filename: string) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const styles = [...doc.querySelectorAll('style')].map((s) => s.outerHTML).join('');
   // html2pdf (with jsPDF and html2canvas) is large; it is fetched the first time someone saves a PDF.
@@ -12,7 +23,7 @@ export async function downloadHtmlAsPdf(html: string, filename: string): Promise
   });
   // html2pdf lays the string out in its own overlay at A4 width; an element we
   // placed off screen ourselves comes out blank.
-  await html2pdf()
+  const worker = html2pdf()
     .set({
       margin: [8, 8, 8, 8],
       filename,
@@ -22,6 +33,6 @@ export async function downloadHtmlAsPdf(html: string, filename: string): Promise
       pagebreak: { mode: ['css', 'legacy'] },
     })
     // Always a light document, whatever theme the dashboard is in.
-    .from(`${styles}<div style="color:#222;background:#fff;color-scheme:light">${doc.body.innerHTML}</div>`, 'string')
-    .save();
+    .from(`${styles}<div style="color:#222;background:#fff;color-scheme:light">${doc.body.innerHTML}</div>`, 'string');
+  return { worker };
 }
