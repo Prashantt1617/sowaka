@@ -43,8 +43,8 @@ import {
   employeeImportPreview,
   employeeImportApply,
   employeeImportCancel,
-  updateOvertimeEligibility,
-} from '../controllers/admin.controller';
+  updateOvertimeEligibility, listExitsHandler, exitSettingsHandler, setExitSettingsHandler, recordExitHandler, withdrawExitHandler, endAccessNowHandler,
+  exitDetailHandler, exitClearanceHandler, exitInterviewHandler, exitCloseCaseHandler, exitSettlementHandler } from '../controllers/admin.controller';
 import { requireAuth } from '../middleware/auth.middleware';
 import { uploadEmployeeDocumentFile } from '../middleware/employee-document-upload.middleware';
 import { requireDashboardAccess, requireDashboardAdmin, requireDashboardTabs } from '../middleware/admin.middleware';
@@ -114,6 +114,18 @@ adminRouter.get('/account-limit', accountLimit);
 adminRouter.patch('/employees/:userId/overtime-eligibility', updateOvertimeEligibility);
 // Profile details, by someone given the right (User.canEditEmployeeDetails): their own and their reports'.
 adminRouter.patch('/employees/:userId', updateEmployeeDetails);
+// Exits: record (or change) one, withdraw it before it takes effect, end access at once; the company's list.
+adminRouter.get('/exits', listExitsHandler);
+adminRouter.get('/exit-settings', exitSettingsHandler);
+adminRouter.put('/exit-settings', setExitSettingsHandler);
+adminRouter.put('/employees/:userId/exit', recordExitHandler);
+adminRouter.delete('/employees/:userId/exit', withdrawExitHandler);
+adminRouter.post('/employees/:userId/exit/end-access', endAccessNowHandler);
+adminRouter.get('/employees/:userId/exit', exitDetailHandler);
+adminRouter.put('/employees/:userId/exit/clearance', exitClearanceHandler);
+adminRouter.put('/employees/:userId/exit/interview', exitInterviewHandler);
+adminRouter.post('/employees/:userId/exit/close-case', exitCloseCaseHandler);
+adminRouter.post('/employees/:userId/exit/settlement/:action', exitSettlementHandler);
 // Delete an employee for good (dashboard admins; their name typed to confirm).
 adminRouter.delete('/employees/:userId', deleteEmployee);
 // Who changed what on them: details, manager, shift and templates.

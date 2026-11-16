@@ -126,7 +126,7 @@ function lateBy(punchIn: Date, startTime: string, graceMinutes: number): number 
   return over > 0 ? over : 0;
 }
 
-type Person = Pick<User, 'userId' | 'name' | 'employeeId' | 'department' | 'location' | 'branch' | 'state' | 'managerUserId' | 'joiningDate'>;
+type Person = Pick<User, 'userId' | 'name' | 'employeeId' | 'department' | 'location' | 'branch' | 'state' | 'managerUserId' | 'joiningDate' | 'endDate'>;
 
 /**
  * The day someone joined, 'YYYY-MM-DD': days before it are not theirs to
@@ -134,6 +134,16 @@ type Person = Pick<User, 'userId' | 'name' | 'employeeId' | 'department' | 'loca
  */
 export const joinedOn = (user: { joiningDate?: Date | string | null }): string | undefined =>
   user.joiningDate ? new Date(user.joiningDate).toISOString().slice(0, 10) : undefined;
+
+/**
+ * Their last working day, 'YYYY-MM-DD', once HR has recorded an exit: days after it are
+ * not theirs either, and payroll counts them as after leaving. Mirrors joinedOn.
+ */
+export const leftOn = (user: { endDate?: Date | string | null }): string | undefined =>
+  user.endDate ? new Date(user.endDate).toISOString().slice(0, 10) : undefined;
+
+/** Leavers stay on the roster this long after their last working day, so past months still grade them. */
+const LEAVERS_KEPT_MS = 400 * 86_400_000;
 
 /**
  * The roster, templates and org policy change rarely and cost the most to
@@ -217,8 +227,10 @@ async function orgSetup(org: string): Promise<OrgSetup> {
   const [roster, templates, orgPolicy, assignments] = await Promise.all([
     users()
       .find(
-        { org, lifecycleStatus: { $nin: ['offboarded', 'terminated'] } },
-        { projection: { _id: 0, userId: 1, name: 1, employeeId: 1, department: 1, location: 1, branch: 1, state: 1, managerUserId: 1, joiningDate: 1 } },
+        // Everyone still here, and anyone who left in the last year or so: their days up to the
+        // last working day still count (a payroll run, a past month on the calendar); after it, none do.
+        { org, $or: [{ lifecycleStatus: { $nin: ['offboarded', 'terminated'] } }, { endDate: { $gte: new Date(Date.now() - LEAVERS_KEPT_MS) } }] } as never,
+        { projection: { _id: 0, userId: 1, name: 1, employeeId: 1, department: 1, location: 1, branch: 1, state: 1, managerUserId: 1, joiningDate: 1, endDate: 1 } },
       )
       // One batch, not a round trip per hundred rows: on a slow link the trips
       // were the whole wait, and the whole roster is a few hundred kilobytes.
@@ -411,6 +423,9 @@ function dayGrader(setup: OrgSetup, { punchesBy, approvedLeaves, holidayRows, ma
     // not loss of pay (payroll counts those days on its own).
     const joined = joinedOn(user);
     if (joined && key < joined) return null;
+    // After their last working day: nothing to grade either.
+    const left = leftOn(user);
+    if (left && key > left) return null;
     // The shift that covered this day, which is not always today's.
     const onDay = policyOn(user, key);
     // HR's mark on the day outranks everything below it.
@@ -596,6 +611,9 @@ export async function attendanceReport(
   const now = Date.now();
 
   for (const user of roster) {
+    // Left before this range began: not part of it at all.
+    const leftDay = leftOn(user);
+    if (leftDay && leftDay < from) continue;
     // The row that names the person describes where they stand at the end of
     // the range; each day below is graded on its own.
     const policy = policyOn(user, to);
@@ -747,12 +765,18 @@ async function gradeEmployeeDays(org: string, setup: OrgSetup, user: Person, fro
   };
 
   const joined = joinedOn(user);
+  const left = leftOn(user);
   for (let t = dayOf(from).getTime(); t <= dayOf(to).getTime(); t += DAY_MS) {
     const day = new Date(t);
     const key = keyOf(day);
     // Before they joined: an empty day, not an absence.
     if (joined && key < joined) {
       days.push({ date: key, status: 'before_joining', label: 'Before joining', punchIn: null, punchOut: null, lateByMinutes: 0, earlyByMinutes: 0 });
+      continue;
+    }
+    // After their last working day: empty too (shown like the days before joining).
+    if (left && key > left) {
+      days.push({ date: key, status: 'before_joining', label: 'After leaving', punchIn: null, punchOut: null, lateByMinutes: 0, earlyByMinutes: 0 });
       continue;
     }
     const onDay = policyOn(user, key);

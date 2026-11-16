@@ -12,6 +12,134 @@ export type UserLifecycleStatus =
 
 export type OnboardingStatus = 'pending' | 'in_progress' | 'completed';
 
+/** Why someone is leaving. 'consultant' (PF employee to consultant) keeps them working; recording one comes with step 3. */
+export type ExitKind = 'resigned' | 'terminated' | 'absconded' | 'retired' | 'other';
+export const EXIT_KINDS: ExitKind[] = ['resigned', 'terminated', 'absconded', 'retired', 'other'];
+export type ExitRuleKind = ExitKind | 'consultant';
+export const EXIT_RULE_KINDS: ExitRuleKind[] = ['resigned', 'terminated', 'absconded', 'consultant', 'retired', 'other'];
+
+/**
+ * What an exit does, per kind: the company's defaults (Setup › Payroll › Exit settings),
+ * copied onto each exit when it is recorded and changeable for that one person.
+ * holdPay and access act now; the notice lines are read by the final settlement.
+ * Gratuity (the law: 5 years or more) and leave encashment (each leave type's own
+ * encashment rule) are not exit settings.
+ */
+export interface ExitRules {
+  /** Hold their pay from the day notice begins, paid with the settlement. */
+  holdPay: boolean;
+  /** When app access ends. */
+  access: 'day_after' | 'at_once' | 'never';
+  /** Paid instead of notice (the company ends the job early). */
+  noticePay: 'none' | 'hr_chooses' | 'pay';
+  /** Recovered when the employee leaves without serving the notice. */
+  noticeRecovery: 'none' | 'days_not_served' | 'whole_notice';
+}
+export const EXIT_RULE_CHOICES: { [K in keyof ExitRules]: ExitRules[K][] } = {
+  holdPay: [true, false],
+  access: ['day_after', 'at_once', 'never'],
+  noticePay: ['none', 'hr_chooses', 'pay'],
+  noticeRecovery: ['none', 'days_not_served', 'whole_notice'],
+};
+/** The starting point for every company until HR changes it (the plan's table). */
+export const DEFAULT_EXIT_RULES: Record<ExitRuleKind, ExitRules> = {
+  resigned: { holdPay: true, access: 'day_after', noticePay: 'none', noticeRecovery: 'days_not_served' },
+  terminated: { holdPay: true, access: 'at_once', noticePay: 'hr_chooses', noticeRecovery: 'none' },
+  absconded: { holdPay: true, access: 'at_once', noticePay: 'none', noticeRecovery: 'whole_notice' },
+  consultant: { holdPay: false, access: 'never', noticePay: 'none', noticeRecovery: 'none' },
+  retired: { holdPay: true, access: 'day_after', noticePay: 'none', noticeRecovery: 'none' },
+  other: { holdPay: true, access: 'day_after', noticePay: 'none', noticeRecovery: 'none' },
+};
+
+/**
+ * An exit HR has recorded. Until the last working day the person is on notice
+ * and uses the app as before; from the day after (00:00 IST, or at once when HR
+ * ends access) they are offboarded (terminated, for a termination or an
+ * absconding), their sessions and device tokens go, and payroll pays nothing
+ * after the last working day. `endDate` on the user mirrors `lastWorkingDay`.
+ */
+export interface UserExit {
+  kind: ExitKind;
+  /** 'YYYY-MM-DD': when they resigned or were told; the notice counts from it. */
+  noticeFrom?: string;
+  /** 'YYYY-MM-DD': their last day at work, paid in full. */
+  lastWorkingDay: string;
+  /** Notice the role requires, in days (as HR enters it). */
+  noticeDays?: number;
+  note?: string;
+  recordedByUserId: string;
+  recordedByName?: string;
+  recordedAt: Date;
+  /** When their access ended (the nightly job or HR's "End access now"). */
+  accessEndedAt?: Date;
+  /** Who takes over their team, when they have one. */
+  newManagerUserId?: string;
+  /**
+   * When the team moves to the new manager: the day after the last working day
+   * (so the leaving manager still approves during notice), or at once ("Move
+   * them now", a termination, an absconding). `teamMovedAt` is when it happened;
+   * `teamToldAt` when the heads-up went to the team and the new manager.
+   */
+  teamMove?: 'day_after' | 'now';
+  teamMovedAt?: Date;
+  teamToldAt?: Date;
+  /** The rules for this exit: the company's for its kind when recorded, with HR's changes. */
+  rules?: ExitRules;
+  /** What must come back or be closed before the settlement is approved; HR ticks each. */
+  clearance?: ExitClearanceItem[];
+  /** The exit interview: the employee's answers (the app) or HR's after a conversation. HR only. */
+  interview?: ExitInterview;
+  /** An absconding: when HR closed the case, which starts its settlement. */
+  caseClosedAt?: Date;
+  caseClosedByName?: string;
+}
+
+export interface ExitClearanceItem {
+  key: string;
+  label: string;
+  done: boolean;
+  doneAt?: Date;
+  doneByName?: string;
+}
+/** The list every exit starts with. */
+export const DEFAULT_EXIT_CLEARANCE: { key: string; label: string }[] = [
+  { key: 'handover', label: 'Work handed over' },
+  { key: 'laptop', label: 'Laptop and accessories returned' },
+  { key: 'id_card', label: 'ID card and access cards returned' },
+  { key: 'advances', label: 'Advances and loans cleared' },
+];
+
+export const EXIT_INTERVIEW_REASONS = ['pay', 'growth', 'manager', 'work_life', 'relocation', 'studies', 'other'] as const;
+export type ExitInterviewReason = (typeof EXIT_INTERVIEW_REASONS)[number];
+export interface ExitInterview {
+  reason?: ExitInterviewReason;
+  /** 1 to 5. */
+  workRating?: number;
+  managerRating?: number;
+  comeBack?: 'yes' | 'maybe' | 'no';
+  change?: string;
+  filledBy: 'employee' | 'hr';
+  filledByName?: string;
+  filledAt: Date;
+}
+
+/** How the notice lines of a settlement are worked out (Setup › Payroll › Exit settings); each has a default. */
+export interface ExitNoticeSettings {
+  /** A day of notice not given is recovered at… */
+  recoveryBasis: 'basic_30' | 'gross_30' | 'basic_month';
+  /** A day of notice pay is paid at… */
+  noticePayBasis: 'gross_30' | 'basic_30' | 'gross_month';
+  /** Unused leave covers the days not given first; only the rest is recovered. */
+  leaveCoversShortfall: boolean;
+  /** How many days before the last day the team and the new manager are told. */
+  teamNoticeDays: number;
+}
+export const DEFAULT_EXIT_NOTICE: ExitNoticeSettings = { recoveryBasis: 'basic_30', noticePayBasis: 'gross_30', leaveCoversShortfall: false, teamNoticeDays: 7 };
+export const EXIT_NOTICE_CHOICES = {
+  recoveryBasis: ['basic_30', 'gross_30', 'basic_month'],
+  noticePayBasis: ['gross_30', 'basic_30', 'gross_month'],
+} as const;
+
 export type NoticeStatus = 'none' | 'serving' | 'completed';
 
 /**
@@ -49,6 +177,8 @@ export interface User {
   birthday?: Date;
   joiningDate?: Date;
   endDate?: Date | null;
+  /** An exit HR has recorded (see UserExit); absent for everyone still employed. */
+  exit?: UserExit;
   documents?: EmployeeDocument[];
   lifecycleStatus: UserLifecycleStatus;
   /**

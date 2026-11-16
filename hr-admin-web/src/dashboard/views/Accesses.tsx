@@ -37,7 +37,7 @@ const titleCase = (t: string) => t.charAt(0) + t.slice(1).toLowerCase();
 // Placements' Clients and Candidates come with its one tab, `placements`.
 // Investment proofs, Statutory & tax settings, FBP requests and FBP splits are not tabs of their own here: they come with Payroll Runs or Salary details.
 // Reports › Company calendar and Punch log come with the Attendance report (Punch log with Attendance and OOL check-ins too), as access.ts and the server decide it.
-const RIDES_ALONG = new Set<AccessKey>([...PLACEMENT_VIEWS.filter((v) => v !== 'placements'), 'investmentproofs', 'payrollconfig', 'fbprequests', 'fbpsplits', 'companycalendar', 'punchlog']);
+const RIDES_ALONG = new Set<AccessKey>([...PLACEMENT_VIEWS.filter((v) => v !== 'placements'), 'investmentproofs', 'payrollconfig', 'exits', 'fbprequests', 'fbpsplits', 'companycalendar', 'punchlog']);
 const SECTION_UNITS: Unit[] = SECTIONS.flatMap((s) => {
   const items = s.items.filter((i) => i.key !== 'usersroles' && i.key !== 'support' && i.key !== 'cuptv');
   const tabs = items.filter((i) => !RIDES_ALONG.has(i.key)).map((i) => i.key);

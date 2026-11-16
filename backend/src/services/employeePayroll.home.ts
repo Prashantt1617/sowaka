@@ -151,6 +151,8 @@ export function fromPayslip(slip: Payslip & { _id?: { toHexString(): string } })
     netPaise: slip.netPaise,
     reimbursementsPaise: slip.reimbursementsPaise,
     takeHomePaise: slip.netPayablePaise,
+    /** On notice: held, paid with the final settlement (the app says so from its next build). */
+    held: slip.held ? true : false,
   };
 }
 

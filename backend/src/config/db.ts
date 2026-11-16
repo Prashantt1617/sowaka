@@ -40,6 +40,7 @@ import { SalaryStructure } from '../models/salaryStructure.model';
 import { SalaryTemplate } from '../models/salaryTemplate.model';
 import { PaidDaysTemplate } from '../models/paidDaysTemplate.model';
 import { PayrollRun, Payslip } from '../models/payrollRun.model';
+import { ExitSettlement } from '../models/exitSettlement.model';
 import { PayrollPeriodSetting } from '../models/payrollPeriod.model';
 import { EmployeePaymentDetails } from '../models/employeePayment.model';
 import { TaxDeclarationRow, TdsConfigRow } from '../models/tds.model';
@@ -348,6 +349,11 @@ export function investmentProofs(): Collection<InvestmentProof> {
 
 export function payslips(): Collection<Payslip> {
   return getDb().collection<Payslip>('payslips');
+}
+
+/** Final settlements of people who have left, one per person (exitSettlement.service). */
+export function exitSettlements(): Collection<ExitSettlement> {
+  return getDb().collection<ExitSettlement>('exit_settlements');
 }
 
 export function kpiParameters(): Collection<KpiParameter> {
@@ -692,6 +698,7 @@ async function ensureIndexes(database: Db): Promise<void> {
   const payslipsCollection = database.collection<Payslip>('payslips');
   await payslipsCollection.createIndex({ org: 1, runId: 1 });
   await payslipsCollection.createIndex({ userId: 1, period: -1 });
+  await getDb().collection('exit_settlements').createIndex({ org: 1, userId: 1 }, { unique: true });
 
   const relayEventsCollection = database.collection<RelayEvent>('relay_events');
   await relayEventsCollection.createIndex({ id: 1 }, { unique: true });

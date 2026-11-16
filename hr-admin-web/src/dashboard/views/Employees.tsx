@@ -39,6 +39,8 @@ function EmployeesBody() {
   };
   const [selected, setSelected] = useState<Emp | null>(null);
   const [page, setPage] = useState(1);
+  // Who the list shows: everyone working here (on notice included), only those on notice, or those who left.
+  const [who, setWho] = useState<'working' | 'notice' | 'left'>('working');
   // Opened from elsewhere (Suwi's links): which person, and on which tab.
   const [initialTab, setInitialTab] = useState<ProfileTab | undefined>(undefined);
   const req = s.profileRequest;
@@ -46,7 +48,7 @@ function EmployeesBody() {
     if (!req) return;
     const e = s.emps.find((x) => x.id === req.userId);
     if (e) {
-      const tabs: Record<string, ProfileTab> = { calendar: 'calendar', salary: 'salary', performance: 'performance', requests: 'requests', orgchart: 'orgchart', activity: 'activity' };
+      const tabs: Record<string, ProfileTab> = { calendar: 'calendar', salary: 'salary', performance: 'performance', requests: 'requests', orgchart: 'orgchart', activity: 'activity', exit: 'exit' };
       setInitialTab(req.tab ? tabs[req.tab] : undefined);
       setSelected(e);
     }
@@ -62,7 +64,11 @@ function EmployeesBody() {
   // may name teams the company does not have.
   const teams = [...new Set(s.emps.map((e) => e.team).filter((t) => t && t !== '—'))].sort();
 
-  let rows = s.emps.slice();
+  // People who have left (access ended after their last day) are kept out unless asked for;
+  // those on notice still work here, so they stay, tagged.
+  const working = s.emps.filter((e) => !e.exit?.left);
+  const leftCount = s.emps.length - working.length;
+  let rows = who === 'left' ? s.emps.filter((e) => e.exit?.left) : who === 'notice' ? working.filter((e) => e.exit) : working.slice();
   const q = s.empSearch.trim().toLowerCase();
   if (q) rows = rows.filter((r) => r.name.toLowerCase().includes(q) || r.employeeId.toLowerCase().includes(q) || r.role.toLowerCase().includes(q));
   if (s.empTeam !== 'all') rows = rows.filter((r) => r.team === s.empTeam);
@@ -96,8 +102,15 @@ function EmployeesBody() {
               <option key={t} value={t}>{t}</option>
             ))}
           </SelectBox>
+          {(leftCount > 0 || working.some((e) => e.exit)) && (
+            <SelectBox value={who} onChange={(v) => { setWho(v as typeof who); setPage(1); }}>
+              <option value="working">Working here</option>
+              <option value="notice">On notice</option>
+              <option value="left">Left · {leftCount}</option>
+            </SelectBox>
+          )}
         </div>
-        <div className="pd-countline" style={{ marginBottom: 14 }}><b>{rows.length}</b> of {s.emps.length} people</div>
+        <div className="pd-countline" style={{ marginBottom: 14 }}><b>{rows.length}</b> of {who === 'left' ? leftCount : working.length} {who === 'left' ? 'who left' : 'people'}</div>
         <div className="pd-tbl-wrap">
         <table className="pd-t">
           <thead>
@@ -119,7 +132,10 @@ function EmployeesBody() {
                     <Avatar name={r.name} size={34} font={14} src={r.photoUrl} />
                     <span className="txt">
                       <b>{r.name}</b>
-                      <span className="sub">{r.employeeId}</span>
+                      <span className="sub">
+                        {r.employeeId}
+                        {r.exit && <ExitTag exit={r.exit} />}
+                      </span>
                     </span>
                   </span>
                 </Td>
@@ -196,4 +212,15 @@ async function exportEmployees(rows: Emp[]) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Employees');
   XLSX.writeFile(wb, `employees-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+/** "On notice · 31 Dec" while they work their notice, "Left · 31 Dec" after. */
+function ExitTag({ exit }: { exit: { lastWorkingDay: string; left: boolean } }) {
+  const day = new Date(`${exit.lastWorkingDay}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  return (
+    <span style={{ marginLeft: 8, padding: '1px 7px', borderRadius: 999, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+      background: exit.left ? 'var(--surface-2)' : 'var(--warn-bg)', color: exit.left ? 'var(--ink-3)' : 'var(--warn)' }}>
+      {exit.left ? 'Left' : 'On notice'} · {day}
+    </span>
+  );
 }

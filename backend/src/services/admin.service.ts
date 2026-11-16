@@ -73,6 +73,8 @@ export async function listAllEmployeesForAdmin(adminUserId: string) {
     managerUserId: e.managerUserId,
     managerName: e.managerUserId ? nameById.get(e.managerUserId) : undefined,
     lifecycleStatus: e.lifecycleStatus,
+    // An exit HR recorded: the dashboard tags "On notice · 31 Dec" and keeps people who have left out of Employees.
+    exit: e.exit ? { lastWorkingDay: e.exit.lastWorkingDay, kind: e.exit.kind, left: Boolean(e.exit.accessEndedAt) } : null,
     // Present on the user record already; the dashboard's employee table and
     // profile show these, and without them every row reads as a dash.
     employeeId: e.employeeId,
