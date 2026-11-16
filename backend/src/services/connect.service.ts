@@ -2089,7 +2089,8 @@ function normalizePostBody(
       // Entries and votes are written by their own endpoints, never taken from
       // the client, so editing the brief cannot rewrite who caught what.
       return {
-        title: normalizeText(input.title, 'Caught red handed', 100),
+        // No made-up title: a Best Photo card leads with its task unless a title is typed.
+        title: normalizeText(input.title, '', 100),
         task: normalizeText(input.task, '', 400),
         pointsPerVote: normalizePoints(input.pointsPerVote),
         closesAt: normalizeClosesAt(input.closesAt),

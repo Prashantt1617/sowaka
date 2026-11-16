@@ -41,7 +41,7 @@ function isClosed(post: ConnectPost): boolean {
 export function contestName(post: ConnectPost): string {
   const b = post.body;
   if (post.type === 'most_likely') return String(b.title || b.question || 'Most Likely');
-  if (post.type === 'photo_story_challenge') return String(b.task || b.title || 'Caught red handed');
+  if (post.type === 'photo_story_challenge') return String(b.task || b.title || 'Best Photo');
   return String(b.title || 'Caption this');
 }
 
