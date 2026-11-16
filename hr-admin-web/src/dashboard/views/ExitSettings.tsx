@@ -6,6 +6,7 @@
 // are the starting point when HR records an exit; HR can still change any of
 // them for that one person. Saved on the company (/admin/exit-settings).
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useStore } from '../store';
 import { Card, LoadError, SkeletonForm, Th } from '../ui';
 import { TH, TR, btn, btnClass, cellName, cellSub } from '../ds';
@@ -118,46 +119,40 @@ export function ExitSettings() {
           </div>
         </div>
         <div style={{ display: 'grid', gap: 14, paddingTop: 18, borderTop: '1px solid var(--line)' }}>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>Notice amounts</div>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>How a day of notice is priced on the final settlement, wherever a rule above says to pay or recover it.</div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, maxWidth: 860 }}>
-            <label className="pd-label">
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>A day of notice not given is recovered at <InfoTip label="Notice shortfall" text={NOTICE_SHORTFALL_INFO} /></span>
-              <span className="pd-pick">
-                <select id="exit-recovery-basis" value={amounts.recoveryBasis} onChange={(e) => setAmounts({ ...amounts, recoveryBasis: e.target.value as ExitNoticeSettings['recoveryBasis'] })} className="pd-inp">
-                  <option value="basic_30">Basic ÷ 30</option>
-                  <option value="gross_30">Gross ÷ 30</option>
-                  <option value="basic_month">Basic ÷ days in that month</option>
-                </select>
-              </span>
-            </label>
-            <label className="pd-label">
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>A day of notice pay is paid at <InfoTip label="Notice pay" text={NOTICE_PAY_INFO} /></span>
-              <span className="pd-pick">
-                <select id="exit-pay-basis" value={amounts.noticePayBasis} onChange={(e) => setAmounts({ ...amounts, noticePayBasis: e.target.value as ExitNoticeSettings['noticePayBasis'] })} className="pd-inp">
-                  <option value="gross_30">Gross ÷ 30</option>
-                  <option value="basic_30">Basic ÷ 30</option>
-                  <option value="gross_month">Gross ÷ days in that month</option>
-                </select>
-              </span>
-            </label>
-            <label className="pd-label">
-              <span>Tell a leaving manager’s team, days before</span>
-              <input id="exit-team-days" inputMode="numeric" value={String(amounts.teamNoticeDays)} onChange={(e) => setAmounts({ ...amounts, teamNoticeDays: Number(e.target.value.replace(/[^0-9]/g, '').slice(0, 2) || 0) })} className="pd-inp" />
-            </label>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, fontSize: 13.5, color: 'var(--ink)' }}>
-            <button type="button" id="exit-leave-covers" role="switch" aria-checked={amounts.leaveCoversShortfall} aria-label="Unused leave covers notice not given" onClick={() => setAmounts({ ...amounts, leaveCoversShortfall: !amounts.leaveCoversShortfall })}
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>Money for notice days</div>
+          <SentenceRow label="Someone leaves before their notice is over. For each day short, take back" info={<InfoTip label="Notice shortfall" text={NOTICE_SHORTFALL_INFO} />}>
+            <span className="pd-pick" style={{ width: 260 }}>
+              <select id="exit-recovery-basis" value={amounts.recoveryBasis} onChange={(e) => setAmounts({ ...amounts, recoveryBasis: e.target.value as ExitNoticeSettings['recoveryBasis'] })} className="pd-inp" style={{ height: 38 }}>
+                <option value="basic_30">a day’s Basic pay</option>
+                <option value="gross_30">a day’s full salary</option>
+                <option value="basic_month">a day’s Basic, by days in the month</option>
+              </select>
+            </span>
+          </SentenceRow>
+          <SentenceRow label="You let someone go before their notice is over. For each day they don’t work, pay" info={<InfoTip label="Notice pay" text={NOTICE_PAY_INFO} />}>
+            <span className="pd-pick" style={{ width: 260 }}>
+              <select id="exit-pay-basis" value={amounts.noticePayBasis} onChange={(e) => setAmounts({ ...amounts, noticePayBasis: e.target.value as ExitNoticeSettings['noticePayBasis'] })} className="pd-inp" style={{ height: 38 }}>
+                <option value="gross_30">a day’s full salary</option>
+                <option value="basic_30">a day’s Basic pay</option>
+                <option value="gross_month">a day’s full salary, by days in the month</option>
+              </select>
+            </span>
+          </SentenceRow>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.5 }}>
+            <button type="button" id="exit-leave-covers" role="switch" aria-checked={amounts.leaveCoversShortfall} aria-label="Use unused leave for the days short" onClick={() => setAmounts({ ...amounts, leaveCoversShortfall: !amounts.leaveCoversShortfall })}
               style={{ width: 38, height: 22, borderRadius: 99, border: 'none', padding: 2, cursor: 'pointer', transition: 'background .15s', display: 'flex', flexShrink: 0, marginTop: 1, background: amounts.leaveCoversShortfall ? 'var(--accent)' : 'var(--line-2)', justifyContent: amounts.leaveCoversShortfall ? 'flex-end' : 'flex-start' }}>
               <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,.2)' }} />
             </button>
             <div>
-              Unused leave covers notice not given first
-              <span style={{ display: 'block', fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>The days short come off their encashable leave; only what is left is recovered from pay.</span>
+              Use their unused leave for the days short first
+              <span style={{ display: 'block', fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>5 days short with 8 days of leave left: nothing is taken back, and 3 days of leave are paid out.</span>
             </div>
           </div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginTop: 6 }}>When a manager leaves</div>
+          <SentenceRow label="Tell their team about their new manager">
+            <input id="exit-team-days" inputMode="numeric" value={String(amounts.teamNoticeDays)} onChange={(e) => setAmounts({ ...amounts, teamNoticeDays: Number(e.target.value.replace(/[^0-9]/g, '').slice(0, 2) || 0) })} className="pd-inp" style={{ width: 64, height: 38, textAlign: 'center' }} aria-label="Days before the last day" />
+            <span style={{ fontSize: 13.5, color: 'var(--ink)' }}>days before the manager’s last day</span>
+          </SentenceRow>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <button type="button" disabled={saving || !dirty} onClick={() => void save()} className={btnClass('primary')} style={btn('primary')}>{saving ? 'Saving…' : 'Save'}</button>
@@ -170,3 +165,13 @@ export function ExitSettings() {
 }
 
 const COLS = '1.25fr 1fr 1fr 1fr 1fr';
+
+/** A setting read as a sentence: the words, then the choice. */
+function SentenceRow({ label, info, children }: { label: string; info?: ReactNode; children: ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.5 }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{label}{info}</span>
+      {children}
+    </div>
+  );
+}

@@ -54,7 +54,9 @@ function Row({ children, control }: { children: ReactNode; control: ReactNode })
   return <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, fontSize: 14, color: 'var(--ink)', lineHeight: 1.45 }}>{control}<div style={{ flex: 1 }}>{children}</div></div>;
 }
 
-export function ExitDialog({ emp, exit, emps, onClose, onSaved }: { emp: Emp; exit: ExitDTO | null; emps: Emp[]; onClose: () => void; onSaved: () => void }) {
+/** `card`: drawn in place on the profile's Exit tab rather than as a dialog over the page. */
+export function ExitDialog({ emp, exit, emps, onClose, onSaved, variant = 'dialog' }: { emp: Emp; exit: ExitDTO | null; emps: Emp[]; onClose: () => void; onSaved: () => void; variant?: 'dialog' | 'card' }) {
+  const card = variant === 'card';
   const { flash } = useStore();
   const name = firstName(emp.name);
   const team = emps.filter((e) => e.managerId === emp.id && e.id !== emp.id && !e.exit?.left);
@@ -120,10 +122,14 @@ export function ExitDialog({ emp, exit, emps, onClose, onSaved }: { emp: Emp; ex
     }
   };
 
-  return (
-    <div onClick={onClose} className="pd-scrim" style={{ zIndex: 70, background: 'rgba(20, 16, 50, 0.38)' }}>
-      <div onClick={(e) => e.stopPropagation()} className="pd-modal" role="dialog" aria-labelledby="exit-h" style={{ width: 'min(600px, 100%)', maxHeight: 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column' }}>
-        <div className="pd-md-h"><h3 id="exit-h">{exit ? `Change ${emp.name}'s exit` : `${emp.name} is leaving`}</h3></div>
+  const inner = (
+      <>
+        <div className="pd-md-h">
+          <div>
+            <h3 id="exit-h">{card ? (exit ? 'Change the exit' : 'Record exit') : exit ? `Change ${emp.name}'s exit` : `${emp.name} is leaving`}</h3>
+            {card && <div className="pd-md-sub">{exit ? `Change the dates, the reason or what happens next, or say ${name} is staying.` : `When ${name} resigns, is let go or stops coming. Nothing changes for ${name} until the last day.`}</div>}
+          </div>
+        </div>
         {confirm ? (
           <>
             <div className="pd-md-b">
@@ -140,7 +146,7 @@ export function ExitDialog({ emp, exit, emps, onClose, onSaved }: { emp: Emp; ex
           </>
         ) : (
           <>
-            <div className="pd-md-b" style={{ display: 'grid', gap: 18, overflowY: 'auto' }}>
+            <div className="pd-md-b" style={{ display: 'grid', gap: 18, ...(card ? { overflow: 'visible', maxWidth: 640 } : { overflowY: 'auto' }) }}>
               <Question label="Why are they leaving?">
                 <div role="radiogroup" aria-label="Why are they leaving?" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {EXIT_KINDS.map(([k, l]) => (
@@ -233,11 +239,18 @@ export function ExitDialog({ emp, exit, emps, onClose, onSaved }: { emp: Emp; ex
                 </>
               )}
               <span style={{ flex: 1 }} />
-              <button type="button" onClick={onClose} className="pd-btn">Cancel</button>
+              {!card && <button type="button" onClick={onClose} className="pd-btn">Cancel</button>}
               <button type="button" disabled={!ready || !!busy} onClick={() => void act('save')} className="pd-btn primary">{busy === 'save' ? 'Saving…' : 'Save exit'}</button>
             </div>
           </>
         )}
+      </>
+  );
+  if (card) return <section className="pd-card pd-form" style={{ padding: 0, marginBottom: 20 }}>{inner}</section>;
+  return (
+    <div onClick={onClose} className="pd-scrim" style={{ zIndex: 70, background: 'rgba(20, 16, 50, 0.38)' }}>
+      <div onClick={(e) => e.stopPropagation()} className="pd-modal" role="dialog" aria-labelledby="exit-h" style={{ width: 'min(600px, 100%)', maxHeight: 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column' }}>
+        {inner}
       </div>
     </div>
   );

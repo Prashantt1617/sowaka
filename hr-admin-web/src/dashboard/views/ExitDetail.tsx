@@ -33,7 +33,8 @@ const dayOf = (iso: string) => longDay(iso.slice(0, 10));
 const dayAfter = (key: string) => new Date(Date.parse(`${key}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 const daysBetween = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1;
 
-export function ExitDetail({ userId, onBack }: { userId: string; onBack: () => void }) {
+/** `embedded`: on the profile's Exit tab, under the profile's own header (no back bar, no summary card). */
+export function ExitDetail({ userId, onBack, embedded }: { userId: string; onBack?: () => void; embedded?: boolean }) {
   const s = useStore();
   const [data, setData] = useState<ExitDetailDTO | null>(null);
   const [error, setError] = useState('');
@@ -62,10 +63,10 @@ export function ExitDetail({ userId, onBack }: { userId: string; onBack: () => v
     }
   };
 
-  const top = (
+  const top = embedded ? null : (
     <div className="pd-prof-top">
-      <button onClick={onBack} className="pd-btn ghost sm" style={{ marginLeft: -12 }}>← Back to exits</button>
-      <button type="button" onClick={() => s.openProfile(userId)} className="pd-btn sm">Open profile</button>
+      <button onClick={() => onBack?.()} className="pd-btn ghost sm" style={{ marginLeft: -12 }}>← Back to exits</button>
+      <button type="button" onClick={() => s.openProfile(userId, 'exit')} className="pd-btn sm">Open profile</button>
     </div>
   );
   if (error) return <div>{top}<section className="pd-card"><LoadError text={error} onRetry={() => setAttempt((n) => n + 1)} /></section></div>;
@@ -85,10 +86,10 @@ export function ExitDetail({ userId, onBack }: { userId: string; onBack: () => v
   const done = exit.clearance.filter((c) => c.done).length;
 
   return (
-    <div style={{ animation: 'fade .3s ease both' }}>
+    <div style={embedded ? undefined : { animation: 'fade .3s ease both' }}>
       {top}
 
-      <section className="pd-card pd-phead">
+      {!embedded && <section className="pd-card pd-phead">
         <div className="ph-id">
           <Avatar name={exit.name} size={52} font={21} />
           <div style={{ minWidth: 0, flex: 1 }}>
@@ -108,7 +109,7 @@ export function ExitDetail({ userId, onBack }: { userId: string; onBack: () => v
           <Fact label="Salary" value={exit.rules.holdPay ? 'Held for the final settlement' : 'Paid with each monthly run'} />
         </div>
         {exit.note && <div style={{ marginTop: 14, fontSize: 13, color: 'var(--ink-2)' }}><span style={{ color: 'var(--ink-3)' }}>Note · </span>{exit.note}</div>}
-      </section>
+      </section>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 20, marginBottom: 20 }}>
         <section className="pd-card">
