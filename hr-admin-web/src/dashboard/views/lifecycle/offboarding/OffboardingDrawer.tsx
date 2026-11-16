@@ -1,18 +1,24 @@
 // The exit drawer (O1d, 460 px): the six-step track, what it waits on, the resignation's reason and
 // note, the clearance by team (IT, Admin and Finance tick their own), the handover, the tasks, the
 // details, and HR's actions for the step: accept with the last day, change the last day or release
-// early, open the settlement, close. Reason and note are the manager's and HR's; exit interview
-// answers never show here. IT, Admin and Finance staff see only their own items and no money.
+// early, open the settlement, close; Remind whoever holds an open step (once a day each); make the
+// relieving letter in Documents; view their handover files and letters. Reason and note are the
+// manager's and HR's; exit interview answers never show here. IT, Admin and Finance staff see only
+// their own items and no money.
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar, LoadError, SkeletonLines } from '../../../ui';
 import { DrawerShell, CloseButton } from '../../../drawers/shell';
 import { useStore } from '../../../store';
 import {
-  acceptResignation, changeLastDay, closeExit, getOffboardingDetail, openHandoverFile, setAppPage, setClearance, taskDone,
+  acceptResignation, changeLastDay, closeExit, getOffboardingDetail, openHandoverFile, sendNudge, setAppPage, setClearance, taskDone,
 } from '../../../../services/lifecycleOffboarding';
 import type { BoardCard, DrawerDTO } from '../../../../services/lifecycleOffboarding';
-import { LockIcon, OwnerChip, TEAM_LABEL, addDays, dueText, firstName, inrPaise, istKey, longDay, todayKey } from './parts';
+import { listLetters } from '../../../../services/lifecycle';
+import type { LetterView } from '../../../../services/lifecycle';
+import { DOCS_OPEN_KEY } from '../format';
+import { FilePreview } from '../shared';
+import { LockIcon, OwnerChip, TEAM_LABEL, addDays, dueText, firstName, inrPaise, istKey, longDay, ownerRoleLabel, todayKey } from './parts';
 
 const HR_TICKS = new Set(['relieving_letter', 'epfo_exit', 'gratuity', 'kt_session', 'thank_you_note', 'delete_face_data', 'final_settlement']);
 
@@ -24,7 +30,7 @@ export function OffboardingDrawer({ card, tabLabel, columnLabel, onClose, onChan
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState('');
-  const [dialog, setDialog] = useState<'' | 'accept' | 'change' | 'early' | 'move'>('');
+  const [dialog, setDialog] = useState<'' | 'accept' | 'change' | 'early' | 'move' | 'docs'>('');
 
   useEffect(() => {
     let live = true;
@@ -59,6 +65,13 @@ export function OffboardingDrawer({ card, tabLabel, columnLabel, onClose, onChan
   const left = !!exit?.accessEndedAt;
   const column = d?.card.column ?? card.column;
   const name = firstName(card.name);
+  const relievingOpen = !!d?.tasks.some((t) => t.systemKey === 'relieving_letter' && t.status !== 'done' && t.status !== 'skipped' && t.status !== 'cancelled');
+  /** Documents, on the Relieving letter, with this person picked. */
+  const generateRelieving = () => {
+    try { sessionStorage.setItem(DOCS_OPEN_KEY, JSON.stringify({ kind: 'relieving', userId: card.userId })); } catch { /* Documents opens on its own first choice */ }
+    onClose();
+    s.setView('lifecycle_documents');
+  };
 
   return (
     <DrawerShell width={460} onClose={onClose}>
@@ -89,6 +102,21 @@ export function OffboardingDrawer({ card, tabLabel, columnLabel, onClose, onChan
                 <div key={i} className="ob-row"><OwnerChip owner={w.owner} /><span className="t">{w.task}</span><span className={`d${w.late ? ' late' : ''}`}>{dueText(w.due, today, w.late)}</span></div>
               ))}
             </section>
+
+            {hr && d.nudges.length > 0 && (
+              <section className="ob-sec" aria-label="Reminders">
+                <h4>Nudge</h4>
+                {d.nudges.map((n) => (
+                  <div key={n.item} className="ob-row">
+                    <span className="t">{n.what}<small>{n.sentToday ? `Reminded today · again tomorrow` : n.late ? 'Late' : 'A push, once a day'}{['IT', 'Admin', 'Finance'].includes(n.to) ? ' · and an email to the team' : ''}</small></span>
+                    <button type="button" className="pd-btn sm" disabled={!!busy || n.sentToday}
+                      onClick={() => void run(`nudge-${n.item}`, () => sendNudge(card.userId, n.item), `${n.to} is reminded`)}>
+                      {busy === `nudge-${n.item}` ? 'Sending…' : n.sentToday ? 'Reminded' : n.label}
+                    </button>
+                  </div>
+                ))}
+              </section>
+            )}
 
             {d.clearance.length > 0 && (
               <section className="ob-sec">
@@ -125,16 +153,20 @@ export function OffboardingDrawer({ card, tabLabel, columnLabel, onClose, onChan
             {d.tasks.length > 0 && (
               <section className="ob-sec">
                 <h4>Tasks · {d.tasks.filter((t) => t.status === 'done').length} of {d.tasks.filter((t) => t.status !== 'cancelled' && t.status !== 'skipped').length} done</h4>
-                {d.tasks.filter((t) => t.status !== 'cancelled').map((t) => {
+                {/* Steps that never applied (an HR-started exit has no resignation to send or accept) are left out. */}
+                {d.tasks.filter((t) => t.status !== 'cancelled' && !(t.status === 'skipped' && t.phase === 'resignation' && t.doneByName === 'Automatic')).map((t) => {
                   const due = t.dueAt ? istKey(t.dueAt) : null;
-                  const tickable = hr && !!t.systemKey && HR_TICKS.has(t.systemKey) && t.status !== 'done' && t.systemKey !== 'final_settlement';
+                  const skipped = t.status === 'skipped';
+                  const tickable = hr && !!t.systemKey && HR_TICKS.has(t.systemKey) && t.status !== 'done' && !skipped && t.systemKey !== 'final_settlement';
+                  const owner = t.ownerName ?? ownerRoleLabel(t.ownerRole);
+                  const by = t.doneByName && t.doneByName !== owner ? `done by ${t.doneByName}` : t.status === 'done' ? 'done' : '';
                   return (
                     <div key={t.id} className="ob-row">
-                      <span style={{ width: 16, flex: 'none', color: t.status === 'done' ? 'var(--ok)' : 'var(--ink-4)' }} aria-label={t.status === 'done' ? 'Done' : 'To do'}>{t.status === 'done' ? '✓' : '○'}</span>
-                      <span className="t">{t.title}<small>{[t.ownerName ?? t.ownerRole.replace('_', ' '), t.status === 'done' && t.doneByName ? `done by ${t.doneByName}` : t.dueLabel].filter(Boolean).join(' · ')}</small></span>
+                      <span style={{ width: 16, flex: 'none', color: t.status === 'done' ? 'var(--ok)' : 'var(--ink-4)' }} aria-label={t.status === 'done' ? 'Done' : skipped ? 'Skipped' : 'To do'}>{t.status === 'done' ? '✓' : skipped ? '–' : '○'}</span>
+                      <span className="t" style={skipped ? { color: 'var(--ink-3)' } : undefined}>{t.title}<small>{[owner, skipped ? t.note || 'Skipped' : t.status === 'done' ? by : t.dueLabel].filter(Boolean).join(' · ')}</small></span>
                       {tickable
                         ? <button type="button" className="pd-btn sm" disabled={!!busy} onClick={() => void run(`task-${t.systemKey}`, () => taskDone(card.userId, t.systemKey!), `${t.title}: done`)}>Mark done</button>
-                        : <span className={`d${t.late ? ' late' : ''}`}>{t.status === 'done' ? 'Done' : due ? dueText(due, today, t.late) : '—'}</span>}
+                        : <span className={`d${t.late ? ' late' : ''}`}>{t.status === 'done' ? 'Done' : skipped ? 'Skipped' : due ? dueText(due, today, t.late) : '—'}</span>}
                     </div>
                   );
                 })}
@@ -161,6 +193,8 @@ export function OffboardingDrawer({ card, tabLabel, columnLabel, onClose, onChan
       {d && hr && (
         <div className="ob-dr-foot">
           <button type="button" className="pd-btn" onClick={() => s.openProfile(card.userId, exit ? 'exit' : undefined)}>Open profile</button>
+          {exit && <button type="button" className="pd-btn" onClick={() => setDialog('docs')}>View documents</button>}
+          {exit && relievingOpen && <button type="button" id="ob-relieving" className="pd-btn" onClick={generateRelieving}>Generate relieving letter</button>}
           {pending && (
             <>
               <button type="button" className="pd-btn" onClick={() => setDialog('change')}>Change last day</button>
@@ -175,7 +209,8 @@ export function OffboardingDrawer({ card, tabLabel, columnLabel, onClose, onChan
           {column === 'settlement_sent' && card.journeyId && <button type="button" className="pd-btn primary" disabled={!!busy} onClick={() => void run('close', () => closeExit(card.userId), `${name}'s exit is closed`)}>Close exit</button>}
         </div>
       )}
-      {dialog && d && (dialog === 'move'
+      {dialog === 'docs' && d && <DocumentsDialog d={d} onClose={() => setDialog('')} />}
+      {dialog && dialog !== 'docs' && d && (dialog === 'move'
         ? <LastDayDialog d={d} onClose={() => setDialog('')} onDone={(out) => { setDialog(''); setData(out); onChanged(); }} />
         : <AcceptDialog d={d} mode={dialog} onClose={() => setDialog('')} onDone={() => { setDialog(''); setAttempt((n) => n + 1); onChanged(); }} />)}
     </DrawerShell>
@@ -313,5 +348,59 @@ function LastDayDialog({ d, onClose, onDone }: { d: DrawerDTO; onClose: () => vo
         </label>
       )}
     </Modal>
+  );
+}
+
+const LETTER_NAME: Record<string, string> = { offer: 'Offer letter', appointment: 'Appointment letter', nda: 'NDA', confirmation: 'Confirmation letter', extension: 'Probation extension letter', relieving: 'Relieving letter' };
+
+/** Their handover uploads and letters, each opened through the authorised file endpoints. */
+function DocumentsDialog({ d, onClose }: { d: DrawerDTO; onClose: () => void }) {
+  const s = useStore();
+  const [letters, setLetters] = useState<LetterView[] | null>(null);
+  const [error, setError] = useState('');
+  const [open, setOpen] = useState<{ fileId: string; name: string } | null>(null);
+  useEffect(() => {
+    let live = true;
+    listLetters({ userId: d.person.userId }).then((l) => { if (live) setLetters(l); }).catch((e) => { if (live) { setLetters([]); setError(e instanceof Error ? e.message : 'Could not load the letters'); } });
+    return () => { live = false; };
+  }, [d.person.userId]);
+  const files = d.handover.items.filter((h) => h.upload);
+  const name = firstName(d.person.name);
+  // A file opens in its own dialog in place of this one, and Close comes back here.
+  if (open) return <FilePreview fileId={open.fileId} name={open.name} onClose={() => setOpen(null)} />;
+  return (
+    <>
+      <Modal title={`Documents · ${d.person.name}`} sub="Handover files and letters. Files open through the dashboard, never a public link." onClose={onClose}
+        foot={<button type="button" className="pd-btn" onClick={onClose}>Close</button>}>
+        <section className="ob-sec">
+          <h4>Handover · {files.length} of {d.handover.items.length} uploaded</h4>
+          {files.length === 0 && <div className="ob-empty">{d.handover.items.length ? `Nothing uploaded by ${name} yet.` : 'No handover checklist yet.'}</div>}
+          {files.map((h) => (
+            <div key={h.id} className="ob-row">
+              <span className="t">{h.title}<small>{h.upload!.name ?? (h.upload!.kind === 'link' ? 'Link' : 'File')} · {longDay(istKey(h.upload!.at))}</small></span>
+              {h.upload!.kind === 'link' && h.upload!.url
+                ? <a className="pd-lnk" href={h.upload!.url} target="_blank" rel="noreferrer noopener">Open</a>
+                : <button type="button" className="pd-lnk" onClick={() => void openHandoverFile(d.person.userId, h.id).catch((e) => s.flash(e instanceof Error ? e.message : 'Could not open', 'error'))}>Open</button>}
+            </div>
+          ))}
+        </section>
+        <section className="ob-sec">
+          <h4>Letters</h4>
+          {!letters && <SkeletonLines lines={2} />}
+          {error && <div style={{ color: 'var(--bad)', fontSize: 12.5 }}>{error}</div>}
+          {letters && letters.length === 0 && !error && <div className="ob-empty">No letters made for {name} yet.</div>}
+          {letters?.map((l) => {
+            const fileId = l.signedPdfFileId ?? l.pdfFileId;
+            const label = LETTER_NAME[l.kind] ?? l.kind;
+            return (
+              <div key={l.id} className="ob-row">
+                <span className="t">{label}<small>{[l.refNo, l.state === 'signed' ? 'Signed' : l.sentAt ? `Sent ${longDay(istKey(l.sentAt))}` : 'Not sent'].filter(Boolean).join(' · ')}</small></span>
+                {fileId ? <button type="button" className="pd-lnk" onClick={() => setOpen({ fileId, name: `${label}.pdf` })}>Open</button> : <span className="d">No PDF yet</span>}
+              </div>
+            );
+          })}
+        </section>
+      </Modal>
+    </>
   );
 }

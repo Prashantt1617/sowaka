@@ -13,8 +13,10 @@ const dmy = (iso?: string | null) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 
 const longDay = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 
 type Company = { name: string; address: string; org?: string };
+/** The lifecycle's O3 statement (spec R-PDF): "Issued {date}" on top and the footer naming the pay-by day and HR's email. */
+export type StatementFooter = { issuedOn: string; payBy: string; hrEmail?: string };
 
-export function settlementHtml(exit: ExitDTO, s: SettlementDTO, company: Company): string {
+export function settlementHtml(exit: ExitDTO, s: SettlementDTO, company: Company, footer?: StatementFooter): string {
   const logo = brandOf(company.org)?.icon;
   const logoSrc = logo ? new URL(logo, window.location.origin).href : '';
   const earnings = s.lines.filter((l) => l.side === 'earning' && l.amountPaise !== 0);
@@ -49,13 +51,15 @@ export function settlementHtml(exit: ExitDTO, s: SettlementDTO, company: Company
   .payable .amt { background: ${pay ? '#F2FBF4' : '#FDF3F2'}; padding: 0 18px; display: flex; align-items: center; font-size: 15px; font-weight: 700; }
   .words { text-align: right; color: #555; margin-top: 14px; padding-bottom: 14px; border-bottom: 1px solid #D9D9D9; } .words b { color: #222; font-weight: 500; }
   .foot { text-align: center; color: #888; font-size: 11.5px; margin-top: 14px; }
+  .foot.spec { text-align: left; color: #555; line-height: 1.6; }
+  .for .iss { display: block; margin-top: 2px; }
   .letter { page-break-before: always; padding-top: 8px; line-height: 1.7; font-size: 13.5px; } .letter p { margin: 0 0 14px; }
   @media print { body { padding: 0; } @page { margin: 12mm; } }
 </style></head><body><div class="page">
   <div class="head">
     ${logoSrc ? `<img class="logo" src="${esc(logoSrc)}" alt="">` : ''}
     <div class="co"><b>${esc(company.name)}</b>${company.address ? `<span>${esc(company.address)}</span>` : ''}</div>
-    <div class="for">Full and Final Settlement<b>${esc(longDay(exit.lastWorkingDay))}</b></div>
+    <div class="for">Full and Final Settlement<b>${esc(longDay(exit.lastWorkingDay))}</b>${footer ? `<span class="iss">Issued ${esc(longDay(footer.issuedOn))}</span>` : ''}</div>
   </div>
   <div class="sum">
     <div>
@@ -79,7 +83,9 @@ export function settlementHtml(exit: ExitDTO, s: SettlementDTO, company: Company
   </table>
   <div class="payable"><div class="l"><b>${pay ? 'NET SETTLEMENT PAYABLE' : 'AMOUNT TO BE RECOVERED'}</b><span>Total Earnings - Total Deductions</span></div><div class="amt">${money(Math.abs(s.payablePaise))}</div></div>
   <div class="words">Amount In Words : <b>${esc(rupeesInWords(Math.abs(s.payablePaise)).replace('Indian Rupees', 'Indian Rupee'))}</b></div>
-  <div class="foot">-- This is a system-generated document. --</div>
+  ${footer
+    ? `<div class="foot spec">${pay ? `Paid to the bank account on record by ${esc(longDay(footer.payBy))}.` : `The amount due is to be settled by ${esc(longDay(footer.payBy))}.`}${footer.hrEmail ? ` Questions: ${esc(footer.hrEmail)}.` : ''} Confidential: meant only for the employee named above.</div>`
+    : '<div class="foot">-- This is a system-generated document. --</div>'}
 
   <div class="letter">
     <p>${esc(longDay(s.approvedAt ?? today))}</p>
@@ -96,6 +102,6 @@ export function settlementHtml(exit: ExitDTO, s: SettlementDTO, company: Company
 }
 
 /** Settlement_CS342.pdf */
-export function downloadSettlementPdf(exit: ExitDTO, s: SettlementDTO, company: Company): Promise<void> {
-  return downloadHtmlAsPdf(settlementHtml(exit, s, company), `Settlement_${exit.employeeId || exit.name.replace(/\s+/g, '_')}.pdf`);
+export function downloadSettlementPdf(exit: ExitDTO, s: SettlementDTO, company: Company, footer?: StatementFooter): Promise<void> {
+  return downloadHtmlAsPdf(settlementHtml(exit, s, company, footer), `Settlement_${exit.employeeId || exit.name.replace(/\s+/g, '_')}.pdf`);
 }

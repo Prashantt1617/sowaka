@@ -21,6 +21,7 @@ import { useSuwiNotices } from './suwi/SuwiNoticed';
 import { PAGE_ACTIONS_ID } from './ds';
 import { BULK_VIEWS, SETUP_VIEWS } from './setupGroups';
 import { useLifecycleOn } from './lifecycleSwitch';
+import { TEAM_NAME, useOffboardingCount } from './views/lifecycle/offboarding/badge';
 
 /** `hidden`: not shown in the sidebar, but still part of its section's access (Accesses grants it). */
 export type NavItem = { key: View; label: string; hidden?: boolean };
@@ -310,6 +311,8 @@ export function Sidebar() {
   const fbpPending = useFbpBadge(canOpen(user, 'fbprequests'));
   // What Suwi noticed: requests waiting past the limit turn the Requests counts red (Claims already are).
   const overdue = useSuwiNotices().notices.some((n) => n.key === 'requests_overdue');
+  // Offboarding: cards that need you, and late ones.
+  const offboardingCount = useOffboardingCount(lifecycle === true && canOpen(user, 'offboarding'));
 
   // A count waits for its list: no "0" before the requests have arrived.
   const LIST_FOR: Partial<Record<View, StoreList>> = { leave: 'leaves', overtime: 'overtime', attendance: 'corrections', feedback: 'feedback', reimbursements: 'claims' };
@@ -331,6 +334,8 @@ export function Sidebar() {
         return <CountBadge value={supportCount} danger={supportCount > 0} />;
       case 'fbprequests':
         return fbpPending === null ? null : <CountBadge value={fbpPending} danger={fbpPending > 0} />;
+      case 'offboarding':
+        return offboardingCount === null ? null : <CountBadge value={offboardingCount.count} danger={offboardingCount.count > 0} />;
       default:
         return SOON[key] ? <SoonBadge /> : null;
     }
@@ -499,6 +504,10 @@ export function Topbar() {
     ? `${new Date().toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Asia/Kolkata' })}, ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })}`
     : fixedMeta;
   const displayName = user?.name ?? 'HR Admin';
+  // IT, Admin and Finance clearance staff see their team under their name, not "HR".
+  const lifecycleOn = useLifecycleOn(Boolean(user?.dashboardAccess));
+  const offViewer = useOffboardingCount(lifecycleOn === true && canOpen(user, 'offboarding'))?.viewer;
+  const roleLabel = offViewer?.kind === 'team' && offViewer.team ? TEAM_NAME[offViewer.team] : 'HR';
   const iconBtn = {
     position: 'relative' as const,
     width: 42,
@@ -543,7 +552,7 @@ export function Topbar() {
           <PersonAvatar name={displayName} userId={user?.id} size={32} font={12} tone={{ bg: 'var(--t-butter)', fg: 'var(--t-butter-i)' }} />
           <div style={{ minWidth: 0, lineHeight: 1.15, display: 'flex', flexDirection: 'column', gap: 2 }}>
             <div style={{ fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap' }}>{displayName}</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}>HR</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', fontWeight: 400 }}>{roleLabel}</div>
           </div>
         </div>
         <button
