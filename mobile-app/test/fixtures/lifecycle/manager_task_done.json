@@ -1,0 +1,21 @@
+{
+  "task": {
+    "id": "93446f4a-c17d-406a-b3a0-f8363130ac65",
+    "systemKey": "meet_manager",
+    "phase": "first_week",
+    "title": "Meet your manager",
+    "helper": "First 1:1. Timed item; push 30 min before",
+    "ownerRole": "manager_employee",
+    "ownerName": "Meera Iyer",
+    "kind": "meeting",
+    "surface": "app",
+    "mustDo": true,
+    "status": "done",
+    "opensAt": "2026-11-10T00:00:00.000Z",
+    "dueAt": "2026-11-10T00:00:00.000Z",
+    "dueLabel": "Tue 10 Nov",
+    "doneAt": "2026-11-16T17:26:02.052Z",
+    "doneByName": "Meera Iyer",
+    "late": false
+  }
+}

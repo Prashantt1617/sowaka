@@ -93,6 +93,8 @@ export const errorHandler = (
     message: userFacing && error instanceof Error ? error.message : 'Internal server error',
     requestId: request.requestId,
     ...(details ? { details } : {}),
+    // An ended account's sign-in or profile check: what the app's account-closed screen shows.
+    ...(error instanceof AuthError && error.accountClosed ? { accountClosed: error.accountClosed } : {}),
     ...(env.nodeEnv === 'production' || expected ? {} : { error: internalMessage }),
   });
 };

@@ -1,0 +1,17 @@
+{
+  "success": true,
+  "noticeDays": 30,
+  "lastDayByNotice": "2026-12-16",
+  "canResign": true,
+  "reasons": [
+    "Better opportunity",
+    "Growth",
+    "Pay",
+    "Manager",
+    "Work-life balance",
+    "Higher studies",
+    "Relocation",
+    "Personal",
+    "Other"
+  ]
+}

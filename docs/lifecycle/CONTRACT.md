@@ -170,6 +170,28 @@ JSON in and out. Errors are `{ error: string }` with 400/401/403/404/409. Dates 
 | POST `/admin/lifecycle/offboarding/:userId/settlement/email` | `{ pdfBase64, to }` → emails the settlement PDF to the personal email; status settlement_sent |
 | GET `/admin/lifecycle/exit-insights?from=&to=&groupBy=department|tenure` | anonymised: counts per reason, averages, come-back split, themes; any group under 5 answers hidden; no quotes |
 
+### App ↔ server, as reconciled (el/reconcile-app)
+
+`npm run lifecycle:fixtures` (backend) writes every app endpoint's real answer to
+`mobile-app/test/fixtures/lifecycle/*.json`; `test/lifecycle_server_fixtures_test.dart` runs the
+app's HTTP clients and parsers on them. Regenerate both after changing a shape. Fields added beside
+the ones above:
+
+- `GET /lifecycle/manager/resignations` also lists **accepted** resignations whose exit is under way
+  (with `tl` = the exit's last day); the app hides them from Requests but keeps the report's
+  Resignation tab (the handover) from them.
+- `GET /lifecycle/manager/leavers/:userId` (and the PUT/POST handover answers): top-level `tl`,
+  `daysLeft`, `acceptedAt`; `resignation` is the whole `ResignationView`; `handover` gains
+  `addedAt`, `dueAt`, `doneAt`; `otherSteps` (clearance by team, never an amount) carry
+  `id, title, status, ownerRole, helper` beside `label, team, done`. `status` stays the exit object.
+- `GET /lifecycle/offboarding`: `managerName`, `acceptedAt`, `noticeFrom`, `handoverDueAt`,
+  `handoverAddedAt`, `handoverDone`, `handoverDoneAt`.
+- `GET /lifecycle/onboarding/probation`: `totalMonths`, `currentMonth`, `managerName`.
+  `GET /lifecycle/manager/joiners/:id`: `joiner.goalsLocked`. `POST …/starter-tasks/:id/done`: `task` beside `tasks`.
+- Auth refusals of an ended account (`/auth/request-otp`, `/auth/verify-otp` 403; `/auth/me` and the
+  auth check 401 "User is not active") carry `accountClosed: { company, lastWorkingDay, hrEmail }`,
+  only when the person has an exit recorded and their company has `features.lifecycle` on.
+
 ## Who builds what
 
 | Part | Branch (off employee-lifecycle) | Owns |

@@ -1,0 +1,184 @@
+{
+  "pushes": [
+    {
+      "userId": "mgr",
+      "scenario": "lifecycle_intro_post",
+      "title": "Isha Verma said hello",
+      "body": "Isha Verma posted their intro on Connect. Say hi 👋",
+      "data": {
+        "journeyId": "7be49524-2125-4d4f-9591-150f6703add7",
+        "postId": "5c8e801a-7c8a-47bd-82ad-5db564024bb4",
+        "destination": "lifecycle_joiner"
+      }
+    },
+    {
+      "userId": "isha",
+      "scenario": "lifecycle_starter_task",
+      "title": "Meera Iyer gave you a starter task",
+      "body": "Redesign the leave request screen · Due Wed 18 Nov",
+      "data": {
+        "journeyId": "7be49524-2125-4d4f-9591-150f6703add7",
+        "starterTaskId": "f258b20e-6a01-4c05-86ba-118c5ce2d659",
+        "destination": "lifecycle_starter_task"
+      }
+    },
+    {
+      "userId": "mgr",
+      "scenario": "lifecycle_starter_task_done",
+      "title": "Isha Verma finished a task",
+      "body": "Redesign the leave request screen",
+      "data": {
+        "journeyId": "7be49524-2125-4d4f-9591-150f6703add7",
+        "starterTaskId": "f258b20e-6a01-4c05-86ba-118c5ce2d659",
+        "destination": "lifecycle_starter_task_done"
+      }
+    },
+    {
+      "userId": "isha",
+      "scenario": "lifecycle_starter_task_reply",
+      "title": "Meera Iyer replied",
+      "body": "Nice start!",
+      "data": {
+        "journeyId": "7be49524-2125-4d4f-9591-150f6703add7",
+        "starterTaskId": "f258b20e-6a01-4c05-86ba-118c5ce2d659",
+        "destination": "lifecycle_starter_task"
+      }
+    },
+    {
+      "userId": "isha",
+      "scenario": "lifecycle_note_shared",
+      "title": "Meera Iyer shared notes from your 1:1",
+      "body": "Tap to read and reply",
+      "data": {
+        "journeyId": "7be49524-2125-4d4f-9591-150f6703add7",
+        "noteId": "b8aa49ce-bf3a-41c9-a270-03b75ab396b7",
+        "destination": "lifecycle_notes"
+      }
+    },
+    {
+      "userId": "mgr",
+      "scenario": "lifecycle_note_reply",
+      "title": "Isha Verma replied",
+      "body": "Thanks, Meera!",
+      "data": {
+        "journeyId": "7be49524-2125-4d4f-9591-150f6703add7",
+        "noteId": "b8aa49ce-bf3a-41c9-a270-03b75ab396b7",
+        "destination": "lifecycle_joiner"
+      }
+    },
+    {
+      "userId": "mgr",
+      "scenario": "lifecycle_meeting_moved",
+      "title": "Meet your manager moved",
+      "body": "New time: Wed 18 Nov",
+      "data": {
+        "journeyId": "7be49524-2125-4d4f-9591-150f6703add7",
+        "meetingId": "fx-meeting",
+        "destination": "lifecycle_joiner"
+      }
+    },
+    {
+      "userId": "mgr",
+      "scenario": "lifecycle_decision",
+      "title": "Probation decision",
+      "body": "Ishita Kaur is confirmed.",
+      "data": {
+        "journeyId": "925aa5fd-16fc-47b1-8e50-3e0fa7aca009",
+        "destination": "lifecycle_joiner"
+      }
+    },
+    {
+      "userId": "mgr",
+      "scenario": "lifecycle_resignation",
+      "title": "Resignation · Ravi Menon",
+      "body": "Ravi has resigned. Last day by notice: Wed 16 Dec. Open Team › Requests.",
+      "data": {
+        "type": "lifecycle_resignation",
+        "resignationId": "9920db70-b815-4905-becd-3d5229390a01",
+        "userId": "ravi"
+      }
+    },
+    {
+      "userId": "mgr",
+      "scenario": "lifecycle_resignation",
+      "title": "Resignation · Wanda Pillai",
+      "body": "Wanda has resigned. Last day by notice: Wed 16 Dec. Open Team › Requests.",
+      "data": {
+        "type": "lifecycle_resignation",
+        "resignationId": "01d2f739-f898-4c30-8731-a8d9a3d4fe34",
+        "userId": "wanda"
+      }
+    },
+    {
+      "userId": "mgr",
+      "scenario": "lifecycle_resignation_withdrawn",
+      "title": "Wanda withdrew their resignation",
+      "body": "Wanda Pillai is staying.",
+      "data": {
+        "type": "lifecycle_resignation",
+        "resignationId": "01d2f739-f898-4c30-8731-a8d9a3d4fe34",
+        "userId": "wanda"
+      }
+    },
+    {
+      "userId": "ravi",
+      "scenario": "lifecycle_offboarding_open",
+      "title": "Your resignation is accepted",
+      "body": "Your last working day is Fri 20 Nov 2026. Before you go is in Action › Off-boarding.",
+      "data": {
+        "type": "lifecycle_offboarding",
+        "journeyId": "eb544344-23d4-4e0c-a964-9ce01db84acd"
+      }
+    },
+    {
+      "userId": "mgr",
+      "scenario": "lifecycle_handover_checklist",
+      "title": "Handover for Ravi",
+      "body": "Ravi's last day is Fri 20 Nov. Add the handover checklist and a note for Ravi.",
+      "data": {
+        "type": "lifecycle_offboarding",
+        "userId": "ravi",
+        "journeyId": "eb544344-23d4-4e0c-a964-9ce01db84acd"
+      }
+    },
+    {
+      "userId": "ravi",
+      "scenario": "lifecycle_handover_shared",
+      "title": "Handover checklist from Meera",
+      "body": "3 items to share before your last day. Open Action › Off-boarding.",
+      "data": {
+        "type": "lifecycle_offboarding"
+      }
+    },
+    {
+      "userId": "mgr",
+      "scenario": "lifecycle_handover_uploaded",
+      "title": "Ravi uploaded a handover item",
+      "body": "Design system file · 1 of 3 uploaded.",
+      "data": {
+        "type": "lifecycle_offboarding",
+        "userId": "ravi"
+      }
+    },
+    {
+      "userId": "mgr",
+      "scenario": "lifecycle_handover_uploaded",
+      "title": "Ravi uploaded a handover item",
+      "body": "Open projects · 2 of 3 uploaded.",
+      "data": {
+        "type": "lifecycle_offboarding",
+        "userId": "ravi"
+      }
+    },
+    {
+      "userId": "mgr",
+      "scenario": "lifecycle_handover_uploaded",
+      "title": "Ravi uploaded a handover item",
+      "body": "Open projects · 2 of 3 uploaded.",
+      "data": {
+        "type": "lifecycle_offboarding",
+        "userId": "ravi"
+      }
+    }
+  ]
+}

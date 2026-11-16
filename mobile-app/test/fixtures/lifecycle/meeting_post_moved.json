@@ -1,0 +1,31 @@
+{
+  "id": "fx-meeting",
+  "title": "Meet your manager",
+  "startsAt": "2026-11-17T19:26:01.552Z",
+  "endsAt": "2026-11-17T19:56:01.552Z",
+  "place": "Room 4B",
+  "attendees": [
+    {
+      "userId": "isha",
+      "name": "Isha Verma",
+      "designation": "Product Designer",
+      "role": "joiner"
+    },
+    {
+      "userId": "mgr",
+      "name": "Meera Iyer",
+      "designation": "Design Lead",
+      "role": "manager"
+    }
+  ],
+  "expect": [
+    "How your first week will go and who to meet",
+    "Your probation goals, and what good looks like by month 1",
+    "Bring any questions, nothing to prepare"
+  ],
+  "mustDo": true,
+  "systemKey": "meet_manager",
+  "met": "moved",
+  "newTime": "2026-11-17T19:26:01.552Z",
+  "taskId": "93446f4a-c17d-406a-b3a0-f8363130ac65"
+}

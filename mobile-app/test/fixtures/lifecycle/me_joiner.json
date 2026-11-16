@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "onboarding": {
+    "journeyId": "7be49524-2125-4d4f-9591-150f6703add7",
+    "stage": "welcome_week1",
+    "dayLabel": "Week 1",
+    "plant": {
+      "stage": 1,
+      "water": 3,
+      "leaves": 0,
+      "droop": true
+    },
+    "tileVisible": true,
+    "progress": {
+      "done": 0,
+      "total": 7
+    }
+  }
+}

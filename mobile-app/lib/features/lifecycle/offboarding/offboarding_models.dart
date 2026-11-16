@@ -291,12 +291,15 @@ class OffboardingTask {
         id: _str(json['id']) ?? '',
         systemKey: _str(json['systemKey']),
         phase: _str(json['phase']),
-        title: _str(json['title']) ?? '',
+        // A clearance row (the manager's Other exit steps) names itself
+        // `label` and says `done`; a journey task, `title` and `status`.
+        title: _str(json['title']) ?? _str(json['label']) ?? '',
         helper: _str(json['helper']),
-        ownerRole: _str(json['ownerRole']),
+        ownerRole: _str(json['ownerRole']) ?? _str(json['team']),
         ownerName: _str(json['ownerName']),
         mustDo: json['mustDo'] == true,
-        status: _str(json['status']) ?? 'todo',
+        status:
+            _str(json['status']) ?? (json['done'] == true ? 'done' : 'todo'),
         opensAt: parseDay(json['opensAt']),
         dueAt: parseDay(json['dueAt']),
         dueLabel: _str(json['dueLabel']),
@@ -541,6 +544,10 @@ class LeaverView {
     final view = resignation is Map
         ? ResignationView.fromJson(resignation.cast<String, dynamic>())
         : null;
+    // The server sends the exit's standing as an object (exit type, when HR
+    // accepted, the last day). An exit here is always accepted and under way,
+    // HR-started ones (no resignation) too.
+    final exit = _map(json['status']);
     final steps = json.containsKey('otherSteps')
         ? [
             for (final row in _maps(json['otherSteps']))
@@ -557,10 +564,13 @@ class LeaverView {
           ];
     return LeaverView(
       resignation: view,
-      status: _str(json['status']),
-      tl: parseDay(json['tl']) ?? view?.tl,
-      daysLeft: _int(json['daysLeft']) ?? view?.daysLeft,
-      acceptedAt: parseDay(json['acceptedAt']) ?? view?.hrAcceptedAt,
+      status: _str(json['status']) ?? (exit.isEmpty ? null : 'accepted'),
+      tl: parseDay(json['tl']) ?? parseDay(exit['tl']) ?? view?.tl,
+      daysLeft: _int(json['daysLeft']) ?? _int(exit['daysLeft']) ?? view?.daysLeft,
+      acceptedAt:
+          parseDay(json['acceptedAt']) ??
+          parseDay(exit['acceptedOn']) ??
+          view?.hrAcceptedAt,
       handover: HandoverChecklist.fromJson(json),
       otherSteps: steps,
     );

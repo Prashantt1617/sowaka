@@ -20,7 +20,7 @@ import { policiesFor } from '../policy-document.service';
 import { resolveProfilePhoto } from '../s3-connect-media.service';
 import { logger } from '../../utils/logger';
 import {
-  addDaysKey, companyTimeZone, dateKeyOf, dayDate, daysBetween, humanDay, isDateKey, keyOfDay, probationMonthEnd, todayKey,
+  addDaysKey, companyTimeZone, dateKeyOf, dayDate, daysBetween, humanDay, isDateKey, keyOfDay, probationMonthEnd, probationMonthOn, todayKey,
 } from './dueRules';
 import {
   ACTIVE_STATUSES, LifecycleError, OPEN_STATUSES, completeTask, deriveJourney, finishTaskById, isJoined, lifecycleEnabled,
@@ -472,7 +472,10 @@ export async function starterDone(me: Me, id: string, body: Record<string, unkno
     if (!open) await completeTask(j.id, 'starter_task', { userId: me.userId, name: me.name });
     else await refreshJourney(j.id);
   }
-  return starterTasksForJoiner(me);
+  // The list, and the one just done (the app's screen shows it as it now stands).
+  const list = await starterTasksForJoiner(me);
+  const task = list.tasks.find((t) => t.id === id);
+  return { ...list, ...(task ? { task } : {}) };
 }
 
 // ─── 1:1 notes (A10, M2b) ───────────────────────────────────────────────────
@@ -602,9 +605,13 @@ export async function surveySummaryFor(managerUserId: string): Promise<{ count: 
 
 // ─── Probation and the reveal (joiner) ──────────────────────────────────────
 
-export async function probationForMe(me: Me) {
+export async function probationForMe(me: Me, now = new Date()) {
   const j = await joinerJourney(me.userId);
-  return probationForJoiner(j.id);
+  const total = totalProbationMonths(j);
+  const current = j.tj ? probationMonthOn(j.tj, todayKey(now, companyTimeZone(j.org)), total) : 0;
+  const managerName = j.managerUserId ? (await namesOf([j.managerUserId])).get(j.managerUserId) : undefined;
+  // The screen's header ("6 months of probation"), the month being worked on, and whose goals they are.
+  return { ...(await probationForJoiner(j.id)), totalMonths: total, ...(current ? { currentMonth: current } : {}), ...(managerName ? { managerName } : {}) };
 }
 
 export async function checkinForMe(me: Me, month: number, body: Record<string, unknown>) {
@@ -683,7 +690,7 @@ export async function joinerForManager(me: Me, journeyId: string, now = new Date
       ...((j.designation ?? person?.designation) ? { designation: j.designation ?? person?.designation } : {}),
       ...((j.department ?? person?.department) ? { department: j.department ?? person?.department } : {}),
       tj: j.tj, dayLabel: derived.dayLabel, stage: derived.stage, stageName: stageName(derived.stage), plant: derived.plant,
-      preboarding: !isJoined(j), probationMonths: totalProbationMonths(j),
+      preboarding: !isJoined(j), probationMonths: totalProbationMonths(j), goalsLocked: goalsLocked(j, now),
       ownProgress: { done: own.filter((t) => t.status === 'done' || t.status === 'skipped').length, total: own.filter((t) => t.status !== 'cancelled').length },
       progress: progressOf(tasks, derived.tab),
     },

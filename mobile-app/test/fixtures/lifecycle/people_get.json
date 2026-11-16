@@ -1,0 +1,18 @@
+{
+  "people": [
+    {
+      "id": "354f73db-524c-4ba8-b051-0dd1f1a4abc9",
+      "userId": "p1",
+      "name": "Kiran Shah",
+      "designation": "Designer",
+      "why": "Your buddy for the first month"
+    },
+    {
+      "id": "8d5b4365-5683-4b01-a292-9a77dc81a7b7",
+      "userId": "p2",
+      "name": "Tara Bose",
+      "designation": "Researcher"
+    }
+  ],
+  "meetBy": "2026-12-09"
+}

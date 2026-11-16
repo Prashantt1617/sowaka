@@ -959,16 +959,26 @@ export async function myOffboarding(userId: string, now = new Date()) {
   const assets = clearance.filter((c) => c.team === 'it' || c.team === 'admin');
   const acceptedOn = keyOfInstant(journey?.anchors.exit_accepted ?? journey?.createdAt ?? null);
   const handoverDue = tasks.find((t) => t.systemKey === 'upload_handover')?.dueAt ?? null;
+  const resignedOn = resignation ? keyOfInstant(resignation.submittedAt) : e.noticeFrom ?? null;
+  const managerUserId = journey?.managerUserId ?? user.managerUserId;
+  const managerName = managerUserId ? (await users().findOne({ userId: managerUserId }, { projection: { _id: 0, name: 1 } }))?.name : undefined;
+  const summary = handoverSummary(items, ob, tasks);
+  const acceptedAt = journey?.anchors.exit_accepted ?? journey?.createdAt ?? null;
   return {
     tl: e.lastWorkingDay,
     daysLeft: Math.max(0, daysFromTo(today, e.lastWorkingDay)),
     exitType: ob.exitType,
     acceptedOn,
-    resignedOn: resignation ? keyOfInstant(resignation.submittedAt) : e.noticeFrom ?? null,
+    resignedOn,
+    // What the app's R3 reads beside the contract's fields: the manager, when HR accepted and when the notice runs from.
+    ...(managerName ? { managerName } : {}),
+    acceptedAt: acceptedAt ? new Date(acceptedAt).toISOString() : null,
+    noticeFrom: e.noticeFrom ?? resignedOn,
     tasks,
     handover: items.map(handoverView),
     handoverNote: ob.handoverNote ?? null,
     handoverDue: handoverDue ? keyOfInstant(new Date(handoverDue)) : null,
+    handoverDueAt: summary.dueAt, handoverAddedAt: summary.addedAt, handoverDone: summary.done, handoverDoneAt: summary.doneAt,
     returnAssets: { done: assets.length > 0 && assets.every((c) => c.done), items: assets.map((c) => ({ label: c.label, done: c.done })) },
     interview: interviewApplies(ob) ? { applies: true, opensAt: opens, open: !!opens && opens <= today && today <= e.lastWorkingDay && !e.interview, sent: !!e.interview } : { applies: false, opensAt: null, open: false, sent: false },
     documents: [
@@ -1115,13 +1125,38 @@ export async function managerLeaver(managerUserId: string, leaverUserId: string,
     journeyTasksView(journeyId, 'manager'),
     ob.resignationId ? resignations().findOne({ id: ob.resignationId }, { projection: { _id: 0 } }) : null,
   ]);
+  const acceptedAt = journey?.anchors.exit_accepted ?? journey?.createdAt ?? null;
+  const daysLeft = daysFromTo(todayKey(now), e.lastWorkingDay);
+  const managerName = resignation?.managerUserId ? (await users().findOne({ userId: resignation.managerUserId }, { projection: { _id: 0, name: 1 } }))?.name : undefined;
   return {
     leaver: { userId: leaver.userId, name: leaver.name, designation: leaver.designation ?? '', department: leaver.department ?? '' },
-    status: { exitType: ob.exitType, exitTypeLabel: EXIT_TYPE_LABEL[ob.exitType], acceptedOn: keyOfInstant(journey?.anchors.exit_accepted ?? journey?.createdAt ?? null), tl: e.lastWorkingDay, daysLeft: daysFromTo(todayKey(now), e.lastWorkingDay) },
-    resignation: resignation ? { reason: resignation.reason, note: resignation.note ?? '', submittedAt: resignation.submittedAt.toISOString(), lastDayByNotice: resignation.lastDayByNotice } : null,
-    handover: { items: items.map(handoverView), note: ob.handoverNote ?? '', done: tasks.some((t) => t.systemKey === 'mark_handover_done' && t.status === 'done') },
+    status: { exitType: ob.exitType, exitTypeLabel: EXIT_TYPE_LABEL[ob.exitType], acceptedOn: keyOfInstant(acceptedAt), tl: e.lastWorkingDay, daysLeft },
+    // The app's R8b reads these at the top (an exit here is always accepted and under way).
+    tl: e.lastWorkingDay, daysLeft, acceptedAt: acceptedAt ? new Date(acceptedAt).toISOString() : null,
+    // The whole ResignationView (status, manager's answer, the last days), with the reason and note.
+    resignation: resignation ? { ...resignationView(resignation, managerName, now), tl: e.lastWorkingDay, daysLeft } : null,
+    handover: handoverSummary(items, ob, tasks),
     tasks,
-    otherSteps: clearanceOf(e).filter((c) => c.team !== 'manager').map((c) => ({ label: c.label, team: c.team ?? 'admin', done: c.done })),
+    // Clearance by team (IT, Admin, Finance), as rows the app draws like tasks; never an amount.
+    otherSteps: clearanceOf(e).filter((c) => c.team !== 'manager').map((c) => ({
+      id: c.key, label: c.label, title: c.label, team: c.team ?? 'admin', ownerRole: c.team ?? 'admin', done: c.done, status: c.done ? 'done' : 'todo',
+      helper: `Tracked by ${CLEARANCE_TEAM_LABEL[c.team ?? 'admin']}`,
+    })),
+  };
+}
+
+const CLEARANCE_TEAM_LABEL: Record<ClearanceTeam, string> = { manager: 'your manager', it: 'IT', admin: 'Admin', finance: 'Finance' };
+
+/** The handover checklist for the app: the items, the manager's note, when it was shared and is due, whether it is done. */
+function handoverSummary(items: HandoverItem[], ob: UserExitOffboarding, tasks: Awaited<ReturnType<typeof journeyTasksView>>) {
+  const upload = tasks.find((t) => t.systemKey === 'upload_handover');
+  const marked = tasks.find((t) => t.systemKey === 'mark_handover_done' && t.status === 'done');
+  const shared = tasks.find((t) => t.systemKey === 'handover_checklist' && t.status === 'done');
+  const addedAt = items.length ? shared?.doneAt ?? (ob.handoverNoteAt ? new Date(ob.handoverNoteAt).toISOString() : null) : null;
+  const doneAt = marked?.doneAt ?? items.map((h) => h.doneAt).filter((d): d is Date => !!d).map((d) => d.toISOString()).sort().at(-1) ?? null;
+  return {
+    items: items.map(handoverView), note: ob.handoverNote ?? '', addedAt, dueAt: upload?.dueAt ?? null,
+    done: !!marked, doneAt: marked ? doneAt : null,
   };
 }
 

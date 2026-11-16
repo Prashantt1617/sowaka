@@ -1,0 +1,51 @@
+{
+  "policies": [
+    {
+      "id": "leave",
+      "title": "Leave policy",
+      "version": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "id": "conduct",
+      "title": "Code of conduct",
+      "version": "2026-09-15T00:00:00.000Z"
+    }
+  ],
+  "taxRegime": {
+    "regime": "new",
+    "at": "2026-11-16T17:26:01.865Z"
+  },
+  "policiesAck": {
+    "versions": [
+      {
+        "id": "leave",
+        "version": "2026-10-01T00:00:00.000Z"
+      },
+      {
+        "id": "conduct",
+        "version": "2026-09-15T00:00:00.000Z"
+      }
+    ],
+    "at": "2026-11-16T17:26:01.858Z",
+    "device": "Fixture/1.0"
+  },
+  "policiesAckAt": "2026-11-16T17:26:01.858Z",
+  "steps": {
+    "policies": true,
+    "tax": true,
+    "bank_pf": false,
+    "goals": false
+  },
+  "managerName": "Meera Iyer",
+  "bank": {
+    "masked": ""
+  },
+  "pf": {},
+  "goals": [
+    "Ship the leave redesign",
+    "Meet every designer"
+  ],
+  "probationMonths": 6,
+  "goalsLockOn": "2026-11-17",
+  "taxSavedToPayroll": false
+}
