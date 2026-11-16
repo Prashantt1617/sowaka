@@ -1,0 +1,51 @@
+/* Kit · app and portal tokens (canvas 6Zs §8, 3Rb §5). Client brand colour replaces
+   --brand per tenant; #B23500 stays for SOWAKA only. */
+:root {
+  --brand: #0571a6;
+  --brand-pressed: #045a85;
+  --brand-border: #beedff;
+  --brand-tint: #e8f4fa;
+
+  --text: #222222;
+  --text-2: #484848;
+  --text-3: #717171;
+  --icon: #9197a2;
+
+  --surface: #f7f7f9;
+  --card: #ffffff;
+  --border: #ebebeb;
+  --border-dark: #dddddd;
+
+  --green: #30d158; /* fills only */
+  --done-tint: #eaf9ee;
+  --done-text: #1f9d45;
+  --water-tint: #fff4e0;
+  --water-text: #8a4b08;
+  --orange-tint: #fff4e5;
+  --orange-text: #b23500;
+  --red-tint: #fdecec;
+  --red-text: #c4383d;
+  --sowaka: #b23500;
+
+  --r-hero: 28px;
+  --r-card: 24px;
+  --r-tile: 20px;
+  --r-row: 16px;
+  --r-input: 14px;
+  --r-pill: 999px;
+
+  --shadow-card: 0 1px 3px rgba(17, 24, 39, 0.06);
+  --scrim: rgba(17, 24, 39, 0.45);
+
+  --font: 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --gutter: 16px;
+  --narrow: 430px;
+  --wide: 1160px;
+  --header-h: 60px;
+}
+
+@media (min-width: 960px) {
+  :root {
+    --header-h: 72px;
+  }
+}
