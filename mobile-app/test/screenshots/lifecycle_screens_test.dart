@@ -3,7 +3,7 @@
 // the person leaving and their manager (R0–R8b), and the Payroll lock.
 //
 // No phone or simulator: each screen is drawn by Flutter's test renderer at
-// 393 × 852 (3x) with the app's own fonts and theme, against a fake server
+// 393 × 852 (PNGs at 2x, to keep them small) with the app's own fonts and theme, against a fake server
 // that answers from test/fixtures/lifecycle/*.json (the backend's
 // `npm run lifecycle:fixtures`, i.e. what the real server sends). States the
 // fixtures do not hold are built from the same shapes.
@@ -74,7 +74,8 @@ const _skip = _out == '' ? 'Screenshots: run tool/lifecycle_screens.sh (sets SCR
 
 const _width = 393.0;
 const _height = 852.0;
-const _dpr = 3.0;
+/// 2x, not the phone's 3x: the same layout in a third of the bytes.
+const _dpr = 2.0;
 
 /// iPhone 15/16: the Dynamic Island's status bar and the home indicator.
 const _top = 59.0;
@@ -330,8 +331,9 @@ class _Shots {
     });
   }
 
-  /// `<CODE>-<state>.png`, and `-full` beside it when the page runs on below
-  /// the fold (unless [full] is false: sheets, dialogs, reels).
+  /// `<CODE>-<state>.png`, and `-full` beside it only when the page scrolls
+  /// by more than a whole screen (unless [full] is false: sheets, dialogs,
+  /// reels).
   Future<void> call(String code, String state, {bool full = true, String note = ''}) async {
     await _images();
     await tester.pump();
@@ -343,7 +345,7 @@ class _Shots {
     final files = ['$name.png'];
     final page = full ? _page() : null;
     final extra = page?.position.maxScrollExtent ?? 0;
-    if (page != null && extra > 24 && page.position.pixels == 0) {
+    if (page != null && extra > page.position.viewportDimension && page.position.pixels == 0) {
       final tall = (_height + extra).clamp(_height, 6000.0);
       _phone(tester, height: tall);
       await tester.pump();

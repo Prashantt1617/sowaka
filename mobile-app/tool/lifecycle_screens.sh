@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Draws every employee-lifecycle screen of the app as a PNG (393 x 852 at 3x,
+# Draws every employee-lifecycle screen of the app as a PNG (393 x 852 at 2x,
 # the app's fonts and theme, data from test/fixtures/lifecycle), for review.
 #
 #   tool/lifecycle_screens.sh [out-dir]
